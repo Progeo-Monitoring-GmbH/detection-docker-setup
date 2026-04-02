@@ -10,7 +10,7 @@ fi
 # ===== CONFIGURATION =====
 EMAIL=""
 DOMAINS=()
-WEB_SERVER="nginx"
+WEBROOT_PATH="/var/www/certbot"
 
 if [[ "$#" -lt 2 ]]; then
   echo "Usage: $0 <email> <domain1> [domain2 ...]"
@@ -59,6 +59,10 @@ snap install --classic certbot
 # Ensure certbot command is available
 ln -sf /snap/bin/certbot /usr/bin/certbot
 
+# ===== PREPARE WEBROOT FOR ACME CHALLENGE =====
+echo "[4/6] Preparing ACME webroot..."
+mkdir -p "$WEBROOT_PATH/.well-known/acme-challenge"
+
 # ===== OBTAIN CERTIFICATE =====
 echo "[5/6] Requesting certificate..."
 
@@ -67,13 +71,14 @@ for domain in "${DOMAINS[@]}"; do
   CERTBOT_DOMAIN_ARGS+=("-d" "$domain")
 done
 
-certbot --nginx "${CERTBOT_DOMAIN_ARGS[@]}" \
-  --non-interactive --agree-tos -m "$EMAIL" --redirect
+certbot certonly --webroot -w "$WEBROOT_PATH" "${CERTBOT_DOMAIN_ARGS[@]}" \
+  --non-interactive --agree-tos -m "$EMAIL"
 
+docker exec progeo-nginx nginx -s reload
 
 # ===== AUTO-RENEWAL TEST =====
 echo "[6/6] Testing auto-renewal..."
-certbot renew --dry-run
+certbot renew --dry-run --webroot -w "$WEBROOT_PATH"
 
 # ===== INSTALL AUTO-RENEW CRONJOB =====
 echo "=== Configuring auto-renew cronjob ==="
