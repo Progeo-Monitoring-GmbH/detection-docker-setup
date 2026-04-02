@@ -82,7 +82,7 @@ replace_tildes_with_random_chars() {
 
   awk '
     BEGIN {
-      chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!§$%&/()=?-_.:,;#+*"
+      chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!§%&()=?-_.:,;#+*"
       n = length(chars)
       srand()
     }
@@ -145,8 +145,6 @@ configure_non_root_docker() {
   log_info "${target_user} must log out/in (or reboot) before running docker without sudo."
 }
 
-
-
 log_info "Updating package index..."
 apt-get update -y
 log_success "Package index updated"
@@ -166,6 +164,7 @@ EOF
     chmod +x /usr/local/bin/docker-compose
   fi
 fi
+chmod 660 /var/run/docker.sock
 log_success "Git and Docker Compose installed"
 
 configure_non_root_docker
@@ -195,5 +194,7 @@ ensure_file_from_template "${DJANGO_ENV_FILE}" "${DJANGO_ENV_TEMPLATE}"
 
 replace_tildes_with_random_chars "${ENV_FILE}"
 replace_tildes_with_random_chars "${DJANGO_ENV_FILE}"
+
+chown progeo:progeo "${ENV_FILE}" "${DJANGO_ENV_FILE}"
 
 log_success "Done. Installed Git, Docker Compose, configured non-root Docker access, and set UFW (22, 80, 443)."
