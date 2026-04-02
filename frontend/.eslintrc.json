@@ -1,0 +1,44 @@
+{
+  "root": true,
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "project": [
+      "./tsconfig.json"
+    ]
+  },
+  "plugins": [
+    "@typescript-eslint",
+    "eslint-plugin-unused-imports"
+  ],
+  "settings": {
+    "react": {
+      "version": "detect"
+      // Tells eslint-plugin-react to automatically detect the version of React to use
+    }
+  },
+  "extends": [
+    "plugin:react/recommended",
+    // Uses the recommended rules from @eslint-plugin-react
+    "plugin:@typescript-eslint/recommended",
+    // Uses the recommended rules from the @typescript-eslint/eslint-plugin
+    "plugin:prettier/recommended"
+    // Enables eslint-plugin-prettier and eslint-config-prettier. This will display prettier errors as ESLint errors. Make sure this is always the last configuration in the extends array.
+  ],
+  "rules": {
+    "@typescript-eslint/no-unused-vars": "warn",
+    "@typescript-eslint/no-empty-function": "off",
+    "unused-imports/no-unused-imports": "error",
+    "react/prop-types": "off",
+    "quotes": [
+      "warn",
+      "single",
+      {
+        "allowTemplateLiterals": true
+      }
+    ],
+    "@typescript-eslint/explicit-module-boundary-types": "off",
+    "@typescript-eslint/no-var-requires": "off",
+    "curly": ["error", "all"],
+    "prettier/prettier": ["error", { "semi": true }]
+  }
+}

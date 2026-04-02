@@ -1,0 +1,147 @@
+# Regular commands:
+# docker rm -f progeo-database && docker volume rm progeo_postgres_data && docker compose down && docker compose build && docker compose up -d && docker logs -f progeo-backend
+# docker rm -f progeo-database && docker volume rm progeo_postgres_data && docker compose build && docker compose up -d
+# docker exec -it progeo-backend bash
+
+services:
+
+  #See for ENVS https://www.postgresql.org/docs/current/libpq-envars.html
+  progeo-database:
+    container_name: progeo-database
+    build:
+      context: .
+      dockerfile: docker/database/Dockerfile
+      args:
+        DJANGO_DATABASES: ${DJANGO_DATABASES}
+    restart: unless-stopped
+    ports:
+      - "${LIMITED_ACCESS}${POSTGRES_PORT}:${POSTGRES_PORT}"
+    environment:
+      TZ: "Europe/Berlin"
+      PGPORT: ${POSTGRES_PORT}
+      POSTGRES_HOST : ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_USER : ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB : ${POSTGRES_DB}
+      BACKEND_PORT: ${BACKEND_PORT}
+    networks:
+      database_net:
+        aliases:
+          - progeo-database
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+
+  # Used for django websocket connections
+  progeo-redis:
+    image: redis:latest
+    container_name: progeo-redis
+    restart: always
+    ports:
+      - "${LIMITED_ACCESS}${REDIS_PORT}:6379"
+    networks:
+      redis_net:
+        aliases:
+          - progeo-redis
+
+
+  # Django backend (using REST-API)
+  progeo-backend:
+    container_name: progeo-backend
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: docker/backend/Dockerfile
+      args:
+        BACKEND_PORT: ${BACKEND_PORT}
+        DB_HOST: ${POSTGRES_HOST}
+        DB_PORT: ${POSTGRES_PORT}
+    environment:
+      PROTOCOL: ${PROTOCOL}
+      FULL_BACKEND_URL: ${BACKEND_URL}
+      FRONTEND_URL: ${FRONTEND_URL}
+      CELERY_ON_BOOT: ${CELERY_ON_BOOT}
+    depends_on:
+      - progeo-database
+      - progeo-redis
+    ports:
+      - "${LIMITED_ACCESS}${BACKEND_PORT}:8383"
+    volumes:
+      - ./media:/usr/src/app/media:rw
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+    user: "1003:1004"
+    security_opt:
+      - label:user:progeo
+      - label:role:progeo
+    networks:
+      default_net:
+        aliases:
+          - progeo-backend
+      database_net:
+      redis_net:
+
+
+  progeo-frontend:
+    container_name: progeo-frontend
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: docker/frontend/Dockerfile
+      args:
+        FRONTEND_URL: ${FRONTEND_URL}
+        BACKEND_URL: ${BACKEND_URL}
+        BACKEND_PORT: ${BACKEND_PORT}
+    environment:
+      - NODE_OPTIONS=--max-old-space-size=8196
+      - MAX_OLD_SPACE_SIZE=8196
+      - SHELL=/bin/sh
+    ports:
+      - "${LIMITED_ACCESS}${PORT}:80"
+    networks:
+      default_net:
+        aliases:
+          - progeo-frontend
+
+
+  progeo-nginx:
+    build:
+      context: .
+      dockerfile: docker/nginx/Dockerfile
+    container_name: progeo-nginx
+    environment:
+      - NGINX_ALWAYS_TLS_REDIRECT="on"
+      - DNS_FRONT_NAMES=${DNS_FRONT_NAMES}
+      - DNS_BACK_NAMES=${DNS_BACK_NAMES}
+      - CERT_LOCAL=${CERT_LOCAL}
+      - CERT_PATH=${CERT_PATH}
+      - CERT_FILE=${CERT_FILE}
+      - CERT_KEY=${CERT_KEY}
+      - CERT_PASS=${CERT_PASS}
+    restart: always
+    ports:
+      - 80:80
+      - 443:443
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - progeo-frontend
+      - progeo-backend
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt
+      - ${CERT_LOCAL}:/etc/nginx/ssl
+      - /var/www/:/var/www/
+    networks:
+      default_net:
+        aliases:
+          - progeo.local
+          - api.progeo.local
+
+networks:
+  default_net:
+  database_net:
+  redis_net:
+
+
+volumes:
+  postgres_data:

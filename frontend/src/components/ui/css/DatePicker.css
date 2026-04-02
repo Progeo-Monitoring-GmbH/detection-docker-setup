@@ -1,0 +1,15 @@
+.customDatePicker {
+    width: 90% !important;
+    display: block;
+    padding: 0.375rem 0.75rem;
+    font-size: 1rem;
+    font-weight: 400;
+    line-height: 1.5;
+    color: #303030;
+    appearance: none;
+    background-color: #fff;
+    background-clip: padding-box;
+    border: var(--bs-border-width) solid #222;
+    border-radius: var(--bs-border-radius);
+    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}

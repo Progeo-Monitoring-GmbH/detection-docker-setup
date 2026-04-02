@@ -1,0 +1,18 @@
+.accordion-button {
+    background-color: #444 !important;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.125) !important;
+    font-size: 1.25rem !important;
+}
+
+.accordion-button:not(.collapsed) {
+    background-color: #444 !important;
+    color: white !important;
+}
+
+.accordion-body {
+    background-color: #303030;
+}
+
+.accordion-item {
+    --bs-accordion-border-color: var(--bs-gray-600);
+}

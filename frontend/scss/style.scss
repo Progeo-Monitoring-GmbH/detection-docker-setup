@@ -1,0 +1,270 @@
+//See https://bootswatch.com/darkly/
+@import "~bootswatch/dist/darkly/variables";
+@import "~bootstrap/scss/bootstrap";
+@import "~bootswatch/dist/darkly/bootswatch";
+
+@import "~bootstrap-icons/font/bootstrap-icons.css";
+
+.card-body {
+  padding: 0 !important;
+}
+
+.card-text {
+  padding: 1rem;
+}
+
+.table-icon {
+  font-size: 25px;
+}
+
+/* Set black background color, white text and some padding */
+footer {
+  background-color: #555;
+  color: white;
+  padding: 15px;
+}
+
+/* On small screens, set height to 'auto' for sidenav and grid */
+@media screen and (max-width: 767px) {
+  .sidenav {
+    height: auto;
+    padding: 25px 5px 15px 15px;
+  }
+
+  .row.content {
+    height: auto;
+    padding-top: 10px;
+  }
+}
+
+div.container-fluid {
+  width: 95% !important;
+}
+
+input.input-left-100 {
+  position: absolute;
+  left: 140px;
+  margin: 0 15px 10px;
+  padding: 8px 12px 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  background: rgba(46, 45, 43, 1);
+}
+
+.block {
+  position: relative;
+}
+
+.block .overlay {
+  width: 90%;
+  display: inline-block;
+}
+
+.connectedSortable {
+  min-height: 370px;
+}
+
+#sortableOptions li, {
+  margin: 0 5px 5px 5px;
+  padding: 5px;
+  font-size: 1.2em;
+}
+
+div.scrollable {
+  border: 0;
+  padding: 10px 0 10px 0;
+  //margin:4px, 4px;
+  height: 290px;
+  max-height: 300px;
+  overflow: scroll;
+  -webkit-overflow-scrolling: touch;
+}
+
+#carouselControls {
+  min-height: 250px;
+  border: 1px solid rgba(206, 206, 206, 0.5);
+}
+
+img.d-block {
+  line-height: 17;
+  text-align: center;
+}
+
+.navbar-brand::before {
+  color: #ccc;
+}
+
+.navbar-brand {
+  color: white;
+}
+
+.panel-default {
+  border: 1px solid rgba(206, 206, 206, 0.5);
+  background-color: #2e2d2b;
+  padding: 0;
+  margin: 15px 0 0 0;
+  height: min-content;
+  min-width: 250px !important;
+}
+
+.panel-heading {
+  font-size: 20px;
+  background-color: #4d4d4d;
+  padding: 5px 10px 5px 10px;
+  border-bottom: 1px solid rgba(206, 206, 206, 0.5);
+}
+
+.panel-body {
+  padding: 15px;
+}
+
+.list-group-item {
+  margin: 2px;
+  border: 1px solid rgba(206, 206, 206, 0.5) !important;
+}
+
+#streamViewholder {
+  overflow: hidden;
+  position: relative;
+  width: 960px;
+  height: 480px;
+}
+
+#focusFrame {
+  position: absolute;
+  border: beige 1px solid;
+}
+
+button.btnCreateFlow {
+  margin: 20px 0 20px 30px;
+  padding: 6px 20px 6px 20px;
+}
+
+.notransition {
+  -webkit-transition: none !important;
+  -moz-transition: none !important;
+  -o-transition: none !important;
+  -ms-transition: none !important;
+  transition: none !important;
+}
+
+#image_preview {
+  position: relative; /* Add this since child are absolute! */
+  background: #eee;
+  margin: 15px;
+  cursor: crosshair;
+  width: 800px;
+}
+
+#image_preview img {
+  display: inline-block;
+  vertical-align: top;
+}
+
+#mark_circle {
+  position: absolute;
+  background: rgba(255, 0, 0, 0.7) no-repeat 50% 50%;
+  border-radius: 50%;
+  transform: translate(-50%, -50%); /* use translate instead of JS calculations */
+}
+
+img.failed {
+  border: 5px solid #f00;
+}
+
+#snackbar-holder {
+  //visibility: hidden;
+  color: #fff;
+  z-index: 1;
+  position: absolute;
+  top: 10px;
+  right: 30px;
+  min-width: 300px;
+  margin-left: -125px;
+}
+
+.snackbar {
+  background-color: cadetblue;
+  //visibility: hidden;
+  color: #fff;
+  text-align: center;
+  border-radius: 4px;
+  padding: 25px;
+  z-index: 1;
+  position: relative;
+  min-width: 300px;
+  margin-left: -125px;
+  margin-bottom: 8px;
+}
+
+.imageholder {
+  position: relative;
+  width: 225px;
+}
+
+a.edit-link {
+  position: absolute;
+  right: 5px;
+  top: 5px;
+  background: azure;
+  padding: 3px;
+  font-weight: bold;
+}
+
+.show_snack {
+  visibility: visible !important;
+  -webkit-animation: fadein 0.5s, fadeout 0.5s 2.5s;
+  animation: fadein 0.5s, fadeout 0.5s 2.5s;
+}
+
+.version-infos {
+  //position: sticky;
+  //left: 15px;
+  //bottom: 15px;
+  //z-index: 1000;
+  padding-top: 25px;
+}
+
+.noLineBreak {
+  display: contents;
+}
+
+/* Animations to fade the snackbar in and out */
+@-webkit-keyframes fadein {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fadein {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@-webkit-keyframes fadeout {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes fadeout {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
