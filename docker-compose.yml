@@ -92,12 +92,13 @@ services:
         FRONTEND_URL: ${FRONTEND_URL}
         BACKEND_URL: ${BACKEND_URL}
         BACKEND_PORT: ${BACKEND_PORT}
+        FRONTEND_PORT: ${FRONTEND_PORT}
     environment:
       - NODE_OPTIONS=--max-old-space-size=8196
       - MAX_OLD_SPACE_SIZE=8196
       - SHELL=/bin/sh
     ports:
-      - "${LIMITED_ACCESS}${PORT}:80"
+      - "${LIMITED_ACCESS}${FRONTEND_PORT}:80"
     networks:
       default_net:
         aliases:
@@ -134,8 +135,8 @@ services:
     networks:
       default_net:
         aliases:
-          - progeo.local
-          - api.progeo.local
+          - dashboard.progeo.com
+          - api.progeo.com
 
 networks:
   default_net:

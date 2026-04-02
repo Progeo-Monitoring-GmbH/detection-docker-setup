@@ -9,9 +9,9 @@ WORKDIR /home/progeo-frontend
 COPY ./frontend/package.json .
 COPY ./docker/frontend/.env.production ./.env
 
-RUN sed -i -r "s/FRONTEND-TEMPLATE/${FRONTEND_URL}/g" ./.env
-RUN sed -i -r "s/BACKEND-TEMPLATE/${BACKEND_URL}/g" ./.env
-RUN sed -i -r "s/URL-TEMPLATE-WITH-PORT/${BACKEND_URL}:${BACKEND_PORT}/g" ./.env
+RUN sed -i -r "s|FRONTEND-TEMPLATE|${FRONTEND_URL}|g" ./.env
+RUN sed -i -r "s|BACKEND-TEMPLATE|${BACKEND_URL}|g" ./.env
+RUN sed -i -r "s|URL-TEMPLATE-WITH-PORT|${BACKEND_URL}:${BACKEND_PORT}|g" ./.env
 
 RUN npm install
 

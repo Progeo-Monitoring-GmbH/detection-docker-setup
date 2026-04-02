@@ -46,11 +46,11 @@ fi
 pprint "[4] fix contenttypes"
 python manage.py fix_contenttypes
 
-pprint "[5] sync default"
-python manage.py sync_default
-
-pprint "[6] create_admin"
+pprint "[5] create_admin"
 python manage.py create_admin
+
+pprint "[6] sync default"
+python manage.py sync_default
 
 #if [ "$CELERY_ON_BOOT" = "1" ]; then
 #  pprint "[7] celery worker"

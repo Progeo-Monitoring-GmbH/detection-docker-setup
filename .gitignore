@@ -38,3 +38,5 @@ progeo/tests/_pytest.log
 progeo/management/commands/dev.py
 yfinance.cache
 tmp/
+
+!**.template

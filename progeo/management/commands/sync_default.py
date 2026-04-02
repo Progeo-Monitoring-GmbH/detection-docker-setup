@@ -7,7 +7,6 @@ from progeo.sets import DJANGO_MODELS
 from progeo.settings import DJANGO_DATABASES
 
 
-
 def copy_model_sets(model, db, from_db='default'):
     # We wrap everything in a transaction against the target DB:
     with transaction.atomic(using=db):
@@ -106,10 +105,5 @@ class Command(BaseCommand):
                     continue
                 copy_model(_model, db)
 
-        # for db in ["soziales_zentrum"]:#DJANGO_DATABASES:
-        #     for _model, _table in DJANGO_MODELS:
-        #         if not _model:
-        #             continue
-        #         copy_model_sets(_model, db)
 
         dlog("DONE!", DJANGO_DATABASES)

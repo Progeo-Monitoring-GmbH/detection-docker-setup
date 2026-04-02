@@ -28,44 +28,6 @@ export default ({ mode }) => {
           tryCatchDeoptimization: false,
           unknownGlobalSideEffects: false,
         },
-
-        // output: {
-        //   // Consistent hashed filenames
-        //   entryFileNames: 'assets/entry-[name]-[hash].js',
-        //   chunkFileNames: 'assets/chunk-[name]-[hash].js',
-        //   assetFileNames: 'assets/[name]-[hash][extname]',
-        //
-        //   // Fine-grained, cache-friendly chunking strategy
-        //   manualChunks(id) {
-        //     // Big frameworks into their own long-lived chunks
-        //     if (id.includes('node_modules')) {
-        //       // Common UI libs
-        //       if (
-        //         /[\\/]@mui[\\/]|[\\/]antd[\\/]|[\\/]chakra-ui[\\/]/.test(id)
-        //       ) {
-        //         return 'ui-vendor';
-        //       }
-        //
-        //       // Heavy data/graph libs
-        //       if (/[\\/]d3[\\/]/.test(id)) {
-        //         return 'd3-vendor';
-        //       }
-        //       if (/[\\/]three[\\/]/.test(id)) {
-        //         return 'three-vendor';
-        //       }
-        //
-        //       // Fallback: put the rest of node_modules into one vendor chunk
-        //       return 'vendor';
-        //     }
-        //
-        //     if (id.includes('/src/pages/')) {
-        //       const m = id.split('/src/pages/')[1]?.split('/')[0];
-        //       if (m) {
-        //         return `page-${m}`;
-        //       }
-        //     }
-        //   },
-        // },
       },
       reportCompressedSize: true,
       chunkSizeWarningLimit: 1000,
@@ -74,19 +36,13 @@ export default ({ mode }) => {
     },
     optimizeDeps: {
       include: ['react', 'react-dom'], // Add frequently used deps
-      // exclude: [
-      //   'plotly.js',
-      //   'plotly.js-dist',
-      //   'plotly.js-dist-min',
-      //   'react-plotly.js',
-      // ],
     },
     define: {
       __APP_ENV__: JSON.stringify(env.APP_ENV),
     },
     server: {
-      host: env.VITE_HOST || '0.0.0.0',
-      port: env.VITE_PORT ? parseInt(env.VITE_PORT, 10) : 3000,
+      host: env.VITE_FRONTEND_URL || '0.0.0.0',
+      port: env.VITE_FRONTEND_PORT ? parseInt(env.VITE_FRONTEND_PORT, 10) : 3000,
     },
     resolve: {
       alias: [

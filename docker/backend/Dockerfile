@@ -54,7 +54,9 @@ RUN pip install -r requirements.txt --use-feature=fast-deps
 COPY ./docker/backend/ .
 COPY ./progeo ./progeo
 COPY ./manage.py ./manage.py
-COPY ./docker/backend/django.env ./django.env
+COPY ./.env ./django.env /tmp/
+RUN cat /tmp/.env /tmp/django.env > ./django.env \
+    && rm -rf /tmp/*
 
 RUN sed -i -e 's/\r$//' ./*.sh
 RUN chmod +x ./*.sh
