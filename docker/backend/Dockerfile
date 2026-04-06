@@ -1,5 +1,7 @@
 FROM python:3.13.7-alpine3.21 AS python
 
+ARG PROTOCOL
+ARG FRONTEND_PORT
 ARG BACKEND_PORT
 ARG DB_HOST
 ARG DB_PORT
@@ -57,6 +59,10 @@ COPY ./manage.py ./manage.py
 COPY ./.env ./django.env /tmp/
 RUN cat /tmp/.env /tmp/django.env > ./django.env \
     && rm -rf /tmp/*
+
+RUN sed -i -r "s|@PROTOCOL|$PROTOCOL|g" ./django.env
+RUN sed -i -r "s|@FRONTEND_PORT|$FRONTEND_PORT|g" ./django.env
+RUN sed -i -r "s|@BACKEND_PORT|$BACKEND_PORT|g" ./django.env
 
 RUN sed -i -e 's/\r$//' ./*.sh
 RUN chmod +x ./*.sh

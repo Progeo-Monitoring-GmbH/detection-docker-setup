@@ -20,7 +20,6 @@ RUN npm audit fix --dry-run --json 2>&1 | tee npm-audit.log
 ENV PATH=/home/progeo-frontend/node_modules/.bin:$PATH
 #CMD ["tail", "-f", "/dev/null"]
 
-#RUN npm run pre-build
 RUN npm run build
 
 # ##########################
