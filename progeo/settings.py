@@ -199,9 +199,24 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 PROTOCOL = os.getenv("PROTOCOL", "http")
-CORS_ALLOWED_ORIGINS = parse_split_str(os.getenv("ALLOWED_ORIGINS", ""), ",")
+_raw_allowed_origins = parse_split_str(os.getenv("ALLOWED_ORIGINS", ""), ",")
+CORS_ALLOWED_ORIGINS = [
+    origin.strip().rstrip("/")
+    for origin in _raw_allowed_origins
+    if origin.strip() and "@" not in origin
+]
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https?://localhost(?::\d+)?$",
+    r"^https?://127\.0\.0\.1(?::\d+)?$",
+    r"^https?://0\.0\.0\.0(?::\d+)?$",
+]
 CSRF_COOKIE_NAME = "csrftoken"
-CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS
+CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS + [
+    "http://localhost",
+    "https://localhost",
+    "http://127.0.0.1",
+    "https://127.0.0.1"
+]
 CORS_ALLOW_CREDENTIALS = True
 # CSRF_USE_SESSIONS = True
 

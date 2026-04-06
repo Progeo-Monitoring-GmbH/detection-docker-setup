@@ -205,4 +205,10 @@ replace_tildes_with_random_chars "${DJANGO_ENV_FILE}"
 
 chown progeo:progeo "${ENV_FILE}" "${DJANGO_ENV_FILE}"
 
+{ echo "";
+  echo "127.0.0.1       api.progeo.local";
+  echo "127.0.0.1       dashboard.progeo.local";
+  echo "";
+} >> /etc/hosts
+
 log_success "Done. Installed Git, Docker Compose, configured non-root Docker access, and set UFW (22, 80, 443)."
