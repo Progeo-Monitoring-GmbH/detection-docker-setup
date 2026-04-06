@@ -72,6 +72,9 @@ services:
     volumes:
       - ./media:/usr/src/app/media:rw
       - /var/run/docker.sock:/var/run/docker.sock:rw
+      - ./data/dnsmasq:/var/lib/misc
+    cap_add:
+      - NET_ADMIN
     user: "1003:1004"
     security_opt:
       - label:user:progeo

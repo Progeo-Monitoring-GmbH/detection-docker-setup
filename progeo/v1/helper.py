@@ -1,5 +1,4 @@
 import base64
-import csv
 import fnmatch
 import hashlib
 import json
@@ -7,16 +6,12 @@ import os
 import re
 import secrets
 import string
-import subprocess
 from datetime import datetime, date, timedelta
 
-from django.core.exceptions import FieldError
 from django.core.serializers.json import DjangoJSONEncoder
-from django.db.models import QuerySet
 from django.utils import timezone
 
 from progeo.helper.basics import dlog, elog, get_current_year
-from django.db import transaction, models
 from charset_normalizer import from_path
 
 regex_has_mail = re.compile(r'(\S+@\S+\.\S+)')
