@@ -1,14 +1,15 @@
 import { Button, Col } from 'react-bootstrap';
 import React from 'react';
+import { useAuth } from '../../../hooks/CoreAuthProvider';
 
 const Navbar = ({}) => {
-  const singOut = useSignOut();
-  const isAdmin = localStorage.getItem('is_staff');
+  const auth = useAuth();
 
   const logout = () => {
-    singOut();
-    // navigate("/login");
+    auth.logoutAction();
   };
+
+  const isAdmin = auth?.user?.is_superuser;
 
   return (
     <Col md={2} id={'v1-Navbar'}>

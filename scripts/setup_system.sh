@@ -59,8 +59,8 @@ fi
 
 # shellcheck disable=SC1091
 source /etc/os-release
-if [[ "${ID:-}" != "ubuntu" ]]; then
-  fatal "Error: this script is intended for Ubuntu only."
+if [[ "${ID:-}" != "ubuntu" && "${ID:-}" != "debian" ]]; then
+  fatal "Error: this script is intended for Ubuntu or Debian only."
 fi
 
 export DEBIAN_FRONTEND=noninteractive
@@ -164,7 +164,8 @@ EOF
     chmod +x /usr/local/bin/docker-compose
   fi
 fi
-chmod 660 /var/run/docker.sock
+
+#chmod 660 /var/run/docker.sock
 log_success "Git and Docker Compose installed"
 
 configure_non_root_docker
@@ -184,8 +185,10 @@ log_success "UFW enabled with allowed ports: 22, 80, 443"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
 ENV_TEMPLATE="${PROJECT_ROOT}/.env.template"
 ENV_FILE="${PROJECT_ROOT}/.env"
+
 DJANGO_ENV_TEMPLATE="${PROJECT_ROOT}/django.env.template"
 DJANGO_ENV_FILE="${PROJECT_ROOT}/django.env"
 

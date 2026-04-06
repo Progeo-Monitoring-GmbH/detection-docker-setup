@@ -5,6 +5,10 @@ RUN apk upgrade
 
 WORKDIR /etc/nginx/
 
+RUN mkdir -p /etc/letsencrypt && \
+    [ ! -f /etc/letsencrypt/options-ssl-nginx.conf ] && \
+    touch /etc/letsencrypt/options-ssl-nginx.conf
+    
 COPY ./docker/nginx/conf.d /etc/nginx/conf.d
 COPY ./docker/nginx/nginx.conf /etc/nginx/nginx.conf
 COPY ./docker/nginx/fix_host_file.sh /docker-entrypoint.d/50-fix_hosts.sh
