@@ -40,3 +40,4 @@ yfinance.cache
 tmp/
 
 !**.template
+!docker/frontend/.env.production

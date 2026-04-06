@@ -126,3 +126,35 @@ class DeviceViewSet(ProgeoModalViewSet):
         device_hash = kwargs.get("device_hash")
         print("XXX", device_hash)
         return RequestSuccess()
+
+
+
+class StatusViewSet(ProgeoModalViewSet):
+    serializer_class = DeviceSerializer
+    permission_classes = [AllowAny]
+
+
+    @calc_runtime
+    @action(detail=False, url_path="list_connected", methods=["GET"])
+    def list_connected(self, request, *args, **kwargs):
+        devices = []
+        leases_path = "/var/lib/misc/dnsmasq.leases"
+
+        if not os.path.exists(leases_path):
+            return RequestFailed({"reason": "Hotspot is not active or dnsmasq.leases file is missing"})
+
+        with open(leases_path, "r") as f:
+            for line in f:
+                parts = line.strip().split()
+                if len(parts) >= 3:
+                    mac = parts[1]
+                    ip = parts[2]
+                    hostname = parts[3] if len(parts) > 3 else "unknown"
+
+                    devices.append({
+                        "mac": mac,
+                        "ip": ip,
+                        "hostname": hostname
+                    })
+
+        return RequestSuccess({"devices": devices})

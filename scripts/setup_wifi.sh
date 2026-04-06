@@ -1,62 +1,204 @@
 #!/bin/bash
 
 # Open Wi-Fi Hotspot Setup Script for Raspberry Pi
-# SSID: ProGeoController
-# No password (open network)
+# SSID and password are read from .env when available
 
-set -e
+set -euo pipefail
 
 if [[ "${EUID}" -ne 0 ]]; then
   echo "Error: run this script as root (use sudo)."
   exit 1
 fi
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ENV_FILE="${PROJECT_ROOT}/.env"
+
+SSID="ProGeoController"
+PASSWORD=""
+WIFI_COUNTRY="US"
+
+if [[ -f "${ENV_FILE}" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "${ENV_FILE}"
+  set +a
+fi
+
+SSID="${CONTROLLER_SSID:-$SSID}"
+PASSWORD="${CONTROLLER_PASSWORD:-}"
+WIFI_COUNTRY="${CONTROLLER_COUNTRY_CODE:-${WIFI_COUNTRY:-US}}"
+WIFI_COUNTRY="$(printf '%s' "${WIFI_COUNTRY}" | tr '[:lower:]' '[:upper:]')"
+
+if [[ -z "${SSID}" ]]; then
+  echo "Error: CONTROLLER_SSID cannot be empty."
+  exit 1
+fi
+
+if [[ -n "${PASSWORD}" ]] && (( ${#PASSWORD} < 8 || ${#PASSWORD} > 63 )); then
+  echo "Error: CONTROLLER_PASSWORD must be 8-63 characters for WPA2."
+  exit 1
+fi
+
+if [[ ! "${WIFI_COUNTRY}" =~ ^[A-Z]{2}$ ]]; then
+  echo "Error: CONTROLLER_COUNTRY_CODE must be a 2-letter ISO country code (for example: DE, US, FR)."
+  exit 1
+fi
+
+has_service() {
+  systemctl list-unit-files --type=service --no-legend 2>/dev/null | awk '{print $1}' | grep -qx "$1.service"
+}
+
+stop_service_if_exists() {
+  systemctl stop "$1" >/dev/null 2>&1 || true
+}
+
+allow_hotspot_firewall() {
+  if command -v ufw >/dev/null 2>&1; then
+    ufw allow in on wlan0 to any port 53 proto tcp >/dev/null 2>&1 || true
+    ufw allow in on wlan0 to any port 53 proto udp >/dev/null 2>&1 || true
+    ufw allow in on wlan0 to any port 67 proto udp >/dev/null 2>&1 || true
+  fi
+}
+
+configure_static_ip() {
+  echo "Configuring static IP for wlan0..."
+
+  if has_service "dhcpcd" && [[ -f /etc/dhcpcd.conf ]]; then
+    if ! grep -q "^interface wlan0$" /etc/dhcpcd.conf; then
+      cat >> /etc/dhcpcd.conf <<'EOF'
+
+interface wlan0
+    static ip_address=192.168.1.1/24
+    nohook wpa_supplicant
+EOF
+    fi
+
+    systemctl restart dhcpcd
+    return
+  fi
+
+  if has_service "systemd-networkd"; then
+    mkdir -p /etc/systemd/network
+    cat > /etc/systemd/network/08-wlan0.network <<'EOF'
+[Match]
+Name=wlan0
+
+[Network]
+Address=192.168.1.1/24
+ConfigureWithoutCarrier=yes
+EOF
+
+    systemctl enable systemd-networkd >/dev/null 2>&1 || true
+    systemctl restart systemd-networkd
+    return
+  fi
+
+  echo "Warning: no supported network management service was found."
+  echo "Applying a temporary IP address to wlan0 for this session only."
+  ip addr flush dev wlan0 || true
+  ip addr add 192.168.1.1/24 dev wlan0
+  ip link set wlan0 up
+}
 
 echo "Updating packages..."
 apt update
 apt install -y hostapd dnsmasq
 
 echo "Stopping services for configuration..."
-systemctl stop hostapd
-systemctl stop dnsmasq
+stop_service_if_exists hostapd
+stop_service_if_exists dnsmasq
+stop_service_if_exists wpa_supplicant
+stop_service_if_exists wpa_supplicant@wlan0
 
-echo "Configuring static IP for wlan0..."
-bash -c 'cat >> /etc/dhcpcd.conf <<EOF
+if command -v rfkill >/dev/null 2>&1; then
+  rfkill unblock wlan || true
+fi
 
-interface wlan0
-    static ip_address=192.168.1.1/24
-    nohook wpa_supplicant
-EOF'
+ip link set wlan0 down || true
+ip addr flush dev wlan0 || true
+ip link set wlan0 up || true
 
-service dhcpcd restart
+configure_static_ip
+allow_hotspot_firewall
 
 echo "Configuring dnsmasq..."
-mv /etc/dnsmasq.conf /etc/dnsmasq.conf.orig
-bash -c 'cat > /etc/dnsmasq.conf <<EOF
+if [[ -f /etc/dnsmasq.conf ]] && [[ ! -f /etc/dnsmasq.conf.orig ]]; then
+  mv /etc/dnsmasq.conf /etc/dnsmasq.conf.orig
+fi
+
+cat > /etc/dnsmasq.conf <<'EOF'
 interface=wlan0
+bind-interfaces
+listen-address=192.168.1.1
+domain-needed
+bogus-priv
 dhcp-range=192.168.1.10,192.168.1.100,255.255.255.0,24h
-EOF'
+dhcp-option=3,192.168.1.1
+dhcp-option=6,192.168.1.1
+EOF
 
 echo "Configuring hostapd..."
-bash -c 'cat > /etc/hostapd/hostapd.conf <<EOF
+cat > /etc/hostapd/hostapd.conf <<EOF
 interface=wlan0
 driver=nl80211
-ssid=ProGeoController
+ssid=${SSID}
 hw_mode=g
 channel=6
+country_code=${WIFI_COUNTRY}
+ieee80211d=1
+ieee80211n=1
+wmm_enabled=1
+macaddr_acl=0
 auth_algs=1
 ignore_broadcast_ssid=0
-EOF'
+EOF
 
-sed -i 's|#DAEMON_CONF=""|DAEMON_CONF="/etc/hostapd/hostapd.conf"|' /etc/default/hostapd
+if [[ -n "${PASSWORD}" ]]; then
+  cat >> /etc/hostapd/hostapd.conf <<EOF
+wpa=2
+wpa_passphrase=${PASSWORD}
+wpa_key_mgmt=WPA-PSK
+wpa_pairwise=TKIP
+rsn_pairwise=CCMP
+EOF
+fi
+
+if [[ -f /etc/default/hostapd ]]; then
+  if grep -q '^#\?DAEMON_CONF=' /etc/default/hostapd; then
+    sed -i 's|^#\?DAEMON_CONF=.*|DAEMON_CONF="/etc/hostapd/hostapd.conf"|' /etc/default/hostapd
+  else
+    echo 'DAEMON_CONF="/etc/hostapd/hostapd.conf"' >> /etc/default/hostapd
+  fi
+else
+  echo 'DAEMON_CONF="/etc/hostapd/hostapd.conf"' > /etc/default/hostapd
+fi
 
 echo "Enabling services..."
 systemctl unmask hostapd
 systemctl enable hostapd
 systemctl enable dnsmasq
 
-systemctl start hostapd
-systemctl start dnsmasq
+systemctl restart dnsmasq
+systemctl restart hostapd
+
+if ! systemctl --quiet is-active dnsmasq; then
+  echo "Error: dnsmasq failed to start. Recent logs:"
+  journalctl -u dnsmasq -n 50 --no-pager || true
+  exit 1
+fi
+
+if ! systemctl --quiet is-active hostapd; then
+  echo "Error: hostapd failed to start. Recent logs:"
+  journalctl -u hostapd -n 50 --no-pager || true
+  exit 1
+fi
 
 echo "Hotspot setup complete!"
-echo "SSID: ProGeoController (open, no password)"
+if [[ -n "${PASSWORD}" ]]; then
+  echo "SSID: ${SSID} (password protected)"
+else
+  echo "SSID: ${SSID} (open, no password)"
+fi
+
+echo "Hotspot IP: 192.168.1.1"

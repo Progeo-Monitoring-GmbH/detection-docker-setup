@@ -150,6 +150,11 @@ apt-get update -y
 log_success "Package index updated"
 
 log_info "Installing Git and Docker Compose..."
+
+curl -fsSL https://get.docker.com | sh
+systemctl start docker
+systemctl enable docker
+
 if apt-cache show docker-compose >/dev/null 2>&1; then
   apt-get install -y git docker-compose
 else
@@ -165,7 +170,7 @@ EOF
   fi
 fi
 
-#chmod 660 /var/run/docker.sock
+chmod 660 /var/run/docker.sock
 log_success "Git and Docker Compose installed"
 
 configure_non_root_docker

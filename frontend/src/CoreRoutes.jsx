@@ -9,12 +9,14 @@ const BackupView = React.lazy(() => import('./main/BackupView'));
 const TokenLogin = React.lazy(() => import('./main/TokenLogin'));
 const ChangeLogs = React.lazy(() => import('./main/ChangeLogs'));
 const DevView = React.lazy(() => import('./main/DevView'));
+const DemoView = React.lazy(() => import('./main/DemoView'));
 
 const CoreRoutes = () => {
   return (
     <Routes>
       <Route path={`/login`} element={<LoginForm />} />
 
+      <Route path="/demo" element={<DemoView />} />
       <Route path="/dev" element={<DevView />} />
 
       <Route path="*" element={<Navbar act={''} content={<LandingPage />} />} />

@@ -90,6 +90,9 @@ class AccountMiddleware:
         if _path.startswith("/v1/device/"):
             #TODO
             pass
+        elif _path.startswith("/v1/status/"):
+            #TODO
+            pass
         elif _path.startswith("/v1/"):
             account_id = get_account_id_from_url(_path)
             if account_id is None:
