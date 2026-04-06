@@ -138,7 +138,7 @@ class StatusViewSet(ProgeoModalViewSet):
     @action(detail=False, url_path="list_connected", methods=["GET"])
     def list_connected(self, request, *args, **kwargs):
         devices = []
-        leases_path = "/data/dnsmasq/dnsmasq.leases"
+        leases_path = "/var/lib/misc/dnsmasq.leases"
 
         if not os.path.exists(leases_path):
             return RequestFailed({"reason": "Hotspot is not active or dnsmasq.leases file is missing"})

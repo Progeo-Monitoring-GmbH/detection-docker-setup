@@ -72,7 +72,7 @@ services:
     volumes:
       - ./media:/usr/src/app/media:rw
       - /var/run/docker.sock:/var/run/docker.sock:rw
-      - ./data/dnsmasq:/var/lib/misc
+      - /var/lib/misc:/var/lib/misc:rw
     cap_add:
       - NET_ADMIN
     user: "1003:1004"
