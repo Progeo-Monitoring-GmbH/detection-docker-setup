@@ -5,6 +5,8 @@ line="`ip route | awk '/default/ { print $3 }'`   docker.host.internal"
 
 { echo "";
   echo "${line}";
+  echo "127.0.0.1       api.progeo.local";
+  echo "127.0.0.1       dashboard.progeo.local";
   echo "";
 } >> /etc/hosts
 echo "Added: ${line}"
