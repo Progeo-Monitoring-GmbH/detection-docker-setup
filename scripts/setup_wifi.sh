@@ -61,6 +61,67 @@ allow_hotspot_firewall() {
   fi
 }
 
+configure_manager_conflicts() {
+  stop_service_if_exists hostapd
+  stop_service_if_exists dnsmasq
+  stop_service_if_exists wpa_supplicant
+  stop_service_if_exists wpa_supplicant@wlan0
+
+  systemctl disable wpa_supplicant >/dev/null 2>&1 || true
+  systemctl disable wpa_supplicant@wlan0 >/dev/null 2>&1 || true
+
+  if has_service "NetworkManager"; then
+    mkdir -p /etc/NetworkManager/conf.d
+    cat > /etc/NetworkManager/conf.d/99-unmanaged-wlan0.conf <<'EOF'
+[keyfile]
+unmanaged-devices=interface-name:wlan0
+EOF
+    systemctl restart NetworkManager >/dev/null 2>&1 || true
+  fi
+}
+
+configure_service_restart_policy() {
+  mkdir -p /etc/systemd/system/hostapd.service.d /etc/systemd/system/dnsmasq.service.d
+
+  cat > /etc/systemd/system/hostapd.service.d/override.conf <<'EOF'
+[Service]
+Restart=always
+RestartSec=2
+EOF
+
+  cat > /etc/systemd/system/dnsmasq.service.d/override.conf <<'EOF'
+[Service]
+Restart=always
+RestartSec=2
+EOF
+
+  systemctl daemon-reload
+}
+
+disable_wifi_power_save() {
+  if command -v iw >/dev/null 2>&1; then
+    mkdir -p /etc/systemd/system
+    cat > /etc/systemd/system/wlan0-power-save-off.service <<'EOF'
+[Unit]
+Description=Disable Wi-Fi power saving on wlan0
+After=network-pre.target
+Before=hostapd.service
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'command -v iw >/dev/null 2>&1 && iw dev wlan0 set power_save off || true'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl enable wlan0-power-save-off.service >/dev/null 2>&1 || true
+    iw dev wlan0 set power_save off >/dev/null 2>&1 || true
+  fi
+}
+
 configure_static_ip() {
   echo "Configuring static IP for wlan0..."
 
@@ -103,13 +164,12 @@ EOF
 
 echo "Updating packages..."
 apt update
-apt install -y hostapd dnsmasq
+apt install -y hostapd dnsmasq iw
 
 echo "Stopping services for configuration..."
-stop_service_if_exists hostapd
-stop_service_if_exists dnsmasq
-stop_service_if_exists wpa_supplicant
-stop_service_if_exists wpa_supplicant@wlan0
+configure_service_restart_policy
+configure_manager_conflicts
+disable_wifi_power_save
 
 if command -v rfkill >/dev/null 2>&1; then
   rfkill unblock wlan || true
@@ -129,10 +189,13 @@ fi
 
 cat > /etc/dnsmasq.conf <<'EOF'
 interface=wlan0
-bind-interfaces
+bind-dynamic
 listen-address=192.168.1.1
 domain-needed
 bogus-priv
+dhcp-authoritative
+clear-on-reload
+dhcp-leasefile=/var/lib/misc/dnsmasq.leases
 dhcp-range=192.168.1.10,192.168.1.100,255.255.255.0,24h
 dhcp-option=3,192.168.1.1
 dhcp-option=6,192.168.1.1
@@ -148,7 +211,12 @@ channel=6
 country_code=${WIFI_COUNTRY}
 ieee80211d=1
 ieee80211n=1
+ieee80211w=0
 wmm_enabled=1
+ap_max_inactivity=60
+skip_inactivity_poll=1
+disassoc_low_ack=1
+max_num_sta=32
 macaddr_acl=0
 auth_algs=1
 ignore_broadcast_ssid=0

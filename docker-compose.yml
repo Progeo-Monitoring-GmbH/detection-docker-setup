@@ -1,6 +1,6 @@
 # Regular commands:
-# docker rm -f progeo-database && docker volume rm progeo_postgres_data && docker compose down && docker compose build && docker compose up -d && docker logs -f progeo-backend
-# docker rm -f progeo-database && docker volume rm progeo_postgres_data && docker compose build && docker compose up -d
+# docker rm -f progeo-database && docker volume rm detection-docker-setup_postgres_data && docker-compose down && docker-compose build && docker-compose up -d && docker logs -f progeo-backend
+# docker rm -f progeo-database && docker volume rm detection-docker-setup_postgres_data && docker-compose build && docker-compose up -d
 # docker exec -it progeo-backend bash
 
 services:
