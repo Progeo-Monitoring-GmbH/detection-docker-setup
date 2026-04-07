@@ -5,8 +5,11 @@ line="`ip route | awk '/default/ { print $3 }'`   docker.host.internal"
 
 { echo "";
   echo "${line}";
-  echo "127.0.0.1       api.progeo.local";
-  echo "127.0.0.1       dashboard.progeo.local";
+  for host_name in ${DNS_BACK_NAMES:-} ${DNS_FRONT_NAMES:-}; do
+    if [ -n "${host_name}" ] && [ "${host_name}" != "localhost" ]; then
+      echo "127.0.0.1       ${host_name}";
+    fi
+  done
   echo "";
 } >> /etc/hosts
 echo "Added: ${line}"
