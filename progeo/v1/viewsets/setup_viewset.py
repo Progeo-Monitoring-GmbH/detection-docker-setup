@@ -10,7 +10,7 @@ from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.v1.helper import generate_hash
-from progeo.v1.models import Account, ProgeoDevice
+from progeo.v1.models import Account, ProgeoDevice, ProgeoLocation
 from progeo.v1.serializers import AccountSerializer, FileSerializer, DeviceSerializer
 from progeo.decorator import calc_runtime
 from progeo.helper.basics import RequestSuccess, delete_file, save_check_dir, RequestFailed
@@ -121,11 +121,30 @@ class DeviceViewSet(ProgeoModalViewSet):
         return ProgeoDevice.objects.filter(location__account=1) # TODO
 
     @calc_runtime
-    @action(detail=False, url_path="receive", methods=["GET"])
-    def test_url(self, request, *args, **kwargs):
+    @action(detail=False, url_path="receive", methods=["POST"])
+    def receive_data(self, request, *args, **kwargs):
         device_hash = kwargs.get("device_hash")
-        print("receive", device_hash)
-        return RequestSuccess()
+        if not device_hash:
+            return RequestFailed({"reason": "No device hash provided"})
+
+        account = Account.objects.filter(pk=1).first() or Account.objects.order_by("pk").first()
+        if not account:
+            return RequestFailed({"reason": "No account configured"})
+
+        db_name = account.db_name or "default"
+        location, _ = ProgeoLocation.objects.using(db_name).get_or_create(
+            account=account,
+            address="unknown",
+        )
+        device, created = ProgeoDevice.objects.using(db_name).get_or_create(
+            raw_hash=device_hash,
+            defaults={"location": location},
+        )
+
+        return RequestSuccess({
+            "created": created,
+            "device": DeviceSerializer(device).data,
+        })
 
 
 
