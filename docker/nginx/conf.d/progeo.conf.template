@@ -1,0 +1,79 @@
+upstream progeo-backend {
+  server progeo-backend:8383;
+}
+
+upstream progeo-frontend {
+  server progeo-frontend:80;
+}
+
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name ${DNS_BACK_NAMES};
+
+    ssl_certificate ${CERT_PATH}${CERT_FILE};
+    ssl_certificate_key ${CERT_PATH}${CERT_KEY};
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    location / {
+        proxy_pass http://progeo-backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        add_header 'Access-Control-Allow-Methods' 'DELETE,GET,OPTIONS,PATCH,POST,PUT';
+        add_header 'Access-Control-Allow-Headers' 'accept,accept-encoding,authorization,content-type,dnt,origin,user-agent,x-csrftoken,x-requested-with';
+
+        if ($http_access_control_request_headers) {
+            add_header 'Access-Control-Allow-Headers' $http_access_control_request_headers;
+        }
+    }
+
+    location /ws/ {
+        proxy_pass http://progeo-backend;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_redirect off;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host $server_name;
+    }
+}
+
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+
+    server_name ${DNS_FRONT_NAMES} localhost;
+
+    ssl_certificate ${CERT_PATH}${CERT_FILE};
+    ssl_certificate_key ${CERT_PATH}${CERT_KEY};
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    location / {
+        proxy_pass http://progeo-frontend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    location /assets/ {
+        access_log off;
+        proxy_pass http://progeo-frontend/assets/;
+    }
+}

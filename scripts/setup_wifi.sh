@@ -196,7 +196,7 @@ bogus-priv
 dhcp-authoritative
 clear-on-reload
 dhcp-leasefile=/var/lib/misc/dnsmasq.leases
-dhcp-range=192.168.1.10,192.168.1.100,255.255.255.0,24h
+dhcp-range=192.168.1.10,192.168.1.255,255.255.255.0,24h
 dhcp-option=3,192.168.1.1
 dhcp-option=6,192.168.1.1
 EOF

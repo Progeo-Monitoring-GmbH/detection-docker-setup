@@ -121,10 +121,10 @@ class DeviceViewSet(ProgeoModalViewSet):
         return ProgeoDevice.objects.filter(location__account=1) # TODO
 
     @calc_runtime
-    @action(detail=False, url_path="test", methods=["GET"])
+    @action(detail=False, url_path="receive", methods=["GET"])
     def test_url(self, request, *args, **kwargs):
         device_hash = kwargs.get("device_hash")
-        print("XXX", device_hash)
+        print("receive", device_hash)
         return RequestSuccess()
 
 

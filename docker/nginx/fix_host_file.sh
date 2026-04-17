@@ -16,14 +16,27 @@ echo "Added: ${line}"
 
 # ######################################################################
 
+CERT_MODE="${CERT_MODE:-local}"
+if [ "${CERT_MODE}" = "existing" ]; then
+  : "${CERT_PATH:=/etc/nginx/ssl/}"
+  : "${CERT_FILE:=localhost-bundle.pem}"
+  : "${CERT_KEY:=${CERT_FILE}}"
+else
+  : "${CERT_PATH:=/etc/nginx/ssl/}"
+  : "${CERT_FILE:=progeo-local.crt}"
+  : "${CERT_KEY:=progeo-local.key}"
+fi
+
+export CERT_MODE CERT_PATH CERT_FILE CERT_KEY
+
 if [ -f /etc/nginx/conf.d/progeo.conf.template ]; then
-  # Substitute environment variables in the NGINX configuration template
-  envsubst '\$DNS_BACK_NAMES \$DNS_FRONT_NAMES \$CERT_FILE \$CERT_KEY \$CERT_PASS \$CERT_PATH' < /etc/nginx/conf.d/progeo.conf.template > /etc/nginx/conf.d/progeo.conf
+  envsubst '\$DNS_BACK_NAMES \$DNS_FRONT_NAMES \$CERT_FILE \$CERT_KEY \$CERT_PATH' < /etc/nginx/conf.d/progeo.conf.template > /etc/nginx/conf.d/progeo.conf
   rm /etc/nginx/conf.d/progeo.conf.template
-  if [ ! -f /etc/nginx/ssl/${CERT_PASS} ] || [ ! -f ${CERT_PATH}${CERT_KEY} ]; then
-      echo "SSL certificate or key file does not exist. | CERT_FILE=${CERT_FILE} | CERT_KEY=${CERT_KEY} | CERT_PATH=${CERT_PATH}"
-      exit 1
-  fi
+fi
+
+if [ ! -f "${CERT_PATH}${CERT_FILE}" ] || [ ! -f "${CERT_PATH}${CERT_KEY}" ]; then
+    echo "SSL certificate or key file does not exist. | CERT_MODE=${CERT_MODE} | CERT_FILE=${CERT_FILE} | CERT_KEY=${CERT_KEY} | CERT_PATH=${CERT_PATH}"
+    exit 1
 fi
 
 # ######################################################################
