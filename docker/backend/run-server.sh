@@ -14,6 +14,9 @@ fi
 
 pprint "### Running Django-Scripts for ${DOMAIN}"
 
+. /etc/profile
+. $VENV_ROOT/bin/activate
+
 #pprint "[0] sleep 15s"
 #sleep 15
 

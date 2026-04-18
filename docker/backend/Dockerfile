@@ -32,7 +32,7 @@ RUN apk add gdal \
             build-base
 RUN apk add proj proj-dev
 
-RUN addgroup -S -g 1004 progeo && adduser -S -u 1003 -G progeo -h /home/progeo progeo
+RUN addgroup -S progeo && adduser -S -G progeo -h /home/progeo progeo
 ENV PROJECT_ROOT=/usr/src/app
 ENV VENV_ROOT=/opt/venv
 
@@ -75,17 +75,16 @@ RUN [ ! -z "$DB_PORT" ]
 ENV DOMAIN="${DB_HOST}:${DB_PORT}"
 ENV PORT=${BACKEND_PORT}
 
-RUN echo "SHELL=/bin/sh" > /etc/crontabs/progeo
-RUN echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" >> /etc/crontabs/progeo
-RUN echo "# m h day mon day_of_week cmd" >> /etc/crontabs/progeo
-RUN echo "*/30 * * * * /usr/src/app/cronjobs/half-hour.sh" >> /etc/crontabs/progeo
-RUN echo "53 23 * * * /usr/src/app/cronjobs/daily.sh" >> /etc/crontabs/progeo
-RUN echo "53 23 * * 0 /usr/src/app/cronjobs/weekly.sh" >> /etc/crontabs/progeo
-RUN chmod 600 /etc/crontabs/progeo && chown 1003:1004 /etc/crontabs/progeo
-RUN mkdir -p /var/spool/cron/crontabs && chown -R 1003:1004 /var/spool/cron
-RUN touch /var/run/crond.pid && chown 1003:1004 /var/run/crond.pid
+RUN echo "# m h day mon day_of_week cmd" > /etc/crontabs/root
+RUN echo "*/30 * * * * su progeo -s /bin/sh -c '/usr/src/app/cronjobs/half-hour.sh >> /var/log/progeo/half-hour.log 2>&1'" >> /etc/crontabs/root
+RUN echo "*/1 * * * * su progeo -s /bin/sh -c '/usr/src/app/cronjobs/minute.sh >> /var/log/progeo/minute.log 2>&1'" >> /etc/crontabs/root
+RUN echo "53 23 * * * su progeo -s /bin/sh -c '/usr/src/app/cronjobs/daily.sh >> /var/log/progeo/daily.log 2>&1'" >> /etc/crontabs/root
+RUN echo "53 23 * * 0 su progeo -s /bin/sh -c '/usr/src/app/cronjobs/weekly.sh >> /var/log/progeo/weekly.log 2>&1'" >> /etc/crontabs/root
+RUN chmod 600 /etc/crontabs/root && chown root:root /etc/crontabs/root
+RUN mkdir -p /var/spool/cron/crontabs && chown -R root:root /var/spool/cron
+RUN touch /var/run/crond.pid && chown root:root /var/run/crond.pid
 RUN test -x /usr/sbin/crond || chmod 755 /usr/sbin/crond
-RUN mkdir -p /var/log/supervisor /run
+RUN mkdir -p /var/log/progeo /run && chown -R progeo:progeo /var/log/progeo
 
 
 RUN sed -i -e 's/\r$//' ./scripts/*.sh
@@ -98,8 +97,19 @@ RUN echo "alias dbbackup='python manage.py clear_token && python manage.py sync_
 RUN echo "alias dbrestore='python manage.py handle_all_dbs --command=dbrestore'" >> /etc/profile
 RUN echo "alias venv='. $VENV_ROOT/bin/activate'" >> /etc/profile
 
-RUN mkdir -p ${PROJECT_ROOT}/static && chown -R 1003:1004 ${PROJECT_ROOT}/static
-RUN mkdir -p ${PROJECT_ROOT}/tmp && chown -R 1003:1004 ${PROJECT_ROOT}/tmp
-RUN touch "${PROJECT_ROOT}/celery.log" && chown -R 1003:1004 "${PROJECT_ROOT}/celery.log"
+RUN mkdir -p ${PROJECT_ROOT}/static && chown -R progeo:progeo ${PROJECT_ROOT}/static
+RUN mkdir -p ${PROJECT_ROOT}/tmp && chown -R progeo:progeo ${PROJECT_ROOT}/tmp
+RUN touch "${PROJECT_ROOT}/celery.log" && chown -R progeo:progeo "${PROJECT_ROOT}/celery.log"
+RUN touch /var/log/progeo/supervisord.log \
+    /var/log/progeo/cron.log \
+    /var/log/progeo/cron-supervisor.log \
+    /var/log/progeo/cron-supervisor.err.log \
+    /var/log/progeo/backend.log \
+    /var/log/progeo/backend.err.log \
+    /var/log/progeo/celery.log \
+    /var/log/progeo/half-hour.log \
+    /var/log/progeo/daily.log \
+    /var/log/progeo/weekly.log \
+    && chown -R progeo:progeo /var/log/progeo
 
 CMD ["/usr/bin/supervisord", "-c", "/usr/src/app/supervisord.conf"]

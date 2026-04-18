@@ -1,20 +1,14 @@
 #!/bin/sh
 
 PROJECT_ROOT="${PROJECT_ROOT:-/usr/src/app}"
-VENV_ROOT="${VENV_ROOT:-/opt/venv}"
+VIRTUAL_ENV="${VIRTUAL_ENV:-/opt/venv}"
+
+. "$VIRTUAL_ENV/bin/activate"
+
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] weekly job started"
 
 cd "$PROJECT_ROOT" || exit 1
 
-if [ -f "$PROJECT_ROOT/django.env" ]; then
-  set -a
-  # shellcheck disable=SC1091
-  . "$PROJECT_ROOT/django.env"
-  set +a
-fi
-
-# shellcheck disable=SC1091
-. "$VENV_ROOT/bin/activate"
-
 # TODO
 
-echo "DONE!"
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] weekly job finished"

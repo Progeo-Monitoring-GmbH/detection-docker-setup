@@ -17,8 +17,8 @@ from progeo.v1.viewsets.setup_viewset import StatusViewSet
 class Command(BaseCommand):
     help = "scan_devices"
 
-    ping_timeout = 1.5
-    measure_timeout = 10
+    ping_timeout = 2
+    measure_timeout = 120
 
     def _get_controller_account(self):
         account_name = (os.getenv("CONTROLLER_DEFAULT_ACCOUNT") or "").strip()
@@ -96,30 +96,15 @@ class Command(BaseCommand):
             device, created = create_progeo_device_safe(
                 location=location,
                 raw_hash=device_hash,
-                hardware=ping_payload.get("hardware"),
-                version=ping_payload.get("version"),
                 db=account.db_name,
             )
             if not device:
                 self.stdout.write(f"Skipping device at {ip_address}: failed to register device")
                 continue
 
-            changed = False
-            hardware = ping_payload.get("hardware")
-            version = ping_payload.get("version")
-            if hardware and device.hardware != hardware:
-                device.hardware = hardware
-                changed = True
-            if version and device.version != version:
-                device.version = version
-                changed = True
-            if changed:
-                device.save(using=account.db_name)
-
             found_devices.append({
                 "device": device,
                 "device_info": device_info,
-                "ping_payload": ping_payload,
                 "base_url": base_url,
                 "created": created,
             })
@@ -141,7 +126,6 @@ class Command(BaseCommand):
                 "ip": device_info.get("ip"),
                 "mac": device_info.get("mac"),
                 "hostname": device_info.get("hostname"),
-                "ping": found["ping_payload"],
                 "measure": measure_payload,
             }
             measurement, created = create_progeo_measurement_safe(
