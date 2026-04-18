@@ -92,8 +92,48 @@ def build_filter(**kwargs):
 
 # ==============================================================================================
 
+class RootModel(auto_prefetch.Model, object):
+    class Meta:
+        abstract = True
+        base_manager_name = "prefetch_manager"
 
-class RootModel(object):
+    last_fetched = models.DateTimeField(null=True, blank=True)
+    last_updated = models.DateTimeField(null=True, blank=True)
+
+    def set_last_fetched(self, **kwargs):
+        self.last_fetched = timezone.now()
+
+    def set_last_updated(self, **kwargs):
+        self.last_updated = timezone.now()
+
+    def reset_lasts(self, **kwargs):
+        self.last_fetched = None
+        self.last_updated = None
+
+    def was_updated(self, **kwargs):
+        last_updated = kwargs.get("last_updated", self.last_updated)
+        last_fetched = kwargs.get("last_fetched", self.last_fetched)
+        if last_updated:
+            if last_fetched:
+                return last_updated + datetime.timedelta(hours=1) > last_fetched
+            try:
+                return last_updated + datetime.timedelta(hours=1) > getattr(self, "activated_since")
+            except AttributeError:
+                return True
+            except TypeError:
+                return True
+        return False
+
+    def save(self, *args, **kwargs):
+        if kwargs.pop("clear_lasts", None):
+            self.reset_lasts()
+        if kwargs.pop("last_fetched", None):
+            self.set_last_fetched()
+        if kwargs.pop("last_updated", None):
+            self.set_last_updated()
+
+        return super(RootModel, self).save(*args, **kwargs)
+
     def get_class_name(self):
         pass
 
@@ -103,8 +143,17 @@ class RootModel(object):
     def get_base(self, _model):
         return f"/v1/{self.account.pk}/{_model._meta.object_name.lower()}/"
 
+
+class ProgeoModel(RootModel):
+    class Meta:
+        abstract = True
+        base_manager_name = "prefetch_manager"
+
+    def get_class_name(self):
+        return self._meta.object_name.lower()
+
     def save(self, clear_cache=False, *args, **kwargs):
-        if clear_cache:
+        if clear_cache and hasattr(self, "account") and self.account:
             search_clear_cache(f"/v1/{self.account.pk}/{self.get_class_name()}/*")
 
             for conn_model_name, _ in self.get_connected_models():
@@ -114,16 +163,7 @@ class RootModel(object):
                     search_clear_cache(f"{_base}{_model.id}/*")
                     search_clear_cache(_base)
 
-        return super(RootModel, self).save(*args, **kwargs)
-
-
-class ProgeoModel(RootModel):
-
-    def get_class_name(self):
-        return self._meta.object_name.lower()
-
-    def save(self, clear_cache=False, *args, **kwargs):
-        return super(ProgeoModel, self).save(clear_cache=clear_cache, *args, **kwargs)
+        return super(ProgeoModel, self).save(*args, **kwargs)
 
     def delete(self, using, *args, **kwargs):
         super(ProgeoModel, self).delete(using=using, *args, **kwargs)
@@ -148,7 +188,17 @@ class ProgeoPolyModel(RootModel):
             cursor.execute(f"DELETE FROM progeo_{clazz} WHERE id = {self.pk}")
 
     def save(self, clear_cache=False, *args, **kwargs):
-        super(ProgeoPolyModel, self).save(clear_cache=clear_cache, *args, **kwargs)
+        if clear_cache and hasattr(self, "account") and self.account:
+            search_clear_cache(f"/v1/{self.account.pk}/{self.get_class_name()}/*")
+
+            for conn_model_name, _ in self.get_connected_models():
+                _model = getattr(self, conn_model_name)
+                if _model:
+                    _base = self.get_base(_model)
+                    search_clear_cache(f"{_base}{_model.id}/*")
+                    search_clear_cache(_base)
+
+        return super(ProgeoPolyModel, self).save(*args, **kwargs)
 
 
 class Account(ProgeoModel, auto_prefetch.Model):
@@ -172,14 +222,14 @@ class Account(ProgeoModel, auto_prefetch.Model):
 
 
 class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
-    account = models.ForeignKey(Account, on_delete=models.DO_NOTHING)
-    address = models.CharField(max_length=255, null=False)
+    account = models.ForeignKey(Account, on_delete=models.DO_NOTHING, null=True, blank=True)
+    address = models.CharField(max_length=255, null=True, blank=True)
     latitude = models.FloatField(null=True, blank=True)
     longitude = models.FloatField(null=True, blank=True)
 
 
 class ProgeoDevice(ProgeoModel, auto_prefetch.Model):
-    location = models.ForeignKey(ProgeoLocation, on_delete=models.DO_NOTHING)
+    location = models.ForeignKey(ProgeoLocation, on_delete=models.DO_NOTHING, null=True, blank=True)
     created = models.DateTimeField(auto_now_add=True)
     raw_hash = models.CharField(max_length=KEY_LEN, null=False, unique=True)
     hardware = models.CharField(max_length=100, null=True, blank=True)

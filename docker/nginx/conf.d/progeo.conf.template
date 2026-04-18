@@ -1,16 +1,8 @@
-upstream progeo-backend {
-  server progeo-backend:8383;
-}
-
-upstream progeo-frontend {
-  server progeo-frontend:80;
-}
-
-
 server {
     listen 443 ssl;
     listen [::]:443 ssl;
     server_name ${DNS_BACK_NAMES};
+        resolver 127.0.0.11 ipv6=off valid=30s;
 
     ssl_certificate ${CERT_PATH}${CERT_FILE};
     ssl_certificate_key ${CERT_PATH}${CERT_KEY};
@@ -22,7 +14,8 @@ server {
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
     location / {
-        proxy_pass http://progeo-backend;
+        set $backend_upstream progeo-backend:8383;
+        proxy_pass http://$backend_upstream;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -37,7 +30,8 @@ server {
     }
 
     location /ws/ {
-        proxy_pass http://progeo-backend;
+        set $backend_upstream progeo-backend:8383;
+        proxy_pass http://$backend_upstream;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "Upgrade";
@@ -55,6 +49,7 @@ server {
     listen [::]:443 ssl;
 
     server_name ${DNS_FRONT_NAMES} localhost;
+    resolver 127.0.0.11 ipv6=off valid=30s;
 
     ssl_certificate ${CERT_PATH}${CERT_FILE};
     ssl_certificate_key ${CERT_PATH}${CERT_KEY};
@@ -66,7 +61,8 @@ server {
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
     location / {
-        proxy_pass http://progeo-frontend;
+        set $frontend_upstream progeo-frontend:80;
+        proxy_pass http://$frontend_upstream;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -74,6 +70,7 @@ server {
 
     location /assets/ {
         access_log off;
-        proxy_pass http://progeo-frontend/assets/;
+        set $frontend_upstream progeo-frontend:80;
+        proxy_pass http://$frontend_upstream/assets/;
     }
 }

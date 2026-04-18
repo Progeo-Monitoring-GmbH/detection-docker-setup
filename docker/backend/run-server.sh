@@ -16,8 +16,12 @@ pprint "### Running Django-Scripts for ${DOMAIN}"
 
 pprint "[0] start cron daemon"
 if command -v crond >/dev/null 2>&1; then
-  crond -b -l 8 -L /tmp/cron.log -c /etc/crontabs
-  pprint "[OK] cron daemon started (crontab: /etc/crontabs/progeo)"
+  if [ "$(id -u)" -eq 0 ]; then
+    crond -b -l 8 -L /tmp/cron.log -c /etc/crontabs
+    pprint "[OK] cron daemon started (crontab: /etc/crontabs/progeo)"
+  else
+    pprint "[WARN] cron daemon requires root; skipping cron startup for uid=$(id -u)"
+  fi
 else
   pprint "[WARN] crond not found, scheduled jobs are disabled"
 fi
@@ -32,7 +36,11 @@ pprint "[2] check database"
 python manage.py check progeo --tag database
 
 pprint "[3] advanced migration"
-bash "${PROJECT_ROOT}/wait-for-it.sh" "${DOMAIN}" -- python manage.py adv_migrate &
+bash "${PROJECT_ROOT}/wait-for-it.sh" "${DOMAIN}" -- python manage.py adv_migrate
+
+pprint "[4] creating account"
+python manage.py create_controller_account
+
 
 pid=$!
 wait $pid
@@ -43,17 +51,17 @@ if [ $exit_status -ne 0 ]; then
   tail -f /dev/null
 fi
 
-pprint "[4] fix contenttypes"
+pprint "[5] fix contenttypes"
 python manage.py fix_contenttypes
 
-pprint "[5] create_admin"
+pprint "[6] create_admin"
 python manage.py create_admin
 
-pprint "[6] sync default"
+pprint "[7] sync default"
 python manage.py sync_default
 
 #if [ "$CELERY_ON_BOOT" = "1" ]; then
-#  pprint "[7] celery worker"
+#  pprint "[8] celery worker"
 #  celery -A progeo.celery worker --loglevel=info --logfile "${PROJECT_ROOT}/celery.log" -E -P eventlet &
 #fi
 

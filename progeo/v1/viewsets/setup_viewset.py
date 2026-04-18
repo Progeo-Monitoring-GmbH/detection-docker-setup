@@ -127,7 +127,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         if not device_hash:
             return RequestFailed({"reason": "No device hash provided"})
 
-        account = Account.objects.filter(pk=1).first() or Account.objects.order_by("pk").first()
+        account = Account.objects.filter(pk=1).first()
         if not account:
             return RequestFailed({"reason": "No account configured"})
 
@@ -153,9 +153,8 @@ class StatusViewSet(ProgeoModalViewSet):
     permission_classes = [AllowAny]
 
 
-    @calc_runtime
-    @action(detail=False, url_path="list_connected", methods=["GET"])
-    def list_connected(self, request, *args, **kwargs):
+    @staticmethod
+    def get_connected_devices(*args, **kwargs) -> dict:
         devices = []
         leases_path = "/var/lib/misc/dnsmasq.leases"
 
@@ -175,5 +174,10 @@ class StatusViewSet(ProgeoModalViewSet):
                         "ip": ip,
                         "hostname": hostname
                     })
+        return devices
 
+    @calc_runtime
+    @action(detail=False, url_path="list_connected", methods=["GET"])
+    def list_connected(self, request, *args, **kwargs):
+        devices = self.get_connected_devices()
         return RequestSuccess({"devices": devices})

@@ -14,10 +14,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ENV_FILE="${PROJECT_ROOT}/.env"
 
-SSID="ProGeoController"
-PASSWORD=""
-WIFI_COUNTRY="US"
-
 if [[ -f "${ENV_FILE}" ]]; then
   set -a
   # shellcheck disable=SC1090
@@ -25,9 +21,10 @@ if [[ -f "${ENV_FILE}" ]]; then
   set +a
 fi
 
-SSID="${CONTROLLER_SSID:-$SSID}"
+CONTROLLER_IP="${CONTROLLER_IP:-192.168.161.1}"
+SSID="${CONTROLLER_SSID:-"ProGeoController"}"
 PASSWORD="${CONTROLLER_PASSWORD:-}"
-WIFI_COUNTRY="${CONTROLLER_COUNTRY_CODE:-${WIFI_COUNTRY:-US}}"
+WIFI_COUNTRY="${CONTROLLER_COUNTRY_CODE:-DE}"
 WIFI_COUNTRY="$(printf '%s' "${WIFI_COUNTRY}" | tr '[:lower:]' '[:upper:]')"
 
 if [[ -z "${SSID}" ]]; then
@@ -130,7 +127,7 @@ configure_static_ip() {
       cat >> /etc/dhcpcd.conf <<'EOF'
 
 interface wlan0
-    static ip_address=192.168.1.1/24
+    static ip_address=${CONTROLLER_IP}/24
     nohook wpa_supplicant
 EOF
     fi
@@ -146,7 +143,7 @@ EOF
 Name=wlan0
 
 [Network]
-Address=192.168.1.1/24
+Address=${CONTROLLER_IP}/24
 ConfigureWithoutCarrier=yes
 EOF
 
@@ -158,7 +155,7 @@ EOF
   echo "Warning: no supported network management service was found."
   echo "Applying a temporary IP address to wlan0 for this session only."
   ip addr flush dev wlan0 || true
-  ip addr add 192.168.1.1/24 dev wlan0
+  ip addr add ${CONTROLLER_IP}/24 dev wlan0
   ip link set wlan0 up
 }
 
@@ -190,19 +187,19 @@ fi
 cat > /etc/dnsmasq.conf <<'EOF'
 interface=wlan0
 bind-dynamic
-listen-address=192.168.1.1
+listen-address=${CONTROLLER_IP}
 domain-needed
 bogus-priv
 dhcp-authoritative
 clear-on-reload
 dhcp-leasefile=/var/lib/misc/dnsmasq.leases
-dhcp-range=192.168.1.10,192.168.1.255,255.255.255.0,24h
-dhcp-option=3,192.168.1.1
-dhcp-option=6,192.168.1.1
+dhcp-range=192.168.161.10,192.168.161.255,255.255.255.0,24h
+dhcp-option=3,${CONTROLLER_IP}
+dhcp-option=6,${CONTROLLER_IP}
 EOF
 
 echo "Configuring hostapd..."
-cat > /etc/hostapd/hostapd.conf <<EOF
+cat > /etc/hostapd/hostapd.conf <<'EOF'
 interface=wlan0
 driver=nl80211
 ssid=${SSID}
@@ -223,7 +220,7 @@ ignore_broadcast_ssid=0
 EOF
 
 if [[ -n "${PASSWORD}" ]]; then
-  cat >> /etc/hostapd/hostapd.conf <<EOF
+  cat >> /etc/hostapd/hostapd.conf <<'EOF'
 wpa=2
 wpa_passphrase=${PASSWORD}
 wpa_key_mgmt=WPA-PSK
@@ -269,4 +266,4 @@ else
   echo "SSID: ${SSID} (open, no password)"
 fi
 
-echo "Hotspot IP: 192.168.1.1"
+echo "Hotspot IP: ${CONTROLLER_IP}"
