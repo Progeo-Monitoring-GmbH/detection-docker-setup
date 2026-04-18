@@ -75,7 +75,6 @@ services:
       - /var/lib/misc:/var/lib/misc:rw
     cap_add:
       - NET_ADMIN
-    user: "1003:1004"
     security_opt:
       - label:user:progeo
       - label:role:progeo

@@ -1,7 +1,7 @@
 #!/bin/sh
 
 PROJECT_ROOT="${PROJECT_ROOT:-/usr/src/app}"
-VENV_ROOT="${VENV_ROOT:-/opt/venv}"
+VIRTUAL_ENV="${VIRTUAL_ENV:-/opt/venv}"
 
 cd "$PROJECT_ROOT" || exit 1
 
@@ -13,8 +13,8 @@ if [ -f "$PROJECT_ROOT/django.env" ]; then
 fi
 
 # shellcheck disable=SC1091
-. "$VENV_ROOT/bin/activate"
+. "$VIRTUAL_ENV/bin/activate"
 
-# TODO
+python manage.py scan_devices
 
 echo "DONE!"

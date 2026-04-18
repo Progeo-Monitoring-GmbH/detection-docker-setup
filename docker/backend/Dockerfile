@@ -17,6 +17,7 @@ RUN apk update && apk add --no-cache  \
                       ca-certificates
 
 RUN apk update && apk add git \
+                      supervisor \
                       dcron \
                       rsync \
                       iputils-ping \
@@ -77,17 +78,20 @@ ENV PORT=${BACKEND_PORT}
 RUN echo "SHELL=/bin/sh" > /etc/crontabs/progeo
 RUN echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" >> /etc/crontabs/progeo
 RUN echo "# m h day mon day_of_week cmd" >> /etc/crontabs/progeo
+RUN echo "*/30 * * * * /usr/src/app/cronjobs/half-hour.sh" >> /etc/crontabs/progeo
 RUN echo "53 23 * * * /usr/src/app/cronjobs/daily.sh" >> /etc/crontabs/progeo
 RUN echo "53 23 * * 0 /usr/src/app/cronjobs/weekly.sh" >> /etc/crontabs/progeo
 RUN chmod 600 /etc/crontabs/progeo && chown 1003:1004 /etc/crontabs/progeo
 RUN mkdir -p /var/spool/cron/crontabs && chown -R 1003:1004 /var/spool/cron
 RUN touch /var/run/crond.pid && chown 1003:1004 /var/run/crond.pid
 RUN test -x /usr/sbin/crond || chmod 755 /usr/sbin/crond
+RUN mkdir -p /var/log/supervisor /run
 
 
 RUN sed -i -e 's/\r$//' ./scripts/*.sh
 RUN sed -i -e 's/\r$//' ./**/*.sh
 RUN chmod +x ./scripts/*.sh
+RUN chmod +x ./cronjobs/*.sh
 RUN chmod +x ./*.sh
 
 RUN echo "alias dbbackup='python manage.py clear_token && python manage.py sync_default && python manage.py handle_all_dbs --command=dbbackup'" >> /etc/profile
@@ -98,4 +102,4 @@ RUN mkdir -p ${PROJECT_ROOT}/static && chown -R 1003:1004 ${PROJECT_ROOT}/static
 RUN mkdir -p ${PROJECT_ROOT}/tmp && chown -R 1003:1004 ${PROJECT_ROOT}/tmp
 RUN touch "${PROJECT_ROOT}/celery.log" && chown -R 1003:1004 "${PROJECT_ROOT}/celery.log"
 
-CMD ./run-server.sh "${PORT}"
+CMD ["/usr/bin/supervisord", "-c", "/usr/src/app/supervisord.conf"]

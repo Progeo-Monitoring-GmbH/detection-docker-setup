@@ -14,18 +14,6 @@ fi
 
 pprint "### Running Django-Scripts for ${DOMAIN}"
 
-pprint "[0] start cron daemon"
-if command -v crond >/dev/null 2>&1; then
-  if [ "$(id -u)" -eq 0 ]; then
-    crond -b -l 8 -L /tmp/cron.log -c /etc/crontabs
-    pprint "[OK] cron daemon started (crontab: /etc/crontabs/progeo)"
-  else
-    pprint "[WARN] cron daemon requires root; skipping cron startup for uid=$(id -u)"
-  fi
-else
-  pprint "[WARN] crond not found, scheduled jobs are disabled"
-fi
-
 #pprint "[0] sleep 15s"
 #sleep 15
 
@@ -38,18 +26,13 @@ python manage.py check progeo --tag database
 pprint "[3] advanced migration"
 bash "${PROJECT_ROOT}/wait-for-it.sh" "${DOMAIN}" -- python manage.py adv_migrate
 
+if [ $? -ne 0 ]; then
+  pprint "[ERROR] advanced migration"
+  exit 1
+fi
+
 pprint "[4] creating account"
 python manage.py create_controller_account
-
-
-pid=$!
-wait $pid
-exit_status=$?
-
-if [ $exit_status -ne 0 ]; then
-  pprint "[ERROR] advanced migration"
-  tail -f /dev/null
-fi
 
 pprint "[5] fix contenttypes"
 python manage.py fix_contenttypes
