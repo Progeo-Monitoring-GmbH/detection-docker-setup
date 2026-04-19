@@ -3,6 +3,7 @@ import os
 
 from django.contrib.auth.models import User
 from django.http import HttpResponse
+from django.utils import timezone
 from rest_framework import viewsets
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action
@@ -10,19 +11,78 @@ from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.v1.helper import generate_hash
-from progeo.v1.models import Account, ProgeoDevice, ProgeoLocation
+from progeo.v1.models import Account, ProgeoDevice, ProgeoLocation, ProgeoMeasurement
 from progeo.v1.serializers import AccountSerializer, FileSerializer, DeviceSerializer
 from progeo.decorator import calc_runtime
 from progeo.helper.basics import RequestSuccess, delete_file, save_check_dir, RequestFailed
 from progeo.helper.cacher import search_clear_cache
 from progeo.helper.creator import create_MfS_log
+from progeo.helper.emails import send_info_mail
+from progeo.v1.creator import create_account_safe, create_email_safe, create_progeo_measurement_safe
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.security import save_clean_path
-from progeo.settings import UPLOAD_DIR
+from progeo.settings import UPLOAD_DIR, DJANGO_DATABASES
 from progeo.tasks import ping
 
 
 # ######################################################################################################################
+
+
+def get_controller_account():
+    account_name = (os.getenv("CONTROLLER_DEFAULT_ACCOUNT") or "").strip()
+    if not account_name or not DJANGO_DATABASES:
+        return None
+
+    account, _ = create_account_safe(name=account_name, db_name=DJANGO_DATABASES[0], db="default")
+    return account
+
+
+def flatten_numeric_values(data):
+    values = []
+    if isinstance(data, (int, float)) and not isinstance(data, bool):
+        return [float(data)]
+    if isinstance(data, str):
+        try:
+            return [float(data)]
+        except ValueError:
+            return []
+    if isinstance(data, dict):
+        for value in data.values():
+            values.extend(flatten_numeric_values(value))
+        return values
+    if isinstance(data, (list, tuple)):
+        for value in data:
+            values.extend(flatten_numeric_values(value))
+    return values
+
+
+def get_latest_measurement(device, db_name):
+    return ProgeoMeasurement.objects.using(db_name).filter(device=device).order_by("-id").first()
+
+
+def get_latest_alarm_measurement(device, db_name):
+    measurements = ProgeoMeasurement.objects.using(db_name).filter(device=device).order_by("-id")
+    for measurement in measurements:
+        raw_data = measurement.raw_data if isinstance(measurement.raw_data, dict) else {}
+        alarm = raw_data.get("alarm")
+        if isinstance(alarm, dict) and alarm.get("triggered"):
+            return measurement
+    return None
+
+
+def send_alarm_email(device_hash, threshold, max_value, exceeding_values):
+    subject = f"Alarm for device {device_hash}"
+    message = (
+        f"Device {device_hash} exceeded the configured threshold.\n\n"
+        f"Threshold: {threshold}\n"
+        f"Max value: {max_value}\n"
+        f"Exceeding values: {', '.join(str(value) for value in exceeding_values)}"
+    )
+    send_info_mail(subject, message)
+
+    sent_to = os.getenv("DJANGO_SUPERUSER_EMAIL")
+    if sent_to:
+        create_email_safe(sent_to=sent_to, subject=subject, message=message, db="default")
 
 
 class SetupViewSet(viewsets.ViewSet):
@@ -118,7 +178,10 @@ class DeviceViewSet(ProgeoModalViewSet):
         return super(DeviceViewSet, self).list(request, no_cache=True, *args, **kwargs)
 
     def get_queryset(self):
-        return ProgeoDevice.objects.filter(location__account=1) # TODO
+        account = get_controller_account()
+        if not account:
+            return ProgeoDevice.objects.none()
+        return ProgeoDevice.objects.using(account.db_name).filter(location__account=account)
 
     @calc_runtime
     @action(detail=False, url_path="receive", methods=["POST"])
@@ -127,7 +190,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         if not device_hash:
             return RequestFailed({"reason": "No device hash provided"})
 
-        account = Account.objects.filter(pk=1).first()
+        account = get_controller_account()
         if not account:
             return RequestFailed({"reason": "No account configured"})
 
@@ -144,6 +207,73 @@ class DeviceViewSet(ProgeoModalViewSet):
         return RequestSuccess({
             "created": created,
             "device": DeviceSerializer(device).data,
+        })
+
+    @calc_runtime
+    @action(detail=False, url_path="evaluate", methods=["POST"])
+    def evaluate_measurement(self, request, *args, **kwargs):
+        device_hash = kwargs.get("device_hash") or request.data.get("device_hash")
+        if not device_hash:
+            return RequestFailed({"reason": "No device hash provided"})
+
+        threshold_raw = request.data.get("threshold")
+        if threshold_raw is None:
+            return RequestFailed({"reason": "No threshold provided"})
+
+        try:
+            threshold = float(threshold_raw)
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "Threshold must be numeric"})
+
+        rows = request.data.get("rows")
+        if rows is None:
+            return RequestFailed({"reason": "No rows provided"})
+
+        account = get_controller_account()
+        if not account:
+            return RequestFailed({"reason": "No account configured"})
+
+        db_name = account.db_name or "default"
+        device = ProgeoDevice.objects.using(db_name).filter(raw_hash=device_hash).first()
+        if not device:
+            return RequestFailed({"reason": "Device not found"})
+
+        values = flatten_numeric_values(rows)
+        if not values:
+            return RequestFailed({"reason": "Rows do not contain numeric values"})
+
+        exceeding_values = [value for value in values if value > threshold]
+        max_value = max(values)
+        alarm_triggered = len(exceeding_values) > 0
+        evaluated_at = timezone.now().isoformat()
+
+        if alarm_triggered:
+            send_alarm_email(device_hash, threshold, max_value, exceeding_values)
+
+        payload = {
+            "device_hash": device_hash,
+            "rows": rows,
+            "values": values,
+            "threshold": threshold,
+            "alarm": {
+                "triggered": alarm_triggered,
+                "max_value": max_value,
+                "exceeding_values": exceeding_values,
+                "evaluated_at": evaluated_at,
+            },
+            "evaluated_at": evaluated_at,
+        }
+        measurement, created = create_progeo_measurement_safe(device=device, raw_data=payload, db=db_name)
+        if not measurement:
+            return RequestFailed({"reason": "Failed to store measurement evaluation"})
+
+        return RequestSuccess({
+            "created": created,
+            "device_hash": device_hash,
+            "threshold": threshold,
+            "alarm_triggered": alarm_triggered,
+            "max_value": max_value,
+            "exceeding_values": exceeding_values,
         })
 
 
@@ -181,3 +311,55 @@ class StatusViewSet(ProgeoModalViewSet):
     def list_connected(self, request, *args, **kwargs):
         devices = self.get_connected_devices()
         return RequestSuccess({"devices": devices})
+
+    @calc_runtime
+    @action(detail=False, url_path="devices", methods=["GET"])
+    def list_device_status(self, request, *args, **kwargs):
+        account = get_controller_account()
+        if not account:
+            return RequestFailed({"reason": "No account configured"})
+
+        db_name = account.db_name or "default"
+        connected_devices = self.get_connected_devices()
+        if not isinstance(connected_devices, list):
+            connected_devices = []
+
+        connected_by_ip = {device.get("ip"): device for device in connected_devices if device.get("ip")}
+        connected_by_mac = {device.get("mac"): device for device in connected_devices if device.get("mac")}
+        connected_by_hostname = {device.get("hostname"): device for device in connected_devices if device.get("hostname")}
+
+        statuses = []
+        devices = ProgeoDevice.objects.using(db_name).select_related("location").all().order_by("id")
+        for device in devices:
+            latest_measurement = get_latest_measurement(device, db_name)
+            latest_alarm = get_latest_alarm_measurement(device, db_name)
+
+            latest_data = latest_measurement.raw_data if latest_measurement and isinstance(latest_measurement.raw_data, dict) else {}
+            ip_address = latest_data.get("ip")
+            mac_address = latest_data.get("mac")
+            hostname = latest_data.get("hostname") or getattr(device.location, "address", None)
+            connected = connected_by_ip.get(ip_address) or connected_by_mac.get(mac_address) or connected_by_hostname.get(hostname)
+
+            last_alarm_payload = None
+            if latest_alarm and isinstance(latest_alarm.raw_data, dict):
+                alarm_data = latest_alarm.raw_data.get("alarm") or {}
+                last_alarm_payload = {
+                    "triggered": alarm_data.get("triggered", False),
+                    "evaluated_at": alarm_data.get("evaluated_at") or latest_alarm.raw_data.get("evaluated_at"),
+                    "max_value": alarm_data.get("max_value"),
+                    "exceeding_values": alarm_data.get("exceeding_values", []),
+                    "threshold": latest_alarm.raw_data.get("threshold"),
+                }
+
+            statuses.append({
+                "device": DeviceSerializer(device).data,
+                "online": bool(connected),
+                "last_seen": latest_data.get("scanned_at") or latest_data.get("evaluated_at"),
+                "last_measurement": latest_data.get("measure") or latest_data.get("rows") or latest_data.get("values"),
+                "last_alarm": last_alarm_payload,
+                "ip": ip_address or (connected or {}).get("ip"),
+                "mac": mac_address or (connected or {}).get("mac"),
+                "hostname": hostname or (connected or {}).get("hostname"),
+            })
+
+        return RequestSuccess({"devices": statuses})

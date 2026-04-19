@@ -13,7 +13,11 @@ from progeo.helper.basics import dlog, ilog
 
 logger = get_task_logger(__name__)
 
-_redis = f'redis://{os.getenv("REDIS_HOST", "localhost")}:{os.getenv("REDIS_PORT", 6379)}'
+_redis_host = os.getenv("REDIS_HOST", "localhost")
+_redis_port = os.getenv("REDIS_PORT", 6379)
+_redis_password = os.getenv("REDIS_PASSWORD", "")
+_redis_auth = f":{_redis_password}@" if _redis_password else ""
+_redis = f"redis://{_redis_auth}{_redis_host}:{_redis_port}"
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "progeo.settings")
 
 celery_instance = Celery("progeo")
@@ -36,6 +40,7 @@ celery_instance.autodiscover_tasks(lambda: settings.INSTALLED_APPS)
 
 # List to store running tasks
 running_tasks = {}
+
 ilog("Setup Celery")
 
 # ######################################################################################################################

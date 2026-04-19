@@ -3,7 +3,8 @@ from typing import Any
 
 import requests
 from django.core.management.base import BaseCommand, CommandError
-
+from django.utils import timezone
+from progeo.helper.basics import dlog, ilog, elog
 from progeo.settings import DJANGO_DATABASES
 from progeo.v1.creator import (
     create_account_safe,
@@ -49,10 +50,10 @@ class Command(BaseCommand):
         return f"http://{ip_address}"
 
     @staticmethod
-    def _build_device_hash(device_info: dict[str, Any], ping_payload: dict[str, Any]) -> str:
+    def _build_device_hash(device_info: dict[str, Any], payload: dict[str, Any]) -> str:
         return str(
-            ping_payload.get("device_hash")
-            or ping_payload.get("raw_hash")
+            payload.get("device_hash")
+            or payload.get("raw_hash")
             or device_info.get("mac")
             or device_info.get("ip")
             or device_info.get("hostname")
@@ -66,7 +67,7 @@ class Command(BaseCommand):
         account = self._get_controller_account()
         found_devices = []
 
-        self.stdout.write(f"Scanning {len(connected_devices)} connected device(s)")
+        dlog(f"Scanning {len(connected_devices)} connected device(s)")
 
         for device_info in connected_devices:
             ip_address = device_info.get("ip")
@@ -75,22 +76,23 @@ class Command(BaseCommand):
 
             base_url = self._build_base_url(ip_address)
             try:
-                response = requests.get(f"{base_url}/ping", timeout=self.ping_timeout)
+                response = requests.get(f"{base_url}/identify", timeout=self.ping_timeout)
                 response.raise_for_status()
             except requests.RequestException:
-                self.stdout.write(f"Skipping unreachable device at {ip_address}")
+                dlog(f"Skipping unreachable device at {ip_address}")
                 continue
 
-            ping_payload = self._parse_response(response)
-            device_hash = self._build_device_hash(device_info, ping_payload)
+            payload = self._parse_response(response)
+            dlog(f"Received payload from {ip_address}: {payload}")
+            device_hash = payload.get("data",{}).get("hash")
             if not device_hash:
-                self.stdout.write(f"Skipping device at {ip_address}: no device identifier")
+                dlog(f"Skipping device at {ip_address}: no device identifier")
                 continue
 
-            location_label = device_info.get("hostname") or ip_address
+            location_label = os.getenv("CONTROLLER_DEFAULT_ACCOUNT", "Unknown Location")
             location, _ = create_progeo_location_safe(account=account, address=location_label)
             if not location:
-                self.stdout.write(f"Skipping device at {ip_address}: failed to create location")
+                elog(f"Skipping device at {ip_address}: failed to create location")
                 continue
 
             device, created = create_progeo_device_safe(
@@ -99,25 +101,27 @@ class Command(BaseCommand):
                 db=account.db_name,
             )
             if not device:
-                self.stdout.write(f"Skipping device at {ip_address}: failed to register device")
+                elog(f"Skipping device at {ip_address}: failed to register device")
                 continue
 
             found_devices.append({
                 "device": device,
                 "device_info": device_info,
+                "payload": payload,
                 "base_url": base_url,
                 "created": created,
             })
-            self.stdout.write(f"Registered device {device.raw_hash} at {ip_address}")
+            dlog(f"Registered device {device.raw_hash} at {ip_address} | payload: {payload}")
 
         for found in found_devices:
+            ilog(f"Found device {found['device'].raw_hash} at {found['device_info'].get('ip')}, starting measurement")
             device = found["device"]
             device_info = found["device_info"]
             try:
                 response = requests.post(f"{found['base_url']}/measure", timeout=self.measure_timeout)
                 response.raise_for_status()
             except requests.RequestException as exc:
-                self.stdout.write(f"Measurement failed for {device.raw_hash}: {exc}")
+                dlog(f"Measurement failed for {device.raw_hash}: {exc}")
                 continue
 
             measure_payload = self._parse_response(response)
@@ -126,7 +130,9 @@ class Command(BaseCommand):
                 "ip": device_info.get("ip"),
                 "mac": device_info.get("mac"),
                 "hostname": device_info.get("hostname"),
+                "ping": found["payload"],
                 "measure": measure_payload,
+                "scanned_at": timezone.now().isoformat(),
             }
             measurement, created = create_progeo_measurement_safe(
                 device=device,
@@ -134,9 +140,11 @@ class Command(BaseCommand):
                 db=account.db_name,
             )
             if not measurement:
-                self.stdout.write(f"Failed to store measurement for {device.raw_hash}")
+                dlog(f"Failed to store measurement for {device.raw_hash}")
                 continue
 
             status = "created" if created else "existing"
-            self.stdout.write(f"Stored measurement for {device.raw_hash} ({status})")
+            dlog(f"Stored measurement for {device.raw_hash} ({status})")
+
+            # TODO relais to legacy server
 

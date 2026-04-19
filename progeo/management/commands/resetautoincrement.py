@@ -30,7 +30,7 @@ class Command(BaseCommand):
                     elog(e, tag="[FieldError]")
                     continue
                 except ValueError as e:
-                    elog(e, tag="[FieldError]")
+                    elog(e, tag="[ValueError]")
                     continue
 
                 if max_id:

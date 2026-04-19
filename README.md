@@ -55,6 +55,12 @@ docker volume rm progeo_postgres_data
 docker compose down
 docker compose build
 docker compose up -d
+
+# Reclaim unused Docker disk space
+bash scripts/reclaim_docker_space.sh
+
+# Also remove unused volumes
+bash scripts/reclaim_docker_space.sh --volumes
 ```
 
 ## Notes

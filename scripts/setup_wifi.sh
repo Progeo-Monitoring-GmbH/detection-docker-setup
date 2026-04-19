@@ -26,6 +26,9 @@ SSID="${CONTROLLER_SSID:-"ProGeoController"}"
 PASSWORD="${CONTROLLER_PASSWORD:-}"
 WIFI_COUNTRY="${CONTROLLER_COUNTRY_CODE:-DE}"
 WIFI_COUNTRY="$(printf '%s' "${WIFI_COUNTRY}" | tr '[:lower:]' '[:upper:]')"
+CONTROLLER_NET_PREFIX="${CONTROLLER_IP%.*}"
+CONTROLLER_DHCP_START="${CONTROLLER_DHCP_START:-${CONTROLLER_NET_PREFIX}.10}"
+CONTROLLER_DHCP_END="${CONTROLLER_DHCP_END:-${CONTROLLER_NET_PREFIX}.200}"
 
 if [[ -z "${SSID}" ]]; then
   echo "Error: CONTROLLER_SSID cannot be empty."
@@ -39,6 +42,11 @@ fi
 
 if [[ ! "${WIFI_COUNTRY}" =~ ^[A-Z]{2}$ ]]; then
   echo "Error: CONTROLLER_COUNTRY_CODE must be a 2-letter ISO country code (for example: DE, US, FR)."
+  exit 1
+fi
+
+if [[ ! "${CONTROLLER_IP}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+  echo "Error: CONTROLLER_IP must be a valid IPv4 address."
   exit 1
 fi
 
@@ -124,7 +132,7 @@ configure_static_ip() {
 
   if has_service "dhcpcd" && [[ -f /etc/dhcpcd.conf ]]; then
     if ! grep -q "^interface wlan0$" /etc/dhcpcd.conf; then
-      cat >> /etc/dhcpcd.conf <<'EOF'
+        cat >> /etc/dhcpcd.conf <<EOF
 
 interface wlan0
     static ip_address=${CONTROLLER_IP}/24
@@ -138,7 +146,7 @@ EOF
 
   if has_service "systemd-networkd"; then
     mkdir -p /etc/systemd/network
-    cat > /etc/systemd/network/08-wlan0.network <<'EOF'
+    cat > /etc/systemd/network/08-wlan0.network <<EOF
 [Match]
 Name=wlan0
 
@@ -193,13 +201,19 @@ bogus-priv
 dhcp-authoritative
 clear-on-reload
 dhcp-leasefile=/var/lib/misc/dnsmasq.leases
-dhcp-range=192.168.161.10,192.168.161.255,255.255.255.0,24h
+dhcp-range=${CONTROLLER_DHCP_START},${CONTROLLER_DHCP_END},255.255.255.0,24h
 dhcp-option=3,${CONTROLLER_IP}
 dhcp-option=6,${CONTROLLER_IP}
 EOF
 
+mkdir -p /var/lib/misc
+if ! dnsmasq --test; then
+  echo "Error: dnsmasq configuration is invalid."
+  exit 1
+fi
+
 echo "Configuring hostapd..."
-cat > /etc/hostapd/hostapd.conf <<'EOF'
+cat > /etc/hostapd/hostapd.conf <<EOF
 interface=wlan0
 driver=nl80211
 ssid=${SSID}
@@ -220,7 +234,7 @@ ignore_broadcast_ssid=0
 EOF
 
 if [[ -n "${PASSWORD}" ]]; then
-  cat >> /etc/hostapd/hostapd.conf <<'EOF'
+  cat >> /etc/hostapd/hostapd.conf <<EOF
 wpa=2
 wpa_passphrase=${PASSWORD}
 wpa_key_mgmt=WPA-PSK
