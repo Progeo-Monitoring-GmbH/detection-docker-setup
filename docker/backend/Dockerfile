@@ -32,9 +32,10 @@ RUN apk add gdal \
             build-base
 RUN apk add proj proj-dev
 
-RUN addgroup -S progeo && adduser -S -G progeo -h /home/progeo progeo
 ENV PROJECT_ROOT=/usr/src/app
 ENV VENV_ROOT=/opt/venv
+
+RUN addgroup -S progeo && adduser -S -G progeo -h ${PROJECT_ROOT} progeo
 
 WORKDIR ${PROJECT_ROOT}
 
@@ -99,6 +100,8 @@ RUN echo "alias venv='. $VENV_ROOT/bin/activate'" >> /etc/profile
 
 RUN mkdir -p ${PROJECT_ROOT}/static && chown -R progeo:progeo ${PROJECT_ROOT}/static
 RUN mkdir -p ${PROJECT_ROOT}/tmp && chown -R progeo:progeo ${PROJECT_ROOT}/tmp
+RUN mkdir -p /var/log/progeo
+
 RUN touch "${PROJECT_ROOT}/celery.log" && chown -R progeo:progeo "${PROJECT_ROOT}/celery.log"
 RUN touch /var/log/progeo/supervisord.log \
     /var/log/progeo/cron.log \
@@ -112,4 +115,4 @@ RUN touch /var/log/progeo/supervisord.log \
     /var/log/progeo/weekly.log \
     && chown -R progeo:progeo /var/log/progeo
 
-CMD ["/usr/bin/supervisord", "-c", "/usr/src/app/supervisord.conf"]
+CMD ["/usr/bin/supervisord", "-c", "${PROJECT_ROOT}/supervisord.conf"]
