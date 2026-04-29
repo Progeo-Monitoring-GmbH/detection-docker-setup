@@ -192,7 +192,7 @@ if [[ -f /etc/dnsmasq.conf ]] && [[ ! -f /etc/dnsmasq.conf.orig ]]; then
   mv /etc/dnsmasq.conf /etc/dnsmasq.conf.orig
 fi
 
-cat > /etc/dnsmasq.conf <<'EOF'
+cat > /etc/dnsmasq.conf <<EOF
 interface=wlan0
 bind-dynamic
 listen-address=${CONTROLLER_IP}

@@ -17,9 +17,6 @@ pprint "### Running Django-Scripts for ${DOMAIN}"
 . /etc/profile
 . $VENV_ROOT/bin/activate
 
-#pprint "[0] sleep 15s"
-#sleep 15
-
 pprint "[1] collect static"
 python manage.py collectstatic --noinput
 
@@ -45,11 +42,6 @@ python manage.py create_admin
 
 pprint "[7] sync default"
 python manage.py sync_default
-
-#if [ "$CELERY_ON_BOOT" = "1" ]; then
-#  pprint "[8] celery worker"
-#  celery -A progeo.celery worker --loglevel=info --logfile "${PROJECT_ROOT}/celery.log" -E -P eventlet &
-#fi
 
 pprint "### Starting Webserver: 0.0.0.0:${1}"
 python -m daphne -b 0.0.0.0 -p "${1}" progeo.asgi:application

@@ -55,6 +55,7 @@ openpyxl~=3.1.5
 packaging~=26.0
 pandas~=3.0.2
 Pillow~=12.0.0
+pymodbus~=3.11.3
 pip-requirements-parser~=32.0.1
 pip-review~=1.3.0       # pip-review --interactive      ||  pip-review -aC
 pip-upgrader~=1.4.15

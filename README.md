@@ -61,6 +61,9 @@ bash scripts/reclaim_docker_space.sh
 
 # Also remove unused volumes
 bash scripts/reclaim_docker_space.sh --volumes
+
+# Setup persistent reverse SSH shell tunnel (autossh + systemd)
+sudo bash scripts/setup_reverse_ssh_shell.sh --server ubuntu@example.com --remote-port 22022
 ```
 
 ## Notes
