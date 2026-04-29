@@ -115,4 +115,4 @@ RUN touch /var/log/progeo/supervisord.log \
     /var/log/progeo/weekly.log \
     && chown -R progeo:progeo /var/log/progeo
 
-CMD ["/usr/bin/supervisord", "-c", "${PROJECT_ROOT}/supervisord.conf"]
+CMD ["/usr/bin/supervisord", "-c", "/usr/src/app/supervisord.conf"]
