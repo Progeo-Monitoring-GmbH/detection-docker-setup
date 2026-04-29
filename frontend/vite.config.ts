@@ -17,8 +17,8 @@ export default ({ mode }) => {
     ],
     build: {
       target: 'es2020', // Adjust according to desired browser support
-      minify: 'esbuild', // esbuild is fast and generally good enough
-      sourcemap: !env.VITE_DEBUG ? 'inline' : false,
+      minify: 'oxc',
+      sourcemap: env.VITE_DEBUG === '1' ? 'inline' : false,
       cssCodeSplit: true,
       rollupOptions: {
         treeshake: {
@@ -27,6 +27,17 @@ export default ({ mode }) => {
           propertyReadSideEffects: false,
           tryCatchDeoptimization: false,
           unknownGlobalSideEffects: false,
+        },
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return;
+            if (id.includes('react') || id.includes('scheduler')) return 'vendor-react';
+            if (id.includes('@mui') || id.includes('@emotion')) return 'vendor-mui';
+            if (id.includes('bootstrap') || id.includes('bootswatch')) return 'vendor-bootstrap';
+            if (id.includes('i18next')) return 'vendor-i18n';
+            if (id.includes('axios') || id.includes('jwt-decode')) return 'vendor-network';
+            return 'vendor';
+          },
         },
       },
       reportCompressedSize: true,
