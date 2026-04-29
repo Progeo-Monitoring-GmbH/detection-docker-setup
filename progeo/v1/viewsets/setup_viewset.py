@@ -289,7 +289,7 @@ class StatusViewSet(ProgeoModalViewSet):
         leases_path = "/var/lib/misc/dnsmasq.leases"
 
         if not os.path.exists(leases_path):
-            return RequestFailed({"reason": "Hotspot is not active or dnsmasq.leases file is missing"})
+            return False, {"reason": "Hotspot is not active or dnsmasq.leases file is missing"}
 
         with open(leases_path, "r") as f:
             for line in f:
@@ -304,13 +304,16 @@ class StatusViewSet(ProgeoModalViewSet):
                         "ip": ip,
                         "hostname": hostname
                     })
-        return devices
+
+        return True, devices
 
     @calc_runtime
     @action(detail=False, url_path="list_connected", methods=["GET"])
     def list_connected(self, request, *args, **kwargs):
-        devices = self.get_connected_devices()
-        return RequestSuccess({"devices": devices})
+        success, data = self.get_connected_devices()
+        if not success:
+            return RequestFailed(data)
+        return RequestSuccess({"devices": data})
 
     @calc_runtime
     @action(detail=False, url_path="devices", methods=["GET"])
