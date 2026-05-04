@@ -162,98 +162,17 @@ def check_class_module(model, module):
 
 
 class AccountRouter:
-    allowed_labels = {"progeo", "admin", "auth", "authtoken", "contenttypes", "sessions"}  # TODO
-
-    @staticmethod
-    def _resolve_db_from_instance(_instance):
-        if not _instance:
-            return None
-
-        if isinstance(_instance, User):
-            return "default"
-
-        if isinstance(_instance, Account):
-            return _instance.db_name
-
-        if hasattr(_instance, "account") and getattr(_instance, "account", None):
-            return _instance.account.db_name
-
-        if hasattr(_instance, "account_id") and _instance.account_id is not None:
-            return Account.objects.get(pk=_instance.account_id).db_name
-
-        return None
-
     def db_for_read(self, model, **hints):
-        _instance = hints.get("instance")
-
-        # print(type(_instance), model == Account, model._meta.app_label in self.allowed_labels)
-        if model._meta.app_label in self.allowed_labels:
-            resolved_db = self._resolve_db_from_instance(_instance)
-            if resolved_db:
-                okaylog(
-                    f"AR | db_for_read | app_label={model._meta.app_label}, model={model}, db={resolved_db}, hints={list(hints.keys())}",
-                    tag="[ROUTER]", active=ACTIVE)
-                return resolved_db
-
-            if model == User or model == Account or model._meta.app_label != "progeo":
-                return "default"
-
-            elog(f"AR | db_for_read | unresolved account DB for model={model}, hints={list(hints.keys())}", tag="[ROUTER]", active=ACTIVE)
-            return "default"
-
-        elog(f"FALLBACK-READ | model={model}, __module__={getattr(model, '__module__', '')}, app_label={model._meta.app_label}, hints={list(hints.keys())}")
         return "default"
 
     def db_for_write(self, model, **hints):
         if os.getenv("TESTS_ACTIVE"):
             return "unit_tests"
 
-        if model._meta.app_label in self.allowed_labels:
-            _instance = hints.get("instance")
-            resolved_db = self._resolve_db_from_instance(_instance)
-            if resolved_db:
-                okaylog(
-                    f"AR | db_for_write | app_label={model._meta.app_label}, model={model}, db={resolved_db}, hints={list(hints.keys())}",
-                    tag="[ROUTER]", active=ACTIVE)
-                return resolved_db
-
-            if model == User or model == Account or model._meta.app_label != "progeo":
-                return "default"
-
-            elog(f"AR | db_for_write | unresolved account DB for model={model}, hints={list(hints.keys())}", tag="[ROUTER]", active=ACTIVE)
-            return "default"
-
-        elog(f"FALLBACK-WRITE | model={model}, app_label={model._meta.app_label}, hints={list(hints.keys())}")
         return "default"
 
     def allow_relation(self, obj1, obj2, **hints):
-
-        _check = obj1._meta.app_label in self.allowed_labels or \
-                 obj2._meta.app_label in self.allowed_labels
-
-        if _check:
-            okaylog(
-                f"AR | allow_relation=yes\t| obj1={obj1._meta.object_name}, obj2={obj2._meta.object_name}, hints={list(hints.keys())}",
-                tag="[ROUTER]", active=ACTIVE)
-            return True
-        else:
-            elog(
-                f"AR | allow_relation=may\t| obj1={obj1._meta.object_name}, obj2={obj2._meta.object_name}, hints={list(hints.keys())}",
-                tag="[ROUTER]", active=ACTIVE)
-
-        return None
+        return True
 
     def allow_migrate(self, db, app_label, model_name=None, **hints):
-        if db != "default":
-            _check = app_label in self.allowed_labels
-            if _check:
-                okaylog(
-                    f"AR | allow_migrate=yes\t| db={db}, app_label={app_label},\tmodel_name={model_name}, hints={list(hints.keys())}",
-                    tag="[ROUTER]", active=ACTIVE)
-            else:
-                wlog(
-                    f"AR | allow_migrate=no\t| db={db}, app_label={app_label},\tmodel_name={model_name}, hints={list(hints.keys())}",
-                    tag="[ROUTER]", active=ACTIVE)
-
-            return _check
-        return None
+        return True
