@@ -168,7 +168,6 @@ class AccountRouter:
     def db_for_write(self, model, **hints):
         if os.getenv("TESTS_ACTIVE"):
             return "unit_tests"
-
         return "default"
 
     def allow_relation(self, obj1, obj2, **hints):

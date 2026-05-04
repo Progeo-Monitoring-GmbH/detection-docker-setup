@@ -185,7 +185,7 @@ DATABASES = {
 }
 
 DATABASE_ROUTERS = [
-    "progeo.router.DjangoRouter",
+    #"progeo.router.DjangoRouter",
     "progeo.router.AccountRouter",
 ]
 
