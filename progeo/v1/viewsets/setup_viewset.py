@@ -1,5 +1,7 @@
 import csv
 import os
+import ipaddress
+from celery.result import AsyncResult
 
 from django.contrib.auth.models import User
 from django.http import HttpResponse
@@ -22,7 +24,7 @@ from progeo.v1.creator import create_account_safe, create_email_safe, create_pro
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.security import save_clean_path
 from progeo.settings import UPLOAD_DIR, DJANGO_DATABASES
-from progeo.tasks import ping
+from progeo.tasks import ping, ping_device as ping_device_task
 
 
 # ######################################################################################################################
@@ -310,10 +312,87 @@ class StatusViewSet(ProgeoModalViewSet):
     @calc_runtime
     @action(detail=False, url_path="list_connected", methods=["GET"])
     def list_connected(self, request, *args, **kwargs):
+        account = get_controller_account()
+        if not account:
+            return RequestFailed({"reason": "No account configured"})
+
+        db_name = account.db_name or "default"
         success, data = self.get_connected_devices()
         if not success:
             return RequestFailed(data)
-        return RequestSuccess({"devices": data})
+
+        devices = []
+        for connected in data:
+            mac = (connected.get("mac") or "").strip().lower()
+            if not mac:
+                continue
+
+            device = ProgeoDevice.objects.using(db_name).filter(mac__iexact=mac).first()
+            if not device:
+                hostname = (connected.get("hostname") or "unknown").strip() or "unknown"
+                location, _ = ProgeoLocation.objects.using(db_name).get_or_create(
+                    account=account,
+                    address=hostname,
+                )
+                device, _ = ProgeoDevice.objects.using(db_name).get_or_create(
+                    raw_hash=f"mac:{mac}",
+                    defaults={"location": location, "mac": mac},
+                )
+                if not device.mac:
+                    device.mac = mac
+                    device.save(using=db_name)
+
+            devices.append(device)
+
+        return RequestSuccess({"devices": DeviceSerializer(devices, many=True).data})
+
+    @calc_runtime
+    @action(detail=False, url_path="ping_device", methods=["GET"])
+    def ping_device(self, request, *args, **kwargs):
+        ip = (request.query_params.get("ip") or "").strip()
+        if not ip:
+            return RequestFailed({"reason": "Missing query parameter: ip"})
+
+        try:
+            parsed_ip = ipaddress.ip_address(ip)
+        except ValueError:
+            return RequestFailed({"reason": "Invalid IP address"})
+
+        if parsed_ip.version != 4 or not parsed_ip.is_private:
+            return RequestFailed({"reason": "Only private IPv4 addresses are allowed"})
+
+        task = ping_device_task.delay(str(parsed_ip))
+        return RequestSuccess({
+            "queued": True,
+            "task_id": task.id,
+            "ip": str(parsed_ip),
+        })
+
+    @calc_runtime
+    @action(detail=False, url_path="ping_device_result", methods=["GET"])
+    def ping_device_result(self, request, *args, **kwargs):
+        task_id = (request.query_params.get("task_id") or "").strip()
+        if not task_id:
+            return RequestFailed({"reason": "Missing query parameter: task_id"})
+
+        async_result = AsyncResult(task_id)
+        state = async_result.state
+
+        payload = {
+            "task_id": task_id,
+            "state": state,
+            "ready": async_result.ready(),
+            "successful": async_result.successful() if async_result.ready() else False,
+            "failed": async_result.failed() if async_result.ready() else False,
+        }
+
+        if async_result.ready():
+            if async_result.successful():
+                payload["result"] = async_result.result
+            else:
+                payload["error"] = str(async_result.result)
+
+        return RequestSuccess(payload)
 
     @calc_runtime
     @action(detail=False, url_path="devices", methods=["GET"])

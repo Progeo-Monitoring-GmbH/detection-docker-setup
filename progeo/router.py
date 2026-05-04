@@ -92,6 +92,9 @@ class DjangoRouter:
         obj1_default = DjangoRouter._is_default_instance(obj1)
         obj2_default = DjangoRouter._is_default_instance(obj2)
 
+        obj1_is_account = isinstance(obj1, Account)
+        obj2_is_account = isinstance(obj2, Account)
+
         if obj1_default and obj2_default:
             okaylog(
                 f"DR | allow_relation=yes\t| obj1={obj1._meta.object_name}, obj2={obj2._meta.object_name}, hints={list(hints.keys())}",
@@ -99,6 +102,14 @@ class DjangoRouter:
             return True
 
         if obj1_default != obj2_default:
+            if obj1_is_account or obj2_is_account:
+                # Account metadata lives on default DB while related progeo models
+                # are stored on account-specific DBs. Let AccountRouter decide.
+                elog(
+                    f"DR | allow_relation=may\t| obj1={obj1._meta.object_name}, obj2={obj2._meta.object_name}, hints={list(hints.keys())}",
+                    tag="[ROUTER]", active=ACTIVE)
+                return None
+
             wlog(
                 f"DR | allow_relation=no\t| obj1={obj1._meta.object_name}, obj2={obj2._meta.object_name}, hints={list(hints.keys())}",
                 tag="[ROUTER]", active=ACTIVE)

@@ -5,7 +5,7 @@ from django.contrib.sessions.models import Session
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
 
 from progeo.helper.basics import okaylog, dlog, elog, ilog
-from progeo.v1.models import Account, LimitedToken, MfSLog
+from progeo.v1.models import Account, EMail, LimitedToken, MfSLog, ProgeoDevice, ProgeoLocation, ProgeoMeasurement
 
 models = [ContentType, Permission, Account, Session, OutstandingToken, BlacklistedToken]
 
@@ -89,21 +89,33 @@ class MultiDBModelAdmin(admin.ModelAdmin):
 # ==============================================================================================
 
 
-
-class EMailAdmin(MultiDBModelAdmin):
-    pass
-
-
 class LimitedTokenAdmin(MultiDBModelAdmin):
     raw_id_fields = ["user", "account"]
     list_display = ("disabled", "id", "raw_hash", "valid_until", "check_counter", "raw_data", "purpose")
 
 
 class MfSLogAdmin(MultiDBModelAdmin):
+    
     raw_id_fields = ["user", "account"]
+
+class ProgeoLocationAdmin(MultiDBModelAdmin):
+    pass
+
+class ProgeoDeviceAdmin(MultiDBModelAdmin):
+    pass
+
+class ProgeoMeasurementAdmin(MultiDBModelAdmin):
+    pass
+
+class EMailAdmin(MultiDBModelAdmin):
+    pass
 
 
 register_models = [
     {"model": LimitedToken, "admin": LimitedTokenAdmin, "custom": True},
     {"model": MfSLog, "admin": MfSLogAdmin, "custom": True},
+    {"model": ProgeoLocation, "admin": ProgeoLocationAdmin, "custom": True},
+    {"model": ProgeoDevice, "admin": ProgeoDeviceAdmin, "custom": True},
+    {"model": ProgeoMeasurement, "admin": ProgeoMeasurementAdmin, "custom": True},
+    {"model": EMail, "admin": EMailAdmin, "custom": True},
 ]

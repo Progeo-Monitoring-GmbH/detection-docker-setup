@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
-import { standardFetchData } from '../helper';
 import { Button, Col, Row } from 'react-bootstrap';
 import axiosConfig from '../axiosConfig';
 import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
@@ -17,6 +16,48 @@ const DemoView = () => {
   const auth = useAuth();
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
   const { enqueueSnackbar } = useSnackbar();
+
+  function pollPingTaskResult(taskId: string, deviceIp: string, attempt = 0) {
+    const maxAttempts = 15;
+
+    void axiosConfig.perform_get(
+      auth,
+      `/v1/status/ping_device_result/?task_id=${encodeURIComponent(taskId)}`,
+      (response) => {
+        const data = response?.data ?? {};
+        const state = data.state;
+
+        if (state === 'SUCCESS') {
+          showSuccessBar(enqueueSnackbar, `Successfully pinged device (${deviceIp})`);
+          console.log('Ping task result:', data.result);
+          return;
+        }
+
+        if (state === 'FAILURE') {
+          showErrorBar(enqueueSnackbar, `Ping task failed for device (${deviceIp})`);
+          console.error('Ping task error:', data.error);
+          return;
+        }
+
+        if (attempt + 1 >= maxAttempts) {
+          showErrorBar(enqueueSnackbar, `Ping task timed out for device (${deviceIp})`);
+          return;
+        }
+
+        setTimeout(() => {
+          pollPingTaskResult(taskId, deviceIp, attempt + 1);
+        }, 1000);
+      },
+      (error) => {
+        showErrorBar(enqueueSnackbar, `Could not check ping result for device (${deviceIp})`);
+        if (error.response) {
+          console.error(error.response.data);
+        } else {
+          console.error(error);
+        }
+      },
+    );
+  }
 
   async function fetchDevices(
     auth,
@@ -62,13 +103,16 @@ const DemoView = () => {
               onClick={() => {
                 void axiosConfig.perform_get(
                   auth,
-                  `http://${device.ip}:80/ping/`,
+                  `/v1/status/ping_device/?ip=${encodeURIComponent(device.ip)}`,
                   (response) => {
-                    showSuccessBar(enqueueSnackbar, `Successfully pinged device (${device.ip})`);
-                    console.log('Ping response:', response.data);
+                    showSuccessBar(enqueueSnackbar, `Queued ping task for device (${device.ip})`);
+                    console.log('Ping task queued:', response.data);
+                    if (response?.data?.task_id) {
+                      pollPingTaskResult(response.data.task_id, device.ip);
+                    }
                   },
                   (error) => {
-                    showErrorBar(enqueueSnackbar, `Could not ping device (${device.ip})`);
+                    showErrorBar(enqueueSnackbar, `Could not queue ping for device (${device.ip})`);
                     if (error.response) {
                       console.error(error.response.data);
                     } else {

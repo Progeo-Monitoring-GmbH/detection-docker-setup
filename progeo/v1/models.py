@@ -234,6 +234,10 @@ class ProgeoDevice(ProgeoModel, auto_prefetch.Model):
     raw_hash = models.CharField(max_length=KEY_LEN, null=False, unique=True)
     hardware = models.CharField(max_length=100, null=True, blank=True)
     version = models.CharField(max_length=50, null=True, blank=True)
+    chip_id = models.CharField(max_length=50, null=True, blank=True)
+    mac = models.CharField(max_length=50, null=True, blank=True)
+    project_id = models.CharField(max_length=50, null=True, blank=True)
+    device_hash = models.CharField(max_length=50, null=True, blank=True)
 
     has_internet = models.BooleanField(default=False)
     data_interval = models.IntegerField(default=3600)

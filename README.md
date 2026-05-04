@@ -70,3 +70,12 @@ sudo bash scripts/setup_reverse_ssh_shell.sh --server ubuntu@example.com --remot
 
 - Most service ports are controlled via `.env` variables.
 - Public entry points are exposed by Nginx on `80`/`443`.
+
+## Local Network CORS (Lightweight)
+
+To allow frontend apps from your LAN (e.g. `http://192.168.x.x:3000`) without opening CORS globally:
+
+- Set `CORS_ALLOWED_ORIGIN_REGEXES="^https?://192\\.168\\.\\d{1,3}\\.\\d{1,3}(?::\\d+)?$"` in `django.env`
+- Keep `CORS_ALLOW_PRIVATE_NETWORK=1` (helps modern browser local-network preflights)
+
+This keeps `CORS_ALLOW_ALL_ORIGINS` disabled and only adds a local subnet regex.

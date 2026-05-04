@@ -19,7 +19,8 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = parse_boolean(os.getenv("DEBUG"))
 
-ALLOWED_HOSTS = [os.getenv("DJANGO_ALLOWED_HOSTS")]
+_raw_allowed_hosts = parse_split_str(os.getenv("DJANGO_ALLOWED_HOSTS", ""), ",")
+ALLOWED_HOSTS = [host.strip() for host in _raw_allowed_hosts if host.strip()]
 
 PRETTY_DATE_FORMAT = "%d.%m.%Y, %H:%M"
 DATETIME_FORMAT = PRETTY_DATE_FORMAT
@@ -199,6 +200,7 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 PROTOCOL = os.getenv("PROTOCOL", "http")
+
 _raw_allowed_origins = parse_split_str(os.getenv("ALLOWED_ORIGINS", ""), ",")
 CORS_ALLOWED_ORIGINS = [
     origin.strip().rstrip("/")
@@ -209,14 +211,11 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https?://localhost(?::\d+)?$",
     r"^https?://127\.0\.0\.1(?::\d+)?$",
     r"^https?://0\.0\.0\.0(?::\d+)?$",
+    r"^https?://192\.168\.\d{1,3}\.\d{1,3}(?::\d+)?$"
 ]
+
 CSRF_COOKIE_NAME = "csrftoken"
-CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS + [
-    "http://localhost",
-    "https://localhost",
-    "http://127.0.0.1",
-    "https://127.0.0.1"
-]
+CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS +CORS_ALLOWED_ORIGIN_REGEXES
 CORS_ALLOW_CREDENTIALS = True
 # CSRF_USE_SESSIONS = True
 
