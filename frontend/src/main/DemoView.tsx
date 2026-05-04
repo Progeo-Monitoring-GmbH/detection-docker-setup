@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
-import { Badge, Button, Stack } from 'react-bootstrap';
+import { Badge, Button } from 'react-bootstrap';
 import DataTable from 'react-data-table-component';
 import type { TableColumn } from 'react-data-table-component';
 import axiosConfig from '../axiosConfig';
@@ -40,7 +40,7 @@ type DeviceStatus = {
 };
 
 const DemoView = () => {
-  const auth = useAuth();
+  const auth = useAuth(); 
   const [devices, setDevices] = useState<DeviceStatus[]>([]);
   const [loading, setLoading] = useState(false);
   const { enqueueSnackbar } = useSnackbar();
@@ -139,8 +139,7 @@ const DemoView = () => {
     );
   }
 
-  const columns: TableColumn<DeviceStatus>[] = useMemo(
-    () => [
+  const columns = [
       {
         name: 'Device',
         sortable: true,
@@ -252,9 +251,8 @@ const DemoView = () => {
           </Button>
         ),
       },
-    ],
-    [auth, enqueueSnackbar],
-  );
+    ];
+
 
   useEffect(() => {
     void fetchDeviceStatus();
@@ -262,24 +260,14 @@ const DemoView = () => {
 
   return (
     <div>
-      <Stack direction="horizontal" className="mb-3 justify-content-between align-items-center">
+      <div className="d-flex mb-3 justify-content-between align-items-center">
         <h3 className="mb-0">Device Status Overview</h3>
         <Button variant="outline-primary" onClick={() => void fetchDeviceStatus()}>
           Refresh
         </Button>
-      </Stack>
+      </div>
 
-      <DataTable
-        title="Connected and Registered Devices"
-        columns={columns}
-        data={devices}
-        pagination
-        highlightOnHover
-        dense
-        responsive
-        progressPending={loading}
-        noDataComponent="No devices found"
-      />
+
     </div>
   );
 };
