@@ -13,7 +13,7 @@ from progeo.settings import DEBUG
 
 
 class AdminGetParamMiddleware:
-    using_db = "dev_null"
+    using_db = "default"
 
     def __init__(self, get_response):
         self.get_response = get_response
@@ -61,7 +61,7 @@ class AdminGetParamMiddleware:
 
 
 class AccountMiddleware:
-    using_db = "dev_null"
+    using_db = "default"
 
     def __init__(self, get_response):
         self.get_response = get_response

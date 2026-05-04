@@ -1,6 +1,7 @@
 import csv
 import os
 import ipaddress
+import subprocess
 from celery.result import AsyncResult
 
 from django.contrib.auth.models import User
@@ -85,6 +86,30 @@ def send_alarm_email(device_hash, threshold, max_value, exceeding_values):
     sent_to = os.getenv("DJANGO_SUPERUSER_EMAIL")
     if sent_to:
         create_email_safe(sent_to=sent_to, subject=subject, message=message, db="default")
+
+
+def ping_host_quick(ip_address, timeout_seconds=1):
+    if not ip_address:
+        return False
+
+    try:
+        parsed_ip = ipaddress.ip_address(str(ip_address))
+    except ValueError:
+        return False
+
+    if parsed_ip.version != 4:
+        return False
+
+    if os.name == "nt":
+        command = ["ping", "-n", "1", "-w", str(int(timeout_seconds * 1000)), str(parsed_ip)]
+    else:
+        command = ["ping", "-c", "1", "-W", str(int(timeout_seconds)), str(parsed_ip)]
+
+    try:
+        result = subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        return result.returncode == 0
+    except Exception:
+        return False
 
 
 class SetupViewSet(viewsets.ViewSet):
@@ -421,6 +446,8 @@ class StatusViewSet(ProgeoModalViewSet):
             mac_address = latest_data.get("mac")
             hostname = latest_data.get("hostname") or getattr(device.location, "address", None)
             connected = connected_by_ip.get(ip_address) or connected_by_mac.get(mac_address) or connected_by_hostname.get(hostname)
+            candidate_ip = ip_address or (connected or {}).get("ip") or device.device_ip
+            online = ping_host_quick(candidate_ip, timeout_seconds=1)
 
             last_alarm_payload = None
             if latest_alarm and isinstance(latest_alarm.raw_data, dict):
@@ -435,11 +462,9 @@ class StatusViewSet(ProgeoModalViewSet):
 
             statuses.append({
                 "device": DeviceSerializer(device).data,
-                "online": bool(connected),
-                "last_seen": latest_data.get("scanned_at") or latest_data.get("evaluated_at"),
-                "last_measurement": latest_data.get("measure") or latest_data.get("rows") or latest_data.get("values"),
+                "online": online,
                 "last_alarm": last_alarm_payload,
-                "ip": ip_address or (connected or {}).get("ip"),
+                "ip": candidate_ip,
                 "mac": mac_address or (connected or {}).get("mac"),
                 "hostname": hostname or (connected or {}).get("hostname"),
             })

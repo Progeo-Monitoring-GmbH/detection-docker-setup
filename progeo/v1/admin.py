@@ -15,7 +15,7 @@ models = [ContentType, Permission, Account, Session, OutstandingToken, Blacklist
 
 class MultiDBModelAdmin(admin.ModelAdmin):
     empty_value_display = "-empty-"
-    using_db = "dev_null"
+    using_db = "default"
 
     def __init__(self, model, admin_site):
         # self.handle_register_django(models)

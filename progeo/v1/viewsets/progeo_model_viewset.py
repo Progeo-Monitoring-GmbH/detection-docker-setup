@@ -41,7 +41,7 @@ class ProgeoModalViewSet(viewsets.ModelViewSet):
 
         queryset = self.filter_queryset(self.get_queryset())
         use_detailed_cache = kwargs.get("use_detailed_cache", False)
-        db = request.account.db_name if hasattr(request, "account") else "dev_null"
+        db = request.account.db_name if hasattr(request, "account") else "default"
         if use_detailed_cache:
             _ids = self.get_queryset_ids(queryset)
             _result = []

@@ -199,10 +199,10 @@ class AccountRouter:
                 return "default"
 
             elog(f"AR | db_for_read | unresolved account DB for model={model}, hints={list(hints.keys())}", tag="[ROUTER]", active=ACTIVE)
-            return "dev_null"
+            return "default"
 
         elog(f"FALLBACK-READ | model={model}, __module__={getattr(model, '__module__', '')}, app_label={model._meta.app_label}, hints={list(hints.keys())}")
-        return "dev_null"
+        return "default"
 
     def db_for_write(self, model, **hints):
         if os.getenv("TESTS_ACTIVE"):
@@ -221,10 +221,10 @@ class AccountRouter:
                 return "default"
 
             elog(f"AR | db_for_write | unresolved account DB for model={model}, hints={list(hints.keys())}", tag="[ROUTER]", active=ACTIVE)
-            return "dev_null"
+            return "default"
 
         elog(f"FALLBACK-WRITE | model={model}, app_label={model._meta.app_label}, hints={list(hints.keys())}")
-        return "dev_null"
+        return "default"
 
     def allow_relation(self, obj1, obj2, **hints):
 
