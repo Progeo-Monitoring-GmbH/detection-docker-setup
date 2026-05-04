@@ -336,7 +336,7 @@ class StatusViewSet(ProgeoModalViewSet):
                 )
                 device, _ = ProgeoDevice.objects.using(db_name).get_or_create(
                     raw_hash=f"mac:{mac}",
-                    defaults={"location": location, "mac": mac, "hardware": hostname, "version": "v1"},
+                    defaults={"location": location, "mac": mac, "device_ip": connected.get("ip"), "hardware": hostname, "version": "v1"},
                 )
                 if not device.mac:
                     device.mac = mac
@@ -344,7 +344,7 @@ class StatusViewSet(ProgeoModalViewSet):
 
             devices.append(device)
 
-        return RequestSuccess({"devices": DeviceSerializer(devices, many=True).data})
+        return RequestSuccess({"devices": DeviceSerializer(devices, many=True).data, "_raw": data})
 
     @calc_runtime
     @action(detail=False, url_path="ping_device", methods=["GET"])
