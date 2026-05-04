@@ -336,7 +336,7 @@ class StatusViewSet(ProgeoModalViewSet):
                 )
                 device, _ = ProgeoDevice.objects.using(db_name).get_or_create(
                     raw_hash=f"mac:{mac}",
-                    defaults={"location": location, "mac": mac},
+                    defaults={"location": location, "mac": mac, "hardware": hostname, "version": "v1"},
                 )
                 if not device.mac:
                     device.mac = mac
@@ -402,8 +402,8 @@ class StatusViewSet(ProgeoModalViewSet):
             return RequestFailed({"reason": "No account configured"})
 
         db_name = account.db_name or "default"
-        connected_devices = self.get_connected_devices()
-        if not isinstance(connected_devices, list):
+        success, connected_devices = self.get_connected_devices()
+        if not success:
             connected_devices = []
 
         connected_by_ip = {device.get("ip"): device for device in connected_devices if device.get("ip")}

@@ -127,7 +127,7 @@ class RootModel(auto_prefetch.Model, object):
     def save(self, *args, **kwargs):
         if kwargs.pop("clear_lasts", None):
             self.reset_lasts()
-        if kwargs.pop("last_fetched", None):
+        if kwargs.pop("last_fetched", True):
             self.set_last_fetched()
         if kwargs.pop("last_updated", None):
             self.set_last_updated()
@@ -237,7 +237,7 @@ class ProgeoDevice(ProgeoModel, auto_prefetch.Model):
     chip_id = models.CharField(max_length=50, null=True, blank=True)
     mac = models.CharField(max_length=50, null=True, blank=True)
     project_id = models.CharField(max_length=50, null=True, blank=True)
-    device_hash = models.CharField(max_length=50, null=True, blank=True)
+    device_ip = models.CharField(max_length=50, null=True, blank=True)
 
     has_internet = models.BooleanField(default=False)
     data_interval = models.IntegerField(default=3600)
