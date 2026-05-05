@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import { Badge, Button } from 'react-bootstrap';
 import DataTable from 'react-data-table-component';
@@ -6,6 +6,7 @@ import type { TableColumn } from 'react-data-table-component';
 import axiosConfig from '../axiosConfig';
 import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import { useSnackbar } from 'notistack';
+import { WebsocketContext } from '../components/ws/websocketContext';
 
 type DeviceModel = {
   id: number;
@@ -39,11 +40,20 @@ type DeviceStatus = {
   hostname: string | null;
 };
 
+type DeviceStatusWsMessage = {
+  type?: string;
+  ip?: string;
+  ok?: boolean;
+  devices?: DeviceStatus[];
+  data?: unknown;
+};
+
 const DemoView = () => {
   const auth = useAuth(); 
   const [devices, setDevices] = useState<DeviceStatus[]>([]);
   const [loading, setLoading] = useState(false);
   const { enqueueSnackbar } = useSnackbar();
+  const { wsMessage } = useContext(WebsocketContext) as { wsMessage: DeviceStatusWsMessage | null };
 
   const formatDate = (value: string | null): string => {
     if (!value) {
@@ -139,8 +149,9 @@ const DemoView = () => {
     );
   }
 
-  const columns = [
+  const columns: TableColumn<DeviceStatus>[] = [
       {
+        id: 1,
         name: 'Device',
         sortable: true,
         selector: (row) => row.device.raw_hash,
@@ -151,9 +162,9 @@ const DemoView = () => {
             <div>{row.device.hardware || '-'} | {row.device.version || '-'}</div>
           </div>
         ),
-        grow: 2,
       },
       {
+        id: 2,
         name: 'Network',
         cell: (row) => (
           <div className="py-2">
@@ -162,9 +173,9 @@ const DemoView = () => {
             <div>Host: {row.hostname || '-'}</div>
           </div>
         ),
-        grow: 2,
       },
       {
+        id: 3,
         name: 'Online',
         width: '120px',
         sortable: true,
@@ -176,25 +187,26 @@ const DemoView = () => {
         ),
       },
       {
+        id: 4,
         name: 'Last Seen',
         sortable: true,
         selector: (row) => row.last_seen || '',
         cell: (row) => <span>{formatDate(row.last_seen)}</span>,
-        grow: 1.4,
       },
       {
+        id: 5,
         name: 'Last Fetched',
         sortable: true,
         selector: (row) => row.device.last_fetched || '',
         cell: (row) => <span>{formatDate(row.device.last_fetched)}</span>,
-        grow: 1.4,
       },
       {
+        id: 6,
         name: 'Measurement',
         cell: (row) => <span>{formatMeasurement(row.last_measurement)}</span>,
-        grow: 1.5,
       },
       {
+        id: 7,
         name: 'Alarm',
         cell: (row) => {
           if (!row.last_alarm) {
@@ -210,9 +222,9 @@ const DemoView = () => {
           }
           return <Badge bg="success">OK</Badge>;
         },
-        grow: 1.2,
       },
       {
+        id: 8,
         name: 'Actions',
         width: '150px',
         cell: (row) => (
@@ -258,16 +270,57 @@ const DemoView = () => {
     void fetchDeviceStatus();
   }, []);
 
+  useEffect(() => {
+    if (!wsMessage) {
+      return;
+    }
+
+    if (Array.isArray(wsMessage.devices)) {
+      setDevices(wsMessage.devices);
+      return;
+    }
+
+    const payload = wsMessage.data as { devices?: DeviceStatus[] } | DeviceStatus[] | undefined;
+    if (payload && !Array.isArray(payload) && Array.isArray(payload.devices)) {
+      setDevices(payload.devices);
+      return;
+    }
+
+    if (Array.isArray(payload)) {
+      setDevices(payload as DeviceStatus[]);
+      return;
+    }
+
+    // For ping responses, update the matching device row from websocket message.
+    if (wsMessage.type === 'ping_device_result' && wsMessage.ip) {
+      setDevices((prev) =>
+        prev.map((entry) =>
+          entry.ip === wsMessage.ip
+            ? { ...entry, online: Boolean(wsMessage.ok) }
+            : entry,
+        ),
+      );
+    }
+  }, [wsMessage]);
+
   return (
-    <div>
+    <div style={{ width: '100%', minWidth: 0 }}>
       <div className="d-flex mb-3 justify-content-between align-items-center">
         <h3 className="mb-0">Device Status Overview</h3>
-        <Button variant="outline-primary" onClick={() => void fetchDeviceStatus()}>
+        <Button variant="outline-primary" onClick={() => void fetchDeviceStatus()} disabled={loading}>
           Refresh
         </Button>
       </div>
 
-
+      <div style={{ width: '100%', overflowX: 'auto' }}>
+        <DataTable
+          columns={columns}
+          data={devices}
+          progressPending={loading}
+          highlightOnHover
+          responsive
+        />
+      </div>
     </div>
   );
 };

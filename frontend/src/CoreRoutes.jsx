@@ -1,5 +1,6 @@
 import React from 'react';
 import { Route, Routes } from 'react-router';
+import { WebSocketProvider } from './components/ws/websocketContext';
 
 const Navbar = React.lazy(() => import('./components/navbar/Navbar'));
 const LoginForm = React.lazy(() => import('./components/auth/LoginForm'));
@@ -16,7 +17,14 @@ const CoreRoutes = () => {
     <Routes>
       <Route path={`/login`} element={<LoginForm />} />
 
-      <Route path="/demo" element={<DemoView />} />
+      <Route
+        path="/demo"
+        element={(
+          <WebSocketProvider url="/ws/commands/list">
+            <DemoView />
+          </WebSocketProvider>
+        )}
+      />
       <Route path="/dev" element={<DevView />} />
 
       <Route path="*" element={<Navbar act={''} content={<LandingPage />} />} />

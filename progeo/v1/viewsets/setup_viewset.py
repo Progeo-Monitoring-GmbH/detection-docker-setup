@@ -361,7 +361,11 @@ class StatusViewSet(ProgeoModalViewSet):
                 )
                 device, _ = ProgeoDevice.objects.using(db_name).get_or_create(
                     raw_hash=f"mac:{mac}",
-                    defaults={"location": location, "mac": mac, "device_ip": connected.get("ip"), "hardware": hostname, "version": "v1"},
+                    defaults={"location": location, "mac": mac, 
+                              "device_ip": connected.get("ip"), 
+                              "hardware": hostname, "version": "v1",
+                              "device_hash": "TODO",
+                              "project_id": os.getenv("CONTROLLER_PROJECT_ID", 0)},
                 )
                 if not device.mac:
                     device.mac = mac

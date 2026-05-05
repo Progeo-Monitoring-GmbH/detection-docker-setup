@@ -2,6 +2,10 @@ from celery import shared_task
 import ipaddress
 
 import requests
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
+
+from progeo.consumer import GRP_NAME
 
 
 @shared_task
@@ -17,10 +21,22 @@ def ping_device(ip: str):
     if parsed_ip.version != 4 or not parsed_ip.is_private:
         raise ValueError("Only private IPv4 addresses are allowed")
 
-    response = requests.get(f"http://{parsed_ip}:80/identify/", timeout=5)
-    return {
-        "ip": str(parsed_ip),
-        "status_code": response.status_code,
-        "ok": response.ok,
-        "body": response.text[:500],
-    }
+    msg: dict = {"type": "ping_device_result", "ip": str(parsed_ip), "ok": False, "status_code": None}
+    exc = None
+    try:
+        response = requests.get(f"http://{parsed_ip}:80/identify/", timeout=5)
+        msg.update({
+            "ok": response.ok,
+            "status_code": response.status_code,
+            "body": response.text[:500],
+        })
+    except Exception as e:
+        msg["error"] = str(e)
+        exc = e
+
+    channel_layer = get_channel_layer()
+    async_to_sync(channel_layer.group_send)(GRP_NAME, msg)
+
+    if exc:
+        raise exc
+    return msg

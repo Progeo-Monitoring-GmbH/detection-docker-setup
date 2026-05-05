@@ -10,10 +10,10 @@ from progeo.v1.helper import parse_float, parse_int
 
 def _get_modbus_config() -> dict[str, Any]:
 	host = os.getenv("MODBUS_TCP_HOST", "127.0.0.1")
-	port = parse_int(os.getenv("MODBUS_TCP_PORT", "502"), 502)
-	unit_id = parse_int(os.getenv("MODBUS_TCP_UNIT_ID", "1"), 1)
-	timeout = parse_float(os.getenv("MODBUS_TCP_TIMEOUT", "3"), 3)
-	start_address = parse_int(os.getenv("MODBUS_TCP_START_ADDRESS", "0"), 0)
+	port = parse_int(os.getenv("MODBUS_TCP_PORT"), 502)
+	unit_id = parse_int(os.getenv("MODBUS_TCP_UNIT_ID"), 1)
+	timeout = parse_float(os.getenv("MODBUS_TCP_TIMEOUT"), 3)
+	start_address = parse_int(os.getenv("MODBUS_TCP_START_ADDRESS"), 0)
 
 	return {
 		"host": host,
