@@ -11,6 +11,7 @@ const TokenLogin = React.lazy(() => import('./main/TokenLogin'));
 const ChangeLogs = React.lazy(() => import('./main/ChangeLogs'));
 const DevView = React.lazy(() => import('./main/DevView'));
 const DemoView = React.lazy(() => import('./main/DemoView'));
+const WsDebugView = React.lazy(() => import('./main/WsDebugView'));
 
 const CoreRoutes = () => {
   return (
@@ -26,6 +27,15 @@ const CoreRoutes = () => {
         )}
       />
       <Route path="/dev" element={<DevView />} />
+
+      <Route
+        path="/ws-debug"
+        element={(
+          <WebSocketProvider url="/ws/commands/list">
+            <WsDebugView />
+          </WebSocketProvider>
+        )}
+      />
 
       <Route path="*" element={<Navbar act={''} content={<LandingPage />} />} />
     </Routes>

@@ -7,6 +7,7 @@ import axiosConfig from '../axiosConfig';
 import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import { useSnackbar } from 'notistack';
 import { WebsocketContext } from '../components/ws/websocketContext';
+import { log } from 'node:console';
 
 type DeviceModel = {
   id: number;
@@ -53,7 +54,14 @@ const DemoView = () => {
   const [devices, setDevices] = useState<DeviceStatus[]>([]);
   const [loading, setLoading] = useState(false);
   const { enqueueSnackbar } = useSnackbar();
-  const { wsMessage } = useContext(WebsocketContext) as { wsMessage: DeviceStatusWsMessage | null };
+  const ctx = useContext(WebsocketContext) as {
+    wsMessage: unknown;
+    readyState: number;
+    sendMessage: (msg: string) => void;
+  } | null;
+
+  const wsMessage = ctx?.wsMessage;
+  console.log('DemoView wsMessage', wsMessage);
 
   const formatDate = (value: string | null): string => {
     if (!value) {
@@ -312,13 +320,17 @@ const DemoView = () => {
         </Button>
       </div>
 
+      {devices.length > 0 ? (
         <DataTable
           columns={columns}
           data={devices}
           progressPending={loading}
           highlightOnHover
-          responsive
         />
+      ) : (
+        <div>No devices found</div>
+      )}
+
     </div>
   );
 };

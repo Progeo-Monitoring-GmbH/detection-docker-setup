@@ -46,7 +46,7 @@ export default ({ mode }) => {
       modulePreload: { polyfill: false },
     },
     optimizeDeps: {
-      include: ['react', 'react-dom'], // Add frequently used deps
+      include: ['react', 'react-dom', 'react-use-websocket', 'react-data-table-component'], // Add frequently used deps
     },
     define: {
       __APP_ENV__: JSON.stringify(env.APP_ENV),
