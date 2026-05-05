@@ -312,7 +312,6 @@ const DemoView = () => {
         </Button>
       </div>
 
-      <div style={{ width: '100%', overflowX: 'auto' }}>
         <DataTable
           columns={columns}
           data={devices}
@@ -320,7 +319,6 @@ const DemoView = () => {
           highlightOnHover
           responsive
         />
-      </div>
     </div>
   );
 };
