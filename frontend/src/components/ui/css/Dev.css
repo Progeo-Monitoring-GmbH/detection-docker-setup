@@ -1,0 +1,11 @@
+.dev-view .card {
+	border: 1px solid #dee2e6;
+}
+
+.dev-view .metric-card {
+	min-height: 180px;
+}
+
+.dev-view table {
+	font-size: 0.92rem;
+}

@@ -13,8 +13,8 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
-from progeo.v1.helper import generate_hash
-from progeo.v1.models import Account, ProgeoDevice, ProgeoLocation, ProgeoMeasurement
+from progeo.v1.helper import generate_hash, dlog
+from progeo.v1.models import Account, ProgeoDevice, ProgeoLocation, ProgeoMeasurement, ProgeoMeasurePoint
 from progeo.v1.serializers import AccountSerializer, FileSerializer, DeviceSerializer
 from progeo.decorator import calc_runtime
 from progeo.helper.basics import RequestSuccess, delete_file, save_check_dir, RequestFailed
@@ -309,6 +309,72 @@ class StatusViewSet(ProgeoModalViewSet):
     serializer_class = DeviceSerializer
     permission_classes = [AllowAny]
 
+    @calc_runtime
+    @action(detail=False, url_path="measure_points", methods=["GET", "POST"])
+    def measure_points(self, request, *args, **kwargs):
+        account = get_controller_account()
+        if not account:
+            return RequestFailed({"reason": "No account configured"})
+
+        db_name = account.db_name or "default"
+
+        device_id_raw = request.query_params.get("device_id") if request.method == "GET" else request.data.get("device_id")
+        if not device_id_raw:
+            return RequestFailed({"reason": "Missing parameter: device_id"})
+
+        try:
+            device_id = int(device_id_raw)
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "device_id must be an integer"})
+
+        device = ProgeoDevice.objects.using(db_name).filter(id=device_id).first()
+        if not device:
+            return RequestFailed({"reason": "Device not found"})
+
+        if request.method == "GET":
+            points_qs = ProgeoMeasurePoint.objects.using(db_name).filter(device=device).order_by("sensor_order", "id")
+            points = [{
+                "id": point.id,
+                "sensor_order": point.sensor_order,
+                "x": float(point.x),
+                "y": float(point.y),
+            } for point in points_qs]
+            return RequestSuccess({"device_id": device.id, "points": points})
+
+        raw_points = request.data.get("points")
+        if not isinstance(raw_points, list):
+            return RequestFailed({"reason": "points must be a list"})
+
+        normalized_points = []
+        for idx, point in enumerate(raw_points, start=1):
+            if not isinstance(point, dict):
+                return RequestFailed({"reason": f"points[{idx - 1}] must be an object"})
+            try:
+                x = max(0.0, min(1.0, float(point.get("x"))))
+                y = max(0.0, min(1.0, float(point.get("y"))))
+            except (TypeError, ValueError):
+                return RequestFailed({"reason": f"points[{idx - 1}] has invalid x/y"})
+
+            normalized_points.append(ProgeoMeasurePoint(
+                device=device,
+                sensor_order=idx,
+                x=x,
+                y=y,
+            ))
+
+        ProgeoMeasurePoint.objects.using(db_name).filter(device=device).delete()
+        if normalized_points:
+            ProgeoMeasurePoint.objects.using(db_name).bulk_create(normalized_points)
+
+        stored_qs = ProgeoMeasurePoint.objects.using(db_name).filter(device=device).order_by("sensor_order", "id")
+        stored = [{
+            "id": point.id,
+            "sensor_order": point.sensor_order,
+            "x": float(point.x),
+            "y": float(point.y),
+        } for point in stored_qs]
+        return RequestSuccess({"device_id": device.id, "stored": len(stored), "points": stored})
+
 
     @staticmethod
     def get_connected_devices(*args, **kwargs) -> dict:
@@ -441,6 +507,7 @@ class StatusViewSet(ProgeoModalViewSet):
         statuses = []
         devices = ProgeoDevice.objects.using(db_name).select_related("location").all().order_by("id")
         for device in devices:
+            dlog("Evaluating status for device", device.id, device.raw_hash)
             latest_measurement = get_latest_measurement(device, db_name)
             latest_alarm = get_latest_alarm_measurement(device, db_name)
 

@@ -13,35 +13,17 @@ const Navbar = ({}) => {
 
   return (
     <Col md={2} id={'v1-Navbar'}>
-      <Button
-        variant="primary"
-        className="w-100 mt-2"
-        size="lg"
-        onClick={() => {
-          logout();
-        }}
-      >
-        Logout
-      </Button>
 
       <Button
-        href="/project/overview/"
-        variant="info"
-        className="w-100 mt-2"
-        size="lg"
-      >
-        Projects
-      </Button>
-      {isAdmin === 'true' && (
-        <>
-          <Button
-            hreaf="/project/evaluate/"
+            href="/device/overview/"
             variant="info"
             className="w-100 mt-2"
             size="lg"
           >
-            Evaluate
-          </Button>
+            Devices
+      </Button>
+      {isAdmin === 'true' && (
+        <>
           <Button
             href="/project/backup/"
             variant="info"
@@ -68,6 +50,16 @@ const Navbar = ({}) => {
           </Button>
         </>
       )}
+      <Button
+        variant="primary"
+        className="w-100 mt-2"
+        size="lg"
+        onClick={() => {
+          logout();
+        }}
+      >
+        Logout
+      </Button>
     </Col>
   );
 };

@@ -13,7 +13,7 @@ from progeo.v1.helper import calc_hash_from_dict
 from progeo.decorator import has_test_coverage
 from progeo.helper.basics import get_templates
 from progeo.helper.cacher import search_clear_cache
-from progeo.settings import DEBUG, BACKUP_DIR
+from progeo.settings import DEBUG, BACKUP_DIR, UPLOAD_BASE_DIR
 
 # ==============================================================================================
 
@@ -226,9 +226,24 @@ class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
     address = models.CharField(max_length=255, null=True, blank=True)
     latitude = models.FloatField(null=True, blank=True)
     longitude = models.FloatField(null=True, blank=True)
+    alarm_threshold = models.IntegerField(blank=True, default=100)
+    #document = models.FileField(upload_to=UPLOAD_BASE_DIR, max_length=255, null=True, blank=True)
+
+    def __str__(self):
+        _id = f"[{self.pk}] " if DEBUG else ""
+        loc = f"({self.latitude}, {self.longitude})" if self.latitude and self.longitude else self.address or 'Unknown Location'
+        return f"{_id} 📍 {loc}"
 
 
 class ProgeoDevice(ProgeoModel, auto_prefetch.Model):
+
+    class Resistance(models.IntegerChoices):
+        DEFAULT_100K = 136  # 100K=0x88
+        RES_10K = 72        # 10K=0x48
+        RES_1k = 40         # 1K=0x28
+        RES_100 = 24        # 100 Ohm=0x18   
+        OFF = 8             # Off=0x08
+
     location = models.ForeignKey(ProgeoLocation, on_delete=models.DO_NOTHING, null=True, blank=True)
     created = models.DateTimeField(auto_now_add=True)
     raw_hash = models.CharField(max_length=KEY_LEN, null=False, unique=True)
@@ -241,11 +256,46 @@ class ProgeoDevice(ProgeoModel, auto_prefetch.Model):
 
     has_internet = models.BooleanField(default=False)
     data_interval = models.IntegerField(default=3600)
+    pull_resistance = models.IntegerField(default=Resistance.DEFAULT_100K, choices=Resistance)
+
+    def __str__(self):
+        _id = f"[{self.pk}] " if DEBUG else ""
+        return f"{_id} 🔧 {self.hardware or 'Unknown'} ({self.mac or 'No MAC'}) - {self.raw_hash[:8]}..."
 
 
 class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
     device = models.ForeignKey(ProgeoDevice, on_delete=models.DO_NOTHING)
     raw_data = JSONField(blank=True)
+
+    def __str__(self):
+        _id = f"[{self.pk}] " if DEBUG else ""
+        _device = f"Device {self.device.mac}" if self.device else "Unknown Device"
+        return f"{_id} 📊 {_device} - {self.last_updated}: {self.raw_data.values()}"
+
+
+class ProgeoMeasurePoint(ProgeoModel, auto_prefetch.Model):
+    device = models.ForeignKey(ProgeoDevice, on_delete=models.DO_NOTHING)
+    sensor_order = models.IntegerField(null=False)
+    x = models.FloatField(null=False)
+    y = models.FloatField(null=False)
+
+    def __str__(self):
+        _id = f"[{self.pk}] " if DEBUG else ""
+        _device = f"Device {self.device.mac}" if self.device else "Unknown Device"
+        return f"{_id} 📍 {_device} - Sensor #{self.sensor_order} ({self.x}, {self.y})"
+
+
+class ProgeoAlarm(ProgeoModel, auto_prefetch.Model):
+    measurement = models.ForeignKey(ProgeoMeasurement, on_delete=models.DO_NOTHING, related_name='alarms')
+    triggered = models.BooleanField(default=False)
+    threshold = models.FloatField(null=True, blank=True)
+    max_value = models.FloatField(null=True, blank=True)
+    evaluated_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        _id = f"[{self.pk}] " if DEBUG else ""
+        status = "🔔 TRIGGERED" if self.triggered else "✅ OK"
+        return f"{_id} {status} - Measurement {self.measurement.id}, Threshold: {self.threshold}, Max: {self.max_value}"
 
 
 class EMail(ProgeoModel, auto_prefetch.Model):

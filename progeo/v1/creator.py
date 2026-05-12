@@ -11,8 +11,10 @@ from progeo.v1.models import (
 	EMail,
 	LimitedToken,
 	MfSLog,
+	ProgeoAlarm,
 	ProgeoDevice,
 	ProgeoLocation,
+	ProgeoMeasurePoint,
 	ProgeoMeasurement,
 )
 
@@ -92,6 +94,39 @@ def create_progeo_measurement_safe(device: ProgeoDevice, raw_data: Optional[dict
 		ProgeoMeasurement,
 		_db,
 		lookup={"device": device, "raw_data": payload},
+		defaults={},
+	)
+
+
+def create_progeo_measure_point_safe(device: ProgeoDevice, sensor_order: int, x: float, y: float,
+									 db: Optional[str] = None) -> Tuple[Optional[ProgeoMeasurePoint], bool]:
+	_db = db or device.location.account.db_name
+
+	return _safe_get_or_create(
+		ProgeoMeasurePoint,
+		_db,
+		lookup={"device": device, "sensor_order": sensor_order, "x": x, "y": y},
+		defaults={},
+	)
+
+
+def create_progeo_alarm_safe(measurement: ProgeoMeasurement, triggered: bool = False,
+							  threshold: Optional[float] = None, max_value: Optional[float] = None,
+							  evaluated_at=None, db: Optional[str] = None) -> Tuple[Optional[ProgeoAlarm], bool]:
+	_db = db or measurement.device.location.account.db_name
+	if evaluated_at is None:
+		evaluated_at = timezone.now()
+
+	return _safe_get_or_create(
+		ProgeoAlarm,
+		_db,
+		lookup={
+			"measurement": measurement,
+			"triggered": triggered,
+			"threshold": threshold,
+			"max_value": max_value,
+			"evaluated_at": evaluated_at,
+		},
 		defaults={},
 	)
 
@@ -178,6 +213,8 @@ def create_all_models_safe(account_name: str, db_name: str, user: Optional[User]
 	location, _ = create_progeo_location_safe(account=account, address="unknown")
 	device, _ = create_progeo_device_safe(location=location) if location else (None, False)
 	measurement, _ = create_progeo_measurement_safe(device=device, raw_data={}) if device else (None, False)
+	measure_point, _ = create_progeo_measure_point_safe(device=device, sensor_order=1, x=0.0, y=0.0) if device else (None, False)
+	alarm, _ = create_progeo_alarm_safe(measurement=measurement, threshold=100.0, max_value=0.0) if measurement else (None, False)
 	email, _ = create_email_safe(sent_to="unknown@example.com", message="initialized", db="default")
 	token, _ = create_limited_token_safe(account=account, user=user, purpose="init")
 	backup, _ = create_backup_safe(account=account, name="initial.backup", user=user)
@@ -188,6 +225,8 @@ def create_all_models_safe(account_name: str, db_name: str, user: Optional[User]
 		"location": location,
 		"device": device,
 		"measurement": measurement,
+		"measure_point": measure_point,
+		"alarm": alarm,
 		"email": email,
 		"limited_token": token,
 		"backup": backup,

@@ -12,6 +12,9 @@ const ChangeLogs = React.lazy(() => import('./main/ChangeLogs'));
 const DevView = React.lazy(() => import('./main/DevView'));
 const DemoView = React.lazy(() => import('./main/DemoView'));
 const WsDebugView = React.lazy(() => import('./main/WsDebugView'));
+const DeviceListView = React.lazy(() => import('./main/DeviceListView'));
+const DeviceDetailView = React.lazy(() => import('./main/DeviceDetailView'));
+const DeviceEditorView = React.lazy(() => import('./main/DeviceEditorView'));
 
 const CoreRoutes = () => {
   return (
@@ -36,7 +39,23 @@ const CoreRoutes = () => {
           </WebSocketProvider>
         )}
       />
+      <Route
+        path="/device/overview"
+        element={(
+          <WebSocketProvider url="/ws/commands/list">
+            <Navbar act="device" content={<DeviceListView />} />
+          </WebSocketProvider>
+        )}
+      />
 
+      <Route
+        path="/device/:id/update"
+        element={<Navbar act="device" content={<DeviceDetailView />} />}
+      />
+      <Route
+        path="/device/:id/editor/"
+        element={<Navbar act="device" content={<DeviceEditorView />} />}
+      />
       <Route path="*" element={<Navbar act={''} content={<LandingPage />} />} />
     </Routes>
   );

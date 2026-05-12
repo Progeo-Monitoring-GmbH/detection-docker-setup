@@ -21,7 +21,7 @@ class FileSerializer(serializers.Serializer):
     meta = serializers.SerializerMethodField("get_meta")
 
     def update(self, instance, validated_data):
-        print("UP", instance, validated_data)
+        print("UPDATE", instance, validated_data)
         return instance
 
     @staticmethod
