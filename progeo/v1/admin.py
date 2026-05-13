@@ -5,7 +5,7 @@ from django.contrib.sessions.models import Session
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
 
 from progeo.helper.basics import okaylog, dlog, elog, ilog
-from progeo.v1.models import Account, EMail, LimitedToken, MfSLog, ProgeoDevice, ProgeoLocation, ProgeoMeasurement
+from progeo.v1.models import Account, EMail, LimitedToken, MfSLog, ProgeoDevice, ProgeoLocation, ProgeoMeasurePoint, ProgeoMeasurement
 
 models = [ContentType, Permission, Account, Session, OutstandingToken, BlacklistedToken]
 
@@ -110,6 +110,9 @@ class ProgeoMeasurementAdmin(MultiDBModelAdmin):
 class EMailAdmin(MultiDBModelAdmin):
     pass
 
+class ProgeoMeasurePointAdmin(MultiDBModelAdmin):
+    pass
+
 
 register_models = [
     {"model": LimitedToken, "admin": LimitedTokenAdmin, "custom": True},
@@ -117,5 +120,6 @@ register_models = [
     {"model": ProgeoLocation, "admin": ProgeoLocationAdmin, "custom": True},
     {"model": ProgeoDevice, "admin": ProgeoDeviceAdmin, "custom": True},
     {"model": ProgeoMeasurement, "admin": ProgeoMeasurementAdmin, "custom": True},
+    {"model": ProgeoMeasurePoint, "admin": ProgeoMeasurePointAdmin, "custom": True},
     {"model": EMail, "admin": EMailAdmin, "custom": True},
 ]

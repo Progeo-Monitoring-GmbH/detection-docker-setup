@@ -1,6 +1,6 @@
 import { useContext, useEffect, useState } from 'react';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
-import { Button, Container, Row, Col, Spinner } from 'react-bootstrap';
+import { Button, Row, Col, Spinner } from 'react-bootstrap';
 import axiosConfig from '../axiosConfig';
 import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import { useSnackbar } from 'notistack';
@@ -136,7 +136,7 @@ const DeviceListView = () => {
   };
 
   useEffect(() => {
-    void fetchDevices();
+    fetchDevices();
   }, []);
 
   useEffect(() => {
@@ -173,7 +173,7 @@ const DeviceListView = () => {
   }, [wsMessage]);
 
   return (
-    <Container fluid className="py-4">
+    <Col>
       <div className="d-flex mb-4 justify-content-between align-items-center">
         <h1>Devices</h1>
         <Button 
@@ -218,7 +218,7 @@ const DeviceListView = () => {
           <p className="text-muted">No devices found</p>
         </div>
       )}
-    </Container>
+    </Col>
   );
 };
 

@@ -274,10 +274,11 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
 
 
 class ProgeoMeasurePoint(ProgeoModel, auto_prefetch.Model):
-    device = models.ForeignKey(ProgeoDevice, on_delete=models.DO_NOTHING)
+    device = models.ForeignKey(ProgeoDevice, on_delete=models.DO_NOTHING, related_name="points")
     sensor_order = models.IntegerField(null=False)
     x = models.FloatField(null=False)
     y = models.FloatField(null=False)
+    last_value = models.FloatField(null=False)
 
     def __str__(self):
         _id = f"[{self.pk}] " if DEBUG else ""

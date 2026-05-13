@@ -218,10 +218,11 @@ class DeviceViewSet(ProgeoModalViewSet):
             return RequestFailed({"reason": "No device hash provided"})
 
         account = get_controller_account()
-        if not account:
-            return RequestFailed({"reason": "No account configured"})
+        #if not account:
+        #    return RequestFailed({"reason": "No account configured"})
 
-        db_name = account.db_name or "default"
+        #db_name = account.db_name or "default"
+        db_name = "default"  # TODO hardcoded for now, needs refactor
         location, _ = ProgeoLocation.objects.using(db_name).get_or_create(
             account=account,
             address="unknown",
@@ -257,10 +258,11 @@ class DeviceViewSet(ProgeoModalViewSet):
             return RequestFailed({"reason": "No rows provided"})
 
         account = get_controller_account()
-        if not account:
-            return RequestFailed({"reason": "No account configured"})
+        #if not account:
+        #    return RequestFailed({"reason": "No account configured"})
 
-        db_name = account.db_name or "default"
+        #db_name = account.db_name or "default"
+        db_name = "default"
         device = ProgeoDevice.objects.using(db_name).filter(raw_hash=device_hash).first()
         if not device:
             return RequestFailed({"reason": "Device not found"})
@@ -293,6 +295,8 @@ class DeviceViewSet(ProgeoModalViewSet):
         measurement, created = create_progeo_measurement_safe(device=device, raw_data=payload, db=db_name)
         if not measurement:
             return RequestFailed({"reason": "Failed to store measurement evaluation"})
+        
+        
 
         return RequestSuccess({
             "created": created,
@@ -313,10 +317,11 @@ class StatusViewSet(ProgeoModalViewSet):
     @action(detail=False, url_path="measure_points", methods=["GET", "POST"])
     def measure_points(self, request, *args, **kwargs):
         account = get_controller_account()
-        if not account:
-            return RequestFailed({"reason": "No account configured"})
+        #if not account:
+        #    return RequestFailed({"reason": "No account configured"})
 
-        db_name = account.db_name or "default"
+        #db_name = account.db_name or "default"
+        db_name = "default"
 
         device_id_raw = request.query_params.get("device_id") if request.method == "GET" else request.data.get("device_id")
         if not device_id_raw:
@@ -491,11 +496,12 @@ class StatusViewSet(ProgeoModalViewSet):
     @calc_runtime
     @action(detail=False, url_path="devices", methods=["GET"])
     def list_device_status(self, request, *args, **kwargs):
-        account = get_controller_account()
-        if not account:
-            return RequestFailed({"reason": "No account configured"})
+        #account = get_controller_account()
+        #if not account:
+        #    return RequestFailed({"reason": "No account configured"})
 
-        db_name = account.db_name or "default"
+        #db_name = account.db_name or "default"
+        db_name = "default"
         success, connected_devices = self.get_connected_devices()
         if not success:
             connected_devices = []
@@ -533,10 +539,7 @@ class StatusViewSet(ProgeoModalViewSet):
             statuses.append({
                 "device": DeviceSerializer(device).data,
                 "online": online,
-                "last_alarm": last_alarm_payload,
-                "ip": candidate_ip,
-                "mac": mac_address or (connected or {}).get("mac"),
-                "hostname": hostname or (connected or {}).get("hostname"),
+                "last_alarm": last_alarm_payload
             })
 
         return RequestSuccess({"devices": statuses})

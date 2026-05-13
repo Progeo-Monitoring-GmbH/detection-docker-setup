@@ -13,6 +13,9 @@ from rest_framework.test import APIClient
 
 from progeo.helper.basics import ilog, elog
 
+
+_FAILED_TESTS = []
+
 if sys.platform.startswith("win"):
     ilog("Modifying asyncio-event-policy...")
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -23,7 +26,6 @@ if sys.platform.startswith("win"):
 def django_db_setup():
     yield
     call_command("dbrestore", "--noinput", "--skip-checks", "--traceback", "--database=unit_tests")
-    call_command("dbrestore", "--noinput", "--skip-checks", "--traceback", "--database=default")
 
 
 @pytest.fixture(autouse=True)
@@ -39,7 +41,6 @@ def setup_args():
 @pytest.fixture(scope="class")
 def reset_db(django_db_keepdb):
     call_command("dbrestore", "--noinput", "--skip-checks", "--traceback", "--database=unit_tests")
-    call_command("dbrestore", "--noinput", "--skip-checks", "--traceback", "--database=default")
     cache.clear()
 
 
@@ -75,7 +76,7 @@ def admin_client(client, admin_user):
 
 # Fixture to add delay automatically if 'dev' mark is present
 @pytest.fixture(scope="function", autouse=True)
-def wrap_playwright_actions(request, page):
+def wrap_playwright_actions(request):
     # Get the helper function for adding delay
     delay_if_dev = add_delay_if_dev(request)
 
@@ -111,6 +112,13 @@ def pytest_sessionfinish(session, exitstatus):
     if exitstatus == 0:
         return
 
-    failed_tests = [item.nodeid for item in session.items if item.rep_call.failed]
-    if failed_tests:
-        elog(f"Failed tests: {failed_tests}")
+    if _FAILED_TESTS:
+        elog(f"Failed tests: {sorted(set(_FAILED_TESTS))}")
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    report = outcome.get_result()
+    if report.when == "call" and report.failed:
+        _FAILED_TESTS.append(item.nodeid)

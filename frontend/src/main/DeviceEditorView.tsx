@@ -26,10 +26,13 @@ const DeviceEditorView = () => {
   const { enqueueSnackbar } = useSnackbar();
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const canvasWrapperRef = useRef<HTMLDivElement | null>(null);
   const bgImageRef = useRef<HTMLImageElement | null>(null);
+  const wasDraggingRef = useRef(false);
+  const suppressNextCanvasClickRef = useRef(false);
 
   const [points, setPoints] = useState<CanvasPoint[]>([]);
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragPointId, setDragPointId] = useState<number | null>(null);
   const [mousePos, setMousePos] = useState({ x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2 });
   const [isStoring, setIsStoring] = useState(false);
 
@@ -116,19 +119,26 @@ const DeviceEditorView = () => {
   }, [mousePos]);
 
   const getCanvasCoordinates = (clientX: number, clientY: number) => {
-    const canvas = canvasRef.current;
-    if (!canvas) {
+    const wrapper = canvasWrapperRef.current;
+    if (!wrapper) {
       return { x: 0, y: 0 };
     }
 
-    const rect = canvas.getBoundingClientRect();
+    const rect = wrapper.getBoundingClientRect();
+    const scaleX = rect.width > 0 ? CANVAS_WIDTH / rect.width : 1;
+    const scaleY = rect.height > 0 ? CANVAS_HEIGHT / rect.height : 1;
     return {
-      x: clamp(clientX - rect.left, 0, CANVAS_WIDTH),
-      y: clamp(clientY - rect.top, 0, CANVAS_HEIGHT),
+      x: clamp((clientX - rect.left) * scaleX, 0, CANVAS_WIDTH),
+      y: clamp((clientY - rect.top) * scaleY, 0, CANVAS_HEIGHT),
     };
   };
 
   const handleCanvasClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    if (suppressNextCanvasClickRef.current) {
+      suppressNextCanvasClickRef.current = false;
+      return;
+    }
+
     const { x, y } = getCanvasCoordinates(event.clientX, event.clientY);
     setPoints((prev) => ([...prev, { id: prev.length + 1, x, y }]));
   };
@@ -136,21 +146,45 @@ const DeviceEditorView = () => {
   const handleCanvasMouseMove = (event: React.MouseEvent<HTMLCanvasElement>) => {
     const { x, y } = getCanvasCoordinates(event.clientX, event.clientY);
     setMousePos({ x, y });
+  };
 
-    if (dragIndex === null) {
+  useEffect(() => {
+    if (dragPointId === null) {
       return;
     }
 
-    setPoints((prev) => prev.map((point, idx) => (
-      idx === dragIndex
-        ? {
-            ...point,
-            x: clamp(x, POINT_SIZE / 2, CANVAS_WIDTH - POINT_SIZE / 2),
-            y: clamp(y, POINT_SIZE / 2, CANVAS_HEIGHT - POINT_SIZE / 2),
-          }
-        : point
-    )));
-  };
+    const onMouseMove = (event: MouseEvent) => {
+      const { x, y } = getCanvasCoordinates(event.clientX, event.clientY);
+      setMousePos({ x, y });
+      wasDraggingRef.current = true;
+
+      setPoints((prev) => prev.map((point) => (
+        point.id === dragPointId
+          ? {
+              ...point,
+              x: clamp(x, POINT_SIZE / 2, CANVAS_WIDTH - POINT_SIZE / 2),
+              y: clamp(y, POINT_SIZE / 2, CANVAS_HEIGHT - POINT_SIZE / 2),
+            }
+          : point
+      )));
+    };
+
+    const onMouseUp = () => {
+      if (wasDraggingRef.current) {
+        suppressNextCanvasClickRef.current = true;
+      }
+      setDragPointId(null);
+      wasDraggingRef.current = false;
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+  }, [dragPointId]);
 
   const loadBackground = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -249,6 +283,7 @@ const DeviceEditorView = () => {
         </Card.Header>
         <Card.Body>
           <div
+            ref={canvasWrapperRef}
             style={{
               width: CANVAS_WIDTH,
               height: CANVAS_HEIGHT,
@@ -267,22 +302,22 @@ const DeviceEditorView = () => {
               style={{ display: 'block', cursor: 'crosshair', width: '100%', height: '100%' }}
               onClick={handleCanvasClick}
               onMouseMove={handleCanvasMouseMove}
-              onMouseUp={() => setDragIndex(null)}
-              onMouseLeave={() => setDragIndex(null)}
             />
 
-            {points.map((point, index) => (
+            {points.map((point) => (
               <div
                 key={point.id}
                 role="button"
                 tabIndex={0}
                 onMouseDown={(event) => {
+                  event.preventDefault();
                   event.stopPropagation();
-                  setDragIndex(index);
+                  wasDraggingRef.current = false;
+                  setDragPointId(point.id);
                 }}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') {
-                    setDragIndex(index);
+                    setDragPointId(point.id);
                   }
                 }}
                 style={{
@@ -300,7 +335,7 @@ const DeviceEditorView = () => {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  cursor: 'grab',
+                  cursor: dragPointId === point.id ? 'grabbing' : 'grab',
                   userSelect: 'none',
                   border: '1px solid #ffffff',
                   boxShadow: '0 1px 6px rgba(0, 0, 0, 0.35)',

@@ -51,7 +51,6 @@ INSTALLED_APPS = [
 
     "colorfield",
     "progeo",
-    "toolz",
 ]
 
 MIDDLEWARE = [
@@ -160,6 +159,13 @@ for db in DJANGO_DATABASES:
 
 DATABASES = {
     **dyn_dbs
+}
+
+# Force all default ORM operations during pytest to hit the unit test database.
+# This keeps read/write activity isolated from the real default database.
+DATABASES["default"] = {
+    **DATABASES["unit_tests"],
+    "TEST": {"NAME": "unit_tests"},
 }
 
 

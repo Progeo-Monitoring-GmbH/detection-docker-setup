@@ -18,7 +18,7 @@ const DeviceCard = ({ device, onPing, onRefresh, onDelete, loading }) => {
   };
 
   return (
-    <Card className="mb-3 h-100">
+    <Card className="mb-3 h-100 p-3">
       <Card.Body>
         <div className="d-flex justify-content-between align-items-start mb-3">
           <div>
@@ -54,20 +54,14 @@ const DeviceCard = ({ device, onPing, onRefresh, onDelete, loading }) => {
 
         <div className="mb-3">
           <small className="d-block text-muted">
-            <strong>IP:</strong> {device.ip || '-'}
+            <strong>IP:</strong> {device.device.device_ip || '-'}
           </small>
           <small className="d-block text-muted">
-            <strong>MAC:</strong> {device.mac || device.device.mac || '-'}
-          </small>
-          <small className="d-block text-muted">
-            <strong>Hostname:</strong> {device.hostname || '-'}
+            <strong>MAC:</strong> {device.device.mac || '-'}
           </small>
         </div>
 
         <div className="mb-3">
-          <small className="d-block text-muted">
-            <strong>Last Seen:</strong> {formatDate(device.last_seen)}
-          </small>
           <small className="d-block text-muted">
             <strong>Last Fetched:</strong> {formatDate(device.device.last_fetched)}
           </small>
@@ -88,8 +82,8 @@ const DeviceCard = ({ device, onPing, onRefresh, onDelete, loading }) => {
           <Button
             variant="outline-success"
             size="sm"
-            disabled={!device.ip || loading}
-            onClick={() => onPing(device.ip, device.device.id)}
+            disabled={!device.device.device_ip || loading}
+            onClick={() => onPing(device.device.device_ip, device.device.id)}
             title="Ping device"
           >
             <Wifi className="me-1" />
