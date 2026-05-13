@@ -151,6 +151,18 @@ services:
           - dashboard.progeo.com
           - api.progeo.com
 
+
+  cad_factory:
+    container_name: cad_factory
+    restart: "no"
+    build:
+      context: .
+      dockerfile: docker/cad_factory/Dockerfile
+    volumes:
+      - ./media:/workspace/media:rw
+    networks:
+      default_net:
+
 networks:
   default_net:
   database_net:

@@ -25,9 +25,7 @@ RUN apk update && apk add git \
                       gcc
 
 RUN apk add python3-dev musl-dev linux-headers make automake g++ bash postgresql-client
-RUN apk add gdal \
-            gdal-dev \
-            geos \
+RUN apk add geos \
             geos-dev \
             build-base
 RUN apk add proj proj-dev
