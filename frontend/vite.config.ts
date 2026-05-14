@@ -6,6 +6,7 @@ import path from 'path';
 // https://vitejs.dev/config/
 export default ({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
+  // console.log('Loaded environment variables:', env.VITE_FRONTEND_URL, env.VITE_FRONTEND_PORT, env.VITE_BACKEND_URL, env.VITE_WS_URL);
 
   return defineConfig({
     base: '/',

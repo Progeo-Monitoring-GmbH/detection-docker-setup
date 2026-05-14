@@ -148,8 +148,8 @@ services:
     networks:
       default_net:
         aliases:
-          - dashboard.progeo.com
-          - api.progeo.com
+          - dashboard.progeo.app
+          - api.progeo.app
 
 
   cad_factory:
