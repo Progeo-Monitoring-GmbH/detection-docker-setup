@@ -6,11 +6,13 @@ import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
 import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import RedDropbox from '../components/form/RedDropbox.tsx';
 
 type CanvasPoint = {
   id: number;
   x: number;
   y: number;
+  reference?: boolean;
 };
 
 const CANVAS_WIDTH = 800;
@@ -35,6 +37,37 @@ const DeviceEditorView = () => {
   const [dragPointId, setDragPointId] = useState<number | null>(null);
   const [mousePos, setMousePos] = useState({ x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2 });
   const [isStoring, setIsStoring] = useState(false);
+  const [cadLayer, setCadLayer] = useState('DKS_MPLE');
+
+  const markReferencePoint = (items: CanvasPoint[]) => {
+    if (!items.length) {
+      return items;
+    }
+
+    const explicit = items.find((point) => point.reference);
+    if (explicit) {
+      return items;
+    }
+
+    const candidate = items.reduce((best, point) => {
+      if (!best) {
+        return point;
+      }
+      if (point.x < best.x || (point.x === best.x && point.y < best.y)) {
+        return point;
+      }
+      return best;
+    }, null as CanvasPoint | null);
+
+    if (!candidate) {
+      return items;
+    }
+
+    return items.map((point) => ({
+      ...point,
+      reference: point.id === candidate.id,
+    }));
+  };
 
   const nextPointId = useMemo(() => points.length + 1, [points.length]);
 
@@ -82,8 +115,9 @@ const DeviceEditorView = () => {
           id: index + 1,
           x: clamp(Number(point.x) * CANVAS_WIDTH, 0, CANVAS_WIDTH),
           y: clamp(Number(point.y) * CANVAS_HEIGHT, 0, CANVAS_HEIGHT),
+          reference: !!point.reference,
         }));
-        setPoints(loaded);
+        setPoints(markReferencePoint(loaded));
       },
       (error) => {
         showErrorBar(enqueueSnackbar, `Could not load points: ${error.message}`);
@@ -233,11 +267,13 @@ const DeviceEditorView = () => {
       (response) => {
         const data = response?.data || {};
         const stored = Array.isArray(data.points) ? data.points : [];
-        setPoints(stored.map((point: any, index: number) => ({
+        const loaded = stored.map((point: any, index: number) => ({
           id: index + 1,
           x: clamp(Number(point.x) * CANVAS_WIDTH, 0, CANVAS_WIDTH),
           y: clamp(Number(point.y) * CANVAS_HEIGHT, 0, CANVAS_HEIGHT),
-        })));
+          reference: !!point.reference,
+        }));
+        setPoints(markReferencePoint(loaded));
         setIsStoring(false);
         showSuccessBar(enqueueSnackbar, `Stored ${stored.length} point(s)`);
       },
@@ -282,6 +318,35 @@ const DeviceEditorView = () => {
           </div>
         </Card.Header>
         <Card.Body>
+          <Form.Group className="mb-3">
+            <Form.Label>CAD Layer for Import</Form.Label>
+            <Form.Control
+              type="text"
+              value={cadLayer}
+              onChange={(event) => setCadLayer(event.target.value)}
+              placeholder="DKS_MPLE"
+            />
+          </Form.Group>
+
+          <RedDropbox
+            auth={auth}
+            url={`/v1/status/measure_points/upload_cad/?device_id=${encodeURIComponent(String(id || ''))}&layer=${encodeURIComponent(cadLayer)}`}
+            accept="cad"
+            withPreview={false}
+            instantFileUpload={true}
+            callBackProcessing={(data) => {
+              const incoming = Array.isArray(data?.points) ? data.points : [];
+              const loaded = incoming.map((point: any, index: number) => ({
+                id: index + 1,
+                x: clamp(Number(point.x) * CANVAS_WIDTH, 0, CANVAS_WIDTH),
+                y: clamp(Number(point.y) * CANVAS_HEIGHT, 0, CANVAS_HEIGHT),
+                reference: !!point.reference,
+              }));
+              setPoints(markReferencePoint(loaded));
+              showSuccessBar(enqueueSnackbar, `Imported ${loaded.length} point(s) from CAD`);
+            }}
+          />
+
           <div
             ref={canvasWrapperRef}
             style={{
@@ -303,6 +368,28 @@ const DeviceEditorView = () => {
               onClick={handleCanvasClick}
               onMouseMove={handleCanvasMouseMove}
             />
+
+            <svg
+              width={CANVAS_WIDTH}
+              height={CANVAS_HEIGHT}
+              style={{ position: 'absolute', left: 0, top: 0, pointerEvents: 'none' }}
+            >
+              {points.slice(1).map((point, index) => {
+                const previous = points[index];
+                return (
+                  <line
+                    key={`line-${previous.id}-${point.id}`}
+                    x1={previous.x}
+                    y1={previous.y}
+                    x2={point.x}
+                    y2={point.y}
+                    stroke="#0d6efd"
+                    strokeWidth={2}
+                    strokeOpacity={0.8}
+                  />
+                );
+              })}
+            </svg>
 
             {points.map((point) => (
               <div
@@ -328,7 +415,7 @@ const DeviceEditorView = () => {
                   height: POINT_SIZE,
                   transform: 'translate(-50%, -50%)',
                   borderRadius: '50%',
-                  backgroundColor: '#dc3545',
+                  backgroundColor: point.reference ? '#198754' : '#dc3545',
                   color: '#fff',
                   fontSize: 11,
                   fontWeight: 700,

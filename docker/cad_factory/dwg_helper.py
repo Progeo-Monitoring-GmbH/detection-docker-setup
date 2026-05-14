@@ -79,33 +79,8 @@ def _extract_xy_from_attributes(attributes: dict[str, Any]) -> tuple[float | Non
     if x_value is not None or y_value is not None:
         return x_value, y_value
 
-    # ezdxf path: common vector attributes.
-    for key in ("insert", "location", "center", "start"):
-        value = attributes.get(key)
-        if isinstance(value, list) and len(value) >= 2:
-            x_value = _to_float(value[0])
-            y_value = _to_float(value[1])
-            if x_value is not None or y_value is not None:
-                return x_value, y_value
-
     return None, None
 
-
-def _build_entity_payload(entity_type: str, layer: str, attributes: dict[str, Any], handle_value: Any) -> dict[str, Any]:
-    handle_id = _handle_hex_to_int(attributes.get("5"))
-    if handle_id is None:
-        handle_id = _handle_hex_to_int(handle_value)
-
-    x_value, y_value = _extract_xy_from_attributes(attributes)
-    return {
-        "type": entity_type,
-        "handle": handle_value,
-        "handle_id": handle_id,
-        "x": x_value,
-        "y": y_value,
-        "layer": layer,
-        "attributes": _to_jsonable(attributes),
-    }
 
 
 def convert_dwg_to_dxf(input_dwg: Path, output_dxf: Path) -> None:
@@ -122,138 +97,8 @@ def convert_dwg_to_dxf(input_dwg: Path, output_dxf: Path) -> None:
         raise RuntimeError(f"DWG to DXF conversion failed: {stderr}{extra}") from exc
 
 
-def print_layer_entities(dxf_path: Path, layer_name: str) -> int:
-    try:
-        doc = ezdxf.readfile(dxf_path)
-    except Exception:  # noqa: BLE001
-        try:
-            # LibreDWG can emit DXF that needs relaxed recovery parsing.
-            doc, _ = recover.readfile(str(dxf_path))
-        except Exception:
-            return print_layer_entities_raw(dxf_path, layer_name)
-
-    modelspace = doc.modelspace()
-
-    count = 0
-    for entity in modelspace:
-        if entity.dxf.layer != layer_name:
-            continue
-        attributes = entity.dxfattribs()
-        payload = _build_entity_payload(
-            entity_type=entity.dxftype(),
-            layer=entity.dxf.layer,
-            attributes=attributes,
-            handle_value=entity.dxf.handle,
-        )
-        print("Layer", json.dumps(payload, ensure_ascii=True))
-        count += 1
-
-    return count
-
-
-def print_layer_entities_raw(dxf_path: Path, layer_name: str) -> int:
-    """Fallback parser for malformed DXF handles: scans ENTITIES as raw code/value pairs."""
-    with dxf_path.open("r", encoding="utf-8", errors="ignore") as handle:
-        lines = [line.rstrip("\n\r") for line in handle]
-
-    in_entities = False
-    current_type: str | None = None
-    current_codes: dict[str, Any] = {}
-    count = 0
-
-    def finalize_entity() -> int:
-        nonlocal current_type, current_codes
-        print("Finalize1", f"{current_type=} {current_codes=}")
-
-        if not current_type:
-            current_codes = {}
-            return 0
-
-        layer_value = current_codes.get("8")
-        if isinstance(layer_value, list):
-            layer_value = layer_value[-1] if layer_value else None
-
-        if layer_value == layer_name:
-            payload = _build_entity_payload(
-                entity_type=current_type,
-                layer=layer_value,
-                attributes=current_codes,
-                handle_value=current_codes.get("5"),
-            )
-            print("Finalize2", json.dumps(payload, ensure_ascii=True))
-            current_type = None
-            current_codes = {}
-            return 1
-
-        current_type = None
-        current_codes = {}
-        return 0
-
-    i = 0
-    while i + 1 < len(lines):
-        code = lines[i].strip()
-        value = lines[i + 1].strip()
-
-        if code == "0" and value == "SECTION" and i + 3 < len(lines):
-            sec_code = lines[i + 2].strip()
-            sec_name = lines[i + 3].strip()
-            in_entities = sec_code == "2" and sec_name == "ENTITIES"
-            i += 2
-        elif in_entities and code == "0" and value == "ENDSEC":
-            count += finalize_entity()
-            in_entities = False
-        elif in_entities and code == "0":
-            count += finalize_entity()
-            current_type = value
-        elif in_entities and current_type:
-            existing = current_codes.get(code)
-            if existing is None:
-                current_codes[code] = value
-            elif isinstance(existing, list):
-                existing.append(value)
-            else:
-                current_codes[code] = [existing, value]
-
-        i += 2
-
-    if in_entities:
-        count += finalize_entity()
-
-    return count
-
-
-def _build_tolerance_mapping(values: set[int], tolerance: int) -> tuple[list[int], dict[int, int]]:
-    """Group close integer coordinates and map each original value to a representative."""
-    if not values:
-        return [], {}
-
-    sorted_values = sorted(values)
-    representatives: list[int] = []
-    value_to_representative: dict[int, int] = {}
-
-    current_group: list[int] = [sorted_values[0]]
-    current_anchor = sorted_values[0]
-
-    def finalize_group(group: list[int]) -> None:
-        representative = int(round(sum(group) / len(group)))
-        representatives.append(representative)
-        for item in group:
-            value_to_representative[item] = representative
-
-    for value in sorted_values[1:]:
-        if abs(value - current_anchor) <= tolerance:
-            current_group.append(value)
-        else:
-            finalize_group(current_group)
-            current_group = [value]
-            current_anchor = value
-
-    finalize_group(current_group)
-    return sorted(representatives), value_to_representative
-
-
 def collect_layer_polyline_points_raw(dxf_path: Path, layer_name: str) -> list[dict[str, int]]:
-    """Raw DXF fallback: collect points from code pairs inside ENTITIES section."""
+    """Raw DXF fallback: collect raw points from code pairs inside ENTITIES section."""
     with dxf_path.open("r", encoding="utf-8", errors="ignore") as handle:
         lines = [line.rstrip("\n\r") for line in handle]
 
@@ -328,17 +173,95 @@ def collect_layer_polyline_points_raw(dxf_path: Path, layer_name: str) -> list[d
     if in_entities:
         finalize_entity()
 
-    result: list[dict[str, int]] = []
+    return raw_points
+
+def scale_to_int(value: float) -> int:
+    return int(round(float(value) * 10))
+
+
+def _cluster_axis_values(values: list[int], tolerance: int) -> tuple[list[int], dict[int, int]]:
+    """Cluster close axis values and return representatives plus lookup mapping."""
+    if not values:
+        return [], {}
+
+    unique_sorted = sorted(set(values))
+    groups: list[list[int]] = [[unique_sorted[0]]]
+
+    for value in unique_sorted[1:]:
+        if abs(value - groups[-1][-1]) <= tolerance:
+            groups[-1].append(value)
+        else:
+            groups.append([value])
+
+    representatives: list[int] = []
+    lookup: dict[int, int] = {}
+    for group in groups:
+        representative = int(round(sum(group) / len(group)))
+        representatives.append(representative)
+        for item in group:
+            lookup[item] = representative
+
+    return representatives, lookup
+
+
+def _normalize_points_with_grid(raw_points: list[dict[str, int]], coord_margin: float) -> list[dict[str, int]]:
+    """Normalize points to a reference origin and assign grid coordinates gx/gy and nx/ny."""
+    if not raw_points:
+        return []
+
+    # Reference point: minimum x and y corner point from observed coordinates.
+    min_x = min(point["x"] for point in raw_points)
+    min_y = min(point["y"] for point in raw_points)
+
+    reference_candidates = [point for point in raw_points if point["x"] == min_x and point["y"] == min_y]
+    if reference_candidates:
+        reference = reference_candidates[0]
+    else:
+        # Fallback if exact corner point does not exist.
+        reference = min(raw_points, key=lambda point: (point["x"], point["y"]))
+
+    ref_x = reference["x"]
+    ref_y = reference["y"]
+
+    tolerance = max(0, int(round(float(coord_margin) * 10)))
+    offset_x_values = [point["x"] - ref_x for point in raw_points]
+    offset_y_values = [point["y"] - ref_y for point in raw_points]
+    max_x_offset = max(offset_x_values) if offset_x_values else 0
+    max_y_offset = max(offset_y_values) if offset_y_values else 0
+
+    x_representatives, x_lookup = _cluster_axis_values(offset_x_values, tolerance)
+    y_representatives, y_lookup = _cluster_axis_values(offset_y_values, tolerance)
+
+    gx_by_rep = {value: index for index, value in enumerate(x_representatives)}
+    gy_by_rep = {value: index for index, value in enumerate(y_representatives)}
+
+    result: list[dict[str, Any]] = []
     for index, point in enumerate(raw_points, start=1):
-        print(f"RawPoint {index}: x={point['x']} y={point['y']}")
-        result.append({
+        x_offset = point["x"] - ref_x
+        y_offset = point["y"] - ref_y
+        x_rep = x_lookup[x_offset]
+        y_rep = y_lookup[y_offset]
+
+        nx = 0.0 if max_x_offset <= 0 else round(x_offset / max_x_offset, 6)
+        ny = 0.0 if max_y_offset <= 0 else round(y_offset / max_y_offset, 6)
+
+        entry: dict[str, Any] = {
             "pos": index,
-            "x": point["x"],
-            "y": point["y"],
-        })
+            "x": x_offset,
+            "y": y_offset,
+            "nx": nx,
+            "ny": ny,
+            "gx": gx_by_rep[x_rep],
+            "gy": gy_by_rep[y_rep],
+            "reference": x_offset == 0 and y_offset == 0,
+        }
+        if "z" in point:
+            entry["z"] = point["z"]
+        result.append(entry)
+
     return result
 
-
+    
 def collect_layer_polyline_points(dxf_path: Path, layer_name: str, coord_margin: float = 0.2) -> list[dict[str, int]]:
     """Return ordered polyline points for one layer as scaled integer coordinates."""
     try:
@@ -348,22 +271,23 @@ def collect_layer_polyline_points(dxf_path: Path, layer_name: str, coord_margin:
             doc, _ = recover.readfile(str(dxf_path))
         except Exception as exc:
             print(f"Cannot open DXF: {exc}", file=sys.stderr)
-            return collect_layer_polyline_points_raw(dxf_path, layer_name)
+            raw_points = collect_layer_polyline_points_raw(dxf_path, layer_name)
+            return _normalize_points_with_grid(raw_points, coord_margin)
 
     modelspace = doc.modelspace()
     raw_points: list[dict[str, int]] = []
 
-    def scale_to_int(value: float) -> int:
-        return int(round(float(value) * 10))
 
     for entity in modelspace:
         if entity.dxf.layer != layer_name:
             continue
+
         etype = entity.dxftype()
         if etype == "LWPOLYLINE":
             points = list(entity.get_points("xy"))
             for x, y in points:
                 raw_points.append({"x": scale_to_int(x), "y": scale_to_int(y)})
+
         elif etype == "POLYLINE":
             for vertex in entity.vertices:
                 loc = vertex.dxf.location
@@ -378,28 +302,7 @@ def collect_layer_polyline_points(dxf_path: Path, layer_name: str, coord_margin:
     if not raw_points:
         return []
 
-    min_x = min(point["x"] for point in raw_points)
-    min_y = min(point["y"] for point in raw_points)
-    max_x = max(point["x"] for point in raw_points)
-    max_y = max(point["y"] for point in raw_points)
-
-    s_x = min_x
-    s_y = min_y
-    e_x = max_x - min_x
-    e_y = max_y - min_y
-
-    result: list[dict[str, int]] = []
-    for index, point in enumerate(raw_points, start=1):
-        entry: dict[str, int] = {
-            "pos": index,
-            "x": point["x"],
-            "y": point["y"],
-        }
-        if "z" in point:
-            entry["z"] = point["z"]
-        result.append(entry)
-
-    return result
+    return _normalize_points_with_grid(raw_points, coord_margin)
 
 
 def main() -> int:

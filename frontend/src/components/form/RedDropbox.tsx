@@ -5,7 +5,6 @@ import axiosConfig from '../../axiosConfig';
 import { useDropzone } from 'react-dropzone';
 import { Thumbnail } from '../ui/GalleryHelper.tsx';
 import { showErrorBar, showSuccessBar } from '../ui/Snackbar.jsx';
-import { getAcceptesTypes } from '../datatables/configs.jsx';
 import { useSnackbar } from 'notistack';
 import { defaultErrorCallback } from '../../helper.jsx';
 
@@ -28,6 +27,26 @@ const RedDropbox = ({
   refreshed = undefined,
   payload = {},
 }) => {
+  const getAcceptesTypes = (kind: string) => {
+    const key = (kind || '').toLowerCase();
+    if (key === 'cad') {
+      return {
+        'application/octet-stream': ['.dwg', '.dxf'],
+        'application/x-autocad': ['.dwg'],
+        'application/acad': ['.dwg'],
+        'application/dxf': ['.dxf'],
+        'application/x-dxf': ['.dxf'],
+      };
+    }
+    if (key === 'image') {
+      return { 'image/*': [] };
+    }
+    if (key === 'pdf') {
+      return { 'application/pdf': ['.pdf'] };
+    }
+    return { '*/*': [] };
+  };
+
   const _types = getAcceptesTypes(accept);
   const [progress, setProgress] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);

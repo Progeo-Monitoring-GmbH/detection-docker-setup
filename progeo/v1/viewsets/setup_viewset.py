@@ -2,6 +2,9 @@ import csv
 import os
 import ipaddress
 import subprocess
+import json
+from pathlib import Path
+from uuid import uuid4
 from celery.result import AsyncResult
 
 from django.contrib.auth.models import User
@@ -313,6 +316,137 @@ class StatusViewSet(ProgeoModalViewSet):
     serializer_class = DeviceSerializer
     permission_classes = [AllowAny]
 
+    @staticmethod
+    def _serialize_measure_points(points_qs, reference_sensor_order=None):
+        points_list = list(points_qs)
+        if not points_list:
+            return []
+
+        if reference_sensor_order is None:
+            reference_point = min(points_list, key=lambda point: (float(point.x), float(point.y), point.sensor_order))
+            reference_sensor_order = reference_point.sensor_order
+
+        return [{
+            "id": point.id,
+            "sensor_order": point.sensor_order,
+            "x": float(point.x),
+            "y": float(point.y),
+            "reference": point.sensor_order == reference_sensor_order,
+        } for point in points_list]
+
+    @staticmethod
+    def _extract_json_list_from_output(output: str):
+        """Find the last JSON list in command output."""
+        lines = [line.strip() for line in (output or "").splitlines() if line.strip()]
+        for line in reversed(lines):
+            if not line.startswith("["):
+                continue
+            try:
+                parsed = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, list):
+                return parsed
+        return None
+
+    @calc_runtime
+    @action(detail=False, url_path="measure_points/upload_cad", methods=["POST"])
+    def upload_measure_points_from_cad(self, request, *args, **kwargs):
+        db_name = "default"
+
+        device_id_raw = request.query_params.get("device_id") or request.data.get("device_id")
+        if not device_id_raw:
+            return RequestFailed({"reason": "Missing parameter: device_id"})
+
+        try:
+            device_id = int(device_id_raw)
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "device_id must be an integer"})
+
+        device = ProgeoDevice.objects.using(db_name).filter(id=device_id).first()
+        if not device:
+            return RequestFailed({"reason": "Device not found"})
+
+        upload = next(iter(request.FILES.values()), None)
+        if not upload:
+            return RequestFailed({"reason": "No file uploaded"})
+
+        suffix = Path(upload.name).suffix.lower()
+        if suffix not in {".dwg", ".dxf"}:
+            return RequestFailed({"reason": "Only .dwg and .dxf files are supported"})
+
+        layer = (request.query_params.get("layer") or request.data.get("layer") or "DKS_MPLE").strip() or "DKS_MPLE"
+        coord_margin_raw = request.query_params.get("coord_margin") or request.data.get("coord_margin") or "0.2"
+        try:
+            coord_margin = float(coord_margin_raw)
+        except (TypeError, ValueError):
+            coord_margin = 0.2
+
+        import_dir = save_check_dir(UPLOAD_DIR, "cad_imports")
+        target_name = f"{uuid4().hex}{suffix}"
+        target_path = os.path.join(import_dir, target_name)
+        with open(target_path, "wb") as handle:
+            for chunk in upload.chunks():
+                handle.write(chunk)
+
+        cad_input = f"media/uploads/cad_imports/{target_name}"
+        command = [
+            "docker", "compose", "run", "--rm", "cad_factory",
+            cad_input,
+            "--layer", layer,
+            "--coord-margin", str(coord_margin),
+        ]
+        if suffix == ".dxf":
+            command.append("--skip-convert")
+
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, check=False)
+        except Exception as exc:
+            return RequestFailed({"reason": f"Failed to start cad_factory: {exc}"})
+
+        points = self._extract_json_list_from_output(result.stdout)
+        if points is None:
+            return RequestFailed({
+                "reason": "Could not parse points from cad_factory output",
+                "stdout": result.stdout[-2000:],
+                "stderr": result.stderr[-2000:],
+            })
+
+        if not points:
+            ProgeoMeasurePoint.objects.using(db_name).filter(device=device).delete()
+            return RequestSuccess({"device_id": device.id, "stored": 0, "points": []})
+
+        max_x = max(float(point.get("x", 0.0)) for point in points)
+        max_y = max(float(point.get("y", 0.0)) for point in points)
+        max_x = max(max_x, 1.0)
+        max_y = max(max_y, 1.0)
+
+        normalized_points = []
+        reference_sensor_order = None
+        for idx, point in enumerate(points, start=1):
+            if bool(point.get("reference")):
+                reference_sensor_order = idx
+            try:
+                x_val = max(0.0, min(1.0, float(point.get("x", 0.0)) / max_x))
+                y_val = max(0.0, min(1.0, float(point.get("y", 0.0)) / max_y))
+            except (TypeError, ValueError):
+                x_val = 0.0
+                y_val = 0.0
+
+            normalized_points.append(ProgeoMeasurePoint(
+                device=device,
+                sensor_order=idx,
+                x=x_val,
+                y=y_val,
+            ))
+
+        ProgeoMeasurePoint.objects.using(db_name).filter(device=device).delete()
+        ProgeoMeasurePoint.objects.using(db_name).bulk_create(normalized_points)
+
+        stored_qs = ProgeoMeasurePoint.objects.using(db_name).filter(device=device).order_by("sensor_order", "id")
+        stored = self._serialize_measure_points(stored_qs, reference_sensor_order=reference_sensor_order)
+        return RequestSuccess({"device_id": device.id, "stored": len(stored), "points": stored})
+
     @calc_runtime
     @action(detail=False, url_path="measure_points", methods=["GET", "POST"])
     def measure_points(self, request, *args, **kwargs):
@@ -338,12 +472,7 @@ class StatusViewSet(ProgeoModalViewSet):
 
         if request.method == "GET":
             points_qs = ProgeoMeasurePoint.objects.using(db_name).filter(device=device).order_by("sensor_order", "id")
-            points = [{
-                "id": point.id,
-                "sensor_order": point.sensor_order,
-                "x": float(point.x),
-                "y": float(point.y),
-            } for point in points_qs]
+            points = self._serialize_measure_points(points_qs)
             return RequestSuccess({"device_id": device.id, "points": points})
 
         raw_points = request.data.get("points")
@@ -372,12 +501,7 @@ class StatusViewSet(ProgeoModalViewSet):
             ProgeoMeasurePoint.objects.using(db_name).bulk_create(normalized_points)
 
         stored_qs = ProgeoMeasurePoint.objects.using(db_name).filter(device=device).order_by("sensor_order", "id")
-        stored = [{
-            "id": point.id,
-            "sensor_order": point.sensor_order,
-            "x": float(point.x),
-            "y": float(point.y),
-        } for point in stored_qs]
+        stored = self._serialize_measure_points(stored_qs)
         return RequestSuccess({"device_id": device.id, "stored": len(stored), "points": stored})
 
 
