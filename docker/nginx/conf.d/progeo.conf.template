@@ -2,12 +2,13 @@ server {
     listen 443 ssl;
     listen [::]:443 ssl;
     server_name ${DNS_BACK_NAMES};
-        resolver 127.0.0.11 ipv6=off valid=30s;
+    resolver 127.0.0.11 ipv6=off valid=30s;
 
     ssl_certificate ${CERT_PATH}${CERT_FILE};
     ssl_certificate_key ${CERT_PATH}${CERT_KEY};
 
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header Content-Security-Policy "upgrade-insecure-requests" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-XSS-Protection "1; mode=block" always;
     add_header X-Frame-Options "DENY" always;
@@ -20,13 +21,6 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-
-        add_header 'Access-Control-Allow-Methods' 'DELETE,GET,OPTIONS,PATCH,POST,PUT';
-        add_header 'Access-Control-Allow-Headers' 'accept,accept-encoding,authorization,content-type,dnt,origin,user-agent,x-csrftoken,x-requested-with';
-
-        if ($http_access_control_request_headers) {
-            add_header 'Access-Control-Allow-Headers' $http_access_control_request_headers;
-        }
     }
 
     location /ws/ {
@@ -55,6 +49,7 @@ server {
     ssl_certificate_key ${CERT_PATH}${CERT_KEY};
 
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header Content-Security-Policy "upgrade-insecure-requests" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-XSS-Protection "1; mode=block" always;
     add_header X-Frame-Options "DENY" always;
@@ -63,14 +58,28 @@ server {
     location / {
         set $frontend_upstream progeo-frontend:80;
         proxy_pass http://$frontend_upstream;
+        add_header Content-Security-Policy "upgrade-insecure-requests" always;
+        add_header X-Progeo-Route "dashboard-root" always;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
 
-    location /assets/ {
-        access_log off;
+    location = /favicon.ico {
         set $frontend_upstream progeo-frontend:80;
-        proxy_pass http://$frontend_upstream/assets/;
+        add_header Content-Security-Policy "upgrade-insecure-requests" always;
+        add_header X-Progeo-Route "dashboard-favicon" always;
+        proxy_pass http://$frontend_upstream/favicon.ico;
+    }
+
+    location /assets/ {
+        #access_log off;
+        set $frontend_upstream progeo-frontend:80;
+        add_header Content-Security-Policy "upgrade-insecure-requests" always;
+        add_header X-Progeo-Route "dashboard-assets" always;
+        proxy_pass http://$frontend_upstream;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
 }

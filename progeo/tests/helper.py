@@ -13,7 +13,7 @@ def called_from_function():
 
 
 def get_assert_file(_file):
-    _path = os.path.join(BASE_DIR, "progeo", "tests", "asserts", _file)
+    _path = os.path.join(BASE_DIR, "progeo", "tests", "assets", _file)
     return os.path.exists(_path), _path
 
 

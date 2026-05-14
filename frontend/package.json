@@ -1,7 +1,7 @@
 {
   "name": "progeo",
   "version": "0.0.1",
-  "homepage": "https://dashboard.progeo.com",
+  "homepage": "https://dashboard.progeo.app",
   "scripts": {
     "start": "vite --mode development",
     "dev": "vite --host 192.168.0.107",

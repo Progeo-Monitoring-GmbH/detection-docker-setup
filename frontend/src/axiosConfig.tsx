@@ -3,6 +3,14 @@ import Cookies from 'js-cookie';
 import { AuthContextType } from '../hooks/CoreAuthProvider';
 import { defaultErrorCallback } from './helper.jsx';
 
+const normalizeBackendUrl = (rawUrl?: string) => {
+  if (!rawUrl) return rawUrl;
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
+    return rawUrl.replace(/^http:\/\//i, 'https://');
+  }
+  return rawUrl;
+};
+
 export interface IConfig {
   token?: string;
   headers?: object;
@@ -15,7 +23,7 @@ export default class axiosConfig {
 
   constructor() {
     this.axiosHolder = axios.create({
-      baseURL: import.meta.env.VITE_BACKEND_URL,
+      baseURL: normalizeBackendUrl(import.meta.env.VITE_BACKEND_URL),
     });
 
     const csrftoken = Cookies.get('csrftoken');

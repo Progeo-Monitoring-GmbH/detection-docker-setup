@@ -41,3 +41,4 @@ tmp/
 
 !**.template
 !docker/frontend/.env.production
+docker/nginx/ro*
