@@ -62,6 +62,8 @@ fi
 
 if [ -f "${CAROOT}/rootCA.pem" ]; then
   cp "${CAROOT}/rootCA.pem" "${ROOT_CA_FILE}"
+  cp "${CAROOT}/rootCA.pem" "/usr/local/share/ca-certificates/progeo-local-rootCA.crt"
+  update-ca-certificates >/dev/null
   chmod 644 "${ROOT_CA_FILE}" "${CERT_PATH_FILE}"
 fi
 chmod 600 "${KEY_PATH_FILE}"
