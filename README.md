@@ -64,6 +64,15 @@ bash scripts/reclaim_docker_space.sh --volumes
 
 # Setup persistent reverse SSH shell tunnel (autossh + systemd)
 sudo bash scripts/setup_reverse_ssh_shell.sh --server ubuntu@example.com --remote-port 22022
+
+# Start cad_factory build in background so SSH disconnect does not kill it
+bash scripts/build_cad_factory_resilient.sh start
+
+# Check if background build is still running
+bash scripts/build_cad_factory_resilient.sh status
+
+# Follow background build logs
+bash scripts/build_cad_factory_resilient.sh logs
 ```
 
 ## Notes

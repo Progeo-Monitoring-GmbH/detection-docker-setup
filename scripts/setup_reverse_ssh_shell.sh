@@ -162,9 +162,13 @@ Wants=network-online.target
 Type=simple
 Environment=AUTOSSH_GATETIME=0
 Environment=AUTOSSH_PORT=0
+Environment=AUTOSSH_POLL=10
+Environment=AUTOSSH_FIRST_POLL=10
 ExecStart=/usr/bin/autossh -M 0 -N \
-  -o ServerAliveInterval=30 \
-  -o ServerAliveCountMax=3 \
+  -o ServerAliveInterval=15 \
+  -o ServerAliveCountMax=10 \
+  -o TCPKeepAlive=yes \
+  -o IPQoS=none \
   -o ExitOnForwardFailure=yes \
   -o StrictHostKeyChecking=accept-new \
   -i ${KEY_PATH} \
@@ -188,3 +192,4 @@ echo "Reverse SSH service configured and started."
 echo "Service: ${SERVICE_NAME}.service"
 echo "Remote access endpoint: ${REMOTE_BIND_ADDRESS}:${REMOTE_PORT} on host from --server"
 echo "View logs: journalctl -u ${SERVICE_NAME}.service -f"
+echo "If you changed keepalive settings, re-run this script to rewrite the service and restart it."
