@@ -27,14 +27,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /opt
 
-ARG LIBREDWG_MAKE_JOBS=1
-
 # Build LibreDWG from source to support newer DWG versions than libopencad.
 RUN git clone --depth 1 --branch 0.13.4 https://github.com/LibreDWG/libredwg.git \
     && cd libredwg \
     && ./autogen.sh \
     && ./configure --prefix=/usr/local --disable-bindings \
-    && make -j"${LIBREDWG_MAKE_JOBS}" \
+    && make -j"$(nproc)" \
     && make install \
     && ldconfig \
     && cd /opt \

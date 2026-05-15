@@ -158,8 +158,6 @@ services:
     build:
       context: .
       dockerfile: docker/cad_factory/Dockerfile
-      args:
-        LIBREDWG_MAKE_JOBS: ${LIBREDWG_MAKE_JOBS:-1}
     volumes:
       - ./media:/workspace/media:rw
     networks:

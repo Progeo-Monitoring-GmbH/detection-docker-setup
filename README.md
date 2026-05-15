@@ -79,7 +79,6 @@ bash scripts/build_cad_factory_resilient.sh logs
 
 - Most service ports are controlled via `.env` variables.
 - Public entry points are exposed by Nginx on `80`/`443`.
-- `cad_factory` builds LibreDWG with `LIBREDWG_MAKE_JOBS`, default `1`. Keep it at `1` on low-memory hosts; raise it only if the machine has enough RAM.
 
 ## Local Network CORS (Lightweight)
 
