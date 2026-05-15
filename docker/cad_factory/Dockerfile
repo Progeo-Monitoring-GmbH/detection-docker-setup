@@ -30,11 +30,11 @@ WORKDIR /opt
 # Build LibreDWG from source to support newer DWG versions than libopencad.
 RUN git clone --depth 1 --branch 0.13.4 https://github.com/LibreDWG/libredwg.git \
     && cd libredwg \
-    && ./autogen.sh \
-    && ./configure --prefix=/usr/local --disable-bindings \
-    && make -j"$(nproc)" \
-    && make install \
-    && ldconfig \
+    && ./autogen.sh
+RUN ./configure --prefix=/usr/local --disable-bindings
+RUN make -j"$(nproc)"
+RUN make install
+RUN ldconfig \
     && cd /opt \
     && rm -rf /opt/libredwg
 
