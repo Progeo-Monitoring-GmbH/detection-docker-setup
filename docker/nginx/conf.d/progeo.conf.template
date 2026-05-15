@@ -4,8 +4,8 @@ server {
     server_name ${DNS_BACK_NAMES};
     resolver 127.0.0.11 ipv6=off valid=30s;
 
-    ssl_certificate ${CERT_PATH}${CERT_FILE};
-    ssl_certificate_key ${CERT_PATH}${CERT_KEY};
+    ssl_certificate ${CERT_PATH}/${CERT_FILE};
+    ssl_certificate_key ${CERT_PATH}/${CERT_KEY};
 
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
     add_header Content-Security-Policy "upgrade-insecure-requests" always;
@@ -45,8 +45,8 @@ server {
     server_name ${DNS_FRONT_NAMES} localhost;
     resolver 127.0.0.11 ipv6=off valid=30s;
 
-    ssl_certificate ${CERT_PATH}${CERT_FILE};
-    ssl_certificate_key ${CERT_PATH}${CERT_KEY};
+    ssl_certificate ${CERT_PATH}/${CERT_FILE};
+    ssl_certificate_key ${CERT_PATH}/${CERT_KEY};
 
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
     add_header Content-Security-Policy "upgrade-insecure-requests" always;
