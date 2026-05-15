@@ -60,14 +60,7 @@ else
   echo "[mkcert] Existing certificate matches requested host names."
 fi
 
-if [ -f "${CAROOT}/rootCA.pem" ]; then
-  cp "${CAROOT}/rootCA.pem" "${ROOT_CA_FILE}"
-  cp "${CAROOT}/rootCA.pem" "/usr/local/share/ca-certificates/progeo-local-rootCA.crt"
-  update-ca-certificates >/dev/null
-  chmod 644 "${ROOT_CA_FILE}" "${CERT_PATH_FILE}"
-fi
 chmod 600 "${KEY_PATH_FILE}"
 rm -f "${SSL_DIR}/local.pass" "${SSL_DIR}/progeo-local.csr"
 
 echo "[mkcert] Certificate ready at ${CERT_PATH_FILE}"
-echo "[mkcert] Root CA exported to ${ROOT_CA_FILE}"

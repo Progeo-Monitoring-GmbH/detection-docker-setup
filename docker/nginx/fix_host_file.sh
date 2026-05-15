@@ -19,11 +19,11 @@ echo "Added: ${line}"
 CERT_MODE="${CERT_MODE:-local}"
 ENABLE_SSL="${ENABLE_SSL:-true}"
 if [ "${CERT_MODE}" = "existing" ]; then
-  : "${CERT_PATH:=/etc/nginx/ssl/}"
+  : "${CERT_PATH:=/etc/nginx/ssl}"
   : "${CERT_FILE:=localhost-bundle.pem}"
   : "${CERT_KEY:=${CERT_FILE}}"
 else
-  : "${CERT_PATH:=/etc/nginx/ssl/}"
+  : "${CERT_PATH:=/etc/nginx/ssl}"
   : "${CERT_FILE:=progeo-local.crt}"
   : "${CERT_KEY:=progeo-local.key}"
 fi
@@ -46,11 +46,6 @@ if [ "${ENABLE_SSL}" = "false" ] || [ "${CERT_MODE}" = "none" ]; then
     echo "SSL disabled: generated HTTP-only nginx config."
   fi
 fi
-
-#if [ ! -f "${CERT_PATH}${CERT_FILE}" ] || [ ! -f "${CERT_PATH}${CERT_KEY}" ]; then
-#    echo "SSL certificate or key file does not exist. | CERT_MODE=${CERT_MODE} | CERT_FILE=${CERT_FILE} | CERT_KEY=${CERT_KEY} | CERT_PATH=${CERT_PATH}"
-#    exit 1
-#fi
 
 # ######################################################################
 

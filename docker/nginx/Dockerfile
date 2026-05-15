@@ -26,6 +26,7 @@ COPY ./docker/nginx/conf.d /etc/nginx/conf.d
 COPY ./docker/nginx/nginx.conf /etc/nginx/nginx.conf
 COPY ./docker/nginx/generate_mkcert.sh /docker-entrypoint.d/40-generate_mkcert.sh
 COPY ./docker/nginx/fix_host_file.sh /docker-entrypoint.d/50-fix_hosts.sh
+COPY ./docker/nginx/enable_local_cert.sh /docker-entrypoint.d/60-enable_local_cert.sh
 COPY ./docker/nginx/robots.txt /var/www/html/robots.txt
 
 RUN sed -i -e 's/\r$//' /docker-entrypoint.d/*.sh
