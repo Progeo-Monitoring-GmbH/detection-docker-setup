@@ -75,7 +75,7 @@ class AccountMiddleware:
     def process_template_response(self, request, response):
         if hasattr(request, "account"):
             if request.user not in request.account.users.all():
-                if request.get_full_path() != "/api/v1/0/account/":
+                if request.get_full_path() != "/v1/0/account/":
                     elog("ERROR", request.user, request.account.users.all())
                     # return HttpResponse("Nice try...", status=406)
 
@@ -100,7 +100,7 @@ class AccountMiddleware:
             try:
                 account = Account.objects.get(id=account_id)
             except Account.DoesNotExist:
-                account = Account.objects.get(id=0)
+                return self.get_response(request)
 
             setattr(request, "account", account)
 

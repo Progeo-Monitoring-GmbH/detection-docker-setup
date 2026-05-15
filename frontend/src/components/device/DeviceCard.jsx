@@ -2,7 +2,7 @@ import { Badge, Button, Card } from 'react-bootstrap';
 import { ArrowClockwise, Wifi, WifiOff, PencilSquare, Trash, Image } from 'react-bootstrap-icons';
 import { useNavigate } from 'react-router';
 
-const DeviceCard = ({ device, onPing, onRefresh, onDelete, loading }) => {
+const DeviceCard = ({ device, onIdentify, onRefresh, onDelete, loading }) => {
   const navigate = useNavigate();
 
   const formatDate = (value) => {
@@ -83,11 +83,11 @@ const DeviceCard = ({ device, onPing, onRefresh, onDelete, loading }) => {
             variant="outline-success"
             size="sm"
             disabled={!device.device.device_ip || loading}
-            onClick={() => onPing(device.device.device_ip, device.device.id)}
-            title="Ping device"
+            onClick={() => onIdentify(device.device.device_ip, device.device.id)}
+            title="Identify device"
           >
             <Wifi className="me-1" />
-            Ping
+            Identify
           </Button>
 
           <Button

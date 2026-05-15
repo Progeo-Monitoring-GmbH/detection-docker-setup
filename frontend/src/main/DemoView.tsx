@@ -98,7 +98,7 @@ const DemoView = () => {
 
     void axiosConfig.perform_get(
       auth,
-      `/v1/status/ping_device_result/?task_id=${encodeURIComponent(taskId)}`,
+      `/v1/status/identify_device_result/?task_id=${encodeURIComponent(taskId)}`,
       (response) => {
         const data = response?.data ?? {};
         const state = data.state;
@@ -249,7 +249,7 @@ const DemoView = () => {
 
               void axiosConfig.perform_get(
                 auth,
-                `/v1/status/ping_device/?ip=${encodeURIComponent(ip)}`,
+                `/v1/status/identify_device/?ip=${encodeURIComponent(ip)}`,
                 (response) => {
                   showSuccessBar(enqueueSnackbar, `Queued ping task for device (${ip})`);
                   if (response?.data?.task_id) {
@@ -300,7 +300,7 @@ const DemoView = () => {
     }
 
     // For ping responses, update the matching device row from websocket message.
-    if (wsMessage.type === 'ping_device_result' && wsMessage.ip) {
+    if (wsMessage.type === 'identify_device_result' && wsMessage.ip) {
       setDevices((prev) =>
         prev.map((entry) =>
           entry.ip === wsMessage.ip

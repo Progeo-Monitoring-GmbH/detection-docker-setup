@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import { Button, Container, Form, Card, Spinner, Alert } from 'react-bootstrap';
@@ -6,6 +6,8 @@ import { ArrowLeft, Trash, Floppy, Image } from 'react-bootstrap-icons';
 import axiosConfig from '../axiosConfig';
 import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import { useSnackbar } from 'notistack';
+import { CoreModalContext } from '../components/modal/coreModalContext';
+import ShowInfoModal from '../components/modal/ShowInfoModal';
 
 type DeviceFormData = {
   hardware: string;
@@ -46,6 +48,7 @@ const DeviceDetailView = () => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState<DeviceFormData>(initialFormData);
+  const [, setShow] = useContext(CoreModalContext);
 
   useEffect(() => {
     fetchDevice();
@@ -119,14 +122,16 @@ const DeviceDetailView = () => {
     );
   };
 
-  const handleDelete = async () => {
-    if (!window.confirm('Are you sure you want to delete this device? This action cannot be undone.')) {
-      return;
-    }
+  const handleDelete = () => {
+    setShow((s) => ({ ...s, modalShowText: true, title: 'Delete Device', txt: 'Are you sure you want to delete this device? This action cannot be undone.' }) as any);
+  };
 
+  const doDelete = () => {
+    setShow((s) => ({ ...s, modalShowText: false }) as any);
     setSaving(true);
-    axiosConfig.updateToken();
-    void axiosConfig.holder.delete(`/v1/device/${id}/`).then(
+    void axiosConfig.perform_post(
+      auth,
+      `/v1/device/${id}/delete/`,
       () => {
         showSuccessBar(enqueueSnackbar, 'Device deleted successfully');
         navigate('/device');
@@ -319,6 +324,7 @@ const DeviceDetailView = () => {
           </Form>
         </Card.Body>
       </Card>
+      <ShowInfoModal callBackConfirm={doDelete} />
     </Container>
   );
 };

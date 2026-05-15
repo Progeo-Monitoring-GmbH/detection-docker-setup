@@ -6,6 +6,8 @@ import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import { useSnackbar } from 'notistack';
 import { WebsocketContext } from '../components/ws/websocketContext';
 import DeviceCard from '../components/device/DeviceCard';
+import { CoreModalContext } from '../components/modal/coreModalContext';
+import ShowInfoModal from '../components/modal/ShowInfoModal';
 
 const DeviceListView = () => {
   const auth = useAuth();
@@ -14,6 +16,8 @@ const DeviceListView = () => {
   const { enqueueSnackbar } = useSnackbar();
   const ctx = useContext(WebsocketContext) || {};
   const wsMessage = ctx.wsMessage;
+  const [, setShow] = useContext(CoreModalContext);
+  const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
 
   const fetchDevices = async () => {
     setLoading(true);
@@ -41,7 +45,7 @@ const DeviceListView = () => {
 
     void axiosConfig.perform_get(
       auth,
-      `/v1/status/ping_device_result/?task_id=${encodeURIComponent(taskId)}`,
+      `/v1/status/identify_device_result/?task_id=${encodeURIComponent(taskId)}`,
       (response) => {
         const data = response?.data ?? {};
         const state = data.state;
@@ -78,7 +82,7 @@ const DeviceListView = () => {
     );
   };
 
-  const handlePing = (ip, deviceId) => {
+  const handleIdentify = (ip, deviceId) => {
     if (!ip) {
       showErrorBar(enqueueSnackbar, 'Cannot ping device: missing IP');
       return;
@@ -86,7 +90,7 @@ const DeviceListView = () => {
 
     void axiosConfig.perform_get(
       auth,
-      `/v1/status/ping_device/?ip=${encodeURIComponent(ip)}`,
+      `/v1/status/identify_device/?ip=${encodeURIComponent(ip)}`,
       (response) => {
         showSuccessBar(enqueueSnackbar, `Queued ping task for device (${ip})`);
         if (response?.data?.task_id) {
@@ -110,17 +114,21 @@ const DeviceListView = () => {
     await fetchDevices();
   };
 
-  const handleDelete = async (deviceId) => {
-    if (!window.confirm('Are you sure you want to delete this device?')) {
-      return;
-    }
+  const handleDelete = (deviceId: number) => {
+    setDeleteTargetId(deviceId);
+    setShow((s) => ({ ...s, modalShowText: true, title: 'Delete Device', txt: 'Are you sure you want to delete this device?' }) as any);
+  };
 
+  const doDelete = () => {
+    if (deleteTargetId === null) return;
+    setShow((s) => ({ ...s, modalShowText: false }) as any);
     setLoading(true);
-    void axiosConfig.perform_delete(
+    void axiosConfig.perform_post(
       auth,
-      `/v1/device/${deviceId}/`,
-      (response) => {
+      `/v1/device/${deleteTargetId}/delete/`,
+      () => {
         showSuccessBar(enqueueSnackbar, 'Device deleted successfully');
+        setDeleteTargetId(null);
         void fetchDevices();
       },
       (error) => {
@@ -130,6 +138,7 @@ const DeviceListView = () => {
         } else {
           console.error(error);
         }
+        setDeleteTargetId(null);
         setLoading(false);
       },
     );
@@ -161,7 +170,7 @@ const DeviceListView = () => {
     }
 
     // For ping responses, update the matching device row
-    if (wsMessage.type === 'ping_device_result' && wsMessage.ip) {
+    if (wsMessage.type === 'identify_device_result' && wsMessage.ip) {
       setDevices((prev) =>
         prev.map((entry) =>
           entry.ip === wsMessage.ip
@@ -199,13 +208,15 @@ const DeviceListView = () => {
         </Button>
       </div>
 
+      <ShowInfoModal callBackConfirm={doDelete} />
+
       {devices.length > 0 ? (
         <Row className="g-3">
           {devices.map((device) => (
             <Col key={device.device.id} lg={4} md={6} sm={12}>
               <DeviceCard
                 device={device}
-                onPing={handlePing}
+                onIdentify={handleIdentify}
                 onRefresh={handleRefresh}
                 onDelete={handleDelete}
                 loading={loading}

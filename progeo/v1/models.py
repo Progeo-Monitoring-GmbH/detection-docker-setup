@@ -13,7 +13,7 @@ from progeo.v1.helper import calc_hash_from_dict
 from progeo.decorator import has_test_coverage
 from progeo.helper.basics import get_templates
 from progeo.helper.cacher import search_clear_cache
-from progeo.settings import DEBUG, BACKUP_DIR, UPLOAD_BASE_DIR
+from progeo.settings import DEBUG, BACKUP_DIR
 
 # ==============================================================================================
 

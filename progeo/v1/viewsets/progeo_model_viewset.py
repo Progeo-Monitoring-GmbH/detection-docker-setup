@@ -23,7 +23,7 @@ class ProgeoModalViewSet(viewsets.ModelViewSet):
 
     @calc_runtime
     @method_decorator(vary_on_cookie)
-    def retrieve(self, request, *args, **kwargs):
+    def retrieve(self, request, pk=None, *args, **kwargs):
         cache_key, _cache = search_cache(request)
         if not kwargs.get("no_cache", False) and _cache:
             return _cache

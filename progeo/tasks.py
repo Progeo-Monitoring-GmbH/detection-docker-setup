@@ -112,16 +112,16 @@ def ping():
 
 
 @shared_task
-def ping_device(ip: str):
+def identify_device(ip: str):
     """Ping a device from the backend network via its local HTTP endpoint."""
     parsed_ip = ipaddress.ip_address(ip)
     if parsed_ip.version != 4 or not parsed_ip.is_private:
         raise ValueError("Only private IPv4 addresses are allowed")
 
-    msg: dict = {"type": "ping_device_result", "ip": str(parsed_ip), "ok": False, "status_code": None}
+    msg: dict = {"type": "identify_device_result", "ip": str(parsed_ip), "ok": False, "status_code": None}
     exc = None
     try:
-        response = requests.get(f"http://{parsed_ip}:80/identify/", timeout=5)
+        response = requests.get(f"http://{parsed_ip}/identify/", timeout=5)
         msg.update({
             "ok": response.ok,
             "status_code": response.status_code,
