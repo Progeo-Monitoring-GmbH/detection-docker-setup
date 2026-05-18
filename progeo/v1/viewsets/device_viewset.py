@@ -116,6 +116,8 @@ class DeviceViewSet(ProgeoModalViewSet):
 
             if isinstance(payload, dict):
                 content = payload.get("content")
+                if not isinstance(content, str) and isinstance(payload.get("data"), dict):
+                    content = payload.get("data", {}).get("content")
                 path = (payload.get("path") or request.query_params.get("path") or "config/device_config.lua").strip()
             else:
                 content = None
@@ -129,6 +131,12 @@ class DeviceViewSet(ProgeoModalViewSet):
                 "reason": "Missing field: content",
                 "content_type": request.content_type,
                 "keys": list(payload.keys()) if hasattr(payload, "keys") else [],
+            })
+
+        if not content.strip():
+            return RequestFailed({
+                "reason": "Empty field: content",
+                "content_type": request.content_type,
             })
 
         task = upload_device_config_task.delay(device.device_ip or "", content, path)

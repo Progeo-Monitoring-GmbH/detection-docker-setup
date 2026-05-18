@@ -179,11 +179,16 @@ def upload_device_config(device_ip: str, content: str, path: str = ALLOWED_DEVIC
     logger.info(f"[CELERY] {msg}")
     dlog(msg, tag="[CELERY]")
     
-    # Send the content as raw bytes in the request body with text/plain content type
+    body = (content or "").encode("utf-8")
+
+    # Send the content as raw bytes in the request body with explicit length.
     response = requests.post(
         f"{base_url}/upload?path={encoded_path}",
-        data=(content or "").encode('utf-8'),
-        headers={"Content-Type": "text/plain"},
+        data=body,
+        headers={
+            "Content-Type": "text/plain",
+            "Content-Length": str(len(body)),
+        },
         timeout=10,
     )
     
