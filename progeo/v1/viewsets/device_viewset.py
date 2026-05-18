@@ -1,10 +1,10 @@
 
 from django.utils import timezone
-from plotly import data
+from celery.exceptions import TimeoutError
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
 
-from progeo.tasks import _flatten_numeric_values
+from progeo.tasks import _flatten_numeric_values, download_device_config as download_device_config_task, upload_device_config as upload_device_config_task
 from progeo.v1.models import ProgeoDevice, ProgeoLocation
 from progeo.v1.serializers import DeviceSerializer
 from progeo.decorator import calc_runtime
@@ -32,6 +32,74 @@ class DeviceViewSet(ProgeoModalViewSet):
         if not account:
             return ProgeoDevice.objects.none()
         return ProgeoDevice.objects.using(account.db_name).all() # TODO.filter(location__account=account)
+
+    @calc_runtime
+    @action(detail=True, url_path="config/download", methods=["GET"])
+    def download_config(self, request, pk=None, *args, **kwargs):
+        db_name = "default"
+        device = ProgeoDevice.objects.using(db_name).filter(pk=pk).first()
+        if not device:
+            return RequestFailed({"reason": "Device not found"})
+
+        path = (request.query_params.get("path") or "config/device_config.lua").strip()
+        task = download_device_config_task.delay(device.device_ip or "", path)
+
+        try:
+            result = task.get(timeout=20)
+        except TimeoutError:
+            return RequestFailed({"reason": "Timed out waiting for device response", "task_id": task.id})
+        except Exception as exc:
+            return RequestFailed({"reason": str(exc), "task_id": task.id})
+
+        if not result.get("ok"):
+            return RequestFailed({
+                "reason": "Device download request failed",
+                "task_id": task.id,
+                "status_code": result.get("status_code"),
+                "content": result.get("content", ""),
+            })
+
+        return RequestSuccess({
+            "task_id": task.id,
+            "status_code": result.get("status_code"),
+            "content": result.get("content", ""),
+        })
+
+    @calc_runtime
+    @action(detail=True, url_path="config/upload", methods=["POST"])
+    def upload_config(self, request, pk=None, *args, **kwargs):
+        db_name = "default"
+        device = ProgeoDevice.objects.using(db_name).filter(pk=pk).first()
+        if not device:
+            return RequestFailed({"reason": "Device not found"})
+
+        content = request.data.get("content")
+        if not isinstance(content, str):
+            return RequestFailed({"reason": "Missing field: content"})
+
+        path = (request.data.get("path") or "config/device_config.lua").strip()
+        task = upload_device_config_task.delay(device.device_ip or "", content, path)
+
+        try:
+            result = task.get(timeout=20)
+        except TimeoutError:
+            return RequestFailed({"reason": "Timed out waiting for device response", "task_id": task.id})
+        except Exception as exc:
+            return RequestFailed({"reason": str(exc), "task_id": task.id})
+
+        if not result.get("ok"):
+            return RequestFailed({
+                "reason": "Device upload request failed",
+                "task_id": task.id,
+                "status_code": result.get("status_code"),
+                "content": result.get("content", ""),
+            })
+
+        return RequestSuccess({
+            "task_id": task.id,
+            "status_code": result.get("status_code"),
+            "content": result.get("content", ""),
+        })
 
     @calc_runtime
     @action(detail=False, url_path="receive", methods=["POST"])

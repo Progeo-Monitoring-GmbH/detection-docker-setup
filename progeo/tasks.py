@@ -2,6 +2,7 @@ from celery import shared_task
 import ipaddress
 import math
 from numbers import Number
+from urllib.parse import quote, unquote, urlparse
 
 import requests
 from asgiref.sync import async_to_sync
@@ -9,6 +10,38 @@ from channels.layers import get_channel_layer
 
 from progeo.consumer import GRP_NAME
 from progeo.helper.basics import dlog
+
+
+ALLOWED_DEVICE_CONFIG_PATH = "config/device_config.lua"
+
+
+def _normalize_device_base_url(device_ip: str) -> str:
+    value = (device_ip or "").strip()
+    if not value:
+        raise ValueError("Missing device IP")
+
+    if not value.startswith("http://") and not value.startswith("https://"):
+        value = f"http://{value}"
+
+    parsed = urlparse(value)
+    host = parsed.hostname
+    if not host:
+        raise ValueError("Invalid device address")
+
+    parsed_ip = ipaddress.ip_address(host)
+    if parsed_ip.version != 4 or not parsed_ip.is_private:
+        raise ValueError("Only private IPv4 addresses are allowed")
+
+    scheme = parsed.scheme or "http"
+    port = f":{parsed.port}" if parsed.port else ""
+    return f"{scheme}://{parsed_ip}{port}"
+
+
+def _normalize_config_path(path: str) -> str:
+    decoded_path = unquote((path or "").strip()).lstrip("/")
+    if decoded_path != ALLOWED_DEVICE_CONFIG_PATH:
+        raise ValueError(f"Unsupported config path: {decoded_path}")
+    return quote(decoded_path, safe="")
 
 
 def _flatten_numeric_values(data):
@@ -109,6 +142,35 @@ def compute_weighted_spots(relevant_points, neighbor_distance=0.2):
 def ping():
     import datetime
     return f"pong {datetime.datetime.now(datetime.timezone.utc)}"
+
+
+@shared_task
+def download_device_config(device_ip: str, path: str = ALLOWED_DEVICE_CONFIG_PATH):
+    base_url = _normalize_device_base_url(device_ip)
+    encoded_path = _normalize_config_path(path)
+    response = requests.get(f"{base_url}/download?path={encoded_path}", timeout=10)
+    return {
+        "ok": response.ok,
+        "status_code": response.status_code,
+        "content": response.text,
+    }
+
+
+@shared_task
+def upload_device_config(device_ip: str, content: str, path: str = ALLOWED_DEVICE_CONFIG_PATH):
+    base_url = _normalize_device_base_url(device_ip)
+    encoded_path = _normalize_config_path(path)
+    response = requests.post(
+        f"{base_url}/upload?path={encoded_path}",
+        data=content or "",
+        headers={"Content-Type": "text/plain"},
+        timeout=10,
+    )
+    return {
+        "ok": response.ok,
+        "status_code": response.status_code,
+        "content": response.text,
+    }
 
 
 @shared_task

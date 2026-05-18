@@ -5,28 +5,12 @@ import requests
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 from progeo.helper.basics import dlog, ilog, elog
-from progeo.settings import DJANGO_DATABASES
 from progeo.v1.creator import (
-    create_account_safe,
     create_progeo_device_safe,
     create_progeo_location_safe,
     create_progeo_measurement_safe,
 )
-from progeo.v1.viewsets.setup_viewset import StatusViewSet
-
-def _get_controller_account():
-        account_name = (os.getenv("CONTROLLER_DEFAULT_ACCOUNT") or "").strip()
-        if not account_name:
-            raise CommandError("CONTROLLER_DEFAULT_ACCOUNT is not set")
-
-        if not DJANGO_DATABASES:
-            raise CommandError("DJANGO_DATABASES is empty")
-
-        account, _ = create_account_safe(name=account_name, db_name=DJANGO_DATABASES[0], db="default")
-        if not account:
-            raise CommandError("Failed to get or create controller account")
-
-        return account
+from progeo.v1.viewsets.setup_viewset import StatusViewSet, _get_controller_account
 
 
 class Command(BaseCommand):
