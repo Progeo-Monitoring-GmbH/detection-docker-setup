@@ -146,11 +146,21 @@ def ping():
 
 @shared_task
 def download_device_config(device_ip: str, path: str = ALLOWED_DEVICE_CONFIG_PATH):
+    import logging
+    logger = logging.getLogger('progeo.tasks')
+    
     base_url = _normalize_device_base_url(device_ip)
     encoded_path = _normalize_config_path(path)
-    dlog(f"download_device_config start ip={device_ip} path={path}", tag="[CELERY]")
+    msg = f"download_device_config start ip={device_ip} path={path}"
+    logger.info(f"[CELERY] {msg}")
+    dlog(msg, tag="[CELERY]")
+    
     response = requests.get(f"{base_url}/download?path={encoded_path}", timeout=10)
-    dlog(f"download_device_config done status={response.status_code}", tag="[CELERY]")
+    
+    done_msg = f"download_device_config done status={response.status_code}"
+    logger.info(f"[CELERY] {done_msg}")
+    dlog(done_msg, tag="[CELERY]")
+    
     return {
         "ok": response.ok,
         "status_code": response.status_code,
@@ -160,16 +170,26 @@ def download_device_config(device_ip: str, path: str = ALLOWED_DEVICE_CONFIG_PAT
 
 @shared_task
 def upload_device_config(device_ip: str, content: str, path: str = ALLOWED_DEVICE_CONFIG_PATH):
+    import logging
+    logger = logging.getLogger('progeo.tasks')
+    
     base_url = _normalize_device_base_url(device_ip)
     encoded_path = _normalize_config_path(path)
-    dlog(f"upload_device_config start ip={device_ip} path={path} len={len(content or '')}", tag="[CELERY]")
+    msg = f"upload_device_config start ip={device_ip} path={path} len={len(content or '')}"
+    logger.info(f"[CELERY] {msg}")
+    dlog(msg, tag="[CELERY]")
+    
+    # Send the content as raw bytes in the request body with text/plain content type
     response = requests.post(
         f"{base_url}/upload?path={encoded_path}",
-        data=content or "",
+        data=(content or "").encode('utf-8'),
         headers={"Content-Type": "text/plain"},
         timeout=10,
     )
-    dlog(f"upload_device_config done status={response.status_code}", tag="[CELERY]")
+    
+    done_msg = f"upload_device_config done status={response.status_code}"
+    logger.info(f"[CELERY] {done_msg}")
+    dlog(done_msg, tag="[CELERY]")
     return {
         "ok": response.ok,
         "status_code": response.status_code,

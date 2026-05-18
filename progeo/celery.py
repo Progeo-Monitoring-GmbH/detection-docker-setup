@@ -50,15 +50,39 @@ ilog("Setup Celery")
 
 @setup_logging.connect
 def configure_logging(*args, **kwargs):
+    import logging
     from logging.config import dictConfig
 
     from django.conf import settings
     dictConfig(settings.LOGGING)
+    
+    # Ensure celery and progeo logs are written to file for persistence
+    for logger_name in ['celery', 'progeo', 'progeo.tasks']:
+        log = logging.getLogger(logger_name)
+        log.setLevel(logging.DEBUG)
+        
+        # Add file handler if not already present
+        if not any(isinstance(h, logging.FileHandler) for h in log.handlers):
+            try:
+                fh = logging.FileHandler('/var/log/progeo/celery.log')
+                fh.setLevel(logging.DEBUG)
+                formatter = logging.Formatter(
+                    '[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s',
+                    datefmt='%Y-%m-%d %H:%M:%S'
+                )
+                fh.setFormatter(formatter)
+                log.addHandler(fh)
+            except (IOError, OSError) as e:
+                pass  # Silently fail if log file is not writable
 
 
 @task_prerun.connect
 def task_started_handler(task_id, task, *args, **kwargs):
     dlog(f"PreRun {args=} | {kwargs=}", logger=logger)
+    # Also log directly to ensure we capture it
+    import logging
+    _log = logging.getLogger('progeo.tasks')
+    _log.info(f"[CELERY PRERUN] Task {task.name} started with ID {task_id}")
     running_tasks[task_id] = {"name": task.name, "status": "running"}
 
 
@@ -67,8 +91,17 @@ def task_completed_handler(task_id, task, *args, **kwargs):
     from django_celery_results.models import TaskResult
 
     dlog(f"PostRun | {task_id=} | {args=}", logger=logger)
-    result = TaskResult.objects.get(task_id=task_id)
-    dlog("TaskResult", f"result={result.result}")
+    # Also log directly to ensure we capture it
+    import logging
+    _log = logging.getLogger('progeo.tasks')
+    _log.info(f"[CELERY POSTRUN] Task {task.name} completed with ID {task_id}")
+    
+    try:
+        result = TaskResult.objects.get(task_id=task_id)
+        dlog("TaskResult", f"result={result.result}")
+    except Exception as e:
+        dlog(f"Could not get TaskResult: {e}", logger=logger)
+    
     if task_id in running_tasks:
         running_tasks[task_id].update({"status": "done", "time": timezone.now().strftime("%Y-%m-%d %H:%M:%S")})
 
