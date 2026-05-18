@@ -38,23 +38,7 @@ def get_controller_account():
     return account
 
 
-def flatten_numeric_values(data):
-    values = []
-    if isinstance(data, (int, float)) and not isinstance(data, bool):
-        return [float(data)]
-    if isinstance(data, str):
-        try:
-            return [float(data)]
-        except ValueError:
-            return []
-    if isinstance(data, dict):
-        for value in data.values():
-            values.extend(flatten_numeric_values(value))
-        return values
-    if isinstance(data, (list, tuple)):
-        for value in data:
-            values.extend(flatten_numeric_values(value))
-    return values
+
 
 
 def get_latest_measurement(device, db_name):

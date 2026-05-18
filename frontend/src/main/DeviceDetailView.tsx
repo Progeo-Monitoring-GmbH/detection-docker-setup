@@ -1,15 +1,13 @@
-import { useContext, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import { Button, Container, Form, Card, Spinner, Alert } from 'react-bootstrap';
-import { ArrowLeft, Trash, Floppy, Image } from 'react-bootstrap-icons';
+import { ArrowLeft } from 'react-bootstrap-icons';
 import axiosConfig from '../axiosConfig';
 import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import { useSnackbar } from 'notistack';
-import { CoreModalContext } from '../components/modal/coreModalContext';
-import ShowInfoModal from '../components/modal/ShowInfoModal';
 
-type DeviceFormData = {
+type DeviceData = {
   hardware: string;
   version: string;
   chip_id: string;
@@ -21,21 +19,48 @@ type DeviceFormData = {
   pull_resistance: number;
 };
 
-type DeviceModel = DeviceFormData & {
+type DeviceModel = DeviceData & {
   id: number;
   raw_hash: string;
 };
 
-const initialFormData: DeviceFormData = {
-  hardware: '',
-  version: '',
-  chip_id: '',
-  mac: '',
-  project_id: '',
-  device_ip: '',
-  has_internet: false,
-  data_interval: 3600,
-  pull_resistance: 136,
+const CONFIG_PATH = 'config%2Fdevice_config.lua';
+
+const normalizeDeviceUrl = (deviceIp: string) => {
+  const trimmed = deviceIp.trim();
+  if (!trimmed) {
+    return '';
+  }
+  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
+  return withProtocol.replace(/\/+$/, '');
+};
+
+const updatePullResistanceInConfig = (content: string, value: number) => {
+  if (!content.trim()) {
+    return `pull_resistance = ${value}\n`;
+  }
+
+  const patterns: RegExp[] = [
+    /(pull_resistance\s*=\s*)(\d+)/i,
+    /(["']pull_resistance["']\s*=\s*)(\d+)/i,
+    /(["']pull_resistance["']\s*:\s*)(\d+)/i,
+  ];
+
+  for (const pattern of patterns) {
+    if (pattern.test(content)) {
+      return content.replace(pattern, `$1${value}`);
+    }
+  }
+
+  return `${content.trimEnd()}\npull_resistance = ${value}\n`;
+};
+
+const extractPullResistanceFromConfig = (content: string) => {
+  const match = content.match(/pull_resistance\s*[=:]\s*(\d+)/i) || content.match(/["']pull_resistance["']\s*[=:]\s*(\d+)/i);
+  if (!match) {
+    return null;
+  }
+  return Number(match[1]);
 };
 
 const DeviceDetailView = () => {
@@ -46,9 +71,10 @@ const DeviceDetailView = () => {
 
   const [device, setDevice] = useState<DeviceModel | null>(null);
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [formData, setFormData] = useState<DeviceFormData>(initialFormData);
-  const [, setShow] = useContext(CoreModalContext);
+  const [loadingConfig, setLoadingConfig] = useState(false);
+  const [savingConfig, setSavingConfig] = useState(false);
+  const [pullResistance, setPullResistance] = useState(136);
+  const [configContent, setConfigContent] = useState('');
 
   useEffect(() => {
     fetchDevice();
@@ -63,17 +89,7 @@ const DeviceDetailView = () => {
         const deviceData = response?.data as DeviceModel | undefined;
         if (deviceData) {
           setDevice(deviceData);
-          setFormData({
-            hardware: deviceData.hardware || '',
-            version: deviceData.version || '',
-            chip_id: deviceData.chip_id || '',
-            mac: deviceData.mac || '',
-            project_id: deviceData.project_id || '',
-            device_ip: deviceData.device_ip || '',
-            has_internet: deviceData.has_internet || false,
-            data_interval: deviceData.data_interval || 3600,
-            pull_resistance: deviceData.pull_resistance || 136,
-          });
+          setPullResistance(deviceData.pull_resistance || 136);
         }
         setLoading(false);
       },
@@ -89,67 +105,62 @@ const DeviceDetailView = () => {
     );
   };
 
-  const handleInputChange = (e: any) => {
-    const { name, value, type, checked } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : type === 'number' ? Number(value) : value,
-    }));
+  const getDeviceConfigUrl = (operation: 'download' | 'upload') => {
+    const baseUrl = normalizeDeviceUrl(device?.device_ip || '');
+    if (!baseUrl) {
+      throw new Error('Device IP is missing');
+    }
+    return `${baseUrl}/${operation}?path=${CONFIG_PATH}`;
   };
 
-  const handleSave = async () => {
-    setSaving(true);
-    axiosConfig.updateToken();
-    void axiosConfig.holder.put(`/v1/device/${id}/`, formData).then(
-      (response) => {
-        showSuccessBar(enqueueSnackbar, 'Device updated successfully');
-        setDevice(response?.data as DeviceModel);
-        setSaving(false);
-      },
-      (error) => {
-        if (error?.response?.status === 401 && auth?.token) {
-          auth.navigate(`/login?forward=${auth.location}`);
-          return;
-        }
-        showErrorBar(enqueueSnackbar, `Could not update device: ${error.message}`);
-        if (error.response) {
-          console.error(error.response.data);
-        } else {
-          console.error(error);
-        }
-        setSaving(false);
-      },
-    );
+  const handleLoadConfig = async () => {
+    try {
+      setLoadingConfig(true);
+      const response = await fetch(getDeviceConfigUrl('download'));
+      if (!response.ok) {
+        throw new Error(`Load failed (${response.status})`);
+      }
+      const text = await response.text();
+      setConfigContent(text);
+      const extracted = extractPullResistanceFromConfig(text);
+      if (extracted !== null) {
+        setPullResistance(extracted);
+      }
+      showSuccessBar(enqueueSnackbar, 'Config loaded successfully');
+    } catch (error: any) {
+      showErrorBar(enqueueSnackbar, `Could not load config: ${error.message}`);
+      console.error(error);
+    } finally {
+      setLoadingConfig(false);
+    }
   };
 
-  const handleDelete = () => {
-    setShow((s) => ({ ...s, modalShowText: true, title: 'Delete Device', txt: 'Are you sure you want to delete this device? This action cannot be undone.' }) as any);
+  const handleSaveConfig = async () => {
+    try {
+      setSavingConfig(true);
+      const response = await fetch(getDeviceConfigUrl('upload'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain',
+        },
+        body: configContent,
+      });
+      if (!response.ok) {
+        throw new Error(`Save failed (${response.status})`);
+      }
+      showSuccessBar(enqueueSnackbar, 'Config saved successfully');
+    } catch (error: any) {
+      showErrorBar(enqueueSnackbar, `Could not save config: ${error.message}`);
+      console.error(error);
+    } finally {
+      setSavingConfig(false);
+    }
   };
 
-  const doDelete = () => {
-    setShow((s) => ({ ...s, modalShowText: false }) as any);
-    setSaving(true);
-    void axiosConfig.perform_post(
-      auth,
-      `/v1/device/${id}/delete/`,
-      () => {
-        showSuccessBar(enqueueSnackbar, 'Device deleted successfully');
-        navigate('/device');
-      },
-      (error) => {
-        if (error?.response?.status === 401 && auth?.token) {
-          auth.navigate(`/login?forward=${auth.location}`);
-          return;
-        }
-        showErrorBar(enqueueSnackbar, `Could not delete device: ${error.message}`);
-        if (error.response) {
-          console.error(error.response.data);
-        } else {
-          console.error(error);
-        }
-        setSaving(false);
-      },
-    );
+  const handlePullResistanceChange = (e: any) => {
+    const value = Number(e.target.value);
+    setPullResistance(value);
+    setConfigContent((previous) => updatePullResistanceInConfig(previous, value));
   };
 
   if (loading) {
@@ -166,7 +177,7 @@ const DeviceDetailView = () => {
     return (
       <Container className="py-4">
         <Alert variant="danger">Device not found</Alert>
-        <Button variant="outline-primary" onClick={() => navigate('/device')}>
+        <Button variant="outline-primary" onClick={() => navigate('/device/overview/')}>
           <ArrowLeft className="me-2" />
           Back to Devices
         </Button>
@@ -179,7 +190,7 @@ const DeviceDetailView = () => {
       <Button 
         variant="outline-secondary" 
         className="mb-3"
-        onClick={() => navigate('/device')}
+        onClick={() => navigate('/device/overview/')}
       >
         <ArrowLeft className="me-2" />
         Back to Devices
@@ -187,51 +198,16 @@ const DeviceDetailView = () => {
 
       <Card>
         <Card.Header>
-          <h3 className="mb-0">Edit Device: {device.raw_hash}</h3>
+          <h3 className="mb-0">Device Config: {device.raw_hash}</h3>
         </Card.Header>
         <Card.Body>
           <Form>
             <Form.Group className="mb-3">
-              <Form.Label>Hardware</Form.Label>
-              <Form.Control
-                type="text"
-                name="hardware"
-                value={formData.hardware}
-                onChange={handleInputChange}
-                placeholder="Enter hardware name"
-              />
-            </Form.Group>
-
-            <Form.Group className="mb-3">
               <Form.Label>Version</Form.Label>
               <Form.Control
                 type="text"
-                name="version"
-                value={formData.version}
-                onChange={handleInputChange}
-                placeholder="Enter version"
-              />
-            </Form.Group>
-
-            <Form.Group className="mb-3">
-              <Form.Label>Chip ID</Form.Label>
-              <Form.Control
-                type="text"
-                name="chip_id"
-                value={formData.chip_id}
-                onChange={handleInputChange}
-                placeholder="Enter chip ID"
-              />
-            </Form.Group>
-
-            <Form.Group className="mb-3">
-              <Form.Label>MAC Address</Form.Label>
-              <Form.Control
-                type="text"
-                name="mac"
-                value={formData.mac}
-                onChange={handleInputChange}
-                placeholder="Enter MAC address"
+                value={device.version || ''}
+                readOnly
               />
             </Form.Group>
 
@@ -239,21 +215,8 @@ const DeviceDetailView = () => {
               <Form.Label>Project ID</Form.Label>
               <Form.Control
                 type="text"
-                name="project_id"
-                value={formData.project_id}
-                onChange={handleInputChange}
-                placeholder="Enter project ID"
-              />
-            </Form.Group>
-
-            <Form.Group className="mb-3">
-              <Form.Label>Device IP</Form.Label>
-              <Form.Control
-                type="text"
-                name="device_ip"
-                value={formData.device_ip}
-                onChange={handleInputChange}
-                placeholder="Enter device IP address"
+                value={device.project_id || ''}
+                readOnly
               />
             </Form.Group>
 
@@ -261,10 +224,8 @@ const DeviceDetailView = () => {
               <Form.Label>Data Interval (seconds)</Form.Label>
               <Form.Control
                 type="number"
-                name="data_interval"
-                value={formData.data_interval}
-                onChange={handleInputChange}
-                placeholder="Enter data interval"
+                value={device.data_interval || 3600}
+                readOnly
               />
             </Form.Group>
 
@@ -272,8 +233,8 @@ const DeviceDetailView = () => {
               <Form.Label>Pull Resistance</Form.Label>
               <Form.Select
                 name="pull_resistance"
-                value={formData.pull_resistance}
-                onChange={handleInputChange}
+                value={pullResistance}
+                onChange={handlePullResistanceChange}
               >
                 <option value={136}>100K Ohm (Default)</option>
                 <option value={72}>10K Ohm</option>
@@ -284,47 +245,38 @@ const DeviceDetailView = () => {
             </Form.Group>
 
             <Form.Group className="mb-3">
-              <Form.Check
-                type="checkbox"
-                name="has_internet"
-                label="Has Internet"
-                checked={formData.has_internet}
-                onChange={handleInputChange}
+              <Form.Label>Device Config Content</Form.Label>
+              <Form.Control
+                as="textarea"
+                rows={14}
+                value={configContent}
+                readOnly
+                placeholder="Click Load Config to fetch config/device_config.lua"
               />
             </Form.Group>
 
             <div className="d-flex gap-2 flex-wrap">
               <Button
+                type="button"
+                variant="primary"
+                onClick={handleLoadConfig}
+                disabled={loadingConfig || savingConfig || !device.device_ip}
+              >
+                {loadingConfig ? 'Loading...' : 'Load Config'}
+              </Button>
+
+              <Button
+                type="button"
                 variant="success"
-                onClick={handleSave}
-                disabled={saving}
+                onClick={handleSaveConfig}
+                disabled={savingConfig || loadingConfig || !configContent.trim() || !device.device_ip}
               >
-                <Floppy className="me-2" />
-                {saving ? 'Saving...' : 'Save Changes'}
-              </Button>
-
-              <Button
-                variant="outline-info"
-                onClick={() => navigate(`/device/${id}/editor/`)}
-                disabled={saving}
-              >
-                <Image className="me-2" />
-                Open Editor
-              </Button>
-
-              <Button
-                variant="danger"
-                onClick={handleDelete}
-                disabled={saving}
-              >
-                <Trash className="me-2" />
-                Delete Device
+                {savingConfig ? 'Saving...' : 'Save Config'}
               </Button>
             </div>
           </Form>
         </Card.Body>
       </Card>
-      <ShowInfoModal callBackConfirm={doDelete} />
     </Container>
   );
 };
