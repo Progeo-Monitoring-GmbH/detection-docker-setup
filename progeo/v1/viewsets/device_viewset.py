@@ -1,7 +1,11 @@
 
+import json
+
 from django.utils import timezone
 from celery.exceptions import TimeoutError
 from rest_framework.decorators import action
+from rest_framework.exceptions import ParseError
+from rest_framework.parsers import BaseParser
 from rest_framework.permissions import AllowAny
 
 from progeo.tasks import _flatten_numeric_values, download_device_config as download_device_config_task, upload_device_config as upload_device_config_task
@@ -16,6 +20,28 @@ from progeo.v1.viewsets.setup_viewset import _get_controller_account
 
 
 # ######################################################################################################################
+
+
+class SafeLuaUploadParser(BaseParser):
+    media_type = "*/*"
+
+    def parse(self, stream, media_type=None, parser_context=None):
+        raw = stream.read()
+        text = raw.decode("utf-8", errors="replace")
+        normalized_type = (media_type or "").split(";")[0].strip().lower()
+
+        if normalized_type == "application/json":
+            try:
+                payload = json.loads(text)
+            except ValueError:
+                return {"content": text}
+            if isinstance(payload, dict):
+                return payload
+            if isinstance(payload, str):
+                return {"content": payload}
+            return {"content": text}
+
+        return {"content": text}
 
 
 class DeviceViewSet(ProgeoModalViewSet):
@@ -66,22 +92,45 @@ class DeviceViewSet(ProgeoModalViewSet):
         })
 
     @calc_runtime
-    @action(detail=True, url_path="config/upload", methods=["POST"])
+    @action(detail=True, url_path="config/upload", methods=["POST"], parser_classes=[SafeLuaUploadParser])
     def upload_config(self, request, pk=None, *args, **kwargs):
         db_name = "default"
         device = ProgeoDevice.objects.using(db_name).filter(pk=pk).first()
         if not device:
             return RequestFailed({"reason": "Device not found"})
 
-        content = request.data.get("content")
+        content_type = (request.content_type or "").split(";")[0].strip().lower()
+        payload = {}
+        raw_body = (request.body or b"").decode("utf-8", errors="replace")
+
+        # Accept plain Lua upload in raw request body.
+        if content_type == "text/plain":
+            content = raw_body
+            path = (request.query_params.get("path") or "config/device_config.lua").strip()
+        else:
+            try:
+                payload = request.data
+            except ParseError:
+                # Fallback for clients sending raw Lua with application/json header.
+                payload = {}
+
+            if isinstance(payload, dict):
+                content = payload.get("content")
+                path = (payload.get("path") or request.query_params.get("path") or "config/device_config.lua").strip()
+            else:
+                content = None
+                path = (request.query_params.get("path") or "config/device_config.lua").strip()
+
+            if not isinstance(content, str) and raw_body.strip():
+                content = raw_body
+
         if not isinstance(content, str):
             return RequestFailed({
                 "reason": "Missing field: content",
                 "content_type": request.content_type,
-                "keys": list(request.data.keys()) if hasattr(request.data, "keys") else [],
+                "keys": list(payload.keys()) if hasattr(payload, "keys") else [],
             })
 
-        path = (request.data.get("path") or "config/device_config.lua").strip()
         task = upload_device_config_task.delay(device.device_ip or "", content, path)
 
         try:
