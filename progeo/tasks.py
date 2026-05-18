@@ -1,6 +1,7 @@
 from celery import shared_task
 import ipaddress
 import math
+import socket
 from numbers import Number
 from urllib.parse import quote, unquote, urlparse
 
@@ -42,6 +43,56 @@ def _normalize_config_path(path: str) -> str:
     if decoded_path != ALLOWED_DEVICE_CONFIG_PATH:
         raise ValueError(f"Unsupported config path: {decoded_path}")
     return quote(decoded_path, safe="")
+
+
+def _socket_upload(base_url: str, encoded_path: str, body: bytes, timeout: int = 10) -> tuple[bool, int | None, str]:
+    parsed = urlparse(base_url)
+    host = parsed.hostname
+    if not host:
+        raise ValueError("Invalid device host")
+
+    scheme = (parsed.scheme or "http").lower()
+    if scheme != "http":
+        raise ValueError("Only HTTP upload is supported for raw socket mode")
+
+    port = parsed.port or 80
+    target = f"/upload?path={encoded_path}"
+
+    head = (
+        f"POST {target} HTTP/1.1\r\n"
+        f"Host: {host}:{port}\r\n"
+        "User-Agent: progeo-upload/1.0\r\n"
+        "Accept: */*\r\n"
+        "Content-Type: text/plain\r\n"
+        f"Content-Length: {len(body)}\r\n"
+        "Connection: close\r\n\r\n"
+    ).encode("ascii")
+    raw_request = head + body
+
+    with socket.create_connection((host, port), timeout=timeout) as sock:
+        sock.settimeout(timeout)
+        sock.sendall(raw_request)
+
+        chunks = []
+        while True:
+            chunk = sock.recv(4096)
+            if not chunk:
+                break
+            chunks.append(chunk)
+
+    raw_response = b"".join(chunks)
+    response_head, sep, response_body = raw_response.partition(b"\r\n\r\n")
+
+    status_code = None
+    if sep:
+        first_line = response_head.split(b"\r\n", 1)[0].decode("latin-1", errors="replace")
+        parts = first_line.split(" ")
+        if len(parts) >= 2 and parts[1].isdigit():
+            status_code = int(parts[1])
+
+    content = response_body.decode("utf-8", errors="replace")
+    ok = status_code is not None and 200 <= status_code < 300
+    return ok, status_code, content
 
 
 def _flatten_numeric_values(data):
@@ -178,27 +229,17 @@ def upload_device_config(device_ip: str, content: str, path: str = ALLOWED_DEVIC
     msg = f"upload_device_config start ip={device_ip} path={path} len={len(content or '')}"
     logger.info(f"[CELERY] {msg}")
     dlog(msg, tag="[CELERY]")
-    
-    body = (content or "").encode("utf-8")
 
-    # Send the content as raw bytes in the request body with explicit length.
-    response = requests.post(
-        f"{base_url}/upload?path={encoded_path}",
-        data=body,
-        headers={
-            "Content-Type": "text/plain",
-            "Content-Length": str(len(body)),
-        },
-        timeout=10,
-    )
-    
-    done_msg = f"upload_device_config done status={response.status_code}"
+    body = (content or "").encode("utf-8")
+    ok, status_code, response_content = _socket_upload(base_url, encoded_path, body, timeout=10)
+
+    done_msg = f"upload_device_config done status={status_code}"
     logger.info(f"[CELERY] {done_msg}")
     dlog(done_msg, tag="[CELERY]")
     return {
-        "ok": response.ok,
-        "status_code": response.status_code,
-        "content": response.text,
+        "ok": ok,
+        "status_code": status_code,
+        "content": response_content,
     }
 
 
