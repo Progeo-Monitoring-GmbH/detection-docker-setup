@@ -29,15 +29,19 @@ from progeo.tasks import ping
 # ######################################################################################################################
 
 
-def get_controller_account():
-    account_name = (os.getenv("CONTROLLER_DEFAULT_ACCOUNT") or "").strip()
-    if not account_name or not DJANGO_DATABASES:
-        return None
+def _get_controller_account():
+        account_name = (os.getenv("CONTROLLER_DEFAULT_ACCOUNT") or "").strip()
+        if not account_name:
+            raise Exception("CONTROLLER_DEFAULT_ACCOUNT is not set")
 
-    account, _ = create_account_safe(name=account_name, db_name=DJANGO_DATABASES[0], db="default")
-    return account
+        if not DJANGO_DATABASES:
+            raise Exception("DJANGO_DATABASES is empty")
 
+        account, _ = create_account_safe(name=account_name, db_name=DJANGO_DATABASES[0], db="default")
+        if not account:
+            raise Exception("Failed to get or create controller account")
 
+        return account
 
 
 

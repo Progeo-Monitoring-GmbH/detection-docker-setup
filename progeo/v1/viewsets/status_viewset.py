@@ -17,6 +17,7 @@ from progeo.helper.basics import RequestSuccess, save_check_dir, RequestFailed
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.settings import UPLOAD_DIR
 from progeo.tasks import identify_device as identify_device_task
+from progeo.v1.viewsets.setup_viewset import _get_controller_account, get_latest_measurement, get_latest_alarm_measurement, ping_host_quick
 
 
 # ######################################################################################################################
@@ -160,7 +161,7 @@ class StatusViewSet(ProgeoModalViewSet):
     @calc_runtime
     @action(detail=False, url_path="measure_points", methods=["GET", "POST"])
     def measure_points(self, request, *args, **kwargs):
-        account = get_controller_account()
+        account = _get_controller_account()
         #if not account:
         #    return RequestFailed({"reason": "No account configured"})
 
@@ -242,7 +243,7 @@ class StatusViewSet(ProgeoModalViewSet):
     @calc_runtime
     @action(detail=False, url_path="list_connected", methods=["GET"])
     def list_connected(self, request, *args, **kwargs):
-        account = get_controller_account()
+        account = _get_controller_account()
         if not account:
             return RequestFailed({"reason": "No account configured"})
 
@@ -330,7 +331,7 @@ class StatusViewSet(ProgeoModalViewSet):
     @calc_runtime
     @action(detail=False, url_path="devices", methods=["GET"])
     def list_device_status(self, request, *args, **kwargs):
-        #account = get_controller_account()
+        #account = _get_controller_account()
         #if not account:
         #    return RequestFailed({"reason": "No account configured"})
 

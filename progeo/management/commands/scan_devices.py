@@ -14,14 +14,7 @@ from progeo.v1.creator import (
 )
 from progeo.v1.viewsets.setup_viewset import StatusViewSet
 
-
-class Command(BaseCommand):
-    help = "scan_devices"
-
-    ping_timeout = 2
-    measure_timeout = 120
-
-    def _get_controller_account(self):
+def _get_controller_account():
         account_name = (os.getenv("CONTROLLER_DEFAULT_ACCOUNT") or "").strip()
         if not account_name:
             raise CommandError("CONTROLLER_DEFAULT_ACCOUNT is not set")
@@ -34,6 +27,14 @@ class Command(BaseCommand):
             raise CommandError("Failed to get or create controller account")
 
         return account
+
+
+class Command(BaseCommand):
+    help = "scan_devices"
+
+    ping_timeout = 2
+    measure_timeout = 120
+
 
     @staticmethod
     def _parse_response(response: requests.Response) -> dict[str, Any]:
@@ -64,7 +65,7 @@ class Command(BaseCommand):
         if not isinstance(connected_devices, list):
             raise CommandError("Could not read connected devices")
 
-        account = self._get_controller_account()
+        account = _get_controller_account()
         found_devices = []
 
         dlog(f"Scanning {len(connected_devices)} connected device(s)")

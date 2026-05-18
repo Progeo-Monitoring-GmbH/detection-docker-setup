@@ -12,7 +12,7 @@ from progeo.helper.basics import RequestSuccess, RequestFailed
 from progeo.helper.creator import create_MfS_log
 from progeo.v1.creator import create_progeo_measurement_safe
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
-from progeo.v1.viewsets.setup_viewset import get_controller_account
+from progeo.v1.viewsets.setup_viewset import _get_controller_account
 
 
 # ######################################################################################################################
@@ -26,7 +26,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         return super(DeviceViewSet, self).list(request, no_cache=True, *args, **kwargs)
 
     def get_queryset(self):
-        account = get_controller_account()
+        account = _get_controller_account()
         print("DeviceViewSet: get_queryset called | account:", account)
 
         if not account:
@@ -40,7 +40,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         if not device_hash:
             return RequestFailed({"reason": "No device hash provided"})
 
-        account = get_controller_account()
+        account = _get_controller_account()
         #if not account:
         #    return RequestFailed({"reason": "No account configured"})
 
@@ -77,7 +77,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         if rows is None:
             return RequestFailed({"reason": "No rows provided"})
 
-        account = get_controller_account()
+        account = _get_controller_account()
         #if not account:
         #    return RequestFailed({"reason": "No account configured"})
 
