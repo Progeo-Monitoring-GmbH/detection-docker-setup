@@ -266,6 +266,6 @@ class DeviceViewSet(ProgeoModalViewSet):
 
         if not device:
             return RequestFailed({"reason": "Device not found"})
-        device.delete()
+        device.delete(using=db_name)
         create_MfS_log(request)
         return RequestSuccess({"deleted": True})

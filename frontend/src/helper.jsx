@@ -31,6 +31,28 @@ export const getToday = () => {
   });
 };
 
+
+export const prettyDate = (value) => {
+    if (!value) {
+      return '-';
+    }
+
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return value;
+    }
+    return parsed.toLocaleString('de-DE', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
+};
+
+
 export const dateStringToTimestamp = (dateString, offset = 0) => {
   const date = new Date(dateString);
   if (offset) {
