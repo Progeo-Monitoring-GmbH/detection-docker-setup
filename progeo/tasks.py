@@ -148,7 +148,9 @@ def ping():
 def download_device_config(device_ip: str, path: str = ALLOWED_DEVICE_CONFIG_PATH):
     base_url = _normalize_device_base_url(device_ip)
     encoded_path = _normalize_config_path(path)
+    dlog(f"download_device_config start ip={device_ip} path={path}", tag="[CELERY]")
     response = requests.get(f"{base_url}/download?path={encoded_path}", timeout=10)
+    dlog(f"download_device_config done status={response.status_code}", tag="[CELERY]")
     return {
         "ok": response.ok,
         "status_code": response.status_code,
@@ -160,12 +162,14 @@ def download_device_config(device_ip: str, path: str = ALLOWED_DEVICE_CONFIG_PAT
 def upload_device_config(device_ip: str, content: str, path: str = ALLOWED_DEVICE_CONFIG_PATH):
     base_url = _normalize_device_base_url(device_ip)
     encoded_path = _normalize_config_path(path)
+    dlog(f"upload_device_config start ip={device_ip} path={path} len={len(content or '')}", tag="[CELERY]")
     response = requests.post(
         f"{base_url}/upload?path={encoded_path}",
         data=content or "",
         headers={"Content-Type": "text/plain"},
         timeout=10,
     )
+    dlog(f"upload_device_config done status={response.status_code}", tag="[CELERY]")
     return {
         "ok": response.ok,
         "status_code": response.status_code,

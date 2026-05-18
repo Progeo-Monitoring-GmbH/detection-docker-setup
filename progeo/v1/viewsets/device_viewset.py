@@ -75,7 +75,11 @@ class DeviceViewSet(ProgeoModalViewSet):
 
         content = request.data.get("content")
         if not isinstance(content, str):
-            return RequestFailed({"reason": "Missing field: content"})
+            return RequestFailed({
+                "reason": "Missing field: content",
+                "content_type": request.content_type,
+                "keys": list(request.data.keys()) if hasattr(request.data, "keys") else [],
+            })
 
         path = (request.data.get("path") or "config/device_config.lua").strip()
         task = upload_device_config_task.delay(device.device_ip or "", content, path)

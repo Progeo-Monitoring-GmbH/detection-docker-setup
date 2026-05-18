@@ -98,7 +98,7 @@ RUN echo "alias venv='. $VENV_ROOT/bin/activate'" >> /etc/profile
 
 RUN mkdir -p ${PROJECT_ROOT}/static && chown -R progeo:progeo ${PROJECT_ROOT}/static
 RUN mkdir -p ${PROJECT_ROOT}/tmp && chown -R progeo:progeo ${PROJECT_ROOT}/tmp
-RUN mkdir -p /var/log/progeo
+RUN mkdir -p /var/log/progeo && chown -R progeo:progeo /var/log/progeo
 
 RUN touch "${PROJECT_ROOT}/celery.log" && chown -R progeo:progeo "${PROJECT_ROOT}/celery.log"
 RUN touch /var/log/progeo/supervisord.log \
@@ -108,6 +108,9 @@ RUN touch /var/log/progeo/supervisord.log \
     /var/log/progeo/backend.log \
     /var/log/progeo/backend.err.log \
     /var/log/progeo/celery.log \
+    /var/log/progeo/celery.err.log \
+    /var/log/progeo/celery-supervisor.log \
+    /var/log/progeo/celery-supervisor.err.log \
     /var/log/progeo/half-hour.log \
     /var/log/progeo/daily.log \
     /var/log/progeo/weekly.log \
