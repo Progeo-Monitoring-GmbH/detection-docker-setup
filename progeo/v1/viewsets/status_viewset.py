@@ -1,6 +1,5 @@
 import os
 import ipaddress
-import subprocess
 import json
 from pathlib import Path
 from uuid import uuid4
@@ -14,6 +13,7 @@ from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurePoint
 from progeo.v1.serializers import DeviceSerializer, ProgeoMeasurePointSerializer
 from progeo.decorator import calc_runtime
 from progeo.helper.basics import RequestSuccess, save_check_dir, RequestFailed
+from progeo.helper.docker_helper import start_cad_factory
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.settings import UPLOAD_DIR
 from progeo.tasks import identify_device as identify_device_task
@@ -82,25 +82,22 @@ class StatusViewSet(ProgeoModalViewSet):
                 handle.write(chunk)
 
         cad_input = f"media/uploads/cad_imports/{target_name}"
-        command = [
-            "docker", "compose", "run", "progeo-cad_factory",
-            cad_input,
-            "--coord-margin", str(coord_margin),
-        ]
-        if suffix == ".dxf":
-            command.append("--skip-convert")
-
         try:
-            result = subprocess.run(command, capture_output=True, text=True, check=False)
+            exit_code, stdout, stderr = start_cad_factory(
+                cad_input=cad_input,
+                coord_margin=coord_margin,
+                skip_convert=(suffix == ".dxf"),
+            )
         except Exception as exc:
             return RequestFailed({"reason": f"Failed to start progeo-cad_factory: {exc}"})
 
-        points = self._extract_json_list_from_output(result.stdout)
+        points = self._extract_json_list_from_output(stdout)
         if points is None:
             return RequestFailed({
                 "reason": "Could not parse points from progeo-cad_factory output",
-                "stdout": result.stdout[-2000:],
-                "stderr": result.stderr[-2000:],
+                "exit_code": exit_code,
+                "stdout": stdout[-2000:],
+                "stderr": stderr[-2000:],
             })
         
 
