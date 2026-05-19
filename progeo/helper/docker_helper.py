@@ -60,8 +60,14 @@ def start_cad_factory(cad_input: str, coord_margin: float = 0.2, skip_convert: b
     if skip_convert:
         command.append("--skip-convert")
 
-    # If this code runs inside the backend container, reuse its mounted volumes.
-    volumes_from = [os.getenv("BACKEND_CONTAINER_NAME", "progeo-backend")]
+    # Mount media directory from host to match docker-compose cad_factory volume.
+    media_dir = os.path.abspath("./media")
+    volumes = {
+        media_dir: {
+            "bind": "/workspace/media",
+            "mode": "rw"
+        }
+    }
 
     container = None
     try:
@@ -74,7 +80,7 @@ def start_cad_factory(cad_input: str, coord_margin: float = 0.2, skip_convert: b
             remove=False,
             stdout=True,
             stderr=True,
-            volumes_from=volumes_from,
+            volumes=volumes,
         )
 
         wait_result = container.wait(timeout=timeout_seconds)

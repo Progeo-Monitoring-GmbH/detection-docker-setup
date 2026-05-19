@@ -25,7 +25,7 @@ class MultiDBModelAdmin(admin.ModelAdmin):
     def handle_register_django(_models):
         for _model in _models:
             if not admin.site.is_registered(_model):
-                ilog(f"Register: {_model}", tag="[ADMIN]")
+                #ilog(f"Register: {_model}", tag="[ADMIN]")
                 admin.site.register(_model)
             # else:
             #     wlog("DJANGO", _model, admin.site.is_registered(_model), tag="[ADMIN]")

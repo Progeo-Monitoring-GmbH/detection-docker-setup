@@ -1,6 +1,6 @@
 #!/bin/sh
 
-PROJECT_ROOT="${PROJECT_ROOT:-/usr/src/app}"
+PROJECT_ROOT="${PROJECT_ROOT:-/home/progeo/detection-docker-setup}"
 VIRTUAL_ENV="${VIRTUAL_ENV:-/opt/venv}"
 
 . "$VIRTUAL_ENV/bin/activate"

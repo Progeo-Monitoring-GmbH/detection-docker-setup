@@ -30,7 +30,7 @@ RUN apk add geos \
             build-base
 RUN apk add proj proj-dev
 
-ENV PROJECT_ROOT=/usr/src/app
+ENV PROJECT_ROOT=/home/progeo/detection-docker-setup
 ENV VENV_ROOT=/opt/venv
 
 RUN addgroup -S progeo && adduser -S -G progeo -h ${PROJECT_ROOT} progeo
@@ -75,10 +75,10 @@ ENV DOMAIN="${DB_HOST}:${DB_PORT}"
 ENV PORT=${BACKEND_PORT}
 
 RUN echo "# m h day mon day_of_week cmd" > /etc/crontabs/root
-RUN echo "*/30 * * * * su progeo -s /bin/sh -c '/usr/src/app/cronjobs/half-hour.sh >> /var/log/progeo/half-hour.log 2>&1'" >> /etc/crontabs/root
-RUN echo "*/1 * * * * su progeo -s /bin/sh -c '/usr/src/app/cronjobs/minute.sh >> /var/log/progeo/minute.log 2>&1'" >> /etc/crontabs/root
-RUN echo "53 23 * * * su progeo -s /bin/sh -c '/usr/src/app/cronjobs/daily.sh >> /var/log/progeo/daily.log 2>&1'" >> /etc/crontabs/root
-RUN echo "53 23 * * 0 su progeo -s /bin/sh -c '/usr/src/app/cronjobs/weekly.sh >> /var/log/progeo/weekly.log 2>&1'" >> /etc/crontabs/root
+RUN echo "*/30 * * * * /bin/sh -c '${PROJECT_ROOT}/cronjobs/half-hour.sh >> /var/log/progeo/half-hour.log 2>&1'" >> /etc/crontabs/root
+RUN echo "*/5 * * * * /bin/sh -c '${PROJECT_ROOT}/cronjobs/measure.sh >> /var/log/progeo/measure.log 2>&1'" >> /etc/crontabs/root
+RUN echo "53 23 * * * /bin/sh -c '${PROJECT_ROOT}/cronjobs/daily.sh >> /var/log/progeo/daily.log 2>&1'" >> /etc/crontabs/root
+RUN echo "53 23 * * 0 /bin/sh -c '${PROJECT_ROOT}/cronjobs/weekly.sh >> /var/log/progeo/weekly.log 2>&1'" >> /etc/crontabs/root
 RUN chmod 600 /etc/crontabs/root && chown root:root /etc/crontabs/root
 RUN mkdir -p /var/spool/cron/crontabs && chown -R root:root /var/spool/cron
 RUN touch /var/run/crond.pid && chown root:root /var/run/crond.pid
@@ -116,4 +116,4 @@ RUN touch /var/log/progeo/supervisord.log \
     /var/log/progeo/weekly.log \
     && chown -R progeo:progeo /var/log/progeo
 
-CMD ["/usr/bin/supervisord", "-c", "/usr/src/app/supervisord.conf"]
+CMD ["/usr/bin/supervisord", "-c", "/home/progeo/detection-docker-setup/supervisord.conf"]
