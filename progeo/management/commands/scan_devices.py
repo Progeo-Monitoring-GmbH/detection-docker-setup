@@ -70,7 +70,7 @@ class Command(BaseCommand):
 
             payload = self._parse_response(response)
             dlog(f"Received payload from {ip_address}: {payload}")
-            device_hash = payload.get("data",{}).get("hash")
+            device_hash = payload.get("device_hash")
             if not device_hash:
                 dlog(f"Skipping device at {ip_address}: no device identifier")
                 continue

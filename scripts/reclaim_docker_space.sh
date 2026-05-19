@@ -9,7 +9,7 @@ SKIP_DOCKER=0
 
 usage() {
   cat <<'EOF'
-Usage: bash scripts/reclaim_docker_space.sh [options]
+Usage: sudo bash scripts/reclaim_docker_space.sh [options]
 
 Reclaim unused disk space from Docker and common host caches/temp files.
 
