@@ -46,9 +46,9 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        connected_devices = get_connected_devices()
+        _, connected_devices = get_connected_devices()
         if not isinstance(connected_devices, list):
-            raise CommandError("Could not read connected devices")
+            raise CommandError("Could not read connected devices", connected_devices)
 
         account = _get_controller_account()
         found_devices = []
