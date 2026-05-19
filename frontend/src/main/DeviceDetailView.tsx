@@ -31,7 +31,7 @@ type DeviceConfigForm = {
   device_version: string;
   device_project_id: string;
   device_hash: string;
-  measurement_pulldown_hex: number;
+  measurement_pulldown_resistance: number;
   measurement_interval_sec: number;
   measurement_sensors: number;
   measurement_protective_earth: number;
@@ -46,7 +46,7 @@ const defaultConfigForm: DeviceConfigForm = {
   device_version: '',
   device_project_id: '',
   device_hash: '',
-  measurement_pulldown_hex: 136,
+  measurement_pulldown_resistance: 136,
   measurement_interval_sec: 3600,
   measurement_sensors: 16,
   measurement_protective_earth: 0,
@@ -83,7 +83,7 @@ const parseConfigContent = (lua: string, current: DeviceConfigForm): DeviceConfi
     device_version: getStringField(device, 'version') || current.device_version,
     device_project_id: getStringField(device, 'project_id') || current.device_project_id,
     device_hash: getStringField(device, 'device_hash') || current.device_hash,
-    measurement_pulldown_hex: getNumberField(measurement, 'pulldown_hex', current.measurement_pulldown_hex),
+    measurement_pulldown_resistance: getNumberField(measurement, 'pulldown_resistance', current.measurement_pulldown_resistance),
     measurement_interval_sec: getNumberField(measurement, 'interval_sec', current.measurement_interval_sec),
     measurement_sensors: getNumberField(measurement, 'sensors', current.measurement_sensors),
     measurement_protective_earth: getNumberField(measurement, 'protective_earth', current.measurement_protective_earth),
@@ -102,7 +102,7 @@ const toLuaConfig = (config: DeviceConfigForm) => `return {
     device_hash = "${config.device_hash}"
   },
   measurement = {
-    pulldown_hex = ${config.measurement_pulldown_hex},
+    pulldown_resistance = ${config.measurement_pulldown_resistance},
     interval_sec = ${config.measurement_interval_sec},
     sensors = ${config.measurement_sensors},
     protective_earth = ${config.measurement_protective_earth}
@@ -145,7 +145,7 @@ const DeviceDetailView = () => {
               device_project_id: deviceData.project_id || previous.device_project_id,
               device_hash: deviceData.raw_hash || previous.device_hash,
               measurement_interval_sec: deviceData.data_interval || previous.measurement_interval_sec,
-              measurement_pulldown_hex: pull,
+              measurement_pulldown_resistance: pull,
             };
             setConfigContent(toLuaConfig(next));
             return next;
@@ -175,7 +175,7 @@ const DeviceDetailView = () => {
       const text = response?.data?.content || '';
       const parsed = parseConfigContent(text, configFields);
       setConfigFields(parsed);
-      setPullResistance(parsed.measurement_pulldown_hex);
+      setPullResistance(parsed.measurement_pulldown_resistance);
       setConfigContent(toLuaConfig(parsed));
       showSuccessBar(enqueueSnackbar, 'Config loaded successfully');
     } catch (error: any) {
@@ -211,7 +211,7 @@ const DeviceDetailView = () => {
     const value = Number(e.target.value);
     setPullResistance(value);
     setConfigFields((previous) => {
-      const next = { ...previous, measurement_pulldown_hex: value };
+      const next = { ...previous, measurement_pulldown_resistance: value };
       setConfigContent(toLuaConfig(next));
       return next;
     });
