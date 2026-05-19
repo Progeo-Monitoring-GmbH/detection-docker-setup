@@ -10,7 +10,8 @@ from progeo.v1.creator import (
     create_progeo_location_safe,
     create_progeo_measurement_safe,
 )
-from progeo.v1.viewsets.setup_viewset import StatusViewSet, _get_controller_account
+from progeo.v1.viewsets.setup_viewset import _get_controller_account
+from progeo.v1.viewsets.status_viewset import get_connected_devices
 
 
 class Command(BaseCommand):
@@ -45,7 +46,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        connected_devices = StatusViewSet.get_connected_devices()
+        connected_devices = get_connected_devices()
         if not isinstance(connected_devices, list):
             raise CommandError("Could not read connected devices")
 

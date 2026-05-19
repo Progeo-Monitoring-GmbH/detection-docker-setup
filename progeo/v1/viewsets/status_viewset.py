@@ -23,6 +23,30 @@ from progeo.v1.viewsets.setup_viewset import _get_controller_account, get_latest
 # ######################################################################################################################
 
 
+def get_connected_devices(*args, **kwargs) -> dict:
+        devices = []
+        leases_path = "/var/lib/misc/dnsmasq.leases"
+
+        if not os.path.exists(leases_path):
+            return False, {"reason": "Hotspot is not active or dnsmasq.leases file is missing"}
+
+        with open(leases_path, "r") as f:
+            for line in f:
+                parts = line.strip().split()
+                if len(parts) >= 3:
+                    mac = parts[1]
+                    ip = parts[2]
+                    hostname = parts[3] if len(parts) > 3 else "unknown"
+
+                    devices.append({
+                        "mac": mac,
+                        "ip": ip,
+                        "hostname": hostname
+                    })
+
+        return True, devices
+
+
 class StatusViewSet(ProgeoModalViewSet):
     serializer_class = DeviceSerializer
     permission_classes = [AllowAny]
@@ -192,30 +216,6 @@ class StatusViewSet(ProgeoModalViewSet):
         return RequestSuccess({"device_id": device.id, "stored": len(stored), "points": stored})
 
 
-    @staticmethod
-    def get_connected_devices(*args, **kwargs) -> dict:
-        devices = []
-        leases_path = "/var/lib/misc/dnsmasq.leases"
-
-        if not os.path.exists(leases_path):
-            return False, {"reason": "Hotspot is not active or dnsmasq.leases file is missing"}
-
-        with open(leases_path, "r") as f:
-            for line in f:
-                parts = line.strip().split()
-                if len(parts) >= 3:
-                    mac = parts[1]
-                    ip = parts[2]
-                    hostname = parts[3] if len(parts) > 3 else "unknown"
-
-                    devices.append({
-                        "mac": mac,
-                        "ip": ip,
-                        "hostname": hostname
-                    })
-
-        return True, devices
-
     @calc_runtime
     @action(detail=False, url_path="list_connected", methods=["GET"])
     def list_connected(self, request, *args, **kwargs):
@@ -224,7 +224,7 @@ class StatusViewSet(ProgeoModalViewSet):
             return RequestFailed({"reason": "No account configured"})
 
         db_name = account.db_name or "default"
-        success, data = self.get_connected_devices()
+        success, data = get_connected_devices()
         if not success:
             return RequestFailed(data)
 
@@ -313,7 +313,7 @@ class StatusViewSet(ProgeoModalViewSet):
 
         #db_name = account.db_name or "default"
         db_name = "default"
-        success, connected_devices = self.get_connected_devices()
+        success, connected_devices = get_connected_devices()
         if not success:
             connected_devices = []
 

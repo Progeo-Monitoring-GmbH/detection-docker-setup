@@ -79,12 +79,12 @@ RUN echo "*/30 * * * * /bin/sh -c '${PROJECT_ROOT}/cronjobs/half-hour.sh >> /var
 RUN echo "*/5 * * * * /bin/sh -c '${PROJECT_ROOT}/cronjobs/measure.sh >> /var/log/progeo/measure.log 2>&1'" >> /etc/crontabs/root
 RUN echo "53 23 * * * /bin/sh -c '${PROJECT_ROOT}/cronjobs/daily.sh >> /var/log/progeo/daily.log 2>&1'" >> /etc/crontabs/root
 RUN echo "53 23 * * 0 /bin/sh -c '${PROJECT_ROOT}/cronjobs/weekly.sh >> /var/log/progeo/weekly.log 2>&1'" >> /etc/crontabs/root
+
 RUN chmod 600 /etc/crontabs/root && chown root:root /etc/crontabs/root
 RUN mkdir -p /var/spool/cron/crontabs && chown -R root:root /var/spool/cron
 RUN touch /var/run/crond.pid && chown root:root /var/run/crond.pid
 RUN test -x /usr/sbin/crond || chmod 755 /usr/sbin/crond
 RUN mkdir -p /var/log/progeo /run && chown -R progeo:progeo /var/log/progeo
-
 
 RUN sed -i -e 's/\r$//' ./scripts/*.sh
 RUN sed -i -e 's/\r$//' ./**/*.sh
@@ -100,7 +100,6 @@ RUN mkdir -p ${PROJECT_ROOT}/static && chown -R progeo:progeo ${PROJECT_ROOT}/st
 RUN mkdir -p ${PROJECT_ROOT}/tmp && chown -R progeo:progeo ${PROJECT_ROOT}/tmp
 RUN mkdir -p /var/log/progeo && chown -R progeo:progeo /var/log/progeo
 
-RUN touch "${PROJECT_ROOT}/celery.log" && chown -R progeo:progeo "${PROJECT_ROOT}/celery.log"
 RUN touch /var/log/progeo/supervisord.log \
     /var/log/progeo/cron.log \
     /var/log/progeo/cron-supervisor.log \
