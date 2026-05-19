@@ -136,7 +136,6 @@ class Command(BaseCommand):
                 "device_info": device_info,
                 "payload": payload,
                 "base_url": base_url,
-                "created": created,
             })
             dlog(f"Registered device {device.raw_hash} at {ip_address} | payload: {payload}")
 
