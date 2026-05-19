@@ -19,13 +19,6 @@ from progeo.v1.models import ProgeoDevice
 class Command(BaseCommand):
     help = "scan_devices"
 
-    ping_timeout = float(os.getenv("SCAN_DEVICES_PING_TIMEOUT", "2"))
-    measure_connect_timeout = float(os.getenv("SCAN_DEVICES_MEASURE_CONNECT_TIMEOUT", "5"))
-    measure_read_timeout = float(os.getenv("SCAN_DEVICES_MEASURE_READ_TIMEOUT", "300"))
-    measure_retries = int(os.getenv("SCAN_DEVICES_MEASURE_RETRIES", "1"))
-    measure_retry_delay_seconds = float(os.getenv("SCAN_DEVICES_MEASURE_RETRY_DELAY", "1.5"))
-
-
     @staticmethod
     def _parse_response(response: requests.Response) -> dict[str, Any]:
         try:
@@ -63,32 +56,16 @@ class Command(BaseCommand):
         )
 
     def _post_measure(self, base_url: str) -> requests.Response:
-        last_exc: Exception | None = None
-        timeout = (self.measure_connect_timeout, self.measure_read_timeout)
-        for attempt in range(1, self.measure_retries + 2):
-            try:
-                # Force a fresh connection for each attempt to avoid stale keep-alive sockets.
-                response = requests.post(
-                    f"{base_url}/measure",
-                    timeout=timeout,
-                    headers={"Connection": "close"},
-                )
-                response.raise_for_status()
-                return response
-            except requests.RequestException as exc:
-                last_exc = exc
-                is_last_attempt = attempt >= (self.measure_retries + 1)
-                if is_last_attempt:
-                    break
-                dlog(
-                    f"Measurement attempt {attempt} failed for {base_url}: {exc}. "
-                    f"Retrying in {self.measure_retry_delay_seconds}s"
-                )
-                time.sleep(self.measure_retry_delay_seconds)
-
-        if last_exc is None:
-            raise RuntimeError("Measurement request failed without an exception")
-        raise last_exc
+        try:
+            # Force a fresh connection for each attempt to avoid stale keep-alive sockets.
+            response = requests.post(
+                f"{base_url}/measure",
+                timeout=(30, 500)
+            )
+            response.raise_for_status()
+            return response
+        except requests.RequestException as exc:
+            elog(f"POST /measure failed for {base_url}: {exc}")
 
     def handle(self, *args, **options):
         _, connected_devices = get_connected_devices()
@@ -107,7 +84,7 @@ class Command(BaseCommand):
 
             base_url = self._build_base_url(ip_address)
             try:
-                response = requests.get(f"{base_url}/identify", timeout=self.ping_timeout)
+                response = requests.get(f"{base_url}/identify", timeout=5)
                 response.raise_for_status()
             except requests.RequestException:
                 dlog(f"Skipping unreachable device at {ip_address}")
