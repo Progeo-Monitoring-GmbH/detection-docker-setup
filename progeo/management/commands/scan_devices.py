@@ -1,4 +1,5 @@
 import os
+import time
 from typing import Any
 
 import requests
@@ -12,13 +13,17 @@ from progeo.v1.creator import (
 )
 from progeo.v1.viewsets.setup_viewset import _get_controller_account
 from progeo.v1.viewsets.status_viewset import get_connected_devices
+from progeo.v1.models import ProgeoDevice
 
 
 class Command(BaseCommand):
     help = "scan_devices"
 
-    ping_timeout = 2
-    measure_timeout = 120
+    ping_timeout = float(os.getenv("SCAN_DEVICES_PING_TIMEOUT", "2"))
+    measure_connect_timeout = float(os.getenv("SCAN_DEVICES_MEASURE_CONNECT_TIMEOUT", "5"))
+    measure_read_timeout = float(os.getenv("SCAN_DEVICES_MEASURE_READ_TIMEOUT", "300"))
+    measure_retries = int(os.getenv("SCAN_DEVICES_MEASURE_RETRIES", "1"))
+    measure_retry_delay_seconds = float(os.getenv("SCAN_DEVICES_MEASURE_RETRY_DELAY", "1.5"))
 
 
     @staticmethod
@@ -29,7 +34,19 @@ class Command(BaseCommand):
                 return payload
             return {"data": payload}
         except ValueError:
-            return {"text": response.text}
+            text = response.text or ""
+            lines = [line.strip() for line in text.splitlines() if line.strip()]
+            parsed: dict[str, Any] = {}
+            for line in lines:
+                if "=" in line:
+                    key, value = line.split("=", 1)
+                    parsed[key.strip()] = value.strip()
+                else:
+                    parsed.setdefault("lines", []).append(line)
+
+            if parsed:
+                return parsed
+            return {"text": text}
 
     @staticmethod
     def _build_base_url(ip_address: str) -> str:
@@ -44,6 +61,34 @@ class Command(BaseCommand):
             or device_info.get("ip")
             or device_info.get("hostname")
         )
+
+    def _post_measure(self, base_url: str) -> requests.Response:
+        last_exc: Exception | None = None
+        timeout = (self.measure_connect_timeout, self.measure_read_timeout)
+        for attempt in range(1, self.measure_retries + 2):
+            try:
+                # Force a fresh connection for each attempt to avoid stale keep-alive sockets.
+                response = requests.post(
+                    f"{base_url}/measure",
+                    timeout=timeout,
+                    headers={"Connection": "close"},
+                )
+                response.raise_for_status()
+                return response
+            except requests.RequestException as exc:
+                last_exc = exc
+                is_last_attempt = attempt >= (self.measure_retries + 1)
+                if is_last_attempt:
+                    break
+                dlog(
+                    f"Measurement attempt {attempt} failed for {base_url}: {exc}. "
+                    f"Retrying in {self.measure_retry_delay_seconds}s"
+                )
+                time.sleep(self.measure_retry_delay_seconds)
+
+        if last_exc is None:
+            raise RuntimeError("Measurement request failed without an exception")
+        raise last_exc
 
     def handle(self, *args, **options):
         _, connected_devices = get_connected_devices()
@@ -81,11 +126,7 @@ class Command(BaseCommand):
                 elog(f"Skipping device at {ip_address}: failed to create location")
                 continue
 
-            device, created = create_progeo_device_safe(
-                location=location,
-                raw_hash=device_hash,
-                db=account.db_name,
-            )
+            device = ProgeoDevice.objects.filter(mac=device_info.get("mac")).first()
             if not device:
                 elog(f"Skipping device at {ip_address}: failed to register device")
                 continue
@@ -100,23 +141,21 @@ class Command(BaseCommand):
             dlog(f"Registered device {device.raw_hash} at {ip_address} | payload: {payload}")
 
         for found in found_devices:
-            ilog(f"Found device {found['device'].raw_hash} at {found['device_info'].get('ip')}, starting measurement")
             device = found["device"]
             device_info = found["device_info"]
+            _ip = device_info.get("ip", "unknown IP")
+            ilog(f"Found device {found['device'].raw_hash} at {_ip}, starting measurement")
+
             try:
-                response = requests.post(f"{found['base_url']}/measure", timeout=self.measure_timeout)
-                response.raise_for_status()
+                response = self._post_measure(found["base_url"])
             except requests.RequestException as exc:
                 dlog(f"Measurement failed for {device.raw_hash}: {exc}")
                 continue
 
             measure_payload = self._parse_response(response)
             measurement_data = {
-                "device_hash": device.raw_hash,
-                "ip": device_info.get("ip"),
-                "mac": device_info.get("mac"),
                 "hostname": device_info.get("hostname"),
-                "ping": found["payload"],
+                "identify": found["payload"],
                 "measure": measure_payload,
                 "scanned_at": timezone.now().isoformat(),
             }
