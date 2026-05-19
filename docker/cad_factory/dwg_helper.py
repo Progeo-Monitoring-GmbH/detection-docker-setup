@@ -4,11 +4,11 @@
 EXAMPLE USAGE:
 
 # Only DKS_Visualisierung exists
-docker compose run --rm cad_factory media/uploads/OG2.dxf --layer DKS_Visualisierung --skip-convert --points
+docker compose run --rm progeo-cad_factory media/uploads/OG2.dxf --skip-convert --points
 
 # Default way
-docker compose run --rm cad_factory media/uploads/VP_20230228_OPR_TSO_BSO_Waiblingen_003.dwg --layer DKS_MPLE
-docker compose build cad_factory ; docker compose run --rm cad_factory media/uploads/VP_20230228_OPR_TSO_BSO_Waiblingen_003.dwg --layer DKS_MPLE
+docker compose run --rm progeo-cad_factory media/uploads/VP_20230228_OPR_TSO_BSO_Waiblingen_003.dwg
+docker compose build progeo-cad_factory ; docker compose run --rm progeo-cad_factory media/uploads/VP_20230228_OPR_TSO_BSO_Waiblingen_003.dwg
 
 """
 
@@ -23,6 +23,9 @@ from typing import Any
 
 import ezdxf
 from ezdxf import recover
+
+
+VALID_LAYERS = ["DKS_Visualisierung", "DKS_MPLE"]
 
 
 def _to_jsonable(value: Any) -> Any:
@@ -89,7 +92,7 @@ def convert_dwg_to_dxf(input_dwg: Path, output_dxf: Path) -> None:
     try:
         subprocess.run(command, check=True, capture_output=True, text=False)
     except FileNotFoundError as exc:
-        raise RuntimeError("dwg2dxf was not found in cad_factory image.") from exc
+        raise RuntimeError("dwg2dxf was not found in progeo-cad_factory image.") from exc
     except subprocess.CalledProcessError as exc:
         stderr = exc.stderr.decode("utf-8", errors="replace").strip() if exc.stderr else "no error output"
         stdout = exc.stdout.decode("utf-8", errors="replace").strip() if exc.stdout else ""
@@ -174,6 +177,76 @@ def collect_layer_polyline_points_raw(dxf_path: Path, layer_name: str) -> list[d
         finalize_entity()
 
     return raw_points
+
+
+def detect_first_valid_layer(dxf_path: Path, valid_layers: list[str]) -> str | None:
+    """Return the first layer from valid_layers that exists in the DXF."""
+    try:
+        doc = ezdxf.readfile(dxf_path)
+        present_layers = {entity.dxf.layer for entity in doc.modelspace()}
+    except Exception:  # noqa: BLE001
+        try:
+            doc, _ = recover.readfile(str(dxf_path))
+            present_layers = {entity.dxf.layer for entity in doc.modelspace()}
+        except Exception:
+            # Raw fallback: collect all layer names from ENTITIES section.
+            with dxf_path.open("r", encoding="utf-8", errors="ignore") as handle:
+                lines = [line.rstrip("\n\r") for line in handle]
+
+            in_entities = False
+            current_type: str | None = None
+            current_codes: dict[str, Any] = {}
+            present_layers: set[str] = set()
+
+            def finalize_entity() -> None:
+                nonlocal current_type, current_codes
+                if not current_type:
+                    current_codes = {}
+                    return
+
+                layer_value = current_codes.get("8")
+                if isinstance(layer_value, list):
+                    layer_value = layer_value[-1] if layer_value else None
+                if isinstance(layer_value, str) and layer_value.strip():
+                    present_layers.add(layer_value.strip())
+
+                current_type = None
+                current_codes = {}
+
+            i = 0
+            while i + 1 < len(lines):
+                code = lines[i].strip()
+                value = lines[i + 1].strip()
+
+                if code == "0" and value == "SECTION" and i + 3 < len(lines):
+                    sec_code = lines[i + 2].strip()
+                    sec_name = lines[i + 3].strip()
+                    in_entities = sec_code == "2" and sec_name == "ENTITIES"
+                    i += 2
+                elif in_entities and code == "0" and value == "ENDSEC":
+                    finalize_entity()
+                    in_entities = False
+                elif in_entities and code == "0":
+                    finalize_entity()
+                    current_type = value
+                elif in_entities and current_type:
+                    existing = current_codes.get(code)
+                    if existing is None:
+                        current_codes[code] = value
+                    elif isinstance(existing, list):
+                        existing.append(value)
+                    else:
+                        current_codes[code] = [existing, value]
+
+                i += 2
+
+            if in_entities:
+                finalize_entity()
+
+    for layer_name in valid_layers:
+        if layer_name in present_layers:
+            return layer_name
+    return None
 
 def scale_to_int(value: float) -> int:
     return int(round(float(value) * 10))
@@ -307,7 +380,7 @@ def collect_layer_polyline_points(dxf_path: Path, layer_name: str, coord_margin:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Convert DWG to DXF and print entities from one layer."
+        description="Convert DWG to DXF and print points from the first matching valid layer."
     )
     parser.add_argument("input", type=Path, help="Path to source DWG.")
     parser.add_argument(
@@ -315,11 +388,6 @@ def main() -> int:
         type=Path,
         default=None,
         help="Path to generated DXF. Default: input with .dxf extension.",
-    )
-    parser.add_argument(
-        "--layer",
-        default="DKS_MPLE",
-        help="Layer name to print (default: DKS_MPLE).",
     )
     parser.add_argument(
         "--skip-convert",
@@ -355,9 +423,17 @@ def main() -> int:
             print(f"DXF file does not exist: {output_path}", file=sys.stderr)
             return 2
 
-        points = collect_layer_polyline_points(output_path, args.layer, coord_margin=args.coord_margin)
+        selected_layer = detect_first_valid_layer(output_path, VALID_LAYERS)
+        if not selected_layer:
+            print(
+                f"None of the valid layers were found: {', '.join(VALID_LAYERS)}",
+                file=sys.stderr,
+            )
+            return 2
+
+        points = collect_layer_polyline_points(output_path, selected_layer, coord_margin=args.coord_margin)
         print(json.dumps(points, ensure_ascii=True))
-        print(f"Found {len(points)} polyline points on layer '{args.layer}'.", file=sys.stderr)
+        print(f"Found {len(points)} polyline points on layer '{selected_layer}'.", file=sys.stderr)
     except Exception as exc:  # noqa: BLE001
         print(str(exc), file=sys.stderr)
         return 1

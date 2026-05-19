@@ -4,7 +4,7 @@ from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from progeo.v1.helper import pretty_sizeof
-from progeo.v1.models import MfSLog, Account, Backup, ProgeoDevice
+from progeo.v1.models import MfSLog, Account, Backup, ProgeoDevice, ProgeoMeasurePoint
 from datetime import datetime
 
 
@@ -91,6 +91,18 @@ class BackupSerializer(ProgeoBaseSerializer):
 
 
 # ############################################################################################
+
+
+class ProgeoMeasurePointSerializer(ProgeoBaseSerializer):
+    reference = serializers.SerializerMethodField("is_reference")
+
+    class Meta:
+        model = ProgeoMeasurePoint
+        exclude = ["last_fetched"]
+
+    def is_reference(self, obj):
+        reference_sensor_order = self.context.get("reference_sensor_order")
+        return obj.sensor_order == reference_sensor_order
 
 
 class MfSLogSerializer(ProgeoBaseSerializer):

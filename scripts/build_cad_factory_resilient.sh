@@ -24,7 +24,7 @@ is_running() {
 
 start_build() {
   if is_running; then
-    echo "cad_factory build is already running with PID $(cat "${PID_FILE}")."
+    echo "progeo-cad_factory build is already running with PID $(cat "${PID_FILE}")."
     echo "Log file: ${LOG_FILE}"
     exit 0
   fi
@@ -32,12 +32,12 @@ start_build() {
   : > "${LOG_FILE}"
 
   # Build in a detached process so it survives SSH disconnects.
-  nohup bash -lc "cd '${ROOT_DIR}' && DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1 docker compose build --progress=plain cad_factory" \
+  nohup bash -lc "cd '${ROOT_DIR}' && DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1 docker compose build --progress=plain progeo-cad_factory" \
     >"${LOG_FILE}" 2>&1 &
 
   echo "$!" > "${PID_FILE}"
 
-  echo "Started cad_factory build in background."
+  echo "Started progeo-cad_factory build in background."
   echo "PID: $(cat "${PID_FILE}")"
   echo "Log file: ${LOG_FILE}"
   echo "Use: $0 status"
@@ -46,16 +46,16 @@ start_build() {
 
 status_build() {
   if is_running; then
-    echo "cad_factory build is running (PID $(cat "${PID_FILE}"))."
+    echo "progeo-cad_factory build is running (PID $(cat "${PID_FILE}"))."
     echo "Log file: ${LOG_FILE}"
     exit 0
   fi
 
   if [[ -f "${PID_FILE}" ]]; then
-    echo "cad_factory build is not running (stale PID file found)."
+    echo "progeo-cad_factory build is not running (stale PID file found)."
     rm -f "${PID_FILE}"
   else
-    echo "cad_factory build is not running."
+    echo "progeo-cad_factory build is not running."
   fi
 
   if [[ -f "${LOG_FILE}" ]]; then
@@ -84,7 +84,7 @@ stop_build() {
   pid="$(cat "${PID_FILE}")"
   kill "${pid}"
   rm -f "${PID_FILE}"
-  echo "Stopped cad_factory build (PID ${pid})."
+  echo "Stopped progeo-cad_factory build (PID ${pid})."
 }
 
 usage() {
@@ -96,7 +96,7 @@ Usage:
   bash scripts/build_cad_factory_resilient.sh stop
 
 Commands:
-  start   Start docker compose build cad_factory in background (SSH-safe).
+  start   Start docker compose build progeo-cad_factory in background (SSH-safe).
   status  Show whether the build process is still running.
   logs    Follow build logs.
   stop    Stop a running background build.

@@ -66,13 +66,13 @@ bash scripts/reclaim_docker_space.sh --volumes
 sudo bash scripts/setup_reverse_ssh_shell.sh --server ubuntu@example.com --remote-port 22022
 
 # Start cad_factory build in background so SSH disconnect does not kill it
-bash scripts/build_cad_factory_resilient.sh start
+bash scripts/build_progeo-cad_factory_resilient.sh start
 
 # Check if background build is still running
-bash scripts/build_cad_factory_resilient.sh status
+bash scripts/build_progeo-cad_factory_resilient.sh status
 
 # Follow background build logs
-bash scripts/build_cad_factory_resilient.sh logs
+bash scripts/build_progeo-cad_factory_resilient.sh logs
 ```
 
 ## Notes

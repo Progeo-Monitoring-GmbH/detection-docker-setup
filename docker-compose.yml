@@ -153,8 +153,8 @@ services:
           - api.progeo.app
 
 
-  cad_factory:
-    container_name: cad_factory
+  progeo-cad_factory:
+    container_name: progeo-cad_factory
     restart: "no"
     build:
       context: .

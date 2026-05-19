@@ -128,8 +128,8 @@ const DeviceListView = () => {
       `/v1/device/${deleteTargetId}/delete/`,
       () => {
         showSuccessBar(enqueueSnackbar, 'Device deleted successfully');
+        setDevices((prev) => prev.filter((d) => d.device.id !== deleteTargetId));
         setDeleteTargetId(null);
-        void fetchDevices();
       },
       (error) => {
         showErrorBar(enqueueSnackbar, `Could not delete device: ${error.message}`);

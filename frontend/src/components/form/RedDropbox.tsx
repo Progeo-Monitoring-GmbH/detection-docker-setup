@@ -31,6 +31,7 @@ const RedDropbox = ({
     const key = (kind || '').toLowerCase();
     if (key === 'cad') {
       return {
+        'image/vnd.dwg': ['.dwg'],
         'application/octet-stream': ['.dwg', '.dxf'],
         'application/x-autocad': ['.dwg'],
         'application/acad': ['.dwg'],
