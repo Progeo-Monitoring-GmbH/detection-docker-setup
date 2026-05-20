@@ -1,13 +1,21 @@
 import { Badge, Button, Card } from 'react-bootstrap';
-import { ArrowClockwise, Wifi, WifiOff, PencilSquare, Trash, Image } from 'react-bootstrap-icons';
+import {
+  ArrowClockwise,
+  Wifi,
+  WifiOff,
+  PencilSquare,
+  Trash,
+  Image,
+} from 'react-bootstrap-icons';
 import { useNavigate } from 'react-router';
 import { prettyDate } from '../../helper';
+import '../ui/css/DeviceCard.css';
 
-const DeviceCard = ({ device, onIdentify, onRefresh, onDelete, loading }) => {
+const DeviceCard = ({ device, onIdentify, onDelete, loading }) => {
   const navigate = useNavigate();
 
   return (
-    <Card className="mb-3 h-100 p-3">
+    <Card className="mb-3 h-100 p-3 device-card">
       <Card.Body>
         <div className="d-flex justify-content-between align-items-start mb-3">
           <div>
@@ -52,28 +60,20 @@ const DeviceCard = ({ device, onIdentify, onRefresh, onDelete, loading }) => {
 
         <div className="mb-3">
           <small className="d-block text-muted">
-            <strong>Last Fetched:</strong> {prettyDate(device.device.last_fetched)}
+            <strong>Last Fetched:</strong>{' '}
+            {prettyDate(device.device.last_fetched)}
           </small>
         </div>
 
         <div className="d-flex gap-2 flex-wrap">
           <Button
-            variant="outline-primary"
-            size="sm"
-            onClick={() => onRefresh(device.device.id)}
-            disabled={loading}
-            title="Refresh device data"
-          >
-            <ArrowClockwise className="me-1" />
-            Refresh
-          </Button>
-
-          <Button
             variant="outline-success"
             size="sm"
             disabled={!device.device.device_ip || loading}
-            onClick={() => onIdentify(device.device.device_ip, device.device.id)}
-            title="Identify device"
+            onClick={() =>
+              onIdentify(device.device.device_ip, device.device.id)
+            }
+            title="Identify Device"
           >
             <Wifi className="me-1" />
             Identify

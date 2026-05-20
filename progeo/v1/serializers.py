@@ -4,7 +4,14 @@ from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from progeo.v1.helper import pretty_sizeof
-from progeo.v1.models import MfSLog, Account, Backup, ProgeoDevice, ProgeoMeasurePoint
+from progeo.v1.models import (
+    MfSLog,
+    Account,
+    Backup,
+    ProgeoDevice,
+    ProgeoMeasurePoint,
+    ProgeoMeasurement,
+)
 from datetime import datetime
 
 
@@ -103,6 +110,78 @@ class ProgeoMeasurePointSerializer(ProgeoBaseSerializer):
     def is_reference(self, obj):
         reference_sensor_order = self.context.get("reference_sensor_order")
         return obj.sensor_order == reference_sensor_order
+
+
+class ProgeoMeasurementSerializer(ProgeoBaseSerializer):
+    samples = serializers.SerializerMethodField("get_samples")
+    max_sample = serializers.SerializerMethodField("get_max_sample")
+    avg_sample = serializers.SerializerMethodField("get_avg_sample")
+    non_zero_sample = serializers.SerializerMethodField("get_non_zero_sample")
+    data_interval = serializers.IntegerField(source="device.data_interval", read_only=True)
+
+    class Meta:
+        model = ProgeoMeasurement
+        fields = [
+            "id",
+            "device",
+            "data_interval",
+            "last_fetched",
+            "samples",
+            "max_sample",
+            "avg_sample",
+            "non_zero_sample",
+        ]
+
+    @staticmethod
+    def _extract_samples(raw_data):
+        if not isinstance(raw_data, dict):
+            return []
+
+        measure_data = raw_data.get("measure")
+        if isinstance(measure_data, dict):
+            samples_raw = measure_data.get("samples")
+        else:
+            samples_raw = raw_data.get("samples")
+
+        if isinstance(samples_raw, list):
+            result = []
+            for value in samples_raw:
+                try:
+                    result.append(float(value))
+                except (TypeError, ValueError):
+                    continue
+            return result
+
+        if isinstance(samples_raw, str):
+            result = []
+            for value in samples_raw.split(","):
+                item = value.strip()
+                if not item:
+                    continue
+                try:
+                    result.append(float(item))
+                except (TypeError, ValueError):
+                    continue
+            return result
+
+        return []
+
+    def get_samples(self, obj):
+        return self._extract_samples(getattr(obj, "raw_data", None))
+
+    def get_max_sample(self, obj):
+        samples = self.get_samples(obj)
+        return max(samples) if samples else 0.0
+
+    def get_avg_sample(self, obj):
+        samples = self.get_samples(obj)
+        if not samples:
+            return 0.0
+        return sum(samples) / len(samples)
+
+    def get_non_zero_sample(self, obj):
+        samples = self.get_samples(obj)
+        return len([value for value in samples if value != 0])
 
 
 class MfSLogSerializer(ProgeoBaseSerializer):

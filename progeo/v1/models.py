@@ -270,7 +270,10 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
     def __str__(self):
         _id = f"[{self.pk}] " if DEBUG else ""
         _device = f"Device {self.device.mac}" if self.device else "Unknown Device"
-        return f"{_id} 📊 {_device} - {self.last_updated}: {self.raw_data.values()}"
+        _samples = self.raw_data.get("samples", [])
+        _sensors = self.raw_data.get("sensors", "")
+
+        return f"{_id} 📊 {_device} - {self.last_fetched}: {_samples} (Sensors: {_sensors})"
 
 
 class ProgeoMeasurePoint(ProgeoModel, auto_prefetch.Model):
@@ -287,7 +290,7 @@ class ProgeoMeasurePoint(ProgeoModel, auto_prefetch.Model):
     def __str__(self):
         _id = f"[{self.pk}] " if DEBUG else ""
         _device = f"Device {self.device.mac}" if self.device else "Unknown Device"
-        return f"{_id} 📍 {_device} - Sensor #{self.sensor_order} ({self.x}, {self.y})"
+        return f"{_id} 📍 {_device} - Sensor #{self.sensor_order} ({self.nx}, {self.ny})"
 
 
 class ProgeoAlarm(ProgeoModel, auto_prefetch.Model):

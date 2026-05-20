@@ -9,8 +9,8 @@ from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
 
 from progeo.v1.helper import dlog
-from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurePoint
-from progeo.v1.serializers import DeviceSerializer, ProgeoMeasurePointSerializer
+from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurePoint, ProgeoMeasurement
+from progeo.v1.serializers import DeviceSerializer, ProgeoMeasurePointSerializer, ProgeoMeasurementSerializer
 from progeo.decorator import calc_runtime
 from progeo.helper.basics import RequestSuccess, save_check_dir, RequestFailed
 from progeo.helper.docker_helper import start_cad_factory
@@ -50,6 +50,18 @@ def get_connected_devices(*args, **kwargs) -> dict:
 class StatusViewSet(ProgeoModalViewSet):
     serializer_class = DeviceSerializer
     permission_classes = [AllowAny]
+
+    @calc_runtime
+    @action(detail=False, url_path="measurements", methods=["GET"])
+    def measurements(self, request, *args, **kwargs):
+        db_name = "default"
+        queryset = (
+            ProgeoMeasurement.objects.using(db_name)
+            .select_related("device")
+            .order_by("-id")
+        )
+        serialized = ProgeoMeasurementSerializer(queryset, many=True).data
+        return RequestSuccess({"measurements": serialized})
 
     @staticmethod
     def _extract_json_list_from_output(output: str):

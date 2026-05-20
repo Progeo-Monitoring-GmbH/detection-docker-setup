@@ -206,7 +206,7 @@ def download_device_config(device_ip: str, path: str = ALLOWED_DEVICE_CONFIG_PAT
     logger.info(f"[CELERY] {msg}")
     dlog(msg, tag="[CELERY]")
     
-    response = requests.get(f"{base_url}/download?path={encoded_path}", timeout=10)
+    response = requests.get(f"{base_url}/download?path={encoded_path}", timeout=25)
     
     done_msg = f"download_device_config done status={response.status_code}"
     logger.info(f"[CELERY] {done_msg}")
@@ -231,7 +231,7 @@ def upload_device_config(device_ip: str, content: str, path: str = ALLOWED_DEVIC
     dlog(msg, tag="[CELERY]")
 
     body = (content or "").encode("utf-8")
-    ok, status_code, response_content = _socket_upload(base_url, encoded_path, body, timeout=10)
+    ok, status_code, response_content = _socket_upload(base_url, encoded_path, body, timeout=25)
 
     done_msg = f"upload_device_config done status={status_code}"
     logger.info(f"[CELERY] {done_msg}")

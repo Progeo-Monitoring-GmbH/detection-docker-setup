@@ -1,0 +1,7 @@
+.device-card {
+  border: 1px solid #dee2e6;
+}
+.device-card:hover {
+  border-color: #007bff;
+  box-shadow: 0 4px 8px rgba(0, 123, 255, 0.1);
+}

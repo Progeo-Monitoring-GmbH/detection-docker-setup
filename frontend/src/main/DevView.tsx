@@ -1,8 +1,21 @@
 import './../components/ui/css/Dev.css';
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
-import { Alert, Button, Card, Col, Container, Row, Table } from 'react-bootstrap';
-import { ArrowClockwise, BarChart, Download, Stopwatch } from 'react-bootstrap-icons';
+import {
+  Alert,
+  Button,
+  Card,
+  Col,
+  Container,
+  Row,
+  Table,
+} from 'react-bootstrap';
+import {
+  ArrowClockwise,
+  BarChart,
+  Download,
+  Stopwatch,
+} from 'react-bootstrap-icons';
 import axiosConfig from '../axiosConfig';
 
 type BootMetrics = {
@@ -35,7 +48,7 @@ type ApiResult = {
 };
 
 const moduleTests: Array<{ name: string; importer: () => Promise<unknown> }> = [
-  { name: 'DemoView', importer: () => import('./DemoView') },
+  { name: 'DemoView', importer: () => import('./MeasurementsOverview.tsx') },
   { name: 'DeviceListView', importer: () => import('./DeviceListView') },
   { name: 'DeviceDetailView', importer: () => import('./DeviceDetailView') },
   { name: 'DeviceEditorView', importer: () => import('./DeviceEditorView') },
@@ -46,7 +59,10 @@ const moduleTests: Array<{ name: string; importer: () => Promise<unknown> }> = [
 const apiTests: Array<{ name: string; url: string }> = [
   { name: 'Device Status', url: '/v1/status/devices/' },
   { name: 'Connected Devices', url: '/v1/status/list_connected/' },
-  { name: 'Measure Points (sample)', url: '/v1/status/measure_points/?device_id=1' },
+  {
+    name: 'Measure Points (sample)',
+    url: '/v1/status/measure_points/?device_id=1',
+  },
 ];
 
 const toKb = (value: number) => Number((value / 1024).toFixed(2));
@@ -68,20 +84,34 @@ const DevView = () => {
   const [lastRun, setLastRun] = useState<string>('never');
 
   const collectBootMetrics = () => {
-    const navEntry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+    const navEntry = performance.getEntriesByType('navigation')[0] as
+      | PerformanceNavigationTiming
+      | undefined;
     const paintEntries = performance.getEntriesByType('paint');
-    const firstPaint = paintEntries.find((entry) => entry.name === 'first-paint');
-    const firstContentfulPaint = paintEntries.find((entry) => entry.name === 'first-contentful-paint');
+    const firstPaint = paintEntries.find(
+      (entry) => entry.name === 'first-paint',
+    );
+    const firstContentfulPaint = paintEntries.find(
+      (entry) => entry.name === 'first-contentful-paint',
+    );
 
     const mem = (performance as any).memory;
-    const usedJsHeapMb = mem?.usedJSHeapSize ? Number((mem.usedJSHeapSize / (1024 * 1024)).toFixed(2)) : null;
+    const usedJsHeapMb = mem?.usedJSHeapSize
+      ? Number((mem.usedJSHeapSize / (1024 * 1024)).toFixed(2))
+      : null;
 
     setBootMetrics({
-      domContentLoadedMs: navEntry ? Number(navEntry.domContentLoadedEventEnd.toFixed(2)) : null,
+      domContentLoadedMs: navEntry
+        ? Number(navEntry.domContentLoadedEventEnd.toFixed(2))
+        : null,
       loadEventMs: navEntry ? Number(navEntry.loadEventEnd.toFixed(2)) : null,
-      domInteractiveMs: navEntry ? Number(navEntry.domInteractive.toFixed(2)) : null,
+      domInteractiveMs: navEntry
+        ? Number(navEntry.domInteractive.toFixed(2))
+        : null,
       firstPaintMs: firstPaint ? Number(firstPaint.startTime.toFixed(2)) : null,
-      firstContentfulPaintMs: firstContentfulPaint ? Number(firstContentfulPaint.startTime.toFixed(2)) : null,
+      firstContentfulPaintMs: firstContentfulPaint
+        ? Number(firstContentfulPaint.startTime.toFixed(2))
+        : null,
       usedJsHeapMb,
     });
   };
@@ -91,18 +121,28 @@ const DevView = () => {
     const results: ModuleResult[] = [];
 
     for (const testCase of moduleTests) {
-      const beforeResources = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
+      const beforeResources = performance.getEntriesByType(
+        'resource',
+      ) as PerformanceResourceTiming[];
       const beforeCount = beforeResources.length;
       const started = performance.now();
 
       try {
         await testCase.importer();
         const finished = performance.now();
-        const afterResources = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
+        const afterResources = performance.getEntriesByType(
+          'resource',
+        ) as PerformanceResourceTiming[];
         const newResources = afterResources.slice(beforeCount);
 
-        const transferSize = newResources.reduce((sum, entry) => sum + (entry.transferSize || 0), 0);
-        const decodedBodySize = newResources.reduce((sum, entry) => sum + (entry.decodedBodySize || 0), 0);
+        const transferSize = newResources.reduce(
+          (sum, entry) => sum + (entry.transferSize || 0),
+          0,
+        );
+        const decodedBodySize = newResources.reduce(
+          (sum, entry) => sum + (entry.decodedBodySize || 0),
+          0,
+        );
 
         results.push({
           name: testCase.name,
@@ -156,7 +196,9 @@ const DevView = () => {
         if (error?.response?.status === 401 && auth?.token) {
           auth.navigate(`/login?forward=${auth.location}`);
         }
-        const dataLength = error?.response?.data ? JSON.stringify(error.response.data).length : 0;
+        const dataLength = error?.response?.data
+          ? JSON.stringify(error.response.data).length
+          : 0;
         results.push({
           name: testCase.name,
           url: testCase.url,
@@ -189,8 +231,14 @@ const DevView = () => {
       return { totalDuration: 0, totalSize: 0, failed: 0 };
     }
     return {
-      totalDuration: Number(moduleResults.reduce((sum, row) => sum + row.durationMs, 0).toFixed(2)),
-      totalSize: Number(moduleResults.reduce((sum, row) => sum + row.transferSizeKb, 0).toFixed(2)),
+      totalDuration: Number(
+        moduleResults.reduce((sum, row) => sum + row.durationMs, 0).toFixed(2),
+      ),
+      totalSize: Number(
+        moduleResults
+          .reduce((sum, row) => sum + row.transferSizeKb, 0)
+          .toFixed(2),
+      ),
       failed: moduleResults.filter((row) => row.status === 'error').length,
     };
   }, [moduleResults]);
@@ -200,8 +248,12 @@ const DevView = () => {
       return { totalDuration: 0, totalPayload: 0, failed: 0 };
     }
     return {
-      totalDuration: Number(apiResults.reduce((sum, row) => sum + row.durationMs, 0).toFixed(2)),
-      totalPayload: Number(apiResults.reduce((sum, row) => sum + row.payloadKb, 0).toFixed(2)),
+      totalDuration: Number(
+        apiResults.reduce((sum, row) => sum + row.durationMs, 0).toFixed(2),
+      ),
+      totalPayload: Number(
+        apiResults.reduce((sum, row) => sum + row.payloadKb, 0).toFixed(2),
+      ),
       failed: apiResults.filter((row) => row.status === 'error').length,
     };
   }, [apiResults]);
@@ -214,18 +266,31 @@ const DevView = () => {
             <Card.Body>
               <h3 className="mb-2">Frontend Diagnostics</h3>
               <p className="text-muted mb-3">
-                Measure startup timing, module loading duration/size, and API response costs to locate frontend bottlenecks.
+                Measure startup timing, module loading duration/size, and API
+                response costs to locate frontend bottlenecks.
               </p>
               <div className="d-flex gap-2 flex-wrap">
-                <Button variant="primary" onClick={runAllDiagnostics} disabled={isRunningModules || isRunningApis}>
+                <Button
+                  variant="primary"
+                  onClick={runAllDiagnostics}
+                  disabled={isRunningModules || isRunningApis}
+                >
                   <BarChart className="me-2" />
                   Run Full Diagnostics
                 </Button>
-                <Button variant="outline-primary" onClick={runModuleDiagnostics} disabled={isRunningModules}>
+                <Button
+                  variant="outline-primary"
+                  onClick={runModuleDiagnostics}
+                  disabled={isRunningModules}
+                >
                   <Download className="me-2" />
                   Test Module Imports
                 </Button>
-                <Button variant="outline-secondary" onClick={runApiDiagnostics} disabled={isRunningApis}>
+                <Button
+                  variant="outline-secondary"
+                  onClick={runApiDiagnostics}
+                  disabled={isRunningApis}
+                >
                   <Stopwatch className="me-2" />
                   Test API Timing
                 </Button>
@@ -259,7 +324,9 @@ const DevView = () => {
           <Card className="metric-card">
             <Card.Body>
               <h6>Startup Metrics (ms)</h6>
-              <div>DOMContentLoaded: {bootMetrics.domContentLoadedMs ?? '-'}</div>
+              <div>
+                DOMContentLoaded: {bootMetrics.domContentLoadedMs ?? '-'}
+              </div>
               <div>DOM Interactive: {bootMetrics.domInteractiveMs ?? '-'}</div>
               <div>Load Event End: {bootMetrics.loadEventMs ?? '-'}</div>
               <div>First Paint: {bootMetrics.firstPaintMs ?? '-'}</div>
@@ -322,7 +389,9 @@ const DevView = () => {
                 </tbody>
               </Table>
               {!moduleResults.length && (
-                <div className="p-3 text-muted">Run module diagnostics to see import timings and chunk sizes.</div>
+                <div className="p-3 text-muted">
+                  Run module diagnostics to see import timings and chunk sizes.
+                </div>
               )}
             </Card.Body>
           </Card>
@@ -354,7 +423,9 @@ const DevView = () => {
                 </tbody>
               </Table>
               {!apiResults.length && (
-                <div className="p-3 text-muted">Run API diagnostics to compare latency and payload weight.</div>
+                <div className="p-3 text-muted">
+                  Run API diagnostics to compare latency and payload weight.
+                </div>
               )}
             </Card.Body>
           </Card>
@@ -365,7 +436,8 @@ const DevView = () => {
         <Row className="mt-3">
           <Col>
             <Alert variant="warning" className="mb-0">
-              At least one diagnostic test failed. Check backend availability, endpoint permissions, or import path issues.
+              At least one diagnostic test failed. Check backend availability,
+              endpoint permissions, or import path issues.
             </Alert>
           </Col>
         </Row>

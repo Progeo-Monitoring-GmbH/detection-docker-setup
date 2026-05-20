@@ -125,7 +125,11 @@ class Command(BaseCommand):
             try:
                 response = self._post_measure(found["base_url"])
             except requests.RequestException as exc:
-                dlog(f"Measurement failed for {device.raw_hash}: {exc}")
+                elog(f"Measurement failed for {device.raw_hash}: {exc}")
+                continue
+
+            if not response:
+                elog(f"Measurement failed for {device.raw_hash}: no response")
                 continue
 
             measure_payload = self._parse_response(response)

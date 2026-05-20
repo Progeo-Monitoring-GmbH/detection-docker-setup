@@ -29,7 +29,10 @@ const DeviceListView = () => {
         setLoading(false);
       },
       (error) => {
-        showErrorBar(enqueueSnackbar, `Could not fetch devices: ${error.message}`);
+        showErrorBar(
+          enqueueSnackbar,
+          `Could not fetch devices: ${error.message}`,
+        );
         if (error.response) {
           console.error(error.response.data);
         } else {
@@ -51,19 +54,28 @@ const DeviceListView = () => {
         const state = data.state;
 
         if (state === 'SUCCESS') {
-          showSuccessBar(enqueueSnackbar, `Successfully pinged device (${deviceIp})`);
+          showSuccessBar(
+            enqueueSnackbar,
+            `Successfully pinged device (${deviceIp})`,
+          );
           void fetchDevices();
           return;
         }
 
         if (state === 'FAILURE') {
-          showErrorBar(enqueueSnackbar, `Ping task failed for device (${deviceIp})`);
+          showErrorBar(
+            enqueueSnackbar,
+            `Ping task failed for device (${deviceIp})`,
+          );
           console.error('Ping task error:', data.error);
           return;
         }
 
         if (attempt + 1 >= maxAttempts) {
-          showErrorBar(enqueueSnackbar, `Ping task timed out for device (${deviceIp})`);
+          showErrorBar(
+            enqueueSnackbar,
+            `Ping task timed out for device (${deviceIp})`,
+          );
           return;
         }
 
@@ -72,7 +84,10 @@ const DeviceListView = () => {
         }, 1000);
       },
       (error) => {
-        showErrorBar(enqueueSnackbar, `Could not check ping result for device (${deviceIp})`);
+        showErrorBar(
+          enqueueSnackbar,
+          `Could not check ping result for device (${deviceIp})`,
+        );
         if (error.response) {
           console.error(error.response.data);
         } else {
@@ -98,7 +113,10 @@ const DeviceListView = () => {
         }
       },
       (error) => {
-        showErrorBar(enqueueSnackbar, `Could not queue ping for device (${ip})`);
+        showErrorBar(
+          enqueueSnackbar,
+          `Could not queue ping for device (${ip})`,
+        );
         if (error.response) {
           console.error(error.response.data);
         } else {
@@ -116,7 +134,15 @@ const DeviceListView = () => {
 
   const handleDelete = (deviceId: number) => {
     setDeleteTargetId(deviceId);
-    setShow((s) => ({ ...s, modalShowText: true, title: 'Delete Device', txt: 'Are you sure you want to delete this device?' }) as any);
+    setShow(
+      (s) =>
+        ({
+          ...s,
+          modalShowText: true,
+          title: 'Delete Device',
+          txt: 'Are you sure you want to delete this device?',
+        }) as any,
+    );
   };
 
   const doDelete = () => {
@@ -128,11 +154,16 @@ const DeviceListView = () => {
       `/v1/device/${deleteTargetId}/delete/`,
       () => {
         showSuccessBar(enqueueSnackbar, 'Device deleted successfully');
-        setDevices((prev) => prev.filter((d) => d.device.id !== deleteTargetId));
+        setDevices((prev) =>
+          prev.filter((d) => d.device.id !== deleteTargetId),
+        );
         setDeleteTargetId(null);
       },
       (error) => {
-        showErrorBar(enqueueSnackbar, `Could not delete device: ${error.message}`);
+        showErrorBar(
+          enqueueSnackbar,
+          `Could not delete device: ${error.message}`,
+        );
         if (error.response) {
           console.error(error.response.data);
         } else {
@@ -185,9 +216,9 @@ const DeviceListView = () => {
     <Col>
       <div className="d-flex mb-4 justify-content-between align-items-center">
         <h1>Devices</h1>
-        <Button 
-          variant="outline-primary" 
-          onClick={() => void fetchDevices()} 
+        <Button
+          variant="outline-primary"
+          onClick={() => void fetchDevices()}
           disabled={loading}
         >
           {loading ? (
@@ -217,7 +248,6 @@ const DeviceListView = () => {
               <DeviceCard
                 device={device}
                 onIdentify={handleIdentify}
-                onRefresh={handleRefresh}
                 onDelete={handleDelete}
                 loading={loading}
               />

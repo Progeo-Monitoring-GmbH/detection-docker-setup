@@ -1,7 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
-import { Button, Container, Form, Card, Spinner, Alert } from 'react-bootstrap';
+import {
+  Button,
+  Container,
+  Form,
+  Card,
+  Spinner,
+  Alert,
+  Row,
+  Col,
+} from 'react-bootstrap';
 import { ArrowLeft } from 'react-bootstrap-icons';
 import axiosConfig from '../axiosConfig';
 import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
@@ -53,7 +62,9 @@ const defaultConfigForm: DeviceConfigForm = {
 };
 
 const sectionContent = (lua: string, section: string) => {
-  const match = lua.match(new RegExp(`${section}\\s*=\\s*\\{([\\s\\S]*?)\\}`, 'i'));
+  const match = lua.match(
+    new RegExp(`${section}\\s*=\\s*\\{([\\s\\S]*?)\\}`, 'i'),
+  );
   return match ? match[1] : '';
 };
 
@@ -71,7 +82,10 @@ const getNumberField = (sectionBody: string, key: string, fallback = 0) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
-const parseConfigContent = (lua: string, current: DeviceConfigForm): DeviceConfigForm => {
+const parseConfigContent = (
+  lua: string,
+  current: DeviceConfigForm,
+): DeviceConfigForm => {
   const wifi = sectionContent(lua, 'wifi');
   const device = sectionContent(lua, 'device');
   const measurement = sectionContent(lua, 'measurement');
@@ -81,12 +95,29 @@ const parseConfigContent = (lua: string, current: DeviceConfigForm): DeviceConfi
     wifi_pwd: getStringField(wifi, 'pwd') || current.wifi_pwd,
     device_model: getStringField(device, 'model') || current.device_model,
     device_version: getStringField(device, 'version') || current.device_version,
-    device_project_id: getStringField(device, 'project_id') || current.device_project_id,
+    device_project_id:
+      getStringField(device, 'project_id') || current.device_project_id,
     device_hash: getStringField(device, 'device_hash') || current.device_hash,
-    measurement_pulldown_resistance: getNumberField(measurement, 'pulldown_resistance', current.measurement_pulldown_resistance),
-    measurement_interval_sec: getNumberField(measurement, 'interval_sec', current.measurement_interval_sec),
-    measurement_sensors: getNumberField(measurement, 'sensors', current.measurement_sensors),
-    measurement_protective_earth: getNumberField(measurement, 'protective_earth', current.measurement_protective_earth),
+    measurement_pulldown_resistance: getNumberField(
+      measurement,
+      'pulldown_resistance',
+      current.measurement_pulldown_resistance,
+    ),
+    measurement_interval_sec: getNumberField(
+      measurement,
+      'interval_sec',
+      current.measurement_interval_sec,
+    ),
+    measurement_sensors: getNumberField(
+      measurement,
+      'sensors',
+      current.measurement_sensors,
+    ),
+    measurement_protective_earth: getNumberField(
+      measurement,
+      'protective_earth',
+      current.measurement_protective_earth,
+    ),
   };
 };
 
@@ -121,8 +152,11 @@ const DeviceDetailView = () => {
   const [loadingConfig, setLoadingConfig] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
   const [pullResistance, setPullResistance] = useState(136);
-  const [configFields, setConfigFields] = useState<DeviceConfigForm>(defaultConfigForm);
-  const [configContent, setConfigContent] = useState(toLuaConfig(defaultConfigForm));
+  const [configFields, setConfigFields] =
+    useState<DeviceConfigForm>(defaultConfigForm);
+  const [configContent, setConfigContent] = useState(
+    toLuaConfig(defaultConfigForm),
+  );
 
   useEffect(() => {
     fetchDevice();
@@ -142,9 +176,11 @@ const DeviceDetailView = () => {
           setConfigFields((previous) => {
             const next = {
               ...previous,
-              device_project_id: deviceData.project_id || previous.device_project_id,
+              device_project_id:
+                deviceData.project_id || previous.device_project_id,
               device_hash: deviceData.raw_hash || previous.device_hash,
-              measurement_interval_sec: deviceData.data_interval || previous.measurement_interval_sec,
+              measurement_interval_sec:
+                deviceData.data_interval || previous.measurement_interval_sec,
               measurement_pulldown_resistance: pull,
             };
             setConfigContent(toLuaConfig(next));
@@ -154,7 +190,10 @@ const DeviceDetailView = () => {
         setLoading(false);
       },
       (error) => {
-        showErrorBar(enqueueSnackbar, `Could not fetch device: ${error.message}`);
+        showErrorBar(
+          enqueueSnackbar,
+          `Could not fetch device: ${error.message}`,
+        );
         if (error.response) {
           console.error(error.response.data);
         } else {
@@ -169,9 +208,12 @@ const DeviceDetailView = () => {
     try {
       setLoadingConfig(true);
       axiosConfig.updateToken();
-      const response = await axiosConfig.holder.get(`/v1/device/${id}/config/download/`, {
-        params: { path: CONFIG_PATH },
-      });
+      const response = await axiosConfig.holder.get(
+        `/v1/device/${id}/config/download/`,
+        {
+          params: { path: CONFIG_PATH },
+        },
+      );
       const text = response?.data?.content || '';
       const parsed = parseConfigContent(text, configFields);
       setConfigFields(parsed);
@@ -217,7 +259,10 @@ const DeviceDetailView = () => {
     });
   };
 
-  const handleFieldChange = (name: keyof DeviceConfigForm, value: string | number) => {
+  const handleFieldChange = (
+    name: keyof DeviceConfigForm,
+    value: string | number,
+  ) => {
     setConfigFields((previous) => {
       const next = { ...previous, [name]: value };
       setConfigContent(toLuaConfig(next));
@@ -227,7 +272,10 @@ const DeviceDetailView = () => {
 
   if (loading) {
     return (
-      <Container className="d-flex justify-content-center align-items-center" style={{ minHeight: '50vh' }}>
+      <Container
+        className="d-flex justify-content-center align-items-center"
+        style={{ minHeight: '50vh' }}
+      >
         <Spinner animation="border" role="status">
           <span className="visually-hidden">Loading...</span>
         </Spinner>
@@ -239,7 +287,10 @@ const DeviceDetailView = () => {
     return (
       <Container className="py-4">
         <Alert variant="danger">Device not found</Alert>
-        <Button variant="outline-primary" onClick={() => navigate('/device/overview/')}>
+        <Button
+          variant="outline-primary"
+          onClick={() => navigate('/device/overview/')}
+        >
           <ArrowLeft className="me-2" />
           Back to Devices
         </Button>
@@ -249,8 +300,8 @@ const DeviceDetailView = () => {
 
   return (
     <Container className="py-4">
-      <Button 
-        variant="outline-secondary" 
+      <Button
+        variant="outline-secondary"
         className="mb-3"
         onClick={() => navigate('/device/overview/')}
       >
@@ -264,111 +315,172 @@ const DeviceDetailView = () => {
         </Card.Header>
         <Card.Body>
           <Form>
-            <Form.Group className="mb-3">
-              <Form.Label>Device IP</Form.Label>
-              <Form.Control
-                type="text"
-                value={device.device_ip || ''}
-                readOnly
-              />
-            </Form.Group>
-
-            <Form.Group className="mb-3">
-              <Form.Label>WiFi SSID</Form.Label>
-              <Form.Control
-                type="text"
-                value={configFields.wifi_ssid}
-                onChange={(e) => handleFieldChange('wifi_ssid', e.target.value)}
-              />
-            </Form.Group>
-
-            <Form.Group className="mb-3">
-              <Form.Label>WiFi Password</Form.Label>
-              <Form.Control
-                type="text"
-                value={configFields.wifi_pwd}
-                onChange={(e) => handleFieldChange('wifi_pwd', e.target.value)}
-              />
-            </Form.Group>
-
-            <Form.Group className="mb-3">
-              <Form.Label>Model</Form.Label>
-              <Form.Control
-                type="text"
-                value={configFields.device_model}
-                onChange={(e) => handleFieldChange('device_model', e.target.value)}
-              />
-            </Form.Group>
-
-            <Form.Group className="mb-3">
-              <Form.Label>Version</Form.Label>
-              <Form.Control
-                type="text"
-                value={configFields.device_version}
-                onChange={(e) => handleFieldChange('device_version', e.target.value)}
-              />
-            </Form.Group>
-
-            <Form.Group className="mb-3">
-              <Form.Label>Project ID</Form.Label>
-              <Form.Control
-                type="text"
-                value={configFields.device_project_id}
-                onChange={(e) => handleFieldChange('device_project_id', e.target.value)}
-              />
-            </Form.Group>
-
-            <Form.Group className="mb-3">
-              <Form.Label>Device Hash</Form.Label>
-              <Form.Control
-                type="text"
-                value={configFields.device_hash}
-                onChange={(e) => handleFieldChange('device_hash', e.target.value)}
-              />
-            </Form.Group>
-
-            <Form.Group className="mb-3">
-              <Form.Label>Pull Resistance</Form.Label>
-              <Form.Select
-                name="pull_resistance"
-                value={pullResistance}
-                onChange={handlePullResistanceChange}
-              >
-                <option value={132}>132 (Device Default)</option>
-                <option value={136}>100K Ohm (Default)</option>
-                <option value={72}>10K Ohm</option>
-                <option value={40}>1K Ohm</option>
-                <option value={24}>100 Ohm</option>
-                <option value={8}>Off</option>
-              </Form.Select>
-            </Form.Group>
-
-            <Form.Group className="mb-3">
-              <Form.Label>Interval (seconds)</Form.Label>
-              <Form.Control
-                type="number"
-                value={configFields.measurement_interval_sec}
-                onChange={(e) => handleFieldChange('measurement_interval_sec', Number(e.target.value) || 0)}
-              />
-            </Form.Group>
-
-            <Form.Group className="mb-3">
-              <Form.Label>Sensors</Form.Label>
-              <Form.Control
-                type="number"
-                value={configFields.measurement_sensors}
-                onChange={(e) => handleFieldChange('measurement_sensors', Number(e.target.value) || 0)}
-              />
-            </Form.Group>
-
-            <Form.Group className="mb-3">
-              <Form.Label>Protective Earth</Form.Label>
-              <Form.Control
-                type="number"
-                value={configFields.measurement_protective_earth}
-                onChange={(e) => handleFieldChange('measurement_protective_earth', Number(e.target.value) || 0)}
-              />
-            </Form.Group>
+            <Row className="my-2 px-2">
+              <Col md="6">
+                <Form.Group className="mb-3">
+                  <Form.Label>Device IP</Form.Label>
+                  <Form.Control
+                    type="text"
+                    value={device.device_ip || ''}
+                    readOnly
+                  />
+                </Form.Group>
+              </Col>
+              <Col md="6"></Col>
+            </Row>
+            <Row className="my-2 px-2">
+              <Col md="6">
+                <Form.Group className="mb-3">
+                  <Form.Label>WiFi SSID</Form.Label>
+                  <Form.Control
+                    type="text"
+                    value={configFields.wifi_ssid}
+                    onChange={(e) =>
+                      handleFieldChange('wifi_ssid', e.target.value)
+                    }
+                  />
+                </Form.Group>
+              </Col>
+              <Col md="6">
+                <Form.Group className="mb-3">
+                  <Form.Label>WiFi Password</Form.Label>
+                  <Form.Control
+                    type="text"
+                    value={configFields.wifi_pwd}
+                    onChange={(e) =>
+                      handleFieldChange('wifi_pwd', e.target.value)
+                    }
+                  />
+                </Form.Group>
+              </Col>
+            </Row>
+            <Row className="my-2 px-2">
+              <Col md="6">
+                <Form.Group className="mb-3">
+                  <Form.Label>Model</Form.Label>
+                  <Form.Control
+                    type="text"
+                    value={configFields.device_model}
+                    onChange={(e) =>
+                      handleFieldChange('device_model', e.target.value)
+                    }
+                  />
+                </Form.Group>
+              </Col>
+              <Col md="6">
+                <Form.Group className="mb-3">
+                  <Form.Label>Version</Form.Label>
+                  <Form.Control
+                    type="text"
+                    value={configFields.device_version}
+                    onChange={(e) =>
+                      handleFieldChange('device_version', e.target.value)
+                    }
+                  />
+                </Form.Group>
+              </Col>
+            </Row>
+            <Row className="my-2 px-2">
+              <Col md="6">
+                <Form.Group className="mb-3">
+                  <Form.Label>Project ID</Form.Label>
+                  <Form.Control
+                    type="text"
+                    value={configFields.device_project_id}
+                    onChange={(e) =>
+                      handleFieldChange('device_project_id', e.target.value)
+                    }
+                  />
+                </Form.Group>
+              </Col>
+              <Col md="6">
+                <Form.Group className="mb-3">
+                  <Form.Label>Device Hash</Form.Label>
+                  <Form.Control
+                    type="text"
+                    value={configFields.device_hash}
+                    onChange={(e) =>
+                      handleFieldChange('device_hash', e.target.value)
+                    }
+                  />
+                </Form.Group>
+              </Col>
+            </Row>
+            <Row className="my-2 px-2">
+              <Col md="6">
+                <Form.Group className="mb-3">
+                  <Form.Label>Pull Resistance</Form.Label>
+                  <Form.Select
+                    name="pull_resistance"
+                    value={pullResistance}
+                    onChange={handlePullResistanceChange}
+                  >
+                    <option value={136}>100K Ohm (Default)</option>
+                    <option value={72}>10K Ohm</option>
+                    <option value={40}>1K Ohm</option>
+                    <option value={24}>100 Ohm</option>
+                    <option value={8}>Off</option>
+                  </Form.Select>
+                </Form.Group>
+              </Col>
+              <Col md="6">
+                <Form.Group className="mb-3">
+                  <Form.Label>Interval (seconds)</Form.Label>
+                  <Form.Select
+                    value={configFields.measurement_interval_sec}
+                    onChange={(e) =>
+                      handleFieldChange(
+                        'measurement_interval_sec',
+                        Number(e.target.value),
+                      )
+                    }
+                  >
+                    <option value={300}>5min</option>
+                    <option value={600}>10min</option>
+                    <option value={900}>15min</option>
+                    <option value={1800}>30min</option>
+                    <option value={3600}>1h</option>
+                    <option value={7200}>2h</option>
+                    <option value={14400}>4h</option>
+                    <option value={28800}>8h</option>
+                    <option value={43200}>12h</option>
+                    <option value={86400}>24h</option>
+                  </Form.Select>
+                </Form.Group>
+              </Col>
+            </Row>
+            <Row className="my-2 px-2">
+              <Col md="6">
+                <Form.Group className="mb-3">
+                  <Form.Label>Sensors</Form.Label>
+                  <Form.Control
+                    type="number"
+                    value={configFields.measurement_sensors}
+                    onChange={(e) =>
+                      handleFieldChange(
+                        'measurement_sensors',
+                        Number(e.target.value) || 0,
+                      )
+                    }
+                  />
+                </Form.Group>
+              </Col>
+              <Col md="6">
+                <Form.Group className="mb-3">
+                  <Form.Label>Protective Earth</Form.Label>
+                  <Form.Control
+                    type="number"
+                    value={configFields.measurement_protective_earth}
+                    onChange={(e) =>
+                      handleFieldChange(
+                        'measurement_protective_earth',
+                        Number(e.target.value) || 0,
+                      )
+                    }
+                  />
+                </Form.Group>
+              </Col>
+            </Row>
 
             <Form.Group className="mb-3">
               <Form.Label>Config Preview</Form.Label>

@@ -2,7 +2,7 @@ import { Button, Col } from 'react-bootstrap';
 import React from 'react';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 
-const Navbar = ({content}) => {
+const Navbar = ({ act, content }) => {
   const auth = useAuth();
 
   const logout = () => {
@@ -14,20 +14,28 @@ const Navbar = ({content}) => {
   return (
     <>
       <Col md={2} id={'v1-Navbar'}>
+        <Button
+          href="/device/overview/"
+          variant={act === 'device' ? 'info' : 'secondary'}
+          className="w-100 mt-2"
+          size="lg"
+        >
+          Devices
+        </Button>
 
         <Button
-              href="/device/overview/"
-              variant="info"
-              className="w-100 mt-2"
-              size="lg"
-            >
-              Devices
+          href="/device/measure/"
+          variant={act === 'measure' ? 'info' : 'secondary'}
+          className="w-100 mt-2"
+          size="lg"
+        >
+          Measurements
         </Button>
         {isAdmin === 'true' && (
           <>
             <Button
               href="/project/backup/"
-              variant="info"
+              variant={act === 'backup' ? 'info' : 'secondary'}
               className="w-100 mt-2"
               size="lg"
             >
