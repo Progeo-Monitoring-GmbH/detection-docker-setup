@@ -138,14 +138,6 @@ const BackupView = () => {
         <LoadAble loaded={data}>
           {'elements' in data && (
             <>
-              {data.pages > 1 && (
-                <Row>
-                  <CorePaginator
-                    pages={data.pages}
-                    handleChange={handlePaginator}
-                  />
-                </Row>
-              )}
               {data.elements.map((backup) => {
                 return (
                   <BackupButton

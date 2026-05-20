@@ -10,6 +10,7 @@ const TokenLogin = React.lazy(() => import('./main/TokenLogin'));
 const ChangeLogs = React.lazy(() => import('./main/ChangeLogs'));
 const DevView = React.lazy(() => import('./main/DevView'));
 const WsDebugView = React.lazy(() => import('./main/WsDebugView'));
+const DockerStatusView = React.lazy(() => import('./main/DockerStatusView'));
 const DeviceListView = React.lazy(() => import('./main/DeviceListView'));
 const DeviceDetailView = React.lazy(() => import('./main/DeviceDetailView'));
 const DeviceEditorView = React.lazy(() => import('./main/DeviceEditorView'));
@@ -50,12 +51,20 @@ const CoreRoutes = () => {
       />
 
       <Route
-        path="/device/:id/update"
+        path="/device/:id/update/"
         element={<Navbar act={'device'} content={<DeviceDetailView />} />}
       />
       <Route
         path="/device/:id/editor/"
         element={<Navbar act={'device'} content={<DeviceEditorView />} />}
+      />
+      <Route
+        path="/docker/"
+        element={<Navbar act={'docker'} content={<DockerStatusView />} />}
+      />
+      <Route
+        path="/backup/:account/overview/"
+        element={<Navbar act={'backup'} content={<BackupView />} />}
       />
       <Route
         path="*"

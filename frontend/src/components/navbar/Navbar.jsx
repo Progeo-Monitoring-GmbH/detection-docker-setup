@@ -31,34 +31,35 @@ const Navbar = ({ act, content }) => {
         >
           Measurements
         </Button>
-        {isAdmin === 'true' && (
-          <>
-            <Button
-              href="/project/backup/"
-              variant={act === 'backup' ? 'info' : 'secondary'}
-              className="w-100 mt-2"
-              size="lg"
-            >
-              Backup
-            </Button>
-            <Button
-              href="/docker/"
-              variant="info"
-              className="w-100 mt-2"
-              size="lg"
-            >
-              Docker Status
-            </Button>
-            <Button
-              href={`${import.meta.env.VITE_BACKEND_URL}/aadmin`}
-              variant="primary"
-              className="w-100 mt-2"
-              size="lg"
-            >
-              Admin
-            </Button>
-          </>
-        )}
+        {isAdmin === 'true' ||
+          (true && (
+            <>
+              <Button
+                href="/backup/1/overview/"
+                variant={act === 'backup' ? 'info' : 'secondary'}
+                className="w-100 mt-2"
+                size="lg"
+              >
+                Backup
+              </Button>
+              <Button
+                href="/docker/"
+                variant={act === 'docker' ? 'info' : 'secondary'}
+                className="w-100 mt-2"
+                size="lg"
+              >
+                Docker Status
+              </Button>
+              <Button
+                href={`${import.meta.env.VITE_BACKEND_URL}/aadmin`}
+                variant="primary"
+                className="w-100 mt-2"
+                size="lg"
+              >
+                Admin
+              </Button>
+            </>
+          ))}
         <Button
           variant="primary"
           className="w-100 mt-2"

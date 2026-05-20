@@ -5,7 +5,7 @@ import ShowTextModal from '../components/modal/ShowTextModal';
 import { CoreModalContext } from '../components/modal/coreModalContext';
 import { WebsocketContext } from '../components/ws/websocketContext';
 
-import '../ui/css/DockerStatusView.css';
+import '../components/ui/css/DockerStatusView.css';
 import { standardFetchData } from '../helper';
 import LoadAble from '../components/ui/LoadAble.jsx';
 import { useAuth } from '../../hooks/CoreAuthProvider';

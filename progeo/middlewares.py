@@ -86,6 +86,7 @@ class AccountMiddleware:
 
     @calc_runtime
     def __call__(self, request):
+        '''
         _path = request.path
         if _path.startswith("/v1/device/"):
             #TODO
@@ -103,5 +104,8 @@ class AccountMiddleware:
                 return self.get_response(request)
 
             setattr(request, "account", account)
-
+        '''
+        db_name = "default" #TODO
+        account = Account.objects.using(db_name).get(pk=1)
+        setattr(request, "account", account)
         return self.get_response(request)

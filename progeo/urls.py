@@ -23,22 +23,30 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView, TokenBlacklistView,
 )
 
+from progeo.v1.viewsets.docker_viewset import DockerViewSet
+from progeo.routers import CustomRouter
+
+
 admin.site.site_header = "Admin | Database='default'"
 
 
 def empty_favicon(request):
     return HttpResponse(status=204)
 
+base_router = CustomRouter()
+base_router.register(r'docker', DockerViewSet, basename='docker')
 
 urlpatterns = [
     re_path(r"^aadmin/", admin.site.urls, name="aadmin"),
 
     re_path(r"^v1/", include("progeo.v1.urls"), name="v1"),
 
+
     re_path(r"^api/token/refresh/$", TokenRefreshView.as_view(), name="token_refresh"),
     re_path(r"^api/token/logout/$", TokenBlacklistView.as_view(), name='token_logout'),
     re_path(r"^api/token/blacklist/$", TokenBlacklistView.as_view(), name='token_blacklist'),
     re_path(r"^api/token/$", ProgeoTokenObtainPairView.as_view(), name="token_obtain_pair"),
+    re_path(r"^api/", include(base_router.urls)),
 
     re_path(r"^auth/login/", views.extended_obtain_auth_token_view, name="auth_login"),
     re_path(r"^auth/logout/", views.logout_view, name="auth_login"),

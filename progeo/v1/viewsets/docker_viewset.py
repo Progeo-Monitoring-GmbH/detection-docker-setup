@@ -7,8 +7,8 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from progeo.helper.basics import RequestSuccess, RequestFailed
-from progeo.v1.viewsets.docker_viewset import get_docker_status
 from progeo.helper.docker_helper import is_container_running
+from progeo.helper.docker_helper import get_docker_status
 
 
 class DockerViewSet(viewsets.ViewSet):
