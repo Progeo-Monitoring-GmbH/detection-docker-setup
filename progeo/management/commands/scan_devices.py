@@ -1,5 +1,4 @@
 import os
-import time
 from typing import Any
 
 import requests
@@ -7,7 +6,6 @@ from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 from progeo.helper.basics import dlog, ilog, elog
 from progeo.v1.creator import (
-    create_progeo_device_safe,
     create_progeo_location_safe,
     create_progeo_measurement_safe,
 )

@@ -59,6 +59,7 @@ services:
         BACKEND_PORT: ${BACKEND_PORT}
         DB_HOST: ${POSTGRES_HOST}
         DB_PORT: ${POSTGRES_PORT}
+        DOCKER_GID: ${DOCKER_GID:-1001}
     depends_on:
       - progeo-database
       - progeo-redis
@@ -78,7 +79,7 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       DOCKER_HOST: unix:///var/run/docker.sock
     group_add:
-      - '${DOCKER_GID:-998}'
+      - '${DOCKER_GID:-1001}'
     cap_add:
       - NET_ADMIN
     security_opt:

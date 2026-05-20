@@ -72,7 +72,7 @@ def configure_logging(*args, **kwargs):
                 )
                 fh.setFormatter(formatter)
                 log.addHandler(fh)
-            except (IOError, OSError) as e:
+            except (IOError, OSError):
                 pass  # Silently fail if log file is not writable
 
 

@@ -1,6 +1,4 @@
 import os
-import tarfile
-import time
 from datetime import datetime
 from typing import Tuple
 
@@ -8,12 +6,11 @@ import docker
 from django.utils import timezone
 from docker.errors import DockerException, NotFound
 
-from progeo.helper.basics import dlog, elog, flog, ilog, save_check_dir, sleep_ms
+from progeo.helper.basics import dlog, elog, sleep_ms
 
 def get_docker_status() -> list:
     client = docker.from_env()
     cons = []
-
     for container in client.containers.list(all=True):
         cons.append({"id": container.id,
                      "name": container.name,

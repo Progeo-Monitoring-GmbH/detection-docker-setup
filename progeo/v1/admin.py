@@ -4,7 +4,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.contrib.sessions.models import Session
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
 
-from progeo.helper.basics import okaylog, dlog, elog, ilog
+from progeo.helper.basics import okaylog, dlog, elog
 from progeo.v1.models import Account, EMail, LimitedToken, MfSLog, ProgeoDevice, ProgeoLocation, ProgeoMeasurePoint, ProgeoMeasurement
 
 models = [ContentType, Permission, Account, Session, OutstandingToken, BlacklistedToken]

@@ -5,7 +5,6 @@ from django.http import HttpResponse
 from django.utils import timezone
 
 from progeo.v1.admin import MultiDBModelAdmin
-from progeo.v1.helper import get_account_id_from_url
 from progeo.v1.models import Account
 from progeo.decorator import calc_runtime
 from progeo.helper.basics import elog, dlog
