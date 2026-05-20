@@ -222,7 +222,7 @@ class Account(ProgeoModel, auto_prefetch.Model):
 
 
 class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
-    account = models.ForeignKey(Account, on_delete=models.DO_NOTHING, null=True, blank=True)
+    account = models.ForeignKey(Account, on_delete=models.CASCADE, null=True, blank=True)
     address = models.CharField(max_length=255, null=True, blank=True)
     latitude = models.FloatField(null=True, blank=True)
     longitude = models.FloatField(null=True, blank=True)
@@ -238,13 +238,13 @@ class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
 class ProgeoDevice(ProgeoModel, auto_prefetch.Model):
 
     class Resistance(models.IntegerChoices):
-        DEFAULT_100K = 136  # 100K=0x88
-        RES_10K = 72        # 10K=0x48
-        RES_1k = 40         # 1K=0x28
-        RES_100 = 24        # 100 Ohm=0x18   
-        OFF = 8             # Off=0x08
+        DEFAULT_100K = 136  # 100K = 0x88
+        RES_10K = 72        # 10K  = 0x48
+        RES_1k = 40         # 1K   = 0x28
+        RES_100 = 24        # 100  = 0x18   
+        OFF = 8             # Off  = 0x08
 
-    location = models.ForeignKey(ProgeoLocation, on_delete=models.DO_NOTHING, null=True, blank=True)
+    location = models.ForeignKey(ProgeoLocation, on_delete=models.CASCADE, null=True, blank=True)
     created = models.DateTimeField(auto_now_add=True)
     raw_hash = models.CharField(max_length=KEY_LEN, null=False, unique=True)
     hardware = models.CharField(max_length=100, null=True, blank=True)
@@ -264,20 +264,20 @@ class ProgeoDevice(ProgeoModel, auto_prefetch.Model):
 
 
 class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
-    device = models.ForeignKey(ProgeoDevice, on_delete=models.DO_NOTHING)
+    device = models.ForeignKey(ProgeoDevice, on_delete=models.CASCADE)
     raw_data = JSONField(blank=True)
 
     def __str__(self):
         _id = f"[{self.pk}] " if DEBUG else ""
         _device = f"Device {self.device.mac}" if self.device else "Unknown Device"
-        _samples = self.raw_data.get("samples", [])
-        _sensors = self.raw_data.get("sensors", "")
+        _samples = self.raw_data.get("measure", {}).get("samples", [])
+        _sensors = self.raw_data.get("measure", {}).get("sensors", "")
 
         return f"{_id} 📊 {_device} - {self.last_fetched}: {_samples} (Sensors: {_sensors})"
 
 
 class ProgeoMeasurePoint(ProgeoModel, auto_prefetch.Model):
-    device = models.ForeignKey(ProgeoDevice, on_delete=models.DO_NOTHING, related_name="points")
+    device = models.ForeignKey(ProgeoDevice, on_delete=models.CASCADE, related_name="points")
     sensor_order = models.IntegerField(null=False)
     x = models.FloatField(null=False, blank=False)
     y = models.FloatField(null=False, blank=False)
@@ -294,7 +294,7 @@ class ProgeoMeasurePoint(ProgeoModel, auto_prefetch.Model):
 
 
 class ProgeoAlarm(ProgeoModel, auto_prefetch.Model):
-    measurement = models.ForeignKey(ProgeoMeasurement, on_delete=models.DO_NOTHING, related_name='alarms')
+    measurement = models.ForeignKey(ProgeoMeasurement, on_delete=models.CASCADE, related_name='alarms')
     triggered = models.BooleanField(default=False)
     threshold = models.FloatField(null=True, blank=True)
     max_value = models.FloatField(null=True, blank=True)
@@ -327,8 +327,8 @@ class LimitedToken(ProgeoPolyModel, PolymorphicModel):
     raw_hash = models.CharField(max_length=KEY_LEN, null=False, unique=True)
     raw_data = JSONField(blank=True)
 
-    user = models.ForeignKey(User, on_delete=models.DO_NOTHING, null=True)
-    account = models.ForeignKey(Account, on_delete=models.DO_NOTHING)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, null=True)
+    account = models.ForeignKey(Account, on_delete=models.CASCADE)
 
     created = models.DateTimeField(auto_now_add=True)
     purpose = models.CharField(max_length=255, null=True, blank=True)
@@ -370,8 +370,8 @@ class LimitedToken(ProgeoPolyModel, PolymorphicModel):
 
 
 class Backup(ProgeoModel, auto_prefetch.Model):
-    user = models.ForeignKey(User, on_delete=models.DO_NOTHING, null=True)
-    account = models.ForeignKey(Account, on_delete=models.DO_NOTHING)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, null=True)
+    account = models.ForeignKey(Account, on_delete=models.CASCADE)
     name = models.CharField(max_length=100, null=False)
 
     def get_file(self):
@@ -386,8 +386,8 @@ class Backup(ProgeoModel, auto_prefetch.Model):
 
 
 class MfSLog(ProgeoModel, auto_prefetch.Model):
-    user = models.ForeignKey(User, on_delete=models.DO_NOTHING, null=True)
-    account = models.ForeignKey(Account, on_delete=models.DO_NOTHING)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, null=True)
+    account = models.ForeignKey(Account, on_delete=models.CASCADE)
     created = models.DateTimeField(default=timezone.now)
     url = models.URLField(max_length=255)
     data = models.JSONField(default=dict, blank=True)
