@@ -5,6 +5,9 @@ ARG FRONTEND_PORT
 ARG BACKEND_PORT
 ARG DB_HOST
 ARG DB_PORT
+ARG DOCKER_UID=1000
+ARG DOCKER_GID=1000
+ARG DOCKER_SOCKET_GID=998
 
 RUN apk update && apk add --no-cache  \
                       ffmpeg \
@@ -33,7 +36,10 @@ RUN apk add proj proj-dev
 ENV PROJECT_ROOT=/home/progeo/detection-docker-setup
 ENV VENV_ROOT=/opt/venv
 
-RUN addgroup -S progeo && adduser -S -G progeo -h ${PROJECT_ROOT} progeo
+RUN addgroup -g ${DOCKER_GID} -S progeo \
+    && adduser -S -u ${DOCKER_UID} -G progeo -h ${PROJECT_ROOT} progeo \
+    && if ! grep -qE '^docker:' /etc/group; then addgroup -g ${DOCKER_SOCKET_GID} -S docker; fi \
+    && addgroup progeo docker
 
 WORKDIR ${PROJECT_ROOT}
 

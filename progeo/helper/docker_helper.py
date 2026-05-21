@@ -65,6 +65,7 @@ def start_cad_factory(cad_input: str, coord_margin: float = 0.2, skip_convert: b
             "mode": "rw"
         }
     }
+    run_user = f"{os.getenv('DOCKER_UID', '1000')}:{os.getenv('DOCKER_GID', '1001')}"
 
     container = None
     try:
@@ -73,6 +74,7 @@ def start_cad_factory(cad_input: str, coord_margin: float = 0.2, skip_convert: b
             command=command,
             hostname=base_name,
             working_dir="/workspace",
+            user=run_user,
             detach=True,
             remove=False,
             stdout=True,

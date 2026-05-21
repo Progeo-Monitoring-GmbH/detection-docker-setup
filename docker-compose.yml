@@ -59,7 +59,9 @@ services:
         BACKEND_PORT: ${BACKEND_PORT}
         DB_HOST: ${POSTGRES_HOST}
         DB_PORT: ${POSTGRES_PORT}
-        DOCKER_GID: ${DOCKER_GID:-1001}
+        DOCKER_UID: ${DOCKER_UID:-1000}
+        DOCKER_GID: ${DOCKER_GID:-1000}
+        DOCKER_SOCKET_GID: ${DOCKER_SOCKET_GID:-1001}
     depends_on:
       - progeo-database
       - progeo-redis
@@ -77,9 +79,12 @@ services:
       REDIS_HOST: ${REDIS_HOST}
       REDIS_PORT: ${REDIS_PORT}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
+      DOCKER_UID: ${DOCKER_UID:-1000}
+      DOCKER_GID: ${DOCKER_GID:-1001}
+      DOCKER_SOCKET_GID: ${DOCKER_SOCKET_GID:-1001}
       DOCKER_HOST: unix:///var/run/docker.sock
     group_add:
-      - '${DOCKER_GID:-1001}'
+      - '${DOCKER_SOCKET_GID:-1001}'
     cap_add:
       - NET_ADMIN
     security_opt:
