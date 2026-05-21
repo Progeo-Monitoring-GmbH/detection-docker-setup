@@ -34,7 +34,11 @@ class LimitedTokenAuthentication(BaseAuthentication):
         auth = get_authorization_header(request).split()
 
         if not auth or auth[0].lower() != self.keyword.lower().encode():
-            return None
+            # Support legacy device calls using ?token=<raw_hash>.
+            token = request.query_params.get("token")
+            if not token:
+                return None
+            return self.authenticate_credentials(request, token)
 
         if len(auth) == 1:
             msg = _("Invalid token header. No credentials provided.")
@@ -49,12 +53,14 @@ class LimitedTokenAuthentication(BaseAuthentication):
             msg = _("Invalid token header. Token string should not contain invalid characters.")
             raise exceptions.AuthenticationFailed(msg)
 
-        return self.authenticate_credentials(request.account, token)
+        return self.authenticate_credentials(request, token)
 
-    def authenticate_credentials(self, account, key):
+    def authenticate_credentials(self, request, key):
         model = self.get_model()
+        account = getattr(request, "account", None)
+        using = account.db_name if account and getattr(account, "db_name", None) else "default"
         try:
-            token = model.objects.using(account.db_name).select_related("user").get(raw_hash=key)
+            token = model.objects.using(using).select_related("user").get(raw_hash=key)
         except model.DoesNotExist:
             raise exceptions.AuthenticationFailed(_("Invalid token."))
 

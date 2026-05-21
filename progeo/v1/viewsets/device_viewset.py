@@ -6,10 +6,12 @@ from celery.exceptions import TimeoutError
 from rest_framework.decorators import action
 from rest_framework.exceptions import ParseError
 from rest_framework.parsers import BaseParser
-from rest_framework.permissions import AllowAny
+from rest_framework_simplejwt.authentication import JWTAuthentication
 
+from rest_framework.authentication import SessionAuthentication, TokenAuthentication
+from progeo.authentication import LimitedTokenAuthentication
 from progeo.tasks import _flatten_numeric_values, download_device_config as download_device_config_task, upload_device_config as upload_device_config_task
-from progeo.v1.models import ProgeoDevice, ProgeoLocation
+from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurement
 from progeo.v1.serializers import DeviceSerializer
 from progeo.decorator import calc_runtime
 from progeo.helper.basics import RequestSuccess, RequestFailed
@@ -46,7 +48,7 @@ class SafeLuaUploadParser(BaseParser):
 
 class DeviceViewSet(ProgeoModalViewSet):
     serializer_class = DeviceSerializer
-    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication, JWTAuthentication, TokenAuthentication]
 
     def list(self, request, *args, **kwargs):
         return super(DeviceViewSet, self).list(request, no_cache=True, *args, **kwargs)
@@ -58,6 +60,39 @@ class DeviceViewSet(ProgeoModalViewSet):
         if not account:
             return ProgeoDevice.objects.none()
         return ProgeoDevice.objects.using(account.db_name).all() # TODO.filter(location__account=account)
+    
+
+    @action(detail=False, url_path="sample/catch", authentication_classes=[LimitedTokenAuthentication], methods=["POST"])
+    def catch_legacy_data(self, request, *args, **kwargs):
+
+        project_id = request.data.get("project_id")
+        sample = request.data.get("sample")
+
+        if not project_id:
+            return RequestFailed({"reason": "No project_id provided"})
+        if not sample:
+            return RequestFailed({"reason": "No sample provided"})
+        
+        db_name = "default"
+        device, created = ProgeoDevice.objects.using(db_name).get_or_create(raw_hash=project_id)
+
+        if created:
+            device.device_ip = request.META.get("REMOTE_ADDR")
+            device.save(using=db_name)
+        
+        data = {
+            "project_id": project_id,
+            "sample": sample
+        }
+        measure = ProgeoMeasurement.objects.using(db_name).create(
+            device=device,
+            raw_data=data,
+        )
+        measure.save(using=db_name)
+
+        return RequestSuccess()
+
+        
 
     @calc_runtime
     @action(detail=True, url_path="config/download", methods=["GET"])
