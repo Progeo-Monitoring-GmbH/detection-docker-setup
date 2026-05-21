@@ -25,6 +25,10 @@ if [ "${CERT_MODE}" = "existing" ]; then
   : "${CERT_PATH:=/etc/nginx/ssl}"
   : "${CERT_FILE:=localhost-bundle.pem}"
   : "${CERT_KEY:=${CERT_FILE}}"
+else
+  : "${CERT_PATH:=/etc/letsencrypt/live/api.progeo.com}"
+  : "${CERT_FILE:=fullchain.pem}"
+  : "${CERT_KEY:=privkey.pem}"
 fi
 
 export CERT_MODE CERT_PATH CERT_FILE CERT_KEY ENABLE_SSL

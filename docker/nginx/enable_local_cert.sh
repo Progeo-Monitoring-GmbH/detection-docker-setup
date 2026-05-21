@@ -1,6 +1,11 @@
 #!/bin/sh
 set -eu
 
+
+if [ "${CERT_MODE}" = "letsencrypt" ]; then
+  exit 0
+fi
+
 SSL_DIR="${CERT_PATH:-/etc/nginx/ssl}"
 CERT_FILE="${CERT_FILE:-progeo-local.crt}"
 CERT_KEY="${CERT_KEY:-progeo-local.key}"
