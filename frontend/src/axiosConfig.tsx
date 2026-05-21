@@ -59,13 +59,13 @@ export default class axiosConfig {
         callBackSuccess(response);
       },
       (error) => {
+        callBackError(error);
         if (error.response.status === 401) {
           if (auth?.token) {
             auth.navigate(`/login?forward=${auth.location}`);
             return;
           }
         }
-        callBackError(error);
       },
     );
   }
@@ -81,13 +81,13 @@ export default class axiosConfig {
     return await axiosConfig.holder.get(url, config).then(
       (response) => callBackSuccess(response),
       (error) => {
+        callBackError(error);
         if (error?.response?.status === 401) {
           if (auth?.token) {
             auth.navigate(`/login?forward=${auth.location}`);
             return;
           }
         }
-        callBackError(error);
       },
     );
   }

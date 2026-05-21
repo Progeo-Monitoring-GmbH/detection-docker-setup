@@ -7,7 +7,6 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ParseError
 from rest_framework.parsers import BaseParser
 from rest_framework_simplejwt.authentication import JWTAuthentication
-
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from progeo.authentication import LimitedTokenAuthentication
 from progeo.tasks import _flatten_numeric_values, download_device_config as download_device_config_task, upload_device_config as upload_device_config_task

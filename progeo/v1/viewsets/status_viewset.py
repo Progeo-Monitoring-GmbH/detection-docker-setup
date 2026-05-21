@@ -6,7 +6,8 @@ from uuid import uuid4
 from celery.result import AsyncResult
 
 from rest_framework.decorators import action
-from rest_framework.permissions import AllowAny
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 
 from progeo.v1.helper import dlog
 from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurePoint, ProgeoMeasurement
@@ -49,7 +50,8 @@ def get_connected_devices(*args, **kwargs) -> dict:
 
 class StatusViewSet(ProgeoModalViewSet):
     serializer_class = DeviceSerializer
-    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication, JWTAuthentication, TokenAuthentication]
+
 
     @calc_runtime
     @action(detail=False, url_path="measurements", methods=["GET"])

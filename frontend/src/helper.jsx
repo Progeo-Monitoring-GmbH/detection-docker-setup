@@ -31,27 +31,25 @@ export const getToday = () => {
   });
 };
 
-
 export const prettyDate = (value) => {
-    if (!value) {
-      return '-';
-    }
+  if (!value) {
+    return '-';
+  }
 
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) {
-      return value;
-    }
-    return parsed.toLocaleString('de-DE', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
-    });
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+  return parsed.toLocaleString('de-DE', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
 };
-
 
 export const dateStringToTimestamp = (dateString, offset = 0) => {
   const date = new Date(dateString);
@@ -147,7 +145,6 @@ export function getBasename(_path) {
   return _path.split(/[\\/]/).pop();
 }
 
-
 export const defaultErrorCallback = (error) => {
   if (error.response) {
     console.error(error.response.data);
@@ -169,7 +166,15 @@ export async function standardFetchData(
     (response) => {
       setter(response.data);
     },
-    callBackError,
+    (error) => {
+      callBackError(error);
+      if (error?.response?.status === 401) {
+        if (auth?.token) {
+          auth.navigate(`/login?forward=${auth.location}`);
+          return;
+        }
+      }
+    },
     header,
   );
 }
@@ -233,7 +238,6 @@ export const setCachedDataWithDispatcher = (
     console.log('Unhandled Type', typeof payload, _key);
   }
 };
-
 
 export function getDeepKeyFromObject(data, _field) {
   if (_field.includes('__')) {

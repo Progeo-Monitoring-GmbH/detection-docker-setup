@@ -3,7 +3,8 @@ import os.path
 from django.core.management import call_command
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAdminUser
-
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from progeo.v1.models import Backup
 from progeo.v1.serializers import BackupSerializer
 from progeo.v1.viewsets.base_viewsets import StandardResultsSetPagination
@@ -18,6 +19,7 @@ class BackupViewSet(ProgeoModalViewSet):
     pagination_class = StandardResultsSetPagination
     serializer_class = BackupSerializer
     permission_classes = [IsAdminUser]
+    authentication_classes = [SessionAuthentication, JWTAuthentication, TokenAuthentication]
 
     def get_queryset(self):
         return Backup.objects.using(self.request.account.db_name)\
