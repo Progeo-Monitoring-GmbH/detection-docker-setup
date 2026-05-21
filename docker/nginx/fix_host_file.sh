@@ -18,14 +18,13 @@ echo "Added: ${line}"
 
 CERT_MODE="${CERT_MODE:-local}"
 ENABLE_SSL="${ENABLE_SSL:-true}"
+CERT_PATH="${CERT_PATH:-/etc/nginx/ssl}"
+CERT_KEY="${CERT_KEY:-localhost-key.pem}"
+
 if [ "${CERT_MODE}" = "existing" ]; then
   : "${CERT_PATH:=/etc/nginx/ssl}"
   : "${CERT_FILE:=localhost-bundle.pem}"
   : "${CERT_KEY:=${CERT_FILE}}"
-else
-  : "${CERT_PATH:=/etc/nginx/ssl}"
-  : "${CERT_FILE:=progeo-local.crt}"
-  : "${CERT_KEY:=progeo-local.key}"
 fi
 
 export CERT_MODE CERT_PATH CERT_FILE CERT_KEY ENABLE_SSL
