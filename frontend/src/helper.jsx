@@ -168,7 +168,7 @@ export async function standardFetchData(
     },
     (error) => {
       callBackError(error);
-      if (error?.response?.status === 401) {
+      if (error?.response?.status in [401, 403]) {
         if (auth?.token) {
           auth.navigate(`/login?forward=${auth.location}`);
           return;

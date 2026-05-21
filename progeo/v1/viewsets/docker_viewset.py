@@ -2,6 +2,7 @@ import docker
 from docker.errors import NotFound
 from rest_framework import viewsets
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import action
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -14,6 +15,7 @@ from progeo.helper.docker_helper import get_docker_status
 class DockerViewSet(viewsets.ViewSet):
 
     authentication_classes = [JWTAuthentication, TokenAuthentication, SessionAuthentication]
+    permission_classes = [IsAuthenticated]
 
     @action(detail=False, url_path="status", methods=["GET"])
     def docker_status(self, request: Request, *args, **kwargs):
