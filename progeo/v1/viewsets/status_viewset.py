@@ -8,6 +8,7 @@ from celery.result import AsyncResult
 from rest_framework.decorators import action
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
+from rest_framework.permissions import IsAuthenticated
 
 from progeo.v1.helper import dlog
 from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurePoint, ProgeoMeasurement
@@ -51,7 +52,7 @@ def get_connected_devices(*args, **kwargs) -> dict:
 class StatusViewSet(ProgeoModalViewSet):
     serializer_class = DeviceSerializer
     authentication_classes = [SessionAuthentication, JWTAuthentication, TokenAuthentication]
-
+    permission_classes = [IsAuthenticated]
 
     @calc_runtime
     @action(detail=False, url_path="measurements", methods=["GET"])

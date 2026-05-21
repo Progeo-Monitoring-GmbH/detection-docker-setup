@@ -9,6 +9,7 @@ from rest_framework.parsers import BaseParser
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from progeo.authentication import LimitedTokenAuthentication
+from rest_framework.permissions import IsAuthenticated
 from progeo.tasks import _flatten_numeric_values, download_device_config as download_device_config_task, upload_device_config as upload_device_config_task
 from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurement
 from progeo.v1.serializers import DeviceSerializer
@@ -48,6 +49,7 @@ class SafeLuaUploadParser(BaseParser):
 class DeviceViewSet(ProgeoModalViewSet):
     serializer_class = DeviceSerializer
     authentication_classes = [SessionAuthentication, JWTAuthentication, TokenAuthentication]
+    permission_classes = [IsAuthenticated]
 
     def list(self, request, *args, **kwargs):
         return super(DeviceViewSet, self).list(request, no_cache=True, *args, **kwargs)
