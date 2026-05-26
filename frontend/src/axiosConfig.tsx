@@ -61,7 +61,7 @@ export default class axiosConfig {
       (error) => {
         callBackError(error);
         if ([401, 403].includes(error?.response?.status)) {
-          if (auth?.token) {
+          if (auth) {
             auth.navigate(`/login?forward=${auth.location}`);
             return;
           }
@@ -83,7 +83,7 @@ export default class axiosConfig {
       (error) => {
         callBackError(error);
         if ([401, 403].includes(error?.response?.status)) {
-          if (auth?.token) {
+          if (auth) {
             auth.navigate(`/login?forward=${auth.location}`);
             return;
           }

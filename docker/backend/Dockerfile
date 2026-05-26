@@ -106,19 +106,4 @@ RUN mkdir -p ${PROJECT_ROOT}/static && chown -R progeo:progeo ${PROJECT_ROOT}/st
 RUN mkdir -p ${PROJECT_ROOT}/tmp && chown -R progeo:progeo ${PROJECT_ROOT}/tmp
 RUN mkdir -p /var/log/progeo && chown -R progeo:progeo /var/log/progeo
 
-RUN touch /var/log/progeo/supervisord.log \
-    /var/log/progeo/cron.log \
-    /var/log/progeo/cron-supervisor.log \
-    /var/log/progeo/cron-supervisor.err.log \
-    /var/log/progeo/backend.log \
-    /var/log/progeo/backend.err.log \
-    /var/log/progeo/celery.log \
-    /var/log/progeo/celery.err.log \
-    /var/log/progeo/celery-supervisor.log \
-    /var/log/progeo/celery-supervisor.err.log \
-    /var/log/progeo/half-hour.log \
-    /var/log/progeo/daily.log \
-    /var/log/progeo/weekly.log \
-    && chown -R progeo:progeo /var/log/progeo
-
-CMD ["/usr/bin/supervisord", "-c", "/home/progeo/detection-docker-setup/supervisord.conf"]
+CMD ["/bin/bash", "/home/progeo/detection-docker-setup/start-supervisord.sh"]
