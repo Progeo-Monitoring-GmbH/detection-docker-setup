@@ -23,6 +23,18 @@ python manage.py collectstatic --noinput
 pprint "[2] check database"
 python manage.py check progeo --tag database
 
+pprint "[2.1] verify postgres authentication"
+if ! PGPASSWORD="${POSTGRES_PASSWORD}" psql \
+  -h "${POSTGRES_HOST}" \
+  -p "${POSTGRES_PORT}" \
+  -U "${POSTGRES_USER}" \
+  -d "${POSTGRES_DB}" \
+  -c "SELECT 1;" >/dev/null 2>&1; then
+  pprint "[ERROR] PostgreSQL login failed for ${POSTGRES_USER}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}"
+  pprint "[HINT] If POSTGRES_PASSWORD was changed after initial DB bootstrap, reset the postgres volume or set the DB user password inside Postgres to match the env."
+  exit 1
+fi
+
 pprint "[3] advanced migration"
 bash "${PROJECT_ROOT}/wait-for-it.sh" "${DOMAIN}" -- python manage.py adv_migrate
 

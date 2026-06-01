@@ -79,6 +79,7 @@ bash scripts/build_progeo-cad_factory_resilient.sh logs
 
 - Most service ports are controlled via `.env` variables.
 - Public entry points are exposed by Nginx on `80`/`443`.
+- PostgreSQL now binds to localhost by default through Compose. To intentionally expose it, set `LIMITED_ACCESS=0.0.0.0:` in `.env`.
 
 ## Local Network CORS (Lightweight)
 

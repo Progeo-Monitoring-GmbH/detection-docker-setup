@@ -1,4 +1,4 @@
-FROM nginx:1.31.0-alpine
+FROM nginx:1.31.1-alpine
 
 RUN apk update && apk add iproute2 iputils-ping
 RUN apk upgrade
