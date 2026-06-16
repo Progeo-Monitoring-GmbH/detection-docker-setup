@@ -43,3 +43,4 @@ tmp/
 !docker/frontend/.env.production
 docker/nginx/ro*
 logs/
+__pycache__/

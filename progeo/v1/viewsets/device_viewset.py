@@ -63,15 +63,26 @@ class DeviceViewSet(ProgeoModalViewSet):
         return ProgeoDevice.objects.using(account.db_name).all() # TODO.filter(location__account=account)
     
 
+    @action(detail=False, url_path="sample/debug", authentication_classes=[LimitedTokenAuthentication], methods=["POST"])
+    def catch_legacy_data_debug(self, request, *args, **kwargs):
+        print("DeviceViewSet: catch_legacy_data_debug called | request.data:", request.data)
+        return RequestSuccess({"data": request.data})
+    
+
     @action(detail=False, url_path="sample/catch", authentication_classes=[LimitedTokenAuthentication], methods=["POST"])
     def catch_legacy_data(self, request, *args, **kwargs):
-        print("DeviceViewSet: catch_legacy_data called | request.data:", request.data)
-
+        last_battery = None
+        device_id = None
+        
         uplink_message = request.data.get("uplink_message")
         if uplink_message:
             decoded_payload = uplink_message.get("decoded_payload", {})
             project_id = decoded_payload.get("project_id")
             sample = decoded_payload.get("sample")
+
+            last_battery_percentage = uplink_message.get("last_battery_percentage", {})
+            last_battery = last_battery_percentage.get("value")
+            device_id = data.get("end_device_ids", {}).get("device_id")
         else:
 
             data = request.data.get("data")
@@ -88,7 +99,9 @@ class DeviceViewSet(ProgeoModalViewSet):
             return RequestFailed({"reason": "No sample provided"})
         
         db_name = "default"
-        device, created = ProgeoDevice.objects.using(db_name).get_or_create(raw_hash=project_id)
+        if not device_id:
+            device_id = project_id
+        device, created = ProgeoDevice.objects.using(db_name).get_or_create(raw_hash=device_id)
 
         if created:
             device.device_ip = request.META.get("REMOTE_ADDR")
@@ -96,8 +109,11 @@ class DeviceViewSet(ProgeoModalViewSet):
         
         data = {
             "project_id": project_id,
-            "sample": sample
+            "sample": sample,
         }
+        if last_battery is not None:
+            data["last_battery_percentage"] = last_battery
+
         measure = ProgeoMeasurement.objects.using(db_name).create(
             device=device,
             raw_data=data,
