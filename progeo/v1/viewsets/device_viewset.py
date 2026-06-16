@@ -68,6 +68,11 @@ class DeviceViewSet(ProgeoModalViewSet):
         print("DeviceViewSet: catch_legacy_data_debug called | request.data:", request.data)
         return RequestSuccess({"data": request.data})
     
+    @action(detail=False, url_path="sample/query", authentication_classes=[LimitedTokenAuthentication], methods=["POST"])
+    def catch_legacy_data_query(self, request, *args, **kwargs):
+        print("DeviceViewSet: catch_legacy_data_query called | request.data:", request.data)
+        return RequestSuccess({"data": request.data})
+    
 
     @action(detail=False, url_path="sample/catch", authentication_classes=[LimitedTokenAuthentication], methods=["POST"])
     def catch_legacy_data(self, request, *args, **kwargs):
