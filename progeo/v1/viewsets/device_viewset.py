@@ -65,9 +65,14 @@ class DeviceViewSet(ProgeoModalViewSet):
 
     @action(detail=False, url_path="sample/catch", authentication_classes=[LimitedTokenAuthentication], methods=["POST"])
     def catch_legacy_data(self, request, *args, **kwargs):
-
-        project_id = request.data.get("project_id")
-        sample = request.data.get("sample")
+        print("DeviceViewSet: catch_legacy_data called | request.data:", request.data)
+        data = request.data.get("data")
+        if not data:
+            project_id = request.data.get("project_id")
+            sample = request.data.get("sample")
+        else:
+            project_id = data.get("project_id")
+            sample = data.get("sample")
 
         if not project_id:
             return RequestFailed({"reason": "No project_id provided"})
