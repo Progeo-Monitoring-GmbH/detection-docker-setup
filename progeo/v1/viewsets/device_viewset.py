@@ -72,14 +72,15 @@ class DeviceViewSet(ProgeoModalViewSet):
             decoded_payload = uplink_message.get("decoded_payload", {})
             project_id = decoded_payload.get("project_id")
             sample = decoded_payload.get("sample")
-
-        data = request.data.get("data")
-        if not data:
-            project_id = request.data.get("project_id")
-            sample = request.data.get("sample")
         else:
-            project_id = data.get("project_id")
-            sample = data.get("sample")
+
+            data = request.data.get("data")
+            if not data:
+                project_id = request.data.get("project_id")
+                sample = request.data.get("sample")
+            else:
+                project_id = data.get("project_id")
+                sample = data.get("sample")
 
         if not project_id:
             return RequestFailed({"reason": "No project_id provided"})
