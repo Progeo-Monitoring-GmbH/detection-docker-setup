@@ -66,6 +66,13 @@ class DeviceViewSet(ProgeoModalViewSet):
     @action(detail=False, url_path="sample/catch", authentication_classes=[LimitedTokenAuthentication], methods=["POST"])
     def catch_legacy_data(self, request, *args, **kwargs):
         print("DeviceViewSet: catch_legacy_data called | request.data:", request.data)
+
+        uplink_message = request.data.get("uplink_message")
+        if uplink_message:
+            decoded_payload = uplink_message.get("decoded_payload", {})
+            project_id = decoded_payload.get("project_id")
+            sample = decoded_payload.get("sample")
+
         data = request.data.get("data")
         if not data:
             project_id = request.data.get("project_id")
