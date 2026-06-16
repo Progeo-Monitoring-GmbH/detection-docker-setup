@@ -3,7 +3,9 @@ import ipaddress
 import json
 from pathlib import Path
 from uuid import uuid4
+from datetime import timedelta
 from celery.result import AsyncResult
+from django.utils import timezone
 
 from rest_framework.decorators import action
 from rest_framework_simplejwt.authentication import JWTAuthentication
@@ -58,11 +60,24 @@ class StatusViewSet(ProgeoModalViewSet):
     @action(detail=False, url_path="measurements", methods=["GET"])
     def measurements(self, request, *args, **kwargs):
         db_name = "default"
+
+        since_hours_raw = request.query_params.get("since_hours")
+        since = None
+        if since_hours_raw not in [None, ""]:
+            try:
+                since_hours = max(0, int(since_hours_raw))
+                since = timezone.now() - timedelta(hours=since_hours)
+            except (TypeError, ValueError):
+                return RequestFailed({"reason": "since_hours must be an integer"})
+
         queryset = (
             ProgeoMeasurement.objects.using(db_name)
             .select_related("device")
             .order_by("-id")
         )
+        if since:
+            queryset = queryset.filter(last_fetched__gte=since)
+
         serialized = ProgeoMeasurementSerializer(queryset, many=True).data
         return RequestSuccess({"measurements": serialized})
 

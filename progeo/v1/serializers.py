@@ -118,12 +118,16 @@ class ProgeoMeasurementSerializer(ProgeoBaseSerializer):
     avg_sample = serializers.SerializerMethodField("get_avg_sample")
     non_zero_sample = serializers.SerializerMethodField("get_non_zero_sample")
     data_interval = serializers.IntegerField(source="device.data_interval", read_only=True)
+    device_mac = serializers.CharField(source="device.mac", read_only=True)
+    device_hash = serializers.CharField(source="device.raw_hash", read_only=True)
 
     class Meta:
         model = ProgeoMeasurement
         fields = [
             "id",
             "device",
+            "device_mac",
+            "device_hash",
             "data_interval",
             "last_fetched",
             "samples",

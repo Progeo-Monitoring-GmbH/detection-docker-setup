@@ -78,11 +78,14 @@ class DeviceViewSet(ProgeoModalViewSet):
     def catch_legacy_data(self, request, *args, **kwargs):
         last_battery = None
         device_id = None
+        battery_V = None
         
         uplink_message = request.data.get("uplink_message")
         if uplink_message:
             decoded_payload = uplink_message.get("decoded_payload", {})
             project_id = decoded_payload.get("project_id")
+            battery_V = decoded_payload.get("Bat_V")
+
             sample = decoded_payload.get("sample")
 
             last_battery_percentage = uplink_message.get("last_battery_percentage", {})
@@ -103,6 +106,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         if not sample:
             return RequestFailed({"reason": "No sample provided"})
         
+
         db_name = "default"
         if not device_id:
             device_id = project_id
@@ -116,8 +120,12 @@ class DeviceViewSet(ProgeoModalViewSet):
             "project_id": project_id,
             "sample": sample,
         }
+        
         if last_battery is not None:
             data["last_battery_percentage"] = last_battery
+        
+        if battery_V is not None:
+            data["battery_V"] = battery_V
 
         measure = ProgeoMeasurement.objects.using(db_name).create(
             device=device,
