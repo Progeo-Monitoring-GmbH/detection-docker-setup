@@ -16,7 +16,7 @@ def allowed_log_roots() -> dict[str, str]:
 
 def _docker_log_sources() -> dict[str, str]:
     # Keep key stable for UI while tolerating alternate container names.
-    candidates = ["progeo-nginx", "nginx-reverse-proxy"]
+    candidates = ["progeo-nginx", "nginx-reverse-proxy", "detection-docker-setup_progeo-nginx"]
     try:
         client = docker.from_env()
     except DockerException:
