@@ -5,7 +5,7 @@ import asyncio
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.contrib.auth.models import AnonymousUser
 
-from progeo.v1.helper.log_files import allowed_log_files, tail_file
+from progeo.v1.log_files_helper import allowed_log_files, tail_file
 
 GRP_NAME = "command-group"
 LOG_STREAM_GROUP = "log-stream-group"

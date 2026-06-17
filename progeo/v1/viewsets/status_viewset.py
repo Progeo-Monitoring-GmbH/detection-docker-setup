@@ -13,17 +13,16 @@ from rest_framework.authentication import SessionAuthentication, TokenAuthentica
 from rest_framework.permissions import IsAuthenticated
 
 from progeo.v1.helper import dlog
-from progeo.v1.helper.log_files import allowed_log_files, allowed_log_roots, tail_file
 from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurePoint, ProgeoMeasurement
-from progeo.v1.serializers import DeviceSerializer, LogFileSerializer, ProgeoMeasurePointSerializer, ProgeoMeasurementSerializer
+from progeo.v1.serializers import DeviceSerializer, ProgeoMeasurePointSerializer, ProgeoMeasurementSerializer
 from progeo.decorator import calc_runtime
 from progeo.helper.basics import RequestSuccess, save_check_dir, RequestFailed
 from progeo.helper.docker_helper import start_cad_factory
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
-from progeo.settings import UPLOAD_DIR, BASE_DIR, SETUP_DIR
+from progeo.settings import UPLOAD_DIR, SETUP_DIR
 from progeo.tasks import identify_device as identify_device_task, collect_host_storage_info
 from progeo.v1.viewsets.setup_viewset import _get_controller_account, get_latest_measurement, get_latest_alarm_measurement, ping_host_quick
-
+from progeo.v1.log_files_helper import tail_file, allowed_log_files, allowed_log_roots
 
 # ######################################################################################################################
 
