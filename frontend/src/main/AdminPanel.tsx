@@ -4,8 +4,13 @@ import { Card, Col, Row, Button, ListGroup, Spinner } from 'react-bootstrap';
 import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
+import {
+  WebsocketContext,
+  ReadyState,
+} from '../components/ws/websocketContext.jsx';
 
 type StorageInfo = {
+  path?: string;
   generated_at?: string;
   host?: {
     hostname?: string;
@@ -47,6 +52,9 @@ type LogFileItem = {
 type AdminPanelProps = {
   auth: any;
   enqueueSnackbar: any;
+  sendMessage: (message: string) => void;
+  wsMessage: any;
+  readyState: number;
 };
 
 type AdminPanelState = {
@@ -59,7 +67,7 @@ type AdminPanelState = {
   selectedLogFile: string;
   selectedLogContent: string;
   selectedLogMeta: LogFileItem | null;
-  wsConnected: boolean;
+  logUpdatedPulse: boolean;
 };
 
 const bytesToReadable = (value?: number) => {
@@ -77,7 +85,8 @@ const bytesToReadable = (value?: number) => {
 };
 
 class AdminPanel extends React.PureComponent<AdminPanelProps, AdminPanelState> {
-  private ws: WebSocket | null = null;
+  private pulseTimer: ReturnType<typeof setTimeout> | null = null;
+  private logContentRef = React.createRef<HTMLPreElement>();
 
   constructor(props: AdminPanelProps) {
     super(props);
@@ -91,59 +100,82 @@ class AdminPanel extends React.PureComponent<AdminPanelProps, AdminPanelState> {
       selectedLogFile: '',
       selectedLogContent: '',
       selectedLogMeta: null,
-      wsConnected: false,
+      logUpdatedPulse: false,
     };
   }
 
   componentDidMount() {
     this.loadStorageInfo(false);
-    this.initializeWebSocket();
+    if (this.props.readyState === ReadyState.OPEN) {
+      this.requestLogFileList();
+    }
+  }
+
+  componentDidUpdate(prevProps: AdminPanelProps, prevState: AdminPanelState) {
+    if (
+      prevProps.readyState !== this.props.readyState &&
+      this.props.readyState === ReadyState.OPEN
+    ) {
+      this.requestLogFileList();
+    }
+
+    if (this.props.wsMessage && prevProps.wsMessage !== this.props.wsMessage) {
+      this.handleWebSocketMessage(this.props.wsMessage);
+    }
+
+    if (
+      prevProps.readyState !== this.props.readyState &&
+      this.props.readyState !== ReadyState.OPEN &&
+      this.state.logFiles.length === 0
+    ) {
+      this.loadLogFiles();
+    }
+
+    const focusedLogChanged =
+      prevState.selectedLogFile !== this.state.selectedLogFile;
+    const finishedLoadingFocusedLog =
+      prevState.loadingLogContent && !this.state.loadingLogContent;
+
+    if (
+      (focusedLogChanged || finishedLoadingFocusedLog) &&
+      this.state.selectedLogFile
+    ) {
+      this.scrollLogToBottom();
+    }
   }
 
   componentWillUnmount() {
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
+    if (this.pulseTimer) {
+      clearTimeout(this.pulseTimer);
+      this.pulseTimer = null;
+    }
+
+    if (this.props.readyState === ReadyState.OPEN) {
+      this.props.sendMessage(JSON.stringify({ action: 'stop_stream' }));
     }
   }
 
-  initializeWebSocket = () => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/logs/stream/`;
-
-    try {
-      this.ws = new WebSocket(wsUrl);
-
-      this.ws.onopen = () => {
-        this.setState({ wsConnected: true });
-        this.requestLogFileList();
-      };
-
-      this.ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          this.handleWebSocketMessage(data);
-        } catch (error) {
-          console.error('Failed to parse websocket message:', error);
-        }
-      };
-
-      this.ws.onerror = (error) => {
-        console.error('Websocket error:', error);
-        showErrorBar(
-          this.props.enqueueSnackbar,
-          'Log streaming connection error',
-        );
-      };
-
-      this.ws.onclose = () => {
-        this.setState({ wsConnected: false });
-        // Attempt to reconnect after 3 seconds
-        setTimeout(() => this.initializeWebSocket(), 3000);
-      };
-    } catch (error) {
-      console.error('Failed to initialize websocket:', error);
+  triggerLogUpdatedPulse = () => {
+    if (this.pulseTimer) {
+      clearTimeout(this.pulseTimer);
+      this.pulseTimer = null;
     }
+
+    this.setState({ logUpdatedPulse: true });
+    this.pulseTimer = setTimeout(() => {
+      this.setState({ logUpdatedPulse: false });
+      this.pulseTimer = null;
+    }, 1200);
+  };
+
+  scrollLogToBottom = () => {
+    window.requestAnimationFrame(() => {
+      const el = this.logContentRef.current;
+      if (!el) {
+        return;
+      }
+      el.scrollTop = el.scrollHeight;
+    });
   };
 
   handleWebSocketMessage = (data: any) => {
@@ -156,14 +188,37 @@ class AdminPanel extends React.PureComponent<AdminPanelProps, AdminPanelState> {
         this.streamLogFile(files[0].file);
       }
     } else if (type === 'log_content') {
+      const previousContent = this.state.selectedLogContent;
+      const incomingContent = data.content || '';
+      const selectedChanged = this.state.selectedLogFile !== (data.file || '');
+      const contentChanged = incomingContent !== previousContent;
+
       this.setState({
         loadingLogContent: false,
-        selectedLogContent: data.content || '',
+        selectedLogContent: incomingContent,
         selectedLogFile: data.file || '',
       });
-      const selected =
-        this.state.logFiles.find((item) => item.file === data.file) || null;
-      this.setState({ selectedLogMeta: selected });
+
+      const selected = this.state.logFiles.find(
+        (item) => item.file === data.file,
+      );
+      const selectedMeta = {
+        file: data.file || selected?.file || '',
+        path: data.path || selected?.path || '',
+        size_bytes: Number(data.size_bytes ?? selected?.size_bytes ?? 0),
+        modified_at: data.modified_at || selected?.modified_at || '',
+      } as LogFileItem;
+
+      this.setState((prevState) => ({
+        selectedLogMeta: selectedMeta,
+        logFiles: prevState.logFiles.map((item) =>
+          item.file === selectedMeta.file ? selectedMeta : item,
+        ),
+      }));
+
+      if (!selectedChanged && contentChanged) {
+        this.triggerLogUpdatedPulse();
+      }
     } else if (type === 'error') {
       showErrorBar(
         this.props.enqueueSnackbar,
@@ -173,15 +228,18 @@ class AdminPanel extends React.PureComponent<AdminPanelProps, AdminPanelState> {
   };
 
   requestLogFileList = () => {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ action: 'list_files' }));
+    if (this.props.readyState === ReadyState.OPEN) {
+      this.setState({ loadingLogs: true });
+      this.props.sendMessage(JSON.stringify({ action: 'list_files' }));
     }
   };
 
   streamLogFile = (file: string) => {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+    if (this.props.readyState === ReadyState.OPEN) {
       this.setState({ loadingLogContent: true, selectedLogFile: file });
-      this.ws.send(JSON.stringify({ action: 'stream_file', file, lines: 500 }));
+      this.props.sendMessage(
+        JSON.stringify({ action: 'stream_file', file, lines: 500 }),
+      );
     } else {
       // Fallback to HTTP if websocket not connected
       this.loadLogFile(file);
@@ -196,10 +254,11 @@ class AdminPanel extends React.PureComponent<AdminPanelProps, AdminPanelState> {
       `/v1/status/admin/storage_info/${suffix}`,
       (response) => {
         const data = response?.data || {};
+        const storagePath = data.path || data.storage_info?.path || '';
         this.setState({
           loadingStorage: false,
           storageInfo: (data.storage_info || {}) as StorageInfo,
-          storagePath: data.path || '',
+          storagePath,
         });
         if (refresh && data.refresh_task_id) {
           showSuccessBar(
@@ -275,7 +334,7 @@ class AdminPanel extends React.PureComponent<AdminPanelProps, AdminPanelState> {
     const logs = storage.logs || {};
 
     return (
-      <Card className="mb-3 border-0 shadow-sm">
+      <Card className="mb-3 border-0 shadow-sm px-4 py-3">
         <Card.Body>
           <div className="d-flex justify-content-between align-items-center mb-3">
             <h4 className="mb-0">Host Storage</h4>
@@ -294,19 +353,18 @@ class AdminPanel extends React.PureComponent<AdminPanelProps, AdminPanelState> {
           ) : (
             <>
               <p className="text-muted mb-2">
-                Generated: {this.state.storageInfo?.generated_at || '-'}
-                {' | '}Host: {this.state.storageInfo?.host?.hostname || '-'}
-                {' | '}Kernel: {this.state.storageInfo?.host?.kernel || '-'}
-              </p>
-              <p className="text-muted mb-3">
-                JSON file: {this.state.storagePath || '-'}
+                <b>Generated:</b> {this.state.storageInfo?.generated_at || '-'}
+                {' | '}
+                <b>Host:</b> {this.state.storageInfo?.host?.hostname || '-'}
+                {' | '}
+                <b>Kernel:</b> {this.state.storageInfo?.host?.kernel || '-'}
               </p>
 
               <Row>
                 <Col md={4}>
                   <Card className="h-100">
                     <Card.Body>
-                      <h6>Root Filesystem</h6>
+                      <h6 style={{ fontWeight: 'bold' }}>Root Filesystem</h6>
                       <div>Total: {bytesToReadable(root.total_bytes)}</div>
                       <div>Used: {bytesToReadable(root.used_bytes)}</div>
                       <div>
@@ -319,7 +377,7 @@ class AdminPanel extends React.PureComponent<AdminPanelProps, AdminPanelState> {
                 <Col md={4}>
                   <Card className="h-100">
                     <Card.Body>
-                      <h6>Media</h6>
+                      <h6 style={{ fontWeight: 'bold' }}>Media</h6>
                       <div>Path: {media.path || '-'}</div>
                       <div>Total: {bytesToReadable(media.total_bytes)}</div>
                       <div>Used: {bytesToReadable(media.used_bytes)}</div>
@@ -332,7 +390,7 @@ class AdminPanel extends React.PureComponent<AdminPanelProps, AdminPanelState> {
                 <Col md={4}>
                   <Card className="h-100">
                     <Card.Body>
-                      <h6>Logs</h6>
+                      <h6 style={{ fontWeight: 'bold' }}>Logs</h6>
                       <div>Path: {logs.path || '-'}</div>
                       <div>
                         Dir Size: {bytesToReadable(logs.directory_size_bytes)}
@@ -350,22 +408,34 @@ class AdminPanel extends React.PureComponent<AdminPanelProps, AdminPanelState> {
 
   renderLogsCard() {
     return (
-      <Card className="border-0 shadow-sm">
+      <Card className="border-0 shadow-sm px-4 py-3">
         <Card.Body>
           <div className="d-flex justify-content-between align-items-center mb-3">
             <h4 className="mb-0">Log Files</h4>
-            <small className="text-muted">
-              {this.state.wsConnected
-                ? '🟢 Live streaming active'
-                : '🔴 Streaming offline'}
-            </small>
+            <div className="d-flex align-items-center gap-2">
+              <small className="text-muted">
+                {this.props.readyState === ReadyState.OPEN
+                  ? '🟢 Live streaming active'
+                  : '🔴 Streaming offline'}
+              </small>
+              <small
+                style={{
+                  opacity: this.state.logUpdatedPulse ? 1 : 0,
+                  transition: 'opacity 1.2s ease-out',
+                  color: '#198754',
+                  fontWeight: 600,
+                }}
+              >
+                Updated
+              </small>
+            </div>
           </div>
           <Row>
             <Col md={4}>
               {this.state.loadingLogs ? (
                 <Spinner animation="border" size="sm" />
               ) : (
-                <ListGroup style={{ maxHeight: '520px', overflowY: 'auto' }}>
+                <ListGroup style={{ maxHeight: '520px' }}>
                   {this.state.logFiles.map((file) => (
                     <ListGroup.Item
                       action
@@ -389,6 +459,7 @@ class AdminPanel extends React.PureComponent<AdminPanelProps, AdminPanelState> {
                   'No file selected'}
               </div>
               <pre
+                ref={this.logContentRef}
                 style={{
                   background: '#101419',
                   color: '#d9e2ec',
@@ -425,7 +496,21 @@ class AdminPanel extends React.PureComponent<AdminPanelProps, AdminPanelState> {
 const AdminPanelView = () => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
-  return <AdminPanel auth={auth} enqueueSnackbar={enqueueSnackbar} />;
+  const wsContext = React.useContext(WebsocketContext) as any;
+
+  return (
+    <AdminPanel
+      auth={auth}
+      enqueueSnackbar={enqueueSnackbar}
+      sendMessage={wsContext?.sendMessage || (() => {})}
+      wsMessage={wsContext?.wsMessage}
+      readyState={
+        typeof wsContext?.readyState === 'number'
+          ? wsContext.readyState
+          : ReadyState.UNINSTANTIATED
+      }
+    />
+  );
 };
 
 export default AdminPanelView;

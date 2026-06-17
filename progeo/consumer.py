@@ -1,11 +1,10 @@
 import json
-import os
 import asyncio
 
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.contrib.auth.models import AnonymousUser
 
-from progeo.v1.log_files_helper import allowed_log_files, tail_file
+from progeo.v1.log_files_helper import read_log_file, summarize_log_files
 
 GRP_NAME = "command-group"
 LOG_STREAM_GROUP = "log-stream-group"
@@ -115,23 +114,7 @@ class LogStreamConsumer(AsyncWebsocketConsumer):
         """Send list of all available log files."""
         try:
             loop = asyncio.get_event_loop()
-            files = await loop.run_in_executor(None, allowed_log_files)
-            
-            summary = []
-            for key, file_path in sorted(files.items()):
-                try:
-                    size_bytes = os.path.getsize(file_path)
-                    modified_at = os.path.getmtime(file_path)
-                    from datetime import datetime
-                    modified_at_iso = datetime.fromtimestamp(modified_at).isoformat()
-                    summary.append({
-                        "file": key,
-                        "path": str(file_path),
-                        "size_bytes": size_bytes,
-                        "modified_at": modified_at_iso,
-                    })
-                except OSError:
-                    continue
+            summary = await loop.run_in_executor(None, summarize_log_files)
 
             await self.send(text_data=json.dumps({
                 "type": "file_list",
@@ -144,17 +127,15 @@ class LogStreamConsumer(AsyncWebsocketConsumer):
         """Start streaming a specific log file with periodic updates."""
         try:
             loop = asyncio.get_event_loop()
-            files = await loop.run_in_executor(None, allowed_log_files)
-            
-            file_path = files.get(file_key)
-            if not file_path:
+            result = await loop.run_in_executor(None, read_log_file, file_key, lines)
+            if not result:
                 await self.send_error("Unknown or disallowed log file")
                 return
 
-            self.selected_file = (file_key, file_path, lines)
+            self.selected_file = (file_key, lines)
 
             # Send initial content
-            await self.send_log_content(file_path, file_key, lines)
+            await self.send_log_content(file_key, lines)
 
             # Stop any existing stream task
             if self.stream_task:
@@ -162,17 +143,17 @@ class LogStreamConsumer(AsyncWebsocketConsumer):
 
             # Start periodic refresh task (every 5 seconds)
             self.stream_task = asyncio.create_task(
-                self.periodic_stream_update(file_key, file_path, lines)
+                self.periodic_stream_update(file_key, lines)
             )
         except Exception as exc:
             await self.send_error(f"Failed to start stream: {exc}")
 
-    async def periodic_stream_update(self, file_key: str, file_path: str, lines: int):
-        """Periodically update log file content every 5 seconds."""
+    async def periodic_stream_update(self, file_key: str, lines: int):
+        """Periodically update log file content every second."""
         try:
             while True:
-                await asyncio.sleep(5)
-                await self.send_log_content(file_path, file_key, lines)
+                await asyncio.sleep(1)
+                await self.send_log_content(file_key, lines)
         except asyncio.CancelledError:
             pass
         except Exception as exc:
@@ -188,29 +169,13 @@ class LogStreamConsumer(AsyncWebsocketConsumer):
             "type": "stream_stopped"
         }))
 
-    async def send_log_content(self, file_path: str, file_key: str, lines: int):
+    async def send_log_content(self, file_key: str, lines: int):
         """Read and send current log file content."""
         try:
             loop = asyncio.get_event_loop()
-            
-            def read_file():
-                try:
-                    content = tail_file(file_path, lines)
-                    size_bytes = os.path.getsize(file_path)
-                    from datetime import datetime
-                    modified_at = datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
-                    return {
-                        "file": file_key,
-                        "path": str(file_path),
-                        "size_bytes": size_bytes,
-                        "modified_at": modified_at,
-                        "content": content,
-                        "lines": lines,
-                    }
-                except Exception as exc:
-                    raise Exception(f"Could not read log file: {exc}")
-
-            result = await loop.run_in_executor(None, read_file)
+            result = await loop.run_in_executor(None, read_log_file, file_key, lines)
+            if not result:
+                raise Exception("Unknown or disallowed log file")
             
             await self.send(text_data=json.dumps({
                 "type": "log_content",

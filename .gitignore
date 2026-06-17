@@ -44,3 +44,4 @@ tmp/
 docker/nginx/ro*
 logs/
 __pycache__/
+.vscode/

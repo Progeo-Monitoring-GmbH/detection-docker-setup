@@ -337,14 +337,25 @@ def collect_host_storage_info():
     from progeo.settings import BASE_DIR, SETUP_DIR
     from datetime import datetime
 
-    script_path = os.path.join(BASE_DIR, "docker", "backend", "scripts", "collect_storage_info.sh")
+    script_candidates = [
+        os.path.join(BASE_DIR, "docker", "backend", "scripts", "collect_storage_info.sh"),
+        os.path.join(BASE_DIR, "scripts", "collect_storage_info.sh"),
+    ]
+    script_path = next((path for path in script_candidates if os.path.isfile(path)), None)
     output_dir = save_check_dir(SETUP_DIR)
     date_folder = datetime.now().strftime("%Y-%m-%d")
     output_path = os.path.join(output_dir, date_folder, "storage_info.json")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-    if not os.path.isfile(script_path):
-        raise FileNotFoundError(f"Storage info script not found: {script_path}")
+    if not script_path:
+        raise FileNotFoundError(
+            "Storage info script not found. Checked: "
+            + ", ".join(script_candidates)
+        )
+
+    env = os.environ.copy()
+    env["PROJECT_ROOT"] = BASE_DIR
+    env["OUTPUT_PATH"] = output_path
 
     result = subprocess.run(
         ["bash", script_path],
@@ -352,6 +363,7 @@ def collect_host_storage_info():
         text=True,
         timeout=45,
         check=False,
+        env=env,
     )
     if result.returncode != 0:
         raise RuntimeError(

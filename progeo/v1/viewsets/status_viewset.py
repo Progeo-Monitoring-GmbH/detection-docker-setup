@@ -22,7 +22,13 @@ from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.settings import UPLOAD_DIR, SETUP_DIR
 from progeo.tasks import identify_device as identify_device_task, collect_host_storage_info
 from progeo.v1.viewsets.setup_viewset import _get_controller_account, get_latest_measurement, get_latest_alarm_measurement, ping_host_quick
-from progeo.v1.log_files_helper import tail_file, allowed_log_files, allowed_log_roots
+from progeo.v1.log_files_helper import (
+    allowed_log_files,
+    allowed_log_roots,
+    read_log_file,
+    summarize_log_files,
+    tail_file,
+)
 
 # ######################################################################################################################
 
@@ -139,39 +145,19 @@ class StatusViewSet(ProgeoModalViewSet):
         files = self._allowed_log_files()
 
         if requested_file:
-            file_path = files.get(requested_file)
-            if not file_path:
+            if requested_file not in files:
                 return RequestFailed({"reason": "Unknown or disallowed log file"})
 
             try:
-                content = self._tail_file(file_path, lines)
-                size_bytes = os.path.getsize(file_path)
-                modified_at = datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
-            except OSError as exc:
+                details = read_log_file(requested_file, lines)
+                if not details:
+                    return RequestFailed({"reason": "Unknown or disallowed log file"})
+            except Exception as exc:
                 return RequestFailed({"reason": f"Could not read log file: {exc}"})
 
-            return RequestSuccess({
-                "file": requested_file,
-                "path": str(file_path),
-                "size_bytes": size_bytes,
-                "modified_at": modified_at,
-                "lines": lines,
-                "content": content,
-            })
+            return RequestSuccess(details)
 
-        summary = []
-        for key, file_path in sorted(files.items()):
-            try:
-                size_bytes = os.path.getsize(file_path)
-                modified_at = datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
-            except OSError:
-                continue
-            summary.append({
-                "file": key,
-                "path": str(file_path),
-                "size_bytes": size_bytes,
-                "modified_at": modified_at,
-            })
+        summary = summarize_log_files()
 
         return RequestSuccess({"files": summary})
 
