@@ -4,8 +4,8 @@ import asyncio
 
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.contrib.auth.models import AnonymousUser
-from progeo.v1.viewsets.status_viewset import StatusViewSet
-from progeo.settings import BASE_DIR
+
+from progeo.v1.helper.log_files import allowed_log_files, tail_file
 
 GRP_NAME = "command-group"
 LOG_STREAM_GROUP = "log-stream-group"
@@ -115,7 +115,7 @@ class LogStreamConsumer(AsyncWebsocketConsumer):
         """Send list of all available log files."""
         try:
             loop = asyncio.get_event_loop()
-            files = await loop.run_in_executor(None, StatusViewSet._allowed_log_files)
+            files = await loop.run_in_executor(None, allowed_log_files)
             
             summary = []
             for key, file_path in sorted(files.items()):
@@ -144,7 +144,7 @@ class LogStreamConsumer(AsyncWebsocketConsumer):
         """Start streaming a specific log file with periodic updates."""
         try:
             loop = asyncio.get_event_loop()
-            files = await loop.run_in_executor(None, StatusViewSet._allowed_log_files)
+            files = await loop.run_in_executor(None, allowed_log_files)
             
             file_path = files.get(file_key)
             if not file_path:
@@ -195,9 +195,7 @@ class LogStreamConsumer(AsyncWebsocketConsumer):
             
             def read_file():
                 try:
-                    with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-                        data = f.readlines()
-                    content = "".join(data[-lines:])
+                    content = tail_file(file_path, lines)
                     size_bytes = os.path.getsize(file_path)
                     from datetime import datetime
                     modified_at = datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()

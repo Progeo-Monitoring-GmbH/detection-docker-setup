@@ -13,8 +13,9 @@ from rest_framework.authentication import SessionAuthentication, TokenAuthentica
 from rest_framework.permissions import IsAuthenticated
 
 from progeo.v1.helper import dlog
+from progeo.v1.helper.log_files import allowed_log_files, allowed_log_roots, tail_file
 from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurePoint, ProgeoMeasurement
-from progeo.v1.serializers import DeviceSerializer, ProgeoMeasurePointSerializer, ProgeoMeasurementSerializer
+from progeo.v1.serializers import DeviceSerializer, LogFileSerializer, ProgeoMeasurePointSerializer, ProgeoMeasurementSerializer
 from progeo.decorator import calc_runtime
 from progeo.helper.basics import RequestSuccess, save_check_dir, RequestFailed
 from progeo.helper.docker_helper import start_cad_factory
@@ -84,34 +85,15 @@ class StatusViewSet(ProgeoModalViewSet):
 
     @staticmethod
     def _allowed_log_roots() -> dict[str, str]:
-        return {
-            "progeo": os.path.join("/var", "log", "progeo"),
-            "workspace": os.path.join(BASE_DIR, "logs", "backend"),
-        }
+        return allowed_log_roots()
 
     @classmethod
     def _allowed_log_files(cls) -> dict[str, str]:
-        files: dict[str, str] = {}
-        for root_name, root_path in cls._allowed_log_roots().items():
-            if not os.path.exists(root_path) or not os.path.isdir(root_path):
-                continue
-
-            for current_root, _, filenames in os.walk(root_path):
-                for filename in filenames:
-                    _, extension = os.path.splitext(filename)
-                    if extension.lower() not in {".log", ".txt", ".out", ".err"}:
-                        continue
-
-                    file_path = os.path.join(current_root, filename)
-                    rel = os.path.relpath(file_path, root_path).replace(os.sep, "/")
-                    files[f"{root_name}/{rel}"] = file_path
-        return files
+        return allowed_log_files()
 
     @staticmethod
     def _tail_file(path: str, lines: int) -> str:
-        with open(path, "r", encoding="utf-8", errors="replace") as file_handle:
-            data = file_handle.readlines()
-        return "".join(data[-lines:])
+        return tail_file(path, lines)
 
     @calc_runtime
     @action(detail=False, url_path="admin/storage_info", methods=["GET"])

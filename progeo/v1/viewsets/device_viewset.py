@@ -90,7 +90,7 @@ class DeviceViewSet(ProgeoModalViewSet):
 
             last_battery_percentage = uplink_message.get("last_battery_percentage", {})
             last_battery = last_battery_percentage.get("value")
-            device_id = data.get("end_device_ids", {}).get("device_id")
+            device_id = request.data.get("end_device_ids", {}).get("device_id")
         else:
 
             data = request.data.get("data")
@@ -120,7 +120,7 @@ class DeviceViewSet(ProgeoModalViewSet):
             "project_id": project_id,
             "sample": sample,
         }
-        
+
         if last_battery is not None:
             data["last_battery_percentage"] = last_battery
         
