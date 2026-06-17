@@ -1,7 +1,10 @@
 from celery import shared_task
 import ipaddress
+import json
 import math
+import os
 import socket
+import subprocess
 from numbers import Number
 from urllib.parse import quote, unquote, urlparse
 
@@ -10,7 +13,7 @@ from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 
 from progeo.consumer import GRP_NAME
-from progeo.helper.basics import dlog
+from progeo.helper.basics import dlog, save_check_dir
 
 
 ALLOWED_DEVICE_CONFIG_PATH = "config/device_config.lua"
@@ -326,6 +329,44 @@ def evaluate_measurement(measurement_id: int):
         "spot_count": len(spots),
         "relevant_point_count": len(relevant_points),
         "spots": spots,
+    }
+
+
+@shared_task
+def collect_host_storage_info():
+    from progeo.settings import BASE_DIR, SETUP_DIR
+    from datetime import datetime
+
+    script_path = os.path.join(BASE_DIR, "docker", "backend", "scripts", "collect_storage_info.sh")
+    output_dir = save_check_dir(SETUP_DIR)
+    date_folder = datetime.now().strftime("%Y-%m-%d")
+    output_path = os.path.join(output_dir, date_folder, "storage_info.json")
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    if not os.path.isfile(script_path):
+        raise FileNotFoundError(f"Storage info script not found: {script_path}")
+
+    result = subprocess.run(
+        ["bash", script_path],
+        capture_output=True,
+        text=True,
+        timeout=45,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            "collect_storage_info.sh failed "
+            f"with code={result.returncode}, stderr={result.stderr.strip()}"
+        )
+
+    with open(output_path, "r", encoding="utf-8") as storage_file:
+        payload = json.load(storage_file)
+
+    return {
+        "ok": True,
+        "path": output_path,
+        "storage_info": payload,
+        "stdout": (result.stdout or "").strip(),
     }
 
 

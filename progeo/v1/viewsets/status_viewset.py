@@ -1,7 +1,7 @@
 import os
 import ipaddress
 import json
-from pathlib import Path
+from datetime import datetime
 from uuid import uuid4
 from datetime import timedelta
 from celery.result import AsyncResult
@@ -19,8 +19,8 @@ from progeo.decorator import calc_runtime
 from progeo.helper.basics import RequestSuccess, save_check_dir, RequestFailed
 from progeo.helper.docker_helper import start_cad_factory
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
-from progeo.settings import UPLOAD_DIR
-from progeo.tasks import identify_device as identify_device_task
+from progeo.settings import UPLOAD_DIR, BASE_DIR, SETUP_DIR
+from progeo.tasks import identify_device as identify_device_task, collect_host_storage_info
 from progeo.v1.viewsets.setup_viewset import _get_controller_account, get_latest_measurement, get_latest_alarm_measurement, ping_host_quick
 
 
@@ -55,6 +55,144 @@ class StatusViewSet(ProgeoModalViewSet):
     serializer_class = DeviceSerializer
     authentication_classes = [SessionAuthentication, JWTAuthentication, TokenAuthentication]
     permission_classes = [IsAuthenticated]
+
+    @staticmethod
+    def _storage_info_path() -> str:
+        """Get path to the latest storage_info.json file in date-based folders."""
+        setup_dir = SETUP_DIR
+        if not os.path.isdir(setup_dir):
+            return os.path.join(setup_dir, "latest", "storage_info.json")
+        
+        # Find all date folders (YYYY-MM-DD format) and get the latest
+        latest_date_folder = None
+        for item in os.listdir(setup_dir):
+            item_path = os.path.join(setup_dir, item)
+            if os.path.isdir(item_path) and len(item) == 10 and item[4] == '-' and item[7] == '-':
+                # Check if it matches YYYY-MM-DD format
+                try:
+                    int(item[:4])  # year
+                    int(item[5:7])  # month
+                    int(item[8:10])  # day
+                    if latest_date_folder is None or item > latest_date_folder:
+                        latest_date_folder = item
+                except ValueError:
+                    continue
+        
+        if latest_date_folder:
+            return os.path.join(setup_dir, latest_date_folder, "storage_info.json")
+        return os.path.join(setup_dir, "storage_info.json")
+
+    @staticmethod
+    def _allowed_log_roots() -> dict[str, str]:
+        return {
+            "progeo": os.path.join("/var", "log", "progeo"),
+            "workspace": os.path.join(BASE_DIR, "logs", "backend"),
+        }
+
+    @classmethod
+    def _allowed_log_files(cls) -> dict[str, str]:
+        files: dict[str, str] = {}
+        for root_name, root_path in cls._allowed_log_roots().items():
+            if not os.path.exists(root_path) or not os.path.isdir(root_path):
+                continue
+
+            for current_root, _, filenames in os.walk(root_path):
+                for filename in filenames:
+                    _, extension = os.path.splitext(filename)
+                    if extension.lower() not in {".log", ".txt", ".out", ".err"}:
+                        continue
+
+                    file_path = os.path.join(current_root, filename)
+                    rel = os.path.relpath(file_path, root_path).replace(os.sep, "/")
+                    files[f"{root_name}/{rel}"] = file_path
+        return files
+
+    @staticmethod
+    def _tail_file(path: str, lines: int) -> str:
+        with open(path, "r", encoding="utf-8", errors="replace") as file_handle:
+            data = file_handle.readlines()
+        return "".join(data[-lines:])
+
+    @calc_runtime
+    @action(detail=False, url_path="admin/storage_info", methods=["GET"])
+    def admin_storage_info(self, request, *args, **kwargs):
+        refresh = (request.query_params.get("refresh") or "").strip().lower() in {"1", "true", "yes"}
+        task_id = None
+        if refresh:
+            async_result = collect_host_storage_info.delay()
+            task_id = async_result.id
+
+        info_path = self._storage_info_path()
+        if not os.path.exists(info_path):
+            return RequestSuccess({
+                "exists": False,
+                "path": str(info_path),
+                "storage_info": {},
+                "refresh_task_id": task_id,
+            })
+
+        try:
+            with open(info_path, "r", encoding="utf-8") as storage_file:
+                storage_data = json.load(storage_file)
+        except (OSError, json.JSONDecodeError) as exc:
+            return RequestFailed({"reason": f"Failed reading storage info: {exc}"})
+
+        return RequestSuccess({
+            "exists": True,
+            "path": str(info_path),
+            "storage_info": storage_data,
+            "refresh_task_id": task_id,
+        })
+
+    @calc_runtime
+    @action(detail=False, url_path="admin/log_files", methods=["GET"])
+    def admin_log_files(self, request, *args, **kwargs):
+        requested_file = (request.query_params.get("file") or "").strip()
+        lines_raw = request.query_params.get("lines")
+        try:
+            lines = int(lines_raw) if lines_raw else 300
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "lines must be an integer"})
+        lines = max(1, min(lines, 2000))
+
+        files = self._allowed_log_files()
+
+        if requested_file:
+            file_path = files.get(requested_file)
+            if not file_path:
+                return RequestFailed({"reason": "Unknown or disallowed log file"})
+
+            try:
+                content = self._tail_file(file_path, lines)
+                size_bytes = os.path.getsize(file_path)
+                modified_at = datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
+            except OSError as exc:
+                return RequestFailed({"reason": f"Could not read log file: {exc}"})
+
+            return RequestSuccess({
+                "file": requested_file,
+                "path": str(file_path),
+                "size_bytes": size_bytes,
+                "modified_at": modified_at,
+                "lines": lines,
+                "content": content,
+            })
+
+        summary = []
+        for key, file_path in sorted(files.items()):
+            try:
+                size_bytes = os.path.getsize(file_path)
+                modified_at = datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
+            except OSError:
+                continue
+            summary.append({
+                "file": key,
+                "path": str(file_path),
+                "size_bytes": size_bytes,
+                "modified_at": modified_at,
+            })
+
+        return RequestSuccess({"files": summary})
 
     @calc_runtime
     @action(detail=False, url_path="measurements", methods=["GET"])
@@ -118,7 +256,8 @@ class StatusViewSet(ProgeoModalViewSet):
         if not upload:
             return RequestFailed({"reason": "No file uploaded"})
 
-        suffix = Path(upload.name).suffix.lower()
+        _, suffix = os.path.splitext(upload.name)
+        suffix = suffix.lower()
         if suffix not in {".dwg", ".dxf"}:
             return RequestFailed({"reason": "Only .dwg and .dxf files are supported"})
 
@@ -135,7 +274,7 @@ class StatusViewSet(ProgeoModalViewSet):
             for chunk in upload.chunks():
                 handle.write(chunk)
 
-        cad_input = f"media/uploads/cad_imports/{target_name}"
+        cad_input = os.path.join("media", "uploads", "cad_imports", target_name)
         try:
             exit_code, stdout, stderr = start_cad_factory(
                 cad_input=cad_input,

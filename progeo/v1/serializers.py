@@ -46,6 +46,19 @@ class FileSerializer(serializers.Serializer):
         }
 
 
+class LogFileSerializer(serializers.Serializer):
+    """Serializer for log file metadata and content."""
+    file = serializers.CharField()
+    path = serializers.CharField()
+    size_bytes = serializers.IntegerField()
+    modified_at = serializers.CharField()
+    content = serializers.CharField(required=False, allow_blank=True)
+    lines = serializers.IntegerField(required=False)
+
+    def update(self, instance, validated_data):
+        return instance
+
+
 class ProgeoBaseSerializer(serializers.ModelSerializer):
     using = None
     _type = None

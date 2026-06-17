@@ -51,6 +51,14 @@ const Navbar = ({ act, content }) => {
                 Docker Status
               </Button>
               <Button
+                href="/admin/panel/"
+                variant={act === 'adminpanel' ? 'info' : 'secondary'}
+                className="w-100 mt-2"
+                size="lg"
+              >
+                Admin Panel
+              </Button>
+              <Button
                 href={`${import.meta.env.VITE_BACKEND_URL}/aadmin`}
                 variant="primary"
                 className="w-100 mt-2"

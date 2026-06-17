@@ -2,6 +2,7 @@ import os
 from urllib.parse import quote
 
 from celery import Celery
+from celery.schedules import crontab
 from celery.signals import setup_logging, task_postrun, task_prerun
 from celery.utils.log import get_task_logger
 from django.utils import timezone
@@ -38,6 +39,12 @@ celery_instance.conf.update(
     result_backend=f"{_redis}/1",
     broker_url=f"{_redis}/0",
 )
+celery_instance.conf.beat_schedule = {
+    "collect-host-storage-info-hourly": {
+        "task": "progeo.tasks.collect_host_storage_info",
+        "schedule": crontab(minute=0),
+    },
+}
 celery_instance.autodiscover_tasks(lambda: settings.INSTALLED_APPS)
 
 # List to store running tasks

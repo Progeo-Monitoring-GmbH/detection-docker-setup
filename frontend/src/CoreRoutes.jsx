@@ -17,6 +17,7 @@ const DeviceEditorView = React.lazy(() => import('./main/DeviceEditorView'));
 const MeasurementsOverview = React.lazy(
   () => import('./main/MeasurementsOverview.tsx'),
 );
+const AdminPanel = React.lazy(() => import('./main/AdminPanel.tsx'));
 
 const CoreRoutes = () => {
   return (
@@ -61,6 +62,14 @@ const CoreRoutes = () => {
       <Route
         path="/docker/"
         element={<Navbar act={'docker'} content={<DockerStatusView />} />}
+      />
+      <Route
+        path="/admin/panel/"
+        element={
+          <WebSocketProvider url="/ws/logs/stream/">
+            <Navbar act={'adminpanel'} content={<AdminPanel />} />{' '}
+          </WebSocketProvider>
+        }
       />
       <Route
         path="/backup/:account/overview/"
