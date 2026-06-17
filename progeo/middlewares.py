@@ -75,7 +75,8 @@ class AccountMiddleware:
         if hasattr(request, "account"):
             if request.user not in request.account.users.all():
                 if request.get_full_path() != "/v1/0/account/":
-                    elog("ERROR", request.user, request.account.users.all())
+                    pass
+                    #elog("ERROR", request.user, request.account.users.all())
                     # return HttpResponse("Nice try...", status=406)
 
             print("process_template_response", request.account, request.user, self.using_db)

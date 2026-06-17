@@ -129,7 +129,7 @@ class LogStreamConsumer(AsyncWebsocketConsumer):
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(None, read_log_file, file_key, lines)
             if not result:
-                await self.send_error("Unknown or disallowed log file")
+                await self.send_error("Unknown or disallowed log file | start_stream")
                 return
 
             self.selected_file = (file_key, lines)
@@ -175,7 +175,7 @@ class LogStreamConsumer(AsyncWebsocketConsumer):
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(None, read_log_file, file_key, lines)
             if not result:
-                raise Exception("Unknown or disallowed log file")
+                raise Exception("Unknown or disallowed log file | send_log_content")
             
             await self.send(text_data=json.dumps({
                 "type": "log_content",

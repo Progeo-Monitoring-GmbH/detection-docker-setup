@@ -10,7 +10,7 @@ from django.utils import timezone
 from rest_framework.decorators import action
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAdminUser, IsAuthenticated
 
 from progeo.v1.helper import dlog
 from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurePoint, ProgeoMeasurement
@@ -101,7 +101,7 @@ class StatusViewSet(ProgeoModalViewSet):
         return tail_file(path, lines)
 
     @calc_runtime
-    @action(detail=False, url_path="admin/storage_info", methods=["GET"])
+    @action(detail=False, url_path="admin/storage_info", permission_classes = [IsAdminUser], methods=["GET"])
     def admin_storage_info(self, request, *args, **kwargs):
         refresh = (request.query_params.get("refresh") or "").strip().lower() in {"1", "true", "yes"}
         task_id = None
@@ -132,7 +132,7 @@ class StatusViewSet(ProgeoModalViewSet):
         })
 
     @calc_runtime
-    @action(detail=False, url_path="admin/log_files", methods=["GET"])
+    @action(detail=False, url_path="admin/log_files", permission_classes = [IsAdminUser], methods=["GET"])
     def admin_log_files(self, request, *args, **kwargs):
         requested_file = (request.query_params.get("file") or "").strip()
         lines_raw = request.query_params.get("lines")
@@ -146,12 +146,12 @@ class StatusViewSet(ProgeoModalViewSet):
 
         if requested_file:
             if requested_file not in files:
-                return RequestFailed({"reason": "Unknown or disallowed log file"})
+                return RequestFailed({"reason": "Unknown or disallowed log file | admin_log_files"})
 
             try:
                 details = read_log_file(requested_file, lines)
                 if not details:
-                    return RequestFailed({"reason": "Unknown or disallowed log file"})
+                    return RequestFailed({"reason": "Unknown or disallowed log file | admin_log_files"})
             except Exception as exc:
                 return RequestFailed({"reason": f"Could not read log file: {exc}"})
 

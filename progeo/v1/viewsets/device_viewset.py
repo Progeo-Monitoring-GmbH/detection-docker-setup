@@ -14,7 +14,7 @@ from progeo.tasks import _flatten_numeric_values, download_device_config as down
 from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurement
 from progeo.v1.serializers import DeviceSerializer
 from progeo.decorator import calc_runtime
-from progeo.helper.basics import RequestSuccess, RequestFailed
+from progeo.helper.basics import RequestSuccess, RequestFailed, ilog
 from progeo.helper.creator import create_MfS_log
 from progeo.v1.creator import create_progeo_measurement_safe
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
@@ -56,7 +56,7 @@ class DeviceViewSet(ProgeoModalViewSet):
 
     def get_queryset(self):
         account = _get_controller_account()
-        print("DeviceViewSet: get_queryset called | account:", account)
+        ilog("DeviceViewSet: get_queryset called | account:", account)
 
         if not account:
             return ProgeoDevice.objects.none()
@@ -65,12 +65,12 @@ class DeviceViewSet(ProgeoModalViewSet):
 
     @action(detail=False, url_path="sample/debug", authentication_classes=[LimitedTokenAuthentication], methods=["POST"])
     def catch_legacy_data_debug(self, request, *args, **kwargs):
-        print("DeviceViewSet: catch_legacy_data_debug called | request.data:", request.data)
+        ilog("DeviceViewSet: catch_legacy_data_debug called | request.data:", request.data, tag="[DEBUG]")
         return RequestSuccess({"data": request.data})
     
     @action(detail=False, url_path="sample/query", authentication_classes=[LimitedTokenAuthentication], methods=["POST"])
     def catch_legacy_data_query(self, request, *args, **kwargs):
-        print("DeviceViewSet: catch_legacy_data_query called | request.data:", request.data)
+        ilog("DeviceViewSet: catch_legacy_data_query called | request.data:", request.data, tag="[QUERY]")
         return RequestSuccess({"data": request.data})
     
 
@@ -79,7 +79,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         last_battery = None
         device_id = None
         battery_V = None
-        print("DeviceViewSet: catch_legacy_data called | request.data:", request.data)
+        ilog("DeviceViewSet: catch_legacy_data called | request.data:", request.data, tag="[CATCH]")
         uplink_message = request.data.get("uplink_message")
         if uplink_message:
             decoded_payload = uplink_message.get("decoded_payload", {})

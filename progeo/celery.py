@@ -50,7 +50,7 @@ celery_instance.autodiscover_tasks(lambda: settings.INSTALLED_APPS)
 # List to store running tasks
 running_tasks = {}
 
-ilog("Setup Celery")
+#ilog("Setup Celery")
 
 # ######################################################################################################################
 
