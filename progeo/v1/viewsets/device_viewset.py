@@ -79,7 +79,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         last_battery = None
         device_id = None
         battery_V = None
-        
+        print("DeviceViewSet: catch_legacy_data called | request.data:", request.data)
         uplink_message = request.data.get("uplink_message")
         if uplink_message:
             decoded_payload = uplink_message.get("decoded_payload", {})
