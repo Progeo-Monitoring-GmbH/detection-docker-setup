@@ -27,6 +27,10 @@ class DataMeasurement:
     faul: int
     error: int
     status: int
+    rbyte: int
+    abyte: int
+    bbyte: int
+    mac345: int
 
     samples: List[int]
 
