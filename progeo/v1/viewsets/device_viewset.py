@@ -1,17 +1,16 @@
 
-import json
+from dataclasses import asdict
 
 from django.utils import timezone
 from celery.exceptions import TimeoutError
 from rest_framework.decorators import action
 from rest_framework.exceptions import ParseError
-from rest_framework.parsers import BaseParser
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from progeo.authentication import LimitedTokenAuthentication
 from rest_framework.permissions import IsAuthenticated
 from progeo.tasks import _flatten_numeric_values, download_device_config as download_device_config_task, upload_device_config as upload_device_config_task
-from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurement
+from progeo.v1.models import ProgeoDevice, ProgeoLocation
 from progeo.v1.serializers import DeviceSerializer
 from progeo.decorator import calc_runtime
 from progeo.helper.basics import RequestSuccess, RequestFailed, ilog
@@ -19,31 +18,12 @@ from progeo.helper.creator import create_MfS_log
 from progeo.v1.creator import create_progeo_measurement_safe
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.v1.viewsets.setup_viewset import _get_controller_account
+from progeo.v1.legacy.executor import parse_legacy_data_measurement, _save_measurement_from_legacy_data
+from progeo.v1.legacy.executor import SafeLuaUploadParser
 
 
 # ######################################################################################################################
 
-
-class SafeLuaUploadParser(BaseParser):
-    media_type = "*/*"
-
-    def parse(self, stream, media_type=None, parser_context=None):
-        raw = stream.read()
-        text = raw.decode("utf-8", errors="replace")
-        normalized_type = (media_type or "").split(";")[0].strip().lower()
-
-        if normalized_type == "application/json":
-            try:
-                payload = json.loads(text)
-            except ValueError:
-                return {"content": text}
-            if isinstance(payload, dict):
-                return payload
-            if isinstance(payload, str):
-                return {"content": payload}
-            return {"content": text}
-
-        return {"content": text}
 
 
 class DeviceViewSet(ProgeoModalViewSet):
@@ -68,10 +48,23 @@ class DeviceViewSet(ProgeoModalViewSet):
         ilog("DeviceViewSet: catch_legacy_data_debug called | request.data:", request.data, tag="[DEBUG]")
         return RequestSuccess({"data": request.data})
     
+
+
     @action(detail=False, url_path="sample/query", authentication_classes=[LimitedTokenAuthentication], methods=["POST"])
     def catch_legacy_data_query(self, request, *args, **kwargs):
         ilog("DeviceViewSet: catch_legacy_data_query called | request.data:", request.data, tag="[QUERY]")
-        return RequestSuccess({"data": request.data})
+        data = request.data.get("Y")
+        try:
+            measurement = parse_legacy_data_measurement(data)
+        except (TypeError, ValueError) as exc:
+            return RequestFailed({"reason": f"Invalid legacy data: {exc}"})
+        
+        _save_measurement_from_legacy_data(
+            measurement=measurement,
+            device_id=str(measurement.project_id)
+        )
+
+        return RequestSuccess({"data": request.data, "measurement": asdict(measurement)})
     
 
     @action(detail=False, url_path="sample/catch", authentication_classes=[LimitedTokenAuthentication], methods=["POST"])
@@ -107,31 +100,18 @@ class DeviceViewSet(ProgeoModalViewSet):
             return RequestFailed({"reason": "No sample provided"})
         
 
-        db_name = "default"
-        if not device_id:
-            device_id = project_id
-        device, created = ProgeoDevice.objects.using(db_name).get_or_create(raw_hash=device_id)
 
-        if created:
-            device.device_ip = request.META.get("REMOTE_ADDR")
-            device.save(using=db_name)
-        
         data = {
             "project_id": project_id,
             "sample": sample,
         }
 
-        if last_battery is not None:
-            data["last_battery_percentage"] = last_battery
-        
-        if battery_V is not None:
-            data["battery_V"] = battery_V
-
-        measure = ProgeoMeasurement.objects.using(db_name).create(
-            device=device,
-            raw_data=data,
+        _save_measurement_from_legacy_data(
+            measurement=data,
+            device_id=device_id or str(project_id),
+            battery_V=battery_V,
+            last_battery_percentage=int(last_battery) if last_battery is not None else None,
         )
-        measure.save(using=db_name)
 
         return RequestSuccess()
 

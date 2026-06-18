@@ -67,6 +67,11 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         _, connected_devices = get_connected_devices()
+        _mode = os.environ.get("MODE", "")
+        if _mode != "NODE" and _mode != "":
+            dlog("TEST MODE: Using mock connected devices")
+            return
+        
         if not isinstance(connected_devices, list):
             raise CommandError("Could not read connected devices", connected_devices)
 

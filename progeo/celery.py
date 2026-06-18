@@ -9,7 +9,7 @@ from django.utils import timezone
 from kombu.serialization import registry
 
 from progeo import settings
-from progeo.helper.basics import dlog, ilog
+from progeo.helper.basics import dlog
 
 # ######################################################################################################################
 
