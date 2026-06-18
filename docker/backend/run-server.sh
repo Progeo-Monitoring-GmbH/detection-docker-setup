@@ -16,6 +16,7 @@ pprint "### Running Django-Scripts for ${DOMAIN}"
 
 . /etc/profile
 . $VENV_ROOT/bin/activate
+export PYTHONUNBUFFERED=1
 
 pprint "[1] collect static"
 python manage.py collectstatic --noinput
@@ -56,4 +57,5 @@ pprint "[7] sync default"
 python manage.py sync_default
 
 pprint "### Starting Webserver: 0.0.0.0:${1}"
-python -m daphne -b 0.0.0.0 -p "${1}" progeo.asgi:application
+# Replace the shell with Daphne so Supervisor tracks and captures the real server process logs.
+exec python -u -m daphne -b 0.0.0.0 -p "${1}" progeo.asgi:application
