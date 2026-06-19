@@ -265,15 +265,23 @@ class ProgeoDevice(ProgeoModel, auto_prefetch.Model):
 
 class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
     device = models.ForeignKey(ProgeoDevice, on_delete=models.CASCADE)
+    project_id = models.IntegerField(null=True, blank=True)
+    voltage = models.FloatField(null=True, blank=True)
+    humidity = models.FloatField(null=True, blank=True)
+    temperature = models.FloatField(null=True, blank=True)
+    current = models.FloatField(null=True, blank=True)
+    samples = JSONField(null=True, blank=True)
+    start_index = models.IntegerField(null=True, blank=True)
+    end_index = models.IntegerField(null=True, blank=True)
+    points = models.IntegerField(null=True, blank=True)
     raw_data = JSONField(blank=True)
 
     def __str__(self):
-        _id = f"[{self.pk}] " if DEBUG else ""
+        _id = f"[{self.pk}] "
         _device = f"Device {self.device.mac}" if self.device else "Unknown Device"
-        _samples = self.raw_data.get("measure", {}).get("samples", [])
-        _sensors = self.raw_data.get("measure", {}).get("sensors", "")
+        _samples = self.samples
 
-        return f"{_id} 📊 {_device} - {self.last_fetched}: {_samples} (Sensors: {_sensors})"
+        return f"{_id} 📊 {_device} - {self.project_id} | {self.last_fetched}: {_samples} ({self.points} Points)"
 
 
 class ProgeoMeasurePoint(ProgeoModel, auto_prefetch.Model):

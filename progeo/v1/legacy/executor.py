@@ -47,7 +47,7 @@ class DataMeasurement:
             "voltage": self.voltage,
             "filetype": self.m_filetype,
             "status": self.status,
-            "sample": self.samples,
+            "samples": self.samples,
             "start_index": self.start,
             "end_index": self.m_points,
             "points": self.m_points - self.start,
@@ -78,7 +78,7 @@ def norm_humidity(value):
     return round(value * -0.3409 + 1392.3, 1)
 
     
-def _save_measurement_from_legacy_data(measurement, device_id: str, battery_V: int = None, last_battery_percentage: int = None):
+def save_measurement_from_legacy_data(measurement, device_id: str, battery_V: int = None, last_battery_percentage: int = None):
     db_name = "default"
     device, created = ProgeoDevice.objects.using(db_name).get_or_create(raw_hash=device_id)
 
@@ -89,19 +89,37 @@ def _save_measurement_from_legacy_data(measurement, device_id: str, battery_V: i
 
     if isinstance(measurement, DataMeasurement):
         data = measurement.get_relevant_info()
+        measure = ProgeoMeasurement.objects.using(db_name).create(
+            project_id=data.get("project_id"),
+            voltage=data.get("voltage"),
+            humidity=data.get("m_hum"),
+            temperature=data.get("m_temp"),
+            current=data.get("m_i"),
+            samples=data.get("samples"),
+            start_index=data.get("start_index"),
+            end_index=data.get("end_index"),
+            points=data.get("points"),
+            device=device,
+            raw_data={"status": data.get("status"), "error": data.get("error", 0),
+                       "alert": data.get("alert", 0), "filetype": data.get("filetype"),
+                       "status": data.get("status")},
+        )
     elif isinstance(measurement, dict):
         data = measurement
         if battery_V is not None:
             data["battery_V"] = battery_V
         if last_battery_percentage is not None:
             data["last_battery_percentage"] = last_battery_percentage
+        measure = ProgeoMeasurement.objects.using(db_name).create(
+            device=device,
+            project_id=data.get("project_id"),
+            samples=data.get("samples"),
+            raw_data=data,
+        )
     else:
         raise ValueError("Measurement must be a DataMeasurement instance or a dict | measurement:", measurement)
 
-    measure = ProgeoMeasurement.objects.using(db_name).create(
-        device=device,
-        raw_data=data,
-    )
+
     measure.save(using=db_name)
     return measure
         

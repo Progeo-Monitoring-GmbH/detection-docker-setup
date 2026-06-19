@@ -18,7 +18,7 @@ from progeo.helper.creator import create_MfS_log
 from progeo.v1.creator import create_progeo_measurement_safe
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.v1.viewsets.setup_viewset import _get_controller_account
-from progeo.v1.legacy.executor import parse_legacy_data_measurement, _save_measurement_from_legacy_data
+from progeo.v1.legacy.executor import parse_legacy_data_measurement, save_measurement_from_legacy_data
 from progeo.v1.legacy.executor import SafeLuaUploadParser
 
 
@@ -59,7 +59,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         except (TypeError, ValueError) as exc:
             return RequestFailed({"reason": f"Invalid legacy data: {exc}"})
         
-        _save_measurement_from_legacy_data(
+        save_measurement_from_legacy_data(
             measurement=measurement,
             device_id=str(measurement.project_id)
         )
@@ -106,7 +106,7 @@ class DeviceViewSet(ProgeoModalViewSet):
             "sample": sample,
         }
 
-        _save_measurement_from_legacy_data(
+        save_measurement_from_legacy_data(
             measurement=data,
             device_id=device_id or str(project_id),
             battery_V=battery_V,
