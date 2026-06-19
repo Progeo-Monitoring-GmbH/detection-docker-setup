@@ -1,7 +1,7 @@
 import pytest
 from django.contrib.auth.models import User
 
-from progeo.v1.legacy.executor import DataMeasurement, parse_legacy_data_measurement
+from progeo.v1.legacy.executor import DataMeasurement, parse_legacy_data_measurement, save_measurement_from_legacy_data
 from progeo.v1.models import ProgeoMeasurement
 
 
@@ -27,6 +27,71 @@ def test_parse_legacy_data_measurement_direct_function_call():
     assert isinstance(measurement.samples, list)
     assert measurement.samples[:3] == [32, 59, 32]
     assert len(measurement.samples) > 0
+
+
+def test_parse_legacy_data_measurement_normalizes_12bit_fields():
+    # Values at indexes 9..15 are 12-bit ADC/header values in the legacy format.
+    payload = [
+        1, 0, 25, 1000, 30, 1, 0, 1781790681, 0,
+        5000, -1, 4096, 8191, 12345, -15, 65535,
+        0, 0, 0, 0, 0, 0, 0, 0, 0,
+        10, 11, 12,
+    ]
+    measurement = parse_legacy_data_measurement(payload)
+
+    assert measurement.m_i == (5000 & 0x0FFF)
+    assert measurement.m_u == (-1 & 0x0FFF)
+    assert measurement.m_aux == (4096 & 0x0FFF)
+    assert measurement.m_temp == (8191 & 0x0FFF)
+    assert measurement.m_hum == (12345 & 0x0FFF)
+    assert measurement.m_pres == (-15 & 0x0FFF)
+    assert measurement.voltage == (65535 & 0x0FFF)
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_save_measurement_from_legacy_data_with_datameasurement():
+    measurement = parse_legacy_data_measurement(LEGACY_SAMPLE_Y)
+
+    saved = save_measurement_from_legacy_data(measurement=measurement, device_id=str(measurement.project_id))
+
+    assert saved is not None
+    assert saved.project_id == 5709
+    assert saved.device.raw_hash == "5709"
+    assert isinstance(saved.samples, list)
+    assert saved.samples[:3] == [32, 59, 32]
+    assert saved.start_index == 1
+    assert saved.end_index == 118
+    assert saved.points == 117
+    assert saved.raw_data.get("filetype") == 1000
+    assert saved.raw_data.get("m_i") == measurement.m_i
+    assert saved.raw_data.get("m_u") == measurement.m_u
+    assert saved.raw_data.get("m_aux") == measurement.m_aux
+    assert saved.raw_data.get("m_temp") == measurement.m_temp
+    assert saved.raw_data.get("m_hum") == measurement.m_hum
+    assert saved.raw_data.get("m_pres") == measurement.m_pres
+    assert saved.raw_data.get("voltage_raw") == measurement.voltage
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_save_measurement_from_legacy_data_with_dict_payload():
+    payload = {
+        "project_id": 6001,
+        "samples": [1, 2, 3],
+    }
+
+    saved = save_measurement_from_legacy_data(
+        measurement=payload,
+        device_id="6001",
+        battery_V=3800,
+        last_battery_percentage=82,
+    )
+
+    assert saved is not None
+    assert saved.project_id == 6001
+    assert saved.device.raw_hash == "6001"
+    assert saved.samples == [1, 2, 3]
+    assert saved.raw_data.get("battery_V") == 3800
+    assert saved.raw_data.get("last_battery_percentage") == 82
 
 
 @pytest.mark.django_db(databases=["unit_tests", "default"])
@@ -58,9 +123,9 @@ def test_catch_legacy_data_query_parses_and_saves(api_client):
     stored = ProgeoMeasurement.objects.using("default").order_by("-id").first()
     assert stored is not None
     assert stored.device.raw_hash == "5709"
-    assert stored.raw_data.get("project_id") == 5709
-    assert isinstance(stored.raw_data.get("sample"), list)
-    assert len(stored.raw_data.get("sample")) > 0
+    assert stored.project_id == 5709
+    assert isinstance(stored.samples, list)
+    assert len(stored.samples) > 0
 
 
 @pytest.mark.django_db(databases=["unit_tests", "default"])

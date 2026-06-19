@@ -35,16 +35,25 @@ class DataMeasurement:
     samples: List[int]
 
     def get_relevant_info(self):
-        m_i = self.m_i | 0 
-        m_u = self.m_u | 0
-        m_aux = self.m_aux | 0
-        m_temp = self.m_temp | 0
-        m_hum = self.m_hum | 0
+        m_i = _to_12bit(self.m_i)
+        m_u = _to_12bit(self.m_u)
+        m_aux = _to_12bit(self.m_aux)
+        m_temp = _to_12bit(self.m_temp)
+        m_hum = _to_12bit(self.m_hum)
+        m_pres = _to_12bit(self.m_pres)
+        voltage = _to_12bit(self.voltage)
         data = {
             "project_id": self.project_id,
             "date": self.m_date,
-            "pressure": self.m_pres,
-            "voltage": self.voltage,
+            "pressure": m_pres,
+            "voltage": voltage,
+            "m_i_raw": m_i,
+            "m_u_raw": m_u,
+            "m_aux_raw": m_aux,
+            "m_temp_raw": m_temp,
+            "m_hum_raw": m_hum,
+            "m_pres_raw": m_pres,
+            "voltage_raw": voltage,
             "filetype": self.m_filetype,
             "status": self.status,
             "samples": self.samples,
@@ -63,6 +72,13 @@ class DataMeasurement:
             data["alert"] = self.alert
 
         return data
+
+
+def _to_12bit(value):
+    try:
+        return int(value) & 0x0FFF
+    except (ValueError, TypeError):
+        return 0
 
 
 def norm_current(value):
@@ -100,9 +116,20 @@ def save_measurement_from_legacy_data(measurement, device_id: str, battery_V: in
             end_index=data.get("end_index"),
             points=data.get("points"),
             device=device,
-            raw_data={"status": data.get("status"), "error": data.get("error", 0),
-                       "alert": data.get("alert", 0), "filetype": data.get("filetype"),
-                       "status": data.get("status")},
+            raw_data={
+                "status": data.get("status"),
+                "error": data.get("error", 0),
+                "alert": data.get("alert", 0),
+                "filetype": data.get("filetype"),
+                # Persist raw 12-bit fields for audit/debug and exact downstream reuse. REMOVE LATER
+                "m_i": data.get("m_i_raw"),
+                "m_u": data.get("m_u_raw"),
+                "m_aux": data.get("m_aux_raw"),
+                "m_temp": data.get("m_temp_raw"),
+                "m_hum": data.get("m_hum_raw"),
+                "m_pres": data.get("m_pres_raw"),
+                "voltage_raw": data.get("voltage_raw"),
+            },
         )
     elif isinstance(measurement, dict):
         data = measurement
@@ -157,6 +184,8 @@ def parse_legacy_data_measurement(data):
     if len(values) < 25:
         raise ValueError("Legacy data requires at least 25 indexed values")
 
+    samples = values[25:]
+    last = samples[-1] if samples else 0
     return DataMeasurement(
         project_id=values[0],
         m_headerlines=values[2],
@@ -166,13 +195,13 @@ def parse_legacy_data_measurement(data):
         m_stv=values[6],
         m_date=values[7],
         start=values[8],
-        m_i=values[9],
-        m_u=values[10],
-        m_aux=values[11],
-        m_temp=values[12],
-        m_hum=values[13],
-        m_pres=values[14],
-        voltage=values[15],
+        m_i=_to_12bit(values[9]),
+        m_u=_to_12bit(values[10]),
+        m_aux=_to_12bit(values[11]),
+        m_temp=_to_12bit(values[12]),
+        m_hum=_to_12bit(values[13]),
+        m_pres=_to_12bit(values[14]),
+        voltage=_to_12bit(values[15]),
         mbyte=values[16],
         alert=values[17],
         faul=values[18],
@@ -182,7 +211,7 @@ def parse_legacy_data_measurement(data):
         abyte=values[22],
         bbyte=values[23],
         mac345=values[24],
-        samples=values[25:-1],
+        samples=samples,
     )
 
 
