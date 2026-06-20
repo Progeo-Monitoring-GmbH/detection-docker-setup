@@ -260,12 +260,13 @@ class ProgeoDevice(ProgeoModel, auto_prefetch.Model):
 
     def __str__(self):
         _id = f"[{self.pk}] " if DEBUG else ""
-        return f"{_id} 🔧 {self.hardware or 'Unknown'} ({self.mac or 'No MAC'}) - {self.raw_hash[:8]}..."
+        return f"{_id} 🔧 {self.hardware or 'Unknown'} ({self.mac or 'No MAC'}) - {self.raw_hash}"
 
 
 class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
     device = models.ForeignKey(ProgeoDevice, on_delete=models.CASCADE)
     project_id = models.IntegerField(null=True, blank=True)
+    is_watching = models.BooleanField(default=False)
     voltage = models.FloatField(null=True, blank=True)
     humidity = models.FloatField(null=True, blank=True)
     temperature = models.FloatField(null=True, blank=True)
@@ -275,6 +276,56 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
     end_index = models.IntegerField(null=True, blank=True)
     points = models.IntegerField(null=True, blank=True)
     raw_data = JSONField(blank=True)
+
+    @staticmethod
+    def _coerce_numeric_samples(raw_samples):
+        if isinstance(raw_samples, list):
+            values = []
+            for value in raw_samples:
+                try:
+                    values.append(int(float(value)))
+                except (TypeError, ValueError):
+                    continue
+            return values
+
+        if isinstance(raw_samples, str):
+            values = []
+            for value in raw_samples.split(","):
+                item = value.strip()
+                if not item:
+                    continue
+                try:
+                    values.append(int(float(item)))
+                except (TypeError, ValueError):
+                    continue
+            return values
+
+        return []
+
+    def get_sample_values(self):
+        # Prefer denormalized samples column for faster reads.
+        samples = self._coerce_numeric_samples(self.samples)
+        if samples:
+            return samples
+
+        raw_data = self.raw_data if isinstance(self.raw_data, dict) else {}
+        measure_data = raw_data.get("measure")
+        if isinstance(measure_data, dict):
+            samples = self._coerce_numeric_samples(measure_data.get("samples"))
+            if samples:
+                return samples
+
+        return self._coerce_numeric_samples(raw_data.get("samples"))
+
+    def get_absolute_pair_values(self):
+        values = self.get_sample_values()
+        pair_count = len(values) // 2
+        result = []
+        for idx in range(pair_count):
+            left = values[idx * 2]
+            right = values[idx * 2 + 1]
+            result.append(abs(left - right))
+        return result
 
     def __str__(self):
         _id = f"[{self.pk}] "

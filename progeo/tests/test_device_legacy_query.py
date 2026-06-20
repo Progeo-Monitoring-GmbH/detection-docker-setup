@@ -2,7 +2,7 @@ import pytest
 from django.contrib.auth.models import User
 
 from progeo.v1.legacy.executor import DataMeasurement, parse_legacy_data_measurement, save_measurement_from_legacy_data
-from progeo.v1.models import ProgeoMeasurement
+from progeo.v1.models import ProgeoMeasurement, ProgeoDevice
 
 
 LEGACY_SAMPLE_Y = (
@@ -46,6 +46,19 @@ def test_parse_legacy_data_measurement_normalizes_12bit_fields():
     assert measurement.m_hum == (12345 & 0x0FFF)
     assert measurement.m_pres == (-15 & 0x0FFF)
     assert measurement.voltage == (65535 & 0x0FFF)
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_progeomeasurement_get_absolute_pair_values_fast_path():
+    device = ProgeoDevice.objects.using("default").create(raw_hash="pair-values-device")
+    measurement = ProgeoMeasurement.objects.using("default").create(
+        device=device,
+        samples=[10, 5, 99, 111, 7, 7],
+        raw_data={},
+    )
+
+    assert measurement.get_sample_values() == [10, 5, 99, 111, 7, 7]
+    assert measurement.get_absolute_pair_values() == [5, 12, 0]
 
 
 @pytest.mark.django_db(databases=["unit_tests", "default"])
@@ -163,3 +176,29 @@ def test_catch_legacy_data_query_uses_project_id_as_device_id(api_client):
     assert stored is not None
     # device_id is built from project_id in the view and becomes device.raw_hash in saver
     assert stored.device.raw_hash == "5709"
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_measurements_watch_toggle(api_client):
+    user = User.objects.using("default").order_by("id").first()
+    assert user is not None
+    api_client.force_authenticate(user=user)
+
+    measurement = parse_legacy_data_measurement(LEGACY_SAMPLE_Y)
+    saved = save_measurement_from_legacy_data(
+        measurement=measurement,
+        device_id=str(measurement.project_id),
+    )
+    assert saved.is_watching is False
+
+    response = api_client.post(
+        "/v1/status/measurements/watch/",
+        {"measurement_id": saved.id, "is_watching": True},
+    )
+    assert response.status_code == 200, response.content
+    payload = response.json()
+    assert payload.get("success") is True
+    assert payload.get("is_watching") is True
+
+    saved.refresh_from_db(using="default")
+    assert saved.is_watching is True
