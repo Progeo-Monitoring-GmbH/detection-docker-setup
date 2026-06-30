@@ -67,6 +67,28 @@ class DeviceViewSet(ProgeoModalViewSet):
         return RequestSuccess({"data": request.data, "measurement": asdict(measurement)})
     
 
+    @action(detail=False, url_path="sample/field", authentication_classes=[LimitedTokenAuthentication], methods=["POST"])
+    def catch_legacy_field_data(self, request, *args, **kwargs):
+        project_id = request.data.get("project_id")
+        sample = request.data.get("sample")
+
+        if not project_id:
+            return RequestFailed({"reason": "No project_id provided"})
+        if not sample:
+            return RequestFailed({"reason": "No sample provided"})
+        
+        data = {
+            "project_id": project_id,
+            "sample": sample,
+        }
+
+        save_measurement_from_legacy_data(
+            measurement=data,
+            device_id=str(project_id),
+        )
+
+        return RequestSuccess()
+
     @action(detail=False, url_path="sample/catch", authentication_classes=[LimitedTokenAuthentication], methods=["POST"])
     def catch_legacy_data(self, request, *args, **kwargs):
         last_battery = None
