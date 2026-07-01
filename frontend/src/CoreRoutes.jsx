@@ -14,6 +14,9 @@ const DockerStatusView = React.lazy(() => import('./main/DockerStatusView'));
 const DeviceListView = React.lazy(() => import('./main/DeviceListView'));
 const DeviceDetailView = React.lazy(() => import('./main/DeviceDetailView'));
 const DeviceEditorView = React.lazy(() => import('./main/DeviceEditorView'));
+const MeasurementDetailView = React.lazy(
+  () => import('./main/MeasurementDetailView'),
+);
 const MeasurementsOverview = React.lazy(
   () => import('./main/MeasurementsOverview.tsx'),
 );
@@ -58,6 +61,10 @@ const CoreRoutes = () => {
       <Route
         path="/device/:id/editor/"
         element={<Navbar act={'device'} content={<DeviceEditorView />} />}
+      />
+      <Route
+        path="/device/:id/detail"
+        element={<Navbar act={'device'} content={<MeasurementDetailView />} />}
       />
       <Route
         path="/docker/"

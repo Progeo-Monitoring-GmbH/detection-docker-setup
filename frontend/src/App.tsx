@@ -1,8 +1,10 @@
+import React from 'react';
 import { Container, Row } from 'react-bootstrap';
 import { BrowserRouter } from 'react-router';
 import { SnackbarProvider } from 'notistack';
 import CoreAuthProvider from '../hooks/CoreAuthProvider';
 import { ModalProvider } from './components/modal/coreModalContext';
+import CookieBanner from './components/privacy/CookieBanner';
 
 import CoreRoutes from './CoreRoutes';
 
@@ -24,6 +26,7 @@ function App() {
             <BrowserRouter>
               <CoreAuthProvider>
                 <CoreRoutes />
+                <CookieBanner />
               </CoreAuthProvider>
             </BrowserRouter>
           </Row>

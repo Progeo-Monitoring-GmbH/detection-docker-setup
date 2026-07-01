@@ -100,6 +100,15 @@ const DeviceCard = ({ device, onIdentify, onDelete, loading }) => {
           </Button>
 
           <Button
+            variant="outline-primary"
+            size="sm"
+            onClick={() => navigate(`/device/${device.device.id}/detail`)}
+            title="Open measurement detail"
+          >
+            Details
+          </Button>
+
+          <Button
             variant="outline-danger"
             size="sm"
             onClick={() => onDelete(device.device.id)}

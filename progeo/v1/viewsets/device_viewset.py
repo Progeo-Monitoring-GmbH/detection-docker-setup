@@ -10,8 +10,8 @@ from rest_framework.authentication import SessionAuthentication, TokenAuthentica
 from progeo.authentication import LimitedTokenAuthentication
 from rest_framework.permissions import IsAuthenticated
 from progeo.tasks import _flatten_numeric_values, download_device_config as download_device_config_task, upload_device_config as upload_device_config_task
-from progeo.v1.models import ProgeoDevice, ProgeoLocation
-from progeo.v1.serializers import DeviceSerializer
+from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurement
+from progeo.v1.serializers import DeviceSerializer, ProgeoMeasurementSerializer
 from progeo.decorator import calc_runtime
 from progeo.helper.basics import RequestSuccess, RequestFailed, ilog
 from progeo.helper.creator import create_MfS_log
@@ -333,6 +333,36 @@ class DeviceViewSet(ProgeoModalViewSet):
             "alarm_triggered": alarm_triggered,
             "max_value": max_value,
             "exceeding_values": exceeding_values,
+        })
+
+    @calc_runtime
+    @action(detail=True, url_path="measurements", methods=["GET"])
+    def measurements(self, request, pk=None, *args, **kwargs):
+        db_name = "default"
+
+        try:
+            limit = int(request.query_params.get("limit", 200))
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "limit must be an integer"})
+        limit = max(1, min(limit, 2000))
+
+        device = ProgeoDevice.objects.using(db_name).filter(pk=pk).first()
+        if not device:
+            return RequestFailed({"reason": "Device not found"})
+
+        queryset = (
+            ProgeoMeasurement.objects.using(db_name)
+            .filter(device=device)
+            .select_related("device")
+            .order_by("-id")[:limit]
+        )
+        serialized = ProgeoMeasurementSerializer(queryset, many=True).data
+
+        return RequestSuccess({
+            "device": DeviceSerializer(device).data,
+            "measurements": serialized,
+            "count": len(serialized),
+            "limit": limit,
         })
 
     @calc_runtime
