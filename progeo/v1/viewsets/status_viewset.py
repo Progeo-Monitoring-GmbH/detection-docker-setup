@@ -183,7 +183,71 @@ class StatusViewSet(ProgeoModalViewSet):
             queryset = queryset.filter(last_fetched__gte=since)
 
         serialized = ProgeoMeasurementSerializer(queryset, many=True).data
-        return RequestSuccess({"measurements": serialized})
+
+        grouped = {}
+        for item in serialized:
+            device_id = item.get("device")
+            if device_id not in grouped:
+                grouped[device_id] = {
+                    "device": device_id,
+                    "device_mac": item.get("device_mac"),
+                    "device_hash": item.get("device_hash"),
+                    "measurement_count": 0,
+                    "watching_count": 0,
+                    "latest_measurement_id": None,
+                    "latest_last_fetched": None,
+                }
+
+            group = grouped[device_id]
+            group["measurement_count"] += 1
+            if item.get("is_watching"):
+                group["watching_count"] += 1
+
+            current_latest = group.get("latest_last_fetched") or ""
+            candidate = item.get("last_fetched") or ""
+            if candidate >= current_latest:
+                group["latest_last_fetched"] = item.get("last_fetched")
+                group["latest_measurement_id"] = item.get("id")
+
+        overview_by_device = sorted(grouped.values(), key=lambda row: row.get("device") or 0)
+        return RequestSuccess({"measurements": serialized, "overview_by_device": overview_by_device})
+
+    @calc_runtime
+    @action(detail=False, url_path="measurements/watch", methods=["POST"])
+    def measurements_watch(self, request, *args, **kwargs):
+        db_name = "default"
+        payload = request.data if isinstance(request.data, dict) else {}
+
+        measurement_id = payload.get("measurement_id")
+        if measurement_id is None:
+            return RequestFailed({"reason": "measurement_id is required"})
+
+        is_watching_raw = payload.get("is_watching", True)
+        if isinstance(is_watching_raw, bool):
+            is_watching = is_watching_raw
+        elif isinstance(is_watching_raw, (int, float)):
+            is_watching = bool(is_watching_raw)
+        elif isinstance(is_watching_raw, str):
+            is_watching = is_watching_raw.strip().lower() in {"1", "true", "yes", "on"}
+        else:
+            is_watching = False
+
+        try:
+            measurement_id = int(measurement_id)
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "measurement_id must be an integer"})
+
+        measurement = ProgeoMeasurement.objects.using(db_name).filter(id=measurement_id).first()
+        if not measurement:
+            return RequestFailed({"reason": "Measurement not found"})
+
+        measurement.is_watching = is_watching
+        measurement.save(using=db_name, last_fetched=False)
+
+        return RequestSuccess({
+            "measurement_id": measurement.id,
+            "is_watching": measurement.is_watching,
+        })
 
     @staticmethod
     def _extract_json_list_from_output(output: str):

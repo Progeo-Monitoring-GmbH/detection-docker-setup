@@ -127,6 +127,8 @@ class ProgeoMeasurePointSerializer(ProgeoBaseSerializer):
 
 class ProgeoMeasurementSerializer(ProgeoBaseSerializer):
     samples = serializers.SerializerMethodField("get_samples")
+    pair_abs_values = serializers.SerializerMethodField("get_pair_abs_values")
+    pair_count = serializers.SerializerMethodField("get_pair_count")
     max_sample = serializers.SerializerMethodField("get_max_sample")
     avg_sample = serializers.SerializerMethodField("get_avg_sample")
     non_zero_sample = serializers.SerializerMethodField("get_non_zero_sample")
@@ -143,7 +145,11 @@ class ProgeoMeasurementSerializer(ProgeoBaseSerializer):
             "device_hash",
             "data_interval",
             "last_fetched",
+            "project_id",
+            "is_watching",
             "samples",
+            "pair_abs_values",
+            "pair_count",
             "max_sample",
             "avg_sample",
             "non_zero_sample",
@@ -184,7 +190,21 @@ class ProgeoMeasurementSerializer(ProgeoBaseSerializer):
         return []
 
     def get_samples(self, obj):
+        if hasattr(obj, "get_sample_values"):
+            return obj.get_sample_values()
         return self._extract_samples(getattr(obj, "raw_data", None))
+
+    def get_pair_abs_values(self, obj):
+        if hasattr(obj, "get_absolute_pair_values"):
+            return obj.get_absolute_pair_values()
+        samples = self.get_samples(obj)
+        return [
+            abs(samples[idx * 2] - samples[idx * 2 + 1])
+            for idx in range(len(samples) // 2)
+        ]
+
+    def get_pair_count(self, obj):
+        return len(self.get_pair_abs_values(obj))
 
     def get_max_sample(self, obj):
         samples = self.get_samples(obj)
