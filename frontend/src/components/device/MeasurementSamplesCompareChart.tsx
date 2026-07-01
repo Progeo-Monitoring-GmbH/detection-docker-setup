@@ -1,5 +1,6 @@
-import React from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card } from 'react-bootstrap';
+import Plot from 'react-plotly.js';
 
 export type MeasurementCompareRow = {
   id: number;
@@ -72,172 +73,198 @@ const toPairAbsDiff = (
   return points;
 };
 
-const buildPath = (
-  points: DiffPoint[],
-  minX: number,
-  maxX: number,
-  minY: number,
-  maxY: number,
-  width: number,
-  height: number,
+const MeasurementSamplesCompareChart = (
+  props: MeasurementSamplesCompareChartProps,
 ) => {
-  if (!points.length) {
-    return '';
-  }
+  const { rows } = props;
+  const [hiddenSeriesIds, setHiddenSeriesIds] = useState<Set<number>>(
+    new Set(),
+  );
 
-  const plotLeft = 44;
-  const plotRight = width - 18;
-  const plotTop = 20;
-  const plotBottom = height - 32;
-  const plotWidth = plotRight - plotLeft;
-  const plotHeight = plotBottom - plotTop;
-  const xRange = maxX - minX || 1;
-  const yRange = maxY - minY || 1;
+  const series: DiffSeries[] = useMemo(
+    () =>
+      rows.map((row, index) => ({
+        id: row.id,
+        label: `#${row.id} | Device ${row.device} | ${formatDate(row.last_fetched)}`,
+        points: toPairAbsDiff(row.samples, row.pair_abs_values),
+        color: COLORS[index % COLORS.length],
+      })),
+    [rows],
+  );
 
-  return points
-    .map((point) => {
-      const x = plotLeft + ((point.pairIndex - minX) / xRange) * plotWidth;
-      const y = plotBottom - ((point.value - minY) / yRange) * plotHeight;
-      return `${x.toFixed(2)},${y.toFixed(2)}`;
-    })
-    .join(' ');
-};
+  useEffect(() => {
+    setHiddenSeriesIds((previous) => {
+      const currentIds = new Set(series.map((entry) => entry.id));
+      const next = new Set<number>();
+      previous.forEach((id) => {
+        if (currentIds.has(id)) {
+          next.add(id);
+        }
+      });
+      return next;
+    });
+  }, [series]);
 
-class MeasurementSamplesCompareChart extends React.PureComponent<MeasurementSamplesCompareChartProps> {
-  render() {
-    const { rows } = this.props;
-    const width = 920;
-    const height = 320;
+  const visibleSeries = useMemo(
+    () => series.filter((entry) => !hiddenSeriesIds.has(entry.id)),
+    [series, hiddenSeriesIds],
+  );
 
-    const series: DiffSeries[] = rows.map((row, index) => ({
-      id: row.id,
-      label: `#${row.id} | Device ${row.device} | ${formatDate(row.last_fetched)}`,
-      points: toPairAbsDiff(row.samples, row.pair_abs_values),
-      color: COLORS[index % COLORS.length],
+  const meanSeries = useMemo(() => {
+    const sums: number[] = [];
+    const counts: number[] = [];
+
+    visibleSeries.forEach((entry) => {
+      entry.points.forEach((point) => {
+        const index = point.pairIndex;
+        sums[index] = (sums[index] || 0) + point.value;
+        counts[index] = (counts[index] || 0) + 1;
+      });
+    });
+
+    const x: number[] = [];
+    const y: number[] = [];
+    counts.forEach((count, index) => {
+      if (!count) {
+        return;
+      }
+      x.push(index);
+      y.push((sums[index] || 0) / count);
+    });
+
+    return { x, y };
+  }, [visibleSeries]);
+
+  const overallVisibleMean = useMemo(() => {
+    if (!meanSeries.y.length) {
+      return 0;
+    }
+    const sum = meanSeries.y.reduce((acc, value) => acc + value, 0);
+    return sum / meanSeries.y.length;
+  }, [meanSeries]);
+
+  const traces = useMemo(() => {
+    const baseTraces = series.map((entry) => ({
+      type: 'scattergl' as const,
+      mode: 'lines' as const,
+      name: entry.label,
+      x: entry.points.map((point) => point.pairIndex),
+      y: entry.points.map((point) => point.value),
+      line: {
+        color: entry.color,
+        width: 2,
+      },
+      visible: hiddenSeriesIds.has(entry.id) ? 'legendonly' : true,
+      hovertemplate:
+        'Pair %{x}<br>Delta %{y:.2f}<br>' + `${entry.label}<extra></extra>`,
     }));
 
-    const allPoints = series.flatMap((entry) => entry.points);
-    const minX = allPoints.length
-      ? Math.min(...allPoints.map((p) => p.pairIndex))
-      : 0;
-    const maxX = allPoints.length
-      ? Math.max(...allPoints.map((p) => p.pairIndex))
-      : 1;
-    const minY = 0;
-    const maxYRaw = allPoints.length
-      ? Math.max(...allPoints.map((p) => p.value))
-      : 1;
-    const maxY = maxYRaw <= 0 ? 1 : maxYRaw;
+    return [
+      ...baseTraces,
+      {
+        type: 'scattergl' as const,
+        mode: 'lines' as const,
+        name: 'Mean (visible)',
+        x: meanSeries.x,
+        y: meanSeries.y,
+        line: {
+          color: '#111827',
+          width: 3,
+          dash: 'dash',
+        },
+        hovertemplate:
+          'Pair %{x}<br>Visible mean %{y:.2f}<extra>Mean (visible)</extra>',
+      },
+    ];
+  }, [series, hiddenSeriesIds, meanSeries]);
 
-    return (
-      <Card className="border-0 shadow-sm">
-        <Card.Body>
-          <div className="d-flex flex-wrap justify-content-between align-items-center mb-2">
-            <h5 className="mb-0">Sample Pair Delta Comparison</h5>
-            <small className="text-muted">
-              Each point is |sample[2i] - sample[2i+1]| for one measurement.
-            </small>
-          </div>
+  return (
+    <Card className="border-0 shadow-sm">
+      <Card.Body>
+        <div className="d-flex flex-wrap justify-content-between align-items-center mb-2">
+          <h5 className="mb-0">Sample Pair Delta Comparison</h5>
+          <small className="text-muted">
+            Each point is |sample[2i] - sample[2i+1]| for one measurement.
+          </small>
+        </div>
 
-          <svg
-            viewBox={`0 0 ${width} ${height}`}
-            width="100%"
-            role="img"
-            aria-label="Measurement samples comparison"
-          >
-            <rect
-              x="44"
-              y="20"
-              width={width - 62}
-              height={height - 52}
-              fill="#f8fbff"
-              rx="8"
-            />
-            <line
-              x1="44"
-              y1={height - 32}
-              x2={width - 18}
-              y2={height - 32}
-              stroke="#9cb5cc"
-              strokeWidth="1"
-            />
-            <line
-              x1="44"
-              y1="20"
-              x2="44"
-              y2={height - 32}
-              stroke="#9cb5cc"
-              strokeWidth="1"
-            />
+        <div className="d-flex flex-wrap justify-content-between align-items-center mb-2">
+          <small className="text-muted">
+            Selected plots: {visibleSeries.length} / {series.length}
+          </small>
+          <small className="fw-semibold text-dark">
+            Visible mean: {overallVisibleMean.toFixed(2)}
+          </small>
+        </div>
 
-            {series.map((entry) => {
-              const path = buildPath(
-                entry.points,
-                minX,
-                maxX,
-                minY,
-                maxY,
-                width,
-                height,
-              );
-              if (!path) {
-                return null;
+        <Plot
+          data={traces}
+          useResizeHandler
+          style={{ width: '100%', height: '520px' }}
+          config={{
+            responsive: true,
+            displaylogo: false,
+            scrollZoom: true,
+          }}
+          layout={{
+            autosize: true,
+            margin: { l: 56, r: 16, t: 16, b: 52 },
+            plot_bgcolor: '#f8fbff',
+            paper_bgcolor: '#ffffff',
+            xaxis: {
+              title: 'Pair Index',
+              showgrid: true,
+              gridcolor: '#dbe4ee',
+              zeroline: false,
+            },
+            yaxis: {
+              title: 'Absolute Delta',
+              rangemode: 'tozero',
+              showgrid: true,
+              gridcolor: '#dbe4ee',
+              zeroline: false,
+            },
+            legend: {
+              orientation: 'h',
+              y: -0.25,
+              x: 0,
+            },
+            hovermode: 'x unified',
+          }}
+          onLegendClick={(event) => {
+            const traceIndex = event.curveNumber;
+            if (traceIndex === undefined || traceIndex < 0) {
+              return false;
+            }
+            if (traceIndex >= series.length) {
+              return false;
+            }
+
+            const selectedId = series[traceIndex]?.id;
+            if (!selectedId) {
+              return false;
+            }
+
+            setHiddenSeriesIds((previous) => {
+              const next = new Set(previous);
+              if (next.has(selectedId)) {
+                next.delete(selectedId);
+              } else {
+                next.add(selectedId);
               }
-              return (
-                <polyline
-                  key={entry.id}
-                  fill="none"
-                  stroke={entry.color}
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  points={path}
-                />
-              );
-            })}
+              return next;
+            });
 
-            <text x="44" y={height - 10} fill="#5f6e7c" fontSize="11">
-              Pair {minX}
-            </text>
-            <text
-              x={width - 18}
-              y={height - 10}
-              fill="#5f6e7c"
-              fontSize="11"
-              textAnchor="end"
-            >
-              Pair {maxX}
-            </text>
-            <text x="10" y="24" fill="#5f6e7c" fontSize="11">
-              {maxY.toFixed(0)}
-            </text>
-            <text x="16" y={height - 34} fill="#5f6e7c" fontSize="11">
-              {minY.toFixed(0)}
-            </text>
-          </svg>
-
-          <div className="mt-3 d-flex flex-column gap-1">
-            {series.map((entry) => (
-              <small
-                key={`legend-${entry.id}`}
-                className="d-flex align-items-center gap-2"
-              >
-                <span
-                  style={{
-                    width: 14,
-                    height: 3,
-                    backgroundColor: entry.color,
-                    display: 'inline-block',
-                  }}
-                />
-                <span>{entry.label}</span>
-              </small>
-            ))}
-          </div>
-        </Card.Body>
-      </Card>
-    );
-  }
-}
+            return false;
+          }}
+          onDoubleClick={() => {
+            setHiddenSeriesIds(new Set());
+            return false;
+          }}
+        />
+      </Card.Body>
+    </Card>
+  );
+};
 
 export default MeasurementSamplesCompareChart;
