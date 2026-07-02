@@ -1,4 +1,7 @@
 
+import math
+import re
+from datetime import timedelta
 from dataclasses import asdict
 
 from django.utils import timezone
@@ -13,13 +16,14 @@ from progeo.tasks import _flatten_numeric_values, download_device_config as down
 from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurement
 from progeo.v1.serializers import DeviceSerializer, ProgeoMeasurementSerializer
 from progeo.decorator import calc_runtime
-from progeo.helper.basics import RequestSuccess, RequestFailed, ilog
+from progeo.helper.basics import RequestSuccess, RequestFailed, elog, ilog
 from progeo.helper.creator import create_MfS_log
 from progeo.v1.creator import create_progeo_measurement_safe
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.v1.viewsets.setup_viewset import _get_controller_account
 from progeo.v1.legacy.executor import parse_legacy_data_measurement, save_measurement_from_legacy_data
 from progeo.v1.legacy.executor import SafeLuaUploadParser
+from progeo.v1.legacy.helper_resistance import calc_resistances
 
 
 # ######################################################################################################################
@@ -69,25 +73,74 @@ class DeviceViewSet(ProgeoModalViewSet):
 
     @action(detail=False, url_path="sample/field", authentication_classes=[LimitedTokenAuthentication], methods=["POST"])
     def catch_legacy_field_data(self, request, *args, **kwargs):
-        project_id = request.data.get("project_id")
-        sample = request.data.get("sample")
 
-        if not project_id:
-            return RequestFailed({"reason": "No project_id provided"})
-        if not sample:
+        # Accept telemetry body where sample values are nested under payload.value.
+        if isinstance(request.data.get("payload"), dict):
+            raw_values = request.data.get("payload", {}).get("value")
+
+        if not raw_values:
             return RequestFailed({"reason": "No sample provided"})
+
+        samples = []
+        resistance_rows = []
+        if isinstance(raw_values, dict):
+            series_keys = [key for key in raw_values.keys() if str(key).isdigit()]
+            for key in sorted(series_keys, key=int):
+                row = raw_values.get(key)
+                if not isinstance(row, (list, tuple)) or len(row) < 2:
+                    continue
+
+                idc_intput, vdc_intput = row[0], row[1]
+                if idc_intput is not None:
+                    try:
+                        idc_intput = float(idc_intput)
+                    except (TypeError, ValueError):
+                        idc_intput = None
+                if vdc_intput is not None:
+                    try:
+                        vdc_intput = float(vdc_intput)
+                    except (TypeError, ValueError):
+                        vdc_intput = None
+
+                result = calc_resistances(vdc_intput=vdc_intput, idc_intput=idc_intput)
+                sample_value = result.get("r_vdc_ohm")
+
+                if sample_value is not None and math.isfinite(float(sample_value)):
+                    samples.append(round(float(sample_value), 2))
+
+                resistance_rows.append({
+                    "index": key,
+                    "timestamp": row[2] if len(row) > 2 else None,
+                    **result,
+                })
+
+        if not samples and isinstance(raw_values, list):
+            for value in raw_values:
+                try:
+                    samples.append(float(value))
+                except (TypeError, ValueError):
+                    elog(f"Missmatch for value: {value}")
+                    continue
+
+        device_id = raw_values.get("IMEI", "legacy-field-unknown")
         
         data = {
-            "project_id": project_id,
-            "sample": sample,
+            "raw": raw_values,
+            "resistance_rows": resistance_rows,
+            "samples": samples,
         }
 
         save_measurement_from_legacy_data(
             measurement=data,
-            device_id=str(project_id),
+            device_id=device_id,
         )
 
-        return RequestSuccess()
+        return RequestSuccess({
+            "device_id": device_id,
+            "sample": samples,
+            "resistance_rows": resistance_rows,
+            "count": len(samples),
+        })
 
     @action(detail=False, url_path="sample/catch", authentication_classes=[LimitedTokenAuthentication], methods=["POST"])
     def catch_legacy_data(self, request, *args, **kwargs):
@@ -136,6 +189,88 @@ class DeviceViewSet(ProgeoModalViewSet):
         )
 
         return RequestSuccess()
+
+    @calc_runtime
+    @action(detail=False, url_path="imei/display", methods=["GET"])
+    def measurements_imei_display(self, request, *args, **kwargs):
+        db_name = "default"
+        now = timezone.now()
+        min_valid_updated = now.replace(
+            year=2025,
+            month=1,
+            day=1,
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+
+        since_hours_raw = request.query_params.get("since_hours")
+        since = None
+        if since_hours_raw not in [None, ""]:
+            try:
+                since_hours = max(0, int(since_hours_raw))
+                since = timezone.now() - timedelta(hours=since_hours)
+            except (TypeError, ValueError):
+                return RequestFailed({"reason": "since_hours must be an integer"})
+
+        queryset = (
+            ProgeoMeasurement.objects.using(db_name)
+            .select_related("device")
+            .filter(resistance_idc__isnull=False, last_updated__isnull=False)
+            .order_by("device__raw_hash", "last_updated", "id")
+        )
+        if since:
+            queryset = queryset.filter(last_updated__gte=since)
+
+        imei_regex = re.compile(r"^\d{15}$")
+        grouped = {}
+
+        for measurement in queryset:
+            raw_hash = (measurement.device.raw_hash or "").strip()
+            if not imei_regex.match(raw_hash):
+                continue
+
+            try:
+                resistance_vdc = float(measurement.resistance_vdc)
+                resistance_idc = float(measurement.resistance_idc)
+            except (TypeError, ValueError):
+                continue
+
+            last_updated = measurement.last_updated
+            if last_updated is None:
+                continue
+
+            # Normalize timezone awareness to avoid comparing naive with aware datetimes.
+            if timezone.is_naive(last_updated) and timezone.is_aware(min_valid_updated):
+                last_updated = timezone.make_aware(last_updated, timezone.get_current_timezone())
+            elif timezone.is_aware(last_updated) and timezone.is_naive(min_valid_updated):
+                last_updated = timezone.make_naive(last_updated, timezone.get_current_timezone())
+
+            if last_updated < min_valid_updated:
+                continue
+
+            if raw_hash not in grouped:
+                grouped[raw_hash] = {
+                    "imei": raw_hash,
+                    "device_id": measurement.device.id,
+                    "device_hash": raw_hash,
+                    "measurements": [],
+                }
+
+            grouped[raw_hash]["measurements"].append({
+                "id": measurement.id,
+                "last_updated": last_updated.isoformat(),
+                "resistance_idc": resistance_idc,
+                "resistance_vdc": resistance_vdc,
+            })
+
+        devices = sorted(grouped.values(), key=lambda row: row.get("imei") or "")
+        return RequestSuccess({
+            "devices": devices,
+            "count_devices": len(devices),
+            "count_measurements": sum(len(device.get("measurements", [])) for device in devices),
+        })
 
         
 

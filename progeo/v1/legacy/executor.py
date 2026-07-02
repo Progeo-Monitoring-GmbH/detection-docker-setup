@@ -1,9 +1,13 @@
 
+from datetime import datetime
+
 from rest_framework.parsers import BaseParser
+from progeo.v1.legacy.helper_resistance import MAX_JSON_SAFE_RESISTANCE_OHM
 from progeo.v1.models import ProgeoDevice, ProgeoMeasurement
 from dataclasses import dataclass
 from typing import List
 import json
+from django.utils import timezone
 
 @dataclass
 class DataMeasurement:
@@ -93,6 +97,45 @@ def norm_temperature(value):
 def norm_humidity(value):
     return round(value * -0.3409 + 1392.3, 1)
 
+
+def parse_sample_timestamp(timestamp_value):
+    if not timestamp_value:
+        return None
+
+    parsed = None
+
+    if isinstance(timestamp_value, datetime):
+        parsed = timestamp_value
+    elif isinstance(timestamp_value, str):
+        text = timestamp_value.strip()
+        if not text:
+            return None
+
+        formats = [
+            "%Y/%m/%d %H:%M:%S",
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%dT%H:%M:%S.%f",
+        ]
+        for fmt in formats:
+            try:
+                parsed = datetime.strptime(text, fmt)
+                break
+            except ValueError:
+                continue
+
+        if parsed is None:
+            try:
+                parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+    else:
+        return None
+
+    if timezone.is_naive(parsed):
+        return timezone.make_aware(parsed, timezone.get_current_timezone())
+    return parsed
+
     
 def save_measurement_from_legacy_data(measurement, device_id: str, battery_V: int = None, last_battery_percentage: int = None):
     db_name = "default"
@@ -137,12 +180,26 @@ def save_measurement_from_legacy_data(measurement, device_id: str, battery_V: in
             data["battery_V"] = battery_V
         if last_battery_percentage is not None:
             data["last_battery_percentage"] = last_battery_percentage
+        
+        samples = data.get("samples", [])
+        del data["samples"]
+
         measure = ProgeoMeasurement.objects.using(db_name).create(
             device=device,
             project_id=data.get("project_id"),
-            samples=data.get("samples"),
+            samples=samples,
             raw_data=data,
         )
+        if len(data["resistance_rows"]) == 1:
+            sample = data["resistance_rows"][0]
+            timestamp = sample.get("timestamp")
+            parsed_timestamp = parse_sample_timestamp(timestamp)
+            if parsed_timestamp is not None:
+                measure.last_updated = parsed_timestamp
+            measure.resistance_idc = sample.get("r_idc_ohm", MAX_JSON_SAFE_RESISTANCE_OHM)
+            measure.resistance_vdc = sample.get("r_vdc_ohm", MAX_JSON_SAFE_RESISTANCE_OHM)
+            measure.voltage = sample.get("vdc_intput", -1)
+
     else:
         raise ValueError("Measurement must be a DataMeasurement instance or a dict | measurement:", measurement)
 

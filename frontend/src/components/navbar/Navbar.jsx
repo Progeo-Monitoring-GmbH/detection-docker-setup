@@ -31,6 +31,14 @@ const Navbar = ({ act, content }) => {
         >
           Measurements
         </Button>
+        <Button
+          href="/devices/imei/display/"
+          variant={act === 'imei' ? 'info' : 'secondary'}
+          className="w-100 mt-2"
+          size="lg"
+        >
+          IMEI Display
+        </Button>
         {isAdmin === 'true' ||
           (true && (
             <>

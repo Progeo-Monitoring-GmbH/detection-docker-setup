@@ -1,7 +1,9 @@
 import pytest
 from django.contrib.auth.models import User
+from django.utils import timezone
 
-from progeo.v1.legacy.executor import DataMeasurement, parse_legacy_data_measurement, save_measurement_from_legacy_data
+from progeo.v1.legacy.executor import DataMeasurement, parse_legacy_data_measurement, parse_sample_timestamp, save_measurement_from_legacy_data
+from progeo.v1.legacy.helper_resistance import calc_resistances
 from progeo.v1.models import ProgeoMeasurement, ProgeoDevice
 
 
@@ -14,6 +16,29 @@ LEGACY_SAMPLE_Y = (
     "138,49,51,80,87,114,215,84,94,77,84,47,58,50,423,49,66,51,423,122,421,73,449,215,272,51,99,49,"
     "128,65,425,92,100,49,50,593"
 )
+
+
+def test_parse_sample_timestamp_parses_slash_format_as_aware_datetime():
+    parsed = parse_sample_timestamp("2026/07/02 04:18:05")
+
+    assert parsed is not None
+    assert timezone.is_aware(parsed)
+    local = timezone.localtime(parsed)
+    assert (local.year, local.month, local.day) == (2026, 7, 2)
+    assert (local.hour, local.minute, local.second) == (4, 18, 5)
+
+
+def test_parse_sample_timestamp_parses_iso_z_format():
+    parsed = parse_sample_timestamp("2026-07-02T04:18:05Z")
+
+    assert parsed is not None
+    assert timezone.is_aware(parsed)
+
+
+def test_parse_sample_timestamp_returns_none_for_invalid_input():
+    assert parse_sample_timestamp("") is None
+    assert parse_sample_timestamp("not-a-date") is None
+    assert parse_sample_timestamp(None) is None
 
 
 def test_parse_legacy_data_measurement_direct_function_call():
@@ -176,6 +201,78 @@ def test_catch_legacy_data_query_uses_project_id_as_device_id(api_client):
     assert stored is not None
     # device_id is built from project_id in the view and becomes device.raw_hash in saver
     assert stored.device.raw_hash == "5709"
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_catch_legacy_field_data_builds_samples_from_payload_value_arrays(api_client):
+    user = User.objects.using("default").order_by("id").first()
+    assert user is not None
+    api_client.force_authenticate(user=user)
+
+    payload = {
+        "project_id": 7001,
+        "sample": {
+            "1": [0, 11.524, "2026/07/01 10:16:21"],
+            "2": [0, 11.525, "2026/07/01 10:01:21"],
+            "vdc_intput": 11.525,
+            "idc_intput": 0,
+            "IMEI": "863663069840161",
+        },
+    }
+
+    response = api_client.post("/v1/device/sample/field/", payload, format="json")
+
+    assert response.status_code == 200, response.content
+    body = response.json()
+    assert body.get("success") is True
+    assert body.get("count") == 2
+
+    expected = [
+        round(calc_resistances(vdc_intput=11.524, idc_intput=0).get("r_vdc_ohm"), 2),
+        round(calc_resistances(vdc_intput=11.525, idc_intput=0).get("r_vdc_ohm"), 2),
+    ]
+    assert body.get("samples") == expected
+
+    saved = ProgeoMeasurement.objects.using("default").order_by("-id").first()
+    assert saved is not None
+    assert saved.project_id == 7001
+    assert saved.device.raw_hash == "7001"
+    assert saved.samples == expected
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_catch_legacy_field_data_accepts_test_json_shape_without_project_id(api_client):
+    user = User.objects.using("default").order_by("id").first()
+    assert user is not None
+    api_client.force_authenticate(user=user)
+
+    payload = {
+        "payload": {
+            "type": "JSON",
+            "value": {
+                "1": [0, 11.524, "2026/07/01 10:16:21"],
+                "2": [0, 11.524, "2026/07/01 10:01:21"],
+                "IMEI": "863663069840180",
+            },
+        },
+        "type": "TELEMETRY_DATA",
+    }
+
+    response = api_client.post("/v1/device/sample/field/", payload, format="json")
+
+    assert response.status_code == 200, response.content
+    body = response.json()
+    assert body.get("success") is True
+    assert body.get("project_id") is None
+    assert body.get("device_id") == "863663069840180"
+    assert body.get("count") == 2
+
+    saved = ProgeoMeasurement.objects.using("default").order_by("-id").first()
+    assert saved is not None
+    assert saved.project_id is None
+    assert saved.device.raw_hash == "863663069840180"
+    assert isinstance(saved.samples, list)
+    assert len(saved.samples) == 2
 
 
 @pytest.mark.django_db(databases=["unit_tests", "default"])

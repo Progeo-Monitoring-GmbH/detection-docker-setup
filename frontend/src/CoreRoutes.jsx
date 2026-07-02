@@ -20,6 +20,9 @@ const MeasurementDetailView = React.lazy(
 const MeasurementsOverview = React.lazy(
   () => import('./main/MeasurementsOverview.tsx'),
 );
+const DisplayIMEIDevices = React.lazy(
+  () => import('./main/DisplayIMEIDevices.tsx'),
+);
 const AdminPanel = React.lazy(() => import('./main/AdminPanel.tsx'));
 
 const CoreRoutes = () => {
@@ -52,6 +55,10 @@ const CoreRoutes = () => {
             <Navbar act={'measure'} content={<MeasurementsOverview />} />
           </WebSocketProvider>
         }
+      />
+      <Route
+        path="/devices/imei/display/"
+        element={<Navbar act={'imei'} content={<DisplayIMEIDevices />} />}
       />
 
       <Route

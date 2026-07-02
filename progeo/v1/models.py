@@ -271,6 +271,8 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
     humidity = models.FloatField(null=True, blank=True)
     temperature = models.FloatField(null=True, blank=True)
     current = models.FloatField(null=True, blank=True)
+    resistance_idc = models.FloatField(null=True, blank=True)
+    resistance_vdc = models.FloatField(null=True, blank=True)
     samples = JSONField(null=True, blank=True)
     start_index = models.IntegerField(null=True, blank=True)
     end_index = models.IntegerField(null=True, blank=True)
