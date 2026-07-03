@@ -25,7 +25,6 @@ const DisplayIMEIDevices = React.lazy(
   () => import('./main/DisplayIMEIDevices.tsx'),
 );
 const AdminPanel = React.lazy(() => import('./main/AdminPanel.tsx'));
-const UserProfile = React.lazy(() => import('./main/UserProfile.tsx'));
 
 const CoreRoutes = () => {
   return (
@@ -64,7 +63,6 @@ const CoreRoutes = () => {
           <NavbarEmpty act={'measure'} content={<DisplayIMEIDevices />} />
         }
       />
-      <Route path="/user/profile/" element={<UserProfile />} />
 
       <Route
         path="/device/:id/update/"

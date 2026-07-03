@@ -240,18 +240,6 @@ const DisplayIMEIDevices = () => {
                   <Plot
                     data={[
                       {
-                        x: device.plotXVdc,
-                        y: device.plotYVdc,
-                        type: 'scatter',
-                        mode: 'lines+markers',
-                        name: 'VDC',
-                        line: { color: plotTheme.brandBlue, width: 2.5 },
-                        marker: { size: 6 },
-                        customdata: device.plotTooltipVdc,
-                        hovertemplate:
-                          '<b>VDC</b><br>%{x|%d.%m.%Y, %H:%M:%S}<br><b>%{customdata}</b><extra></extra>',
-                      },
-                      {
                         x: device.plotXIdc,
                         y: device.plotYIdc,
                         type: 'scatter',
@@ -263,6 +251,18 @@ const DisplayIMEIDevices = () => {
                         hovertemplate:
                           '<b>IDC</b><br>%{x|%d.%m.%Y, %H:%M:%S}<br><b>%{customdata}</b><extra></extra>',
                       },
+                      {
+                        x: device.plotXVdc,
+                        y: device.plotYVdc,
+                        type: 'scatter',
+                        mode: 'lines+markers',
+                        name: 'VDC',
+                        line: { color: plotTheme.brandBlue, width: 2.5 },
+                        marker: { size: 6 },
+                        customdata: device.plotTooltipVdc,
+                        hovertemplate:
+                          '<b>VDC</b><br>%{x|%d.%m.%Y, %H:%M:%S}<br><b>%{customdata}</b><extra></extra>',
+                      },
                     ]}
                     layout={{
                       autosize: true,
@@ -273,9 +273,9 @@ const DisplayIMEIDevices = () => {
                       paper_bgcolor: 'transparent',
                       plot_bgcolor: plotTheme.white,
                       hoverlabel: {
-                        bgcolor: plotTheme.brandBlue,
+                        bgcolor: plotTheme.warmGray1,
                         bordercolor: plotTheme.warmGray3,
-                        font: { color: plotTheme.white, size: 13 },
+                        font: { color: plotTheme.black, size: 13 },
                       },
                       hoverdistance: 40,
                       spikedistance: -1,

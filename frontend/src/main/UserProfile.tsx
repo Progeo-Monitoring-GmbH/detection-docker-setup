@@ -282,14 +282,14 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
       >
         <Modal.Header closeButton>
           <Modal.Title>
-            {t('profile_title')} - {t('profile_user')}: {username}
+            {t('profile_title')}: {username}
           </Modal.Title>
         </Modal.Header>
         <Modal.Body>
           <Row className="g-4">
             <Col xs={12} lg={6}>
               <Card className="border-0 shadow-sm h-100">
-                <Card.Body className="p-4">
+                <Card.Body className="p-4 m-2">
                   <h5 className="mb-3">{t('profile_settings')}</h5>
 
                   <Form.Group className="mb-3">
@@ -330,7 +330,7 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
 
             <Col xs={12} lg={6}>
               <Card className="border-0 shadow-sm h-100">
-                <Card.Body className="p-4">
+                <Card.Body className="p-4 m-2">
                   <h5 className="mb-3">{t('profile_change_password')}</h5>
 
                   <Form.Group className="mb-3">
@@ -429,7 +429,7 @@ const UserProfile = () => {
       <UserProfileModal show={showModal} onHide={() => setShowModal(false)} />
       {!showModal && (
         <Card className="border-0 shadow-sm">
-          <Card.Body className="p-4 d-flex justify-content-between align-items-center">
+          <Card.Body className="p-4 m-2 d-flex justify-content-between align-items-center">
             <span>{t('profile_modal_reopen_hint')}</span>
             <Button onClick={() => setShowModal(true)}>
               {t('profile_settings_button')}
