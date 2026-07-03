@@ -163,7 +163,8 @@ class StatusViewSet(ProgeoModalViewSet):
     @calc_runtime
     @action(detail=False, url_path="measurements", methods=["GET"])
     def measurements(self, request, *args, **kwargs):
-        db_name = "default"
+        account = getattr(request, "account", None) or _get_controller_account()
+        db_name = account.db_name if account else "default"
 
         since_hours_raw = request.query_params.get("since_hours")
         since = None
@@ -174,11 +175,7 @@ class StatusViewSet(ProgeoModalViewSet):
             except (TypeError, ValueError):
                 return RequestFailed({"reason": "since_hours must be an integer"})
 
-        queryset = (
-            ProgeoMeasurement.objects.using(db_name)
-            .select_related("device")
-            .order_by("-id")
-        )
+        queryset = ProgeoMeasurement.for_account(account, using=db_name, user=request.user).select_related("device").order_by("-id")
         if since:
             queryset = queryset.filter(last_fetched__gte=since)
 
@@ -215,7 +212,8 @@ class StatusViewSet(ProgeoModalViewSet):
     @calc_runtime
     @action(detail=False, url_path="measurements/watch", methods=["POST"])
     def measurements_watch(self, request, *args, **kwargs):
-        db_name = "default"
+        account = getattr(request, "account", None) or _get_controller_account()
+        db_name = account.db_name if account else "default"
         payload = request.data if isinstance(request.data, dict) else {}
 
         measurement_id = payload.get("measurement_id")
@@ -237,7 +235,7 @@ class StatusViewSet(ProgeoModalViewSet):
         except (TypeError, ValueError):
             return RequestFailed({"reason": "measurement_id must be an integer"})
 
-        measurement = ProgeoMeasurement.objects.using(db_name).filter(id=measurement_id).first()
+        measurement = ProgeoMeasurement.get_for_account(account, measurement_id, using=db_name, user=request.user)
         if not measurement:
             return RequestFailed({"reason": "Measurement not found"})
 
@@ -267,7 +265,8 @@ class StatusViewSet(ProgeoModalViewSet):
     @calc_runtime
     @action(detail=False, url_path="measure_points/upload_cad", methods=["POST"])
     def upload_measure_points_from_cad(self, request, *args, **kwargs):
-        db_name = "default"
+        account = getattr(request, "account", None) or _get_controller_account()
+        db_name = account.db_name if account else "default"
 
         device_id_raw = request.query_params.get("device_id") or request.data.get("device_id")
         if not device_id_raw:
@@ -278,7 +277,7 @@ class StatusViewSet(ProgeoModalViewSet):
         except (TypeError, ValueError):
             return RequestFailed({"reason": "device_id must be an integer"})
 
-        device = ProgeoDevice.objects.using(db_name).filter(id=device_id).first()
+        device = ProgeoDevice.objects.using(db_name).filter(id=device_id, location__account=account).first()
         if not device:
             return RequestFailed({"reason": "Device not found"})
 
@@ -360,12 +359,12 @@ class StatusViewSet(ProgeoModalViewSet):
     @calc_runtime
     @action(detail=False, url_path="measure_points", methods=["GET", "POST"])
     def measure_points(self, request, *args, **kwargs):
-        account = _get_controller_account()
+        account = getattr(request, "account", None) or _get_controller_account()
         #if not account:
         #    return RequestFailed({"reason": "No account configured"})
 
         #db_name = account.db_name or "default"
-        db_name = "default"
+        db_name = account.db_name if account else "default"
 
         device_id_raw = request.query_params.get("device_id") if request.method == "GET" else request.data.get("device_id")
         if not device_id_raw:
@@ -376,7 +375,7 @@ class StatusViewSet(ProgeoModalViewSet):
         except (TypeError, ValueError):
             return RequestFailed({"reason": "device_id must be an integer"})
 
-        device = ProgeoDevice.objects.using(db_name).filter(id=device_id).first()
+        device = ProgeoDevice.objects.using(db_name).filter(id=device_id, location__account=account).first()
         if not device:
             return RequestFailed({"reason": "Device not found"})
 

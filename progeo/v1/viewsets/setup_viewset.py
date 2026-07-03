@@ -45,12 +45,18 @@ def _get_controller_account():
 
 
 
-def get_latest_measurement(device, db_name):
-    return ProgeoMeasurement.objects.using(db_name).filter(device=device).order_by("-id").first()
+def get_latest_measurement(device, db_name, account=None):
+    queryset = ProgeoMeasurement.objects.using(db_name).filter(device=device)
+    if account:
+        queryset = queryset.filter(device__location__account=account)
+    return queryset.order_by("-id").first()
 
 
-def get_latest_alarm_measurement(device, db_name):
-    measurements = ProgeoMeasurement.objects.using(db_name).filter(device=device).order_by("-id")
+def get_latest_alarm_measurement(device, db_name, account=None):
+    measurements = ProgeoMeasurement.objects.using(db_name).filter(device=device)
+    if account:
+        measurements = measurements.filter(device__location__account=account)
+    measurements = measurements.order_by("-id")
     for measurement in measurements:
         raw_data = measurement.raw_data if isinstance(measurement.raw_data, dict) else {}
         alarm = raw_data.get("alarm")

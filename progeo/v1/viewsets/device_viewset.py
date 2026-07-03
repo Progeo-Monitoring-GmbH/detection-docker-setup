@@ -39,12 +39,12 @@ class DeviceViewSet(ProgeoModalViewSet):
         return super(DeviceViewSet, self).list(request, no_cache=True, *args, **kwargs)
 
     def get_queryset(self):
-        account = _get_controller_account()
+        account = getattr(self.request, "account", None) or _get_controller_account()
         ilog("DeviceViewSet: get_queryset called | account:", account)
 
         if not account:
             return ProgeoDevice.objects.none()
-        return ProgeoDevice.objects.using(account.db_name).all() # TODO.filter(location__account=account)
+        return ProgeoDevice.objects.using(account.db_name).filter(location__account=account)
     
 
     @action(detail=False, url_path="sample/debug", authentication_classes=[LimitedTokenAuthentication], methods=["POST"])
@@ -85,22 +85,27 @@ class DeviceViewSet(ProgeoModalViewSet):
         resistance_rows = []
         if isinstance(raw_values, dict):
             series_keys = [key for key in raw_values.keys() if str(key).isdigit()]
+            print(f"DeviceViewSet: catch_legacy_field_data | series_keys: {series_keys} | raw_values: {raw_values}")
             for key in sorted(series_keys, key=int):
                 row = raw_values.get(key)
                 if not isinstance(row, (list, tuple)) or len(row) < 2:
                     continue
 
-                idc_intput, vdc_intput = row[0], row[1]
+                idc_intput, vdc_intput, ts = row[0], row[1], row[2]
                 if idc_intput is not None:
                     try:
                         idc_intput = float(idc_intput)
                     except (TypeError, ValueError):
                         idc_intput = None
+                        
                 if vdc_intput is not None:
                     try:
                         vdc_intput = float(vdc_intput)
                     except (TypeError, ValueError):
                         vdc_intput = None
+
+                if raw_values.get("time") is not None:
+                    ts = raw_values.get("time")
 
                 result = calc_resistances(vdc_intput=vdc_intput, idc_intput=idc_intput)
                 sample_value = result.get("r_vdc_ohm")
@@ -110,9 +115,10 @@ class DeviceViewSet(ProgeoModalViewSet):
 
                 resistance_rows.append({
                     "index": key,
-                    "timestamp": row[2] if len(row) > 2 else None,
+                    "timestamp": ts,
                     **result,
                 })
+                ilog(f"DeviceViewSet: catch_legacy_field_data | index: {key} | row: {row} | result: {result}", tag="[FIELD]")
 
         if not samples and isinstance(raw_values, list):
             for value in raw_values:
@@ -193,7 +199,8 @@ class DeviceViewSet(ProgeoModalViewSet):
     @calc_runtime
     @action(detail=False, url_path="imei/display", methods=["GET"])
     def measurements_imei_display(self, request, *args, **kwargs):
-        db_name = "default"
+        account = getattr(request, "account", None) or _get_controller_account()
+        db_name = account.db_name if account else "default"
         now = timezone.now()
         min_valid_updated = now.replace(
             year=2025,
@@ -214,12 +221,7 @@ class DeviceViewSet(ProgeoModalViewSet):
             except (TypeError, ValueError):
                 return RequestFailed({"reason": "since_hours must be an integer"})
 
-        queryset = (
-            ProgeoMeasurement.objects.using(db_name)
-            .select_related("device")
-            .filter(resistance_idc__isnull=False, last_updated__isnull=False)
-            .order_by("device__raw_hash", "last_updated", "id")
-        )
+        queryset = ProgeoMeasurement.for_account(account, using=db_name, user=request.user).select_related("device").filter(resistance_idc__isnull=False, last_updated__isnull=False).order_by("device__raw_hash", "last_updated", "id")
         if since:
             queryset = queryset.filter(last_updated__gte=since)
 
@@ -277,8 +279,9 @@ class DeviceViewSet(ProgeoModalViewSet):
     @calc_runtime
     @action(detail=True, url_path="config/download", methods=["GET"])
     def download_config(self, request, pk=None, *args, **kwargs):
-        db_name = "default"
-        device = ProgeoDevice.objects.using(db_name).filter(pk=pk).first()
+        account = getattr(request, "account", None) or _get_controller_account()
+        db_name = account.db_name if account else "default"
+        device = ProgeoDevice.objects.using(db_name).filter(pk=pk, location__account=account).first()
         if not device:
             return RequestFailed({"reason": "Device not found"})
 
@@ -309,8 +312,9 @@ class DeviceViewSet(ProgeoModalViewSet):
     @calc_runtime
     @action(detail=True, url_path="config/upload", methods=["POST"], parser_classes=[SafeLuaUploadParser])
     def upload_config(self, request, pk=None, *args, **kwargs):
-        db_name = "default"
-        device = ProgeoDevice.objects.using(db_name).filter(pk=pk).first()
+        account = getattr(request, "account", None) or _get_controller_account()
+        db_name = account.db_name if account else "default"
+        device = ProgeoDevice.objects.using(db_name).filter(pk=pk, location__account=account).first()
         if not device:
             return RequestFailed({"reason": "Device not found"})
 
@@ -421,13 +425,13 @@ class DeviceViewSet(ProgeoModalViewSet):
         if rows is None:
             return RequestFailed({"reason": "No rows provided"})
 
-        account = _get_controller_account()
+        account = getattr(request, "account", None) or _get_controller_account()
         #if not account:
         #    return RequestFailed({"reason": "No account configured"})
 
         #db_name = account.db_name or "default"
-        db_name = "default"
-        device = ProgeoDevice.objects.using(db_name).filter(pk=pk).first()
+        db_name = account.db_name if account else "default"
+        device = ProgeoDevice.objects.using(db_name).filter(pk=pk, location__account=account).first()
         if not device:
             return RequestFailed({"reason": "Device not found"})
 
@@ -473,7 +477,8 @@ class DeviceViewSet(ProgeoModalViewSet):
     @calc_runtime
     @action(detail=True, url_path="measurements", methods=["GET"])
     def measurements(self, request, pk=None, *args, **kwargs):
-        db_name = "default"
+        account = getattr(request, "account", None) or _get_controller_account()
+        db_name = account.db_name if account else "default"
 
         try:
             limit = int(request.query_params.get("limit", 200))
@@ -485,12 +490,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         if not device:
             return RequestFailed({"reason": "Device not found"})
 
-        queryset = (
-            ProgeoMeasurement.objects.using(db_name)
-            .filter(device=device)
-            .select_related("device")
-            .order_by("-id")[:limit]
-        )
+        queryset = ProgeoMeasurement.for_account(account, using=db_name, user=request.user).filter(device=device).select_related("device").order_by("-id")[:limit]
         serialized = ProgeoMeasurementSerializer(queryset, many=True).data
 
         return RequestSuccess({
@@ -503,9 +503,10 @@ class DeviceViewSet(ProgeoModalViewSet):
     @calc_runtime
     @action(detail=True, url_path="delete", methods=["POST"])
     def delete_device(self, request, pk=None, *args, **kwargs):
-        db_name = "default" # TODO hardcoded for now, needs refactor
+        account = getattr(request, "account", None) or _get_controller_account()
+        db_name = account.db_name if account else "default"
         try:
-            device = ProgeoDevice.objects.using(db_name).get(id=int(pk))
+            device = ProgeoDevice.objects.using(db_name).get(id=int(pk), location__account=account)
         except (ValueError, ProgeoDevice.DoesNotExist):
             device = None
 

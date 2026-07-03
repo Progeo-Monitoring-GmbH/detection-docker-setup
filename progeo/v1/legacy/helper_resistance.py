@@ -19,7 +19,7 @@ import math
 U_IN = 12.0        # V, angelegte Versorgungsspannung
 R_VOR = 22_000     # Ohm, Vorwiderstand des Spannungsteilers
 R_IMP = 638_000    # Ohm, Korrekturfaktor (Eingangsimpedanz ADC)
-MAX_JSON_SAFE_RESISTANCE_OHM = 9_999_999.9
+MAX_JSON_SAFE_RESISTANCE_OHM = 19_999_999.9
 
 
 def _json_safe_resistance(value):

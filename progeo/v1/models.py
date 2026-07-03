@@ -237,6 +237,11 @@ class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
 
 class ProgeoDevice(ProgeoModel, auto_prefetch.Model):
 
+    class DeviceType(models.TextChoices):
+        IMEI = "imei", "imei"
+        SMARTBOX = "smartbox", "smartbox"
+        NODE = "node", "node"
+
     class Resistance(models.IntegerChoices):
         DEFAULT_100K = 136  # 100K = 0x88
         RES_10K = 72        # 10K  = 0x48
@@ -247,6 +252,7 @@ class ProgeoDevice(ProgeoModel, auto_prefetch.Model):
     location = models.ForeignKey(ProgeoLocation, on_delete=models.CASCADE, null=True, blank=True)
     created = models.DateTimeField(auto_now_add=True)
     raw_hash = models.CharField(max_length=KEY_LEN, null=False, unique=True)
+    type = models.CharField(max_length=20, choices=DeviceType.choices, null=True, blank=True)
     hardware = models.CharField(max_length=100, null=True, blank=True)
     version = models.CharField(max_length=50, null=True, blank=True)
     chip_id = models.CharField(max_length=50, null=True, blank=True)
@@ -264,6 +270,21 @@ class ProgeoDevice(ProgeoModel, auto_prefetch.Model):
 
 
 class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
+    @classmethod
+    def for_account(cls, account, using=None, user=None):
+        queryset = cls.objects
+        if using:
+            queryset = queryset.using(using)
+        if user and (user.is_staff or user.is_superuser):
+            return queryset
+        if not account:
+            return queryset.none()
+        return queryset.filter(device__location__account=account)
+
+    @classmethod
+    def get_for_account(cls, account, measurement_id, using=None, user=None):
+        return cls.for_account(account, using=using, user=user).filter(pk=measurement_id).first()
+
     device = models.ForeignKey(ProgeoDevice, on_delete=models.CASCADE)
     project_id = models.IntegerField(null=True, blank=True)
     is_watching = models.BooleanField(default=False)
