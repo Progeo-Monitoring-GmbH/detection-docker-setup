@@ -6,13 +6,11 @@ from typing import Any, Dict, List, Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from progeo.helper.basics import dlog, read_env
-from progeo.tests.settings import BASE_DIR
+from progeo.helper.basics import dlog
 from django.core.management.base import BaseCommand
-from progeo.helper.basics import okaylog
 
 
-TARGET_URL = f"http://192.168.0.107:8282/v1/device/sample/field/?token={os.getenv('API_TOKEN')}"
+TARGET_URL = f"https://api.progeo.com/v1/device/sample/field/?token={os.getenv('API_TOKEN')}"
 INPUT_URL = "https://data-progeo.net/dragino/dragino.txt"
 SPECIAL_FORWARD_IMEIS = {
     "863663069826155",
