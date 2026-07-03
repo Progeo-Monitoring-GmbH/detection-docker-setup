@@ -220,7 +220,7 @@ def test_catch_legacy_field_data_builds_samples_from_payload_value_arrays(api_cl
         },
     }
 
-    response = api_client.post("/v1/device/sample/field/", payload, format="json")
+    response = api_client.post("/v1/device/sample/imei/", payload, format="json")
 
     assert response.status_code == 200, response.content
     body = response.json()
@@ -258,7 +258,7 @@ def test_catch_legacy_field_data_accepts_test_json_shape_without_project_id(api_
         "type": "TELEMETRY_DATA",
     }
 
-    response = api_client.post("/v1/device/sample/field/", payload, format="json")
+    response = api_client.post("/v1/device/sample/imei/", payload, format="json")
 
     assert response.status_code == 200, response.content
     body = response.json()

@@ -10,7 +10,7 @@ from progeo.helper.basics import dlog
 from django.core.management.base import BaseCommand
 
 
-TARGET_URL = f"https://api.progeo.com/v1/device/sample/field/?token={os.getenv('API_TOKEN')}"
+TARGET_URL = f"https://api.progeo.com/v1/device/sample/imei/?token={os.getenv('API_TOKEN')}"
 INPUT_URL = "https://data-progeo.net/dragino/dragino.txt"
 SPECIAL_FORWARD_IMEIS = {
     "863663069826155",
