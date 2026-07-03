@@ -1,9 +1,25 @@
-//See https://bootswatch.com/darkly/
-@import "~bootswatch/dist/darkly/variables";
-@import "~bootstrap/scss/bootstrap";
-@import "~bootswatch/dist/darkly/bootswatch";
+// ProGeo corporate bootstrap theme tokens
+$primary: #0b3659;
+$secondary: #b8b0b0;
+$success: #8dc160;
+$info: #61aac5;
+$warning: #fbbc15;
+$danger: #eb633b;
+$light: #ffffff;
+$dark: #0b3659;
 
-@import "~bootstrap-icons/font/bootstrap-icons.css";
+$body-bg: #eeebeb;
+$body-color: #0b3659;
+$border-color: #dcd7d8;
+$card-bg: #ffffff;
+$card-cap-bg: #eeebeb;
+$input-bg: #ffffff;
+$input-color: #0b3659;
+$input-border-color: #cac4c4;
+
+@import '~bootstrap/scss/bootstrap';
+
+@import '~bootstrap-icons/font/bootstrap-icons.css';
 
 .card-body {
   padding: 0 !important;
@@ -19,8 +35,8 @@
 
 /* Set black background color, white text and some padding */
 footer {
-  background-color: #555;
-  color: white;
+  background-color: #0b3659;
+  color: #fff;
   padding: 15px;
 }
 
@@ -46,8 +62,8 @@ input.input-left-100 {
   left: 140px;
   margin: 0 15px 10px;
   padding: 8px 12px 10px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  background: rgba(46, 45, 43, 1);
+  border: 1px solid rgba(11, 54, 89, 0.25);
+  background: #fff;
 }
 
 .block {
@@ -63,7 +79,7 @@ input.input-left-100 {
   min-height: 370px;
 }
 
-#sortableOptions li, {
+#sortableOptions li {
   margin: 0 5px 5px 5px;
   padding: 5px;
   font-size: 1.2em;
@@ -81,7 +97,7 @@ div.scrollable {
 
 #carouselControls {
   min-height: 250px;
-  border: 1px solid rgba(206, 206, 206, 0.5);
+  border: 1px solid rgba(184, 176, 176, 0.7);
 }
 
 img.d-block {
@@ -90,16 +106,16 @@ img.d-block {
 }
 
 .navbar-brand::before {
-  color: #ccc;
+  color: #b8b0b0;
 }
 
 .navbar-brand {
-  color: white;
+  color: #0b3659;
 }
 
 .panel-default {
-  border: 1px solid rgba(206, 206, 206, 0.5);
-  background-color: #2e2d2b;
+  border: 1px solid rgba(184, 176, 176, 0.7);
+  background-color: #fff;
   padding: 0;
   margin: 15px 0 0 0;
   height: min-content;
@@ -108,9 +124,9 @@ img.d-block {
 
 .panel-heading {
   font-size: 20px;
-  background-color: #4d4d4d;
+  background-color: #eeebeb;
   padding: 5px 10px 5px 10px;
-  border-bottom: 1px solid rgba(206, 206, 206, 0.5);
+  border-bottom: 1px solid rgba(184, 176, 176, 0.7);
 }
 
 .panel-body {
@@ -119,7 +135,7 @@ img.d-block {
 
 .list-group-item {
   margin: 2px;
-  border: 1px solid rgba(206, 206, 206, 0.5) !important;
+  border: 1px solid rgba(184, 176, 176, 0.7) !important;
 }
 
 #streamViewholder {
@@ -131,7 +147,7 @@ img.d-block {
 
 #focusFrame {
   position: absolute;
-  border: beige 1px solid;
+  border: #eb633b 1px solid;
 }
 
 button.btnCreateFlow {
@@ -164,7 +180,10 @@ button.btnCreateFlow {
   position: absolute;
   background: rgba(255, 0, 0, 0.7) no-repeat 50% 50%;
   border-radius: 50%;
-  transform: translate(-50%, -50%); /* use translate instead of JS calculations */
+  transform: translate(
+    -50%,
+    -50%
+  ); /* use translate instead of JS calculations */
 }
 
 img.failed {
@@ -183,7 +202,7 @@ img.failed {
 }
 
 .snackbar {
-  background-color: cadetblue;
+  background-color: #61aac5;
   //visibility: hidden;
   color: #fff;
   text-align: center;
@@ -205,15 +224,19 @@ a.edit-link {
   position: absolute;
   right: 5px;
   top: 5px;
-  background: azure;
+  background: #eeebeb;
   padding: 3px;
   font-weight: bold;
 }
 
 .show_snack {
   visibility: visible !important;
-  -webkit-animation: fadein 0.5s, fadeout 0.5s 2.5s;
-  animation: fadein 0.5s, fadeout 0.5s 2.5s;
+  -webkit-animation:
+    fadein 0.5s,
+    fadeout 0.5s 2.5s;
+  animation:
+    fadein 0.5s,
+    fadeout 0.5s 2.5s;
 }
 
 .version-infos {

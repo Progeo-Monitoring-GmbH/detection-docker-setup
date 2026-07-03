@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Card } from 'react-bootstrap';
 import Plot from 'react-plotly.js';
+import { plotSeriesColors, plotTheme } from '../../styles/plotTheme';
 
 export type MeasurementCompareRow = {
   id: number;
@@ -25,17 +26,6 @@ type DiffSeries = {
 type MeasurementSamplesCompareChartProps = {
   rows: MeasurementCompareRow[];
 };
-
-const COLORS = [
-  '#2563eb',
-  '#dc2626',
-  '#059669',
-  '#d97706',
-  '#7c3aed',
-  '#0f766e',
-  '#be123c',
-  '#374151',
-];
 
 const formatDate = (value: string | null | undefined) => {
   if (!value) {
@@ -87,7 +77,7 @@ const MeasurementSamplesCompareChart = (
         id: row.id,
         label: `#${row.id} | Device ${row.device} | ${formatDate(row.last_fetched)}`,
         points: toPairAbsDiff(row.samples, row.pair_abs_values),
-        color: COLORS[index % COLORS.length],
+        color: plotSeriesColors[index % plotSeriesColors.length],
       })),
     [rows],
   );
@@ -168,7 +158,7 @@ const MeasurementSamplesCompareChart = (
         x: meanSeries.x,
         y: meanSeries.y,
         line: {
-          color: '#111827',
+          color: plotTheme.brandBlue,
           width: 3,
           dash: 'dash',
         },
@@ -209,27 +199,36 @@ const MeasurementSamplesCompareChart = (
           layout={{
             autosize: true,
             margin: { l: 56, r: 16, t: 16, b: 52 },
-            plot_bgcolor: '#f8fbff',
-            paper_bgcolor: '#ffffff',
+            font: { color: plotTheme.brandBlue },
+            plot_bgcolor: plotTheme.warmGray1,
+            paper_bgcolor: plotTheme.white,
             xaxis: {
               title: 'Pair Index',
               showgrid: true,
-              gridcolor: '#dbe4ee',
+              gridcolor: plotTheme.warmGray2,
               zeroline: false,
             },
             yaxis: {
               title: 'Absolute Delta',
               rangemode: 'tozero',
               showgrid: true,
-              gridcolor: '#dbe4ee',
+              gridcolor: plotTheme.warmGray2,
               zeroline: false,
             },
             legend: {
               orientation: 'h',
               y: -0.25,
               x: 0,
+              bgcolor: plotTheme.warmGray1,
+              bordercolor: plotTheme.warmGray3,
+              borderwidth: 1,
             },
             hovermode: 'x unified',
+            hoverlabel: {
+              bgcolor: plotTheme.brandBlue,
+              bordercolor: plotTheme.warmGray3,
+              font: { color: plotTheme.white },
+            },
           }}
           onLegendClick={(event) => {
             const traceIndex = event.curveNumber;

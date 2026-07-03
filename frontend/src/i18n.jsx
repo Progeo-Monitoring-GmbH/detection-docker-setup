@@ -164,11 +164,23 @@ i18n
     },
   });
 
-// new usage
-i18n.services.formatter.add('DATE_HUGE', (value, lng) => {
-  return DateTime.fromJSDate(value)
-    .setLocale(lng)
-    .toLocaleString(DateTime.DATE_HUGE);
-});
+// Register the custom formatter after i18next services are available.
+const addDateHugeFormatter = () => {
+  if (!i18n.services?.formatter) {
+    return;
+  }
+
+  i18n.services.formatter.add('DATE_HUGE', (value, lng) => {
+    return DateTime.fromJSDate(value)
+      .setLocale(lng)
+      .toLocaleString(DateTime.DATE_HUGE);
+  });
+};
+
+if (i18n.isInitialized) {
+  addDateHugeFormatter();
+} else {
+  i18n.on('initialized', addDateHugeFormatter);
+}
 
 export default i18n;

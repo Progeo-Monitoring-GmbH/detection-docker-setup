@@ -1,5 +1,6 @@
 import { Card } from 'react-bootstrap';
 import React from 'react';
+import { plotTheme } from '../../styles/plotTheme';
 
 export type TimePoint = {
   id: number;
@@ -113,7 +114,7 @@ class DeviceChart extends React.PureComponent<DeviceChartProps> {
               y="16"
               width={width - 52}
               height={height - 44}
-              fill="#f8fbff"
+              fill={plotTheme.warmGray1}
               rx="8"
             />
             <line
@@ -121,7 +122,7 @@ class DeviceChart extends React.PureComponent<DeviceChartProps> {
               y1={height - 28}
               x2={width - 12}
               y2={height - 28}
-              stroke="#9cb5cc"
+              stroke={plotTheme.warmGray4}
               strokeWidth="1"
             />
             <line
@@ -129,14 +130,14 @@ class DeviceChart extends React.PureComponent<DeviceChartProps> {
               y1="16"
               x2="40"
               y2={height - 28}
-              stroke="#9cb5cc"
+              stroke={plotTheme.warmGray4}
               strokeWidth="1"
             />
 
             {maxPath && (
               <polyline
                 fill="none"
-                stroke="#d97706"
+                stroke={plotTheme.brandOrange}
                 strokeWidth="2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -146,7 +147,7 @@ class DeviceChart extends React.PureComponent<DeviceChartProps> {
             {avgPath && (
               <polyline
                 fill="none"
-                stroke="#0d6efd"
+                stroke={plotTheme.brandBlue}
                 strokeWidth="2.5"
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -154,29 +155,29 @@ class DeviceChart extends React.PureComponent<DeviceChartProps> {
               />
             )}
 
-            <text x="40" y={height - 8} fill="#5f6e7c" fontSize="11">
+            <text x="40" y={height - 8} fill={plotTheme.brandBlue} fontSize="11">
               {series.points[0]?.timeLabel || ''}
             </text>
             <text
               x={width - 12}
               y={height - 8}
-              fill="#5f6e7c"
+              fill={plotTheme.brandBlue}
               fontSize="11"
               textAnchor="end"
             >
               {series.points[series.points.length - 1]?.timeLabel || ''}
             </text>
-            <text x="8" y="22" fill="#5f6e7c" fontSize="11">
+            <text x="8" y="22" fill={plotTheme.brandBlue} fontSize="11">
               {maxYRaw.toFixed(2)}
             </text>
-            <text x="8" y={height - 30} fill="#5f6e7c" fontSize="11">
+            <text x="8" y={height - 30} fill={plotTheme.brandBlue} fontSize="11">
               {minYRaw.toFixed(2)}
             </text>
           </svg>
 
           <div className="mt-2 d-flex gap-3 flex-wrap">
-            <small className="text-primary">Blue: average sample</small>
-            <small style={{ color: '#d97706' }}>Orange: max sample</small>
+            <small style={{ color: plotTheme.brandBlue }}>Blue: average sample</small>
+            <small style={{ color: plotTheme.brandOrange }}>Orange: max sample</small>
           </div>
         </Card.Body>
       </Card>

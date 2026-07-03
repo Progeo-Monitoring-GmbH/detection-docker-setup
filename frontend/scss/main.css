@@ -1,0 +1,98 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;500;700&display=swap');
+
+:root {
+  --progeo-blue: #0b3659;
+  --progeo-orange: #eb633b;
+  --progeo-white: #ffffff;
+
+  --progeo-warm-gray-1: #eeebeb;
+  --progeo-warm-gray-2: #dcd7d8;
+  --progeo-warm-gray-3: #cac4c4;
+  --progeo-warm-gray-4: #b8b0b0;
+
+  --progeo-contrast-green: #8dc160;
+  --progeo-contrast-violet: #9577b3;
+  --progeo-contrast-yellow: #fbbc15;
+  --progeo-contrast-cyan: #61aac5;
+
+  --bs-primary: var(--progeo-blue);
+  --bs-secondary: var(--progeo-warm-gray-4);
+  --bs-success: var(--progeo-contrast-green);
+  --bs-info: var(--progeo-contrast-cyan);
+  --bs-warning: var(--progeo-contrast-yellow);
+  --bs-danger: var(--progeo-orange);
+  --bs-light: var(--progeo-white);
+  --bs-dark: var(--progeo-blue);
+  --bs-body-bg: var(--progeo-warm-gray-1);
+  --bs-body-color: var(--progeo-blue);
+  --bs-border-color: var(--progeo-warm-gray-2);
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  font-family: 'Plus Jakarta Sans', 'Segoe UI', Tahoma, sans-serif;
+  background-color: var(--progeo-warm-gray-1);
+  color: var(--progeo-blue);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-weight: 500;
+  color: var(--progeo-blue);
+}
+
+a {
+  color: var(--progeo-orange);
+}
+
+a:hover {
+  color: #cc4f2d;
+}
+
+.bg-brand {
+  background-color: var(--progeo-blue) !important;
+  color: var(--progeo-white) !important;
+}
+
+.text-brand {
+  color: var(--progeo-blue) !important;
+}
+
+.text-brand-accent {
+  color: var(--progeo-orange) !important;
+}
+
+.surface-soft {
+  background-color: var(--progeo-warm-gray-1);
+  border: 1px solid var(--progeo-warm-gray-2);
+}
+
+.card,
+.modal-content,
+.dropdown-menu,
+.list-group-item {
+  border-color: var(--progeo-warm-gray-2);
+}
+
+.btn-primary {
+  --bs-btn-bg: var(--progeo-blue);
+  --bs-btn-border-color: var(--progeo-blue);
+  --bs-btn-hover-bg: #092c49;
+  --bs-btn-hover-border-color: #092c49;
+}
+
+.btn-danger {
+  --bs-btn-bg: var(--progeo-orange);
+  --bs-btn-border-color: var(--progeo-orange);
+  --bs-btn-hover-bg: #cc4f2d;
+  --bs-btn-hover-border-color: #cc4f2d;
+}

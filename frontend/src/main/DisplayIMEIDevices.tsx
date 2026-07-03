@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
 import { showErrorBar, showInfoBar } from '../components/ui/Snackbar.jsx';
+import { plotTheme } from '../styles/plotTheme';
 import { UserProfileModal } from './UserProfile.tsx';
 
 type ImeiMeasurementPoint = {
@@ -244,7 +245,7 @@ const DisplayIMEIDevices = () => {
                         type: 'scatter',
                         mode: 'lines+markers',
                         name: 'VDC',
-                        line: { color: '#0d6efd', width: 2.5 },
+                        line: { color: plotTheme.brandBlue, width: 2.5 },
                         marker: { size: 6 },
                         customdata: device.plotTooltipVdc,
                         hovertemplate:
@@ -256,7 +257,7 @@ const DisplayIMEIDevices = () => {
                         type: 'scatter',
                         mode: 'lines+markers',
                         name: 'IDC',
-                        line: { color: '#22c55e', width: 2.5 },
+                        line: { color: plotTheme.brandOrange, width: 2.5 },
                         marker: { size: 6 },
                         customdata: device.plotTooltipIdc,
                         hovertemplate:
@@ -268,42 +269,42 @@ const DisplayIMEIDevices = () => {
                       height: 360,
                       margin: { l: 60, r: 20, t: 92, b: 64 },
                       hovermode: 'x unified',
-                      font: { color: '#f8fbff' },
+                      font: { color: plotTheme.brandBlue },
                       paper_bgcolor: 'transparent',
-                      plot_bgcolor: '#111827',
+                      plot_bgcolor: plotTheme.white,
                       hoverlabel: {
-                        bgcolor: '#0f172a',
-                        bordercolor: '#94a3b8',
-                        font: { color: '#e2e8f0', size: 13 },
+                        bgcolor: plotTheme.brandBlue,
+                        bordercolor: plotTheme.warmGray3,
+                        font: { color: plotTheme.white, size: 13 },
                       },
                       hoverdistance: 40,
                       spikedistance: -1,
                       xaxis: {
                         title: {
                           text: t('imei_axis_time'),
-                          font: { color: '#ffffff' },
+                          font: { color: plotTheme.brandBlue },
                         },
                         type: 'date',
                         tickformat: '%Y-%m-%d %H:%M',
-                        tickfont: { color: '#f8fbff' },
-                        gridcolor: 'rgba(255, 255, 255, 0.20)',
-                        zerolinecolor: 'rgba(255, 255, 255, 0.35)',
+                        tickfont: { color: plotTheme.brandBlue },
+                        gridcolor: plotTheme.warmGray2,
+                        zerolinecolor: plotTheme.warmGray3,
                         showspikes: true,
                         spikethickness: 1,
-                        spikecolor: 'rgba(148, 163, 184, 0.85)',
+                        spikecolor: plotTheme.warmGray4,
                         spikesnap: 'cursor',
                         spikemode: 'across',
                       },
                       yaxis: {
                         title: {
                           text: t('imei_axis_resistance'),
-                          font: { color: '#ffffff' },
+                          font: { color: plotTheme.brandBlue },
                         },
                         type: 'log',
                         automargin: true,
-                        tickfont: { color: '#f8fbff' },
-                        gridcolor: 'rgba(255, 255, 255, 0.20)',
-                        zerolinecolor: 'rgba(255, 255, 255, 0.35)',
+                        tickfont: { color: plotTheme.brandBlue },
+                        gridcolor: plotTheme.warmGray2,
+                        zerolinecolor: plotTheme.warmGray3,
                       },
                       showlegend: true,
                       legend: {
@@ -312,8 +313,8 @@ const DisplayIMEIDevices = () => {
                         y: 1.18,
                         xanchor: 'left',
                         x: 0,
-                        bgcolor: 'rgba(15, 23, 42, 0.55)',
-                        bordercolor: 'rgba(148, 163, 184, 0.3)',
+                        bgcolor: plotTheme.warmGray1,
+                        bordercolor: plotTheme.warmGray3,
                         borderwidth: 1,
                       },
                     }}

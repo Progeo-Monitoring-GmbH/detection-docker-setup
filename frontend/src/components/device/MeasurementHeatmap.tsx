@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { Card } from 'react-bootstrap';
+import { plotTheme } from '../../styles/plotTheme';
 
 export type HeatmapPoint = {
   x: number;
@@ -18,49 +19,44 @@ type MeasurementHeatmapProps = {
 const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, value));
 
+const toRgb = (hex: string) => {
+  const clean = hex.replace('#', '');
+  return {
+    r: Number.parseInt(clean.slice(0, 2), 16),
+    g: Number.parseInt(clean.slice(2, 4), 16),
+    b: Number.parseInt(clean.slice(4, 6), 16),
+  };
+};
+
+const lerpColor = (
+  left: { r: number; g: number; b: number },
+  right: { r: number; g: number; b: number },
+  t: number,
+) => ({
+  r: Math.round(left.r + (right.r - left.r) * t),
+  g: Math.round(left.g + (right.g - left.g) * t),
+  b: Math.round(left.b + (right.b - left.b) * t),
+});
+
+const heatStops = [
+  { at: 0.0, color: toRgb(plotTheme.warmGray1) },
+  { at: 0.2, color: toRgb(plotTheme.contrastCyan) },
+  { at: 0.45, color: toRgb(plotTheme.contrastGreen) },
+  { at: 0.7, color: toRgb(plotTheme.contrastYellow) },
+  { at: 1.0, color: toRgb(plotTheme.brandOrange) },
+];
+
 const palette = (tRaw: number) => {
   const t = clamp(tRaw, 0, 1);
-
-  // A vivid heat palette: navy -> cyan -> lime -> yellow -> orange -> red.
-  if (t < 0.2) {
-    const k = t / 0.2;
-    return {
-      r: Math.round(10 + (0 - 10) * k),
-      g: Math.round(35 + (180 - 35) * k),
-      b: Math.round(120 + (255 - 120) * k),
-    };
+  for (let i = 0; i < heatStops.length - 1; i += 1) {
+    const left = heatStops[i];
+    const right = heatStops[i + 1];
+    if (t >= left.at && t <= right.at) {
+      const relative = (t - left.at) / (right.at - left.at || 1);
+      return lerpColor(left.color, right.color, relative);
+    }
   }
-  if (t < 0.45) {
-    const k = (t - 0.2) / 0.25;
-    return {
-      r: Math.round(0 + (40 - 0) * k),
-      g: Math.round(180 + (225 - 180) * k),
-      b: Math.round(255 + (40 - 255) * k),
-    };
-  }
-  if (t < 0.7) {
-    const k = (t - 0.45) / 0.25;
-    return {
-      r: Math.round(40 + (245 - 40) * k),
-      g: Math.round(225 + (220 - 225) * k),
-      b: Math.round(40 + (35 - 40) * k),
-    };
-  }
-  if (t < 0.87) {
-    const k = (t - 0.7) / 0.17;
-    return {
-      r: Math.round(245 + (255 - 245) * k),
-      g: Math.round(220 + (120 - 220) * k),
-      b: Math.round(35 + (20 - 35) * k),
-    };
-  }
-
-  const k = (t - 0.87) / 0.13;
-  return {
-    r: Math.round(255 + (170 - 255) * k),
-    g: Math.round(120 + (10 - 120) * k),
-    b: Math.round(20 + (10 - 20) * k),
-  };
+  return heatStops[heatStops.length - 1].color;
 };
 
 const MeasurementHeatmap = ({
@@ -149,7 +145,7 @@ const MeasurementHeatmap = ({
       data[i + 3] = Math.round(clamp(alpha * 255 * 1.2, 0, 255));
     }
 
-    ctx.fillStyle = '#0f172a';
+    ctx.fillStyle = plotTheme.brandBlue;
     ctx.fillRect(0, 0, width, height);
     ctx.putImageData(image, 0, 0);
 
@@ -161,7 +157,7 @@ const MeasurementHeatmap = ({
     ctx.globalAlpha = 1;
 
     // Draw points lightly on top for orientation.
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
     safePoints.forEach((point) => {
       ctx.beginPath();
       ctx.arc(point.x, point.y, 1.5, 0, Math.PI * 2);
