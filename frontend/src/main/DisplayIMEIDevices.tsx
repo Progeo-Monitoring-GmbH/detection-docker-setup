@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Col, Row, Spinner } from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
 import Plot from 'react-plotly.js';
@@ -10,6 +10,8 @@ import axiosConfig from '../axiosConfig';
 import { showErrorBar, showInfoBar } from '../components/ui/Snackbar.jsx';
 import { plotTheme } from '../styles/plotTheme';
 import { UserProfileModal } from './UserProfile.tsx';
+
+void React;
 
 type ImeiMeasurementPoint = {
   id: number;
@@ -71,8 +73,11 @@ const DisplayIMEIDevices = () => {
     try {
       showInfoBar(enqueueSnackbar, t('profile_logout_info'));
       auth.logoutAction();
-    } catch (error: any) {
-      const reason = error?.message || t('profile_logout_unknown_error');
+    } catch (error: unknown) {
+      const reason =
+        error instanceof Error
+          ? error.message
+          : t('profile_logout_unknown_error');
       showErrorBar(enqueueSnackbar, `${t('profile_logout_error')}: ${reason}`);
     }
   };
@@ -275,7 +280,7 @@ const DisplayIMEIDevices = () => {
                       hoverlabel: {
                         bgcolor: plotTheme.warmGray1,
                         bordercolor: plotTheme.warmGray3,
-                        font: { color: plotTheme.black, size: 13 },
+                        font: { color: plotTheme.brandBlue, size: 13 },
                       },
                       hoverdistance: 40,
                       spikedistance: -1,

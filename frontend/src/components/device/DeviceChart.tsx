@@ -155,7 +155,12 @@ class DeviceChart extends React.PureComponent<DeviceChartProps> {
               />
             )}
 
-            <text x="40" y={height - 8} fill={plotTheme.brandBlue} fontSize="11">
+            <text
+              x="40"
+              y={height - 8}
+              fill={plotTheme.brandBlue}
+              fontSize="11"
+            >
               {series.points[0]?.timeLabel || ''}
             </text>
             <text
@@ -170,14 +175,23 @@ class DeviceChart extends React.PureComponent<DeviceChartProps> {
             <text x="8" y="22" fill={plotTheme.brandBlue} fontSize="11">
               {maxYRaw.toFixed(2)}
             </text>
-            <text x="8" y={height - 30} fill={plotTheme.brandBlue} fontSize="11">
+            <text
+              x="8"
+              y={height - 30}
+              fill={plotTheme.brandBlue}
+              fontSize="11"
+            >
               {minYRaw.toFixed(2)}
             </text>
           </svg>
 
           <div className="mt-2 d-flex gap-3 flex-wrap">
-            <small style={{ color: plotTheme.brandBlue }}>Blue: average sample</small>
-            <small style={{ color: plotTheme.brandOrange }}>Orange: max sample</small>
+            <small style={{ color: plotTheme.brandBlue }}>
+              Blue: average sample
+            </small>
+            <small style={{ color: plotTheme.brandOrange }}>
+              Orange: max sample
+            </small>
           </div>
         </Card.Body>
       </Card>
