@@ -24,7 +24,15 @@ export default ({ mode }) => {
       rollupOptions: {
         treeshake: {
           preset: 'recommended',
-          moduleSideEffects: false, // assumes your deps mark sideEffects correctly
+          // Keep side effects for i18n bootstrap modules; everything else remains aggressively tree-shaken.
+          moduleSideEffects: (id) => {
+            return (
+              /src[\\/]i18n\.(jsx|tsx|js|ts)$/.test(id) ||
+              /node_modules[\\/](i18next|react-i18next|i18next-http-backend|i18next-browser-languagedetector)/.test(
+                id,
+              )
+            );
+          },
           propertyReadSideEffects: false,
           tryCatchDeoptimization: false,
           unknownGlobalSideEffects: false,
@@ -32,11 +40,15 @@ export default ({ mode }) => {
         output: {
           manualChunks(id) {
             if (!id.includes('node_modules')) return;
-            if (id.includes('react') || id.includes('scheduler')) return 'vendor-react';
-            if (id.includes('@mui') || id.includes('@emotion')) return 'vendor-mui';
-            if (id.includes('bootstrap') || id.includes('bootswatch')) return 'vendor-bootstrap';
+            if (id.includes('react') || id.includes('scheduler'))
+              return 'vendor-react';
+            if (id.includes('@mui') || id.includes('@emotion'))
+              return 'vendor-mui';
+            if (id.includes('bootstrap') || id.includes('bootswatch'))
+              return 'vendor-bootstrap';
             if (id.includes('i18next')) return 'vendor-i18n';
-            if (id.includes('axios') || id.includes('jwt-decode')) return 'vendor-network';
+            if (id.includes('axios') || id.includes('jwt-decode'))
+              return 'vendor-network';
             return 'vendor';
           },
         },
@@ -47,14 +59,21 @@ export default ({ mode }) => {
       modulePreload: { polyfill: false },
     },
     optimizeDeps: {
-      include: ['react', 'react-dom', 'react-use-websocket', 'react-data-table-component'], // Add frequently used deps
+      include: [
+        'react',
+        'react-dom',
+        'react-use-websocket',
+        'react-data-table-component',
+      ], // Add frequently used deps
     },
     define: {
       __APP_ENV__: JSON.stringify(env.APP_ENV),
     },
     server: {
       host: env.VITE_FRONTEND_URL || '0.0.0.0',
-      port: env.VITE_FRONTEND_PORT ? parseInt(env.VITE_FRONTEND_PORT, 10) : 3000,
+      port: env.VITE_FRONTEND_PORT
+        ? parseInt(env.VITE_FRONTEND_PORT, 10)
+        : 3000,
     },
     resolve: {
       alias: [

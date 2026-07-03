@@ -6,11 +6,11 @@ from typing import Any, Dict, List, Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from progeo.helper.basics import dlog
 from django.core.management.base import BaseCommand
 
+from progeo.helper.basics import dlog
 
-TARGET_URL = f"https://api.progeo.com/v1/device/sample/imei/?token={os.getenv('API_TOKEN')}"
+
 INPUT_URL = "https://data-progeo.net/dragino/dragino.txt"
 SPECIAL_FORWARD_IMEIS = {
     "863663069826155",
@@ -23,6 +23,20 @@ SPECIAL_FORWARD_IMEIS = {
 BLOCK_SEPARATOR = re.compile(r"\s*`{0,3}\s*-{10,}\s*`{0,3}\s*", re.MULTILINE)
 
 
+def build_target_urls() -> List[str]:
+    token = (os.getenv("API_TOKEN") or "").strip()
+    if not token:
+        return []
+
+    configured_urls = (os.getenv("DRAGINO_TARGET_URLS") or "").strip()
+    if configured_urls:
+        return [entry.strip() for entry in configured_urls.split(",") if entry.strip()]
+
+    configured_url = (os.getenv("DRAGINO_TARGET_URL") or "").strip()
+    if configured_url:
+        return [configured_url]
+
+    return [f"https://api.progeo.com/v1/device/sample/imei/?token={token}"]
 
 
 def fetch_input_text(url: str) -> str:
@@ -93,9 +107,14 @@ def collect_matching_payloads(text: str) -> List[Dict[str, Any]]:
 
 
 class Command(BaseCommand):
-    help = 'Just a simple ping command to check if the management command system is working'
+    help = "Just a simple ping command to check if the management command system is working"
 
     def handle(self, *args, **options):
+        target_urls = build_target_urls()
+        if not target_urls:
+            print("Failed to forward payload: missing API_TOKEN and no DRAGINO_TARGET_URL/DRAGINO_TARGET_URLS configured")
+            return
+
         try:
             text = fetch_input_text(INPUT_URL)
         except (HTTPError, URLError, TimeoutError) as exc:
@@ -103,15 +122,23 @@ class Command(BaseCommand):
             return
 
         payloads = collect_matching_payloads(text)
-    
+
         for payload in payloads:
             content = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-            #okaylog(f"Forwarding content: {content.decode('utf-8')}")
-            forward_request = Request(TARGET_URL, data=content, headers={"Content-Type": "application/json"})
+            last_error: Optional[Exception] = None
 
-            try:
-                with urlopen(forward_request, timeout=30) as response:
-                    response_body = response.read().decode("utf-8", errors="replace")
-                    dlog(f"Response: {response_body}")
-            except (HTTPError, URLError, TimeoutError) as exc:
-                print(f"Failed to forward payload: {exc}: {TARGET_URL}")
+            for target_url in target_urls:
+                forward_request = Request(target_url, data=content, headers={"Content-Type": "application/json"})
+
+                try:
+                    with urlopen(forward_request, timeout=30) as response:
+                        response_body = response.read().decode("utf-8", errors="replace")
+                        dlog(f"Response from {target_url}: {response_body}")
+                        last_error = None
+                        break
+                except (HTTPError, URLError, TimeoutError) as exc:
+                    last_error = exc
+                    dlog(f"Forwarding failed for {target_url}: {exc}")
+
+            if last_error is not None:
+                print(f"Failed to forward payload after trying {len(target_urls)} target(s): {last_error}")
