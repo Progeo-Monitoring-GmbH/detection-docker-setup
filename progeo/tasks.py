@@ -274,10 +274,14 @@ def identify_device(ip: str):
     return msg
 
 @shared_task
-def evaluate_measurement(measurement_id: int):
+def evaluate_measurement(measurement_id: int, account_id: int = None):
     from progeo.v1.models import ProgeoMeasurePoint, ProgeoMeasurement
 
-    measurement = ProgeoMeasurement.objects.filter(pk=measurement_id).first()
+    queryset = ProgeoMeasurement.objects
+    if account_id is not None:
+        queryset = queryset.filter(device__location__account_id=account_id)
+
+    measurement = queryset.filter(pk=measurement_id).first()
     if not measurement:
         raise ValueError(f"Measurement with id {measurement_id} not found")
 

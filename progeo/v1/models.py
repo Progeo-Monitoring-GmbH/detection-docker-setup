@@ -241,6 +241,7 @@ class ProgeoDevice(ProgeoModel, auto_prefetch.Model):
         IMEI = "imei", "imei"
         SMARTBOX = "smartbox", "smartbox"
         NODE = "node", "node"
+        LEGACY = "legacy", "legacy"
 
     class Resistance(models.IntegerChoices):
         DEFAULT_100K = 136  # 100K = 0x88

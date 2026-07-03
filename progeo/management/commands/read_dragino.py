@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from progeo.helper.basics import read_env
+from progeo.helper.basics import dlog, read_env
 from progeo.tests.settings import BASE_DIR
 from django.core.management.base import BaseCommand
 from progeo.helper.basics import okaylog
@@ -108,11 +108,12 @@ class Command(BaseCommand):
     
         for payload in payloads:
             content = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            #okaylog(f"Forwarding content: {content.decode('utf-8')}")
             forward_request = Request(TARGET_URL, data=content, headers={"Content-Type": "application/json"})
 
             try:
                 with urlopen(forward_request, timeout=30) as response:
                     response_body = response.read().decode("utf-8", errors="replace")
-                    print(f"Forwarded payload: {response_body}")
+                    dlog(f"Response: {response_body}")
             except (HTTPError, URLError, TimeoutError) as exc:
                 print(f"Failed to forward payload: {exc}: {TARGET_URL}")

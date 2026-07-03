@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import List
 import json
 from django.utils import timezone
-
+ 
 @dataclass
 class DataMeasurement:
     project_id: int
@@ -136,13 +136,29 @@ def parse_sample_timestamp(timestamp_value):
         return timezone.make_aware(parsed, timezone.get_current_timezone())
     return parsed
 
-    
+def is_imei(value):
+    if not isinstance(value, str):
+        return False
+    text = value.strip()
+    if len(text) != 15 or not text.isdigit():
+        return False
+    return True
+
+def get_device_type(measurement, device_id) -> ProgeoDevice.DeviceType:
+    if is_imei(device_id):
+        return ProgeoDevice.DeviceType.IMEI
+    elif isinstance(measurement, DataMeasurement):
+        return ProgeoDevice.DeviceType.SMARTBOX
+    elif isinstance(measurement, dict):
+        return ProgeoDevice.DeviceType.LEGACY
+
 def save_measurement_from_legacy_data(measurement, device_id: str, battery_V: int = None, last_battery_percentage: int = None):
     db_name = "default"
     device, created = ProgeoDevice.objects.using(db_name).get_or_create(raw_hash=device_id)
 
     if created:
         device.device_ip = None
+        device.type = get_device_type(measurement, device_id)
         device.save(using=db_name)
 
 

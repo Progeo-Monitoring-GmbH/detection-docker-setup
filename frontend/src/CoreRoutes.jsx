@@ -3,6 +3,7 @@ import { Route, Routes } from 'react-router';
 import { WebSocketProvider } from './components/ws/websocketContext';
 
 const Navbar = React.lazy(() => import('./components/navbar/Navbar'));
+const NavbarEmpty = React.lazy(() => import('./components/navbar/NavbarEmpty'));
 const LoginForm = React.lazy(() => import('./components/auth/LoginForm'));
 const TokenTransit = React.lazy(() => import('./main/TokenTransit'));
 const BackupView = React.lazy(() => import('./main/BackupView'));
@@ -24,6 +25,7 @@ const DisplayIMEIDevices = React.lazy(
   () => import('./main/DisplayIMEIDevices.tsx'),
 );
 const AdminPanel = React.lazy(() => import('./main/AdminPanel.tsx'));
+const UserProfile = React.lazy(() => import('./main/UserProfile.tsx'));
 
 const CoreRoutes = () => {
   return (
@@ -58,8 +60,11 @@ const CoreRoutes = () => {
       />
       <Route
         path="/devices/imei/display/"
-        element={<Navbar act={'imei'} content={<DisplayIMEIDevices />} />}
+        element={
+          <NavbarEmpty act={'measure'} content={<DisplayIMEIDevices />} />
+        }
       />
+      <Route path="/user/profile/" element={<UserProfile />} />
 
       <Route
         path="/device/:id/update/"

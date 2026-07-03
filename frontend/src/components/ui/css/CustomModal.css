@@ -1,7 +1,12 @@
 .wide-modal {
-    max-width: 75% !important;
+  max-width: 75% !important;
+}
+
+.user-profile-modal {
+  width: 50vw;
+  max-width: min(90vw, 1200px) !important;
 }
 
 .modalErrors {
-    color: red;
+  color: red;
 }

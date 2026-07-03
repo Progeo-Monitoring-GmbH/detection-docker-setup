@@ -8,7 +8,10 @@ from django.core.management import call_command
 import sys
 import asyncio
 
-from playwright.sync_api import Locator
+try:
+    from playwright.sync_api import Locator
+except ModuleNotFoundError:
+    Locator = None
 from rest_framework.test import APIClient
 
 from progeo.helper.basics import ilog, elog
@@ -77,6 +80,10 @@ def admin_client(client, admin_user):
 # Fixture to add delay automatically if 'dev' mark is present
 @pytest.fixture(scope="function", autouse=True)
 def wrap_playwright_actions(request):
+    if Locator is None:
+        yield
+        return
+
     # Get the helper function for adding delay
     delay_if_dev = add_delay_if_dev(request)
 

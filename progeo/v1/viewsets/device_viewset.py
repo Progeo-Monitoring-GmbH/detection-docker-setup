@@ -35,11 +35,31 @@ class DeviceViewSet(ProgeoModalViewSet):
     authentication_classes = [SessionAuthentication, JWTAuthentication, TokenAuthentication]
     permission_classes = [IsAuthenticated]
 
+    @staticmethod
+    def _resolve_request_account(request):
+        account = getattr(request, "account", None)
+        user = getattr(request, "user", None)
+
+        if not user:
+            return account or _get_controller_account()
+
+        if user.is_staff or user.is_superuser:
+            return account or _get_controller_account()
+
+        if account and account.users.filter(pk=user.pk).exists():
+            return account
+
+        user_account = user.accounts.order_by("id").first()
+        if user_account:
+            return user_account
+
+        return account or _get_controller_account()
+
     def list(self, request, *args, **kwargs):
         return super(DeviceViewSet, self).list(request, no_cache=True, *args, **kwargs)
 
     def get_queryset(self):
-        account = getattr(self.request, "account", None) or _get_controller_account()
+        account = self._resolve_request_account(self.request)
         ilog("DeviceViewSet: get_queryset called | account:", account)
 
         if not account:
@@ -71,8 +91,8 @@ class DeviceViewSet(ProgeoModalViewSet):
         return RequestSuccess({"data": request.data, "measurement": asdict(measurement)})
     
 
-    @action(detail=False, url_path="sample/field", authentication_classes=[LimitedTokenAuthentication], methods=["POST"])
-    def catch_legacy_field_data(self, request, *args, **kwargs):
+    @action(detail=False, url_path="sample/imei", authentication_classes=[LimitedTokenAuthentication], methods=["POST"])
+    def catch_legacy_imei_data(self, request, *args, **kwargs):
 
         # Accept telemetry body where sample values are nested under payload.value.
         if isinstance(request.data.get("payload"), dict):
@@ -85,7 +105,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         resistance_rows = []
         if isinstance(raw_values, dict):
             series_keys = [key for key in raw_values.keys() if str(key).isdigit()]
-            print(f"DeviceViewSet: catch_legacy_field_data | series_keys: {series_keys} | raw_values: {raw_values}")
+            ilog(f"catch_legacy_imei_data | series_keys: {series_keys} | raw_values: {raw_values}", tag="[IMEI]")
             for key in sorted(series_keys, key=int):
                 row = raw_values.get(key)
                 if not isinstance(row, (list, tuple)) or len(row) < 2:
@@ -118,14 +138,14 @@ class DeviceViewSet(ProgeoModalViewSet):
                     "timestamp": ts,
                     **result,
                 })
-                ilog(f"DeviceViewSet: catch_legacy_field_data | index: {key} | row: {row} | result: {result}", tag="[FIELD]")
+                ilog(f"catch_legacy_imei_data | index: {key} | row: {row} | result: {result}", tag="[IMEI]")
 
         if not samples and isinstance(raw_values, list):
             for value in raw_values:
                 try:
                     samples.append(float(value))
                 except (TypeError, ValueError):
-                    elog(f"Missmatch for value: {value}")
+                    elog(f"Missmatch for value: {value}", tag="[IMEI]")
                     continue
 
         device_id = raw_values.get("IMEI", "legacy-field-unknown")
@@ -180,8 +200,6 @@ class DeviceViewSet(ProgeoModalViewSet):
         if not sample:
             return RequestFailed({"reason": "No sample provided"})
         
-
-
         data = {
             "project_id": project_id,
             "sample": sample,
@@ -199,7 +217,7 @@ class DeviceViewSet(ProgeoModalViewSet):
     @calc_runtime
     @action(detail=False, url_path="imei/display", methods=["GET"])
     def measurements_imei_display(self, request, *args, **kwargs):
-        account = getattr(request, "account", None) or _get_controller_account()
+        account = self._resolve_request_account(request)
         db_name = account.db_name if account else "default"
         now = timezone.now()
         min_valid_updated = now.replace(
