@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React from 'react';
 import {
   Button,
   Card,
@@ -13,6 +13,7 @@ import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
+import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
 import {
   showErrorBar,
@@ -102,21 +103,23 @@ type UserProfileModalProps = {
 
 export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
   const auth = useAuth();
+  const { hasPermission } = usePermissions();
   const { enqueueSnackbar } = useSnackbar();
   const { t, i18n } = useTranslation();
 
-  const [loading, setLoading] = useState(true);
-  const [isSavingSettings, setIsSavingSettings] = useState(false);
-  const [isSavingPassword, setIsSavingPassword] = useState(false);
+  const [loading, setLoading] = React.useState(true);
+  const [isSavingSettings, setIsSavingSettings] = React.useState(false);
+  const [isSavingPassword, setIsSavingPassword] = React.useState(false);
 
-  const [email, setEmail] = useState('');
-  const [language, setLanguage] = useState('de');
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = React.useState('');
+  const [language, setLanguage] = React.useState('de');
+  const [username, setUsername] = React.useState('');
 
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [newPasswordConfirm, setNewPasswordConfirm] = useState('');
+  const [currentPassword, setCurrentPassword] = React.useState('');
+  const [newPassword, setNewPassword] = React.useState('');
+  const [newPasswordConfirm, setNewPasswordConfirm] = React.useState('');
 
+  const canEditEmail = hasPermission('module_profile_mail_edit');
   const isEmailInputValid = isValidEmail(email);
 
   const passwordStrength = evaluatePasswordStrength(newPassword);
@@ -166,7 +169,7 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
     );
   };
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (!show) {
       return;
     }
@@ -297,6 +300,7 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
                     <Form.Control
                       type="email"
                       value={email}
+                      disabled={!canEditEmail}
                       isInvalid={Boolean(email) && !isEmailInputValid}
                       onChange={(event) => setEmail(event.target.value)}
                     />
@@ -422,7 +426,7 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
 
 const UserProfile = () => {
   const { t } = useTranslation();
-  const [showModal, setShowModal] = useState(true);
+  const [showModal, setShowModal] = React.useState(true);
 
   return (
     <Col>

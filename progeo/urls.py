@@ -18,7 +18,7 @@ from django.urls import include, re_path
 from django.contrib import admin
 from django.views.static import serve
 from progeo import settings, views
-from progeo.v1.viewsets.base_viewsets import AuthenticatedMediaView, ProgeoTokenObtainPairView
+from progeo.v1.viewsets.base_viewsets import AuthenticatedMediaView, ProgeoTokenObtainPairView, UserModulePermissionView
 from rest_framework_simplejwt.views import (
     TokenRefreshView, TokenBlacklistView,
 )
@@ -46,6 +46,7 @@ urlpatterns = [
     re_path(r"^api/token/logout/$", TokenBlacklistView.as_view(), name='token_logout'),
     re_path(r"^api/token/blacklist/$", TokenBlacklistView.as_view(), name='token_blacklist'),
     re_path(r"^api/token/$", ProgeoTokenObtainPairView.as_view(), name="token_obtain_pair"),
+    re_path(r"^api/auth-support/module-permissions/$", UserModulePermissionView.as_view(), name="module_permissions"),
     re_path(r"^api/", include(base_router.urls)),
 
     re_path(r"^auth/login/", views.extended_obtain_auth_token_view, name="auth_login"),

@@ -23,6 +23,23 @@ OPTIONS = [(0, "icontains"), (1, "contains"), (2, "exact")]
 
 ROTATION = [(0, "monthly"), (1, "quarter"), (2, "half"), (3, "yearly")]
 
+MODULE_PERMISSION_DEFINITIONS = (
+    ("module_navbar_enabled", "Can access navbar module"),
+    ("module_devices_enabled", "Can access devices module"),
+    ("module_devices_edit", "Can edit devices module"),
+    ("module_devices_delete", "Can delete devices module"),
+    ("module_measurements_enabled", "Can access measurements module"),
+    ("module_imei_enabled", "Can access IMEI module"),
+    ("module_backup_enabled", "Can access backup module"),
+    ("module_backup_delete", "Can delete backup module"),
+    ("module_docker_enabled", "Can access Docker module"),
+    ("module_admin_enabled", "Can access admin module"),
+    ("module_testsuite_enabled", "Can access testsuite module"),
+    ("module_profile_mail_edit", "Can edit profile mail module"),
+)
+
+MODULE_PERMISSION_CODES = tuple(code for code, _ in MODULE_PERMISSION_DEFINITIONS)
+
 
 class Durations(Enum):
     HALF_HOUR = datetime.timedelta(minutes=30)
@@ -484,3 +501,7 @@ class MfSLog(ProgeoModel, auto_prefetch.Model):
 
 # ==============================================================================================
 
+class UserModulePermissions(User):
+    class Meta:
+        proxy = True
+        permissions = MODULE_PERMISSION_DEFINITIONS

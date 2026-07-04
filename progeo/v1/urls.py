@@ -26,4 +26,5 @@ urlpatterns = [
     re_path(r'^device/', include(device_router.urls)),
     re_path(r'^status/', include(status_router.urls)),
     re_path(r'^user/', include(user_router.urls)),
+    
 ]

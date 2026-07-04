@@ -9,12 +9,12 @@ from django.utils import timezone
 from rest_framework.decorators import action
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
-from rest_framework.permissions import IsAdminUser, IsAuthenticated
+from rest_framework.permissions import IsAuthenticated
 
 from progeo.v1.helper import dlog
 from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurePoint, ProgeoMeasurement
 from progeo.v1.serializers import DeviceSerializer, ProgeoMeasurePointSerializer, ProgeoMeasurementSerializer
-from progeo.decorator import calc_runtime
+from progeo.decorator import calc_runtime, require_module_permissions
 from progeo.helper.basics import RequestSuccess, save_check_dir, RequestFailed
 from progeo.helper.docker_helper import start_cad_factory
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
@@ -100,7 +100,8 @@ class StatusViewSet(ProgeoModalViewSet):
         return tail_file(path, lines)
 
     @calc_runtime
-    @action(detail=False, url_path="admin/storage_info", permission_classes = [IsAdminUser], methods=["GET"])
+    @require_module_permissions("module_admin_enabled")
+    @action(detail=False, url_path="admin/storage_info", methods=["GET"])
     def admin_storage_info(self, request, *args, **kwargs):
         refresh = (request.query_params.get("refresh") or "").strip().lower() in {"1", "true", "yes"}
         task_id = None
@@ -131,7 +132,8 @@ class StatusViewSet(ProgeoModalViewSet):
         })
 
     @calc_runtime
-    @action(detail=False, url_path="admin/log_files", permission_classes = [IsAdminUser], methods=["GET"])
+    @require_module_permissions("module_admin_enabled")
+    @action(detail=False, url_path="admin/log_files", methods=["GET"])
     def admin_log_files(self, request, *args, **kwargs):
         requested_file = (request.query_params.get("file") or "").strip()
         lines_raw = request.query_params.get("lines")
@@ -161,6 +163,7 @@ class StatusViewSet(ProgeoModalViewSet):
         return RequestSuccess({"files": summary})
 
     @calc_runtime
+    @require_module_permissions("module_measurements_enabled")
     @action(detail=False, url_path="measurements", methods=["GET"])
     def measurements(self, request, *args, **kwargs):
         account = getattr(request, "account", None) or _get_controller_account()
@@ -210,6 +213,7 @@ class StatusViewSet(ProgeoModalViewSet):
         return RequestSuccess({"measurements": serialized, "overview_by_device": overview_by_device})
 
     @calc_runtime
+    @require_module_permissions("module_measurements_enabled")
     @action(detail=False, url_path="measurements/watch", methods=["POST"])
     def measurements_watch(self, request, *args, **kwargs):
         account = getattr(request, "account", None) or _get_controller_account()
@@ -263,6 +267,7 @@ class StatusViewSet(ProgeoModalViewSet):
         return None
 
     @calc_runtime
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
     @action(detail=False, url_path="measure_points/upload_cad", methods=["POST"])
     def upload_measure_points_from_cad(self, request, *args, **kwargs):
         account = getattr(request, "account", None) or _get_controller_account()
@@ -357,6 +362,7 @@ class StatusViewSet(ProgeoModalViewSet):
 
 
     @calc_runtime
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
     @action(detail=False, url_path="measure_points", methods=["GET", "POST"])
     def measure_points(self, request, *args, **kwargs):
         account = getattr(request, "account", None) or _get_controller_account()
@@ -415,6 +421,7 @@ class StatusViewSet(ProgeoModalViewSet):
 
 
     @calc_runtime
+    @require_module_permissions("module_devices_enabled")
     @action(detail=False, url_path="list_connected", methods=["GET"])
     def list_connected(self, request, *args, **kwargs):
         account = _get_controller_account()
@@ -455,6 +462,7 @@ class StatusViewSet(ProgeoModalViewSet):
         return RequestSuccess({"devices": DeviceSerializer(devices, many=True).data, "_raw": data})
 
     @calc_runtime
+    @require_module_permissions("module_devices_enabled")
     @action(detail=False, url_path="identify_device", methods=["GET"])
     def identify_device(self, request, *args, **kwargs):
         ip = (request.query_params.get("ip") or "").strip()
@@ -477,6 +485,7 @@ class StatusViewSet(ProgeoModalViewSet):
         })
 
     @calc_runtime
+    @require_module_permissions("module_devices_enabled")
     @action(detail=False, url_path="identify_device_result", methods=["GET"])
     def identify_device_result(self, request, *args, **kwargs):
         task_id = (request.query_params.get("task_id") or "").strip()
@@ -503,6 +512,7 @@ class StatusViewSet(ProgeoModalViewSet):
         return RequestSuccess(payload)
 
     @calc_runtime
+    @require_module_permissions("module_devices_enabled")
     @action(detail=False, url_path="devices", methods=["GET"])
     def list_device_status(self, request, *args, **kwargs):
         #account = _get_controller_account()

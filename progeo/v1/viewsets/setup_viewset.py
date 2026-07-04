@@ -14,7 +14,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from progeo.v1.helper import generate_hash
 from progeo.v1.models import Account, ProgeoMeasurement
 from progeo.v1.serializers import AccountSerializer, FileSerializer
-from progeo.decorator import calc_runtime
+from progeo.decorator import calc_runtime, require_module_permissions
 from progeo.helper.basics import RequestSuccess, delete_file, save_check_dir, RequestFailed
 from progeo.helper.cacher import search_clear_cache
 from progeo.helper.creator import create_MfS_log
@@ -108,12 +108,14 @@ class SetupViewSet(viewsets.ViewSet):
     authentication_classes = [JWTAuthentication, SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
+    @require_module_permissions("module_admin_enabled")
     @action(detail=False, url_path="cache/clear", methods=["POST"])
     def clear_cache(self, request, *args, **kwargs):
         search_clear_cache(f"/v1/{request.account.pk}/*")
         return RequestSuccess()
 
-    @action(detail=False, url_path="celery/status", permission_classes=[IsAdminUser], methods=["GET"])
+    @require_module_permissions("module_admin_enabled")
+    @action(detail=False, url_path="celery/status", methods=["GET"])
     def get_celery_status(self, request, *args, **kwargs):
         try:
             result = ping.delay()
@@ -122,7 +124,8 @@ class SetupViewSet(viewsets.ViewSet):
         except Exception as e:
             return RequestFailed({"celery": "error", "error": str(e)})
 
-    @action(detail=False, url_path="change_pw", permission_classes=[IsAdminUser], methods=["POST"])
+    @require_module_permissions("module_admin_enabled")
+    @action(detail=False, url_path="change_pw", methods=["POST"])
     def change_user_password(self, request, *args, **kwargs):
         _user = request.data.get("user")
         if not _user:

@@ -15,7 +15,7 @@ from rest_framework.permissions import IsAuthenticated
 from progeo.tasks import _flatten_numeric_values, download_device_config as download_device_config_task, upload_device_config as upload_device_config_task
 from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurement
 from progeo.v1.serializers import DeviceSerializer, ProgeoMeasurementSerializer
-from progeo.decorator import calc_runtime
+from progeo.decorator import calc_runtime, require_module_permissions
 from progeo.helper.basics import RequestSuccess, RequestFailed, elog, ilog
 from progeo.helper.creator import create_MfS_log
 from progeo.v1.creator import create_progeo_measurement_safe
@@ -55,8 +55,29 @@ class DeviceViewSet(ProgeoModalViewSet):
 
         return account or _get_controller_account()
 
+    @require_module_permissions("module_devices_enabled")
     def list(self, request, *args, **kwargs):
         return super(DeviceViewSet, self).list(request, no_cache=True, *args, **kwargs)
+
+    @require_module_permissions("module_devices_enabled")
+    def retrieve(self, request, pk=None, *args, **kwargs):
+        return super(DeviceViewSet, self).retrieve(request, pk=pk, *args, **kwargs)
+
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
+    def create(self, request, *args, **kwargs):
+        return super(DeviceViewSet, self).create(request, *args, **kwargs)
+
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
+    def update(self, request, *args, **kwargs):
+        return super(DeviceViewSet, self).update(request, *args, **kwargs)
+
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
+    def partial_update(self, request, *args, **kwargs):
+        return super(DeviceViewSet, self).partial_update(request, *args, **kwargs)
+
+    @require_module_permissions("module_devices_enabled", "module_devices_delete")
+    def destroy(self, request, *args, **kwargs):
+        return super(DeviceViewSet, self).destroy(request, *args, **kwargs)
 
     def get_queryset(self):
         account = self._resolve_request_account(self.request)
@@ -215,6 +236,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         return RequestSuccess()
 
     @calc_runtime
+    @require_module_permissions("module_imei_enabled")
     @action(detail=False, url_path="imei/display", methods=["GET"])
     def measurements_imei_display(self, request, *args, **kwargs):
         account = self._resolve_request_account(request)
@@ -295,6 +317,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         
 
     @calc_runtime
+    @require_module_permissions("module_devices_enabled")
     @action(detail=True, url_path="config/download", methods=["GET"])
     def download_config(self, request, pk=None, *args, **kwargs):
         account = getattr(request, "account", None) or _get_controller_account()
@@ -328,6 +351,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         })
 
     @calc_runtime
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
     @action(detail=True, url_path="config/upload", methods=["POST"], parser_classes=[SafeLuaUploadParser])
     def upload_config(self, request, pk=None, *args, **kwargs):
         account = getattr(request, "account", None) or _get_controller_account()
@@ -400,6 +424,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         })
 
     @calc_runtime
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
     @action(detail=False, url_path="receive", methods=["POST"])
     def receive_data(self, request, *args, **kwargs):
         device_hash = kwargs.get("device_hash")
@@ -427,6 +452,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         })
 
     @calc_runtime
+    @require_module_permissions("module_measurements_enabled")
     @action(detail=True, url_path="evaluate", methods=["POST"])
     def evaluate_measurement(self, request, pk=None, *args, **kwargs):
 
@@ -493,6 +519,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         })
 
     @calc_runtime
+    @require_module_permissions("module_measurements_enabled")
     @action(detail=True, url_path="measurements", methods=["GET"])
     def measurements(self, request, pk=None, *args, **kwargs):
         account = getattr(request, "account", None) or _get_controller_account()
@@ -519,6 +546,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         })
 
     @calc_runtime
+    @require_module_permissions("module_devices_enabled", "module_devices_delete")
     @action(detail=True, url_path="delete", methods=["POST"])
     def delete_device(self, request, pk=None, *args, **kwargs):
         account = getattr(request, "account", None) or _get_controller_account()
