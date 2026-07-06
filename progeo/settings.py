@@ -342,7 +342,7 @@ TIME_CALC_OFFSET = parse_int(os.getenv("TIME_CALC_OFFSET", 0))
 LOG_DIR = os.path.join(BASE_DIR, "logs", "backend")
 REQUEST_LOG_FILE = os.path.join(LOG_DIR, "request.log")
 
-LOGGING = {
+LOGGING_OUT = {
     "version": 1,
     "disable_existing_loggers": False,
     "filters": {
