@@ -6,7 +6,7 @@ import os
 
 from pathlib import Path
 from progeo.v1.helper import parse_int, parse_boolean, parse_split_str
-from progeo.helper.basics import flog, read_env
+from progeo.helper.basics import flog, read_env, save_check_dir
 
 BASE_DIR = Path(__file__).resolve(strict=True).parent.parent
 
@@ -340,7 +340,6 @@ SHOW_LAST_TAGS = 25
 TIME_CALC_OFFSET = parse_int(os.getenv("TIME_CALC_OFFSET", 0))
 
 LOG_DIR = os.path.join(BASE_DIR, "logs", "backend")
-os.makedirs(LOG_DIR, exist_ok=True)
 REQUEST_LOG_FILE = os.path.join(LOG_DIR, "request.log")
 
 LOGGING = {
