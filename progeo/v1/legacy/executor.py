@@ -206,7 +206,7 @@ def save_measurement_from_legacy_data(measurement, device_id: str, battery_V: in
             samples=samples,
             raw_data=data,
         )
-        if len(data["resistance_rows"]) == 1:
+        if len(data["resistance_rows"]) >= 1:
             sample = data["resistance_rows"][0]
             timestamp = sample.get("timestamp")
             parsed_timestamp = parse_sample_timestamp(timestamp)

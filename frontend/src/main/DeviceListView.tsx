@@ -16,7 +16,7 @@ const DeviceListView = () => {
   const { enqueueSnackbar } = useSnackbar();
   const ctx = useContext(WebsocketContext) || {};
   const wsMessage = ctx.wsMessage;
-  const [, setShow] = useContext(CoreModalContext);
+  const [show, setShow] = useContext(CoreModalContext);
   const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
 
   const fetchDevices = async () => {
@@ -146,7 +146,9 @@ const DeviceListView = () => {
   };
 
   const doDelete = () => {
-    if (deleteTargetId === null) return;
+    if (deleteTargetId === null) {
+      return;
+    }
     setShow((s) => ({ ...s, modalShowText: false }) as any);
     setLoading(true);
     void axiosConfig.perform_post(
