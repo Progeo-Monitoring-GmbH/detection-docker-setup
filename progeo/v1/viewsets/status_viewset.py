@@ -510,16 +510,25 @@ class StatusViewSet(ProgeoModalViewSet):
                 payload["error"] = str(async_result.result)
 
         return RequestSuccess(payload)
-
     @calc_runtime
     @require_module_permissions("module_devices_enabled")
     @action(detail=False, url_path="devices", methods=["GET"])
     def list_device_status(self, request, *args, **kwargs):
-        #account = _get_controller_account()
-        #if not account:
-        #    return RequestFailed({"reason": "No account configured"})
+        db_name = "default"
+        account = getattr(request, "account", None)
+        if not account:
+            return RequestFailed({"reason": "No account configured"})
+        
+        devices = ProgeoDevice.objects.using(db_name).select_related("location").filter(location__account=account).order_by("id")
+        data = DeviceSerializer(devices, many=True).data
+        return RequestSuccess({"devices": data})
 
-        #db_name = account.db_name or "default"
+    @calc_runtime
+    @require_module_permissions("module_devices_enabled")
+    @action(detail=False, url_path="devices/detailed", methods=["GET"])
+    # TODO extremly slow...
+    def list_device_status_detailed(self, request, *args, **kwargs):
+
         db_name = "default"
         success, connected_devices = get_connected_devices()
         if not success:

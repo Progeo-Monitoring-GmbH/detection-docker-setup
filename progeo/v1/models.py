@@ -240,7 +240,14 @@ class Account(ProgeoModel, auto_prefetch.Model):
 
 class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
     account = models.ForeignKey(Account, on_delete=models.CASCADE, null=True, blank=True)
+    name = models.CharField(max_length=255, null=True, blank=True)
+    plz = models.CharField(max_length=10, null=True, blank=True)
     address = models.CharField(max_length=255, null=True, blank=True)
+    city = models.CharField(max_length=100, null=True, blank=True)
+    manager = models.CharField(max_length=100, null=True, blank=True)
+    telefon = models.CharField(max_length=100, null=True, blank=True)
+    mail = models.EmailField(max_length=100, null=True, blank=True)
+    project_id = models.IntegerField(null=True, blank=True)
     latitude = models.FloatField(null=True, blank=True)
     longitude = models.FloatField(null=True, blank=True)
     alarm_threshold = models.IntegerField(blank=True, default=100)
@@ -248,8 +255,8 @@ class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
 
     def __str__(self):
         _id = f"[{self.pk}] " if DEBUG else ""
-        loc = f"({self.latitude}, {self.longitude})" if self.latitude and self.longitude else self.address or 'Unknown Location'
-        return f"{_id} 📍 {loc}"
+        #loc = f"({self.latitude}, {self.longitude})" if self.latitude and self.longitude else self.address or 'Unknown Location'
+        return f"{_id} 📍 {self.project_id or 'XXXX'} - {self.name or 'Unknown'}"
 
 
 class ProgeoDevice(ProgeoModel, auto_prefetch.Model):
@@ -277,7 +284,7 @@ class ProgeoDevice(ProgeoModel, auto_prefetch.Model):
     version = models.CharField(max_length=50, null=True, blank=True)
     chip_id = models.CharField(max_length=50, null=True, blank=True)
     mac = models.CharField(max_length=50, null=True, blank=True)
-    project_id = models.CharField(max_length=50, null=True, blank=True)
+    project_id = models.IntegerField(null=True, blank=True)
     device_ip = models.CharField(max_length=50, null=True, blank=True)
 
     has_internet = models.BooleanField(default=False)

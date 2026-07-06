@@ -338,3 +338,44 @@ DATA_UPLOAD_MAX_NUMBER_FIELDS = 5000
 SHOW_LAST_TAGS = 25
 
 TIME_CALC_OFFSET = parse_int(os.getenv("TIME_CALC_OFFSET", 0))
+
+LOG_DIR = os.path.join(BASE_DIR, "logs", "backend")
+os.makedirs(LOG_DIR, exist_ok=True)
+REQUEST_LOG_FILE = os.path.join(LOG_DIR, "request.log")
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "filters": {
+        "sanitize_url": {
+            "()": "progeo.logging.SanitizeURLFilter",
+        },
+    },
+    "formatters": {
+        "request_file": {
+            "format": "[%(asctime)s] [%(levelname)s] [%(name)s] %(cleaned_path)s %(message)s",
+            "datefmt": "%Y-%m-%d %H:%M:%S",
+        },
+    },
+    "handlers": {
+        "request_file": {
+            "level": "INFO",
+            "class": "logging.FileHandler",
+            "filename": REQUEST_LOG_FILE,
+            "formatter": "request_file",
+            "filters": ["sanitize_url"],
+        },
+    },
+    "loggers": {
+        "django.request": {
+            "handlers": ["request_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "django.server": {
+            "handlers": ["request_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
+}

@@ -25,6 +25,7 @@ const DisplayIMEIDevices = React.lazy(
   () => import('./main/DisplayIMEIDevices.tsx'),
 );
 const AdminPanel = React.lazy(() => import('./main/AdminPanel.tsx'));
+const LandingPage = React.lazy(() => import('./main/LandingPage.tsx'));
 
 const CoreRoutes = () => {
   return (
@@ -92,19 +93,7 @@ const CoreRoutes = () => {
         path="/backup/:account/overview/"
         element={<Navbar act={'backup'} content={<BackupView />} />}
       />
-      <Route
-        path="*"
-        element={
-          <Navbar
-            act={'device'}
-            content={
-              <WebSocketProvider url="/ws/commands/list">
-                <DeviceListView />
-              </WebSocketProvider>
-            }
-          />
-        }
-      />
+      <Route path="*" element={<LandingPage />} />
     </Routes>
   );
 };
