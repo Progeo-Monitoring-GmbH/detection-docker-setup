@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React from 'react';
 import { Card } from 'react-bootstrap';
 import Plot from 'react-plotly.js';
-import { plotSeriesColors, plotTheme } from '../../styles/plotTheme';
+import { useTranslation } from 'react-i18next';
+import { plotTheme } from '../../styles/plotTheme';
 
 export type MeasurementCompareRow = {
   id: number;
@@ -18,24 +19,12 @@ type DiffPoint = {
 
 type DiffSeries = {
   id: number;
-  label: string;
+  lastFetched: string | null;
   points: DiffPoint[];
-  color: string;
 };
 
 type MeasurementSamplesCompareChartProps = {
   rows: MeasurementCompareRow[];
-};
-
-const formatDate = (value: string | null | undefined) => {
-  if (!value) {
-    return '-';
-  }
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-  return parsed.toLocaleString();
 };
 
 const toPairAbsDiff = (
@@ -63,127 +52,195 @@ const toPairAbsDiff = (
   return points;
 };
 
+const formatDateTime = (value: string | null | undefined) => {
+  if (!value) {
+    return '-';
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat('de-DE', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(parsed);
+};
+
 const MeasurementSamplesCompareChart = (
   props: MeasurementSamplesCompareChartProps,
 ) => {
   const { rows } = props;
-  const [hiddenSeriesIds, setHiddenSeriesIds] = useState<Set<number>>(
-    new Set(),
-  );
+  const { t } = useTranslation();
 
-  const series: DiffSeries[] = useMemo(
+  const series: DiffSeries[] = React.useMemo(
     () =>
-      rows.map((row, index) => ({
+      rows.map((row) => ({
         id: row.id,
-        label: `#${row.id} | Device ${row.device} | ${formatDate(row.last_fetched)}`,
+        lastFetched: row.last_fetched,
         points: toPairAbsDiff(row.samples, row.pair_abs_values),
-        color: plotSeriesColors[index % plotSeriesColors.length],
       })),
     [rows],
   );
 
-  useEffect(() => {
-    setHiddenSeriesIds((previous) => {
-      const currentIds = new Set(series.map((entry) => entry.id));
-      const next = new Set<number>();
-      previous.forEach((id) => {
-        if (currentIds.has(id)) {
-          next.add(id);
-        }
-      });
-      return next;
-    });
-  }, [series]);
-
-  const visibleSeries = useMemo(
-    () => series.filter((entry) => !hiddenSeriesIds.has(entry.id)),
-    [series, hiddenSeriesIds],
-  );
-
-  const meanSeries = useMemo(() => {
+  const meanAndDeviationSeries = React.useMemo(() => {
     const sums: number[] = [];
+    const sumsSquared: number[] = [];
     const counts: number[] = [];
 
-    visibleSeries.forEach((entry) => {
+    series.forEach((entry) => {
       entry.points.forEach((point) => {
         const index = point.pairIndex;
         sums[index] = (sums[index] || 0) + point.value;
+        sumsSquared[index] =
+          (sumsSquared[index] || 0) + point.value * point.value;
         counts[index] = (counts[index] || 0) + 1;
       });
     });
 
     const x: number[] = [];
-    const y: number[] = [];
+    const mean: number[] = [];
+    const upper: number[] = [];
+    const lower: number[] = [];
+    const sigma: number[] = [];
+
     counts.forEach((count, index) => {
       if (!count) {
         return;
       }
+      const currentSum = sums[index] || 0;
+      const currentSumSq = sumsSquared[index] || 0;
+      const avg = currentSum / count;
+      const variance = Math.max(currentSumSq / count - avg * avg, 0);
+      const stdDev = Math.sqrt(variance);
+
       x.push(index);
-      y.push((sums[index] || 0) / count);
+      mean.push(avg);
+      sigma.push(stdDev);
+      lower.push(Math.max(avg - stdDev, 0));
+      upper.push(avg + stdDev);
     });
 
-    return { x, y };
-  }, [visibleSeries]);
+    return { x, mean, upper, lower, sigma };
+  }, [series]);
 
-  const overallVisibleMean = useMemo(() => {
-    if (!meanSeries.y.length) {
+  const overallMean = React.useMemo(() => {
+    if (!meanAndDeviationSeries.mean.length) {
       return 0;
     }
-    const sum = meanSeries.y.reduce((acc, value) => acc + value, 0);
-    return sum / meanSeries.y.length;
-  }, [meanSeries]);
+    const sum = meanAndDeviationSeries.mean.reduce(
+      (acc, value) => acc + value,
+      0,
+    );
+    return sum / meanAndDeviationSeries.mean.length;
+  }, [meanAndDeviationSeries]);
 
-  const traces = useMemo(() => {
-    const baseTraces = series.map((entry) => ({
-      type: 'scattergl' as const,
-      mode: 'lines' as const,
-      name: entry.label,
-      x: entry.points.map((point) => point.pairIndex),
-      y: entry.points.map((point) => point.value),
-      line: {
-        color: entry.color,
-        width: 2,
-      },
-      visible: hiddenSeriesIds.has(entry.id) ? 'legendonly' : true,
-      hovertemplate:
-        'Pair %{x}<br>Delta %{y:.2f}<br>' + `${entry.label}<extra></extra>`,
-    }));
+  const averageSigma = React.useMemo(() => {
+    if (!meanAndDeviationSeries.sigma.length) {
+      return 0;
+    }
+    const sum = meanAndDeviationSeries.sigma.reduce(
+      (acc, value) => acc + value,
+      0,
+    );
+    return sum / meanAndDeviationSeries.sigma.length;
+  }, [meanAndDeviationSeries]);
 
+  const pairSumSeries = React.useMemo(() => {
+    const orderedSeries = [...series].reverse();
+
+    const x = orderedSeries.map((_, index) => index);
+    const y = orderedSeries.map((entry) =>
+      entry.points.reduce((acc, point) => acc + point.value, 0),
+    );
+    const measurementDateTime = orderedSeries.map((entry) =>
+      formatDateTime(entry.lastFetched),
+    );
+
+    return { x, y, measurementDateTime };
+  }, [series]);
+
+  const traces = React.useMemo(() => {
     return [
-      ...baseTraces,
+      {
+        type: 'scatter' as const,
+        mode: 'lines' as const,
+        name: t('measurement_compare_deviation_label'),
+        x: meanAndDeviationSeries.x,
+        y: meanAndDeviationSeries.upper,
+        line: {
+          color: 'rgba(36, 74, 132, 0)',
+          width: 1,
+        },
+        hoverinfo: 'skip' as const,
+      },
+      {
+        type: 'scatter' as const,
+        mode: 'lines' as const,
+        name: t('measurement_compare_deviation_lower_bound_label'),
+        x: meanAndDeviationSeries.x,
+        y: meanAndDeviationSeries.lower,
+        line: {
+          color: 'rgba(196, 49, 151, 0)',
+          width: 1,
+        },
+        fill: 'tonexty' as const,
+        fillcolor: 'rgba(252, 122, 46, 0.31)',
+        hovertemplate: `${t('measurement_compare_pair_label')} %{x}<br>${t('measurement_compare_range_label')} %{customdata[0]:.2f} - %{customdata[1]:.2f}<extra>${t('measurement_compare_deviation_label')}</extra>`,
+        customdata: meanAndDeviationSeries.x.map((_, index) => [
+          meanAndDeviationSeries.lower[index],
+          meanAndDeviationSeries.upper[index],
+        ]),
+        showlegend: false,
+      },
       {
         type: 'scattergl' as const,
         mode: 'lines' as const,
-        name: 'Mean (visible)',
-        x: meanSeries.x,
-        y: meanSeries.y,
+        name: t('measurement_compare_mean_label'),
+        x: meanAndDeviationSeries.x,
+        y: meanAndDeviationSeries.mean,
         line: {
           color: plotTheme.brandBlue,
           width: 3,
-          dash: 'dash',
         },
-        hovertemplate:
-          'Pair %{x}<br>Visible mean %{y:.2f}<extra>Mean (visible)</extra>',
+        hovertemplate: `${t('measurement_compare_pair_label')} %{x}<br>${t('measurement_compare_mean_label')} %{y:.2f}<br>${t('measurement_compare_sigma_label')} %{customdata:.2f}<extra>${t('measurement_compare_mean_label')}</extra>`,
+        customdata: meanAndDeviationSeries.sigma,
+      },
+      {
+        type: 'scattergl' as const,
+        mode: 'lines' as const,
+        name: t('measurement_compare_pair_sum_label'),
+        x: pairSumSeries.x,
+        y: pairSumSeries.y,
+        xaxis: 'x2' as const,
+        yaxis: 'y2' as const,
+        line: {
+          color: 'rgba(44, 160, 44, 0.95)',
+          width: 2,
+        },
+        hovertemplate: `${t('measurement_compare_pair_label')} %{x}<br>${t('measurement_compare_sum_label')} %{y:.2f}<br>${t('measurement_compare_measurement_datetime_label')} %{customdata}<extra>${t('measurement_compare_pair_sum_label')}</extra>`,
+        customdata: pairSumSeries.measurementDateTime,
       },
     ];
-  }, [series, hiddenSeriesIds, meanSeries]);
+  }, [meanAndDeviationSeries, pairSumSeries, t]);
 
   return (
     <Card className="border-0 shadow-sm">
       <Card.Body>
         <div className="d-flex flex-wrap justify-content-between align-items-center mb-2">
-          <h5 className="mb-0">Sample Pair Delta Comparison</h5>
           <small className="text-muted">
-            Each point is |sample[2i] - sample[2i+1]| for one measurement.
-          </small>
-        </div>
-
-        <div className="d-flex flex-wrap justify-content-between align-items-center mb-2">
-          <small className="text-muted">
-            Selected plots: {visibleSeries.length} / {series.length}
+            {t('measurement_compare_measurements_included')}: {series.length}
           </small>
           <small className="fw-semibold text-dark">
-            Visible mean: {overallVisibleMean.toFixed(2)}
+            {t('measurement_compare_mean_avg_sigma_summary', {
+              mean: overallMean.toFixed(2),
+              avgSigma: averageSigma.toFixed(2),
+            })}
           </small>
         </div>
 
@@ -203,14 +260,33 @@ const MeasurementSamplesCompareChart = (
             plot_bgcolor: plotTheme.warmGray1,
             paper_bgcolor: plotTheme.white,
             xaxis: {
-              title: 'Pair Index',
+              title: t('measurement_compare_pair_index_axis'),
+              domain: [0, 1],
+              anchor: 'y',
               showgrid: true,
               gridcolor: plotTheme.warmGray2,
               zeroline: false,
             },
             yaxis: {
-              title: 'Absolute Delta',
+              title: t('measurement_compare_absolute_delta_axis'),
+              domain: [0.34, 1],
               rangemode: 'tozero',
+              showgrid: true,
+              gridcolor: plotTheme.warmGray2,
+              zeroline: false,
+            },
+            xaxis2: {
+              title: t('measurement_compare_pair_index_axis'),
+              domain: [0, 1],
+              anchor: 'y2',
+              showgrid: true,
+              gridcolor: plotTheme.warmGray2,
+              zeroline: false,
+            },
+            yaxis2: {
+              title: t('measurement_compare_pair_sum_axis'),
+              domain: [0, 0.24],
+              side: 'left',
               showgrid: true,
               gridcolor: plotTheme.warmGray2,
               zeroline: false,
@@ -229,36 +305,6 @@ const MeasurementSamplesCompareChart = (
               bordercolor: plotTheme.warmGray3,
               font: { color: plotTheme.white },
             },
-          }}
-          onLegendClick={(event) => {
-            const traceIndex = event.curveNumber;
-            if (traceIndex === undefined || traceIndex < 0) {
-              return false;
-            }
-            if (traceIndex >= series.length) {
-              return false;
-            }
-
-            const selectedId = series[traceIndex]?.id;
-            if (!selectedId) {
-              return false;
-            }
-
-            setHiddenSeriesIds((previous) => {
-              const next = new Set(previous);
-              if (next.has(selectedId)) {
-                next.delete(selectedId);
-              } else {
-                next.add(selectedId);
-              }
-              return next;
-            });
-
-            return false;
-          }}
-          onDoubleClick={() => {
-            setHiddenSeriesIds(new Set());
-            return false;
           }}
         />
       </Card.Body>

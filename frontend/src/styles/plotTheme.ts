@@ -1,5 +1,5 @@
 export const plotTheme = {
-  brandBlue: '#0b3659',
+  brandBlue: '#094b81',
   brandOrange: '#eb633b',
   white: '#ffffff',
   warmGray1: '#eeebeb',
