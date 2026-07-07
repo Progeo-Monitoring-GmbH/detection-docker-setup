@@ -33,6 +33,10 @@ const PERMISSION_ROUTE_MAP: Record<string, PermissionRouteConfig> = {
     target: '/device/overview/',
     allowedPrefixes: ['/device/overview', '/device/'],
   },
+  module_locations_enabled: {
+    target: '/location/overview/',
+    allowedPrefixes: ['/location/overview', '/location/'],
+  },
   module_measurements_enabled: {
     target: '/device/measure/',
     allowedPrefixes: ['/device/measure'],

@@ -20,6 +20,11 @@ const LANDING_MODULES: LandingModule[] = [
     target: '/device/overview/',
   },
   {
+    permission: 'module_locations_enabled',
+    labelKey: 'landing_module_locations',
+    target: '/location/overview/',
+  },
+  {
     permission: 'module_measurements_enabled',
     labelKey: 'landing_module_measurements',
     target: '/device/measure/',

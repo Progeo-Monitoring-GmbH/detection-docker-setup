@@ -9,6 +9,7 @@ from progeo.v1.models import (
     Account,
     Backup,
     ProgeoDevice,
+    ProgeoLocation,
     ProgeoMeasurePoint,
     ProgeoMeasurement,
 )
@@ -96,6 +97,24 @@ class DeviceSerializer(ProgeoBaseSerializer):
     @staticmethod
     def get_clazz_name(_):
         return "ProgeoDevice"
+
+
+class LocationSerializer(ProgeoBaseSerializer):
+    clazz = serializers.SerializerMethodField("get_clazz_name")
+    device_count = serializers.IntegerField(read_only=True)
+    has_device = serializers.SerializerMethodField("get_has_device")
+
+    class Meta:
+        model = ProgeoLocation
+        fields = "__all__"
+
+    @staticmethod
+    def get_clazz_name(_):
+        return "ProgeoLocation"
+
+    @staticmethod
+    def get_has_device(obj):
+        return bool(getattr(obj, "device_count", 0))
 
 
 class BackupSerializer(ProgeoBaseSerializer):

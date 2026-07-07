@@ -25,6 +25,17 @@ const Navbar = ({ act, content }) => {
           </Button>
         )}
 
+        {hasPermission('module_locations_enabled') && (
+          <Button
+            href="/location/overview/"
+            variant={act === 'location' ? 'info' : 'secondary'}
+            className="w-100 mt-2"
+            size="lg"
+          >
+            Locations
+          </Button>
+        )}
+
         {hasPermission('module_measurements_enabled') && (
           <Button
             href="/device/measure/"

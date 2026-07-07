@@ -25,6 +25,9 @@ ROTATION = [(0, "monthly"), (1, "quarter"), (2, "half"), (3, "yearly")]
 
 MODULE_PERMISSION_DEFINITIONS = (
     ("module_navbar_enabled", "Can access navbar module"),
+    ("module_locations_enabled", "Can access locations module"),
+    ("module_locations_edit", "Can edit locations module"),
+    ("module_locations_delete", "Can delete locations module"),
     ("module_devices_enabled", "Can access devices module"),
     ("module_devices_edit", "Can edit devices module"),
     ("module_devices_delete", "Can delete devices module"),

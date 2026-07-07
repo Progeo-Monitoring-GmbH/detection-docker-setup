@@ -29,6 +29,22 @@ type ImeiDeviceSeries = {
 
 const MAX_JSON_SAFE_RESISTANCE_OHM = 19_999_999.9;
 
+type ResistanceChannel = 'IDC' | 'VDC';
+
+const IMEI_CHANNEL_DISPLAY_NAMES: Record<string, { IDC: string; VDC: string }> =
+  {
+    '863663069840180': { IDC: 'dm1', VDC: 'dm2' },
+    '863663069826155': { IDC: 'dm3', VDC: 'dm4' },
+    '860631079044187': { IDC: 'dm5', VDC: 'dm6' },
+  };
+
+const getImeiChannelDisplayName = (
+  imei: string,
+  channel: ResistanceChannel,
+) => {
+  return IMEI_CHANNEL_DISPLAY_NAMES[imei]?.[channel] || channel;
+};
+
 const formatResistanceTooltip = (value: number) => {
   if (Math.abs(value - MAX_JSON_SAFE_RESISTANCE_OHM) < 1e-6) {
     return '∞ Ω';
@@ -222,6 +238,8 @@ const DisplayIMEIDevices = () => {
       <Row className="g-4">
         {normalized.map((device) => {
           const latest = device.points[device.points.length - 1];
+          const idcDisplayName = getImeiChannelDisplayName(device.imei, 'IDC');
+          const vdcDisplayName = getImeiChannelDisplayName(device.imei, 'VDC');
 
           return (
             <Col key={device.imei} xs={12}>
@@ -249,24 +267,22 @@ const DisplayIMEIDevices = () => {
                         y: device.plotYIdc,
                         type: 'scatter',
                         mode: 'lines+markers',
-                        name: 'IDC',
+                        name: idcDisplayName,
                         line: { color: plotTheme.brandOrange, width: 2.5 },
                         marker: { size: 6 },
                         customdata: device.plotTooltipIdc,
-                        hovertemplate:
-                          '<b>IDC</b><br>%{x|%d.%m.%Y, %H:%M:%S}<br><b>%{customdata}</b><extra></extra>',
+                        hovertemplate: `<b>${idcDisplayName}</b><br>%{x|%d.%m.%Y, %H:%M:%S}<br><b>%{customdata}</b><extra></extra>`,
                       },
                       {
                         x: device.plotXVdc,
                         y: device.plotYVdc,
                         type: 'scatter',
                         mode: 'lines+markers',
-                        name: 'VDC',
+                        name: vdcDisplayName,
                         line: { color: plotTheme.brandBlue, width: 2.5 },
                         marker: { size: 6 },
                         customdata: device.plotTooltipVdc,
-                        hovertemplate:
-                          '<b>VDC</b><br>%{x|%d.%m.%Y, %H:%M:%S}<br><b>%{customdata}</b><extra></extra>',
+                        hovertemplate: `<b>${vdcDisplayName}</b><br>%{x|%d.%m.%Y, %H:%M:%S}<br><b>%{customdata}</b><extra></extra>`,
                       },
                     ]}
                     layout={{

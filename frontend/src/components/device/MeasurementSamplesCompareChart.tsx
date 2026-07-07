@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Card } from 'react-bootstrap';
 import Plot from 'react-plotly.js';
 import { plotSeriesColors, plotTheme } from '../../styles/plotTheme';

@@ -13,6 +13,7 @@ const DevView = React.lazy(() => import('./main/DevView'));
 const WsDebugView = React.lazy(() => import('./main/WsDebugView'));
 const DockerStatusView = React.lazy(() => import('./main/DockerStatusView'));
 const DeviceListView = React.lazy(() => import('./main/DeviceListView'));
+const LocationsOverview = React.lazy(() => import('./main/LocationsOverview'));
 const DeviceDetailView = React.lazy(() => import('./main/DeviceDetailView'));
 const DeviceEditorView = React.lazy(() => import('./main/DeviceEditorView'));
 const MeasurementDetailView = React.lazy(
@@ -49,6 +50,10 @@ const CoreRoutes = () => {
             <Navbar act={'device'} content={<DeviceListView />} />
           </WebSocketProvider>
         }
+      />
+      <Route
+        path="/location/overview/"
+        element={<Navbar act={'location'} content={<LocationsOverview />} />}
       />
       <Route
         path="/device/measure"
