@@ -62,6 +62,12 @@ const LandingPage = () => {
   );
 
   useEffect(() => {
+    if (!auth.token || !auth.user) {
+      const forward = auth.location || '/';
+      auth.navigate(`/login?forward=${encodeURIComponent(forward)}`);
+      return;
+    }
+
     if (isLoading) {
       return;
     }
@@ -72,6 +78,14 @@ const LandingPage = () => {
       auth.navigate(forwardUrl);
     }
   }, [auth, isLoading, permissions]);
+
+  if (!auth.token || !auth.user) {
+    return (
+      <Row>
+        <LoadingIcon />
+      </Row>
+    );
+  }
 
   if (isLoading) {
     return (
