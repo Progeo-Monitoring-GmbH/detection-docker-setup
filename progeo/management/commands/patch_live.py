@@ -7,9 +7,10 @@ from urllib.request import urlopen
 from django.core.management.base import BaseCommand
 
 
+from progeo import settings
 from progeo.helper.basics import dlog
 from progeo.helper.geo import GeoHelper
-from progeo.v1.legacy.executor import parse_sample_timestamp
+from progeo.v1.legacy.executor import fetch_legacy_data, parse_sample_timestamp
 from progeo.v1.legacy.helper_resistance import MAX_JSON_SAFE_RESISTANCE_OHM
 from progeo.v1.models import Account, ProgeoDevice, ProgeoLocation, ProgeoMeasurement
 
@@ -120,5 +121,8 @@ class Command(BaseCommand):
                     device.project_id = project_id
                     device.location = location
                     device.save()
-                    
+
+        if patch == "fetch_legacy_data":
+            target_dir = os.path.join(settings.MEDIA_ROOT, "legacy_fetch")
+            fetch_legacy_data(target_dir=target_dir, dry_run=True)
         dlog("DONE!")

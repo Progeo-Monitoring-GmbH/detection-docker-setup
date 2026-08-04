@@ -73,6 +73,26 @@ def test_parse_legacy_data_measurement_normalizes_12bit_fields():
     assert measurement.voltage == (65535 & 0x0FFF)
 
 
+def test_parse_legacy_data_measurement_invalid_fields_become_zero():
+    payload = [
+        5709, 0, 25, 1000, 30, 1, 0, 1781790681, 0,
+        "�", "�L", "", None, "NaN", "foo", "Infinity",
+        0, 0, 0, 0, 0, 0, 0, 0, 0,
+        1, "bar", 3,
+    ]
+
+    measurement = parse_legacy_data_measurement(payload)
+
+    assert measurement.m_i == 0
+    assert measurement.m_u == 0
+    assert measurement.m_aux == 0
+    assert measurement.m_temp == 0
+    assert measurement.m_hum == 0
+    assert measurement.m_pres == 0
+    assert measurement.voltage == 0
+    assert measurement.samples[:3] == [1, 0, 3]
+
+
 @pytest.mark.django_db(databases=["unit_tests", "default"])
 def test_progeomeasurement_get_absolute_pair_values_fast_path():
     device = ProgeoDevice.objects.using("default").create(raw_hash="pair-values-device")

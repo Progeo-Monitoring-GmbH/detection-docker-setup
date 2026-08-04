@@ -1,7 +1,9 @@
 
 from datetime import datetime
+import os
 
 from rest_framework.parsers import BaseParser
+from django.conf import settings
 from progeo.v1.legacy.helper_resistance import MAX_JSON_SAFE_RESISTANCE_OHM
 from progeo.v1.models import ProgeoDevice, ProgeoMeasurement
 from dataclasses import dataclass
@@ -247,8 +249,13 @@ def _normalize_legacy_payload_to_int_list(data):
     for item in raw_items:
         text = str(item).strip()
         if not text:
+            values.append(0)
             continue
-        values.append(int(float(text)))
+
+        try:
+            values.append(int(float(text)))
+        except (TypeError, ValueError, OverflowError):
+            values.append(0)
     return values
 
 
@@ -286,6 +293,145 @@ def parse_legacy_data_measurement(data):
         mac345=values[24],
         samples=samples,
     )
+
+
+def fetch_legacy_data(target_dir=None, dry_run=True):
+    if target_dir is None:
+        target_dir = os.path.join(settings.MEDIA_ROOT, "legacy_fetch")
+
+    report = {
+        "target_dir": target_dir,
+        "dry_run": dry_run,
+        "files_total": 0,
+        "files_with_y": 0,
+        "file_read_errors": 0,
+        "lines_total": 0,
+        "y_lines_total": 0,
+        "parsed_total": 0,
+        "parse_errors": 0,
+        "saved_total": 0,
+        "save_errors": 0,
+        "input_bytes": 0,
+        "projects_found": set(),
+        "error_examples": [],
+    }
+
+    if not os.path.isdir(target_dir):
+        print(f"Legacy target directory does not exist: {target_dir}")
+        return report
+
+    def _split_timestamp_and_payload(raw_line):
+        text = (raw_line or "").strip()
+        if not text or "," not in text:
+            return None, ""
+        timestamp_text, payload = text.split(",", 1)
+        return timestamp_text.strip(), payload.strip()
+
+    def _build_parse_line(raw_line, prev_line):
+        current = (raw_line or "").strip()
+        if not current:
+            return current
+
+        current_timestamp, _ = _split_timestamp_and_payload(current)
+        prev_timestamp, prev_payload = _split_timestamp_and_payload(prev_line)
+
+        if current_timestamp and current_timestamp == prev_timestamp and prev_payload:
+            needs_separator = not current.endswith((",", ";", "&"))
+            current = f"{current}{',' if needs_separator else ''}{prev_payload}"
+
+        if not current.endswith(";"):
+            current = f"{current};"
+        return current
+
+    for root, _, files in os.walk(target_dir):
+        for file_name in sorted(files):
+            path = os.path.join(root, file_name)
+            if not os.path.isfile(path):
+                continue
+
+            report["files_total"] += 1
+            try:
+                report["input_bytes"] += os.path.getsize(path)
+            except OSError:
+                pass
+
+            file_has_y = False
+            previous_line = None
+
+            try:
+                with open(path, "r", encoding="utf-8", errors="replace") as handle:
+                    for line_index, line in enumerate(handle, start=1):
+                        report["lines_total"] += 1
+                        if "Y=" in line:
+                            file_has_y = True
+                            report["y_lines_total"] += 1
+
+                            try:
+                                parse_line = _build_parse_line(line, previous_line)
+                                y_part = parse_line.split("Y=", 1)[1]
+                                y_part = y_part.split("&", 1)[0].strip()
+                                y_part = y_part.split(";", 1)[0].strip()
+                                values = [entry.strip() for entry in y_part.split(",") if entry.strip()]
+                                measurement = parse_legacy_data_measurement(values)
+                            except (TypeError, ValueError, IndexError) as exc:
+                                report["parse_errors"] += 1
+                                if len(report["error_examples"]) < 5:
+                                    report["error_examples"].append(f"parse {path}:{line_index} -> {exc}")
+                                previous_line = line
+                                continue
+
+                            report["parsed_total"] += 1
+                            report["projects_found"].add(measurement.project_id)
+
+                            if not dry_run:
+                                try:
+                                    save_measurement_from_legacy_data(
+                                        measurement=measurement,
+                                        device_id=str(measurement.project_id),
+                                    )
+                                    report["saved_total"] += 1
+                                except Exception as exc:  # pragma: no cover
+                                    report["save_errors"] += 1
+                                    if len(report["error_examples"]) < 5:
+                                        report["error_examples"].append(f"save {path}:{line_index} -> {exc}")
+
+                        previous_line = line
+            except OSError as exc:
+                report["file_read_errors"] += 1
+                if len(report["error_examples"]) < 5:
+                    report["error_examples"].append(f"read {path} -> {exc}")
+
+            if file_has_y:
+                report["files_with_y"] += 1
+
+    projects_found_count = len(report["projects_found"])
+    print("")
+    print("=" * 72)
+    print("LEGACY DATA IMPORT REPORT")
+    print("=" * 72)
+    print(f"Mode               : {'DRY-RUN' if dry_run else 'WRITE'}")
+    print(f"Target folder      : {report['target_dir']}")
+    print("-" * 72)
+    print(f"Files total        : {report['files_total']}")
+    print(f"Files with Y=      : {report['files_with_y']}")
+    print(f"Read errors        : {report['file_read_errors']}")
+    print(f"Total lines        : {report['lines_total']}")
+    print(f"Y= lines           : {report['y_lines_total']}")
+    print("-" * 72)
+    print(f"Parsed ok          : {report['parsed_total']}")
+    print(f"Parse errors       : {report['parse_errors']}")
+    print(f"Saved              : {report['saved_total']}")
+    print(f"Save errors        : {report['save_errors']}")
+    print(f"Projects found     : {projects_found_count}")
+    print(f"Input data size    : {report['input_bytes']} bytes")
+    print("=" * 72)
+    if report["error_examples"]:
+        print("Error samples:")
+        for msg in report["error_examples"]:
+            print(f"  - {msg}")
+
+    report["projects_found"] = sorted(report["projects_found"])
+    return report
 
 
 class SafeLuaUploadParser(BaseParser):
