@@ -123,6 +123,5 @@ class Command(BaseCommand):
                     device.save()
 
         if patch == "fetch_legacy_data":
-            target_dir = os.path.join(settings.MEDIA_ROOT, "legacy_fetch")
-            fetch_legacy_data(target_dir=target_dir, dry_run=True)
+            fetch_legacy_data(dry_run=True)
         dlog("DONE!")
