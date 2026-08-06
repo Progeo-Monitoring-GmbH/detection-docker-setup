@@ -124,4 +124,23 @@ class Command(BaseCommand):
 
         if patch == "fetch_legacy_data":
             fetch_legacy_data(dry_run=True)
+
+        if patch == "fetch_device_locations":
+            devices = ProgeoDevice.objects.filter(location__isnull=True).all()
+            dlog(f"Found {len(devices)} devices without location")  
+            for device in devices:
+                if device.project_id:
+                    pid = device.project_id
+                elif device.raw_hash:
+                    pid = device.raw_hash
+                else:
+                    dlog(f"Skipping device {device.raw_hash} without project_id or raw_hash")
+                    continue
+
+                location = ProgeoLocation.objects.filter(account=device.account, project_id=pid).first()
+                if location:
+                    device.location = location
+                    device.save()
+                    dlog(f"Assigned location {location} to device {device.raw_hash}")
+
         dlog("DONE!")

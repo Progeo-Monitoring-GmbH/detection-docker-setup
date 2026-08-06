@@ -5,11 +5,13 @@ import os
 from rest_framework.parsers import BaseParser
 from django.conf import settings
 from progeo.v1.legacy.helper_resistance import MAX_JSON_SAFE_RESISTANCE_OHM
-from progeo.v1.models import ProgeoDevice, ProgeoMeasurement
+from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurement
 from dataclasses import dataclass
 from typing import List
 import json
 from django.utils import timezone
+
+from progeo.v1.viewsets.setup_viewset import _get_controller_account
  
 @dataclass
 class DataMeasurement:
@@ -162,6 +164,14 @@ def save_measurement_from_legacy_data(measurement, device_id: str, battery_V: in
         device.device_ip = None
         device.type = get_device_type(measurement, device_id)
         device.save(using=db_name)
+
+        account = _get_controller_account()
+        location, _ = ProgeoLocation.objects.using(db_name).get_or_create(
+                account=account,
+                project_id=device_id,
+            )
+        location.devices.add(device)
+        location.save(using=db_name)
 
 
     if isinstance(measurement, DataMeasurement):
