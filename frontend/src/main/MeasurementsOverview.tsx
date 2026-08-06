@@ -42,7 +42,7 @@ type DeviceOverviewRow = {
   latest_last_fetched?: string | null;
 };
 
-const WINDOW_HOURS = 48;
+const WINDOW_HOURS = 12;
 
 const formatDate = (value: string | null | undefined) => {
   if (!value) {
