@@ -137,7 +137,7 @@ class Command(BaseCommand):
                     dlog(f"Skipping device {device.raw_hash} without project_id or raw_hash")
                     continue
 
-                location = ProgeoLocation.objects.filter(account=device.account, project_id=pid).first()
+                location = ProgeoLocation.objects.filter(project_id=pid).first()
                 if location:
                     device.location = location
                     device.save()
