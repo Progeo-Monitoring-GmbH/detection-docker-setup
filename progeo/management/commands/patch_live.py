@@ -137,6 +137,13 @@ class Command(BaseCommand):
                     dlog(f"Skipping device {device.raw_hash} without project_id or raw_hash")
                     continue
 
+                if not isinstance(pid, int):
+                    try:
+                        pid = int(pid)
+                    except ValueError:
+                        dlog(f"Skipping device {device.raw_hash} with non-integer project_id: {pid}")
+                        continue
+
                 location = ProgeoLocation.objects.filter(project_id=pid).first()
                 if location:
                     device.location = location
