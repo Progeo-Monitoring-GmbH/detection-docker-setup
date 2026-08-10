@@ -1,4 +1,4 @@
-from django.db.models import Count
+from django.db.models import Count, Max
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -69,7 +69,10 @@ class LocationViewSet(ProgeoModalViewSet):
         queryset = (
             ProgeoLocation.objects.using(account.db_name)
             .filter(account=account)
-            .annotate(device_count=Count("progeodevice", distinct=True))
+            .annotate(
+                device_count=Count("progeodevice", distinct=True),
+                last_measurement_at=Max("progeodevice__progeomeasurement__last_fetched"),
+            )
             .order_by("name", "id")
         )
 
@@ -95,16 +98,23 @@ class LocationViewSet(ProgeoModalViewSet):
             return RequestFailed({"reason": "limit must be an integer"})
         limit = max(1, min(limit, 2000))
 
+        year_raw = request.query_params.get("year")
+        year = None
+        if year_raw not in [None, ""]:
+            try:
+                year = int(year_raw)
+            except (TypeError, ValueError):
+                return RequestFailed({"reason": "year must be an integer"})
+
         location = ProgeoLocation.objects.using(db_name).filter(pk=pk, account=account).first()
         if not location:
             return RequestFailed({"reason": "Location not found"})
 
-        queryset = (
-            ProgeoMeasurement.for_account(account, using=db_name, user=request.user)
-            .filter(device__location=location)
-            .select_related("device")
-            .order_by("-id")[:limit]
-        )
+        queryset = ProgeoMeasurement.for_account(account, using=db_name, user=request.user).filter(device__location=location)
+        if year:
+            queryset = queryset.select_related("device").filter(last_fetched__year=year).order_by("-id")
+        else:
+            queryset = queryset.select_related("device").order_by("-id")[:limit]
 
         serialized = ProgeoMeasurementSerializer(queryset, many=True).data
         return RequestSuccess(
@@ -112,6 +122,5 @@ class LocationViewSet(ProgeoModalViewSet):
                 "location": LocationSerializer(location).data,
                 "measurements": serialized,
                 "count": len(serialized),
-                "limit": limit,
             }
         )

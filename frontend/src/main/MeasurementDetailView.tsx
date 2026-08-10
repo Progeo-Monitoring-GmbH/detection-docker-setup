@@ -29,11 +29,18 @@ const MeasurementDetailView = () => {
 
   const filteredRows = filterMode === 'last10' ? rows.slice(0, 10) : rows;
 
-  const loadMeasurements = () => {
+  const loadMeasurements = (year?: number) => {
     setLoading(true);
+    const params = new URLSearchParams();
+    if (year) {
+      params.set('year', String(year));
+    } else {
+      params.set('limit', '300');
+    }
+
     void axiosConfig.perform_get(
       auth,
-      `/v1/device/${id}/measurements/?limit=300`,
+      `/v1/device/${id}/measurements/?${params.toString()}`,
       (response) => {
         const payload = response?.data || {};
         const nextDevice = (payload.device || null) as DeviceSummary | null;
@@ -128,7 +135,11 @@ const MeasurementDetailView = () => {
             Plotting {filteredRows.length} measurements for this device. Each
             line is one measurement.
           </p>
-          <MeasurementSamplesCompareChart rows={filteredRows} />
+          <MeasurementSamplesCompareChart
+            rows={filteredRows}
+            onLoadCurrentYear={() => loadMeasurements(new Date().getFullYear())}
+            isLoadingCurrentYear={loading}
+          />
         </>
       )}
     </Container>

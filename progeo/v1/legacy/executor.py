@@ -10,8 +10,11 @@ from dataclasses import dataclass
 from typing import List
 import json
 from django.utils import timezone
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 
 from progeo.v1.viewsets.setup_viewset import _get_controller_account
+from progeo.consumer import GRP_NAME
  
 @dataclass
 class DataMeasurement:
@@ -269,6 +272,37 @@ def _normalize_legacy_payload_to_int_list(data):
     return values
 
 
+def _broadcast_legacy_location(project_id: int):
+    channel_layer = get_channel_layer()
+    if channel_layer is None:
+        return
+
+    location = ProgeoLocation.objects.using("default").filter(project_id=project_id).first()
+    payload = {
+        "type": "legacy_location_event",
+        "project_id": project_id,
+        "parsed_at": timezone.now().isoformat(),
+        "location": None,
+    }
+
+    if location:
+        payload["location"] = {
+            "id": location.id,
+            "project_id": location.project_id,
+            "name": location.name,
+            "city": location.city,
+            "address": location.address,
+            "plz": location.plz,
+            "manager": location.manager,
+            "telefon": location.telefon,
+            "mail": location.mail,
+            "latitude": location.latitude,
+            "longitude": location.longitude,
+        }
+
+    async_to_sync(channel_layer.group_send)(GRP_NAME, payload)
+
+
 def parse_legacy_data_measurement(data):
     values = _normalize_legacy_payload_to_int_list(data)
     if len(values) < 25:
@@ -276,7 +310,7 @@ def parse_legacy_data_measurement(data):
 
     samples = values[25:]
     last = samples[-1] if samples else 0
-    return DataMeasurement(
+    measurement = DataMeasurement(
         project_id=values[0],
         m_headerlines=values[2],
         m_filetype=values[3],
@@ -303,6 +337,9 @@ def parse_legacy_data_measurement(data):
         mac345=values[24],
         samples=samples,
     )
+
+    _broadcast_legacy_location(measurement.project_id)
+    return measurement
 
 
 def fetch_legacy_data(target_dir=None, dry_run=True):

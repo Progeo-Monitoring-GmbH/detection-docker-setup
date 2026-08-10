@@ -53,6 +53,9 @@ class CommandConsumer(AsyncWebsocketConsumer):
     async def identify_device_result(self, event):
         await self.send(text_data=json.dumps(event))
 
+    async def legacy_location_event(self, event):
+        await self.send(text_data=json.dumps(event))
+
 
 # ==============================================================================================
 

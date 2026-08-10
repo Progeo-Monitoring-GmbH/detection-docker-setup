@@ -1,5 +1,5 @@
 import React from 'react';
-import { Card } from 'react-bootstrap';
+import { Button, Card } from 'react-bootstrap';
 import Plot from 'react-plotly.js';
 import { useTranslation } from 'react-i18next';
 import { plotTheme } from '../../styles/plotTheme';
@@ -25,6 +25,8 @@ type DiffSeries = {
 
 type MeasurementSamplesCompareChartProps = {
   rows: MeasurementCompareRow[];
+  onLoadCurrentYear?: (() => void) | null;
+  isLoadingCurrentYear?: boolean;
 };
 
 const toPairAbsDiff = (
@@ -75,8 +77,13 @@ const formatDateTime = (value: string | null | undefined) => {
 const MeasurementSamplesCompareChart = (
   props: MeasurementSamplesCompareChartProps,
 ) => {
-  const { rows } = props;
+  const {
+    rows,
+    onLoadCurrentYear = null,
+    isLoadingCurrentYear = false,
+  } = props;
   const { t } = useTranslation();
+  const currentYear = new Date().getFullYear();
 
   const series: DiffSeries[] = React.useMemo(
     () =>
@@ -233,9 +240,23 @@ const MeasurementSamplesCompareChart = (
     <Card className="border-0 shadow-sm">
       <Card.Body>
         <div className="d-flex flex-wrap justify-content-between align-items-center mb-2">
-          <small className="text-muted">
-            {t('measurement_compare_measurements_included')}: {series.length}
-          </small>
+          <div className="d-flex flex-wrap align-items-center gap-2">
+            <small className="text-muted">
+              {t('measurement_compare_measurements_included')}: {series.length}
+            </small>
+            {onLoadCurrentYear && (
+              <Button
+                size="sm"
+                variant="outline-primary"
+                onClick={onLoadCurrentYear}
+                disabled={isLoadingCurrentYear}
+              >
+                {isLoadingCurrentYear
+                  ? `Loading ${currentYear}...`
+                  : `Load ${currentYear}`}
+              </Button>
+            )}
+          </div>
           <small className="fw-semibold text-dark">
             {t('measurement_compare_mean_avg_sigma_summary', {
               mean: overallMean.toFixed(2),

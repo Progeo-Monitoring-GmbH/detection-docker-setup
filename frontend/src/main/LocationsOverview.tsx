@@ -88,11 +88,17 @@ const LocationsOverview = () => {
     [rows, selectedLocationId],
   );
 
-  const fetchLocationMeasurements = (locationId: number) => {
+  const fetchLocationMeasurements = (locationId: number, year?: number) => {
     setMeasurementsLoading(true);
+    const params = new URLSearchParams();
+    if (year) {
+      params.set('year', String(year));
+    } else {
+      params.set('limit', '300');
+    }
     void axiosConfig.perform_get(
       auth,
-      `/v1/location/${locationId}/measurements/?limit=300`,
+      `/v1/location/${locationId}/measurements/?${params.toString()}`,
       (response) => {
         const measurements = (response?.data?.measurements ||
           []) as MeasurementCompareRow[];
@@ -323,7 +329,19 @@ const LocationsOverview = () => {
               No measurements found for devices in this location.
             </div>
           ) : (
-            <MeasurementSamplesCompareChart rows={selectedMeasurements} />
+            <MeasurementSamplesCompareChart
+              rows={selectedMeasurements}
+              onLoadCurrentYear={
+                selectedLocationId
+                  ? () =>
+                      fetchLocationMeasurements(
+                        selectedLocationId,
+                        new Date().getFullYear(),
+                      )
+                  : null
+              }
+              isLoadingCurrentYear={measurementsLoading}
+            />
           )}
         </Card.Body>
       </Card>

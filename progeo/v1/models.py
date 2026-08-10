@@ -256,6 +256,9 @@ class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
     alarm_threshold = models.IntegerField(blank=True, default=100)
     #document = models.FileField(upload_to=UPLOAD_BASE_DIR, max_length=255, null=True, blank=True)
 
+    def get_device_count(self):
+        return ProgeoDevice.objects.filter(location=self).count()
+
     def __str__(self):
         _id = f"[{self.pk}] " if DEBUG else ""
         #loc = f"({self.latitude}, {self.longitude})" if self.latitude and self.longitude else self.address or 'Unknown Location'

@@ -8,6 +8,31 @@ from docker.errors import DockerException, NotFound
 
 from progeo.helper.basics import dlog, elog, sleep_ms
 
+
+def _resolve_media_source_for_cad_factory(client) -> str:
+    """Return Docker host source path for media bind mount used by cad_factory."""
+    explicit_source = os.getenv("DOCKER_MEDIA_SOURCE", "").strip()
+    if explicit_source:
+        return explicit_source
+
+    backend_container_name = os.getenv("DOCKER_BACKEND_CONTAINER", "progeo-backend")
+    backend_media_target = os.getenv(
+        "DOCKER_BACKEND_MEDIA_TARGET",
+        "/home/progeo/detection-docker-setup/media",
+    ).rstrip("/")
+
+    try:
+        backend = client.containers.get(backend_container_name)
+        for mount in backend.attrs.get("Mounts", []):
+            destination = str(mount.get("Destination", "")).rstrip("/")
+            source = mount.get("Source")
+            if destination == backend_media_target and source:
+                return source
+    except DockerException as exc:
+        dlog(f"Could not inspect '{backend_container_name}' mounts: {exc}", tag="[CAD-FACTORY]")
+
+    return os.path.abspath("./media")
+
 def get_docker_status() -> list:
     client = docker.from_env()
     cons = []
@@ -57,10 +82,10 @@ def start_cad_factory(cad_input: str, coord_margin: float = 0.2, skip_convert: b
     if skip_convert:
         command.append("--skip-convert")
 
-    # Mount media directory from host to match docker-compose cad_factory volume.
-    media_dir = os.path.abspath("./media")
+    # Resolve the Docker host source path so mounts work when backend runs in a container.
+    media_source = _resolve_media_source_for_cad_factory(client)
     volumes = {
-        media_dir: {
+        media_source: {
             "bind": "/workspace/media",
             "mode": "rw"
         }

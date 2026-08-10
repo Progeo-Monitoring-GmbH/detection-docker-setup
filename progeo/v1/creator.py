@@ -36,13 +36,13 @@ def _calc_hash(payload: dict) -> str:
 	return calc_hash_from_dict(payload)
 
 
-def create_account_safe(name: str, db_name: str, raw_hash: Optional[str] = None, db: str = "default") -> Tuple[Optional[Account], bool]:
+def create_account_safe(name: str, db_name: str, raw_hash: Optional[str] = None) -> Tuple[Optional[Account], bool]:
 	if not raw_hash:
 		raw_hash = _calc_hash({"name": name, "db_name": db_name})
 
 	return _safe_get_or_create(
 		Account,
-		db,
+		db_name,
 		lookup={"raw_hash": raw_hash},
 		defaults={"name": name, "db_name": db_name},
 	)
@@ -206,7 +206,7 @@ def create_mfs_log_safe(account: Account, url: str, data: Optional[dict] = None,
 
 
 def create_all_models_safe(account_name: str, db_name: str, user: Optional[User] = None) -> dict[str, Any]:
-	account, _ = create_account_safe(name=account_name, db_name=db_name, db="default")
+	account, _ = create_account_safe(name=account_name, db_name=db_name)
 	if not account:
 		return {"account": None}
 

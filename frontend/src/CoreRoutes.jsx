@@ -27,6 +27,12 @@ const DisplayIMEIDevices = React.lazy(
 );
 const AdminPanel = React.lazy(() => import('./main/AdminPanel.tsx'));
 const LandingPage = React.lazy(() => import('./main/LandingPage.tsx'));
+const FactoryVisualizerView = React.lazy(
+  () => import('./main/FactoryVisualizerView.tsx'),
+);
+const LocationsMapView = React.lazy(
+  () => import('./main/LocationsMapView.jsx'),
+);
 
 const CoreRoutes = () => {
   return (
@@ -97,6 +103,14 @@ const CoreRoutes = () => {
       <Route
         path="/backup/:account/overview/"
         element={<Navbar act={'backup'} content={<BackupView />} />}
+      />
+      <Route
+        path="/factory/"
+        element={<Navbar act={'measure'} content={<FactoryVisualizerView />} />}
+      />
+      <Route
+        path="/map/"
+        element={<Navbar act={'location'} content={<LocationsMapView />} />}
       />
       <Route path="*" element={<LandingPage />} />
     </Routes>

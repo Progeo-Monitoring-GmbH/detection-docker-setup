@@ -528,23 +528,36 @@ class DeviceViewSet(ProgeoModalViewSet):
         db_name = account.db_name if account else "default"
 
         try:
-            limit = int(request.query_params.get("limit", 200))
+            limit = int(request.query_params.get("limit", 250))
         except (TypeError, ValueError):
             return RequestFailed({"reason": "limit must be an integer"})
         limit = max(1, min(limit, 2000))
+
+        year_raw = request.query_params.get("year")
+        year = None
+        if year_raw not in [None, ""]:
+            try:
+                year = int(year_raw)
+            except (TypeError, ValueError):
+                return RequestFailed({"reason": "year must be an integer"})
 
         device = ProgeoDevice.objects.using(db_name).filter(pk=pk).first()
         if not device:
             return RequestFailed({"reason": "Device not found"})
 
-        queryset = ProgeoMeasurement.for_account(account, using=db_name, user=request.user).filter(device=device).select_related("device").order_by("-id")[:limit]
+        queryset = ProgeoMeasurement.for_account(account, using=db_name, user=request.user).filter(device=device)
+        if year:
+            queryset = queryset.filter(last_fetched__year=year)
+        else:
+            queryset = queryset.select_related("device").order_by("-id")[:limit]
         serialized = ProgeoMeasurementSerializer(queryset, many=True).data
 
         return RequestSuccess({
             "device": DeviceSerializer(device).data,
-            "measurements": serialized,
-            "count": len(serialized),
+            "count": queryset.count(),
             "limit": limit,
+            "year": year,
+            "measurements": serialized,
         })
 
     @calc_runtime

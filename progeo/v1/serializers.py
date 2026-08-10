@@ -103,6 +103,7 @@ class LocationSerializer(ProgeoBaseSerializer):
     clazz = serializers.SerializerMethodField("get_clazz_name")
     device_count = serializers.IntegerField(read_only=True)
     has_device = serializers.SerializerMethodField("get_has_device")
+    last_measurement_at = serializers.DateTimeField(read_only=True)
 
     class Meta:
         model = ProgeoLocation
@@ -114,7 +115,7 @@ class LocationSerializer(ProgeoBaseSerializer):
 
     @staticmethod
     def get_has_device(obj):
-        return bool(getattr(obj, "device_count", 0))
+        return obj.get_device_count()
 
 
 class BackupSerializer(ProgeoBaseSerializer):

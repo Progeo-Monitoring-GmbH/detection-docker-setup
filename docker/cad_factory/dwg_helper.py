@@ -24,8 +24,10 @@ from typing import Any
 import ezdxf
 from ezdxf import recover
 
+from progeo.helper.basics import sleep_ms
 
-VALID_LAYERS = ["DKS_Visualisierung", "DKS_MPLE"]
+
+VALID_LAYERS = ["DKS_MPLE", "DKS_Visualisierung"]
 
 
 def _to_jsonable(value: Any) -> Any:
@@ -432,8 +434,13 @@ def main() -> int:
             return 2
 
         points = collect_layer_polyline_points(output_path, selected_layer, coord_margin=args.coord_margin)
-        print(json.dumps(points, ensure_ascii=True))
+        result = json.dumps(points, ensure_ascii=True)
+        print(result)
+        with open(output_path.with_suffix(".json"), "w", encoding="utf-8") as json_file:
+            json_file.write(result)
+            print(f"Saved points to JSON: {json_file.name}", file=sys.stderr)
         print(f"Found {len(points)} polyline points on layer '{selected_layer}'.", file=sys.stderr)
+        sleep_ms(5000)
     except Exception as exc:  # noqa: BLE001
         print(str(exc), file=sys.stderr)
         return 1
