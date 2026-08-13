@@ -4,6 +4,7 @@ import os
 
 from rest_framework.parsers import BaseParser
 from django.conf import settings
+from progeo.v1.creator import create_progeo_alarm_safe
 from progeo.v1.legacy.helper_resistance import MAX_JSON_SAFE_RESISTANCE_OHM
 from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurement
 from dataclasses import dataclass
@@ -236,6 +237,17 @@ def save_measurement_from_legacy_data(measurement, device_id: str, battery_V: in
 
 
     measure.save(using=db_name)
+
+    alarm_threshold=device.location.alarm_threshold if device and device.location else 150
+    sensor_id, max_value = measure.evaluate(alarm_threshold=alarm_threshold)
+    if sensor_id is not None and max_value is not None:
+        create_progeo_alarm_safe(
+            measurement=measure,
+            sensor_id=sensor_id,
+            max_value=max_value,
+            threshold=alarm_threshold,
+        )
+
     return measure
         
 

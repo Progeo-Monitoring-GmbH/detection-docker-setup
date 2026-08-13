@@ -36,24 +36,28 @@ def _calc_hash(payload: dict) -> str:
 	return calc_hash_from_dict(payload)
 
 
-def create_account_safe(name: str, db_name: str, raw_hash: Optional[str] = None) -> Tuple[Optional[Account], bool]:
+def create_account_safe(name: str, db_name: Optional[str] = None, raw_hash: Optional[str] = None,
+						  db: Optional[str] = None) -> Tuple[Optional[Account], bool]:
+	target_db = db or db_name or "default"
+	if db_name is None:
+		db_name = target_db
 	if not raw_hash:
 		raw_hash = _calc_hash({"name": name, "db_name": db_name})
 
 	return _safe_get_or_create(
 		Account,
-		db_name,
+		target_db,
 		lookup={"raw_hash": raw_hash},
 		defaults={"name": name, "db_name": db_name},
 	)
 
 
 def create_progeo_location_safe(account: Account, address: str, latitude: Optional[float] = None,
-								longitude: Optional[float] = None, db: Optional[str] = None) -> Tuple[Optional[ProgeoLocation], bool]:
-	_db = db or account.db_name
+											longitude: Optional[float] = None, db: Optional[str] = None) -> Tuple[Optional[ProgeoLocation], bool]:
+	db_name = db or getattr(account, "db_name", None) or "default"
 	return _safe_get_or_create(
 		ProgeoLocation,
-		_db,
+		db_name,
 		lookup={"account": account, "address": address},
 		defaults={"latitude": latitude, "longitude": longitude},
 	)
@@ -62,7 +66,7 @@ def create_progeo_location_safe(account: Account, address: str, latitude: Option
 def create_progeo_device_safe(location: ProgeoLocation, hardware: Optional[str] = None, version: Optional[str] = None,
 							  has_internet: bool = False, data_interval: int = 3600,
 							  raw_hash: Optional[str] = None, db: Optional[str] = None) -> Tuple[Optional[ProgeoDevice], bool]:
-	_db = db or location.account.db_name
+	db_name = db or getattr(getattr(location, "account", None), "db_name", None) or "default"
 	if not raw_hash:
 		raw_hash = _calc_hash({
 			"location_id": location.pk,
@@ -73,7 +77,7 @@ def create_progeo_device_safe(location: ProgeoLocation, hardware: Optional[str] 
 
 	return _safe_get_or_create(
 		ProgeoDevice,
-		_db,
+		db_name,
 		lookup={"raw_hash": raw_hash},
 		defaults={
 			"location": location,
@@ -86,48 +90,61 @@ def create_progeo_device_safe(location: ProgeoLocation, hardware: Optional[str] 
 
 
 def create_progeo_measurement_safe(device: ProgeoDevice, raw_data: Optional[dict] = None,
-								   db: Optional[str] = None) -> Tuple[Optional[ProgeoMeasurement], bool]:
-	_db = db or device.location.account.db_name
+									   db: Optional[str] = None) -> Tuple[Optional[ProgeoMeasurement], bool]:
+	db_name = db or getattr(getattr(getattr(device, "location", None), "account", None), "db_name", None) or "default"
 	payload = raw_data or {}
-
 	return _safe_get_or_create(
 		ProgeoMeasurement,
-		_db,
+		db_name,
 		lookup={"device": device, "raw_data": payload},
 		defaults={},
 	)
 
 
 def create_progeo_measure_point_safe(device: ProgeoDevice, sensor_order: int, x: float, y: float,
-									 db: Optional[str] = None) -> Tuple[Optional[ProgeoMeasurePoint], bool]:
-	_db = db or device.location.account.db_name
-
+										   db: Optional[str] = None) -> Tuple[Optional[ProgeoMeasurePoint], bool]:
+	db_name = db or getattr(getattr(getattr(device, "location", None), "account", None), "db_name", None) or "default"
 	return _safe_get_or_create(
 		ProgeoMeasurePoint,
-		_db,
+		db_name,
 		lookup={"device": device, "sensor_order": sensor_order, "x": x, "y": y},
 		defaults={},
 	)
 
 
-def create_progeo_alarm_safe(measurement: ProgeoMeasurement, triggered: bool = False,
-							  threshold: Optional[float] = None, max_value: Optional[float] = None,
-							  evaluated_at=None, db: Optional[str] = None) -> Tuple[Optional[ProgeoAlarm], bool]:
-	_db = db or measurement.device.location.account.db_name
-	if evaluated_at is None:
-		evaluated_at = timezone.now()
+def create_progeo_alarm_safe(measurement: ProgeoMeasurement,
+							  threshold: Optional[float] = None, max_value: Optional[float] = None, triggered_at=None, status: int = 0,
+							  evaluated_by: Optional[User] = None, normalized_at=None,
+							  db: Optional[str] = "default") -> Tuple[Optional[ProgeoAlarm], bool]:
+	if measurement is None:
+		return None, False
+	
+	db_name = db
+
+	if isinstance(measurement, ProgeoMeasurement):
+		device = measurement.device
+		existing_alarms = ProgeoAlarm.objects.using(db_name).filter(device=device, normalized_at__isnull=True)
+		if len(existing_alarms) > 0:
+			for alarm in existing_alarms:
+				alarm.still_active_at = measurement.last_updated
+				alarm.save(using=db_name)
+			elog(f"Existing unnormalized alarms found for device {device.id}. Skipping creation of new alarm.", tag="[CREATOR]")
+			return None, False
 
 	return _safe_get_or_create(
 		ProgeoAlarm,
-		_db,
+		db_name,
 		lookup={
 			"measurement": measurement,
-			"triggered": triggered,
 			"threshold": threshold,
 			"max_value": max_value,
-			"evaluated_at": evaluated_at,
+			"status": status,
 		},
-		defaults={},
+		defaults={
+			"triggered_at": triggered_at,
+			"evaluated_by": evaluated_by,
+			"normalized_at": normalized_at,
+		},
 	)
 
 
@@ -157,7 +174,7 @@ def create_email_safe(sent_to: str, message: str, files: str = "", subject: str 
 def create_limited_token_safe(account: Account, user: Optional[User] = None, purpose: str = "",
 							  raw_data: Optional[dict] = None, valid_until=None,
 							  raw_hash: Optional[str] = None, db: Optional[str] = None) -> Tuple[Optional[LimitedToken], bool]:
-	_db = db or account.db_name
+	db_name = db or getattr(account, "db_name", None) or "default"
 	payload = raw_data or {}
 	if not raw_hash:
 		raw_hash = _calc_hash({"account_id": account.pk, "purpose": purpose, "raw_data": payload})
@@ -166,7 +183,7 @@ def create_limited_token_safe(account: Account, user: Optional[User] = None, pur
 
 	return _safe_get_or_create(
 		LimitedToken,
-		_db,
+		db_name,
 		lookup={"raw_hash": raw_hash},
 		defaults={
 			"account": account,

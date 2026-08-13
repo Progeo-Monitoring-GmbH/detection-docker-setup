@@ -2,6 +2,7 @@ import pytest
 from django.contrib.auth.models import User
 from django.utils import timezone
 
+from progeo.v1.creator import create_progeo_alarm_safe
 from progeo.v1.legacy.executor import DataMeasurement, parse_legacy_data_measurement, parse_sample_timestamp, save_measurement_from_legacy_data
 from progeo.v1.legacy.helper_resistance import calc_resistances
 from progeo.v1.models import ProgeoMeasurement, ProgeoDevice
@@ -150,6 +151,31 @@ def test_save_measurement_from_legacy_data_with_dict_payload():
     assert saved.samples == [1, 2, 3]
     assert saved.raw_data.get("battery_V") == 3800
     assert saved.raw_data.get("last_battery_percentage") == 82
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_create_progeo_alarm_safe_uses_current_alarm_model():
+    device = ProgeoDevice.objects.using("default").create(raw_hash="alarm-safe-device")
+    measurement = ProgeoMeasurement.objects.using("default").create(device=device, raw_data={})
+    evaluated_at = timezone.now()
+
+    alarm, created = create_progeo_alarm_safe(
+        measurement=measurement,
+        triggered=True,
+        threshold=25.5,
+        max_value=42.0,
+        evaluated_at=evaluated_at,
+        status=2,
+        db="default",
+    )
+
+    assert created is True
+    assert alarm is not None
+    assert alarm.status == 2
+    assert alarm.triggered_at == evaluated_at
+    assert alarm.evaluated_at == evaluated_at
+    assert alarm.threshold == 25.5
+    assert alarm.max_value == 42.0
 
 
 @pytest.mark.django_db(databases=["unit_tests", "default"])

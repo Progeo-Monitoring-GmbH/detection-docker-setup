@@ -83,6 +83,7 @@ ENV PORT=${BACKEND_PORT}
 RUN echo "# m h day mon day_of_week cmd" > /etc/crontabs/root
 RUN echo "*/30 * * * * /bin/sh -c '${PROJECT_ROOT}/cronjobs/half-hour.sh >> /var/log/progeo/half-hour.log 2>&1'" >> /etc/crontabs/root
 RUN echo "*/5 * * * * /bin/sh -c '${PROJECT_ROOT}/cronjobs/measure.sh >> /var/log/progeo/measure.log 2>&1'" >> /etc/crontabs/root
+RUN echo "*/7 * * * * /bin/sh -c '${PROJECT_ROOT}/cronjobs/7min.sh >> /var/log/progeo/7min.log 2>&1'" >> /etc/crontabs/root
 RUN echo "53 23 * * * /bin/sh -c '${PROJECT_ROOT}/cronjobs/daily.sh >> /var/log/progeo/daily.log 2>&1'" >> /etc/crontabs/root
 RUN echo "53 23 * * 0 /bin/sh -c '${PROJECT_ROOT}/cronjobs/weekly.sh >> /var/log/progeo/weekly.log 2>&1'" >> /etc/crontabs/root
 

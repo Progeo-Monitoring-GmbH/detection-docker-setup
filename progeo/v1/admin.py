@@ -5,7 +5,7 @@ from django.contrib.sessions.models import Session
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
 
 from progeo.helper.basics import okaylog, dlog, elog
-from progeo.v1.models import Account, EMail, LimitedToken, MfSLog, ProgeoDevice, ProgeoLocation, ProgeoMeasurePoint, ProgeoMeasurement
+from progeo.v1.models import Account, EMail, LimitedToken, MfSLog, ProgeoAlarm, ProgeoDevice, ProgeoLocation, ProgeoMeasurePoint, ProgeoMeasurement
 from django.contrib.auth.models import User
 from django import forms
 from django.forms import ModelForm
@@ -102,6 +102,9 @@ class LimitedTokenAdmin(MultiDBModelAdmin):
 class MfSLogAdmin(MultiDBModelAdmin):
     
     raw_id_fields = ["user", "account"]
+
+class ProgeoAlarmAdmin(MultiDBModelAdmin):
+    pass
 
 class ProgeoLocationAdmin(MultiDBModelAdmin):
     pass
@@ -230,6 +233,7 @@ class UserModulePermissionsAdmin(admin.ModelAdmin):
 register_models = [
     {"model": LimitedToken, "admin": LimitedTokenAdmin, "custom": True},
     {"model": MfSLog, "admin": MfSLogAdmin, "custom": True},
+    {"model": ProgeoAlarm, "admin": ProgeoAlarmAdmin, "custom": True},
     {"model": ProgeoLocation, "admin": ProgeoLocationAdmin, "custom": True},
     {"model": ProgeoDevice, "admin": ProgeoDeviceAdmin, "custom": True},
     {"model": ProgeoMeasurement, "admin": ProgeoMeasurementAdmin, "custom": True},

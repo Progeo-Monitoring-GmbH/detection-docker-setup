@@ -116,8 +116,13 @@ class DeviceViewSet(ProgeoModalViewSet):
     def catch_legacy_imei_data(self, request, *args, **kwargs):
 
         # Accept telemetry body where sample values are nested under payload.value.
-        if isinstance(request.data.get("payload"), dict):
-            raw_values = request.data.get("payload", {}).get("value")
+        raw_values = request.data.get("payload", {}).get("value") if isinstance(request.data.get("payload"), dict) else None
+        if raw_values is None:
+            raw_values = request.data.get("sample")
+        if raw_values is None:
+            raw_values = request.data.get("payload")
+        if raw_values is None:
+            raw_values = request.data
 
         if not raw_values:
             return RequestFailed({"reason": "No sample provided"})
@@ -171,9 +176,17 @@ class DeviceViewSet(ProgeoModalViewSet):
                     elog(f"Missmatch for value: {value}", tag="[IMEI]")
                     continue
 
-        device_id = raw_values.get("IMEI", "legacy-field-unknown")
-        
+        project_id = request.data.get("project_id")
+        if project_id is not None and isinstance(project_id, str) and project_id.strip() == "":
+            project_id = None
+
+        if isinstance(raw_values, dict):
+            device_id = raw_values.get("IMEI") if raw_values.get("IMEI") else (str(project_id) if project_id is not None else "legacy-field-unknown")
+        else:
+            device_id = str(project_id) if project_id is not None else "legacy-field-unknown"
+
         data = {
+            "project_id": project_id,
             "raw": raw_values,
             "resistance_rows": resistance_rows,
             "samples": samples,
@@ -185,6 +198,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         )
 
         return RequestSuccess({
+            "project_id": project_id,
             "device_id": device_id,
             "sample": samples,
             "resistance_rows": resistance_rows,

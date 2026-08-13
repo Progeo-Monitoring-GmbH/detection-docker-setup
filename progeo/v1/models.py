@@ -13,7 +13,7 @@ from progeo.v1.helper import calc_hash_from_dict
 from progeo.decorator import has_test_coverage
 from progeo.helper.basics import get_templates
 from progeo.helper.cacher import search_clear_cache
-from progeo.settings import DEBUG, BACKUP_DIR
+from progeo.settings import DEBUG, BACKUP_DIR, UPLOAD_BASE_DIR
 
 # ==============================================================================================
 
@@ -253,8 +253,14 @@ class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
     project_id = models.IntegerField(null=True, blank=True)
     latitude = models.FloatField(null=True, blank=True)
     longitude = models.FloatField(null=True, blank=True)
+
     alarm_threshold = models.IntegerField(blank=True, default=100)
-    #document = models.FileField(upload_to=UPLOAD_BASE_DIR, max_length=255, null=True, blank=True)
+
+    lageplan = models.FileField(upload_to=UPLOAD_BASE_DIR, max_length=255, null=True, blank=True)
+    offset_x = models.IntegerField(null=True, blank=True)
+    offset_y = models.IntegerField(null=True, blank=True)
+    offset_latitude = models.FloatField(null=True, blank=True)
+    offset_longitude = models.FloatField(null=True, blank=True)
 
     def get_device_count(self):
         return ProgeoDevice.objects.filter(location=self).count()
@@ -358,6 +364,14 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
 
         return []
 
+    def evaluate(self, alarm_threshold):
+        samples = self.get_sample_values()
+        for idx, sample in enumerate(samples):
+            value = int(sample)
+            if value > alarm_threshold:
+                return idx, value
+        return None, None
+
     def get_sample_values(self):
         # Prefer denormalized samples column for faster reads.
         samples = self._coerce_numeric_samples(self.samples)
@@ -410,14 +424,28 @@ class ProgeoMeasurePoint(ProgeoModel, auto_prefetch.Model):
 
 class ProgeoAlarm(ProgeoModel, auto_prefetch.Model):
     measurement = models.ForeignKey(ProgeoMeasurement, on_delete=models.CASCADE, related_name='alarms')
-    triggered = models.BooleanField(default=False)
+
+    triggered_at = models.DateTimeField(null=True, blank=True)
     threshold = models.FloatField(null=True, blank=True)
+    sensor_id = models.IntegerField(null=True, blank=True)
     max_value = models.FloatField(null=True, blank=True)
+    
     evaluated_at = models.DateTimeField(null=True, blank=True)
+    evaluated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+
+    still_active_at = models.DateTimeField(null=True, blank=True)
+    normalized_at = models.DateTimeField(null=True, blank=True)
+
+    status = models.IntegerField(choices=[(0, "neu"), (1, "quittiert"), (2, "stoerung")], default=0)
 
     def __str__(self):
         _id = f"[{self.pk}] " if DEBUG else ""
-        status = "🔔 TRIGGERED" if self.triggered else "✅ OK"
+        if self.status == 0:
+            status = "🔔 TRIGGERED"
+        elif self.status == 1:
+            status = "✅ OK"
+        elif self.status == 2:
+            status = "⚠️ STOERUNG"
         return f"{_id} {status} - Measurement {self.measurement.id}, Threshold: {self.threshold}, Max: {self.max_value}"
 
 

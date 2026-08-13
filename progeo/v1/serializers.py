@@ -115,7 +115,7 @@ class LocationSerializer(ProgeoBaseSerializer):
 
     @staticmethod
     def get_has_device(obj):
-        return obj.get_device_count()
+        return obj.get_device_count() # TODO expensive, should be cached or annotated
 
 
 class BackupSerializer(ProgeoBaseSerializer):

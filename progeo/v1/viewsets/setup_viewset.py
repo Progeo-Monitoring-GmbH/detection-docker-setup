@@ -37,7 +37,7 @@ def _get_controller_account():
         if not DJANGO_DATABASES:
             raise Exception("DJANGO_DATABASES is empty")
 
-        account, _ = create_account_safe(name=account_name, db_name=DJANGO_DATABASES[0], db="default")
+        account, _ = create_account_safe(name=account_name, db_name=DJANGO_DATABASES[0])
         if not account:
             raise Exception("Failed to get or create controller account")
 
