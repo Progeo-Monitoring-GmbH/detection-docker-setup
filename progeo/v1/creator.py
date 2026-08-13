@@ -123,7 +123,7 @@ def create_progeo_alarm_safe(measurement: ProgeoMeasurement, sensor_id: Optional
 
 	if isinstance(measurement, ProgeoMeasurement):
 		device = measurement.device
-		existing_alarms = ProgeoAlarm.objects.using(db_name).filter(device=device, normalized_at__isnull=True)
+		existing_alarms = ProgeoAlarm.objects.using(db_name).filter(measurement__device=device, normalized_at__isnull=True)
 		if len(existing_alarms) > 0:
 			for alarm in existing_alarms:
 				alarm.still_active_at = measurement.last_updated
