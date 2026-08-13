@@ -97,7 +97,7 @@ class DeviceViewSet(ProgeoModalViewSet):
 
     @action(detail=False, url_path="sample/query", authentication_classes=[LimitedTokenAuthentication], methods=["POST"])
     def catch_legacy_data_query(self, request, *args, **kwargs):
-        ilog("DeviceViewSet: catch_legacy_data_query called | request.data:", request.data, tag="[QUERY]")
+        #ilog("DeviceViewSet: catch_legacy_data_query called | request.data:", request.data, tag="[QUERY]")
         data = request.data.get("Y")
         try:
             measurement = parse_legacy_data_measurement(data)

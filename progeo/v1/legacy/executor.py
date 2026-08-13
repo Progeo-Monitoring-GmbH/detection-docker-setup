@@ -238,7 +238,7 @@ def save_measurement_from_legacy_data(measurement, device_id: str, battery_V: in
 
     measure.save(using=db_name)
 
-    alarm_threshold = device.location.alarm_threshold if device and device.location else 150
+    alarm_threshold = 1500  #device.location.alarm_threshold if device and device.location else 150
     sensor_id, max_value = measure.evaluate(alarm_threshold=alarm_threshold)
     if sensor_id is not None and max_value is not None:
         create_progeo_alarm_safe(
