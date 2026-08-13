@@ -51,12 +51,35 @@ const getLineColorFromPos = (pos: number, minPos: number, maxPos: number) => {
   return `hsl(${hue}, 88%, 46%)`;
 };
 
+const normalizePoints = (
+  rawPoints: Array<{ pos: number; x: number; y: number }>,
+): FactoryPoint[] => {
+  if (!rawPoints.length) {
+    return [];
+  }
+
+  const xs = rawPoints.map((point) => point.x);
+  const ys = rawPoints.map((point) => point.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const spanX = Math.max(maxX - minX, 1);
+  const spanY = Math.max(maxY - minY, 1);
+
+  return rawPoints.map((point) => ({
+    ...point,
+    nx: clamp((point.x - minX) / spanX, 0, 1),
+    ny: 1 - clamp((point.y - minY) / spanY, 0, 1),
+  }));
+};
+
 const parsePoints = (raw: unknown): FactoryPoint[] => {
   if (!Array.isArray(raw)) {
     throw new Error('JSON must contain an array of points.');
   }
 
-  return raw
+  const parsed = raw
     .map((item) => {
       if (!item || typeof item !== 'object') {
         return null;
@@ -68,13 +91,75 @@ const parsePoints = (raw: unknown): FactoryPoint[] => {
       const nx = Number(candidate.nx);
       const ny = Number(candidate.ny);
 
-      if ([pos, x, y, nx, ny].some((value) => Number.isNaN(value))) {
+      if ([pos, x, y].some((value) => Number.isNaN(value))) {
         return null;
       }
 
-      return { pos, x, y, nx, ny };
+      const hasNormalized = ![nx, ny].some((value) => Number.isNaN(value));
+      return {
+        pos,
+        x,
+        y,
+        nx,
+        ny,
+        hasNormalized,
+      };
     })
-    .filter((point): point is FactoryPoint => !!point);
+    .filter(
+      (
+        point,
+      ): point is {
+        pos: number;
+        x: number;
+        y: number;
+        nx: number;
+        ny: number;
+        hasNormalized: boolean;
+      } => !!point,
+    );
+
+  const needsNormalization = parsed.some((point) => !point.hasNormalized);
+
+  if (!needsNormalization) {
+    return parsed.map(({ pos, x, y, nx, ny }) => ({ pos, x, y, nx, ny }));
+  }
+
+  return normalizePoints(
+    parsed.map((point) => ({
+      pos: point.pos,
+      x: point.x,
+      y: point.y,
+    })),
+  );
+};
+
+const parseSemicolonPointsText = (text: string): FactoryPoint[] => {
+  const rawPoints: Array<{ pos: number; x: number; y: number }> = [];
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  lines.forEach((line, idx) => {
+    const parts = line.split(';').map((part) => part.trim());
+    if (parts.length < 7) {
+      return;
+    }
+
+    const x = Number(parts[5]);
+    const y = Number(parts[6]);
+    const posFromNo = Number(parts[0]);
+    const fallbackPos = idx + 1;
+    const pos = Number.isNaN(posFromNo) ? fallbackPos : posFromNo;
+
+    if (Number.isNaN(x) || Number.isNaN(y)) {
+      return;
+    }
+
+    rawPoints.push({ pos, x, y });
+  });
+
+  return normalizePoints(rawPoints);
 };
 
 const FactoryVisualizerView = () => {
@@ -149,7 +234,7 @@ const FactoryVisualizerView = () => {
     return orderedPoints.map((point) => ({
       pos: point.pos,
       px: pad + ((point.x - minX) / spanX) * drawWidth,
-      py: pad + ((point.y - minY) / spanY) * drawHeight,
+      py: pad + ((maxY - point.y) / spanY) * drawHeight,
     }));
   }, [orderedPoints]);
 
@@ -398,22 +483,29 @@ const FactoryVisualizerView = () => {
       return;
     }
 
-    if (!firstFile.name.toLowerCase().endsWith('.json')) {
+    const loweredName = firstFile.name.toLowerCase();
+    if (!loweredName.endsWith('.json') && !loweredName.endsWith('.txt')) {
       setPoints([]);
       setSourceName(firstFile.name);
-      setError('Only .json files are supported in this visualizer.');
+      setError('Only .json and .txt files are supported in this visualizer.');
       return;
     }
 
     try {
       const text = await firstFile.text();
-      const parsed = JSON.parse(text);
-      const parsedPoints = parsePoints(parsed);
+      let parsedPoints: FactoryPoint[] = [];
+
+      if (loweredName.endsWith('.txt')) {
+        parsedPoints = parseSemicolonPointsText(text);
+      } else {
+        const parsed = JSON.parse(text);
+        parsedPoints = parsePoints(parsed);
+      }
 
       if (!parsedPoints.length) {
         setPoints([]);
         setSourceName(firstFile.name);
-        setError('No valid points found. Required keys: pos, x, y, nx, ny.');
+        setError('No valid points found in file.');
         return;
       }
 
@@ -423,7 +515,9 @@ const FactoryVisualizerView = () => {
     } catch (exc) {
       setPoints([]);
       setSourceName(firstFile.name);
-      setError(`Could not parse JSON: ${(exc as Error).message}`);
+      setError(
+        `Could not parse file. Expected JSON array or semicolon TXT lines: ${(exc as Error).message}`,
+      );
     }
   };
 
@@ -433,10 +527,10 @@ const FactoryVisualizerView = () => {
         <Col>
           <Card>
             <Card.Body>
-              <Card.Title>Factory JSON Visualizer</Card.Title>
+              <Card.Title>Factory Visualizer</Card.Title>
               <Card.Text className="text-muted mb-0">
-                Import a JSON file with points and inspect normalized pixels
-                (nx/ny) and position labels (pos at x/y).
+                Import a JSON or TXT file with points and inspect normalized
+                pixels (nx/ny) and position labels (pos at x/y).
               </Card.Text>
             </Card.Body>
           </Card>
@@ -446,7 +540,7 @@ const FactoryVisualizerView = () => {
       <Row className="mb-4">
         <Col>
           <Card>
-            <Card.Header>Import JSON</Card.Header>
+            <Card.Header>Import JSON/TXT</Card.Header>
             <Card.Body>
               <RedDropbox
                 auth={auth}

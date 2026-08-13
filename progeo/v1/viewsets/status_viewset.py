@@ -266,6 +266,94 @@ class StatusViewSet(ProgeoModalViewSet):
                 return parsed
         return None
 
+    @staticmethod
+    def _parse_semicolon_points_text(raw_text: str):
+        """Parse semicolon-delimited point lines.
+
+        Expected row format (at least 7 columns):
+            id;...;...;...;project;x;y;[grid_x];[grid_y];[sensor_order]
+        """
+        rows = []
+        for line_no, line in enumerate((raw_text or "").splitlines(), start=1):
+            text = line.strip()
+            if not text:
+                continue
+
+            parts = [part.strip() for part in text.split(";")]
+            if len(parts) < 7:
+                raise ValueError(f"Line {line_no} must have at least 7 ';'-separated values")
+
+            try:
+                point_id = int(float(parts[0]))
+                project_id = int(float(parts[4]))
+                x = float(parts[5])
+                y = float(parts[6])
+            except (TypeError, ValueError):
+                raise ValueError(f"Line {line_no} has invalid id/project/x/y values")
+
+            grid_x = None
+            grid_y = None
+            sensor_order = point_id
+
+            if len(parts) > 7 and parts[7] != "":
+                try:
+                    grid_x = int(float(parts[7]))
+                except (TypeError, ValueError):
+                    raise ValueError(f"Line {line_no} has invalid grid_x value")
+
+            if len(parts) > 8 and parts[8] != "":
+                try:
+                    grid_y = int(float(parts[8]))
+                except (TypeError, ValueError):
+                    raise ValueError(f"Line {line_no} has invalid grid_y value")
+
+            if len(parts) > 9 and parts[9] != "":
+                try:
+                    sensor_order = int(float(parts[9]))
+                except (TypeError, ValueError):
+                    raise ValueError(f"Line {line_no} has invalid sensor order value")
+
+            rows.append({
+                "id": point_id,
+                "project": project_id,
+                "x": x,
+                "y": y,
+                "gx": grid_x,
+                "gy": grid_y,
+                "pos": sensor_order,
+            })
+
+        if not rows:
+            raise ValueError("No valid point rows found in text input")
+
+        min_x = min(row["x"] for row in rows)
+        max_x = max(row["x"] for row in rows)
+        min_y = min(row["y"] for row in rows)
+        max_y = max(row["y"] for row in rows)
+        span_x = max(max_x - min_x, 1.0)
+        span_y = max(max_y - min_y, 1.0)
+        reference_sensor_order = min(row["pos"] for row in rows)
+
+        points = []
+        for row in rows:
+            nx = (row["x"] - min_x) / span_x
+            ny = (row["y"] - min_y) / span_y
+            gx = row["gx"] if row["gx"] is not None else int(round(nx * 100))
+            gy = row["gy"] if row["gy"] is not None else int(round(ny * 100))
+
+            points.append({
+                "pos": row["pos"],
+                "x": row["x"],
+                "y": row["y"],
+                "nx": nx,
+                "ny": ny,
+                "gx": gx,
+                "gy": gy,
+                "reference": row["pos"] == reference_sensor_order,
+            })
+
+        return points
+
     @calc_runtime
     @require_module_permissions("module_devices_enabled", "module_devices_edit")
     @action(detail=False, url_path="measure_points/upload_cad", methods=["POST"])
@@ -287,45 +375,69 @@ class StatusViewSet(ProgeoModalViewSet):
             return RequestFailed({"reason": "Device not found"})
 
         upload = next(iter(request.FILES.values()), None)
-        if not upload:
-            return RequestFailed({"reason": "No file uploaded"})
+        points = None
+        if upload:
+            _, suffix = os.path.splitext(upload.name)
+            suffix = suffix.lower()
 
-        _, suffix = os.path.splitext(upload.name)
-        suffix = suffix.lower()
-        if suffix not in {".dwg", ".dxf"}:
-            return RequestFailed({"reason": "Only .dwg and .dxf files are supported"})
+            if suffix in {".dwg", ".dxf"}:
+                coord_margin_raw = request.query_params.get("coord_margin") or request.data.get("coord_margin") or "0.2"
+                try:
+                    coord_margin = float(coord_margin_raw)
+                except (TypeError, ValueError):
+                    coord_margin = 0.2
 
-        coord_margin_raw = request.query_params.get("coord_margin") or request.data.get("coord_margin") or "0.2"
-        try:
-            coord_margin = float(coord_margin_raw)
-        except (TypeError, ValueError):
-            coord_margin = 0.2
+                import_dir = save_check_dir(UPLOAD_DIR, "cad_imports")
+                target_name = f"{uuid4().hex}{suffix}"
+                target_path = os.path.join(import_dir, target_name)
+                with open(target_path, "wb") as handle:
+                    for chunk in upload.chunks():
+                        handle.write(chunk)
 
-        import_dir = save_check_dir(UPLOAD_DIR, "cad_imports")
-        target_name = f"{uuid4().hex}{suffix}"
-        target_path = os.path.join(import_dir, target_name)
-        with open(target_path, "wb") as handle:
-            for chunk in upload.chunks():
-                handle.write(chunk)
+                cad_input = os.path.join("media", "uploads", "cad_imports", target_name)
+                project_id = getattr(getattr(device, "location", None), "project_id", None)
+                try:
+                    exit_code, stdout, stderr = start_cad_factory(
+                        cad_input=cad_input,
+                        coord_margin=coord_margin,
+                        skip_convert=(suffix == ".dxf"),
+                        project_id=project_id,
+                        source_name=upload.name,
+                    )
+                except Exception as exc:
+                    return RequestFailed({"reason": f"Failed to start progeo-cad_factory: {exc}"})
 
-        cad_input = os.path.join("media", "uploads", "cad_imports", target_name)
-        try:
-            exit_code, stdout, stderr = start_cad_factory(
-                cad_input=cad_input,
-                coord_margin=coord_margin,
-                skip_convert=(suffix == ".dxf"),
-            )
-        except Exception as exc:
-            return RequestFailed({"reason": f"Failed to start progeo-cad_factory: {exc}"})
+                points = self._extract_json_list_from_output(stdout)
+                if points is None:
+                    return RequestFailed({
+                        "reason": "Could not parse points from progeo-cad_factory output",
+                        "exit_code": exit_code,
+                        "stdout": stdout[-2000:],
+                        "stderr": stderr[-2000:],
+                    })
+            else:
+                try:
+                    text_data = upload.read().decode("utf-8", errors="replace")
+                    points = self._parse_semicolon_points_text(text_data)
+                except ValueError as exc:
+                    return RequestFailed({"reason": f"Invalid text point format: {exc}"})
+        else:
+            text_data = request.data.get("text") or request.data.get("content")
+            if not text_data:
+                try:
+                    text_data = request.body.decode("utf-8", errors="replace")
+                except Exception:
+                    text_data = ""
 
-        points = self._extract_json_list_from_output(stdout)
-        if points is None:
-            return RequestFailed({
-                "reason": "Could not parse points from progeo-cad_factory output",
-                "exit_code": exit_code,
-                "stdout": stdout[-2000:],
-                "stderr": stderr[-2000:],
-            })
+            if not text_data.strip():
+                return RequestFailed({
+                    "reason": "No file uploaded. Provide .dwg/.dxf file or semicolon-delimited text data"
+                })
+
+            try:
+                points = self._parse_semicolon_points_text(text_data)
+            except ValueError as exc:
+                return RequestFailed({"reason": f"Invalid text point format: {exc}"})
         
 
         if not points:

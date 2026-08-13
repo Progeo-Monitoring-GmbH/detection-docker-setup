@@ -246,7 +246,7 @@ const DeviceListView = () => {
       {devices.length > 0 ? (
         <Row className="g-3">
           {devices.map((device) => (
-            <Col key={device.device.id} lg={4} md={6} sm={12}>
+            <Col key={device.id} lg={4} md={6} sm={12}>
               <DeviceCard
                 device={device}
                 onIdentify={handleIdentify}

@@ -1,6 +1,5 @@
 import { Badge, Button, Card } from 'react-bootstrap';
 import {
-  ArrowClockwise,
   Wifi,
   WifiOff,
   PencilSquare,
@@ -19,8 +18,8 @@ const DeviceCard = ({ device, onIdentify, onDelete, loading }) => {
       <Card.Body>
         <div className="d-flex justify-content-between align-items-start mb-3">
           <div>
-            <Card.Title className="mb-1">{device.device.raw_hash}</Card.Title>
-            <small className="text-muted">ID: {device.device.id}</small>
+            <Card.Title className="mb-1">{device.raw_hash}</Card.Title>
+            <small className="text-muted">ID: {device.id}</small>
           </div>
           <div>
             {device.online ? (
@@ -39,29 +38,28 @@ const DeviceCard = ({ device, onIdentify, onDelete, loading }) => {
 
         <div className="mb-3">
           <small className="d-block text-muted">
-            <strong>Hardware:</strong> {device.device.hardware || '-'}
+            <strong>Hardware:</strong> {device.hardware || '-'}
           </small>
           <small className="d-block text-muted">
-            <strong>Version:</strong> {device.device.version || '-'}
+            <strong>Version:</strong> {device.version || '-'}
           </small>
           <small className="d-block text-muted">
-            <strong>Chip ID:</strong> {device.device.chip_id || '-'}
-          </small>
-        </div>
-
-        <div className="mb-3">
-          <small className="d-block text-muted">
-            <strong>IP:</strong> {device.device.device_ip || '-'}
-          </small>
-          <small className="d-block text-muted">
-            <strong>MAC:</strong> {device.device.mac || '-'}
+            <strong>Chip ID:</strong> {device.chip_id || '-'}
           </small>
         </div>
 
         <div className="mb-3">
           <small className="d-block text-muted">
-            <strong>Last Fetched:</strong>{' '}
-            {prettyDate(device.device.last_fetched)}
+            <strong>IP:</strong> {device.device_ip || '-'}
+          </small>
+          <small className="d-block text-muted">
+            <strong>MAC:</strong> {device.mac || '-'}
+          </small>
+        </div>
+
+        <div className="mb-3">
+          <small className="d-block text-muted">
+            <strong>Last Fetched:</strong> {prettyDate(device.last_fetched)}
           </small>
         </div>
 
@@ -69,10 +67,8 @@ const DeviceCard = ({ device, onIdentify, onDelete, loading }) => {
           <Button
             variant="outline-success"
             size="sm"
-            disabled={!device.device.device_ip || loading}
-            onClick={() =>
-              onIdentify(device.device.device_ip, device.device.id)
-            }
+            disabled={!device.device_ip || loading}
+            onClick={() => onIdentify(device.device_ip, device.id)}
             title="Identify Device"
           >
             <Wifi className="me-1" />
@@ -82,7 +78,7 @@ const DeviceCard = ({ device, onIdentify, onDelete, loading }) => {
           <Button
             variant="outline-warning"
             size="sm"
-            onClick={() => navigate(`/device/${device.device.id}/update`)}
+            onClick={() => navigate(`/device/${device.id}/update`)}
             title="Update device settings"
           >
             <PencilSquare className="me-1" />
@@ -92,7 +88,7 @@ const DeviceCard = ({ device, onIdentify, onDelete, loading }) => {
           <Button
             variant="outline-info"
             size="sm"
-            onClick={() => navigate(`/device/${device.device.id}/editor/`)}
+            onClick={() => navigate(`/device/${device.id}/editor/`)}
             title="Open sensor editor"
           >
             <Image className="me-1" />
@@ -102,7 +98,7 @@ const DeviceCard = ({ device, onIdentify, onDelete, loading }) => {
           <Button
             variant="outline-primary"
             size="sm"
-            onClick={() => navigate(`/device/${device.device.id}/detail`)}
+            onClick={() => navigate(`/device/${device.id}/detail`)}
             title="Open measurement detail"
           >
             Details
@@ -111,7 +107,7 @@ const DeviceCard = ({ device, onIdentify, onDelete, loading }) => {
           <Button
             variant="outline-danger"
             size="sm"
-            onClick={() => onDelete(device.device.id)}
+            onClick={() => onDelete(device.id)}
             disabled={loading}
             title="Delete device"
           >

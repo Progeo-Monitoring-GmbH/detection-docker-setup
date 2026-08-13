@@ -16,19 +16,97 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+import time
 
 import ezdxf
 from ezdxf import recover
 
-from progeo.helper.basics import sleep_ms
+
+VALID_LAYERS = ["DKS_MPLE", "DKS_Visualisierung", "DKS_Konstruktion", "DKS_Dachaufbauten"]
 
 
-VALID_LAYERS = ["DKS_MPLE", "DKS_Visualisierung"]
+def _safe_filename_part(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "unknown"
 
+    safe_chars = []
+    for char in text:
+        if char.isalnum() or char in {"-", "_"}:
+            safe_chars.append(char)
+        else:
+            safe_chars.append("_")
+
+    safe = "".join(safe_chars).strip("._")
+    while "__" in safe:
+        safe = safe.replace("__", "_")
+    return safe or "unknown"
+
+
+def _build_output_base(input_path: Path, project_id: Any = None, source_name: str | None = None) -> Path:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    source_stem = _safe_filename_part(Path(source_name).stem if source_name else input_path.stem)
+    project_part = _safe_filename_part(project_id if project_id not in (None, "") else "unknown")
+    file_name = f"{source_stem}_project_{project_part}_{timestamp}"
+    return input_path.with_name(file_name)
+
+
+def _export_points_preview(points: list[dict[str, int]], output_base: Path) -> None:
+    if not points:
+        return
+
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"Could not initialize image export backend: {exc}") from exc
+
+    xs = [point["x"] for point in points]
+    ys = [point["y"] for point in points]
+
+    width = 10
+    height = 10
+    fig, ax = plt.subplots(figsize=(width, height), dpi=120)
+    ax.plot(xs, ys, color="#c62828", linewidth=1.6, marker="o", markersize=2.2)
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_title(output_base.name, fontsize=10)
+    ax.grid(True, linewidth=0.3, alpha=0.35)
+
+    min_x = min(xs)
+    max_x = max(xs)
+    min_y = min(ys)
+    max_y = max(ys)
+    x_pad = max((max_x - min_x) * 0.05, 1)
+    y_pad = max((max_y - min_y) * 0.05, 1)
+    ax.set_xlim(min_x - x_pad, max_x + x_pad)
+    ax.set_ylim(min_y - y_pad, max_y + y_pad)
+
+    fig.subplots_adjust(left=0.04, right=0.98, top=0.95, bottom=0.04)
+    fig.savefig(f"{output_base}.png")
+    fig.savefig(f"{output_base}.svg")
+    plt.close(fig)
+
+def sleep_ms(delay=0, msg=None):
+    """
+    sleeps for a specific amount of ms
+    :param msg:
+    :param delay: Delay as String in ms or 'None' as string
+    """
+    if msg:
+        print(f"Sleep for {delay} | From: {msg}")
+
+    if delay == 0 or (isinstance(delay, str) and delay == "---"):
+        time.sleep(3)
+    else:
+        time.sleep(int(delay) / 1000)
 
 def _to_jsonable(value: Any) -> Any:
     if isinstance(value, (str, int, float, bool)) or value is None:
@@ -318,7 +396,7 @@ def _normalize_points_with_grid(raw_points: list[dict[str, int]], coord_margin: 
         y_rep = y_lookup[y_offset]
 
         nx = 0.0 if max_x_offset <= 0 else round(x_offset / max_x_offset, 6)
-        ny = 0.0 if max_y_offset <= 0 else round(y_offset / max_y_offset, 6)
+        ny = 1.0 if max_y_offset <= 0 else 1 - round(y_offset / max_y_offset, 6)
 
         entry: dict[str, Any] = {
             "pos": index,
@@ -410,12 +488,15 @@ def main() -> int:
 
     args = parser.parse_args()
     input_path = args.input.resolve()
+    project_id = os.getenv("CAD_FACTORY_PROJECT_ID", "")
+    source_name = os.getenv("CAD_FACTORY_SOURCE_NAME", "")
 
     if not input_path.exists():
         print(f"Input file does not exist: {input_path}", file=sys.stderr)
         return 2
 
-    output_path = args.output.resolve() if args.output else input_path.with_suffix(".dxf")
+    output_path = args.output.resolve() if args.output else _build_output_base(input_path, project_id, source_name).with_suffix(".dxf")
+    output_base = output_path.with_suffix("")
 
     try:
         if not args.skip_convert:
@@ -436,11 +517,16 @@ def main() -> int:
         points = collect_layer_polyline_points(output_path, selected_layer, coord_margin=args.coord_margin)
         result = json.dumps(points, ensure_ascii=True)
         print(result)
-        with open(output_path.with_suffix(".json"), "w", encoding="utf-8") as json_file:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_base.with_suffix(".json"), "w", encoding="utf-8") as json_file:
             json_file.write(result)
             print(f"Saved points to JSON: {json_file.name}", file=sys.stderr)
+        _export_points_preview(points, output_base)
+        print(f"Saved preview image: {output_base.with_suffix('.png').name}", file=sys.stderr)
+        print(f"Saved preview image: {output_base.with_suffix('.svg').name}", file=sys.stderr)
         print(f"Found {len(points)} polyline points on layer '{selected_layer}'.", file=sys.stderr)
-        sleep_ms(5000)
+
+        sleep_ms(10000, "Sleeping for 10 seconds before exit to allow Docker logs to flush.")
     except Exception as exc:  # noqa: BLE001
         print(str(exc), file=sys.stderr)
         return 1

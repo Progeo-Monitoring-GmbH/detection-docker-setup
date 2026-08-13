@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { Button, Card, Container, Form } from 'react-bootstrap';
-import { ArrowLeft, CloudArrowUp, Floppy, PlusCircle } from 'react-bootstrap-icons';
+import {
+  ArrowLeft,
+  CloudArrowUp,
+  Floppy,
+  PlusCircle,
+} from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
@@ -23,7 +28,8 @@ const POINT_SIZE = 20;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 4;
 
-const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+const clamp = (value: number, min: number, max: number) =>
+  Math.max(min, Math.min(max, value));
 
 const DeviceEditorView = () => {
   const { id } = useParams();
@@ -38,7 +44,12 @@ const DeviceEditorView = () => {
   const wasDraggingRef = useRef(false);
   const wasPanningRef = useRef(false);
   const suppressNextCanvasClickRef = useRef(false);
-  const panStartRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
+  const panStartRef = useRef<{
+    x: number;
+    y: number;
+    panX: number;
+    panY: number;
+  } | null>(null);
 
   const [points, setPoints] = useState<CanvasPoint[]>([]);
   const [dragPointId, setDragPointId] = useState<number | null>(null);
@@ -58,15 +69,18 @@ const DeviceEditorView = () => {
       return items;
     }
 
-    const candidate = items.reduce((best, point) => {
-      if (!best) {
-        return point;
-      }
-      if (point.x < best.x || (point.x === best.x && point.y < best.y)) {
-        return point;
-      }
-      return best;
-    }, null as CanvasPoint | null);
+    const candidate = items.reduce(
+      (best, point) => {
+        if (!best) {
+          return point;
+        }
+        if (point.x < best.x || (point.x === best.x && point.y < best.y)) {
+          return point;
+        }
+        return best;
+      },
+      null as CanvasPoint | null,
+    );
 
     if (!candidate) {
       return items;
@@ -100,7 +114,10 @@ const DeviceEditorView = () => {
       return;
     }
 
-    const scale = Math.min(CANVAS_WIDTH / bgImage.width, CANVAS_HEIGHT / bgImage.height);
+    const scale = Math.min(
+      CANVAS_WIDTH / bgImage.width,
+      CANVAS_HEIGHT / bgImage.height,
+    );
     const drawWidth = bgImage.width * scale;
     const drawHeight = bgImage.height * scale;
     const offsetX = (CANVAS_WIDTH - drawWidth) / 2;
@@ -129,7 +146,10 @@ const DeviceEditorView = () => {
         setPoints(markReferencePoint(loaded));
       },
       (error) => {
-        showErrorBar(enqueueSnackbar, `Could not load points: ${error.message}`);
+        showErrorBar(
+          enqueueSnackbar,
+          `Could not load points: ${error.message}`,
+        );
       },
     );
   };
@@ -174,15 +194,22 @@ const DeviceEditorView = () => {
     }
 
     const { x, y } = getCanvasCoordinates(event.clientX, event.clientY);
-    setPoints((prev) => ([...prev, { id: prev.length + 1, x, y }]));
+    setPoints((prev) => [...prev, { id: prev.length + 1, x, y }]);
   };
 
-  const handleCanvasMouseDown = (event: React.MouseEvent<HTMLCanvasElement>) => {
+  const handleCanvasMouseDown = (
+    event: React.MouseEvent<HTMLCanvasElement>,
+  ) => {
     if (event.button !== 0 || isAddMode) {
       return;
     }
     event.preventDefault();
-    panStartRef.current = { x: event.clientX, y: event.clientY, panX: pan.x, panY: pan.y };
+    panStartRef.current = {
+      x: event.clientX,
+      y: event.clientY,
+      panX: pan.x,
+      panY: pan.y,
+    };
     wasPanningRef.current = false;
     setIsPanning(true);
   };
@@ -219,15 +246,17 @@ const DeviceEditorView = () => {
       const { x, y } = getCanvasCoordinates(event.clientX, event.clientY);
       wasDraggingRef.current = true;
 
-      setPoints((prev) => prev.map((point) => (
-        point.id === dragPointId
-          ? {
-              ...point,
-              x: clamp(x, POINT_SIZE / 2, CANVAS_WIDTH - POINT_SIZE / 2),
-              y: clamp(y, POINT_SIZE / 2, CANVAS_HEIGHT - POINT_SIZE / 2),
-            }
-          : point
-      )));
+      setPoints((prev) =>
+        prev.map((point) =>
+          point.id === dragPointId
+            ? {
+                ...point,
+                x: clamp(x, POINT_SIZE / 2, CANVAS_WIDTH - POINT_SIZE / 2),
+                y: clamp(y, POINT_SIZE / 2, CANVAS_HEIGHT - POINT_SIZE / 2),
+              }
+            : point,
+        ),
+      );
     };
 
     const onMouseUp = () => {
@@ -340,7 +369,10 @@ const DeviceEditorView = () => {
       },
       (error) => {
         setIsStoring(false);
-        showErrorBar(enqueueSnackbar, `Could not store points: ${error.message}`);
+        showErrorBar(
+          enqueueSnackbar,
+          `Could not store points: ${error.message}`,
+        );
       },
     );
   };
@@ -348,7 +380,10 @@ const DeviceEditorView = () => {
   return (
     <Container className="py-4">
       <div className="d-flex justify-content-between align-items-center mb-3">
-        <Button variant="outline-secondary" onClick={() => navigate(`/device/${id}/update`)}>
+        <Button
+          variant="outline-secondary"
+          onClick={() => navigate(`/device/${id}/update`)}
+        >
           <ArrowLeft className="me-2" />
           Back to Device
         </Button>
@@ -374,11 +409,16 @@ const DeviceEditorView = () => {
         <Card.Header className="d-flex flex-wrap gap-3 align-items-center">
           <Form.Group className="mb-0">
             <Form.Label className="mb-1">Background PNG</Form.Label>
-            <Form.Control type="file" accept="image/png" onChange={loadBackground} />
+            <Form.Control
+              type="file"
+              accept="image/png"
+              onChange={loadBackground}
+            />
           </Form.Group>
           <div className="text-muted">
             <CloudArrowUp className="me-1" />
-            Canvas {CANVAS_WIDTH}x{CANVAS_HEIGHT} | Wheel: zoom | Drag background: pan
+            Canvas {CANVAS_WIDTH}x{CANVAS_HEIGHT} | Wheel: zoom | Drag
+            background: pan
           </div>
           <div className="text-muted ms-auto">
             <PlusCircle className="me-1" />
@@ -390,6 +430,7 @@ const DeviceEditorView = () => {
             auth={auth}
             url={`/v1/status/measure_points/upload_cad/?device_id=${encodeURIComponent(String(id || ''))}`}
             accept="cad"
+            maxSizeMB={150}
             withPreview={false}
             instantFileUpload={true}
             callBackProcessing={(data) => {
@@ -401,7 +442,10 @@ const DeviceEditorView = () => {
                 reference: !!point.reference,
               }));
               setPoints(markReferencePoint(loaded));
-              showSuccessBar(enqueueSnackbar, `Imported ${loaded.length} point(s) from CAD`);
+              showSuccessBar(
+                enqueueSnackbar,
+                `Imported ${loaded.length} point(s) from CAD`,
+              );
             }}
           />
 
@@ -436,7 +480,11 @@ const DeviceEditorView = () => {
                 ref={canvasRef}
                 width={CANVAS_WIDTH}
                 height={CANVAS_HEIGHT}
-                style={{ display: 'block', width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+                style={{
+                  display: 'block',
+                  width: CANVAS_WIDTH,
+                  height: CANVAS_HEIGHT,
+                }}
                 onMouseDown={handleCanvasMouseDown}
                 onClick={handleCanvasClick}
               />
@@ -444,7 +492,12 @@ const DeviceEditorView = () => {
               <svg
                 width={CANVAS_WIDTH}
                 height={CANVAS_HEIGHT}
-                style={{ position: 'absolute', left: 0, top: 0, pointerEvents: 'none' }}
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  top: 0,
+                  pointerEvents: 'none',
+                }}
               >
                 {points.slice(1).map((point, index) => {
                   const previous = points[index];

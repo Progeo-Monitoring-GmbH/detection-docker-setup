@@ -72,7 +72,8 @@ def restart_nginx(tag=None, *args):
 
 
 def start_cad_factory(cad_input: str, coord_margin: float = 0.2, skip_convert: bool = False,
-                      timeout_seconds: int = 300) -> tuple[int, str, str]:
+                      timeout_seconds: int = 300, project_id: int | None = None,
+                      source_name: str | None = None) -> tuple[int, str, str]:
     """Run progeo-cad_factory via Docker SDK and return (exit_code, stdout, stderr)."""
     client = docker.from_env()
     base_name = os.getenv("DOCKER_BASE_IMAGE", "detection-docker-setup")
@@ -81,6 +82,11 @@ def start_cad_factory(cad_input: str, coord_margin: float = 0.2, skip_convert: b
     command = [cad_input, "--coord-margin", str(coord_margin)]
     if skip_convert:
         command.append("--skip-convert")
+
+    environment = {
+        "CAD_FACTORY_SOURCE_NAME": source_name or "",
+        "CAD_FACTORY_PROJECT_ID": "" if project_id is None else str(project_id),
+    }
 
     # Resolve the Docker host source path so mounts work when backend runs in a container.
     media_source = _resolve_media_source_for_cad_factory(client)
@@ -101,10 +107,10 @@ def start_cad_factory(cad_input: str, coord_margin: float = 0.2, skip_convert: b
             working_dir="/workspace",
             user=run_user,
             detach=True,
-            remove=False,
             stdout=True,
             stderr=True,
             volumes=volumes,
+            environment=environment,
         )
 
         wait_result = container.wait(timeout=timeout_seconds)
