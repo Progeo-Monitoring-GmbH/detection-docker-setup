@@ -238,19 +238,20 @@ def save_measurement_from_legacy_data(measurement, device_id: str, battery_V: in
 
     measure.save(using=db_name)
 
-    alarm_threshold=device.location.alarm_threshold if device and device.location else 150
+    alarm_threshold = device.location.alarm_threshold if device and device.location else 150
     sensor_id, max_value = measure.evaluate(alarm_threshold=alarm_threshold)
     if sensor_id is not None and max_value is not None:
         create_progeo_alarm_safe(
             measurement=measure,
-            sensor_id=sensor_id,
+            sensor_id=sensor_id + 1,
             max_value=max_value,
             threshold=alarm_threshold,
+            triggered_at=measure.last_updated,
+            db=db_name
         )
 
     return measure
         
-
 
 
 def _normalize_legacy_payload_to_int_list(data):

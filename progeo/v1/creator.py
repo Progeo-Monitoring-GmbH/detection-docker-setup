@@ -112,7 +112,7 @@ def create_progeo_measure_point_safe(device: ProgeoDevice, sensor_order: int, x:
 	)
 
 
-def create_progeo_alarm_safe(measurement: ProgeoMeasurement,
+def create_progeo_alarm_safe(measurement: ProgeoMeasurement, sensor_id: Optional[int] = None,
 							  threshold: Optional[float] = None, max_value: Optional[float] = None, triggered_at=None, status: int = 0,
 							  evaluated_by: Optional[User] = None, normalized_at=None,
 							  db: Optional[str] = "default") -> Tuple[Optional[ProgeoAlarm], bool]:
@@ -138,6 +138,7 @@ def create_progeo_alarm_safe(measurement: ProgeoMeasurement,
 			"measurement": measurement,
 			"threshold": threshold,
 			"max_value": max_value,
+			"sensor_id": sensor_id,
 			"status": status,
 		},
 		defaults={
