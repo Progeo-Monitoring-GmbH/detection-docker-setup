@@ -39,6 +39,8 @@ def create_MfS_log(request):
         else:
             data = request.data
 
+        del data["password"]
+
         mfs = MfSLog.objects.using(db).create(account=request.account, user=request.user, url=url, data=data)
         mfs.save(using=db)
     except Exception as e:

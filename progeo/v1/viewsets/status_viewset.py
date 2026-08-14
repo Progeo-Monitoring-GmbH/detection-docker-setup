@@ -25,7 +25,7 @@ from progeo.decorator import calc_runtime, require_module_permissions
 from progeo.helper.basics import RequestSuccess, save_check_dir, RequestFailed
 from progeo.helper.docker_helper import start_cad_factory
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
-from progeo.settings import UPLOAD_DIR, SETUP_DIR
+from progeo.settings import UPLOAD_REL_DIR, UPLOAD_DIR, SETUP_DIR
 from progeo.tasks import identify_device as identify_device_task, collect_host_storage_info
 from progeo.v1.viewsets.setup_viewset import _get_controller_account, get_latest_measurement, get_latest_alarm_measurement, ping_host_quick
 from progeo.v1.log_files_helper import (
@@ -426,7 +426,8 @@ class StatusViewSet(ProgeoModalViewSet):
         upload = next(iter(request.FILES.values()), None)
         if upload:
             _dir = save_check_dir(UPLOAD_DIR, "lageplan")
-            filename = os.path.join(_dir, f"{device.id}_f{int(time.time())}.png").replace(os.sep, "/")
+            _dir = _dir[_dir.find("media") + 6:]
+            filename = os.path.join("lageplan", f"{device.id}_{int(time.time())}.png").replace(os.sep, "/")
             with tempfile.NamedTemporaryFile() as temporary_file:
                 for chunk in upload.chunks():
                     temporary_file.write(chunk)
@@ -596,7 +597,7 @@ class StatusViewSet(ProgeoModalViewSet):
             }
             if with_lageplan:
                 lageplan = getattr(device.location, "lageplan", None)
-                response_data["lageplan"] = lageplan.url if lageplan and lageplan.name else None
+                response_data["lageplan"] = os.path.join("media", "uploads", lageplan.name) if lageplan else None
             return RequestSuccess(response_data)
 
         raw_points = request.data.get("points")

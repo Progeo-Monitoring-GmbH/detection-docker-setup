@@ -15,6 +15,7 @@ from progeo.helper.basics import RequestFailed, RequestSuccess
 from progeo.v1.models import MODULE_PERMISSION_CODES
 from progeo.v1.serializers import ProgeoTokenObtainPairSerializer
 from progeo.settings import MEDIA_ROOT
+from progeo.helper.creator import create_MfS_log
 
 
 class StandardResultsSetPagination(PageNumberPagination):
@@ -59,8 +60,9 @@ class ProgeoTokenObtainPairView(TokenObtainPairView):
 
         user = User.objects.get(username=request.data.get("username"))
         login(request, user)
-        #if not DEBUG:
-        #    send_telegram_note(f"Logged in '{user.username}' from {ip} / {is_routable=}")
+
+        create_MfS_log(request)
+
         return Response(serializer.validated_data, status=status.HTTP_200_OK)
 
 

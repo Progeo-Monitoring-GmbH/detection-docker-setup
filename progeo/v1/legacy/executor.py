@@ -238,6 +238,8 @@ def save_measurement_from_legacy_data(measurement, device_id: str, battery_V: in
 
     measure.save(using=db_name)
 
+    '''
+    # To heavy load. Evaluate via cronjob
     alarm_threshold = 1500  #device.location.alarm_threshold if device and device.location else 150
     sensor_id, max_value = measure.evaluate(alarm_threshold=alarm_threshold)
     if sensor_id is not None and max_value is not None:
@@ -249,7 +251,7 @@ def save_measurement_from_legacy_data(measurement, device_id: str, battery_V: in
             triggered_at=measure.last_updated,
             db=db_name
         )
-
+    '''
     return measure
         
 

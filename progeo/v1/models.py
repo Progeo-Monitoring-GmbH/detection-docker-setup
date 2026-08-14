@@ -259,6 +259,9 @@ class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
     lageplan = models.FileField(upload_to=UPLOAD_REL_DIR, max_length=255, null=True, blank=True)
     offset_x = models.IntegerField(null=True, blank=True)
     offset_y = models.IntegerField(null=True, blank=True)
+    scale_x = models.FloatField(default=1, blank=True)
+    scale_y = models.FloatField(default=1, blank=True)
+
     offset_latitude = models.FloatField(null=True, blank=True)
     offset_longitude = models.FloatField(null=True, blank=True)
 
@@ -415,6 +418,7 @@ class ProgeoMeasurePoint(ProgeoModel, auto_prefetch.Model):
     grid_x = models.IntegerField(null=False, blank=True)
     grid_y = models.IntegerField(null=False, blank=True)
     last_value = models.FloatField(null=True, blank=True)
+    threshold = models.FloatField(null=True, blank=True)
 
     def from_device(self, device, data):
         self.device = device

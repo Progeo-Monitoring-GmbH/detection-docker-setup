@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 import cv2
-import fitz
+import pymupdf
 import numpy as np
 
 from progeo.settings import UPLOAD_DIR
@@ -182,10 +182,10 @@ def process_pdf_to_png_and_extract_crosses(pdf_path: Path, dpi: int = 300):
 
     print(f"Processing PDF: {pdf_path} at {dpi} DPI. Output directory: {output_dir}")
 
-    doc = fitz.open(pdf_path)
+    doc = pymupdf.open(pdf_path)
 
     scale = dpi / 72
-    matrix = fitz.Matrix(scale, scale)
+    matrix = pymupdf.Matrix(scale, scale)
 
     for page_number, page in enumerate(doc, start=1):
         pix = page.get_pixmap(

@@ -387,6 +387,7 @@ const LageplanWizardView = () => {
             title={sourceMeta.fileName || 'Imported source'}
             fileName={sourceMeta.fileName}
             measurePoints={measurePoints}
+            withSliders
           />
         )}
       </Card.Body>

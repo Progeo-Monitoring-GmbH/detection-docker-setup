@@ -8,6 +8,7 @@ type ImageCanvasStageProps = {
   title?: string;
   fileName?: string;
   measurePoints?: Array<Record<string, unknown>>;
+  withSliders?: boolean;
 };
 
 const ImageCanvasStage = ({
@@ -15,6 +16,7 @@ const ImageCanvasStage = ({
   title = 'Image preview',
   fileName,
   measurePoints = [],
+  withSliders = false,
 }: ImageCanvasStageProps) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const dragRef = useRef<{
@@ -28,6 +30,10 @@ const ImageCanvasStage = ({
   const [zoom, setZoom] = useState(1);
   const [offsetX, setOffsetX] = useState(0);
   const [offsetY, setOffsetY] = useState(0);
+  const [pointOffsetX, setPointOffsetX] = useState(35);
+  const [pointOffsetY, setPointOffsetY] = useState(125);
+  const [pointScaleX, setPointScaleX] = useState(0.92);
+  const [pointScaleY, setPointScaleY] = useState(0.51);
 
   useEffect(() => {
     if (!imageUrl) {
@@ -78,8 +84,10 @@ const ImageCanvasStage = ({
         return;
       }
 
-      const pointX = drawX + Number(point.x); //normalizedX * drawWidth;
-      const pointY = drawY + Number(point.y); //normalizedY * drawHeight;
+      const pointX =
+        drawX + pointOffsetX + normalizedX * drawWidth * pointScaleX;
+      const pointY =
+        drawY + pointOffsetY + normalizedY * drawHeight * pointScaleY;
       const radius = 7;
       const label = String(point.pos ?? point.sensor_order ?? index + 1);
 
@@ -97,7 +105,17 @@ const ImageCanvasStage = ({
       ctx.fillStyle = '#ffffff';
       ctx.fillText(label, pointX, pointY);
     });
-  }, [image, measurePoints, offsetX, offsetY, zoom]);
+  }, [
+    image,
+    measurePoints,
+    offsetX,
+    offsetY,
+    pointOffsetX,
+    pointOffsetY,
+    pointScaleX,
+    pointScaleY,
+    zoom,
+  ]);
 
   useEffect(() => {
     const handleMouseMove = (event: MouseEvent) => {
@@ -187,6 +205,71 @@ const ImageCanvasStage = ({
         <span>Zoom: {zoom.toFixed(2)}x</span>
         <span>Drag to pan</span>
       </div>
+
+      {withSliders && (
+        <div className="row g-2">
+          <div className="col-md-6">
+            <label className="form-label mb-0" htmlFor="point-offset-x">
+              offsetX: {pointOffsetX}
+            </label>
+            <input
+              id="point-offset-x"
+              className="form-range"
+              type="range"
+              min="-250"
+              max="250"
+              step="1"
+              value={pointOffsetX}
+              onChange={(event) => setPointOffsetX(Number(event.target.value))}
+            />
+          </div>
+          <div className="col-md-6">
+            <label className="form-label mb-0" htmlFor="point-offset-y">
+              offsetY: {pointOffsetY}
+            </label>
+            <input
+              id="point-offset-y"
+              className="form-range"
+              type="range"
+              min="-250"
+              max="250"
+              step="1"
+              value={pointOffsetY}
+              onChange={(event) => setPointOffsetY(Number(event.target.value))}
+            />
+          </div>
+          <div className="col-md-6">
+            <label className="form-label mb-0" htmlFor="point-scale-x">
+              scaleX: {pointScaleX.toFixed(2)}
+            </label>
+            <input
+              id="point-scale-x"
+              className="form-range"
+              type="range"
+              min="0.1"
+              max="5"
+              step="0.01"
+              value={pointScaleX}
+              onChange={(event) => setPointScaleX(Number(event.target.value))}
+            />
+          </div>
+          <div className="col-md-6">
+            <label className="form-label mb-0" htmlFor="point-scale-y">
+              scaleY: {pointScaleY.toFixed(2)}
+            </label>
+            <input
+              id="point-scale-y"
+              className="form-range"
+              type="range"
+              min="0.1"
+              max="5"
+              step="0.01"
+              value={pointScaleY}
+              onChange={(event) => setPointScaleY(Number(event.target.value))}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };
