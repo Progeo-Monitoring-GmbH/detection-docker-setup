@@ -1,5 +1,5 @@
 import { LinearProgress } from '@mui/material';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Col, Form, Row } from 'react-bootstrap';
 import axiosConfig from '../../axiosConfig';
 import { useDropzone } from 'react-dropzone';
@@ -26,6 +26,7 @@ const RedDropbox = ({
   token = '',
   refreshed = undefined,
   payload = {},
+  hint = 'Drag & drop some files here, or click to select files',
 }) => {
   const getAcceptesTypes = (kind: string) => {
     const key = (kind || '').toLowerCase();
@@ -52,6 +53,7 @@ const RedDropbox = ({
   const [progress, setProgress] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
   const [previews, setPreviews] = useState<IPreview[]>([]);
+  const processedUploadRef = useRef('');
   const { enqueueSnackbar } = useSnackbar();
 
   const maxBytes = maxSizeMB * 1024 * 1024;
@@ -162,6 +164,28 @@ const RedDropbox = ({
     [accept],
   );
 
+  const appendPayloadToFormData = (formData: FormData) => {
+    const source = payload ?? {};
+    if (!Object.keys(source).length) {
+      return formData;
+    }
+
+    Object.entries(source).forEach(([key, value]) => {
+      if (value === undefined || value === null) {
+        return;
+      }
+
+      if (typeof value === 'object') {
+        formData.append(key, JSON.stringify(value));
+        return;
+      }
+
+      formData.append(key, String(value));
+    });
+
+    return formData;
+  };
+
   function matchesAccept(file: File, parts: string[]) {
     const type = file.type.toLowerCase();
     const name = file.name.toLowerCase();
@@ -189,19 +213,33 @@ const RedDropbox = ({
   }
 
   useEffect(() => {
-    if (acceptedFiles.length) {
-      const formData = new FormData();
-      acceptedFiles.map((file, index) => {
-        formData.append(`files${index}`, file, file.name);
-      });
-
-      if (instantFileUpload) {
-        uploadFile(url, formData);
-      } else {
-        callBackProcessing(formData);
-      }
+    if (!acceptedFiles.length) {
+      processedUploadRef.current = '';
+      return;
     }
-  }, [acceptedFiles]);
+
+    const filesSignature = acceptedFiles
+      .map((file) => `${file.name}:${file.size}:${file.lastModified}`)
+      .join('|');
+    const uploadSignature = `${filesSignature}:${JSON.stringify(payload ?? {})}`;
+    if (processedUploadRef.current === uploadSignature) {
+      return;
+    }
+
+    processedUploadRef.current = uploadSignature;
+    const formData = new FormData();
+    acceptedFiles.forEach((file, index) => {
+      formData.append(`files${index}`, file, file.name);
+    });
+
+    appendPayloadToFormData(formData);
+
+    if (instantFileUpload) {
+      uploadFile(url, formData);
+    } else {
+      callBackProcessing(formData);
+    }
+  }, [acceptedFiles, payload]);
 
   useEffect(() => {
     if (refreshed) {
@@ -217,6 +255,7 @@ const RedDropbox = ({
       headers['Authorization'] = `Token ${token}`;
     }
 
+    appendPayloadToFormData(formData);
     if (Object.keys(payload).length) {
       formData.append('payload', JSON.stringify(payload));
     }
@@ -254,9 +293,7 @@ const RedDropbox = ({
         <Col>
           <div {...getRootProps({ style })}>
             <input {...getInputProps()} />
-            <p>
-              Drag &apos;n&apos; drop some files here, or click to select files
-            </p>
+            <p>{hint}</p>
           </div>
           <LinearProgress
             style={{

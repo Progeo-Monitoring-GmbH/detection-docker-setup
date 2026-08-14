@@ -1,0 +1,194 @@
+import { useEffect, useRef, useState } from 'react';
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
+
+type ImageCanvasStageProps = {
+  imageUrl?: string;
+  title?: string;
+  fileName?: string;
+  measurePoints?: Array<Record<string, unknown>>;
+};
+
+const ImageCanvasStage = ({
+  imageUrl,
+  title = 'Image preview',
+  fileName,
+  measurePoints = [],
+}: ImageCanvasStageProps) => {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const dragRef = useRef<{
+    startX: number;
+    startY: number;
+    startOffsetX: number;
+    startOffsetY: number;
+  } | null>(null);
+
+  const [image, setImage] = useState<HTMLImageElement | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [offsetX, setOffsetX] = useState(0);
+  const [offsetY, setOffsetY] = useState(0);
+
+  useEffect(() => {
+    if (!imageUrl) {
+      setImage(null);
+      return;
+    }
+
+    const nextImage = new Image();
+    nextImage.onload = () => setImage(nextImage);
+    nextImage.onerror = () => setImage(null);
+    nextImage.src = imageUrl;
+  }, [imageUrl]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !image) {
+      return;
+    }
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      return;
+    }
+
+    const { width, height } = canvas;
+    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = '#f5f6f8';
+    ctx.fillRect(0, 0, width, height);
+
+    const baseScale = Math.min(
+      (width - 32) / image.naturalWidth,
+      (height - 32) / image.naturalHeight,
+      1.5,
+    );
+    const drawWidth = image.naturalWidth * baseScale * zoom;
+    const drawHeight = image.naturalHeight * baseScale * zoom;
+    const drawX = width / 2 - drawWidth / 2 + offsetX;
+    const drawY = height / 2 - drawHeight / 2 + offsetY;
+
+    ctx.strokeStyle = '#cfd4da';
+    ctx.strokeRect(0.5, 0.5, width - 1, height - 1);
+    ctx.drawImage(image, drawX, drawY, drawWidth, drawHeight);
+
+    measurePoints.forEach((point, index) => {
+      const normalizedX = Number(point.nx);
+      const normalizedY = Number(point.ny);
+      if (!Number.isFinite(normalizedX) || !Number.isFinite(normalizedY)) {
+        return;
+      }
+
+      const pointX = drawX + Number(point.x); //normalizedX * drawWidth;
+      const pointY = drawY + Number(point.y); //normalizedY * drawHeight;
+      const radius = 7;
+      const label = String(point.pos ?? point.sensor_order ?? index + 1);
+
+      ctx.beginPath();
+      ctx.arc(pointX, pointY, radius, 0, Math.PI * 2);
+      ctx.fillStyle = '#dc3545';
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#ffffff';
+      ctx.stroke();
+
+      ctx.font = '600 12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(label, pointX, pointY);
+    });
+  }, [image, measurePoints, offsetX, offsetY, zoom]);
+
+  useEffect(() => {
+    const handleMouseMove = (event: MouseEvent) => {
+      if (!dragRef.current) {
+        return;
+      }
+
+      const dx = event.clientX - dragRef.current.startX;
+      const dy = event.clientY - dragRef.current.startY;
+      setOffsetX(dragRef.current.startOffsetX + dx);
+      setOffsetY(dragRef.current.startOffsetY + dy);
+    };
+
+    const handleMouseUp = () => {
+      dragRef.current = null;
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
+
+  const handleWheel = (event: React.WheelEvent<HTMLCanvasElement>) => {
+    event.preventDefault();
+
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      return;
+    }
+
+    const rect = canvas.getBoundingClientRect();
+    const pointerX = event.clientX - rect.left;
+    const pointerY = event.clientY - rect.top;
+    const nextZoom = clamp(
+      zoom * (event.deltaY < 0 ? 1.12 : 1 / 1.12),
+      0.4,
+      10,
+    );
+
+    const nextOffsetX =
+      offsetX + (pointerX - canvas.width / 2) * (1 - nextZoom / zoom);
+    const nextOffsetY =
+      offsetY + (pointerY - canvas.height / 2) * (1 - nextZoom / zoom);
+
+    setZoom(nextZoom);
+    setOffsetX(nextOffsetX);
+    setOffsetY(nextOffsetY);
+  };
+
+  const handleMouseDown = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    dragRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      startOffsetX: offsetX,
+      startOffsetY: offsetY,
+    };
+  };
+
+  return (
+    <div className="d-flex flex-column gap-2">
+      <div className="d-flex justify-content-between align-items-center">
+        <strong>{title}</strong>
+        {fileName && <small className="text-muted">{fileName}</small>}
+      </div>
+
+      <canvas
+        ref={canvasRef}
+        width={900}
+        height={600}
+        onWheel={handleWheel}
+        onMouseDown={handleMouseDown}
+        style={{
+          width: '100%',
+          height: 'auto',
+          border: '1px solid #dfe3e8',
+          borderRadius: 8,
+          background: '#f5f6f8',
+          cursor: dragRef.current ? 'grabbing' : 'grab',
+        }}
+      />
+
+      <div className="d-flex justify-content-between align-items-center text-muted small">
+        <span>Zoom: {zoom.toFixed(2)}x</span>
+        <span>Drag to pan</span>
+      </div>
+    </div>
+  );
+};
+
+export default ImageCanvasStage;

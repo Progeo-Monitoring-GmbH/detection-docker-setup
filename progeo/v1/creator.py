@@ -101,14 +101,15 @@ def create_progeo_measurement_safe(device: ProgeoDevice, raw_data: Optional[dict
 	)
 
 
-def create_progeo_measure_point_safe(device: ProgeoDevice, sensor_order: int, x: float, y: float,
-										   db: Optional[str] = None) -> Tuple[Optional[ProgeoMeasurePoint], bool]:
+def create_progeo_measure_point_safe(device: ProgeoDevice, sensor_order: int, x: float, y: float, nx: float, ny: float,
+									  grid_x: Optional[float] = None, grid_y: Optional[float] = None,
+									  db: Optional[str] = None) -> Tuple[Optional[ProgeoMeasurePoint], bool]:
 	db_name = db or getattr(getattr(getattr(device, "location", None), "account", None), "db_name", None) or "default"
 	return _safe_get_or_create(
 		ProgeoMeasurePoint,
 		db_name,
-		lookup={"device": device, "sensor_order": sensor_order, "x": x, "y": y},
-		defaults={},
+		lookup={"device": device, "sensor_order": sensor_order, "nx": nx, "ny": ny},
+		defaults={"x": x, "y": y, "grid_x": grid_x, "grid_y": grid_y},
 	)
 
 
@@ -143,6 +144,7 @@ def create_progeo_alarm_safe(measurement: ProgeoMeasurement, sensor_id: Optional
 		},
 		defaults={
 			"triggered_at": triggered_at,
+			"still_active_at": triggered_at,
 			"evaluated_by": evaluated_by,
 			"normalized_at": normalized_at,
 		},
@@ -231,7 +233,7 @@ def create_all_models_safe(account_name: str, db_name: str, user: Optional[User]
 	location, _ = create_progeo_location_safe(account=account, address="unknown")
 	device, _ = create_progeo_device_safe(location=location) if location else (None, False)
 	measurement, _ = create_progeo_measurement_safe(device=device, raw_data={}) if device else (None, False)
-	measure_point, _ = create_progeo_measure_point_safe(device=device, sensor_order=1, x=0.0, y=0.0) if device else (None, False)
+	measure_point, _ = create_progeo_measure_point_safe(device=device, sensor_order=1, x=0.0, y=0.0, nx=0.0, ny=0.0) if device else (None, False)
 	alarm, _ = create_progeo_alarm_safe(measurement=measurement, threshold=100.0, max_value=0.0) if measurement else (None, False)
 	email, _ = create_email_safe(sent_to="unknown@example.com", message="initialized", db="default")
 	token, _ = create_limited_token_safe(account=account, user=user, purpose="init")

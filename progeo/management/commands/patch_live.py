@@ -1,13 +1,9 @@
-import os
 import json
-import numpy as np
-import pandas as pd
 from urllib.request import urlopen
 
 from django.core.management.base import BaseCommand
 
 
-from progeo import settings
 from progeo.helper.basics import dlog
 from progeo.helper.geo import GeoHelper
 from progeo.v1.legacy.executor import fetch_legacy_data, parse_sample_timestamp

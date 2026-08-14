@@ -379,6 +379,7 @@ def _normalize_points_with_grid(raw_points: list[dict[str, int]], coord_margin: 
     tolerance = max(0, int(round(float(coord_margin) * 10)))
     offset_x_values = [point["x"] - ref_x for point in raw_points]
     offset_y_values = [point["y"] - ref_y for point in raw_points]
+    
     max_x_offset = max(offset_x_values) if offset_x_values else 0
     max_y_offset = max(offset_y_values) if offset_y_values else 0
 
@@ -396,7 +397,7 @@ def _normalize_points_with_grid(raw_points: list[dict[str, int]], coord_margin: 
         y_rep = y_lookup[y_offset]
 
         nx = 0.0 if max_x_offset <= 0 else round(x_offset / max_x_offset, 6)
-        ny = 1.0 if max_y_offset <= 0 else 1 - round(y_offset / max_y_offset, 6)
+        ny = 0.0 if max_y_offset <= 0 else round(y_offset / max_y_offset, 6)
 
         entry: dict[str, Any] = {
             "pos": index,

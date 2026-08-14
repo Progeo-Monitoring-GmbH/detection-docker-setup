@@ -6,7 +6,7 @@ import os
 
 from pathlib import Path
 from progeo.v1.helper import parse_int, parse_boolean, parse_split_str
-from progeo.helper.basics import flog, read_env, save_check_dir
+from progeo.helper.basics import flog, read_env
 
 BASE_DIR = Path(__file__).resolve(strict=True).parent.parent
 
@@ -268,7 +268,7 @@ MEDIA_URL = "/media/"
 BACKUP_DIR = os.path.join(MEDIA_ROOT, os.getenv("BACKUP_DIR", "backup"))
 SETUP_DIR = os.path.join(MEDIA_ROOT, os.getenv("SETUP_DIR", "setup"))
 UPLOAD_DIR = os.path.join(MEDIA_ROOT, os.getenv("UPLOAD_DIR", "uploads"))
-UPLOAD_BASE_DIR = os.path.join(MEDIA_URL, os.getenv("UPLOAD_DIR", "uploads"))[1:]
+UPLOAD_REL_DIR = os.path.join(MEDIA_URL, os.getenv("UPLOAD_DIR", "uploads"))[1:]
 EXPORT_DIR = os.path.join(MEDIA_ROOT, os.getenv("EXPORT_DIR", "export"))
 STONKS_DIR = os.path.join(MEDIA_ROOT, os.getenv("STONKS_DIR", "stonks"))
 

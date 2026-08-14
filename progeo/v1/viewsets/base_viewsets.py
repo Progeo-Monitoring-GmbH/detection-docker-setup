@@ -8,19 +8,8 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.views import TokenObtainPairView
-from django.contrib.auth import login
-from django.contrib.auth.password_validation import validate_password
-from django.contrib.auth.models import Permission, User
-from django.http import JsonResponse
-from django.views import View
-from django.views.static import serve as serve_media
 from rest_framework.permissions import IsAuthenticated
-from rest_framework import status
-from rest_framework.pagination import PageNumberPagination
-from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
-from rest_framework_simplejwt.views import TokenObtainPairView
 
 from progeo.helper.basics import RequestFailed, RequestSuccess
 from progeo.v1.models import MODULE_PERMISSION_CODES

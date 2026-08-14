@@ -30,6 +30,9 @@ const LandingPage = React.lazy(() => import('./main/LandingPage.tsx'));
 const FactoryVisualizerView = React.lazy(
   () => import('./main/FactoryVisualizerView.tsx'),
 );
+const LageplanWizardView = React.lazy(
+  () => import('./main/LageplanWizardView.tsx'),
+);
 const LocationsMapView = React.lazy(
   () => import('./main/LocationsMapView.jsx'),
 );
@@ -107,6 +110,10 @@ const CoreRoutes = () => {
       <Route
         path="/factory/"
         element={<Navbar act={'measure'} content={<FactoryVisualizerView />} />}
+      />
+      <Route
+        path="/lageplan/wizard/"
+        element={<Navbar act={'measure'} content={<LageplanWizardView />} />}
       />
       <Route
         path="/map/"

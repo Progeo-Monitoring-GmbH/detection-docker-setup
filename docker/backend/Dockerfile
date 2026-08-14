@@ -54,7 +54,7 @@ RUN . $VENV_ROOT/bin/activate
 
 #Temp hotfix see https://github.com/pypa/setuptools/issues/4519
 RUN pip install -U certifi setuptools pip
-#RUN pip install opencv-python-headless==4.12.0.88 --use-feature=fast-deps
+RUN pip install opencv-python-headless==4.12.0.88 --use-feature=fast-deps
 
 COPY ./requirements.txt ./requirements.txt
 RUN pip install -r requirements.txt --use-feature=fast-deps

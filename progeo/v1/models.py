@@ -13,7 +13,7 @@ from progeo.v1.helper import calc_hash_from_dict
 from progeo.decorator import has_test_coverage
 from progeo.helper.basics import get_templates
 from progeo.helper.cacher import search_clear_cache
-from progeo.settings import DEBUG, BACKUP_DIR, UPLOAD_BASE_DIR
+from progeo.settings import DEBUG, BACKUP_DIR, UPLOAD_REL_DIR
 
 # ==============================================================================================
 
@@ -256,7 +256,7 @@ class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
 
     alarm_threshold = models.IntegerField(blank=True, default=100)
 
-    lageplan = models.FileField(upload_to=UPLOAD_BASE_DIR, max_length=255, null=True, blank=True)
+    lageplan = models.FileField(upload_to=UPLOAD_REL_DIR, max_length=255, null=True, blank=True)
     offset_x = models.IntegerField(null=True, blank=True)
     offset_y = models.IntegerField(null=True, blank=True)
     offset_latitude = models.FloatField(null=True, blank=True)
@@ -416,6 +416,17 @@ class ProgeoMeasurePoint(ProgeoModel, auto_prefetch.Model):
     grid_y = models.IntegerField(null=False, blank=True)
     last_value = models.FloatField(null=True, blank=True)
 
+    def from_device(self, device, data):
+        self.device = device
+        self.sensor_order = data.get("pos")
+        self.x = data.get("x")
+        self.y = data.get("y")
+        self.nx = data.get("nx")
+        self.ny = data.get("ny")
+        self.grid_x = data.get("gx")
+        self.grid_y = data.get("gy")
+        self.save() #TODO using=db
+
     def __str__(self):
         _id = f"[{self.pk}] " if DEBUG else ""
         _device = f"Device {self.device.mac}" if self.device else "Unknown Device"
@@ -440,13 +451,19 @@ class ProgeoAlarm(ProgeoModel, auto_prefetch.Model):
 
     def __str__(self):
         _id = f"[{self.pk}] " if DEBUG else ""
+        if self.normalized_at:
+            normalized = f"✅ NORMALIZED after {self.normalized_at - self.triggered_at}s" if self.triggered_at else "✅ NORMALIZED"
+        else:
+            normalized = "⚠️ STILL ACTIVE"
+
         if self.status == 0:
             status = "🔔 TRIGGERED"
         elif self.status == 1:
             status = "✅ OK"
         elif self.status == 2:
             status = "⚠️ STOERUNG"
-        return f"{_id} {status} - Measurement {self.measurement.id}, Threshold: {self.threshold}, Max: {self.max_value}"
+            
+        return f"{_id} {normalized} | {status} - Measurement {self.measurement.id}, sensor-id: {self.sensor_id}, Threshold: {self.threshold}, Max: {self.max_value}"
 
 
 class EMail(ProgeoModel, auto_prefetch.Model):

@@ -9,7 +9,6 @@ echo "[$(date '+%Y-%m-%d %H:%M:%S')] weekly job started"
 
 cd "$PROJECT_ROOT" || exit 1
 
-pyhton manage.py evaluate_alarms
+python manage.py evaluate_alarms
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] weekly job finished"
-    

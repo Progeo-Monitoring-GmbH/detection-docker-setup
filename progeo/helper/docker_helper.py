@@ -107,6 +107,7 @@ def start_cad_factory(cad_input: str, coord_margin: float = 0.2, skip_convert: b
             working_dir="/workspace",
             user=run_user,
             detach=True,
+            remove=True,
             stdout=True,
             stderr=True,
             volumes=volumes,

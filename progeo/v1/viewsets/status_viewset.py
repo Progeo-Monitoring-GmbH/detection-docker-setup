@@ -1,9 +1,14 @@
 import os
 import ipaddress
 import json
+import tempfile
+import time
+
 from uuid import uuid4
 from datetime import timedelta
+from django.core.files import File
 from celery.result import AsyncResult
+from django.core.files.storage import FileSystemStorage
 from django.utils import timezone
 
 from rest_framework.decorators import action
@@ -11,6 +16,8 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from rest_framework.permissions import IsAuthenticated
 
+from progeo.helper.pdf_cropper import process_pdf_to_png_and_extract_crosses
+from progeo.v1.creator import create_progeo_measure_point_safe
 from progeo.v1.helper import dlog
 from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurePoint, ProgeoMeasurement
 from progeo.v1.serializers import DeviceSerializer, ProgeoMeasurePointSerializer, ProgeoMeasurementSerializer
@@ -356,6 +363,87 @@ class StatusViewSet(ProgeoModalViewSet):
 
     @calc_runtime
     @require_module_permissions("module_devices_enabled", "module_devices_edit")
+    @action(detail=False, url_path="measure_points/from_pdf", methods=["POST"])
+    def upload_measure_points_from_pdf(self, request, *args, **kwargs):
+        pdf_path = request.FILES.get("files0")
+        json_path = process_pdf_to_png_and_extract_crosses(pdf_path, dpi=300)
+        return RequestSuccess({"message": "PDF processed and points extracted successfully.", "json_path": str(json_path)})
+
+    @calc_runtime
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
+    @action(detail=False, url_path="measure_points/from_json", methods=["POST"])
+    def upload_measure_points_from_json(self, request, *args, **kwargs):
+        account = getattr(request, "account", None) or _get_controller_account()
+        db_name = account.db_name if account else "default"
+
+        device_id_raw = request.query_params.get("device_id") or request.data.get("device_id")
+        if not device_id_raw:
+            return RequestFailed({"reason": "Missing parameter: device_id"})
+
+        try:
+            device_id = int(device_id_raw)
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "device_id must be an integer"})
+
+        device = ProgeoDevice.objects.using(db_name).filter(id=device_id, location__account=account).first()
+        if not device:
+            return RequestFailed({"reason": "Device not found"})
+
+        json_path = request.FILES.get("files0")
+        data = json.load(json_path)
+        for point in data:
+            measure_point, _ = create_progeo_measure_point_safe(device=device, sensor_order=point.get('pos'),
+                                                                 x=point.get('x'), y=point.get('y'), 
+                                                                 nx=point.get('nx'), ny=point.get('ny'), 
+                                                                 grid_x=point.get('gx'), grid_y=point.get('gy'), 
+                                                                 db=db_name)
+        return RequestSuccess({"data": data})
+
+    @calc_runtime
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
+    @action(detail=False, url_path="measure_points/upload_png", methods=["POST"])
+    def upload_measure_points_from_png(self, request, *args, **kwargs):
+        account = getattr(request, "account", None) or _get_controller_account()
+        db_name = account.db_name if account else "default"
+
+        device_id_raw = request.query_params.get("device_id") or request.data.get("device_id")
+        if not device_id_raw:
+            return RequestFailed({"reason": "Missing parameter: device_id"})
+
+        try:
+            device_id = int(device_id_raw)
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "device_id must be an integer"})
+
+        device = ProgeoDevice.objects.using(db_name).filter(id=device_id, location__account=account).first()
+        if not device:
+            return RequestFailed({"reason": "Device not found"})
+
+        location = device.location
+        fs = FileSystemStorage(location=UPLOAD_DIR)
+        _new_file = None
+
+        upload = next(iter(request.FILES.values()), None)
+        if upload:
+            _dir = save_check_dir(UPLOAD_DIR, "lageplan")
+            filename = os.path.join(_dir, f"{device.id}_f{int(time.time())}.png").replace(os.sep, "/")
+            with tempfile.NamedTemporaryFile() as temporary_file:
+                for chunk in upload.chunks():
+                    temporary_file.write(chunk)
+                temporary_file.flush()
+                temporary_file.seek(0)
+                _new_file = fs.save(filename, File(temporary_file, name=upload.name))
+
+        if _new_file:   
+            location.lageplan = _new_file
+            location.save(using=db_name)
+            print(f"Lageplan uploaded for device {device.id} at {location.lageplan.url}")
+            return RequestSuccess({"message": "Lageplan uploaded successfully.", "files0": _new_file})
+
+        return RequestFailed({"reason": "No file uploaded."})
+
+    @calc_runtime
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
     @action(detail=False, url_path="measure_points/upload_cad", methods=["POST"])
     def upload_measure_points_from_cad(self, request, *args, **kwargs):
         account = getattr(request, "account", None) or _get_controller_account()
@@ -450,7 +538,7 @@ class StatusViewSet(ProgeoModalViewSet):
             if bool(point.get("reference")):
                 reference_sensor_order = idx
 
-            bulk_points.append(ProgeoMeasurePoint(
+            point, _ = create_progeo_measure_point_safe(
                 device=device,
                 sensor_order=point.get("pos"),
                 x=point.get("x"),
@@ -459,7 +547,9 @@ class StatusViewSet(ProgeoModalViewSet):
                 ny=point.get("ny"),
                 grid_x=point.get("gx"),
                 grid_y=point.get("gy"),
-            ))
+            )
+
+            bulk_points.append(point)
 
         ProgeoMeasurePoint.objects.using(db_name).filter(device=device).delete()
         ProgeoMeasurePoint.objects.using(db_name).bulk_create(bulk_points)
@@ -498,9 +588,16 @@ class StatusViewSet(ProgeoModalViewSet):
             return RequestFailed({"reason": "Device not found"})
 
         if request.method == "GET":
-            points_qs = ProgeoMeasurePoint.objects.using(db_name).filter(device=device).order_by("sensor_order", "id")
+            points_qs = ProgeoMeasurePoint.objects.using(db_name).filter(device=device).order_by("sensor_order")
             points = ProgeoMeasurePointSerializer(points_qs, many=True).data
-            return RequestSuccess({"device_id": device.id, "points": points})
+            response_data = {"device_id": device.id, "points": points}
+            with_lageplan = (request.query_params.get("with_lageplan") or "").strip().lower() in {
+                "1", "true", "yes", "on"
+            }
+            if with_lageplan:
+                lageplan = getattr(device.location, "lageplan", None)
+                response_data["lageplan"] = lageplan.url if lageplan and lageplan.name else None
+            return RequestSuccess(response_data)
 
         raw_points = request.data.get("points")
         if not isinstance(raw_points, list):
