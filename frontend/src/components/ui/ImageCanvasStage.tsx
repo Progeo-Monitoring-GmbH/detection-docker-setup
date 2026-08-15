@@ -1,23 +1,44 @@
 import { useEffect, useRef, useState } from 'react';
+import axiosConfig from '../../axiosConfig';
+import { useAuth } from '../../../hooks/CoreAuthProvider';
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
 
 type ImageCanvasStageProps = {
   imageUrl?: string;
+  locationId?: number;
+  sourceMeta?: {
+    offset_x?: number;
+    offset_y?: number;
+    scale_x?: number;
+    scale_y?: number;
+    flip_x?: boolean;
+    flip_y?: boolean;
+  };
   title?: string;
   fileName?: string;
   measurePoints?: Array<Record<string, unknown>>;
   withSliders?: boolean;
+  onSaveSliders?: (values: {
+    offsetX: number;
+    offsetY: number;
+    scaleX: number;
+    scaleY: number;
+  }) => void;
 };
 
 const ImageCanvasStage = ({
   imageUrl,
+  sourceMeta,
   title = 'Image preview',
   fileName,
   measurePoints = [],
   withSliders = false,
+  locationId,
+  onSaveSliders,
 }: ImageCanvasStageProps) => {
+  const auth = useAuth();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const dragRef = useRef<{
     startX: number;
@@ -30,10 +51,13 @@ const ImageCanvasStage = ({
   const [zoom, setZoom] = useState(1);
   const [offsetX, setOffsetX] = useState(0);
   const [offsetY, setOffsetY] = useState(0);
-  const [pointOffsetX, setPointOffsetX] = useState(35);
-  const [pointOffsetY, setPointOffsetY] = useState(125);
-  const [pointScaleX, setPointScaleX] = useState(0.92);
-  const [pointScaleY, setPointScaleY] = useState(0.51);
+  const [pointOffsetX, setPointOffsetX] = useState(sourceMeta?.offset_x ?? 0);
+  const [pointOffsetY, setPointOffsetY] = useState(sourceMeta?.offset_y ?? 0);
+  const [pointScaleX, setPointScaleX] = useState(sourceMeta?.scale_x ?? 1);
+  const [pointScaleY, setPointScaleY] = useState(sourceMeta?.scale_y ?? 1);
+  const [isVerticallyFlipped, setIsVerticallyFlipped] = useState(
+    sourceMeta?.flip_y ?? false,
+  );
 
   useEffect(() => {
     if (!imageUrl) {
@@ -79,10 +103,13 @@ const ImageCanvasStage = ({
 
     measurePoints.forEach((point, index) => {
       const normalizedX = Number(point.nx);
-      const normalizedY = Number(point.ny);
-      if (!Number.isFinite(normalizedX) || !Number.isFinite(normalizedY)) {
+      const rawNormalizedY = Number(point.ny);
+      if (!Number.isFinite(normalizedX) || !Number.isFinite(rawNormalizedY)) {
         return;
       }
+      const normalizedY = isVerticallyFlipped
+        ? 1 - rawNormalizedY
+        : rawNormalizedY;
 
       const pointX =
         drawX + pointOffsetX + normalizedX * drawWidth * pointScaleX;
@@ -114,8 +141,20 @@ const ImageCanvasStage = ({
     pointOffsetY,
     pointScaleX,
     pointScaleY,
+    isVerticallyFlipped,
     zoom,
   ]);
+
+  useEffect(() => {
+    console.log('sourceMeta changed:', sourceMeta);
+    if (sourceMeta) {
+      setPointOffsetX(sourceMeta.offset_x ?? 0);
+      setPointOffsetY(sourceMeta.offset_y ?? 0);
+      setPointScaleX(sourceMeta.scale_x ?? 1);
+      setPointScaleY(sourceMeta.scale_y ?? 1);
+      setIsVerticallyFlipped(sourceMeta.flip_y ?? false);
+    }
+  }, [sourceMeta]);
 
   useEffect(() => {
     const handleMouseMove = (event: MouseEvent) => {
@@ -208,6 +247,31 @@ const ImageCanvasStage = ({
 
       {withSliders && (
         <div className="row g-2">
+          <div className="col-12">
+            <button
+              type="button"
+              className={`btn ${isVerticallyFlipped ? 'btn-secondary' : 'btn-outline-secondary'}`}
+              onClick={async () => {
+                setIsVerticallyFlipped((current) => !current);
+                await axiosConfig.perform_post(
+                  auth,
+                  '/v1/location/update/',
+                  {
+                    location_id: locationId,
+                    offset_x: pointOffsetX,
+                    offset_y: pointOffsetY,
+                    scale_x: pointScaleX,
+                    scale_y: pointScaleY,
+                    flip_y: !isVerticallyFlipped,
+                  },
+                  () => {},
+                  (saveError) => {},
+                );
+              }}
+            >
+              Vertical Flip
+            </button>
+          </div>
           <div className="col-md-6">
             <label className="form-label mb-0" htmlFor="point-offset-x">
               offsetX: {pointOffsetX}
@@ -268,6 +332,24 @@ const ImageCanvasStage = ({
               onChange={(event) => setPointScaleY(Number(event.target.value))}
             />
           </div>
+          {onSaveSliders && (
+            <div className="col-12">
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() =>
+                  onSaveSliders({
+                    offsetX: pointOffsetX,
+                    offsetY: pointOffsetY,
+                    scaleX: pointScaleX,
+                    scaleY: pointScaleY,
+                  })
+                }
+              >
+                Store alignment
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

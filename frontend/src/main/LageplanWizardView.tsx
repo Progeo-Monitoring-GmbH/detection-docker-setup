@@ -18,7 +18,7 @@ import axiosConfig from '../axiosConfig';
 type WizardStep = 1 | 2 | 3 | 4;
 
 type ImportedCad = {
-  device_id: number;
+  location_id: number;
   stored: number;
   points: Array<Record<string, unknown>>;
 };
@@ -27,11 +27,23 @@ type ImportedSource = {
   fileName?: string;
   imageUrl?: string;
   type?: 'png' | 'pdf';
+  offset_x?: number;
+  offset_y?: number;
+  scale_x?: number;
+  scale_y?: number;
+  flip_x?: boolean;
+  flip_y?: boolean;
 };
 
 type MeasurePointsResponse = {
   points?: Array<Record<string, unknown>>;
   lageplan?: string | null;
+  offset_x?: number;
+  offset_y?: number;
+  scale_x?: number;
+  scale_y?: number;
+  flip_x?: boolean;
+  flip_y?: boolean;
 };
 
 type DeviceOption = {
@@ -47,9 +59,11 @@ const getFileExt = (name: string) => name.split('.').pop()?.toLowerCase() ?? '';
 const LageplanWizardView = () => {
   const auth = useAuth();
   const [step, setStep] = useState<WizardStep>(1);
-  const [selectedDeviceId, setSelectedDeviceId] = useState<number | null>(null);
-  const [devices, setDevices] = useState<DeviceOption[]>([]);
-  const [deviceLoading, setDeviceLoading] = useState(false);
+  const [selectedLocationId, setSelectedLocationId] = useState<number | null>(
+    null,
+  );
+  const [locations, setLocations] = useState<DeviceOption[]>([]);
+  const [locationLoading, setLocationLoading] = useState(false);
   const [cadFileName, setCadFileName] = useState('');
   const [cadPayload, setCadPayload] = useState<ImportedCad | null>(null);
   const [measurePoints, setMeasurePoints] = useState<
@@ -60,9 +74,9 @@ const LageplanWizardView = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState('');
 
-  const selectedDevice = useMemo(
-    () => devices.find((device) => device.id === selectedDeviceId) ?? null,
-    [devices, selectedDeviceId],
+  const selectedLocation = useMemo(
+    () => locations.find((loc) => loc.id === selectedLocationId) ?? null,
+    [locations, selectedLocationId],
   );
 
   const getBackendUrl = (path: string) => {
@@ -90,36 +104,31 @@ const LageplanWizardView = () => {
 
   useEffect(() => {
     const fetchDevices = async () => {
-      setDeviceLoading(true);
+      setLocationLoading(true);
       try {
         await axiosConfig.perform_get(
           auth,
-          '/v1/status/devices/',
+          '/v1/location/',
           (response) => {
-            const list = Array.isArray(response?.data?.devices)
-              ? response.data.devices
-              : [];
+            const list = Array.isArray(response?.data) ? response.data : [];
 
             const mapped = list
-              .map((device) => ({
-                id: Number(device?.id ?? device?.device_id ?? 0),
-                label: `${device?.hardware || `Device ${device?.id ?? device?.device_id ?? '?'}`} (${device?.id ?? device?.device_id ?? '?'})`,
-                raw_hash: device?.raw_hash,
-                hardware: device?.hardware,
-                device_ip: device?.device_ip,
+              .map((loc) => ({
+                id: Number(loc?.project_id),
+                label: `${loc?.project_id}`,
               }))
-              .filter((device) => Number.isFinite(device.id) && device.id > 0);
+              .filter((loc) => Number.isFinite(loc.id) && loc.id > 0);
 
-            setDevices(mapped);
+            setLocations(mapped);
           },
           (fetchError) => {
             setError(
-              `Could not load available devices: ${(fetchError as Error).message}`,
+              `Could not load available locations: ${(fetchError as Error).message}`,
             );
           },
         );
       } finally {
-        setDeviceLoading(false);
+        setLocationLoading(false);
       }
     };
 
@@ -127,7 +136,7 @@ const LageplanWizardView = () => {
   }, [auth]);
 
   useEffect(() => {
-    if (selectedDeviceId === null) {
+    if (selectedLocationId === null) {
       setMeasurePoints([]);
       setSourceMeta(null);
       return;
@@ -140,7 +149,7 @@ const LageplanWizardView = () => {
     void axiosConfig
       .perform_get(
         auth,
-        `/v1/status/measure_points/?device_id=${selectedDeviceId}&with_lageplan=true`,
+        `/v1/status/measure_points/?location_id=${selectedLocationId}&with_lageplan=true`,
         (response) => {
           if (cancelled) {
             return;
@@ -158,6 +167,11 @@ const LageplanWizardView = () => {
               fileName,
               imageUrl: getBackendUrl(data.lageplan),
               type: 'png',
+              offset_x: data.offset_x ?? 0,
+              offset_y: data.offset_y ?? 0,
+              scale_x: data.scale_x ?? 1,
+              scale_y: data.scale_y ?? 1,
+              flip_x: data.flip_x ?? false,
             });
             setStep(4);
           }
@@ -179,7 +193,7 @@ const LageplanWizardView = () => {
     return () => {
       cancelled = true;
     };
-  }, [auth, selectedDeviceId]);
+  }, [auth, selectedLocationId]);
 
   const handleJsonUpload = (response: Record<string, unknown>) => {
     const data = response.data;
@@ -196,13 +210,44 @@ const LageplanWizardView = () => {
     setCadPayload(valid);
     setMeasurePoints(valid.points);
     setCadFileName(
-      valid.device_id ? `device_${valid.device_id}.dwg` : cadFileName,
+      valid.location_id ? `device_${valid.location_id}.dwg` : cadFileName,
     );
     setError('');
     setStep(3);
   };
 
   const handleFromPdfUpload = async (payload: FormData) => {};
+
+  const handleSaveSliders = async (values: {
+    offsetX: number;
+    offsetY: number;
+    scaleX: number;
+    scaleY: number;
+  }) => {
+    if (selectedLocationId === null) {
+      setError('Select a location before storing the alignment.');
+      return;
+    }
+
+    setIsProcessing(true);
+    setError('');
+    await axiosConfig.perform_post(
+      auth,
+      '/v1/location/update/',
+      {
+        location_id: selectedLocationId,
+        offset_x: values.offsetX,
+        offset_y: values.offsetY,
+        scale_x: values.scaleX,
+        scale_y: values.scaleY,
+      },
+      () => setIsProcessing(false),
+      (saveError) => {
+        setError(`Could not store alignment: ${(saveError as Error).message}`);
+        setIsProcessing(false);
+      },
+    );
+  };
 
   const handleSourceUpload = async (payload: FormData) => {
     const file = payload.get('files0');
@@ -243,38 +288,40 @@ const LageplanWizardView = () => {
 
   const renderStepOne = () => (
     <Card className="shadow-sm">
-      <Card.Header>1. Select device</Card.Header>
+      <Card.Header>1. Select Location</Card.Header>
       <Card.Body className="m-2">
         <p className="text-muted mb-3">
-          Choose the device that will receive the measure points and layout
+          Choose the location that will receive the measure points and layout
           data.
         </p>
 
         <Typeahead
           id="lageplan-device-typeahead"
-          options={devices}
+          options={locations}
           labelKey="label"
-          selected={selectedDevice ? [selectedDevice] : []}
+          selected={selectedLocation ? [selectedLocation] : []}
           onChange={(selection) => {
-            const next = selection[0] as DeviceOption | undefined;
-            setSelectedDeviceId(next ? next.id : null);
+            const next = selection[0] as LocationOption | undefined;
+            setSelectedLocationId(next ? next.id : null);
             setError('');
           }}
-          placeholder={deviceLoading ? 'Loading devices…' : 'Select a device…'}
-          disabled={deviceLoading || !devices.length}
+          placeholder={
+            locationLoading ? 'Loading locations…' : 'Select a location…'
+          }
+          disabled={locationLoading || !locations.length}
           clearButton
           singleSelect
         />
 
-        {!devices.length && !deviceLoading && (
+        {!locations.length && !locationLoading && (
           <Alert variant="warning" className="mt-3 mb-0">
-            No devices are available yet.
+            No locations are available yet.
           </Alert>
         )}
 
-        {selectedDevice && (
+        {selectedLocation && (
           <Alert variant="success" className="mt-3 mb-0">
-            Selected device: {selectedDevice.label}
+            Selected location: {selectedLocation.label}
           </Alert>
         )}
       </Card.Body>
@@ -289,7 +336,7 @@ const LageplanWizardView = () => {
           Upload the DWG/DXF file that defines the measure points for the
           layout.
         </p>
-        {selectedDeviceId === null ? (
+        {selectedLocationId === null ? (
           <Alert variant="warning" className="mb-0">
             Select a device in step one before uploading the CAD file.
           </Alert>
@@ -302,7 +349,7 @@ const LageplanWizardView = () => {
               hint="Upload DWG"
               instantFileUpload={true}
               withPreview={false}
-              payload={{ device_id: selectedDeviceId }}
+              payload={{ location_id: selectedLocationId }}
               callBackProcessing={handleCadUpload}
             />
             <RedDropbox
@@ -312,7 +359,7 @@ const LageplanWizardView = () => {
               hint="Upload JSON"
               instantFileUpload={true}
               withPreview={false}
-              payload={{ device_id: selectedDeviceId }}
+              payload={{ location_id: selectedLocationId }}
               callBackProcessing={handleJsonUpload}
             />
           </>
@@ -342,7 +389,7 @@ const LageplanWizardView = () => {
           hint="Upload PDF"
           instantFileUpload={true}
           withPreview={false}
-          payload={{ device_id: selectedDeviceId ?? 0 }}
+          payload={{ location_id: selectedLocationId ?? 0 }}
           callBackProcessing={handleFromPdfUpload}
         />
 
@@ -354,7 +401,7 @@ const LageplanWizardView = () => {
             hint="Upload PNG"
             instantFileUpload={true}
             withPreview={false}
-            payload={{ device_id: selectedDeviceId }}
+            payload={{ location_id: selectedLocationId }}
             callBackProcessing={handleSourceUpload}
           />
         </div>
@@ -383,11 +430,14 @@ const LageplanWizardView = () => {
           </Alert>
         ) : (
           <ImageCanvasStage
+            sourceMeta={sourceMeta}
             imageUrl={sourceMeta.imageUrl}
             title={sourceMeta.fileName || 'Imported source'}
             fileName={sourceMeta.fileName}
+            locationId={selectedLocationId}
             measurePoints={measurePoints}
             withSliders
+            onSaveSliders={handleSaveSliders}
           />
         )}
       </Card.Body>

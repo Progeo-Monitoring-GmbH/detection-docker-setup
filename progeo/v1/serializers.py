@@ -99,6 +99,7 @@ class DeviceSerializer(ProgeoBaseSerializer):
         return "ProgeoDevice"
 
 
+
 class LocationSerializer(ProgeoBaseSerializer):
     clazz = serializers.SerializerMethodField("get_clazz_name")
     device_count = serializers.IntegerField(read_only=True)
@@ -115,9 +116,15 @@ class LocationSerializer(ProgeoBaseSerializer):
 
     @staticmethod
     def get_has_device(obj):
-        return obj.get_device_count() # TODO expensive, should be cached or annotated
+        return 161 #obj.get_device_count() # TODO expensive, should be cached or annotated
 
 
+class MinimalLocationSerializer(ProgeoBaseSerializer):
+    class Meta:
+        model = ProgeoLocation
+        fields = ["id", "project_id"]
+
+        
 class BackupSerializer(ProgeoBaseSerializer):
     clazz = serializers.SerializerMethodField("get_clazz_name")
 

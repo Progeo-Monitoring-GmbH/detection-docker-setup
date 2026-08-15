@@ -261,6 +261,8 @@ class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
     offset_y = models.IntegerField(null=True, blank=True)
     scale_x = models.FloatField(default=1, blank=True)
     scale_y = models.FloatField(default=1, blank=True)
+    flip_x = models.BooleanField(default=False)
+    flip_y = models.BooleanField(default=False)
 
     offset_latitude = models.FloatField(null=True, blank=True)
     offset_longitude = models.FloatField(null=True, blank=True)
@@ -409,7 +411,7 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
 
 
 class ProgeoMeasurePoint(ProgeoModel, auto_prefetch.Model):
-    device = models.ForeignKey(ProgeoDevice, on_delete=models.CASCADE, related_name="points")
+    location = models.ForeignKey(ProgeoLocation, on_delete=models.CASCADE, related_name="points", null=True, blank=True)
     sensor_order = models.IntegerField(null=False)
     x = models.FloatField(null=False, blank=False)
     y = models.FloatField(null=False, blank=False)
@@ -420,8 +422,8 @@ class ProgeoMeasurePoint(ProgeoModel, auto_prefetch.Model):
     last_value = models.FloatField(null=True, blank=True)
     threshold = models.FloatField(null=True, blank=True)
 
-    def from_device(self, device, data):
-        self.device = device
+    def from_device(self, location, data):
+        self.location = location
         self.sensor_order = data.get("pos")
         self.x = data.get("x")
         self.y = data.get("y")
@@ -433,8 +435,8 @@ class ProgeoMeasurePoint(ProgeoModel, auto_prefetch.Model):
 
     def __str__(self):
         _id = f"[{self.pk}] " if DEBUG else ""
-        _device = f"Device {self.device.mac}" if self.device else "Unknown Device"
-        return f"{_id} 📍 {_device} - Sensor #{self.sensor_order} ({self.nx}, {self.ny})"
+        _location = f"Location {self.location.address}" if self.location else "Unknown Location"
+        return f"{_id} 📍 {_location} - Sensor #{self.sensor_order} ({self.nx}, {self.ny})"
 
 
 class ProgeoAlarm(ProgeoModel, auto_prefetch.Model):

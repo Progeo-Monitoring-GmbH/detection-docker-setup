@@ -7,13 +7,13 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from progeo.decorator import require_module_permissions
 from progeo.helper.basics import RequestFailed, RequestSuccess
 from progeo.v1.models import ProgeoLocation, ProgeoMeasurement
-from progeo.v1.serializers import LocationSerializer, ProgeoMeasurementSerializer
+from progeo.v1.serializers import LocationSerializer, ProgeoMeasurementSerializer, MinimalLocationSerializer
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.v1.viewsets.setup_viewset import _get_controller_account
 
 
 class LocationViewSet(ProgeoModalViewSet):
-    serializer_class = LocationSerializer
+    serializer_class = MinimalLocationSerializer
     authentication_classes = [SessionAuthentication, JWTAuthentication, TokenAuthentication]
     permission_classes = [IsAuthenticated]
 
@@ -39,7 +39,7 @@ class LocationViewSet(ProgeoModalViewSet):
 
     @require_module_permissions("module_locations_enabled")
     def list(self, request, *args, **kwargs):
-        return super(LocationViewSet, self).list(request, no_cache=True, *args, **kwargs)
+        return super(LocationViewSet, self).list(request, no_cache=False, *args, **kwargs)
 
     @require_module_permissions("module_locations_enabled")
     def retrieve(self, request, pk=None, *args, **kwargs):
@@ -57,6 +57,62 @@ class LocationViewSet(ProgeoModalViewSet):
     def partial_update(self, request, *args, **kwargs):
         return super(LocationViewSet, self).partial_update(request, *args, **kwargs)
 
+    @require_module_permissions("module_locations_enabled", "module_locations_edit")
+    @action(detail=False, url_path="update", methods=["POST"])
+    def update_alignment(self, request, *args, **kwargs):
+        account = self._resolve_request_account(request)
+        db_name = account.db_name if account else "default"
+        location_id = request.data.get("location_id")
+        if not location_id:
+            return RequestFailed({"reason": "Missing parameter: location_id"})
+
+        location = ProgeoLocation.objects.using(db_name).filter(
+            project_id=location_id,
+            account=account,
+        ).first()
+        if not location:
+            return RequestFailed({"reason": "Location not found"})
+
+        try:
+            offset_x = int(request.data.get("offset_x"))
+            offset_y = int(request.data.get("offset_y"))
+            scale_x = float(request.data.get("scale_x"))
+            scale_y = float(request.data.get("scale_y"))
+            flip_x = bool(request.data.get("flip_x", False))
+            flip_y = bool(request.data.get("flip_y", False))
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "Invalid alignment values"})
+
+        if not -250 <= offset_x <= 250 or not -250 <= offset_y <= 250:
+            return RequestFailed({"reason": "Offsets must be between -250 and 250"})
+        if not 0.1 <= scale_x <= 5.0 or not 0.1 <= scale_y <= 5.0:
+            return RequestFailed({"reason": "Scales must be between 0.1 and 5.0"})
+
+        location.offset_x = offset_x
+        location.offset_y = offset_y
+        location.scale_x = scale_x
+        location.scale_y = scale_y
+        location.flip_x = flip_x
+        location.flip_y = flip_y
+        location.save(using=db_name, update_fields=[
+            "offset_x",
+            "offset_y",
+            "scale_x",
+            "scale_y",
+            "flip_x",
+            "flip_y",
+        ])
+
+        return RequestSuccess({
+            "location_id": location.project_id,
+            "offset_x": offset_x,
+            "offset_y": offset_y,
+            "scale_x": scale_x,
+            "scale_y": scale_y,
+            "flip_x": flip_x,
+            "flip_y": flip_y,
+        })
+
     @require_module_permissions("module_locations_enabled", "module_locations_delete")
     def destroy(self, request, *args, **kwargs):
         return super(LocationViewSet, self).destroy(request, *args, **kwargs)
@@ -66,24 +122,7 @@ class LocationViewSet(ProgeoModalViewSet):
         if not account:
             return ProgeoLocation.objects.none()
 
-        queryset = (
-            ProgeoLocation.objects.using(account.db_name)
-            .filter(account=account)
-            .annotate(
-                device_count=Count("progeodevice", distinct=True),
-                last_measurement_at=Max("progeodevice__progeomeasurement__last_fetched"),
-            )
-            .order_by("name", "id")
-        )
-
-        search = (self.request.query_params.get("search") or "").strip()
-        if search:
-            queryset = queryset.filter(name__icontains=search)
-
-        has_device = (self.request.query_params.get("has_device") or "").strip().lower()
-        if has_device in ["1", "true", "yes"]:
-            queryset = queryset.filter(device_count__gt=0)
-
+        queryset = ProgeoLocation.objects.using(account.db_name).filter(account=account).order_by("id")
         return queryset
 
     @require_module_permissions("module_locations_enabled", "module_measurements_enabled")

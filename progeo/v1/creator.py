@@ -101,14 +101,14 @@ def create_progeo_measurement_safe(device: ProgeoDevice, raw_data: Optional[dict
 	)
 
 
-def create_progeo_measure_point_safe(device: ProgeoDevice, sensor_order: int, x: float, y: float, nx: float, ny: float,
+def create_progeo_measure_point_safe(location: ProgeoLocation, sensor_order: int, x: float, y: float, nx: float, ny: float,
 									  grid_x: Optional[float] = None, grid_y: Optional[float] = None,
 									  db: Optional[str] = None) -> Tuple[Optional[ProgeoMeasurePoint], bool]:
-	db_name = db or getattr(getattr(getattr(device, "location", None), "account", None), "db_name", None) or "default"
+	db_name = db or getattr(getattr(location, "account", None), "db_name", None) or "default"
 	return _safe_get_or_create(
 		ProgeoMeasurePoint,
 		db_name,
-		lookup={"device": device, "sensor_order": sensor_order, "nx": nx, "ny": ny},
+		lookup={"location": location, "sensor_order": sensor_order, "nx": nx, "ny": ny},
 		defaults={"x": x, "y": y, "grid_x": grid_x, "grid_y": grid_y},
 	)
 

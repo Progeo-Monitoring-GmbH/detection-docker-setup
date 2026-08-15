@@ -35,9 +35,9 @@ class ProgeoModalViewSet(viewsets.ModelViewSet):
     @method_decorator(vary_on_cookie)
     def list(self, request, *args, **kwargs):
 
-        cache_key = request.get_full_path()
-        # if not kwargs.get("no_cache", False) and _cache:
-        #     return _cache
+        cache_key, _cache = search_cache(request)
+        if not kwargs.get("no_cache", False) and _cache:
+            return _cache
 
         queryset = self.filter_queryset(self.get_queryset())
         use_detailed_cache = kwargs.get("use_detailed_cache", False)
@@ -72,8 +72,7 @@ class ProgeoModalViewSet(viewsets.ModelViewSet):
             for obj in serializer.data:
                 cache_save(f"{cache_key}{obj.get('id')}/", obj)
 
-        return Response(data=serializer.data)
-        # return cache_save_and_return(cache_key, serializer.data)
+        return cache_save_and_return(cache_key, serializer.data)
 
     @action(detail=True, url_path="anon", authentication_classes=[LimitedTokenAuthentication], methods=["GET"])
     def get_details_anon(self, request, *args, **kwargs):
