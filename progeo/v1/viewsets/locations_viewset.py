@@ -6,14 +6,14 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.decorator import require_module_permissions
 from progeo.helper.basics import RequestFailed, RequestSuccess
-from progeo.v1.models import ProgeoLocation, ProgeoMeasurement
+from progeo.v1.models import ProgeoLocation, ProgeoMeasurePoint, ProgeoMeasurement
 from progeo.v1.serializers import LocationSerializer, ProgeoMeasurementSerializer, MinimalLocationSerializer
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.v1.viewsets.setup_viewset import _get_controller_account
 
 
 class LocationViewSet(ProgeoModalViewSet):
-    serializer_class = MinimalLocationSerializer
+    serializer_class = LocationSerializer
     authentication_classes = [SessionAuthentication, JWTAuthentication, TokenAuthentication]
     permission_classes = [IsAuthenticated]
 
@@ -163,3 +163,60 @@ class LocationViewSet(ProgeoModalViewSet):
                 "count": len(serialized),
             }
         )
+    
+    @require_module_permissions("module_locations_enabled", "module_measurements_enabled")
+    @action(detail=True, url_path="heatmap", methods=["GET"])
+    def get_heatmap_data(self, request, pk=None, *args, **kwargs):
+        account = self._resolve_request_account(request)
+        db_name = account.db_name if account else "default"
+        try:
+            limit = int(request.query_params.get("limit", 300))
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "limit must be an integer"})
+        limit = max(1, min(limit, 2000))
+
+        location = ProgeoLocation.objects.using(db_name).filter(pk=pk, account=account).first()
+        if not location:
+            return RequestFailed({"reason": "Location not found"})
+
+        points = ProgeoMeasurePoint.objects.using(db_name).filter(location=location)
+        queryset = ProgeoMeasurement.for_account(account, using=db_name, user=request.user).filter(device__location=location)[:limit]
+
+        timestamps = []
+        sensor_points = []
+        _map = {}
+
+        for point in points:
+            sensor_points.append({
+                "pos": point.sensor_order,
+                "x": round(((point.nx / 1.6) + 0.1) * 1.2, 4),
+                "y": round(((point.ny / 1.6) + 0.1) * 1.2, 4),
+            })
+
+        for idx, measurement in enumerate(queryset):
+            
+            #point = points.filter(sensor_order=idx + 1).first()
+            ts = measurement.last_fetched.timestamp() if measurement.last_fetched else None
+            timestamps.append(ts)
+            for idz, sample in enumerate(measurement.samples):
+                if idz % 2 == 0:
+                    continue
+                
+                value = sample - measurement.samples[idz - 1]
+                r_id = idz // 2 + 1
+
+                try:
+                    samples = _map.get(r_id, [])
+                    samples.append(value)
+                    _map.update({r_id: samples})
+                except KeyError:
+                    print(f"Warning: No point found for sensor_order {r_id} in _map {_map}")
+
+
+        return RequestSuccess({
+            "location": LocationSerializer(location).data,
+            "limit": limit,
+            "data": _map,
+            "timestamps": timestamps,
+            "sensor_points": sensor_points
+        })

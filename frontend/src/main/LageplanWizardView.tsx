@@ -1,3 +1,4 @@
+import React from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -37,7 +38,7 @@ type ImportedSource = {
 
 type MeasurePointsResponse = {
   points?: Array<Record<string, unknown>>;
-  lageplan?: string | null;
+  lageplan_url?: string | null;
   offset_x?: number;
   offset_y?: number;
   scale_x?: number;
@@ -159,13 +160,14 @@ const LageplanWizardView = () => {
           const points = Array.isArray(data.points) ? data.points : [];
           setMeasurePoints(points);
 
-          if (data.lageplan) {
-            console.log('Lageplan URL from backend:', data.lageplan);
-            const fileName = data.lageplan.split('/').pop() || 'lageplan.png';
+          if (data.lageplan_url) {
+            console.log('Lageplan URL from backend:', data.lageplan_url);
+            const fileName =
+              data.lageplan_url.split('/').pop() || 'lageplan.png';
             setSourceFileName(fileName);
             setSourceMeta({
               fileName,
-              imageUrl: getBackendUrl(data.lageplan),
+              imageUrl: getBackendUrl(data.lageplan_url),
               type: 'png',
               offset_x: data.offset_x ?? 0,
               offset_y: data.offset_y ?? 0,
@@ -194,6 +196,11 @@ const LageplanWizardView = () => {
       cancelled = true;
     };
   }, [auth, selectedLocationId]);
+
+  const handleTxtUpload = (response: Record<string, unknown>) => {
+    const data = response.data;
+    console.log('TXT upload response data:', data);
+  };
 
   const handleJsonUpload = (response: Record<string, unknown>) => {
     const data = response.data;
@@ -361,6 +368,16 @@ const LageplanWizardView = () => {
               withPreview={false}
               payload={{ location_id: selectedLocationId }}
               callBackProcessing={handleJsonUpload}
+            />
+            <RedDropbox
+              auth={auth}
+              url={`/v1/status/measure_points/upload_cad/`}
+              accept="text"
+              hint="Upload TXT"
+              instantFileUpload={true}
+              withPreview={false}
+              payload={{ location_id: selectedLocationId }}
+              callBackProcessing={handleTxtUpload}
             />
           </>
         )}

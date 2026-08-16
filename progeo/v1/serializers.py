@@ -1,4 +1,5 @@
 import os
+import posixpath
 
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -105,6 +106,7 @@ class LocationSerializer(ProgeoBaseSerializer):
     device_count = serializers.IntegerField(read_only=True)
     has_device = serializers.SerializerMethodField("get_has_device")
     last_measurement_at = serializers.DateTimeField(read_only=True)
+    lageplan_url = serializers.SerializerMethodField("get_lageplan_url")
 
     class Meta:
         model = ProgeoLocation
@@ -113,6 +115,13 @@ class LocationSerializer(ProgeoBaseSerializer):
     @staticmethod
     def get_clazz_name(_):
         return "ProgeoLocation"
+    
+    @staticmethod
+    def get_lageplan_url(obj):
+        raw = obj.lageplan
+        if raw and hasattr(raw, "name"):
+            return posixpath.join("media", "uploads", raw.name)
+        return None
 
     @staticmethod
     def get_has_device(obj):
@@ -124,7 +133,7 @@ class MinimalLocationSerializer(ProgeoBaseSerializer):
         model = ProgeoLocation
         fields = ["id", "project_id"]
 
-        
+
 class BackupSerializer(ProgeoBaseSerializer):
     clazz = serializers.SerializerMethodField("get_clazz_name")
 

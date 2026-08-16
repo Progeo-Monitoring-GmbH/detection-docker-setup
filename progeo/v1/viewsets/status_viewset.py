@@ -279,7 +279,7 @@ class StatusViewSet(ProgeoModalViewSet):
         """Parse semicolon-delimited point lines.
 
         Expected row format (at least 7 columns):
-            id;...;...;...;project;x;y;[grid_x];[grid_y];[sensor_order]
+            id;...;...;...;project;x;y;[grid_x];[grid_y];?;[sensor_order]
         """
         rows = []
         for line_no, line in enumerate((raw_text or "").splitlines(), start=1):
@@ -299,35 +299,13 @@ class StatusViewSet(ProgeoModalViewSet):
             except (TypeError, ValueError):
                 raise ValueError(f"Line {line_no} has invalid id/project/x/y values")
 
-            grid_x = None
-            grid_y = None
             sensor_order = point_id
-
-            if len(parts) > 7 and parts[7] != "":
-                try:
-                    grid_x = int(float(parts[7]))
-                except (TypeError, ValueError):
-                    raise ValueError(f"Line {line_no} has invalid grid_x value")
-
-            if len(parts) > 8 and parts[8] != "":
-                try:
-                    grid_y = int(float(parts[8]))
-                except (TypeError, ValueError):
-                    raise ValueError(f"Line {line_no} has invalid grid_y value")
-
-            if len(parts) > 9 and parts[9] != "":
-                try:
-                    sensor_order = int(float(parts[9]))
-                except (TypeError, ValueError):
-                    raise ValueError(f"Line {line_no} has invalid sensor order value")
 
             rows.append({
                 "id": point_id,
                 "project": project_id,
                 "x": x,
                 "y": y,
-                "gx": grid_x,
-                "gy": grid_y,
                 "pos": sensor_order,
             })
 
@@ -346,8 +324,6 @@ class StatusViewSet(ProgeoModalViewSet):
         for row in rows:
             nx = (row["x"] - min_x) / span_x
             ny = (row["y"] - min_y) / span_y
-            gx = row["gx"] if row["gx"] is not None else int(round(nx * 100))
-            gy = row["gy"] if row["gy"] is not None else int(round(ny * 100))
 
             points.append({
                 "pos": row["pos"],
@@ -355,8 +331,6 @@ class StatusViewSet(ProgeoModalViewSet):
                 "y": row["y"],
                 "nx": nx,
                 "ny": ny,
-                "gx": gx,
-                "gy": gy,
                 "reference": row["pos"] == reference_sensor_order,
             })
 
@@ -540,13 +514,13 @@ class StatusViewSet(ProgeoModalViewSet):
 
             point, _ = create_progeo_measure_point_safe(
                 location=location,
-                sensor_order=point.get("pos"),
+                sensor_order=idx,
                 x=point.get("x"),
                 y=point.get("y"),
                 nx=point.get("nx"),
                 ny=point.get("ny"),
-                grid_x=point.get("gx"),
-                grid_y=point.get("gy"),
+                grid_x=point.get("gx", 0),
+                grid_y=point.get("gy", 0),
             )
 
             bulk_points.append(point)
@@ -554,7 +528,7 @@ class StatusViewSet(ProgeoModalViewSet):
         ProgeoMeasurePoint.objects.using(db_name).filter(location=location).delete()
         ProgeoMeasurePoint.objects.using(db_name).bulk_create(bulk_points)
 
-        stored_qs = ProgeoMeasurePoint.objects.using(db_name).filter(location=location).order_by("sensor_order", "id")
+        stored_qs = ProgeoMeasurePoint.objects.using(db_name).filter(location=location).order_by("sensor_order")
         stored = ProgeoMeasurePointSerializer(
             stored_qs,
             many=True,

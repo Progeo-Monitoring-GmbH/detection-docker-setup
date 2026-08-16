@@ -14,6 +14,12 @@ const WsDebugView = React.lazy(() => import('./main/WsDebugView'));
 const DockerStatusView = React.lazy(() => import('./main/DockerStatusView'));
 const DeviceListView = React.lazy(() => import('./main/DeviceListView'));
 const LocationsOverview = React.lazy(() => import('./main/LocationsOverview'));
+const LocationHeatplotView = React.lazy(
+  () => import('./main/LocationHeatplotView.tsx'),
+);
+const LocationHeatmap2DView = React.lazy(
+  () => import('./main/LocationHeatmap2DView.tsx'),
+);
 const DeviceDetailView = React.lazy(() => import('./main/DeviceDetailView'));
 const DeviceEditorView = React.lazy(() => import('./main/DeviceEditorView'));
 const MeasurementDetailView = React.lazy(
@@ -63,6 +69,20 @@ const CoreRoutes = () => {
       <Route
         path="/location/overview/"
         element={<Navbar act={'location'} content={<LocationsOverview />} />}
+      />
+      <Route
+        path="/location/:id/heatplot"
+        element={<Navbar act={'location'} content={<LocationHeatplotView />} />}
+      />
+      <Route
+        path="/locations/:id/heatplot"
+        element={<Navbar act={'location'} content={<LocationHeatplotView />} />}
+      />
+      <Route
+        path="/location/:id/heatmap2d"
+        element={
+          <Navbar act={'location'} content={<LocationHeatmap2DView />} />
+        }
       />
       <Route
         path="/device/measure"

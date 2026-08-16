@@ -112,9 +112,9 @@ const ImageCanvasStage = ({
         : rawNormalizedY;
 
       const pointX =
-        drawX + pointOffsetX + normalizedX * drawWidth * pointScaleX;
+        drawX + pointOffsetX * zoom + normalizedX * drawWidth * pointScaleX;
       const pointY =
-        drawY + pointOffsetY + normalizedY * drawHeight * pointScaleY;
+        drawY + pointOffsetY * zoom + normalizedY * drawHeight * pointScaleY;
       const radius = 7;
       const label = String(point.pos ?? point.sensor_order ?? index + 1);
 
