@@ -269,21 +269,8 @@ class ProgeoAlarmSerializer(ProgeoBaseSerializer):
 
     class Meta:
         model = ProgeoAlarm
-        fields = [
-            "id",
-            "measurement",
-            "device",
-            "location",
-            "triggered_at",
-            "threshold",
-            "sensor_id",
-            "max_value",
-            "still_active_at",
-            "normalized_at",
-            "status",
-            "is_active",
-            "duration_seconds",
-        ]
+        fields = "__all__"
+
 
     @staticmethod
     def get_clazz_name(_):

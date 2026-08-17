@@ -48,25 +48,30 @@ class Command(BaseCommand):
 
     def _evaluate_db(self, db: str, cutoff) -> tuple[int, int]:
         """Evaluate every last-hour measurement of every location in one pass."""
-        location_ids = list(ProgeoLocation.objects.using(db).values_list("id", flat=True))
-        if not location_ids:
-            return 0, 0
 
         # One query for all locations: every measurement of the last hour with its
         # device+location already joined. `last_fetched` is set on every save and is
         # the reliable "when did the measurement arrive" field.
         measurements = (
             ProgeoMeasurement.objects.using(db)
-            .filter(device__location_id__in=location_ids, last_fetched__gte=cutoff)
+            .filter(last_fetched__gte=cutoff)
             .select_related("device__location")
-            .order_by("last_fetched", "id")
+            .order_by("device__location__pk","last_fetched")
         )
 
         triggered = 0
+        location_ids = 0
+        location_id = None
+        dlog(f"Found Measurements: {measurements.count()}")
         for measurement in measurements:
             location = measurement.device.location
             if location is None:
+                elog(f"No Location found for measurement {measurement} | devuce={measurement.device}!")
                 continue
+
+            if location_id != location.project_id:
+                location_ids += 1
+            location_id = location.project_id
 
             threshold = location.alarm_threshold
             sensor_id, max_value = measurement.evaluate(threshold)
@@ -79,8 +84,8 @@ class Command(BaseCommand):
                 sensor_id=sensor_id + 1,  # 1-based sensor index, matches sensor_order
                 max_value=max_value,
                 threshold=threshold,
-                triggered_at=measurement.last_updated or measurement.last_fetched or timezone.now(),
+                triggered_at=measurement.last_fetched,
                 db=db,
             )
 
-        return len(location_ids), triggered
+        return location_ids, triggered
