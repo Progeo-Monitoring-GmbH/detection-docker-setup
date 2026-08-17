@@ -6,6 +6,7 @@ import Plot from 'react-plotly.js';
 // module so Plotly.toImage operates on the instance that owns the graph div.
 import Plotly from 'plotly.js/dist/plotly';
 import { plotTheme } from '../../styles/plotTheme';
+import { buildStoredZip } from './frameZip';
 import {
   SensorHeatmapLocation,
   SensorHeatmapResponse,
@@ -102,16 +103,27 @@ const computeAutoSigma = (points: Array<{ x: number; y: number }>) => {
 };
 
 /**
+ * Multiplier applied to the location's alarm threshold to define the heat
+ * value at which the field saturates (heat = 1). Sensors must read well
+ * above the alarm threshold before the heatmap turns fully "hot".
+ */
+const HEAT_FULL_MULTIPLIER = 3;
+
+/**
  * Weighted Gaussian splatting on a regular grid over [0, 1] x [0, 1]:
  *
  *   heat(x) = sum_i weight_i * exp(-d(x, point_i)^2 / (2 * sigma^2))
  *
- * The accumulated field is normalized to [0, 1] afterwards.
+ * When `referenceMax` is given (absolute scaling), the accumulated field is
+ * divided by it and clamped to [0, 1] - heat only reaches 1 for sensor
+ * values far above the alarm threshold. Without it the field is normalized
+ * by its own maximum (relative fallback).
  */
 const buildWeightedGrid = (
   points: WeightedPoint[],
   resolution: number,
   sigma: number,
+  referenceMax: number | null = null,
 ) => {
   const res = Math.max(2, resolution);
   const axis = Array.from({ length: res }, (_, index) => index / (res - 1));
@@ -153,7 +165,13 @@ const buildWeightedGrid = (
     });
   });
 
-  if (max > 0) {
+  if (referenceMax != null && referenceMax > 0) {
+    grid.forEach((row) => {
+      for (let index = 0; index < row.length; index += 1) {
+        row[index] = clamp(row[index] / referenceMax, 0, 1);
+      }
+    });
+  } else if (max > 0) {
     grid.forEach((row) => {
       for (let index = 0; index < row.length; index += 1) {
         row[index] /= max;
@@ -162,6 +180,73 @@ const buildWeightedGrid = (
   }
 
   return { axis, grid, max };
+};
+
+// ---------------------------------------------------------------------------
+// Frame export helpers: PNG frames are packaged as a (store-only) ZIP, which
+// is enough because PNGs are already compressed. The zip is then assembled
+// into an MP4 with ffmpeg (scripts are included in the archive).
+// ---------------------------------------------------------------------------
+
+const canvasToPngBlob = (canvas: HTMLCanvasElement) =>
+  new Promise<Blob | null>((resolve) => {
+    canvas.toBlob(resolve, 'image/png');
+  });
+
+const downloadBlob = (blob: Blob, filename: string) => {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+};
+
+const loadImageFromDataUrl = (image: HTMLImageElement, dataUrl: string) =>
+  new Promise<void>((resolve, reject) => {
+    image.onload = () => resolve();
+    image.onerror = () =>
+      reject(new Error('Could not decode the captured frame.'));
+    image.src = dataUrl;
+  });
+
+/**
+ * Draws the frame timestamp (date/time of that frame) plus a frame counter
+ * into the bottom-right corner, on a translucent brand-blue pill.
+ */
+const drawFrameLabel = (
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  timestamp: number | null | undefined,
+  frameNumber: number,
+  totalFrames: number,
+) => {
+  const text = `${formatTimestamp(timestamp)}  \u00B7  frame ${frameNumber}/${totalFrames}`;
+  ctx.font = '600 20px system-ui, -apple-system, "Segoe UI", sans-serif';
+  const textWidth = ctx.measureText(text).width;
+  const padX = 14;
+  const padY = 9;
+  const boxWidth = textWidth + padX * 2;
+  const boxHeight = 34;
+  const x = width - boxWidth - 16;
+  const y = height - boxHeight - 16;
+
+  ctx.fillStyle = 'rgba(9, 75, 129, 0.85)';
+  if (typeof ctx.roundRect === 'function') {
+    ctx.beginPath();
+    ctx.roundRect(x, y, boxWidth, boxHeight, 6);
+    ctx.fill();
+  } else {
+    ctx.fillRect(x, y, boxWidth, boxHeight);
+  }
+
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, x + padX, y + boxHeight / 2 + padY - 8);
 };
 
 const SensorHeatmap2D = ({
@@ -321,21 +406,22 @@ const SensorHeatmap2D = ({
 
     const usedSigma =
       sigma === 'auto' ? computeAutoSigma(sensors) : clamp(sigma, 0.005, 0.3);
-    const { axis, grid, max } = buildWeightedGrid(
-      weightedPoints,
-      resolution,
-      usedSigma,
-    );
 
-    const activeCount = weightedPoints.filter(
-      (point) => point.weight > 0,
-    ).length;
+    // Heat normalization: the field saturates (heat = 1) only when sensor
+    // values reach HEAT_FULL_MULTIPLIER times the location's alarm threshold.
+    // Without a usable threshold the field falls back to relative scaling.
+    const rawThreshold = Number(location?.alarm_threshold);
+    const heatReference =
+      Number.isFinite(rawThreshold) && rawThreshold > 0
+        ? rawThreshold * HEAT_FULL_MULTIPLIER
+        : null;
 
-    // Lageplan placement: the alignment wizard maps normalized coords to
-    // image pixels via  pixel = offset + coord * imageSize * scale. Invert
-    // that mapping so the image lands exactly under the (mirrored) sensor
-    // coordinates. The image's natural size is only needed when offsets are
-    // non-zero, so it degrades gracefully while the image is still loading.
+    // Lageplan alignment: the alignment wizard maps normalized coordinates to
+    // image pixels via  pixel = offset + coord * imageSize * scale. The plot
+    // uses a normalized-to-image space where the image always spans
+    // [0, 1] x [0, 1] and the sensor coordinates are scaled up by
+    // scale_x/scale_y (plus the offsets) so the points land exactly where the
+    // wizard placed them on the plan.
     const rawScaleX = Number(location?.scale_x ?? 1);
     const rawScaleY = Number(location?.scale_y ?? 1);
     const rawOffsetX = Number(location?.offset_x ?? 0);
@@ -345,43 +431,71 @@ const SensorHeatmap2D = ({
     const offsetX = Number.isFinite(rawOffsetX) ? rawOffsetX : 0;
     const offsetY = Number.isFinite(rawOffsetY) ? rawOffsetY : 0;
 
+    // Offsets are normalized by the image size; they only apply once the
+    // image has actually loaded, and degrade gracefully before that.
     const sizeKnown = Boolean(lageplanUrl && imageSize);
     const imgWidth = imageSize?.width ?? 1;
     const imgHeight = imageSize?.height ?? 1;
+    const offsetNormX = sizeKnown ? offsetX / imgWidth : 0;
+    const offsetNormY = sizeKnown ? offsetY / imgHeight : 0;
 
-    const xLeft = sizeKnown ? -offsetX / (imgWidth * scaleX) + 0.1 : 0;
-    const xSize = 1 / scaleX;
-    const vTop = sizeKnown ? 1 + offsetY / (imgHeight * scaleY) - 0.07 : 1;
-    const vSize = 1 / scaleY;
+    // sensors.x/y follow the mirrored convention (y = 1 - ny, or raw ny when
+    // the lageplan is flipped), so the plot y transform collapses to:
+    //   plotY = yUser * scaleY + (1 - scaleY) - offsetNormY
+    const toPlotX = (xUser: number) => offsetNormX + xUser * scaleX;
+    const toPlotY = (yUser: number) =>
+      yUser * scaleY + (1 - scaleY) - offsetNormY;
 
-    const pad = 0.1; // 5% padding around the image and sensors
-    const xMin = Math.min(0, xLeft);
-    const xMax = Math.max(1, xLeft + xSize);
-    const yMin = Math.min(0, vTop - vSize);
-    const yMax = Math.max(1, vTop);
-    const xPad = (xMax - xMin) * pad || pad;
-    const yPad = (yMax - yMin) * pad || pad;
+    // The heat field is computed in normalized space (isotropic kernels);
+    // the raster is then stretched onto the scaled plot domain via the trace
+    // axes, so heat extends exactly as far as the scaled sensor positions.
+    const { axis, grid, max } = buildWeightedGrid(
+      weightedPoints,
+      resolution,
+      usedSigma,
+      heatReference,
+    );
+    const xAxis = axis.map((value) => toPlotX(value));
+    const yAxis = axis.map((value) => toPlotY(value));
+
+    const activeCount = weightedPoints.filter(
+      (point) => point.weight > 0,
+    ).length;
+
+    // Fixed 0.1 margin around the drawn sensor points; the lageplan's
+    // [0, 1] span is always included so the plan stays visible behind them.
+    const margin = 0.1;
+    const plotXs = sensors.map((sensor) => toPlotX(sensor.x));
+    const plotYs = sensors.map((sensor) => toPlotY(sensor.y));
+    const xMin = Math.min(0, ...plotXs) - margin;
+    const xMax = Math.max(1, ...plotXs) + margin;
+    const yMin = Math.min(0, ...plotYs) - margin;
+    const yMax = Math.max(1, ...plotYs) + margin;
 
     return {
-      axis,
+      xAxis,
+      yAxis,
       grid,
       max,
       usedSigma,
       activeCount,
-      xRange: [xMin - xPad, xMax + xPad],
-      yRange: [yMin - yPad, yMax + yPad],
+      heatReference,
+      xRange: [xMin, xMax],
+      yRange: [yMin, yMax],
+      // Display the lageplan at its true aspect ratio.
+      scaleRatio: sizeKnown && imgWidth > 0 ? imgHeight / imgWidth : 1,
       image: lageplanUrl
         ? {
             source: lageplanUrl,
             xref: 'x',
             yref: 'y',
-            x: xLeft,
-            y: vTop - 0.1,
-            sizex: xSize,
-            sizey: vSize,
+            x: 0,
+            y: 1,
+            sizex: 1,
+            sizey: 1,
             xanchor: 'left',
             yanchor: 'top',
-            sizing: 'contain',
+            sizing: 'stretch',
             layer: 'below',
             opacity: 1,
           }
@@ -389,8 +503,8 @@ const SensorHeatmap2D = ({
       sensorScatter: {
         type: 'scatter',
         mode: 'markers+text',
-        x: sensors.map((sensor) => sensor.x),
-        y: sensors.map((sensor) => sensor.y),
+        x: plotXs,
+        y: plotYs,
         text: sensors.map((sensor) => String(sensor.pos)),
         textposition: 'top center',
         textfont: { color: '#ffffff', size: 10 },
@@ -429,13 +543,13 @@ const SensorHeatmap2D = ({
   };
 
   /**
-   * Record the heatmap animation over all timestamps and download it as a
-   * video. Frames are captured from the plot itself (Plotly.toImage), drawn
-   * onto an offscreen canvas and muxed in real time with MediaRecorder.
-   * MP4 is used when the browser supports it, otherwise it falls back to
-   * WebM.
+   * Capture the heatmap animation over all timestamps as PNG frames and
+   * download them as a ZIP together with ffmpeg scripts that assemble the
+   * frames into an MP4. Frames are captured from the plot itself via
+   * Plotly.toImage, drawn onto a canvas with a white background and the
+   * frame's timestamp label, and stored as lossless PNGs.
    */
-  const exportVideo = async () => {
+  const exportFrames = async () => {
     const gd = plotRef.current;
     if (!gd || !chart || timestamps.length < 2 || videoExporting) {
       return;
@@ -447,7 +561,6 @@ const SensorHeatmap2D = ({
 
     const initialMode = mode;
     const initialIndex = timestampIndex;
-    const fps = 8;
     const maxFrames = 120;
     const frameStep = Math.max(1, Math.ceil(timestamps.length / maxFrames));
     const frameIndices: number[] = [];
@@ -469,98 +582,137 @@ const SensorHeatmap2D = ({
         await waitForPlotRedraw();
       }
 
-      const videoCanvas = document.createElement('canvas');
-      videoCanvas.width = width;
-      videoCanvas.height = height;
-      const ctx = videoCanvas.getContext('2d');
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
       if (!ctx) {
         throw new Error('Canvas 2D context unavailable.');
       }
 
-      const mimeTypes = [
-        'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
-        'video/mp4;codecs=avc1',
-        'video/mp4',
-        'video/webm;codecs=vp9',
-        'video/webm;codecs=vp8',
-        'video/webm',
-      ];
-      const mimeType =
-        mimeTypes.find((type) => MediaRecorder.isTypeSupported(type)) || '';
-      const fileExt = mimeType.includes('mp4') ? 'mp4' : 'webm';
+      const frameBlobs: Blob[] = [];
+      const frameImage = new Image();
+      let previousIndex = initialIndex;
 
-      const stream = videoCanvas.captureStream(fps);
-      const recorder = new MediaRecorder(
-        stream,
-        mimeType ? { mimeType, videoBitsPerSecond: 8_000_000 } : undefined,
+      for (let frame = 0; frame < frameIndices.length; frame += 1) {
+        const frameIndex = frameIndices[frame];
+        if (frameIndex !== previousIndex) {
+          setTimestampIndex(frameIndex);
+          await waitForPlotRedraw();
+          previousIndex = frameIndex;
+        }
+
+        const dataUrl = await Plotly.toImage(gd, {
+          format: 'png',
+          width,
+          height,
+          scale: 1,
+        });
+        await loadImageFromDataUrl(frameImage, dataUrl);
+
+        // The plot paper is transparent, so paint a background first to keep
+        // the frames from rendering black on dark video players.
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(frameImage, 0, 0, width, height);
+        drawFrameLabel(
+          ctx,
+          width,
+          height,
+          timestamps[frameIndex],
+          frame + 1,
+          frameIndices.length,
+        );
+
+        const blob = await canvasToPngBlob(canvas);
+        if (blob) {
+          frameBlobs.push(blob);
+        }
+
+        // Let the browser breathe between frames so the progress UI updates.
+        await sleep(25);
+        setVideoProgress((frame + 1) / frameIndices.length);
+      }
+
+      if (!frameBlobs.length) {
+        throw new Error('No frames could be captured.');
+      }
+
+      const encoder = new TextEncoder();
+      const frameFiles = await Promise.all(
+        frameBlobs.map(async (blob, index) => ({
+          name: `frames/frame_${String(index + 1).padStart(4, '0')}.png`,
+          data: new Uint8Array(await blob.arrayBuffer()),
+        })),
       );
 
-      const chunks: Blob[] = [];
-      recorder.ondataavailable = (event) => {
-        if (event.data && event.data.size > 0) {
-          chunks.push(event.data);
-        }
-      };
-      const stopped = new Promise<void>((resolve) => {
-        recorder.onstop = () => resolve();
-      });
+      const ffmpegCommand =
+        'ffmpeg -y -framerate 8 -i frames/frame_%04d.png -c:v libx264 ' +
+        '-preset medium -crf 20 -pix_fmt yuv420p -movflags +faststart ' +
+        'sensor-heatmap.mp4';
 
-      recorder.start();
+      const makeVideoBat = [
+        '@echo off',
+        'REM Assemble the sensor heatmap frames into an MP4 (Windows).',
+        'REM Requires ffmpeg (https://ffmpeg.org/) on PATH.',
+        ffmpegCommand.replace(/%/g, '%%'),
+        'if errorlevel 1 goto :error',
+        'echo.',
+        'echo Done: sensor-heatmap.mp4',
+        'pause',
+        'exit /b 0',
+        ':error',
+        'echo ffmpeg failed - is it installed and on PATH?',
+        'pause',
+        'exit /b 1',
+        '',
+      ].join('\r\n');
 
-      try {
-        const frameImage = new Image();
-        let previousIndex = initialIndex;
-        for (let frame = 0; frame < frameIndices.length; frame += 1) {
-          const frameIndex = frameIndices[frame];
-          if (frameIndex !== previousIndex) {
-            setTimestampIndex(frameIndex);
-            await waitForPlotRedraw();
-            previousIndex = frameIndex;
-          }
+      const makeVideoSh = [
+        '#!/usr/bin/env bash',
+        '# Assemble the sensor heatmap frames into an MP4 (Linux/macOS).',
+        '# Requires ffmpeg (https://ffmpeg.org/) on PATH.',
+        'set -e',
+        ffmpegCommand,
+        'echo "Done: sensor-heatmap.mp4"',
+        '',
+      ].join('\n');
 
-          const dataUrl = await Plotly.toImage(gd, {
-            format: 'png',
-            width,
-            height,
-            scale: 1,
-          });
-          await new Promise<void>((resolve, reject) => {
-            frameImage.onload = () => resolve();
-            frameImage.onerror = () =>
-              reject(new Error('Could not decode the video frame.'));
-            frameImage.src = dataUrl;
-          });
-          ctx.drawImage(frameImage, 0, 0, width, height);
+      const readme = [
+        'Sensor heatmap video frames',
+        '==========================',
+        '',
+        'Each frame is a lossless PNG of the heatmap at one timestamp, labeled',
+        'with the timestamp date/time and a frame counter.',
+        '',
+        'To assemble an MP4 with ffmpeg:',
+        '',
+        `    ${ffmpegCommand}`,
+        '',
+        'Or run make_video.bat (Windows) / make_video.sh (Linux/macOS) from',
+        'this folder after installing ffmpeg (https://ffmpeg.org/).',
+        '',
+        'Tip: raise -framerate for a smoother video, e.g. -framerate 12.',
+        '',
+      ].join('\n');
 
-          if (frame < frameIndices.length - 1) {
-            await sleep(1000 / fps);
-          }
-          setVideoProgress((frame + 1) / frameIndices.length);
-        }
-      } finally {
-        recorder.stop();
-        await stopped;
-      }
+      const zipBlob = buildStoredZip([
+        ...frameFiles,
+        { name: 'make_video.bat', data: encoder.encode(makeVideoBat) },
+        { name: 'make_video.sh', data: encoder.encode(makeVideoSh) },
+        { name: 'README.txt', data: encoder.encode(readme) },
+      ]);
 
-      if (!chunks.length) {
-        throw new Error('The browser produced no video data.');
-      }
-
-      const blob = new Blob(chunks, { type: mimeType || 'video/webm' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `sensor-heatmap-${new Date()
-        .toISOString()
-        .slice(0, 19)
-        .replace(/[:T]/g, '-')}.${fileExt}`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      downloadBlob(
+        zipBlob,
+        `sensor-heatmap-frames-${new Date()
+          .toISOString()
+          .slice(0, 19)
+          .replace(/[:T]/g, '-')}.zip`,
+      );
       setVideoProgress(1);
     } catch (error) {
-      setVideoError((error as Error).message || 'Video export failed.');
+      setVideoError((error as Error).message || 'Frame export failed.');
     } finally {
       setTimestampIndex(initialIndex);
       setMode(initialMode);
@@ -571,7 +723,7 @@ const SensorHeatmap2D = ({
   return (
     <Card className="border-0 shadow-sm">
       <Card.Body>
-        <div className="d-flex flex-wrap justify-content-between align-items-center mb-2">
+        <div className="d-flex flex-wrap justify-content-between align-items-center mb-2 p-3">
           <h5 className="mb-0">{title}</h5>
           {chart && (
             <small className="text-muted">
@@ -581,6 +733,9 @@ const SensorHeatmap2D = ({
                 ? `, ${chart.activeCount} active, \u03C3=${chart.usedSigma.toFixed(
                     3,
                   )}`
+                : ''}
+              {chart.heatReference
+                ? `, heat=1 \u2265 ${chart.heatReference}`
                 : ''}
             </small>
           )}
@@ -592,7 +747,7 @@ const SensorHeatmap2D = ({
           </div>
         ) : (
           <>
-            <div className="d-flex flex-wrap align-items-center gap-3 mb-3">
+            <div className="d-flex flex-wrap align-items-center gap-3 mb-3 p-3">
               <Form.Select
                 aria-label="Aggregation mode"
                 value={mode}
@@ -671,7 +826,7 @@ const SensorHeatmap2D = ({
                   <>
                     <Spinner size="sm" animation="border" />
                     <span className="text-muted small">
-                      Rendering video\u2026{' '}
+                      Rendering frames\u2026{' '}
                       {Math.round((videoProgress ?? 0) * 100)}%
                     </span>
                   </>
@@ -679,12 +834,12 @@ const SensorHeatmap2D = ({
                   <Button
                     size="sm"
                     variant="outline-danger"
-                    onClick={() => void exportVideo()}
+                    onClick={() => void exportFrames()}
                     disabled={timestamps.length < 2}
-                    title="Record the heatmap animation over all timestamps (MP4 or WebM)"
+                    title="Capture PNG frames of the heatmap animation and download them together with an ffmpeg script that assembles an MP4"
                   >
                     <Film className="me-1" />
-                    Export MP4
+                    Export Frames
                   </Button>
                 )}
               </div>
@@ -699,9 +854,11 @@ const SensorHeatmap2D = ({
               data={[
                 {
                   type: 'heatmap',
-                  x: chart.axis,
-                  y: chart.axis,
+                  x: chart.xAxis,
+                  y: chart.yAxis,
                   z: chart.grid.map((row) => Array.from(row)),
+                  zmin: 0,
+                  zmax: 1,
                   colorscale: [
                     [0, plotTheme.brandBlue],
                     [0.35, plotTheme.contrastCyan],
@@ -726,15 +883,13 @@ const SensorHeatmap2D = ({
                 plot_bgcolor: 'transparent',
                 images: chart.image ? [chart.image] : [],
                 xaxis: {
-                  title: { text: 'x (normalized)' },
                   range: chart.xRange,
                   constrain: 'domain',
                 },
                 yaxis: {
-                  title: { text: 'y (normalized)' },
                   range: chart.yRange,
                   scaleanchor: 'x',
-                  scaleratio: 1,
+                  scaleratio: chart.scaleRatio,
                 },
                 font: { family: 'inherit', color: plotTheme.brandBlue },
               }}

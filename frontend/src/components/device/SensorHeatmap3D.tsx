@@ -7,6 +7,7 @@ export type SensorHeatmapLocation = {
   id?: number | null;
   project_id?: number | null;
   lageplan_url?: string | null;
+  alarm_threshold?: number | null;
   offset_x?: number | null;
   offset_y?: number | null;
   scale_x?: number | null;

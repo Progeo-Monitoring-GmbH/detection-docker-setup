@@ -455,6 +455,10 @@ class ProgeoAlarm(ProgeoModel, auto_prefetch.Model):
 
     status = models.IntegerField(choices=[(0, "neu"), (1, "quittiert"), (2, "stoerung")], default=0)
 
+    def prolong_until_now(self):
+        self.still_active_at = timezone.now()
+        self.save()
+
     def __str__(self):
         _id = f"[{self.pk}] " if DEBUG else ""
         if self.normalized_at:
