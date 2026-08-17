@@ -370,12 +370,17 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
         return []
 
     def evaluate(self, alarm_threshold):
-        samples = self.get_sample_values()
-        for idx, sample in enumerate(samples):
+        pairs = self.get_pairs()
+        for idx, sample in enumerate(pairs):
             value = int(sample)
             if value > alarm_threshold:
                 return idx, value
         return None, None
+
+    def get_pairs(self, samples=None):
+        if samples is None:
+            samples = self.get_sample_values()
+        return [abs(b - a) for a, b in zip(samples[:-1], samples[1:-1])]
 
     def get_sample_values(self):
         # Prefer denormalized samples column for faster reads.
@@ -391,16 +396,6 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
                 return samples
 
         return self._coerce_numeric_samples(raw_data.get("samples"))
-
-    def get_absolute_pair_values(self):
-        values = self.get_sample_values()
-        pair_count = len(values) // 2
-        result = []
-        for idx in range(pair_count):
-            left = values[idx * 2]
-            right = values[idx * 2 + 1]
-            result.append(abs(left - right))
-        return result
 
     def __str__(self):
         _id = f"[{self.pk}] "

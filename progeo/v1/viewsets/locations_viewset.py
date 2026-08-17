@@ -195,9 +195,19 @@ class LocationViewSet(ProgeoModalViewSet):
 
         for idx, measurement in enumerate(queryset):
             
-            #point = points.filter(sensor_order=idx + 1).first()
             ts = measurement.last_fetched.timestamp() if measurement.last_fetched else None
             timestamps.append(ts)
+            pairs = measurement.get_pairs()
+
+            for idz, sample in enumerate(pairs):
+                try:
+                    samples = _map.get(idz, [])
+                    samples.append(sample)
+                    _map.update({idz: samples})
+                except KeyError:
+                    print(f"Warning: No point found for sensor_order {idz} in _map {_map}")
+
+            '''
             for idz, sample in enumerate(measurement.samples):
                 if idz % 2 == 0:
                     continue
@@ -211,6 +221,7 @@ class LocationViewSet(ProgeoModalViewSet):
                     _map.update({r_id: samples})
                 except KeyError:
                     print(f"Warning: No point found for sensor_order {r_id} in _map {_map}")
+            '''
 
 
         return RequestSuccess({

@@ -234,13 +234,10 @@ class ProgeoMeasurementSerializer(ProgeoBaseSerializer):
         return self._extract_samples(getattr(obj, "raw_data", None))
 
     def get_pair_abs_values(self, obj):
-        if hasattr(obj, "get_absolute_pair_values"):
-            return obj.get_absolute_pair_values()
-        samples = self.get_samples(obj)
-        return [
-            abs(samples[idx * 2] - samples[idx * 2 + 1])
-            for idx in range(len(samples) // 2)
-        ]
+        if hasattr(obj, "get_pairs"):
+            return obj.get_pairs()
+        return []
+
 
     def get_pair_count(self, obj):
         return len(self.get_pair_abs_values(obj))

@@ -95,7 +95,7 @@ def test_parse_legacy_data_measurement_invalid_fields_become_zero():
 
 
 @pytest.mark.django_db(databases=["unit_tests", "default"])
-def test_progeomeasurement_get_absolute_pair_values_fast_path():
+def test_progeomeasurement_get_pairs_fast_path():
     device = ProgeoDevice.objects.using("default").create(raw_hash="pair-values-device")
     measurement = ProgeoMeasurement.objects.using("default").create(
         device=device,
@@ -104,7 +104,7 @@ def test_progeomeasurement_get_absolute_pair_values_fast_path():
     )
 
     assert measurement.get_sample_values() == [10, 5, 99, 111, 7, 7]
-    assert measurement.get_absolute_pair_values() == [5, 12, 0]
+    assert measurement.get_pairs() == [5, 12, 0]
 
 
 @pytest.mark.django_db(databases=["unit_tests", "default"])

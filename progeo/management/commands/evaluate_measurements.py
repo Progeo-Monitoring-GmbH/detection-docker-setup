@@ -10,7 +10,6 @@ from progeo.v1.models import ProgeoLocation, ProgeoMeasurement
 
 LOOKBACK = datetime.timedelta(hours=1)
 
-
 class Command(BaseCommand):
     help = (
         "Iterates over all locations and evaluates every ProgeoMeasurement of the last hour. "
