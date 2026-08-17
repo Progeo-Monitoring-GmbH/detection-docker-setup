@@ -126,10 +126,13 @@ def create_progeo_alarm_safe(measurement: ProgeoMeasurement, sensor_id: Optional
 		device = measurement.device
 		existing_alarms = ProgeoAlarm.objects.using(db_name).filter(measurement__device=device, normalized_at__isnull=True)
 		if len(existing_alarms) > 0:
+			# `last_updated` is not set for every measurement; fall back to
+			# `last_fetched` so the still-active alarm is always prolonged to a real time.
+			still_active_at = measurement.last_updated or measurement.last_fetched or timezone.now()
 			for alarm in existing_alarms:
-				alarm.still_active_at = measurement.last_updated
+				alarm.still_active_at = still_active_at
 				alarm.save(using=db_name)
-			elog(f"Existing unnormalized alarms found for device {device.id}. Skipping creation of new alarm.", tag="[CREATOR]")
+			okaylog(f"Existing unnormalized alarms found for device {device.id}. Prolonged current alarm.", tag="[CREATOR]")
 			return None, False
 
 	return _safe_get_or_create(
