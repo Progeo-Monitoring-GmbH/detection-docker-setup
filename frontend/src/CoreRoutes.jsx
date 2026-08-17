@@ -14,6 +14,7 @@ const WsDebugView = React.lazy(() => import('./main/WsDebugView'));
 const DockerStatusView = React.lazy(() => import('./main/DockerStatusView'));
 const DeviceListView = React.lazy(() => import('./main/DeviceListView'));
 const LocationsOverview = React.lazy(() => import('./main/LocationsOverview'));
+const AlarmsOverview = React.lazy(() => import('./main/AlarmsOverview.tsx'));
 const LocationHeatplotView = React.lazy(
   () => import('./main/LocationHeatplotView.tsx'),
 );
@@ -69,6 +70,10 @@ const CoreRoutes = () => {
       <Route
         path="/location/overview/"
         element={<Navbar act={'location'} content={<LocationsOverview />} />}
+      />
+      <Route
+        path="/alarms/"
+        element={<Navbar act={'alarms'} content={<AlarmsOverview />} />}
       />
       <Route
         path="/location/:id/heatplot"

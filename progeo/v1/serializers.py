@@ -4,11 +4,14 @@ import posixpath
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
+from django.utils import timezone
+
 from progeo.v1.helper import pretty_sizeof
 from progeo.v1.models import (
     MfSLog,
     Account,
     Backup,
+    ProgeoAlarm,
     ProgeoDevice,
     ProgeoLocation,
     ProgeoMeasurePoint,
@@ -255,6 +258,69 @@ class ProgeoMeasurementSerializer(ProgeoBaseSerializer):
     def get_non_zero_sample(self, obj):
         samples = self.get_samples(obj)
         return len([value for value in samples if value != 0])
+
+
+class ProgeoAlarmSerializer(ProgeoBaseSerializer):
+    clazz = serializers.SerializerMethodField("get_clazz_name")
+    device = serializers.SerializerMethodField("get_device")
+    location = serializers.SerializerMethodField("get_location")
+    is_active = serializers.SerializerMethodField("get_is_active")
+    duration_seconds = serializers.SerializerMethodField("get_duration_seconds")
+
+    class Meta:
+        model = ProgeoAlarm
+        fields = [
+            "id",
+            "measurement",
+            "device",
+            "location",
+            "triggered_at",
+            "threshold",
+            "sensor_id",
+            "max_value",
+            "still_active_at",
+            "normalized_at",
+            "status",
+            "is_active",
+            "duration_seconds",
+        ]
+
+    @staticmethod
+    def get_clazz_name(_):
+        return "ProgeoAlarm"
+
+    @staticmethod
+    def get_device(obj):
+        device = obj.measurement.device
+        return {
+            "id": device.id,
+            "mac": device.mac,
+            "raw_hash": device.raw_hash,
+        }
+
+    @staticmethod
+    def get_location(obj):
+        location = obj.measurement.device.location
+        if location is None:
+            return None
+        return {
+            "id": location.id,
+            "project_id": location.project_id,
+            "name": location.name,
+        }
+
+    @staticmethod
+    def get_is_active(obj):
+        return obj.normalized_at is None
+
+    @staticmethod
+    def get_duration_seconds(obj):
+        """Seconds the alarm stayed/stays active (triggered -> normalized/now)."""
+        if not obj.triggered_at:
+            return None
+        end = obj.normalized_at or timezone.now()
+        duration = end - obj.triggered_at
+        return max(0, int(duration.total_seconds()))
 
 
 class MfSLogSerializer(ProgeoBaseSerializer):

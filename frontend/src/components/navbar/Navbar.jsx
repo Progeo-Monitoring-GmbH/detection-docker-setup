@@ -46,6 +46,16 @@ const Navbar = ({ act, content }) => {
             Measurements
           </Button>
         )}
+        {hasPermission('module_measurements_enabled') && (
+          <Button
+            href="/alarms/"
+            variant={act === 'alarms' ? 'info' : 'secondary'}
+            className="w-100 mt-2"
+            size="lg"
+          >
+            Alarms
+          </Button>
+        )}
         {hasPermission('module_imei_enabled') && (
           <Button
             href="/devices/imei/display/"
