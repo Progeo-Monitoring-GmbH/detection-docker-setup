@@ -132,7 +132,7 @@ def create_progeo_alarm_safe(measurement: ProgeoMeasurement, sensor_id: Optional
 			for alarm in existing_alarms:
 				alarm.still_active_at = still_active_at
 				alarm.save(using=db_name)
-			#okaylog(f"Existing unnormalized alarms found for device {device.id}. Prolonged current alarm.", tag="[CREATOR]")
+			okaylog(f"Existing unnormalized alarms found for device {device.id}. Prolonged current alarm.", tag="[CREATOR]")
 			return None, False
 
 	return _safe_get_or_create(

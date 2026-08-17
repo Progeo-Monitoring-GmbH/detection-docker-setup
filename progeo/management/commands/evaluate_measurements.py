@@ -65,8 +65,17 @@ class Command(BaseCommand):
         for measurement in measurements:
             location = measurement.device.location
             if location is None:
-                elog(f"No Location found for measurement {measurement} | devuce={measurement.device}!")
-                continue
+                if measurement.device:
+                    location, created = ProgeoLocation.objects.using(db).get_or_create(project_id=measurement.device.project_id)
+                    if created:
+                        ilog(f"Created new Location {location} for device {measurement.device}!")
+                        location.save(using=db)
+                    device = measurement.device
+                    device.location = location
+                    device.save(using=db)
+                else:
+                    elog(f"No Location found for measurement {measurement} | device={measurement.device}!")
+                    continue
 
             if location_id != location.project_id:
                 location_ids += 1
@@ -78,6 +87,7 @@ class Command(BaseCommand):
                 continue
 
             triggered += 1
+            dlog(f"ALARM TRIGGERED: location={location.project_id} at={measurement.last_fetched}")
             create_progeo_alarm_safe(
                 measurement=measurement,
                 sensor_id=sensor_id + 1,  # 1-based sensor index, matches sensor_order
