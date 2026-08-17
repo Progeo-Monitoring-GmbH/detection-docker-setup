@@ -6,7 +6,7 @@ from django.utils import timezone
 from progeo.helper.basics import dlog, elog, ilog
 from progeo.settings import DATABASES
 from progeo.v1.creator import create_progeo_alarm_safe
-from progeo.v1.models import ProgeoLocation, ProgeoMeasurement
+from progeo.v1.models import ProgeoAlarm, ProgeoLocation, ProgeoMeasurement
 
 LOOKBACK = datetime.timedelta(hours=1)
 
@@ -83,8 +83,14 @@ class Command(BaseCommand):
 
             threshold = location.alarm_threshold
             sensor_id, max_value = measurement.evaluate(threshold)
+            alarm = None
             if sensor_id is None or max_value is None:
+                alarm = ProgeoAlarm.objects.using(db).filter(measurement__device=measurement.device, normalized_at__isnull=True)
+                if alarm:
+                    alarm.update(normalized_at=measurement.last_fetched)
+                    dlog(f"ALARM NORMALIZED: location={location.project_id} at={measurement.last_fetched}")
                 continue
+
 
             triggered += 1
             dlog(f"ALARM TRIGGERED: location={location.project_id} at={measurement.last_fetched}")
