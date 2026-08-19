@@ -1,8 +1,6 @@
 .alarm-timeline {
   position: relative;
   width: 100%;
-  height: 300px;
-  overflow: auto;
 }
 
 .alarm-timeline-empty {
@@ -13,15 +11,31 @@
   color: #6c757d;
 }
 
+/* Fixed header: stays visible while the lanes scroll. */
+.alarm-timeline-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: #ffffff;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  padding-bottom: 0.4rem;
+}
+
 .alarm-timeline-summary {
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-  padding-bottom: 0.5rem;
+  padding-bottom: 0.4rem;
 }
 
 .alarm-timeline-axis {
-  padding: 0.25rem 0 0.4rem;
-  border-bottom: 2px solid rgba(0, 0, 0, 0.12);
+  padding: 0.15rem 0 0.3rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
   font-variant-numeric: tabular-nums;
+}
+
+/* Scrollable lane area; header stays pinned above it. */
+.alarm-timeline-scroll {
+  max-height: 340px;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .alarm-timeline-lane {
@@ -82,6 +96,9 @@
   transition:
     transform 0.1s ease,
     box-shadow 0.1s ease;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
 }
 
 .alarm-timeline-bar:hover {
@@ -90,22 +107,55 @@
   z-index: 2;
 }
 
+/* State border: green = normalized, red = still active. The fill color
+   (heat) is set inline per alarm via alarmHeatColor. */
 .alarm-timeline-bar.is-active {
-  background: linear-gradient(180deg, #dc3545 0%, #a52834 100%);
-  border: 1px solid #7f1d27;
+  border: 4px solid #dc3545;
 }
 
 .alarm-timeline-bar.is-normalized {
-  background: linear-gradient(180deg, #198754 0%, #136740 100%);
-  border: 1px solid #0d5030;
+  border: 4px solid #198754;
 }
 
 .alarm-timeline-bar.is-selected {
-  outline: 2px solid #0d6efd;
-  outline-offset: 1px;
+  outline: 4px solid #0d6efd;
+  outline-offset: 2px;
   z-index: 3;
+}
+
+.alarm-timeline-bar-label {
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
 }
 
 .alarm-timeline-legend {
   font-size: 0.8rem;
+}
+
+.alarm-timeline-swatch {
+  display: inline-block;
+  width: 16px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+.alarm-timeline-swatch-border-red {
+  background: rgba(220, 53, 69, 0.25);
+  border: 2px solid #dc3545;
+}
+
+.alarm-timeline-swatch-border-green {
+  background: rgba(25, 135, 84, 0.25);
+  border: 2px solid #198754;
+}
+
+.alarm-timeline-swatch-heat {
+  background: linear-gradient(90deg, #094b81, #61aac5, #fbbc15, #eb633b);
 }

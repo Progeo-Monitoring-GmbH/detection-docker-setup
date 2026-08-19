@@ -49,13 +49,13 @@ const CoreRoutes = () => {
     <Routes>
       <Route path={`/login`} element={<LoginForm />} />
 
-      <Route path="/dev" element={<DevView />} />
+      <Route path="/dev" element={<Navbar act={'tools'} content={<DevView />} />} />
 
       <Route
         path="/ws-debug"
         element={
           <WebSocketProvider url="/ws/commands/list">
-            <WsDebugView />
+            <Navbar act={'tools'} content={<WsDebugView />} />
           </WebSocketProvider>
         }
       />

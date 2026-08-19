@@ -128,6 +128,17 @@ def create_progeo_alarm_safe(measurement: ProgeoMeasurement, sensor_id: Optional
 	if triggered_at is None:
 		triggered_at = measurement.last_updated or measurement.last_fetched or timezone.now()
 
+	# Record this measurement in the alarm's development history, so the
+	# timeline can color-code the alarm's progress over time like the heatmap.
+	max_value_entry = None
+	if max_value is not None:
+		ts = measurement.last_fetched or measurement.last_updated or triggered_at
+		max_value_entry = {
+			"ts": ts.isoformat() if hasattr(ts, "isoformat") else ts,
+			"value": float(max_value),
+			"sensor_id": sensor_id,
+		}
+
 	if isinstance(measurement, ProgeoMeasurement):
 		device = measurement.device
 		existing_alarms = ProgeoAlarm.objects.using(db_name).filter(measurement__device=device, normalized_at__isnull=True)
@@ -137,12 +148,15 @@ def create_progeo_alarm_safe(measurement: ProgeoMeasurement, sensor_id: Optional
 			still_active_at = measurement.last_fetched or measurement.last_updated or timezone.now()
 			for alarm in existing_alarms:
 				alarm.still_active_at = still_active_at
+				update_fields = ["still_active_at"]
+				if max_value_entry is not None:
+					alarm.max_values = list(alarm.max_values or []) + [max_value_entry]
+					update_fields.append("max_values")
 				if alarm.triggered_at is None:
 					# Backfill the trigger time for legacy alarms without one.
 					alarm.triggered_at = triggered_at
-					alarm.save(using=db_name, update_fields=["triggered_at", "still_active_at"])
-				else:
-					alarm.save(using=db_name, update_fields=["still_active_at"])
+					update_fields.append("triggered_at")
+				alarm.save(using=db_name, update_fields=update_fields)
 			okaylog(f"Existing unnormalized alarms found for device {device.id}. Prolonged current alarm.", tag="[CREATOR]")
 			return None, False
 
@@ -159,6 +173,7 @@ def create_progeo_alarm_safe(measurement: ProgeoMeasurement, sensor_id: Optional
 		defaults={
 			"triggered_at": triggered_at,
 			"still_active_at": triggered_at,
+			"max_values": [max_value_entry] if max_value_entry is not None else [],
 			"evaluated_by": evaluated_by,
 			"normalized_at": normalized_at,
 		},

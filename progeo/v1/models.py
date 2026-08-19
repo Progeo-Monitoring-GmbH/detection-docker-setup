@@ -441,7 +441,11 @@ class ProgeoAlarm(ProgeoModel, auto_prefetch.Model):
     threshold = models.FloatField(null=True, blank=True)
     sensor_id = models.IntegerField(null=True, blank=True)
     max_value = models.FloatField(null=True, blank=True)
-    
+    # Development of the alarm: one entry per evaluated measurement, so the
+    # timeline can color-code the alarm's progress over time like the heatmap.
+    # Each entry: {"ts": iso, "value": float, "sensor_id": int}
+    max_values = JSONField(default=list, blank=True)
+
     evaluated_at = models.DateTimeField(null=True, blank=True)
     evaluated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
 

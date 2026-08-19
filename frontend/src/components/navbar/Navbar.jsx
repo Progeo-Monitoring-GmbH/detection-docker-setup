@@ -25,7 +25,7 @@ import {
   Navbar as BsNavbar,
   NavDropdown,
 } from 'react-bootstrap';
-import { useLocation } from 'react-router';
+import { Link, useLocation } from 'react-router';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import usePermissions from '../../../hooks/usePermissions';
 import './Navbar.css';
@@ -106,6 +106,7 @@ const buildBreadcrumbs = (pathname) => {
       'alarms',
       'measure',
       'devices',
+      'imei',
       'backup',
       'docker',
       'admin',
@@ -152,7 +153,8 @@ const Navbar = ({ act, content }) => {
     return (
       <Nav.Link
         key={section}
-        href={target}
+        as={Link}
+        to={target}
         active={activeSection === section}
         className="px-3"
       >
@@ -173,7 +175,7 @@ const Navbar = ({ act, content }) => {
           className="progeo-topnav px-3 py-1"
         >
           <Container fluid>
-            <BsNavbar.Brand href="/">
+            <BsNavbar.Brand as={Link} to="/">
               <House size={20} />
               <span>PROGEO</span>
             </BsNavbar.Brand>
@@ -206,24 +208,24 @@ const Navbar = ({ act, content }) => {
                   id="progeo-tools-dropdown"
                   active={activeSection === 'tools'}
                 >
-                  <NavDropdown.Item href="/factory/">
+                  <NavDropdown.Item as={Link} to="/factory/">
                     <Map size={16} className="me-2" />
                     Factory
                   </NavDropdown.Item>
-                  <NavDropdown.Item href="/lageplan/wizard/">
+                  <NavDropdown.Item as={Link} to="/lageplan/wizard/">
                     <Layers size={16} className="me-2" />
                     Lageplan Wizard
                   </NavDropdown.Item>
-                  <NavDropdown.Item href="/map/">
+                  <NavDropdown.Item as={Link} to="/map/">
                     <Geo size={16} className="me-2" />
                     Map
                   </NavDropdown.Item>
                   <NavDropdown.Divider />
-                  <NavDropdown.Item href="/ws-debug">
+                  <NavDropdown.Item as={Link} to="/ws-debug">
                     <Broadcast size={16} className="me-2" />
                     WS Debug
                   </NavDropdown.Item>
-                  <NavDropdown.Item href="/dev">
+                  <NavDropdown.Item as={Link} to="/dev">
                     <Terminal size={16} className="me-2" />
                     Dev
                   </NavDropdown.Item>
@@ -248,7 +250,11 @@ const Navbar = ({ act, content }) => {
           <Breadcrumb>
             {crumbs.map((crumb, index) =>
               crumb.to && index < crumbs.length - 1 ? (
-                <Breadcrumb.Item key={index} href={crumb.to}>
+                <Breadcrumb.Item
+                  key={index}
+                  linkAs={Link}
+                  linkProps={{ to: crumb.to }}
+                >
                   {crumb.label}
                 </Breadcrumb.Item>
               ) : (

@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from django.db.models import Count, Max
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from rest_framework.decorators import action
@@ -175,12 +177,29 @@ class LocationViewSet(ProgeoModalViewSet):
             return RequestFailed({"reason": "limit must be an integer"})
         limit = max(1, min(limit, 2000))
 
+        # Optional time window (ISO-8601) so the frontend can scope the heatmap
+        # to a selected alarm's active range instead of the newest N measurements.
+        time_from = request.query_params.get("from")
+        time_to = request.query_params.get("to")
+        try:
+            if time_from:
+                time_from = datetime.fromisoformat(time_from)
+            if time_to:
+                time_to = datetime.fromisoformat(time_to)
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "from/to must be ISO-8601 timestamps"})
+
         location = ProgeoLocation.objects.using(db_name).filter(pk=pk, account=account).first()
         if not location:
             return RequestFailed({"reason": "Location not found"})
 
         points = ProgeoMeasurePoint.objects.using(db_name).filter(location=location)
-        queryset = ProgeoMeasurement.for_account(account, using=db_name, user=request.user).filter(device__location=location)[:limit]
+        queryset = ProgeoMeasurement.for_account(account, using=db_name, user=request.user).filter(device__location=location)
+        if time_from:
+            queryset = queryset.filter(last_fetched__gte=time_from)
+        if time_to:
+            queryset = queryset.filter(last_fetched__lte=time_to)
+        queryset = queryset[:limit]
 
         timestamps = []
         sensor_points = []
@@ -227,6 +246,8 @@ class LocationViewSet(ProgeoModalViewSet):
         return RequestSuccess({
             "location": LocationSerializer(location).data,
             "limit": limit,
+            "from": time_from.isoformat() if time_from else None,
+            "to": time_to.isoformat() if time_to else None,
             "data": _map,
             "timestamps": timestamps,
             "sensor_points": sensor_points

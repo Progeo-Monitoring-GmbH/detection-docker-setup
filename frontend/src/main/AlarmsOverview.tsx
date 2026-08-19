@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import DataTable from 'react-data-table-component';
 import type { TableColumn } from 'react-data-table-component';
-import { Badge, Button, Card, Container, Spinner } from 'react-bootstrap';
+import { Badge, Button, Card, Container, Form, Spinner } from 'react-bootstrap';
 import {
   ArrowClockwise,
   Check2Circle,
@@ -38,6 +38,12 @@ type AlarmEvaluatedBy = {
   username?: string | null;
 };
 
+type AlarmMaxValueEntry = {
+  ts?: string | null;
+  value?: number | null;
+  sensor_id?: number | null;
+};
+
 type AlarmRow = {
   id: number;
   measurement?: number | null;
@@ -54,12 +60,27 @@ type AlarmRow = {
   status?: number;
   is_active?: boolean;
   duration_seconds?: number | null;
+  max_values?: AlarmMaxValueEntry[];
 };
 
 const HEATMAP_LIMIT = 300;
 // Live "how long active" counter: 30s granularity is plenty and avoids
 // re-rendering the whole timeline every second.
 const TICK_MS = 30_000;
+
+/**
+ * Convert a ms timestamp to a naive local ISO string (no timezone suffix),
+ * matching the format the backend serializer emits, so `from`/`to` round-trip
+ * through datetime.fromisoformat on the server.
+ */
+const toLocalIso = (ms: number): string => {
+  const date = new Date(ms);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+    `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+  );
+};
 
 const STATUS_LABELS: Record<number, { label: string; variant: string }> = {
   0: { label: 'Neu', variant: 'warning' },
@@ -77,6 +98,7 @@ const AlarmsOverview = () => {
   const [heatmapResponse, setHeatmapResponse] =
     useState<SensorHeatmapResponse | null>(null);
   const [filterText, setFilterText] = useState('');
+  const [onlyActive, setOnlyActive] = useState(false);
   const [acknowledgingId, setAcknowledgingId] = useState<number | null>(null);
   // Only ticks while at least one alarm is active; frozen otherwise, so the
   // timeline does not re-render when all alarms are normalized.
@@ -127,12 +149,32 @@ const AlarmsOverview = () => {
         return;
       }
 
+      // Scope the heatmap to the alarm's active window (trigger -> normalized,
+      // or -> now while still active), with a little padding for context.
+      const startMs = alarmStartTime(alarm);
+      const normalizedMs = parseTimestamp(alarm.normalized_at);
+      const endMs =
+        normalizedMs != null
+          ? normalizedMs
+          : isAlarmActive(alarm)
+            ? now
+            : startMs ?? now;
+      const padMs = 5 * 60 * 1000; // 5 minutes each side
+      const fromMs = startMs != null ? startMs - padMs : now - padMs;
+      const toMs = endMs + padMs;
+
+      const params = new URLSearchParams({
+        limit: String(HEATMAP_LIMIT),
+        from: toLocalIso(fromMs),
+        to: toLocalIso(toMs),
+      });
+
       setSelectedAlarm(alarm);
       setHeatmapLoading(true);
       setHeatmapResponse(null);
       void axiosConfig.perform_get(
         auth,
-        `/v1/location/${locationId}/heatmap/?limit=${HEATMAP_LIMIT}`,
+        `/v1/location/${locationId}/heatmap/?${params.toString()}`,
         (result) => {
           setHeatmapResponse(
             (result?.data || null) as SensorHeatmapResponse | null,
@@ -150,7 +192,7 @@ const AlarmsOverview = () => {
         },
       );
     },
-    [auth, enqueueSnackbar],
+    [auth, enqueueSnackbar, now],
   );
 
   const acknowledgeAlarm = useCallback(
@@ -203,11 +245,13 @@ const AlarmsOverview = () => {
 
   const filteredRows = useMemo(() => {
     const needle = filterText.trim().toLowerCase();
-    if (!needle) {
-      return rows;
-    }
-
     return rows.filter((row) => {
+      if (onlyActive && !isAlarmActive(row)) {
+        return false;
+      }
+      if (!needle) {
+        return true;
+      }
       const haystack = [
         String(row.id),
         row.location?.name,
@@ -226,7 +270,7 @@ const AlarmsOverview = () => {
 
       return haystack.includes(needle);
     });
-  }, [rows, filterText]);
+  }, [rows, filterText, onlyActive]);
 
   const columns: TableColumn<AlarmRow>[] = [
     {
@@ -369,8 +413,22 @@ const AlarmsOverview = () => {
     const where = loc
       ? `${loc.name || 'Unnamed location'} (${loc.project_id ?? loc.id})`
       : 'unknown location';
-    return `Alarm #${selectedAlarm.id} - ${where}`;
-  }, [selectedAlarm]);
+    const startMs = alarmStartTime(selectedAlarm);
+    const normalizedMs = parseTimestamp(selectedAlarm.normalized_at);
+    const endMs =
+      normalizedMs != null
+        ? normalizedMs
+        : isAlarmActive(selectedAlarm)
+          ? now
+          : startMs ?? now;
+    const range =
+      startMs != null && endMs != null
+        ? `${new Date(startMs).toLocaleString()} → ${new Date(
+            endMs,
+          ).toLocaleString()}`
+        : '';
+    return `Alarm #${selectedAlarm.id} - ${where}${range ? ` (${range})` : ''}`;
+  }, [selectedAlarm, now]);
 
   const handleClearFilter = () => setFilterText('');
 
@@ -384,6 +442,14 @@ const AlarmsOverview = () => {
           </small>
         </div>
         <div className="d-flex flex-wrap align-items-center gap-2">
+          <Form.Check
+            type="switch"
+            id="alarms-only-active"
+            label="Only with active alarms"
+            checked={onlyActive}
+            onChange={(event) => setOnlyActive(event.target.checked)}
+            title="Show only alarms that are currently active"
+          />
           <FilterComponent
             filterText={filterText}
             onFilter={(event) => setFilterText(event.target.value)}

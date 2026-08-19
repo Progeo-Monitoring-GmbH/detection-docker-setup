@@ -12,7 +12,7 @@ const TextField = styled.input`
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;
   border: 1px solid #e5e5e5;
-  padding: 0 32px 0 16px;
+  padding: 0 6px 0 16px;
   font-size: 15px;
 `;
 
@@ -31,7 +31,11 @@ export const FilterComponent = ({
       value={filterText}
       onChange={onFilter}
     />
-    <Button variant={'danger'} className={'filterButton'} onClick={onClear}>
+    <Button
+      variant={'danger'}
+      className={'filterButton btn-sm'}
+      onClick={onClear}
+    >
       X
     </Button>
   </div>

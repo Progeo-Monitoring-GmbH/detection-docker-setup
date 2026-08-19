@@ -557,7 +557,15 @@ def _check_existing_alarms_db(db: str, silence_hours: int = 24) -> tuple[int, in
 
         if still_exceeding and not silent:
             alarm.still_active_at = latest_at
-            alarm.save(using=db, update_fields=["still_active_at", "triggered_at"])
+            # Keep tracking the alarm's development while it stays active.
+            if max_value is not None:
+                alarm.max_values = list(alarm.max_values or []) + [{
+                    "ts": latest_at.isoformat() if hasattr(latest_at, "isoformat") else latest_at,
+                    "value": float(max_value),
+                    "sensor_id": sensor_id,
+                }]
+                update_fields.append("max_values")
+            alarm.save(using=db, update_fields=["still_active_at", "triggered_at", "max_values"])
             continue
 
         # Normalize: the alarm no longer reflects an active over-threshold state.

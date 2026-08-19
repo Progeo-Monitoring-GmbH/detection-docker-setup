@@ -1,4 +1,3 @@
-import React from 'react';
 import Navbar from './Navbar';
 
 /**
@@ -7,7 +6,6 @@ import Navbar from './Navbar';
  * so routes stay explicit about intent.
  */
 const NavbarEmpty = ({ act, content }) => {
-  void React;
   return <Navbar act={act} content={content} />;
 };
 
