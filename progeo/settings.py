@@ -278,7 +278,7 @@ for db in DJANGO_DATABASES:
         "USER": os.getenv("POSTGRES_USER"),
         "PASSWORD": os.getenv("POSTGRES_PASSWORD"),
         "HOST": os.getenv("POSTGRES_HOST"),
-        "CONNECTOR": "dbbackup.db.postgresql.PgDumpConnector"
+        "CONNECTOR": "progeo.dbbackup_connector.RestrictSafePgDumpConnector"
     }})
 
 
@@ -302,7 +302,7 @@ DBBACKUP_CONNECTORS = {
         "USER": os.getenv("POSTGRES_USER"),
         "PASSWORD": os.getenv("POSTGRES_PASSWORD"),
         "HOST": os.getenv("POSTGRES_HOST"),
-        "CONNECTOR": "dbbackup.db.postgresql.PgDumpConnector"
+        "CONNECTOR": "progeo.dbbackup_connector.RestrictSafePgDumpConnector"
     },
     **dyn_backups
 }

@@ -559,12 +559,17 @@ def _check_existing_alarms_db(db: str, silence_hours: int = 24) -> tuple[int, in
             alarm.still_active_at = latest_at
             # Keep tracking the alarm's development while it stays active.
             if max_value is not None:
-                alarm.max_values = list(alarm.max_values or []) + [{
-                    "ts": latest_at.isoformat() if hasattr(latest_at, "isoformat") else latest_at,
-                    "value": float(max_value),
-                    "sensor_id": sensor_id,
-                }]
-                update_fields.append("max_values")
+                # Runs every 15 minutes, so the same timestamp can be appended more
+                # than once; only record an entry when it is genuinely new.
+                existing_ts = {str(e.get("ts")) for e in (alarm.max_values or [])}
+                entry_ts = latest_at.isoformat() if hasattr(latest_at, "isoformat") else latest_at
+                if str(entry_ts) not in existing_ts:
+                    alarm.max_values = list(alarm.max_values or []) + [{
+                        "ts": entry_ts,
+                        "value": float(max_value),
+                        "sensor_id": sensor_id,
+                    }]
+                    update_fields.append("max_values")
             alarm.save(using=db, update_fields=["still_active_at", "triggered_at", "max_values"])
             continue
 

@@ -1,45 +1,30 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Badge } from 'react-bootstrap';
 import { ClockHistory } from 'react-bootstrap-icons';
-import { plotTheme } from '../styles/plotTheme';
+import AlarmTooltip from './AlarmTooltip';
+import {
+  alarmHeatColor,
+  alarmPeakValue,
+  alarmStartTime,
+  formatDuration,
+  isAlarmActive,
+  parseTimestamp,
+  type TimelineAlarm,
+} from './alarmUtils';
 import './AlarmTimeline.css';
 
-export type AlarmLocationLite = {
-  id?: number | null;
-  project_id?: number | null;
-  name?: string | null;
-};
-
-export type AlarmDeviceLite = {
-  id?: number | null;
-  mac?: string | null;
-  raw_hash?: string | null;
-};
-
-export type AlarmMaxValueEntry = {
-  ts?: string | null;
-  value?: number | null;
-  sensor_id?: number | null;
-};
-
-export type TimelineAlarm = {
-  id: number;
-  location?: AlarmLocationLite | null;
-  device?: AlarmDeviceLite | null;
-  triggered_at?: string | null;
-  last_fetched?: string | null;
-  last_updated?: string | null;
-  normalized_at?: string | null;
-  still_active_at?: string | null;
-  evaluated_at?: string | null;
-  evaluated_by?: { id?: number | null; username?: string | null } | null;
-  is_active?: boolean;
-  status?: number;
-  sensor_id?: number | null;
-  max_value?: number | null;
-  threshold?: number | null;
-  max_values?: AlarmMaxValueEntry[];
-};
+export {
+  alarmHeatColor,
+  alarmPeakValue,
+  alarmStartTime,
+  formatDuration,
+  isAlarmActive,
+  parseTimestamp,
+  type AlarmDeviceLite,
+  type AlarmLocationLite,
+  type AlarmMaxValueEntry,
+  type TimelineAlarm,
+} from './alarmUtils';
 
 type AlarmTimelineProps = {
   alarms: TimelineAlarm[];
@@ -49,178 +34,8 @@ type AlarmTimelineProps = {
   onSelectAlarm?: (alarm: TimelineAlarm) => void;
 };
 
-/** Format a duration in seconds as "1d 2h 3m 4s" (skips empty units). */
-export const formatDuration = (seconds: number): string => {
-  if (!Number.isFinite(seconds) || seconds < 0) {
-    return '-';
-  }
-  const total = Math.floor(seconds);
-  const days = Math.floor(total / 86400);
-  const hours = Math.floor((total % 86400) / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const secs = total % 60;
-
-  const parts: string[] = [];
-  if (days > 0) parts.push(`${days}d`);
-  if (hours > 0) parts.push(`${hours}h`);
-  if (minutes > 0) parts.push(`${minutes}m`);
-  if (parts.length === 0 || secs > 0) parts.push(`${secs}s`);
-  return parts.join(' ');
-};
-
-export const parseTimestamp = (raw?: string | null): number | null => {
-  if (!raw) {
-    return null;
-  }
-  // ISO-8601 (preferred, emitted by ProgeoAlarmSerializer).
-  const ms = Date.parse(raw);
-  if (!Number.isNaN(ms)) {
-    return ms;
-  }
-  // Fallback: the project-wide pretty format "%d.%m.%Y, %H:%M" (e.g.
-  // "19.08.2026, 11:08") in case a stale/cached payload shows up.
-  const prettyMatch =
-    /^(\d{2})\.(\d{2})\.(\d{4}),\s*(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(
-      raw.trim(),
-    );
-  if (prettyMatch) {
-    const [, day, month, year, hour, minute, second] = prettyMatch;
-    const date = new Date(
-      Number(year),
-      Number(month) - 1,
-      Number(day),
-      Number(hour),
-      Number(minute),
-      second ? Number(second) : 0,
-    );
-    return Number.isNaN(date.getTime()) ? null : date.getTime();
-  }
-  return null;
-};
-
-/**
- * Effective alarm start time in ms. `triggered_at` is the canonical trigger
- * time, but legacy alarms may lack it - fall back to the alarm row's own
- * `last_fetched`/`last_updated` (set whenever the row is saved) so the alarm
- * always gets a position on the timeline.
- */
-export const alarmStartTime = (alarm: {
-  triggered_at?: string | null;
-  last_fetched?: string | null;
-  last_updated?: string | null;
-}): number | null => {
-  return (
-    parseTimestamp(alarm.triggered_at) ??
-    parseTimestamp(alarm.last_fetched) ??
-    parseTimestamp(alarm.last_updated)
-  );
-};
-
-/**
- * Whether the alarm is still active. Prefers the backend `is_active` flag and
- * falls back to deriving it from `normalized_at` so the UI stays correct even
- * when the payload does not include the flag.
- */
-export const isAlarmActive = (alarm: {
-  is_active?: boolean | null;
-  normalized_at?: string | null;
-}): boolean => {
-  if (typeof alarm.is_active === 'boolean') {
-    return alarm.is_active;
-  }
-  return parseTimestamp(alarm.normalized_at) == null;
-};
-
-/**
- * Highest value ever recorded for this alarm (from the per-measurement
- * development history, falling back to the single `max_value` snapshot).
- */
-export const alarmPeakValue = (alarm: {
-  max_value?: number | null;
-  max_values?: AlarmMaxValueEntry[];
-}): number | null => {
-  const history = Array.isArray(alarm.max_values) ? alarm.max_values : [];
-  const peak = history.reduce<number | null>((best, entry) => {
-    const value = Number(entry?.value);
-    if (!Number.isFinite(value)) {
-      return best;
-    }
-    return best == null || value > best ? value : best;
-  }, null);
-  return (
-    peak ??
-    (Number.isFinite(Number(alarm.max_value)) ? Number(alarm.max_value) : null)
-  );
-};
-
-/** Hex color -> [r, g, b]. */
-const parseHex = (hex: string): [number, number, number] => {
-  const normalized = hex.replace('#', '');
-  const full =
-    normalized.length === 3
-      ? normalized
-          .split('')
-          .map((c) => c + c)
-          .join('')
-      : normalized;
-  const value = Number.parseInt(full, 16);
-  if (Number.isNaN(value)) {
-    return [9, 75, 129];
-  }
-  return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
-};
-
-const toHex = (rgb: [number, number, number]): string =>
-  `#${rgb.map((c) => Math.round(c).toString(16).padStart(2, '0')).join('')}`;
-
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-
-/**
- * Interpolate along the same colorscale the 2D heatmap uses
- * (blue -> cyan -> yellow -> orange) based on how far the peak value is
- * above the alarm threshold. `heat` 0 = at threshold, 1 = HEAT_FULL_MULTIPLIER
- * times the threshold (matching SensorHeatmap2D's saturation point).
- */
-export const alarmHeatColor = (alarm: {
-  threshold?: number | null;
-  max_value?: number | null;
-  max_values?: AlarmMaxValueEntry[];
-}): string => {
-  const rawThreshold = Number(alarm.threshold);
-  const threshold =
-    Number.isFinite(rawThreshold) && rawThreshold > 0 ? rawThreshold : 100;
-  const peak = alarmPeakValue(alarm);
-  const heat =
-    peak == null ? 0 : Math.min(1, Math.max(0, peak / (threshold * 3)));
-
-  const stops: Array<[number, string]> = [
-    [0, plotTheme.brandBlue],
-    [0.35, plotTheme.contrastCyan],
-    [0.65, plotTheme.contrastYellow],
-    [1, plotTheme.brandOrange],
-  ];
-  for (let index = 1; index < stops.length; index += 1) {
-    const [t0, color0] = stops[index - 1];
-    const [t1, color1] = stops[index];
-    if (heat <= t1) {
-      const t = t1 === t0 ? 0 : (heat - t0) / (t1 - t0);
-      const rgb0 = parseHex(color0);
-      const rgb1 = parseHex(color1);
-      return toHex([
-        lerp(rgb0[0], rgb1[0], t),
-        lerp(rgb0[1], rgb1[1], t),
-        lerp(rgb0[2], rgb1[2], t),
-      ]);
-    }
-  }
-  return plotTheme.brandOrange;
-};
-
-type AlarmSpan = {
-  alarm: TimelineAlarm;
-  start: number;
-  end: number;
-};
+/** Close delay for the floating alarm tooltip after the mouse left it (ms). */
+const TOOLTIP_CLOSE_DELAY_MS = 250;
 
 const formatClock = (ms: number): string =>
   new Date(ms).toLocaleString(undefined, {
@@ -252,6 +67,20 @@ const locationLabel = (alarm: TimelineAlarm): string => {
   return 'Unknown location';
 };
 
+type AlarmSpan = {
+  alarm: TimelineAlarm;
+  start: number;
+  end: number;
+};
+
+type TooltipState = {
+  alarm: TimelineAlarm;
+  start: number;
+  end: number;
+  x: number;
+  y: number;
+};
+
 const AlarmTimeline = ({
   alarms,
   now,
@@ -263,6 +92,32 @@ const AlarmTimeline = ({
   );
   const [trackWidth, setTrackWidth] = useState(0);
   const trackObserver = useRef<ResizeObserver | null>(null);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  // Hover state: timestamp under the cursor + its x-position (px, relative to
+  // the timeline body) for the vertical indicator + bottom date tooltip.
+  const [hover, setHover] = useState<{ ms: number; x: number } | null>(null);
+  // Floating alarm detail tooltip while hovering a bar.
+  const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+  const closeTimerRef = useRef<number | null>(null);
+
+  const clearCloseTimer = useCallback(() => {
+    if (closeTimerRef.current != null) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  }, []);
+
+  // Close the tooltip 2s after the mouse left it (or a bar), unless the mouse
+  // re-enters the tooltip/another bar before the timer fires.
+  const scheduleTooltipClose = useCallback(() => {
+    clearCloseTimer();
+    closeTimerRef.current = window.setTimeout(() => {
+      setTooltip(null);
+      closeTimerRef.current = null;
+    }, TOOLTIP_CLOSE_DELAY_MS);
+  }, [clearCloseTimer]);
+
+  useEffect(() => clearCloseTimer, [clearCloseTimer]);
 
   // Measure the track so we can decide whether a bar is wide enough to draw
   // its duration/max-value label inside it. All lanes share the same track
@@ -373,6 +228,77 @@ const AlarmTimeline = ({
   const toLeft = (ms: number) => ((ms - minTime) / axisSpan) * 100;
   const toWidth = (ms: number) => Math.max((ms / axisSpan) * 100, 0.35);
 
+  // Map a mouse x-position (relative to the track) to a timestamp and keep
+  // the x-offset relative to the timeline body for the hover indicator.
+  const handleTrackMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
+    const body = bodyRef.current;
+    if (!body) {
+      return;
+    }
+    const trackRect = event.currentTarget.getBoundingClientRect();
+    const xInTrack = event.clientX - trackRect.left;
+    const ratio = Math.min(1, Math.max(0, xInTrack / trackRect.width));
+    const ms = minTime + ratio * (maxTime - minTime);
+    const xInBody =
+      trackRect.left - body.getBoundingClientRect().left + xInTrack;
+    setHover({ ms, x: xInBody });
+  };
+
+  const handleTrackMouseLeave = () => {
+    setHover(null);
+    // The mouse left the whole timeline, so the alarm tooltip should go away
+    // (after the usual grace period, in case it moved onto the tooltip).
+    scheduleTooltipClose();
+  };
+
+  // Open/move the floating alarm tooltip for the bar under the cursor. A new
+  // bar replaces the previous tooltip immediately ("closes when another
+  // component is opened") and cancels any pending close timer.
+  const toBodyPosition = (
+    event: React.MouseEvent<HTMLDivElement>,
+  ): { x: number; y: number } => {
+    const body = bodyRef.current;
+    const rect = body?.getBoundingClientRect();
+    if (!rect) {
+      return { x: event.clientX, y: event.clientY };
+    }
+    return {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    };
+  };
+
+  const handleBarMouseEnter = (
+    span: AlarmSpan,
+    event: React.MouseEvent<HTMLDivElement>,
+  ) => {
+    clearCloseTimer();
+    const { x, y } = toBodyPosition(event);
+    setTooltip({
+      alarm: span.alarm,
+      start: span.start,
+      end: span.end,
+      x,
+      y,
+    });
+  };
+
+  const handleBarMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
+    setTooltip((current) => {
+      if (!current) {
+        return current;
+      }
+      const { x, y } = toBodyPosition(event);
+      return { ...current, x, y };
+    });
+  };
+
+  const handleBarMouseLeave = () => {
+    // Keep the tooltip visible for a short grace period so the user can move
+    // the mouse onto it (e.g. to click "Open alarm details").
+    scheduleTooltipClose();
+  };
+
   const totalDurationSeconds = useMemo(
     () => spans.reduce((sum, span) => sum + (span.end - span.start) / 1000, 0),
     [spans],
@@ -432,103 +358,111 @@ const AlarmTimeline = ({
         </div>
       </div>
 
-      <div className="alarm-timeline-scroll">
-        {groups.map((group) => {
-          const groupDurationSeconds = group.spans.reduce(
-            (sum, span) => sum + (span.end - span.start) / 1000,
-            0,
-          );
-          const groupActiveCount = group.spans.filter((span) =>
-            isAlarmActive(span.alarm),
-          ).length;
-          return (
-            <div className="alarm-timeline-lane" key={group.key}>
-              <div className="alarm-timeline-label">
-                <div className="alarm-timeline-label-name" title={group.label}>
-                  {group.label}
+      <div className="alarm-timeline-body" ref={bodyRef}>
+        <div className="alarm-timeline-scroll">
+          {groups.map((group) => {
+            const groupDurationSeconds = group.spans.reduce(
+              (sum, span) => sum + (span.end - span.start) / 1000,
+              0,
+            );
+            const groupActiveCount = group.spans.filter((span) =>
+              isAlarmActive(span.alarm),
+            ).length;
+            return (
+              <div className="alarm-timeline-lane" key={group.key}>
+                <div className="alarm-timeline-label">
+                  <div
+                    className="alarm-timeline-label-name"
+                    title={group.label}
+                  >
+                    {group.label}
+                  </div>
+                  <div className="alarm-timeline-label-stats small text-muted">
+                    {group.spans.length} alarm(s) · {groupActiveCount} active ·{' '}
+                    {formatDuration(groupDurationSeconds)}
+                  </div>
                 </div>
-                <div className="alarm-timeline-label-stats small text-muted">
-                  {group.spans.length} alarm(s) · {groupActiveCount} active ·{' '}
-                  {formatDuration(groupDurationSeconds)}
+                <div
+                  className="alarm-timeline-track"
+                  ref={trackRef}
+                  onMouseMove={handleTrackMouseMove}
+                  onMouseLeave={handleTrackMouseLeave}
+                >
+                  {group.spans
+                    .slice()
+                    .sort((a, b) => a.start - b.start)
+                    .map((span) => {
+                      const isSelected = span.alarm.id === selectedAlarmId;
+                      const isActive = isAlarmActive(span.alarm);
+                      const heatColor = alarmHeatColor(span.alarm);
+                      const barWidthPercent = toWidth(span.end - span.start);
+                      const barWidthPx = (barWidthPercent / 100) * trackWidth;
+                      const showLabel = barWidthPx >= 90;
+                      return (
+                        <div
+                          key={span.alarm.id}
+                          className={[
+                            'alarm-timeline-bar',
+                            isActive ? 'is-active' : 'is-normalized',
+                            isSelected ? 'is-selected' : '',
+                          ]
+                            .filter(Boolean)
+                            .join(' ')}
+                          style={{
+                            left: `${toLeft(span.start)}%`,
+                            width: `${barWidthPercent}%`,
+                            background: heatColor,
+                          }}
+                          onMouseEnter={(event) =>
+                            handleBarMouseEnter(span, event)
+                          }
+                          onMouseMove={handleBarMouseMove}
+                          onMouseLeave={handleBarMouseLeave}
+                          onClick={() => onSelectAlarm?.(span.alarm)}
+                        >
+                          {showLabel && (
+                            <span className="alarm-timeline-bar-label">
+                              {formatDuration((span.end - span.start) / 1000)}
+                              {span.alarm.max_value != null
+                                ? ` · ${span.alarm.max_value / span.alarm.threshold! >= 1.5 ? '🔥 ' : ''}${Math.round((span.alarm.max_value / span.alarm?.threshold!) * 100) / 100}x`
+                                : ''}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
                 </div>
               </div>
-              <div className="alarm-timeline-track" ref={trackRef}>
-                {group.spans
-                  .slice()
-                  .sort((a, b) => a.start - b.start)
-                  .map((span) => {
-                    const isSelected = span.alarm.id === selectedAlarmId;
-                    const isActive = isAlarmActive(span.alarm);
-                    const heatColor = alarmHeatColor(span.alarm);
-                    const barWidthPercent = toWidth(span.end - span.start);
-                    const barWidthPx = (barWidthPercent / 100) * trackWidth;
-                    const showLabel = barWidthPx >= 90;
-                    return (
-                      <div
-                        key={span.alarm.id}
-                        className={[
-                          'alarm-timeline-bar',
-                          isActive ? 'is-active' : 'is-normalized',
-                          isSelected ? 'is-selected' : '',
-                        ]
-                          .filter(Boolean)
-                          .join(' ')}
-                        style={{
-                          left: `${toLeft(span.start)}%`,
-                          width: `${barWidthPercent}%`,
-                          background: heatColor,
-                        }}
-                        title={[
-                          `Alarm #${span.alarm.id}`,
-                          span.alarm.device?.mac || span.alarm.device?.raw_hash
-                            ? `Device: ${span.alarm.device?.mac || span.alarm.device?.raw_hash}`
-                            : '',
-                          span.alarm.sensor_id != null
-                            ? `Sensor: ${span.alarm.sensor_id}`
-                            : '',
-                          span.alarm.max_value != null
-                            ? `Max value: ${span.alarm.max_value}`
-                            : '',
-                          `Triggered: ${new Date(span.start).toLocaleString()}`,
-                          isActive
-                            ? `Still active · running ${formatDuration(
-                                (now - span.start) / 1000,
-                              )}`
-                            : `Normalized: ${new Date(span.end).toLocaleString()}`,
-                          `Active for: ${formatDuration(
-                            (span.end - span.start) / 1000,
-                          )}`,
-                          span.alarm.status === 1
-                            ? `Acknowledged by ${
-                                span.alarm.evaluated_by?.username || 'unknown'
-                              } · ${
-                                span.alarm.evaluated_at
-                                  ? new Date(
-                                      span.alarm.evaluated_at,
-                                    ).toLocaleString()
-                                  : '-'
-                              }`
-                            : '',
-                        ]
-                          .filter(Boolean)
-                          .join('\n')}
-                        onClick={() => onSelectAlarm?.(span.alarm)}
-                      >
-                        {showLabel && (
-                          <span className="alarm-timeline-bar-label">
-                            {formatDuration((span.end - span.start) / 1000)}
-                            {span.alarm.max_value != null
-                              ? ` · ${span.alarm.max_value / span.alarm.threshold! >= 1.5 ? '🔥 ' : ''}${Math.round((span.alarm.max_value / span.alarm?.threshold!) * 100) / 100}x`
-                              : ''}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })}
-              </div>
+            );
+          })}
+        </div>
+
+        {hover && (
+          <>
+            <div
+              className="alarm-timeline-hover-line"
+              style={{ left: hover.x }}
+            />
+            <div className="alarm-timeline-hover-tip" style={{ left: hover.x }}>
+              {formatClock(hover.ms)}
             </div>
-          );
-        })}
+          </>
+        )}
+
+        {tooltip && (
+          <AlarmTooltip
+            alarm={tooltip.alarm}
+            start={tooltip.start}
+            end={tooltip.end}
+            now={now}
+            x={tooltip.x + 15}
+            y={tooltip.y + 15}
+            containerWidth={bodyRef.current?.clientWidth ?? 0}
+            containerHeight={bodyRef.current?.clientHeight ?? 0}
+            onMouseEnter={clearCloseTimer}
+            onMouseLeave={scheduleTooltipClose}
+          />
+        )}
       </div>
 
       <div className="alarm-timeline-legend d-flex gap-3 mt-2 small text-muted">

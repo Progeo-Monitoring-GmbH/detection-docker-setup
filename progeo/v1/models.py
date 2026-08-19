@@ -371,11 +371,13 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
 
     def evaluate(self, alarm_threshold):
         pairs = self.get_pairs()
+        _idx, _value = None, None
         for idx, sample in enumerate(pairs):
             value = int(sample)
             if value > alarm_threshold:
-                return idx, value
-        return None, None
+                if _value is None or value > _value:
+                    _idx, _value = idx, value
+        return _idx, _value
 
     def get_pairs(self, samples=None):
         if samples is None:

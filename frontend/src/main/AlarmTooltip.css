@@ -1,0 +1,74 @@
+/* Floating alarm detail tooltip shown while hovering a timeline bar.
+   Position (left/top) is computed in JS from the cursor position and the
+   tooltip's measured size: drawn 50px above the mouse, flipped 50px below
+   when it would clip the top of the timeline. */
+.alarm-tooltip {
+  position: absolute;
+  z-index: 40;
+  width: 260px;
+  max-width: calc(100vw - 32px);
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.18),
+    0 2px 6px rgba(0, 0, 0, 0.1);
+  padding: 0.6rem 0.75rem;
+  pointer-events: auto;
+}
+
+.alarm-tooltip-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.alarm-tooltip-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid;
+  flex: 0 0 auto;
+}
+
+.alarm-tooltip-title {
+  font-weight: 700;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.alarm-tooltip-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.alarm-tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.alarm-tooltip-key {
+  color: #6c757d;
+  flex: 0 0 auto;
+}
+
+.alarm-tooltip-value {
+  font-weight: 600;
+  text-align: right;
+  word-break: break-word;
+}
+
+.alarm-tooltip-actions {
+  margin-top: 0.6rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
