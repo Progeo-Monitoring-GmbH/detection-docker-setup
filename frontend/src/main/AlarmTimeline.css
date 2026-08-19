@@ -1,0 +1,107 @@
+.alarm-timeline {
+  position: relative;
+  width: 100%;
+}
+
+.alarm-timeline-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+  color: #6c757d;
+}
+
+.alarm-timeline-summary {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  padding-bottom: 0.5rem;
+}
+
+.alarm-timeline-axis {
+  padding: 0.25rem 0 0.4rem;
+  border-bottom: 2px solid rgba(0, 0, 0, 0.12);
+  font-variant-numeric: tabular-nums;
+}
+
+.alarm-timeline-lane {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.alarm-timeline-lane:hover {
+  background: rgba(13, 110, 253, 0.03);
+}
+
+.alarm-timeline-label {
+  flex: 0 0 220px;
+  min-width: 150px;
+  padding: 0.5rem 0.75rem 0.5rem 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.alarm-timeline-label-name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.alarm-timeline-label-stats {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.alarm-timeline-track {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 44px;
+  background-image: repeating-linear-gradient(
+    to right,
+    rgba(0, 0, 0, 0.03) 0,
+    rgba(0, 0, 0, 0.03) 1px,
+    transparent 1px,
+    transparent 12.5%
+  );
+  border-left: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.alarm-timeline-bar {
+  position: absolute;
+  top: 12px;
+  height: 20px;
+  min-width: 3px;
+  border-radius: 4px;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.alarm-timeline-bar:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+  z-index: 2;
+}
+
+.alarm-timeline-bar.is-active {
+  background: linear-gradient(180deg, #dc3545 0%, #a52834 100%);
+  border: 1px solid #7f1d27;
+}
+
+.alarm-timeline-bar.is-normalized {
+  background: linear-gradient(180deg, #198754 0%, #136740 100%);
+  border: 1px solid #0d5030;
+}
+
+.alarm-timeline-bar.is-selected {
+  outline: 2px solid #0d6efd;
+  outline-offset: 1px;
+  z-index: 3;
+}
+
+.alarm-timeline-legend {
+  font-size: 0.8rem;
+}

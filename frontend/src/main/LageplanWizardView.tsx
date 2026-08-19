@@ -257,7 +257,8 @@ const LageplanWizardView = () => {
   };
 
   const handleSourceUpload = async (payload: FormData) => {
-    const file = payload.get('files0');
+    console.log('Source upload payload:', payload);
+    const file = payload['files0'];
     if (!(file instanceof File)) {
       setError('No source file found in the upload payload.');
       return;

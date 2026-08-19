@@ -7,8 +7,13 @@ import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
 import { showErrorBar } from '../components/ui/Snackbar.jsx';
+import { FilterComponent } from '../components/ui/FilterComponent.jsx';
 import SensorHeatmap2D from '../components/device/SensorHeatmap2D.tsx';
 import { type SensorHeatmapResponse } from '../components/device/SensorHeatmap3D.tsx';
+import AlarmTimeline, {
+  formatDuration,
+  parseTimestamp,
+} from './AlarmTimeline.tsx';
 
 type AlarmDevice = {
   id?: number | null;
@@ -41,33 +46,6 @@ type AlarmRow = {
 const HEATMAP_LIMIT = 300;
 const TICK_MS = 1000;
 
-/** Format a duration in seconds as "1d 2h 3m 4s" (skips empty units). */
-const formatDuration = (seconds: number): string => {
-  if (!Number.isFinite(seconds) || seconds < 0) {
-    return '-';
-  }
-  const total = Math.floor(seconds);
-  const days = Math.floor(total / 86400);
-  const hours = Math.floor((total % 86400) / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const secs = total % 60;
-
-  const parts: string[] = [];
-  if (days > 0) parts.push(`${days}d`);
-  if (hours > 0) parts.push(`${hours}h`);
-  if (minutes > 0) parts.push(`${minutes}m`);
-  if (parts.length === 0 || secs > 0) parts.push(`${secs}s`);
-  return parts.join(' ');
-};
-
-const parseTimestamp = (raw?: string | null): number | null => {
-  if (!raw) {
-    return null;
-  }
-  const ms = Date.parse(raw);
-  return Number.isNaN(ms) ? null : ms;
-};
-
 const STATUS_LABELS: Record<number, { label: string; variant: string }> = {
   0: { label: 'Neu', variant: 'warning' },
   1: { label: 'Quittiert', variant: 'secondary' },
@@ -83,6 +61,7 @@ const AlarmsOverview = () => {
   const [heatmapLoading, setHeatmapLoading] = useState(false);
   const [heatmapResponse, setHeatmapResponse] =
     useState<SensorHeatmapResponse | null>(null);
+  const [filterText, setFilterText] = useState('');
   // Ticks every second so active alarms show a live "how long active" counter.
   const [now, setNow] = useState(() => Date.now());
 
@@ -162,6 +141,31 @@ const AlarmsOverview = () => {
     },
     [now],
   );
+
+  const filteredRows = useMemo(() => {
+    const needle = filterText.trim().toLowerCase();
+    if (!needle) {
+      return rows;
+    }
+
+    return rows.filter((row) => {
+      const haystack = [
+        String(row.id),
+        row.location?.name,
+        row.location?.project_id != null ? String(row.location.project_id) : '',
+        row.device?.mac,
+        row.device?.raw_hash,
+        row.sensor_id != null ? String(row.sensor_id) : '',
+        row.is_active ? 'active' : 'normalized',
+        STATUS_LABELS[row.status ?? 0]?.label,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+      return haystack.includes(needle);
+    });
+  }, [rows, filterText]);
 
   const columns: TableColumn<AlarmRow>[] = [
     {
@@ -251,28 +255,55 @@ const AlarmsOverview = () => {
     return `Alarm #${selectedAlarm.id} - ${where}`;
   }, [selectedAlarm]);
 
+  const handleClearFilter = () => setFilterText('');
+
   return (
     <Container fluid className="py-4">
       <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
         <div>
           <h2 className="mb-0">Alarms</h2>
           <small className="text-muted">
-            {rows.length} alarm(s) for your account
+            {filteredRows.length} of {rows.length} alarm(s) for your account
           </small>
         </div>
-        <Button
-          variant="outline-primary"
-          onClick={fetchAlarms}
-          disabled={loading}
-        >
-          <ArrowClockwise className="me-2" />
-          Refresh
-        </Button>
+        <div className="d-flex flex-wrap align-items-center gap-2">
+          <FilterComponent
+            filterText={filterText}
+            onFilter={(event) => setFilterText(event.target.value)}
+            onClear={handleClearFilter}
+          />
+          <Button
+            variant="outline-primary"
+            onClick={fetchAlarms}
+            disabled={loading}
+          >
+            <ArrowClockwise className="me-2" />
+            Refresh
+          </Button>
+        </div>
       </div>
+
+      <Card className="border-0 shadow-sm mb-3">
+        <Card.Body>
+          <div className="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
+            <h5 className="mb-0">Alarm Timeline</h5>
+            <small className="text-muted">
+              Grouped by location — hover a bar for details, click to load the
+              heatmap
+            </small>
+          </div>
+          <AlarmTimeline
+            alarms={filteredRows}
+            now={now}
+            selectedAlarmId={selectedAlarm?.id}
+            onSelectAlarm={(alarm) => fetchHeatmap(alarm)}
+          />
+        </Card.Body>
+      </Card>
 
       <DataTable
         columns={columns}
-        data={rows}
+        data={filteredRows}
         pagination
         progressPending={loading}
         highlightOnHover
@@ -290,7 +321,7 @@ const AlarmsOverview = () => {
               {heatmapTitle}
             </h5>
             <small className="text-muted">
-              Click an alarm row to load its location heatmap
+              Click an alarm row or timeline bar to load its location heatmap
             </small>
           </div>
 

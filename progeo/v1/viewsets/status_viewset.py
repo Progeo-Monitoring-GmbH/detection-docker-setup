@@ -566,7 +566,7 @@ class StatusViewSet(ProgeoModalViewSet):
             }
             if with_lageplan:
                 lageplan = location.lageplan
-                response_data["lageplan"] = posixpath.join("media", "uploads", lageplan.name) if lageplan else None
+                response_data["lageplan_url"] = posixpath.join("media", "uploads", lageplan.name) if lageplan else None
                 response_data["offset_x"] = location.offset_x
                 response_data["offset_y"] = location.offset_y
                 response_data["scale_x"] = location.scale_x

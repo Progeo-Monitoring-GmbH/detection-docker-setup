@@ -44,6 +44,11 @@ celery_instance.conf.beat_schedule = {
         "task": "progeo.tasks.collect_host_storage_info",
         "schedule": crontab(minute=0),
     },
+    "evaluate-measurements-hourly": {
+        "task": "progeo.tasks.evaluate_measurements",
+        # Previously the "7 * * * *" cron entry (docker/backend/cronjobs/hourly.sh).
+        "schedule": crontab(minute=7),
+    },
 }
 celery_instance.autodiscover_tasks(lambda: settings.INSTALLED_APPS)
 
