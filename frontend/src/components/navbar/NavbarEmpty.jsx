@@ -1,22 +1,14 @@
-import { Col } from 'react-bootstrap';
 import React from 'react';
-import { useAuth } from '../../../hooks/CoreAuthProvider';
+import Navbar from './Navbar';
 
-const Navbar = ({ act, content }) => {
-  const auth = useAuth();
-
-  const logout = () => {
-    auth.logoutAction();
-  };
-
-  return (
-    <>
-      <Col md={2} id={'v1-Navbar'}></Col>
-      <Col md={10} className={`ps-3`}>
-        {content}
-      </Col>
-    </>
-  );
+/**
+ * Used for views that historically had no sidebar (e.g. the IMEI display).
+ * With the top-bar navigation this is identical to Navbar, kept as an alias
+ * so routes stay explicit about intent.
+ */
+const NavbarEmpty = ({ act, content }) => {
+  void React;
+  return <Navbar act={act} content={content} />;
 };
 
-export default Navbar;
+export default NavbarEmpty;

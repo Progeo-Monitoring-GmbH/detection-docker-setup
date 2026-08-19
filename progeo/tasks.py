@@ -443,6 +443,132 @@ def _evaluate_measurements_db(db: str, cutoff) -> tuple[int, int]:
 
 
 @shared_task
+def check_existing_alarms(db: str = None, silence_hours: int = 24):
+    """
+    Re-evaluate every still-active (unnormalized) alarm against its device's
+    latest measurement and normalize alarms that no longer exceed the location
+    threshold.
+
+    Complements evaluate_measurements, which only looks at measurements of the
+    last hour: an alarm whose below-threshold measurement is older than that
+    window (or whose device went silent) would otherwise stay "active" forever,
+    which keeps is_active=true in the API and skews the alarm timeline.
+
+    Rules per alarm:
+      - latest measurement still exceeds the threshold  -> prolong still_active_at
+      - latest measurement is below the threshold       -> normalize (is_active=false)
+      - device has no newer data within `silence_hours` -> normalize as silent
+    """
+    from progeo.helper.basics import elog, ilog
+    from progeo.settings import DATABASES
+
+    db_names = [db] if db else list(DATABASES.keys())
+
+    total_checked = 0
+    total_normalized = 0
+
+    for db_name in db_names:
+        try:
+            checked, normalized = _check_existing_alarms_db(db_name, silence_hours=silence_hours)
+        except Exception as exc:
+            elog(f"[check_existing_alarms] db={db_name} failed: {exc}")
+            continue
+
+        total_checked += checked
+        total_normalized += normalized
+        ilog(f"[check_existing_alarms] db={db_name} checked={checked} normalized={normalized}")
+
+    ilog(f"[check_existing_alarms] total checked={total_checked} normalized={total_normalized}")
+    return {
+        "databases": db_names,
+        "checked": total_checked,
+        "normalized": total_normalized,
+    }
+
+
+def _check_existing_alarms_db(db: str, silence_hours: int = 24) -> tuple[int, int]:
+    """Check all unnormalized alarms of one database against the latest measurements."""
+    import datetime
+
+    from django.utils import timezone
+
+    from progeo.v1.models import ProgeoAlarm, ProgeoMeasurement
+
+    alarms = list(
+        ProgeoAlarm.objects.using(db)
+        .filter(normalized_at__isnull=True)
+        .select_related("measurement__device__location")
+        .order_by("-triggered_at")
+    )
+    if not alarms:
+        return 0, 0
+
+    # Fetch the newest measurement per involved device in ONE query, so the
+    # per-alarm check below never triggers an N+1 lookup.
+    device_ids = {alarm.measurement.device_id for alarm in alarms}
+    latest_by_device = {
+        measurement.device_id: measurement
+        for measurement in (
+            ProgeoMeasurement.objects.using(db)
+            .filter(device_id__in=device_ids)
+            .order_by("device_id", "-last_fetched", "-id")
+            .distinct("device_id")
+        )
+    }
+
+    now = timezone.now()
+    silence_cutoff = now - datetime.timedelta(hours=silence_hours)
+
+    checked = 0
+    normalized = 0
+    for alarm in alarms:
+        device = alarm.measurement.device
+        if device is None:
+            continue
+
+        latest = latest_by_device.get(device.id)
+        if latest is None:
+            continue
+        checked += 1
+
+        latest_at = latest.last_fetched or latest.last_updated
+        if latest_at is None:
+            continue
+
+        location = device.location
+        threshold = location.alarm_threshold if location else None
+        sensor_id, max_value = (None, None)
+        if threshold is not None:
+            sensor_id, max_value = latest.evaluate(threshold)
+
+        still_exceeding = sensor_id is not None and max_value is not None
+        silent = latest_at < silence_cutoff
+
+        update_fields = ["still_active_at", "normalized_at"]
+        if alarm.triggered_at is None:
+            # Backfill the trigger time for alarms that were created without
+            # one (fall back to the measurement's own timestamps).
+            alarm.triggered_at = (
+                alarm.measurement.last_updated
+                or alarm.measurement.last_fetched
+                or latest_at
+            )
+            update_fields.append("triggered_at")
+
+        if still_exceeding and not silent:
+            alarm.still_active_at = latest_at
+            alarm.save(using=db, update_fields=["still_active_at", "triggered_at"])
+            continue
+
+        # Normalize: the alarm no longer reflects an active over-threshold state.
+        alarm.normalized_at = latest_at
+        alarm.save(using=db, update_fields=update_fields)
+        normalized += 1
+
+    return checked, normalized
+
+
+@shared_task
 def collect_host_storage_info():
     from progeo.settings import BASE_DIR, SETUP_DIR
     from datetime import datetime

@@ -1,0 +1,72 @@
+.progeo-topnav {
+  border-bottom: 2px solid rgba(9, 75, 129, 0.15);
+}
+
+.progeo-topnav .navbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.progeo-topnav .nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 6px;
+  margin: 0 0.15rem;
+  font-weight: 500;
+}
+
+.progeo-topnav .nav-link:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.progeo-topnav .nav-link.active {
+  background: rgba(9, 75, 129, 0.85);
+  color: #fff;
+}
+
+.progeo-topnav .dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.progeo-breadcrumbs {
+  background: rgba(9, 75, 129, 0.06);
+  border-bottom: 1px solid rgba(9, 75, 129, 0.1);
+  padding: 0.4rem 1rem;
+  font-size: 0.85rem;
+}
+
+.progeo-breadcrumbs .breadcrumb {
+  margin: 0;
+}
+
+.progeo-breadcrumbs .breadcrumb-item a {
+  color: #094b81;
+  text-decoration: none;
+}
+
+.progeo-breadcrumbs .breadcrumb-item a:hover {
+  text-decoration: underline;
+}
+
+.progeo-breadcrumbs .breadcrumb-item.active {
+  color: #6c757d;
+}
+
+.progeo-navbar-logout {
+  border-radius: 6px;
+}
+
+@media (max-width: 991.98px) {
+  .progeo-topnav .navbar-collapse {
+    padding-top: 0.5rem;
+  }
+  .progeo-topnav .nav-link {
+    margin: 0.1rem 0;
+  }
+}

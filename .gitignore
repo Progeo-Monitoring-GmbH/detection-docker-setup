@@ -45,3 +45,4 @@ docker/nginx/ro*
 logs/
 __pycache__/
 .vscode/
+png_output/

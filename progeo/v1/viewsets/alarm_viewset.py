@@ -1,12 +1,19 @@
+from django.utils import timezone
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
+from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.decorator import require_module_permissions
+from progeo.helper.basics import RequestFailed, RequestSuccess
 from progeo.v1.models import ProgeoAlarm
 from progeo.v1.serializers import ProgeoAlarmSerializer
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.v1.viewsets.setup_viewset import _get_controller_account
+from progeo.helper.creator import create_MfS_log
+
+# Alarm statuses (mirror ProgeoAlarm.status choices)
+STATUS_ACKNOWLEDGED = 1
 
 
 class AlarmViewSet(ProgeoModalViewSet):
@@ -43,6 +50,32 @@ class AlarmViewSet(ProgeoModalViewSet):
     @require_module_permissions("module_measurements_enabled")
     def retrieve(self, request, pk=None, *args, **kwargs):
         return super(AlarmViewSet, self).retrieve(request, pk=pk, *args, **kwargs)
+
+    @require_module_permissions("module_measurements_enabled")
+    @action(detail=True, url_path="acknowledge", methods=["POST"])
+    def acknowledge(self, request, pk=None, *args, **kwargs):
+        """
+        Acknowledge an alarm: stores who evaluated it and when, and flips the
+        status to "quittiert" (1). Idempotent - acknowledging an already
+        acknowledged alarm keeps the original evaluated_at/evaluated_by.
+        """
+        alarm = self.get_object()
+        db_name = self._resolve_request_account(request).db_name
+
+        if alarm.status != STATUS_ACKNOWLEDGED or alarm.evaluated_at is None:
+            user = getattr(request, "user", None)
+            alarm.evaluated_at = timezone.now()
+            alarm.evaluated_by = user if user and user.is_authenticated else None
+            alarm.status = STATUS_ACKNOWLEDGED
+            alarm.save(
+                using=db_name,
+                update_fields=["evaluated_at", "evaluated_by", "status"],
+            )
+
+        create_MfS_log(request)
+
+        serializer = ProgeoAlarmSerializer(alarm)
+        return RequestSuccess(serializer.data)
 
     def get_queryset(self):
         account = self._resolve_request_account(self.request)

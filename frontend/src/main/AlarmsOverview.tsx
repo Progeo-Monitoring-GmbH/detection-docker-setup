@@ -2,16 +2,22 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import DataTable from 'react-data-table-component';
 import type { TableColumn } from 'react-data-table-component';
 import { Badge, Button, Card, Container, Spinner } from 'react-bootstrap';
-import { ArrowClockwise, ThermometerHalf } from 'react-bootstrap-icons';
+import {
+  ArrowClockwise,
+  Check2Circle,
+  ThermometerHalf,
+} from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
-import { showErrorBar } from '../components/ui/Snackbar.jsx';
+import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import { FilterComponent } from '../components/ui/FilterComponent.jsx';
 import SensorHeatmap2D from '../components/device/SensorHeatmap2D.tsx';
 import { type SensorHeatmapResponse } from '../components/device/SensorHeatmap3D.tsx';
 import AlarmTimeline, {
+  alarmStartTime,
   formatDuration,
+  isAlarmActive,
   parseTimestamp,
 } from './AlarmTimeline.tsx';
 
@@ -27,6 +33,11 @@ type AlarmLocation = {
   name?: string | null;
 };
 
+type AlarmEvaluatedBy = {
+  id?: number | null;
+  username?: string | null;
+};
+
 type AlarmRow = {
   id: number;
   measurement?: number | null;
@@ -38,13 +49,17 @@ type AlarmRow = {
   max_value?: number | null;
   still_active_at?: string | null;
   normalized_at?: string | null;
+  evaluated_at?: string | null;
+  evaluated_by?: AlarmEvaluatedBy | null;
   status?: number;
   is_active?: boolean;
   duration_seconds?: number | null;
 };
 
 const HEATMAP_LIMIT = 300;
-const TICK_MS = 1000;
+// Live "how long active" counter: 30s granularity is plenty and avoids
+// re-rendering the whole timeline every second.
+const TICK_MS = 30_000;
 
 const STATUS_LABELS: Record<number, { label: string; variant: string }> = {
   0: { label: 'Neu', variant: 'warning' },
@@ -62,13 +77,23 @@ const AlarmsOverview = () => {
   const [heatmapResponse, setHeatmapResponse] =
     useState<SensorHeatmapResponse | null>(null);
   const [filterText, setFilterText] = useState('');
-  // Ticks every second so active alarms show a live "how long active" counter.
+  const [acknowledgingId, setAcknowledgingId] = useState<number | null>(null);
+  // Only ticks while at least one alarm is active; frozen otherwise, so the
+  // timeline does not re-render when all alarms are normalized.
   const [now, setNow] = useState(() => Date.now());
 
+  const hasActiveAlarm = useMemo(
+    () => rows.some((row) => isAlarmActive(row)),
+    [rows],
+  );
+
   useEffect(() => {
+    if (!hasActiveAlarm) {
+      return undefined;
+    }
     const intervalId = window.setInterval(() => setNow(Date.now()), TICK_MS);
     return () => window.clearInterval(intervalId);
-  }, []);
+  }, [hasActiveAlarm]);
 
   const fetchAlarms = useCallback(() => {
     setLoading(true);
@@ -128,15 +153,49 @@ const AlarmsOverview = () => {
     [auth, enqueueSnackbar],
   );
 
+  const acknowledgeAlarm = useCallback(
+    (alarm: AlarmRow) => {
+      setAcknowledgingId(alarm.id);
+      void axiosConfig.perform_post(
+        auth,
+        `/v1/alarm/${alarm.id}/acknowledge/`,
+        {},
+        (response) => {
+          const updated = (response?.data || null) as AlarmRow | null;
+          if (updated) {
+            setRows((prev) =>
+              prev.map((row) => (row.id === updated.id ? updated : row)),
+            );
+          }
+          showSuccessBar(enqueueSnackbar, `Alarm #${alarm.id} acknowledged.`);
+          setAcknowledgingId(null);
+        },
+        (error) => {
+          const reason = error?.response?.data?.reason || error.message;
+          showErrorBar(
+            enqueueSnackbar,
+            `Could not acknowledge alarm: ${reason}`,
+          );
+          setAcknowledgingId(null);
+        },
+      );
+    },
+    [auth, enqueueSnackbar],
+  );
+
   const alarmActiveDuration = useCallback(
     (alarm: AlarmRow): number => {
-      const triggeredMs = parseTimestamp(alarm.triggered_at);
+      const triggeredMs = alarmStartTime(alarm);
       if (triggeredMs == null) {
         return 0;
       }
       const normalizedMs = parseTimestamp(alarm.normalized_at);
       const endMs =
-        normalizedMs != null ? normalizedMs : alarm.is_active ? now : triggeredMs;
+        normalizedMs != null
+          ? normalizedMs
+          : isAlarmActive(alarm)
+            ? now
+            : triggeredMs;
       return Math.max(0, (endMs - triggeredMs) / 1000);
     },
     [now],
@@ -156,8 +215,10 @@ const AlarmsOverview = () => {
         row.device?.mac,
         row.device?.raw_hash,
         row.sensor_id != null ? String(row.sensor_id) : '',
-        row.is_active ? 'active' : 'normalized',
+        isAlarmActive(row) ? 'active' : 'normalized',
         STATUS_LABELS[row.status ?? 0]?.label,
+        row.status === 1 ? 'acknowledged' : '',
+        row.evaluated_by?.username,
       ]
         .filter(Boolean)
         .join(' ')
@@ -178,7 +239,9 @@ const AlarmsOverview = () => {
       name: 'Location',
       cell: (row) => {
         const loc = row.location;
-        return loc ? `${loc.name || 'Unnamed'} (${loc.project_id ?? loc.id})` : '-';
+        return loc
+          ? `${loc.name || 'Unnamed'} (${loc.project_id ?? loc.id})`
+          : '-';
       },
       sortable: true,
       grow: 1.4,
@@ -208,7 +271,12 @@ const AlarmsOverview = () => {
     },
     {
       name: 'Triggered At',
-      selector: (row) => row.triggered_at || '-',
+      cell: (row) => {
+        const ms = alarmStartTime(row);
+        return ms != null
+          ? new Date(ms).toLocaleString()
+          : row.triggered_at || '-';
+      },
       sortable: true,
       width: '180px',
       wrap: true,
@@ -223,16 +291,63 @@ const AlarmsOverview = () => {
       name: 'Status',
       cell: (row) => {
         const status = STATUS_LABELS[row.status ?? 0] || STATUS_LABELS[0];
+        const active = isAlarmActive(row);
+        const acknowledged = row.status === 1;
         return (
-          <div className="d-flex align-items-center gap-2">
-            <Badge bg={row.is_active ? 'danger' : 'success'}>
-              {row.is_active ? 'ACTIVE' : 'NORMALIZED'}
-            </Badge>
-            <Badge bg={status.variant}>{status.label}</Badge>
+          <div className="d-flex flex-column gap-1">
+            <div className="d-flex align-items-center gap-2">
+              <Badge bg={active ? 'danger' : 'success'}>
+                {active ? 'ACTIVE' : 'NORMALIZED'}
+              </Badge>
+              <Badge bg={status.variant}>{status.label}</Badge>
+            </div>
+            {acknowledged && (
+              <small className="text-muted">
+                by {row.evaluated_by?.username || 'unknown'} ·{' '}
+                {row.evaluated_at
+                  ? (() => {
+                      const ms = parseTimestamp(row.evaluated_at);
+                      return ms != null
+                        ? new Date(ms).toLocaleString()
+                        : row.evaluated_at;
+                    })()
+                  : '-'}
+              </small>
+            )}
           </div>
         );
       },
-      width: '210px',
+      width: '260px',
+    },
+    {
+      name: 'Actions',
+      width: '150px',
+      cell: (row) => {
+        const acknowledged = row.status === 1;
+        return (
+          <Button
+            size="sm"
+            variant={acknowledged ? 'outline-success' : 'success'}
+            disabled={acknowledged || acknowledgingId === row.id}
+            title={
+              acknowledged
+                ? 'Alarm already acknowledged'
+                : 'Acknowledge this alarm'
+            }
+            onClick={(event) => {
+              event.stopPropagation();
+              acknowledgeAlarm(row);
+            }}
+          >
+            {acknowledgingId === row.id ? (
+              <Spinner size="sm" animation="border" />
+            ) : (
+              <Check2Circle className="me-1" />
+            )}
+            {acknowledged ? 'Acknowledged' : 'Acknowledge'}
+          </Button>
+        );
+      },
     },
   ];
 
@@ -251,7 +366,9 @@ const AlarmsOverview = () => {
       return 'Alarm heatmap';
     }
     const loc = selectedAlarm.location;
-    const where = loc ? `${loc.name || 'Unnamed location'} (${loc.project_id ?? loc.id})` : 'unknown location';
+    const where = loc
+      ? `${loc.name || 'Unnamed location'} (${loc.project_id ?? loc.id})`
+      : 'unknown location';
     return `Alarm #${selectedAlarm.id} - ${where}`;
   }, [selectedAlarm]);
 
@@ -283,7 +400,7 @@ const AlarmsOverview = () => {
         </div>
       </div>
 
-      <Card className="border-0 shadow-sm mb-3">
+      <Card className="border-0 shadow-sm mb-3 p-2">
         <Card.Body>
           <div className="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
             <h5 className="mb-0">Alarm Timeline</h5>
@@ -301,19 +418,7 @@ const AlarmsOverview = () => {
         </Card.Body>
       </Card>
 
-      <DataTable
-        columns={columns}
-        data={filteredRows}
-        pagination
-        progressPending={loading}
-        highlightOnHover
-        pointerOnHover
-        conditionalRowStyles={conditionalRowStyles}
-        onRowClicked={(row) => fetchHeatmap(row)}
-        dense
-      />
-
-      <Card className="border-0 shadow-sm mt-3">
+      <Card className="border-0 shadow-sm my-5">
         <Card.Body>
           <div className="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
             <h5 className="mb-0">
@@ -335,13 +440,22 @@ const AlarmsOverview = () => {
               Select an alarm to display its location heatmap.
             </div>
           ) : (
-            <SensorHeatmap2D
-              response={heatmapResponse}
-              title={heatmapTitle}
-            />
+            <SensorHeatmap2D response={heatmapResponse} title={heatmapTitle} />
           )}
         </Card.Body>
       </Card>
+
+      <DataTable
+        columns={columns}
+        data={filteredRows}
+        pagination
+        progressPending={loading}
+        highlightOnHover
+        pointerOnHover
+        conditionalRowStyles={conditionalRowStyles}
+        onRowClicked={(row) => fetchHeatmap(row)}
+        dense
+      />
     </Container>
   );
 };

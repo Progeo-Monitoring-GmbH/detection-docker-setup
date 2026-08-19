@@ -46,8 +46,14 @@ celery_instance.conf.beat_schedule = {
     },
     "evaluate-measurements-hourly": {
         "task": "progeo.tasks.evaluate_measurements",
-        # Previously the "7 * * * *" cron entry (docker/backend/cronjobs/hourly.sh).
-        "schedule": crontab(minute=7),
+        # Previously the "67 * * * *" cron entry (docker/backend/cronjobs/hourly.sh).
+        "schedule": crontab(minute="*/67"),
+    },
+    "check-existing-alarms-quarter-hourly": {
+        "task": "progeo.tasks.check_existing_alarms",
+        # Normalizes alarms whose device stopped exceeding the threshold, so
+        # is_active stays truthful between the hourly evaluate runs.
+        "schedule": crontab(minute="*/15"),
     },
 }
 celery_instance.autodiscover_tasks(lambda: settings.INSTALLED_APPS)

@@ -20,8 +20,12 @@ export type TimelineAlarm = {
   location?: AlarmLocationLite | null;
   device?: AlarmDeviceLite | null;
   triggered_at?: string | null;
+  last_fetched?: string | null;
+  last_updated?: string | null;
   normalized_at?: string | null;
   still_active_at?: string | null;
+  evaluated_at?: string | null;
+  evaluated_by?: { id?: number | null; username?: string | null } | null;
   is_active?: boolean;
   status?: number;
   sensor_id?: number | null;
@@ -60,8 +64,63 @@ export const parseTimestamp = (raw?: string | null): number | null => {
   if (!raw) {
     return null;
   }
+  // ISO-8601 (preferred, emitted by ProgeoAlarmSerializer).
   const ms = Date.parse(raw);
-  return Number.isNaN(ms) ? null : ms;
+  if (!Number.isNaN(ms)) {
+    return ms;
+  }
+  // Fallback: the project-wide pretty format "%d.%m.%Y, %H:%M" (e.g.
+  // "19.08.2026, 11:08") in case a stale/cached payload shows up.
+  const prettyMatch =
+    /^(\d{2})\.(\d{2})\.(\d{4}),\s*(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(
+      raw.trim(),
+    );
+  if (prettyMatch) {
+    const [, day, month, year, hour, minute, second] = prettyMatch;
+    const date = new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hour),
+      Number(minute),
+      second ? Number(second) : 0,
+    );
+    return Number.isNaN(date.getTime()) ? null : date.getTime();
+  }
+  return null;
+};
+
+/**
+ * Effective alarm start time in ms. `triggered_at` is the canonical trigger
+ * time, but legacy alarms may lack it - fall back to the alarm row's own
+ * `last_fetched`/`last_updated` (set whenever the row is saved) so the alarm
+ * always gets a position on the timeline.
+ */
+export const alarmStartTime = (alarm: {
+  triggered_at?: string | null;
+  last_fetched?: string | null;
+  last_updated?: string | null;
+}): number | null => {
+  return (
+    parseTimestamp(alarm.triggered_at) ??
+    parseTimestamp(alarm.last_fetched) ??
+    parseTimestamp(alarm.last_updated)
+  );
+};
+
+/**
+ * Whether the alarm is still active. Prefers the backend `is_active` flag and
+ * falls back to deriving it from `normalized_at` so the UI stays correct even
+ * when the payload does not include the flag.
+ */
+export const isAlarmActive = (alarm: {
+  is_active?: boolean | null;
+  normalized_at?: string | null;
+}): boolean => {
+  if (typeof alarm.is_active === 'boolean') {
+    return alarm.is_active;
+  }
+  return parseTimestamp(alarm.normalized_at) == null;
 };
 
 type AlarmSpan = {
@@ -109,13 +168,13 @@ const AlarmTimeline = ({
   const spans = useMemo<AlarmSpan[]>(() => {
     const result: AlarmSpan[] = [];
     for (const alarm of alarms) {
-      const start = parseTimestamp(alarm.triggered_at);
+      const start = alarmStartTime(alarm);
       if (start == null) {
         continue;
       }
       const normalized = parseTimestamp(alarm.normalized_at);
-      const end =
-        normalized != null ? normalized : alarm.is_active ? now : start;
+      const active = isAlarmActive(alarm);
+      const end = normalized != null ? normalized : active ? now : start;
       result.push({ alarm, start, end: Math.max(end, start) });
     }
     return result;
@@ -163,7 +222,7 @@ const AlarmTimeline = ({
     [spans],
   );
   const activeCount = useMemo(
-    () => alarms.filter((alarm) => alarm.is_active).length,
+    () => alarms.filter((alarm) => isAlarmActive(alarm)).length,
     [alarms],
   );
 
@@ -177,7 +236,7 @@ const AlarmTimeline = ({
   }
 
   return (
-    <div className="alarm-timeline">
+    <div className="alarm-timeline p-2">
       <div className="alarm-timeline-summary d-flex flex-wrap gap-3 mb-2">
         <span className="text-muted small">
           <strong>{spans.length}</strong> alarm(s)
@@ -204,8 +263,8 @@ const AlarmTimeline = ({
           (sum, span) => sum + (span.end - span.start) / 1000,
           0,
         );
-        const groupActiveCount = group.spans.filter(
-          (span) => span.alarm.is_active,
+        const groupActiveCount = group.spans.filter((span) =>
+          isAlarmActive(span.alarm),
         ).length;
         return (
           <div className="alarm-timeline-lane" key={group.key}>
@@ -224,7 +283,7 @@ const AlarmTimeline = ({
                 .sort((a, b) => a.start - b.start)
                 .map((span) => {
                   const isSelected = span.alarm.id === selectedAlarmId;
-                  const isActive = Boolean(span.alarm.is_active);
+                  const isActive = isAlarmActive(span.alarm);
                   return (
                     <div
                       key={span.alarm.id}
@@ -256,6 +315,17 @@ const AlarmTimeline = ({
                         `Active for: ${formatDuration(
                           (span.end - span.start) / 1000,
                         )}`,
+                        span.alarm.status === 1
+                          ? `Acknowledged by ${
+                              span.alarm.evaluated_by?.username || 'unknown'
+                            } · ${
+                              span.alarm.evaluated_at
+                                ? new Date(
+                                    span.alarm.evaluated_at,
+                                  ).toLocaleString()
+                                : '-'
+                            }`
+                          : '',
                       ]
                         .filter(Boolean)
                         .join('\n')}

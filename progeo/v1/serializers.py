@@ -263,6 +263,17 @@ class ProgeoAlarmSerializer(ProgeoBaseSerializer):
     location = serializers.SerializerMethodField("get_location")
     is_active = serializers.SerializerMethodField("get_is_active")
     duration_seconds = serializers.SerializerMethodField("get_duration_seconds")
+    evaluated_by = serializers.SerializerMethodField("get_evaluated_by")
+
+    # The project-wide DATETIME_FORMAT is a display-only pretty format
+    # ("%d.%m.%Y, %H:%M") that is useless for the frontend timeline. Emit
+    # machine-readable ISO-8601 datetimes instead (the UI formats them).
+    triggered_at = serializers.DateTimeField(format=None, read_only=True)
+    still_active_at = serializers.DateTimeField(format=None, read_only=True)
+    normalized_at = serializers.DateTimeField(format=None, read_only=True)
+    evaluated_at = serializers.DateTimeField(format=None, read_only=True)
+    last_fetched = serializers.DateTimeField(format=None, read_only=True)
+    last_updated = serializers.DateTimeField(format=None, read_only=True)
 
     class Meta:
         model = ProgeoAlarm
@@ -305,6 +316,16 @@ class ProgeoAlarmSerializer(ProgeoBaseSerializer):
         end = obj.normalized_at or timezone.now()
         duration = end - obj.triggered_at
         return max(0, int(duration.total_seconds()))
+
+    @staticmethod
+    def get_evaluated_by(obj):
+        user = obj.evaluated_by
+        if user is None:
+            return None
+        return {
+            "id": user.pk,
+            "username": getattr(user, "username", None),
+        }
 
 
 class MfSLogSerializer(ProgeoBaseSerializer):

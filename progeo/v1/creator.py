@@ -119,8 +119,14 @@ def create_progeo_alarm_safe(measurement: ProgeoMeasurement, sensor_id: Optional
 							  db: Optional[str] = "default") -> Tuple[Optional[ProgeoAlarm], bool]:
 	if measurement is None:
 		return None, False
-	
+
 	db_name = db
+
+	# `triggered_at` is crucial for the alarm timeline. When the caller does not
+	# provide it, fall back to the measurement's own timestamps so the alarm is
+	# never created without a trigger time.
+	if triggered_at is None:
+		triggered_at = measurement.last_updated or measurement.last_fetched or timezone.now()
 
 	if isinstance(measurement, ProgeoMeasurement):
 		device = measurement.device
@@ -128,10 +134,15 @@ def create_progeo_alarm_safe(measurement: ProgeoMeasurement, sensor_id: Optional
 		if len(existing_alarms) > 0:
 			# `last_updated` is not set for every measurement; fall back to
 			# `last_fetched` so the still-active alarm is always prolonged to a real time.
-			still_active_at = measurement.last_fetched
+			still_active_at = measurement.last_fetched or measurement.last_updated or timezone.now()
 			for alarm in existing_alarms:
 				alarm.still_active_at = still_active_at
-				alarm.save(using=db_name)
+				if alarm.triggered_at is None:
+					# Backfill the trigger time for legacy alarms without one.
+					alarm.triggered_at = triggered_at
+					alarm.save(using=db_name, update_fields=["triggered_at", "still_active_at"])
+				else:
+					alarm.save(using=db_name, update_fields=["still_active_at"])
 			okaylog(f"Existing unnormalized alarms found for device {device.id}. Prolonged current alarm.", tag="[CREATOR]")
 			return None, False
 
