@@ -48,7 +48,6 @@ type ApiResult = {
 };
 
 const moduleTests: Array<{ name: string; importer: () => Promise<unknown> }> = [
-  { name: 'DemoView', importer: () => import('./MeasurementsOverview.tsx') },
   { name: 'DeviceListView', importer: () => import('./DeviceListView') },
   { name: 'DeviceDetailView', importer: () => import('./DeviceDetailView') },
   { name: 'DeviceEditorView', importer: () => import('./DeviceEditorView') },

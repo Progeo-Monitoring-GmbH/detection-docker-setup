@@ -3,7 +3,6 @@ import { Route, Routes } from 'react-router';
 import { WebSocketProvider } from './components/ws/websocketContext';
 
 const Navbar = React.lazy(() => import('./components/navbar/Navbar'));
-const NavbarEmpty = React.lazy(() => import('./components/navbar/NavbarEmpty'));
 const LoginForm = React.lazy(() => import('./components/auth/LoginForm'));
 const TokenTransit = React.lazy(() => import('./main/TokenTransit'));
 const BackupView = React.lazy(() => import('./main/BackupView'));
@@ -25,12 +24,6 @@ const DeviceDetailView = React.lazy(() => import('./main/DeviceDetailView'));
 const DeviceEditorView = React.lazy(() => import('./main/DeviceEditorView'));
 const MeasurementDetailView = React.lazy(
   () => import('./main/MeasurementDetailView'),
-);
-const MeasurementsOverview = React.lazy(
-  () => import('./main/MeasurementsOverview.tsx'),
-);
-const DisplayIMEIDevices = React.lazy(
-  () => import('./main/DisplayIMEIDevices.tsx'),
 );
 const AdminPanel = React.lazy(() => import('./main/AdminPanel.tsx'));
 const LandingPage = React.lazy(() => import('./main/LandingPage.tsx'));
@@ -90,21 +83,6 @@ const CoreRoutes = () => {
         }
       />
       <Route
-        path="/device/measure"
-        element={
-          <WebSocketProvider url="/ws/commands/list">
-            <Navbar act={'measure'} content={<MeasurementsOverview />} />
-          </WebSocketProvider>
-        }
-      />
-      <Route
-        path="/devices/imei/display/"
-        element={
-          <NavbarEmpty act={'measure'} content={<DisplayIMEIDevices />} />
-        }
-      />
-
-      <Route
         path="/device/:id/update/"
         element={<Navbar act={'device'} content={<DeviceDetailView />} />}
       />
@@ -134,17 +112,17 @@ const CoreRoutes = () => {
       />
       <Route
         path="/factory/"
-        element={<Navbar act={'measure'} content={<FactoryVisualizerView />} />}
+        element={<Navbar act={'tools'} content={<FactoryVisualizerView />} />}
       />
       <Route
         path="/lageplan/wizard/"
-        element={<Navbar act={'measure'} content={<LageplanWizardView />} />}
+        element={<Navbar act={'tools'} content={<LageplanWizardView />} />}
       />
       <Route
         path="/map/"
         element={<Navbar act={'location'} content={<LocationsMapView />} />}
       />
-      <Route path="*" element={<LandingPage />} />
+      <Route path="*" element={<Navbar act={'home'} content={<LandingPage />} />} />
     </Routes>
   );
 };

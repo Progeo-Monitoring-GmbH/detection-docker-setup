@@ -26,18 +26,8 @@ const LANDING_MODULES: LandingModule[] = [
   },
   {
     permission: 'module_measurements_enabled',
-    labelKey: 'landing_module_measurements',
-    target: '/device/measure/',
-  },
-  {
-    permission: 'module_measurements_enabled',
     labelKey: 'landing_module_alarms',
     target: '/alarms/',
-  },
-  {
-    permission: 'module_imei_enabled',
-    labelKey: 'landing_module_imei',
-    target: '/devices/imei/display/',
   },
   {
     permission: 'module_backup_enabled',

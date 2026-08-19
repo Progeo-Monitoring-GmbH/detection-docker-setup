@@ -1,6 +1,5 @@
 import React from 'react';
 import {
-  Activity,
   Bell,
   Box,
   Broadcast,
@@ -12,7 +11,6 @@ import {
   House,
   Layers,
   Map,
-  Phone,
   Terminal,
   Wrench,
 } from 'react-bootstrap-icons';
@@ -30,19 +28,17 @@ import { useAuth } from '../../../hooks/CoreAuthProvider';
 import usePermissions from '../../../hooks/usePermissions';
 import './Navbar.css';
 
-/** Map pathname prefixes to the sidebar section they belong to. */
+/** Map pathname prefixes to the navbar section they belong to. */
 const sectionFromPath = (pathname) => {
-  if (pathname.startsWith('/device/measure')) return 'measure';
   if (pathname.startsWith('/device/')) return 'device';
-  if (pathname.startsWith('/devices/imei')) return 'imei';
   if (pathname.startsWith('/devices/')) return 'device';
   if (pathname.startsWith('/location/') || pathname.startsWith('/locations/')) {
     return 'location';
   }
   if (pathname.startsWith('/alarms')) return 'alarms';
-  if (pathname.startsWith('/backup')) return 'backup';
-  if (pathname.startsWith('/docker')) return 'docker';
-  if (pathname.startsWith('/admin')) return 'adminpanel';
+  if (pathname.startsWith('/backup')) return 'admin';
+  if (pathname.startsWith('/docker')) return 'admin';
+  if (pathname.startsWith('/admin')) return 'admin';
   if (pathname.startsWith('/factory')) return 'tools';
   if (pathname.startsWith('/lageplan')) return 'tools';
   if (pathname.startsWith('/map')) return 'tools';
@@ -75,11 +71,7 @@ const buildBreadcrumbs = (pathname) => {
     device: 'Devices',
     location: 'Locations',
     alarms: 'Alarms',
-    measure: 'Measurements',
-    imei: 'IMEI Display',
-    backup: 'Backup',
-    docker: 'Docker',
-    adminpanel: 'Admin Panel',
+    admin: 'Admin',
     tools: 'Tools',
   };
 
@@ -89,11 +81,7 @@ const buildBreadcrumbs = (pathname) => {
       device: '/device/overview/',
       location: '/location/overview/',
       alarms: '/alarms/',
-      measure: '/device/measure',
-      imei: '/devices/imei/display/',
-      backup: '/backup/1/overview/',
-      docker: '/docker/',
-      adminpanel: '/admin/panel/',
+      admin: '/admin/panel/',
       tools: null,
     }[section];
     crumbs.push({ label: sectionToLabel[section], to: sectionTarget });
@@ -104,9 +92,7 @@ const buildBreadcrumbs = (pathname) => {
       'location',
       'locations',
       'alarms',
-      'measure',
       'devices',
-      'imei',
       'backup',
       'docker',
       'admin',
@@ -119,6 +105,7 @@ const buildBreadcrumbs = (pathname) => {
       'display',
       'update',
       'detail',
+      'panel',
     ]);
     for (const segment of segments) {
       if (knownSections.has(segment)) {
@@ -187,17 +174,40 @@ const Navbar = ({ act, content }) => {
                 {hasPermission('module_locations_enabled') &&
                   navLink('location', 'Locations', Geo, '/location/overview/')}
                 {hasPermission('module_measurements_enabled') &&
-                  navLink('measure', 'Measurements', Activity, '/device/measure')}
-                {hasPermission('module_measurements_enabled') &&
                   navLink('alarms', 'Alarms', Bell, '/alarms/')}
-                {hasPermission('module_imei_enabled') &&
-                  navLink('imei', 'IMEI Display', Phone, '/devices/imei/display/')}
-                {hasPermission('module_backup_enabled') &&
-                  navLink('backup', 'Backup', Database, '/backup/1/overview/')}
-                {hasPermission('module_docker_enabled') &&
-                  navLink('docker', 'Docker', Box, '/docker/')}
-                {hasPermission('module_admin_enabled') &&
-                  navLink('adminpanel', 'Admin Panel', Gear, '/admin/panel/')}
+                {(hasPermission('module_backup_enabled') ||
+                  hasPermission('module_docker_enabled') ||
+                  hasPermission('module_admin_enabled')) && (
+                  <NavDropdown
+                    title={
+                      <span className="d-inline-flex align-items-center gap-2">
+                        <Gear size={16} />
+                        Admin
+                      </span>
+                    }
+                    id="progeo-admin-dropdown"
+                    active={activeSection === 'admin'}
+                  >
+                    {hasPermission('module_backup_enabled') && (
+                      <NavDropdown.Item as={Link} to="/backup/1/overview/">
+                        <Database size={16} className="me-2" />
+                        Backup
+                      </NavDropdown.Item>
+                    )}
+                    {hasPermission('module_docker_enabled') && (
+                      <NavDropdown.Item as={Link} to="/docker/">
+                        <Box size={16} className="me-2" />
+                        Docker
+                      </NavDropdown.Item>
+                    )}
+                    {hasPermission('module_admin_enabled') && (
+                      <NavDropdown.Item as={Link} to="/admin/panel/">
+                        <Gear size={16} className="me-2" />
+                        Admin Panel
+                      </NavDropdown.Item>
+                    )}
+                  </NavDropdown>
+                )}
                 <NavDropdown
                   title={
                     <span className="d-inline-flex align-items-center gap-2">

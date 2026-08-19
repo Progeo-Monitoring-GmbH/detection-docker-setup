@@ -99,9 +99,11 @@ const AlarmsOverview = () => {
     useState<SensorHeatmapResponse | null>(null);
   const [filterText, setFilterText] = useState('');
   const [onlyActive, setOnlyActive] = useState(false);
+  const [onlyLastHour, setOnlyLastHour] = useState(false);
   const [acknowledgingId, setAcknowledgingId] = useState<number | null>(null);
-  // Only ticks while at least one alarm is active; frozen otherwise, so the
-  // timeline does not re-render when all alarms are normalized.
+  // Only ticks while at least one alarm is active (or the last-hour filter is
+  // on, so the window stays rolling); frozen otherwise, so the timeline does
+  // not re-render when all alarms are normalized.
   const [now, setNow] = useState(() => Date.now());
 
   const hasActiveAlarm = useMemo(
@@ -110,12 +112,12 @@ const AlarmsOverview = () => {
   );
 
   useEffect(() => {
-    if (!hasActiveAlarm) {
+    if (!hasActiveAlarm && !onlyLastHour) {
       return undefined;
     }
     const intervalId = window.setInterval(() => setNow(Date.now()), TICK_MS);
     return () => window.clearInterval(intervalId);
-  }, [hasActiveAlarm]);
+  }, [hasActiveAlarm, onlyLastHour]);
 
   const fetchAlarms = useCallback(() => {
     setLoading(true);
@@ -245,9 +247,16 @@ const AlarmsOverview = () => {
 
   const filteredRows = useMemo(() => {
     const needle = filterText.trim().toLowerCase();
+    const lastHourCutoff = onlyLastHour ? now - 60 * 60 * 1000 : null;
     return rows.filter((row) => {
       if (onlyActive && !isAlarmActive(row)) {
         return false;
+      }
+      if (lastHourCutoff != null) {
+        const startMs = alarmStartTime(row);
+        if (startMs == null || startMs < lastHourCutoff) {
+          return false;
+        }
       }
       if (!needle) {
         return true;
@@ -270,7 +279,7 @@ const AlarmsOverview = () => {
 
       return haystack.includes(needle);
     });
-  }, [rows, filterText, onlyActive]);
+  }, [rows, filterText, onlyActive, onlyLastHour, now]);
 
   const columns: TableColumn<AlarmRow>[] = [
     {
@@ -449,6 +458,14 @@ const AlarmsOverview = () => {
             checked={onlyActive}
             onChange={(event) => setOnlyActive(event.target.checked)}
             title="Show only alarms that are currently active"
+          />
+          <Form.Check
+            type="switch"
+            id="alarms-only-last-hour"
+            label="Only show last hour"
+            checked={onlyLastHour}
+            onChange={(event) => setOnlyLastHour(event.target.checked)}
+            title="Show only alarms triggered within the last hour"
           />
           <FilterComponent
             filterText={filterText}

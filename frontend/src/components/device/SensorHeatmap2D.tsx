@@ -724,11 +724,10 @@ const SensorHeatmap2D = ({
     <Card className="border-0 shadow-sm">
       <Card.Body>
         <div className="d-flex flex-wrap justify-content-between align-items-center mb-2 p-3">
-          <h5 className="mb-0">{title}</h5>
           {chart && (
             <small className="text-muted">
-              {sensors.length} sensors, {timestamps.length} timestamps
-              {lageplanUrl ? ', lageplan' : ''}
+              {sensors.length} sensors, {timestamps.length} timestamps,
+              {lageplanUrl ? ' Lageplan' : ' No Lageplan'}
               {chart.activeCount > 0
                 ? `, ${chart.activeCount} active, \u03C3=${chart.usedSigma.toFixed(
                     3,

@@ -1,3 +1,6 @@
+from datetime import timedelta
+
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from rest_framework.decorators import action
@@ -14,6 +17,9 @@ from progeo.helper.creator import create_MfS_log
 
 # Alarm statuses (mirror ProgeoAlarm.status choices)
 STATUS_ACKNOWLEDGED = 1
+
+# Default window for the alarm list; keep the payload bounded.
+DEFAULT_ALARM_DAYS = 14
 
 
 class AlarmViewSet(ProgeoModalViewSet):
@@ -59,8 +65,18 @@ class AlarmViewSet(ProgeoModalViewSet):
         status to "quittiert" (1). Idempotent - acknowledging an already
         acknowledged alarm keeps the original evaluated_at/evaluated_by.
         """
-        alarm = self.get_object()
-        db_name = self._resolve_request_account(request).db_name
+        account = self._resolve_request_account(request)
+        db_name = account.db_name if account else "default"
+        # Bypass the list window (last N days) so any alarm owned by the
+        # account can be acknowledged, not just recently triggered ones.
+        alarm = (
+            ProgeoAlarm.objects.using(db_name)
+            .select_related("measurement__device__location")
+            .filter(pk=pk)
+            .first()
+        )
+        if alarm is None:
+            return RequestFailed({"reason": "Alarm not found"})
 
         if alarm.status != STATUS_ACKNOWLEDGED or alarm.evaluated_at is None:
             user = getattr(request, "user", None)
@@ -82,10 +98,24 @@ class AlarmViewSet(ProgeoModalViewSet):
         if not account:
             return ProgeoAlarm.objects.none()
 
+        # Default window: last two weeks. Overridable via ?days=.
+        try:
+            days = int(self.request.query_params.get("days", DEFAULT_ALARM_DAYS))
+        except (TypeError, ValueError):
+            days = DEFAULT_ALARM_DAYS
+        days = max(1, min(days, 365))
+        cutoff = timezone.now() - timedelta(days=days)
+
         # Alarms live on the account-specific DB; prefetch the whole chain
-        # (alarm -> measurement -> device -> location) in one query.
+        # (alarm -> measurement -> device -> location) in one query. Filter by
+        # trigger time, with a fallback to the row's own last_fetched for
+        # legacy alarms that lack a trigger time.
         return (
             ProgeoAlarm.objects.using(account.db_name)
+            .filter(
+                Q(triggered_at__gte=cutoff)
+                | Q(triggered_at__isnull=True, last_fetched__gte=cutoff)
+            )
             .select_related("measurement__device__location")
             .order_by("-triggered_at", "-id")
         )

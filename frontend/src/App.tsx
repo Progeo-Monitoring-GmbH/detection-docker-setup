@@ -1,5 +1,5 @@
 import React from 'react';
-import { Container, Row } from 'react-bootstrap';
+import { Col, Container, Row } from 'react-bootstrap';
 import { BrowserRouter } from 'react-router';
 import { SnackbarProvider } from 'notistack';
 import CoreAuthProvider from '../hooks/CoreAuthProvider';
@@ -18,17 +18,18 @@ function App() {
       anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
     >
       <ModalProvider>
-        <Container
-          fluid={true}
-          style={{ minWidth: '750px', maxWidth: '2160px', margin: '0' }}
-        >
+        <Container fluid={true} style={{ minWidth: '750px', margin: '0' }}>
           <Row>
-            <BrowserRouter>
-              <CoreAuthProvider>
-                <CoreRoutes />
-                <CookieBanner />
-              </CoreAuthProvider>
-            </BrowserRouter>
+            <Col md={1} style={{ padding: '0' }}></Col>
+            <Col md={10} style={{ padding: '0' }}>
+              <BrowserRouter>
+                <CoreAuthProvider>
+                  <CoreRoutes />
+                  <CookieBanner />
+                </CoreAuthProvider>
+              </BrowserRouter>
+            </Col>
+            <Col md={1} style={{ padding: '0' }}></Col>
           </Row>
         </Container>
       </ModalProvider>

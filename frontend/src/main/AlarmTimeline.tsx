@@ -147,15 +147,22 @@ export const alarmPeakValue = (alarm: {
     }
     return best == null || value > best ? value : best;
   }, null);
-  return peak ?? (Number.isFinite(Number(alarm.max_value)) ? Number(alarm.max_value) : null);
+  return (
+    peak ??
+    (Number.isFinite(Number(alarm.max_value)) ? Number(alarm.max_value) : null)
+  );
 };
 
 /** Hex color -> [r, g, b]. */
 const parseHex = (hex: string): [number, number, number] => {
   const normalized = hex.replace('#', '');
-  const full = normalized.length === 3
-    ? normalized.split('').map((c) => c + c).join('')
-    : normalized;
+  const full =
+    normalized.length === 3
+      ? normalized
+          .split('')
+          .map((c) => c + c)
+          .join('')
+      : normalized;
   const value = Number.parseInt(full, 16);
   if (Number.isNaN(value)) {
     return [9, 75, 129];
@@ -174,16 +181,17 @@ const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
  * above the alarm threshold. `heat` 0 = at threshold, 1 = HEAT_FULL_MULTIPLIER
  * times the threshold (matching SensorHeatmap2D's saturation point).
  */
-export const alarmHeatColor = (
-  alarm: { threshold?: number | null; max_value?: number | null; max_values?: AlarmMaxValueEntry[] },
-): string => {
+export const alarmHeatColor = (alarm: {
+  threshold?: number | null;
+  max_value?: number | null;
+  max_values?: AlarmMaxValueEntry[];
+}): string => {
   const rawThreshold = Number(alarm.threshold);
   const threshold =
     Number.isFinite(rawThreshold) && rawThreshold > 0 ? rawThreshold : 100;
   const peak = alarmPeakValue(alarm);
-  const heat = peak == null
-    ? 0
-    : Math.min(1, Math.max(0, peak / (threshold * 3)));
+  const heat =
+    peak == null ? 0 : Math.min(1, Math.max(0, peak / (threshold * 3)));
 
   const stops: Array<[number, string]> = [
     [0, plotTheme.brandBlue],
@@ -250,7 +258,9 @@ const AlarmTimeline = ({
   selectedAlarmId = null,
   onSelectAlarm,
 }: AlarmTimelineProps) => {
-  const [sortBy, setSortBy] = useState<'label' | 'duration'>('duration');
+  const [sortBy, setSortBy] = useState<'label' | 'duration' | 'max_value'>(
+    'duration',
+  );
   const [trackWidth, setTrackWidth] = useState(0);
   const trackObserver = useRef<ResizeObserver | null>(null);
 
@@ -340,6 +350,19 @@ const AlarmTimeline = ({
         );
         return durationB - durationA;
       });
+    } else if (sortBy === 'max_value') {
+      // Sort by the highest recorded value, descending.
+      entries.sort((a, b) => {
+        const peakA = Math.max(
+          ...a.spans.map((span) => alarmPeakValue(span.alarm) ?? 0),
+          0,
+        );
+        const peakB = Math.max(
+          ...b.spans.map((span) => alarmPeakValue(span.alarm) ?? 0),
+          0,
+        );
+        return peakB - peakA;
+      });
     } else {
       entries.sort((a, b) => a.label.localeCompare(b.label));
     }
@@ -391,10 +414,13 @@ const AlarmTimeline = ({
               aria-label="Sort timeline"
               value={sortBy}
               onChange={(event) =>
-                setSortBy(event.target.value as 'label' | 'duration')
+                setSortBy(
+                  event.target.value as 'label' | 'duration' | 'max_value',
+                )
               }
             >
               <option value="duration">Sort by active time</option>
+              <option value="max_value">Sort by max value</option>
               <option value="label">Sort by name</option>
             </select>
           </div>
@@ -426,10 +452,7 @@ const AlarmTimeline = ({
                   {formatDuration(groupDurationSeconds)}
                 </div>
               </div>
-              <div
-                className="alarm-timeline-track"
-                ref={trackRef}
-              >
+              <div className="alarm-timeline-track" ref={trackRef}>
                 {group.spans
                   .slice()
                   .sort((a, b) => a.start - b.start)
@@ -437,9 +460,7 @@ const AlarmTimeline = ({
                     const isSelected = span.alarm.id === selectedAlarmId;
                     const isActive = isAlarmActive(span.alarm);
                     const heatColor = alarmHeatColor(span.alarm);
-                    const barWidthPercent = toWidth(
-                      span.end - span.start,
-                    );
+                    const barWidthPercent = toWidth(span.end - span.start);
                     const barWidthPx = (barWidthPercent / 100) * trackWidth;
                     const showLabel = barWidthPx >= 90;
                     return (
@@ -495,11 +516,9 @@ const AlarmTimeline = ({
                       >
                         {showLabel && (
                           <span className="alarm-timeline-bar-label">
-                            {formatDuration(
-                              (span.end - span.start) / 1000,
-                            )}
+                            {formatDuration((span.end - span.start) / 1000)}
                             {span.alarm.max_value != null
-                              ? ` · ${span.alarm.max_value}`
+                              ? ` · ${span.alarm.max_value / span.alarm.threshold! >= 1.5 ? '🔥 ' : ''}${Math.round((span.alarm.max_value / span.alarm?.threshold!) * 100) / 100}x`
                               : ''}
                           </span>
                         )}
