@@ -10,10 +10,7 @@ import {
   type SensorHeatmapLocation,
   type SensorHeatmapResponse,
 } from '../components/device/SensorHeatmap3D.tsx';
-import {
-  showErrorBar,
-  showSuccessBar,
-} from '../components/ui/Snackbar.jsx';
+import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
 
 const MAX_LIMIT = 2000;
 const LOAD_MORE_STEP = 100;
@@ -205,7 +202,9 @@ const LocationHeatmap2DView = () => {
           <div className="d-flex justify-content-between align-items-center text-muted small">
             <span>1</span>
             <div className="d-flex align-items-center gap-2">
-              <span>Loaded {limit} of up to {MAX_LIMIT} measurements</span>
+              <span>
+                Loaded {limit} of up to {MAX_LIMIT} measurements
+              </span>
               <Button
                 size="sm"
                 variant="outline-primary"
@@ -340,7 +339,6 @@ const LocationHeatmap2DView = () => {
         <SensorHeatmap2D
           response={response}
           alignment={withSliders ? alignment : null}
-          title={`Location ${id} sensor heatmap`}
         />
       )}
     </Container>

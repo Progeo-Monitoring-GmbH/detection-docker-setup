@@ -3,6 +3,7 @@ import DataTable from 'react-data-table-component';
 import type { TableColumn } from 'react-data-table-component';
 import { Button, Card, Form, Spinner } from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
+import { useNavigate } from 'react-router';
 
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
@@ -29,13 +30,40 @@ type LocationRow = {
   alarm_threshold?: number | null;
   device_count?: number;
   has_device?: boolean;
+  measurement_count?: number;
+  last_measurement_at?: string | null;
+};
+
+type LocationAlarmSummary = {
+  count: number;
+  active: number;
+};
+
+/** Row coloring: yellow = has alarms, green = has measurements, gray = none. */
+const ROW_STYLES = {
+  alarm: {
+    backgroundColor: 'rgba(251, 188, 21, 0.18)',
+    borderLeft: '3px solid #fbbc15',
+  },
+  measurement: {
+    backgroundColor: 'rgba(141, 193, 96, 0.18)',
+    borderLeft: '3px solid #8dc160',
+  },
+  none: {
+    backgroundColor: 'rgba(108, 117, 125, 0.10)',
+    borderLeft: '3px solid #6c757d',
+  },
 };
 
 const LocationsOverview = () => {
   const auth = useAuth();
+  const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
   const [rows, setRows] = useState<LocationRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [alarmSummary, setAlarmSummary] = useState<
+    Record<string, LocationAlarmSummary>
+  >({});
   const [searchText, setSearchText] = useState('');
   const [onlyConnected, setOnlyConnected] = useState(true);
   const [selectedLocationId, setSelectedLocationId] = useState<number | null>(
@@ -79,14 +107,33 @@ const LocationsOverview = () => {
     );
   };
 
+  // Load alarm counts per location separately, so the location list stays
+  // light and the rows can be colored by alarm state.
+  const fetchAlarmSummary = () => {
+    void axiosConfig.perform_get(
+      auth,
+      '/v1/alarm/location_summary/',
+      (response) => {
+        const payload = (response?.data?.locations || {}) as Record<
+          string,
+          LocationAlarmSummary
+        >;
+        setAlarmSummary(payload);
+      },
+      (error) => {
+        const reason = error?.response?.data?.reason || error.message;
+        showErrorBar(
+          enqueueSnackbar,
+          `Could not load alarm summary: ${reason}`,
+        );
+      },
+    );
+  };
+
   useEffect(() => {
     fetchLocations(searchText, onlyConnected);
+    fetchAlarmSummary();
   }, [onlyConnected]);
-
-  const selectedLocation = useMemo(
-    () => rows.find((row) => row.id === selectedLocationId) || null,
-    [rows, selectedLocationId],
-  );
 
   const fetchLocationMeasurements = (locationId: number, year?: number) => {
     setMeasurementsLoading(true);
@@ -175,6 +222,18 @@ const LocationsOverview = () => {
     });
   }, [rows, searchText]);
 
+  // Row coloring priority: alarms (yellow) > measurements (green) > none (gray).
+  const rowColorStyle = (row: LocationRow) => {
+    const summary = alarmSummary[String(row.id)];
+    if (summary && summary.count > 0) {
+      return ROW_STYLES.alarm;
+    }
+    if ((row.measurement_count ?? 0) > 0 || row.last_measurement_at) {
+      return ROW_STYLES.measurement;
+    }
+    return ROW_STYLES.none;
+  };
+
   useEffect(() => {
     if (!selectedLocationId) {
       return;
@@ -212,13 +271,48 @@ const LocationsOverview = () => {
       name: 'Address',
       selector: (row) => row.address || '-',
       grow: 1.7,
+      sortable: true,
       wrap: true,
     },
     {
       name: 'Contact',
       selector: (row) => row.manager || row.telefon || row.mail || '-',
+      sortable: true,
       grow: 1.5,
       wrap: true,
+    },
+    {
+      name: 'State',
+      cell: (row) => {
+        const summary = alarmSummary[String(row.id)];
+        const hasAlarm = Boolean(summary && summary.count > 0);
+        const hasMeasurements =
+          (row.measurement_count ?? 0) > 0 || Boolean(row.last_measurement_at);
+        return (
+          <div className="d-flex align-items-center gap-2">
+            <span
+              className="d-inline-block rounded-circle"
+              style={{
+                width: 10,
+                height: 10,
+                backgroundColor: hasAlarm
+                  ? '#fbbc15'
+                  : hasMeasurements
+                    ? '#8dc160'
+                    : '#6c757d',
+              }}
+            />
+            <span className="small">
+              {hasAlarm
+                ? `${summary.active}/${summary.count} active`
+                : hasMeasurements
+                  ? 'Measurements'
+                  : 'No data'}
+            </span>
+          </div>
+        );
+      },
+      width: '150px',
     },
     {
       name: 'Devices',
@@ -228,7 +322,7 @@ const LocationsOverview = () => {
     },
     {
       name: 'Actions',
-      width: '180px',
+      width: '260px',
       cell: (row) => (
         <div className="d-flex gap-2">
           <Button
@@ -253,6 +347,22 @@ const LocationsOverview = () => {
           >
             Delete
           </Button>
+          <Button
+            size="sm"
+            variant="outline-warning"
+            style={{
+              display: !alarmSummary[String(row.id)]?.count
+                ? 'none'
+                : 'inline-block',
+            }}
+            title="View location alarms"
+            onClick={(event) => {
+              event.stopPropagation();
+              navigate(`/location/${row.id}/alarms`);
+            }}
+          >
+            Alarms
+          </Button>
         </div>
       ),
     },
@@ -260,9 +370,22 @@ const LocationsOverview = () => {
 
   const conditionalRowStyles = [
     {
+      when: (row: LocationRow) => rowColorStyle(row) === ROW_STYLES.alarm,
+      style: ROW_STYLES.alarm,
+    },
+    {
+      when: (row: LocationRow) => rowColorStyle(row) === ROW_STYLES.measurement,
+      style: ROW_STYLES.measurement,
+    },
+    {
+      when: (row: LocationRow) => rowColorStyle(row) === ROW_STYLES.none,
+      style: ROW_STYLES.none,
+    },
+    // Selected highlight last so it stays visible on colored rows.
+    {
       when: (row: LocationRow) => row.id === selectedLocationId,
       style: {
-        backgroundColor: 'rgba(13, 110, 253, 0.12)',
+        backgroundColor: 'rgba(13, 110, 253, 0.22)',
         borderLeft: '3px solid #0d6efd',
       },
     },
@@ -291,6 +414,30 @@ const LocationsOverview = () => {
         </div>
       </div>
 
+      <div className="d-flex flex-wrap gap-3 small text-muted mb-2">
+        <span className="d-flex align-items-center gap-1">
+          <span
+            className="d-inline-block rounded-circle"
+            style={{ width: 10, height: 10, backgroundColor: '#fbbc15' }}
+          />
+          Alarms
+        </span>
+        <span className="d-flex align-items-center gap-1">
+          <span
+            className="d-inline-block rounded-circle"
+            style={{ width: 10, height: 10, backgroundColor: '#8dc160' }}
+          />
+          Measurements
+        </span>
+        <span className="d-flex align-items-center gap-1">
+          <span
+            className="d-inline-block rounded-circle"
+            style={{ width: 10, height: 10, backgroundColor: '#6c757d' }}
+          />
+          No data
+        </span>
+      </div>
+
       <DataTable
         columns={columns}
         data={filteredRows}
@@ -305,15 +452,6 @@ const LocationsOverview = () => {
 
       <Card className="border-0 shadow-sm mt-3">
         <Card.Body>
-          <div className="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
-            <h5 className="mb-0">Location Measurements Comparison</h5>
-            <small className="text-muted">
-              {selectedLocation
-                ? `${selectedLocation.name || 'Unnamed location'} (ID ${selectedLocation.id})`
-                : 'Select a location row to load measurements'}
-            </small>
-          </div>
-
           {measurementsLoading ? (
             <div className="d-flex align-items-center gap-2 text-muted">
               <Spinner size="sm" animation="border" />

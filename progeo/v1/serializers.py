@@ -109,6 +109,7 @@ class LocationSerializer(ProgeoBaseSerializer):
     device_count = serializers.IntegerField(read_only=True)
     has_device = serializers.SerializerMethodField("get_has_device")
     last_measurement_at = serializers.DateTimeField(read_only=True)
+    measurement_count = serializers.IntegerField(read_only=True)
     lageplan_url = serializers.SerializerMethodField("get_lageplan_url")
 
     class Meta:

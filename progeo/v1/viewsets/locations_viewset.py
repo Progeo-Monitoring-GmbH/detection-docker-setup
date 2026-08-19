@@ -124,7 +124,17 @@ class LocationViewSet(ProgeoModalViewSet):
         if not account:
             return ProgeoLocation.objects.none()
 
-        queryset = ProgeoLocation.objects.using(account.db_name).filter(account=account).order_by("id")
+        # Annotate measurement availability so the frontend can color rows:
+        # green = has measurements, gray = no measurements at all.
+        queryset = (
+            ProgeoLocation.objects.using(account.db_name)
+            .filter(account=account)
+            .annotate(
+                measurement_count=Count("progeodevice__progeomeasurement", distinct=True),
+                last_measurement_at=Max("progeodevice__progeomeasurement__last_fetched"),
+            )
+            .order_by("id")
+        )
         return queryset
 
     @require_module_permissions("module_locations_enabled", "module_measurements_enabled")

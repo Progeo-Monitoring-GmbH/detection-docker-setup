@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.utils import timezone
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from rest_framework.decorators import action
@@ -52,6 +52,50 @@ class AlarmViewSet(ProgeoModalViewSet):
         # Alarms are time-sensitive and account-scoped; the default path-based
         # cache would serve stale rows and could leak rows across accounts.
         return super(AlarmViewSet, self).list(request, no_cache=True, *args, **kwargs)
+
+    @require_module_permissions("module_measurements_enabled")
+    @action(detail=False, url_path="location_summary", methods=["GET"])
+    def location_summary(self, request, *args, **kwargs):
+        """
+        Lightweight per-location alarm counts within the default window, so
+        the locations overview can color rows without loading every alarm.
+        Returns {"locations": {<location_id>: {"count": n, "active": m}}}.
+        """
+        account = self._resolve_request_account(request)
+        if not account:
+            return RequestSuccess({"locations": {}})
+
+        try:
+            days = int(request.query_params.get("days", DEFAULT_ALARM_DAYS))
+        except (TypeError, ValueError):
+            days = DEFAULT_ALARM_DAYS
+        days = max(1, min(days, 365))
+        cutoff = timezone.now() - timedelta(days=days)
+
+        rows = (
+            ProgeoAlarm.objects.using(account.db_name)
+            .filter(
+                Q(triggered_at__gte=cutoff)
+                | Q(triggered_at__isnull=True, last_fetched__gte=cutoff)
+            )
+            .values("measurement__device__location_id")
+            .annotate(
+                count=Count("id"),
+                active=Count("id", filter=Q(normalized_at__isnull=True)),
+            )
+        )
+
+        locations = {}
+        for row in rows:
+            location_id = row["measurement__device__location_id"]
+            if location_id is None:
+                continue
+            locations[str(location_id)] = {
+                "count": row["count"],
+                "active": row["active"],
+            }
+
+        return RequestSuccess({"locations": locations})
 
     @require_module_permissions("module_measurements_enabled")
     def retrieve(self, request, pk=None, *args, **kwargs):
@@ -106,11 +150,16 @@ class AlarmViewSet(ProgeoModalViewSet):
         days = max(1, min(days, 365))
         cutoff = timezone.now() - timedelta(days=days)
 
-        # Alarms live on the account-specific DB; prefetch the whole chain
-        # (alarm -> measurement -> device -> location) in one query. Filter by
-        # trigger time, with a fallback to the row's own last_fetched for
-        # legacy alarms that lack a trigger time.
-        return (
+        # Optional location filter (?location=<pk>) for the per-location view.
+        location_raw = self.request.query_params.get("location")
+        location_id = None
+        if location_raw not in [None, ""]:
+            try:
+                location_id = int(location_raw)
+            except (TypeError, ValueError):
+                location_id = None
+
+        queryset = (
             ProgeoAlarm.objects.using(account.db_name)
             .filter(
                 Q(triggered_at__gte=cutoff)
@@ -119,3 +168,6 @@ class AlarmViewSet(ProgeoModalViewSet):
             .select_related("measurement__device__location")
             .order_by("-triggered_at", "-id")
         )
+        if location_id is not None:
+            queryset = queryset.filter(measurement__device__location_id=location_id)
+        return queryset

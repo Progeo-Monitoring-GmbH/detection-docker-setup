@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import DataTable from 'react-data-table-component';
 import type { TableColumn } from 'react-data-table-component';
 import { Badge, Button, Card, Container, Form, Spinner } from 'react-bootstrap';
@@ -101,6 +101,7 @@ const AlarmsOverview = () => {
   const [onlyActive, setOnlyActive] = useState(false);
   const [onlyLastHour, setOnlyLastHour] = useState(false);
   const [acknowledgingId, setAcknowledgingId] = useState<number | null>(null);
+  const heatmapCardRef = useRef<HTMLDivElement | null>(null);
   // Only ticks while at least one alarm is active (or the last-hour filter is
   // on, so the window stays rolling); frozen otherwise, so the timeline does
   // not re-render when all alarms are normalized.
@@ -160,7 +161,7 @@ const AlarmsOverview = () => {
           ? normalizedMs
           : isAlarmActive(alarm)
             ? now
-            : startMs ?? now;
+            : (startMs ?? now);
       const padMs = 5 * 60 * 1000; // 5 minutes each side
       const fromMs = startMs != null ? startMs - padMs : now - padMs;
       const toMs = endMs + padMs;
@@ -193,6 +194,14 @@ const AlarmsOverview = () => {
           setHeatmapLoading(false);
         },
       );
+
+      // Bring the heatmap card into view once the selection is made.
+      window.setTimeout(() => {
+        heatmapCardRef.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+        });
+      }, 50);
     },
     [auth, enqueueSnackbar, now],
   );
@@ -429,7 +438,7 @@ const AlarmsOverview = () => {
         ? normalizedMs
         : isAlarmActive(selectedAlarm)
           ? now
-          : startMs ?? now;
+          : (startMs ?? now);
     const range =
       startMs != null && endMs != null
         ? `${new Date(startMs).toLocaleString()} → ${new Date(
@@ -501,7 +510,10 @@ const AlarmsOverview = () => {
         </Card.Body>
       </Card>
 
-      <Card className="border-0 shadow-sm my-5">
+      <Card
+        ref={heatmapCardRef}
+        className="border-0 shadow-sm my-5 p-2"
+      >
         <Card.Body>
           <div className="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
             <h5 className="mb-0">
@@ -523,7 +535,7 @@ const AlarmsOverview = () => {
               Select an alarm to display its location heatmap.
             </div>
           ) : (
-            <SensorHeatmap2D response={heatmapResponse} title={heatmapTitle} />
+            <SensorHeatmap2D response={heatmapResponse} />
           )}
         </Card.Body>
       </Card>

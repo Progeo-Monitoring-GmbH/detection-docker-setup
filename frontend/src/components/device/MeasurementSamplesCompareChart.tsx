@@ -237,7 +237,7 @@ const MeasurementSamplesCompareChart = (
   }, [meanAndDeviationSeries, pairSumSeries, t]);
 
   return (
-    <Card className="border-0 shadow-sm">
+    <Card className="border-0 shadow-sm p-3">
       <Card.Body>
         <div className="d-flex flex-wrap justify-content-between align-items-center mb-2">
           <div className="d-flex flex-wrap align-items-center gap-2">

@@ -251,7 +251,6 @@ const drawFrameLabel = (
 
 const SensorHeatmap2D = ({
   response,
-  title = 'Sensor heatmap',
   height = 620,
   resolution = 120,
   alignment = null,
