@@ -19,6 +19,12 @@ from django.contrib import admin
 from django.views.static import serve
 from progeo import settings, views
 from progeo.v1.viewsets.base_viewsets import AuthenticatedMediaView, ProgeoTokenObtainPairView, UserModulePermissionView
+from progeo.v1.viewsets.staff_admin_viewset import (
+    StaffUserDeleteView,
+    StaffUserDetailView,
+    StaffUserListView,
+    StaffUserPasswordView,
+)
 from rest_framework_simplejwt.views import (
     TokenRefreshView, TokenBlacklistView,
 )
@@ -47,6 +53,10 @@ urlpatterns = [
     re_path(r"^api/token/blacklist/$", TokenBlacklistView.as_view(), name='token_blacklist'),
     re_path(r"^api/token/$", ProgeoTokenObtainPairView.as_view(), name="token_obtain_pair"),
     re_path(r"^api/auth-support/module-permissions/$", UserModulePermissionView.as_view(), name="module_permissions"),
+    re_path(r"^api/auth-support/staff/users/$", StaffUserListView.as_view(), name="staff_users"),
+    re_path(r"^api/auth-support/staff/users/(?P<pk>\d+)/update/$", StaffUserDetailView.as_view(), name="staff_user_update"),
+    re_path(r"^api/auth-support/staff/users/(?P<pk>\d+)/password/$", StaffUserPasswordView.as_view(), name="staff_user_password"),
+    re_path(r"^api/auth-support/staff/users/(?P<pk>\d+)/delete/$", StaffUserDeleteView.as_view(), name="staff_user_delete"),
     re_path(r"^api/", include(base_router.urls)),
 
     re_path(r"^auth/login/", views.extended_obtain_auth_token_view, name="auth_login"),

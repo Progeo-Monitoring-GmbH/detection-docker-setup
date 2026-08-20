@@ -29,6 +29,7 @@ const MeasurementDetailView = React.lazy(
   () => import('./main/MeasurementDetailView'),
 );
 const AdminPanel = React.lazy(() => import('./main/AdminPanel.tsx'));
+const StaffAdmin = React.lazy(() => import('./main/StaffAdmin.tsx'));
 const LandingPage = React.lazy(() => import('./main/LandingPage.tsx'));
 const FactoryVisualizerView = React.lazy(
   () => import('./main/FactoryVisualizerView.tsx'),
@@ -112,6 +113,10 @@ const CoreRoutes = () => {
             <Navbar act={'adminpanel'} content={<AdminPanel />} />{' '}
           </WebSocketProvider>
         }
+      />
+      <Route
+        path="/staff/"
+        element={<Navbar act={'staff'} content={<StaffAdmin />} />}
       />
       <Route
         path="/backup/:account/overview/"
