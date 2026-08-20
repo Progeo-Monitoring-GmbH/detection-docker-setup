@@ -337,15 +337,26 @@ def evaluate_measurement(measurement_id: int, account_id: int = None):
 
 
 @shared_task
-def evaluate_measurements(db: str = None, lookback_hours: int = 1):
+def evaluate_measurements(db: str = None, lookback_hours: int = 1, days: int = None,
+                          start_date=None, end_date=None, project_id: int = None):
     """
-    Evaluate all measurements of the last hour for every location and raise or
-    prolong alarms via create_progeo_alarm_safe.
+    Evaluate measurements (default: of the last hour) for every location and raise
+    or prolong alarms via create_progeo_alarm_safe.
+
+    The evaluation window can be widened for backfills:
+      - days: int          -> evaluate the last N days (from now)
+      - start_date/end_date-> explicit window, ISO "YYYY-MM-DD" or datetime
+                             (each optional; a missing side falls back to the
+                             1h lookback / now respectively)
+    Optional filter:
+      - project_id         -> only evaluate measurements of this project
 
     Runs for every configured database unless a single `db` is given. Scheduled
     through celery beat; can also be triggered manually:
-        python manage.py evaluate_measurements            # all databases
-        python manage.py evaluate_measurements --db mydb  # single database
+        python manage.py evaluate_measurements                       # last hour
+        python manage.py evaluate_measurements --days 7              # last 7 days
+        python manage.py evaluate_measurements --start 2026-08-01 --end 2026-08-20
+        python manage.py evaluate_measurements --project-id 42
     """
     import datetime
 
@@ -354,15 +365,30 @@ def evaluate_measurements(db: str = None, lookback_hours: int = 1):
     from progeo.helper.basics import elog, ilog
     from progeo.settings import DATABASES
 
+    now = timezone.now()
+
+    if days is not None:
+        start = now - datetime.timedelta(days=days)
+        end = now
+    elif start_date is not None or end_date is not None:
+        start = _parse_date_bound(start_date, start_of_day=True)
+        end = _parse_date_bound(end_date, end_of_day=True)
+        if start is None:
+            start = now - datetime.timedelta(hours=lookback_hours)
+        if end is None:
+            end = now
+    else:
+        start = now - datetime.timedelta(hours=lookback_hours)
+        end = now
+
     db_names = [db] if db else list(DATABASES.keys())
-    cutoff = timezone.now() - datetime.timedelta(hours=lookback_hours)
 
     total_locations = 0
     total_triggered = 0
 
     for db_name in db_names:
         try:
-            locations, triggered = _evaluate_measurements_db(db_name, cutoff)
+            locations, triggered = _evaluate_measurements_db(db_name, start, end, project_id=project_id)
         except Exception as exc:
             elog(f"[evaluate_measurements] db={db_name} failed: {exc}")
             continue
@@ -374,13 +400,53 @@ def evaluate_measurements(db: str = None, lookback_hours: int = 1):
     ilog(f"[evaluate_measurements] total locations={total_locations} alarms_triggered={total_triggered}")
     return {
         "databases": db_names,
+        "window_start": start.isoformat() if start else None,
+        "window_end": end.isoformat() if end else None,
+        "project_id": project_id,
         "locations": total_locations,
         "alarms_triggered": total_triggered,
     }
 
 
-def _evaluate_measurements_db(db: str, cutoff) -> tuple[int, int]:
-    """Evaluate every last-hour measurement of every location in one pass."""
+def _parse_date_bound(value, start_of_day=False, end_of_day=False):
+    """Parse an ISO 'YYYY-MM-DD' / datetime into a naive local datetime.
+
+    With `start_of_day`, a bare date becomes 00:00:00; with `end_of_day` it
+    becomes 23:59:59.999999 so the whole day is included in the window.
+    """
+    import datetime
+
+    if value is None:
+        return None
+    if isinstance(value, datetime.datetime):
+        return value
+    if isinstance(value, datetime.date):
+        moment = datetime.datetime(value.year, value.month, value.day)
+    elif isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return None
+        try:
+            moment = datetime.datetime.strptime(value, "%Y-%m-%d")
+        except ValueError:
+            try:
+                moment = datetime.datetime.fromisoformat(value)
+            except ValueError:
+                return None
+    else:
+        return None
+
+    if start_of_day:
+        return moment.replace(hour=0, minute=0, second=0, microsecond=0)
+    if end_of_day:
+        return moment.replace(hour=23, minute=59, second=59, microsecond=999999)
+    return moment
+
+
+def _evaluate_measurements_db(db: str, start, end, project_id: int = None) -> tuple[int, int]:
+    """Evaluate every measurement in [start, end] of every location in one pass."""
+    from django.db.models import Q
+
     from progeo.helper.basics import dlog, elog, ilog
     from progeo.helper.weather import WeatherHelper
     from progeo.v1.creator import create_progeo_alarm_safe
@@ -392,15 +458,21 @@ def _evaluate_measurements_db(db: str, cutoff) -> tuple[int, int]:
     # rain data).
     weather_helper = WeatherHelper()
 
-    # One query for all locations: every measurement of the last hour with its
+    # One query for all locations: every measurement in the window with its
     # device+location already joined. `last_fetched` is set on every save and is
     # the reliable "when did the measurement arrive" field.
     measurements = (
         ProgeoMeasurement.objects.using(db)
-        .filter(last_fetched__gte=cutoff)
+        .filter(last_fetched__gte=start, last_fetched__lte=end)
         .select_related("device__location")
         .order_by("device__location__pk", "last_fetched")
     )
+    if project_id is not None:
+        # Measurements may carry the project on the row or on the device; match
+        # either so backfills with explicit project ids behave consistently.
+        measurements = measurements.filter(
+            Q(project_id=project_id) | Q(device__project_id=project_id)
+        ).distinct()
 
     triggered = 0
     location_ids = 0

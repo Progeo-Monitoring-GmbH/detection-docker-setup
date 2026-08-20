@@ -11,6 +11,7 @@ import {
   House,
   Layers,
   Map,
+  People,
   Terminal,
   Wrench,
 } from 'react-bootstrap-icons';
@@ -39,6 +40,7 @@ const sectionFromPath = (pathname) => {
   if (pathname.startsWith('/backup')) return 'admin';
   if (pathname.startsWith('/docker')) return 'admin';
   if (pathname.startsWith('/admin')) return 'admin';
+  if (pathname.startsWith('/staff')) return 'admin';
   if (pathname.startsWith('/factory')) return 'tools';
   if (pathname.startsWith('/lageplan')) return 'tools';
   if (pathname.startsWith('/map')) return 'tools';
@@ -129,6 +131,9 @@ const Navbar = ({ act, content }) => {
   const pathname = location.pathname || '/';
   const activeSection = sectionFromPath(pathname) || act || null;
 
+  // Staff flag comes from the JWT (is_staff claim added by the token serializer).
+  const isStaffUser = Boolean(auth?.user?.is_staff);
+
   const crumbs = React.useMemo(() => buildBreadcrumbs(pathname), [pathname]);
 
   const logout = () => {
@@ -177,7 +182,8 @@ const Navbar = ({ act, content }) => {
                   navLink('alarms', 'Alarms', Bell, '/alarms/')}
                 {(hasPermission('module_backup_enabled') ||
                   hasPermission('module_docker_enabled') ||
-                  hasPermission('module_admin_enabled')) && (
+                  hasPermission('module_admin_enabled') ||
+                  isStaffUser) && (
                   <NavDropdown
                     title={
                       <span className="d-inline-flex align-items-center gap-2">
@@ -188,6 +194,12 @@ const Navbar = ({ act, content }) => {
                     id="progeo-admin-dropdown"
                     active={activeSection === 'admin'}
                   >
+                    {isStaffUser && (
+                      <NavDropdown.Item as={Link} to="/staff/">
+                        <People size={16} className="me-2" />
+                        Staff Admin
+                      </NavDropdown.Item>
+                    )}
                     {hasPermission('module_backup_enabled') && (
                       <NavDropdown.Item as={Link} to="/backup/1/overview/">
                         <Database size={16} className="me-2" />
