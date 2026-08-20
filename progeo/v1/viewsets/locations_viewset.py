@@ -1,6 +1,9 @@
 from datetime import datetime
 
+import csv
+
 from django.db.models import Count, Max
+from django.http import HttpResponse
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -12,6 +15,24 @@ from progeo.v1.models import ProgeoLocation, ProgeoMeasurePoint, ProgeoMeasureme
 from progeo.v1.serializers import LocationSerializer, ProgeoMeasurementSerializer, MinimalLocationSerializer
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.v1.viewsets.setup_viewset import _get_controller_account
+
+# Geo- and address fields that can be exported / imported (updated) via the
+# dedicated geo_export / geo_import routes. `id`/`project_id` are used for
+# matching on import and are always included in the export.
+LOCATION_GEO_FIELDS = [
+    "name",
+    "address",
+    "plz",
+    "city",
+    "manager",
+    "telefon",
+    "mail",
+    "latitude",
+    "longitude",
+    "alarm_threshold",
+]
+
+LOCATION_GEO_CSV_FIELDS = ["id", "project_id", *LOCATION_GEO_FIELDS]
 
 
 class LocationViewSet(ProgeoModalViewSet):
@@ -46,6 +67,128 @@ class LocationViewSet(ProgeoModalViewSet):
     @require_module_permissions("module_locations_enabled")
     def retrieve(self, request, pk=None, *args, **kwargs):
         return super(LocationViewSet, self).retrieve(request, pk=pk, *args, **kwargs)
+
+    @require_module_permissions("module_locations_enabled")
+    @action(detail=False, url_path="geo_export", methods=["GET"])
+    def geo_export(self, request, *args, **kwargs):
+        """Export the geo- and address data of every location of the current account.
+
+        Returns JSON by default; pass `?format=csv` for a spreadsheet download.
+        The exported rows can be sent back to geo_import to update locations.
+        """
+        account = self._resolve_request_account(request)
+        if not account:
+            return RequestFailed({"reason": "No account found"})
+        db_name = account.db_name if account else "default"
+
+        rows = list(
+            ProgeoLocation.objects.using(db_name)
+            .filter(account=account)
+            .order_by("id")
+            .values(*LOCATION_GEO_CSV_FIELDS)
+        )
+
+        if request.query_params.get("format", "").lower() == "csv":
+            response = HttpResponse(content_type="text/csv")
+            response["Content-Disposition"] = 'attachment; filename="locations-geo-address.csv"'
+            writer = csv.DictWriter(response, fieldnames=LOCATION_GEO_CSV_FIELDS)
+            writer.writeheader()
+            for row in rows:
+                writer.writerow(row)
+            return response
+
+        return RequestSuccess({"locations": rows, "count": len(rows)})
+
+    @require_module_permissions("module_locations_enabled", "module_locations_edit")
+    @action(detail=False, url_path="geo_import", methods=["POST"])
+    def geo_import(self, request, *args, **kwargs):
+        """Update the geo- and address data of existing locations.
+
+        Accepts the payload produced by geo_export (a JSON list of location rows,
+        or `{"locations": [...]}`). Locations are matched by `project_id` first,
+        then by `id`. Only the geo/address fields that are present in a row are
+        updated; `id` and `project_id` are never overwritten.
+
+        Returns per-row results plus a summary of updated / not-found rows.
+        """
+        account = self._resolve_request_account(request)
+        if not account:
+            return RequestFailed({"reason": "No account found"})
+        db_name = account.db_name if account else "default"
+
+        payload = request.data
+        if isinstance(payload, dict):
+            payload = payload.get("locations") or payload.get("items")
+        if not isinstance(payload, list):
+            return RequestFailed({"reason": "Expected a JSON list of location rows (see geo_export)"})
+
+        # Load all locations of the account once and index them for matching.
+        locations = list(
+            ProgeoLocation.objects.using(db_name).filter(account=account)
+        )
+        by_project_id = {loc.project_id: loc for loc in locations if loc.project_id is not None}
+        by_id = {loc.pk: loc for loc in locations}
+
+        updated = []
+        not_found = []
+        skipped = []
+
+        for index, row in enumerate(payload):
+            if not isinstance(row, dict):
+                skipped.append({"row": index, "reason": "row is not an object"})
+                continue
+
+            location = None
+            if row.get("project_id") is not None:
+                location = by_project_id.get(row.get("project_id"))
+            if location is None and row.get("id") is not None:
+                location = by_id.get(row.get("id"))
+            if location is None:
+                not_found.append({"row": index, "id": row.get("id"), "project_id": row.get("project_id")})
+                continue
+
+            update_fields = []
+            for field in LOCATION_GEO_FIELDS:
+                if field not in row:
+                    continue
+                value = row[field]
+                if value == "":
+                    value = None
+
+                if field in ("latitude", "longitude"):
+                    try:
+                        value = float(value) if value is not None else None
+                    except (TypeError, ValueError):
+                        skipped.append({"row": index, "id": location.pk, "field": field, "reason": "must be a number"})
+                        break
+                elif field == "alarm_threshold":
+                    # NOT NULL column (default=100): skip instead of storing None.
+                    if value is None:
+                        continue
+                    try:
+                        value = int(value)
+                    except (TypeError, ValueError):
+                        skipped.append({"row": index, "id": location.pk, "field": field, "reason": "must be an integer"})
+                        break
+
+                setattr(location, field, value)
+                update_fields.append(field)
+            else:
+                if update_fields:
+                    location.save(using=db_name, update_fields=update_fields)
+                    updated.append({"row": index, "id": location.pk, "project_id": location.project_id, "fields": update_fields})
+                else:
+                    skipped.append({"row": index, "id": location.pk, "reason": "no geo/address fields to update"})
+
+        return RequestSuccess({
+            "updated": updated,
+            "updated_count": len(updated),
+            "not_found": not_found,
+            "not_found_count": len(not_found),
+            "skipped": skipped,
+            "skipped_count": len(skipped),
+            "total": len(payload),
+        })
 
     @require_module_permissions("module_locations_enabled", "module_locations_edit")
     def create(self, request, *args, **kwargs):

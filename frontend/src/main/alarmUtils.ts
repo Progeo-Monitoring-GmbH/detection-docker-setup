@@ -35,6 +35,11 @@ export type TimelineAlarm = {
   max_value?: number | null;
   threshold?: number | null;
   max_values?: AlarmMaxValueEntry[];
+  rain_start?: string | null;
+  /** Hours of rain found (see progeo.helper.legacy WeatherHelper). */
+  rain_duration?: number | null;
+  /** Precipitation in mm. */
+  rain_amount?: number | null;
 };
 
 /** Format a duration in seconds as "1d 2h 3m 4s" (skips empty units). */
@@ -117,6 +122,22 @@ export const isAlarmActive = (alarm: {
     return alarm.is_active;
   }
   return parseTimestamp(alarm.normalized_at) == null;
+};
+
+/**
+ * Rain window found for the alarm (start/end in ms), or null if no rain was recorded.
+ * `rain_duration` is stored in hours (see progeo.helper.legacy WeatherHelper).
+ */
+export const alarmRainSpan = (alarm: {
+  rain_start?: string | null;
+  rain_duration?: number | null;
+}): { start: number; end: number } | null => {
+  const start = parseTimestamp(alarm.rain_start);
+  if (start == null || alarm.rain_duration == null) {
+    return null;
+  }
+  const end = start + alarm.rain_duration * 60 * 60 * 1000;
+  return { start, end: Math.max(end, start) };
 };
 
 /**

@@ -382,7 +382,10 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
     def get_pairs(self, samples=None):
         if samples is None:
             samples = self.get_sample_values()
-        return [abs(b - a) for a, b in zip(samples[:-1], samples[1:-1])]
+        result = []
+        for i in range(0, len(samples) - 1, 2):
+            result.append(abs(samples[i + 1] - samples[i]))
+        return result
 
     def get_sample_values(self):
         # Prefer denormalized samples column for faster reads.
@@ -456,9 +459,23 @@ class ProgeoAlarm(ProgeoModel, auto_prefetch.Model):
 
     status = models.IntegerField(choices=[(0, "neu"), (1, "quittiert"), (2, "stoerung")], default=0)
 
+    rain_start = models.DateTimeField(null=True, blank=True)
+    rain_duration = models.FloatField(null=True, blank=True, help_text="Hours of rain found")
+    rain_amount = models.FloatField(null=True, blank=True, help_text="Precipitation in mm")
+    rain_checked = models.BooleanField(default=False, blank=True, help_text="Whether rain check has been performed for this alarm")
+
     def prolong_until_now(self):
         self.still_active_at = timezone.now()
         self.save()
+
+    def fetch_weather(self, helper=None):
+        from progeo.helper.weather import WeatherHelper
+
+        # A shared helper lets a batch run reuse the per-location caches (one API
+        # call + one alarm lookup per location) and keeps rain attribution to the
+        # earliest alarm deterministic across the whole run.
+        wh = helper or WeatherHelper()
+        wh.check_rain_for_alarm(self, save=True)
 
     def __str__(self):
         _id = f"[{self.pk}] " if DEBUG else ""

@@ -31,6 +31,40 @@
   font-variant-numeric: tabular-nums;
 }
 
+.alarm-timeline-zoom-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+
+.alarm-timeline-zoom-reset {
+  border: 1px solid rgba(13, 110, 253, 0.4);
+  background: rgba(13, 110, 253, 0.08);
+  color: #0d6efd;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0 6px;
+  line-height: 1.5;
+}
+
+.alarm-timeline-zoom-reset:hover {
+  background: rgba(13, 110, 253, 0.16);
+}
+
+/* Live selection rectangle drawn while drag-zooming. */
+.alarm-timeline-drag-selection {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(13, 110, 253, 0.12);
+  border-left: 1px solid #0d6efd;
+  border-right: 1px solid #0d6efd;
+  pointer-events: none;
+  z-index: 4;
+}
+
 /* Scrollable lane area; header stays pinned above it. */
 .alarm-timeline-scroll {
   max-height: 340px;
@@ -115,6 +149,33 @@
     transparent 12.5%
   );
   border-left: 1px solid rgba(0, 0, 0, 0.1);
+  cursor: crosshair;
+  user-select: none;
+}
+
+/* Rain window found for an alarm: full-lane blue background behind the bar. */
+.alarm-timeline-rain {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(13, 110, 253, 0.18);
+  border-left: 1px solid rgba(13, 110, 253, 0.4);
+  border-right: 1px solid rgba(13, 110, 253, 0.4);
+  cursor: default;
+  z-index: 0;
+}
+
+.alarm-timeline-rain-label {
+  position: absolute;
+  bottom: 1px;
+  left: 2px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #0b3659;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .alarm-timeline-bar {
