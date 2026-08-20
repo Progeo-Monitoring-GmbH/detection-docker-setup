@@ -126,7 +126,7 @@ def save_location_lageplan(location: ProgeoLocation, source: Union[bytes, Any], 
 
 	``source`` is either raw bytes or a Django uploaded file (anything with ``.chunks()``).
 	"""
-	db_name = db or getattr(getattr(location, "account", None), "db_name", None) or "default"
+	db_name = "default"
 
 	save_check_dir(UPLOAD_DIR, "lageplan")
 	suffix = os.path.splitext(original_name)[1] or ".png"
@@ -146,8 +146,7 @@ def save_location_lageplan(location: ProgeoLocation, source: Union[bytes, Any], 
 	try:
 		location.save(using=db_name)
 	except Exception as exc:
-		dlog(f"Failed saving location lageplan for project {location.project_id}: {exc}")
-		location.save(using="default")
+		elog(f"Failed saving location lageplan for project {location.project_id}: {exc}")
 	return new_file
 
 
