@@ -6,7 +6,7 @@ from django.core.management.base import BaseCommand
 
 
 from progeo.helper.basics import dlog
-from progeo.helper.geo import GeoHelper
+from progeo.helper.legacy.geo import GeoHelper
 from progeo.v1.creator import save_location_lageplan
 from progeo.v1.legacy.executor import fetch_legacy_data, parse_sample_timestamp
 from progeo.v1.legacy.helper_resistance import MAX_JSON_SAFE_RESISTANCE_OHM

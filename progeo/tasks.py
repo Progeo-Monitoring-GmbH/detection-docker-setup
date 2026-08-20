@@ -382,8 +382,15 @@ def evaluate_measurements(db: str = None, lookback_hours: int = 1):
 def _evaluate_measurements_db(db: str, cutoff) -> tuple[int, int]:
     """Evaluate every last-hour measurement of every location in one pass."""
     from progeo.helper.basics import dlog, elog, ilog
+    from progeo.helper.weather import WeatherHelper
     from progeo.v1.creator import create_progeo_alarm_safe
     from progeo.v1.models import ProgeoAlarm, ProgeoLocation, ProgeoMeasurement
+
+    # One shared helper for the whole pass: alarms of the same location share a
+    # single API call, and rain is only attributed to the earliest alarm that
+    # catches a rain event (later overlapping alarms are marked checked without
+    # rain data).
+    weather_helper = WeatherHelper()
 
     # One query for all locations: every measurement of the last hour with its
     # device+location already joined. `last_fetched` is set on every save and is
@@ -422,9 +429,20 @@ def _evaluate_measurements_db(db: str, cutoff) -> tuple[int, int]:
         sensor_id, max_value = measurement.evaluate(threshold)
         alarm = None
         if sensor_id is None or max_value is None:
-            alarm = ProgeoAlarm.objects.using(db).filter(measurement__device=measurement.device, normalized_at__isnull=True)
+            active_alarms = (
+                ProgeoAlarm.objects.using(db)
+                .filter(measurement__device=measurement.device, normalized_at__isnull=True)
+                .select_related("measurement__device__location")
+                .order_by("triggered_at", "id")
+            )
+            alarm = active_alarms.first()
             if alarm:
-                alarm.update(normalized_at=measurement.last_fetched)
+                # Normalize every still-active alarm of this device and check the
+                # earliest one for rain (later overlapping alarms are marked
+                # checked without rain data by the shared WeatherHelper).
+                active_alarms.update(normalized_at=measurement.last_fetched)
+                alarm.normalized_at = measurement.last_fetched
+                alarm.fetch_weather(weather_helper)
                 dlog(f"ALARM NORMALIZED: location={location.project_id} at={measurement.last_fetched}")
             continue
 

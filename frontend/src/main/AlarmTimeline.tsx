@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Badge } from 'react-bootstrap';
 import { ClockHistory } from 'react-bootstrap-icons';
 import AlarmTooltip from './AlarmTooltip';
+import RainTooltip from './RainTooltip';
 import {
   alarmHeatColor,
   alarmPeakValue,
+  alarmRainSpan,
   alarmStartTime,
   formatDuration,
   isAlarmActive,
@@ -16,6 +18,7 @@ import './AlarmTimeline.css';
 export {
   alarmHeatColor,
   alarmPeakValue,
+  alarmRainSpan,
   alarmStartTime,
   formatDuration,
   isAlarmActive,
@@ -81,6 +84,14 @@ type TooltipState = {
   y: number;
 };
 
+type RainTooltipState = {
+  start: number;
+  end: number;
+  amount?: number | null;
+  x: number;
+  y: number;
+};
+
 const AlarmTimeline = ({
   alarms,
   now,
@@ -93,17 +104,42 @@ const AlarmTimeline = ({
   const [trackWidth, setTrackWidth] = useState(0);
   const trackObserver = useRef<ResizeObserver | null>(null);
   const bodyRef = useRef<HTMLDivElement | null>(null);
+  // Manual zoom range set by drag-selecting on a track; null = auto-fit to the alarms.
+  const [zoomRange, setZoomRange] = useState<{
+    start: number;
+    end: number;
+  } | null>(null);
+  // Live selection rectangle (body-relative px) while drag-zooming.
+  const [dragSelection, setDragSelection] = useState<{
+    left: number;
+    width: number;
+  } | null>(null);
+  const dragRef = useRef<{
+    trackRect: DOMRect;
+    startX: number;
+    moved: boolean;
+  } | null>(null);
   // Hover state: timestamp under the cursor + its x-position (px, relative to
   // the timeline body) for the vertical indicator + bottom date tooltip.
   const [hover, setHover] = useState<{ ms: number; x: number } | null>(null);
   // Floating alarm detail tooltip while hovering a bar.
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const closeTimerRef = useRef<number | null>(null);
+  // Floating rain tooltip while hovering a rain overlay.
+  const [rainTooltip, setRainTooltip] = useState<RainTooltipState | null>(null);
+  const rainCloseTimerRef = useRef<number | null>(null);
 
   const clearCloseTimer = useCallback(() => {
     if (closeTimerRef.current != null) {
       window.clearTimeout(closeTimerRef.current);
       closeTimerRef.current = null;
+    }
+  }, []);
+
+  const clearRainCloseTimer = useCallback(() => {
+    if (rainCloseTimerRef.current != null) {
+      window.clearTimeout(rainCloseTimerRef.current);
+      rainCloseTimerRef.current = null;
     }
   }, []);
 
@@ -118,6 +154,17 @@ const AlarmTimeline = ({
   }, [clearCloseTimer]);
 
   useEffect(() => clearCloseTimer, [clearCloseTimer]);
+
+  // Same grace-period close behavior as the alarm tooltip, for the rain tooltip.
+  const scheduleRainTooltipClose = useCallback(() => {
+    clearRainCloseTimer();
+    rainCloseTimerRef.current = window.setTimeout(() => {
+      setRainTooltip(null);
+      rainCloseTimerRef.current = null;
+    }, TOOLTIP_CLOSE_DELAY_MS);
+  }, [clearRainCloseTimer]);
+
+  useEffect(() => clearRainCloseTimer, [clearRainCloseTimer]);
 
   // Measure the track so we can decide whether a bar is wide enough to draw
   // its duration/max-value label inside it. All lanes share the same track
@@ -162,6 +209,9 @@ const AlarmTimeline = ({
   }, [alarms, now]);
 
   const { minTime, maxTime } = useMemo(() => {
+    if (zoomRange) {
+      return { minTime: zoomRange.start, maxTime: zoomRange.end };
+    }
     if (spans.length === 0) {
       return { minTime: 0, maxTime: 1 };
     }
@@ -177,7 +227,7 @@ const AlarmTimeline = ({
       maxTime += spanMs * 0.04;
     }
     return { minTime, maxTime };
-  }, [spans, now]);
+  }, [spans, now, zoomRange]);
 
   const groups = useMemo(() => {
     const map = new Map<
@@ -251,6 +301,86 @@ const AlarmTimeline = ({
     scheduleTooltipClose();
   };
 
+  /** Minimum horizontal movement (px) before a mousedown counts as a zoom drag rather than a click. */
+  const DRAG_THRESHOLD_PX = 4;
+
+  // Drag-to-zoom: dragging left/right on any track selects a time range and
+  // zooms the whole axis to it on release. A plain click (no real movement)
+  // is left alone so bar selection still works.
+  const handleTrackMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0) {
+      return;
+    }
+    const trackRect = event.currentTarget.getBoundingClientRect();
+    const body = bodyRef.current;
+    if (!body) {
+      return;
+    }
+    const bodyRect = body.getBoundingClientRect();
+    const rangeStart = minTime;
+    const rangeEnd = maxTime;
+    dragRef.current = { trackRect, startX: event.clientX, moved: false };
+
+    const clampToTrack = (clientX: number) =>
+      Math.min(Math.max(clientX, trackRect.left), trackRect.right);
+
+    const toMs = (clientX: number) => {
+      const ratio = (clampToTrack(clientX) - trackRect.left) / trackRect.width;
+      return rangeStart + ratio * (rangeEnd - rangeStart);
+    };
+
+    const handleWindowMouseMove = (moveEvent: MouseEvent) => {
+      const drag = dragRef.current;
+      if (!drag) {
+        return;
+      }
+      if (Math.abs(moveEvent.clientX - drag.startX) > DRAG_THRESHOLD_PX) {
+        drag.moved = true;
+      }
+      const startPx = clampToTrack(drag.startX) - bodyRect.left;
+      const currentPx = clampToTrack(moveEvent.clientX) - bodyRect.left;
+      setDragSelection({
+        left: Math.min(startPx, currentPx),
+        width: Math.abs(currentPx - startPx),
+      });
+    };
+
+    // Suppress the click on whatever's under the cursor (e.g. an alarm bar)
+    // when this mousedown turned into a real drag.
+    const handleWindowClickCapture = (clickEvent: MouseEvent) => {
+      if (dragRef.current?.moved) {
+        clickEvent.preventDefault();
+        clickEvent.stopPropagation();
+      }
+    };
+
+    const handleWindowMouseUp = (upEvent: MouseEvent) => {
+      window.removeEventListener('mousemove', handleWindowMouseMove);
+      const drag = dragRef.current;
+      dragRef.current = null;
+      setDragSelection(null);
+      if (drag?.moved) {
+        const msA = toMs(drag.startX);
+        const msB = toMs(upEvent.clientX);
+        const start = Math.min(msA, msB);
+        const end = Math.max(msA, msB);
+        // Ignore accidental micro-drags that would zoom into a sliver of time.
+        if (end - start > 1000) {
+          setZoomRange({ start, end });
+        }
+      }
+    };
+
+    window.addEventListener('mousemove', handleWindowMouseMove);
+    window.addEventListener('mouseup', handleWindowMouseUp, { once: true });
+    window.addEventListener('click', handleWindowClickCapture, {
+      once: true,
+      capture: true,
+    });
+  };
+
+  const resetZoom = () => setZoomRange(null);
+
   // Open/move the floating alarm tooltip for the bar under the cursor. A new
   // bar replaces the previous tooltip immediately ("closes when another
   // component is opened") and cancels any pending close timer.
@@ -297,6 +427,32 @@ const AlarmTimeline = ({
     // Keep the tooltip visible for a short grace period so the user can move
     // the mouse onto it (e.g. to click "Open alarm details").
     scheduleTooltipClose();
+  };
+
+  const handleRainMouseEnter = (
+    rain: { start: number; end: number },
+    amount: number | null | undefined,
+    event: React.MouseEvent<HTMLDivElement>,
+  ) => {
+    clearRainCloseTimer();
+    // A rain overlay hover shouldn't leave the alarm-bar tooltip lingering.
+    scheduleTooltipClose();
+    const { x, y } = toBodyPosition(event);
+    setRainTooltip({ start: rain.start, end: rain.end, amount, x, y });
+  };
+
+  const handleRainMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
+    setRainTooltip((current) => {
+      if (!current) {
+        return current;
+      }
+      const { x, y } = toBodyPosition(event);
+      return { ...current, x, y };
+    });
+  };
+
+  const handleRainMouseLeave = () => {
+    scheduleRainTooltipClose();
   };
 
   const totalDurationSeconds = useMemo(
@@ -352,8 +508,20 @@ const AlarmTimeline = ({
           </div>
         </div>
 
-        <div className="alarm-timeline-axis d-flex justify-content-between small text-muted">
+        <div className="alarm-timeline-axis d-flex justify-content-between align-items-center small text-muted">
           <span>{formatClock(minTime)}</span>
+          <span className="alarm-timeline-zoom-hint">
+            🔍 Drag to zoom
+            {zoomRange && (
+              <button
+                type="button"
+                className="alarm-timeline-zoom-reset"
+                onClick={resetZoom}
+              >
+                Reset zoom
+              </button>
+            )}
+          </span>
           <span>{formatClock(maxTime)}</span>
         </div>
       </div>
@@ -385,9 +553,44 @@ const AlarmTimeline = ({
                 <div
                   className="alarm-timeline-track"
                   ref={trackRef}
+                  onMouseDown={handleTrackMouseDown}
                   onMouseMove={handleTrackMouseMove}
                   onMouseLeave={handleTrackMouseLeave}
                 >
+                  {group.spans
+                    .slice()
+                    .sort((a, b) => a.start - b.start)
+                    .map((span) => {
+                      const rain = alarmRainSpan(span.alarm);
+                      if (!rain) {
+                        return null;
+                      }
+                      return (
+                        <div
+                          key={`rain-${span.alarm.id}`}
+                          className="alarm-timeline-rain"
+                          style={{
+                            left: `${toLeft(rain.start)}%`,
+                            width: `${toWidth(rain.end - rain.start)}%`,
+                          }}
+                          onMouseEnter={(event) =>
+                            handleRainMouseEnter(
+                              rain,
+                              span.alarm.rain_amount,
+                              event,
+                            )
+                          }
+                          onMouseMove={handleRainMouseMove}
+                          onMouseLeave={handleRainMouseLeave}
+                        >
+                          {span.alarm.rain_amount != null && (
+                            <span className="alarm-timeline-rain-label">
+                              💧{Math.round(span.alarm.rain_amount * 10) / 10}mm
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
                   {group.spans
                     .slice()
                     .sort((a, b) => a.start - b.start)
@@ -449,6 +652,13 @@ const AlarmTimeline = ({
           </>
         )}
 
+        {dragSelection && (
+          <div
+            className="alarm-timeline-drag-selection"
+            style={{ left: dragSelection.left, width: dragSelection.width }}
+          />
+        )}
+
         {tooltip && (
           <AlarmTooltip
             alarm={tooltip.alarm}
@@ -461,6 +671,20 @@ const AlarmTimeline = ({
             containerHeight={bodyRef.current?.clientHeight ?? 0}
             onMouseEnter={clearCloseTimer}
             onMouseLeave={scheduleTooltipClose}
+          />
+        )}
+
+        {rainTooltip && (
+          <RainTooltip
+            start={rainTooltip.start}
+            end={rainTooltip.end}
+            amount={rainTooltip.amount}
+            x={rainTooltip.x + 15}
+            y={rainTooltip.y + 15}
+            containerWidth={bodyRef.current?.clientWidth ?? 0}
+            containerHeight={bodyRef.current?.clientHeight ?? 0}
+            onMouseEnter={clearRainCloseTimer}
+            onMouseLeave={scheduleRainTooltipClose}
           />
         )}
       </div>
