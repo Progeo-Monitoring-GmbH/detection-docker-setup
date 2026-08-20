@@ -1,4 +1,5 @@
 import json
+from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
 from django.core.management.base import BaseCommand
@@ -6,6 +7,7 @@ from django.core.management.base import BaseCommand
 
 from progeo.helper.basics import dlog
 from progeo.helper.geo import GeoHelper
+from progeo.v1.creator import save_location_lageplan
 from progeo.v1.legacy.executor import fetch_legacy_data, parse_sample_timestamp
 from progeo.v1.legacy.helper_resistance import MAX_JSON_SAFE_RESISTANCE_OHM
 from progeo.v1.models import Account, ProgeoDevice, ProgeoLocation, ProgeoMeasurement
@@ -145,5 +147,30 @@ class Command(BaseCommand):
                     device.location = location
                     device.save()
                     dlog(f"Assigned location {location} to device {device.raw_hash}")
+
+        if patch == "fetch_lageplan":
+            locations = ProgeoLocation.objects.filter(lageplan__isnull=True).all()
+            for location in locations:
+                url = f"http://data-progeo.net/DB/upload/{location.project_id}/system/{location.project_id}.png"
+                try:
+                    with urlopen(url, timeout=1) as response:
+                        content = response.read()
+                except HTTPError as exc:
+                    if exc.code == 404:
+                        dlog(f"No lageplan found for project {location.project_id}")
+                    else:
+                        dlog(f"Failed fetching lageplan for project {location.project_id}: {exc}")
+                    continue
+                except URLError as exc:
+                    dlog(f"Failed fetching lageplan for project {location.project_id}: {exc}")
+                    continue
+
+                if not content:
+                    dlog(f"Empty lageplan response for project {location.project_id}")
+                    continue
+
+                save_location_lageplan(location, content, f"{location.project_id}.png")
+                dlog(f"Fetched lageplan for project {location.project_id}")
+
 
         dlog("DONE!")

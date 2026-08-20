@@ -1,10 +1,16 @@
-from typing import Any, Optional, Tuple
+import os
+import tempfile
+import time
+from typing import Any, Optional, Tuple, Union
 
 from django.contrib.auth.models import User
+from django.core.files import File
+from django.core.files.storage import FileSystemStorage
 from django.db.models import Q
 from django.utils import timezone
 
-from progeo.helper.basics import elog, okaylog
+from progeo.helper.basics import dlog, elog, okaylog, save_check_dir
+from progeo.settings import UPLOAD_DIR
 from progeo.v1.helper import calc_hash_from_dict
 from progeo.v1.models import (
 	Account,
@@ -112,6 +118,37 @@ def create_progeo_measure_point_safe(location: ProgeoLocation, sensor_order: int
 		lookup={"location": location, "sensor_order": sensor_order, "nx": nx, "ny": ny},
 		defaults={"x": x, "y": y, "grid_x": grid_x, "grid_y": grid_y},
 	)
+
+
+def save_location_lageplan(location: ProgeoLocation, source: Union[bytes, Any], original_name: str,
+							db: Optional[str] = None) -> str:
+	"""Store a lageplan image for a location and persist the reference.
+
+	``source`` is either raw bytes or a Django uploaded file (anything with ``.chunks()``).
+	"""
+	db_name = db or getattr(getattr(location, "account", None), "db_name", None) or "default"
+
+	save_check_dir(UPLOAD_DIR, "lageplan")
+	suffix = os.path.splitext(original_name)[1] or ".png"
+	filename = os.path.join("lageplan", f"{location.id}_{location.project_id or ''}_{int(time.time())}{suffix}").replace(os.sep, "/")
+
+	chunks = [bytes(source)] if isinstance(source, (bytes, bytearray)) else source.chunks()
+
+	fs = FileSystemStorage(location=UPLOAD_DIR)
+	with tempfile.NamedTemporaryFile() as temporary_file:
+		for chunk in chunks:
+			temporary_file.write(chunk)
+		temporary_file.flush()
+		temporary_file.seek(0)
+		new_file = fs.save(filename, File(temporary_file, name=original_name))
+
+	location.lageplan = new_file
+	try:
+		location.save(using=db_name)
+	except Exception as exc:
+		dlog(f"Failed saving location lageplan for project {location.project_id}: {exc}")
+		location.save(using="default")
+	return new_file
 
 
 def _alarm_window_end(alarm) -> Any:

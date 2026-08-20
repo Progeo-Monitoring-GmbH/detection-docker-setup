@@ -2,14 +2,10 @@ import os
 import ipaddress
 import json
 import posixpath
-import tempfile
-import time
 
 from uuid import uuid4
 from datetime import timedelta
-from django.core.files import File
 from celery.result import AsyncResult
-from django.core.files.storage import FileSystemStorage
 from django.utils import timezone
 
 from rest_framework.decorators import action
@@ -18,7 +14,7 @@ from rest_framework.authentication import SessionAuthentication, TokenAuthentica
 from rest_framework.permissions import IsAuthenticated
 
 from progeo.helper.pdf_cropper import process_pdf_to_png_and_extract_crosses
-from progeo.v1.creator import create_progeo_measure_point_safe
+from progeo.v1.creator import create_progeo_measure_point_safe, save_location_lageplan
 from progeo.v1.helper import dlog
 from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurePoint, ProgeoMeasurement
 from progeo.v1.serializers import DeviceSerializer, ProgeoMeasurePointSerializer, ProgeoMeasurementSerializer
@@ -393,28 +389,14 @@ class StatusViewSet(ProgeoModalViewSet):
         location = ProgeoLocation.objects.using(db_name).filter(project_id=location_id, account=account).first()
         if not location:
             return RequestFailed({"reason": "Location not found"})
-        fs = FileSystemStorage(location=UPLOAD_DIR)
-        _new_file = None
 
         upload = next(iter(request.FILES.values()), None)
-        if upload:
-            _dir = save_check_dir(UPLOAD_DIR, "lageplan")
-            _dir = _dir[_dir.find("media") + 6:]
-            filename = os.path.join("lageplan", f"{location.id}_{location.project_id or ''}_{int(time.time())}.png").replace(os.sep, "/")
-            with tempfile.NamedTemporaryFile() as temporary_file:
-                for chunk in upload.chunks():
-                    temporary_file.write(chunk)
-                temporary_file.flush()
-                temporary_file.seek(0)
-                _new_file = fs.save(filename, File(temporary_file, name=upload.name))
+        if not upload:
+            return RequestFailed({"reason": "No file uploaded."})
 
-        if _new_file:   
-            location.lageplan = _new_file
-            location.save(using=db_name)
-            print(f"Lageplan uploaded for location {location.id} at {location.lageplan.url}")
-            return RequestSuccess({"message": "Lageplan uploaded successfully.", "files0": _new_file})
-
-        return RequestFailed({"reason": "No file uploaded."})
+        new_file = save_location_lageplan(location, upload, upload.name, db=db_name)
+        print(f"Lageplan uploaded for location {location.id} at {location.lageplan.url}")
+        return RequestSuccess({"message": "Lageplan uploaded successfully.", "files0": new_file})
 
     @calc_runtime
     @require_module_permissions("module_devices_enabled", "module_devices_edit")
