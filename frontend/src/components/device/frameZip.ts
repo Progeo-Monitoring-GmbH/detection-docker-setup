@@ -26,7 +26,7 @@ export const crc32 = (data: Uint8Array): number => {
 };
 
 export const buildStoredZip = (
-  files: Array<{ name: string; data: Uint8Array<ArrayBuffer> }>,
+  files: Array<{ name: string; data: Uint8Array }>,
 ): Blob => {
   const encoder = new TextEncoder();
   const parts: BlobPart[] = [];
@@ -51,7 +51,7 @@ export const buildStoredZip = (
     local.setUint32(22, size, true); // uncompressed size
     local.setUint16(26, nameBytes.length, true);
     local.setUint16(28, 0, true); // extra length
-    parts.push(local, nameBytes, file.data);
+    parts.push(local, nameBytes, new Uint8Array(file.data));
 
     const entry = new DataView(new ArrayBuffer(46));
     entry.setUint32(0, 0x02014b50, true); // central directory signature
