@@ -18,6 +18,11 @@ export type AlarmMaxValueEntry = {
   sensor_id?: number | null;
 };
 
+export type AlarmSensorMaxValue = {
+  sensor_id?: number | null;
+  max_value?: number | null;
+};
+
 export type TimelineAlarm = {
   id: number;
   location?: AlarmLocationLite | null;
@@ -35,6 +40,8 @@ export type TimelineAlarm = {
   max_value?: number | null;
   threshold?: number | null;
   max_values?: AlarmMaxValueEntry[];
+  /** Every sensor above the alarm threshold: (sensor_id, max_value) pairs. */
+  sensor_max_values?: AlarmSensorMaxValue[];
   rain_start?: string | null;
   /** Hours of rain found (see progeo.helper.legacy WeatherHelper). */
   rain_duration?: number | null;
@@ -141,12 +148,43 @@ export const alarmRainSpan = (alarm: {
 };
 
 /**
+ * Every sensor that was above the alarm threshold, as (sensor_id, max_value)
+ * pairs. Falls back to the single strongest sensor when the pair list is
+ * missing (e.g. legacy alarms).
+ */
+export const alarmSensors = (
+  alarm: {
+    sensor_id?: number | null;
+    max_value?: number | null;
+    sensor_max_values?: AlarmSensorMaxValue[];
+  },
+): AlarmSensorMaxValue[] => {
+  const pairs = Array.isArray(alarm.sensor_max_values)
+    ? alarm.sensor_max_values
+    : [];
+  if (pairs.length > 0) {
+    return pairs;
+  }
+  if (alarm.sensor_id != null || alarm.max_value != null) {
+    return [
+      {
+        sensor_id: alarm.sensor_id ?? null,
+        max_value: alarm.max_value ?? null,
+      },
+    ];
+  }
+  return [];
+};
+
+/**
  * Highest value ever recorded for this alarm (from the per-measurement
- * development history, falling back to the single `max_value` snapshot).
+ * development history, then the over-threshold sensor pairs, falling back to
+ * the single `max_value` snapshot).
  */
 export const alarmPeakValue = (alarm: {
   max_value?: number | null;
   max_values?: AlarmMaxValueEntry[];
+  sensor_max_values?: AlarmSensorMaxValue[];
 }): number | null => {
   const history = Array.isArray(alarm.max_values) ? alarm.max_values : [];
   const peak = history.reduce<number | null>((best, entry) => {
@@ -156,8 +194,16 @@ export const alarmPeakValue = (alarm: {
     }
     return best == null || value > best ? value : best;
   }, null);
+  const sensorPeak = alarmSensors(alarm).reduce<number | null>((best, pair) => {
+    const value = Number(pair?.max_value);
+    if (!Number.isFinite(value)) {
+      return best;
+    }
+    return best == null || value > best ? value : best;
+  }, null);
   return (
     peak ??
+    sensorPeak ??
     (Number.isFinite(Number(alarm.max_value)) ? Number(alarm.max_value) : null)
   );
 };

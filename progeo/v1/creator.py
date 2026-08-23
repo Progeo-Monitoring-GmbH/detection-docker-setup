@@ -230,6 +230,11 @@ def merge_alarm_into(target: ProgeoAlarm, source: ProgeoAlarm, db: str) -> Proge
 		unique_values.append(entry)
 	target.max_values = unique_values
 
+	# Union of over-threshold sensor pairs (highest value per sensor).
+	target.sensor_max_values = merge_sensor_max_values(
+		target.sensor_max_values, source.sensor_max_values
+	)
+
 	# Keep acknowledgement data if either alarm has it; severity (2 stoerung) dominates.
 	if source.status == 2:
 		target.status = 2
@@ -239,16 +244,37 @@ def merge_alarm_into(target: ProgeoAlarm, source: ProgeoAlarm, db: str) -> Proge
 
 	target.save(using=db, update_fields=[
 		"triggered_at", "still_active_at", "normalized_at",
-		"max_value", "sensor_id", "max_values", "status",
+		"max_value", "sensor_id", "max_values", "sensor_max_values", "status",
 		"evaluated_at", "evaluated_by",
 	])
 	source.delete(using=db)
 	return target
 
 
+def merge_sensor_max_values(existing: list, incoming: Optional[list]) -> list:
+	"""Merge (sensor_id, max_value) pairs, keeping the highest value per sensor."""
+	merged = list(existing or [])
+	by_sensor = {}
+	for entry in merged:
+		sid = entry.get("sensor_id")
+		if sid is not None:
+			by_sensor[sid] = max(by_sensor.get(sid, 0), float(entry.get("max_value") or 0))
+	for entry in incoming or []:
+		sid = entry.get("sensor_id")
+		if sid is None:
+			continue
+		value = float(entry.get("max_value") or 0)
+		if sid in by_sensor:
+			by_sensor[sid] = max(by_sensor[sid], value)
+		else:
+			by_sensor[sid] = value
+	return [{"sensor_id": sid, "max_value": value} for sid, value in by_sensor.items()]
+
+
 def create_progeo_alarm_safe(measurement: ProgeoMeasurement, sensor_id: Optional[int] = None,
 							  threshold: Optional[float] = None, max_value: Optional[float] = None, triggered_at=None, status: int = 0,
 							  evaluated_by: Optional[User] = None, normalized_at=None,
+							  sensor_max_values: Optional[list] = None,
 							  db: Optional[str] = "default") -> Tuple[Optional[ProgeoAlarm], bool]:
 	if measurement is None:
 		return None, False
@@ -298,6 +324,11 @@ def create_progeo_alarm_safe(measurement: ProgeoMeasurement, sensor_id: Optional
 				if str(max_value_entry.get("ts")) not in existing_ts:
 					target.max_values = list(target.max_values or []) + [max_value_entry]
 					update_fields.append("max_values")
+			if sensor_max_values:
+				merged = merge_sensor_max_values(target.sensor_max_values, sensor_max_values)
+				if merged != list(target.sensor_max_values or []):
+					target.sensor_max_values = merged
+					update_fields.append("sensor_max_values")
 			if target.triggered_at is None or (triggered_at is not None and triggered_at < target.triggered_at):
 				# Backfill the trigger time for legacy alarms without one, or move it
 				# earlier when an older measurement of the same episode is re-evaluated.
@@ -320,6 +351,7 @@ def create_progeo_alarm_safe(measurement: ProgeoMeasurement, sensor_id: Optional
 		defaults={
 			"triggered_at": triggered_at,
 			"still_active_at": triggered_at,
+			"sensor_max_values": list(sensor_max_values or []),
 			"max_values": [max_value_entry] if max_value_entry is not None else [],
 			"evaluated_by": evaluated_by,
 			"normalized_at": normalized_at,

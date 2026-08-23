@@ -44,6 +44,11 @@ type AlarmMaxValueEntry = {
   sensor_id?: number | null;
 };
 
+type AlarmSensorMaxValue = {
+  sensor_id?: number | null;
+  max_value?: number | null;
+};
+
 type AlarmRow = {
   id: number;
   measurement?: number | null;
@@ -61,6 +66,7 @@ type AlarmRow = {
   is_active?: boolean;
   duration_seconds?: number | null;
   max_values?: AlarmMaxValueEntry[];
+  sensor_max_values?: AlarmSensorMaxValue[];
 };
 
 const HEATMAP_LIMIT = 300;
@@ -277,6 +283,9 @@ const AlarmsOverview = () => {
         row.device?.mac,
         row.device?.raw_hash,
         row.sensor_id != null ? String(row.sensor_id) : '',
+        (Array.isArray(row.sensor_max_values) ? row.sensor_max_values : [])
+          .map((pair) => String(pair.sensor_id ?? ''))
+          .join(' '),
         isAlarmActive(row) ? 'active' : 'normalized',
         STATUS_LABELS[row.status ?? 0]?.label,
         row.status === 1 ? 'acknowledged' : '',
@@ -317,9 +326,20 @@ const AlarmsOverview = () => {
       wrap: true,
     },
     {
-      name: 'Sensor',
-      selector: (row) => row.sensor_id ?? '-',
-      width: '90px',
+      name: 'Sensors',
+      cell: (row) => {
+        const pairs = Array.isArray(row.sensor_max_values)
+          ? row.sensor_max_values
+          : [];
+        if (pairs.length === 0) {
+          return row.sensor_id != null ? String(row.sensor_id) : '-';
+        }
+        return pairs
+          .map((pair) => `#${pair.sensor_id ?? '-'}`)
+          .join(', ');
+      },
+      width: '160px',
+      wrap: true,
     },
     {
       name: 'Threshold',
