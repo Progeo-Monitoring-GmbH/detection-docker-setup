@@ -498,9 +498,11 @@ def _evaluate_measurements_db(db: str, start, end, project_id: int = None) -> tu
         location_id = location.project_id
 
         threshold = location.alarm_threshold
-        sensor_id, max_value = measurement.evaluate(threshold)
+        # All sensors above the threshold (up to 10) — the alarm records every
+        # over-threshold sensor as a (sensor_id, max_value) pair.
+        over_threshold = measurement.evaluate_all(threshold)
         alarm = None
-        if sensor_id is None or max_value is None:
+        if not over_threshold:
             active_alarms = (
                 ProgeoAlarm.objects.using(db)
                 .filter(measurement__device=measurement.device, normalized_at__isnull=True)
@@ -520,10 +522,16 @@ def _evaluate_measurements_db(db: str, start, end, project_id: int = None) -> tu
 
         triggered += 1
         dlog(f"ALARM TRIGGERED: location={location.project_id} at={measurement.last_fetched}")
+        sensor_max_values = [
+            {"sensor_id": idx + 1, "max_value": float(value)}  # 1-based sensor index
+            for idx, value in over_threshold
+        ]
+        peak_idx, peak_value = max(over_threshold, key=lambda pair: pair[1])
         create_progeo_alarm_safe(
             measurement=measurement,
-            sensor_id=sensor_id + 1,  # 1-based sensor index, matches sensor_order
-            max_value=max_value,
+            sensor_id=peak_idx + 1,  # 1-based sensor index, matches sensor_order
+            max_value=float(peak_value),
+            sensor_max_values=sensor_max_values,
             threshold=threshold,
             triggered_at=measurement.last_fetched,
             db=db,
@@ -627,11 +635,11 @@ def _check_existing_alarms_db(db: str, silence_hours: int = 24) -> tuple[int, in
 
         location = device.location
         threshold = location.alarm_threshold if location else None
-        sensor_id, max_value = (None, None)
+        over_threshold = []
         if threshold is not None:
-            sensor_id, max_value = latest.evaluate(threshold)
+            over_threshold = latest.evaluate_all(threshold)
 
-        still_exceeding = sensor_id is not None and max_value is not None
+        still_exceeding = len(over_threshold) > 0
         silent = latest_at < silence_cutoff
 
         update_fields = ["still_active_at", "normalized_at"]
@@ -648,6 +656,9 @@ def _check_existing_alarms_db(db: str, silence_hours: int = 24) -> tuple[int, in
         if still_exceeding and not silent:
             alarm.still_active_at = latest_at
             # Keep tracking the alarm's development while it stays active.
+            peak_idx, peak_value = max(over_threshold, key=lambda pair: pair[1])
+            max_value = float(peak_value)
+            sensor_id = peak_idx + 1  # 1-based sensor index, matches sensor_order
             if max_value is not None:
                 # Runs every 15 minutes, so the same timestamp can be appended more
                 # than once; only record an entry when it is genuinely new.
@@ -656,11 +667,24 @@ def _check_existing_alarms_db(db: str, silence_hours: int = 24) -> tuple[int, in
                 if str(entry_ts) not in existing_ts:
                     alarm.max_values = list(alarm.max_values or []) + [{
                         "ts": entry_ts,
-                        "value": float(max_value),
+                        "value": max_value,
                         "sensor_id": sensor_id,
                     }]
                     update_fields.append("max_values")
-            alarm.save(using=db, update_fields=["still_active_at", "triggered_at", "max_values"])
+            # Refresh the strongest sensor + the full set of over-threshold pairs.
+            sensor_pairs = [
+                {"sensor_id": idx + 1, "max_value": float(value)}
+                for idx, value in over_threshold
+            ]
+            from progeo.v1.creator import merge_sensor_max_values
+            merged_pairs = merge_sensor_max_values(alarm.sensor_max_values, sensor_pairs)
+            if merged_pairs != list(alarm.sensor_max_values or []):
+                alarm.sensor_max_values = merged_pairs
+                update_fields.append("sensor_max_values")
+            alarm.save(
+                using=db,
+                update_fields=["still_active_at", "triggered_at", "max_values", "sensor_max_values"],
+            )
             continue
 
         # Normalize: the alarm no longer reflects an active over-threshold state.

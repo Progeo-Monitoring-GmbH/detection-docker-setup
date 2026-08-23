@@ -351,9 +351,26 @@ const LocationAlarmDetail = () => {
                       selectedAlarm.device?.raw_hash ||
                       '-'}
                   </dd>
-                  <dt className="col-sm-4">Sensor</dt>
+                  <dt className="col-sm-4">Sensors</dt>
                   <dd className="col-sm-8">
-                    {selectedAlarm.sensor_id ?? '-'}
+                    {(() => {
+                      const pairs = Array.isArray(selectedAlarm.sensor_max_values)
+                        ? selectedAlarm.sensor_max_values
+                        : [];
+                      if (pairs.length === 0) {
+                        return selectedAlarm.sensor_id != null
+                          ? `#${selectedAlarm.sensor_id}`
+                          : '-';
+                      }
+                      return pairs
+                        .map(
+                          (pair) =>
+                            `#${pair.sensor_id ?? '-'} (${
+                              pair.max_value ?? '-'
+                            })`,
+                        )
+                        .join(', ');
+                    })()}
                   </dd>
                   <dt className="col-sm-4">Threshold</dt>
                   <dd className="col-sm-8">

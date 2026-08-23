@@ -379,6 +379,23 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
                     _idx, _value = idx, value
         return _idx, _value
 
+    def evaluate_all(self, alarm_threshold, limit: int = 10):
+        """Return (idx, value) for every sensor whose pair value exceeds the threshold.
+
+        `idx` is the 0-based pair index (= sensor_order - 1); callers convert to
+        1-based sensor ids. Limited to `limit` sensors (default 10) so a single
+        measurement can only claim the strongest over-threshold sensors.
+        """
+        pairs = self.get_pairs()
+        result = []
+        for idx, sample in enumerate(pairs):
+            value = int(sample)
+            if value > alarm_threshold:
+                result.append((idx, value))
+                if len(result) >= limit:
+                    break
+        return result
+
     def get_pairs(self, samples=None):
         if samples is None:
             samples = self.get_sample_values()
@@ -446,6 +463,11 @@ class ProgeoAlarm(ProgeoModel, auto_prefetch.Model):
     threshold = models.FloatField(null=True, blank=True)
     sensor_id = models.IntegerField(null=True, blank=True)
     max_value = models.FloatField(null=True, blank=True)
+    # Sensors above the alarm threshold, as pairs of {"sensor_id": int,
+    # "max_value": float}. Unlike `sensor_id`/`max_value` (single strongest
+    # sensor), this keeps every over-threshold sensor of the alarm so the UI
+    # can show which sensors triggered together.
+    sensor_max_values = JSONField(default=list, blank=True)
     # Development of the alarm: one entry per evaluated measurement, so the
     # timeline can color-code the alarm's progress over time like the heatmap.
     # Each entry: {"ts": iso, "value": float, "sensor_id": int}

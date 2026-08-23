@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router';
 import {
   alarmHeatColor,
   alarmPeakValue,
+  alarmSensors,
   formatDuration,
   isAlarmActive,
   parseTimestamp,
@@ -147,10 +148,19 @@ const AlarmTooltip = ({
             </span>
           </div>
         )}
-        {alarm.sensor_id != null && (
+        {alarmSensors(alarm).length > 0 && (
           <div className="alarm-tooltip-row">
-            <span className="alarm-tooltip-key">Sensor</span>
-            <span className="alarm-tooltip-value">{alarm.sensor_id}</span>
+            <span className="alarm-tooltip-key">Sensors</span>
+            <span className="alarm-tooltip-value">
+              {alarmSensors(alarm)
+                .map(
+                  (pair) =>
+                    `#${pair.sensor_id ?? '-'}${
+                      pair.max_value != null ? ` (${pair.max_value})` : ''
+                    }`,
+                )
+                .join(', ')}
+            </span>
           </div>
         )}
         {peak != null && (
