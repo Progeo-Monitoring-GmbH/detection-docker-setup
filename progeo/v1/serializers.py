@@ -10,6 +10,7 @@ from progeo.v1.helper import pretty_sizeof
 from progeo.v1.models import (
     MfSLog,
     Account,
+    AlarmDailyReport,
     Backup,
     ProgeoAlarm,
     ProgeoDevice,
@@ -136,6 +137,22 @@ class MinimalLocationSerializer(ProgeoBaseSerializer):
     class Meta:
         model = ProgeoLocation
         fields = ["id", "project_id"]
+
+
+class AlarmDailyReportSerializer(ProgeoBaseSerializer):
+    clazz = serializers.SerializerMethodField("get_clazz_name")
+    date = serializers.DateField(format="%Y-%m-%d", read_only=True)
+    # Machine-readable timestamps for the frontend graph.
+    last_fetched = serializers.DateTimeField(format=None, read_only=True)
+    last_updated = serializers.DateTimeField(format=None, read_only=True)
+
+    class Meta:
+        model = AlarmDailyReport
+        fields = "__all__"
+
+    @staticmethod
+    def get_clazz_name(_):
+        return "AlarmDailyReport"
 
 
 class BackupSerializer(ProgeoBaseSerializer):
