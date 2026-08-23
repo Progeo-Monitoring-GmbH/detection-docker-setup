@@ -2,15 +2,17 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Card, Form, Spinner } from 'react-bootstrap';
 import { Film } from 'react-bootstrap-icons';
 import Plot from 'react-plotly.js';
-// react-plotly.js renders with the full plotly.js build; import the exact same
-// module so Plotly.toImage operates on the instance that owns the graph div.
-import Plotly from 'plotly.js/dist/plotly';
 import { plotTheme } from '../../styles/plotTheme';
-import { buildStoredZip } from './frameZip';
+import { formatTimestamp } from './heatmapFrames';
+import SensorTooltip from './SensorTooltip';
 import {
   SensorHeatmapLocation,
   SensorHeatmapResponse,
 } from './SensorHeatmap3D';
+import {
+  AggregationMode,
+  useHeatmapFrameExport,
+} from './useHeatmapFrameExport';
 
 type SensorHeatmap2DProps = {
   response: SensorHeatmapResponse | null | undefined;
@@ -20,8 +22,6 @@ type SensorHeatmap2DProps = {
   /** Overrides for the lageplan alignment (offset/scale) used in placement. */
   alignment?: SensorHeatmapLocation | null;
 };
-
-type AggregationMode = 'slice' | 'avg' | 'max';
 
 type WeightedPoint = {
   pos: number;
@@ -35,31 +35,17 @@ type ImageSize = {
   height: number;
 };
 
+type HoveredSensor = {
+  pos: number;
+  x: number;
+  y: number;
+  value: number;
+  cursorX: number;
+  cursorY: number;
+};
+
 const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, value));
-
-const sleep = (milliseconds: number) =>
-  new Promise<void>((resolve) => {
-    window.setTimeout(resolve, milliseconds);
-  });
-
-const formatTimestamp = (timestamp: number | null | undefined) => {
-  if (timestamp == null) {
-    return 'n/a';
-  }
-  const date = new Date(timestamp * 1000);
-  if (Number.isNaN(date.getTime())) {
-    return String(timestamp);
-  }
-  return date.toLocaleString(undefined, {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-};
 
 const getBackendUrl = (path: string) => {
   if (/^https?:\/\//i.test(path)) {
@@ -182,89 +168,22 @@ const buildWeightedGrid = (
   return { axis, grid, max };
 };
 
-// ---------------------------------------------------------------------------
-// Frame export helpers: PNG frames are packaged as a (store-only) ZIP, which
-// is enough because PNGs are already compressed. The zip is then assembled
-// into an MP4 with ffmpeg (scripts are included in the archive).
-// ---------------------------------------------------------------------------
-
-const canvasToPngBlob = (canvas: HTMLCanvasElement) =>
-  new Promise<Blob | null>((resolve) => {
-    canvas.toBlob(resolve, 'image/png');
-  });
-
-const downloadBlob = (blob: Blob, filename: string) => {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
-};
-
-const loadImageFromDataUrl = (image: HTMLImageElement, dataUrl: string) =>
-  new Promise<void>((resolve, reject) => {
-    image.onload = () => resolve();
-    image.onerror = () =>
-      reject(new Error('Could not decode the captured frame.'));
-    image.src = dataUrl;
-  });
-
-/**
- * Draws the frame timestamp (date/time of that frame) plus a frame counter
- * into the bottom-right corner, on a translucent brand-blue pill.
- */
-const drawFrameLabel = (
-  ctx: CanvasRenderingContext2D,
-  width: number,
-  height: number,
-  timestamp: number | null | undefined,
-  frameNumber: number,
-  totalFrames: number,
-) => {
-  const text = `${formatTimestamp(timestamp)}  \u00B7  frame ${frameNumber}/${totalFrames}`;
-  ctx.font = '600 20px system-ui, -apple-system, "Segoe UI", sans-serif';
-  const textWidth = ctx.measureText(text).width;
-  const padX = 14;
-  const padY = 9;
-  const boxWidth = textWidth + padX * 2;
-  const boxHeight = 34;
-  const x = width - boxWidth - 16;
-  const y = height - boxHeight - 16;
-
-  ctx.fillStyle = 'rgba(9, 75, 129, 0.85)';
-  if (typeof ctx.roundRect === 'function') {
-    ctx.beginPath();
-    ctx.roundRect(x, y, boxWidth, boxHeight, 6);
-    ctx.fill();
-  } else {
-    ctx.fillRect(x, y, boxWidth, boxHeight);
-  }
-
-  ctx.fillStyle = '#ffffff';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(text, x + padX, y + boxHeight / 2 + padY - 8);
-};
-
 const SensorHeatmap2D = ({
   response,
-  height = 620,
-  resolution = 120,
+  height = 800,
+  resolution = 180,
   alignment = null,
 }: SensorHeatmap2DProps) => {
   const [mode, setMode] = useState<AggregationMode>('slice');
   const [timestampIndex, setTimestampIndex] = useState(0);
   const [sigma, setSigma] = useState<'auto' | number>('auto');
   const [imageSize, setImageSize] = useState<ImageSize | null>(null);
-  const [videoExporting, setVideoExporting] = useState(false);
-  const [videoProgress, setVideoProgress] = useState(0);
-  const [videoError, setVideoError] = useState<string | null>(null);
+  const [hoveredSensor, setHoveredSensor] = useState<HoveredSensor | null>(
+    null,
+  );
 
   const plotRef = useRef<HTMLDivElement | null>(null);
-  const afterPlotResolvers = useRef<Array<() => void>>([]);
+  const plotWrapRef = useRef<HTMLDivElement | null>(null);
 
   const timestamps = useMemo(
     () => (Array.isArray(response?.timestamps) ? response.timestamps : []),
@@ -471,6 +390,18 @@ const SensorHeatmap2D = ({
     const yMin = Math.min(0, ...plotYs) - margin;
     const yMax = Math.max(1, ...plotYs) + margin;
 
+    // Values shown in the sensor tooltip (per aggregation mode), aligned with
+    // the scatter points.
+    const sensorValues = sensors.map((sensor, index) => {
+      const point = weightedPoints[index];
+      return [
+        sensor.pos,
+        sensor.x,
+        sensor.y,
+        point ? point.weight : 0,
+      ];
+    });
+
     return {
       xAxis,
       yAxis,
@@ -499,6 +430,7 @@ const SensorHeatmap2D = ({
             opacity: 1,
           }
         : null,
+      sensorValues,
       sensorScatter: {
         type: 'scatter',
         mode: 'markers+text',
@@ -513,8 +445,10 @@ const SensorHeatmap2D = ({
           line: { color: '#ffffff', width: 1 },
         },
         hovertemplate: 'Sensor %{text}<extra></extra>',
+        hoverinfo: 'none',
         name: 'Sensors',
         showlegend: false,
+        customdata: sensorValues,
       },
     };
   }, [
@@ -528,196 +462,78 @@ const SensorHeatmap2D = ({
     imageSize,
   ]);
 
-  const waitForPlotRedraw = (timeoutMs = 400) =>
-    Promise.race([
-      new Promise<void>((resolve) => {
-        afterPlotResolvers.current.push(resolve);
-      }),
-      sleep(timeoutMs),
-    ]);
+  const {
+    videoExporting,
+    videoProgress,
+    videoError,
+    handleAfterPlot,
+    exportFrames,
+  } = useHeatmapFrameExport({
+    plotRef,
+    chartReady: chart != null,
+    timestamps,
+    mode,
+    timestampIndex,
+    setTimestampIndex,
+    setMode,
+  });
 
-  const handleAfterPlot = () => {
-    const resolve = afterPlotResolvers.current.shift();
-    resolve?.();
-  };
+  const [wrapSize, setWrapSize] = useState({ width: 0, height: 0 });
 
-  /**
-   * Capture the heatmap animation over all timestamps as PNG frames and
-   * download them as a ZIP together with ffmpeg scripts that assemble the
-   * frames into an MP4. Frames are captured from the plot itself via
-   * Plotly.toImage, drawn onto a canvas with a white background and the
-   * frame's timestamp label, and stored as lossless PNGs.
-   */
-  const exportFrames = async () => {
-    const gd = plotRef.current;
-    if (!gd || !chart || timestamps.length < 2 || videoExporting) {
+  // Measure the wrapper once the plot is mounted so the tooltip can clamp
+  // itself to the plot area.
+  useEffect(() => {
+    const wrap = plotWrapRef.current;
+    if (!wrap) {
       return;
     }
+    const measure = () => {
+      setWrapSize({ width: wrap.clientWidth, height: wrap.clientHeight });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(wrap);
+    return () => observer.disconnect();
+  }, [chart != null]);
 
-    setVideoExporting(true);
-    setVideoProgress(0);
-    setVideoError(null);
-
-    const initialMode = mode;
-    const initialIndex = timestampIndex;
-    const maxFrames = 120;
-    const frameStep = Math.max(1, Math.ceil(timestamps.length / maxFrames));
-    const frameIndices: number[] = [];
-    for (let index = 0; index < timestamps.length; index += frameStep) {
-      frameIndices.push(index);
+  // Show the pretty sensor tooltip when hovering a marker: anchor it near the
+  // hovered point (pixel bbox from plotly) inside the plot wrapper.
+  const handlePlotHover = (event: {
+    points?: Array<{
+      customdata?: Array<number | string>;
+      bbox?: { x0: number; y0: number; x1: number; y1: number };
+    }>;
+  }) => {
+    // The heatmap cell under the cursor also reports a hover point; pick the
+    // sensor marker one, identified by its 4-part customdata.
+    const point = (event.points || []).find(
+      (candidate) =>
+        Array.isArray(candidate.customdata) && candidate.customdata.length >= 4,
+    );
+    const meta = point?.customdata;
+    if (!point || !meta) {
+      return;
     }
-    if (frameIndices[frameIndices.length - 1] !== timestamps.length - 1) {
-      frameIndices.push(timestamps.length - 1);
-    }
+    const [pos, x, y, value] = meta as number[];
 
-    const width = Math.min(Math.max(gd.clientWidth || 960, 320), 1280);
-    const height = Math.min(Math.max(gd.clientHeight || 540, 240), 720);
+    const wrap = plotWrapRef.current;
+    const wrapRect = wrap?.getBoundingClientRect();
+    const bbox = point.bbox;
+    const cursorX = bbox
+      ? bbox.x0 + (bbox.x1 - bbox.x0) / 2
+      : wrapRect
+        ? wrapRect.width / 2
+        : 0;
+    const cursorY = bbox
+      ? bbox.y0 + (bbox.y1 - bbox.y0) / 2
+      : wrapRect
+        ? wrapRect.height / 2
+        : 0;
 
-    try {
-      // The animation walks the timestamp slider, so force slice mode for the
-      // duration of the export and restore the previous mode afterwards.
-      if (mode !== 'slice') {
-        setMode('slice');
-        await waitForPlotRedraw();
-      }
-
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        throw new Error('Canvas 2D context unavailable.');
-      }
-
-      const frameBlobs: Blob[] = [];
-      const frameImage = new Image();
-      let previousIndex = initialIndex;
-
-      for (let frame = 0; frame < frameIndices.length; frame += 1) {
-        const frameIndex = frameIndices[frame];
-        if (frameIndex !== previousIndex) {
-          setTimestampIndex(frameIndex);
-          await waitForPlotRedraw();
-          previousIndex = frameIndex;
-        }
-
-        const dataUrl = await Plotly.toImage(gd, {
-          format: 'png',
-          width,
-          height,
-          scale: 1,
-        });
-        await loadImageFromDataUrl(frameImage, dataUrl);
-
-        // The plot paper is transparent, so paint a background first to keep
-        // the frames from rendering black on dark video players.
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, width, height);
-        ctx.drawImage(frameImage, 0, 0, width, height);
-        drawFrameLabel(
-          ctx,
-          width,
-          height,
-          timestamps[frameIndex],
-          frame + 1,
-          frameIndices.length,
-        );
-
-        const blob = await canvasToPngBlob(canvas);
-        if (blob) {
-          frameBlobs.push(blob);
-        }
-
-        // Let the browser breathe between frames so the progress UI updates.
-        await sleep(25);
-        setVideoProgress((frame + 1) / frameIndices.length);
-      }
-
-      if (!frameBlobs.length) {
-        throw new Error('No frames could be captured.');
-      }
-
-      const encoder = new TextEncoder();
-      const frameFiles = await Promise.all(
-        frameBlobs.map(async (blob, index) => ({
-          name: `frames/frame_${String(index + 1).padStart(4, '0')}.png`,
-          data: new Uint8Array(await blob.arrayBuffer()),
-        })),
-      );
-
-      const ffmpegCommand =
-        'ffmpeg -y -framerate 8 -i frames/frame_%04d.png -c:v libx264 ' +
-        '-preset medium -crf 20 -pix_fmt yuv420p -movflags +faststart ' +
-        'sensor-heatmap.mp4';
-
-      const makeVideoBat = [
-        '@echo off',
-        'REM Assemble the sensor heatmap frames into an MP4 (Windows).',
-        'REM Requires ffmpeg (https://ffmpeg.org/) on PATH.',
-        ffmpegCommand.replace(/%/g, '%%'),
-        'if errorlevel 1 goto :error',
-        'echo.',
-        'echo Done: sensor-heatmap.mp4',
-        'pause',
-        'exit /b 0',
-        ':error',
-        'echo ffmpeg failed - is it installed and on PATH?',
-        'pause',
-        'exit /b 1',
-        '',
-      ].join('\r\n');
-
-      const makeVideoSh = [
-        '#!/usr/bin/env bash',
-        '# Assemble the sensor heatmap frames into an MP4 (Linux/macOS).',
-        '# Requires ffmpeg (https://ffmpeg.org/) on PATH.',
-        'set -e',
-        ffmpegCommand,
-        'echo "Done: sensor-heatmap.mp4"',
-        '',
-      ].join('\n');
-
-      const readme = [
-        'Sensor heatmap video frames',
-        '==========================',
-        '',
-        'Each frame is a lossless PNG of the heatmap at one timestamp, labeled',
-        'with the timestamp date/time and a frame counter.',
-        '',
-        'To assemble an MP4 with ffmpeg:',
-        '',
-        `    ${ffmpegCommand}`,
-        '',
-        'Or run make_video.bat (Windows) / make_video.sh (Linux/macOS) from',
-        'this folder after installing ffmpeg (https://ffmpeg.org/).',
-        '',
-        'Tip: raise -framerate for a smoother video, e.g. -framerate 12.',
-        '',
-      ].join('\n');
-
-      const zipBlob = buildStoredZip([
-        ...frameFiles,
-        { name: 'make_video.bat', data: encoder.encode(makeVideoBat) },
-        { name: 'make_video.sh', data: encoder.encode(makeVideoSh) },
-        { name: 'README.txt', data: encoder.encode(readme) },
-      ]);
-
-      downloadBlob(
-        zipBlob,
-        `sensor-heatmap-frames-${new Date()
-          .toISOString()
-          .slice(0, 19)
-          .replace(/[:T]/g, '-')}.zip`,
-      );
-      setVideoProgress(1);
-    } catch (error) {
-      setVideoError((error as Error).message || 'Frame export failed.');
-    } finally {
-      setTimestampIndex(initialIndex);
-      setMode(initialMode);
-      setVideoExporting(false);
-    }
+    setHoveredSensor({ pos, x, y, value, cursorX, cursorY });
   };
+
+  const handlePlotUnhover = () => setHoveredSensor(null);
 
   return (
     <Card className="border-0 shadow-sm">
@@ -769,8 +585,7 @@ const SensorHeatmap2D = ({
                     {timestamps.length
                       ? `Timestamp ${timestampIndex + 1}/${timestamps.length}: ${formatTimestamp(timestamps[timestampIndex])}`
                       : 'Timestamp'}
-                  </label>
-                  <input
+                  </label>                  <input
                     id="heatmap2d-timestamp"
                     type="range"
                     className="form-range"
@@ -847,59 +662,85 @@ const SensorHeatmap2D = ({
               <div className="text-danger small mb-2">{videoError}</div>
             )}
 
-            <Plot
-              ref={plotRef}
-              data={[
-                {
-                  type: 'heatmap',
-                  x: chart.xAxis,
-                  y: chart.yAxis,
-                  z: chart.grid.map((row) => Array.from(row)),
-                  zmin: 0,
-                  zmax: 1,
-                  colorscale: [
-                    [0, plotTheme.brandBlue],
-                    [0.35, plotTheme.contrastCyan],
-                    [0.65, plotTheme.contrastYellow],
-                    [1, plotTheme.brandOrange],
-                  ],
-                  opacity: 0.7,
-                  colorbar: {
-                    title: { text: 'Heat' },
-                    thickness: 14,
+            <div
+              ref={plotWrapRef}
+              className="heatmap2d-plot-wrap"
+              style={{ position: 'relative' }}
+            >
+              <Plot
+                ref={plotRef}
+                data={[
+                  {
+                    type: 'heatmap',
+                    x: chart.xAxis,
+                    y: chart.yAxis,
+                    z: chart.grid.map((row) => Array.from(row)),
+                    zmin: 0,
+                    zmax: 1,
+                    colorscale: [
+                      [0, plotTheme.brandBlue],
+                      [0.35, plotTheme.contrastCyan],
+                      [0.65, plotTheme.contrastYellow],
+                      [1, plotTheme.brandOrange],
+                    ],
+                    opacity: 0.7,
+                    colorbar: {
+                      title: { text: 'Heat' },
+                      thickness: 14,
+                    },
+                    hovertemplate:
+                      'x: %{x:.3f}<br>y: %{y:.3f}<br>Heat: %{z:.3f}<extra></extra>',
                   },
-                  hovertemplate:
-                    'x: %{x:.3f}<br>y: %{y:.3f}<br>Heat: %{z:.3f}<extra></extra>',
-                },
-                chart.sensorScatter,
-              ]}
-              layout={{
-                height,
-                autosize: true,
-                margin: { l: 44, r: 16, t: 12, b: 44 },
-                paper_bgcolor: 'transparent',
-                plot_bgcolor: 'transparent',
-                images: chart.image ? [chart.image] : [],
-                xaxis: {
-                  range: chart.xRange,
-                  constrain: 'domain',
-                },
-                yaxis: {
-                  range: chart.yRange,
-                  scaleanchor: 'x',
-                  scaleratio: chart.scaleRatio,
-                },
-                font: { family: 'inherit', color: plotTheme.brandBlue },
-              }}
-              config={{
-                responsive: true,
-                displaylogo: false,
-                modeBarButtonsToRemove: ['lasso2d', 'select2d'],
-              }}
-              style={{ width: '100%' }}
-              useResizeHandler
-              onAfterPlot={handleAfterPlot}
-            />
+                  chart.sensorScatter,
+                ]}
+                layout={{
+                  height,
+                  autosize: true,
+                  margin: { l: 44, r: 16, t: 12, b: 44 },
+                  paper_bgcolor: 'transparent',
+                  plot_bgcolor: 'transparent',
+                  images: chart.image ? [chart.image] : [],
+                  xaxis: {
+                    range: chart.xRange,
+                    constrain: 'domain',
+                  },
+                  yaxis: {
+                    range: chart.yRange,
+                    scaleanchor: 'x',
+                    scaleratio: chart.scaleRatio,
+                  },
+                  font: { family: 'inherit', color: plotTheme.brandBlue },
+                }}
+                config={{
+                  responsive: true,
+                  displaylogo: false,
+                  modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+                }}
+                style={{ width: '100%' }}
+                useResizeHandler
+                onAfterPlot={handleAfterPlot}
+                onHover={handlePlotHover}
+                onUnhover={handlePlotUnhover}
+              />
+
+              {hoveredSensor && (
+                <SensorTooltip
+                  sensorPos={hoveredSensor.pos}
+                  x={hoveredSensor.x}
+                  y={hoveredSensor.y}
+                  value={hoveredSensor.value}
+                  threshold={
+                    Number.isFinite(Number(location?.alarm_threshold))
+                      ? Number(location?.alarm_threshold)
+                      : null
+                  }
+                  cursorX={hoveredSensor.cursorX}
+                  cursorY={hoveredSensor.cursorY}
+                  containerWidth={wrapSize.width}
+                  containerHeight={wrapSize.height}
+                />
+              )}
+            </div>
           </>
         )}
       </Card.Body>
