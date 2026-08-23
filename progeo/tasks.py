@@ -696,6 +696,163 @@ def _check_existing_alarms_db(db: str, silence_hours: int = 24) -> tuple[int, in
 
 
 @shared_task
+def generate_daily_alarm_report(db: str = None, report_date=None):
+    """
+    Bundle the alarm data of one day into an AlarmDailyReport for every account.
+
+    Aggregates all alarms triggered on `report_date` (default: yesterday) into
+    totals, per-location / per-sensor counts, an hourly distribution and the
+    top alarms of that day. The report row is upserted per account+date, so
+    re-running the task for the same day simply refreshes the report.
+
+    Runs through celery beat (daily); can also be triggered manually:
+        python manage.py shell -c "from progeo.tasks import generate_daily_alarm_report; generate_daily_alarm_report()"
+        python manage.py shell -c "from progeo.tasks import generate_daily_alarm_report; generate_daily_alarm_report(report_date='2026-08-20')"
+    """
+    import datetime
+
+    from django.utils import timezone
+
+    from progeo.helper.basics import elog, ilog
+    from progeo.settings import DATABASES
+
+    if report_date is None:
+        report_date = (timezone.now() - datetime.timedelta(days=1)).date()
+    elif not hasattr(report_date, "year"):
+        report_date = datetime.date.fromisoformat(str(report_date))
+
+    db_names = [db] if db else list(DATABASES.keys())
+    total_reports = 0
+
+    for db_name in db_names:
+        try:
+            generated = _generate_daily_report_db(db_name, report_date)
+        except Exception as exc:
+            elog(f"[generate_daily_alarm_report] db={db_name} failed: {exc}")
+            continue
+        total_reports += 1 if generated else 0
+        ilog(f"[generate_daily_alarm_report] db={db_name} report={report_date} generated={bool(generated)}")
+
+    ilog(f"[generate_daily_alarm_report] total reports generated={total_reports}")
+    return {"date": report_date.isoformat(), "reports": total_reports}
+
+
+def _generate_daily_report_db(db: str, report_date) -> bool:
+    """Build and upsert the AlarmDailyReport for one database. Returns whether a row was written."""
+    import datetime
+
+    from django.db.models import Count, Max, Q
+
+    from progeo.v1.models import Account, AlarmDailyReport, ProgeoAlarm
+
+    day_start = datetime.datetime.combine(report_date, datetime.time.min)
+    day_end = datetime.datetime.combine(report_date, datetime.time.max)
+
+    alarms = ProgeoAlarm.objects.using(db).filter(
+        triggered_at__gte=day_start,
+        triggered_at__lte=day_end,
+    )
+    total_count = alarms.count()
+    if total_count == 0:
+        return False
+
+    status_agg = alarms.aggregate(
+        active=Count("id", filter=Q(normalized_at__isnull=True)),
+        normalized=Count("id", filter=Q(normalized_at__isnull=False)),
+        acknowledged=Count("id", filter=Q(status=1)),
+        stoppage=Count("id", filter=Q(status=2)),
+        peak=Max("max_value"),
+    )
+
+    # Per-location counts (name + project_id resolved from the related device).
+    location_rows = (
+        alarms.values("measurement__device__location_id", "measurement__device__location__name", "measurement__device__project_id")
+        .annotate(
+            count=Count("id"),
+            active=Count("id", filter=Q(normalized_at__isnull=True)),
+            peak=Max("max_value"),
+        )
+    )
+    locations = {}
+    for row in location_rows:
+        location_id = row["measurement__device__location_id"]
+        if location_id is None:
+            continue
+        locations[str(location_id)] = {
+            "name": row["measurement__device__location__name"] or f"Location {location_id}",
+            "project_id": row["measurement__device__project_id"],
+            "count": row["count"],
+            "active": row["active"],
+            "max_value": row["peak"],
+        }
+
+    # Per-sensor counts / peak (sensor_id + the multi-sensor pairs).
+    sensor_counts = {}
+    for alarm in alarms.only("sensor_id", "max_value", "sensor_max_values"):
+        sensor_ids = [alarm.sensor_id] if alarm.sensor_id is not None else []
+        for entry in alarm.sensor_max_values or []:
+            sid = entry.get("sensor_id")
+            if sid is not None and sid not in sensor_ids:
+                sensor_ids.append(sid)
+        for sid in sensor_ids:
+            bucket = sensor_counts.setdefault(str(sid), {"count": 0, "max_value": 0})
+            bucket["count"] += 1
+            if alarm.max_value is not None and alarm.max_value > bucket["max_value"]:
+                bucket["max_value"] = alarm.max_value
+
+    # Hourly distribution of triggers.
+    hourly_map = {hour: 0 for hour in range(24)}
+    for row in alarms.extra(
+        select={"trigger_hour": "EXTRACT(hour FROM triggered_at)"}
+    ).values("trigger_hour").annotate(count=Count("id")).order_by("trigger_hour"):
+        try:
+            hourly_map[int(row["trigger_hour"])] = row["count"]
+        except (TypeError, ValueError):
+            continue
+    hourly = [{"hour": hour, "count": hourly_map[hour]} for hour in range(24)]
+
+    # Top alarms of the day (strongest first).
+    top_alarms = []
+    for alarm in alarms.select_related("measurement__device__location").order_by("-max_value")[:10]:
+        top_alarms.append({
+            "id": alarm.pk,
+            "location_id": alarm.measurement.device.location_id,
+            "location_name": (
+                alarm.measurement.device.location.name
+                if alarm.measurement.device.location
+                else f"Location {alarm.measurement.device.location_id}"
+            ),
+            "sensor_ids": [alarm.sensor_id] if alarm.sensor_id is not None else [],
+            "max_value": alarm.max_value,
+            "triggered_at": alarm.triggered_at.isoformat() if alarm.triggered_at else None,
+            "status": alarm.status,
+            "active": alarm.normalized_at is None,
+        })
+
+    account = Account.objects.using(db).filter(db_name=db).first()
+    report, _ = AlarmDailyReport.objects.using(db).update_or_create(
+        account=account,
+        date=report_date,
+        defaults={
+            "total_count": total_count,
+            "active_count": status_agg["active"] or 0,
+            "normalized_count": status_agg["normalized"] or 0,
+            "acknowledged_count": status_agg["acknowledged"] or 0,
+            "stoppage_count": status_agg["stoppage"] or 0,
+            "avg_duration_seconds": None,
+            "max_value": status_agg["peak"],
+            "peak_sensor_id": None,
+            "max_value_at": None,
+            "locations": locations,
+            "sensors": sensor_counts,
+            "hourly": hourly,
+            "top_alarms": top_alarms,
+        },
+    )
+    return True
+
+
+@shared_task
 def collect_host_storage_info():
     from progeo.settings import BASE_DIR, SETUP_DIR
     from datetime import datetime

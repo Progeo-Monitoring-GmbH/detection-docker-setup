@@ -516,6 +516,54 @@ class ProgeoAlarm(ProgeoModel, auto_prefetch.Model):
         return f"{_id} {normalized} | {status} - Measurement {self.measurement.id}, sensor-id: {self.sensor_id}, Threshold: {self.threshold}, Max: {self.max_value}"
 
 
+class AlarmDailyReport(ProgeoModel, auto_prefetch.Model):
+    """Daily alarm report: aggregates the important alarm data of one day.
+
+    One row per account + day, created by the `generate_daily_alarm_report`
+    celery task. The JSON payloads bundle per-location and per-sensor counts,
+    an hourly distribution and the top alarms of that day, so the report view
+    can render graphs and comparisons without querying every alarm.
+    """
+
+    account = models.ForeignKey(Account, on_delete=models.CASCADE, null=True, blank=True)
+    date = models.DateField(null=True, blank=True, db_index=True)
+
+    # Totals
+    total_count = models.IntegerField(default=0)
+    active_count = models.IntegerField(default=0)
+    normalized_count = models.IntegerField(default=0)
+    acknowledged_count = models.IntegerField(default=0)
+    stoppage_count = models.IntegerField(default=0)
+
+    # Metrics
+    avg_duration_seconds = models.FloatField(null=True, blank=True)
+    max_value = models.FloatField(null=True, blank=True)
+    peak_sensor_id = models.IntegerField(null=True, blank=True)
+    max_value_at = models.DateTimeField(null=True, blank=True)
+
+    # Bundled payloads (kept as JSON for flexibility)
+    # {location_id: {"name": str, "project_id": int, "count": int, "active": int}}
+    locations = JSONField(default=dict, blank=True)
+    # {sensor_id: {"count": int, "max_value": float}}
+    sensors = JSONField(default=dict, blank=True)
+    # [{"hour": 0..23, "count": int}, ...]
+    hourly = JSONField(default=list, blank=True)
+    # [{"id": int, "location_id": int, "location_name": str, "sensor_ids": [int],
+    #   "max_value": float, "triggered_at": iso, "status": int, "active": bool}, ...]
+    top_alarms = JSONField(default=list, blank=True)
+
+    class Meta:
+        unique_together = [("account", "date")]
+        base_manager_name = "prefetch_manager"
+
+    def __str__(self):
+        return f"📊 {self.date} - {self.total_count} alarms"
+
+    @property
+    def is_complete(self):
+        return self.total_count > 0
+
+
 class EMail(ProgeoModel, auto_prefetch.Model):
     raw_hash = models.CharField(max_length=KEY_LEN, null=False, unique=True)
     created = models.DateTimeField(auto_now_add=True)

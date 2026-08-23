@@ -55,6 +55,12 @@ celery_instance.conf.beat_schedule = {
         # is_active stays truthful between the hourly evaluate runs.
         "schedule": crontab(minute="*/15"),
     },
+    "generate-daily-alarm-report-daily": {
+        "task": "progeo.tasks.generate_daily_alarm_report",
+        # Bundles yesterday's alarms into an AlarmDailyReport shortly after
+        # midnight (00:30), once all of the previous day has been evaluated.
+        "schedule": crontab(hour=0, minute=30),
+    },
 }
 celery_instance.autodiscover_tasks(lambda: settings.INSTALLED_APPS)
 

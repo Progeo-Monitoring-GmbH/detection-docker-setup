@@ -3,6 +3,7 @@ import {
   Bell,
   Box,
   Broadcast,
+  Calendar3,
   Database,
   DoorOpen,
   Gear,
@@ -180,6 +181,8 @@ const Navbar = ({ act, content }) => {
                   navLink('location', 'Locations', Geo, '/location/overview/')}
                 {hasPermission('module_measurements_enabled') &&
                   navLink('alarms', 'Alarms', Bell, '/alarms/')}
+                {hasPermission('module_measurements_enabled') &&
+                  navLink('alarm-report', 'Reports', Calendar3, '/alarms/report/')}
                 {(hasPermission('module_backup_enabled') ||
                   hasPermission('module_docker_enabled') ||
                   hasPermission('module_admin_enabled') ||
