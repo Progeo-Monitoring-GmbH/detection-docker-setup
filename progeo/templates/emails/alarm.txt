@@ -1,0 +1,7 @@
+Subject: Alarm für Gerät {device_hash}
+
+Gerät {device_hash} hat den konfigurierten Schwellwert überschritten.
+
+Schwellwert: {threshold}
+Maximalwert: {max_value}
+Überschreitende Werte: {exceeding_values}

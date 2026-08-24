@@ -19,7 +19,7 @@ from progeo.helper.basics import RequestSuccess, delete_file, save_check_dir, Re
 from progeo.helper.cacher import search_clear_cache
 from progeo.helper.creator import create_MfS_log
 from progeo.helper.emails import send_info_mail
-from progeo.v1.creator import create_account_safe, create_email_safe
+from progeo.v1.creator import create_account_safe
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.security import save_clean_path
 from progeo.settings import UPLOAD_DIR, DJANGO_DATABASES
@@ -66,18 +66,27 @@ def get_latest_alarm_measurement(device, db_name, account=None):
 
 
 def send_alarm_email(device_hash, threshold, max_value, exceeding_values):
-    subject = f"Alarm for device {device_hash}"
-    message = (
-        f"Device {device_hash} exceeded the configured threshold.\n\n"
-        f"Threshold: {threshold}\n"
-        f"Max value: {max_value}\n"
-        f"Exceeding values: {', '.join(str(value) for value in exceeding_values)}"
-    )
-    send_info_mail(subject, message)
+    # Template-based alarm notification (emails/alarm.txt); falls back to the
+    # superuser address like the old send_info_mail path. The mail is persisted
+    # as an EMail row by emailhelper.send_mail.
+    from progeo.helper.emailhelper import render_email_template
 
-    sent_to = os.getenv("DJANGO_SUPERUSER_EMAIL")
-    if sent_to:
-        create_email_safe(sent_to=sent_to, subject=subject, message=message, db="default")
+    subject, message = render_email_template("alarm.txt", {
+        "device_hash": device_hash,
+        "threshold": threshold,
+        "max_value": max_value,
+        "exceeding_values": ", ".join(str(value) for value in exceeding_values),
+    })
+    if not subject and not message:
+        subject = f"Alarm for device {device_hash}"
+        message = (
+            f"Device {device_hash} exceeded the configured threshold.\n\n"
+            f"Threshold: {threshold}\n"
+            f"Max value: {max_value}\n"
+            f"Exceeding values: {', '.join(str(value) for value in exceeding_values)}"
+        )
+
+    send_info_mail(subject, message)
 
 
 def ping_host_quick(ip_address, timeout_seconds=1):

@@ -541,6 +541,17 @@ class AlarmDailyReport(ProgeoModel, auto_prefetch.Model):
     peak_sensor_id = models.IntegerField(null=True, blank=True)
     max_value_at = models.DateTimeField(null=True, blank=True)
 
+    # Connectivity of the account's projects (locations) on this day.
+    # Per location: {"status": "online"|"disconnected"|"dead",
+    #   "device_count": int, "measurement_count": int,
+    #   "start_of_day_measurements": int, "end_of_day_measurements": int,
+    #   "first_measurement_at": iso|null, "last_measurement_at": iso|null,
+    #   "emailed_disconnect": bool}
+    projects = JSONField(default=dict, blank=True)
+    online_count = models.IntegerField(default=0)
+    disconnected_count = models.IntegerField(default=0)
+    dead_count = models.IntegerField(default=0)
+
     # Bundled payloads (kept as JSON for flexibility)
     # {location_id: {"name": str, "project_id": int, "count": int, "active": int}}
     locations = JSONField(default=dict, blank=True)
@@ -565,16 +576,32 @@ class AlarmDailyReport(ProgeoModel, auto_prefetch.Model):
 
 
 class EMail(ProgeoModel, auto_prefetch.Model):
+    # Optional link to the location (project) this mail belongs to, e.g. a
+    # disconnect notification for that project. Kept nullable so generic
+    # system mails can be stored without a location.
+    location = models.ForeignKey(
+        ProgeoLocation,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="emails",
+    )
     raw_hash = models.CharField(max_length=KEY_LEN, null=False, unique=True)
     created = models.DateTimeField(auto_now_add=True)
     sent_to = models.TextField(null=False)
     subject = models.CharField(null=True, blank=True, max_length=255)
     message = models.TextField(null=False)
     files = models.TextField(null=False)
+    # Send outcome: True = delivered, False = skipped/failed (kept for the log).
+    sent = models.BooleanField(default=False)
+    # Human-readable reason when the mail could not be sent (SMTP missing,
+    # connection error, no recipient, ...).
+    error = models.TextField(null=True, blank=True)
 
     def __str__(self):
         _id = f"[{self.pk}] " if DEBUG else ""
-        return f"{_id} 📧 {self.created.strftime('%d.%m.%y %H:%M')} => {self.sent_to[:50]}, Length={len(self.message)}, Files={self.files}"
+        status = "✅" if self.sent else "⚠️"
+        return f"{_id} {status} 📧 {self.created.strftime('%d.%m.%y %H:%M')} => {self.sent_to[:50]}, Length={len(self.message)}, Files={self.files}"
 
 
 # ==============================================================================================

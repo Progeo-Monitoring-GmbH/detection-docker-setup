@@ -1,0 +1,23 @@
+Subject: ⚠️ Projekt '{project_name}' - Störung des Monitoringsystems - Vorgang {mail_id}
+
+Sehr geehrte Damen und Herren,
+
+Ihr Flachdachmonitoring überträgt seit dem {last_measurement_at} keine Daten auf unseren Server. Bis zur Wiederaufnahme der Datenübertragung erfolgt keine Leckageüberwachung Ihrer Abdichtungsflächen.
+
+Wenn Sie für den Betrieb des Systems in Ihrem Objekt verantwortlich sind, helfen Sie bitte dabei, die Störungsursache möglichst schnell zu beseitigen.
+
+Zur Ermittlung der Störungsursache gehen Sie bitte wie folgt vor:
+
+    Prüfen Sie, ob Ihr Internetzugang aktiv ist, und stellen Sie die Betriebsbereitschaft gegebenenfalls wieder her.
+    Erteilen Sie erforderliche Freigaben, falls sich Ihre Netzwerkkonfiguration geändert hat. Fragen Sie hierzu Ihren Netzwerkadministrator.
+    Prüfen Sie, ob Ihre Auswerteeinheit bzw. Monitoring-Box mit Spannung versorgt wird und regelmäßig Messungen durchführt. Falls nicht, führen Sie einen Reset durch und beachten Sie die Systemdokumentation.
+
+Falls Sie weitere Hilfe benötigen, wenden Sie sich bitte telefonisch an uns unter . Sie erreichen uns werktäglich von 09:00 bis 16:30 Uhr.
+
+Bei Rückfragen nennen Sie bitte stets die im Betreff angegebene Vorgangsnummer.
+
+Diese Nachricht wird erneut versendet, sofern die Störung zwischenzeitlich nicht beseitigt wurde. Sobald die Datenübertragung wiederhergestellt ist, werden Sie ebenfalls per E-Mail benachrichtigt.
+
+Mit freundlichen Grüßen
+
+ProGeo Monitoring Systeme & Service GmbH & Co. KG

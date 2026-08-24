@@ -116,7 +116,9 @@ class ProgeoMeasurementAdmin(MultiDBModelAdmin):
     pass
 
 class EMailAdmin(MultiDBModelAdmin):
-    pass
+    list_display = ("created", "sent", "location", "sent_to", "subject", "error")
+    list_filter = ("sent", "location")
+    search_fields = ("sent_to", "subject", "message")
 
 class ProgeoMeasurePointAdmin(MultiDBModelAdmin):
     pass
