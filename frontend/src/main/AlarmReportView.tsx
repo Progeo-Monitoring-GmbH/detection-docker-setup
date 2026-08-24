@@ -21,10 +21,7 @@ import { useSnackbar } from 'notistack';
 
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
-import {
-  showErrorBar,
-  showSuccessBar,
-} from '../components/ui/Snackbar.jsx';
+import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import { plotTheme } from '../styles/plotTheme';
 
 type AlarmProjectStatus = {
@@ -56,7 +53,16 @@ type AlarmDailyReport = {
   disconnected_count: number;
   dead_count: number;
   projects: Record<string, AlarmProjectStatus>;
-  locations: Record<string, { name?: string; project_id?: number | null; count?: number; active?: number; max_value?: number | null }>;
+  locations: Record<
+    string,
+    {
+      name?: string;
+      project_id?: number | null;
+      count?: number;
+      active?: number;
+      max_value?: number | null;
+    }
+  >;
   sensors: Record<string, { count?: number; max_value?: number }>;
   hourly: Array<{ hour: number; count: number }>;
   top_alarms: Array<{
@@ -80,7 +86,9 @@ const DATE_FMT: Intl.DateTimeFormatOptions = {
 
 const formatDate = (iso: string): string => {
   const date = new Date(`${iso}T00:00:00`);
-  return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString(undefined, DATE_FMT);
+  return Number.isNaN(date.getTime())
+    ? iso
+    : date.toLocaleDateString(undefined, DATE_FMT);
 };
 
 const formatCount = (value: number | null | undefined): string =>
@@ -95,7 +103,7 @@ const toMs = (iso?: string | null): number | null => {
 const ReportSummaryCard = ({ report }: { report: AlarmDailyReport | null }) => {
   if (!report) {
     return (
-      <Card className="border-0 shadow-sm h-100">
+      <Card className="border-0 shadow-sm h-100 p-2">
         <Card.Body className="text-muted text-center py-5">
           No report for this day yet.
         </Card.Body>
@@ -105,7 +113,7 @@ const ReportSummaryCard = ({ report }: { report: AlarmDailyReport | null }) => {
 
   const peakMs = toMs(report.max_value_at);
   return (
-    <Card className="border-0 shadow-sm h-100">
+    <Card className="border-0 shadow-sm h-100 p-2">
       <Card.Body>
         <h6 className="text-muted text-uppercase small mb-3">
           <Calendar3 className="me-1" />
@@ -113,23 +121,33 @@ const ReportSummaryCard = ({ report }: { report: AlarmDailyReport | null }) => {
         </h6>
         <Row className="g-3 text-center">
           <Col xs={6} md={4}>
-            <div className="fs-4 fw-bold">{formatCount(report.total_count)}</div>
+            <div className="fs-4 fw-bold">
+              {formatCount(report.total_count)}
+            </div>
             <small className="text-muted">Total</small>
           </Col>
           <Col xs={6} md={4}>
-            <div className="fs-4 fw-bold text-danger">{formatCount(report.active_count)}</div>
+            <div className="fs-4 fw-bold text-danger">
+              {formatCount(report.active_count)}
+            </div>
             <small className="text-muted">Active</small>
           </Col>
           <Col xs={6} md={4}>
-            <div className="fs-4 fw-bold text-success">{formatCount(report.normalized_count)}</div>
+            <div className="fs-4 fw-bold text-success">
+              {formatCount(report.normalized_count)}
+            </div>
             <small className="text-muted">Normalized</small>
           </Col>
           <Col xs={6} md={4}>
-            <div className="fs-4 fw-bold text-secondary">{formatCount(report.acknowledged_count)}</div>
+            <div className="fs-4 fw-bold text-secondary">
+              {formatCount(report.acknowledged_count)}
+            </div>
             <small className="text-muted">Acknowledged</small>
           </Col>
           <Col xs={6} md={4}>
-            <div className="fs-4 fw-bold text-warning">{formatCount(report.stoppage_count)}</div>
+            <div className="fs-4 fw-bold text-warning">
+              {formatCount(report.stoppage_count)}
+            </div>
             <small className="text-muted">Stoerung</small>
           </Col>
           <Col xs={6} md={4}>
@@ -138,12 +156,16 @@ const ReportSummaryCard = ({ report }: { report: AlarmDailyReport | null }) => {
           </Col>
         </Row>
         <div className="mt-3 small text-muted d-flex flex-wrap gap-3">
-          <span>Locations: <strong>{Object.keys(report.locations || {}).length}</strong></span>
-          <span>Sensors: <strong>{Object.keys(report.sensors || {}).length}</strong></span>
+          <span>
+            Locations:{' '}
+            <strong>{Object.keys(report.locations || {}).length}</strong>
+          </span>
+          <span>
+            Sensors: <strong>{Object.keys(report.sensors || {}).length}</strong>
+          </span>
           {peakMs != null && (
             <span>
-              Peak at:{' '}
-              <strong>{new Date(peakMs).toLocaleTimeString()}</strong>
+              Peak at: <strong>{new Date(peakMs).toLocaleTimeString()}</strong>
             </span>
           )}
         </div>
@@ -152,11 +174,7 @@ const ReportSummaryCard = ({ report }: { report: AlarmDailyReport | null }) => {
   );
 };
 
-const ProjectStatusCard = ({
-  report,
-}: {
-  report: AlarmDailyReport | null;
-}) => {
+const ProjectStatusCard = ({ report }: { report: AlarmDailyReport | null }) => {
   if (!report) {
     return null;
   }
@@ -175,9 +193,7 @@ const ProjectStatusCard = ({
   ) => {
     const list = grouped[key];
     if (list.length === 0) {
-      return (
-        <div className="text-muted small py-2">None</div>
-      );
+      return <div className="text-muted small py-2">None</div>;
     }
     return (
       <ul className="list-unstyled small mb-0">
@@ -210,22 +226,22 @@ const ProjectStatusCard = ({
   };
 
   return (
-    <Card className="border-0 shadow-sm mb-4">
+    <Card className="border-0 shadow-sm p-2">
       <Card.Body>
         <div className="d-flex flex-wrap align-items-center gap-3 mb-3">
           <h6 className="text-muted text-uppercase small mb-0">
             Project connectivity
           </h6>
           <Badge bg="success">{report.online_count ?? 0} online</Badge>
-          <Badge bg="danger">{report.disconnected_count ?? 0} disconnected</Badge>
+          <Badge bg="danger">
+            {report.disconnected_count ?? 0} disconnected
+          </Badge>
           <Badge bg="secondary">{report.dead_count ?? 0} dead</Badge>
         </div>
 
         <Row className="g-3">
           <Col md={4}>
-            <div className="text-muted small text-uppercase mb-1">
-              Online
-            </div>
+            <div className="text-muted small text-uppercase mb-1">Online</div>
             {renderList('online')}
           </Col>
           <Col md={4}>
@@ -445,7 +461,7 @@ const AlarmReportView = () => {
       ) : (
         <>
           {/* Daily alarm count graph */}
-          <Card className="border-0 shadow-sm mb-4">
+          <Card className="border-0 shadow-sm my-4 p-3">
             <Card.Body>
               <h6 className="text-muted text-uppercase small mb-3">
                 Alarms per day
@@ -495,9 +511,9 @@ const AlarmReportView = () => {
           </Card>
 
           {/* Navigation + selected report */}
-          <Card className="border-0 shadow-sm mb-4">
+          <Card className="border-0 shadow-sm my-4 py-3">
             <Card.Body>
-              <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
+              <div className="d-flex flex-wrap align-items-center gap-2 ms-2">
                 <Button
                   variant="outline-secondary"
                   size="sm"
@@ -553,7 +569,7 @@ const AlarmReportView = () => {
           </Card>
 
           {/* Comparison */}
-          <Card className="border-0 shadow-sm">
+          <Card className="border-0 shadow-sm my-4 p-3">
             <Card.Body>
               <h6 className="text-muted text-uppercase small mb-3">
                 Compare two reports
@@ -621,8 +637,14 @@ const AlarmReportView = () => {
                       </h6>
                       <Plot
                         data={[
-                          hourlyTrace(comparison.report_a, formatDate(compareA)),
-                          hourlyTrace(comparison.report_b, formatDate(compareB)),
+                          hourlyTrace(
+                            comparison.report_a,
+                            formatDate(compareA),
+                          ),
+                          hourlyTrace(
+                            comparison.report_b,
+                            formatDate(compareB),
+                          ),
                         ]}
                         layout={{
                           height: 280,
