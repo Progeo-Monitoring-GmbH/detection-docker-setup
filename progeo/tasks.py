@@ -702,8 +702,12 @@ def generate_daily_alarm_report(db: str = None, report_date=None):
 
     Aggregates all alarms triggered on `report_date` (default: yesterday) into
     totals, per-location / per-sensor counts, an hourly distribution and the
-    top alarms of that day. The report row is upserted per account+date, so
-    re-running the task for the same day simply refreshes the report.
+    top alarms of that day. Also checks project connectivity: every location
+    is classified as online / disconnected / dead based on whether measurements
+    arrive at the start and end of the day, and the contacts of projects that
+    just lost their signal are notified by mail (if SMTP is configured). The
+    report row is upserted per account+date, so re-running the task for the
+    same day simply refreshes the report.
 
     Runs through celery beat (daily); can also be triggered manually:
         python manage.py shell -c "from progeo.tasks import generate_daily_alarm_report; generate_daily_alarm_report()"
@@ -737,6 +741,162 @@ def generate_daily_alarm_report(db: str = None, report_date=None):
     return {"date": report_date.isoformat(), "reports": total_reports}
 
 
+# How far into the day counts as "start of day" / "end of day" for the
+# connectivity check (hours).
+CONNECTIVITY_EDGE_HOURS = 2
+
+
+def _collect_project_connectivity(db: str, report_date):
+    """Check every location of the account for signal presence on `report_date`.
+
+    A location is:
+      - "dead": it has devices but never sent a single measurement
+      - "disconnected": it sent data before but has no measurements at the
+        start OR end of the report day (signal lost)
+      - "online": it has measurements at both the start and the end of the day
+
+    Returns (projects_dict, counts) where projects_dict maps location id to a
+    status payload and counts is {"online": n, "disconnected": n, "dead": n}.
+    """
+    import datetime
+
+    from django.db.models import Count, Max, Min
+
+    from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurement
+
+    day_start = datetime.datetime.combine(report_date, datetime.time.min)
+    day_end = datetime.datetime.combine(report_date, datetime.time.max)
+    start_edge = day_start + datetime.timedelta(hours=CONNECTIVITY_EDGE_HOURS)
+    end_edge = day_end - datetime.timedelta(hours=CONNECTIVITY_EDGE_HOURS)
+
+    projects = {}
+    counts = {"online": 0, "disconnected": 0, "dead": 0}
+
+    for location in ProgeoLocation.objects.using(db).all():
+        device_ids = list(
+            ProgeoDevice.objects.using(db)
+            .filter(location=location)
+            .values_list("id", flat=True)
+        )
+        if not device_ids:
+            continue
+
+        # Any measurement ever -> proves the project is not "dead".
+        ever = (
+            ProgeoMeasurement.objects.using(db)
+            .filter(device_id__in=device_ids)
+            .aggregate(count=Count("id"), first=Min("last_fetched"), last=Max("last_fetched"))
+        )
+        ever_count = ever["count"] or 0
+
+        # Measurements at the very start and very end of the report day.
+        start_count = (
+            ProgeoMeasurement.objects.using(db)
+            .filter(device_id__in=device_ids, last_fetched__gte=day_start, last_fetched__lte=start_edge)
+            .count()
+        )
+        end_count = (
+            ProgeoMeasurement.objects.using(db)
+            .filter(device_id__in=device_ids, last_fetched__gte=end_edge, last_fetched__lte=day_end)
+            .count()
+        )
+
+        if ever_count == 0:
+            status = "dead"
+        elif start_count > 0 and end_count > 0:
+            status = "online"
+        else:
+            status = "disconnected"
+
+        counts[status] += 1
+        projects[str(location.pk)] = {
+            "status": status,
+            "name": location.name or f"Location {location.pk}",
+            "project_id": location.project_id,
+            "device_count": len(device_ids),
+            "measurement_count": ever_count,
+            "start_of_day_measurements": start_count,
+            "end_of_day_measurements": end_count,
+            "first_measurement_at": ever["first"].isoformat() if ever["first"] else None,
+            "last_measurement_at": ever["last"].isoformat() if ever["last"] else None,
+            "emailed_disconnect": False,
+        }
+
+    return projects, counts
+
+
+def _email_disconnected_projects(db: str, report_date, projects, previous_report):
+    """
+    Notify the responsible contact(s) when a project transitions to
+    "disconnected". Only fires for projects that were NOT disconnected in the
+    previous report (so a project that stays offline does not get a daily
+    spam). The mail body comes from the `disconnect_project` email template;
+    SMTP settings are read from environment variables - without credentials the
+    mail is skipped with a log line.
+    """
+    from progeo.helper.basics import elog, ilog
+    from progeo.helper.emailhelper import send_template_mail, smtp_configured
+
+    if not smtp_configured():
+        ilog(
+            f"[generate_daily_alarm_report] SMTP not configured (MAIL_SENDER/MAIL_SERVER), "
+            f"skipping disconnect mails for {report_date}"
+        )
+        return []
+
+    previous_projects = (previous_report.projects if previous_report else {}) or {}
+    newly_disconnected = [
+        (location_id, payload)
+        for location_id, payload in projects.items()
+        if payload.get("status") == "disconnected"
+        and previous_projects.get(location_id, {}).get("status") != "disconnected"
+    ]
+
+    if not newly_disconnected:
+        return []
+
+    from progeo.v1.models import ProgeoLocation
+
+    emailed = []
+    for location_id, payload in newly_disconnected:
+        location = ProgeoLocation.objects.using(db).filter(pk=location_id).first()
+        if location is None:
+            continue
+        recipient = location.mail
+        if not recipient:
+            ilog(
+                f"[generate_daily_alarm_report] No contact mail for disconnected "
+                f"location {location_id}, skipping mail"
+            )
+            continue
+
+        context = {
+            "project_name": payload.get("name") or f"Location {location_id}",
+            "location_id": location_id,
+            "report_date": report_date,
+            "last_measurement_at": payload.get("last_measurement_at") or "unbekannt",
+            "device_count": payload.get("device_count"),
+        }
+        try:
+            result = send_template_mail(
+                [recipient],
+                "disconnect_project.txt",
+                context,
+                location=location,
+                db=db,
+            )
+            if result:
+                projects[str(location_id)]["emailed_disconnect"] = True
+                emailed.append(location_id)
+                ilog(f"[generate_daily_alarm_report] Disconnect mail sent to {recipient} for location {location_id}")
+            else:
+                elog(f"[generate_daily_alarm_report] Disconnect mail not sent for location {location_id}")
+        except Exception as exc:
+            elog(f"[generate_daily_alarm_report] Failed to send disconnect mail for location {location_id}: {exc}")
+
+    return emailed
+
+
 def _generate_daily_report_db(db: str, report_date) -> bool:
     """Build and upsert the AlarmDailyReport for one database. Returns whether a row was written."""
     import datetime
@@ -753,8 +913,6 @@ def _generate_daily_report_db(db: str, report_date) -> bool:
         triggered_at__lte=day_end,
     )
     total_count = alarms.count()
-    if total_count == 0:
-        return False
 
     status_agg = alarms.aggregate(
         active=Count("id", filter=Q(normalized_at__isnull=True)),
@@ -830,6 +988,19 @@ def _generate_daily_report_db(db: str, report_date) -> bool:
         })
 
     account = Account.objects.using(db).filter(db_name=db).first()
+
+    # Project connectivity: dead / disconnected / online per location.
+    projects, connectivity_counts = _collect_project_connectivity(db, report_date)
+
+    # Email the contacts of projects that just lost their signal (transition
+    # to "disconnected" only). Previous report row is read before upsert.
+    previous_report = (
+        AlarmDailyReport.objects.using(db)
+        .filter(account=account, date=report_date)
+        .first()
+    )
+    _email_disconnected_projects(db, report_date, projects, previous_report)
+
     report, _ = AlarmDailyReport.objects.using(db).update_or_create(
         account=account,
         date=report_date,
@@ -847,6 +1018,10 @@ def _generate_daily_report_db(db: str, report_date) -> bool:
             "sensors": sensor_counts,
             "hourly": hourly,
             "top_alarms": top_alarms,
+            "projects": projects,
+            "online_count": connectivity_counts["online"],
+            "disconnected_count": connectivity_counts["disconnected"],
+            "dead_count": connectivity_counts["dead"],
         },
     )
     return True

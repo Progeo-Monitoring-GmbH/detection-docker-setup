@@ -360,6 +360,7 @@ def create_progeo_alarm_safe(measurement: ProgeoMeasurement, sensor_id: Optional
 
 
 def create_email_safe(sent_to: str, message: str, files: str = "", subject: str = "",
+					  location: Optional[ProgeoLocation] = None, sent: bool = False, error: Optional[str] = None,
 					  raw_hash: Optional[str] = None, db: str = "default") -> Tuple[Optional[EMail], bool]:
 	if not raw_hash:
 		raw_hash = _calc_hash({
@@ -367,6 +368,7 @@ def create_email_safe(sent_to: str, message: str, files: str = "", subject: str 
 			"subject": subject,
 			"message": message,
 			"files": files,
+			"location_id": getattr(location, "pk", None),
 		})
 
 	return _safe_get_or_create(
@@ -378,6 +380,9 @@ def create_email_safe(sent_to: str, message: str, files: str = "", subject: str 
 			"subject": subject,
 			"message": message,
 			"files": files,
+			"location": location,
+			"sent": sent,
+			"error": error,
 		},
 	)
 

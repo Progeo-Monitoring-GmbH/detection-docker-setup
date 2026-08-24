@@ -27,6 +27,19 @@ import {
 } from '../components/ui/Snackbar.jsx';
 import { plotTheme } from '../styles/plotTheme';
 
+type AlarmProjectStatus = {
+  status?: 'online' | 'disconnected' | 'dead';
+  name?: string | null;
+  project_id?: number | null;
+  device_count?: number;
+  measurement_count?: number;
+  start_of_day_measurements?: number;
+  end_of_day_measurements?: number;
+  first_measurement_at?: string | null;
+  last_measurement_at?: string | null;
+  emailed_disconnect?: boolean;
+};
+
 type AlarmDailyReport = {
   id: number;
   date: string;
@@ -39,6 +52,10 @@ type AlarmDailyReport = {
   max_value: number | null;
   peak_sensor_id: number | null;
   max_value_at: string | null;
+  online_count: number;
+  disconnected_count: number;
+  dead_count: number;
+  projects: Record<string, AlarmProjectStatus>;
   locations: Record<string, { name?: string; project_id?: number | null; count?: number; active?: number; max_value?: number | null }>;
   sensors: Record<string, { count?: number; max_value?: number }>;
   hourly: Array<{ hour: number; count: number }>;
@@ -130,6 +147,100 @@ const ReportSummaryCard = ({ report }: { report: AlarmDailyReport | null }) => {
             </span>
           )}
         </div>
+      </Card.Body>
+    </Card>
+  );
+};
+
+const ProjectStatusCard = ({
+  report,
+}: {
+  report: AlarmDailyReport | null;
+}) => {
+  if (!report) {
+    return null;
+  }
+
+  const projects = report.projects || {};
+  const entries = Object.entries(projects);
+  const grouped = {
+    online: entries.filter(([, p]) => p.status === 'online'),
+    disconnected: entries.filter(([, p]) => p.status === 'disconnected'),
+    dead: entries.filter(([, p]) => p.status === 'dead'),
+  };
+
+  const renderList = (
+    key: 'online' | 'disconnected' | 'dead',
+    showMeta = true,
+  ) => {
+    const list = grouped[key];
+    if (list.length === 0) {
+      return (
+        <div className="text-muted small py-2">None</div>
+      );
+    }
+    return (
+      <ul className="list-unstyled small mb-0">
+        {list.map(([id, p]) => (
+          <li
+            key={id}
+            className="d-flex justify-content-between gap-2 py-1 border-bottom"
+          >
+            <span>
+              {p.name || `Location ${id}`}
+              {p.emailed_disconnect && (
+                <span className="ms-1" title="Disconnect mail sent">
+                  ✉️
+                </span>
+              )}
+            </span>
+            {showMeta && (
+              <span className="text-muted">
+                {p.device_count ?? 0} dev
+                {p.start_of_day_measurements != null ||
+                p.end_of_day_measurements != null
+                  ? ` · ⬇${p.start_of_day_measurements ?? 0} ⬆${p.end_of_day_measurements ?? 0}`
+                  : ''}
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+    );
+  };
+
+  return (
+    <Card className="border-0 shadow-sm mb-4">
+      <Card.Body>
+        <div className="d-flex flex-wrap align-items-center gap-3 mb-3">
+          <h6 className="text-muted text-uppercase small mb-0">
+            Project connectivity
+          </h6>
+          <Badge bg="success">{report.online_count ?? 0} online</Badge>
+          <Badge bg="danger">{report.disconnected_count ?? 0} disconnected</Badge>
+          <Badge bg="secondary">{report.dead_count ?? 0} dead</Badge>
+        </div>
+
+        <Row className="g-3">
+          <Col md={4}>
+            <div className="text-muted small text-uppercase mb-1">
+              Online
+            </div>
+            {renderList('online')}
+          </Col>
+          <Col md={4}>
+            <div className="text-muted small text-uppercase mb-1">
+              Disconnected
+            </div>
+            {renderList('disconnected')}
+          </Col>
+          <Col md={4}>
+            <div className="text-muted small text-uppercase mb-1">
+              Dead (never sent data)
+            </div>
+            {renderList('dead')}
+          </Col>
+        </Row>
       </Card.Body>
     </Card>
   );
@@ -431,7 +542,12 @@ const AlarmReportView = () => {
                   <Spinner size="sm" animation="border" /> Loading…
                 </div>
               ) : (
-                <ReportSummaryCard report={report} />
+                <>
+                  <ReportSummaryCard report={report} />
+                  <div className="mt-3">
+                    <ProjectStatusCard report={report} />
+                  </div>
+                </>
               )}
             </Card.Body>
           </Card>
