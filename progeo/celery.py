@@ -61,6 +61,12 @@ celery_instance.conf.beat_schedule = {
         # midnight (00:30), once all of the previous day has been evaluated.
         "schedule": crontab(hour=0, minute=30),
     },
+    "swap-databases-new-year": {
+        "task": "progeo.tasks.swap_databases_new_year",
+        # New Year's Eve, 23:50: archive every database as "<name>_<year>" and
+        # start a fresh one, carrying over the alarm/measurement id counters.
+        "schedule": crontab(month_of_year=12, day_of_month=31, hour=23, minute=50),
+    },
 }
 celery_instance.autodiscover_tasks(lambda: settings.INSTALLED_APPS)
 
