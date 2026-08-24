@@ -12,7 +12,8 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from progeo.authentication import LimitedTokenAuthentication
 from rest_framework.permissions import IsAuthenticated
-from progeo.tasks import _flatten_numeric_values, download_device_config as download_device_config_task, upload_device_config as upload_device_config_task
+from progeo.helper.measurement_utils import flatten_numeric_values
+from progeo.tasks import download_device_config as download_device_config_task, upload_device_config as upload_device_config_task
 from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurement
 from progeo.v1.serializers import DeviceSerializer, ProgeoMeasurementSerializer
 from progeo.decorator import calc_runtime, require_module_permissions
@@ -495,7 +496,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         if not device:
             return RequestFailed({"reason": "Device not found"})
 
-        values = _flatten_numeric_values(rows)
+        values = flatten_numeric_values(rows)
         if not values:
             return RequestFailed({"reason": "Rows do not contain numeric values"})
 

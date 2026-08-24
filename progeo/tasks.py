@@ -1,195 +1,6 @@
 from celery import shared_task
-import ipaddress
-import json
-import math
-import os
-import socket
-import subprocess
-from numbers import Number
-from urllib.parse import quote, unquote, urlparse
 
-import requests
-from asgiref.sync import async_to_sync
-from channels.layers import get_channel_layer
-
-from progeo.consumer import GRP_NAME
-from progeo.helper.basics import dlog, save_check_dir
-
-
-ALLOWED_DEVICE_CONFIG_PATH = "config/device_config.lua"
-
-
-def _normalize_device_base_url(device_ip: str) -> str:
-    value = (device_ip or "").strip()
-    if not value:
-        raise ValueError("Missing device IP")
-
-    if not value.startswith("http://") and not value.startswith("https://"):
-        value = f"http://{value}"
-
-    parsed = urlparse(value)
-    host = parsed.hostname
-    if not host:
-        raise ValueError("Invalid device address")
-
-    parsed_ip = ipaddress.ip_address(host)
-    if parsed_ip.version != 4 or not parsed_ip.is_private:
-        raise ValueError("Only private IPv4 addresses are allowed")
-
-    scheme = parsed.scheme or "http"
-    port = f":{parsed.port}" if parsed.port else ""
-    return f"{scheme}://{parsed_ip}{port}"
-
-
-def _normalize_config_path(path: str) -> str:
-    decoded_path = unquote((path or "").strip()).lstrip("/")
-    if decoded_path != ALLOWED_DEVICE_CONFIG_PATH:
-        raise ValueError(f"Unsupported config path: {decoded_path}")
-    return quote(decoded_path, safe="")
-
-
-def _socket_upload(base_url: str, encoded_path: str, body: bytes, timeout: int = 10) -> tuple[bool, int | None, str]:
-    parsed = urlparse(base_url)
-    host = parsed.hostname
-    if not host:
-        raise ValueError("Invalid device host")
-
-    scheme = (parsed.scheme or "http").lower()
-    if scheme != "http":
-        raise ValueError("Only HTTP upload is supported for raw socket mode")
-
-    port = parsed.port or 80
-    target = f"/upload?path={encoded_path}"
-
-    head = (
-        f"POST {target} HTTP/1.1\r\n"
-        f"Host: {host}:{port}\r\n"
-        "User-Agent: progeo-upload/1.0\r\n"
-        "Accept: */*\r\n"
-        "Content-Type: text/plain\r\n"
-        f"Content-Length: {len(body)}\r\n"
-        "Connection: close\r\n\r\n"
-    ).encode("ascii")
-    raw_request = head + body
-
-    with socket.create_connection((host, port), timeout=timeout) as sock:
-        sock.settimeout(timeout)
-        sock.sendall(raw_request)
-
-        chunks = []
-        while True:
-            chunk = sock.recv(4096)
-            if not chunk:
-                break
-            chunks.append(chunk)
-
-    raw_response = b"".join(chunks)
-    response_head, sep, response_body = raw_response.partition(b"\r\n\r\n")
-
-    status_code = None
-    if sep:
-        first_line = response_head.split(b"\r\n", 1)[0].decode("latin-1", errors="replace")
-        parts = first_line.split(" ")
-        if len(parts) >= 2 and parts[1].isdigit():
-            status_code = int(parts[1])
-
-    content = response_body.decode("utf-8", errors="replace")
-    ok = status_code is not None and 200 <= status_code < 300
-    return ok, status_code, content
-
-
-def _flatten_numeric_values(data):
-    values = []
-    if isinstance(data, Number) and not isinstance(data, bool):
-        return [float(data)]
-    if isinstance(data, str):
-        try:
-            return [float(data)]
-        except ValueError:
-            return []
-    if isinstance(data, dict):
-        for value in data.values():
-            values.extend(_flatten_numeric_values(value))
-        return values
-    if isinstance(data, (list, tuple)):
-        for value in data:
-            values.extend(_flatten_numeric_values(value))
-    return values
-
-
-def extract_measurement_values(raw_data):
-    if raw_data is None:
-        return []
-
-    if isinstance(raw_data, (list, tuple)):
-        return _flatten_numeric_values(raw_data)
-
-    if isinstance(raw_data, dict):
-        if "values" in raw_data:
-            return _flatten_numeric_values(raw_data.get("values"))
-        if "rows" in raw_data:
-            return _flatten_numeric_values(raw_data.get("rows"))
-        return _flatten_numeric_values(raw_data)
-
-    return _flatten_numeric_values(raw_data)
-
-
-def compute_weighted_spots(relevant_points, neighbor_distance=0.2):
-    if not relevant_points:
-        return []
-
-    n = len(relevant_points)
-    graph = {idx: set() for idx in range(n)}
-
-    for i in range(n):
-        p1 = relevant_points[i]
-        for j in range(i + 1, n):
-            p2 = relevant_points[j]
-            distance = math.dist((float(p1.x), float(p1.y)), (float(p2.x), float(p2.y)))
-            if distance <= neighbor_distance:
-                graph[i].add(j)
-                graph[j].add(i)
-
-    spots = []
-    visited = set()
-    for start_idx in range(n):
-        if start_idx in visited:
-            continue
-
-        stack = [start_idx]
-        component = []
-        visited.add(start_idx)
-
-        while stack:
-            idx = stack.pop()
-            component.append(relevant_points[idx])
-            for neigh in graph[idx]:
-                if neigh not in visited:
-                    visited.add(neigh)
-                    stack.append(neigh)
-
-        total_weight = sum(float(max(0.0, point.last_value)) for point in component)
-        if total_weight <= 0:
-            continue
-
-        weighted_x = sum(float(point.x) * float(point.last_value) for point in component) / total_weight
-        weighted_y = sum(float(point.y) * float(point.last_value) for point in component) / total_weight
-        member_ids = [int(point.id) for point in component]
-
-        spots.append({
-            "x": round(weighted_x, 6),
-            "y": round(weighted_y, 6),
-            "total_weight": round(total_weight, 6),
-            "point_count": len(component),
-            "member_point_ids": sorted(member_ids),
-            "max_value": round(max(float(point.last_value) for point in component), 6),
-        })
-
-    spots.sort(key=lambda row: (-row["total_weight"], row["x"], row["y"]))
-    for idx, spot in enumerate(spots, start=1):
-        spot["spot_id"] = idx
-
-    return spots
+from progeo.helper.basics import dlog
 
 
 @shared_task
@@ -199,22 +10,30 @@ def ping():
 
 
 @shared_task
-def download_device_config(device_ip: str, path: str = ALLOWED_DEVICE_CONFIG_PATH):
+def download_device_config(device_ip: str, path: str = None):
+    """Download the device config file from a private IPv4 device."""
     import logging
+
+    import requests
+
+    from progeo.helper.basics import dlog as _dlog
+    from progeo.helper.device_utils import ALLOWED_DEVICE_CONFIG_PATH, normalize_config_path, normalize_device_base_url
+
+    path = path or ALLOWED_DEVICE_CONFIG_PATH
     logger = logging.getLogger('progeo.tasks')
-    
-    base_url = _normalize_device_base_url(device_ip)
-    encoded_path = _normalize_config_path(path)
+
+    base_url = normalize_device_base_url(device_ip)
+    encoded_path = normalize_config_path(path)
     msg = f"download_device_config start ip={device_ip} path={path}"
     logger.info(f"[CELERY] {msg}")
-    dlog(msg, tag="[CELERY]")
-    
+    _dlog(msg, tag="[CELERY]")
+
     response = requests.get(f"{base_url}/download?path={encoded_path}", timeout=25)
-    
+
     done_msg = f"download_device_config done status={response.status_code}"
     logger.info(f"[CELERY] {done_msg}")
-    dlog(done_msg, tag="[CELERY]")
-    
+    _dlog(done_msg, tag="[CELERY]")
+
     return {
         "ok": response.ok,
         "status_code": response.status_code,
@@ -223,22 +42,28 @@ def download_device_config(device_ip: str, path: str = ALLOWED_DEVICE_CONFIG_PAT
 
 
 @shared_task
-def upload_device_config(device_ip: str, content: str, path: str = ALLOWED_DEVICE_CONFIG_PATH):
+def upload_device_config(device_ip: str, content: str, path: str = None):
+    """Upload the device config file to a private IPv4 device."""
     import logging
+
+    from progeo.helper.basics import dlog as _dlog
+    from progeo.helper.device_utils import ALLOWED_DEVICE_CONFIG_PATH, normalize_config_path, normalize_device_base_url, socket_upload
+
+    path = path or ALLOWED_DEVICE_CONFIG_PATH
     logger = logging.getLogger('progeo.tasks')
-    
-    base_url = _normalize_device_base_url(device_ip)
-    encoded_path = _normalize_config_path(path)
-    msg = f"upload_device_config start ip={device_ip} path={path} len={len(content or '')}"
+
+    base_url = normalize_device_base_url(device_ip)
+    encoded_path = normalize_config_path(path)
+    msg = f"upload_device_config start ip={device_ip} path={path}"
     logger.info(f"[CELERY] {msg}")
-    dlog(msg, tag="[CELERY]")
+    _dlog(msg, tag="[CELERY]")
 
     body = (content or "").encode("utf-8")
-    ok, status_code, response_content = _socket_upload(base_url, encoded_path, body, timeout=25)
+    ok, status_code, response_content = socket_upload(base_url, encoded_path, body, timeout=25)
 
     done_msg = f"upload_device_config done status={status_code}"
     logger.info(f"[CELERY] {done_msg}")
-    dlog(done_msg, tag="[CELERY]")
+    _dlog(done_msg, tag="[CELERY]")
     return {
         "ok": ok,
         "status_code": status_code,
@@ -249,6 +74,14 @@ def upload_device_config(device_ip: str, content: str, path: str = ALLOWED_DEVIC
 @shared_task
 def identify_device(ip: str):
     """Ping a device from the backend network via its local HTTP endpoint."""
+    import ipaddress
+
+    import requests
+    from asgiref.sync import async_to_sync
+    from channels.layers import get_channel_layer
+
+    from progeo.consumer import GRP_NAME
+
     parsed_ip = ipaddress.ip_address(ip)
     if parsed_ip.version != 4 or not parsed_ip.is_private:
         raise ValueError("Only private IPv4 addresses are allowed")
@@ -273,8 +106,12 @@ def identify_device(ip: str):
         raise exc
     return msg
 
+
 @shared_task
 def evaluate_measurement(measurement_id: int, account_id: int = None):
+    """Evaluate a single measurement: update sensor points and compute spots."""
+    from progeo.helper.basics import dlog as _dlog
+    from progeo.helper.measurement_utils import compute_weighted_spots, extract_measurement_values
     from progeo.v1.models import ProgeoMeasurePoint, ProgeoMeasurement
 
     queryset = ProgeoMeasurement.objects
@@ -302,10 +139,10 @@ def evaluate_measurement(measurement_id: int, account_id: int = None):
         sensor_order = i + 1
         point = points_by_sensor_order.get(sensor_order)
         if not point:
-            dlog(f"No point for measurement {measurement_id} sensor {sensor_order} with value {value}")
+            _dlog(f"No point for measurement {measurement_id} sensor {sensor_order} with value {value}")
             continue
         if value is None or value <= 0:
-            dlog(f"No positive value for measurement {measurement_id} point {point.id} sensor {sensor_order}")
+            _dlog(f"No positive value for measurement {measurement_id} point {point.id} sensor {sensor_order}")
             continue
         point.last_value = float(value)
         updated_points.append(point)
@@ -362,6 +199,7 @@ def evaluate_measurements(db: str = None, lookback_hours: int = 1, days: int = N
 
     from django.utils import timezone
 
+    from progeo.helper.alarm_evaluation import evaluate_measurements_db, parse_date_bound
     from progeo.helper.basics import elog, ilog
     from progeo.settings import DATABASES
 
@@ -371,8 +209,8 @@ def evaluate_measurements(db: str = None, lookback_hours: int = 1, days: int = N
         start = now - datetime.timedelta(days=days)
         end = now
     elif start_date is not None or end_date is not None:
-        start = _parse_date_bound(start_date, start_of_day=True)
-        end = _parse_date_bound(end_date, end_of_day=True)
+        start = parse_date_bound(start_date, start_of_day=True)
+        end = parse_date_bound(end_date, end_of_day=True)
         if start is None:
             start = now - datetime.timedelta(hours=lookback_hours)
         if end is None:
@@ -388,7 +226,7 @@ def evaluate_measurements(db: str = None, lookback_hours: int = 1, days: int = N
 
     for db_name in db_names:
         try:
-            locations, triggered = _evaluate_measurements_db(db_name, start, end, project_id=project_id)
+            locations, triggered = evaluate_measurements_db(db_name, start, end, project_id=project_id)
         except Exception as exc:
             elog(f"[evaluate_measurements] db={db_name} failed: {exc}")
             continue
@@ -408,138 +246,6 @@ def evaluate_measurements(db: str = None, lookback_hours: int = 1, days: int = N
     }
 
 
-def _parse_date_bound(value, start_of_day=False, end_of_day=False):
-    """Parse an ISO 'YYYY-MM-DD' / datetime into a naive local datetime.
-
-    With `start_of_day`, a bare date becomes 00:00:00; with `end_of_day` it
-    becomes 23:59:59.999999 so the whole day is included in the window.
-    """
-    import datetime
-
-    if value is None:
-        return None
-    if isinstance(value, datetime.datetime):
-        return value
-    if isinstance(value, datetime.date):
-        moment = datetime.datetime(value.year, value.month, value.day)
-    elif isinstance(value, str):
-        value = value.strip()
-        if not value:
-            return None
-        try:
-            moment = datetime.datetime.strptime(value, "%Y-%m-%d")
-        except ValueError:
-            try:
-                moment = datetime.datetime.fromisoformat(value)
-            except ValueError:
-                return None
-    else:
-        return None
-
-    if start_of_day:
-        return moment.replace(hour=0, minute=0, second=0, microsecond=0)
-    if end_of_day:
-        return moment.replace(hour=23, minute=59, second=59, microsecond=999999)
-    return moment
-
-
-def _evaluate_measurements_db(db: str, start, end, project_id: int = None) -> tuple[int, int]:
-    """Evaluate every measurement in [start, end] of every location in one pass."""
-    from django.db.models import Q
-
-    from progeo.helper.basics import dlog, elog, ilog
-    from progeo.helper.weather import WeatherHelper
-    from progeo.v1.creator import create_progeo_alarm_safe
-    from progeo.v1.models import ProgeoAlarm, ProgeoLocation, ProgeoMeasurement
-
-    # One shared helper for the whole pass: alarms of the same location share a
-    # single API call, and rain is only attributed to the earliest alarm that
-    # catches a rain event (later overlapping alarms are marked checked without
-    # rain data).
-    weather_helper = WeatherHelper()
-
-    # One query for all locations: every measurement in the window with its
-    # device+location already joined. `last_fetched` is set on every save and is
-    # the reliable "when did the measurement arrive" field.
-    measurements = (
-        ProgeoMeasurement.objects.using(db)
-        .filter(last_fetched__gte=start, last_fetched__lte=end)
-        .select_related("device__location")
-        .order_by("device__location__pk", "last_fetched")
-    )
-    if project_id is not None:
-        # Measurements may carry the project on the row or on the device; match
-        # either so backfills with explicit project ids behave consistently.
-        measurements = measurements.filter(
-            Q(project_id=project_id) | Q(device__project_id=project_id)
-        ).distinct()
-
-    triggered = 0
-    location_ids = 0
-    location_id = None
-    dlog(f"Found Measurements: {measurements.count()}")
-    for measurement in measurements:
-        location = measurement.device.location
-        if location is None:
-            if measurement.device:
-                location, created = ProgeoLocation.objects.using(db).get_or_create(project_id=measurement.device.project_id)
-                if created:
-                    ilog(f"Created new Location {location} for device {measurement.device}!")
-                    location.save(using=db)
-                device = measurement.device
-                device.location = location
-                device.save(using=db)
-            else:
-                elog(f"No Location found for measurement {measurement} | device={measurement.device}!")
-                continue
-
-        if location_id != location.project_id:
-            location_ids += 1
-        location_id = location.project_id
-
-        threshold = location.alarm_threshold
-        # All sensors above the threshold (up to 10) — the alarm records every
-        # over-threshold sensor as a (sensor_id, max_value) pair.
-        over_threshold = measurement.evaluate_all(threshold)
-        alarm = None
-        if not over_threshold:
-            active_alarms = (
-                ProgeoAlarm.objects.using(db)
-                .filter(measurement__device=measurement.device, normalized_at__isnull=True)
-                .select_related("measurement__device__location")
-                .order_by("triggered_at", "id")
-            )
-            alarm = active_alarms.first()
-            if alarm:
-                # Normalize every still-active alarm of this device and check the
-                # earliest one for rain (later overlapping alarms are marked
-                # checked without rain data by the shared WeatherHelper).
-                active_alarms.update(normalized_at=measurement.last_fetched)
-                alarm.normalized_at = measurement.last_fetched
-                alarm.fetch_weather(weather_helper)
-                dlog(f"ALARM NORMALIZED: location={location.project_id} at={measurement.last_fetched}")
-            continue
-
-        triggered += 1
-        dlog(f"ALARM TRIGGERED: location={location.project_id} at={measurement.last_fetched}")
-        sensor_max_values = [
-            {"sensor_id": idx + 1, "max_value": float(value)}  # 1-based sensor index
-            for idx, value in over_threshold
-        ]
-        peak_idx, peak_value = max(over_threshold, key=lambda pair: pair[1])
-        create_progeo_alarm_safe(
-            measurement=measurement,
-            sensor_id=peak_idx + 1,  # 1-based sensor index, matches sensor_order
-            max_value=float(peak_value),
-            sensor_max_values=sensor_max_values,
-            threshold=threshold,
-            triggered_at=measurement.last_fetched,
-            db=db,
-        )
-
-    return location_ids, triggered
-
-
 @shared_task
 def check_existing_alarms(db: str = None, silence_hours: int = 24):
     """
@@ -557,6 +263,7 @@ def check_existing_alarms(db: str = None, silence_hours: int = 24):
       - latest measurement is below the threshold       -> normalize (is_active=false)
       - device has no newer data within `silence_hours` -> normalize as silent
     """
+    from progeo.helper.alarm_check import check_existing_alarms_db
     from progeo.helper.basics import elog, ilog
     from progeo.settings import DATABASES
 
@@ -567,7 +274,7 @@ def check_existing_alarms(db: str = None, silence_hours: int = 24):
 
     for db_name in db_names:
         try:
-            checked, normalized = _check_existing_alarms_db(db_name, silence_hours=silence_hours)
+            checked, normalized = check_existing_alarms_db(db_name, silence_hours=silence_hours)
         except Exception as exc:
             elog(f"[check_existing_alarms] db={db_name} failed: {exc}")
             continue
@@ -582,117 +289,6 @@ def check_existing_alarms(db: str = None, silence_hours: int = 24):
         "checked": total_checked,
         "normalized": total_normalized,
     }
-
-
-def _check_existing_alarms_db(db: str, silence_hours: int = 24) -> tuple[int, int]:
-    """Check all unnormalized alarms of one database against the latest measurements."""
-    import datetime
-
-    from django.utils import timezone
-
-    from progeo.v1.models import ProgeoAlarm, ProgeoMeasurement
-
-    alarms = list(
-        ProgeoAlarm.objects.using(db)
-        .filter(normalized_at__isnull=True)
-        .select_related("measurement__device__location")
-        .order_by("-triggered_at")
-    )
-    if not alarms:
-        return 0, 0
-
-    # Fetch the newest measurement per involved device in ONE query, so the
-    # per-alarm check below never triggers an N+1 lookup.
-    device_ids = {alarm.measurement.device_id for alarm in alarms}
-    latest_by_device = {
-        measurement.device_id: measurement
-        for measurement in (
-            ProgeoMeasurement.objects.using(db)
-            .filter(device_id__in=device_ids)
-            .order_by("device_id", "-last_fetched", "-id")
-            .distinct("device_id")
-        )
-    }
-
-    now = timezone.now()
-    silence_cutoff = now - datetime.timedelta(hours=silence_hours)
-
-    checked = 0
-    normalized = 0
-    for alarm in alarms:
-        device = alarm.measurement.device
-        if device is None:
-            continue
-
-        latest = latest_by_device.get(device.id)
-        if latest is None:
-            continue
-        checked += 1
-
-        latest_at = latest.last_fetched or latest.last_updated
-        if latest_at is None:
-            continue
-
-        location = device.location
-        threshold = location.alarm_threshold if location else None
-        over_threshold = []
-        if threshold is not None:
-            over_threshold = latest.evaluate_all(threshold)
-
-        still_exceeding = len(over_threshold) > 0
-        silent = latest_at < silence_cutoff
-
-        update_fields = ["still_active_at", "normalized_at"]
-        if alarm.triggered_at is None:
-            # Backfill the trigger time for alarms that were created without
-            # one (fall back to the measurement's own timestamps).
-            alarm.triggered_at = (
-                alarm.measurement.last_updated
-                or alarm.measurement.last_fetched
-                or latest_at
-            )
-            update_fields.append("triggered_at")
-
-        if still_exceeding and not silent:
-            alarm.still_active_at = latest_at
-            # Keep tracking the alarm's development while it stays active.
-            peak_idx, peak_value = max(over_threshold, key=lambda pair: pair[1])
-            max_value = float(peak_value)
-            sensor_id = peak_idx + 1  # 1-based sensor index, matches sensor_order
-            if max_value is not None:
-                # Runs every 15 minutes, so the same timestamp can be appended more
-                # than once; only record an entry when it is genuinely new.
-                existing_ts = {str(e.get("ts")) for e in (alarm.max_values or [])}
-                entry_ts = latest_at.isoformat() if hasattr(latest_at, "isoformat") else latest_at
-                if str(entry_ts) not in existing_ts:
-                    alarm.max_values = list(alarm.max_values or []) + [{
-                        "ts": entry_ts,
-                        "value": max_value,
-                        "sensor_id": sensor_id,
-                    }]
-                    update_fields.append("max_values")
-            # Refresh the strongest sensor + the full set of over-threshold pairs.
-            sensor_pairs = [
-                {"sensor_id": idx + 1, "max_value": float(value)}
-                for idx, value in over_threshold
-            ]
-            from progeo.v1.creator import merge_sensor_max_values
-            merged_pairs = merge_sensor_max_values(alarm.sensor_max_values, sensor_pairs)
-            if merged_pairs != list(alarm.sensor_max_values or []):
-                alarm.sensor_max_values = merged_pairs
-                update_fields.append("sensor_max_values")
-            alarm.save(
-                using=db,
-                update_fields=["still_active_at", "triggered_at", "max_values", "sensor_max_values"],
-            )
-            continue
-
-        # Normalize: the alarm no longer reflects an active over-threshold state.
-        alarm.normalized_at = latest_at
-        alarm.save(using=db, update_fields=update_fields)
-        normalized += 1
-
-    return checked, normalized
 
 
 @shared_task
@@ -718,6 +314,7 @@ def generate_daily_alarm_report(db: str = None, report_date=None):
     from django.utils import timezone
 
     from progeo.helper.basics import elog, ilog
+    from progeo.helper.report_utils import generate_daily_report_db
     from progeo.settings import DATABASES
 
     if report_date is None:
@@ -730,7 +327,7 @@ def generate_daily_alarm_report(db: str = None, report_date=None):
 
     for db_name in db_names:
         try:
-            generated = _generate_daily_report_db(db_name, report_date)
+            generated = generate_daily_report_db(db_name, report_date)
         except Exception as exc:
             elog(f"[generate_daily_alarm_report] db={db_name} failed: {exc}")
             continue
@@ -741,343 +338,51 @@ def generate_daily_alarm_report(db: str = None, report_date=None):
     return {"date": report_date.isoformat(), "reports": total_reports}
 
 
-# How far into the day counts as "start of day" / "end of day" for the
-# connectivity check (hours).
-CONNECTIVITY_EDGE_HOURS = 2
+@shared_task
+def collect_host_storage_info():
+    """Collect host storage info into SETUP_DIR/<date>/storage_info.json."""
+    from progeo.helper.storage_utils import collect_storage_info_to_file
+    from progeo.settings import BASE_DIR, SETUP_DIR
 
-
-def _collect_project_connectivity(db: str, report_date):
-    """Check every location of the account for signal presence on `report_date`.
-
-    A location is:
-      - "dead": it has devices but never sent a single measurement
-      - "disconnected": it sent data before but has no measurements at the
-        start OR end of the report day (signal lost)
-      - "online": it has measurements at both the start and the end of the day
-
-    Returns (projects_dict, counts) where projects_dict maps location id to a
-    status payload and counts is {"online": n, "disconnected": n, "dead": n}.
-    """
-    import datetime
-
-    from django.db.models import Count, Max, Min
-
-    from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurement
-
-    day_start = datetime.datetime.combine(report_date, datetime.time.min)
-    day_end = datetime.datetime.combine(report_date, datetime.time.max)
-    start_edge = day_start + datetime.timedelta(hours=CONNECTIVITY_EDGE_HOURS)
-    end_edge = day_end - datetime.timedelta(hours=CONNECTIVITY_EDGE_HOURS)
-
-    projects = {}
-    counts = {"online": 0, "disconnected": 0, "dead": 0}
-
-    for location in ProgeoLocation.objects.using(db).all():
-        device_ids = list(
-            ProgeoDevice.objects.using(db)
-            .filter(location=location)
-            .values_list("id", flat=True)
-        )
-        if not device_ids:
-            continue
-
-        # Any measurement ever -> proves the project is not "dead".
-        ever = (
-            ProgeoMeasurement.objects.using(db)
-            .filter(device_id__in=device_ids)
-            .aggregate(count=Count("id"), first=Min("last_fetched"), last=Max("last_fetched"))
-        )
-        ever_count = ever["count"] or 0
-
-        # Measurements at the very start and very end of the report day.
-        start_count = (
-            ProgeoMeasurement.objects.using(db)
-            .filter(device_id__in=device_ids, last_fetched__gte=day_start, last_fetched__lte=start_edge)
-            .count()
-        )
-        end_count = (
-            ProgeoMeasurement.objects.using(db)
-            .filter(device_id__in=device_ids, last_fetched__gte=end_edge, last_fetched__lte=day_end)
-            .count()
-        )
-
-        if ever_count == 0:
-            status = "dead"
-        elif start_count > 0 and end_count > 0:
-            status = "online"
-        else:
-            status = "disconnected"
-
-        counts[status] += 1
-        projects[str(location.pk)] = {
-            "status": status,
-            "name": location.name or f"Location {location.pk}",
-            "project_id": location.project_id,
-            "device_count": len(device_ids),
-            "measurement_count": ever_count,
-            "start_of_day_measurements": start_count,
-            "end_of_day_measurements": end_count,
-            "first_measurement_at": ever["first"].isoformat() if ever["first"] else None,
-            "last_measurement_at": ever["last"].isoformat() if ever["last"] else None,
-            "emailed_disconnect": False,
-        }
-
-    return projects, counts
-
-
-def _email_disconnected_projects(db: str, report_date, projects, previous_report):
-    """
-    Notify the responsible contact(s) when a project transitions to
-    "disconnected". Only fires for projects that were NOT disconnected in the
-    previous report (so a project that stays offline does not get a daily
-    spam). The mail body comes from the `disconnect_project` email template;
-    SMTP settings are read from environment variables - without credentials the
-    mail is skipped with a log line.
-    """
-    from progeo.helper.basics import elog, ilog
-    from progeo.helper.emailhelper import send_template_mail, smtp_configured
-
-    if not smtp_configured():
-        ilog(
-            f"[generate_daily_alarm_report] SMTP not configured (MAIL_SENDER/MAIL_SERVER), "
-            f"skipping disconnect mails for {report_date}"
-        )
-        return []
-
-    previous_projects = (previous_report.projects if previous_report else {}) or {}
-    newly_disconnected = [
-        (location_id, payload)
-        for location_id, payload in projects.items()
-        if payload.get("status") == "disconnected"
-        and previous_projects.get(location_id, {}).get("status") != "disconnected"
-    ]
-
-    if not newly_disconnected:
-        return []
-
-    from progeo.v1.models import ProgeoLocation
-
-    emailed = []
-    for location_id, payload in newly_disconnected:
-        location = ProgeoLocation.objects.using(db).filter(pk=location_id).first()
-        if location is None:
-            continue
-        recipient = location.mail
-        if not recipient:
-            ilog(
-                f"[generate_daily_alarm_report] No contact mail for disconnected "
-                f"location {location_id}, skipping mail"
-            )
-            continue
-
-        context = {
-            "project_name": payload.get("name") or f"Location {location_id}",
-            "location_id": location_id,
-            "report_date": report_date,
-            "last_measurement_at": payload.get("last_measurement_at") or "unbekannt",
-            "device_count": payload.get("device_count"),
-        }
-        try:
-            result = send_template_mail(
-                [recipient],
-                "disconnect_project.txt",
-                context,
-                location=location,
-                db=db,
-            )
-            if result:
-                projects[str(location_id)]["emailed_disconnect"] = True
-                emailed.append(location_id)
-                ilog(f"[generate_daily_alarm_report] Disconnect mail sent to {recipient} for location {location_id}")
-            else:
-                elog(f"[generate_daily_alarm_report] Disconnect mail not sent for location {location_id}")
-        except Exception as exc:
-            elog(f"[generate_daily_alarm_report] Failed to send disconnect mail for location {location_id}: {exc}")
-
-    return emailed
-
-
-def _generate_daily_report_db(db: str, report_date) -> bool:
-    """Build and upsert the AlarmDailyReport for one database. Returns whether a row was written."""
-    import datetime
-
-    from django.db.models import Count, Max, Q
-
-    from progeo.v1.models import Account, AlarmDailyReport, ProgeoAlarm
-
-    day_start = datetime.datetime.combine(report_date, datetime.time.min)
-    day_end = datetime.datetime.combine(report_date, datetime.time.max)
-
-    alarms = ProgeoAlarm.objects.using(db).filter(
-        triggered_at__gte=day_start,
-        triggered_at__lte=day_end,
-    )
-    total_count = alarms.count()
-
-    status_agg = alarms.aggregate(
-        active=Count("id", filter=Q(normalized_at__isnull=True)),
-        normalized=Count("id", filter=Q(normalized_at__isnull=False)),
-        acknowledged=Count("id", filter=Q(status=1)),
-        stoppage=Count("id", filter=Q(status=2)),
-        peak=Max("max_value"),
-    )
-
-    # Per-location counts (name + project_id resolved from the related device).
-    location_rows = (
-        alarms.values("measurement__device__location_id", "measurement__device__location__name", "measurement__device__project_id")
-        .annotate(
-            count=Count("id"),
-            active=Count("id", filter=Q(normalized_at__isnull=True)),
-            peak=Max("max_value"),
-        )
-    )
-    locations = {}
-    for row in location_rows:
-        location_id = row["measurement__device__location_id"]
-        if location_id is None:
-            continue
-        locations[str(location_id)] = {
-            "name": row["measurement__device__location__name"] or f"Location {location_id}",
-            "project_id": row["measurement__device__project_id"],
-            "count": row["count"],
-            "active": row["active"],
-            "max_value": row["peak"],
-        }
-
-    # Per-sensor counts / peak (sensor_id + the multi-sensor pairs).
-    sensor_counts = {}
-    for alarm in alarms.only("sensor_id", "max_value", "sensor_max_values"):
-        sensor_ids = [alarm.sensor_id] if alarm.sensor_id is not None else []
-        for entry in alarm.sensor_max_values or []:
-            sid = entry.get("sensor_id")
-            if sid is not None and sid not in sensor_ids:
-                sensor_ids.append(sid)
-        for sid in sensor_ids:
-            bucket = sensor_counts.setdefault(str(sid), {"count": 0, "max_value": 0})
-            bucket["count"] += 1
-            if alarm.max_value is not None and alarm.max_value > bucket["max_value"]:
-                bucket["max_value"] = alarm.max_value
-
-    # Hourly distribution of triggers.
-    hourly_map = {hour: 0 for hour in range(24)}
-    for row in alarms.extra(
-        select={"trigger_hour": "EXTRACT(hour FROM triggered_at)"}
-    ).values("trigger_hour").annotate(count=Count("id")).order_by("trigger_hour"):
-        try:
-            hourly_map[int(row["trigger_hour"])] = row["count"]
-        except (TypeError, ValueError):
-            continue
-    hourly = [{"hour": hour, "count": hourly_map[hour]} for hour in range(24)]
-
-    # Top alarms of the day (strongest first).
-    top_alarms = []
-    for alarm in alarms.select_related("measurement__device__location").order_by("-max_value")[:10]:
-        top_alarms.append({
-            "id": alarm.pk,
-            "location_id": alarm.measurement.device.location_id,
-            "location_name": (
-                alarm.measurement.device.location.name
-                if alarm.measurement.device.location
-                else f"Location {alarm.measurement.device.location_id}"
-            ),
-            "sensor_ids": [alarm.sensor_id] if alarm.sensor_id is not None else [],
-            "max_value": alarm.max_value,
-            "triggered_at": alarm.triggered_at.isoformat() if alarm.triggered_at else None,
-            "status": alarm.status,
-            "active": alarm.normalized_at is None,
-        })
-
-    account = Account.objects.using(db).filter(db_name=db).first()
-
-    # Project connectivity: dead / disconnected / online per location.
-    projects, connectivity_counts = _collect_project_connectivity(db, report_date)
-
-    # Email the contacts of projects that just lost their signal (transition
-    # to "disconnected" only). Previous report row is read before upsert.
-    previous_report = (
-        AlarmDailyReport.objects.using(db)
-        .filter(account=account, date=report_date)
-        .first()
-    )
-    _email_disconnected_projects(db, report_date, projects, previous_report)
-
-    report, _ = AlarmDailyReport.objects.using(db).update_or_create(
-        account=account,
-        date=report_date,
-        defaults={
-            "total_count": total_count,
-            "active_count": status_agg["active"] or 0,
-            "normalized_count": status_agg["normalized"] or 0,
-            "acknowledged_count": status_agg["acknowledged"] or 0,
-            "stoppage_count": status_agg["stoppage"] or 0,
-            "avg_duration_seconds": None,
-            "max_value": status_agg["peak"],
-            "peak_sensor_id": None,
-            "max_value_at": None,
-            "locations": locations,
-            "sensors": sensor_counts,
-            "hourly": hourly,
-            "top_alarms": top_alarms,
-            "projects": projects,
-            "online_count": connectivity_counts["online"],
-            "disconnected_count": connectivity_counts["disconnected"],
-            "dead_count": connectivity_counts["dead"],
-        },
-    )
-    return True
+    return collect_storage_info_to_file(SETUP_DIR, BASE_DIR)
 
 
 @shared_task
-def collect_host_storage_info():
-    from progeo.settings import BASE_DIR, SETUP_DIR
-    from datetime import datetime
+def swap_databases_new_year(db: str = None, year: int = None):
+    """
+    Archive every account database for the year on New Year's Eve.
 
-    script_candidates = [
-        os.path.join(BASE_DIR, "docker", "backend", "scripts", "collect_storage_info.sh"),
-        os.path.join(BASE_DIR, "scripts", "collect_storage_info.sh"),
-    ]
-    script_path = next((path for path in script_candidates if os.path.isfile(path)), None)
-    output_dir = save_check_dir(SETUP_DIR)
-    date_folder = datetime.now().strftime("%Y-%m-%d")
-    output_path = os.path.join(output_dir, date_folder, "storage_info.json")
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    For each configured database: terminate connections, rename
+    "<name>" -> "<name>_<year>", create a fresh "<name>" (template0) and copy
+    all tables except progeo_progeoalarm / progeo_progeomeasurement. Those two
+    are recreated empty and their id sequences are set to the archived max, so
+    new alarms/measurements keep counting up instead of restarting at 1.
 
-    if not script_path:
-        raise FileNotFoundError(
-            "Storage info script not found. Checked: "
-            + ", ".join(script_candidates)
-        )
+    Scheduled through celery beat (31.12. 23:50); can be triggered manually:
+        python manage.py shell -c "from progeo.tasks import swap_databases_new_year; swap_databases_new_year()"
+        python manage.py shell -c "from progeo.tasks import swap_databases_new_year; swap_databases_new_year(db='default')"
+    """
+    from django.utils import timezone
 
-    env = os.environ.copy()
-    env["PROJECT_ROOT"] = BASE_DIR
-    env["OUTPUT_PATH"] = output_path
+    from progeo.helper.basics import elog, ilog
+    from progeo.helper.db_swap import archive_single_db, pg_env
+    from progeo.settings import DATABASES
 
-    result = subprocess.run(
-        ["bash", script_path],
-        capture_output=True,
-        text=True,
-        timeout=45,
-        check=False,
-        env=env,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(
-            "collect_storage_info.sh failed "
-            f"with code={result.returncode}, stderr={result.stderr.strip()}"
-        )
+    env = pg_env()
+    if year is None:
+        year = timezone.now().year
 
-    with open(output_path, "r", encoding="utf-8") as storage_file:
-        payload = json.load(storage_file)
+    db_names = [db] if db else list(DATABASES.keys())
+    results = {}
 
-    return {
-        "ok": True,
-        "path": output_path,
-        "storage_info": payload,
-        "stdout": (result.stdout or "").strip(),
-    }
+    for db_name in db_names:
+        try:
+            detail = archive_single_db(db_name, year, env=env)
+            results[db_name] = {"ok": True, **detail}
+            ilog(f"[swap_databases_new_year] db={db_name} archived -> {detail['old_name']}")
+        except Exception as exc:
+            elog(f"[swap_databases_new_year] db={db_name} failed: {exc}")
+            results[db_name] = {"ok": False, "error": str(exc)}
 
-
-
-
-
-
+    ilog(f"[swap_databases_new_year] done: {results}")
+    return {"year": year, "databases": results}

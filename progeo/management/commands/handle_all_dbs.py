@@ -35,10 +35,21 @@ class Command(BaseCommand):
             for db in DATABASES.keys():
                 if cmd == "dbrestore" and not check_db_exists_for(db):
                     ilog(f"Skipping for db={db}")
-                    break
+                    continue
 
-                ilog(cmd, "--noinput", "--skip-checks", "--traceback", f"--database={db}")
-                call_command(cmd, "--noinput", "--skip-checks", "--traceback", f"--database={db}")
+
+                _cmds = [cmd, "--noinput", "--skip-checks", "--traceback", f"--database={db}"]
+                if cmd == "dbbackup":
+                    _cmds += ["--compress"]
+                elif cmd == "dbrestore":
+                    _cmds += ["--uncompress"]
+
+                ilog(f"Running: {' '.join(_cmds)}")
+                try:
+                    call_command(*_cmds)
+                except Exception as exc:
+                    elog(f"Error running command: {exc}, retrying without compress/uncompress")
+                    call_command(*_cmds[:-1])
 
         elif cmd in ["dbclean"]:
             _files = os.listdir(BACKUP_DIR)
