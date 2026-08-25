@@ -1,5 +1,5 @@
-from django.core.cache import cache
-from django.core.management.base import BaseCommand
+﻿from django.core.cache import cache
+from progeo.management.commands._base import BaseCommand
 from progeo.helper.basics import dlog
 
 

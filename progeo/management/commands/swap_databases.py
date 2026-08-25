@@ -1,4 +1,4 @@
-from django.core.management.base import BaseCommand
+﻿from progeo.management.commands._base import BaseCommand
 
 from progeo.helper.basics import ilog
 from progeo.tasks import swap_databases_new_year

@@ -1,5 +1,5 @@
-from django.contrib.admin.models import LogEntry
-from django.core.management.base import BaseCommand
+﻿from django.contrib.admin.models import LogEntry
+from progeo.management.commands._base import BaseCommand
 from progeo.helper.basics import dlog
 
 

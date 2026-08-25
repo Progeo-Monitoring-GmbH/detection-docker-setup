@@ -1,6 +1,6 @@
-from django.apps import apps
+﻿from django.apps import apps
 from django.core.exceptions import FieldError
-from django.core.management.base import BaseCommand
+from progeo.management.commands._base import BaseCommand
 from django.db import ProgrammingError
 from django.db import connections
 
