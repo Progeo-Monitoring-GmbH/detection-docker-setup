@@ -51,12 +51,6 @@ export type TimelineAlarm = {
   sensor_max_values?: AlarmSensorMaxValue[];
   /** Rain events matched to this alarm (see progeo.helper.weather). */
   rain_events?: AlarmRainEvent[];
-  // Legacy single-event rain fields (kept for stale cached payloads).
-  rain_start?: string | null;
-  /** Hours of rain found (legacy, pre-rain_events payloads). */
-  rain_duration?: number | null;
-  /** Precipitation in mm (legacy, pre-rain_events payloads). */
-  rain_amount?: number | null;
 };
 
 /** Format a duration in seconds as "1d 2h 3m 4s" (skips empty units). */
@@ -149,9 +143,6 @@ export const isAlarmActive = (alarm: {
  */
 export const alarmRainSpans = (alarm: {
   rain_events?: AlarmRainEvent[] | null;
-  rain_start?: string | null;
-  rain_duration?: number | null;
-  rain_amount?: number | null;
 }): Array<{ start: number; end: number; amount: number | null }> => {
   const spans: Array<{ start: number; end: number; amount: number | null }> =
     [];
@@ -171,20 +162,6 @@ export const alarmRainSpans = (alarm: {
     });
   }
 
-  // Legacy fallback: single rain window stored in the old scalar fields.
-  if (spans.length === 0 && alarm.rain_start != null) {
-    const start = parseTimestamp(alarm.rain_start);
-    const duration = Number(alarm.rain_duration);
-    if (start != null && Number.isFinite(duration) && duration > 0) {
-      const amount = Number(alarm.rain_amount);
-      spans.push({
-        start,
-        end: Math.max(start + duration * 60 * 60 * 1000, start),
-        amount: Number.isFinite(amount) ? amount : null,
-      });
-    }
-  }
-
   return spans;
 };
 
@@ -193,13 +170,11 @@ export const alarmRainSpans = (alarm: {
  * pairs. Falls back to the single strongest sensor when the pair list is
  * missing (e.g. legacy alarms).
  */
-export const alarmSensors = (
-  alarm: {
-    sensor_id?: number | null;
-    max_value?: number | null;
-    sensor_max_values?: AlarmSensorMaxValue[];
-  },
-): AlarmSensorMaxValue[] => {
+export const alarmSensors = (alarm: {
+  sensor_id?: number | null;
+  max_value?: number | null;
+  sensor_max_values?: AlarmSensorMaxValue[];
+}): AlarmSensorMaxValue[] => {
   const pairs = Array.isArray(alarm.sensor_max_values)
     ? alarm.sensor_max_values
     : [];
