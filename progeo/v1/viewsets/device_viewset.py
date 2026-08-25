@@ -1,7 +1,7 @@
 
 import math
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta
 from dataclasses import asdict
 
 from django.utils import timezone
@@ -556,6 +556,18 @@ class DeviceViewSet(ProgeoModalViewSet):
             except (TypeError, ValueError):
                 return RequestFailed({"reason": "year must be an integer"})
 
+        # Optional time window (ISO-8601) so the frontend can scope the
+        # measurements around an alarm (mirrors the location heatmap action).
+        time_from = request.query_params.get("from")
+        time_to = request.query_params.get("to")
+        try:
+            if time_from:
+                time_from = datetime.fromisoformat(time_from)
+            if time_to:
+                time_to = datetime.fromisoformat(time_to)
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "from/to must be ISO-8601 timestamps"})
+
         device = ProgeoDevice.objects.using(db_name).filter(pk=pk).first()
         if not device:
             return RequestFailed({"reason": "Device not found"})
@@ -563,7 +575,11 @@ class DeviceViewSet(ProgeoModalViewSet):
         queryset = ProgeoMeasurement.for_account(account, using=db_name, user=request.user).filter(device=device)
         if year:
             queryset = queryset.filter(last_fetched__year=year)
-        else:
+        if time_from:
+            queryset = queryset.filter(last_fetched__gte=time_from)
+        if time_to:
+            queryset = queryset.filter(last_fetched__lte=time_to)
+        if not year:
             queryset = queryset.select_related("device").order_by("-id")[:limit]
         serialized = ProgeoMeasurementSerializer(queryset, many=True).data
 

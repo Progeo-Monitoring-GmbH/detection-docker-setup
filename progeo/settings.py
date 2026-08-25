@@ -265,6 +265,13 @@ MEDIA_ROOT = os.path.join(BASE_DIR, "media")
 MEDIA_HIDDEN = os.path.join(BASE_DIR, "media", "hidden")
 MEDIA_URL = "/media/"
 
+# When set (e.g. "/protected-media"), AuthenticatedMediaView hands file
+# downloads to nginx via X-Accel-Redirect instead of streaming them through
+# Python - required for very large files (backups > 1GB). The nginx location
+# must be `internal` so authentication stays enforced. Empty = serve through
+# Django (dev / non-nginx deployments).
+MEDIA_X_ACCEL = os.getenv("MEDIA_X_ACCEL", "").strip()
+
 BACKUP_DIR = os.path.join(MEDIA_ROOT, os.getenv("BACKUP_DIR", "backup"))
 SETUP_DIR = os.path.join(MEDIA_ROOT, os.getenv("SETUP_DIR", "setup"))
 UPLOAD_DIR = os.path.join(MEDIA_ROOT, os.getenv("UPLOAD_DIR", "uploads"))

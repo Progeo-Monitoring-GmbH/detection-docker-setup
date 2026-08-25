@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 
 # Tables that are NOT copied on the swap - only their sequence is carried over.
-SWAP_EXCLUDED_TABLES = ("progeo_progeoalarm", "progeo_progeomeasurement")
+SWAP_EXCLUDED_TABLES = ("progeo_progeoalarm", "progeo_progeomeasurement", "progeo_email", "progeo_mfslog")
 
 
 def swap_excluded_patterns():
@@ -128,14 +128,14 @@ def archive_single_db(db: str, year: int, env=None) -> dict:
 
         count = run_psql(old_name, f"SELECT count(*) FROM {table};", env=env)
         max_id = run_psql(old_name, f"SELECT COALESCE(MAX(id), 0) FROM {table};", env=env)
-        excluded_counts[table] = {"count": int(count or 0), "max_id": int(max_id or 0)}
+        excluded_counts[table] = {"count": int(count or 0), "max_id": int(max_id or 0) + 1}
 
         # Point the fresh sequence at the archived max so ids keep counting up.
         # The fresh table is empty (max 0), so the sequence is set from the
         # archived max; nextval then returns max + 1.
         run_psql(
             db,
-            f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), {int(max_id or 0)}, true);",
+            f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), {int(max_id or 0) + 1}, true);",
             env=env,
         )
 

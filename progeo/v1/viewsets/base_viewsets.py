@@ -1,6 +1,10 @@
+import mimetypes
+import os
+from urllib.parse import quote
+
 from django.contrib.auth import login
 from django.contrib.auth.models import Permission, User
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.views import View
 from django.views.static import serve as serve_media
 from rest_framework import status
@@ -14,7 +18,7 @@ from rest_framework.views import APIView
 from progeo.helper.basics import RequestFailed, RequestSuccess
 from progeo.v1.models import MODULE_PERMISSION_CODES
 from progeo.v1.serializers import ProgeoTokenObtainPairSerializer
-from progeo.settings import MEDIA_ROOT
+from progeo.settings import MEDIA_ROOT, MEDIA_X_ACCEL
 from progeo.helper.creator import create_MfS_log
 
 
@@ -32,18 +36,56 @@ class StandardResultsSetPagination(PageNumberPagination):
 
 
 class AuthenticatedMediaView(View):
-    def get(self, request, path):
-        if request.user.is_authenticated:
-            # Serve the media file if the user is authenticated
-            if path.startswith("backup"):
-                if request.user.is_superuser:
-                    # TODO send alert
-                    return serve_media(request, path, document_root=MEDIA_ROOT)
-            else:
-                return serve_media(request, path, document_root=MEDIA_ROOT)
+    """Serve media files to authenticated users.
 
-        # Return a 403 Forbidden response if the user is not authenticated
-        return JsonResponse({"code": 403, "reason": "Just no!"})
+    Very large files (backups/exports > 1GB) must not be streamed through
+    Python. When ``MEDIA_X_ACCEL`` is configured, this view only performs the
+    authentication/authorization and then hands the file off to nginx via the
+    ``X-Accel-Redirect`` header; nginx serves it with zero-copy ``sendfile``.
+    Authentication stays enforced because the nginx location is ``internal``
+    and can only be reached through this header (external requests to it are
+    refused by nginx). Without the setting, files are streamed through Django
+    as before (dev / non-nginx deployments).
+    """
+
+    def get(self, request, path):
+        if not request.user.is_authenticated:
+            # Return a 403 Forbidden response if the user is not authenticated
+            return JsonResponse({"code": 403, "reason": "Just no!"}, status=403)
+
+        if path.startswith("backup") and not request.user.is_superuser:
+            # Backups are restricted to superusers.
+            return JsonResponse({"code": 403, "reason": "Just no!"}, status=403)
+
+        full_path = self._resolve_media_path(path)
+        if full_path is None or not os.path.isfile(full_path):
+            return JsonResponse({"code": 404, "reason": "File not found"}, status=404)
+
+        content_type, _ = mimetypes.guess_type(full_path)
+        if content_type is None:
+            content_type = "application/octet-stream"
+
+        if MEDIA_X_ACCEL:
+            # Hand the file to nginx (internal redirect); no body is streamed
+            # through Python. nginx serves Range requests and sets its own
+            # Content-Length / Last-Modified / Accept-Ranges.
+            response = HttpResponse()
+            response["X-Accel-Redirect"] = f"{MEDIA_X_ACCEL.rstrip('/')}/{quote(path)}"
+            response["Content-Type"] = content_type
+            response["Cache-Control"] = "private, no-store"
+            return response
+
+        # Fallback: stream through Django (dev / non-nginx deployments).
+        return serve_media(request, path, document_root=MEDIA_ROOT)
+
+    @staticmethod
+    def _resolve_media_path(path):
+        """Resolve ``path`` inside MEDIA_ROOT, rejecting any traversal."""
+        media_root = os.path.realpath(MEDIA_ROOT)
+        candidate = os.path.realpath(os.path.join(media_root, path))
+        if candidate != media_root and not candidate.startswith(media_root + os.sep):
+            return None
+        return candidate
 
 
 class ProgeoTokenObtainPairView(TokenObtainPairView):

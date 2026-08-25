@@ -9,6 +9,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.decorator import require_module_permissions
 from progeo.helper.basics import RequestFailed, RequestSuccess
+from progeo.helper.cacher import search_cache, cache_save_and_return
 from progeo.v1.models import ProgeoAlarm
 from progeo.v1.serializers import ProgeoAlarmSerializer
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
@@ -49,9 +50,12 @@ class AlarmViewSet(ProgeoModalViewSet):
 
     @require_module_permissions("module_measurements_enabled")
     def list(self, request, *args, **kwargs):
-        # Alarms are time-sensitive and account-scoped; the default path-based
-        # cache would serve stale rows and could leak rows across accounts.
-        return super(AlarmViewSet, self).list(request, no_cache=True, *args, **kwargs)
+        cache_key, _cache = search_cache(request)
+        if not kwargs.get("no_cache", False) and _cache:
+            return _cache
+        alarms = self.get_queryset()
+        data = self.get_serializer(alarms, many=True).data
+        return cache_save_and_return(cache_key, {"alarms": data})
 
     @require_module_permissions("module_measurements_enabled")
     @action(detail=False, url_path="location_summary", methods=["GET"])
