@@ -89,16 +89,112 @@ class DeviceViewSet(ProgeoModalViewSet):
         return ProgeoDevice.objects.using(account.db_name).filter(location__account=account)
     
 
+    @calc_runtime
+    @require_module_permissions("module_devices_enabled")
+    @action(detail=False, url_path="forward/measurement",
+            authentication_classes=[SessionAuthentication, JWTAuthentication, TokenAuthentication, LimitedTokenAuthentication],
+            methods=["POST"])
+    def forward_measurement(self, request, pk=None, *args, **kwargs):
+        """Store a measurement forwarded from a node server as a NEW row.
+
+        The payload is the serialized ``ProgeoMeasurement`` of the sending node
+        (``ProgeoMeasurementSerializer`` output, optionally wrapped in
+        ``{"data": {...}}``). The incoming pk is reset and the measurement is
+        saved as a fresh entry on this server; the node's original id is kept
+        in ``raw_data["forwarded_from"]["id"]`` so originals stay traceable.
+        """
+        account = getattr(request, "account", None) or _get_controller_account()
+        db_name = account.db_name if account else "default"
+
+        payload = request.data if isinstance(request.data, dict) else {}
+        data = payload.get("data") if isinstance(payload.get("data"), dict) else None
+        if not data:
+            data = payload if payload.get("device") is not None else None
+        if not data:
+            return RequestFailed({"reason": "No measurement data provided"})
+
+        device = self._resolve_forwarded_device(data, db_name)
+        if device is None:
+            return RequestFailed({"reason": "Device not found on this server"})
+
+        measurement = ProgeoMeasurement(
+            device=device,
+            project_id=data.get("project_id"),
+            is_watching=bool(data.get("is_watching")),
+            raw_data=self._forwarded_raw_data(data),
+        )
+        last_fetched = self._parse_forwarded_timestamp(data.get("last_fetched"))
+        if last_fetched is not None:
+            measurement.last_fetched = last_fetched
+        # last_fetched=False keeps the forwarded timestamp; otherwise RootModel
+        # would overwrite it with "now".
+        measurement.save(using=db_name, last_fetched=last_fetched is None)
+
+        return RequestSuccess({
+            "data": ProgeoMeasurementSerializer(measurement).data,
+            "status": "forwarded",
+        })
+
+    @staticmethod
+    def _resolve_forwarded_device(data: dict, db_name: str):
+        """Resolve the device on this server by pk, falling back to raw_hash/mac.
+
+        Node and root servers are separate databases, so the node's device pk
+        may not exist here; the serialized payload also carries device_hash
+        (raw_hash) / device_mac to look the device up by identity.
+        """
+        queryset = ProgeoDevice.objects.using(db_name)
+
+        device_pk = data.get("device")
+        if device_pk is not None:
+            device = queryset.filter(pk=device_pk).first()
+            if device:
+                return device
+
+        for identity_key, lookup_field in (("device_hash", "raw_hash"), ("device_mac", "mac")):
+            identity = data.get(identity_key)
+            if not identity:
+                continue
+            device = queryset.filter(**{lookup_field: identity}).first()
+            if device:
+                return device
+        return None
+
+    @staticmethod
+    def _forwarded_raw_data(data: dict) -> dict:
+        """Rebuild raw_data from the serialized payload and keep the origin."""
+        raw_data = {"samples": data.get("samples") or []}
+        forwarded_id = data.get("id")
+        if forwarded_id is not None:
+            raw_data["forwarded_from"] = {"id": forwarded_id}
+        return raw_data
+
+    @staticmethod
+    def _parse_forwarded_timestamp(value):
+        """Parse the serialized last_fetched (project pretty or ISO format)."""
+        if not value or not isinstance(value, str):
+            return None
+        try:
+            return datetime.strptime(value, "%d.%m.%Y, %H:%M")
+        except ValueError:
+            pass
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return None
+
+        
+
+
+
     @action(detail=False, url_path="sample/debug", authentication_classes=[LimitedTokenAuthentication], methods=["POST"])
     def catch_legacy_data_debug(self, request, *args, **kwargs):
         ilog("DeviceViewSet: catch_legacy_data_debug called | request.data:", request.data, tag="[DEBUG]")
         return RequestSuccess({"data": request.data})
     
 
-
     @action(detail=False, url_path="sample/query", authentication_classes=[LimitedTokenAuthentication], methods=["POST"])
     def catch_legacy_data_query(self, request, *args, **kwargs):
-        #ilog("DeviceViewSet: catch_legacy_data_query called | request.data:", request.data, tag="[QUERY]")
         data = request.data.get("Y")
         try:
             measurement = parse_legacy_data_measurement(data)
@@ -504,9 +600,6 @@ class DeviceViewSet(ProgeoModalViewSet):
         max_value = max(values)
         alarm_triggered = len(exceeding_values) > 0
         evaluated_at = timezone.now().isoformat()
-
-        #if alarm_triggered:
-        #    send_alarm_email(device.raw_hash, threshold, max_value, exceeding_values)
 
         payload = {
             "device_hash": device.raw_hash,

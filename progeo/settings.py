@@ -22,6 +22,24 @@ DEBUG = parse_boolean(os.getenv("DEBUG"))
 _raw_allowed_hosts = parse_split_str(os.getenv("DJANGO_ALLOWED_HOSTS", ""), ",")
 ALLOWED_HOSTS = [host.strip() for host in _raw_allowed_hosts if host.strip()]
 
+# ########################################################################
+# Server role / feature flags (see django.env.template)
+#
+# A deployment can act as a ROOT server (full system), a NODE server
+# (subordinate, reports to a root server) or both/neither. Mailing and
+# measurement evaluation can be switched off per server.
+# ########################################################################
+# Whether this server is configured as a root server.
+PROGEO_CONFIG_IS_ROOT_SERVER = parse_boolean(os.getenv("PROGEO_CONFIG_IS_ROOT_SERVER"))
+# Whether this server is configured as a node server.
+PROGEO_CONFIG_IS_NODE_SERVER = parse_boolean(os.getenv("PROGEO_CONFIG_IS_NODE_SERVER"))
+# IP/hostname of the root server this node reports to; empty when unset.
+PROGEO_CONFIG_HAS_ROOT_SERVER = (os.getenv("PROGEO_CONFIG_HAS_ROOT_SERVER") or "").strip()
+# Whether mails may be sent (daily reports, disconnect notifications, ...).
+PROGEO_CONFIG_ENABLE_MAILING = parse_boolean(os.getenv("PROGEO_CONFIG_ENABLE_MAILING"))
+# Whether celery evaluates measurements / raises alarms on this server.
+PROGEO_CONFIG_ENABLE_MEASUREMENTS = parse_boolean(os.getenv("PROGEO_CONFIG_ENABLE_MEASUREMENTS"))
+
 PRETTY_DATE_FORMAT = "%d.%m.%Y, %H:%M"
 DATETIME_FORMAT = PRETTY_DATE_FORMAT
 

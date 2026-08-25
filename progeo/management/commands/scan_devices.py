@@ -5,10 +5,12 @@ import requests
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 from progeo.helper.basics import dlog, ilog, elog
+from progeo.settings import PROGEO_CONFIG_ENABLE_MEASUREMENTS, PROGEO_CONFIG_HAS_ROOT_SERVER
 from progeo.v1.creator import (
     create_progeo_location_safe,
     create_progeo_measurement_safe,
 )
+from progeo.v1.serializers import ProgeoMeasurementSerializer
 from progeo.v1.viewsets.setup_viewset import _get_controller_account
 from progeo.v1.viewsets.status_viewset import get_connected_devices
 from progeo.v1.models import ProgeoDevice
@@ -66,12 +68,12 @@ class Command(BaseCommand):
             elog(f"POST /measure failed for {base_url}: {exc}")
 
     def handle(self, *args, **options):
-        _, connected_devices = get_connected_devices()
-        _mode = os.environ.get("MODE", "")
-        if _mode != "NODE" and _mode != "":
-            dlog("TEST MODE: Using mock connected devices")
+
+        if not PROGEO_CONFIG_ENABLE_MEASUREMENTS:
+            ilog("by PROGEO_CONFIG_ENABLE_MEASUREMENTS", tag="[DISABLED]")
             return
         
+        _, connected_devices = get_connected_devices()
         if not isinstance(connected_devices, list):
             raise CommandError("Could not read connected devices", connected_devices)
 
@@ -154,5 +156,18 @@ class Command(BaseCommand):
             status = "created" if created else "existing"
             dlog(f"Stored measurement for {device.raw_hash} ({status})")
 
-            # TODO relais to legacy server
-
+            if PROGEO_CONFIG_HAS_ROOT_SERVER:
+                try:
+                    root_response = requests.post(
+                        f"{PROGEO_CONFIG_HAS_ROOT_SERVER}/api/v1/device/forward/measurement/",
+                        json={"data": ProgeoMeasurementSerializer(measurement).data},
+                    )
+                    if root_response.ok:
+                        ilog(f"Forwarded measurement {measurement.pk} to root server {PROGEO_CONFIG_HAS_ROOT_SERVER} ({status})")
+                    else:
+                        elog(
+                            f"Root server rejected forwarded measurement {measurement.pk}: "
+                            f"{root_response.status_code} {root_response.text[:200]}"
+                        )
+                except Exception as exc:
+                    elog(f"Failed to send measurement to root server for {device.raw_hash}: {exc}")

@@ -96,6 +96,7 @@ def create_progeo_device_safe(location: ProgeoLocation, hardware: Optional[str] 
 	)
 
 
+
 def create_progeo_measurement_safe(device: ProgeoDevice, raw_data: Optional[dict] = None,
 									   db: Optional[str] = None) -> Tuple[Optional[ProgeoMeasurement], bool]:
 	db_name = db or getattr(getattr(getattr(device, "location", None), "account", None), "db_name", None) or "default"
