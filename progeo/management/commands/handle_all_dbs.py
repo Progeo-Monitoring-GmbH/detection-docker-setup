@@ -40,7 +40,7 @@ class Command(BaseCommand):
 
                 _cmds = [cmd, "--noinput", "--skip-checks", "--traceback", f"--database={db}"]
                 if cmd == "dbbackup":
-                    _cmds += ["--compress"]
+                    _cmds += ["--clean 25", "--compress"]
                 elif cmd == "dbrestore":
                     _cmds += ["--uncompress"]
 

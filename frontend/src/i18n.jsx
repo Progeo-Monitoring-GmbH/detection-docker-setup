@@ -103,11 +103,11 @@ i18n
           measurement_compare_deviation_label: 'Deviation (±1σ)',
           measurement_compare_deviation_lower_bound_label:
             'Lower deviation bound',
-          measurement_compare_pair_label: 'Pair',
+          measurement_compare_pair_label: 'Sensor',
           measurement_compare_range_label: 'Range',
           measurement_compare_mean_label: 'Mean',
           measurement_compare_sigma_label: 'σ',
-          measurement_compare_pair_sum_label: 'Pair sum',
+          measurement_compare_pair_sum_label: 'Sensor sum',
           measurement_compare_sum_label: 'Sum',
           measurement_compare_samples_label: 'Samples',
           measurement_compare_measurement_datetime_label:
@@ -116,9 +116,9 @@ i18n
           measurement_compare_avg_sigma_label: 'Avg σ',
           measurement_compare_mean_avg_sigma_summary:
             'Mean: {{mean}} | Avg σ: {{avgSigma}}',
-          measurement_compare_pair_index_axis: 'Pair Index',
+          measurement_compare_pair_index_axis: 'Sensor Index',
           measurement_compare_absolute_delta_axis: 'Absolute Delta',
-          measurement_compare_pair_sum_axis: 'Pair Sum',
+          measurement_compare_pair_sum_axis: 'Sensor Sum',
         },
       },
       de: {
@@ -203,11 +203,11 @@ i18n
           measurement_compare_deviation_label: 'Abweichung (±1σ)',
           measurement_compare_deviation_lower_bound_label:
             'Untere Abweichungsgrenze',
-          measurement_compare_pair_label: 'Paar',
+          measurement_compare_pair_label: 'Sensor',
           measurement_compare_range_label: 'Bereich',
           measurement_compare_mean_label: 'Mittelwert',
           measurement_compare_sigma_label: 'σ',
-          measurement_compare_pair_sum_label: 'Paar-Summe',
+          measurement_compare_pair_sum_label: 'Sensor-Summe',
           measurement_compare_sum_label: 'Summe',
           measurement_compare_samples_label: 'Stichproben',
           measurement_compare_measurement_datetime_label: 'Messungszeitpunkt',
@@ -215,9 +215,9 @@ i18n
           measurement_compare_avg_sigma_label: 'Durchschn. σ',
           measurement_compare_mean_avg_sigma_summary:
             'Mittelwert: {{mean}} | Durchschn. σ: {{avgSigma}}',
-          measurement_compare_pair_index_axis: 'Paarindex',
+          measurement_compare_pair_index_axis: 'Sensor-Index',
           measurement_compare_absolute_delta_axis: 'Absolutes Delta',
-          measurement_compare_pair_sum_axis: 'Paar-Summe',
+          measurement_compare_pair_sum_axis: 'Sensor-Summe',
         },
       },
     },

@@ -89,6 +89,8 @@ services:
       DOCKER_GID: ${DOCKER_GID:-1001}
       DOCKER_SOCKET_GID: ${DOCKER_SOCKET_GID:-1001}
       DOCKER_HOST: unix:///var/run/docker.sock
+      # Hand large media downloads (backups > 1GB) to nginx via X-Accel-Redirect.
+      MEDIA_X_ACCEL: /protected-media
     group_add:
       - '${DOCKER_SOCKET_GID:-1001}'
     cap_add:
@@ -155,6 +157,9 @@ services:
       - /etc/letsencrypt:/etc/letsencrypt
       - ${CERT_LOCAL}:/etc/nginx/ssl
       - /var/www/:/var/www/
+      # Read-only view of the media dir so nginx can serve large files that
+      # AuthenticatedMediaView hands over via X-Accel-Redirect.
+      - ./media:/media:ro
     networks:
       default_net:
         aliases:

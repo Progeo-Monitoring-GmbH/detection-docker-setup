@@ -6,6 +6,7 @@ import {
   ArrowClockwise,
   Check2Circle,
   ThermometerHalf,
+  Activity,
 } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider';
@@ -14,6 +15,7 @@ import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import { FilterComponent } from '../components/ui/FilterComponent.jsx';
 import SensorHeatmap2D from '../components/device/SensorHeatmap2D.tsx';
 import { type SensorHeatmapResponse } from '../components/device/SensorHeatmap3D.tsx';
+import AlarmMeasurementCompareChart from '../components/device/AlarmMeasurementCompareChart.tsx';
 import AlarmTimeline, {
   alarmStartTime,
   formatDuration,
@@ -135,7 +137,7 @@ const AlarmsOverview = () => {
       auth,
       `/v1/alarm/?days=${DEFAULT_ALARM_DAYS}`,
       (response) => {
-        setRows((response?.data || []) as AlarmRow[]);
+        setRows((response?.data?.alarms || []) as AlarmRow[]);
         setLoading(false);
       },
       (error) => {
@@ -223,7 +225,7 @@ const AlarmsOverview = () => {
         `/v1/alarm/${alarm.id}/acknowledge/`,
         {},
         (response) => {
-          const updated = (response?.data || null) as AlarmRow | null;
+          const updated = (response?.data?.alarms || null) as AlarmRow | null;
           if (updated) {
             setRows((prev) =>
               prev.map((row) => (row.id === updated.id ? updated : row)),
@@ -337,9 +339,7 @@ const AlarmsOverview = () => {
         if (pairs.length === 0) {
           return row.sensor_id != null ? String(row.sensor_id) : '-';
         }
-        return pairs
-          .map((pair) => `#${pair.sensor_id ?? '-'}`)
-          .join(', ');
+        return pairs.map((pair) => `#${pair.sensor_id ?? '-'}`).join(', ');
       },
       width: '160px',
       wrap: true,
@@ -533,10 +533,7 @@ const AlarmsOverview = () => {
         </Card.Body>
       </Card>
 
-      <Card
-        ref={heatmapCardRef}
-        className="border-0 shadow-sm my-5 p-2"
-      >
+      <Card ref={heatmapCardRef} className="border-0 shadow-sm my-5 p-2">
         <Card.Body>
           <div className="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
             <h5 className="mb-0">
@@ -558,7 +555,23 @@ const AlarmsOverview = () => {
               Select an alarm to display its location heatmap.
             </div>
           ) : (
-            <SensorHeatmap2D response={heatmapResponse} />
+            <>
+              <SensorHeatmap2D response={heatmapResponse} />
+              <div className="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
+                <h5 className="mb-0">
+                  <Activity className="me-2 text-primary" />
+                  Measurements
+                </h5>
+                <small className="text-muted">±6h around the alarm start</small>
+              </div>
+              {selectedAlarm ? (
+                <AlarmMeasurementCompareChart alarm={selectedAlarm} />
+              ) : (
+                <div className="text-muted py-5 text-center">
+                  Select an alarm to compare its measurements.
+                </div>
+              )}
+            </>
           )}
         </Card.Body>
       </Card>

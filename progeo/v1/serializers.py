@@ -4,6 +4,7 @@ import posixpath
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
+from django.db.models import Prefetch, prefetch_related_objects
 from django.utils import timezone
 
 from progeo.v1.helper import pretty_sizeof
@@ -297,6 +298,29 @@ class ProgeoAlarmSerializer(ProgeoBaseSerializer):
         model = ProgeoAlarm
         fields = "__all__"
 
+
+    @staticmethod
+    def _measurement_cached(alarm):
+        """True when alarm.measurement is already loaded (select_related or prefetch)."""
+        if alarm._state.fields_cache.get("measurement"):
+            return True
+        prefetched = getattr(alarm, "_prefetched_objects_cache", None)
+        return bool(prefetched and prefetched.get("measurement"))
+
+    def to_representation(self, instance):
+        # Safety net against N+1 queries: get_device()/get_location() walk
+        # alarm -> measurement -> device -> location. When the queryset did
+        # not select_related that chain, batch-load it for ALL sibling alarms
+        # of this queryset (auto_prefetch attaches `_peers`) in a few IN (...)
+        # queries instead of one lookup per alarm. Callers that already
+        # select_related the chain pay nothing (cache check below).
+        peers = getattr(instance, "_peers", None)
+        if peers and len(peers) >= 2 and not self._measurement_cached(instance):
+            prefetch_related_objects(
+                list(peers.values()),
+                Prefetch("measurement__device__location"),
+            )
+        return super().to_representation(instance)
 
     @staticmethod
     def get_clazz_name(_):

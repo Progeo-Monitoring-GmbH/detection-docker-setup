@@ -2,6 +2,7 @@ import React from 'react';
 import { Button, Card } from 'react-bootstrap';
 import Plot from 'react-plotly.js';
 import { useTranslation } from 'react-i18next';
+import { parseTimestamp } from '../../main/alarmUtils';
 import { plotTheme } from '../../styles/plotTheme';
 
 export type MeasurementCompareRow = {
@@ -27,6 +28,17 @@ type MeasurementSamplesCompareChartProps = {
   rows: MeasurementCompareRow[];
   onLoadCurrentYear?: (() => void) | null;
   isLoadingCurrentYear?: boolean;
+  /**
+   * Alarm start (epoch ms). Marks the measurement at which the alarm started
+   * with a red transparent band on the measurement-time axis (x2).
+   */
+  alarmStartTime?: number | null;
+  /**
+   * Alarm duration (ms). The red band spans from the measurement closest to
+   * `alarmStartTime` to the one closest to `alarmStartTime + alarmDurationMs`
+   * (a single column when the duration is missing or zero).
+   */
+  alarmDurationMs?: number | null;
 };
 
 const toPairAbsDiff = (
@@ -81,6 +93,8 @@ const MeasurementSamplesCompareChart = (
     rows,
     onLoadCurrentYear = null,
     isLoadingCurrentYear = false,
+    alarmStartTime = null,
+    alarmDurationMs = null,
   } = props;
   const { t } = useTranslation();
   const currentYear = new Date().getFullYear();
@@ -94,6 +108,20 @@ const MeasurementSamplesCompareChart = (
       })),
     [rows],
   );
+
+  // The pair-sum subplot (x2) is a date axis, so the alarm band is positioned
+  // directly by the alarm's own start/end timestamps (no index mapping).
+  const alarmBandX = React.useMemo(() => {
+    if (alarmStartTime == null) {
+      return null;
+    }
+    const hasDuration = alarmDurationMs != null && alarmDurationMs > 0;
+    const end =
+      hasDuration && alarmStartTime + alarmDurationMs > alarmStartTime
+        ? alarmStartTime + alarmDurationMs
+        : alarmStartTime;
+    return { start: alarmStartTime, end };
+  }, [alarmStartTime, alarmDurationMs]);
 
   const meanAndDeviationSeries = React.useMemo(() => {
     const sums: number[] = [];
@@ -159,15 +187,22 @@ const MeasurementSamplesCompareChart = (
   }, [meanAndDeviationSeries]);
 
   const pairSumSeries = React.useMemo(() => {
+    // The x2 subplot is a date axis: x values are the measurement timestamps
+    // (epoch ms), so the axis shows real dates instead of row indices.
     const orderedSeries = [...series].reverse();
 
-    const x = orderedSeries.map((_, index) => index);
-    const y = orderedSeries.map((entry) =>
-      entry.points.reduce((acc, point) => acc + point.value, 0),
-    );
-    const measurementDateTime = orderedSeries.map((entry) =>
-      formatDateTime(entry.lastFetched),
-    );
+    const x: number[] = [];
+    const y: number[] = [];
+    const measurementDateTime: string[] = [];
+    orderedSeries.forEach((entry) => {
+      const ts = parseTimestamp(entry.lastFetched);
+      if (ts == null) {
+        return; // cannot be placed on the date axis
+      }
+      x.push(ts);
+      y.push(entry.points.reduce((acc, point) => acc + point.value, 0));
+      measurementDateTime.push(formatDateTime(entry.lastFetched));
+    });
 
     return { x, y, measurementDateTime };
   }, [series]);
@@ -230,7 +265,7 @@ const MeasurementSamplesCompareChart = (
           color: 'rgba(44, 160, 44, 0.95)',
           width: 2,
         },
-        hovertemplate: `${t('measurement_compare_pair_label')} %{x}<br>${t('measurement_compare_sum_label')} %{y:.2f}<br>${t('measurement_compare_measurement_datetime_label')} %{customdata}<extra>${t('measurement_compare_pair_sum_label')}</extra>`,
+        hovertemplate: `${t('measurement_compare_measurement_datetime_label')} %{customdata}<br>${t('measurement_compare_sum_label')} %{y:.2f}<extra>${t('measurement_compare_pair_sum_label')}</extra>`,
         customdata: pairSumSeries.measurementDateTime,
       },
     ];
@@ -280,6 +315,36 @@ const MeasurementSamplesCompareChart = (
             font: { color: plotTheme.brandBlue },
             plot_bgcolor: plotTheme.warmGray1,
             paper_bgcolor: plotTheme.white,
+            shapes:
+              alarmBandX != null
+                ? [
+                    alarmBandX.end > alarmBandX.start
+                      ? {
+                          type: 'rect',
+                          xref: 'x2',
+                          yref: 'paper',
+                          x0: alarmBandX.start,
+                          x1: alarmBandX.end,
+                          y0: 0,
+                          y1: 0.24,
+                          fillcolor: 'rgba(220, 38, 38, 0.22)',
+                          line: { width: 0 },
+                        }
+                      : {
+                          type: 'line',
+                          xref: 'x2',
+                          yref: 'paper',
+                          x0: alarmBandX.start,
+                          x1: alarmBandX.start,
+                          y0: 0,
+                          y1: 0.24,
+                          line: {
+                            color: 'rgba(220, 38, 38, 0.6)',
+                            width: 2,
+                          },
+                        },
+                  ]
+                : [],
             xaxis: {
               title: t('measurement_compare_pair_index_axis'),
               domain: [0, 1],
@@ -294,10 +359,11 @@ const MeasurementSamplesCompareChart = (
               rangemode: 'tozero',
               showgrid: true,
               gridcolor: plotTheme.warmGray2,
-              zeroline: false,
+              zeroline: true,
             },
             xaxis2: {
-              title: t('measurement_compare_pair_index_axis'),
+              type: 'date',
+              title: t('measurement_compare_measurement_datetime_label'),
               domain: [0, 1],
               anchor: 'y2',
               showgrid: true,

@@ -10,6 +10,7 @@ import {
 } from 'react-bootstrap';
 import {
   ArrowLeft,
+  Activity,
   Bell,
   Building,
   Geo,
@@ -20,6 +21,7 @@ import { useNavigate, useParams } from 'react-router';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
 import { showErrorBar } from '../components/ui/Snackbar.jsx';
+import AlarmMeasurementCompareChart from '../components/device/AlarmMeasurementCompareChart.tsx';
 import SensorHeatmap2D from '../components/device/SensorHeatmap2D.tsx';
 import { type SensorHeatmapResponse } from '../components/device/SensorHeatmap3D.tsx';
 import AlarmTimeline, {
@@ -120,7 +122,7 @@ const LocationAlarmDetail = () => {
       auth,
       `/v1/alarm/?location=${id}&days=365`,
       (response) => {
-        setAlarms((response?.data || []) as TimelineAlarm[]);
+        setAlarms((response?.data?.alarms || []) as TimelineAlarm[]);
         setLoading(false);
       },
       (error) => {
@@ -288,7 +290,23 @@ const LocationAlarmDetail = () => {
               Select an alarm to display its location heatmap.
             </div>
           ) : (
-            <SensorHeatmap2D response={heatmapResponse} />
+            <>
+              <SensorHeatmap2D response={heatmapResponse} />
+              <div className="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
+                <h5 className="mb-0">
+                  <Activity className="me-2 text-primary" />
+                  Measurements
+                </h5>
+                <small className="text-muted">±6h around the alarm start</small>
+              </div>
+              {selectedAlarm ? (
+                <AlarmMeasurementCompareChart alarm={selectedAlarm} />
+              ) : (
+                <div className="text-muted py-5 text-center">
+                  Select an alarm to compare its measurements.
+                </div>
+              )}
+            </>
           )}
         </Card.Body>
       </Card>
@@ -302,9 +320,7 @@ const LocationAlarmDetail = () => {
           </h5>
           <Row className="g-4">
             <Col md={6}>
-              <h6 className="text-muted text-uppercase small mb-2">
-                Location
-              </h6>
+              <h6 className="text-muted text-uppercase small mb-2">Location</h6>
               <dl className="row mb-0">
                 <dt className="col-sm-4">Name</dt>
                 <dd className="col-sm-8">{location?.name || '-'}</dd>
@@ -323,9 +339,7 @@ const LocationAlarmDetail = () => {
                 <dt className="col-sm-4">Phone</dt>
                 <dd className="col-sm-8">{location?.telefon || '-'}</dd>
                 <dt className="col-sm-4">Alarm Threshold</dt>
-                <dd className="col-sm-8">
-                  {location?.alarm_threshold ?? '-'}
-                </dd>
+                <dd className="col-sm-8">{location?.alarm_threshold ?? '-'}</dd>
                 <dt className="col-sm-4">Coordinates</dt>
                 <dd className="col-sm-8">
                   {location?.latitude != null && location?.longitude != null
@@ -354,7 +368,9 @@ const LocationAlarmDetail = () => {
                   <dt className="col-sm-4">Sensors</dt>
                   <dd className="col-sm-8">
                     {(() => {
-                      const pairs = Array.isArray(selectedAlarm.sensor_max_values)
+                      const pairs = Array.isArray(
+                        selectedAlarm.sensor_max_values,
+                      )
                         ? selectedAlarm.sensor_max_values
                         : [];
                       if (pairs.length === 0) {
@@ -373,13 +389,9 @@ const LocationAlarmDetail = () => {
                     })()}
                   </dd>
                   <dt className="col-sm-4">Threshold</dt>
-                  <dd className="col-sm-8">
-                    {selectedAlarm.threshold ?? '-'}
-                  </dd>
+                  <dd className="col-sm-8">{selectedAlarm.threshold ?? '-'}</dd>
                   <dt className="col-sm-4">Max Value</dt>
-                  <dd className="col-sm-8">
-                    {selectedAlarm.max_value ?? '-'}
-                  </dd>
+                  <dd className="col-sm-8">{selectedAlarm.max_value ?? '-'}</dd>
                   <dt className="col-sm-4">Triggered</dt>
                   <dd className="col-sm-8">
                     {selectedAlarm.triggered_at
@@ -404,19 +416,25 @@ const LocationAlarmDetail = () => {
                   <dt className="col-sm-4">Status</dt>
                   <dd className="col-sm-8">
                     <div className="d-flex align-items-center gap-2">
-                      <Badge bg={isAlarmActive(selectedAlarm) ? 'danger' : 'success'}>
-                        {isAlarmActive(selectedAlarm)
-                          ? 'ACTIVE'
-                          : 'NORMALIZED'}
+                      <Badge
+                        bg={isAlarmActive(selectedAlarm) ? 'danger' : 'success'}
+                      >
+                        {isAlarmActive(selectedAlarm) ? 'ACTIVE' : 'NORMALIZED'}
                       </Badge>
                       <Badge
                         bg={
-                          (STATUS_LABELS[selectedAlarm.status ?? 0] ||
-                            STATUS_LABELS[0]).variant
+                          (
+                            STATUS_LABELS[selectedAlarm.status ?? 0] ||
+                            STATUS_LABELS[0]
+                          ).variant
                         }
                       >
-                        {(STATUS_LABELS[selectedAlarm.status ?? 0] ||
-                          STATUS_LABELS[0]).label}
+                        {
+                          (
+                            STATUS_LABELS[selectedAlarm.status ?? 0] ||
+                            STATUS_LABELS[0]
+                          ).label
+                        }
                       </Badge>
                     </div>
                   </dd>
