@@ -9,6 +9,7 @@ from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
 from email.utils import formatdate
 
+from django.conf import settings
 from django.template.loader import render_to_string
 
 from progeo.v1.helper import calc_hash_from_dict
@@ -79,6 +80,8 @@ def render_email_template(template_name: str, context: dict | None = None) -> tu
 
 
 def smtp_configured() -> bool:
+    if not settings.PROGEO_CONFIG_ENABLE_MAILING:
+        return False
     return bool(os.getenv("MAIL_SERVER") and os.getenv("MAIL_SENDER"))
 
 
@@ -161,6 +164,10 @@ def send_mail(sent_to: list, subject: str, message: str, files: list,
     username = os.getenv("MAIL_USER")
     password = os.getenv("MAIL_PW")
 
+    if not settings.PROGEO_CONFIG_ENABLE_MAILING:
+        ilog(f"[emailhelper] Mailing disabled (PROGEO_CONFIG_ENABLE_MAILING=0), skipping mail to {sent_to}")
+        return None
+
     if not sender or not server:
         ilog(f"[emailhelper] SMTP not configured (MAIL_SENDER/MAIL_SERVER), skipping mail to {sent_to}")
         _persist_email(sent_to, subject, message, files, location=location,
@@ -177,8 +184,7 @@ def send_mail(sent_to: list, subject: str, message: str, files: list,
             dlog(f"Mail was sent to '{sent_to}', hash={_hash}")
             return _hash
     except OSError as exc:
-        elog("Could not send Mail")
-        elog(exc)
+        elog(f"Could not send Mail to '{sent_to}': {exc}")
         _persist_email(sent_to, subject, message, files, location=location,
                        sent=False, error=str(exc), db=db)
     return None

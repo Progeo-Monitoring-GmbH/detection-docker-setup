@@ -1,8 +1,5 @@
 from celery import shared_task
 
-from progeo.helper.basics import dlog
-
-
 @shared_task
 def ping():
     import datetime
@@ -202,7 +199,6 @@ def evaluate_measurements(db: str = None, lookback_hours: int = 1, days: int = N
     from progeo.helper.alarm_evaluation import evaluate_measurements_db, parse_date_bound
     from progeo.helper.basics import elog, ilog
     from progeo.settings import DATABASES
-
     now = timezone.now()
 
     if days is not None:
@@ -266,6 +262,7 @@ def check_existing_alarms(db: str = None, silence_hours: int = 24):
     from progeo.helper.alarm_check import check_existing_alarms_db
     from progeo.helper.basics import elog, ilog
     from progeo.settings import DATABASES
+
 
     db_names = [db] if db else list(DATABASES.keys())
 
