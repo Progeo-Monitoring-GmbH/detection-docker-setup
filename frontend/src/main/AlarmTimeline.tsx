@@ -48,6 +48,16 @@ const formatClock = (ms: number): string =>
     minute: '2-digit',
   });
 
+/** Short day label for the day header, e.g. "Mo 18.08.". */
+const formatDayLabel = (ms: number): string =>
+  new Intl.DateTimeFormat('de-DE', {
+    weekday: 'short',
+    day: '2-digit',
+    month: '2-digit',
+  })
+    .format(new Date(ms))
+    .replace(/,/g, '');
+
 const locationKey = (alarm: TimelineAlarm): string => {
   const loc = alarm.location;
   if (loc?.id != null) {
@@ -104,6 +114,10 @@ const AlarmTimeline = ({
   const [trackWidth, setTrackWidth] = useState(0);
   const trackObserver = useRef<ResizeObserver | null>(null);
   const bodyRef = useRef<HTMLDivElement | null>(null);
+  // Width of the label column (measured from the day-header spacer), used to
+  // position the day grid layer over the track area.
+  const [labelWidth, setLabelWidth] = useState(0);
+  const labelSpacerRef = useRef<HTMLDivElement | null>(null);
   // Manual zoom range set by drag-selecting on a track; null = auto-fit to the alarms.
   const [zoomRange, setZoomRange] = useState<{
     start: number;
@@ -193,6 +207,21 @@ const AlarmTimeline = ({
     [],
   );
 
+  // Measure the label column width (the day-header spacer uses the exact same
+  // class as the lane labels, so its width matches the track offset).
+  useEffect(() => {
+    const node = labelSpacerRef.current;
+    if (!node) {
+      return;
+    }
+    const observer = new ResizeObserver(() => {
+      setLabelWidth(node.offsetWidth);
+    });
+    observer.observe(node);
+    setLabelWidth(node.offsetWidth);
+    return () => observer.disconnect();
+  }, []);
+
   const spans = useMemo<AlarmSpan[]>(() => {
     const result: AlarmSpan[] = [];
     for (const alarm of alarms) {
@@ -277,6 +306,39 @@ const AlarmTimeline = ({
   const axisSpan = Math.max(maxTime - minTime, 1);
   const toLeft = (ms: number) => ((ms - minTime) / axisSpan) * 100;
   const toWidth = (ms: number) => Math.max((ms / axisSpan) * 100, 0.35);
+
+  // Day boundaries (local midnight) inside the current axis range. Month
+  // starts get a stronger grid line so the days read like a calendar.
+  const dayTicks = useMemo(() => {
+    const ticks: Array<{ ms: number; monthStart: boolean }> = [];
+    const first = new Date(minTime);
+    first.setHours(0, 0, 0, 0);
+    if (first.getTime() < minTime) {
+      first.setDate(first.getDate() + 1);
+    }
+    const last = new Date(maxTime);
+    const cursor = new Date(
+      first.getFullYear(),
+      first.getMonth(),
+      first.getDate(),
+    );
+    while (cursor.getTime() <= last.getTime()) {
+      ticks.push({
+        ms: cursor.getTime(),
+        monthStart: cursor.getDate() === 1,
+      });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return ticks;
+  }, [minTime, maxTime]);
+
+  // Label only every Nth day so the day labels never overlap; adapts to the
+  // zoom level (56px is roughly the width of one day label).
+  const dayLabelStep = useMemo(() => {
+    const width = trackWidth || 800;
+    const pxPerDay = (width / axisSpan) * 86_400_000;
+    return Math.max(1, Math.ceil(56 / Math.max(pxPerDay, 1)));
+  }, [trackWidth, axisSpan]);
 
   // Map a mouse x-position (relative to the track) to a timestamp and keep
   // the x-offset relative to the timeline body for the hover indicator.
@@ -527,6 +589,42 @@ const AlarmTimeline = ({
       </div>
 
       <div className="alarm-timeline-body" ref={bodyRef}>
+        {/* Day header: day labels aligned with the tracks (spacer matches the
+            lane label column, so labels line up with the time axis). */}
+        <div className="alarm-timeline-day-header">
+          <div className="alarm-timeline-label" ref={labelSpacerRef} />
+          <div className="alarm-timeline-day-header-track">
+            {dayTicks.map((tick, index) =>
+              index % dayLabelStep === 0 ? (
+                <span
+                  key={tick.ms}
+                  className="alarm-timeline-day-label"
+                  style={{ left: `${toLeft(tick.ms)}%` }}
+                >
+                  {formatDayLabel(tick.ms)}
+                </span>
+              ) : null,
+            )}
+          </div>
+        </div>
+
+        {/* Day grid: one vertical line per day boundary across all lanes. */}
+        {labelWidth > 0 && dayTicks.length > 0 && (
+          <div className="alarm-timeline-grid" style={{ left: labelWidth }}>
+            {dayTicks.map((tick) => (
+              <div
+                key={`line-${tick.ms}`}
+                className={
+                  tick.monthStart
+                    ? 'alarm-timeline-grid-line is-month'
+                    : 'alarm-timeline-grid-line'
+                }
+                style={{ left: `${toLeft(tick.ms)}%` }}
+              />
+            ))}
+          </div>
+        )}
+
         <div className="alarm-timeline-scroll">
           {groups.map((group) => {
             const groupDurationSeconds = group.spans.reduce(
