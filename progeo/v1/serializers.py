@@ -146,6 +146,14 @@ class AlarmDailyReportSerializer(ProgeoBaseSerializer):
     # Machine-readable timestamps for the frontend graph.
     last_fetched = serializers.DateTimeField(format=None, read_only=True)
     last_updated = serializers.DateTimeField(format=None, read_only=True)
+    # The third-party jsonfield.fields.JSONField would be emitted as raw JSON
+    # *strings*; declare explicit JSON fields so the frontend receives real
+    # objects/arrays.
+    projects = serializers.JSONField(read_only=True)
+    locations = serializers.JSONField(read_only=True)
+    sensors = serializers.JSONField(read_only=True)
+    hourly = serializers.JSONField(read_only=True)
+    top_alarms = serializers.JSONField(read_only=True)
 
     class Meta:
         model = AlarmDailyReport
@@ -283,6 +291,14 @@ class ProgeoAlarmSerializer(ProgeoBaseSerializer):
     is_active = serializers.SerializerMethodField("get_is_active")
     duration_seconds = serializers.SerializerMethodField("get_duration_seconds")
     evaluated_by = serializers.SerializerMethodField("get_evaluated_by")
+
+    # The third-party jsonfield.fields.JSONField is not recognized by DRF's
+    # ModelSerializer, which would emit these as raw JSON *strings*. Declare
+    # explicit JSON fields so the frontend receives real arrays/objects
+    # (required e.g. for the rain overlay and sensor pair list).
+    rain_events = serializers.JSONField(read_only=True)
+    max_values = serializers.JSONField(read_only=True)
+    sensor_max_values = serializers.JSONField(read_only=True)
 
     # The project-wide DATETIME_FORMAT is a display-only pretty format
     # ("%d.%m.%Y, %H:%M") that is useless for the frontend timeline. Emit

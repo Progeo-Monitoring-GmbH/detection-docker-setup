@@ -1,6 +1,6 @@
 ﻿from progeo.management.commands._base import BaseCommand
 
-from progeo.helper.basics import ilog
+from progeo.helper.basics import ilog, okaylog
 from progeo.helper.weather import WeatherHelper
 from progeo.settings import DATABASES
 from progeo.v1.models import ProgeoAlarm
@@ -52,7 +52,7 @@ class Command(BaseCommand):
 
             total_checked += checked
             total_rain += rain
-            ilog(f"[fetch_weather] db={db} checked={checked} rain={rain}")
+            okaylog(f"[fetch_weather] db={db} checked={checked} rain={rain}")
 
         ilog(f"[fetch_weather] total checked={total_checked} rain={total_rain}")
         self.stdout.write(

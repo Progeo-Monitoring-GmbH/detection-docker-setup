@@ -75,9 +75,9 @@ const HEATMAP_LIMIT = 300;
 // Live "how long active" counter: 30s granularity is plenty and avoids
 // re-rendering the whole timeline every second.
 const TICK_MS = 30_000;
-// Default alarm window: the backend also defaults to 14 days, but passing it
+// Default alarm window: the backend also defaults to 7 days, but passing it
 // explicitly keeps the overview bounded even if the backend default changes.
-const DEFAULT_ALARM_DAYS = 14;
+const DEFAULT_ALARM_DAYS = 7;
 
 /**
  * Convert a ms timestamp to a naive local ISO string (no timezone suffix),
