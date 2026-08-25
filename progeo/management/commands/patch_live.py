@@ -1,8 +1,8 @@
-import json
+﻿import json
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
-from django.core.management.base import BaseCommand
+from progeo.management.commands._base import BaseCommand
 
 
 from progeo.helper.basics import dlog

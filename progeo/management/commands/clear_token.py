@@ -1,4 +1,4 @@
-from django.core.management.base import BaseCommand
+﻿from progeo.management.commands._base import BaseCommand
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
 from progeo.helper.basics import dlog
 

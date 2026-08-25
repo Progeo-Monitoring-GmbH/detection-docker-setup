@@ -1,6 +1,6 @@
-import random
+﻿import random
 
-from django.core.management.base import BaseCommand
+from progeo.management.commands._base import BaseCommand
 from django.db.models import Q
 
 from progeo.helper.basics import dlog, elog, ilog, wlog

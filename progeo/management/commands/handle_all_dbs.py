@@ -1,7 +1,7 @@
-import os
+﻿import os
 
 from django.core.management import call_command
-from django.core.management.base import BaseCommand
+from progeo.management.commands._base import BaseCommand
 
 from progeo.v1.helper import convert_backup_date_to_timestamp
 from progeo.helper.basics import dlog, ilog, elog

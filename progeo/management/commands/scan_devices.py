@@ -1,8 +1,9 @@
-import os
+﻿import os
 from typing import Any
 
 import requests
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
+from progeo.management.commands._base import BaseCommand
 from django.utils import timezone
 from progeo.helper.basics import dlog, ilog, elog
 from progeo.settings import PROGEO_CONFIG_ENABLE_MEASUREMENTS, PROGEO_CONFIG_HAS_ROOT_SERVER

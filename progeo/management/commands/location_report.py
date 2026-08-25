@@ -1,8 +1,8 @@
-import json
+﻿import json
 import os
 from datetime import datetime
 
-from django.core.management.base import BaseCommand
+from progeo.management.commands._base import BaseCommand
 
 from progeo.helper.basics import elog, ilog, save_check_dir
 from progeo.settings import DATABASES, EXPORT_DIR

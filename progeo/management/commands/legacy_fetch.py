@@ -1,11 +1,11 @@
-import os
+﻿import os
 import ssl
 from datetime import datetime
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from django.conf import settings
-from django.core.management.base import BaseCommand
+from progeo.management.commands._base import BaseCommand
 
 from progeo.v1.models import ProgeoLocation
 
