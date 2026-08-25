@@ -6,7 +6,7 @@ import RainTooltip from './RainTooltip';
 import {
   alarmHeatColor,
   alarmPeakValue,
-  alarmRainSpan,
+  alarmRainSpans,
   alarmStartTime,
   formatDuration,
   isAlarmActive,
@@ -18,7 +18,7 @@ import './AlarmTimeline.css';
 export {
   alarmHeatColor,
   alarmPeakValue,
-  alarmRainSpan,
+  alarmRainSpans,
   alarmStartTime,
   formatDuration,
   isAlarmActive,
@@ -560,37 +560,34 @@ const AlarmTimeline = ({
                   {group.spans
                     .slice()
                     .sort((a, b) => a.start - b.start)
-                    .map((span) => {
-                      const rain = alarmRainSpan(span.alarm);
-                      if (!rain) {
-                        return null;
-                      }
-                      return (
-                        <div
-                          key={`rain-${span.alarm.id}`}
-                          className="alarm-timeline-rain"
-                          style={{
-                            left: `${toLeft(rain.start)}%`,
-                            width: `${toWidth(rain.end - rain.start)}%`,
-                          }}
-                          onMouseEnter={(event) =>
-                            handleRainMouseEnter(
-                              rain,
-                              span.alarm.rain_amount,
-                              event,
-                            )
-                          }
-                          onMouseMove={handleRainMouseMove}
-                          onMouseLeave={handleRainMouseLeave}
-                        >
-                          {span.alarm.rain_amount != null && (
-                            <span className="alarm-timeline-rain-label">
-                              💧{Math.round(span.alarm.rain_amount * 10) / 10}mm
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
+                    .flatMap((span) =>
+                      alarmRainSpans(span.alarm).map((rain, index) => ({
+                        span,
+                        rain,
+                        index,
+                      })),
+                    )
+                    .map(({ span, rain, index }) => (
+                      <div
+                        key={`rain-${span.alarm.id}-${index}`}
+                        className="alarm-timeline-rain"
+                        style={{
+                          left: `${toLeft(rain.start)}%`,
+                          width: `${toWidth(rain.end - rain.start)}%`,
+                        }}
+                        onMouseEnter={(event) =>
+                          handleRainMouseEnter(rain, rain.amount, event)
+                        }
+                        onMouseMove={handleRainMouseMove}
+                        onMouseLeave={handleRainMouseLeave}
+                      >
+                        {rain.amount != null && (
+                          <span className="alarm-timeline-rain-label">
+                            💧{Math.round(rain.amount * 10) / 10}mm
+                          </span>
+                        )}
+                      </div>
+                    ))}
                   {group.spans
                     .slice()
                     .sort((a, b) => a.start - b.start)

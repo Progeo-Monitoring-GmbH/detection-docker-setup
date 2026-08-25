@@ -20,7 +20,11 @@ class Command(BaseCommand):
         "Finds ProgeoLocation rows without coordinates and splits them into locations "
         "with no address data at all (nothing to geocode) and locations with address "
         "data that GeoHelper.fetch_lat_lon could not resolve. Locations that do resolve "
-        "are patched with their new coordinates."
+        "are patched with their new coordinates.\n\n"
+        "Examples:\n"
+        "  python manage.py fix_locations\n"
+        "  python manage.py fix_locations --dry-run\n"
+        "  python manage.py fix_locations --db default"
     )
 
     def add_arguments(self, parser):

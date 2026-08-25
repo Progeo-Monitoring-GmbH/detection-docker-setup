@@ -3,7 +3,7 @@ import { formatDuration } from './alarmUtils';
 import './AlarmTooltip.css';
 
 type RainTooltipProps = {
-  /** Rain window start/end in ms (from alarmRainSpan). */
+  /** Rain window start/end in ms (one span from alarmRainSpans). */
   start: number;
   end: number;
   /** Precipitation in mm, if known. */

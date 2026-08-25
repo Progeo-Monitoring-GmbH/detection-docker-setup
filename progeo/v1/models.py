@@ -481,9 +481,9 @@ class ProgeoAlarm(ProgeoModel, auto_prefetch.Model):
 
     status = models.IntegerField(choices=[(0, "neu"), (1, "quittiert"), (2, "stoerung")], default=0)
 
-    rain_start = models.DateTimeField(null=True, blank=True)
-    rain_duration = models.FloatField(null=True, blank=True, help_text="Hours of rain found")
-    rain_amount = models.FloatField(null=True, blank=True, help_text="Precipitation in mm")
+    # Rain events matched to this alarm: one entry per continuous rain window.
+    # Each entry: {"start": iso, "duration": hours, "amount": mm}
+    rain_events = JSONField(default=list, blank=True)
     rain_checked = models.BooleanField(default=False, blank=True, help_text="Whether rain check has been performed for this alarm")
 
     def prolong_until_now(self):

@@ -11,7 +11,12 @@ from progeo.settings import DATABASES
 
 
 class Command(BaseCommand):
-    help = "iterates over all models and resets the id if existing"
+    help = (
+        "iterates over all models and resets the id if existing: sets every "
+        "model's id sequence to max(id) on all configured databases.\n\n"
+        "Examples:\n"
+        "  python manage.py resetautoincrement"
+    )
 
     @staticmethod
     def handle_model(_models_list):

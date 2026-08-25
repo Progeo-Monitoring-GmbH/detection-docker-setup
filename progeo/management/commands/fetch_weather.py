@@ -12,7 +12,10 @@ class Command(BaseCommand):
         "WeatherHelper is used for the whole run, so alarms of the same location "
         "share a single API call and the rain window is only attributed to the "
         "earliest alarm that catches it (later overlapping alarms are marked "
-        "checked without rain data)."
+        "checked without rain data).\n\n"
+        "Examples:\n"
+        "  python manage.py fetch_weather\n"
+        "  python manage.py fetch_weather --db default"
     )
 
     def add_arguments(self, parser):
@@ -44,7 +47,7 @@ class Command(BaseCommand):
             for alarm in alarms:
                 result = helper.check_rain_for_alarm(alarm, save=True)
                 checked += 1
-                if result and result.get("rain_start") is not None:
+                if result and result.get("rain_events"):
                     rain += 1
 
             total_checked += checked

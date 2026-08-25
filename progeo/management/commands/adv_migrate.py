@@ -7,7 +7,12 @@ from progeo.settings import DATABASES
 
 
 class Command(BaseCommand):
-    help = "Advanced migrations"
+    help = (
+        "Advanced migrations: runs 'migrate' against every configured database "
+        "(DATABASES).\n\n"
+        "Examples:\n"
+        "  python manage.py adv_migrate"
+    )
 
     def handle(self, *args, **options):
 

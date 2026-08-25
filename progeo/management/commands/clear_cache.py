@@ -4,7 +4,11 @@ from progeo.helper.basics import dlog
 
 
 class Command(BaseCommand):
-    help = 'iterates over all models and resets the id if existing'
+    help = (
+        'Clears the Django cache (cache.clear()).\n\n'
+        'Examples:\n'
+        '  python manage.py clear_cache'
+    )
 
     def handle(self, *args, **options):
         cache.clear()

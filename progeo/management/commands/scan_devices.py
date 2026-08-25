@@ -17,7 +17,15 @@ from progeo.v1.models import ProgeoDevice
 
 
 class Command(BaseCommand):
-    help = "scan_devices"
+    help = (
+        "scan_devices: scans the connected devices, requests a fresh measurement "
+        "from each one, stores it locally and forwards it to the configured root "
+        "server (PROGEO_CONFIG_HAS_ROOT_SERVER) via "
+        "/api/v1/device/forward/measurement/. Requires PROGEO_CONFIG_ENABLE_"
+        "MEASUREMENTS=1.\n\n"
+        "Examples:\n"
+        "  python manage.py scan_devices"
+    )
 
     @staticmethod
     def _parse_response(response: requests.Response) -> dict[str, Any]:

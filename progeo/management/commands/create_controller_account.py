@@ -7,7 +7,13 @@ from progeo.v1.creator import create_account_safe
 
 
 class Command(BaseCommand):
-    help = "Create the controller default account from django.env"
+    help = (
+        "Create the controller default account from django.env "
+        "(requires CONTROLLER_DEFAULT_ACCOUNT; uses the first database from "
+        "DATABASES).\n\n"
+        "Examples:\n"
+        "  python manage.py create_controller_account"
+    )
 
     def handle(self, *args, **options):
         account_name = (os.getenv("CONTROLLER_DEFAULT_ACCOUNT") or "").strip()

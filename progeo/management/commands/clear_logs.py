@@ -4,7 +4,11 @@ from progeo.helper.basics import dlog
 
 
 class Command(BaseCommand):
-    help = 'Clear LogEntry'
+    help = (
+        'Clear LogEntry: deletes all django admin log entries.\n\n'
+        'Examples:\n'
+        '  python manage.py clear_logs'
+    )
 
     def handle(self, *args, **options):
         LogEntry.objects.all().delete()

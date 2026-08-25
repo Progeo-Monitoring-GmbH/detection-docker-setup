@@ -14,7 +14,21 @@ from progeo.v1.models import Account, ProgeoDevice, ProgeoLocation, ProgeoMeasur
 
 
 class Command(BaseCommand):
-    help = 'Patches for live data'
+    help = (
+        'Patches for live data. Selects the patch to run with -p/--patch.\n\n'
+        'Available patches:\n'
+        '  fix_dragino_usage      backfill last_updated / resistances for a dragino device\n'
+        '  fetch_projects         import projects from data-progeo.net into locations\n'
+        '  fetch_legacy_data      fetch legacy measurement data (dry run)\n'
+        '  fetch_device_locations assign locations to devices without one\n'
+        '  fetch_lageplan         download lageplan images for locations without one\n\n'
+        'Examples:\n'
+        '  python manage.py patch_live --patch fetch_projects\n'
+        '  python manage.py patch_live --patch fix_dragino_usage\n'
+        '  python manage.py patch_live --patch fetch_legacy_data\n'
+        '  python manage.py patch_live --patch fetch_device_locations\n'
+        '  python manage.py patch_live --patch fetch_lageplan'
+    )
 
     def add_arguments(self, parser):
         parser.add_argument("-p", "--patch",

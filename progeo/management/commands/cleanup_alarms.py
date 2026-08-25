@@ -16,7 +16,11 @@ class Command(BaseCommand):
         "[triggered_at, normalized_at] intersects another alarm of the same device "
         "(still-active alarms have an open end). The earliest alarm of the group "
         "survives and absorbs the merged history; all merged duplicates are deleted. "
-        "Idempotent and safe to re-run."
+        "Idempotent and safe to re-run.\n\n"
+        "Examples:\n"
+        "  python manage.py cleanup_alarms\n"
+        "  python manage.py cleanup_alarms --dry-run\n"
+        "  python manage.py cleanup_alarms --db default"
     )
 
     def add_arguments(self, parser):
