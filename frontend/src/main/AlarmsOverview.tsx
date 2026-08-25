@@ -5,6 +5,7 @@ import { Badge, Button, Card, Container, Form, Spinner } from 'react-bootstrap';
 import {
   ArrowClockwise,
   Check2Circle,
+  PlusLg,
   ThermometerHalf,
   Activity,
 } from 'react-bootstrap-icons';
@@ -77,7 +78,11 @@ const HEATMAP_LIMIT = 300;
 const TICK_MS = 30_000;
 // Default alarm window: the backend also defaults to 7 days, but passing it
 // explicitly keeps the overview bounded even if the backend default changes.
-const DEFAULT_ALARM_DAYS = 7;
+const DEFAULT_ALARM_DAYS = 3;
+// Selectable window sizes for the days select-box (older alarms are fetched
+// incrementally, one missing slice at a time).
+const DAY_OPTIONS = [3, 7, 14, 30, 90, 365];
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Convert a ms timestamp to a naive local ISO string (no timezone suffix),
@@ -104,6 +109,10 @@ const AlarmsOverview = () => {
   const { enqueueSnackbar } = useSnackbar();
   const [rows, setRows] = useState<AlarmRow[]>([]);
   const [loading, setLoading] = useState(false);
+  // Select-box value: the step size for "Load more" and the initial window.
+  const [days, setDays] = useState(DEFAULT_ALARM_DAYS);
+  // How many days are currently covered by `rows` (0 = nothing loaded yet).
+  const [loadedDays, setLoadedDays] = useState(0);
   const [selectedAlarm, setSelectedAlarm] = useState<AlarmRow | null>(null);
   const [heatmapLoading, setHeatmapLoading] = useState(false);
   const [heatmapResponse, setHeatmapResponse] =
@@ -131,26 +140,105 @@ const AlarmsOverview = () => {
     return () => window.clearInterval(intervalId);
   }, [hasActiveAlarm, onlyLastHour]);
 
-  const fetchAlarms = useCallback(() => {
-    setLoading(true);
-    void axiosConfig.perform_get(
-      auth,
-      `/v1/alarm/?days=${DEFAULT_ALARM_DAYS}`,
-      (response) => {
-        setRows((response?.data?.alarms || []) as AlarmRow[]);
-        setLoading(false);
-      },
-      (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not load alarms: ${reason}`);
-        setLoading(false);
-      },
-    );
-  }, [auth, enqueueSnackbar]);
+  // Fetch a specific time window [fromMs, toMs]. When `merge` is true the
+  // returned alarms are added to the existing rows (deduplicated by id) so
+  // older alarms can be loaded incrementally without re-fetching the whole
+  // window; otherwise the rows are replaced.
+  const fetchWindow = useCallback(
+    (
+      fromMs: number,
+      toMs: number,
+      merge: boolean,
+      onSuccess?: () => void,
+    ) => {
+      setLoading(true);
+      const params = new URLSearchParams({
+        from: toLocalIso(fromMs),
+        to: toLocalIso(toMs),
+      });
+      void axiosConfig.perform_get(
+        auth,
+        `/v1/alarm/?${params.toString()}`,
+        (response) => {
+          const incoming = (response?.data?.alarms || []) as AlarmRow[];
+          setRows((prev) => {
+            if (!merge) {
+              return incoming;
+            }
+            const map = new Map<number, AlarmRow>();
+            for (const row of prev) {
+              map.set(row.id, row);
+            }
+            for (const row of incoming) {
+              map.set(row.id, row); // incoming wins on duplicate ids
+            }
+            return [...map.values()];
+          });
+          setLoading(false);
+          onSuccess?.();
+        },
+        (error) => {
+          const reason = error?.response?.data?.reason || error.message;
+          showErrorBar(enqueueSnackbar, `Could not load alarms: ${reason}`);
+          setLoading(false);
+        },
+      );
+    },
+    [auth, enqueueSnackbar],
+  );
 
+  // Grow the covered window to `targetDays` by fetching only the missing,
+  // older slice [now - targetDays, now - loadedDays] and appending it.
+  const loadDays = useCallback(
+    (targetDays: number) => {
+      if (targetDays <= loadedDays) {
+        return;
+      }
+      const nowMs = Date.now();
+      fetchWindow(
+        nowMs - targetDays * DAY_MS,
+        nowMs - loadedDays * DAY_MS,
+        true,
+        () => setLoadedDays(targetDays),
+      );
+    },
+    [fetchWindow, loadedDays],
+  );
+
+  // Shrink the covered window client-side (no fetch needed).
+  const trimDays = useCallback((targetDays: number) => {
+    const cutoff = Date.now() - targetDays * DAY_MS;
+    setRows((prev) =>
+      prev.filter((row) => {
+        const start = alarmStartTime(row);
+        return start == null || start >= cutoff;
+      }),
+    );
+    setLoadedDays(targetDays);
+  }, []);
+
+  const handleDaysChange = (value: number) => {
+    setDays(value);
+    if (value > loadedDays) {
+      loadDays(value);
+    } else if (value < loadedDays) {
+      trimDays(value);
+    }
+  };
+
+  const loadMore = () => loadDays(loadedDays + days);
+
+  const refresh = () => {
+    const nowMs = Date.now();
+    const currentDays = loadedDays > 0 ? loadedDays : days;
+    fetchWindow(nowMs - currentDays * DAY_MS, nowMs, false);
+  };
+
+  // Initial load of the default window.
   useEffect(() => {
-    fetchAlarms();
-  }, [fetchAlarms]);
+    loadDays(DEFAULT_ALARM_DAYS);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const fetchHeatmap = useCallback(
     (alarm: AlarmRow) => {
@@ -479,7 +567,8 @@ const AlarmsOverview = () => {
         <div>
           <h2 className="mb-0">Alarms</h2>
           <small className="text-muted">
-            {filteredRows.length} of {rows.length} alarm(s) for your account
+            {filteredRows.length} of {rows.length} alarm(s) · last{' '}
+            {loadedDays > 0 ? loadedDays : days} day(s)
           </small>
         </div>
         <div className="d-flex flex-wrap align-items-center gap-2">
@@ -504,9 +593,32 @@ const AlarmsOverview = () => {
             onFilter={(event) => setFilterText(event.target.value)}
             onClear={handleClearFilter}
           />
+          <Form.Select
+            size="sm"
+            style={{ width: 'auto' }}
+            aria-label="Alarm window (days)"
+            value={days}
+            disabled={loading}
+            onChange={(event) => handleDaysChange(Number(event.target.value))}
+          >
+            {DAY_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {option} days
+              </option>
+            ))}
+          </Form.Select>
+          <Button
+            variant="outline-secondary"
+            onClick={loadMore}
+            disabled={loading || loadedDays >= 365}
+            title="Load older alarms (fetch only the missing days)"
+          >
+            <PlusLg className="me-2" />
+            +{days} days
+          </Button>
           <Button
             variant="outline-primary"
-            onClick={fetchAlarms}
+            onClick={refresh}
             disabled={loading}
           >
             <ArrowClockwise className="me-2" />

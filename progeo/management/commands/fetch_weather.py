@@ -16,6 +16,7 @@ class Command(BaseCommand):
         "Examples:\n"
         "  python manage.py fetch_weather\n"
         "  python manage.py fetch_weather --db default"
+        "  python manage.py fetch_weather --db default --recheck True"
     )
 
     def add_arguments(self, parser):
@@ -23,6 +24,11 @@ class Command(BaseCommand):
             "--db",
             default=None,
             help="Only process a single database (defaults to all configured databases).",
+        )
+        parser.add_argument(
+            "--recheck",
+            default=False,
+            help="Recheck alarms even if they were already checked.",
         )
 
     def handle(self, *args, **options):
@@ -37,7 +43,7 @@ class Command(BaseCommand):
             # the first alarm of a rain event claims it deterministically.
             alarms = (
                 ProgeoAlarm.objects.using(db)
-                .filter(rain_checked=False)
+                .filter(rain_checked=options.get("recheck", False))
                 .select_related("measurement__device__location")
                 .order_by("triggered_at", "id")
             )

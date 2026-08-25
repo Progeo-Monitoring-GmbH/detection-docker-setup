@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from django.db.models import Count, Q
 from django.utils import timezone
@@ -154,6 +154,21 @@ class AlarmViewSet(ProgeoModalViewSet):
         days = max(1, min(days, 365))
         cutoff = timezone.now() - timedelta(days=days)
 
+        # Optional explicit time window (ISO-8601): overrides `days` so the
+        # frontend can load older alarms incrementally without re-fetching the
+        # whole window (mirrors the heatmap/measurements endpoints). Each side
+        # is optional; a missing side falls back to `days`/now.
+        time_from = self.request.query_params.get("from")
+        time_to = self.request.query_params.get("to")
+        try:
+            if time_from:
+                time_from = datetime.fromisoformat(time_from)
+            if time_to:
+                time_to = datetime.fromisoformat(time_to)
+        except (TypeError, ValueError):
+            # Invalid window params: ignore them and fall back to ?days=.
+            time_from = time_to = None
+
         # Optional location filter (?location=<pk>) for the per-location view.
         location_raw = self.request.query_params.get("location")
         location_id = None
@@ -163,12 +178,22 @@ class AlarmViewSet(ProgeoModalViewSet):
             except (TypeError, ValueError):
                 location_id = None
 
-        queryset = (
-            ProgeoAlarm.objects.using(account.db_name)
-            .filter(
+        if time_from is not None or time_to is not None:
+            window_start = time_from if time_from is not None else cutoff
+            window_end = time_to if time_to is not None else timezone.now()
+            alarm_filter = (
+                Q(triggered_at__range=(window_start, window_end))
+                | Q(triggered_at__isnull=True, last_fetched__range=(window_start, window_end))
+            )
+        else:
+            alarm_filter = (
                 Q(triggered_at__gte=cutoff)
                 | Q(triggered_at__isnull=True, last_fetched__gte=cutoff)
             )
+
+        queryset = (
+            ProgeoAlarm.objects.using(account.db_name)
+            .filter(alarm_filter)
             .select_related("measurement__device__location")
             .order_by("-triggered_at", "-id")
         )
