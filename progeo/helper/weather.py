@@ -36,14 +36,17 @@ class WeatherHelper:
     def check_rain_for_alarm(self, alarm, save=True):
         """Checks whether it rained during the given alarm's timeframe (plus a lookback margin).
 
-        If rain was found, `rain_start`, `rain_duration` (hours) and `rain_amount` (mm) are set
-        on the alarm and, unless `save=False`, persisted to the database.
+        If rain was found, `alarm.rain_events` is set to one entry per continuous
+        rain window - ``{"start": iso, "duration": hours, "amount": mm}`` - and,
+        unless ``save=False``, persisted to the database. An alarm can therefore
+        carry several rain events.
 
-        Rain is only attributed to the FIRST alarm that catches the event: when several alarms
-        of the same location overlap the same rain window, the alarm with the earliest
-        `triggered_at` owns it and every later alarm is marked checked without rain data. The
-        decision is based on all alarms of the location (not on processing order), so it is
-        deterministic no matter in which order the alarms are visited.
+        Each rain event is only attributed to the FIRST alarm that catches it:
+        when several alarms of the same location overlap the same rain window,
+        the alarm with the earliest `triggered_at` owns it and every later alarm
+        is marked checked without that event. The decision is based on all alarms
+        of the location (not on processing order), so it is deterministic no
+        matter in which order the alarms are visited.
         """
         location = alarm.measurement.device.location
         if location is None:
@@ -62,30 +65,23 @@ class WeatherHelper:
             logger.warning(f"Failed to fetch rain data for alarm {alarm.pk}, skipping rain check")
             return None
 
-        rain_start, rain_duration, rain_amount = self._extract_rain_window(hourly)
+        events = self._extract_rain_events(hourly)
 
-        if rain_start is not None and not self._is_earliest_for_window(location, alarm, rain_start, rain_duration):
-            logger.info(
-                f"Rain window already caught by an earlier alarm of location {location.pk}, "
-                f"skipping rain data for alarm {alarm.pk}"
-            )
-            rain_start = rain_duration = rain_amount = None
+        owned_events = []
+        for event in events:
+            event_start = datetime.fromisoformat(event["start"])
+            if self._is_earliest_for_window(location, alarm, event_start, event["duration"]):
+                owned_events.append(event)
 
-        alarm.rain_start = rain_start
-        alarm.rain_duration = rain_duration
-        alarm.rain_amount = rain_amount
+        alarm.rain_events = owned_events
         alarm.rain_checked = True
         if save:
-            alarm.save(update_fields=["rain_start", "rain_duration", "rain_amount", "rain_checked"])
+            alarm.save(update_fields=["rain_events", "rain_checked"])
 
-        if rain_start is not None:
-            logger.info(f"\tRain detected for alarm {alarm.pk}: start={rain_start}, duration={rain_duration}h, amount={rain_amount}mm")
+        if owned_events:
+            logger.info(f"\tRain detected for alarm {alarm.pk}: {len(owned_events)} event(s)")
 
-        return {
-            "rain_start": rain_start,
-            "rain_duration": rain_duration,
-            "rain_amount": rain_amount,
-        }
+        return {"rain_events": owned_events}
 
     def _db_alias(self, alarm):
         return getattr(getattr(alarm, "_state", None), "db", None) or "default"
@@ -172,12 +168,32 @@ class WeatherHelper:
         return entries
 
     @staticmethod
-    def _extract_rain_window(entries):
+    def _extract_rain_events(entries):
+        """Group rainy hours into continuous rain events.
+
+        Returns a list of ``{"start": iso, "duration": hours, "amount": mm}``.
+        Consecutive hourly buckets (gap <= 1h) belong to the same event; a
+        larger gap starts a new event, so an alarm can carry several events.
+        """
         rain_entries = [(moment, value) for moment, value in entries if value >= RAIN_THRESHOLD_MM]
         if not rain_entries:
-            return None, None, None
+            return []
 
-        rain_start = rain_entries[0][0]
-        rain_amount = sum(value for _, value in rain_entries)
-        rain_duration = len(rain_entries)  # hourly resolution -> count == hours
-        return rain_start, rain_duration, rain_amount
+        groups = []
+        current = [rain_entries[0]]
+        for previous, entry in zip(rain_entries, rain_entries[1:]):
+            if entry[0] - previous[0] <= timedelta(hours=1):
+                current.append(entry)
+            else:
+                groups.append(current)
+                current = [entry]
+        groups.append(current)
+
+        return [
+            {
+                "start": group[0][0].isoformat(),
+                "duration": len(group),  # hourly resolution -> count == hours
+                "amount": sum(value for _, value in group),
+            }
+            for group in groups
+        ]

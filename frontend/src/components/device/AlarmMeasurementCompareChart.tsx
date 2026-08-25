@@ -72,14 +72,13 @@ const AlarmMeasurementCompareChart = ({
     // Alarm duration: normalized_at marks the end; still-active alarms run
     // until "now" (captured when the measurements are loaded).
     const normalizedMs = parseTimestamp(alarm.normalized_at);
-    const endMs =
-      normalizedMs ?? (isAlarmActive(alarm) ? Date.now() : startMs);
+    const endMs = normalizedMs ?? (isAlarmActive(alarm) ? Date.now() : startMs);
     const durationMs = Math.max(0, endMs - startMs);
 
     setLoading(true);
     const params = new URLSearchParams({
       from: toLocalIso(startMs - ALARM_WINDOW_MS),
-      to: toLocalIso(startMs + ALARM_WINDOW_MS),
+      to: toLocalIso(endMs + ALARM_WINDOW_MS),
       limit: '2000',
     });
 
@@ -87,7 +86,9 @@ const AlarmMeasurementCompareChart = ({
       auth,
       `/v1/device/${deviceId}/measurements/?${params.toString()}`,
       (response) => {
-        setRows((response?.data?.measurements || []) as MeasurementCompareRow[]);
+        setRows(
+          (response?.data?.measurements || []) as MeasurementCompareRow[],
+        );
         setAlarmStart(startMs);
         setAlarmDuration(durationMs);
         setLoading(false);

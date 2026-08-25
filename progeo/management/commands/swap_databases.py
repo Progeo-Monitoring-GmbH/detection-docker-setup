@@ -9,7 +9,10 @@ class Command(BaseCommand):
         "Archive every database for the year (New Year's Eve swap): rename "
         "'<db>' -> '<db>_<year>', create a fresh '<db>' and copy all tables "
         "except alarms/measurements, carrying over their id sequences. "
-        "Delegates to the celery task progeo.tasks.swap_databases_new_year."
+        "Delegates to the celery task progeo.tasks.swap_databases_new_year.\n\n"
+        "Examples:\n"
+        "  python manage.py swap_databases\n"
+        "  python manage.py swap_databases --db default --year 2026"
     )
 
     def add_arguments(self, parser):

@@ -8,7 +8,12 @@ from progeo.helper.basics import dlog, okaylog, ilog, elog
 
 
 class Command(BaseCommand):
-    help = "Added missing permissions"
+    help = (
+        "Added missing permissions: creates missing ContentTypes for the progeo app "
+        "and the default add/change/delete/view permissions, then runs sync_default.\n\n"
+        "Examples:\n"
+        "  python manage.py fix_contenttypes"
+    )
 
     def handle(self, *args, **options):
         _app = "progeo"

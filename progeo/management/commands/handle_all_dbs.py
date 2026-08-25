@@ -21,7 +21,15 @@ def check_db_exists_for(db):
 
 
 class Command(BaseCommand):
-    help = "Backup or Restore all databases"
+    help = (
+        "Backup or Restore all databases via dbbackup. Runs the given dbbackup "
+        "command against every configured database (skips dbrestore for databases "
+        "without an existing backup).\n\n"
+        "Examples:\n"
+        "  python manage.py handle_all_dbs --command dbbackup\n"
+        "  python manage.py handle_all_dbs --command dbrestore\n"
+        "  python manage.py handle_all_dbs --command dbclean"
+    )
 
     def add_arguments(self, parser):
         parser.add_argument("-c", "--command",

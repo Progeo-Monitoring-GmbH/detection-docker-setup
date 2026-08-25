@@ -107,7 +107,16 @@ def collect_matching_payloads(text: str) -> List[Dict[str, Any]]:
 
 
 class Command(BaseCommand):
-    help = "Just a simple ping command to check if the management command system is working"
+    help = (
+        "Reads the dragino payload file, extracts the JSON payloads of the "
+        "configured IMEIs and forwards them to the configured target URL(s).\n\n"
+        "Requires env vars: API_TOKEN (default target https://api.progeo.com/"
+        "v1/device/sample/imei/?token=...), optionally DRAGINO_TARGET_URL / "
+        "DRAGINO_TARGET_URLS (comma separated) to override the target.\n\n"
+        "Examples:\n"
+        "  python manage.py read_dragino\n"
+        "  DRAGINO_TARGET_URLS='http://localhost:8383/v1/device/sample/imei/?token=x' python manage.py read_dragino"
+    )
 
     def handle(self, *args, **options):
         target_urls = build_target_urls()

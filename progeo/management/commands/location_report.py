@@ -54,7 +54,11 @@ class Command(BaseCommand):
     help = (
         "Report how many locations are missing geolocation (latitude/longitude) and/or "
         "address data (address/city/plz). The report is written as a JSON file under "
-        "media/export (EXPORT_DIR) and a short summary is printed to stdout."
+        "media/export (EXPORT_DIR) and a short summary is printed to stdout.\n\n"
+        "Examples:\n"
+        "  python manage.py location_report\n"
+        "  python manage.py location_report --db default\n"
+        "  python manage.py location_report --output /tmp/location_report.json"
     )
 
     def add_arguments(self, parser):

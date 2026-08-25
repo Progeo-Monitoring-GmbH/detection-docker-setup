@@ -9,7 +9,13 @@ from progeo.settings import DATABASES
 
 
 class Command(BaseCommand):
-    help = "Check and create databases if they do not exist"
+    help = (
+        "Check and create databases if they do not exist: creates every database "
+        "from DATABASES that is missing, then runs adv_migrate, fix_contenttypes "
+        "and sync_default.\n\n"
+        "Examples:\n"
+        "  python manage.py create_dbs"
+    )
 
     def _database_exists(self, db_name):
         with connections["default"].cursor() as cursor:

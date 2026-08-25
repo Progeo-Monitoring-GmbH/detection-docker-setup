@@ -37,7 +37,14 @@ def fetch_with_ssl_fallback(request: Request, timeout: int = 30) -> bytes:
 
 
 class Command(BaseCommand):
-    help = "Download legacy gprs project files into MEDIA_ROOT with a console summary"
+    help = (
+        "Download legacy gprs project files into MEDIA_ROOT with a console summary. "
+        "Downloads https://data-progeo.net/DB/gprs{pid}.txt for every distinct "
+        "project_id found in ProgeoLocation and writes it to media/legacy_fetch/, "
+        "then prints a summary report.\n\n"
+        "Examples:\n"
+        "  python manage.py legacy_fetch"
+    )
 
     def handle(self, *args, **options):
         run_started = datetime.now()

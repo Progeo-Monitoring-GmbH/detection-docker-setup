@@ -23,6 +23,13 @@ export type AlarmSensorMaxValue = {
   max_value?: number | null;
 };
 
+/** One rain event matched to an alarm: start (iso), duration in hours, amount in mm. */
+export type AlarmRainEvent = {
+  start?: string | null;
+  duration?: number | null;
+  amount?: number | null;
+};
+
 export type TimelineAlarm = {
   id: number;
   location?: AlarmLocationLite | null;
@@ -42,10 +49,13 @@ export type TimelineAlarm = {
   max_values?: AlarmMaxValueEntry[];
   /** Every sensor above the alarm threshold: (sensor_id, max_value) pairs. */
   sensor_max_values?: AlarmSensorMaxValue[];
+  /** Rain events matched to this alarm (see progeo.helper.weather). */
+  rain_events?: AlarmRainEvent[];
+  // Legacy single-event rain fields (kept for stale cached payloads).
   rain_start?: string | null;
-  /** Hours of rain found (see progeo.helper.legacy WeatherHelper). */
+  /** Hours of rain found (legacy, pre-rain_events payloads). */
   rain_duration?: number | null;
-  /** Precipitation in mm. */
+  /** Precipitation in mm (legacy, pre-rain_events payloads). */
   rain_amount?: number | null;
 };
 
@@ -132,19 +142,50 @@ export const isAlarmActive = (alarm: {
 };
 
 /**
- * Rain window found for the alarm (start/end in ms), or null if no rain was recorded.
- * `rain_duration` is stored in hours (see progeo.helper.legacy WeatherHelper).
+ * Rain events of the alarm as (start/end in ms, amount) spans, or [] when no
+ * rain was recorded. One span per rain event (an alarm can carry several).
+ * Falls back to the legacy single-event scalar fields so stale cached
+ * payloads (pre-`rain_events`) still render.
  */
-export const alarmRainSpan = (alarm: {
+export const alarmRainSpans = (alarm: {
+  rain_events?: AlarmRainEvent[] | null;
   rain_start?: string | null;
   rain_duration?: number | null;
-}): { start: number; end: number } | null => {
-  const start = parseTimestamp(alarm.rain_start);
-  if (start == null || alarm.rain_duration == null) {
-    return null;
+  rain_amount?: number | null;
+}): Array<{ start: number; end: number; amount: number | null }> => {
+  const spans: Array<{ start: number; end: number; amount: number | null }> =
+    [];
+
+  const events = Array.isArray(alarm.rain_events) ? alarm.rain_events : [];
+  for (const event of events) {
+    const start = parseTimestamp(event.start);
+    const duration = Number(event.duration);
+    if (start == null || !Number.isFinite(duration) || duration <= 0) {
+      continue;
+    }
+    const amount = Number(event.amount);
+    spans.push({
+      start,
+      end: Math.max(start + duration * 60 * 60 * 1000, start),
+      amount: Number.isFinite(amount) ? amount : null,
+    });
   }
-  const end = start + alarm.rain_duration * 60 * 60 * 1000;
-  return { start, end: Math.max(end, start) };
+
+  // Legacy fallback: single rain window stored in the old scalar fields.
+  if (spans.length === 0 && alarm.rain_start != null) {
+    const start = parseTimestamp(alarm.rain_start);
+    const duration = Number(alarm.rain_duration);
+    if (start != null && Number.isFinite(duration) && duration > 0) {
+      const amount = Number(alarm.rain_amount);
+      spans.push({
+        start,
+        end: Math.max(start + duration * 60 * 60 * 1000, start),
+        amount: Number.isFinite(amount) ? amount : null,
+      });
+    }
+  }
+
+  return spans;
 };
 
 /**

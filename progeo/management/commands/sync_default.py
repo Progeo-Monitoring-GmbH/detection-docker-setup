@@ -94,7 +94,13 @@ def copy_model(model, db, from_db='default'):
 
 
 class Command(BaseCommand):
-    help = "Sync all"
+    help = (
+        "Sync all: copies the configured models (DJANGO_MODELS) from the 'default' "
+        "database into every other configured database, including many-to-many "
+        "relations (users/groups/permissions).\n\n"
+        "Examples:\n"
+        "  python manage.py sync_default"
+    )
     SHOW_LOG = True
 
     def handle(self, *args, **options):

@@ -13,7 +13,12 @@ class Command(BaseCommand):
         "  --days N               evaluate the last N days\n"
         "  --start YYYY-MM-DD     start of the window (optional)\n"
         "  --end YYYY-MM-DD       end of the window (optional)\n"
-        "  --project-id N         only evaluate measurements of this project"
+        "  --project-id N         only evaluate measurements of this project\n\n"
+        "Examples:\n"
+        "  python manage.py evaluate_measurements\n"
+        "  python manage.py evaluate_measurements --days 7\n"
+        "  python manage.py evaluate_measurements --start 2026-08-01 --end 2026-08-20\n"
+        "  python manage.py evaluate_measurements --days 30 --project-id 42 --db default"
     )
 
     def add_arguments(self, parser):

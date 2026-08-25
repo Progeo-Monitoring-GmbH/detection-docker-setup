@@ -9,7 +9,12 @@ from progeo.helper.basics import ilog
 
 
 class Command(BaseCommand):
-    help = 'Create Admin-Django user from environment'
+    help = (
+        'Create Admin-Django user from environment (DJANGO_SUPERUSER_USERNAME / '
+        'DJANGO_SUPERUSER_PASSWORD / DJANGO_SUPERUSER_EMAIL) and an API token for it.\n\n'
+        'Examples:\n'
+        '  python manage.py create_admin'
+    )
 
     def handle(self, *args, **options):
 
