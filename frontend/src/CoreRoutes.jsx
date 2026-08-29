@@ -41,6 +41,7 @@ const LageplanWizardView = React.lazy(
 const LocationsMapView = React.lazy(
   () => import('./main/LocationsMapView.jsx'),
 );
+const LegacyImportView = React.lazy(() => import('./main/LegacyImportView.tsx'));
 
 const CoreRoutes = () => {
   return (
@@ -134,6 +135,10 @@ const CoreRoutes = () => {
       <Route
         path="/lageplan/wizard/"
         element={<Navbar act={'tools'} content={<LageplanWizardView />} />}
+      />
+      <Route
+        path="/legacy/import/"
+        element={<Navbar act={'tools'} content={<LegacyImportView />} />}
       />
       <Route
         path="/map/"

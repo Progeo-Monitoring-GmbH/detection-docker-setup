@@ -22,7 +22,7 @@ from progeo.helper.creator import create_MfS_log
 from progeo.v1.creator import create_progeo_measurement_safe
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.v1.viewsets.setup_viewset import _get_controller_account
-from progeo.v1.legacy.executor import parse_legacy_data_measurement, parse_sample_timestamp, save_measurement_from_legacy_data
+from progeo.v1.legacy.executor import parse_legacy_data_measurement, parse_sample_timestamp, save_measurement_from_legacy_data, fetch_and_import_legacy_project
 from progeo.v1.legacy.executor import SafeLuaUploadParser
 from progeo.v1.legacy.helper_resistance import calc_resistances
 
@@ -207,7 +207,33 @@ class DeviceViewSet(ProgeoModalViewSet):
         )
 
         return RequestSuccess({"data": request.data, "measurement": asdict(measurement)})
-    
+
+
+    @action(detail=False, url_path="legacy/fetch", methods=["POST"])
+    def fetch_legacy_project(self, request, *args, **kwargs):
+        """Download https://data-progeo.net/gprs{project_id}.txt, parse it and
+        import the measurements. Entries are only created when no measurement
+        exists for the same project_id + datetime (no duplicates).
+        """
+        from progeo.management.commands.patch_live import Command as PatchLiveCommand
+        project_id = request.data.get("project_id")
+        try:
+            project_id = int(project_id)
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "project_id must be an integer"})
+
+        try:
+            dry_run = bool(request.data.get("dry_run"))
+        except (TypeError, ValueError):
+            dry_run = False
+
+        try:
+            report = fetch_and_import_legacy_project(project_id, dry_run=dry_run)
+        except Exception as exc:
+            elog(f"[legacy/fetch] project_id={project_id} failed: {exc}")
+            return RequestFailed({"reason": f"Import failed: {exc}"})
+        PatchLiveCommand()._fetch_device_locations()
+        return RequestSuccess({"report": report})
 
     @action(detail=False, url_path="sample/imei", authentication_classes=[LimitedTokenAuthentication], methods=["POST"])
     def catch_legacy_imei_data(self, request, *args, **kwargs):

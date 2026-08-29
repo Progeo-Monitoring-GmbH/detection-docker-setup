@@ -6,6 +6,7 @@ import {
   Calendar3,
   Database,
   DoorOpen,
+  FileEarmarkText,
   Gear,
   Geo,
   Hdd,
@@ -44,6 +45,7 @@ const sectionFromPath = (pathname) => {
   if (pathname.startsWith('/staff')) return 'admin';
   if (pathname.startsWith('/factory')) return 'tools';
   if (pathname.startsWith('/lageplan')) return 'tools';
+  if (pathname.startsWith('/legacy')) return 'tools';
   if (pathname.startsWith('/map')) return 'tools';
   if (pathname.startsWith('/ws-debug')) return 'tools';
   if (pathname.startsWith('/dev')) return 'tools';
@@ -244,6 +246,10 @@ const Navbar = ({ act, content }) => {
                   <NavDropdown.Item as={Link} to="/map/">
                     <Geo size={16} className="me-2" />
                     Map
+                  </NavDropdown.Item>
+                  <NavDropdown.Item as={Link} to="/legacy/import/">
+                    <FileEarmarkText size={16} className="me-2" />
+                    Legacy Import
                   </NavDropdown.Item>
                   <NavDropdown.Divider />
                   <NavDropdown.Item as={Link} to="/ws-debug">
