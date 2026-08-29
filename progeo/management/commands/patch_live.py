@@ -13,6 +13,33 @@ from progeo.v1.legacy.helper_resistance import MAX_JSON_SAFE_RESISTANCE_OHM
 from progeo.v1.models import Account, ProgeoDevice, ProgeoLocation, ProgeoMeasurement
 
 
+
+def fetch_device_locations():
+    devices = ProgeoDevice.objects.filter(location__isnull=True).all()
+    dlog(f"Found {len(devices)} devices without location")  
+    for device in devices:
+        if device.project_id:
+            pid = device.project_id
+        elif device.raw_hash:
+            pid = device.raw_hash
+        else:
+            dlog(f"Skipping device {device.raw_hash} without project_id or raw_hash")
+            continue
+
+        if not isinstance(pid, int):
+            try:
+                pid = int(pid)
+            except ValueError:
+                dlog(f"Skipping device {device.raw_hash} with non-integer project_id: {pid}")
+                continue
+
+        location = ProgeoLocation.objects.filter(project_id=pid).first()
+        if location:
+            device.location = location
+            device.save()
+            dlog(f"Assigned location {location} to device {device.raw_hash}")
+
+
 class Command(BaseCommand):
     help = (
         'Patches for live data. Selects the patch to run with -p/--patch.\n\n'
@@ -35,30 +62,7 @@ class Command(BaseCommand):
                             help="Select a patch to run",
                             default=None)
 
-    def _fetch_device_locations(self):
-        devices = ProgeoDevice.objects.filter(location__isnull=True).all()
-        dlog(f"Found {len(devices)} devices without location")  
-        for device in devices:
-            if device.project_id:
-                pid = device.project_id
-            elif device.raw_hash:
-                pid = device.raw_hash
-            else:
-                dlog(f"Skipping device {device.raw_hash} without project_id or raw_hash")
-                continue
 
-            if not isinstance(pid, int):
-                try:
-                    pid = int(pid)
-                except ValueError:
-                    dlog(f"Skipping device {device.raw_hash} with non-integer project_id: {pid}")
-                    continue
-
-            location = ProgeoLocation.objects.filter(project_id=pid).first()
-            if location:
-                device.location = location
-                device.save()
-                dlog(f"Assigned location {location} to device {device.raw_hash}")
 
 
     def handle(self, *args, **options):
@@ -164,7 +168,7 @@ class Command(BaseCommand):
             fetch_legacy_data(dry_run=True)
 
         if patch == "fetch_device_locations":
-            _fetch_device_locations()
+            fetch_device_locations()
 
         if patch == "fetch_lageplan":
             locations = ProgeoLocation.objects.filter(lageplan__isnull=True).all()
