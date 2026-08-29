@@ -4,6 +4,7 @@ import os
 
 from rest_framework.parsers import BaseParser
 from django.conf import settings
+from progeo.helper.basics import ilog
 from progeo.v1.creator import create_progeo_alarm_safe
 from progeo.v1.legacy.helper_resistance import MAX_JSON_SAFE_RESISTANCE_OHM
 from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurement
@@ -152,6 +153,17 @@ def is_imei(value):
         return False
     return True
 
+
+def _legacy_measurement_datetime(measurement):
+    """The measurement's own datetime (naive local) from the legacy m_date epoch, or None."""
+    m_date = getattr(measurement, "m_date", None)
+    if not isinstance(m_date, int) or m_date <= 0:
+        return None
+    try:
+        return datetime.fromtimestamp(m_date)
+    except (OverflowError, OSError, ValueError):
+        return None
+
 def get_device_type(measurement, device_id) -> ProgeoDevice.DeviceType:
     if is_imei(device_id):
         return ProgeoDevice.DeviceType.IMEI
@@ -206,6 +218,11 @@ def save_measurement_from_legacy_data(measurement, device_id: str, battery_V: in
                 "voltage_raw": data.get("voltage_raw"),
             },
         )
+        # Stamp the measurement with its own datetime (m_date epoch) so imports
+        # can be deduplicated by project_id + datetime.
+        parsed_datetime = _legacy_measurement_datetime(measurement)
+        if parsed_datetime is not None:
+            measure.last_updated = parsed_datetime
     elif isinstance(measurement, dict):
         data = measurement
         if battery_V is not None:
@@ -318,7 +335,7 @@ def _broadcast_legacy_location(project_id: int):
     async_to_sync(channel_layer.group_send)(GRP_NAME, payload)
 
 
-def parse_legacy_data_measurement(data):
+def parse_legacy_data_measurement(data, broadcast=True):
     values = _normalize_legacy_payload_to_int_list(data)
     if len(values) < 25:
         raise ValueError("Legacy data requires at least 25 indexed values")
@@ -353,8 +370,217 @@ def parse_legacy_data_measurement(data):
         samples=samples,
     )
 
-    _broadcast_legacy_location(measurement.project_id)
+    if broadcast:
+        _broadcast_legacy_location(measurement.project_id)
     return measurement
+
+
+def _split_timestamp_and_payload(raw_line):
+    text = (raw_line or "").strip()
+    if not text or "," not in text:
+        return None, ""
+    timestamp_text, payload = text.split(",", 1)
+    return timestamp_text.strip(), payload.strip()
+
+
+def _build_parse_line(raw_line, prev_line):
+    current = (raw_line or "").strip()
+    if not current:
+        return current
+
+    current_timestamp, _ = _split_timestamp_and_payload(current)
+    prev_timestamp, prev_payload = _split_timestamp_and_payload(prev_line)
+
+    if current_timestamp and current_timestamp == prev_timestamp and prev_payload:
+        needs_separator = not current.endswith((",", ";", "&"))
+        current = f"{current}{',' if needs_separator else ''}{prev_payload}"
+
+    if not current.endswith(";"):
+        current = f"{current};"
+    return current
+
+
+def _parse_y_line(raw_line, prev_line, broadcast=True):
+    """Parse a 'Y=' line (with the previous line for continuation merging)
+    into a DataMeasurement, or None when it cannot be parsed. Bulk parsers
+    pass ``broadcast=False`` and broadcast once themselves afterwards."""
+    try:
+        parse_line = _build_parse_line(raw_line, prev_line)
+        y_part = parse_line.split("Y=", 1)[1]
+        y_part = y_part.split("&", 1)[0].strip()
+        y_part = y_part.split(";", 1)[0].strip()
+        values = [entry.strip() for entry in y_part.split(",") if entry.strip()]
+        return parse_legacy_data_measurement(values, broadcast=broadcast)
+    except (TypeError, ValueError, IndexError):
+        return None
+
+
+def save_legacy_measurement_dedup(measurement, existing_datetimes=None) -> bool:
+    """Save a legacy measurement only when no measurement exists for the same
+    project_id + datetime (m_date). Returns True when created, False when the
+    entry already exists (no duplicate is written).
+
+    ``existing_datetimes``: an optional pre-loaded set of datetimes that are
+    already stored for this project (see fetch_and_import_legacy_project). When
+    given, the duplicate check is an in-memory lookup instead of one DB query
+    per measurement.
+    """
+    db_name = "default"
+    parsed_datetime = _legacy_measurement_datetime(measurement)
+    if parsed_datetime is not None:
+        if existing_datetimes is None:
+            exists = ProgeoMeasurement.objects.using(db_name).filter(
+                project_id=measurement.project_id,
+                last_updated=parsed_datetime,
+            ).exists()
+        else:
+            exists = parsed_datetime in existing_datetimes
+        if exists:
+            ilog(f"Duplicate measurement found for project_id={measurement.project_id} at {parsed_datetime}")
+            return False
+    save_measurement_from_legacy_data(
+        measurement=measurement,
+        device_id=str(measurement.project_id),
+    )
+    return True
+
+
+def _fetch_text_with_ssl_fallback(url, timeout=30) -> str:
+    """Download `url` and return its text; retries with an unverified SSL
+    context for endpoints with incomplete cert chains (dev/local)."""
+    import ssl
+    from urllib.error import URLError
+    from urllib.request import Request, urlopen
+
+    request = Request(url, headers={"User-Agent": "progeo-legacy-fetch/1.0"})
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            return response.read().decode("utf-8", errors="replace")
+    except URLError as exc:
+        if not isinstance(exc.reason, ssl.SSLCertVerificationError):
+            raise
+    insecure_context = ssl._create_unverified_context()
+    with urlopen(request, timeout=timeout, context=insecure_context) as response:
+        return response.read().decode("utf-8", errors="replace")
+
+
+LEGACY_FILE_URL_TEMPLATE = "https://data-progeo.net/gprs{project_id}.txt"
+
+
+def fetch_and_import_legacy_project(project_id: int, dry_run: bool = False) -> dict:
+    """Download the legacy file of one project, parse its 'Y=' lines and store
+    each measurement - but only when no measurement exists for the same
+    project_id + datetime (no duplicates).
+
+    Deduplication is boundary-based instead of one DB query per measurement:
+    the project's existing datetimes are loaded ONCE as a set, bounded to the
+    file's own datetime range. If nothing exists in that range, no duplicate is
+    possible at all and the file is imported without any per-measurement
+    checks; otherwise measurements are checked against the set in memory. When
+    the whole file turns out to be covered, the import is skipped entirely.
+    """
+    from urllib.error import HTTPError, URLError
+
+    url = LEGACY_FILE_URL_TEMPLATE.format(project_id=project_id)
+    report = {
+        "project_id": project_id,
+        "url": url,
+        "fetched": False,
+        "status_code": None,
+        "bytes": 0,
+        "lines": 0,
+        "parsed": 0,
+        "created": 0,
+        "skipped_duplicates": 0,
+        "skipped_file": False,
+        "errors": [],
+    }
+
+    try:
+        text = _fetch_text_with_ssl_fallback(url)
+    except HTTPError as exc:
+        report["status_code"] = exc.code
+        report["errors"].append(f"HTTP {exc.code}")
+        return report
+    except (URLError, TimeoutError, OSError) as exc:
+        report["errors"].append(str(exc))
+        return report
+
+    report["fetched"] = True
+    report["bytes"] = len(text.encode("utf-8", errors="replace"))
+
+    # Parse every Y= line first so we know the file's datetime boundaries.
+    measurements = []
+    previous_line = None
+    for line_index, line in enumerate(text.splitlines(), start=1):
+        report["lines"] += 1
+        if "Y=" not in line:
+            previous_line = line
+            continue
+
+        measurement = _parse_y_line(line, previous_line, broadcast=False)
+        previous_line = line
+        if measurement is None:
+            report["errors"].append(f"parse error on line {line_index}")
+            continue
+        report["parsed"] += 1
+        measurements.append(measurement)
+
+    if dry_run:
+        return report
+
+    datetimes = [_legacy_measurement_datetime(m) for m in measurements]
+
+    # Boundary check: only datetimes inside the file's own range can collide,
+    # so load exactly those in one bounded query.
+    existing_datetimes = set()
+    valid_datetimes = [dt for dt in datetimes if dt is not None]
+    if valid_datetimes:
+        min_datetime, max_datetime = min(valid_datetimes), max(valid_datetimes)
+        existing_datetimes = set(
+            ProgeoMeasurement.objects.using("default")
+            .filter(
+                project_id=project_id,
+                last_updated__gte=min_datetime,
+                last_updated__lte=max_datetime,
+            )
+            .values_list("last_updated", flat=True)
+        )
+
+    # Nothing in the file's range exists yet -> no duplicate is possible at
+    # all; import everything without any per-measurement checks.
+    if not existing_datetimes:
+        for measurement in measurements:
+            try:
+                save_measurement_from_legacy_data(
+                    measurement=measurement,
+                    device_id=str(project_id),
+                )
+                report["created"] += 1
+            except Exception as exc:  # pragma: no cover
+                report["errors"].append(f"save error: {exc}")
+        _broadcast_legacy_location(project_id)
+        return report
+
+    # Otherwise dedupe with in-memory lookups against the boundary set.
+    for measurement in measurements:
+        try:
+            if save_legacy_measurement_dedup(
+                measurement,
+                existing_datetimes=existing_datetimes,
+            ):
+                report["created"] += 1
+            else:
+                report["skipped_duplicates"] += 1
+        except Exception as exc:  # pragma: no cover
+            report["errors"].append(f"save error: {exc}")
+
+    # Every measurement of the file already existed -> the whole file is done.
+    if report["created"] == 0 and not report["errors"]:
+        report["skipped_file"] = True
+
+    _broadcast_legacy_location(project_id)
+    return report
 
 
 def fetch_legacy_data(target_dir=None, dry_run=True):
@@ -382,29 +608,6 @@ def fetch_legacy_data(target_dir=None, dry_run=True):
         print(f"Legacy target directory does not exist: {target_dir}")
         return report
 
-    def _split_timestamp_and_payload(raw_line):
-        text = (raw_line or "").strip()
-        if not text or "," not in text:
-            return None, ""
-        timestamp_text, payload = text.split(",", 1)
-        return timestamp_text.strip(), payload.strip()
-
-    def _build_parse_line(raw_line, prev_line):
-        current = (raw_line or "").strip()
-        if not current:
-            return current
-
-        current_timestamp, _ = _split_timestamp_and_payload(current)
-        prev_timestamp, prev_payload = _split_timestamp_and_payload(prev_line)
-
-        if current_timestamp and current_timestamp == prev_timestamp and prev_payload:
-            needs_separator = not current.endswith((",", ";", "&"))
-            current = f"{current}{',' if needs_separator else ''}{prev_payload}"
-
-        if not current.endswith(";"):
-            current = f"{current};"
-        return current
-
     for root, _, files in os.walk(target_dir):
         for file_name in sorted(files):
             path = os.path.join(root, file_name)
@@ -428,17 +631,11 @@ def fetch_legacy_data(target_dir=None, dry_run=True):
                             file_has_y = True
                             report["y_lines_total"] += 1
 
-                            try:
-                                parse_line = _build_parse_line(line, previous_line)
-                                y_part = parse_line.split("Y=", 1)[1]
-                                y_part = y_part.split("&", 1)[0].strip()
-                                y_part = y_part.split(";", 1)[0].strip()
-                                values = [entry.strip() for entry in y_part.split(",") if entry.strip()]
-                                measurement = parse_legacy_data_measurement(values)
-                            except (TypeError, ValueError, IndexError) as exc:
+                            measurement = _parse_y_line(line, previous_line, broadcast=False)
+                            if measurement is None:
                                 report["parse_errors"] += 1
                                 if len(report["error_examples"]) < 5:
-                                    report["error_examples"].append(f"parse {path}:{line_index} -> {exc}")
+                                    report["error_examples"].append(f"parse {path}:{line_index}")
                                 previous_line = line
                                 continue
 
@@ -465,6 +662,11 @@ def fetch_legacy_data(target_dir=None, dry_run=True):
 
             if file_has_y:
                 report["files_with_y"] += 1
+
+    # One broadcast per project instead of one per parsed measurement.
+    if not dry_run:
+        for project_id in report["projects_found"]:
+            _broadcast_legacy_location(project_id)
 
     projects_found_count = len(report["projects_found"])
     print("")

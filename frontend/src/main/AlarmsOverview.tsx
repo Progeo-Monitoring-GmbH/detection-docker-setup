@@ -81,7 +81,7 @@ const TICK_MS = 30_000;
 const DEFAULT_ALARM_DAYS = 3;
 // Selectable window sizes for the days select-box (older alarms are fetched
 // incrementally, one missing slice at a time).
-const DAY_OPTIONS = [3, 7, 14, 30, 90, 365];
+const DAY_OPTIONS = [1, 2, 3, 7, 14, 30, 90, 365];
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
@@ -145,12 +145,7 @@ const AlarmsOverview = () => {
   // older alarms can be loaded incrementally without re-fetching the whole
   // window; otherwise the rows are replaced.
   const fetchWindow = useCallback(
-    (
-      fromMs: number,
-      toMs: number,
-      merge: boolean,
-      onSuccess?: () => void,
-    ) => {
+    (fromMs: number, toMs: number, merge: boolean, onSuccess?: () => void) => {
       setLoading(true);
       const params = new URLSearchParams({
         from: toLocalIso(fromMs),
@@ -613,8 +608,7 @@ const AlarmsOverview = () => {
             disabled={loading || loadedDays >= 365}
             title="Load older alarms (fetch only the missing days)"
           >
-            <PlusLg className="me-2" />
-            +{days} days
+            <PlusLg className="me-2" />+{days} days
           </Button>
           <Button
             variant="outline-primary"
