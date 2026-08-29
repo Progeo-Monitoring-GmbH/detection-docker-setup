@@ -13,6 +13,7 @@ from rest_framework.authentication import SessionAuthentication, TokenAuthentica
 from progeo.authentication import LimitedTokenAuthentication
 from rest_framework.permissions import IsAuthenticated
 from progeo.helper.measurement_utils import flatten_numeric_values
+from progeo.management.commands.patch_live import fetch_device_locations
 from progeo.tasks import download_device_config as download_device_config_task, upload_device_config as upload_device_config_task
 from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurement
 from progeo.v1.serializers import DeviceSerializer, ProgeoMeasurementSerializer
@@ -215,7 +216,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         import the measurements. Entries are only created when no measurement
         exists for the same project_id + datetime (no duplicates).
         """
-        from progeo.management.commands.patch_live import Command as PatchLiveCommand
+
         project_id = request.data.get("project_id")
         try:
             project_id = int(project_id)
@@ -232,7 +233,8 @@ class DeviceViewSet(ProgeoModalViewSet):
         except Exception as exc:
             elog(f"[legacy/fetch] project_id={project_id} failed: {exc}")
             return RequestFailed({"reason": f"Import failed: {exc}"})
-        PatchLiveCommand()._fetch_device_locations()
+        
+        fetch_device_locations()
         return RequestSuccess({"report": report})
 
     @action(detail=False, url_path="sample/imei", authentication_classes=[LimitedTokenAuthentication], methods=["POST"])
