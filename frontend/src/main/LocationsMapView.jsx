@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Badge,
   Card,
@@ -35,8 +35,39 @@ const hasCoordinates = (location) =>
 
 const MapViewportController = ({ markers, selectedLocation }) => {
   const map = useMap();
+  // Signature of the markers' spatial content only (id + coordinates). Websocket
+  // updates that merely refresh metadata (e.g. last_measurement_at) create a new
+  // `markers` array but keep the same signature, so the map is NOT re-fitted and
+  // the user's zoom/position stays put.
+  const fittedSignatureRef = useRef(null);
+  // Once the user has panned or zoomed by hand, stop auto-fitting entirely so
+  // even genuinely new markers don't yank the view away.
+  const userInteractedRef = useRef(false);
 
   useEffect(() => {
+    const markUserInteracted = () => {
+      userInteractedRef.current = true;
+    };
+    const container = map.getContainer();
+    map.on('dragstart', markUserInteracted);
+    container.addEventListener('wheel', markUserInteracted, { passive: true });
+    return () => {
+      map.off('dragstart', markUserInteracted);
+      container.removeEventListener('wheel', markUserInteracted);
+    };
+  }, [map]);
+
+  useEffect(() => {
+    const signature = markers
+      .map((location) => `${location.id}:${location.latitude},${location.longitude}`)
+      .sort()
+      .join('|');
+
+    if (userInteractedRef.current || signature === fittedSignatureRef.current) {
+      return;
+    }
+    fittedSignatureRef.current = signature;
+
     if (!markers.length) {
       map.setView(DEFAULT_CENTER, 6);
       return;

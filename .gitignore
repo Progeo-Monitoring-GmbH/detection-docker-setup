@@ -46,3 +46,4 @@ logs/
 __pycache__/
 .vscode/
 png_output/
+*.inspect.json
