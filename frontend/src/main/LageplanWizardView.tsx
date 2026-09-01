@@ -38,6 +38,7 @@ type ImportedSource = {
 
 type MeasurePointsResponse = {
   points?: Array<Record<string, unknown>>;
+  // Backward compatible: primary lageplan data (for single active lageplan)
   lageplan_url?: string | null;
   offset_x?: number;
   offset_y?: number;
@@ -45,6 +46,21 @@ type MeasurePointsResponse = {
   scale_y?: number;
   flip_x?: boolean;
   flip_y?: boolean;
+  // New: array of all lageplans with full metadata
+  lageplans?: Array<{
+    id: number;
+    name?: string;
+    is_active?: boolean;
+    url?: string | null;
+    offset_x?: number | null;
+    offset_y?: number | null;
+    scale_x?: number | null;
+    scale_y?: number | null;
+    flip_x?: boolean;
+    flip_y?: boolean;
+    offset_latitude?: number | null;
+    offset_longitude?: number | null;
+  }> | null;
 };
 
 type DeviceOption = {

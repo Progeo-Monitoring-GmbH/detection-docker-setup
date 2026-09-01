@@ -16,6 +16,7 @@ from progeo.v1.models import (
     ProgeoAlarm,
     ProgeoDevice,
     ProgeoLocation,
+    ProgeoLageplan,
     ProgeoMeasurePoint,
     ProgeoMeasurement,
 )
@@ -113,6 +114,8 @@ class LocationSerializer(ProgeoBaseSerializer):
     last_measurement_at = serializers.DateTimeField(read_only=True)
     measurement_count = serializers.IntegerField(read_only=True)
     lageplan_url = serializers.SerializerMethodField("get_lageplan_url")
+    lageplans = serializers.SerializerMethodField("get_lageplans")
+    child_location_ids = serializers.SerializerMethodField("get_child_location_ids")
 
     class Meta:
         model = ProgeoLocation
@@ -124,14 +127,110 @@ class LocationSerializer(ProgeoBaseSerializer):
     
     @staticmethod
     def get_lageplan_url(obj):
+        """
+        Returns URL for the primary active lageplan.
+        First checks new ProgeoLageplan model (preferred), then falls back to legacy field.
+        """
+        # Try new ProgeoLageplan model first
+        try:
+            # Get the active lageplan if it exists
+            lageplan = obj.lageplans.filter(is_active=True).first()
+            if not lageplan:
+                # Fallback to any lageplan if none are marked active
+                lageplan = obj.lageplans.first()
+            
+            if lageplan and lageplan.lageplan and hasattr(lageplan.lageplan, "name"):
+                return posixpath.join("media", "uploads", lageplan.lageplan.name)
+        except Exception:
+            # If accessing lageplans fails, continue to legacy fallback
+            pass
+        
+        # Fallback to legacy lageplan field for backward compatibility
         raw = obj.lageplan
         if raw and hasattr(raw, "name"):
             return posixpath.join("media", "uploads", raw.name)
+        
+        return None
+
+    @staticmethod
+    def get_lageplans(obj):
+        """
+        Returns serialized list of all lageplans for this location.
+        Includes both file URL and transformation data.
+        """
+        try:
+            lageplans_data = []
+            for lageplan in obj.lageplans.all():
+                lageplan_obj = {
+                    "id": lageplan.id,
+                    "name": lageplan.name or f"Lageplan {lageplan.id}",
+                    "is_active": lageplan.is_active,
+                    "url": posixpath.join("media", "uploads", lageplan.lageplan.name) if lageplan.lageplan and hasattr(lageplan.lageplan, "name") else None,
+                    "offset_x": lageplan.offset_x,
+                    "offset_y": lageplan.offset_y,
+                    "scale_x": lageplan.scale_x,
+                    "scale_y": lageplan.scale_y,
+                    "flip_x": lageplan.flip_x,
+                    "flip_y": lageplan.flip_y,
+                    "offset_latitude": lageplan.offset_latitude,
+                    "offset_longitude": lageplan.offset_longitude,
+                }
+                lageplans_data.append(lageplan_obj)
+            return lageplans_data if lageplans_data else None
+        except Exception:
+            return None
+
+    @staticmethod
+    def get_child_location_ids(obj):
+        """Returns IDs of child locations in the hierarchy."""
+        if obj.child_locations.exists():
+            return list(obj.child_locations.values_list('id', flat=True))
         return None
 
     @staticmethod
     def get_has_device(obj):
         return 161 #obj.get_device_count() # TODO expensive, should be cached or annotated
+
+
+class ProgeoLageplanSerializer(ProgeoBaseSerializer):
+    """Serializer for ProgeoLageplan model with file URL handling."""
+    clazz = serializers.SerializerMethodField("get_clazz_name")
+    url = serializers.SerializerMethodField("get_lageplan_url")
+    location_id = serializers.IntegerField(source="location.id", read_only=True)
+    location_name = serializers.CharField(source="location.name", read_only=True)
+
+    class Meta:
+        model = ProgeoLageplan
+        fields = [
+            "id",
+            "clazz",
+            "location_id",
+            "location_name",
+            "name",
+            "url",
+            "offset_x",
+            "offset_y",
+            "scale_x",
+            "scale_y",
+            "flip_x",
+            "flip_y",
+            "offset_latitude",
+            "offset_longitude",
+            "is_active",
+            "last_fetched",
+            "last_updated",
+        ]
+
+    @staticmethod
+    def get_clazz_name(_):
+        return "ProgeoLageplan"
+
+    @staticmethod
+    def get_lageplan_url(obj):
+        """Returns the media URL for the lageplan file."""
+        if obj.lageplan and hasattr(obj.lageplan, "name"):
+            return posixpath.join("media", "uploads", obj.lageplan.name)
+        return None
 
 
 class MinimalLocationSerializer(ProgeoBaseSerializer):

@@ -99,10 +99,12 @@ class Command(BaseCommand):
         if options["limit"]:
             kwargs["max_records"] = max(1, options["limit"])
 
-        records = helper.fetch_all_projects(**kwargs)
+        records = helper.fetch_all_auftraege(**kwargs)
 
         if options["json"]:
-            self.stdout.write(json.dumps(records, ensure_ascii=False, indent=2))
+
+            with open("airtable_projects.json", "w", encoding="utf-8") as f:
+                f.write(json.dumps(records, ensure_ascii=False))
             return
 
         self.stdout.write(self.style.SUCCESS(f"Fetched {len(records)} project(s):"))

@@ -10,7 +10,7 @@ from progeo.helper.legacy.geo import GeoHelper
 from progeo.v1.creator import save_location_lageplan
 from progeo.v1.legacy.executor import fetch_legacy_data, parse_sample_timestamp
 from progeo.v1.legacy.helper_resistance import MAX_JSON_SAFE_RESISTANCE_OHM
-from progeo.v1.models import Account, ProgeoDevice, ProgeoLocation, ProgeoMeasurement
+from progeo.v1.models import Account, ProgeoDevice, ProgeoLocation, ProgeoMeasurement, ProgeoLageplan
 
 
 
@@ -44,17 +44,19 @@ class Command(BaseCommand):
     help = (
         'Patches for live data. Selects the patch to run with -p/--patch.\n\n'
         'Available patches:\n'
-        '  fix_dragino_usage      backfill last_updated / resistances for a dragino device\n'
-        '  fetch_projects         import projects from data-progeo.net into locations\n'
-        '  fetch_legacy_data      fetch legacy measurement data (dry run)\n'
-        '  fetch_device_locations assign locations to devices without one\n'
-        '  fetch_lageplan         download lageplan images for locations without one\n\n'
+        '  fix_dragino_usage         backfill last_updated / resistances for a dragino device\n'
+        '  fetch_projects            import projects from data-progeo.net into locations\n'
+        '  fetch_legacy_data         fetch legacy measurement data (dry run)\n'
+        '  fetch_device_locations    assign locations to devices without one\n'
+        '  fetch_lageplan            download lageplan images for locations without one\n'
+        '  migrate_legacy_lageplan   convert old lageplan fields to new ProgeoLageplan model\n\n'
         'Examples:\n'
         '  python manage.py patch_live --patch fetch_projects\n'
         '  python manage.py patch_live --patch fix_dragino_usage\n'
         '  python manage.py patch_live --patch fetch_legacy_data\n'
         '  python manage.py patch_live --patch fetch_device_locations\n'
-        '  python manage.py patch_live --patch fetch_lageplan'
+        '  python manage.py patch_live --patch fetch_lageplan\n'
+        '  python manage.py patch_live --patch migrate_legacy_lageplan'
     )
 
     def add_arguments(self, parser):
@@ -234,5 +236,56 @@ class Command(BaseCommand):
                         ilog(f"Updated location for device {project_id}")
                     except ProgeoLocation.DoesNotExist:
                         dlog(f"No location found for project {project_id}")
+        
+        if patch == "migrate_legacy_lageplan":
+            """
+            Convert legacy lageplan fields from ProgeoLocation to new ProgeoLageplan model.
+            
+            For each location with lageplan data, creates a ProgeoLageplan record with:
+            - lageplan file
+            - offset_x, offset_y (pixel offsets)
+            - scale_x, scale_y (scaling factors)
+            - flip_x, flip_y (transformations)
+            - offset_latitude, offset_longitude (georeferencing)
+            
+            Marks new lageplan as active and logs progress.
+            """
+            locations_with_lageplan = ProgeoLocation.objects.filter(lageplan__isnull=False).exclude(lageplan='').all()
+            total = locations_with_lageplan.count()
+            created = 0
+            skipped = 0
+            
+            ilog(f"Starting migration of {total} locations with legacy lageplan data")
+            
+            for location in locations_with_lageplan:
+                # Check if this location already has a ProgeoLageplan (avoid duplicates)
+                if ProgeoLageplan.objects.filter(location=location).exists():
+                    skipped += 1
+                    dlog(f"Location {location.id} ({location.project_id}) already has ProgeoLageplan, skipping")
+                    continue
+                
+                try:
+                    # Create ProgeoLageplan with the legacy data
+                    lageplan = ProgeoLageplan(
+                        location=location,
+                        lageplan=location.lageplan,
+                        name='',
+                        offset_x=location.offset_x,
+                        offset_y=location.offset_y,
+                        scale_x=location.scale_x if location.scale_x else 1.0,
+                        scale_y=location.scale_y if location.scale_y else 1.0,
+                        flip_x=location.flip_x,
+                        flip_y=location.flip_y,
+                        offset_latitude=location.offset_latitude,
+                        offset_longitude=location.offset_longitude,
+                        is_active=True,
+                    )
+                    lageplan.save()
+                    created += 1
+                    ilog(f"✓ Migrated lageplan for location {location.id} ({location.name or location.project_id})")
+                except Exception as exc:
+                    elog(f"✗ Failed to migrate lageplan for location {location.id} ({location.project_id}): {exc}")
+            
+            ilog(f"Migration complete: {created} created, {skipped} skipped out of {total} locations")
                     
         dlog("DONE!")
