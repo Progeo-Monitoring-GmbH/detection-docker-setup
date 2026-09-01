@@ -5,7 +5,7 @@ from urllib.request import urlopen
 from progeo.management.commands._base import BaseCommand
 
 
-from progeo.helper.basics import dlog
+from progeo.helper.basics import dlog, elog, ilog
 from progeo.helper.legacy.geo import GeoHelper
 from progeo.v1.creator import save_location_lageplan
 from progeo.v1.legacy.executor import fetch_legacy_data, parse_sample_timestamp
@@ -194,5 +194,45 @@ class Command(BaseCommand):
                 save_location_lageplan(location, content, f"{location.project_id}.png")
                 dlog(f"Fetched lageplan for project {location.project_id}")
 
+        if patch == "fix_unknown_location":
 
+            devices = ProgeoDevice.objects.filter(project_id__isnull=True).all()
+            for device in devices:
+                project_id = device.raw_hash
+                try:
+                    location = ProgeoLocation.objects.filter(project_id=device.raw_hash).first()
+                    if location:
+                        device.location = location
+                        device.project_id = project_id
+                        device.save()
+                        ilog(f"Updated device {device.id} with project_id {project_id} and location {location.id}")
+                except ValueError as exc:
+                    elog(f"Failed to update device {device.id} with project_id {project_id}: {exc}")
+
+            locations = ProgeoLocation.objects.filter(project_id__isnull=True).all()
+            for location in locations:
+                devices = ProgeoDevice.objects.filter(location=location).all()
+                for device in devices:
+                    if not device.project_id:
+                        measurement = ProgeoMeasurement.objects.filter(device=device, project_id__isnull=True).first()
+                        dlog(f"Device {device.id} has no project_id, skipping | {measurement}")
+
+                        if not measurement:
+                            continue
+                        project_id = measurement.project_id
+                    else:
+                        project_id = device.project_id
+
+                    if not project_id:
+                        dlog(f"No project_id found for device {device.id}, skipping")
+                        continue
+
+                    dlog(f"Attempting to update location for device {project_id}")
+                    try:
+                        device.location = ProgeoLocation.objects.get(project_id=project_id)
+                        device.save()
+                        ilog(f"Updated location for device {project_id}")
+                    except ProgeoLocation.DoesNotExist:
+                        dlog(f"No location found for project {project_id}")
+                    
         dlog("DONE!")

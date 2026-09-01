@@ -1,4 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;500;700&display=swap');
+/* Plus Jakarta Sans is bundled locally (frontend/src/assets/fonts/plus-jakarta-sans)
+   so the app works fully offline - no runtime request to fonts.googleapis.com. */
+@import '../src/assets/fonts/plus-jakarta-sans/plus-jakarta-sans.css';
 
 :root {
   --progeo-blue: #0b3659;

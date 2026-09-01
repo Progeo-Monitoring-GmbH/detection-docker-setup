@@ -27,6 +27,13 @@ import { showErrorBar, showInfoBar } from '../components/ui/Snackbar.jsx';
 const DEFAULT_CENTER = [51.1657, 10.4515];
 const FLASH_DURATION_MS = 30000;
 
+// Tile source: point VITE_MAP_TILE_URL at a local tile server (or another
+// provider) for offline deployments - with the default Esri source the map
+// page needs internet at runtime.
+const TILE_URL =
+  import.meta.env.VITE_MAP_TILE_URL ||
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+
 const hasCoordinates = (location) =>
   typeof location.latitude === 'number' &&
   Number.isFinite(location.latitude) &&
@@ -430,7 +437,7 @@ const LocationsMapView = () => {
                 >
                   <TileLayer
                     attribution="Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community"
-                    url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                    url={TILE_URL}
                   />
                   <MapViewportController
                     markers={mappableRows}
