@@ -64,7 +64,7 @@ class AirtableHelper:
         base = self.api.base(self._base_id)
         return [(table.id, table.name) for table in base.tables()]
 
-    def fetch_all_projects(self, **options) -> list:
+    def fetch_all_auftraege(self, **options) -> list:
         """Fetch every row of the projects table.
 
         Returns the raw pyairtable records, each with ``id``, ``createdTime``

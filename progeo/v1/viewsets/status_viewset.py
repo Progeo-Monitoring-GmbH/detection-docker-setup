@@ -547,14 +547,34 @@ class StatusViewSet(ProgeoModalViewSet):
                 "1", "true", "yes", "on"
             }
             if with_lageplan:
-                lageplan = location.lageplan
-                response_data["lageplan_url"] = posixpath.join("media", "uploads", lageplan.name) if lageplan else None
-                response_data["offset_x"] = location.offset_x
-                response_data["offset_y"] = location.offset_y
-                response_data["scale_x"] = location.scale_x
-                response_data["scale_y"] = location.scale_y
-                response_data["flip_x"] = location.flip_x
-                response_data["flip_y"] = location.flip_y
+                # Prefer new ProgeoLageplan model, fallback to legacy fields
+                from progeo.v1.serializers import ProgeoLageplanSerializer
+                
+                lageplans_qs = location.lageplans.all()
+                if lageplans_qs.exists():
+                    # New model: return all lageplans
+                    lageplans_serialized = ProgeoLageplanSerializer(lageplans_qs, many=True).data
+                    response_data["lageplans"] = lageplans_serialized
+                    # Also include primary (active) lageplan data for backward compatibility
+                    active_lageplan = lageplans_qs.filter(is_active=True).first() or lageplans_qs.first()
+                    if active_lageplan and active_lageplan.lageplan:
+                        response_data["lageplan_url"] = posixpath.join("media", "uploads", active_lageplan.lageplan.name) if hasattr(active_lageplan.lageplan, "name") else None
+                        response_data["offset_x"] = active_lageplan.offset_x
+                        response_data["offset_y"] = active_lageplan.offset_y
+                        response_data["scale_x"] = active_lageplan.scale_x
+                        response_data["scale_y"] = active_lageplan.scale_y
+                        response_data["flip_x"] = active_lageplan.flip_x
+                        response_data["flip_y"] = active_lageplan.flip_y
+                else:
+                    # Fallback to legacy fields
+                    lageplan = location.lageplan
+                    response_data["lageplan_url"] = posixpath.join("media", "uploads", lageplan.name) if lageplan else None
+                    response_data["offset_x"] = location.offset_x
+                    response_data["offset_y"] = location.offset_y
+                    response_data["scale_x"] = location.scale_x
+                    response_data["scale_y"] = location.scale_y
+                    response_data["flip_x"] = location.flip_x
+                    response_data["flip_y"] = location.flip_y
             return RequestSuccess(response_data)
 
         raw_points = request.data.get("points")

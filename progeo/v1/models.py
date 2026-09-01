@@ -256,24 +256,114 @@ class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
 
     alarm_threshold = models.IntegerField(blank=True, default=100)
 
-    lageplan = models.FileField(upload_to=UPLOAD_REL_DIR, max_length=255, null=True, blank=True)
-    offset_x = models.IntegerField(null=True, blank=True)
-    offset_y = models.IntegerField(null=True, blank=True)
-    scale_x = models.FloatField(default=1, blank=True)
-    scale_y = models.FloatField(default=1, blank=True)
-    flip_x = models.BooleanField(default=False)
-    flip_y = models.BooleanField(default=False)
+    # Parent-location support: allows location hierarchy
+    parent_location = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='child_locations'
+    )
 
-    offset_latitude = models.FloatField(null=True, blank=True)
-    offset_longitude = models.FloatField(null=True, blank=True)
+    # DEPRECATED: Fields below are deprecated and kept for backward compatibility only.
+    # Use ProgeoLageplan model for new code. These fields will be migrated via data migrations.
+    lageplan = models.FileField(upload_to=UPLOAD_REL_DIR, max_length=255, null=True, blank=True, help_text="DEPRECATED: Use ProgeoLageplan instead")
+    offset_x = models.IntegerField(null=True, blank=True, help_text="DEPRECATED: Use ProgeoLageplan instead")
+    offset_y = models.IntegerField(null=True, blank=True, help_text="DEPRECATED: Use ProgeoLageplan instead")
+    scale_x = models.FloatField(default=1, blank=True, help_text="DEPRECATED: Use ProgeoLageplan instead")
+    scale_y = models.FloatField(default=1, blank=True, help_text="DEPRECATED: Use ProgeoLageplan instead")
+    flip_x = models.BooleanField(default=False, help_text="DEPRECATED: Use ProgeoLageplan instead")
+    flip_y = models.BooleanField(default=False, help_text="DEPRECATED: Use ProgeoLageplan instead")
+
+    offset_latitude = models.FloatField(null=True, blank=True, help_text="DEPRECATED: Use ProgeoLageplan instead")
+    offset_longitude = models.FloatField(null=True, blank=True, help_text="DEPRECATED: Use ProgeoLageplan instead")
 
     def get_device_count(self):
         return ProgeoDevice.objects.filter(location=self).count()
 
+    def get_lageplans(self):
+        """
+        Get lageplans for this location.
+        If this location has children, returns empty (use parent's lageplans).
+        If this location is a child, returns its own lageplans.
+        Efficiently handles hierarchy to avoid N+1 queries.
+        """
+        if self.child_locations.exists():
+            return ProgeoLageplan.objects.none()
+        return ProgeoLageplan.objects.filter(location=self)
+
+    def get_connected_models(self):
+        """
+        Override to include child locations' connected models if this is a parent.
+        This allows efficient loading of all devices/measurements for a location hierarchy.
+        """
+        connected = []
+        
+        # Get this location's devices/measurements
+        if hasattr(self, 'progeomeasurement_set'):
+            connected.append(('progeomeasurement_set', ProgeoMeasurement))
+        if hasattr(self, 'progeodevice_set'):
+            connected.append(('progeodevice_set', ProgeoDevice))
+        
+        # If this location has children, also include their devices/measurements
+        # Use select_related/prefetch_related to avoid N+1 queries
+        if self.child_locations.exists():
+            connected.append(('child_locations', ProgeoLocation))
+        
+        return connected
+
     def __str__(self):
         _id = f"[{self.pk}] " if DEBUG else ""
-        #loc = f"({self.latitude}, {self.longitude})" if self.latitude and self.longitude else self.address or 'Unknown Location'
-        return f"{_id} 📍 {self.project_id or 'XXXX'} - {self.name or 'Unknown'}"
+        parent_info = f" (Parent of {self.child_locations.count()} locations)" if self.child_locations.exists() else ""
+        return f"{_id} 📍 {self.project_id or 'XXXX'} - {self.name or 'Unknown'}{parent_info}"
+
+
+class ProgeoLageplan(ProgeoModel, auto_prefetch.Model):
+    """
+    Lageplan (site plan) data for a location.
+    A location can have multiple lagelans (e.g., different versions, floors, etc.).
+    
+    This model replaces the deprecated lageplan fields in ProgeoLocation:
+    - lageplan (FileField)
+    - offset_x, offset_y
+    - scale_x, scale_y
+    - flip_x, flip_y
+    - offset_latitude, offset_longitude
+    """
+    
+    location = models.ForeignKey(ProgeoLocation, on_delete=models.CASCADE, related_name='lageplans')
+    
+    # File and naming
+    lageplan = models.FileField(upload_to=UPLOAD_REL_DIR, max_length=255, null=True, blank=True)
+    name = models.CharField(max_length=255, null=True, blank=True, help_text="Optional name/version of this lageplan")
+    
+    # Positioning offsets
+    offset_x = models.IntegerField(null=True, blank=True, help_text="X offset in pixels")
+    offset_y = models.IntegerField(null=True, blank=True, help_text="Y offset in pixels")
+    
+    # Scaling factors
+    scale_x = models.FloatField(default=1, blank=True, help_text="Scale factor for X axis")
+    scale_y = models.FloatField(default=1, blank=True, help_text="Scale factor for Y axis")
+    
+    # Flip/mirror transformations
+    flip_x = models.BooleanField(default=False, help_text="Flip/mirror horizontally")
+    flip_y = models.BooleanField(default=False, help_text="Flip/mirror vertically")
+    
+    # Geographic offsets (for coordinate system adjustments)
+    offset_latitude = models.FloatField(null=True, blank=True, help_text="Latitude offset for georeferencing")
+    offset_longitude = models.FloatField(null=True, blank=True, help_text="Longitude offset for georeferencing")
+    
+    # Metadata
+    is_active = models.BooleanField(default=True, help_text="Whether this is the active/current lageplan")
+    
+    class Meta:
+        base_manager_name = "prefetch_manager"
+    
+    def __str__(self):
+        _id = f"[{self.pk}] " if DEBUG else ""
+        name_part = f" - {self.name}" if self.name else ""
+        active_marker = " ✓" if self.is_active else ""
+        return f"{_id} 📐 Location {self.location.name}{name_part}{active_marker}"
 
 
 class ProgeoDevice(ProgeoModel, auto_prefetch.Model):

@@ -40,6 +40,12 @@ PROGEO_CONFIG_ENABLE_MAILING = parse_boolean(os.getenv("PROGEO_CONFIG_ENABLE_MAI
 # Whether celery evaluates measurements / raises alarms on this server.
 PROGEO_CONFIG_ENABLE_MEASUREMENTS = parse_boolean(os.getenv("PROGEO_CONFIG_ENABLE_MEASUREMENTS"))
 
+# Airtable (pyairtable) integration - see django.env.template. The API key is
+# a placeholder until a real personal access token is configured.
+AIRTABLE_API_KEY = (os.getenv("AIRTABLE_API_KEY") or "").strip()
+AIRTABLE_BASE_ID = (os.getenv("AIRTABLE_BASE_ID") or "").strip()
+AIRTABLE_PROJECTS_TABLE = (os.getenv("AIRTABLE_PROJECTS_TABLE") or "Projects").strip()
+
 PRETTY_DATE_FORMAT = "%d.%m.%Y, %H:%M"
 DATETIME_FORMAT = PRETTY_DATE_FORMAT
 

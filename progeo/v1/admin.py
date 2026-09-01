@@ -5,7 +5,7 @@ from django.contrib.sessions.models import Session
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
 
 from progeo.helper.basics import okaylog, dlog, elog
-from progeo.v1.models import Account, AlarmDailyReport, EMail, LimitedToken, MfSLog, ProgeoAlarm, ProgeoDevice, ProgeoLocation, ProgeoMeasurePoint, ProgeoMeasurement
+from progeo.v1.models import Account, AlarmDailyReport, EMail, LimitedToken, MfSLog, ProgeoAlarm, ProgeoDevice, ProgeoLageplan, ProgeoLocation, ProgeoMeasurePoint, ProgeoMeasurement
 from django.contrib.auth.models import User
 from django import forms
 from django.forms import ModelForm
@@ -122,6 +122,9 @@ class EMailAdmin(MultiDBModelAdmin):
     list_display = ("created", "sent", "location", "sent_to", "subject", "error")
     list_filter = ("sent", "location")
     search_fields = ("sent_to", "subject", "message")
+
+class ProgeoLageplanAdmin(MultiDBModelAdmin):
+    pass
 
 class ProgeoMeasurePointAdmin(MultiDBModelAdmin):
     pass
@@ -244,7 +247,9 @@ register_models = [
     {"model": ProgeoDevice, "admin": ProgeoDeviceAdmin, "custom": True},
     {"model": ProgeoMeasurement, "admin": ProgeoMeasurementAdmin, "custom": True},
     {"model": ProgeoMeasurePoint, "admin": ProgeoMeasurePointAdmin, "custom": True},
+    {"model": ProgeoLageplan, "admin": ProgeoLageplanAdmin, "custom": True},
     {"model": EMail, "admin": EMailAdmin, "custom": True},
+    
 ]
 
 if not admin.site.is_registered(UserModulePermissions):

@@ -3,17 +3,37 @@ import { Card } from 'react-bootstrap';
 import Plot from 'react-plotly.js';
 import { plotTheme } from '../../styles/plotTheme';
 
-export type SensorHeatmapLocation = {
-  id?: number | null;
-  project_id?: number | null;
-  lageplan_url?: string | null;
-  alarm_threshold?: number | null;
+export type SensorHeatmapLageplanData = {
+  id?: number;
+  name?: string;
+  is_active?: boolean;
+  url?: string | null;
   offset_x?: number | null;
   offset_y?: number | null;
   scale_x?: number | null;
   scale_y?: number | null;
   flip_x?: boolean;
   flip_y?: boolean;
+  offset_latitude?: number | null;
+  offset_longitude?: number | null;
+};
+
+export type SensorHeatmapLocation = {
+  id?: number | null;
+  project_id?: number | null;
+  // Backward compatibility: primary lageplan fields (from LocationSerializer.get_lageplan_url/lageplans)
+  lageplan_url?: string | null;
+  offset_x?: number | null;
+  offset_y?: number | null;
+  scale_x?: number | null;
+  scale_y?: number | null;
+  flip_x?: boolean;
+  flip_y?: boolean;
+  // New: array of all lageplans with full metadata
+  lageplans?: SensorHeatmapLageplanData[] | null;
+  alarm_threshold?: number | null;
+  parent_location?: number | null;
+  child_location_ids?: number[] | null;
 };
 
 export type SensorHeatmapResponse = {
