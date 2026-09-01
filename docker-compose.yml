@@ -166,9 +166,13 @@ services:
           - dashboard.progeo.app
           - api.progeo.app
 
+  # Optional helper: only built + started when COMPOSE_PROFILES=cad_factory
+  # is set (see .env). With the profile inactive the image is not built and
+  # the container not started.
   progeo-cad_factory:
     container_name: progeo-cad_factory
     restart: 'no'
+    profiles: ["cad_factory"]
     build:
       context: .
       dockerfile: docker/cad_factory/Dockerfile
