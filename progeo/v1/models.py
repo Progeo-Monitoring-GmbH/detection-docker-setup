@@ -4,12 +4,13 @@ from enum import Enum
 
 import auto_prefetch
 from django.contrib.auth.models import User
+from django.conf import settings
 from django.db import models, connections
 from django.utils import timezone
 from jsonfield import JSONField
 from polymorphic.models import PolymorphicModel
 
-from progeo.v1.helper import calc_hash_from_dict
+from progeo.v1.helper import bitfield, calc_hash_from_dict
 from progeo.decorator import has_test_coverage
 from progeo.helper.basics import get_templates
 from progeo.helper.cacher import search_clear_cache
@@ -242,6 +243,15 @@ class Account(ProgeoModel, auto_prefetch.Model):
 
 
 class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
+    class PROJECT_TYPE_CHOICES(models.IntegerChoices):
+        UNKNOWN = 0, "Unknown"
+        SMARTEX = 1, "smartex"
+        GEOLOGGER = 2, "geologger"
+        DFH = 3, "DFH"
+        DEVELOPMENT = 4, "Development"
+        VERSUCH = 5, "Versuchsprojekte"
+        SONSTIGE = 99, "Sonstige"
+
     account = models.ForeignKey(Account, on_delete=models.CASCADE, null=True, blank=True)
     name = models.CharField(max_length=255, null=True, blank=True)
     plz = models.CharField(max_length=10, null=True, blank=True)
@@ -250,11 +260,15 @@ class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
     manager = models.CharField(max_length=100, null=True, blank=True)
     telefon = models.CharField(max_length=100, null=True, blank=True)
     mail = models.EmailField(max_length=100, null=True, blank=True)
+
     project_id = models.IntegerField(null=True, blank=True)
+    project_type = models.IntegerField(choices=PROJECT_TYPE_CHOICES, default=PROJECT_TYPE_CHOICES.UNKNOWN, null=True, blank=True)
+
     latitude = models.FloatField(null=True, blank=True)
     longitude = models.FloatField(null=True, blank=True)
 
     alarm_threshold = models.IntegerField(blank=True, default=100)
+    alarm_priority = models.IntegerField(blank=True, default=0)
 
     # Parent-location support: allows location hierarchy
     parent_location = models.ForeignKey(
@@ -264,19 +278,6 @@ class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
         blank=True,
         related_name='child_locations'
     )
-
-    # DEPRECATED: Fields below are deprecated and kept for backward compatibility only.
-    # Use ProgeoLageplan model for new code. These fields will be migrated via data migrations.
-    lageplan = models.FileField(upload_to=UPLOAD_REL_DIR, max_length=255, null=True, blank=True, help_text="DEPRECATED: Use ProgeoLageplan instead")
-    offset_x = models.IntegerField(null=True, blank=True, help_text="DEPRECATED: Use ProgeoLageplan instead")
-    offset_y = models.IntegerField(null=True, blank=True, help_text="DEPRECATED: Use ProgeoLageplan instead")
-    scale_x = models.FloatField(default=1, blank=True, help_text="DEPRECATED: Use ProgeoLageplan instead")
-    scale_y = models.FloatField(default=1, blank=True, help_text="DEPRECATED: Use ProgeoLageplan instead")
-    flip_x = models.BooleanField(default=False, help_text="DEPRECATED: Use ProgeoLageplan instead")
-    flip_y = models.BooleanField(default=False, help_text="DEPRECATED: Use ProgeoLageplan instead")
-
-    offset_latitude = models.FloatField(null=True, blank=True, help_text="DEPRECATED: Use ProgeoLageplan instead")
-    offset_longitude = models.FloatField(null=True, blank=True, help_text="DEPRECATED: Use ProgeoLageplan instead")
 
     def get_device_count(self):
         return ProgeoDevice.objects.filter(location=self).count()
@@ -519,6 +520,7 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
 
 class ProgeoMeasurePoint(ProgeoModel, auto_prefetch.Model):
     location = models.ForeignKey(ProgeoLocation, on_delete=models.CASCADE, related_name="points", null=True, blank=True)
+    lageplan = models.ForeignKey(ProgeoLageplan, on_delete=models.CASCADE, related_name="lageplaene", null=True, blank=True)
     sensor_order = models.IntegerField(null=False)
     x = models.FloatField(null=False, blank=False)
     y = models.FloatField(null=False, blank=False)
@@ -664,6 +666,83 @@ class AlarmDailyReport(ProgeoModel, auto_prefetch.Model):
     def is_complete(self):
         return self.total_count > 0
 
+class UserProfile(models.Model):
+    """Extra contact data of a user that does not fit on auth.User (mobile)."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="profile",
+    )
+    mobile = models.CharField(max_length=50, null=True, blank=True, help_text="Mobile number for SMS notifications")
+
+    def __str__(self):
+        return f"[{self.pk}] {self.user.username} - {self.mobile or 'no mobile'}"
+
+
+class ProgeoAccess(ProgeoModel, auto_prefetch.Model):
+
+    class NotifiTrans(models.IntegerChoices):
+        SILENT = 0
+        EMAIL = 1
+        SMS = 2
+        EMAIL_AND_SMS = 4
+
+    class NotifiTypes(models.IntegerChoices):
+        SILENT = 0
+        ALARM = 1
+        TIMEOUT = 2
+        NEWS = 4
+
+    location = models.ForeignKey(ProgeoLocation, on_delete=models.CASCADE, related_name="notifications", blank=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, null=True)
+    transport = models.IntegerField(choices=NotifiTrans.choices, null=True, blank=True)
+    type = models.IntegerField(choices=NotifiTypes.choices, null=True, blank=True)
+
+    def check_has_email(self):
+        user_email = self.user.email if self.user else None
+        if not user_email:
+            return False
+        return self.transport == self.NotifiTrans.EMAIL and bool(user_email)
+
+    def check_has_mobile(self):
+        user_mobile = self.user.mobile if self.user else None
+        if not user_mobile:
+            return False
+        return self.transport == self.NotifiTrans.SMS and bool(user_mobile)
+
+    def unpack_transport(self):
+        value = self.transport.value if self.transport else 0
+        if value == 0:
+            return {"SILENT": 1}
+        
+        return {
+            "EMAIL": 1 if value & 1 else 0,
+            "SMS": 1 if value & 2 else 0,
+            "EMAIL_AND_SMS": 1 if value & 4 else 0,
+        }
+
+    def unpack_type(self):
+        value = self.type.value if self.type else 0
+        if value == 0:
+            return {"SILENT": 1}
+        
+        return {
+            "ALARM": 1 if value & 1 else 0,
+            "TIMEOUT": 1 if value & 2 else 0,
+            "NEWS": 1 if value & 4 else 0,
+        }
+    
+    def return_active(self, data, as_string=True):
+        result = {k: 1 for k, v in data.items() if v}
+        if as_string:
+            return ", ".join(result.keys())
+        return result
+
+    def __str__(self):
+        _id = f"[{self.pk}] " if DEBUG else ""
+        return f"{_id} ProgeoAccess: User={self.user}, Location={self.location}, Transport={self.return_active(self.unpack_transport())}, Type={self.return_active(self.unpack_type())}"
+
 
 class EMail(ProgeoModel, auto_prefetch.Model):
     # Optional link to the location (project) this mail belongs to, e.g. a
@@ -778,3 +857,18 @@ class UserModulePermissions(User):
     class Meta:
         proxy = True
         permissions = MODULE_PERMISSION_DEFINITIONS
+
+
+class SystemConfig(ProgeoModel, auto_prefetch.Model):
+    """Runtime-editable system configuration (key -> JSON value).
+
+    Used for the "Schnittstelle" settings (SMTP server, Modbus) that are
+    normally env-based but should be editable at runtime from the UI. Env
+    vars remain the fallback until a config row is saved.
+    """
+    key = models.CharField(max_length=64, unique=True)
+    value = models.JSONField(default=dict, blank=True)
+
+    def __str__(self):
+        _id = f"[{self.pk}] " if DEBUG else ""
+        return f"{_id} ⚙️ {self.key}"

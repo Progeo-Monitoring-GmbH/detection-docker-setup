@@ -196,11 +196,46 @@ const SensorHeatmap2D = ({
     );
   }, [timestamps.length]);
 
-  /** Alignment from the view (with_sliders mode) takes precedence. */
-  const location = useMemo(
+  /** Alignment from the view (with_sliders mode) takes precedence over the list. */
+  const baseLocation = useMemo(
     () => alignment ?? response?.location ?? null,
     [alignment, response],
   );
+
+  /** All lageplans of the location (may be several - user can swap between them). */
+  const plans = useMemo(() => {
+    const list = baseLocation?.lageplans;
+    return Array.isArray(list) && list.length > 0 ? list : null;
+  }, [baseLocation]);
+
+  const [planIndex, setPlanIndex] = useState(0);
+  useEffect(() => {
+    setPlanIndex(0);
+  }, [plans]);
+
+  const activePlan = plans
+    ? (plans[Math.min(planIndex, plans.length - 1)] ?? null)
+    : null;
+
+  /**
+   * Effective location: merge the selected lageplan's url + alignment into the
+   * location payload so the existing rendering code keeps working unchanged.
+   */
+  const location = useMemo(() => {
+    if (!activePlan) {
+      return baseLocation;
+    }
+    return {
+      ...baseLocation,
+      lageplan_url: activePlan.url ?? null,
+      offset_x: activePlan.offset_x ?? 0,
+      offset_y: activePlan.offset_y ?? 0,
+      scale_x: activePlan.scale_x ?? 1,
+      scale_y: activePlan.scale_y ?? 1,
+      flip_x: Boolean(activePlan.flip_x),
+      flip_y: Boolean(activePlan.flip_y),
+    };
+  }, [baseLocation, activePlan]);
 
   const lageplanUrl = useMemo(() => {
     const raw = location?.lageplan_url;
@@ -542,7 +577,11 @@ const SensorHeatmap2D = ({
           {chart && (
             <small className="text-muted">
               {sensors.length} sensors, {timestamps.length} timestamps,
-              {lageplanUrl ? ' Lageplan' : ' No Lageplan'}
+              {activePlan?.name
+                ? ` ${activePlan.name}`
+                : lageplanUrl
+                  ? ' Lageplan'
+                  : ' No Lageplan'}
               {chart.activeCount > 0
                 ? `, ${chart.activeCount} active, \u03C3=${chart.usedSigma.toFixed(
                     3,
@@ -554,6 +593,30 @@ const SensorHeatmap2D = ({
             </small>
           )}
         </div>
+
+        {/* Lageplan switcher: several lageplans of this location. Hidden in
+            the alignment wizard mode (alignment prop takes precedence). */}
+        {!alignment && plans && plans.length > 1 && (
+          <div className="d-flex flex-wrap align-items-center gap-2 mb-2 px-3">
+            <small className="text-muted fw-semibold">Lageplan:</small>
+            <Form.Select
+              aria-label="Select lageplan"
+              value={Math.min(planIndex, plans.length - 1)}
+              onChange={(event) => setPlanIndex(Number(event.target.value))}
+              style={{ width: 220 }}
+            >
+              {plans.map((plan, index) => (
+                <option key={plan.id ?? index} value={index}>
+                  {plan.name || `Lageplan ${index + 1}`}
+                  {plan.is_active ? ' (aktiv)' : ''}
+                </option>
+              ))}
+            </Form.Select>
+            <small className="text-muted">
+              {Math.min(planIndex, plans.length - 1) + 1} / {plans.length}
+            </small>
+          </div>
+        )}
 
         {!chart ? (
           <div className="text-muted py-5 text-center">

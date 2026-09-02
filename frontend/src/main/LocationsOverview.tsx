@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import DataTable from 'react-data-table-component';
 import type { TableColumn } from 'react-data-table-component';
 import { Button, Card, Form, Spinner } from 'react-bootstrap';
@@ -59,6 +59,9 @@ const LocationsOverview = () => {
   const auth = useAuth();
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
+  // Only auto-forward on the very first load (an account with a single
+  // location goes straight into the LocationDetailView).
+  const autoForwarded = useRef(false);
   const [rows, setRows] = useState<LocationRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [alarmSummary, setAlarmSummary] = useState<
@@ -96,8 +99,14 @@ const LocationsOverview = () => {
       auth,
       `/v1/location/${suffix}`,
       (response) => {
-        setRows((response?.data || []) as LocationRow[]);
+        const next = (response?.data || []) as LocationRow[];
+        setRows(next);
         setLoading(false);
+        // Single-location accounts land directly in the LocationDetailView.
+        if (!autoForwarded.current && next.length === 1 && next[0]?.id != null) {
+          autoForwarded.current = true;
+          navigate(`/location/${next[0].id}/detail/`);
+        }
       },
       (error) => {
         const reason = error?.response?.data?.reason || error.message;

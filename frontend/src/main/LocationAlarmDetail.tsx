@@ -66,7 +66,20 @@ const STATUS_LABELS: Record<number, { label: string; variant: string }> = {
   2: { label: 'Stoerung', variant: 'danger' },
 };
 
-const LocationAlarmDetail = () => {
+type LocationAlarmDetailProps = {
+  /**
+   * Location data shared by a parent view (LocationDetailView). When
+   * `preloaded` is true the component never fetches the location itself and
+   * just waits for this prop.
+   */
+  location?: LocationDetail | null;
+  preloaded?: boolean;
+};
+
+const LocationAlarmDetail = ({
+  location: sharedLocation,
+  preloaded = false,
+}: LocationAlarmDetailProps = {}) => {
   const { id } = useParams();
   const navigate = useNavigate();
   const auth = useAuth();
@@ -96,8 +109,15 @@ const LocationAlarmDetail = () => {
     return () => window.clearInterval(intervalId);
   }, [hasActiveAlarm]);
 
+  // Shared location from the parent wins; sync it into local state.
+  useEffect(() => {
+    if (sharedLocation) {
+      setLocation(sharedLocation);
+    }
+  }, [sharedLocation]);
+
   const loadLocation = useCallback(() => {
-    if (!id) {
+    if (!id || preloaded) {
       return;
     }
     void axiosConfig.perform_get(
@@ -111,7 +131,7 @@ const LocationAlarmDetail = () => {
         showErrorBar(enqueueSnackbar, `Could not load location: ${reason}`);
       },
     );
-  }, [auth, enqueueSnackbar, id]);
+  }, [auth, enqueueSnackbar, id, preloaded]);
 
   const loadAlarms = useCallback(() => {
     if (!id) {

@@ -9,18 +9,16 @@ from progeo.v1.helper import parse_float, parse_int
 
 
 def _get_modbus_config() -> dict[str, Any]:
-	host = os.getenv("MODBUS_TCP_HOST", "127.0.0.1")
-	port = parse_int(os.getenv("MODBUS_TCP_PORT"), 502)
-	unit_id = parse_int(os.getenv("MODBUS_TCP_UNIT_ID"), 1)
-	timeout = parse_float(os.getenv("MODBUS_TCP_TIMEOUT"), 3)
-	start_address = parse_int(os.getenv("MODBUS_TCP_START_ADDRESS"), 0)
+	# Runtime-editable config (SystemConfig) wins, env vars are the fallback.
+	from progeo.helper.interface_config import get_modbus_config
 
+	cfg = get_modbus_config()
 	return {
-		"host": host,
-		"port": port,
-		"unit_id": unit_id,
-		"timeout": timeout,
-		"start_address": start_address,
+		"host": cfg.get("host") or "127.0.0.1",
+		"port": parse_int(cfg.get("port"), 502),
+		"unit_id": parse_int(cfg.get("unit_id"), 1),
+		"timeout": parse_float(cfg.get("timeout"), 3),
+		"start_address": parse_int(cfg.get("start_address"), 0),
 	}
 
 
@@ -69,6 +67,77 @@ def _registers_to_json(registers: list[int]) -> dict | list | str:
 		return json.loads(payload_text)
 	except json.JSONDecodeError:
 		return payload_text
+
+
+def test_modbus_connection(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
+	"""Non-destructive Modbus TCP check: connect to the server and read one
+	holding register at the start address (validates host, port, unit id and
+	address without writing anything).
+
+	``cfg`` may override the stored/env config (e.g. unsaved form values);
+	when omitted the effective config is used. Returns
+	``{"ok": bool, "steps": [...], "error": str | None}`` so the UI can show
+	a step-by-step result.
+	"""
+	if cfg is None:
+		cfg = _get_modbus_config()
+	else:
+		cfg = {
+			"host": cfg.get("host") or "127.0.0.1",
+			"port": parse_int(cfg.get("port"), 502),
+			"unit_id": parse_int(cfg.get("unit_id"), 1),
+			"timeout": parse_float(cfg.get("timeout"), 3),
+			"start_address": parse_int(cfg.get("start_address"), 0),
+		}
+
+	host = cfg["host"]
+	port = cfg["port"]
+	unit_id = cfg["unit_id"]
+	timeout = cfg["timeout"]
+	address = cfg["start_address"]
+
+	steps: list[str] = []
+	client = None
+	try:
+		steps.append(f"Connecting to {host}:{port} (timeout {timeout}s) ...")
+		client = ModbusTcpClient(host=host, port=port, timeout=timeout)
+		if not client.connect():
+			return {
+				"ok": False,
+				"steps": steps,
+				"error": f"Could not connect to Modbus TCP server at {host}:{port}.",
+			}
+		steps.append(f"Connected to {host}:{port}")
+
+		response = _read_register_block(
+			client=client, address=address, count=1, unit_id=unit_id
+		)
+		if response.isError():
+			return {
+				"ok": False,
+				"steps": steps,
+				"error": (
+					f"Register read failed at address {address} (unit {unit_id}): "
+					f"{response}. Is the unit id / start address correct?"
+				),
+			}
+
+		registers = getattr(response, "registers", None) or []
+		steps.append(f"Read holding register {address} (unit {unit_id}): {registers[0] if registers else 'empty'}")
+		return {"ok": True, "steps": steps, "error": None}
+	except Exception as exc:
+		elog(exc, tag="[MODBUS]")
+		return {
+			"ok": False,
+			"steps": steps,
+			"error": f"{type(exc).__name__}: {exc}",
+		}
+	finally:
+		if client is not None:
+			try:
+				client.close()
+			except Exception:
+				pass
 
 
 def send_json_over_modbus_tcp(data: dict | list | str) -> dict[str, Any]:

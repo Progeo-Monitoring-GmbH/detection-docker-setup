@@ -17,7 +17,7 @@ def search_cache_raw(_key):
 
 
 def search_cache(request):
-    _key = request.get_full_path()
+    _key = f"{request.get_full_path()}@{request.user.id if request.user else 0}"
     _cache = cache.get(_key)
     if _cache:
         okaylog("Found Cache", _key, tag="[CACHE]", active=DEBUG)
