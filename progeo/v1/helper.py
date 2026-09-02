@@ -21,6 +21,13 @@ regex_has_replacer = re.compile(r'(\[\S+\])')
 regex_first_integer = re.compile(r'^(\-?[\d,.]*)')
 
 
+def bitfield(n, reverse=False):
+    bits = [int(digit) for digit in bin(n)[2:]]
+    if reverse:
+        bits.reverse()
+    return bits
+
+
 def get_file_encoding(_file):
     results = from_path(_file)
     return results.best().encoding

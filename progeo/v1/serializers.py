@@ -13,6 +13,7 @@ from progeo.v1.models import (
     Account,
     AlarmDailyReport,
     Backup,
+    ProgeoAccess,
     ProgeoAlarm,
     ProgeoDevice,
     ProgeoLocation,
@@ -113,7 +114,6 @@ class LocationSerializer(ProgeoBaseSerializer):
     has_device = serializers.SerializerMethodField("get_has_device")
     last_measurement_at = serializers.DateTimeField(read_only=True)
     measurement_count = serializers.IntegerField(read_only=True)
-    lageplan_url = serializers.SerializerMethodField("get_lageplan_url")
     lageplans = serializers.SerializerMethodField("get_lageplans")
     child_location_ids = serializers.SerializerMethodField("get_child_location_ids")
 
@@ -126,57 +126,17 @@ class LocationSerializer(ProgeoBaseSerializer):
         return "ProgeoLocation"
     
     @staticmethod
-    def get_lageplan_url(obj):
-        """
-        Returns URL for the primary active lageplan.
-        First checks new ProgeoLageplan model (preferred), then falls back to legacy field.
-        """
-        # Try new ProgeoLageplan model first
-        try:
-            # Get the active lageplan if it exists
-            lageplan = obj.lageplans.filter(is_active=True).first()
-            if not lageplan:
-                # Fallback to any lageplan if none are marked active
-                lageplan = obj.lageplans.first()
-            
-            if lageplan and lageplan.lageplan and hasattr(lageplan.lageplan, "name"):
-                return posixpath.join("media", "uploads", lageplan.lageplan.name)
-        except Exception:
-            # If accessing lageplans fails, continue to legacy fallback
-            pass
-        
-        # Fallback to legacy lageplan field for backward compatibility
-        raw = obj.lageplan
-        if raw and hasattr(raw, "name"):
-            return posixpath.join("media", "uploads", raw.name)
-        
-        return None
-
-    @staticmethod
     def get_lageplans(obj):
         """
-        Returns serialized list of all lageplans for this location.
-        Includes both file URL and transformation data.
+        Returns the serialized list of all lageplans of this location
+        (ProgeoLageplanSerializer) - file URL plus transformation data, so the
+        heatmap can offer a plan switcher when several lageplans exist.
         """
         try:
-            lageplans_data = []
-            for lageplan in obj.lageplans.all():
-                lageplan_obj = {
-                    "id": lageplan.id,
-                    "name": lageplan.name or f"Lageplan {lageplan.id}",
-                    "is_active": lageplan.is_active,
-                    "url": posixpath.join("media", "uploads", lageplan.lageplan.name) if lageplan.lageplan and hasattr(lageplan.lageplan, "name") else None,
-                    "offset_x": lageplan.offset_x,
-                    "offset_y": lageplan.offset_y,
-                    "scale_x": lageplan.scale_x,
-                    "scale_y": lageplan.scale_y,
-                    "flip_x": lageplan.flip_x,
-                    "flip_y": lageplan.flip_y,
-                    "offset_latitude": lageplan.offset_latitude,
-                    "offset_longitude": lageplan.offset_longitude,
-                }
-                lageplans_data.append(lageplan_obj)
-            return lageplans_data if lageplans_data else None
+            data = ProgeoLageplanSerializer(
+                obj.lageplans.all(), many=True
+            ).data
+            return data if data else None
         except Exception:
             return None
 
@@ -483,6 +443,37 @@ class ProgeoAlarmSerializer(ProgeoBaseSerializer):
             "id": user.pk,
             "username": getattr(user, "username", None),
         }
+
+
+class ProgeoAccessSerializer(ProgeoBaseSerializer):
+    """A notification access rule (ProgeoAccess) for a location."""
+
+    user_name = serializers.CharField(source="user.username", read_only=True)
+    user_email = serializers.EmailField(source="user.email", read_only=True, allow_null=True)
+    transport_unpacked = serializers.SerializerMethodField("get_transport_unpacked")
+    type_unpacked = serializers.SerializerMethodField("get_type_unpacked")
+
+    class Meta:
+        model = ProgeoAccess
+        fields = [
+            "id",
+            "location",
+            "user",
+            "user_name",
+            "user_email",
+            "transport",
+            "type",
+            "transport_unpacked",
+            "type_unpacked",
+        ]
+
+    @staticmethod
+    def get_transport_unpacked(obj):
+        return obj.unpack_transport()
+
+    @staticmethod
+    def get_type_unpacked(obj):
+        return obj.unpack_type()
 
 
 class MfSLogSerializer(ProgeoBaseSerializer):

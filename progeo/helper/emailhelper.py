@@ -14,6 +14,7 @@ from django.template.loader import render_to_string
 
 from progeo.v1.helper import calc_hash_from_dict
 from progeo.helper.basics import dlog, elog, ilog
+from progeo.helper.interface_config import get_smtp_config
 
 # ############################################################################################
 # Email templates
@@ -82,7 +83,67 @@ def render_email_template(template_name: str, context: dict | None = None) -> tu
 def smtp_configured() -> bool:
     if not settings.PROGEO_CONFIG_ENABLE_MAILING:
         return False
-    return bool(os.getenv("MAIL_SERVER") and os.getenv("MAIL_SENDER"))
+    cfg = get_smtp_config()
+    return bool(cfg.get("server") and cfg.get("sender"))
+
+
+def test_smtp_connection(cfg: dict | None = None) -> dict:
+    """Non-destructive SMTP check: connect, STARTTLS and (when a username is
+    configured) authenticate against the server. No mail is sent and nothing
+    is persisted. ``cfg`` may override the stored/env config (e.g. unsaved
+    form values); when omitted the effective config is used.
+
+    Returns ``{"ok": bool, "steps": [...], "error": str | None}`` so the UI
+    can show a step-by-step result.
+    """
+    cfg = cfg or get_smtp_config()
+    server = cfg.get("server")
+    if not server:
+        return {
+            "ok": False,
+            "steps": [],
+            "error": "No SMTP server configured (server is empty).",
+        }
+    try:
+        port = int(cfg.get("port") or 587)
+    except (TypeError, ValueError):
+        port = 587
+    username = cfg.get("username")
+    password = cfg.get("password")
+
+    steps: list[str] = []
+    smtp = None
+    try:
+        smtp = smtplib.SMTP(server, port, timeout=10)
+        smtp.ehlo()
+        steps.append(f"Connected to {server}:{port}")
+
+        smtp.starttls()
+        smtp.ehlo()
+        steps.append("TLS handshake OK")
+
+        if username:
+            smtp.login(username, password)
+            steps.append(f"Login as '{username}' OK")
+        else:
+            steps.append("No login (no username configured)")
+
+        smtp.quit()
+        smtp = None
+        return {"ok": True, "steps": steps, "error": None}
+    except Exception as exc:
+        elog(f"[emailhelper] SMTP connection test failed for {server}:{port}: {exc}")
+        return {
+            "ok": False,
+            "steps": steps,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+    finally:
+        if smtp is not None:
+            try:
+                smtp.close()
+            except Exception:
+                pass
 
 
 def _send_mail(send_from, send_to, reply_to, subject, message, files,
@@ -157,12 +218,16 @@ def send_mail(sent_to: list, subject: str, message: str, files: list,
     outcome) so the EMail model doubles as a mail log. `location` links the
     row to a project when relevant (e.g. disconnect notifications).
     """
-    sender = os.getenv("MAIL_SENDER")
-    reply_to = os.getenv("MAIL_REPLY_TO")
-    server = os.getenv("MAIL_SERVER")
-    port = int(os.getenv("MAIL_PORT", 587))
-    username = os.getenv("MAIL_USER")
-    password = os.getenv("MAIL_PW")
+    cfg = get_smtp_config()
+    sender = cfg.get("sender")
+    reply_to = cfg.get("reply_to")
+    server = cfg.get("server")
+    try:
+        port = int(cfg.get("port") or 587)
+    except (TypeError, ValueError):
+        port = 587
+    username = cfg.get("username")
+    password = cfg.get("password")
 
     if not settings.PROGEO_CONFIG_ENABLE_MAILING:
         ilog(f"[emailhelper] Mailing disabled (PROGEO_CONFIG_ENABLE_MAILING=0), skipping mail to {sent_to}")

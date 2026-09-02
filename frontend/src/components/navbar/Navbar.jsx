@@ -73,7 +73,6 @@ const buildBreadcrumbs = (pathname) => {
   const segments = parts[0] && /^\d+$/.test(parts[0]) ? parts.slice(1) : parts;
 
   const sectionToLabel = {
-    device: 'Devices',
     location: 'Locations',
     alarms: 'Alarms',
     admin: 'Admin',
@@ -83,7 +82,6 @@ const buildBreadcrumbs = (pathname) => {
   const section = sectionFromPath(pathname);
   if (section && sectionToLabel[section]) {
     const sectionTarget = {
-      device: '/device/overview/',
       location: '/location/overview/',
       alarms: '/alarms/',
       admin: '/admin/panel/',
@@ -93,7 +91,6 @@ const buildBreadcrumbs = (pathname) => {
 
     // Append remaining path segments as detail crumbs (non-clickable).
     const knownSections = new Set([
-      'device',
       'location',
       'locations',
       'alarms',
@@ -177,14 +174,17 @@ const Navbar = ({ act, content }) => {
             <BsNavbar.Toggle aria-controls="progeo-navbar-nav" />
             <BsNavbar.Collapse id="progeo-navbar-nav">
               <Nav className="me-auto align-items-lg-center">
-                {hasPermission('module_devices_enabled') &&
-                  navLink('device', 'Devices', Hdd, '/device/overview/')}
                 {hasPermission('module_locations_enabled') &&
                   navLink('location', 'Locations', Geo, '/location/overview/')}
                 {hasPermission('module_measurements_enabled') &&
                   navLink('alarms', 'Alarms', Bell, '/alarms/')}
                 {hasPermission('module_measurements_enabled') &&
-                  navLink('alarm-report', 'Reports', Calendar3, '/alarms/report/')}
+                  navLink(
+                    'alarm-report',
+                    'Reports',
+                    Calendar3,
+                    '/alarms/report/',
+                  )}
                 {(hasPermission('module_backup_enabled') ||
                   hasPermission('module_docker_enabled') ||
                   hasPermission('module_admin_enabled') ||

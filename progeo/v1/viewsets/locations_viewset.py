@@ -11,8 +11,13 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.decorator import require_module_permissions
 from progeo.helper.basics import RequestFailed, RequestSuccess
-from progeo.v1.models import ProgeoLocation, ProgeoMeasurePoint, ProgeoMeasurement
-from progeo.v1.serializers import LocationSerializer, ProgeoMeasurementSerializer, MinimalLocationSerializer
+from progeo.v1.models import ProgeoAccess, ProgeoLocation, ProgeoMeasurePoint, ProgeoMeasurement, UserProfile
+from progeo.v1.serializers import (
+    LocationSerializer,
+    MinimalLocationSerializer,
+    ProgeoAccessSerializer,
+    ProgeoMeasurementSerializer,
+)
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.v1.viewsets.setup_viewset import _get_controller_account
 
@@ -67,6 +72,140 @@ class LocationViewSet(ProgeoModalViewSet):
     @require_module_permissions("module_locations_enabled")
     def retrieve(self, request, pk=None, *args, **kwargs):
         return super(LocationViewSet, self).retrieve(request, pk=pk, *args, **kwargs)
+
+    @require_module_permissions("module_locations_enabled")
+    @action(detail=True, url_path="access", methods=["GET", "POST"])
+    def access(self, request, pk=None, *args, **kwargs):
+        """Notification access rules (ProgeoAccess) of one location.
+
+        GET  -> {"access": [...], "users": [{id, username, email}...]}
+        POST -> create (body: {user_id, transport, type}) or update an
+                existing rule of this location (body: {id, transport, type,
+                user_id?}). transport/type are the ProgeoAccess bitmask ints.
+        """
+        account = self._resolve_request_account(request)
+        db_name = account.db_name if account else "default"
+        location = ProgeoLocation.objects.using(db_name).filter(pk=pk, account=account).first()
+        if not location:
+            return RequestFailed({"reason": "Location not found"})
+
+        if request.method == "GET":
+            rows = (
+                ProgeoAccess.objects.using(db_name)
+                .filter(location=location)
+                .select_related("user")
+                .order_by("id")
+            )
+            users = []
+            if account:
+                for user in account.users.all().order_by("username"):
+                    profile = getattr(user, "profile", None)
+                    users.append({
+                        "id": user.id,
+                        "username": user.username,
+                        "email": user.email,
+                        "mobile": profile.mobile if profile is not None else None,
+                    })
+            return RequestSuccess({
+                "access": ProgeoAccessSerializer(rows, many=True).data,
+                "users": users,
+            })
+
+        access_id = request.data.get("id")
+        user_id = request.data.get("user_id")
+        if access_id:
+            rule = ProgeoAccess.objects.using(db_name).filter(pk=access_id, location=location).first()
+            if not rule:
+                return RequestFailed({"reason": "Access rule not found"})
+        else:
+            if not user_id:
+                return RequestFailed({"reason": "user_id required to create an access rule"})
+            rule = (
+                ProgeoAccess.objects.using(db_name)
+                .filter(location=location, user_id=user_id)
+                .first()
+                or ProgeoAccess(location=location)
+            )
+
+        if user_id is not None:
+            rule.user_id = user_id
+        if request.data.get("transport") is not None:
+            try:
+                rule.transport = int(request.data.get("transport"))
+            except (TypeError, ValueError):
+                return RequestFailed({"reason": "transport must be an integer"})
+        if request.data.get("type") is not None:
+            try:
+                rule.type = int(request.data.get("type"))
+            except (TypeError, ValueError):
+                return RequestFailed({"reason": "type must be an integer"})
+        rule.save(using=db_name)
+        return RequestSuccess({"access": ProgeoAccessSerializer(rule).data})
+
+    @require_module_permissions("module_locations_enabled")
+    @action(detail=True, url_path="access/delete", methods=["POST"])
+    def access_delete(self, request, pk=None, *args, **kwargs):
+        """Delete an access rule of the location: POST {"id": <access_id>}."""
+        account = self._resolve_request_account(request)
+        db_name = account.db_name if account else "default"
+        location = ProgeoLocation.objects.using(db_name).filter(pk=pk, account=account).first()
+        if not location:
+            return RequestFailed({"reason": "Location not found"})
+        try:
+            access_id = int(request.data.get("id"))
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "id required"})
+        deleted, _ = ProgeoAccess.objects.using(db_name).filter(pk=access_id, location=location).delete()
+        if not deleted:
+            return RequestFailed({"reason": "Access rule not found"})
+        return RequestSuccess({"deleted": access_id})
+
+    @require_module_permissions("module_locations_enabled")
+    @action(detail=True, url_path="access/user", methods=["POST"])
+    def access_user_update(self, request, pk=None, *args, **kwargs):
+        """Update contact data of an account user (quick fix missing email/mobile).
+
+        POST {"user_id": N, "email": "...", "mobile": "..."} - only fields
+        that are present and non-empty are changed. mobile is stored on the
+        UserProfile (auth.User has no mobile column).
+        """
+        account = self._resolve_request_account(request)
+        if not account:
+            return RequestFailed({"reason": "No account found"})
+        db_name = account.db_name if account else "default"
+
+        try:
+            user_id = int(request.data.get("user_id"))
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "user_id required"})
+
+        user = account.users.filter(pk=user_id).first()
+        if not user:
+            return RequestFailed({"reason": "User not found in this account"})
+
+        email = request.data.get("email")
+        if email is not None and str(email).strip():
+            user.email = str(email).strip()
+            user.save(using=db_name)
+
+        mobile = request.data.get("mobile")
+        if mobile is not None and str(mobile).strip():
+            profile, _ = UserProfile.objects.using(db_name).update_or_create(
+                user_id=user_id,
+                defaults={"mobile": str(mobile).strip()},
+            )
+        elif mobile is not None:
+            UserProfile.objects.using(db_name).filter(user_id=user_id).delete()
+
+        profile = getattr(user, "profile", None)
+        return RequestSuccess({
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "mobile": profile.mobile if profile is not None else None,
+            }
+        })
 
     @require_module_permissions("module_locations_enabled")
     @action(detail=False, url_path="geo_export", methods=["GET"])

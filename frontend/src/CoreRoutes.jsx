@@ -24,6 +24,9 @@ const LocationHeatmap2DView = React.lazy(
 const LocationAlarmDetail = React.lazy(
   () => import('./main/LocationAlarmDetail.tsx'),
 );
+const LocationDetailView = React.lazy(
+  () => import('./main/LocationDetailView.tsx'),
+);
 const DeviceDetailView = React.lazy(() => import('./main/DeviceDetailView'));
 const DeviceEditorView = React.lazy(() => import('./main/DeviceEditorView'));
 const MeasurementDetailView = React.lazy(
@@ -95,6 +98,10 @@ const CoreRoutes = () => {
       <Route
         path="/location/:id/alarms"
         element={<Navbar act={'location'} content={<LocationAlarmDetail />} />}
+      />
+      <Route
+        path="/location/:id/detail/"
+        element={<Navbar act={'location'} content={<LocationDetailView />} />}
       />
       <Route
         path="/device/:id/update/"
