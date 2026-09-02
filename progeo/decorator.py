@@ -42,6 +42,31 @@ def _extract_request(args):
     return None
 
 
+def has_module_permissions(user, *permission_codes) -> bool:
+    """True when ``user`` (staff/superusers always) holds every code.
+
+    Same semantics as ``require_module_permissions`` but callable inside an
+    action whose requirement depends on e.g. the HTTP method.
+    """
+    if not getattr(user, "is_authenticated", False):
+        return False
+    if getattr(user, "is_staff", False) or getattr(user, "is_superuser", False):
+        return True
+    return all(user.has_perm(f"progeo.{code}") for code in permission_codes)
+
+
+def permission_denied_response(missing_permissions) -> Response:
+    """403 Response shaped like the one require_module_permissions returns."""
+    return Response(
+        {
+            "success": False,
+            "reason": "Missing required permissions",
+            "missing_permissions": list(missing_permissions),
+        },
+        status=status.HTTP_403_FORBIDDEN,
+    )
+
+
 def require_module_permissions(*permission_codes):
     def _decorator(wrapped_function):
         @wraps(wrapped_function)

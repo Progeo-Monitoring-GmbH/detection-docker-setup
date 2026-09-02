@@ -25,6 +25,13 @@ DEFAULT_MODBUS = {
     "timeout": 3,
     "start_address": 0,
 }
+# Stored shape of the Esendex SMS config.
+DEFAULT_ESENDEX = {
+    "account_reference": "",
+    "username": "",
+    "password": "",
+    "from": "",
+}
 
 _SMTP_ENV = {
     "sender": "MAIL_SENDER",
@@ -40,6 +47,12 @@ _MODBUS_ENV = {
     "unit_id": "MODBUS_TCP_UNIT_ID",
     "timeout": "MODBUS_TCP_TIMEOUT",
     "start_address": "MODBUS_TCP_START_ADDRESS",
+}
+_ESENDEX_ENV = {
+    "account_reference": "ESENDEX_ACCOUNT_REFERENCE",
+    "username": "ESENDEX_USERNAME",
+    "password": "ESENDEX_PASSWORD",
+    "from": "ESENDEX_FROM",
 }
 
 
@@ -78,6 +91,11 @@ def get_modbus_config() -> dict[str, Any]:
     return _merged("modbus", DEFAULT_MODBUS, _MODBUS_ENV)
 
 
+def get_esendex_config() -> dict[str, Any]:
+    """Esendex SMS settings: stored SystemConfig row merged over env defaults."""
+    return _merged("esendex", DEFAULT_ESENDEX, _ESENDEX_ENV)
+
+
 def set_smtp_config(values: dict) -> dict[str, Any]:
     """Persist the SMTP config. ``password`` may be a mask (empty or
     '********') to keep the previously stored password unchanged."""
@@ -86,6 +104,12 @@ def set_smtp_config(values: dict) -> dict[str, Any]:
 
 def set_modbus_config(values: dict) -> dict[str, Any]:
     return _save("modbus", values, DEFAULT_MODBUS, None)
+
+
+def set_esendex_config(values: dict) -> dict[str, Any]:
+    """Persist the Esendex config. ``password`` may be a mask (empty or
+    '********') to keep the previously stored password unchanged."""
+    return _save("esendex", values, DEFAULT_ESENDEX, "password")
 
 
 def _save(key: str, values: dict, default: dict, secret_field: str | None) -> dict[str, Any]:

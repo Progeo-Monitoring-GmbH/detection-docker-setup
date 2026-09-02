@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Alert,
   Button,
   Card,
   Form,
@@ -8,6 +9,7 @@ import {
 } from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
+import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
 import {
   showErrorBar,
@@ -66,6 +68,13 @@ const LocationNotificationsTab = ({
 }: LocationNotificationsTabProps) => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
+  const { hasPermission } = usePermissions();
+
+  // module_notifications_edit: change/delete rules + fix contact data;
+  // module_notifications_add: create a rule for a new user.
+  const canEdit = hasPermission('module_notifications_edit');
+  const canAdd = hasPermission('module_notifications_add');
+  const canManage = canEdit || canAdd;
 
   const [rules, setRules] = useState<AccessRule[]>([]);
   const [users, setUsers] = useState<AccessUser[]>([]);
@@ -298,21 +307,27 @@ const LocationNotificationsTab = ({
                         : 'Silent'}
                     </td>
                     <td>
-                      <Button
-                        size="sm"
-                        variant="outline-primary"
-                        className="me-1"
-                        onClick={() => startEdit(rule)}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline-danger"
-                        onClick={() => deleteRule(rule)}
-                      >
-                        Delete
-                      </Button>
+                      {canEdit ? (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline-primary"
+                            className="me-1"
+                            onClick={() => startEdit(rule)}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline-danger"
+                            onClick={() => deleteRule(rule)}
+                          >
+                            Delete
+                          </Button>
+                        </>
+                      ) : (
+                        <span className="small text-muted">view only</span>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -328,9 +343,24 @@ const LocationNotificationsTab = ({
 
             <hr />
 
-            <h6 className="mb-3">
-              {editId ? `Edit rule #${editId}` : 'Add notification rule'}
-            </h6>
+            {!canManage ? (
+              <Alert variant="info" className="mb-0 small">
+                Du kannst die Benachrichtigungsregeln nur ansehen. Zum Anlegen
+                von Regeln fehlt dir die Berechtigung{' '}
+                <code>module_notifications_add</code>, zum Ändern / Löschen und
+                zum Pflegen der Kontaktdaten{' '}
+                <code>module_notifications_edit</code>.
+              </Alert>
+            ) : !canAdd && !editId ? (
+              <Alert variant="warning" className="mb-0 small">
+                Du kannst bestehende Regeln bearbeiten, aber keine neuen
+                anlegen (<code>module_notifications_add</code> fehlt).
+              </Alert>
+            ) : (
+              <>
+                <h6 className="mb-3">
+                  {editId ? `Edit rule #${editId}` : 'Add notification rule'}
+                </h6>
             <div className="d-flex flex-wrap align-items-end gap-3">
               <Form.Group style={{ minWidth: 200 }}>
                 <Form.Label className="small text-muted">User</Form.Label>
@@ -428,8 +458,8 @@ const LocationNotificationsTab = ({
             </div>
 
             {/* Quick fix: add missing contact data of the selected user so the
-                mail/SMS transports become available. */}
-            {selectedUser && (contactEdit || !hasEmail || !hasMobile) && (
+                mail/SMS transports become available (edit permission). */}
+            {canEdit && selectedUser && (contactEdit || !hasEmail || !hasMobile) && (
               <div className="mt-3 p-3 border rounded bg-light">
                 <div className="small fw-semibold mb-2">
                   Contact data of {selectedUser.username}
@@ -539,6 +569,8 @@ const LocationNotificationsTab = ({
                   )}
                 </div>
               </div>
+            )}
+              </>
             )}
           </>
         )}
