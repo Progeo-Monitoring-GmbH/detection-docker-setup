@@ -9,7 +9,11 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
-from progeo.decorator import require_module_permissions
+from progeo.decorator import (
+    has_module_permissions,
+    permission_denied_response,
+    require_module_permissions,
+)
 from progeo.helper.basics import RequestFailed, RequestSuccess
 from progeo.v1.models import ProgeoAccess, ProgeoLocation, ProgeoMeasurePoint, ProgeoMeasurement, UserProfile
 from progeo.v1.serializers import (
@@ -73,15 +77,17 @@ class LocationViewSet(ProgeoModalViewSet):
     def retrieve(self, request, pk=None, *args, **kwargs):
         return super(LocationViewSet, self).retrieve(request, pk=pk, *args, **kwargs)
 
-    @require_module_permissions("module_locations_enabled")
+    @require_module_permissions("module_notifications_enabled")
     @action(detail=True, url_path="access", methods=["GET", "POST"])
     def access(self, request, pk=None, *args, **kwargs):
         """Notification access rules (ProgeoAccess) of one location.
 
-        GET  -> {"access": [...], "users": [{id, username, email}...]}
-        POST -> create (body: {user_id, transport, type}) or update an
-                existing rule of this location (body: {id, transport, type,
-                user_id?}). transport/type are the ProgeoAccess bitmask ints.
+        GET  -> {"access": [...], "users": [{id, username, email, mobile}...]}
+               (requires module_notifications_enabled)
+        POST -> create (module_notifications_add) or update an existing rule
+                (module_notifications_edit): body {user_id, transport, type}
+                or {id, transport, type, user_id?}. transport/type are the
+                ProgeoAccess bitmask ints.
         """
         account = self._resolve_request_account(request)
         db_name = account.db_name if account else "default"
@@ -110,6 +116,13 @@ class LocationViewSet(ProgeoModalViewSet):
                 "access": ProgeoAccessSerializer(rows, many=True).data,
                 "users": users,
             })
+
+        # Mutations need the dedicated edit/add permissions (creating a rule
+        # with a new user = add, changing an existing rule = edit).
+        is_update = bool(request.data.get("id"))
+        required = "module_notifications_edit" if is_update else "module_notifications_add"
+        if not has_module_permissions(request.user, required):
+            return permission_denied_response([required])
 
         access_id = request.data.get("id")
         user_id = request.data.get("user_id")
@@ -142,7 +155,7 @@ class LocationViewSet(ProgeoModalViewSet):
         rule.save(using=db_name)
         return RequestSuccess({"access": ProgeoAccessSerializer(rule).data})
 
-    @require_module_permissions("module_locations_enabled")
+    @require_module_permissions("module_notifications_enabled", "module_notifications_edit")
     @action(detail=True, url_path="access/delete", methods=["POST"])
     def access_delete(self, request, pk=None, *args, **kwargs):
         """Delete an access rule of the location: POST {"id": <access_id>}."""
@@ -160,7 +173,7 @@ class LocationViewSet(ProgeoModalViewSet):
             return RequestFailed({"reason": "Access rule not found"})
         return RequestSuccess({"deleted": access_id})
 
-    @require_module_permissions("module_locations_enabled")
+    @require_module_permissions("module_notifications_enabled", "module_notifications_edit")
     @action(detail=True, url_path="access/user", methods=["POST"])
     def access_user_update(self, request, pk=None, *args, **kwargs):
         """Update contact data of an account user (quick fix missing email/mobile).

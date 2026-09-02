@@ -40,6 +40,58 @@ MODULE_PERMISSION_DEFINITIONS = (
     ("module_admin_enabled", "Can access admin module"),
     ("module_testsuite_enabled", "Can access testsuite module"),
     ("module_profile_mail_edit", "Can edit profile mail module"),
+    ("module_notifications_enabled", "Can access notifications module"),
+    ("module_notifications_edit", "Can edit notifications module"),
+    ("module_notifications_add", "Can add notifications module"),
+    ("module_interface_enabled", "Can access interface module"),
+    ("module_interface_smtp_enabled", "Can access SMTP interface module"),
+    ("module_interface_modbus_enabled", "Can access Modbus interface module"),
+    ("module_interface_sms_enabled", "Can access SMS interface module"),
+    ("module_interface_smtp_edit", "Can edit smtp interface module"),
+    ("module_interface_modbus_edit", "Can edit modbus interface module"),
+    ("module_interface_sms_edit", "Can edit sms interface module"),
+)
+
+# Descriptions are defined once above; the default sets below just select codes from it.
+_PERMISSION_LABELS = dict(MODULE_PERMISSION_DEFINITIONS)
+
+
+def _select_permissions(*codes):
+    return tuple((code, _PERMISSION_LABELS[code]) for code in codes)
+
+
+DEFAULT_USER_PERMISSIONS = _select_permissions(
+    "module_navbar_enabled",
+    "module_locations_enabled",
+    "module_locations_edit",
+    "module_devices_enabled",
+    "module_devices_edit",
+    "module_measurements_enabled",
+    "module_profile_mail_edit",
+    "module_notifications_enabled",
+)
+
+DEFAULT_STAFF_PERMISSIONS = _select_permissions(
+    "module_navbar_enabled",
+    "module_locations_enabled",
+    "module_locations_edit",
+    "module_locations_delete",
+    "module_devices_enabled",
+    "module_devices_edit",
+    "module_devices_delete",
+    "module_measurements_enabled",
+    "module_backup_enabled",
+    "module_profile_mail_edit",
+    "module_notifications_enabled",
+    "module_notifications_edit",
+    "module_notifications_add",
+    "module_interface_enabled",
+    "module_interface_smtp_enabled",
+    "module_interface_modbus_enabled",
+    "module_interface_sms_enabled",
+    "module_interface_smtp_edit",
+    "module_interface_modbus_edit",
+    "module_interface_sms_edit",
 )
 
 MODULE_PERMISSION_CODES = tuple(code for code, _ in MODULE_PERMISSION_DEFINITIONS)
@@ -703,16 +755,30 @@ class ProgeoAccess(ProgeoModel, auto_prefetch.Model):
         user_email = self.user.email if self.user else None
         if not user_email:
             return False
-        return self.transport == self.NotifiTrans.EMAIL and bool(user_email)
+        return self._as_int(self.transport) == self.NotifiTrans.EMAIL and bool(user_email)
 
     def check_has_mobile(self):
-        user_mobile = self.user.mobile if self.user else None
+        user_mobile = self.user_mobile() if self.user else None
         if not user_mobile:
             return False
-        return self.transport == self.NotifiTrans.SMS and bool(user_mobile)
+        return self._as_int(self.transport) == self.NotifiTrans.SMS and bool(user_mobile)
+
+    def user_mobile(self):
+        """Mobile number of the rule's user (from UserProfile), or None."""
+        if not self.user:
+            return None
+        profile = getattr(self.user, "profile", None)
+        return profile.mobile if profile is not None else None
+
+    @staticmethod
+    def _as_int(value):
+        """Coerce an IntegerChoices member or raw int/None to a plain int."""
+        if isinstance(value, int):
+            return value
+        return getattr(value, "value", 0) or 0
 
     def unpack_transport(self):
-        value = self.transport.value if self.transport else 0
+        value = self._as_int(self.transport)
         if value == 0:
             return {"SILENT": 1}
         
@@ -723,7 +789,7 @@ class ProgeoAccess(ProgeoModel, auto_prefetch.Model):
         }
 
     def unpack_type(self):
-        value = self.type.value if self.type else 0
+        value = self._as_int(self.type)
         if value == 0:
             return {"SILENT": 1}
         

@@ -1,8 +1,15 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router';
-import { Breadcrumb, Card, Container, Spinner, Tab, Tabs } from 'react-bootstrap';
+import { useEffect, useMemo, useState } from 'react';
+import { useParams } from 'react-router';
+import {
+  Card,
+  Container,
+  Spinner,
+  Tab,
+  Tabs,
+} from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
+import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
 import { showErrorBar } from '../components/ui/Snackbar.jsx';
 import LocationStatusTab from './LocationStatusTab';
@@ -22,16 +29,39 @@ export type LocationDetail = {
   longitude?: number | null;
 };
 
+type TabKey = 'status' | 'analyse' | 'notifications' | 'interface';
+
+/** The permission code that unlocks each tab; tabs are hidden when missing. */
+const TAB_DEFS: { key: TabKey; title: string; permission: string }[] = [
+  { key: 'status', title: 'Status', permission: 'module_locations_enabled' },
+  {
+    key: 'analyse',
+    title: 'Analyse',
+    permission: 'module_measurements_enabled',
+  },
+  {
+    key: 'notifications',
+    title: 'Benachrichtigungen',
+    permission: 'module_notifications_enabled',
+  },
+  {
+    key: 'interface',
+    title: 'Schnittstelle',
+    permission: 'module_interface_enabled',
+  },
+];
+
 const LocationDetailView = () => {
   const { id } = useParams();
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
+  const { hasPermission, isLoading: permissionsLoading } = usePermissions();
 
   const [location, setLocation] = useState<LocationDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('status');
+  const [activeTab, setActiveTab] = useState<TabKey | ''>('');
 
-  const loadLocation = useCallback(() => {
+  const loadLocation = () => {
     if (!id) {
       return;
     }
@@ -49,57 +79,80 @@ const LocationDetailView = () => {
         setLoading(false);
       },
     );
-  }, [auth, enqueueSnackbar, id]);
+  };
 
   useEffect(() => {
     setLocation(null);
     loadLocation();
-  }, [loadLocation]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  // Tabs the current user is allowed to see.
+  const allowedTabs = useMemo(
+    () => TAB_DEFS.filter((tab) => hasPermission(tab.permission)),
+    [hasPermission],
+  );
+
+  // Keep the active tab valid when permissions change (e.g. first allowed).
+  useEffect(() => {
+    if (allowedTabs.length === 0) {
+      return;
+    }
+    setActiveTab((current) => {
+      if (current && allowedTabs.some((tab) => tab.key === current)) {
+        return current;
+      }
+      return allowedTabs[0].key;
+    });
+  }, [allowedTabs]);
 
   const locationId = location?.id ?? Number(id);
-  const locationLabel = location?.name
-    ? `${location.name}${location.project_id != null ? ` (${location.project_id})` : ''}`
-    : `Location ${id}`;
+
+  const renderTab = (tabKey: TabKey) => {
+    switch (tabKey) {
+      case 'status':
+        return <LocationStatusTab location={location} locationId={locationId} />;
+      case 'analyse':
+        return <LocationAnalyseTab locationId={locationId} />;
+      case 'notifications':
+        return <LocationNotificationsTab locationId={locationId} />;
+      case 'interface':
+        return <LocationInterfaceTab />;
+    }
+  };
+
+  if (loading || permissionsLoading) {
+    return (
+      <Container fluid className="py-3">
+        <Card className="border-0 shadow-sm">
+          <Card.Body className="d-flex justify-content-center py-5 text-muted">
+            <Spinner animation="border" className="me-2" /> Loading...
+          </Card.Body>
+        </Card>
+      </Container>
+    );
+  }
 
   return (
     <Container fluid className="py-3">
-      <Breadcrumb>
-        <Breadcrumb.Item linkAs={Link} linkProps={{ to: '/' }}>
-          Home
-        </Breadcrumb.Item>
-        <Breadcrumb.Item linkAs={Link} linkProps={{ to: '/location/overview/' }}>
-          Locations
-        </Breadcrumb.Item>
-        <Breadcrumb.Item active>{locationLabel}</Breadcrumb.Item>
-      </Breadcrumb>
-
-      <h3 className="mb-3">{locationLabel}</h3>
-
-      {loading ? (
+      {allowedTabs.length === 0 ? (
         <Card className="border-0 shadow-sm">
-          <Card.Body className="d-flex justify-content-center py-5 text-muted">
-            <Spinner animation="border" className="me-2" /> Loading location...
+          <Card.Body className="py-5 text-center text-muted">
+            Keine Zugriffsberechtigung für die Inhalte dieser Location.
           </Card.Body>
         </Card>
       ) : (
         <Tabs
-          activeKey={activeTab}
-          onSelect={(key) => setActiveTab(String(key ?? 'status'))}
+          activeKey={activeTab || allowedTabs[0].key}
+          onSelect={(key) => setActiveTab(String(key ?? '') as TabKey | '')}
           mountOnEnter
           className="mb-3"
         >
-          <Tab eventKey="status" title="Status">
-            <LocationStatusTab location={location} locationId={locationId} />
-          </Tab>
-          <Tab eventKey="analyse" title="Analyse">
-            <LocationAnalyseTab locationId={locationId} />
-          </Tab>
-          <Tab eventKey="notifications" title="Benachrichtigungen">
-            <LocationNotificationsTab locationId={locationId} />
-          </Tab>
-          <Tab eventKey="interface" title="Schnittstelle">
-            <LocationInterfaceTab />
-          </Tab>
+          {allowedTabs.map((tab) => (
+            <Tab key={tab.key} eventKey={tab.key} title={tab.title}>
+              {renderTab(tab.key)}
+            </Tab>
+          ))}
         </Tabs>
       )}
     </Container>

@@ -10,20 +10,15 @@ import {
 } from 'react-bootstrap';
 import {
   ArrowLeft,
-  Activity,
   Bell,
   Building,
   Geo,
-  ThermometerHalf,
 } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
 import { useNavigate, useParams } from 'react-router';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
 import { showErrorBar } from '../components/ui/Snackbar.jsx';
-import AlarmMeasurementCompareChart from '../components/device/AlarmMeasurementCompareChart.tsx';
-import SensorHeatmap2D from '../components/device/SensorHeatmap2D.tsx';
-import { type SensorHeatmapResponse } from '../components/device/SensorHeatmap3D.tsx';
 import AlarmTimeline, {
   alarmStartTime,
   formatDuration,
@@ -47,18 +42,7 @@ type LocationDetail = {
   longitude?: number | null;
 };
 
-const HEATMAP_LIMIT = 300;
 const TICK_MS = 30_000;
-
-/** ms -> naive local ISO string (matches backend serializer output). */
-const toLocalIso = (ms: number): string => {
-  const date = new Date(ms);
-  const pad = (value: number) => String(value).padStart(2, '0');
-  return (
-    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
-    `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
-  );
-};
 
 const STATUS_LABELS: Record<number, { label: string; variant: string }> = {
   0: { label: 'Neu', variant: 'warning' },
@@ -91,9 +75,6 @@ const LocationAlarmDetail = ({
   const [selectedAlarm, setSelectedAlarm] = useState<TimelineAlarm | null>(
     null,
   );
-  const [heatmapLoading, setHeatmapLoading] = useState(false);
-  const [heatmapResponse, setHeatmapResponse] =
-    useState<SensorHeatmapResponse | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
   const hasActiveAlarm = useMemo(
@@ -155,65 +136,9 @@ const LocationAlarmDetail = ({
 
   useEffect(() => {
     setSelectedAlarm(null);
-    setHeatmapResponse(null);
     loadLocation();
     loadAlarms();
   }, [loadLocation, loadAlarms]);
-
-  const fetchHeatmap = useCallback(
-    (alarm: TimelineAlarm) => {
-      const locationId = alarm.location?.id ?? location?.id ?? id;
-      if (locationId == null) {
-        showErrorBar(
-          enqueueSnackbar,
-          'Alarm has no location to render a heatmap for.',
-        );
-        return;
-      }
-
-      const startMs = alarmStartTime(alarm);
-      const normalizedMs = parseTimestamp(alarm.normalized_at);
-      const endMs =
-        normalizedMs != null
-          ? normalizedMs
-          : isAlarmActive(alarm)
-            ? now
-            : (startMs ?? now);
-      const padMs = 5 * 60 * 1000;
-      const fromMs = startMs != null ? startMs - padMs : now - padMs;
-      const toMs = endMs + padMs;
-
-      const params = new URLSearchParams({
-        limit: String(HEATMAP_LIMIT),
-        from: toLocalIso(fromMs),
-        to: toLocalIso(toMs),
-      });
-
-      setSelectedAlarm(alarm);
-      setHeatmapLoading(true);
-      setHeatmapResponse(null);
-      void axiosConfig.perform_get(
-        auth,
-        `/v1/location/${locationId}/heatmap/?${params.toString()}`,
-        (result) => {
-          setHeatmapResponse(
-            (result?.data || null) as SensorHeatmapResponse | null,
-          );
-          setHeatmapLoading(false);
-        },
-        (error) => {
-          const reason = error?.response?.data?.reason || error.message;
-          showErrorBar(
-            enqueueSnackbar,
-            `Could not load alarm heatmap: ${reason}`,
-          );
-          setHeatmapResponse(null);
-          setHeatmapLoading(false);
-        },
-      );
-    },
-    [auth, enqueueSnackbar, id, location?.id, now],
-  );
 
   const alarmDuration = useCallback(
     (alarm: TimelineAlarm): number => {
@@ -267,7 +192,7 @@ const LocationAlarmDetail = ({
               Alarm Timeline
             </h5>
             <small className="text-muted">
-              Click a bar to load its heatmap
+              Select an alarm bar to show its details
             </small>
           </div>
           {loading ? (
@@ -280,56 +205,13 @@ const LocationAlarmDetail = ({
               alarms={alarms}
               now={now}
               selectedAlarmId={selectedAlarm?.id}
-              onSelectAlarm={(alarm) => fetchHeatmap(alarm)}
+              onSelectAlarm={() => {}}
             />
           )}
         </Card.Body>
       </Card>
 
-      {/* Heatmap */}
-      <Card className="border-0 shadow-sm mb-3 p-2">
-        <Card.Body>
-          <div className="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
-            <h5 className="mb-0">
-              <ThermometerHalf className="me-2 text-danger" />
-              {selectedAlarm
-                ? `Heatmap for Alarm #${selectedAlarm.id}`
-                : 'Heatmap'}
-            </h5>
-            <small className="text-muted">
-              Scoped to the selected alarm's active window
-            </small>
-          </div>
-          {heatmapLoading ? (
-            <div className="d-flex align-items-center gap-2 text-muted py-5 justify-content-center">
-              <Spinner size="sm" animation="border" />
-              Loading alarm heatmap...
-            </div>
-          ) : !selectedAlarm ? (
-            <div className="text-muted py-5 text-center">
-              Select an alarm to display its location heatmap.
-            </div>
-          ) : (
-            <>
-              <SensorHeatmap2D response={heatmapResponse} />
-              <div className="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
-                <h5 className="mb-0">
-                  <Activity className="me-2 text-primary" />
-                  Measurements
-                </h5>
-                <small className="text-muted">±6h around the alarm start</small>
-              </div>
-              {selectedAlarm ? (
-                <AlarmMeasurementCompareChart alarm={selectedAlarm} />
-              ) : (
-                <div className="text-muted py-5 text-center">
-                  Select an alarm to compare its measurements.
-                </div>
-              )}
-            </>
-          )}
-        </Card.Body>
-      </Card>
+      {/* TODO: insert alarms as DataTable - there already is a component for it */}
 
       {/* Details */}
       <Card className="border-0 shadow-sm p-2">
