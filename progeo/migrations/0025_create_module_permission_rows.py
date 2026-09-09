@@ -39,10 +39,10 @@ def create_module_permission_rows(apps, schema_editor):
     Permission = apps.get_model("auth", "Permission")
     ContentType = apps.get_model("contenttypes", "ContentType")
 
+    # ContentType has no 'name' field after contenttypes 0002 (dependency above).
     content_type, _ = ContentType.objects.get_or_create(
         app_label="progeo",
         model="usermodulepermissions",
-        defaults={"name": "user module permissions"},
     )
 
     existing = set(
