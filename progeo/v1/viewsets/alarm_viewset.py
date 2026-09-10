@@ -63,11 +63,19 @@ class AlarmViewSet(ProgeoModalViewSet):
         """
         Lightweight per-location alarm counts within the default window, so
         the locations overview can color rows without loading every alarm.
+        Optional `ids` (comma-separated) scopes the summary to those
+        location ids, e.g. the rows currently visible on a paginated table.
         Returns {"locations": {<location_id>: {"count": n, "active": m}}}.
         """
         account = self._resolve_request_account(request)
         if not account:
             return RequestSuccess({"locations": {}})
+
+        ids_param = request.query_params.get("ids", "")
+        try:
+            location_ids = [int(value) for value in ids_param.split(",") if value.strip()]
+        except ValueError:
+            return RequestFailed({"reason": "ids must be a comma-separated list of integers"})
 
         try:
             days = int(request.query_params.get("days", DEFAULT_ALARM_DAYS))
@@ -82,11 +90,12 @@ class AlarmViewSet(ProgeoModalViewSet):
                 Q(triggered_at__gte=cutoff)
                 | Q(triggered_at__isnull=True, last_fetched__gte=cutoff)
             )
-            .values("measurement__device__location_id")
-            .annotate(
-                count=Count("id"),
-                active=Count("id", filter=Q(normalized_at__isnull=True)),
-            )
+        )
+        if location_ids:
+            rows = rows.filter(measurement__device__location_id__in=location_ids)
+        rows = rows.values("measurement__device__location_id").annotate(
+            count=Count("id"),
+            active=Count("id", filter=Q(normalized_at__isnull=True)),
         )
 
         locations = {}

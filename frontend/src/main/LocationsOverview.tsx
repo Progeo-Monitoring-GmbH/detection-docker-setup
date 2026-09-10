@@ -1,16 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import DataTable from 'react-data-table-component';
 import type { TableColumn } from 'react-data-table-component';
-import { Button, Card, Form, Spinner } from 'react-bootstrap';
+import { Button, Form } from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
 import { useNavigate } from 'react-router';
 
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
 import { showErrorBar } from '../components/ui/Snackbar.jsx';
-import MeasurementSamplesCompareChart, {
-  type MeasurementCompareRow,
-} from '../components/device/MeasurementSamplesCompareChart.tsx';
 import LocationEditModal, {
   type LocationEditRow,
 } from '../components/modal/LocationEditModal.tsx';
@@ -69,17 +66,17 @@ const LocationsOverview = () => {
   >({});
   const [searchText, setSearchText] = useState('');
   const [onlyConnected, setOnlyConnected] = useState(true);
-  const [selectedLocationId, setSelectedLocationId] = useState<number | null>(
-    null,
-  );
-  const [selectedMeasurements, setSelectedMeasurements] = useState<
-    MeasurementCompareRow[]
-  >([]);
-  const [measurementsLoading, setMeasurementsLoading] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingLocation, setEditingLocation] = useState<LocationRow | null>(
     null,
   );
+  const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  // Ids for which the full detail fields (device/measurement counts) were
+  // already loaded, so the paginated table only fetches what's missing.
+  const loadedDetailIds = useRef<Set<number>>(new Set());
+  // Ids for which the alarm summary was already loaded, same on-page-demand pattern.
+  const loadedAlarmIds = useRef<Set<number>>(new Set());
 
   const fetchLocations = (search = '', hasDevice = false) => {
     setLoading(true);
@@ -93,17 +90,21 @@ const LocationsOverview = () => {
       params.set('has_device', '1');
     }
 
-    const suffix = params.toString() ? `?${params.toString()}` : '';
-
     void axiosConfig.perform_get(
       auth,
-      `/v1/location/${suffix}`,
+      `/v1/location/min/?${params.toString()}`,
       (response) => {
         const next = (response?.data || []) as LocationRow[];
+        loadedDetailIds.current.clear();
+        loadedAlarmIds.current.clear();
         setRows(next);
         setLoading(false);
         // Single-location accounts land directly in the LocationDetailView.
-        if (!autoForwarded.current && next.length === 1 && next[0]?.id != null) {
+        if (
+          !autoForwarded.current &&
+          next.length === 1 &&
+          next[0]?.id != null
+        ) {
           autoForwarded.current = true;
           navigate(`/location/${next[0].id}/detail/`);
         }
@@ -117,19 +118,26 @@ const LocationsOverview = () => {
   };
 
   // Load alarm counts per location separately, so the location list stays
-  // light and the rows can be colored by alarm state.
-  const fetchAlarmSummary = () => {
+  // light and the rows can be colored by alarm state. Only fetches for the
+  // ids currently visible on screen, merging into the existing summary.
+  const fetchAlarmSummary = (ids: number[]) => {
+    if (ids.length === 0) {
+      return;
+    }
+    ids.forEach((id) => loadedAlarmIds.current.add(id));
+
     void axiosConfig.perform_get(
       auth,
-      '/v1/alarm/location_summary/',
+      `/v1/alarm/location_summary/?ids=${ids.join(',')}`,
       (response) => {
         const payload = (response?.data?.locations || {}) as Record<
           string,
           LocationAlarmSummary
         >;
-        setAlarmSummary(payload);
+        setAlarmSummary((prev) => ({ ...prev, ...payload }));
       },
       (error) => {
+        ids.forEach((id) => loadedAlarmIds.current.delete(id));
         const reason = error?.response?.data?.reason || error.message;
         showErrorBar(
           enqueueSnackbar,
@@ -141,41 +149,45 @@ const LocationsOverview = () => {
 
   useEffect(() => {
     fetchLocations(searchText, onlyConnected);
-    fetchAlarmSummary();
   }, [onlyConnected]);
 
-  const fetchLocationMeasurements = (locationId: number, year?: number) => {
-    setMeasurementsLoading(true);
-    const params = new URLSearchParams();
-    if (year) {
-      params.set('year', String(year));
-    } else {
-      params.set('limit', '300');
+  // Batch-load the full fields (device/measurement counts) for ids that
+  // aren't loaded yet, so /min stays fast and details trickle in per page.
+  const fetchLocationDetails = (ids: number[]) => {
+    if (ids.length === 0) {
+      return;
     }
+    ids.forEach((id) => loadedDetailIds.current.add(id));
+
     void axiosConfig.perform_get(
       auth,
-      `/v1/location/${locationId}/measurements/?${params.toString()}`,
+      `/v1/location/details/?ids=${ids.join(',')}`,
       (response) => {
-        const measurements = (response?.data?.measurements ||
-          []) as MeasurementCompareRow[];
-        setSelectedMeasurements(measurements);
-        setMeasurementsLoading(false);
+        const details = (response?.data || []) as LocationRow[];
+        const detailsById = new Map(
+          details.map((detail) => [detail.id, detail]),
+        );
+        setRows((prev) =>
+          prev.map((row) => {
+            const detail = detailsById.get(row.id);
+            return detail ? { ...row, ...detail } : row;
+          }),
+        );
       },
       (error) => {
+        // Allow a retry on the next page change instead of silently missing data.
+        ids.forEach((id) => loadedDetailIds.current.delete(id));
         const reason = error?.response?.data?.reason || error.message;
         showErrorBar(
           enqueueSnackbar,
-          `Could not load location measurements: ${reason}`,
+          `Could not load location details: ${reason}`,
         );
-        setSelectedMeasurements([]);
-        setMeasurementsLoading(false);
       },
     );
   };
 
   const handleRowClick = (row: LocationRow) => {
-    setSelectedLocationId(row.id);
-    fetchLocationMeasurements(row.id);
+    navigate(`/location/${row.id}/detail/`);
   };
 
   const openEditModal = (row: LocationRow) => {
@@ -231,6 +243,29 @@ const LocationsOverview = () => {
     });
   }, [rows, searchText]);
 
+  // Fetch the missing detail fields and alarm summary only for the page
+  // currently on screen.
+  useEffect(() => {
+    const start = (currentPage - 1) * rowsPerPage;
+    const visibleIds = filteredRows
+      .slice(start, start + rowsPerPage)
+      .map((row) => row.id);
+
+    const missingDetailIds = visibleIds.filter(
+      (id) => !loadedDetailIds.current.has(id),
+    );
+    if (missingDetailIds.length > 0) {
+      fetchLocationDetails(missingDetailIds);
+    }
+
+    const missingAlarmIds = visibleIds.filter(
+      (id) => !loadedAlarmIds.current.has(id),
+    );
+    if (missingAlarmIds.length > 0) {
+      fetchAlarmSummary(missingAlarmIds);
+    }
+  }, [filteredRows, currentPage, rowsPerPage]);
+
   // Row coloring priority: alarms (yellow) > measurements (green) > none (gray).
   const rowColorStyle = (row: LocationRow) => {
     const summary = alarmSummary[String(row.id)];
@@ -242,20 +277,6 @@ const LocationsOverview = () => {
     }
     return ROW_STYLES.none;
   };
-
-  useEffect(() => {
-    if (!selectedLocationId) {
-      return;
-    }
-
-    const existsInFilteredRows = filteredRows.some(
-      (row) => row.id === selectedLocationId,
-    );
-    if (!existsInFilteredRows) {
-      setSelectedLocationId(null);
-      setSelectedMeasurements([]);
-    }
-  }, [filteredRows, selectedLocationId]);
 
   const columns: TableColumn<LocationRow>[] = [
     {
@@ -390,14 +411,6 @@ const LocationsOverview = () => {
       when: (row: LocationRow) => rowColorStyle(row) === ROW_STYLES.none,
       style: ROW_STYLES.none,
     },
-    // Selected highlight last so it stays visible on colored rows.
-    {
-      when: (row: LocationRow) => row.id === selectedLocationId,
-      style: {
-        backgroundColor: 'rgba(13, 110, 253, 0.22)',
-        borderLeft: '3px solid #0d6efd',
-      },
-    },
   ];
 
   return (
@@ -410,7 +423,10 @@ const LocationsOverview = () => {
             type="text"
             placeholder="Search locations..."
             value={searchText}
-            onChange={(event) => setSearchText(event.target.value)}
+            onChange={(event) => {
+              setSearchText(event.target.value);
+              setCurrentPage(1);
+            }}
             style={{ minWidth: '260px' }}
           />
           <Form.Check
@@ -451,6 +467,12 @@ const LocationsOverview = () => {
         columns={columns}
         data={filteredRows}
         pagination
+        paginationPerPage={rowsPerPage}
+        onChangePage={(page) => setCurrentPage(page)}
+        onChangeRowsPerPage={(newPerPage, page) => {
+          setRowsPerPage(newPerPage);
+          setCurrentPage(page);
+        }}
         progressPending={loading}
         highlightOnHover
         pointerOnHover
@@ -458,40 +480,6 @@ const LocationsOverview = () => {
         onRowClicked={handleRowClick}
         dense
       />
-
-      <Card className="border-0 shadow-sm mt-3">
-        <Card.Body>
-          {measurementsLoading ? (
-            <div className="d-flex align-items-center gap-2 text-muted">
-              <Spinner size="sm" animation="border" />
-              Loading location measurements...
-            </div>
-          ) : !selectedLocationId ? (
-            <div className="text-muted">
-              Click a row in the table to display measurements from all devices
-              connected to that location.
-            </div>
-          ) : selectedMeasurements.length === 0 ? (
-            <div className="text-muted">
-              No measurements found for devices in this location.
-            </div>
-          ) : (
-            <MeasurementSamplesCompareChart
-              rows={selectedMeasurements}
-              onLoadCurrentYear={
-                selectedLocationId
-                  ? () =>
-                      fetchLocationMeasurements(
-                        selectedLocationId,
-                        new Date().getFullYear(),
-                      )
-                  : null
-              }
-              isLoadingCurrentYear={measurementsLoading}
-            />
-          )}
-        </Card.Body>
-      </Card>
 
       <LocationEditModal
         show={showEditModal}
