@@ -8,12 +8,7 @@ import {
   Row,
   Spinner,
 } from 'react-bootstrap';
-import {
-  ArrowLeft,
-  Bell,
-  Building,
-  Geo,
-} from 'react-bootstrap-icons';
+import { ArrowLeft, Bell, Building, Geo } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
 import { useNavigate, useParams } from 'react-router';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
@@ -26,6 +21,7 @@ import AlarmTimeline, {
   parseTimestamp,
   type TimelineAlarm,
 } from './AlarmTimeline.tsx';
+import AlarmsOverview from './AlarmsOverview.tsx';
 
 type LocationDetail = {
   id?: number | null;
@@ -212,6 +208,7 @@ const LocationAlarmDetail = ({
       </Card>
 
       {/* TODO: insert alarms as DataTable - there already is a component for it */}
+      <AlarmsOverview />
 
       {/* Details */}
       <Card className="border-0 shadow-sm p-2">
