@@ -108,6 +108,19 @@ class DeviceSerializer(ProgeoBaseSerializer):
 
 
 
+class ProgeoLocationMinSerializer(ProgeoBaseSerializer):
+    clazz = serializers.SerializerMethodField("get_clazz_name")
+    id = serializers.IntegerField(read_only=True)
+    name = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = ProgeoLocation
+        fields = ["project_id", "id", "clazz", "name", "city", "plz", "address", "manager", "telefon", "mail"]
+
+    @staticmethod
+    def get_clazz_name(_):
+        return "ProgeoLocation"
+    
 class LocationSerializer(ProgeoBaseSerializer):
     clazz = serializers.SerializerMethodField("get_clazz_name")
     device_count = serializers.IntegerField(read_only=True)

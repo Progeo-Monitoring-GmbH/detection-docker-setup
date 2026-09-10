@@ -8,6 +8,7 @@ from rest_framework.authentication import SessionAuthentication, TokenAuthentica
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.response import Response
 
 from progeo.decorator import (
     has_module_permissions,
@@ -18,7 +19,7 @@ from progeo.helper.basics import RequestFailed, RequestSuccess
 from progeo.v1.models import ProgeoAccess, ProgeoLocation, ProgeoMeasurePoint, ProgeoMeasurement, UserProfile
 from progeo.v1.serializers import (
     LocationSerializer,
-    MinimalLocationSerializer,
+    ProgeoLocationMinSerializer,
     ProgeoAccessSerializer,
     ProgeoMeasurementSerializer,
 )
@@ -50,28 +51,77 @@ class LocationViewSet(ProgeoModalViewSet):
     permission_classes = [IsAuthenticated]
 
     @staticmethod
-    def _resolve_request_account(request):
+    def _resolve_request_accounts(request):
+        """All accounts the current user has access to (a user can belong to
+        several accounts, each backed by its own database)."""
         account = getattr(request, "account", None)
         user = getattr(request, "user", None)
 
         if not user:
-            return account or _get_controller_account()
+            controller_account = account or _get_controller_account()
+            return [controller_account] if controller_account else []
 
         if user.is_staff or user.is_superuser:
-            return account or _get_controller_account()
+            controller_account = account or _get_controller_account()
+            return [controller_account] if controller_account else []
 
-        if account and account.users.filter(pk=user.pk).exists():
-            return account
+        accounts = list(user.accounts.order_by("id"))
+        if accounts:
+            return accounts
 
-        user_account = user.accounts.order_by("id").first()
-        if user_account:
-            return user_account
+        return [account] if account else []
 
-        return account or _get_controller_account()
+    @classmethod
+    def _primary_account(cls, request):
+        """Best-effort single account for actions that must pick one context
+        (e.g. create). Falls back to the first of the resolved accounts."""
+        accounts = cls._resolve_request_accounts(request)
+        return accounts[0] if accounts else None
+
+    @classmethod
+    def _find_location(cls, request, pk=None, project_id=None):
+        """Look up a location by pk or project_id across every account the
+        user has access to, since ids are only unique within one account's db."""
+        for account in cls._resolve_request_accounts(request):
+            qs = ProgeoLocation.objects.using(account.db_name).filter(account=account)
+            location = qs.filter(pk=pk).first() if pk is not None else qs.filter(project_id=project_id).first()
+            if location:
+                return location, account
+        return None, None
 
     @require_module_permissions("module_locations_enabled")
     def list(self, request, *args, **kwargs):
         return super(LocationViewSet, self).list(request, no_cache=False, *args, **kwargs)
+    
+    @require_module_permissions("module_locations_enabled")
+    @action(detail=False, url_path="min", methods=["GET"])
+    def min_list(self, request, *args, **kwargs):
+        # A user can belong to several accounts, each living in its own
+        # database, so locations must be collected per account/db_name.
+        accounts = self._resolve_request_accounts(request)
+        data = []
+        for account in accounts:
+            locations = ProgeoLocation.objects.using(account.db_name).filter(account=account)
+            data.extend(ProgeoLocationMinSerializer(locations, many=True).data)
+        return Response(data=data)
+
+    @require_module_permissions("module_locations_enabled")
+    @action(detail=False, url_path="details", methods=["GET"])
+    def details(self, request, *args, **kwargs):
+        """Batch-load the full location fields (device/measurement counts,
+        last measurement) for a set of ids, e.g. the rows currently visible
+        on the paginated locations table after the fast `min` load."""
+        ids_param = request.query_params.get("ids", "")
+        try:
+            ids = [int(value) for value in ids_param.split(",") if value.strip()]
+        except ValueError:
+            return RequestFailed({"reason": "ids must be a comma-separated list of integers"})
+        if not ids:
+            return Response(data=[])
+
+        queryset = self.get_queryset().filter(id__in=ids)
+        data = LocationSerializer(queryset, many=True).data
+        return Response(data=data)
 
     @require_module_permissions("module_locations_enabled")
     def retrieve(self, request, pk=None, *args, **kwargs):
@@ -89,11 +139,10 @@ class LocationViewSet(ProgeoModalViewSet):
                 or {id, transport, type, user_id?}. transport/type are the
                 ProgeoAccess bitmask ints.
         """
-        account = self._resolve_request_account(request)
-        db_name = account.db_name if account else "default"
-        location = ProgeoLocation.objects.using(db_name).filter(pk=pk, account=account).first()
+        location, account = self._find_location(request, pk=pk)
         if not location:
             return RequestFailed({"reason": "Location not found"})
+        db_name = account.db_name
 
         if request.method == "GET":
             rows = (
@@ -159,11 +208,10 @@ class LocationViewSet(ProgeoModalViewSet):
     @action(detail=True, url_path="access/delete", methods=["POST"])
     def access_delete(self, request, pk=None, *args, **kwargs):
         """Delete an access rule of the location: POST {"id": <access_id>}."""
-        account = self._resolve_request_account(request)
-        db_name = account.db_name if account else "default"
-        location = ProgeoLocation.objects.using(db_name).filter(pk=pk, account=account).first()
+        location, account = self._find_location(request, pk=pk)
         if not location:
             return RequestFailed({"reason": "Location not found"})
+        db_name = account.db_name
         try:
             access_id = int(request.data.get("id"))
         except (TypeError, ValueError):
@@ -182,19 +230,23 @@ class LocationViewSet(ProgeoModalViewSet):
         that are present and non-empty are changed. mobile is stored on the
         UserProfile (auth.User has no mobile column).
         """
-        account = self._resolve_request_account(request)
-        if not account:
-            return RequestFailed({"reason": "No account found"})
-        db_name = account.db_name if account else "default"
-
         try:
             user_id = int(request.data.get("user_id"))
         except (TypeError, ValueError):
             return RequestFailed({"reason": "user_id required"})
 
-        user = account.users.filter(pk=user_id).first()
-        if not user:
-            return RequestFailed({"reason": "User not found in this account"})
+        account = None
+        user = None
+        for candidate_account in self._resolve_request_accounts(request):
+            found_user = candidate_account.users.filter(pk=user_id).first()
+            if found_user:
+                account = candidate_account
+                user = found_user
+                break
+
+        if not account or not user:
+            return RequestFailed({"reason": "User not found in any of your accounts"})
+        db_name = account.db_name
 
         email = request.data.get("email")
         if email is not None and str(email).strip():
@@ -228,17 +280,18 @@ class LocationViewSet(ProgeoModalViewSet):
         Returns JSON by default; pass `?format=csv` for a spreadsheet download.
         The exported rows can be sent back to geo_import to update locations.
         """
-        account = self._resolve_request_account(request)
-        if not account:
+        accounts = self._resolve_request_accounts(request)
+        if not accounts:
             return RequestFailed({"reason": "No account found"})
-        db_name = account.db_name if account else "default"
 
-        rows = list(
-            ProgeoLocation.objects.using(db_name)
-            .filter(account=account)
-            .order_by("id")
-            .values(*LOCATION_GEO_CSV_FIELDS)
-        )
+        rows = []
+        for account in accounts:
+            rows.extend(
+                ProgeoLocation.objects.using(account.db_name)
+                .filter(account=account)
+                .order_by("id")
+                .values(*LOCATION_GEO_CSV_FIELDS)
+            )
 
         if request.query_params.get("format", "").lower() == "csv":
             response = HttpResponse(content_type="text/csv")
@@ -263,10 +316,9 @@ class LocationViewSet(ProgeoModalViewSet):
 
         Returns per-row results plus a summary of updated / not-found rows.
         """
-        account = self._resolve_request_account(request)
-        if not account:
+        accounts = self._resolve_request_accounts(request)
+        if not accounts:
             return RequestFailed({"reason": "No account found"})
-        db_name = account.db_name if account else "default"
 
         payload = request.data
         if isinstance(payload, dict):
@@ -274,12 +326,15 @@ class LocationViewSet(ProgeoModalViewSet):
         if not isinstance(payload, list):
             return RequestFailed({"reason": "Expected a JSON list of location rows (see geo_export)"})
 
-        # Load all locations of the account once and index them for matching.
-        locations = list(
-            ProgeoLocation.objects.using(db_name).filter(account=account)
-        )
-        by_project_id = {loc.project_id: loc for loc in locations if loc.project_id is not None}
-        by_id = {loc.pk: loc for loc in locations}
+        # Load all locations of every account once and index them for matching,
+        # keeping track of which account/db_name each location belongs to.
+        by_project_id = {}
+        by_id = {}
+        for account in accounts:
+            for loc in ProgeoLocation.objects.using(account.db_name).filter(account=account):
+                if loc.project_id is not None:
+                    by_project_id[loc.project_id] = (loc, account)
+                by_id[loc.pk] = (loc, account)
 
         updated = []
         not_found = []
@@ -291,10 +346,15 @@ class LocationViewSet(ProgeoModalViewSet):
                 continue
 
             location = None
+            account = None
             if row.get("project_id") is not None:
-                location = by_project_id.get(row.get("project_id"))
+                match = by_project_id.get(row.get("project_id"))
+                if match:
+                    location, account = match
             if location is None and row.get("id") is not None:
-                location = by_id.get(row.get("id"))
+                match = by_id.get(row.get("id"))
+                if match:
+                    location, account = match
             if location is None:
                 not_found.append({"row": index, "id": row.get("id"), "project_id": row.get("project_id")})
                 continue
@@ -327,7 +387,7 @@ class LocationViewSet(ProgeoModalViewSet):
                 update_fields.append(field)
             else:
                 if update_fields:
-                    location.save(using=db_name, update_fields=update_fields)
+                    location.save(using=account.db_name, update_fields=update_fields)
                     updated.append({"row": index, "id": location.pk, "project_id": location.project_id, "fields": update_fields})
                 else:
                     skipped.append({"row": index, "id": location.pk, "reason": "no geo/address fields to update"})
@@ -357,18 +417,14 @@ class LocationViewSet(ProgeoModalViewSet):
     @require_module_permissions("module_locations_enabled", "module_locations_edit")
     @action(detail=False, url_path="update", methods=["POST"])
     def update_alignment(self, request, *args, **kwargs):
-        account = self._resolve_request_account(request)
-        db_name = account.db_name if account else "default"
         location_id = request.data.get("location_id")
         if not location_id:
             return RequestFailed({"reason": "Missing parameter: location_id"})
 
-        location = ProgeoLocation.objects.using(db_name).filter(
-            project_id=location_id,
-            account=account,
-        ).first()
+        location, account = self._find_location(request, project_id=location_id)
         if not location:
             return RequestFailed({"reason": "Location not found"})
+        db_name = account.db_name
 
         try:
             offset_x = int(request.data.get("offset_x"))
@@ -415,7 +471,10 @@ class LocationViewSet(ProgeoModalViewSet):
         return super(LocationViewSet, self).destroy(request, *args, **kwargs)
 
     def get_queryset(self):
-        account = self._resolve_request_account(self.request)
+        # A single QuerySet can only target one database, so the standard
+        # (paginated) list/retrieve/update/destroy actions operate on the
+        # user's primary account; use /min and /details for the multi-account view.
+        account = self._primary_account(self.request)
         if not account:
             return ProgeoLocation.objects.none()
 
@@ -435,9 +494,6 @@ class LocationViewSet(ProgeoModalViewSet):
     @require_module_permissions("module_locations_enabled", "module_measurements_enabled")
     @action(detail=True, url_path="measurements", methods=["GET"])
     def measurements(self, request, pk=None, *args, **kwargs):
-        account = self._resolve_request_account(request)
-        db_name = account.db_name if account else "default"
-
         try:
             limit = int(request.query_params.get("limit", 300))
         except (TypeError, ValueError):
@@ -452,9 +508,10 @@ class LocationViewSet(ProgeoModalViewSet):
             except (TypeError, ValueError):
                 return RequestFailed({"reason": "year must be an integer"})
 
-        location = ProgeoLocation.objects.using(db_name).filter(pk=pk, account=account).first()
+        location, account = self._find_location(request, pk=pk)
         if not location:
             return RequestFailed({"reason": "Location not found"})
+        db_name = account.db_name
 
         queryset = ProgeoMeasurement.for_account(account, using=db_name, user=request.user).filter(device__location=location)
         if year:
@@ -474,8 +531,6 @@ class LocationViewSet(ProgeoModalViewSet):
     @require_module_permissions("module_locations_enabled", "module_measurements_enabled")
     @action(detail=True, url_path="heatmap", methods=["GET"])
     def get_heatmap_data(self, request, pk=None, *args, **kwargs):
-        account = self._resolve_request_account(request)
-        db_name = account.db_name if account else "default"
         try:
             limit = int(request.query_params.get("limit", 300))
         except (TypeError, ValueError):
@@ -494,9 +549,10 @@ class LocationViewSet(ProgeoModalViewSet):
         except (TypeError, ValueError):
             return RequestFailed({"reason": "from/to must be ISO-8601 timestamps"})
 
-        location = ProgeoLocation.objects.using(db_name).filter(pk=pk, account=account).first()
+        location, account = self._find_location(request, pk=pk)
         if not location:
             return RequestFailed({"reason": "Location not found"})
+        db_name = account.db_name
 
         points = ProgeoMeasurePoint.objects.using(db_name).filter(location=location)
         queryset = ProgeoMeasurement.for_account(account, using=db_name, user=request.user).filter(device__location=location)
