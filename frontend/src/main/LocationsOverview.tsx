@@ -410,7 +410,7 @@ const LocationsOverview = () => {
     },
     {
       name: 'Actions',
-      width: '260px',
+      width: '300px',
       cell: (row) => (
         <div className="d-flex gap-2">
           <Button

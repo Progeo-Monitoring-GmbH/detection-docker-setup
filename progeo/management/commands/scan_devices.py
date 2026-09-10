@@ -163,10 +163,18 @@ class Command(BaseCommand):
                 continue
 
             status = "created" if created else "existing"
+            samples = measure_payload.get("samples")
+            if isinstance(samples, list):
+                pass
+            elif isinstance(samples, str):
+                samples = samples.replace('"', '').split(",")
+            else:
+                samples = []
+
             dlog(f"Stored measurement for {device.raw_hash} ({status})")
             measurement.project_id = found["payload"].get("project_id")
-            measurement.samples = measure_payload.get("samples", [])
-            measurement.points = len(measurement.samples)
+            measurement.samples = samples
+            measurement.points = int(len(samples) / 2)
             measurement.save()
 
             if PROGEO_CONFIG_HAS_ROOT_SERVER:
