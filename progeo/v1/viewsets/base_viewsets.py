@@ -100,7 +100,10 @@ class ProgeoTokenObtainPairView(TokenObtainPairView):
         except TokenError as e:
             raise InvalidToken(e.args[0])
 
-        user = User.objects.get(username=request.data.get("username"))
+        # serializer.user was resolved by the auth backend, which accepts the
+        # username or email, case-insensitively - don't re-look it up by the
+        # raw (possibly differently-cased/email) "username" field.
+        user = serializer.user
         login(request, user)
 
         create_MfS_log(request)

@@ -1,8 +1,39 @@
+from django.contrib.auth import get_user_model
+from django.contrib.auth.backends import ModelBackend
+from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 from rest_framework import exceptions
 from rest_framework.authentication import BaseAuthentication, get_authorization_header
 
 from progeo.v1.models import LimitedToken
+
+
+class CaseInsensitiveUsernameOrEmailBackend(ModelBackend):
+    """Allows login with the username or email, case-insensitively."""
+
+    def authenticate(self, request, username=None, password=None, **kwargs):
+        UserModel = get_user_model()
+        if username is None:
+            username = kwargs.get(UserModel.USERNAME_FIELD)
+        if username is None or password is None:
+            return None
+
+        user = (
+            UserModel.objects.filter(
+                Q(username__iexact=username) | Q(email__iexact=username)
+            )
+            .order_by("id")
+            .first()
+        )
+        if user is None:
+            # Run the default password hasher to mitigate user enumeration
+            # via timing attacks (same behavior as ModelBackend).
+            UserModel().set_password(password)
+            return None
+
+        if user.check_password(password) and self.user_can_authenticate(user):
+            return user
+        return None
 
 
 class LimitedTokenAuthentication(BaseAuthentication):
