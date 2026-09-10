@@ -174,6 +174,12 @@ DATABASE_ROUTERS = [
     "progeo.router.AccountRouter",
 ]
 
+# Login accepts the username or email, case-insensitively (see backend).
+AUTHENTICATION_BACKENDS = [
+    "progeo.authentication.CaseInsensitiveUsernameOrEmailBackend",
+    "django.contrib.auth.backends.ModelBackend",
+]
+
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
 

@@ -87,7 +87,12 @@ class AlarmViewSet(ProgeoModalViewSet):
         rows = (
             ProgeoAlarm.objects.using(account.db_name)
             .filter(
-                Q(triggered_at__gte=cutoff)
+                # Still-active alarms count regardless of age - otherwise an
+                # alarm that's never been acknowledged silently drops out of
+                # the summary (and the row's yellow marker) once it's older
+                # than the window, even though it's still unresolved.
+                Q(normalized_at__isnull=True)
+                | Q(triggered_at__gte=cutoff)
                 | Q(triggered_at__isnull=True, last_fetched__gte=cutoff)
             )
         )

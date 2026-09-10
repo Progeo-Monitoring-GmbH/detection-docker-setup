@@ -1,13 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import DataTable from 'react-data-table-component';
 import type { TableColumn } from 'react-data-table-component';
-import { Button, Form } from 'react-bootstrap';
+import { Button, Card, Form, Spinner } from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
 import { useNavigate } from 'react-router';
 
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
 import { showErrorBar } from '../components/ui/Snackbar.jsx';
+import MeasurementSamplesCompareChart, {
+  type MeasurementCompareRow,
+} from '../components/device/MeasurementSamplesCompareChart.tsx';
 import LocationEditModal, {
   type LocationEditRow,
 } from '../components/modal/LocationEditModal.tsx';
@@ -66,6 +69,13 @@ const LocationsOverview = () => {
   >({});
   const [searchText, setSearchText] = useState('');
   const [onlyConnected, setOnlyConnected] = useState(true);
+  const [selectedLocationId, setSelectedLocationId] = useState<number | null>(
+    null,
+  );
+  const [selectedMeasurements, setSelectedMeasurements] = useState<
+    MeasurementCompareRow[]
+  >([]);
+  const [measurementsLoading, setMeasurementsLoading] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingLocation, setEditingLocation] = useState<LocationRow | null>(
     null,
@@ -190,6 +200,40 @@ const LocationsOverview = () => {
     navigate(`/location/${row.id}/detail/`);
   };
 
+  const fetchLocationMeasurements = (locationId: number, year?: number) => {
+    setMeasurementsLoading(true);
+    const params = new URLSearchParams();
+    if (year) {
+      params.set('year', String(year));
+    } else {
+      params.set('limit', '300');
+    }
+    void axiosConfig.perform_get(
+      auth,
+      `/v1/location/${locationId}/measurements/?${params.toString()}`,
+      (response) => {
+        const measurements = (response?.data?.measurements ||
+          []) as MeasurementCompareRow[];
+        setSelectedMeasurements(measurements);
+        setMeasurementsLoading(false);
+      },
+      (error) => {
+        const reason = error?.response?.data?.reason || error.message;
+        showErrorBar(
+          enqueueSnackbar,
+          `Could not load location measurements: ${reason}`,
+        );
+        setSelectedMeasurements([]);
+        setMeasurementsLoading(false);
+      },
+    );
+  };
+
+  const handleCompareClick = (row: LocationRow) => {
+    setSelectedLocationId(row.id);
+    fetchLocationMeasurements(row.id);
+  };
+
   const openEditModal = (row: LocationRow) => {
     setEditingLocation(row);
     setShowEditModal(true);
@@ -277,6 +321,20 @@ const LocationsOverview = () => {
     }
     return ROW_STYLES.none;
   };
+
+  useEffect(() => {
+    if (!selectedLocationId) {
+      return;
+    }
+
+    const existsInFilteredRows = filteredRows.some(
+      (row) => row.id === selectedLocationId,
+    );
+    if (!existsInFilteredRows) {
+      setSelectedLocationId(null);
+      setSelectedMeasurements([]);
+    }
+  }, [filteredRows, selectedLocationId]);
 
   const columns: TableColumn<LocationRow>[] = [
     {
@@ -393,6 +451,17 @@ const LocationsOverview = () => {
           >
             Alarms
           </Button>
+          <Button
+            size="sm"
+            variant="outline-secondary"
+            title="Compare measurements of this location"
+            onClick={(event) => {
+              event.stopPropagation();
+              handleCompareClick(row);
+            }}
+          >
+            Compare
+          </Button>
         </div>
       ),
     },
@@ -410,6 +479,14 @@ const LocationsOverview = () => {
     {
       when: (row: LocationRow) => rowColorStyle(row) === ROW_STYLES.none,
       style: ROW_STYLES.none,
+    },
+    // Selected highlight last so it stays visible on colored rows.
+    {
+      when: (row: LocationRow) => row.id === selectedLocationId,
+      style: {
+        backgroundColor: 'rgba(13, 110, 253, 0.22)',
+        borderLeft: '3px solid #0d6efd',
+      },
     },
   ];
 
@@ -480,6 +557,40 @@ const LocationsOverview = () => {
         onRowClicked={handleRowClick}
         dense
       />
+
+      <Card className="border-0 shadow-sm mt-3">
+        <Card.Body>
+          {measurementsLoading ? (
+            <div className="d-flex align-items-center gap-2 text-muted">
+              <Spinner size="sm" animation="border" />
+              Loading location measurements...
+            </div>
+          ) : !selectedLocationId ? (
+            <div className="text-muted">
+              Click "Compare" on a row to display measurements from all devices
+              connected to that location.
+            </div>
+          ) : selectedMeasurements.length === 0 ? (
+            <div className="text-muted">
+              No measurements found for devices in this location.
+            </div>
+          ) : (
+            <MeasurementSamplesCompareChart
+              rows={selectedMeasurements}
+              onLoadCurrentYear={
+                selectedLocationId
+                  ? () =>
+                      fetchLocationMeasurements(
+                        selectedLocationId,
+                        new Date().getFullYear(),
+                      )
+                  : null
+              }
+              isLoadingCurrentYear={measurementsLoading}
+            />
+          )}
+        </Card.Body>
+      </Card>
 
       <LocationEditModal
         show={showEditModal}
