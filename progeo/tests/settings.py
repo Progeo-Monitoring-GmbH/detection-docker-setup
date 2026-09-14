@@ -1,12 +1,12 @@
 """
 Django settings for testing project.
 """
-from datetime import timedelta
 import os
-
+from datetime import timedelta
 from pathlib import Path
-from progeo.v1.helper import parse_int, parse_boolean, parse_split_str
-from progeo.helper.basics import save_check_dir, read_env
+
+from progeo.helper.basics import read_env, save_check_dir
+from progeo.v1.helper import parse_boolean, parse_int, parse_split_str
 
 BASE_DIR = Path(__file__).resolve(strict=True).parent.parent.parent
 

@@ -3,18 +3,22 @@ from typing import Any
 
 import requests
 from django.core.management.base import CommandError
-from progeo.management.commands._base import BaseCommand
 from django.utils import timezone
-from progeo.helper.basics import dlog, ilog, elog
-from progeo.settings import PROGEO_CONFIG_ENABLE_MEASUREMENTS, PROGEO_CONFIG_HAS_ROOT_SERVER
+
+from progeo.helper.basics import dlog, elog, ilog
+from progeo.management.commands._base import BaseCommand
+from progeo.settings import (
+    PROGEO_CONFIG_ENABLE_MEASUREMENTS,
+    PROGEO_CONFIG_HAS_ROOT_SERVER,
+)
 from progeo.v1.creator import (
     create_progeo_location_safe,
     create_progeo_measurement_safe,
 )
+from progeo.v1.models import ProgeoDevice
 from progeo.v1.serializers import ProgeoMeasurementSerializer
 from progeo.v1.viewsets.setup_viewset import _get_controller_account
 from progeo.v1.viewsets.status_viewset import get_connected_devices
-from progeo.v1.models import ProgeoDevice
 
 
 class Command(BaseCommand):

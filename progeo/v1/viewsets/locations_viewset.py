@@ -1,6 +1,5 @@
-from datetime import datetime, timedelta
-
 import csv
+from datetime import datetime, timedelta
 
 from django.contrib.auth.models import User
 from django.db.models import Count, Max, Q
@@ -9,8 +8,8 @@ from django.utils import timezone
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
-from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.response import Response
+from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.decorator import (
     has_module_permissions,
@@ -24,17 +23,17 @@ from progeo.v1.models import (
     ProgeoAlarm,
     ProgeoDevice,
     ProgeoLocation,
-    ProgeoMeasurePoint,
     ProgeoMeasurement,
+    ProgeoMeasurePoint,
     UserProfile,
 )
 from progeo.v1.serializers import (
     DeviceSerializer,
     LocationSerializer,
-    ProgeoLocationMinSerializer,
     ProgeoAccessSerializer,
-    ProgeoMeasurePointSerializer,
+    ProgeoLocationMinSerializer,
     ProgeoMeasurementSerializer,
+    ProgeoMeasurePointSerializer,
 )
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.v1.viewsets.setup_viewset import _get_controller_account
@@ -104,7 +103,7 @@ class LocationViewSet(ProgeoModalViewSet):
 
     @require_module_permissions("module_locations_enabled")
     def list(self, request, *args, **kwargs):
-        return super(LocationViewSet, self).list(request, no_cache=False, *args, **kwargs)
+        return super().list(request, no_cache=False, *args, **kwargs)
     
     @require_module_permissions("module_locations_enabled")
     @action(detail=False, url_path="min", methods=["GET"])
@@ -138,7 +137,7 @@ class LocationViewSet(ProgeoModalViewSet):
 
     @require_module_permissions("module_locations_enabled")
     def retrieve(self, request, pk=None, *args, **kwargs):
-        return super(LocationViewSet, self).retrieve(request, pk=pk, *args, **kwargs)
+        return super().retrieve(request, pk=pk, *args, **kwargs)
 
     @require_module_permissions("module_notifications_enabled")
     @action(detail=True, url_path="access", methods=["GET", "POST"])
@@ -580,15 +579,15 @@ class LocationViewSet(ProgeoModalViewSet):
 
     @require_module_permissions("module_locations_enabled", "module_locations_edit")
     def create(self, request, *args, **kwargs):
-        return super(LocationViewSet, self).create(request, *args, **kwargs)
+        return super().create(request, *args, **kwargs)
 
     @require_module_permissions("module_locations_enabled", "module_locations_edit")
     def update(self, request, *args, **kwargs):
-        return super(LocationViewSet, self).update(request, *args, **kwargs)
+        return super().update(request, *args, **kwargs)
 
     @require_module_permissions("module_locations_enabled", "module_locations_edit")
     def partial_update(self, request, *args, **kwargs):
-        return super(LocationViewSet, self).partial_update(request, *args, **kwargs)
+        return super().partial_update(request, *args, **kwargs)
 
     @require_module_permissions("module_locations_enabled", "module_locations_edit")
     @action(detail=False, url_path="update", methods=["POST"])
@@ -644,7 +643,7 @@ class LocationViewSet(ProgeoModalViewSet):
 
     @require_module_permissions("module_locations_enabled", "module_locations_delete")
     def destroy(self, request, *args, **kwargs):
-        return super(LocationViewSet, self).destroy(request, *args, **kwargs)
+        return super().destroy(request, *args, **kwargs)
 
     def get_queryset(self):
         # A single QuerySet can only target one database, so the standard

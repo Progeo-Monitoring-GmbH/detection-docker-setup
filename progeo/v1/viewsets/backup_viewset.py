@@ -1,18 +1,19 @@
 import os.path
 
 from django.core.management import call_command
+from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
-from rest_framework.authentication import SessionAuthentication, TokenAuthentication
-from progeo.v1.models import Backup
-from progeo.v1.serializers import BackupSerializer
-from progeo.v1.viewsets.base_viewsets import StandardResultsSetPagination
-from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
+
 from progeo.decorator import calc_runtime, require_module_permissions
 from progeo.helper.basics import RequestSuccess, delete_file
 from progeo.helper.creator import create_MfS_log
 from progeo.settings import BACKUP_DIR
+from progeo.v1.models import Backup
+from progeo.v1.serializers import BackupSerializer
+from progeo.v1.viewsets.base_viewsets import StandardResultsSetPagination
+from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 
 
 class BackupViewSet(ProgeoModalViewSet):
@@ -23,11 +24,11 @@ class BackupViewSet(ProgeoModalViewSet):
 
     @require_module_permissions("module_backup_enabled")
     def list(self, request, *args, **kwargs):
-        return super(BackupViewSet, self).list(request, *args, **kwargs)
+        return super().list(request, *args, **kwargs)
 
     @require_module_permissions("module_backup_enabled")
     def retrieve(self, request, pk=None, *args, **kwargs):
-        return super(BackupViewSet, self).retrieve(request, pk=pk, *args, **kwargs)
+        return super().retrieve(request, pk=pk, *args, **kwargs)
 
     def get_queryset(self):
         return Backup.objects.using(self.request.account.db_name)\

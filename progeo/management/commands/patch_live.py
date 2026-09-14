@@ -2,16 +2,13 @@
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
-from progeo.management.commands._base import BaseCommand
-
-
 from progeo.helper.basics import dlog, elog, ilog
 from progeo.helper.legacy.geo import GeoHelper
+from progeo.management.commands._base import BaseCommand
 from progeo.v1.creator import save_location_lageplan
 from progeo.v1.legacy.executor import fetch_legacy_data, parse_sample_timestamp
 from progeo.v1.legacy.helper_resistance import MAX_JSON_SAFE_RESISTANCE_OHM
 from progeo.v1.models import Account, ProgeoDevice, ProgeoLocation, ProgeoMeasurement
-
 
 
 def fetch_device_locations():

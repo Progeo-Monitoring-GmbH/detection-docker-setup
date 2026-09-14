@@ -7,16 +7,14 @@ import random
 import re
 import secrets
 import string
-from datetime import datetime, timedelta
-
 import time
+from datetime import date, datetime, timedelta
 from json import JSONDecodeError
+from time import gmtime, strftime
 
 from colorama import Fore, Style
 from colorama.ansi import AnsiFore
 from rest_framework.response import Response
-from time import gmtime, strftime
-from datetime import date
 
 from progeo.helper.exceptions import MissingEnvironmentVariableError
 from progeo.security import save_clean_path
@@ -132,7 +130,7 @@ def read_env(file_path: str):
     try:
         with open(file_path, encoding='utf-8') as f:
             content = f.read()
-    except IOError:
+    except OSError:
         content = ''
 
     for line in content.splitlines():
@@ -155,7 +153,7 @@ def read_env_as_dict(file_path: str):
     try:
         with open(file_path) as f:
             content = f.read()
-    except IOError:
+    except OSError:
         content = ''
 
     for line in content.splitlines():

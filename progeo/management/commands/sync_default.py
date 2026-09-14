@@ -1,8 +1,7 @@
-﻿from progeo.management.commands._base import BaseCommand
-from django.db import transaction
+﻿from django.db import transaction
 
-
-from progeo.helper.basics import dlog, okaylog, elog
+from progeo.helper.basics import dlog, elog, okaylog
+from progeo.management.commands._base import BaseCommand
 from progeo.sets import DJANGO_MODELS
 from progeo.settings import DJANGO_DATABASES
 

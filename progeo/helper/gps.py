@@ -1,6 +1,7 @@
-from PIL import Image
-from PIL.ExifTags import TAGS, GPSTAGS
 import math
+
+from PIL import Image
+from PIL.ExifTags import GPSTAGS, TAGS
 
 from progeo.v1.helper import is_image
 

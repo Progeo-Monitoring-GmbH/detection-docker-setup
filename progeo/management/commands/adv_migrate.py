@@ -1,8 +1,8 @@
 ﻿from dbbackup.db.exceptions import CommandConnectorError
 from django.core.management import call_command
-from progeo.management.commands._base import BaseCommand
 
 from progeo.helper.basics import dlog, elog
+from progeo.management.commands._base import BaseCommand
 from progeo.settings import DATABASES
 
 

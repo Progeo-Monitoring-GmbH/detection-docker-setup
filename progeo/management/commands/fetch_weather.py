@@ -1,7 +1,6 @@
-﻿from progeo.management.commands._base import BaseCommand
-
-from progeo.helper.basics import ilog, okaylog
+﻿from progeo.helper.basics import ilog, okaylog
 from progeo.helper.weather import WeatherHelper
+from progeo.management.commands._base import BaseCommand
 from progeo.settings import DATABASES
 from progeo.v1.models import ProgeoAlarm
 

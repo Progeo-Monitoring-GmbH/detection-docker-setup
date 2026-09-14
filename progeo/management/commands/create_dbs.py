@@ -1,10 +1,10 @@
 ﻿from dbbackup.db.exceptions import CommandConnectorError
-from django.db import connections
 from django.core.management import call_command
-from progeo.management.commands._base import BaseCommand
+from django.db import connections
 from psycopg2 import sql
 
 from progeo.helper.basics import dlog, elog
+from progeo.management.commands._base import BaseCommand
 from progeo.settings import DATABASES
 
 

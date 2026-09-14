@@ -1,5 +1,6 @@
 from rest_framework.authtoken.admin import User
 from rest_framework.authtoken.models import Token
+
 from progeo.v1.models import Account
 
 DJANGO_MODELS = [

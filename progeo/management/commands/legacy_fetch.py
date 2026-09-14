@@ -5,8 +5,8 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from django.conf import settings
-from progeo.management.commands._base import BaseCommand
 
+from progeo.management.commands._base import BaseCommand
 from progeo.v1.models import ProgeoLocation
 
 

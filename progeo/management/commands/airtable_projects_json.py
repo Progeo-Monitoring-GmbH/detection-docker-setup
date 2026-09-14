@@ -1,16 +1,9 @@
 import json
 import re
 
-from django.core.management.base import CommandError
-
-from progeo.helper.airtable import AirtableHelper
 from progeo.helper.basics import dlog, elog, ilog, okaylog
-
 from progeo.management.commands._base import BaseCommand
 from progeo.v1.models import ProgeoLocation
-
-
-
 
 
 def is_broken_address(address):

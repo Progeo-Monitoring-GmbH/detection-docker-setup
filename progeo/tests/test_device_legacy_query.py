@@ -3,10 +3,14 @@ from django.contrib.auth.models import User
 from django.utils import timezone
 
 from progeo.v1.creator import create_progeo_alarm_safe
-from progeo.v1.legacy.executor import DataMeasurement, parse_legacy_data_measurement, parse_sample_timestamp, save_measurement_from_legacy_data
+from progeo.v1.legacy.executor import (
+    DataMeasurement,
+    parse_legacy_data_measurement,
+    parse_sample_timestamp,
+    save_measurement_from_legacy_data,
+)
 from progeo.v1.legacy.helper_resistance import calc_resistances
-from progeo.v1.models import ProgeoMeasurement, ProgeoDevice
-
+from progeo.v1.models import ProgeoDevice, ProgeoMeasurement
 
 LEGACY_SAMPLE_Y = (
     "5709,4777,25,1000,118,21,0,1781790681,1,403,1074,958,2828,3958,0,8,3437,100,100,100,2,1,66,128,"

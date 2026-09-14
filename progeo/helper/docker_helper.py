@@ -1,11 +1,10 @@
 import os
 from datetime import datetime
-from typing import Tuple
 
-import docker
 from django.utils import timezone
 from docker.errors import DockerException, NotFound
 
+import docker
 from progeo.helper.basics import dlog, elog, sleep_ms
 
 
@@ -44,7 +43,7 @@ def get_docker_status() -> list:
     return cons
 
 
-def get_hash_from_docker(client, docker_name) -> Tuple:
+def get_hash_from_docker(client, docker_name) -> tuple:
     dock_db = client.containers.get(docker_name)
     if dock_db.status == "exited":
         dlog(f"{docker_name} has exited! Starting it...")

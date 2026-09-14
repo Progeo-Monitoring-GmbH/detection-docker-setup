@@ -3,18 +3,18 @@ import os
 from enum import Enum
 
 import auto_prefetch
-from django.contrib.auth.models import User
 from django.conf import settings
-from django.db import models, connections
+from django.contrib.auth.models import User
+from django.db import connections, models
 from django.utils import timezone
 from jsonfield import JSONField
 from polymorphic.models import PolymorphicModel
 
-from progeo.v1.helper import bitfield, calc_hash_from_dict
 from progeo.decorator import has_test_coverage
 from progeo.helper.basics import get_templates
 from progeo.helper.cacher import search_clear_cache
-from progeo.settings import DEBUG, BACKUP_DIR, UPLOAD_REL_DIR
+from progeo.settings import BACKUP_DIR, DEBUG, UPLOAD_REL_DIR
+from progeo.v1.helper import calc_hash_from_dict
 
 # ==============================================================================================
 
@@ -165,7 +165,7 @@ def build_filter(**kwargs):
 
 # ==============================================================================================
 
-class RootModel(auto_prefetch.Model, object):
+class RootModel(auto_prefetch.Model):
     class Meta:
         abstract = True
         base_manager_name = "prefetch_manager"
@@ -190,7 +190,7 @@ class RootModel(auto_prefetch.Model, object):
             if last_fetched:
                 return last_updated + datetime.timedelta(hours=1) > last_fetched
             try:
-                return last_updated + datetime.timedelta(hours=1) > getattr(self, "activated_since")
+                return last_updated + datetime.timedelta(hours=1) > self.activated_since
             except AttributeError:
                 return True
             except TypeError:
@@ -205,7 +205,7 @@ class RootModel(auto_prefetch.Model, object):
         if kwargs.pop("last_updated", None):
             self.set_last_updated()
 
-        return super(RootModel, self).save(*args, **kwargs)
+        return super().save(*args, **kwargs)
 
     def get_class_name(self):
         pass
@@ -236,10 +236,10 @@ class ProgeoModel(RootModel):
                     search_clear_cache(f"{_base}{_model.id}/*")
                     search_clear_cache(_base)
 
-        return super(ProgeoModel, self).save(*args, **kwargs)
+        return super().save(*args, **kwargs)
 
     def delete(self, using, *args, **kwargs):
-        super(ProgeoModel, self).delete(using=using, *args, **kwargs)
+        super().delete(using=using, *args, **kwargs)
 
 
 class ProgeoPolyModel(RootModel):
@@ -271,7 +271,7 @@ class ProgeoPolyModel(RootModel):
                     search_clear_cache(f"{_base}{_model.id}/*")
                     search_clear_cache(_base)
 
-        return super(ProgeoPolyModel, self).save(*args, **kwargs)
+        return super().save(*args, **kwargs)
 
 
 class Account(ProgeoModel, auto_prefetch.Model):

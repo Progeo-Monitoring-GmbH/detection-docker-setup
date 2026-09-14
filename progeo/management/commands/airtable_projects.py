@@ -1,9 +1,11 @@
+import csv
 import json
 
 from django.core.management.base import CommandError
 
 from progeo.helper.airtable import AirtableHelper
 from progeo.management.commands._base import BaseCommand
+from progeo.management.commands.airtable_projects_json import is_broken_address
 
 
 class Command(BaseCommand):
@@ -17,7 +19,8 @@ class Command(BaseCommand):
         "  python manage.py airtable_projects\n"
         "  python manage.py airtable_projects --fields Name,Project_ID\n"
         "  python manage.py airtable_projects --limit 10\n"
-        "  python manage.py airtable_projects --json"
+        "  python manage.py airtable_projects --json\n"
+        "  python manage.py airtable_projects --csv"
     )
 
     def add_arguments(self, parser):
@@ -41,6 +44,11 @@ class Command(BaseCommand):
             "--json",
             action="store_true",
             help="Print the raw JSON records instead of a summary list.",
+        )
+        parser.add_argument(
+            "--csv",
+            action="store_true",
+            help="Export all projects to airtable_projects.csv, splitting Baustellenadresse into street/plz/city.",
         )
 
     def handle(self, *args, **options):
@@ -107,6 +115,10 @@ class Command(BaseCommand):
                 f.write(json.dumps(records, ensure_ascii=False))
             return
 
+        if options["csv"]:
+            self._export_csv(records)
+            return
+
         self.stdout.write(self.style.SUCCESS(f"Fetched {len(records)} project(s):"))
         for record in records:
             fields = record.get("fields", {})
@@ -114,3 +126,38 @@ class Command(BaseCommand):
                 f"{key}: {value}" for key, value in fields.items()
             )
             self.stdout.write(f"  [{record.get('id')}] {label or '(no fields)'}")
+
+    def _export_csv(self, records):
+        """Write project_id plus fields parsed out of Baustellenadresse to a CSV."""
+        columns = [
+            "project_id", "name", "project_type", "status", "portalstatus",
+            "street", "plz", "city", "company", "address",
+        ]
+
+        with open("airtable_projects.csv", "w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=columns)
+            writer.writeheader()
+
+            for record in records:
+                fields = record.get("fields", {})
+                project_id = fields.get("Projektnummer")
+                if not project_id:
+                    continue
+
+                address = fields.get("Baustellenadresse")
+                parts = is_broken_address(address)["parts"] if address else {}
+
+                writer.writerow({
+                    "project_id": project_id,
+                    "name": fields.get("Objektname"),
+                    "project_type": fields.get("Projekttyp"),
+                    "status": fields.get("Status"),
+                    "portalstatus": fields.get("Portalstatus"),
+                    "street": parts.get("street"),
+                    "plz": parts.get("postal_code"),
+                    "city": parts.get("city"),
+                    "company": parts.get("company"),
+                    "address": address,
+                })
+
+        self.stdout.write(self.style.SUCCESS(f"Wrote {len(records)} project(s) to airtable_projects.csv"))

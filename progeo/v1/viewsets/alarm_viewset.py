@@ -10,12 +10,12 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.decorator import require_module_permissions
 from progeo.helper.basics import RequestFailed, RequestSuccess
-from progeo.helper.cacher import search_cache, cache_save_and_return
+from progeo.helper.cacher import cache_save_and_return, search_cache
+from progeo.helper.creator import create_MfS_log
 from progeo.v1.models import ProgeoAlarm
 from progeo.v1.serializers import ProgeoAlarmSerializer
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.v1.viewsets.setup_viewset import _get_controller_account
-from progeo.helper.creator import create_MfS_log
 
 # Kept as an alias for readability at call sites below.
 STATUS_ACKNOWLEDGED = ProgeoAlarm.Status.QUITTIERT
@@ -257,7 +257,7 @@ class AlarmViewSet(ProgeoModalViewSet):
 
     @require_module_permissions("module_measurements_enabled")
     def retrieve(self, request, pk=None, *args, **kwargs):
-        return super(AlarmViewSet, self).retrieve(request, pk=pk, *args, **kwargs)
+        return super().retrieve(request, pk=pk, *args, **kwargs)
 
     @require_module_permissions("module_measurements_enabled")
     @action(detail=True, url_path="acknowledge", methods=["POST"])

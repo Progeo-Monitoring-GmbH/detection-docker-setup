@@ -1,20 +1,19 @@
 import os
 import re
 import smtplib
-
 from email import encoders
-from pathlib import Path
-from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formatdate
+from pathlib import Path
 
 from django.conf import settings
 from django.template.loader import render_to_string
 
-from progeo.v1.helper import calc_hash_from_dict
 from progeo.helper.basics import dlog, elog, ilog
 from progeo.helper.interface_config import get_smtp_config
+from progeo.v1.helper import calc_hash_from_dict
 
 # ############################################################################################
 # Email templates
@@ -180,7 +179,7 @@ def _send_mail(send_from, send_to, reply_to, subject, message, files,
         with open(_path, "rb") as file:
             part.set_payload(file.read())
         encoders.encode_base64(part)
-        part.add_header("Content-Disposition", "attachment; filename={}".format(Path(_path).name))
+        part.add_header("Content-Disposition", f"attachment; filename={Path(_path).name}")
         msg.attach(part)
 
     smtp = smtplib.SMTP(server, port)

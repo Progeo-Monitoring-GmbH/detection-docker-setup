@@ -1,12 +1,12 @@
+import asyncio
 import os
+import sys
 import time
 
 import pytest
 from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.core.management import call_command
-import sys
-import asyncio
 
 try:
     from playwright.sync_api import Locator
@@ -14,8 +14,7 @@ except ModuleNotFoundError:
     Locator = None
 from rest_framework.test import APIClient
 
-from progeo.helper.basics import ilog, elog
-
+from progeo.helper.basics import elog, ilog
 
 _FAILED_TESTS = []
 

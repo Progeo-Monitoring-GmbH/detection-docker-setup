@@ -1,9 +1,7 @@
 import json
-import os
 from pathlib import Path
 
 import cv2
-
 import numpy as np
 
 from progeo.settings import UPLOAD_DIR
@@ -16,7 +14,7 @@ def find_pink_rectangle(image_bgr: np.ndarray):
     white_threshold = 245
 
     seed = None
-    for diag in range(0, max(h, w) + 1):
+    for diag in range(max(h, w) + 1):
         x = min(diag, w - 1)
         y = diag - x
         if y < 0 or y >= h:

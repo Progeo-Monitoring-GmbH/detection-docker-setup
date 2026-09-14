@@ -1,6 +1,6 @@
 import csv
-import os
 import ipaddress
+import os
 import subprocess
 
 from django.contrib.auth.models import User
@@ -11,20 +11,24 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
-from progeo.v1.helper import generate_hash
-from progeo.v1.models import Account, ProgeoMeasurement
-from progeo.v1.serializers import AccountSerializer, FileSerializer
 from progeo.decorator import calc_runtime, require_module_permissions
-from progeo.helper.basics import RequestSuccess, delete_file, save_check_dir, RequestFailed
+from progeo.helper.basics import (
+        RequestFailed,
+        RequestSuccess,
+        delete_file,
+        save_check_dir,
+)
 from progeo.helper.cacher import search_clear_cache
 from progeo.helper.creator import create_MfS_log
 from progeo.helper.emails import send_info_mail
-from progeo.v1.creator import create_account_safe
-from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.security import save_clean_path
-from progeo.settings import UPLOAD_DIR, DJANGO_DATABASES
+from progeo.settings import DJANGO_DATABASES, UPLOAD_DIR
 from progeo.tasks import ping
-
+from progeo.v1.creator import create_account_safe
+from progeo.v1.helper import generate_hash
+from progeo.v1.models import Account, ProgeoMeasurement
+from progeo.v1.serializers import AccountSerializer, FileSerializer
+from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 
 # ######################################################################################################################
 
@@ -189,7 +193,7 @@ class AccountViewSet(ProgeoModalViewSet):
     permission_classes = [IsAuthenticated]
 
     def list(self, request, *args, **kwargs):
-        return super(AccountViewSet, self).list(request, no_cache=True, *args, **kwargs)
+        return super().list(request, no_cache=True, *args, **kwargs)
 
     def get_queryset(self):
         return Account.objects.filter(users=self.request.user)  # TODO

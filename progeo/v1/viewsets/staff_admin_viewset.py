@@ -2,11 +2,9 @@ import secrets
 import string
 
 from django.contrib.auth.models import Permission, User
-from django.core.validators import validate_email
 from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 from django.db import transaction
-from django.utils import timezone
-
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 

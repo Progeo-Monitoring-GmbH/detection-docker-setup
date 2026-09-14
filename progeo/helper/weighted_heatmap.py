@@ -37,11 +37,10 @@ Example
     result.plot()
 """
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable, Optional, Tuple
 
 import numpy as np
-
 
 # ---------------------------------------------------------------------------
 # Data structure
@@ -200,8 +199,8 @@ class HeatmapResult:
 # ---------------------------------------------------------------------------
 
 def _prepare_points(
-    points: Iterable[Tuple[float, float, float]],
-) -> Tuple[np.ndarray, np.ndarray]:
+    points: Iterable[tuple[float, float, float]],
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Convert points to NumPy arrays and validate them.
     """
@@ -227,7 +226,7 @@ def _prepare_points(
 
 def _make_grid(
     resolution: int,
-    bounds: Tuple[float, float, float, float],
+    bounds: tuple[float, float, float, float],
 ):
     """
     Create a regular 2D grid.

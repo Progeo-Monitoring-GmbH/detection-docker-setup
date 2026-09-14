@@ -1,6 +1,10 @@
-﻿from progeo.management.commands._base import BaseCommand
-from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
+﻿from rest_framework_simplejwt.token_blacklist.models import (
+    BlacklistedToken,
+    OutstandingToken,
+)
+
 from progeo.helper.basics import dlog
+from progeo.management.commands._base import BaseCommand
 
 
 class Command(BaseCommand):

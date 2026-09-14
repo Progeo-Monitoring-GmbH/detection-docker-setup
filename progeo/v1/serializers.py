@@ -1,28 +1,27 @@
 import os
 import posixpath
-
-from rest_framework import serializers
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from datetime import datetime
 
 from django.db.models import Prefetch, prefetch_related_objects
 from django.utils import timezone
+from rest_framework import serializers
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from progeo.v1.helper import pretty_sizeof
 from progeo.v1.models import (
-    MfSLog,
     Account,
     AlarmDailyReport,
     Backup,
     EMail,
+    MfSLog,
     ProgeoAccess,
     ProgeoAlarm,
     ProgeoDevice,
-    ProgeoLocation,
     ProgeoLageplan,
-    ProgeoMeasurePoint,
+    ProgeoLocation,
     ProgeoMeasurement,
+    ProgeoMeasurePoint,
 )
-from datetime import datetime
 
 
 class EmptySerializer(serializers.Serializer):
@@ -81,7 +80,7 @@ class ProgeoBaseSerializer(serializers.ModelSerializer):
         if "_type" in kwargs:
             self._type = kwargs.get("_type")
             del kwargs["_type"]
-        super(ProgeoBaseSerializer, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
 
 class AccountSerializer(ProgeoBaseSerializer):

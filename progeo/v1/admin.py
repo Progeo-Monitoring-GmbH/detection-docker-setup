@@ -1,17 +1,31 @@
+from django import forms
 from django.contrib import admin
-from django.contrib.auth.models import Permission
+from django.contrib.auth.models import Permission, User
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.sessions.models import Session
-from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
-
-from progeo.helper.basics import okaylog, dlog, elog
-from progeo.v1.models import Account, AlarmDailyReport, EMail, LimitedToken, MfSLog, ProgeoAccess, ProgeoAlarm, ProgeoDevice, ProgeoLageplan, ProgeoLocation, ProgeoMeasurePoint, ProgeoMeasurement
-from django.contrib.auth.models import User
-from django import forms
 from django.forms import ModelForm
+from rest_framework_simplejwt.token_blacklist.models import (
+    BlacklistedToken,
+    OutstandingToken,
+)
 
-from progeo.v1.models import UserModulePermissions, MODULE_PERMISSION_CODES
-from progeo.helper.basics import ilog
+from progeo.helper.basics import dlog, elog, ilog, okaylog
+from progeo.v1.models import (
+    MODULE_PERMISSION_CODES,
+    Account,
+    AlarmDailyReport,
+    EMail,
+    LimitedToken,
+    MfSLog,
+    ProgeoAccess,
+    ProgeoAlarm,
+    ProgeoDevice,
+    ProgeoLageplan,
+    ProgeoLocation,
+    ProgeoMeasurement,
+    ProgeoMeasurePoint,
+    UserModulePermissions,
+)
 
 models = [ContentType, Permission, Account, Session, OutstandingToken, BlacklistedToken]
 
@@ -25,7 +39,7 @@ class MultiDBModelAdmin(admin.ModelAdmin):
 
     def __init__(self, model, admin_site):
         # self.handle_register_django(models)
-        super(MultiDBModelAdmin, self).__init__(model, admin_site)
+        super().__init__(model, admin_site)
 
     @staticmethod
     def handle_register_django(_models):

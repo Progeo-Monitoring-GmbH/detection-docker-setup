@@ -19,14 +19,13 @@ import json
 import os
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-import time
 
 import ezdxf
 from ezdxf import recover
-
 
 VALID_LAYERS = ["DKS_MPLE", "DKS_Visualisierung", "DKS_Konstruktion", "DKS_Dachaufbauten"]
 
@@ -66,7 +65,7 @@ def _export_points_preview(points: list[dict[str, int]], output_base: Path) -> N
 
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise RuntimeError(f"Could not initialize image export backend: {exc}") from exc
 
     xs = [point["x"] for point in points]

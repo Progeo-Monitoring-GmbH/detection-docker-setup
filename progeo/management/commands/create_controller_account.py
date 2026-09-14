@@ -1,8 +1,8 @@
 ﻿import os
 
 from django.core.management.base import CommandError
-from progeo.management.commands._base import BaseCommand
 
+from progeo.management.commands._base import BaseCommand
 from progeo.settings import DATABASES
 from progeo.v1.creator import create_account_safe
 

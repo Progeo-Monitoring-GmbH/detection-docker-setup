@@ -1,5 +1,5 @@
 import logging
-from urllib.parse import urlsplit, parse_qsl, urlencode, urlunsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 SENSITIVE_PARAMS = {
     "token",

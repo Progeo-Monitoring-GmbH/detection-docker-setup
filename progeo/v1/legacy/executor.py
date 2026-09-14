@@ -1,23 +1,22 @@
 
-from datetime import datetime
-import os
-
-from rest_framework.parsers import BaseParser
-from django.conf import settings
-from progeo.helper.basics import ilog
-from progeo.v1.creator import create_progeo_alarm_safe
-from progeo.v1.legacy.helper_resistance import MAX_JSON_SAFE_RESISTANCE_OHM
-from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurement
-from dataclasses import dataclass
-from typing import List
 import json
-from django.utils import timezone
+import os
+from dataclasses import dataclass
+from datetime import datetime
+
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
+from django.conf import settings
+from django.utils import timezone
+from rest_framework.parsers import BaseParser
 
-from progeo.v1.viewsets.setup_viewset import _get_controller_account
 from progeo.consumer import GRP_NAME
- 
+from progeo.helper.basics import ilog
+from progeo.v1.legacy.helper_resistance import MAX_JSON_SAFE_RESISTANCE_OHM
+from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurement
+from progeo.v1.viewsets.setup_viewset import _get_controller_account
+
+
 @dataclass
 class DataMeasurement:
     project_id: int
@@ -45,7 +44,7 @@ class DataMeasurement:
     bbyte: int
     mac345: int
 
-    samples: List[int]
+    samples: list[int]
 
     def get_relevant_info(self):
         m_i = _to_12bit(self.m_i)
@@ -669,7 +668,7 @@ def fetch_legacy_data(target_dir=None, dry_run=True):
             _broadcast_legacy_location(project_id)
 
     projects_found_count = len(report["projects_found"])
-    print("")
+    print()
     print("=" * 72)
     print("LEGACY DATA IMPORT REPORT")
     print("=" * 72)

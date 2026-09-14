@@ -1,5 +1,4 @@
 import json
-import os
 from typing import Any
 
 from pymodbus.client import ModbusTcpClient
