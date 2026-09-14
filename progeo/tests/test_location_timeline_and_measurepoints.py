@@ -2,10 +2,15 @@ import pytest
 from django.contrib.auth.models import User
 from django.utils import timezone
 
-from progeo.v1.models import EMail, ProgeoAlarm, ProgeoDevice, ProgeoLocation, ProgeoMeasurement
+from progeo.v1.models import (
+    EMail,
+    ProgeoAlarm,
+    ProgeoDevice,
+    ProgeoLocation,
+    ProgeoMeasurement,
+)
 from progeo.v1.serializers import EMailSerializer, ProgeoAccessSerializer
 from progeo.v1.viewsets.locations_viewset import LocationViewSet
-
 
 # -- ProgeoLocation.pe_geschaltet -----------------------------------------
 

@@ -1,9 +1,7 @@
 ﻿import datetime
 
-from progeo.management.commands._base import BaseCommand
-
 from progeo.helper.basics import ilog
-from progeo.settings import DATABASES
+from progeo.management.commands._base import BaseCommand
 from progeo.tasks import generate_daily_alarm_report
 
 

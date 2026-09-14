@@ -1,6 +1,6 @@
-﻿from progeo.management.commands._base import BaseCommand
+﻿from progeo.helper.basics import okaylog
+from progeo.management.commands._base import BaseCommand
 
-from progeo.helper.basics import okaylog
 
 class Command(BaseCommand):
     help = (

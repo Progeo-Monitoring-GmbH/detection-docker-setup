@@ -2,7 +2,6 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.utils import translation
-
 from rest_framework import viewsets
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from rest_framework.decorators import action
@@ -10,7 +9,6 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.helper.basics import RequestFailed, RequestSuccess
-
 
 LANGUAGE_SESSION_KEY = "django_language"
 

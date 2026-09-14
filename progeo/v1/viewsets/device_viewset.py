@@ -1,32 +1,38 @@
 
 import math
 import re
-from datetime import datetime, timedelta
 from dataclasses import asdict
+from datetime import datetime, timedelta
 
-from django.utils import timezone
 from celery.exceptions import TimeoutError
+from django.utils import timezone
+from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from rest_framework.decorators import action
 from rest_framework.exceptions import ParseError
-from rest_framework_simplejwt.authentication import JWTAuthentication
-from rest_framework.authentication import SessionAuthentication, TokenAuthentication
-from progeo.authentication import LimitedTokenAuthentication
 from rest_framework.permissions import IsAuthenticated
+from rest_framework_simplejwt.authentication import JWTAuthentication
+
+from progeo.authentication import LimitedTokenAuthentication
+from progeo.decorator import calc_runtime, require_module_permissions
+from progeo.helper.basics import RequestFailed, RequestSuccess, elog, ilog
+from progeo.helper.creator import create_MfS_log
 from progeo.helper.measurement_utils import flatten_numeric_values
 from progeo.management.commands.patch_live import fetch_device_locations
-from progeo.tasks import download_device_config as download_device_config_task, upload_device_config as upload_device_config_task
+from progeo.tasks import download_device_config as download_device_config_task
+from progeo.tasks import upload_device_config as upload_device_config_task
+from progeo.v1.creator import create_progeo_measurement_safe
+from progeo.v1.legacy.executor import (
+    SafeLuaUploadParser,
+    fetch_and_import_legacy_project,
+    parse_legacy_data_measurement,
+    parse_sample_timestamp,
+    save_measurement_from_legacy_data,
+)
+from progeo.v1.legacy.helper_resistance import calc_resistances
 from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurement
 from progeo.v1.serializers import DeviceSerializer, ProgeoMeasurementSerializer
-from progeo.decorator import calc_runtime, require_module_permissions
-from progeo.helper.basics import RequestSuccess, RequestFailed, elog, ilog
-from progeo.helper.creator import create_MfS_log
-from progeo.v1.creator import create_progeo_measurement_safe
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.v1.viewsets.setup_viewset import _get_controller_account
-from progeo.v1.legacy.executor import parse_legacy_data_measurement, parse_sample_timestamp, save_measurement_from_legacy_data, fetch_and_import_legacy_project
-from progeo.v1.legacy.executor import SafeLuaUploadParser
-from progeo.v1.legacy.helper_resistance import calc_resistances
-
 
 # ######################################################################################################################
 
@@ -59,27 +65,27 @@ class DeviceViewSet(ProgeoModalViewSet):
 
     @require_module_permissions("module_devices_enabled")
     def list(self, request, *args, **kwargs):
-        return super(DeviceViewSet, self).list(request, no_cache=True, *args, **kwargs)
+        return super().list(request, no_cache=True, *args, **kwargs)
 
     @require_module_permissions("module_devices_enabled")
     def retrieve(self, request, pk=None, *args, **kwargs):
-        return super(DeviceViewSet, self).retrieve(request, pk=pk, *args, **kwargs)
+        return super().retrieve(request, pk=pk, *args, **kwargs)
 
     @require_module_permissions("module_devices_enabled", "module_devices_edit")
     def create(self, request, *args, **kwargs):
-        return super(DeviceViewSet, self).create(request, *args, **kwargs)
+        return super().create(request, *args, **kwargs)
 
     @require_module_permissions("module_devices_enabled", "module_devices_edit")
     def update(self, request, *args, **kwargs):
-        return super(DeviceViewSet, self).update(request, *args, **kwargs)
+        return super().update(request, *args, **kwargs)
 
     @require_module_permissions("module_devices_enabled", "module_devices_edit")
     def partial_update(self, request, *args, **kwargs):
-        return super(DeviceViewSet, self).partial_update(request, *args, **kwargs)
+        return super().partial_update(request, *args, **kwargs)
 
     @require_module_permissions("module_devices_enabled", "module_devices_delete")
     def destroy(self, request, *args, **kwargs):
-        return super(DeviceViewSet, self).destroy(request, *args, **kwargs)
+        return super().destroy(request, *args, **kwargs)
 
     def get_queryset(self):
         account = self._resolve_request_account(self.request)

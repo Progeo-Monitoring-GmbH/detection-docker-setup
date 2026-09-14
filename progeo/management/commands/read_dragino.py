@@ -2,14 +2,12 @@
 import os
 import re
 import ssl
-from typing import Any, Dict, List, Optional
+from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from progeo.management.commands._base import BaseCommand
-
 from progeo.helper.basics import dlog
-
+from progeo.management.commands._base import BaseCommand
 
 INPUT_URL = "https://data-progeo.net/dragino/dragino.txt"
 SPECIAL_FORWARD_IMEIS = {
@@ -23,7 +21,7 @@ SPECIAL_FORWARD_IMEIS = {
 BLOCK_SEPARATOR = re.compile(r"\s*`{0,3}\s*-{10,}\s*`{0,3}\s*", re.MULTILINE)
 
 
-def build_target_urls() -> List[str]:
+def build_target_urls() -> list[str]:
     token = (os.getenv("API_TOKEN") or "").strip()
     if not token:
         return []
@@ -54,9 +52,9 @@ def fetch_input_text(url: str) -> str:
     return raw.decode("utf-8", errors="replace")
 
 
-def extract_trailing_json(block: str) -> Optional[Dict[str, Any]]:
+def extract_trailing_json(block: str) -> dict[str, Any] | None:
     decoder = json.JSONDecoder()
-    candidate: Optional[Dict[str, Any]] = None
+    candidate: dict[str, Any] | None = None
 
     for index, char in enumerate(block):
         if char != "{":
@@ -76,7 +74,7 @@ def extract_trailing_json(block: str) -> Optional[Dict[str, Any]]:
     return candidate
 
 
-def extract_imei(payload: Dict[str, Any]) -> str:
+def extract_imei(payload: dict[str, Any]) -> str:
     direct_imei = payload.get("IMEI")
     if direct_imei is not None:
         return str(direct_imei).strip()
@@ -88,8 +86,8 @@ def extract_imei(payload: Dict[str, Any]) -> str:
     return ""
 
 
-def collect_matching_payloads(text: str) -> List[Dict[str, Any]]:
-    payloads: List[Dict[str, Any]] = []
+def collect_matching_payloads(text: str) -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
 
     for block in BLOCK_SEPARATOR.split(text):
         if not block or not block.strip():
@@ -134,7 +132,7 @@ class Command(BaseCommand):
 
         for payload in payloads:
             content = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-            last_error: Optional[Exception] = None
+            last_error: Exception | None = None
 
             for target_url in target_urls:
                 forward_request = Request(target_url, data=content, headers={"Content-Type": "application/json"})

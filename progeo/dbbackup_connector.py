@@ -17,10 +17,10 @@ appears); the large middle is copied through untouched in bulk chunks.
 
 import os
 import re
+from tempfile import SpooledTemporaryFile
 
 from dbbackup import settings as dbbackup_settings
 from dbbackup.db.postgresql import PgDumpConnector
-from tempfile import SpooledTemporaryFile
 
 # Matches a psql meta-command line like "\restrict <key>" or "\unrestrict <key>".
 _RESTRICT_LINE = re.compile(rb"^\\(?:un)?restrict\s+\S+")

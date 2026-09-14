@@ -6,13 +6,13 @@ import os
 import re
 import secrets
 import string
-from datetime import datetime, date, timedelta
+from datetime import date, datetime, timedelta
 
+from charset_normalizer import from_path
 from django.core.serializers.json import DjangoJSONEncoder
 from django.utils import timezone
 
 from progeo.helper.basics import dlog, elog, get_current_year
-from charset_normalizer import from_path
 
 regex_has_mail = re.compile(r'(\S+@\S+\.\S+)')
 regex_has_link = re.compile(

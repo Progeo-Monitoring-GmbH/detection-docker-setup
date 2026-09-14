@@ -1,9 +1,9 @@
 import os
 from datetime import datetime
 
-import docker
 from docker.errors import DockerException, NotFound
 
+import docker
 from progeo.settings import BASE_DIR
 
 

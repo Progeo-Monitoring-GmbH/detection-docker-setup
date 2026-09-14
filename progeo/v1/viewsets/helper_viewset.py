@@ -2,7 +2,7 @@ import datetime
 import os
 import os.path
 
-from django.db.models import Sum, QuerySet
+from django.db.models import QuerySet, Sum
 from django.http import HttpResponse
 from plotly.offline import plot
 from psycopg2 import errors

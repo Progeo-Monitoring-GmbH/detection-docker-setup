@@ -73,7 +73,7 @@ class AlarmReportViewSet(ProgeoModalViewSet):
 
     @require_module_permissions("module_measurements_enabled")
     def retrieve(self, request, pk=None, *args, **kwargs):
-        return super(AlarmReportViewSet, self).retrieve(request, pk=pk, no_cache=True, *args, **kwargs)
+        return super().retrieve(request, pk=pk, no_cache=True, *args, **kwargs)
 
     @require_module_permissions("module_measurements_enabled")
     @action(detail=False, url_path="compare", methods=["GET"])

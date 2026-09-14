@@ -2,11 +2,11 @@ import os
 import re
 
 import pytest
-from playwright.sync_api import expect, Page
+from playwright.sync_api import Page, expect
 
-from progeo.v1.helper import get_frontend_url
 from progeo.helper.basics import check_raise_config, read_json
 from progeo.tests.helper import get_auth
+from progeo.v1.helper import get_frontend_url
 
 test_credentials = [
     {"username": "demo", "password": "demo"},

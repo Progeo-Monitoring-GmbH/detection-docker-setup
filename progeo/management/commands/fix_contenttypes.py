@@ -1,10 +1,10 @@
-﻿from django.contrib.auth.models import Permission
+﻿from django.apps import apps
+from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.core.management import call_command
-from progeo.management.commands._base import BaseCommand
-from django.apps import apps
 
-from progeo.helper.basics import dlog, okaylog, ilog, elog
+from progeo.helper.basics import dlog, elog, ilog, okaylog
+from progeo.management.commands._base import BaseCommand
 
 
 class Command(BaseCommand):

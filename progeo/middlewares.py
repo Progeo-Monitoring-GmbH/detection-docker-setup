@@ -4,11 +4,11 @@ from django.contrib.sessions.models import Session
 from django.http import HttpResponse
 from django.utils import timezone
 
-from progeo.v1.admin import MultiDBModelAdmin
-from progeo.v1.models import Account
 from progeo.decorator import calc_runtime
 from progeo.helper.basics import dlog
 from progeo.settings import DEBUG
+from progeo.v1.admin import MultiDBModelAdmin
+from progeo.v1.models import Account
 
 
 class AdminGetParamMiddleware:
@@ -54,7 +54,7 @@ class AdminGetParamMiddleware:
 
             dlog(f"AdminGetParamMiddleware using_db={self.using_db}", tag="[MIDDLE]")
 
-            setattr(request, "using_db", self.using_db)
+            request.using_db = self.using_db
 
         return self.get_response(request)
 
@@ -107,5 +107,5 @@ class AccountMiddleware:
         '''
         db_name = "default" #TODO
         account = Account.objects.using(db_name).get(pk=1)
-        setattr(request, "account", account)
+        request.account = account
         return self.get_response(request)

@@ -1,11 +1,9 @@
 ﻿from django.apps import apps
 from django.core.exceptions import FieldError
-from progeo.management.commands._base import BaseCommand
-from django.db import ProgrammingError
-from django.db import connections
+from django.db import ProgrammingError, connections
 
-from progeo.helper.basics import dlog
-from progeo.helper.basics import okaylog, elog
+from progeo.helper.basics import dlog, elog, okaylog
+from progeo.management.commands._base import BaseCommand
 from progeo.sets import DJANGO_MODELS
 from progeo.settings import DATABASES
 

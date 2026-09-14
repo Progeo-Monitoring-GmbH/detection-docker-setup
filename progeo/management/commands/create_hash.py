@@ -1,5 +1,4 @@
 ﻿from progeo.management.commands._base import BaseCommand
-
 from progeo.v1.helper import generate_hash
 
 

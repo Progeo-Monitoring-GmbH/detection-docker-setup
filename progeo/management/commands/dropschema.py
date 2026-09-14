@@ -1,7 +1,7 @@
-﻿from progeo.management.commands._base import BaseCommand
-from django.db import connections
+﻿from django.db import connections
 
 from progeo.helper.basics import okaylog
+from progeo.management.commands._base import BaseCommand
 from progeo.settings import DATABASES
 
 

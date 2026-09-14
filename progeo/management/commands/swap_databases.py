@@ -1,6 +1,5 @@
-﻿from progeo.management.commands._base import BaseCommand
-
-from progeo.helper.basics import ilog
+﻿from progeo.helper.basics import ilog
+from progeo.management.commands._base import BaseCommand
 from progeo.tasks import swap_databases_new_year
 
 

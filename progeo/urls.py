@@ -13,25 +13,29 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path("blog/", include("blog.urls"))
 """
+from django.contrib import admin
 from django.http import HttpResponse
 from django.urls import include, re_path
-from django.contrib import admin
 from django.views.static import serve
+from rest_framework_simplejwt.views import (
+    TokenBlacklistView,
+    TokenRefreshView,
+)
+
 from progeo import settings, views
-from progeo.v1.viewsets.base_viewsets import AuthenticatedMediaView, ProgeoTokenObtainPairView, UserModulePermissionView
+from progeo.routers import CustomRouter
+from progeo.v1.viewsets.base_viewsets import (
+    AuthenticatedMediaView,
+    ProgeoTokenObtainPairView,
+    UserModulePermissionView,
+)
+from progeo.v1.viewsets.docker_viewset import DockerViewSet
 from progeo.v1.viewsets.staff_admin_viewset import (
     StaffUserDeleteView,
     StaffUserDetailView,
     StaffUserListView,
     StaffUserPasswordView,
 )
-from rest_framework_simplejwt.views import (
-    TokenRefreshView, TokenBlacklistView,
-)
-
-from progeo.v1.viewsets.docker_viewset import DockerViewSet
-from progeo.routers import CustomRouter
-
 
 admin.site.site_header = "Admin | Database='default'"
 

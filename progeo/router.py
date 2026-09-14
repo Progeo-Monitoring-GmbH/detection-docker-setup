@@ -1,10 +1,10 @@
 import os
 
 from django.contrib.auth.models import User
-from rest_framework.routers import Route, DynamicRoute, SimpleRouter
+from rest_framework.routers import DynamicRoute, Route, SimpleRouter
 
+from progeo.helper.basics import elog, okaylog, wlog
 from progeo.v1.models import Account
-from progeo.helper.basics import wlog, okaylog, elog
 
 
 class CoreRouter(SimpleRouter):

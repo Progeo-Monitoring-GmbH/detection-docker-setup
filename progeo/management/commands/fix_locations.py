@@ -1,10 +1,10 @@
 ﻿import random
 
-from progeo.management.commands._base import BaseCommand
 from django.db.models import Q
 
 from progeo.helper.basics import dlog, elog, ilog, wlog
 from progeo.helper.legacy.geo import GeoHelper
+from progeo.management.commands._base import BaseCommand
 from progeo.settings import DATABASES
 from progeo.v1.models import ProgeoLocation
 

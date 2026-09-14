@@ -2,7 +2,12 @@ import pytest
 from django.utils import timezone
 
 from progeo.helper.alarm_check import check_existing_alarms_db
-from progeo.v1.models import ProgeoAlarm, ProgeoDevice, ProgeoLocation, ProgeoMeasurement
+from progeo.v1.models import (
+    ProgeoAlarm,
+    ProgeoDevice,
+    ProgeoLocation,
+    ProgeoMeasurement,
+)
 from progeo.v1.viewsets.alarm_viewset import AlarmViewSet
 
 

@@ -9,17 +9,17 @@ from django.views import View
 from django.views.static import serve as serve_media
 from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.views import TokenObtainPairView
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.views import APIView
 
 from progeo.helper.basics import RequestFailed, RequestSuccess
+from progeo.helper.creator import create_MfS_log
+from progeo.settings import MEDIA_ROOT, MEDIA_X_ACCEL
 from progeo.v1.models import MODULE_PERMISSION_CODES
 from progeo.v1.serializers import ProgeoTokenObtainPairSerializer
-from progeo.settings import MEDIA_ROOT, MEDIA_X_ACCEL
-from progeo.helper.creator import create_MfS_log
 
 
 class StandardResultsSetPagination(PageNumberPagination):

@@ -112,7 +112,7 @@ def send_sms(to: str, body: str, cfg: dict | None = None, sender: str | None = N
     if from_id:
         payload["from"] = from_id
 
-    auth = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
+    auth = base64.b64encode(f"{username}:{password}".encode()).decode("ascii")
     dlog(f"Payload: {payload}")
 
     try:

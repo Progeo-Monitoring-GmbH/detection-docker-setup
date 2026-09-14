@@ -1,15 +1,15 @@
 from django.urls import include, re_path
 
-from progeo.v1.viewsets.alarm_viewset import AlarmViewSet
+from progeo.routers import CustomRouter
 from progeo.v1.viewsets.alarm_report_viewset import AlarmReportViewSet
+from progeo.v1.viewsets.alarm_viewset import AlarmViewSet
 from progeo.v1.viewsets.backup_viewset import BackupViewSet
 from progeo.v1.viewsets.device_viewset import DeviceViewSet
 from progeo.v1.viewsets.interface_viewset import InterfaceViewSet
 from progeo.v1.viewsets.locations_viewset import LocationViewSet
-from progeo.v1.viewsets.setup_viewset import SetupViewSet, AccountViewSet
+from progeo.v1.viewsets.setup_viewset import AccountViewSet, SetupViewSet
 from progeo.v1.viewsets.status_viewset import StatusViewSet
 from progeo.v1.viewsets.user_profile_viewset import UserProfileViewSet
-from progeo.routers import CustomRouter
 
 progeo_router = CustomRouter()
 progeo_router.register(r'account', AccountViewSet, basename='account')

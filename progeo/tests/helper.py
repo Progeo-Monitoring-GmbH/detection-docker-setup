@@ -4,8 +4,8 @@ import os
 from django.contrib.auth.models import User
 from playwright.sync_api import expect
 
-from progeo.v1.models import Account
 from progeo.tests.settings import BASE_DIR
+from progeo.v1.models import Account
 
 
 def called_from_function():

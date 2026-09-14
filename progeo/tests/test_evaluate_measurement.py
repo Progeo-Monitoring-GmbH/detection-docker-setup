@@ -2,7 +2,10 @@ from dataclasses import dataclass
 
 import pytest
 
-from progeo.helper.measurement_utils import compute_weighted_spots, extract_measurement_values
+from progeo.helper.measurement_utils import (
+    compute_weighted_spots,
+    extract_measurement_values,
+)
 
 
 @dataclass

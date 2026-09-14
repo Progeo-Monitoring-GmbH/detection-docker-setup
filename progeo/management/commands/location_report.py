@@ -2,9 +2,8 @@
 import os
 from datetime import datetime
 
-from progeo.management.commands._base import BaseCommand
-
 from progeo.helper.basics import elog, ilog, save_check_dir
+from progeo.management.commands._base import BaseCommand
 from progeo.settings import DATABASES, EXPORT_DIR
 from progeo.v1.models import ProgeoLocation
 

@@ -19,7 +19,6 @@ from pathlib import Path
 
 from prompt_toolkit.shortcuts import button_dialog, checkboxlist_dialog, message_dialog
 
-
 TEST_SETTINGS_MODULE = "progeo.tests.settings"
 TEST_ENV_FLAG = "1"
 
@@ -163,7 +162,7 @@ def run_selected_tests(repo_root: Path, selected_nodeids: list[str]) -> int:
 
     print("\nRunning command:")
     print(" ".join(cmd))
-    print("")
+    print()
 
     result = subprocess.run(cmd, cwd=repo_root, env=env, check=False)
     return int(result.returncode)

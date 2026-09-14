@@ -1,5 +1,6 @@
 from celery import shared_task
 
+
 @shared_task
 def ping():
     import datetime
@@ -14,7 +15,11 @@ def download_device_config(device_ip: str, path: str = None):
     import requests
 
     from progeo.helper.basics import dlog as _dlog
-    from progeo.helper.device_utils import ALLOWED_DEVICE_CONFIG_PATH, normalize_config_path, normalize_device_base_url
+    from progeo.helper.device_utils import (
+        ALLOWED_DEVICE_CONFIG_PATH,
+        normalize_config_path,
+        normalize_device_base_url,
+    )
 
     path = path or ALLOWED_DEVICE_CONFIG_PATH
     logger = logging.getLogger('progeo.tasks')
@@ -44,7 +49,12 @@ def upload_device_config(device_ip: str, content: str, path: str = None):
     import logging
 
     from progeo.helper.basics import dlog as _dlog
-    from progeo.helper.device_utils import ALLOWED_DEVICE_CONFIG_PATH, normalize_config_path, normalize_device_base_url, socket_upload
+    from progeo.helper.device_utils import (
+        ALLOWED_DEVICE_CONFIG_PATH,
+        normalize_config_path,
+        normalize_device_base_url,
+        socket_upload,
+    )
 
     path = path or ALLOWED_DEVICE_CONFIG_PATH
     logger = logging.getLogger('progeo.tasks')
@@ -108,8 +118,11 @@ def identify_device(ip: str):
 def evaluate_measurement(measurement_id: int, account_id: int = None):
     """Evaluate a single measurement: update sensor points and compute spots."""
     from progeo.helper.basics import dlog as _dlog
-    from progeo.helper.measurement_utils import compute_weighted_spots, extract_measurement_values
-    from progeo.v1.models import ProgeoMeasurePoint, ProgeoMeasurement
+    from progeo.helper.measurement_utils import (
+        compute_weighted_spots,
+        extract_measurement_values,
+    )
+    from progeo.v1.models import ProgeoMeasurement, ProgeoMeasurePoint
 
     queryset = ProgeoMeasurement.objects
     if account_id is not None:
@@ -196,7 +209,10 @@ def evaluate_measurements(db: str = None, lookback_hours: int = 1, days: int = N
 
     from django.utils import timezone
 
-    from progeo.helper.alarm_evaluation import evaluate_measurements_db, parse_date_bound
+    from progeo.helper.alarm_evaluation import (
+        evaluate_measurements_db,
+        parse_date_bound,
+    )
     from progeo.helper.basics import elog, ilog
     from progeo.settings import DATABASES
     now = timezone.now()

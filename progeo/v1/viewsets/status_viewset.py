@@ -1,36 +1,50 @@
-import os
 import ipaddress
 import json
+import os
 import posixpath
-
-from uuid import uuid4
 from datetime import timedelta
+from uuid import uuid4
+
 from celery.result import AsyncResult
 from django.utils import timezone
-
-from rest_framework.decorators import action
-from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
+from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
+from rest_framework_simplejwt.authentication import JWTAuthentication
 
+from progeo.decorator import calc_runtime, require_module_permissions
+from progeo.helper.basics import RequestFailed, RequestSuccess, save_check_dir
+from progeo.helper.docker_helper import start_cad_factory
 from progeo.helper.pdf_cropper import process_pdf_to_png_and_extract_crosses
+from progeo.settings import SETUP_DIR, UPLOAD_DIR
+from progeo.tasks import collect_host_storage_info
+from progeo.tasks import identify_device as identify_device_task
 from progeo.v1.creator import create_progeo_measure_point_safe, save_location_lageplan
 from progeo.v1.helper import dlog
-from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurePoint, ProgeoMeasurement
-from progeo.v1.serializers import DeviceSerializer, ProgeoMeasurePointSerializer, ProgeoMeasurementSerializer
-from progeo.decorator import calc_runtime, require_module_permissions
-from progeo.helper.basics import RequestSuccess, save_check_dir, RequestFailed
-from progeo.helper.docker_helper import start_cad_factory
-from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
-from progeo.settings import UPLOAD_REL_DIR, UPLOAD_DIR, SETUP_DIR
-from progeo.tasks import identify_device as identify_device_task, collect_host_storage_info
-from progeo.v1.viewsets.setup_viewset import _get_controller_account, get_latest_measurement, get_latest_alarm_measurement, ping_host_quick
 from progeo.v1.log_files_helper import (
-    allowed_log_files,
-    allowed_log_roots,
-    read_log_file,
-    summarize_log_files,
-    tail_file,
+        allowed_log_files,
+        allowed_log_roots,
+        read_log_file,
+        summarize_log_files,
+        tail_file,
+)
+from progeo.v1.models import (
+        ProgeoDevice,
+        ProgeoLocation,
+        ProgeoMeasurement,
+        ProgeoMeasurePoint,
+)
+from progeo.v1.serializers import (
+        DeviceSerializer,
+        ProgeoMeasurementSerializer,
+        ProgeoMeasurePointSerializer,
+)
+from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
+from progeo.v1.viewsets.setup_viewset import (
+        _get_controller_account,
+        get_latest_alarm_measurement,
+        get_latest_measurement,
+        ping_host_quick,
 )
 
 # ######################################################################################################################
@@ -435,8 +449,7 @@ class StatusViewSet(ProgeoModalViewSet):
                 target_name = f"{uuid4().hex}{suffix}"
                 target_path = os.path.join(import_dir, target_name)
                 with open(target_path, "wb") as handle:
-                    for chunk in upload.chunks():
-                        handle.write(chunk)
+                    handle.writelines(upload.chunks())
 
                 cad_input = posixpath.join("media", "uploads", "cad_imports", target_name)
                 project_id = getattr(location, "project_id", None)
