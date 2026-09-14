@@ -321,6 +321,10 @@ class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
 
     alarm_threshold = models.IntegerField(blank=True, default=100)
     alarm_priority = models.IntegerField(blank=True, default=0)
+    # Potentialausgleich (PE) switched into the measuring circuit - part of
+    # the Einstellungen/Systemeinstellungen screen, no measurement logic
+    # depends on this yet.
+    pe_geschaltet = models.BooleanField(default=False, blank=True)
 
     # Parent-location support: allows location hierarchy
     parent_location = models.ForeignKey(

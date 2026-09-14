@@ -13,6 +13,7 @@ from progeo.v1.models import (
     Account,
     AlarmDailyReport,
     Backup,
+    EMail,
     ProgeoAccess,
     ProgeoAlarm,
     ProgeoDevice,
@@ -470,6 +471,9 @@ class ProgeoAccessSerializer(ProgeoBaseSerializer):
     user_email = serializers.EmailField(source="user.email", read_only=True, allow_null=True)
     transport_unpacked = serializers.SerializerMethodField("get_transport_unpacked")
     type_unpacked = serializers.SerializerMethodField("get_type_unpacked")
+    # Lets the frontend split customer (Rechte) vs ProGeo staff (Objektleitung)
+    # rows from the same /access/ response instead of needing a second endpoint.
+    is_staff = serializers.BooleanField(source="user.is_staff", read_only=True, default=False)
 
     class Meta:
         model = ProgeoAccess
@@ -479,6 +483,7 @@ class ProgeoAccessSerializer(ProgeoBaseSerializer):
             "user",
             "user_name",
             "user_email",
+            "is_staff",
             "transport",
             "type",
             "transport_unpacked",
@@ -492,6 +497,14 @@ class ProgeoAccessSerializer(ProgeoBaseSerializer):
     @staticmethod
     def get_type_unpacked(obj):
         return obj.unpack_type()
+
+
+class EMailSerializer(ProgeoBaseSerializer):
+    """Sent-mail log row (EMail) - one entry per send, not per recipient."""
+
+    class Meta:
+        model = EMail
+        fields = ["id", "location", "created", "sent_to", "subject", "message", "sent", "error"]
 
 
 class MfSLogSerializer(ProgeoBaseSerializer):

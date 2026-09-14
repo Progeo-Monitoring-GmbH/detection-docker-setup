@@ -1,9 +1,11 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import csv
 
-from django.db.models import Count, Max
+from django.contrib.auth.models import User
+from django.db.models import Count, Max, Q
 from django.http import HttpResponse
+from django.utils import timezone
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -16,11 +18,22 @@ from progeo.decorator import (
     require_module_permissions,
 )
 from progeo.helper.basics import RequestFailed, RequestSuccess
-from progeo.v1.models import ProgeoAccess, ProgeoLocation, ProgeoMeasurePoint, ProgeoMeasurement, UserProfile
+from progeo.v1.models import (
+    EMail,
+    ProgeoAccess,
+    ProgeoAlarm,
+    ProgeoDevice,
+    ProgeoLocation,
+    ProgeoMeasurePoint,
+    ProgeoMeasurement,
+    UserProfile,
+)
 from progeo.v1.serializers import (
+    DeviceSerializer,
     LocationSerializer,
     ProgeoLocationMinSerializer,
     ProgeoAccessSerializer,
+    ProgeoMeasurePointSerializer,
     ProgeoMeasurementSerializer,
 )
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
@@ -132,8 +145,12 @@ class LocationViewSet(ProgeoModalViewSet):
     def access(self, request, pk=None, *args, **kwargs):
         """Notification access rules (ProgeoAccess) of one location.
 
-        GET  -> {"access": [...], "users": [{id, username, email, mobile}...]}
-               (requires module_notifications_enabled)
+        GET  -> {"access": [...], "users": [{id, username, email, mobile}...],
+                 "staff_users": [{id, username, email}...]}
+               (requires module_notifications_enabled). "users" are this
+               account's customer users (Rechte candidates); "staff_users"
+               are ProGeo staff (Objektleitung candidates, Einstellungen) -
+               both are assigned the same way, via a POST below.
         POST -> create (module_notifications_add) or update an existing rule
                 (module_notifications_edit): body {user_id, transport, type}
                 or {id, transport, type, user_id?}. transport/type are the
@@ -161,9 +178,14 @@ class LocationViewSet(ProgeoModalViewSet):
                         "email": user.email,
                         "mobile": profile.mobile if profile is not None else None,
                     })
+            staff_users = [
+                {"id": user.id, "username": user.username, "email": user.email}
+                for user in User.objects.filter(is_staff=True).order_by("username")
+            ]
             return RequestSuccess({
                 "access": ProgeoAccessSerializer(rows, many=True).data,
                 "users": users,
+                "staff_users": staff_users,
             })
 
         # Mutations need the dedicated edit/add permissions (creating a rule
@@ -271,6 +293,160 @@ class LocationViewSet(ProgeoModalViewSet):
                 "mobile": profile.mobile if profile is not None else None,
             }
         })
+
+    @require_module_permissions("module_locations_enabled")
+    @action(detail=True, url_path="measurepoints", methods=["GET", "POST"])
+    def measurepoints(self, request, pk=None, *args, **kwargs):
+        """
+        Per-measurement-point threshold overrides (Einstellungen / Schwellwerte).
+
+        GET  -> {"measurepoints": [ProgeoMeasurePointSerializer...]}
+        POST -> update one point's threshold (module_locations_edit):
+                body {"id": <mp_id>, "threshold": <number|null>}. null clears
+                the override so the point falls back to the object's
+                alarm_threshold (existing severity logic already does this
+                fallback when threshold is unset).
+        """
+        location, account = self._find_location(request, pk=pk)
+        if not location:
+            return RequestFailed({"reason": "Location not found"})
+        db_name = account.db_name
+
+        if request.method == "GET":
+            points = (
+                ProgeoMeasurePoint.objects.using(db_name)
+                .filter(location=location)
+                .order_by("sensor_order")
+            )
+            return RequestSuccess(
+                {"measurepoints": ProgeoMeasurePointSerializer(points, many=True).data}
+            )
+
+        if not has_module_permissions(request.user, "module_locations_edit"):
+            return permission_denied_response(["module_locations_edit"])
+
+        try:
+            mp_id = int(request.data.get("id"))
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "id required"})
+        point = (
+            ProgeoMeasurePoint.objects.using(db_name)
+            .filter(pk=mp_id, location=location)
+            .first()
+        )
+        if not point:
+            return RequestFailed({"reason": "Measurement point not found"})
+
+        threshold = request.data.get("threshold")
+        if threshold in (None, ""):
+            point.threshold = None
+        else:
+            try:
+                point.threshold = float(threshold)
+            except (TypeError, ValueError):
+                return RequestFailed({"reason": "threshold must be a number"})
+        point.save(using=db_name, update_fields=["threshold"])
+        return RequestSuccess({"measurepoint": ProgeoMeasurePointSerializer(point).data})
+
+    @require_module_permissions("module_locations_enabled")
+    @action(detail=True, url_path="devices", methods=["GET"])
+    def devices(self, request, pk=None, *args, **kwargs):
+        """
+        Devices of this location (Einstellungen / Systemeinstellungen -
+        Produkt/Dämpfungswiderstand are edited via the existing
+        PATCH /v1/device/<pk>/, gated by module_devices_edit; this action
+        only lists them under module_locations_enabled so Einstellungen
+        doesn't need module_devices_enabled just to see what's there).
+        """
+        location, account = self._find_location(request, pk=pk)
+        if not location:
+            return RequestFailed({"reason": "Location not found"})
+        devices = ProgeoDevice.objects.using(account.db_name).filter(location=location).order_by("id")
+        return RequestSuccess({"devices": DeviceSerializer(devices, many=True).data})
+
+    @require_module_permissions("module_notifications_enabled")
+    @action(detail=True, url_path="timeline", methods=["GET"])
+    def timeline(self, request, pk=None, *args, **kwargs):
+        """
+        Benachrichtigungen (Ereignisverlauf): a chronological feed merging
+        sent e-mails (EMail) and alarm lifecycle events (triggered/
+        acknowledged/resolved) for this location. Optional ?days= (default
+        30, capped at 365). Returns {"events": [...]}, most recent first.
+
+        Deliberately not included (no data exists for it): per-recipient
+        delivery/read receipts (EMail.sent_to is one string for the whole
+        send), SMS send logging, SMS-reply acknowledgement.
+        """
+        location, account = self._find_location(request, pk=pk)
+        if not location:
+            return RequestFailed({"reason": "Location not found"})
+        db_name = account.db_name
+
+        try:
+            days = int(request.query_params.get("days", 30))
+        except (TypeError, ValueError):
+            days = 30
+        days = max(1, min(days, 365))
+        cutoff = timezone.now() - timedelta(days=days)
+
+        emails = (
+            EMail.objects.using(db_name)
+            .filter(location=location, created__gte=cutoff)
+            .order_by("-created")
+        )
+        alarms = (
+            ProgeoAlarm.objects.using(db_name)
+            .filter(measurement__device__location=location)
+            .filter(
+                Q(triggered_at__gte=cutoff)
+                | Q(evaluated_at__gte=cutoff)
+                | Q(normalized_at__gte=cutoff)
+            )
+            .select_related("evaluated_by")
+        )
+        events = self._build_timeline_events(emails, alarms, cutoff)
+        return RequestSuccess({"events": events})
+
+    @staticmethod
+    def _build_timeline_events(emails, alarms, cutoff):
+        """Pure merge/sort step of `timeline`, split out so it's testable
+        without a request/account - takes already-queried emails/alarms."""
+        events = []
+
+        for email in emails:
+            events.append({
+                "kind": "email",
+                "at": email.created,
+                "title": email.subject or None,
+                "detail": email.sent_to,
+                "success": email.sent,
+                "error": email.error,
+            })
+
+        for alarm in alarms:
+            if alarm.triggered_at and alarm.triggered_at >= cutoff:
+                events.append({
+                    "kind": "alarm_triggered",
+                    "at": alarm.triggered_at,
+                    "detail": alarm.sensor_id,
+                    "severity": alarm.severity,
+                    "max_value": alarm.peak_value,
+                })
+            if alarm.evaluated_at and alarm.evaluated_at >= cutoff:
+                events.append({
+                    "kind": "alarm_acknowledged",
+                    "at": alarm.evaluated_at,
+                    "detail": getattr(alarm.evaluated_by, "username", None),
+                })
+            if alarm.normalized_at and alarm.normalized_at >= cutoff:
+                events.append({
+                    "kind": "alarm_resolved",
+                    "at": alarm.normalized_at,
+                    "detail": None,
+                })
+
+        events.sort(key=lambda event: event["at"], reverse=True)
+        return events
 
     @require_module_permissions("module_locations_enabled")
     @action(detail=False, url_path="geo_export", methods=["GET"])
