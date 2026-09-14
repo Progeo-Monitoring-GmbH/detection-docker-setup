@@ -601,6 +601,21 @@ class ProgeoMeasurePoint(ProgeoModel, auto_prefetch.Model):
 
 
 class ProgeoAlarm(ProgeoModel, auto_prefetch.Model):
+    class Status(models.IntegerChoices):
+        NEU = 0, "neu"
+        QUITTIERT = 1, "quittiert"
+        STOERUNG = 2, "stoerung"
+        GELOEST = 3, "geloest"
+
+    class Severity(models.TextChoices):
+        BEOBACHTEN = "beobachten", "Beobachten"
+        ALARM = "alarm", "Alarm"
+        KRITISCH = "kritisch", "Kritisch"
+
+    # Same saturation point as SensorHeatmap2D.tsx/alarmHeatColor() on the
+    # frontend: heat=1 (fully "kritisch") at 3x the alarm threshold.
+    HEAT_FULL_MULTIPLIER = 3
+
     measurement = models.ForeignKey(ProgeoMeasurement, on_delete=models.CASCADE, related_name='alarms')
 
     triggered_at = models.DateTimeField(null=True, blank=True)
@@ -623,7 +638,7 @@ class ProgeoAlarm(ProgeoModel, auto_prefetch.Model):
     still_active_at = models.DateTimeField(null=True, blank=True)
     normalized_at = models.DateTimeField(null=True, blank=True)
 
-    status = models.IntegerField(choices=[(0, "neu"), (1, "quittiert"), (2, "stoerung")], default=0)
+    status = models.IntegerField(choices=Status.choices, default=Status.NEU)
 
     # Rain events matched to this alarm: one entry per continuous rain window.
     # Each entry: {"start": iso, "duration": hours, "amount": mm}
@@ -643,6 +658,43 @@ class ProgeoAlarm(ProgeoModel, auto_prefetch.Model):
         wh = helper or WeatherHelper()
         wh.check_rain_for_alarm(self, save=True)
 
+    @property
+    def peak_value(self):
+        """
+        Highest value ever recorded for this alarm: prefers the per-measurement
+        development history (`max_values`), then the over-threshold sensor
+        pairs (`sensor_max_values`), then falls back to the single `max_value`
+        snapshot. Mirrors alarmPeakValue() in frontend/src/main/alarmUtils.ts.
+        """
+        def _numeric_values(entries, key):
+            for entry in entries or []:
+                value = entry.get(key) if isinstance(entry, dict) else None
+                if isinstance(value, (int, float)):
+                    yield value
+
+        history_peak = max(_numeric_values(self.max_values, "value"), default=None)
+        if history_peak is not None:
+            return history_peak
+
+        sensor_peak = max(_numeric_values(self.sensor_max_values, "max_value"), default=None)
+        if sensor_peak is not None:
+            return sensor_peak
+
+        return self.max_value
+
+    @property
+    def severity(self):
+        """4-tier severity derived from how far `peak_value` sits above the
+        alarm threshold, on the same heat scale the heatmap coloring uses."""
+        threshold = self.threshold if self.threshold and self.threshold > 0 else 100
+        peak = self.peak_value or 0
+        heat = min(1.0, max(0.0, peak / (threshold * self.HEAT_FULL_MULTIPLIER)))
+        if heat < 0.35:
+            return self.Severity.BEOBACHTEN
+        if heat < 0.65:
+            return self.Severity.ALARM
+        return self.Severity.KRITISCH
+
     def __str__(self):
         _id = f"[{self.pk}] " if DEBUG else ""
         if self.normalized_at:
@@ -650,13 +702,17 @@ class ProgeoAlarm(ProgeoModel, auto_prefetch.Model):
         else:
             normalized = "⚠️ STILL ACTIVE"
 
-        if self.status == 0:
+        if self.status == self.Status.NEU:
             status = "🔔 TRIGGERED"
-        elif self.status == 1:
+        elif self.status == self.Status.QUITTIERT:
             status = "✅ OK"
-        elif self.status == 2:
+        elif self.status == self.Status.STOERUNG:
             status = "⚠️ STOERUNG"
-            
+        elif self.status == self.Status.GELOEST:
+            status = "🌤 GELOEST"
+        else:
+            status = f"UNKNOWN({self.status})"
+
         return f"{_id} {normalized} | {status} - Measurement {self.measurement.id}, sensor-id: {self.sensor_id}, Threshold: {self.threshold}, Max: {self.max_value}"
 
 

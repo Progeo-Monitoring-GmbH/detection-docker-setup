@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import datetime, timedelta
 
 from django.db.models import Count, Q
@@ -16,8 +17,8 @@ from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.v1.viewsets.setup_viewset import _get_controller_account
 from progeo.helper.creator import create_MfS_log
 
-# Alarm statuses (mirror ProgeoAlarm.status choices)
-STATUS_ACKNOWLEDGED = 1
+# Kept as an alias for readability at call sites below.
+STATUS_ACKNOWLEDGED = ProgeoAlarm.Status.QUITTIERT
 
 # Default window for the alarm list; keep the payload bounded.
 DEFAULT_ALARM_DAYS = 14
@@ -114,6 +115,145 @@ class AlarmViewSet(ProgeoModalViewSet):
             }
 
         return RequestSuccess({"locations": locations})
+
+    @require_module_permissions("module_measurements_enabled")
+    @action(detail=False, url_path="clusters", methods=["GET"])
+    def clusters(self, request, *args, **kwargs):
+        """
+        Groups one location's alarms into "Verdachtsstellen" (suspected-leak
+        clusters), by device - the closest existing equivalent to a
+        persisted zone until real spatial clustering (via
+        ProgeoMeasurePoint's grid coordinates) exists. Uses the same
+        time-window filter as location_summary: still-active alarms always
+        count, others only within `days`. Required `location`; optional
+        `days` (default DEFAULT_ALARM_DAYS).
+        Returns {"clusters": [...]}, most urgent (neu) first, then highest
+        reading first.
+        """
+        account = self._resolve_request_account(request)
+        location_id = request.query_params.get("location")
+        if not location_id:
+            return RequestFailed({"reason": "location is required"})
+
+        try:
+            days = int(request.query_params.get("days", DEFAULT_ALARM_DAYS))
+        except (TypeError, ValueError):
+            days = DEFAULT_ALARM_DAYS
+        days = max(1, min(days, 365))
+        cutoff = timezone.now() - timedelta(days=days)
+
+        db = account.db_name if account else "default"
+        alarms = (
+            ProgeoAlarm.objects.using(db)
+            .filter(measurement__device__location_id=location_id)
+            .filter(
+                Q(normalized_at__isnull=True)
+                | Q(triggered_at__gte=cutoff)
+                | Q(triggered_at__isnull=True, last_fetched__gte=cutoff)
+            )
+            .select_related("measurement__device", "evaluated_by")
+            .order_by("triggered_at", "id")
+        )
+
+        by_device = defaultdict(list)
+        for alarm in alarms:
+            by_device[alarm.measurement.device_id].append(alarm)
+
+        clusters = [
+            self._build_cluster(device_id, device_alarms)
+            for device_id, device_alarms in by_device.items()
+        ]
+
+        state_order = {"neu": 2, "quittiert": 1, "geloest": 0}
+        clusters.sort(
+            key=lambda cluster: (
+                -state_order.get(cluster["state"], 2),
+                -(cluster["max_value"] or 0),
+            )
+        )
+        return RequestSuccess({"clusters": clusters})
+
+    @staticmethod
+    def _build_cluster(device_id, alarms):
+        """Roll up one device's alarms into a single Verdachtsstelle: worst
+        state/severity across members, merged sensor readings, and which
+        member alarms are still pending acknowledgement."""
+        device = alarms[0].measurement.device
+        status_to_state = {
+            ProgeoAlarm.Status.NEU: "neu",
+            ProgeoAlarm.Status.QUITTIERT: "quittiert",
+            ProgeoAlarm.Status.GELOEST: "geloest",
+            # STOERUNG is unused in practice today (no writer sets it) - treat
+            # it as still needing attention rather than inventing a 4th state
+            # the frontend doesn't model.
+            ProgeoAlarm.Status.STOERUNG: "neu",
+        }
+        state_order = {"geloest": 0, "quittiert": 1, "neu": 2}
+        severity_order = {
+            ProgeoAlarm.Severity.BEOBACHTEN: 0,
+            ProgeoAlarm.Severity.ALARM: 1,
+            ProgeoAlarm.Severity.KRITISCH: 2,
+        }
+
+        worst_state = "geloest"
+        worst_severity = ProgeoAlarm.Severity.BEOBACHTEN
+        max_value = None
+        since = None
+        ack_by = None
+        ack_at = None
+        pending_ack_alarm_ids = []
+        sensors = {}
+
+        for alarm in alarms:
+            state = status_to_state.get(alarm.status, "neu")
+            if state_order[state] > state_order[worst_state]:
+                worst_state = state
+
+            severity = alarm.severity
+            if severity_order[severity] > severity_order[worst_severity]:
+                worst_severity = severity
+
+            peak = alarm.peak_value
+            if peak is not None and (max_value is None or peak > max_value):
+                max_value = peak
+
+            start = alarm.triggered_at or alarm.last_fetched
+            if start and (since is None or start < since):
+                since = start
+
+            if alarm.status == ProgeoAlarm.Status.QUITTIERT and alarm.evaluated_by_id:
+                if ack_at is None or (alarm.evaluated_at and alarm.evaluated_at > ack_at):
+                    ack_by = getattr(alarm.evaluated_by, "username", None)
+                    ack_at = alarm.evaluated_at
+
+            if state == "neu":
+                pending_ack_alarm_ids.append(alarm.id)
+
+            for pair in (alarm.sensor_max_values or []):
+                sensor_id = pair.get("sensor_id")
+                value = pair.get("max_value")
+                if sensor_id is None:
+                    continue
+                if sensor_id not in sensors or (
+                    value is not None and (sensors[sensor_id] is None or value > sensors[sensor_id])
+                ):
+                    sensors[sensor_id] = value
+
+        return {
+            "id": f"device-{device_id}",
+            "device_label": device.mac or device.raw_hash or str(device_id),
+            "state": worst_state,
+            "severity": worst_severity,
+            "max_value": max_value,
+            "since": since,
+            "ack_by": ack_by,
+            "ack_at": ack_at,
+            "pending_ack_alarm_ids": pending_ack_alarm_ids,
+            "sensors": [
+                {"sensor_id": sensor_id, "max_value": value}
+                for sensor_id, value in sensors.items()
+            ],
+        }
 
     @require_module_permissions("module_measurements_enabled")
     def retrieve(self, request, pk=None, *args, **kwargs):

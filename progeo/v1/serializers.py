@@ -363,6 +363,7 @@ class ProgeoAlarmSerializer(ProgeoBaseSerializer):
     is_active = serializers.SerializerMethodField("get_is_active")
     duration_seconds = serializers.SerializerMethodField("get_duration_seconds")
     evaluated_by = serializers.SerializerMethodField("get_evaluated_by")
+    severity = serializers.SerializerMethodField("get_severity")
 
     # The third-party jsonfield.fields.JSONField is not recognized by DRF's
     # ModelSerializer, which would emit these as raw JSON *strings*. Declare
@@ -456,6 +457,10 @@ class ProgeoAlarmSerializer(ProgeoBaseSerializer):
             "id": user.pk,
             "username": getattr(user, "username", None),
         }
+
+    @staticmethod
+    def get_severity(obj):
+        return obj.severity
 
 
 class ProgeoAccessSerializer(ProgeoBaseSerializer):

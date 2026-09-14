@@ -107,7 +107,16 @@ def evaluate_measurements_db(db: str, start, end, project_id: int = None) -> tup
                 # Normalize every still-active alarm of this device and check the
                 # earliest one for rain (later overlapping alarms are marked
                 # checked without rain data by the shared WeatherHelper).
-                active_alarms.update(normalized_at=measurement.last_fetched)
+                # Alarms nobody ever acknowledged (still NEU) become GELOEST
+                # (resolved) here; already-acknowledged/stoerung alarms keep
+                # their status - only normalized_at changes for those.
+                active_alarms.filter(status=ProgeoAlarm.Status.NEU).update(
+                    normalized_at=measurement.last_fetched,
+                    status=ProgeoAlarm.Status.GELOEST,
+                )
+                active_alarms.exclude(status=ProgeoAlarm.Status.NEU).update(
+                    normalized_at=measurement.last_fetched,
+                )
                 alarm.normalized_at = measurement.last_fetched
                 alarm.fetch_weather(weather_helper)
                 dlog(f"ALARM NORMALIZED: location={location.project_id} at={measurement.last_fetched}")

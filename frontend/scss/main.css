@@ -17,6 +17,19 @@
   --progeo-contrast-yellow: #fbbc15;
   --progeo-contrast-cyan: #61aac5;
 
+  /* "Portal v2" mockup panel/pill palette - distinct from the warm-gray
+     steps above, which back the classic Bootstrap surfaces. */
+  --progeo-page-bg: #e6e3e2;
+  --progeo-panel-bg: #f3f1f0;
+  --progeo-surface: #fbfafa;
+  --progeo-track: #e9e6e5;
+  --progeo-track-soft: #efecec;
+  --progeo-shadow-chrome: 0 2px 10px rgba(11, 54, 89, 0.07);
+  --progeo-shadow-panel:
+    0 14px 34px -14px rgba(11, 54, 89, 0.16), 0 2px 5px rgba(11, 54, 89, 0.05);
+  --progeo-radius-pill: 999px;
+  --progeo-radius-panel: 18px;
+
   --bs-primary: var(--progeo-blue);
   --bs-secondary: var(--progeo-warm-gray-4);
   --bs-success: var(--progeo-contrast-green);

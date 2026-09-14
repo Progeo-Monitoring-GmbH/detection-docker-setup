@@ -106,6 +106,10 @@ def check_existing_alarms_db(db: str, silence_hours: int = 24) -> tuple[int, int
 
         # Normalize: the alarm no longer reflects an active over-threshold state.
         alarm.normalized_at = latest_at
+        if alarm.status == ProgeoAlarm.Status.NEU:
+            # Nobody ever acknowledged it - it resolved on its own.
+            alarm.status = ProgeoAlarm.Status.GELOEST
+            update_fields.append("status")
         alarm.save(using=db, update_fields=update_fields)
         normalized += 1
 

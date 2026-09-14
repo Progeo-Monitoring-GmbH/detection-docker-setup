@@ -11,7 +11,9 @@
     "test": "vitest",
     "lint": "eslint src/**/*.{ts,tsx,js,jsx}",
     "lint-fix": "eslint --quiet --fix src/**/*.{ts,tsx,js,jsx}",
-    "test:coverage": "vitest run --coverage --watch=false"
+    "test:coverage": "vitest run --coverage --watch=false",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build"
   },
   "type": "module",
   "sideEffects": false,
@@ -19,6 +21,9 @@
   "__UPDATING-COMMAND_RUN__": "ncu --interactive --format group",
   "__RUN_DEEPSEEK__": "npx @deepseek-ai/dsh web",
   "devDependencies": {
+    "@storybook/addon-links": "^10.6.0",
+    "@storybook/react-vite": "^10.6.0",
+    "storybook": "^10.6.0",
     "@types/node": "^26.4.0",
     "@types/react": "^19.2.18",
     "@vitest/coverage-v8": "^4.1.11",

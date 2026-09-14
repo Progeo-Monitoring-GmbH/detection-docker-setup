@@ -21,6 +21,8 @@ type SensorHeatmap2DProps = {
   resolution?: number;
   /** Overrides for the lageplan alignment (offset/scale) used in placement. */
   alignment?: SensorHeatmapLocation | null;
+  /** Skip the component's own Card chrome so it can sit inside another panel wrapper. */
+  hideChrome?: boolean;
 };
 
 type WeightedPoint = {
@@ -173,6 +175,7 @@ const SensorHeatmap2D = ({
   height = 800,
   resolution = 180,
   alignment = null,
+  hideChrome = false,
 }: SensorHeatmap2DProps) => {
   const [mode, setMode] = useState<AggregationMode>('slice');
   const [timestampIndex, setTimestampIndex] = useState(0);
@@ -570,9 +573,8 @@ const SensorHeatmap2D = ({
 
   const handlePlotUnhover = () => setHoveredSensor(null);
 
-  return (
-    <Card className="border-0 shadow-sm">
-      <Card.Body>
+  const body = (
+    <>
         <div className="d-flex flex-wrap justify-content-between align-items-center mb-2 p-3">
           {chart && (
             <small className="text-muted">
@@ -806,7 +808,16 @@ const SensorHeatmap2D = ({
             </div>
           </>
         )}
-      </Card.Body>
+    </>
+  );
+
+  if (hideChrome) {
+    return body;
+  }
+
+  return (
+    <Card className="border-0 shadow-sm">
+      <Card.Body>{body}</Card.Body>
     </Card>
   );
 };
