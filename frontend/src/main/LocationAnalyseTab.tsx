@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useOutletContext } from 'react-router';
 import { Card, Spinner } from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
@@ -9,18 +10,17 @@ import { type SensorHeatmapResponse } from '../components/device/SensorHeatmap3D
 import MeasurementSamplesCompareChart, {
   type MeasurementCompareRow,
 } from '../components/device/MeasurementSamplesCompareChart.tsx';
-
-type LocationAnalyseTabProps = {
-  locationId: number;
-};
+import type { PortalOutletContext } from './LocationPortalLayout';
 
 const HEATMAP_LIMIT = 300;
 
 /**
- * Analyse tab: the location heatmap plus the recent measurements of all its
- * devices. Reuses the existing heatmap + measurement endpoints and components.
+ * Analyse route: the location heatmap plus the recent measurements of all
+ * its devices. Reuses the existing heatmap + measurement endpoints and
+ * components.
  */
-const LocationAnalyseTab = ({ locationId }: LocationAnalyseTabProps) => {
+const LocationAnalyseTab = () => {
+  const { locationId } = useOutletContext<PortalOutletContext>();
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
 

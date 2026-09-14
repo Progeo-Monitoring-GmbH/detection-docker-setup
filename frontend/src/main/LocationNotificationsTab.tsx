@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useOutletContext } from 'react-router';
 import {
   Alert,
   Button,
@@ -15,10 +16,7 @@ import {
   showErrorBar,
   showSuccessBar,
 } from '../components/ui/Snackbar.jsx';
-
-type LocationNotificationsTabProps = {
-  locationId: number;
-};
+import type { PortalOutletContext } from './LocationPortalLayout';
 
 type AccessRule = {
   id: number;
@@ -63,9 +61,8 @@ const typeLabels = (value?: number | null) =>
  * Benachrichtigungen tab: shows and edits the ProgeoAccess notification rules
  * of the location (who gets notified, via which transport, for which type).
  */
-const LocationNotificationsTab = ({
-  locationId,
-}: LocationNotificationsTabProps) => {
+const LocationNotificationsTab = () => {
+  const { locationId } = useOutletContext<PortalOutletContext>();
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
   const { hasPermission } = usePermissions();

@@ -116,7 +116,7 @@ const LocationsOverview = () => {
           next[0]?.id != null
         ) {
           autoForwarded.current = true;
-          navigate(`/location/${next[0].id}/detail/`);
+          navigate(`/location/${next[0].id}/status`);
         }
       },
       (error) => {
@@ -197,7 +197,7 @@ const LocationsOverview = () => {
   };
 
   const handleRowClick = (row: LocationRow) => {
-    navigate(`/location/${row.id}/detail/`);
+    navigate(`/location/${row.id}/status`);
   };
 
   const fetchLocationMeasurements = (locationId: number, year?: number) => {

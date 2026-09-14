@@ -70,6 +70,31 @@ export default class axiosConfig {
     );
   }
 
+  static async perform_patch(
+    auth: AuthContextType | undefined,
+    url: string,
+    data,
+    callBackSuccess,
+    callBackError = defaultErrorCallback,
+    config: IConfig = {},
+  ) {
+    axiosConfig.updateToken(config.token);
+    await axiosConfig.holder.patch(url, data, config).then(
+      (response) => {
+        callBackSuccess(response);
+      },
+      (error) => {
+        callBackError(error);
+        if ([401, 403].includes(error?.response?.status)) {
+          if (auth) {
+            auth.navigate(`/login?forward=${auth.location}`);
+            return;
+          }
+        }
+      },
+    );
+  }
+
   static async perform_get(
     auth: AuthContextType,
     url,

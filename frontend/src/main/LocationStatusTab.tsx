@@ -1,24 +1,16 @@
-import LocationAlarmDetail from './LocationAlarmDetail.tsx';
-import type { LocationDetail } from './LocationDetailView';
-
-type LocationStatusTabProps = {
-  location: LocationDetail | null;
-  locationId: number;
-};
+import { useOutletContext } from 'react-router';
+import LocationStatusView from './LocationStatusView';
+import type { PortalOutletContext } from './LocationPortalLayout';
 
 /**
- * Status tab: reuses the existing LocationAlarmDetail page (timeline, alarm
- * heatmap, alarm details). The location object is shared from the parent so
- * it is only loaded once.
+ * Status route: KPI strip, roof-view heatmap and the Verdachtsstellen
+ * (suspected-leak) list, per the Portal v2 mockup. location/locationId come
+ * from LocationPortalLayout, which loads the location once for every
+ * section route.
  */
-const LocationStatusTab = ({ location, locationId }: LocationStatusTabProps) => {
-  return (
-    <LocationAlarmDetail
-      key={locationId}
-      location={location}
-      preloaded
-    />
-  );
+const LocationStatusTab = () => {
+  const { location, locationId } = useOutletContext<PortalOutletContext>();
+  return <LocationStatusView key={locationId} location={location} locationId={locationId} />;
 };
 
 export default LocationStatusTab;

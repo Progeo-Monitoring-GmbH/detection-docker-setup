@@ -1,6 +1,14 @@
 import React from 'react';
-import { Route, Routes } from 'react-router';
+import { Navigate, Route, Routes, useParams } from 'react-router';
 import { WebSocketProvider } from './components/ws/websocketContext';
+import { PORTAL_NAV_ITEMS } from './main/portalNav';
+
+// The old tab-based /location/:id/detail/ route is replaced by
+// /location/:id/status - redirect any stray bookmarks/links there.
+const RedirectToStatus = () => {
+  const { id } = useParams();
+  return <Navigate to={`/location/${id}/status`} replace />;
+};
 
 const Navbar = React.lazy(() => import('./components/navbar/Navbar'));
 const LoginForm = React.lazy(() => import('./components/auth/LoginForm'));
@@ -24,9 +32,40 @@ const LocationHeatmap2DView = React.lazy(
 const LocationAlarmDetail = React.lazy(
   () => import('./main/LocationAlarmDetail.tsx'),
 );
-const LocationDetailView = React.lazy(
-  () => import('./main/LocationDetailView.tsx'),
+const LocationPortalLayout = React.lazy(
+  () => import('./main/LocationPortalLayout.tsx'),
 );
+const GuardedPortalPage = React.lazy(
+  () => import('./main/GuardedPortalPage.tsx'),
+);
+const LocationStatusTab = React.lazy(() => import('./main/LocationStatusTab.tsx'));
+const LocationObjektTab = React.lazy(() => import('./main/LocationObjektTab.tsx'));
+const LocationAnalyseTabRoute = React.lazy(
+  () => import('./main/LocationAnalyseTab.tsx'),
+);
+const LocationNotificationsTabRoute = React.lazy(
+  () => import('./main/LocationNotificationsTab.tsx'),
+);
+const LocationInterfaceTab = React.lazy(
+  () => import('./main/LocationInterfaceTab.tsx'),
+);
+const LocationRechteTab = React.lazy(() => import('./main/LocationRechteTab.tsx'));
+const LocationEinstellungenTab = React.lazy(
+  () => import('./main/LocationEinstellungenTab.tsx'),
+);
+
+// One content component per PORTAL_NAV_ITEMS key - kept next to the routes
+// that mount them (portalNav.ts stays framework-agnostic: labels/icons/
+// permissions/segments only).
+const PORTAL_NAV_COMPONENTS = {
+  status: LocationStatusTab,
+  objekt: LocationObjektTab,
+  analyse: LocationAnalyseTabRoute,
+  benach: LocationNotificationsTabRoute,
+  rechte: LocationRechteTab,
+  einstell: LocationEinstellungenTab,
+  schnittstelle: LocationInterfaceTab,
+};
 const DeviceDetailView = React.lazy(() => import('./main/DeviceDetailView'));
 const DeviceEditorView = React.lazy(() => import('./main/DeviceEditorView'));
 const MeasurementDetailView = React.lazy(
@@ -70,10 +109,6 @@ const CoreRoutes = () => {
         }
       />
       <Route
-        path="/location/overview/"
-        element={<Navbar act={'location'} content={<LocationsOverview />} />}
-      />
-      <Route
         path="/alarms/"
         element={<Navbar act={'alarms'} content={<AlarmsOverview />} />}
       />
@@ -99,10 +134,21 @@ const CoreRoutes = () => {
         path="/location/:id/alarms"
         element={<Navbar act={'location'} content={<LocationAlarmDetail />} />}
       />
-      <Route
-        path="/location/:id/detail/"
-        element={<Navbar act={'location'} content={<LocationDetailView />} />}
-      />
+      <Route element={<LocationPortalLayout />}>
+        <Route path="/location/overview/" element={<LocationsOverview />} />
+        {PORTAL_NAV_ITEMS.map((item) => (
+          <Route
+            key={item.key}
+            path={`/location/:id/${item.segment}`}
+            element={
+              <GuardedPortalPage item={item}>
+                {React.createElement(PORTAL_NAV_COMPONENTS[item.key])}
+              </GuardedPortalPage>
+            }
+          />
+        ))}
+        <Route path="/location/:id/detail/" element={<RedirectToStatus />} />
+      </Route>
       <Route
         path="/device/:id/update/"
         element={<Navbar act={'device'} content={<DeviceDetailView />} />}
