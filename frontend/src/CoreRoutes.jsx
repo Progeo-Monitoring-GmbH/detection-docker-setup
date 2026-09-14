@@ -10,7 +10,7 @@ const RedirectToStatus = () => {
   return <Navigate to={`/location/${id}/status`} replace />;
 };
 
-const Navbar = React.lazy(() => import('./components/navbar/Navbar'));
+const AppLayout = React.lazy(() => import('./main/AppLayout.tsx'));
 const LoginForm = React.lazy(() => import('./components/auth/LoginForm'));
 const TokenTransit = React.lazy(() => import('./main/TokenTransit'));
 const BackupView = React.lazy(() => import('./main/BackupView'));
@@ -90,50 +90,7 @@ const CoreRoutes = () => {
     <Routes>
       <Route path={`/login`} element={<LoginForm />} />
 
-      <Route path="/dev" element={<Navbar act={'tools'} content={<DevView />} />} />
-
-      <Route
-        path="/ws-debug"
-        element={
-          <WebSocketProvider url="/ws/commands/list">
-            <Navbar act={'tools'} content={<WsDebugView />} />
-          </WebSocketProvider>
-        }
-      />
-      <Route
-        path="/device/overview"
-        element={
-          <WebSocketProvider url="/ws/commands/list">
-            <Navbar act={'device'} content={<DeviceListView />} />
-          </WebSocketProvider>
-        }
-      />
-      <Route
-        path="/alarms/"
-        element={<Navbar act={'alarms'} content={<AlarmsOverview />} />}
-      />
-      <Route
-        path="/alarms/report/"
-        element={<Navbar act={'alarms'} content={<AlarmReportView />} />}
-      />
-      <Route
-        path="/location/:id/heatplot"
-        element={<Navbar act={'location'} content={<LocationHeatplotView />} />}
-      />
-      <Route
-        path="/locations/:id/heatplot"
-        element={<Navbar act={'location'} content={<LocationHeatplotView />} />}
-      />
-      <Route
-        path="/location/:id/heatmap2d"
-        element={
-          <Navbar act={'location'} content={<LocationHeatmap2DView />} />
-        }
-      />
-      <Route
-        path="/location/:id/alarms"
-        element={<Navbar act={'location'} content={<LocationAlarmDetail />} />}
-      />
+      {/* Object/location monitoring portal - its own mockup-driven sidebar. */}
       <Route element={<LocationPortalLayout />}>
         <Route path="/location/overview/" element={<LocationsOverview />} />
         {PORTAL_NAV_ITEMS.map((item) => (
@@ -149,55 +106,53 @@ const CoreRoutes = () => {
         ))}
         <Route path="/location/:id/detail/" element={<RedirectToStatus />} />
       </Route>
-      <Route
-        path="/device/:id/update/"
-        element={<Navbar act={'device'} content={<DeviceDetailView />} />}
-      />
-      <Route
-        path="/device/:id/editor/"
-        element={<Navbar act={'device'} content={<DeviceEditorView />} />}
-      />
-      <Route
-        path="/device/:id/detail"
-        element={<Navbar act={'device'} content={<MeasurementDetailView />} />}
-      />
-      <Route
-        path="/docker/"
-        element={<Navbar act={'docker'} content={<DockerStatusView />} />}
-      />
-      <Route
-        path="/admin/panel/"
-        element={
-          <WebSocketProvider url="/ws/logs/stream/">
-            <Navbar act={'adminpanel'} content={<AdminPanel />} />{' '}
-          </WebSocketProvider>
-        }
-      />
-      <Route
-        path="/staff/"
-        element={<Navbar act={'staff'} content={<StaffAdmin />} />}
-      />
-      <Route
-        path="/backup/:account/overview/"
-        element={<Navbar act={'backup'} content={<BackupView />} />}
-      />
-      <Route
-        path="/factory/"
-        element={<Navbar act={'tools'} content={<FactoryVisualizerView />} />}
-      />
-      <Route
-        path="/lageplan/wizard/"
-        element={<Navbar act={'tools'} content={<LageplanWizardView />} />}
-      />
-      <Route
-        path="/legacy/import/"
-        element={<Navbar act={'tools'} content={<LegacyImportView />} />}
-      />
-      <Route
-        path="/map/"
-        element={<Navbar act={'location'} content={<LocationsMapView />} />}
-      />
-      <Route path="*" element={<Navbar act={'home'} content={<LandingPage />} />} />
+
+      {/* Everything else - the general-purpose sidebar (ported 1:1 from the
+          retired Navbar.jsx's item list). */}
+      <Route element={<AppLayout />}>
+        <Route path="/dev" element={<DevView />} />
+        <Route
+          path="/ws-debug"
+          element={
+            <WebSocketProvider url="/ws/commands/list">
+              <WsDebugView />
+            </WebSocketProvider>
+          }
+        />
+        <Route
+          path="/device/overview"
+          element={
+            <WebSocketProvider url="/ws/commands/list">
+              <DeviceListView />
+            </WebSocketProvider>
+          }
+        />
+        <Route path="/alarms/" element={<AlarmsOverview />} />
+        <Route path="/alarms/report/" element={<AlarmReportView />} />
+        <Route path="/location/:id/heatplot" element={<LocationHeatplotView />} />
+        <Route path="/locations/:id/heatplot" element={<LocationHeatplotView />} />
+        <Route path="/location/:id/heatmap2d" element={<LocationHeatmap2DView />} />
+        <Route path="/location/:id/alarms" element={<LocationAlarmDetail />} />
+        <Route path="/device/:id/update/" element={<DeviceDetailView />} />
+        <Route path="/device/:id/editor/" element={<DeviceEditorView />} />
+        <Route path="/device/:id/detail" element={<MeasurementDetailView />} />
+        <Route path="/docker/" element={<DockerStatusView />} />
+        <Route
+          path="/admin/panel/"
+          element={
+            <WebSocketProvider url="/ws/logs/stream/">
+              <AdminPanel />
+            </WebSocketProvider>
+          }
+        />
+        <Route path="/staff/" element={<StaffAdmin />} />
+        <Route path="/backup/:account/overview/" element={<BackupView />} />
+        <Route path="/factory/" element={<FactoryVisualizerView />} />
+        <Route path="/lageplan/wizard/" element={<LageplanWizardView />} />
+        <Route path="/legacy/import/" element={<LegacyImportView />} />
+        <Route path="/map/" element={<LocationsMapView />} />
+        <Route path="*" element={<LandingPage />} />
+      </Route>
     </Routes>
   );
 };

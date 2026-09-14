@@ -31,7 +31,6 @@ const PROJECT_TYPE_BRAND_LABELS: Record<number, string> = {
 type FormState = {
   project_id: string;
   name: string;
-  alarm_threshold: string;
   address: string;
   plz: string;
   city: string;
@@ -43,7 +42,6 @@ type FormState = {
 const toForm = (location: LocationDetail | null): FormState => ({
   project_id: location?.project_id != null ? String(location.project_id) : '',
   name: location?.name ?? '',
-  alarm_threshold: location?.alarm_threshold != null ? String(location.alarm_threshold) : '',
   address: location?.address ?? '',
   plz: location?.plz ?? '',
   city: location?.city ?? '',
@@ -85,7 +83,6 @@ const LocationObjektTab = () => {
       `/v1/location/${locationId}/`,
       {
         name: form.name,
-        alarm_threshold: form.alarm_threshold ? Number(form.alarm_threshold) : null,
         address: form.address,
         plz: form.plz,
         city: form.city,
@@ -148,13 +145,6 @@ const LocationObjektTab = () => {
                   : '–'
               }
               readOnly
-            />
-            <LabeledInput
-              label={t('objekt_field_alarm_threshold')}
-              value={form.alarm_threshold}
-              onChange={set('alarm_threshold')}
-              readOnly={!canEditIdentity}
-              type="number"
             />
           </div>
         </PanelCard>

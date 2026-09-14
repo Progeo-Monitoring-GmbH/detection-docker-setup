@@ -6,6 +6,7 @@ import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
 import { showErrorBar } from '../components/ui/Snackbar.jsx';
 import LocationSidebar from '../components/sidebar/LocationSidebar';
+import TopBar from '../components/topbar/TopBar';
 import type { LocationDetail } from './locationTypes';
 
 export type PortalOutletContext = {
@@ -76,6 +77,7 @@ const LocationPortalLayout = () => {
           padding: mobile ? '4px 12px 20px' : '20px 20px 22px 6px',
         }}
       >
+        <TopBar />
         {loading ? (
           <div className="d-flex justify-content-center py-5 text-muted">
             <Spinner animation="border" className="me-2" />

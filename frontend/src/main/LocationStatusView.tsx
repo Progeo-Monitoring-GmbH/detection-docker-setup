@@ -15,6 +15,7 @@ import KpiStrip from '../components/ui/kit/KpiStrip';
 import LegendGradientBar from '../components/ui/kit/LegendGradientBar';
 import StateBadge, { type AlarmState } from '../components/ui/kit/StateBadge';
 import SeverityBadge, { type Severity } from '../components/ui/kit/SeverityBadge';
+import Tooltip from '../components/ui/kit/Tooltip';
 import type { LocationDetail } from './locationTypes';
 
 type LocationStatusViewProps = {
@@ -405,8 +406,8 @@ const VerdachtsstelleRow = ({
                 fontWeight: 500,
               }}
             >
-              <span>{t('status_col_mp')}</span>
-              <span>{t('status_col_avgwp')}</span>
+              <Tooltip title={t('status_col_mp_tooltip')}>{t('status_col_mp')}</Tooltip>
+              <Tooltip title={t('status_col_avgwp_tooltip')}>{t('status_col_avgwp')}</Tooltip>
               <span>{t('status_col_position')}</span>
             </div>
             {cluster.sensors.map((sensor, index) => (

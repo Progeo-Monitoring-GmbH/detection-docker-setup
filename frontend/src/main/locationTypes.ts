@@ -17,4 +17,5 @@ export type LocationDetail = {
   device_count?: number | null;
   measurement_count?: number | null;
   last_measurement_at?: string | null;
+  pe_geschaltet?: boolean | null;
 };

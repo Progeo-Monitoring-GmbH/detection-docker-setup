@@ -1,14 +1,6 @@
 import React from 'react';
-import {
-  Button,
-  Card,
-  Col,
-  Form,
-  Modal,
-  ProgressBar,
-  Row,
-  Spinner,
-} from 'react-bootstrap';
+import { Spinner, ProgressBar } from 'react-bootstrap';
+import { X } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 
@@ -20,11 +12,15 @@ import {
   showInfoBar,
   showSuccessBar,
 } from '../components/ui/Snackbar.jsx';
-import '../components/ui/css/CustomModal.css';
+import PillButton from '../components/ui/kit/PillButton';
+import LabeledInput from '../components/ui/kit/LabeledInput';
 
 type UserProfileResponse = {
   username: string;
+  first_name?: string | null;
+  last_name?: string | null;
   email: string;
+  mobile?: string | null;
   language: string;
 };
 
@@ -101,6 +97,37 @@ type UserProfileModalProps = {
   onHide: () => void;
 };
 
+const sectionLabelStyle: React.CSSProperties = {
+  fontSize: 11,
+  letterSpacing: '.11em',
+  textTransform: 'uppercase',
+  color: '#8B8383',
+  fontWeight: 500,
+  marginBottom: 12,
+};
+
+/**
+ * "Mein Konto" account drawer, ported from the Portal v2 mockup
+ * (ProGeo Portal v2.dc.html ~line 1215) - a right-side sliding panel rather
+ * than the previous centered two-card Modal, same underlying data/actions.
+ *
+ * Deliberate departures from the mockup, since it's fake-data demo content:
+ * - "Telefon" (landline) is dropped - only "Mobil" exists anywhere in the
+ *   backend (UserProfile.mobile, used for SMS notifications already).
+ * - "Benachrichtigungen" (a global Keine/E-Mail/SMS/Beides preference "for
+ *   all projects") has no backing field anywhere - notification channel is
+ *   real but per-object (ProgeoAccess, already editable on Rechte/
+ *   Einstellungen), so a second, disconnected "global" toggle here would
+ *   either do nothing or conflict with those. Omitted rather than faked.
+ * - "Sprache" (language) is kept here even though the mockup's own account
+ *   drawer doesn't list it - it's real, working, persisted server-side
+ *   (unlike the header's quick, session-local DE/EN toggle), and dropping
+ *   it would regress existing functionality just to match the mockup.
+ * - "Zugriff auf weiteres Projekt anfragen" and "Konto löschen" have no
+ *   backend support (no request-access flow, no self-service account
+ *   deactivation exists anywhere) - both show guidance to contact ProGeo
+ *   directly instead of silently doing nothing or faking success.
+ */
 export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
   const auth = useAuth();
   const { hasPermission } = usePermissions();
@@ -108,12 +135,15 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
   const { t, i18n } = useTranslation();
 
   const [loading, setLoading] = React.useState(true);
-  const [isSavingSettings, setIsSavingSettings] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
   const [isSavingPassword, setIsSavingPassword] = React.useState(false);
+  const [passwordOpen, setPasswordOpen] = React.useState(false);
 
+  const [firstName, setFirstName] = React.useState('');
+  const [lastName, setLastName] = React.useState('');
   const [email, setEmail] = React.useState('');
+  const [mobile, setMobile] = React.useState('');
   const [language, setLanguage] = React.useState('de');
-  const [username, setUsername] = React.useState('');
 
   const [currentPassword, setCurrentPassword] = React.useState('');
   const [newPassword, setNewPassword] = React.useState('');
@@ -130,10 +160,7 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
     newPassword === newPasswordConfirm &&
     passwordStrength.valid;
 
-  const passwordStrengthVariantByLevel: Record<
-    PasswordStrength['level'],
-    string
-  > = {
+  const passwordStrengthVariantByLevel: Record<PasswordStrength['level'], string> = {
     very_weak: 'danger',
     weak: 'danger',
     medium: 'warning',
@@ -141,24 +168,18 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
     very_strong: 'success',
   };
 
-  const handleClose = () => {
-    setCurrentPassword('');
-    setNewPassword('');
-    setNewPasswordConfirm('');
-    onHide();
-  };
-
-  const loadProfile = () => {
+  const loadProfile = React.useCallback(() => {
     setLoading(true);
     void axiosConfig.perform_get(
       auth,
       '/v1/user/profile/',
       (response) => {
         const data = (response?.data || {}) as UserProfileResponse;
-        setUsername(data.username || '');
+        setFirstName(data.first_name || '');
+        setLastName(data.last_name || '');
         setEmail(data.email || '');
+        setMobile(data.mobile || '');
         setLanguage(data.language || 'de');
-        showInfoBar(enqueueSnackbar, t('profile_load_success'));
         setLoading(false);
       },
       (error) => {
@@ -167,43 +188,40 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
         setLoading(false);
       },
     );
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth, enqueueSnackbar]);
 
   React.useEffect(() => {
     if (!show) {
       return;
     }
-
+    setPasswordOpen(false);
+    setCurrentPassword('');
+    setNewPassword('');
+    setNewPasswordConfirm('');
     loadProfile();
-  }, [show]);
+  }, [show, loadProfile]);
 
-  const saveSettings = () => {
+  const save = () => {
     if (!isEmailInputValid) {
       showErrorBar(enqueueSnackbar, t('profile_email_invalid'));
       return;
     }
-
-    showInfoBar(enqueueSnackbar, t('profile_settings_saving_info'));
-    setIsSavingSettings(true);
+    setSaving(true);
     void axiosConfig.perform_post(
       auth,
       '/v1/user/settings/',
-      {
-        email,
-        language,
-      },
+      { first_name: firstName, last_name: lastName, email, mobile, language },
       async () => {
         await i18n.changeLanguage(language);
         showSuccessBar(enqueueSnackbar, t('profile_settings_saved'));
-        setIsSavingSettings(false);
+        setSaving(false);
+        onHide();
       },
       (error) => {
         const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(
-          enqueueSnackbar,
-          `${t('profile_settings_error')}: ${reason}`,
-        );
-        setIsSavingSettings(false);
+        showErrorBar(enqueueSnackbar, `${t('profile_settings_error')}: ${reason}`);
+        setSaving(false);
       },
     );
   };
@@ -213,170 +231,173 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
       showErrorBar(enqueueSnackbar, t('profile_password_missing'));
       return;
     }
-
     if (newPassword !== newPasswordConfirm) {
       showErrorBar(enqueueSnackbar, t('profile_password_mismatch'));
       return;
     }
-
     if (!passwordStrength.valid) {
       showErrorBar(enqueueSnackbar, t('profile_password_weak'));
       return;
     }
 
-    showInfoBar(enqueueSnackbar, t('profile_password_saving_info'));
     setIsSavingPassword(true);
     void axiosConfig.perform_post(
       auth,
       '/v1/user/password/change/',
-      {
-        current_password: currentPassword,
-        new_password: newPassword,
-      },
+      { current_password: currentPassword, new_password: newPassword },
       () => {
         showSuccessBar(enqueueSnackbar, t('profile_password_saved'));
         setCurrentPassword('');
         setNewPassword('');
         setNewPasswordConfirm('');
+        setPasswordOpen(false);
         setIsSavingPassword(false);
       },
       (error) => {
         const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(
-          enqueueSnackbar,
-          `${t('profile_password_error')}: ${reason}`,
-        );
+        showErrorBar(enqueueSnackbar, `${t('profile_password_error')}: ${reason}`);
         setIsSavingPassword(false);
       },
     );
   };
 
-  if (loading) {
-    return (
-      <Modal
-        show={show}
-        onHide={handleClose}
-        dialogClassName={'user-profile-modal'}
-      >
-        <Modal.Header closeButton>
-          <Modal.Title>{t('profile_title')}</Modal.Title>
-        </Modal.Header>
-        <Modal.Body>
-          <div className="py-2 d-flex align-items-center gap-3">
-            <Spinner animation="border" role="status" />
-            <span>{t('profile_loading')}</span>
-          </div>
-        </Modal.Body>
-        <Modal.Footer>
-          <Button variant="secondary" onClick={handleClose}>
-            {t('profile_close')}
-          </Button>
-        </Modal.Footer>
-      </Modal>
-    );
+  if (!show) {
+    return null;
   }
 
   return (
-    <Form>
-      <Modal
-        show={show}
-        onHide={handleClose}
-        dialogClassName={'user-profile-modal'}
+    <div
+      onClick={onHide}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(7, 34, 58, .38)',
+        zIndex: 70,
+        display: 'flex',
+        justifyContent: 'flex-end',
+        padding: 14,
+      }}
+    >
+      <div
+        onClick={(event) => event.stopPropagation()}
+        style={{
+          width: 'min(430px, 100%)',
+          height: '100%',
+          background: 'var(--progeo-panel-bg)',
+          borderRadius: 20,
+          boxShadow: '-10px 0 44px rgba(11, 54, 89, .26)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'auto',
+        }}
       >
-        <Modal.Header closeButton>
-          <Modal.Title>
-            {t('profile_title')}: {username}
-          </Modal.Title>
-        </Modal.Header>
-        <Modal.Body>
-          <Row className="g-4">
-            <Col xs={12} lg={6}>
-              <Card className="border-0 shadow-sm h-100">
-                <Card.Body className="p-4 m-2">
-                  <h5 className="mb-3">{t('profile_settings')}</h5>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            padding: '20px 22px 14px',
+            position: 'sticky',
+            top: 0,
+            background: 'var(--progeo-panel-bg)',
+            zIndex: 2,
+          }}
+        >
+          <div style={{ fontSize: 17, fontWeight: 500 }}>{t('profile_title')}</div>
+          <div style={{ flex: 1 }} />
+          <button
+            type="button"
+            onClick={onHide}
+            aria-label={t('profile_close')}
+            style={{
+              width: 34,
+              height: 34,
+              border: 'none',
+              borderRadius: '50%',
+              background: 'var(--progeo-surface)',
+              boxShadow: '0 2px 8px rgba(11, 54, 89, .1)',
+              cursor: 'pointer',
+              color: 'var(--progeo-blue)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 0,
+            }}
+          >
+            <X size={16} />
+          </button>
+        </div>
 
-                  <Form.Group className="mb-3">
-                    <Form.Label>{t('profile_email')}</Form.Label>
-                    <Form.Control
-                      type="email"
-                      value={email}
-                      disabled={!canEditEmail}
-                      isInvalid={Boolean(email) && !isEmailInputValid}
-                      onChange={(event) => setEmail(event.target.value)}
-                    />
-                    <Form.Control.Feedback type="invalid">
-                      {t('profile_email_invalid')}
-                    </Form.Control.Feedback>
-                  </Form.Group>
-
-                  <Form.Group className="mb-4">
-                    <Form.Label>{t('profile_language')}</Form.Label>
-                    <Form.Select
-                      value={language}
-                      onChange={(event) => setLanguage(event.target.value)}
-                    >
-                      <option value="de">Deutsch</option>
-                      <option value="en">English</option>
-                    </Form.Select>
-                  </Form.Group>
-
-                  <Button
-                    onClick={saveSettings}
-                    disabled={isSavingSettings || !isEmailInputValid}
+        {loading ? (
+          <div className="d-flex align-items-center gap-2 text-muted py-4 px-4">
+            <Spinner animation="border" size="sm" /> {t('profile_loading')}
+          </div>
+        ) : (
+          <div style={{ padding: '0 22px 20px', display: 'flex', flexDirection: 'column', gap: 22 }}>
+            <section>
+              <div style={sectionLabelStyle}>{t('profile_section_contact')}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <LabeledInput label={t('profile_first_name')} value={firstName} onChange={setFirstName} />
+                <LabeledInput label={t('profile_last_name')} value={lastName} onChange={setLastName} />
+                <div style={{ gridColumn: 'span 2' }}>
+                  <LabeledInput
+                    label={t('profile_email')}
+                    value={email}
+                    onChange={canEditEmail ? setEmail : undefined}
+                    readOnly={!canEditEmail}
+                  />
+                </div>
+                <LabeledInput label={t('profile_mobile')} value={mobile} onChange={setMobile} />
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  <span style={{ fontSize: 11, letterSpacing: '.07em', textTransform: 'uppercase', color: '#8B8383', fontWeight: 500 }}>
+                    {t('profile_language')}
+                  </span>
+                  <select
+                    value={language}
+                    onChange={(event) => setLanguage(event.target.value)}
+                    style={{ height: 40, border: 'none', borderRadius: 11, background: 'var(--progeo-surface)', boxShadow: '0 1px 4px rgba(11,54,89,.09)', padding: '0 13px', fontFamily: 'inherit', fontSize: 14, color: 'var(--progeo-blue)' }}
                   >
-                    {isSavingSettings
-                      ? t('profile_saving')
-                      : t('profile_save_settings')}
-                  </Button>
-                </Card.Body>
-              </Card>
-            </Col>
+                    <option value="de">Deutsch</option>
+                    <option value="en">English</option>
+                  </select>
+                </label>
+              </div>
+            </section>
 
-            <Col xs={12} lg={6}>
-              <Card className="border-0 shadow-sm h-100">
-                <Card.Body className="p-4 m-2">
-                  <h5 className="mb-3">{t('profile_change_password')}</h5>
+            <section>
+              <div style={sectionLabelStyle}>{t('profile_section_access')}</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start' }}>
+                <PillButton
+                  label={t('profile_request_access')}
+                  onClick={() => showInfoBar(enqueueSnackbar, t('profile_request_access_info'))}
+                />
+                <PillButton label={t('profile_change_password')} onClick={() => setPasswordOpen((open) => !open)} />
+              </div>
 
-                  <Form.Group className="mb-3">
-                    <Form.Label>{t('profile_current_password')}</Form.Label>
-                    <Form.Control
-                      type="password"
-                      value={currentPassword}
-                      onChange={(event) =>
-                        setCurrentPassword(event.target.value)
-                      }
-                    />
-                  </Form.Group>
-
-                  <Form.Group className="mb-3">
-                    <Form.Label>{t('profile_new_password')}</Form.Label>
-                    <Form.Control
-                      type="password"
-                      value={newPassword}
-                      onChange={(event) => setNewPassword(event.target.value)}
-                    />
-                  </Form.Group>
-
-                  <div className="mb-3">
+              {passwordOpen && (
+                <div style={{ marginTop: 14, background: 'var(--progeo-surface)', borderRadius: 14, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <LabeledInput
+                    label={t('profile_current_password')}
+                    value={currentPassword}
+                    onChange={setCurrentPassword}
+                    type="password"
+                  />
+                  <LabeledInput
+                    label={t('profile_new_password')}
+                    value={newPassword}
+                    onChange={setNewPassword}
+                    type="password"
+                  />
+                  <div>
                     <div className="d-flex justify-content-between align-items-center mb-1">
-                      <small className="text-muted">
-                        {t('profile_password_strength')}
-                      </small>
-                      <small>
-                        {t(
-                          `profile_password_strength_${passwordStrength.level}`,
-                        )}
-                      </small>
+                      <small className="text-muted">{t('profile_password_strength')}</small>
+                      <small>{t(`profile_password_strength_${passwordStrength.level}`)}</small>
                     </div>
                     <ProgressBar
                       now={(passwordStrength.score / 6) * 100}
-                      variant={
-                        passwordStrengthVariantByLevel[passwordStrength.level]
-                      }
+                      variant={passwordStrengthVariantByLevel[passwordStrength.level]}
                     />
-                    <small className="text-muted d-block mt-2">
-                      {t('profile_password_requirements_hint')}
-                    </small>
+                    <small className="text-muted d-block mt-2">{t('profile_password_requirements_hint')}</small>
                     <small className="d-block mt-1">
                       {passwordStrength.checks.minLength
                         ? t('profile_password_requirement_min_length_ok')
@@ -388,39 +409,64 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
                         : t('profile_password_requirement_charset')}
                     </small>
                   </div>
-
-                  <Form.Group className="mb-4">
-                    <Form.Label>{t('profile_confirm_password')}</Form.Label>
-                    <Form.Control
-                      type="password"
-                      value={newPasswordConfirm}
-                      onChange={(event) =>
-                        setNewPasswordConfirm(event.target.value)
-                      }
-                    />
-                  </Form.Group>
-
-                  <Button
+                  <LabeledInput
+                    label={t('profile_confirm_password')}
+                    value={newPasswordConfirm}
+                    onChange={setNewPasswordConfirm}
+                    type="password"
+                  />
+                  <PillButton
+                    label={isSavingPassword ? t('profile_saving') : t('profile_save_password')}
                     onClick={changePassword}
                     disabled={isSavingPassword || !isPasswordInputValid}
-                  >
-                    {isSavingPassword
-                      ? t('profile_saving')
-                      : t('profile_save_password')}
-                  </Button>
-                </Card.Body>
-              </Card>
-            </Col>
-          </Row>
-        </Modal.Body>
+                  />
+                </div>
+              )}
+            </section>
 
-        <Modal.Footer>
-          <Button variant="secondary" onClick={handleClose}>
+            <section>
+              <div style={{ fontSize: 13.5, fontWeight: 500, marginBottom: 4 }}>{t('profile_delete_account')}</div>
+              <div style={{ fontSize: 12.5, color: '#8B8383', marginBottom: 12 }}>{t('profile_delete_account_hint')}</div>
+              <button
+                type="button"
+                onClick={() => showInfoBar(enqueueSnackbar, t('profile_delete_account_info'))}
+                style={{ height: 36, padding: '0 15px', border: 'none', borderRadius: 10, background: '#FBEAE4', color: '#C44D26', fontFamily: 'inherit', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
+              >
+                {t('profile_delete_account')}
+              </button>
+            </section>
+          </div>
+        )}
+
+        <div
+          style={{
+            marginTop: 'auto',
+            display: 'flex',
+            gap: 10,
+            padding: '14px 22px 20px',
+            position: 'sticky',
+            bottom: 0,
+            background: 'var(--progeo-panel-bg)',
+          }}
+        >
+          <button
+            type="button"
+            onClick={save}
+            disabled={saving || loading}
+            style={{ height: 38, padding: '0 18px', border: 'none', borderRadius: 10, background: 'var(--progeo-orange)', color: '#fff', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 500, cursor: 'pointer', boxShadow: '0 4px 14px rgba(235, 99, 59, .26)' }}
+          >
+            {saving ? t('profile_saving') : t('profile_save_settings')}
+          </button>
+          <button
+            type="button"
+            onClick={onHide}
+            style={{ height: 38, padding: '0 16px', border: 'none', borderRadius: 10, background: 'var(--progeo-surface)', boxShadow: '0 2px 8px rgba(11, 54, 89, .1)', color: 'var(--progeo-blue)', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 500, cursor: 'pointer' }}
+          >
             {t('profile_close')}
-          </Button>
-        </Modal.Footer>
-      </Modal>
-    </Form>
+          </button>
+        </div>
+      </div>
+    </div>
   );
 };
 
@@ -429,19 +475,15 @@ const UserProfile = () => {
   const [showModal, setShowModal] = React.useState(true);
 
   return (
-    <Col>
+    <div>
       <UserProfileModal show={showModal} onHide={() => setShowModal(false)} />
       {!showModal && (
-        <Card className="border-0 shadow-sm">
-          <Card.Body className="p-4 m-2 d-flex justify-content-between align-items-center">
-            <span>{t('profile_modal_reopen_hint')}</span>
-            <Button onClick={() => setShowModal(true)}>
-              {t('profile_settings_button')}
-            </Button>
-          </Card.Body>
-        </Card>
+        <div className="d-flex justify-content-between align-items-center p-4">
+          <span>{t('profile_modal_reopen_hint')}</span>
+          <PillButton label={t('profile_settings_button')} onClick={() => setShowModal(true)} />
+        </div>
       )}
-    </Col>
+    </div>
   );
 };
 

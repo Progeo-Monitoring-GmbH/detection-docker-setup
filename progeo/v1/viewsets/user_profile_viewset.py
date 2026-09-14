@@ -45,14 +45,20 @@ class UserProfileViewSet(viewsets.ViewSet):
     def profile(self, request, *args, **kwargs):
         user = request.user
         language = self._normalize_language(request.session.get(LANGUAGE_SESSION_KEY)) or "de"
+        profile = getattr(user, "profile", None)
         return RequestSuccess({
             "username": user.username,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
             "email": user.email,
+            "mobile": profile.mobile if profile is not None else None,
             "language": language,
         })
 
     @action(detail=False, url_path="settings", methods=["POST"])
     def update_settings(self, request, *args, **kwargs):
+        from progeo.v1.models import UserProfile
+
         user = request.user
         data = request.data if isinstance(request.data, dict) else {}
 
@@ -68,14 +74,35 @@ class UserProfileViewSet(viewsets.ViewSet):
             return RequestFailed({"reason": "invalid email address"})
 
         user.email = next_email
-        user.save(update_fields=["email"])
+        # first_name/last_name are optional (Kontaktdaten) - only touched
+        # when the key is present, so callers that don't send them (e.g. the
+        # header's quick language switch, if it ever posts here) don't wipe them.
+        update_fields = ["email"]
+        if "first_name" in data:
+            user.first_name = (data.get("first_name") or "").strip()
+            update_fields.append("first_name")
+        if "last_name" in data:
+            user.last_name = (data.get("last_name") or "").strip()
+            update_fields.append("last_name")
+        user.save(update_fields=update_fields)
+
+        if "mobile" in data:
+            mobile = (data.get("mobile") or "").strip()
+            if mobile:
+                UserProfile.objects.update_or_create(user=user, defaults={"mobile": mobile})
+            else:
+                UserProfile.objects.filter(user=user).delete()
 
         if next_language:
             request.session[LANGUAGE_SESSION_KEY] = next_language
             translation.activate(next_language)
 
+        profile = getattr(user, "profile", None)
         return RequestSuccess({
             "email": user.email,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "mobile": profile.mobile if profile is not None else None,
             "language": next_language or self._normalize_language(request.session.get(LANGUAGE_SESSION_KEY)) or "de",
         })
 
