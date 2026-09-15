@@ -34,7 +34,9 @@ const GuardedPortalPage = ({ item, children }: GuardedPortalPageProps) => {
     return (
       <Container fluid className="py-3">
         <Card className="border-0 shadow-sm">
-          <Card.Body className="py-5 text-center text-muted">{t('portal_no_access')}</Card.Body>
+          <Card.Body className="py-5 text-center text-muted">
+            {t('portal_no_access')}
+          </Card.Body>
         </Card>
       </Container>
     );

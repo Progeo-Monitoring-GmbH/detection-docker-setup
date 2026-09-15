@@ -106,6 +106,19 @@ class LocationViewSet(ProgeoModalViewSet):
         return super().list(request, no_cache=False, *args, **kwargs)
     
     @require_module_permissions("module_locations_enabled")
+    @action(detail=False, url_path="project-types", methods=["GET"])
+    def project_types(self, request, *args, **kwargs):
+        """The fixed ProgeoLocation.PROJECT_TYPE_CHOICES enum, so the Objekt
+        tab's "Produkt" dropdown reads its options from the backend instead
+        of hardcoding them client-side."""
+        return RequestSuccess({
+            "project_types": [
+                {"value": value, "label": label}
+                for value, label in ProgeoLocation.PROJECT_TYPE_CHOICES.choices
+            ],
+        })
+
+    @require_module_permissions("module_locations_enabled")
     @action(detail=False, url_path="min", methods=["GET"])
     def min_list(self, request, *args, **kwargs):
         # A user can belong to several accounts, each living in its own
@@ -703,6 +716,36 @@ class LocationViewSet(ProgeoModalViewSet):
             }
         )
     
+    @require_module_permissions("module_locations_enabled", "module_measurements_enabled")
+    @action(detail=True, url_path="request-measurement", methods=["POST"])
+    def request_measurement(self, request, pk=None, *args, **kwargs):
+        """Ask every device of this location for a fresh, on-demand reading
+        (the Status tab's "Messung anfordern" button).
+
+        Fire-and-forget: a physical measurement can take minutes, so this
+        dispatches `request_device_measurement` per device and returns
+        immediately instead of blocking the request for the result - the new
+        reading shows up on Status once `evaluate_measurements` (celery beat)
+        picks it up, same as any regularly scheduled measurement.
+        """
+        from progeo.tasks import request_device_measurement
+
+        location, account = self._find_location(request, pk=pk)
+        if not location:
+            return RequestFailed({"reason": "Location not found"})
+
+        devices = ProgeoDevice.objects.using(account.db_name).filter(location=location)
+        reachable = [device for device in devices if device.device_ip]
+        if not reachable:
+            return RequestFailed({"reason": "No device with a known IP address for this location"})
+
+        task_ids = [request_device_measurement.delay(device.pk).id for device in reachable]
+
+        return RequestSuccess({
+            "requested_devices": len(reachable),
+            "task_ids": task_ids,
+        })
+
     @require_module_permissions("module_locations_enabled", "module_measurements_enabled")
     @action(detail=True, url_path="heatmap", methods=["GET"])
     def get_heatmap_data(self, request, pk=None, *args, **kwargs):

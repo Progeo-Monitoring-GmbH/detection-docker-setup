@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Geo } from 'react-bootstrap-icons';
 import PanelCard from '../components/ui/kit/PanelCard';
 import type { LocationDetail } from './locationTypes';
+import { formatDateTime } from './dateFormat';
 
 // react-leaflet@5's shipped prop types don't resolve `center`/`zoom`/
 // `attribution`/`radius` etc. under this project's TS setup (every other
@@ -109,9 +110,7 @@ const LocationStandortPanel = ({ location }: LocationStandortPanelProps) => {
         >
           <span style={{ color: '#6E6868' }}>{t('objekt_fact_last_measurement')}</span>
           <span style={{ fontWeight: 500 }}>
-            {location?.last_measurement_at
-              ? new Date(location.last_measurement_at).toLocaleString()
-              : '–'}
+            {formatDateTime(location?.last_measurement_at)}
           </span>
         </div>
       </div>

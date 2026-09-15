@@ -115,6 +115,78 @@ def identify_device(ip: str):
 
 
 @shared_task
+def request_device_measurement(device_id: int):
+    """POST /measure to a single device's private-IP endpoint on demand.
+
+    Mirrors what `manage.py scan_devices` does for its periodic scan (same
+    `/measure` call, same samples/points extraction) but for one already-known
+    device instead of a fresh LAN discovery, and without the scan's location-
+    creation or root-server-forwarding steps - this is a manual "take a
+    reading now" request, not a rerun of the discovery scan. The stored
+    measurement is picked up by the regular `evaluate_measurements` beat task
+    like any other, so no alarm-evaluation logic is duplicated here.
+    """
+    import ipaddress
+
+    import requests
+    from django.utils import timezone
+
+    from progeo.helper.basics import dlog, elog
+    from progeo.v1.creator import create_progeo_measurement_safe
+    from progeo.v1.models import ProgeoDevice
+
+    device = ProgeoDevice.objects.filter(pk=device_id).first()
+    if not device:
+        return {"ok": False, "error": "Device not found"}
+    if not device.device_ip:
+        return {"ok": False, "error": "Device has no known IP address"}
+
+    try:
+        parsed_ip = ipaddress.ip_address(device.device_ip)
+        if parsed_ip.version != 4 or not parsed_ip.is_private:
+            return {"ok": False, "error": "Only private IPv4 addresses are allowed"}
+    except ValueError:
+        return {"ok": False, "error": "Invalid device IP address"}
+
+    base_url = f"http://{parsed_ip}"
+    try:
+        response = requests.post(f"{base_url}/measure", timeout=(30, 500))
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        elog(f"[request_device_measurement] POST /measure failed for {device.raw_hash}: {exc}")
+        return {"ok": False, "error": str(exc)}
+
+    try:
+        measure_payload = response.json()
+    except ValueError:
+        measure_payload = {"text": response.text}
+
+    measurement, created = create_progeo_measurement_safe(
+        device=device,
+        raw_data={"measure": measure_payload, "requested_at": timezone.now().isoformat()},
+    )
+    if not measurement:
+        return {"ok": False, "error": "Failed to store measurement"}
+
+    samples = measure_payload.get("samples") if isinstance(measure_payload, dict) else None
+    if isinstance(samples, str):
+        samples = samples.replace('"', '').split(",")
+    elif not isinstance(samples, list):
+        samples = []
+
+    measurement.project_id = (measure_payload.get("project_id") if isinstance(measure_payload, dict) else None) or device.project_id
+    measurement.samples = samples
+    measurement.points = int(len(samples) / 2)
+    measurement.save()
+
+    dlog(
+        f"[request_device_measurement] stored measurement {measurement.pk} for device "
+        f"{device.raw_hash} ({'created' if created else 'existing'})"
+    )
+    return {"ok": True, "measurement_id": measurement.pk, "device_id": device.pk}
+
+
+@shared_task
 def evaluate_measurement(measurement_id: int, account_id: int = None):
     """Evaluate a single measurement: update sensor points and compute spots."""
     from progeo.helper.basics import dlog as _dlog

@@ -13,9 +13,12 @@ export type LocationDetail = {
   manager?: string | null;
   telefon?: string | null;
   mail?: string | null;
+  country?: string | null;
+  contact_person?: string | null;
   project_type?: number | null;
   device_count?: number | null;
   measurement_count?: number | null;
   last_measurement_at?: string | null;
+  last_updated?: string | null;
   pe_geschaltet?: boolean | null;
 };
