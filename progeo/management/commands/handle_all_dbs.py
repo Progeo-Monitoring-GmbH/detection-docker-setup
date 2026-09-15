@@ -15,7 +15,7 @@ def check_db_exists_for(db):
         return False
 
     for _f in _files:
-        if _f.endswith(".psql") and _f.startswith(db):
+        if (_f.endswith(".psql") or _f.endswith(".psql.gz")) and _f.startswith(db):
             return True
     return False
 

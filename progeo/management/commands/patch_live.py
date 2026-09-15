@@ -1,14 +1,32 @@
 ﻿import json
+import os
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
 from progeo.helper.basics import dlog, elog, ilog
 from progeo.helper.legacy.geo import GeoHelper
 from progeo.management.commands._base import BaseCommand
+from progeo.settings import SETUP_DIR
 from progeo.v1.creator import save_location_lageplan
 from progeo.v1.legacy.executor import fetch_legacy_data, parse_sample_timestamp
 from progeo.v1.legacy.helper_resistance import MAX_JSON_SAFE_RESISTANCE_OHM
 from progeo.v1.models import Account, ProgeoDevice, ProgeoLocation, ProgeoMeasurement
+
+
+def _parse_int(value, default=0):
+    """Parse an int from the legacy data-progeo.net export, which encodes
+    numeric fields as strings and sometimes as decimals (e.g. "0.1") - a bare
+    int("0.1") raises ValueError, so fall back to float() first."""
+    if value in (None, ""):
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        pass
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
 
 
 def fetch_device_locations():
@@ -87,12 +105,32 @@ class Command(BaseCommand):
                 m.save()
 
         if patch == "fetch_projects":
+            def get_status(status):
+                if status == "Auto-Alarm":
+                    return 1
+                elif status == "nur Messen":
+                    return 2
+                elif status == "offline":
+                    return 0
+                return -1
+
+
             url = "http://data-progeo.net/DB/admin/bad.php"
             dlog(f"Fetching projects from {url}")
             geo_helper = GeoHelper(logger=dlog)
 
-            with urlopen(url, timeout=30) as response:
-                payload = response.read().decode("utf-8", errors="replace")
+            try:
+                with urlopen(url, timeout=30) as response:
+                    payload = response.read().decode("utf-8", errors="replace")
+            except (URLError, HTTPError, OSError) as exc:
+                fallback_path = os.path.join(SETUP_DIR, "projects.json")
+                dlog(f"Could not fetch {url} ({exc}), falling back to {fallback_path}")
+                if not os.path.isfile(fallback_path):
+                    elog(f"Fallback file not found: {fallback_path}")
+                    dlog("DONE!")
+                    return
+                with open(fallback_path, "r", encoding="utf-8") as fallback_file:
+                    payload = fallback_file.read()
 
             project_rows = json.loads(payload)
             if isinstance(project_rows, dict):
@@ -110,19 +148,39 @@ class Command(BaseCommand):
             dlog(f"Parsed {len(project_rows)} project entries")
 
             account = Account.objects.get(pk=1)
+            db_name = account.db_name
             for row in project_rows:
                 if not isinstance(row, dict):
                     continue
 
-                project_id = row.get("project_ID")
-                if project_id in (None, ""):
+                project_id_raw = row.get("project_ID")
+                if project_id_raw in (None, ""):
                     continue
 
-                project_id = int(project_id)
-                location, created = ProgeoLocation.objects.get_or_create(
-                    account=account,
-                    project_id=project_id,
-                )
+                project_id = _parse_int(project_id_raw, default=None)
+                if project_id is None:
+                    elog(f"Skipping row with non-numeric project_ID: {project_id_raw!r}")
+                    continue
+
+                # Look up by project_id alone (the stable natural key from
+                # data-progeo.net) rather than (account, project_id): a location
+                # can already exist without the right account attached (e.g.
+                # auto-registered by a device before this patch ever ran), and
+                # scoping the lookup by account too would miss that row and
+                # create a second, duplicate location for the same project
+                # instead of adopting the existing one.
+                try:
+                    location, created = ProgeoLocation.objects.using(db_name).get_or_create(
+                        project_id=project_id,
+                    )
+                except Exception as exc:
+                    elog(f"Failed to get or create location for project {project_id}: {exc}")
+                    continue
+
+                # Always (re-)attach the account, not just on creation - an
+                # existing row found above might still be missing it or point
+                # at the wrong one.
+                location.account = account
 
                 location.name = row.get("project_name")
                 location.plz = row.get("project_plz")
@@ -131,6 +189,13 @@ class Command(BaseCommand):
                 location.manager = row.get("project_manager")
                 location.telefon = row.get("project_tel")
                 location.mail = row.get("project_mail")
+                location.alarm_threshold = _parse_int(row.get("Level"), default=100)
+                location.alarm_integration_depth = _parse_int(row.get("Tiefe"), default=1)
+                location.alarm_umfeld = _parse_int(row.get("Umfeld"), default=0)
+                location.alarm_distance = _parse_int(row.get("Dist"), default=0)
+                location.alarm_timeout = _parse_int(row.get("TmeOut"), default=0)
+                location.alarm_m_status = get_status(row.get("MStatus"))
+                location.interval = row.get("intervall")
 
                 has_geo_source = all([
                     location.city not in (None, ""),
@@ -149,17 +214,18 @@ class Command(BaseCommand):
                         location.latitude = lat
                         location.longitude = lon
 
-                location.save()
+                location.save(using=db_name)
 
-                if created:
-                    dlog(f"Created new location for project {project_id}: {location.name}")
+                dlog(
+                    f"{'Created' if created else 'Updated'} location for project "
+                    f"{project_id}: {location.name}"
+                )
 
-                devices = ProgeoDevice.objects.filter(raw_hash=project_id).all()
+                devices = ProgeoDevice.objects.using(db_name).filter(project_id=project_id).all()
                 if len(devices) == 1:
                     device = devices[0]
-                    device.project_id = project_id
                     device.location = location
-                    device.save()
+                    device.save(using=db_name)
 
         if patch == "fetch_legacy_data":
             fetch_legacy_data(dry_run=True)

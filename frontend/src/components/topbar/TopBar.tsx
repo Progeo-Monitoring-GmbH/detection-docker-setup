@@ -17,30 +17,6 @@ const LANGUAGES: { code: 'de' | 'en'; label: string }[] = [
   { code: 'en', label: 'EN' },
 ];
 
-/**
- * Global top-bar chrome (role indicator, help/info, language, account),
- * ported from the mockup's <header> (ProGeo Portal v2.dc.html ~line 70) and
- * shared by both LocationPortalLayout and AppLayout - these concerns
- * (who am I, what language, how do I sign out) apply everywhere, not just
- * the monitoring portal.
- *
- * Deviations from the mockup, made deliberately rather than silently:
- * - "Ansicht als" (view-as role switcher) becomes a read-only role badge.
- *   The mockup's version actually changes what you see (fake demo data);
- *   faking that in the real app would misrepresent actual access. A real
- *   admin-impersonation feature would be a separate, larger piece of work.
- * - The language list is the app's real 2 languages (de/en), not the
- *   mockup's 30 demo languages. Switching here is immediate/local
- *   (i18next's own browser-local persistence) - it doesn't call
- *   /v1/user/settings/, which requires re-submitting the account email to
- *   change anything; that full, cross-device-synced language setting stays
- *   in "Mein Konto" (UserProfileModal, reused as-is) where it already works.
- * - "Portalanleitung"/"FAQ"/"Supportanfrage" have no real destination
- *   anywhere in the app (no docs, no FAQ page, no support address) - rather
- *   than linking them to nothing, the info popover shows the one real,
- *   known static fact (the company name), which is what "static infos"
- *   the mockup itself actually has role for.
- */
 const TopBar = () => {
   const auth = useAuth();
   const { t, i18n } = useTranslation();
@@ -64,7 +40,10 @@ const TopBar = () => {
 
   useEffect(() => {
     const onClickAway = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
+      ) {
         setInfoOpen(false);
         setLangOpen(false);
       }
@@ -74,7 +53,8 @@ const TopBar = () => {
   }, []);
 
   const initials = username.slice(0, 2).toUpperCase() || '?';
-  const currentLang = (i18n.language || 'de').slice(0, 2).toLowerCase() === 'en' ? 'en' : 'de';
+  const currentLang =
+    (i18n.language || 'de').slice(0, 2).toLowerCase() === 'en' ? 'en' : 'de';
 
   const pillButtonStyle = (active = false) => ({
     height: 40,
@@ -98,7 +78,13 @@ const TopBar = () => {
   return (
     <div
       ref={containerRef}
-      style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', justifyContent: 'flex-end' }}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        flexWrap: 'wrap',
+        justifyContent: 'flex-end',
+      }}
     >
       <span
         style={{
@@ -186,7 +172,10 @@ const TopBar = () => {
                   display: 'block',
                   width: '100%',
                   textAlign: 'left',
-                  background: currentLang === language.code ? 'var(--progeo-track-soft)' : 'none',
+                  background:
+                    currentLang === language.code
+                      ? 'var(--progeo-track-soft)'
+                      : 'none',
                   border: 'none',
                   padding: '9px 10px',
                   borderRadius: 9,
@@ -239,7 +228,9 @@ const TopBar = () => {
         >
           {initials}
         </span>
-        <span style={{ fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap' }}>{username}</span>
+        <span style={{ fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap' }}>
+          {username}
+        </span>
       </button>
 
       <button
@@ -251,7 +242,10 @@ const TopBar = () => {
         <DoorOpen size={16} />
       </button>
 
-      <UserProfileModal show={profileOpen} onHide={() => setProfileOpen(false)} />
+      <UserProfileModal
+        show={profileOpen}
+        onHide={() => setProfileOpen(false)}
+      />
     </div>
   );
 };

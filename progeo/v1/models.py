@@ -312,6 +312,10 @@ class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
     manager = models.CharField(max_length=100, null=True, blank=True)
     telefon = models.CharField(max_length=100, null=True, blank=True)
     mail = models.EmailField(max_length=100, null=True, blank=True)
+    country = models.CharField(max_length=100, null=True, blank=True)
+    # ProGeo®-side site manager ("Objektleitung ProGeo®" in the mockup) -
+    # a plain text field like `manager`, not a ProgeoAccess/staff relation.
+    contact_person = models.CharField(max_length=100, null=True, blank=True)
 
     project_id = models.IntegerField(null=True, blank=True)
     project_type = models.IntegerField(choices=PROJECT_TYPE_CHOICES, default=PROJECT_TYPE_CHOICES.UNKNOWN, null=True, blank=True)
@@ -321,6 +325,12 @@ class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
 
     alarm_threshold = models.IntegerField(blank=True, default=100)
     alarm_priority = models.IntegerField(blank=True, default=0)
+    alarm_integration_depth = models.IntegerField(blank=True, default=1)
+    alarm_umfeld = models.IntegerField(blank=True, default=0)
+    alarm_distance = models.IntegerField(blank=True, default=0)
+    alarm_timeout = models.IntegerField(blank=True, default=0)
+    alarm_m_status = models.IntegerField(blank=True, default=0)
+    
     # Potentialausgleich (PE) switched into the measuring circuit - part of
     # the Einstellungen/Systemeinstellungen screen, no measurement logic
     # depends on this yet.

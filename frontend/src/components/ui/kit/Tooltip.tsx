@@ -39,10 +39,10 @@ const Tooltip = ({ title, children }: TooltipProps) => {
           id={tooltipId}
           style={{
             position: 'absolute',
-            bottom: '100%',
+            top: '100%',
             left: '50%',
             transform: 'translateX(-50%)',
-            marginBottom: 6,
+            marginTop: 6,
             background: '#07223A',
             color: '#fff',
             fontSize: 12,

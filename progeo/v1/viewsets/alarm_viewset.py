@@ -241,7 +241,10 @@ class AlarmViewSet(ProgeoModalViewSet):
 
         return {
             "id": f"device-{device_id}",
+            "device_id": device_id,
             "device_label": device.mac or device.raw_hash or str(device_id),
+            "device_type": device.type,
+            "alarm_ids": sorted(alarm.id for alarm in alarms),
             "state": worst_state,
             "severity": worst_severity,
             "max_value": max_value,

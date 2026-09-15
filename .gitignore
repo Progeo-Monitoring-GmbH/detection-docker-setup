@@ -47,3 +47,4 @@ __pycache__/
 .vscode/
 png_output/
 *.inspect.json
+.claude/settings.json

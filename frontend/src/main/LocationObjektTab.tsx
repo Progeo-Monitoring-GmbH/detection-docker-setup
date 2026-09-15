@@ -11,50 +11,44 @@ import type { LocationDetail } from './locationTypes';
 import type { PortalOutletContext } from './LocationPortalLayout';
 import LocationStandortPanel from './LocationStandortPanel';
 import { useProgeoRole } from './roleModel';
+import { formatDateTime } from './dateFormat';
+import { getProjectTypeLabel } from './projectType';
 
-// Mirrors ProgeoLocation.PROJECT_TYPE_CHOICES (progeo/v1/models.py) - a fixed
-// Django IntegerChoices enum, safe to hardcode client-side. Brand/product
-// names (smartex, geologger, DFH) stay literal; the generic terms go
-// through i18n.
-const PROJECT_TYPE_LABEL_KEYS: Record<number, string> = {
-  0: 'objekt_project_type_unknown',
-  4: 'objekt_project_type_development',
-  5: 'objekt_project_type_versuchsprojekte',
-  99: 'objekt_project_type_sonstige',
-};
-const PROJECT_TYPE_BRAND_LABELS: Record<number, string> = {
-  1: 'smartex',
-  2: 'geologger',
-  3: 'DFH',
-};
+type ProjectTypeOption = { value: number; label: string };
 
 type FormState = {
   project_id: string;
   name: string;
+  project_type: string;
   address: string;
   plz: string;
   city: string;
+  country: string;
   manager: string;
   telefon: string;
   mail: string;
+  contact_person: string;
 };
 
 const toForm = (location: LocationDetail | null): FormState => ({
   project_id: location?.project_id != null ? String(location.project_id) : '',
   name: location?.name ?? '',
+  project_type: location?.project_type != null ? String(location.project_type) : '',
   address: location?.address ?? '',
   plz: location?.plz ?? '',
   city: location?.city ?? '',
+  country: location?.country ?? '',
   manager: location?.manager ?? '',
   telefon: location?.telefon ?? '',
   mail: location?.mail ?? '',
+  contact_person: location?.contact_person ?? '',
 });
 
 /**
  * Objekt tab: the mockup's editable object-detail sections plus a Standort
  * (location) side panel. Only real ProgeoLocation fields are shown - mockup
- * fields with no backend equivalent (Kunden-Nr., Owner, Objektleitung
- * ProGeo, Dachfläche, ...) are intentionally omitted rather than fabricated.
+ * fields with no backend equivalent (Kunden-Nr., Owner, Dachfläche, ...) are
+ * intentionally omitted rather than fabricated.
  */
 const LocationObjektTab = () => {
   const { location, locationId } = useOutletContext<PortalOutletContext>();
@@ -65,10 +59,26 @@ const LocationObjektTab = () => {
 
   const [form, setForm] = useState<FormState>(() => toForm(location));
   const [saving, setSaving] = useState(false);
+  const [projectTypeOptions, setProjectTypeOptions] = useState<ProjectTypeOption[]>([]);
 
   useEffect(() => {
     setForm(toForm(location));
   }, [location]);
+
+  useEffect(() => {
+    void axiosConfig.perform_get(
+      auth,
+      '/v1/location/project-types/',
+      (response) => {
+        setProjectTypeOptions((response?.data?.project_types || []) as ProjectTypeOption[]);
+      },
+      () => {
+        // Non-fatal: the read-only label fallback below still works from the
+        // locally mirrored enum, so a failed fetch just disables editing.
+      },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const canEditContact = role !== 'nutzer';
   const canEditIdentity = role === 'progeo-admin';
@@ -83,12 +93,15 @@ const LocationObjektTab = () => {
       `/v1/location/${locationId}/`,
       {
         name: form.name,
+        project_type: form.project_type ? Number(form.project_type) : null,
         address: form.address,
         plz: form.plz,
         city: form.city,
+        country: form.country,
         manager: form.manager,
         telefon: form.telefon,
         mail: form.mail,
+        contact_person: form.contact_person,
       },
       () => {
         showSuccessBar(enqueueSnackbar, t('objekt_saved'));
@@ -102,19 +115,35 @@ const LocationObjektTab = () => {
     );
   };
 
-  const projectTypeLabel =
-    location?.project_type != null
-      ? PROJECT_TYPE_BRAND_LABELS[location.project_type] ??
-        (PROJECT_TYPE_LABEL_KEYS[location.project_type]
-          ? t(PROJECT_TYPE_LABEL_KEYS[location.project_type])
-          : String(location.project_type))
-      : '–';
+  const projectTypeLabel = (value: number | null) =>
+    getProjectTypeLabel(t, value, projectTypeOptions.find((option) => option.value === value)?.label);
 
   return (
-    <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-      <div style={{ flex: '1 1 480px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div
+      style={{
+        display: 'flex',
+        gap: 14,
+        alignItems: 'flex-start',
+        flexWrap: 'wrap',
+      }}
+    >
+      <div
+        style={{
+          flex: '1 1 480px',
+          minWidth: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 14,
+        }}
+      >
         <PanelCard title={t('objekt_section_project')}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '14px 18px' }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+              gap: '14px 18px',
+            }}
+          >
             <LabeledInput
               label={t('objekt_field_project_nr')}
               value={form.project_id}
@@ -126,22 +155,74 @@ const LocationObjektTab = () => {
               onChange={set('name')}
               readOnly={!canEditIdentity}
             />
-          </div>
-        </PanelCard>
-
-        <PanelCard title={t('objekt_section_product')}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '14px 18px' }}>
-            <LabeledInput label={t('objekt_field_project_type')} value={projectTypeLabel} readOnly />
             <LabeledInput
-              label={t('objekt_field_device_count')}
-              value={location?.device_count != null ? String(location.device_count) : '–'}
+              label={t('objekt_field_online_since')}
+              value={formatDateTime(location?.last_updated)}
               readOnly
             />
             <LabeledInput
               label={t('objekt_field_last_measurement')}
+              value={formatDateTime(location?.last_measurement_at)}
+              readOnly
+            />
+          </div>
+        </PanelCard>
+
+        <PanelCard title={t('objekt_section_product')}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+              gap: '14px 18px',
+            }}
+          >
+            {canEditIdentity && projectTypeOptions.length > 0 ? (
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>
+                <span
+                  style={{
+                    fontSize: 11,
+                    letterSpacing: '.07em',
+                    textTransform: 'uppercase',
+                    color: '#8B8383',
+                    fontWeight: 500,
+                  }}
+                >
+                  {t('objekt_field_project_type')}
+                </span>
+                <select
+                  value={form.project_type}
+                  onChange={(event) => set('project_type')(event.target.value)}
+                  style={{
+                    height: 40,
+                    border: 'none',
+                    borderRadius: 11,
+                    background: 'var(--progeo-surface)',
+                    boxShadow: '0 1px 4px rgba(11, 54, 89, .09)',
+                    padding: '0 13px',
+                    fontFamily: 'inherit',
+                    fontSize: 14,
+                    color: 'var(--progeo-blue)',
+                  }}
+                >
+                  {projectTypeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {projectTypeLabel(option.value)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <LabeledInput
+                label={t('objekt_field_project_type')}
+                value={projectTypeLabel(location?.project_type ?? null)}
+                readOnly
+              />
+            )}
+            <LabeledInput
+              label={t('objekt_field_device_count')}
               value={
-                location?.last_measurement_at
-                  ? new Date(location.last_measurement_at).toLocaleString()
+                location?.device_count != null
+                  ? String(location.device_count)
                   : '–'
               }
               readOnly
@@ -150,7 +231,13 @@ const LocationObjektTab = () => {
         </PanelCard>
 
         <PanelCard title={t('objekt_section_address')}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '14px 18px' }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+              gap: '14px 18px',
+            }}
+          >
             <LabeledInput
               label={t('objekt_field_street')}
               value={form.address}
@@ -169,11 +256,23 @@ const LocationObjektTab = () => {
               onChange={set('city')}
               readOnly={!canEditContact}
             />
+            <LabeledInput
+              label={t('objekt_field_country')}
+              value={form.country}
+              onChange={set('country')}
+              readOnly={!canEditContact}
+            />
           </div>
         </PanelCard>
 
         <PanelCard title={t('objekt_section_contact')}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '14px 18px' }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+              gap: '14px 18px',
+            }}
+          >
             <LabeledInput
               label={t('objekt_field_manager')}
               value={form.manager}
@@ -191,6 +290,12 @@ const LocationObjektTab = () => {
               value={form.mail}
               onChange={set('mail')}
               readOnly={!canEditContact}
+            />
+            <LabeledInput
+              label={t('objekt_field_contact_person')}
+              value={form.contact_person}
+              onChange={set('contact_person')}
+              readOnly={!canEditIdentity}
             />
           </div>
         </PanelCard>
@@ -220,7 +325,9 @@ const LocationObjektTab = () => {
           </div>
         )}
         {!canEditContact && (
-          <span style={{ fontSize: 12.5, color: '#8B8383' }}>{t('ui_no_permission_edit')}</span>
+          <span style={{ fontSize: 12.5, color: '#8B8383' }}>
+            {t('ui_no_permission_edit')}
+          </span>
         )}
       </div>
 
