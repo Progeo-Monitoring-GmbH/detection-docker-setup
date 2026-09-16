@@ -44,6 +44,9 @@ export type SensorHeatmapResponse = {
     pos: number;
     x: number;
     y: number;
+    name?: string | null;
+    last_value?: number | null;
+    threshold?: number | null;
   }>;
   location?: SensorHeatmapLocation | null;
 };

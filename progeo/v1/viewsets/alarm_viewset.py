@@ -1,3 +1,4 @@
+import math
 from collections import defaultdict
 from datetime import datetime, timedelta
 
@@ -12,10 +13,15 @@ from progeo.decorator import require_module_permissions
 from progeo.helper.basics import RequestFailed, RequestSuccess
 from progeo.helper.cacher import cache_save_and_return, search_cache
 from progeo.helper.creator import create_MfS_log
-from progeo.v1.models import ProgeoAlarm
+from progeo.v1.models import ProgeoAlarm, ProgeoMeasurePoint
 from progeo.v1.serializers import ProgeoAlarmSerializer
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.v1.viewsets.setup_viewset import _get_controller_account
+
+# Two measure points closer than this (in the same normalized x/y units as
+# compute_weighted_spots in progeo/helper/measurement_utils.py) are treated as
+# the same physical zone when merging alarms into one Verdachtsstelle.
+CLUSTER_NEIGHBOR_DISTANCE = 0.2
 
 # Kept as an alias for readability at call sites below.
 STATUS_ACKNOWLEDGED = ProgeoAlarm.Status.QUITTIERT
@@ -121,12 +127,14 @@ class AlarmViewSet(ProgeoModalViewSet):
     def clusters(self, request, *args, **kwargs):
         """
         Groups one location's alarms into "Verdachtsstellen" (suspected-leak
-        clusters), by device - the closest existing equivalent to a
-        persisted zone until real spatial clustering (via
-        ProgeoMeasurePoint's grid coordinates) exists. Uses the same
-        time-window filter as location_summary: still-active alarms always
-        count, others only within `days`. Required `location`; optional
-        `days` (default DEFAULT_ALARM_DAYS).
+        clusters) by physical proximity of their affected ProgeoMeasurePoints
+        (see `_group_alarms_by_proximity`), not just by device - two devices
+        whose sensors sit next to each other on the same roof merge into one
+        Verdachtsstelle instead of showing up as two separate rows. Locations
+        without measure-point coordinates fall back to grouping by device
+        alone. Uses the same time-window filter as location_summary:
+        still-active alarms always count, others only within `days`.
+        Required `location`; optional `days` (default DEFAULT_ALARM_DAYS).
         Returns {"clusters": [...]}, most urgent (neu) first, then highest
         reading first.
         """
@@ -143,7 +151,7 @@ class AlarmViewSet(ProgeoModalViewSet):
         cutoff = timezone.now() - timedelta(days=days)
 
         db = account.db_name if account else "default"
-        alarms = (
+        alarms = list(
             ProgeoAlarm.objects.using(db)
             .filter(measurement__device__location_id=location_id)
             .filter(
@@ -155,13 +163,9 @@ class AlarmViewSet(ProgeoModalViewSet):
             .order_by("triggered_at", "id")
         )
 
-        by_device = defaultdict(list)
-        for alarm in alarms:
-            by_device[alarm.measurement.device_id].append(alarm)
-
+        groups = self._group_alarms_by_proximity(db, location_id, alarms)
         clusters = [
-            self._build_cluster(device_id, device_alarms)
-            for device_id, device_alarms in by_device.items()
+            self._build_cluster(key, group_alarms) for key, group_alarms in groups.items()
         ]
 
         state_order = {"neu": 2, "quittiert": 1, "geloest": 0}
@@ -174,11 +178,74 @@ class AlarmViewSet(ProgeoModalViewSet):
         return RequestSuccess({"clusters": clusters})
 
     @staticmethod
-    def _build_cluster(device_id, alarms):
-        """Roll up one device's alarms into a single Verdachtsstelle: worst
-        state/severity across members, merged sensor readings, and which
-        member alarms are still pending acknowledgement."""
-        device = alarms[0].measurement.device
+    def _group_alarms_by_proximity(db, location_id, alarms, neighbor_distance=CLUSTER_NEIGHBOR_DISTANCE):
+        """Group alarms into Verdachtsstellen via union-find over two kinds of
+        atoms: a device (one per alarm's measurement) and a measure point
+        (one per sensor_id in an alarm's sensor_max_values).
+
+        Every alarm unions its own device with every sensor it reports, so an
+        alarm's data is never split across two output clusters. Measure
+        points within `neighbor_distance` of each other are additionally
+        unioned - that's what lets two different devices merge into one
+        Verdachtsstelle when their sensors are physically close together.
+        Locations with no (or unmatched) ProgeoMeasurePoint rows simply never
+        get that extra union, so alarms fall back to being grouped by device
+        alone - today's behavior, unchanged for that case.
+
+        Returns {root: [alarms]}.
+        """
+        parent = {}
+
+        def find(atom):
+            parent.setdefault(atom, atom)
+            root = atom
+            while parent[root] != root:
+                root = parent[root]
+            while parent[atom] != root:
+                parent[atom], atom = root, parent[atom]
+            return root
+
+        def union(a, b):
+            root_a, root_b = find(a), find(b)
+            if root_a != root_b:
+                parent[root_a] = root_b
+
+        points = list(ProgeoMeasurePoint.objects.using(db).filter(location_id=location_id))
+        for i in range(len(points)):
+            for j in range(i + 1, len(points)):
+                distance = math.dist((points[i].x, points[i].y), (points[j].x, points[j].y))
+                if distance <= neighbor_distance:
+                    union(("point", points[i].sensor_order), ("point", points[j].sensor_order))
+
+        for alarm in alarms:
+            if not alarm.measurement_id or not alarm.measurement.device_id:
+                continue
+            device_atom = ("device", alarm.measurement.device_id)
+            find(device_atom)
+            for pair in (alarm.sensor_max_values or []):
+                sensor_id = pair.get("sensor_id")
+                if sensor_id is not None:
+                    union(device_atom, ("point", sensor_id))
+
+        groups = defaultdict(list)
+        for alarm in alarms:
+            if alarm.measurement_id and alarm.measurement.device_id:
+                key = find(("device", alarm.measurement.device_id))
+            else:
+                # No device to key off of at all - keep it as its own group
+                # rather than dropping it.
+                key = ("alarm", alarm.id)
+            groups[key].append(alarm)
+        return groups
+
+    @staticmethod
+    def _build_cluster(cluster_key, alarms):
+        """Roll up one Verdachtsstelle - one or more devices whose alarms were
+        merged by `_group_alarms_by_proximity` - into worst state/severity
+        across members, merged sensor readings, every device involved, and
+        which member alarms are still pending acknowledgement. Device info is
+        derived from the alarms themselves (not from `cluster_key`, which is
+        only used as a fallback id when an alarm has no device at all)."""
         status_to_state = {
             ProgeoAlarm.Status.NEU: "neu",
             ProgeoAlarm.Status.QUITTIERT: "quittiert",
@@ -203,8 +270,12 @@ class AlarmViewSet(ProgeoModalViewSet):
         ack_at = None
         pending_ack_alarm_ids = []
         sensors = {}
+        devices_by_id = {}
 
         for alarm in alarms:
+            if alarm.measurement_id and alarm.measurement.device_id:
+                devices_by_id[alarm.measurement.device_id] = alarm.measurement.device
+
             state = status_to_state.get(alarm.status, "neu")
             if state_order[state] > state_order[worst_state]:
                 worst_state = state
@@ -239,11 +310,14 @@ class AlarmViewSet(ProgeoModalViewSet):
                 ):
                     sensors[sensor_id] = value
 
+        devices = [devices_by_id[key] for key in sorted(devices_by_id)]
+        device_labels = [device.mac or device.raw_hash or str(device.id) for device in devices]
+
         return {
-            "id": f"device-{device_id}",
-            "device_id": device_id,
-            "device_label": device.mac or device.raw_hash or str(device_id),
-            "device_type": device.type,
+            "id": "cluster-" + ("-".join(str(device.id) for device in devices) or f"alarm-{cluster_key}"),
+            "device_ids": [device.id for device in devices],
+            "device_label": ", ".join(device_labels) if device_labels else str(cluster_key),
+            "device_type": devices[0].type if devices else None,
             "alarm_ids": sorted(alarm.id for alarm in alarms),
             "state": worst_state,
             "severity": worst_severity,
