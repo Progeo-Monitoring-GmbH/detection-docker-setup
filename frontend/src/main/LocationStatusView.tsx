@@ -9,6 +9,10 @@ import axiosConfig from '../axiosConfig';
 import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import SensorHeatmap2D from '../components/device/SensorHeatmap2D';
 import type { SensorHeatmapResponse } from '../components/device/SensorHeatmap3D';
+import LageplanZoneOverlay from '../components/device/LageplanZoneOverlay';
+import SensorListTable, {
+  type SensorListRow,
+} from '../components/device/SensorListTable';
 import { plotTheme } from '../styles/plotTheme';
 import PanelCard from '../components/ui/kit/PanelCard';
 import KpiStrip from '../components/ui/kit/KpiStrip';
@@ -31,7 +35,7 @@ type LocationStatusViewProps = {
 // AlarmViewSet.clusters) - this view just renders what it returns.
 type VerdachtsstelleCluster = {
   id: string;
-  device_id: number;
+  device_ids: number[];
   device_label: string;
   device_type: string | null;
   alarm_ids: number[];
@@ -182,6 +186,77 @@ const LocationStatusView = ({
   const isOnline = (heatmap?.timestamps?.length ?? 0) > 0;
   const thresholdValue = location?.alarm_threshold ?? null;
 
+  // ProgeoLocation.PROJECT_TYPE_CHOICES (progeo/v1/models.py) - a fixed
+  // Django IntegerChoices enum, safe to hardcode client-side (see
+  // projectType.ts for the same convention used elsewhere).
+  const isDfh = location?.project_type === 3;
+  const isSmartex = location?.project_type === 1;
+
+  const activeLageplan = useMemo(() => {
+    const plans = heatmap?.location?.lageplans;
+    if (!Array.isArray(plans) || plans.length === 0) {
+      return null;
+    }
+    return plans.find((plan) => plan.is_active) ?? plans[0];
+  }, [heatmap]);
+  const hasLageplan = Boolean(activeLageplan);
+
+  const sensorPoints = useMemo(() => heatmap?.sensor_points ?? [], [heatmap]);
+  const hasMeasurePoints = sensorPoints.length > 0;
+
+  // Only used for the DFH zone overlay - sensor_points already carry the
+  // same normalized x/y the heatmap markers use.
+  const zonePoints = useMemo(
+    () =>
+      sensorPoints.map((point) => ({
+        pos: point.pos,
+        x: point.x,
+        y: point.y,
+        name: point.name ?? null,
+        value: point.last_value ?? null,
+        threshold: point.threshold ?? thresholdValue,
+      })),
+    [sensorPoints, thresholdValue],
+  );
+
+  // Plain sensor table: built from ProgeoMeasurePoint when placed (name +
+  // its own threshold override), otherwise straight from the heatmap's raw
+  // per-index series (a Lageplan with no measure points yet still has
+  // devices reporting - #index is the best label available).
+  const sensorRows = useMemo<SensorListRow[]>(() => {
+    const latestOf = (series: Array<number | null> | undefined) => {
+      if (!Array.isArray(series)) {
+        return null;
+      }
+      for (let index = series.length - 1; index >= 0; index -= 1) {
+        const value = series[index];
+        if (value != null && Number.isFinite(Number(value))) {
+          return Number(value);
+        }
+      }
+      return null;
+    };
+
+    if (hasMeasurePoints) {
+      return sensorPoints.map((point) => ({
+        key: String(point.pos),
+        label: point.name || `#${point.pos}`,
+        value: point.last_value ?? latestOf(heatmap?.data?.[String(point.pos)]),
+        threshold: point.threshold ?? thresholdValue,
+      }));
+    }
+
+    const data = heatmap?.data ?? {};
+    return Object.keys(data)
+      .sort((a, b) => Number(a) - Number(b))
+      .map((key) => ({
+        key,
+        label: `#${key}`,
+        value: latestOf(data[key]),
+        threshold: thresholdValue,
+      }));
+  }, [hasMeasurePoints, sensorPoints, heatmap, thresholdValue]);
+
   const objektStatusValue = !worstSeverity
     ? t('status_kpi_ok')
     : t(`ui_severity_${worstSeverity}` as const);
@@ -214,6 +289,12 @@ const LocationStatusView = ({
           value:
             highestReading != null ? String(Math.round(highestReading)) : '–',
           unit: highestReading != null ? 'mV' : undefined,
+          note:
+            thresholdValue != null
+              ? t('status_kpi_max_value_threshold', {
+                  threshold: thresholdValue,
+                })
+              : undefined,
         },
         {
           label: t('status_kpi_anlage'),
@@ -362,6 +443,18 @@ const LocationStatusView = ({
               <div style={{ color: '#8B8383', fontSize: 13 }}>
                 {t('status_no_measurement_access')}
               </div>
+            ) : !hasLageplan ? (
+              <div style={{ color: '#8B8383', fontSize: 13 }}>
+                {t('status_no_lageplan')}
+              </div>
+            ) : !hasMeasurePoints ? (
+              <SensorListTable rows={sensorRows} />
+            ) : isDfh ? (
+              <LageplanZoneOverlay
+                imageUrl={activeLageplan?.url ?? null}
+                points={zonePoints}
+                height={480}
+              />
             ) : (
               <>
                 <div
@@ -394,6 +487,11 @@ const LocationStatusView = ({
                     }
                   />
                 </div>
+                {isSmartex && (
+                  <div style={{ marginTop: 14 }}>
+                    <SensorListTable rows={sensorRows} />
+                  </div>
+                )}
               </>
             )}
           </PanelCard>
@@ -515,9 +613,11 @@ const VerdachtsstelleRow = ({
               )}
             </span>
             {cluster.alarm_ids.length > 0 && (
-              <span style={{ fontSize: 11.5, fontWeight: 400, color: '#8B8383' }}>
+              <span
+                style={{ fontSize: 11.5, fontWeight: 400, color: '#8B8383' }}
+              >
                 {t('status_alarm_ids', {
-                  ids: cluster.alarm_ids.map((id) => `#${id}`).join(', '),
+                  size: cluster.alarm_ids.length,
                 })}
               </span>
             )}

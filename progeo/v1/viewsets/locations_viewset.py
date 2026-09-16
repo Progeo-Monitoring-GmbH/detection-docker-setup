@@ -789,6 +789,9 @@ class LocationViewSet(ProgeoModalViewSet):
                 "pos": point.sensor_order,
                 "x": round(((point.nx / 1.6) + 0.1) * 1.2, 4),
                 "y": round(((point.ny / 1.6) + 0.1) * 1.2, 4),
+                "name": point.name,
+                "last_value": point.last_value,
+                "threshold": point.threshold,
             })
 
         for idx, measurement in enumerate(queryset):

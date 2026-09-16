@@ -144,7 +144,19 @@ const LocationsOverview = () => {
           string,
           LocationAlarmSummary
         >;
-        setAlarmSummary((prev) => ({ ...prev, ...payload }));
+        setAlarmSummary((prev) => {
+          const next = { ...prev, ...payload };
+          // The backend only returns an entry for locations that actually
+          // have alarms - backfill the rest with an explicit zero so an
+          // absent key reliably means "not loaded yet" (the State column's
+          // loading-spinner check) rather than "confirmed no alarms".
+          ids.forEach((id) => {
+            if (!(String(id) in next)) {
+              next[String(id)] = { count: 0, active: 0 };
+            }
+          });
+          return next;
+        });
       },
       (error) => {
         ids.forEach((id) => loadedAlarmIds.current.delete(id));
@@ -373,7 +385,15 @@ const LocationsOverview = () => {
       name: 'State',
       cell: (row) => {
         const summary = alarmSummary[String(row.id)];
-        const hasAlarm = Boolean(summary && summary.count > 0);
+        const detailsLoaded = row.measurement_count !== undefined;
+        if (!summary || !detailsLoaded) {
+          return (
+            <div className="d-flex align-items-center gap-2 text-muted">
+              <Spinner size="sm" animation="border" />
+            </div>
+          );
+        }
+        const hasAlarm = summary.count > 0;
         const hasMeasurements =
           (row.measurement_count ?? 0) > 0 || Boolean(row.last_measurement_at);
         return (
@@ -514,30 +534,6 @@ const LocationsOverview = () => {
             onChange={(event) => setOnlyConnected(event.target.checked)}
           />
         </div>
-      </div>
-
-      <div className="d-flex flex-wrap gap-3 small text-muted mb-2">
-        <span className="d-flex align-items-center gap-1">
-          <span
-            className="d-inline-block rounded-circle"
-            style={{ width: 10, height: 10, backgroundColor: '#fbbc15' }}
-          />
-          Alarms
-        </span>
-        <span className="d-flex align-items-center gap-1">
-          <span
-            className="d-inline-block rounded-circle"
-            style={{ width: 10, height: 10, backgroundColor: '#8dc160' }}
-          />
-          Measurements
-        </span>
-        <span className="d-flex align-items-center gap-1">
-          <span
-            className="d-inline-block rounded-circle"
-            style={{ width: 10, height: 10, backgroundColor: '#6c757d' }}
-          />
-          No data
-        </span>
       </div>
 
       <DataTable

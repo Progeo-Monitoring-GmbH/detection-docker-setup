@@ -587,6 +587,10 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
 class ProgeoMeasurePoint(ProgeoModel, auto_prefetch.Model):
     location = models.ForeignKey(ProgeoLocation, on_delete=models.CASCADE, related_name="points", null=True, blank=True)
     lageplan = models.ForeignKey(ProgeoLageplan, on_delete=models.CASCADE, related_name="lageplaene", null=True, blank=True)
+    # Zone/area label (e.g. "Hauptdach", "Garage") - filled in by hand or by
+    # the parse_lageplan_labels command, which OCRs the Lageplan's legend
+    # table.
+    name = models.CharField(max_length=100, null=True, blank=True)
     sensor_order = models.IntegerField(null=False)
     x = models.FloatField(null=False, blank=False)
     y = models.FloatField(null=False, blank=False)

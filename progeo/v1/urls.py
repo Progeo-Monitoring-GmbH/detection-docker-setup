@@ -4,6 +4,7 @@ from progeo.routers import CustomRouter
 from progeo.v1.viewsets.alarm_report_viewset import AlarmReportViewSet
 from progeo.v1.viewsets.alarm_viewset import AlarmViewSet
 from progeo.v1.viewsets.backup_viewset import BackupViewSet
+from progeo.v1.viewsets.data_transfer_viewset import DataTransferViewSet
 from progeo.v1.viewsets.device_viewset import DeviceViewSet
 from progeo.v1.viewsets.interface_viewset import InterfaceViewSet
 from progeo.v1.viewsets.locations_viewset import LocationViewSet
@@ -37,6 +38,9 @@ alarm_report_router.register(r'', AlarmReportViewSet, basename='alarm-report')
 interface_router = CustomRouter()
 interface_router.register(r'', InterfaceViewSet, basename='interface')
 
+data_router = CustomRouter()
+data_router.register(r'', DataTransferViewSet, basename='data')
+
 urlpatterns = [
     re_path(r'^(?P<account_id>\d+)/', include(progeo_router.urls)),
     re_path(r'^device/', include(device_router.urls)),
@@ -46,4 +50,5 @@ urlpatterns = [
     re_path(r'^alarm/', include(alarm_router.urls)),
     re_path(r'^alarm-report/', include(alarm_report_router.urls)),
     re_path(r'^interface/', include(interface_router.urls)),
+    re_path(r'^data/', include(data_router.urls)),
 ]
