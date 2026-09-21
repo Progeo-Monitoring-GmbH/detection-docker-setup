@@ -238,6 +238,9 @@ class AlarmDailyReportSerializer(ProgeoBaseSerializer):
 
 class BackupSerializer(ProgeoBaseSerializer):
     clazz = serializers.SerializerMethodField("get_clazz_name")
+    is_compressed = serializers.BooleanField(read_only=True)
+    size = serializers.SerializerMethodField("get_size_display")
+    created_at = serializers.SerializerMethodField("get_created_at_display")
 
     class Meta:
         model = Backup
@@ -246,6 +249,15 @@ class BackupSerializer(ProgeoBaseSerializer):
     @staticmethod
     def get_clazz_name(_):
         return "Backup"
+
+    @staticmethod
+    def get_size_display(obj):
+        return obj.get_size()
+
+    @staticmethod
+    def get_created_at_display(obj):
+        created_at = obj.get_created_at()
+        return created_at.isoformat() if created_at else None
 
 
 # ############################################################################################
