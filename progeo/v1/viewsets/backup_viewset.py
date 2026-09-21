@@ -41,7 +41,8 @@ class BackupViewSet(ProgeoModalViewSet):
     def parse_backups(self, request, *args, **kwargs):
         _files = os.listdir(BACKUP_DIR)
         for _f in _files:
-            if not _f.endswith(".psql") or request.account.db_name not in _f:
+            is_backup_file = _f.endswith(".psql") or _f.endswith(f".psql{Backup.COMPRESSED_SUFFIX}")
+            if not is_backup_file or request.account.db_name not in _f:
                 continue
 
             backup, created = Backup.objects.using(request.account.db_name).get_or_create(name=_f, account=request.account)
@@ -99,7 +100,10 @@ class BackupViewSet(ProgeoModalViewSet):
     @action(detail=True, url_path="restore", methods=["POST"])
     def restore_backup(self, request, pk, *args, **kwargs):
         backup = Backup.objects.using(request.account.db_name).get(pk=pk)
-        call_command("dbrestore", f"--input-file={backup.name}", "--noinput")
+        restore_args = ["dbrestore", f"--input-file={backup.name}", "--noinput"]
+        if backup.is_compressed:
+            restore_args.append("--uncompress")
+        call_command(*restore_args)
         self.parse_backups(request, *args, **kwargs)
         create_MfS_log(request)
 

@@ -1,5 +1,6 @@
 import datetime
 import os
+import re
 from enum import Enum
 
 import auto_prefetch
@@ -968,12 +969,47 @@ class Backup(ProgeoModel, auto_prefetch.Model):
     account = models.ForeignKey(Account, on_delete=models.CASCADE)
     name = models.CharField(max_length=100, null=False)
 
-    def get_file(self):
+    # django-dbbackup's --compress gzips the dump and appends ".gz" to the
+    # filename (e.g. "default-2026-09-20-193045.psql.gz") - detected from the
+    # name itself rather than a separate column, so existing rows keep
+    # working with no migration/backfill needed.
+    COMPRESSED_SUFFIX = ".gz"
+
+    @property
+    def is_compressed(self):
+        return self.name.endswith(self.COMPRESSED_SUFFIX)
+
+    def get_file_path(self):
         return os.path.join(BACKUP_DIR, str(self.name))
+
+    def get_size(self):
+        """Human-readable file size, or None if the file isn't on disk."""
+        from progeo.v1.helper import pretty_sizeof
+
+        try:
+            return pretty_sizeof(os.path.getsize(self.get_file_path()))
+        except OSError:
+            return None
+
+    def get_created_at(self):
+        """Best-effort creation time: parse dbbackup's own timestamp out of
+        the filename (e.g. "default-2026-09-20-193045.psql[.gz]"), falling
+        back to the file's mtime on disk, then this row's last_updated."""
+        match = re.search(r"(\d{4}-\d{2}-\d{2}-\d{6})", self.name)
+        if match:
+            try:
+                return datetime.datetime.strptime(match.group(1), "%Y-%m-%d-%H%M%S")
+            except ValueError:
+                pass
+        try:
+            return datetime.datetime.fromtimestamp(os.path.getmtime(self.get_file_path()))
+        except OSError:
+            return self.last_updated
 
     def __str__(self):
         _id = f"[{self.pk}] " if os.getenv("DEBUG") else ""
-        return f"{_id} 💾 {self.name}"
+        compressed_marker = " (gz)" if self.is_compressed else ""
+        return f"{_id} 💾 {self.name}{compressed_marker}"
 
 
 # ==============================================================================================
