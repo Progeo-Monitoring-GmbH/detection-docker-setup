@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router';
 import { Card, Spinner } from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
+import { openPostResponseInNewTab, openResponseInNewTab } from '../helper';
 import { showErrorBar } from '../components/ui/Snackbar.jsx';
 import SensorHeatmap2D from '../components/device/SensorHeatmap2D.tsx';
 import { type SensorHeatmapResponse } from '../components/device/SensorHeatmap3D.tsx';
@@ -23,10 +25,26 @@ const LocationAnalyseTab = () => {
   const { locationId } = useOutletContext<PortalOutletContext>();
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
+  const { t } = useTranslation();
 
   const [heatmap, setHeatmap] = useState<SensorHeatmapResponse | null>(null);
   const [measurements, setMeasurements] = useState<MeasurementCompareRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exportMsg, setExportMsg] = useState<string | null>(null);
+  const [exportingPdf, setExportingPdf] = useState(false);
+
+  const exportCsv = () => {
+    void openResponseInNewTab(auth, `/v1/location/${locationId}/export_csv/`);
+    setExportMsg(t('analyse_export_csv_done'));
+  };
+
+  const exportPdf = () => {
+    setExportingPdf(true);
+    void openPostResponseInNewTab(`/v1/location/${locationId}/export_pdf/`, {}, auth).then(() => {
+      setExportingPdf(false);
+      setExportMsg(t('analyse_export_pdf_done'));
+    });
+  };
 
   const loadAll = useCallback(() => {
     setLoading(true);
@@ -82,6 +100,26 @@ const LocationAnalyseTab = () => {
 
   return (
     <div className="d-flex flex-column gap-4">
+      <div className="d-flex flex-wrap align-items-center gap-3">
+        <button
+          type="button"
+          className="btn btn-outline-secondary btn-sm"
+          onClick={exportCsv}
+        >
+          {t('analyse_export_csv')}
+        </button>
+        <button
+          type="button"
+          className="btn btn-outline-secondary btn-sm"
+          onClick={exportPdf}
+          disabled={exportingPdf}
+        >
+          {exportingPdf && <Spinner size="sm" animation="border" className="me-2" />}
+          {t('analyse_export_pdf')}
+        </button>
+        {exportMsg && <span className="text-success small">{exportMsg}</span>}
+      </div>
+
       <Card className="border-0 shadow-sm p-2">
         <Card.Body>
           <h5 className="mb-2">Heatmap</h5>

@@ -1,0 +1,9 @@
+Subject: Testleackage — Objekt {project_nr} · {project_name}
+
+Manuell ausgelöste Zustellprüfung für Objekt {project_nr} — {project_name}.
+
+Diese Meldung ist als Test gekennzeichnet. Es liegt keine Verdachtsstelle vor.
+Auslösung und Zustellung dieser Benachrichtigung sind dokumentiert.
+
+Ausgelöst von: {triggered_by}
+Zeitpunkt: {timestamp}

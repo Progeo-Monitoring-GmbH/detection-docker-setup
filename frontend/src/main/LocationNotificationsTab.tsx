@@ -5,9 +5,12 @@ import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
-import { showErrorBar } from '../components/ui/Snackbar.jsx';
+import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import PanelCard from '../components/ui/kit/PanelCard';
+import PillButton from '../components/ui/kit/PillButton';
+import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import SeverityBadge, { type Severity } from '../components/ui/kit/SeverityBadge';
+import { useProgeoRole } from './roleModel';
 import type { PortalOutletContext } from './LocationPortalLayout';
 
 type TimelineEvent = {
@@ -19,6 +22,14 @@ type TimelineEvent = {
   error?: string | null;
   severity?: Severity;
   max_value?: number | null;
+};
+
+type TestRecipient = {
+  user_id: number;
+  name: string;
+  mail: string | null;
+  mobile: string | null;
+  kanal: string;
 };
 
 const DAYS_WINDOW = 90;
@@ -40,6 +51,55 @@ const LocationNotificationsTab = () => {
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
+
+  const isStaff = useProgeoRole() === 'progeo-admin';
+  const [testOpen, setTestOpen] = useState(false);
+  const [testRecipients, setTestRecipients] = useState<TestRecipient[]>([]);
+  const [testSending, setTestSending] = useState(false);
+
+  const openTest = () => {
+    setTestOpen(true);
+    void axiosConfig.perform_get(
+      auth,
+      `/v1/location/${locationId}/test_notification/`,
+      (response) => {
+        setTestRecipients((response?.data?.recipients || []) as TestRecipient[]);
+      },
+      (error) => {
+        const reason = error?.response?.data?.reason || error.message;
+        showErrorBar(enqueueSnackbar, `Could not load recipients: ${reason}`);
+      },
+    );
+  };
+
+  const sendTest = () => {
+    setTestSending(true);
+    void axiosConfig.perform_post(
+      auth,
+      `/v1/location/${locationId}/test_notification/`,
+      {},
+      (response) => {
+        const results = (response?.data?.results || []) as {
+          name: string;
+          email_ok?: boolean;
+          sms_ok?: boolean;
+        }[];
+        const okCount = results.filter((r) => r.email_ok || r.sms_ok).length;
+        setTestSending(false);
+        setTestOpen(false);
+        showSuccessBar(
+          enqueueSnackbar,
+          t('benach_test_sent', { ok: okCount, total: results.length }),
+        );
+        load();
+      },
+      (error) => {
+        const reason = error?.response?.data?.reason || error.message;
+        showErrorBar(enqueueSnackbar, `Could not send test notification: ${reason}`);
+        setTestSending(false);
+      },
+    );
+  };
 
   const load = useCallback(() => {
     setLoading(true);
@@ -113,7 +173,15 @@ const LocationNotificationsTab = () => {
   };
 
   return (
-    <PanelCard title={t('benach_title')}>
+    <>
+    <PanelCard
+      title={t('benach_title')}
+      actions={
+        isStaff && (
+          <PillButton label={t('benach_test_button')} onClick={openTest} />
+        )
+      }
+    >
       {loading ? (
         <div className="d-flex justify-content-center py-4 text-muted">
           <Spinner animation="border" size="sm" />
@@ -173,6 +241,37 @@ const LocationNotificationsTab = () => {
         </div>
       )}
     </PanelCard>
+    <ConfirmDialog
+      show={testOpen}
+      title={t('benach_test_title')}
+      danger={false}
+      confirmLabel={t('benach_test_send')}
+      cancelLabel={t('rechte_cancel')}
+      confirming={testSending}
+      onCancel={() => setTestOpen(false)}
+      onConfirm={sendTest}
+      message={
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div>{t('benach_test_description')}</div>
+          {testRecipients.length === 0 ? (
+            <div style={{ color: '#8B8383' }}>{t('benach_test_no_recipients')}</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {testRecipients.map((recipient) => (
+                <div
+                  key={recipient.user_id}
+                  style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12.5 }}
+                >
+                  <span>{recipient.name}</span>
+                  <span style={{ color: '#8B8383' }}>{recipient.kanal}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      }
+    />
+    </>
   );
 };
 

@@ -111,6 +111,8 @@ def test_normalizing_an_acknowledged_alarm_keeps_its_status():
 
 
 # -- AlarmViewSet._build_cluster (pure function, no HTTP/permission layer) --
+# A Verdachtsstelle is one sensor: _build_cluster(sensor_id, alarms) rolls up
+# every alarm that reported that sensor_id as over-threshold.
 
 @pytest.mark.django_db(databases=["unit_tests", "default"])
 def test_build_cluster_rolls_up_worst_state_and_severity():
@@ -133,18 +135,54 @@ def test_build_cluster_rolls_up_worst_state_and_severity():
         max_value=300,  # kritisch
         status=ProgeoAlarm.Status.QUITTIERT,
         evaluated_by=None,
-        sensor_max_values=[{"sensor_id": 2, "max_value": 300}],
+        sensor_max_values=[{"sensor_id": 1, "max_value": 300}],
     )
 
-    cluster = AlarmViewSet._build_cluster(device.id, [neu_alarm, kritisch_alarm])
+    cluster = AlarmViewSet._build_cluster(1, [neu_alarm, kritisch_alarm])
 
+    assert cluster["sensor_id"] == 1
     assert cluster["state"] == "neu"  # worst of neu/quittiert
     assert cluster["severity"] == ProgeoAlarm.Severity.KRITISCH  # worst of beobachten/kritisch
-    assert cluster["max_value"] == 300
+    assert cluster["max_value"] == 300  # this sensor's own peak, not any other sensor's
     assert cluster["pending_ack_alarm_ids"] == [neu_alarm.id]
     assert cluster["device_label"] == "AA:BB:CC"
-    sensor_ids = {s["sensor_id"] for s in cluster["sensors"]}
-    assert sensor_ids == {1, 2}
+    assert {entry["id"] for entry in cluster["alarms"]} == {neu_alarm.id, kritisch_alarm.id}
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_build_cluster_expands_history_from_max_values_when_available():
+    """A long-running alarm's max_values (one entry per evaluated
+    measurement) should produce one Zeitreihe point per measurement, not
+    just one point for the whole alarm - otherwise a "last 24h/7 days" view
+    is too sparse to show anything once an alarm has been open a while."""
+    location = ProgeoLocation.objects.using("default").create(alarm_threshold=100)
+    device = ProgeoDevice.objects.using("default").create(raw_hash="history-device", location=location)
+    measurement = ProgeoMeasurement.objects.using("default").create(device=device, raw_data={})
+
+    alarm = ProgeoAlarm.objects.using("default").create(
+        measurement=measurement,
+        threshold=100,
+        status=ProgeoAlarm.Status.NEU,
+        sensor_max_values=[{"sensor_id": 1, "max_value": 180}],
+        max_values=[
+            {"ts": "2026-01-01T00:00:00Z", "value": 110, "sensor_id": 1},
+            {"ts": "2026-01-02T00:00:00Z", "value": 150, "sensor_id": 1},
+            {"ts": "2026-01-03T00:00:00Z", "value": 180, "sensor_id": 1},
+            {"ts": "2026-01-01T06:00:00Z", "value": 999, "sensor_id": 2},  # other sensor, excluded
+        ],
+    )
+
+    cluster = AlarmViewSet._build_cluster(1, [alarm])
+
+    assert len(cluster["alarms"]) == 3
+    assert {entry["value"] for entry in cluster["alarms"]} == {110, 150, 180}
+    assert {entry["triggered_at"] for entry in cluster["alarms"]} == {
+        "2026-01-01T00:00:00Z",
+        "2026-01-02T00:00:00Z",
+        "2026-01-03T00:00:00Z",
+    }
+    # Newest first.
+    assert cluster["alarms"][0]["triggered_at"] == "2026-01-03T00:00:00Z"
 
 
 @pytest.mark.django_db(databases=["unit_tests", "default"])
@@ -159,9 +197,72 @@ def test_build_cluster_all_resolved_reports_geloest():
         max_value=50,
         status=ProgeoAlarm.Status.GELOEST,
         normalized_at=timezone.now(),
+        sensor_max_values=[{"sensor_id": 3, "max_value": 50}],
     )
 
-    cluster = AlarmViewSet._build_cluster(device.id, [alarm])
+    cluster = AlarmViewSet._build_cluster(3, [alarm])
 
     assert cluster["state"] == "geloest"
     assert cluster["pending_ack_alarm_ids"] == []
+
+
+# -- AlarmViewSet._group_alarms_by_sensor / _top_sensors -------------------
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_group_alarms_by_sensor_fans_out_one_alarm_to_every_sensor_it_reports():
+    location = ProgeoLocation.objects.using("default").create(alarm_threshold=100)
+    device = ProgeoDevice.objects.using("default").create(raw_hash="fanout-device", location=location)
+    measurement = ProgeoMeasurement.objects.using("default").create(device=device, raw_data={})
+
+    alarm = ProgeoAlarm.objects.using("default").create(
+        measurement=measurement,
+        threshold=100,
+        status=ProgeoAlarm.Status.NEU,
+        sensor_max_values=[
+            {"sensor_id": 1, "max_value": 120},
+            {"sensor_id": 2, "max_value": 150},
+        ],
+    )
+
+    groups = AlarmViewSet._group_alarms_by_sensor([alarm])
+
+    assert set(groups.keys()) == {1, 2}
+    assert groups[1] == [alarm]
+    assert groups[2] == [alarm]
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_top_sensors_ranks_by_alarm_count_then_peak_value():
+    location = ProgeoLocation.objects.using("default").create(alarm_threshold=100)
+    device = ProgeoDevice.objects.using("default").create(raw_hash="top-sensors-device", location=location)
+    measurement = ProgeoMeasurement.objects.using("default").create(device=device, raw_data={})
+
+    # Sensor 1: two alarms (higher count wins). Sensor 2: one alarm, higher value.
+    first = ProgeoAlarm.objects.using("default").create(
+        measurement=measurement,
+        threshold=100,
+        status=ProgeoAlarm.Status.NEU,
+        sensor_max_values=[{"sensor_id": 1, "max_value": 110}],
+    )
+    second = ProgeoAlarm.objects.using("default").create(
+        measurement=measurement,
+        threshold=100,
+        status=ProgeoAlarm.Status.NEU,
+        sensor_max_values=[{"sensor_id": 1, "max_value": 130}],
+    )
+    third = ProgeoAlarm.objects.using("default").create(
+        measurement=measurement,
+        threshold=100,
+        status=ProgeoAlarm.Status.NEU,
+        sensor_max_values=[{"sensor_id": 2, "max_value": 999}],
+    )
+
+    groups = AlarmViewSet._group_alarms_by_sensor([first, second, third])
+    top_sensors = AlarmViewSet._top_sensors(groups, limit=5)
+
+    assert top_sensors[0]["sensor_id"] == 1
+    assert top_sensors[0]["alarm_count"] == 2
+    assert top_sensors[0]["max_value"] == 130
+    assert top_sensors[1]["sensor_id"] == 2
+    assert top_sensors[1]["alarm_count"] == 1
+    assert top_sensors[1]["max_value"] == 999
