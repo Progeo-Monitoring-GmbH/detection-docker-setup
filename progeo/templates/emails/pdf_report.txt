@@ -1,0 +1,7 @@
+Subject: PDF-Report — Objekt {project_nr} · {project_name}
+
+Anbei der angeforderte Messbericht für Objekt {project_nr} — {project_name}
+({range_from} – {range_to}).
+
+Erstellt von: {triggered_by}
+Zeitpunkt: {timestamp}

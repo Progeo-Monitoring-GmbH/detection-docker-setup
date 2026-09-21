@@ -86,7 +86,7 @@ const getPermissionValue = (
   return Boolean(permissions?.[code]);
 };
 
-export const hasModulePermission = (
+const hasModulePermission = (
   permissions: ModulePermissions,
   code: string,
   isAdmin = false,
@@ -94,7 +94,7 @@ export const hasModulePermission = (
   return getPermissionValue(permissions, code, isAdmin);
 };
 
-export const hasAnyModulePermission = (
+const hasAnyModulePermission = (
   permissions: ModulePermissions,
   codes: string[] = [],
   isAdmin = false,
@@ -106,7 +106,7 @@ export const hasAnyModulePermission = (
   return codes.some((code) => getPermissionValue(permissions, code));
 };
 
-export const hasAllModulePermissions = (
+const hasAllModulePermissions = (
   permissions: ModulePermissions,
   codes: string[] = [],
   isAdmin = false,
@@ -118,11 +118,11 @@ export const hasAllModulePermissions = (
   return codes.every((code) => getPermissionValue(permissions, code));
 };
 
-export const getEnabledModulePermissions = (permissions: ModulePermissions) => {
+const getEnabledModulePermissions = (permissions: ModulePermissions) => {
   return Object.keys(permissions).filter((code) => permissions[code]);
 };
 
-export const getPermissionRoute = (code: string) => {
+const getPermissionRoute = (code: string) => {
   return PERMISSION_ROUTE_MAP[code]?.target || null;
 };
 
@@ -138,7 +138,7 @@ export const getSinglePermissionForwardUrl = (
   return getPermissionRoute(enabledPermissions[0]);
 };
 
-export const clearPermissionsCache = () => {
+const clearPermissionsCache = () => {
   cachedToken = '';
   cachedPermissionPayload = null;
   pendingPermissionRequest = null;
@@ -180,7 +180,7 @@ const fetchPermissionPayload = async (auth: AuthContextType, token: string) => {
   return pendingPermissionRequest;
 };
 
-export const usePermissions = () => {
+const usePermissions = () => {
   const auth = useAuth();
   const token = auth?.token || '';
   const isAdmin = Boolean(

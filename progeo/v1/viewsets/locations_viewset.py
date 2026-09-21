@@ -1,7 +1,11 @@
 import csv
+import os
+import tempfile
+import time
 from datetime import datetime, timedelta
 
 from django.contrib.auth.models import User
+from django.core.files.storage import FileSystemStorage
 from django.db.models import Count, Max, Q
 from django.http import HttpResponse
 from django.utils import timezone
@@ -16,12 +20,15 @@ from progeo.decorator import (
     permission_denied_response,
     require_module_permissions,
 )
-from progeo.helper.basics import RequestFailed, RequestSuccess
+from progeo.helper.basics import RequestFailed, RequestSuccess, save_check_dir
+from progeo.settings import UPLOAD_DIR
 from progeo.v1.models import (
+    Account,
     EMail,
     ProgeoAccess,
     ProgeoAlarm,
     ProgeoDevice,
+    ProgeoLageplan,
     ProgeoLocation,
     ProgeoMeasurement,
     ProgeoMeasurePoint,
@@ -37,6 +44,10 @@ from progeo.v1.serializers import (
 )
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.v1.viewsets.setup_viewset import _get_controller_account
+
+
+def _is_staff_admin(user) -> bool:
+    return bool(getattr(user, "is_staff", False) or getattr(user, "is_superuser", False))
 
 # Geo- and address fields that can be exported / imported (updated) via the
 # dedicated geo_export / geo_import routes. `id`/`project_id` are used for
@@ -99,6 +110,19 @@ class LocationViewSet(ProgeoModalViewSet):
             location = qs.filter(pk=pk).first() if pk is not None else qs.filter(project_id=project_id).first()
             if location:
                 return location, account
+
+        # Staff-wide fallback: lets a staff/admin user act on a location
+        # outside their own bound account (e.g. the Verwaltung cross-tenant
+        # dashboard's permissions modal, reusing access/access_delete as-is).
+        user = getattr(request, "user", None)
+        if user and _is_staff_admin(user):
+            for account in Account.objects.using("default").all():
+                qs = ProgeoLocation.objects.using(account.db_name).filter(account=account)
+                location = (
+                    qs.filter(pk=pk).first() if pk is not None else qs.filter(project_id=project_id).first()
+                )
+                if location:
+                    return location, account
         return None, None
 
     @require_module_permissions("module_locations_enabled")
@@ -378,7 +402,7 @@ class LocationViewSet(ProgeoModalViewSet):
 
     @require_module_permissions("module_notifications_enabled")
     @action(detail=True, url_path="timeline", methods=["GET"])
-    def timeline(self, request, pk=None, *args, **kwargs):
+    def get_locations_timeline(self, request, pk=None, *args, **kwargs):
         """
         Benachrichtigungen (Ereignisverlauf): a chronological feed merging
         sent e-mails (EMail) and alarm lifecycle events (triggered/
@@ -833,4 +857,439 @@ class LocationViewSet(ProgeoModalViewSet):
             "data": _map,
             "timestamps": timestamps,
             "sensor_points": sensor_points
+        })
+
+    # ------------------------------------------------------------------
+    # Testleackage, CSV/PDF export, Verwaltung, Anlegen
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _notification_recipients(location, db_name):
+        """Real ProgeoAccess-based recipients of a location, resolved to
+        {user_id, name, mail, mobile, kanal} rows - shared by Testleackage
+        and the PDF-Report email. `mail`/`mobile` are only populated when
+        that channel is actually active for the row (unpack_transport()'s
+        bitmask, not the buggy/unused check_has_email/check_has_mobile)."""
+        rows = (
+            ProgeoAccess.objects.using(db_name)
+            .filter(location=location)
+            .select_related("user", "user__profile")
+        )
+        recipients = []
+        for rule in rows:
+            if not rule.user:
+                continue
+            transport = rule.unpack_transport()
+            has_email = bool(transport.get("EMAIL") or transport.get("EMAIL_AND_SMS"))
+            has_sms = bool(transport.get("SMS") or transport.get("EMAIL_AND_SMS"))
+            if not has_email and not has_sms:
+                continue
+            profile = getattr(rule.user, "profile", None)
+            mobile = profile.mobile if profile is not None else None
+            has_sms = has_sms and bool(mobile)
+            if not has_email and not has_sms:
+                continue
+            kanal = " + ".join(
+                label for label, ok in (("E-Mail", has_email), ("SMS", has_sms)) if ok
+            )
+            recipients.append({
+                "user_id": rule.user_id,
+                "name": rule.user.get_full_name() or rule.user.username,
+                "mail": rule.user.email if has_email and rule.user.email else None,
+                "mobile": mobile if has_sms else None,
+                "kanal": kanal or "—",
+            })
+        return recipients
+
+    @action(detail=True, url_path="test_notification", methods=["GET", "POST"])
+    def test_notification(self, request, pk=None, *args, **kwargs):
+        """Testleackage (mockup: `showTest: admin`). GET previews the
+        location's real recipients; POST sends a real test notification to
+        each of them - email via send_template_mail (already logs an EMail
+        row), SMS via Esendex (its first real caller in this codebase) -
+        and reports per-recipient results instead of failing the whole
+        request when one channel is unavailable/misconfigured."""
+        if not _is_staff_admin(getattr(request, "user", None)):
+            return RequestFailed({"reason": "Staff access required"})
+
+        location, account = self._find_location(request, pk=pk)
+        if not location:
+            return RequestFailed({"reason": "Location not found"})
+        db_name = account.db_name
+        recipients = self._notification_recipients(location, db_name)
+
+        if request.method == "GET":
+            return RequestSuccess({"recipients": recipients})
+
+        from progeo.helper import esendex
+        from progeo.helper.emailhelper import send_template_mail
+        from progeo.helper.esendex import EsendexError
+
+        user = getattr(request, "user", None)
+        context = {
+            "project_nr": location.project_id,
+            "project_name": location.name,
+            "triggered_by": getattr(user, "username", "system"),
+            "timestamp": timezone.now().strftime("%d.%m.%Y %H:%M"),
+        }
+        results = []
+        for recipient in recipients:
+            result = {"name": recipient["name"], "kanal": recipient["kanal"]}
+            if recipient["mail"]:
+                sent = send_template_mail(
+                    [recipient["mail"]], "test_leakage.txt", context,
+                    location=location, db=db_name,
+                )
+                result["email_ok"] = bool(sent)
+            if recipient["mobile"]:
+                try:
+                    esendex.send_sms(
+                        recipient["mobile"],
+                        f"ProGeo Testleackage - Objekt {location.project_id or ''} {location.name or ''}",
+                    )
+                    result["sms_ok"] = True
+                except EsendexError as exc:
+                    result["sms_ok"] = False
+                    result["sms_error"] = str(exc)
+            results.append(result)
+        return RequestSuccess({"results": results})
+
+    @classmethod
+    def _measurement_series(cls, location, account, db_name, request, limit=2000):
+        """Shared by get_heatmap_data/export_csv/export_pdf: the location's
+        measurement points plus, per point (keyed by sensor_order), the
+        aligned value series over `timestamps` - same query shape
+        get_heatmap_data already uses, just reused instead of duplicated."""
+        time_from = request.query_params.get("from")
+        time_to = request.query_params.get("to")
+        if time_from:
+            time_from = datetime.fromisoformat(time_from)
+        if time_to:
+            time_to = datetime.fromisoformat(time_to)
+
+        points = list(
+            ProgeoMeasurePoint.objects.using(db_name).filter(location=location).order_by("sensor_order")
+        )
+        queryset = ProgeoMeasurement.for_account(account, using=db_name, user=request.user).filter(
+            device__location=location
+        )
+        if time_from:
+            queryset = queryset.filter(last_fetched__gte=time_from)
+        if time_to:
+            queryset = queryset.filter(last_fetched__lte=time_to)
+        queryset = queryset[:limit]
+
+        timestamps = []
+        series = {}
+        for measurement in queryset:
+            timestamps.append(measurement.last_fetched)
+            for idz, sample in enumerate(measurement.get_pairs()):
+                series.setdefault(idz, []).append(sample)
+        return points, timestamps, series
+
+    @require_module_permissions("module_locations_enabled", "module_measurements_enabled")
+    @action(detail=True, url_path="export_csv", methods=["GET"])
+    def export_csv(self, request, pk=None, *args, **kwargs):
+        """CSV-Export (Analyse): one row per measurement timestamp, one
+        column per measurement point, for the currently viewed range
+        (optional ?from=&to=, ISO-8601 - same convention as get_heatmap_data)."""
+        location, account = self._find_location(request, pk=pk)
+        if not location:
+            return RequestFailed({"reason": "Location not found"})
+        db_name = account.db_name
+        try:
+            points, timestamps, series = self._measurement_series(location, account, db_name, request)
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "from/to must be ISO-8601 timestamps"})
+
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = (
+            f'attachment; filename="{location.project_id or location.id}-messwerte.csv"'
+        )
+        writer = csv.writer(response)
+        writer.writerow(["timestamp"] + [point.name or f"#{point.sensor_order}" for point in points])
+        for index, ts in enumerate(timestamps):
+            row = [ts.isoformat() if ts else ""]
+            for point in points:
+                values = series.get(point.sensor_order, [])
+                row.append(values[index] if index < len(values) else "")
+            writer.writerow(row)
+        return response
+
+    @staticmethod
+    def _build_measurement_pdf(location, points, timestamps, series):
+        """The PDF-Report: title + a measurement table, built with reportlab
+        (the codebase's first PDF-generation dependency - pypdf, already in
+        requirements.txt, only manipulates existing PDFs, it doesn't build
+        one from scratch)."""
+        from io import BytesIO
+
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib.units import mm
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4, title="ProGeo Messbericht")
+        styles = getSampleStyleSheet()
+        elements = [
+            Paragraph(
+                f"Messbericht — Objekt {location.project_id or ''} · {location.name or ''}",
+                styles["Title"],
+            ),
+            Spacer(1, 8 * mm),
+        ]
+
+        header = ["Zeitpunkt"] + [point.name or f"#{point.sensor_order}" for point in points]
+        rows = [header]
+        for index, ts in enumerate(timestamps):
+            row = [ts.strftime("%d.%m.%Y %H:%M") if ts else "-"]
+            for point in points:
+                values = series.get(point.sensor_order, [])
+                value = values[index] if index < len(values) else None
+                row.append("" if value is None else f"{value:.0f}")
+            rows.append(row)
+        # Cap rows so the PDF stays a reasonable size/generation time.
+        if len(rows) > 201:
+            rows = [rows[0], *rows[-200:]]
+
+        table = Table(rows, repeatRows=1)
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0B3659")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTSIZE", (0, 0), (-1, -1), 7),
+            ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#DCD7D8")),
+        ]))
+        elements.append(table)
+        doc.build(elements)
+        return buffer.getvalue()
+
+    @require_module_permissions("module_locations_enabled", "module_measurements_enabled")
+    @action(detail=True, url_path="export_pdf", methods=["POST"])
+    def export_pdf(self, request, pk=None, *args, **kwargs):
+        """PDF-Report (Analyse): builds the report, emails it to every real
+        recipient of the object (send_template_mail's `files=` attaches it
+        and logs the EMail row for free) and also returns the same PDF bytes
+        so the requesting browser gets the download too."""
+        location, account = self._find_location(request, pk=pk)
+        if not location:
+            return RequestFailed({"reason": "Location not found"})
+        db_name = account.db_name
+        try:
+            points, timestamps, series = self._measurement_series(location, account, db_name, request)
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "from/to must be ISO-8601 timestamps"})
+
+        pdf_bytes = self._build_measurement_pdf(location, points, timestamps, series)
+
+        from progeo.helper.emailhelper import send_template_mail
+
+        recipients = self._notification_recipients(location, db_name)
+        emails = [recipient["mail"] for recipient in recipients if recipient["mail"]]
+        if emails:
+            tmp_path = None
+            try:
+                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp_file:
+                    tmp_file.write(pdf_bytes)
+                    tmp_path = tmp_file.name
+                context = {
+                    "project_nr": location.project_id,
+                    "project_name": location.name,
+                    "range_from": timestamps[0].strftime("%d.%m.%Y") if timestamps else "-",
+                    "range_to": timestamps[-1].strftime("%d.%m.%Y") if timestamps else "-",
+                    "triggered_by": getattr(request.user, "username", "system"),
+                    "timestamp": timezone.now().strftime("%d.%m.%Y %H:%M"),
+                }
+                send_template_mail(
+                    emails, "pdf_report.txt", context, location=location, db=db_name, files=[tmp_path],
+                )
+            finally:
+                if tmp_path:
+                    os.unlink(tmp_path)
+
+        response = HttpResponse(pdf_bytes, content_type="application/pdf")
+        response["Content-Disposition"] = (
+            f'attachment; filename="{location.project_id or location.id}-report.pdf"'
+        )
+        return response
+
+    @staticmethod
+    def _worst_open_severity(db_name, location_ids):
+        """{location_id: severity} for every currently-open alarm (NEU/
+        QUITTIERT) across `location_ids`, worst severity wins - the same
+        rollup ProgeoAlarm.severity already computes per-alarm, aggregated
+        per-location for the Verwaltung dashboard."""
+        if not location_ids:
+            return {}
+        order = {
+            ProgeoAlarm.Severity.BEOBACHTEN: 0,
+            ProgeoAlarm.Severity.ALARM: 1,
+            ProgeoAlarm.Severity.KRITISCH: 2,
+        }
+        worst = {}
+        alarms = (
+            ProgeoAlarm.objects.using(db_name)
+            .filter(
+                measurement__device__location_id__in=location_ids,
+                status__in=[ProgeoAlarm.Status.NEU, ProgeoAlarm.Status.QUITTIERT],
+            )
+            .select_related("measurement__device")
+        )
+        for alarm in alarms:
+            location_id = alarm.measurement.device.location_id
+            severity = alarm.severity
+            if location_id not in worst or order[severity] > order[worst[location_id]]:
+                worst[location_id] = severity
+        return worst
+
+    @action(detail=False, url_path="accounts", methods=["GET"])
+    def accounts(self, request, *args, **kwargs):
+        """Every Account, for the Anlegen account picker. Staff-only - a
+        regular customer user has no reason to see other accounts' names."""
+        if not _is_staff_admin(getattr(request, "user", None)):
+            return RequestFailed({"reason": "Staff access required"})
+        rows = [
+            {"id": account.id, "name": account.name}
+            for account in Account.objects.using("default").all().order_by("name")
+        ]
+        return RequestSuccess({"accounts": rows})
+
+    @action(detail=False, url_path="admin_overview", methods=["GET"])
+    def admin_overview(self, request, *args, **kwargs):
+        """Verwaltung: cross-tenant dashboard for ProGeo staff - every
+        location across every Account, not just the one the request happens
+        to be bound to (see _resolve_request_accounts: for a staff SPA
+        session that's always one fixed "controller account")."""
+        if not _is_staff_admin(getattr(request, "user", None)):
+            return RequestFailed({"reason": "Staff access required"})
+
+        rows = []
+        for account in Account.objects.using("default").all().order_by("name"):
+            locations = list(ProgeoLocation.objects.using(account.db_name).filter(account=account))
+            if not locations:
+                continue
+            worst_by_location = self._worst_open_severity(
+                account.db_name, [location.id for location in locations]
+            )
+            for location in locations:
+                rows.append({
+                    "id": location.id,
+                    "account_id": account.id,
+                    "nr": location.project_id,
+                    "name": location.name,
+                    "city": location.city,
+                    "owner": account.name,
+                    "status": worst_by_location.get(location.id) or "ok",
+                })
+
+        kpis = {"ok": 0, "beobachten": 0, "alarm": 0, "kritisch": 0}
+        for row in rows:
+            kpis[row["status"]] = kpis.get(row["status"], 0) + 1
+
+        return RequestSuccess({"objects": rows, "kpis": kpis, "count": len(rows)})
+
+    @staticmethod
+    def _save_lageplan_upload(location, uploaded_file, db_name):
+        """Stores one uploaded visualization file as a new ProgeoLageplan
+        row, following the same physical-path convention every existing
+        lageplan already uses (UPLOAD_DIR/lageplan/<file>,
+        ProgeoLageplan.lageplan.name relative to UPLOAD_DIR - see
+        parse_lageplan_labels.py's own path-resolution fix for why this
+        matters) rather than the deprecated save_location_lageplan helper,
+        which still writes to a removed ProgeoLocation.lageplan field."""
+        save_check_dir(UPLOAD_DIR, "lageplan")
+        suffix = os.path.splitext(uploaded_file.name)[1] or ".png"
+        filename = os.path.join(
+            "lageplan", f"{location.id}_{location.project_id or ''}_{int(time.time())}{suffix}"
+        ).replace(os.sep, "/")
+        fs = FileSystemStorage(location=UPLOAD_DIR)
+        saved_name = fs.save(filename, uploaded_file)
+        return ProgeoLageplan.objects.using(db_name).create(
+            location=location, lageplan=saved_name, name=uploaded_file.name,
+        )
+
+    @staticmethod
+    def _save_coordinate_upload(location, uploaded_file):
+        """Coordinate-list files (CSV/XLSX) from Anlegen are stored on disk
+        (same UPLOAD_DIR convention) but deliberately NOT auto-processed
+        into ProgeoMeasurePoint rows - that stays parse_lageplan_labels.py's
+        explicit, separate step, so this doesn't quietly expand its scope."""
+        save_check_dir(UPLOAD_DIR, "coordinates")
+        suffix = os.path.splitext(uploaded_file.name)[1] or ".csv"
+        filename = os.path.join(
+            "coordinates", f"{location.id}_{int(time.time())}{suffix}"
+        ).replace(os.sep, "/")
+        fs = FileSystemStorage(location=UPLOAD_DIR)
+        return fs.save(filename, uploaded_file)
+
+    @action(detail=False, url_path="create_object", methods=["POST"])
+    def create_object(self, request, *args, **kwargs):
+        """Anlegen: creates a new ProgeoLocation under a chosen existing
+        Account (the account dropdown, per the user's own scoping decision -
+        no new-account provisioning). Staff-only."""
+        if not _is_staff_admin(getattr(request, "user", None)):
+            return RequestFailed({"reason": "Staff access required"})
+
+        try:
+            account_id = int(request.data.get("account_id"))
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "account_id required"})
+        account = Account.objects.using("default").filter(pk=account_id).first()
+        if not account:
+            return RequestFailed({"reason": "Account not found"})
+        db_name = account.db_name
+
+        name = (request.data.get("name") or "").strip()
+        if not name:
+            return RequestFailed({"reason": "name required"})
+
+        project_id = None
+        project_id_raw = request.data.get("nr")
+        if project_id_raw not in (None, ""):
+            try:
+                project_id = int(project_id_raw)
+            except (TypeError, ValueError):
+                return RequestFailed({"reason": "nr must be an integer"})
+
+        project_type = ProgeoLocation.PROJECT_TYPE_CHOICES.UNKNOWN
+        project_type_raw = request.data.get("project_type")
+        if project_type_raw not in (None, ""):
+            try:
+                project_type = int(project_type_raw)
+            except (TypeError, ValueError):
+                return RequestFailed({"reason": "project_type must be an integer"})
+
+        def _clean(field):
+            value = (request.data.get(field) or "").strip()
+            return value or None
+
+        location = ProgeoLocation.objects.using(db_name).create(
+            account=account,
+            name=name,
+            project_id=project_id,
+            project_type=project_type,
+            airtable_url=_clean("airtable_url"),
+            address=_clean("address"),
+            plz=_clean("plz"),
+            city=_clean("city"),
+            country=_clean("country"),
+            manager=_clean("manager"),
+            mail=_clean("mail"),
+            telefon=_clean("telefon"),
+        )
+
+        lageplan_ids = [
+            self._save_lageplan_upload(location, uploaded, db_name).id
+            for uploaded in request.FILES.getlist("visualization_files")
+        ]
+        coordinate_files = [
+            self._save_coordinate_upload(location, uploaded)
+            for uploaded in request.FILES.getlist("coordinate_files")
+        ]
+
+        return RequestSuccess({
+            "location": LocationSerializer(location).data,
+            "lageplan_ids": lageplan_ids,
+            "coordinate_files": coordinate_files,
         })

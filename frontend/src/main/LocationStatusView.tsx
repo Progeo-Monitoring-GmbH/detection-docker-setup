@@ -13,15 +13,16 @@ import LageplanZoneOverlay from '../components/device/LageplanZoneOverlay';
 import SensorListTable, {
   type SensorListRow,
 } from '../components/device/SensorListTable';
+import ThresholdTrendChart from '../components/device/ThresholdTrendChart';
 import { plotTheme } from '../styles/plotTheme';
 import PanelCard from '../components/ui/kit/PanelCard';
 import KpiStrip from '../components/ui/kit/KpiStrip';
 import LegendGradientBar from '../components/ui/kit/LegendGradientBar';
+import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import StateBadge, { type AlarmState } from '../components/ui/kit/StateBadge';
 import SeverityBadge, {
   type Severity,
 } from '../components/ui/kit/SeverityBadge';
-import Tooltip from '../components/ui/kit/Tooltip';
 import type { LocationDetail } from './locationTypes';
 import { getProjectTypeLabel } from './projectType';
 
@@ -33,10 +34,13 @@ type LocationStatusViewProps = {
 // The backend now owns severity/state/clustering entirely
 // (ProgeoAlarm.severity, the auto-GELOEST transition, and
 // AlarmViewSet.clusters) - this view just renders what it returns.
+// A Verdachtsstelle is one sensor: every sensor_id an alarm reported as
+// over-threshold, rolled up across every alarm that flagged it.
 type VerdachtsstelleCluster = {
   id: string;
+  sensor_id: number;
   device_ids: number[];
-  device_label: string;
+  device_label: string | null;
   device_type: string | null;
   alarm_ids: number[];
   state: AlarmState;
@@ -46,7 +50,12 @@ type VerdachtsstelleCluster = {
   ack_by: string | null;
   ack_at: string | null;
   pending_ack_alarm_ids: number[];
-  sensors: { sensor_id: number | null; max_value: number | null }[];
+  alarms: {
+    id: number | string;
+    triggered_at: string | null;
+    value: number | null;
+    state: AlarmState;
+  }[];
 };
 
 const HEATMAP_LIMIT = 200;
@@ -55,6 +64,17 @@ const SEVERITY_ORDER: Record<Severity, number> = {
   beobachten: 0,
   alarm: 1,
   kritisch: 2,
+};
+
+// Zeitreihe range toggle ("Letzte 24 h" / "Letzte 7 Tage" / "Letzte 30
+// Tage" in the mockup): a client-side window over the already-loaded
+// ALARM_WINDOW_DAYS history - no extra request, since 30 days always fits
+// inside what's already fetched.
+type ZeitreiheRange = '24h' | '7d' | '30d';
+const ZEITREIHE_RANGE_DAYS: Record<ZeitreiheRange, number> = {
+  '24h': 1,
+  '7d': 7,
+  '30d': 30,
 };
 
 const LocationStatusView = ({
@@ -77,6 +97,9 @@ const LocationStatusView = ({
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [acknowledging, setAcknowledging] = useState<Set<string>>(new Set());
   const [requestingMeasurement, setRequestingMeasurement] = useState(false);
+  const [statusView, setStatusView] = useState<'roof' | 'zeitreihe'>('roof');
+  const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
+  const [zeitreiheRange, setZeitreiheRange] = useState<ZeitreiheRange>('7d');
 
   const requestMeasurement = () => {
     setRequestingMeasurement(true);
@@ -218,6 +241,20 @@ const LocationStatusView = ({
       })),
     [sensorPoints, thresholdValue],
   );
+
+  const zeitreiheSeries = useMemo(() => {
+    const cutoff = Date.now() - ZEITREIHE_RANGE_DAYS[zeitreiheRange] * 24 * 60 * 60 * 1000;
+    return openClusters.map((cluster) => ({
+      id: cluster.id,
+      label: t('status_sensor_label', { sensor: cluster.sensor_id }),
+      threshold:
+        sensorPoints.find((point) => point.pos === cluster.sensor_id)?.threshold ??
+        thresholdValue,
+      points: cluster.alarms.filter(
+        (alarm) => alarm.triggered_at && new Date(alarm.triggered_at).getTime() >= cutoff,
+      ),
+    }));
+  }, [openClusters, sensorPoints, thresholdValue, zeitreiheRange, t]);
 
   // Plain sensor table: built from ProgeoMeasurePoint when placed (name +
   // its own threshold override), otherwise straight from the heatmap's raw
@@ -429,6 +466,49 @@ const LocationStatusView = ({
         kpiTiles.length > 0 && <KpiStrip tiles={kpiTiles} />
       )}
 
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', padding: '2px 2px 0' }}>
+        <SegmentedControl
+          options={[
+            { value: 'roof', label: t('status_view_roof') },
+            { value: 'zeitreihe', label: t('status_view_zeitreihe') },
+          ]}
+          value={statusView}
+          onChange={(value) => setStatusView(value as 'roof' | 'zeitreihe')}
+        />
+        {statusView === 'zeitreihe' && (
+          <SegmentedControl
+            options={[
+              { value: '24h', label: t('status_range_24h') },
+              { value: '7d', label: t('status_range_7d') },
+              { value: '30d', label: t('status_range_30d') },
+            ]}
+            value={zeitreiheRange}
+            onChange={(value) => setZeitreiheRange(value as ZeitreiheRange)}
+          />
+        )}
+      </div>
+
+      {statusView === 'zeitreihe' ? (
+        <PanelCard title={t('status_zeitreihe_title')}>
+          <ThresholdTrendChart
+            series={zeitreiheSeries}
+            hiddenSeries={hiddenSeries}
+            onToggleSeries={(id) =>
+              setHiddenSeries((prev) => {
+                const next = new Set(prev);
+                if (next.has(id)) {
+                  next.delete(id);
+                } else {
+                  next.add(id);
+                }
+                return next;
+              })
+            }
+            emptyLabel={t('status_zeitreihe_empty')}
+            meanOfLabel={(count) => t('status_zeitreihe_mean_of', { count })}
+          />
+        </PanelCard>
+      ) : (
       <div
         style={{
           display: 'flex',
@@ -551,6 +631,7 @@ const LocationStatusView = ({
           </PanelCard>
         </div>
       </div>
+      )}
     </div>
   );
 };
@@ -604,11 +685,12 @@ const VerdachtsstelleRow = ({
             }}
           >
             <span style={{ fontSize: 14, fontWeight: 500 }}>
-              {cluster.device_label}
-              {cluster.device_type && (
+              {t('status_sensor_label', { sensor: cluster.sensor_id })}
+              {cluster.device_label && (
                 <span style={{ fontWeight: 400, color: '#8B8383' }}>
                   {' '}
-                  ({cluster.device_type})
+                  · {cluster.device_label}
+                  {cluster.device_type ? ` (${cluster.device_type})` : ''}
                 </span>
               )}
             </span>
@@ -679,7 +761,7 @@ const VerdachtsstelleRow = ({
               fontWeight: 500,
             }}
           >
-            {t('status_affected_points')}
+            {t('status_alarm_history')}
           </div>
           <div
             style={{
@@ -691,7 +773,7 @@ const VerdachtsstelleRow = ({
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: '1fr 1fr 1.4fr',
+                gridTemplateColumns: '1.3fr 1fr 1fr',
                 padding: '9px 12px',
                 fontSize: 10.5,
                 letterSpacing: '.06em',
@@ -700,40 +782,37 @@ const VerdachtsstelleRow = ({
                 fontWeight: 500,
               }}
             >
-              <Tooltip title={t('status_col_mp_tooltip')}>
-                {t('status_col_mp')}
-              </Tooltip>
-              <Tooltip title={t('status_col_avgwp_tooltip')}>
-                {t('status_col_avgwp')}
-              </Tooltip>
-              <span>{t('status_col_position')}</span>
+              <span>{t('status_col_date')}</span>
+              <span>{t('status_col_state')}</span>
+              <span>{t('status_col_value')}</span>
             </div>
-            {cluster.sensors.map((sensor, index) => (
+            {cluster.alarms.map((entry) => (
               <div
-                key={`${sensor.sensor_id ?? index}`}
+                key={entry.id}
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '1fr 1fr 1.4fr',
+                  gridTemplateColumns: '1.3fr 1fr 1fr',
                   padding: '9px 12px',
                   fontSize: 12.5,
                   borderTop: '1px solid var(--progeo-track-soft)',
                 }}
               >
-                <span style={{ fontWeight: 600 }}>
-                  #{sensor.sensor_id ?? '–'}
-                </span>
-                <span
-                  style={{ fontWeight: 600, color: 'var(--progeo-orange)' }}
-                >
-                  {sensor.max_value ?? '–'}
-                </span>
-                <span style={{ color: '#8B8383' }}>
-                  {sensor.sensor_id != null && sensor.max_value != null
-                    ? t('status_col_position_value', {
-                        sensor: sensor.sensor_id,
-                        value: sensor.max_value,
+                <span style={{ fontWeight: 500 }}>
+                  {entry.triggered_at
+                    ? new Date(entry.triggered_at).toLocaleString(undefined, {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
                       })
                     : '–'}
+                </span>
+                <span>
+                  <StateBadge state={entry.state} label={t(`ui_${entry.state}`)} />
+                </span>
+                <span style={{ fontWeight: 600, color: 'var(--progeo-orange)' }}>
+                  {entry.value != null ? `${Math.round(entry.value)} mV` : '–'}
                 </span>
               </div>
             ))}

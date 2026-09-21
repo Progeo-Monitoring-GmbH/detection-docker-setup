@@ -161,8 +161,12 @@ const LocationSidebar = ({ location, locationId }: LocationSidebarProps) => {
         {t('nav_alle_objekte')}
       </div>
       <Link
-        to="/location/overview/"
-        style={itemStyle(routerLocation.pathname === '/location/overview/', true)}
+        to={canCreateLocation ? '/verwaltung/' : '/location/overview/'}
+        style={itemStyle(
+          routerLocation.pathname === '/location/overview/' ||
+            routerLocation.pathname === '/verwaltung/',
+          true,
+        )}
       >
         <span style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
           {renderIcon('M4 6h16M4 12h16M4 18h16')}
@@ -170,7 +174,7 @@ const LocationSidebar = ({ location, locationId }: LocationSidebarProps) => {
         </span>
       </Link>
       {canCreateLocation && (
-        <Link to="/lageplan/wizard/" style={itemStyle(false, true)}>
+        <Link to="/anlegen/" style={itemStyle(routerLocation.pathname === '/anlegen/', true)}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
             {renderIcon('M12 5v14M5 12h14')}
             <span>{t('nav_anlegen')}</span>

@@ -84,6 +84,12 @@ const LocationsMapView = React.lazy(
   () => import('./main/LocationsMapView.jsx'),
 );
 const LegacyImportView = React.lazy(() => import('./main/LegacyImportView.tsx'));
+const LocationVerwaltungView = React.lazy(
+  () => import('./main/LocationVerwaltungView.tsx'),
+);
+const LocationAnlegenView = React.lazy(
+  () => import('./main/LocationAnlegenView.tsx'),
+);
 
 const CoreRoutes = () => {
   return (
@@ -151,6 +157,8 @@ const CoreRoutes = () => {
         <Route path="/lageplan/wizard/" element={<LageplanWizardView />} />
         <Route path="/legacy/import/" element={<LegacyImportView />} />
         <Route path="/map/" element={<LocationsMapView />} />
+        <Route path="/verwaltung/" element={<LocationVerwaltungView />} />
+        <Route path="/anlegen/" element={<LocationAnlegenView />} />
         <Route path="*" element={<LandingPage />} />
       </Route>
     </Routes>

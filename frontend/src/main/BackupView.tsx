@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import DataTable, { type TableColumn } from 'react-data-table-component';
 import { useParams } from 'react-router';
 import { useSnackbar } from 'notistack';
@@ -23,6 +23,13 @@ type BackupRow = {
 // per dump file on disk) so the DataTable can paginate/sort client-side
 // instead of round-tripping to the server for every page.
 const LIST_QUERY = 'page_size=1000';
+
+// django-dbbackup names files "{databasename}-{datetime}.psql[.gz]" (see
+// parse_backups in backup_viewset.py, which already relies on the db_name
+// being a literal substring of the filename) - the part before the first
+// "-" is the database alias ("default", "main_db", ...), used both to
+// display and to filter by database type.
+const dbTypeOf = (name: string) => name.split('-')[0] || name;
 
 const dataTableStyles = {
   headRow: {
@@ -103,7 +110,31 @@ const BackupView = () => {
   const [backups, setBackups] = useState<BackupRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
-  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [selectedRows, setSelectedRows] = useState<BackupRow[]>([]);
+  const [clearSelectionToggle, setClearSelectionToggle] = useState(false);
+  const [selectedDbTypes, setSelectedDbTypes] = useState<string[]>([]);
+
+  const hasSelection = selectedRows.length > 0;
+  const isBulkBusy = busyAction === 'delete-all' || busyAction === 'delete-selected';
+
+  const availableDbTypes = useMemo(
+    () => Array.from(new Set(backups.map((backup) => dbTypeOf(backup.name)))).sort(),
+    [backups],
+  );
+
+  const filteredBackups = useMemo(() => {
+    if (selectedDbTypes.length === 0) {
+      return backups;
+    }
+    return backups.filter((backup) => selectedDbTypes.includes(dbTypeOf(backup.name)));
+  }, [backups, selectedDbTypes]);
+
+  const toggleDbTypeFilter = (dbType: string) => {
+    setSelectedDbTypes((prev) =>
+      prev.includes(dbType) ? prev.filter((value) => value !== dbType) : [...prev, dbType],
+    );
+  };
 
   const applyResponse = (response: { data?: { elements?: BackupRow[] } }) => {
     setBackups((response?.data?.elements || []) as BackupRow[]);
@@ -171,13 +202,49 @@ const BackupView = () => {
     );
 
   const confirmDeleteAllBackups = () => {
-    setConfirmDeleteAll(false);
+    setConfirmOpen(false);
     runAction(
       'delete-all',
       `/v1/${account}/backup/deleteAll/`,
       t('backup_deleted_all'),
       'backup_delete_all_error',
     );
+  };
+
+  const confirmDeleteSelectedBackups = () => {
+    setConfirmOpen(false);
+    const targets = selectedRows;
+    setBusyAction('delete-selected');
+    Promise.all(
+      targets.map(
+        (backup) =>
+          new Promise<void>((resolve) => {
+            void axiosConfig.perform_post(
+              auth,
+              `/v1/${account}/backup/${backup.id}/delete/`,
+              {},
+              () => resolve(),
+              (error) => {
+                const reason = error?.response?.data?.reason || error.message;
+                showErrorBar(
+                  enqueueSnackbar,
+                  t('backup_delete_error', { reason: `${backup.name}: ${reason}` }),
+                );
+                resolve();
+              },
+            );
+          }),
+      ),
+    ).then(() => {
+      showSuccessBar(
+        enqueueSnackbar,
+        t('backup_deleted_selected', { count: targets.length }),
+      );
+      setSelectedRows([]);
+      setClearSelectionToggle((prev) => !prev);
+      setBusyAction(null);
+      loadBackups();
+    });
   };
 
   const deleteBackup = (backup: BackupRow) =>
@@ -228,14 +295,18 @@ const BackupView = () => {
             fontWeight: 600,
             padding: '3px 9px',
             borderRadius: 999,
-            background: row.is_compressed ? 'rgba(97, 170, 197, .18)' : 'var(--progeo-track-soft)',
+            background: row.is_compressed
+              ? 'rgba(97, 170, 197, .18)'
+              : 'var(--progeo-track-soft)',
             color: row.is_compressed ? 'var(--progeo-blue)' : '#8B8383',
           }}
         >
-          {row.is_compressed ? t('backup_compressed_yes') : t('backup_compressed_no')}
+          {row.is_compressed
+            ? t('backup_compressed_yes')
+            : t('backup_compressed_no')}
         </span>
       ),
-      width: '120px',
+      width: '160px',
     },
     {
       name: t('backup_col_actions'),
@@ -244,22 +315,26 @@ const BackupView = () => {
           <button
             type="button"
             onClick={() => restoreBackup(row)}
-            disabled={busyAction === `restore-${row.id}`}
-            style={smallActionButtonStyle(busyAction === `restore-${row.id}`)}
+            disabled={isBulkBusy || busyAction === `restore-${row.id}`}
+            style={smallActionButtonStyle(isBulkBusy || busyAction === `restore-${row.id}`)}
           >
             {t('backup_restore')}
           </button>
           <button
             type="button"
             onClick={() => deleteBackup(row)}
-            disabled={busyAction === `delete-${row.id}`}
-            style={{ ...smallActionButtonStyle(busyAction === `delete-${row.id}`), background: '#FBEAE4', color: '#C44D26' }}
+            disabled={isBulkBusy || busyAction === `delete-${row.id}`}
+            style={{
+              ...smallActionButtonStyle(isBulkBusy || busyAction === `delete-${row.id}`),
+              background: '#FBEAE4',
+              color: '#C44D26',
+            }}
           >
             {t('backup_delete')}
           </button>
         </div>
       ),
-      width: '220px',
+      width: '260px',
     },
   ];
 
@@ -282,23 +357,59 @@ const BackupView = () => {
           </button>
           <button
             type="button"
-            onClick={() => setConfirmDeleteAll(true)}
-            disabled={busyAction === 'delete-all'}
-            style={buttonStyle('danger', busyAction === 'delete-all')}
+            onClick={() => setConfirmOpen(true)}
+            disabled={isBulkBusy}
+            style={buttonStyle('danger', isBulkBusy)}
           >
-            {t('backup_delete_all')}
+            {hasSelection
+              ? t('backup_delete_selected', { count: selectedRows.length })
+              : t('backup_delete_all')}
           </button>
         </div>
       </PanelCard>
 
       <PanelCard title={t('backup_available')}>
+        {availableDbTypes.length > 1 && (
+          <div
+            style={{
+              display: 'flex',
+              gap: 8,
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              marginBottom: 12,
+            }}
+          >
+            <span
+              style={{
+                fontSize: 11,
+                letterSpacing: '.06em',
+                textTransform: 'uppercase',
+                color: '#8B8383',
+                fontWeight: 500,
+              }}
+            >
+              {t('backup_filter_db_type')}
+            </span>
+            {availableDbTypes.map((dbType) => (
+              <PillButton
+                key={dbType}
+                label={dbType}
+                active={selectedDbTypes.includes(dbType)}
+                onClick={() => toggleDbTypeFilter(dbType)}
+              />
+            ))}
+          </div>
+        )}
         <DataTable
           columns={columns}
-          data={backups}
+          data={filteredBackups}
           pagination
           progressPending={loading}
           highlightOnHover
           dense
+          selectableRows
+          onSelectedRowsChange={({ selectedRows: rows }) => setSelectedRows(rows)}
+          clearSelectedRows={clearSelectionToggle}
           noDataComponent={
             <div style={{ padding: '22px 0', color: '#8B8383', fontSize: 13 }}>
               {t('backup_empty')}
@@ -309,14 +420,39 @@ const BackupView = () => {
       </PanelCard>
 
       <ConfirmDialog
-        show={confirmDeleteAll}
-        title={t('backup_delete_all_confirm_title')}
-        message={t('backup_delete_all_confirm_body')}
+        show={confirmOpen}
+        title={
+          hasSelection
+            ? t('backup_delete_selected_confirm_title', { count: selectedRows.length })
+            : t('backup_delete_all_confirm_title')
+        }
+        message={
+          <div>
+            <div>
+              {hasSelection
+                ? t('backup_delete_selected_confirm_body')
+                : t('backup_delete_all_confirm_body')}
+            </div>
+            <ul
+              style={{
+                maxHeight: 160,
+                overflowY: 'auto',
+                margin: '10px 0 0',
+                padding: '0 0 0 18px',
+                fontSize: 12.5,
+              }}
+            >
+              {(hasSelection ? selectedRows : backups).map((backup) => (
+                <li key={backup.id}>{backup.name}</li>
+              ))}
+            </ul>
+          </div>
+        }
         confirmLabel={t('backup_confirm_yes')}
         cancelLabel={t('backup_confirm_cancel')}
-        onConfirm={confirmDeleteAllBackups}
-        onCancel={() => setConfirmDeleteAll(false)}
-        confirming={busyAction === 'delete-all'}
+        onConfirm={hasSelection ? confirmDeleteSelectedBackups : confirmDeleteAllBackups}
+        onCancel={() => setConfirmOpen(false)}
+        confirming={isBulkBusy}
       />
     </div>
   );

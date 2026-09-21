@@ -69,6 +69,8 @@ const AppSidebar = () => {
 
   const adminItems: Item[] = [
     { key: 'staff', label: 'Staff Admin', icon: People, to: '/staff/', visible: isStaffUser },
+    { key: 'verwaltung', label: 'Object management', icon: Geo, to: '/verwaltung/', visible: isStaffUser },
+    { key: 'anlegen', label: 'Create object', icon: Layers, to: '/anlegen/', visible: isStaffUser },
     { key: 'backup', label: 'Backup', icon: Database, to: '/backup/1/overview/', visible: hasPermission('module_backup_enabled') },
     { key: 'docker', label: 'Docker', icon: Box, to: '/docker/', visible: hasPermission('module_docker_enabled') },
     { key: 'admin-panel', label: 'Admin Panel', icon: Gear, to: '/admin/panel/', visible: hasPermission('module_admin_enabled') },

@@ -1,4 +1,3 @@
-import math
 from collections import defaultdict
 from datetime import datetime, timedelta
 
@@ -13,15 +12,10 @@ from progeo.decorator import require_module_permissions
 from progeo.helper.basics import RequestFailed, RequestSuccess
 from progeo.helper.cacher import cache_save_and_return, search_cache
 from progeo.helper.creator import create_MfS_log
-from progeo.v1.models import ProgeoAlarm, ProgeoMeasurePoint
+from progeo.v1.models import ProgeoAlarm
 from progeo.v1.serializers import ProgeoAlarmSerializer
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.v1.viewsets.setup_viewset import _get_controller_account
-
-# Two measure points closer than this (in the same normalized x/y units as
-# compute_weighted_spots in progeo/helper/measurement_utils.py) are treated as
-# the same physical zone when merging alarms into one Verdachtsstelle.
-CLUSTER_NEIGHBOR_DISTANCE = 0.2
 
 # Kept as an alias for readability at call sites below.
 STATUS_ACKNOWLEDGED = ProgeoAlarm.Status.QUITTIERT
@@ -126,17 +120,22 @@ class AlarmViewSet(ProgeoModalViewSet):
     @action(detail=False, url_path="clusters", methods=["GET"])
     def clusters(self, request, *args, **kwargs):
         """
-        Groups one location's alarms into "Verdachtsstellen" (suspected-leak
-        clusters) by physical proximity of their affected ProgeoMeasurePoints
-        (see `_group_alarms_by_proximity`), not just by device - two devices
-        whose sensors sit next to each other on the same roof merge into one
-        Verdachtsstelle instead of showing up as two separate rows. Locations
-        without measure-point coordinates fall back to grouping by device
-        alone. Uses the same time-window filter as location_summary:
-        still-active alarms always count, others only within `days`.
-        Required `location`; optional `days` (default DEFAULT_ALARM_DAYS).
-        Returns {"clusters": [...]}, most urgent (neu) first, then highest
-        reading first.
+        A "Verdachtsstelle" is one sensor: every sensor_id an alarm reported
+        as over-threshold (ProgeoAlarm.sensor_max_values - already filtered
+        to over-threshold readings when the alarm was evaluated, see
+        evaluate_measurements_db) is grouped into its own Verdachtsstelle,
+        rolling up the worst state/severity and peak reading across every
+        alarm that flagged it. One alarm can touch several sensors, so it
+        can contribute to more than one Verdachtsstelle.
+
+        Also returns the `top_sensors` most frequently responsible for an
+        alarm in the same window, for the "top 5" chart.
+
+        Uses the same time-window filter as location_summary: still-active
+        alarms always count, others only within `days`. Required `location`;
+        optional `days` (default DEFAULT_ALARM_DAYS).
+        Returns {"clusters": [...], "top_sensors": [...]}, clusters sorted
+        most urgent (neu) first, then highest reading first.
         """
         account = self._resolve_request_account(request)
         location_id = request.query_params.get("location")
@@ -163,9 +162,10 @@ class AlarmViewSet(ProgeoModalViewSet):
             .order_by("triggered_at", "id")
         )
 
-        groups = self._group_alarms_by_proximity(db, location_id, alarms)
+        groups = self._group_alarms_by_sensor(alarms)
         clusters = [
-            self._build_cluster(key, group_alarms) for key, group_alarms in groups.items()
+            self._build_cluster(sensor_id, group_alarms)
+            for sensor_id, group_alarms in groups.items()
         ]
 
         state_order = {"neu": 2, "quittiert": 1, "geloest": 0}
@@ -175,77 +175,85 @@ class AlarmViewSet(ProgeoModalViewSet):
                 -(cluster["max_value"] or 0),
             )
         )
-        return RequestSuccess({"clusters": clusters})
 
-    @staticmethod
-    def _group_alarms_by_proximity(db, location_id, alarms, neighbor_distance=CLUSTER_NEIGHBOR_DISTANCE):
-        """Group alarms into Verdachtsstellen via union-find over two kinds of
-        atoms: a device (one per alarm's measurement) and a measure point
-        (one per sensor_id in an alarm's sensor_max_values).
+        return RequestSuccess({
+            "clusters": clusters,
+            "top_sensors": self._top_sensors(groups),
+        })
 
-        Every alarm unions its own device with every sensor it reports, so an
-        alarm's data is never split across two output clusters. Measure
-        points within `neighbor_distance` of each other are additionally
-        unioned - that's what lets two different devices merge into one
-        Verdachtsstelle when their sensors are physically close together.
-        Locations with no (or unmatched) ProgeoMeasurePoint rows simply never
-        get that extra union, so alarms fall back to being grouped by device
-        alone - today's behavior, unchanged for that case.
+    @classmethod
+    def _sensor_max_value_pairs(cls, alarm):
+        """Every (sensor_id, max_value) this alarm reported as over-threshold,
+        falling back to the alarm's own sensor_id/max_value for legacy rows
+        with no sensor_max_values (mirrors alarmPeakValue()'s fallback chain
+        in frontend/src/main/alarmUtils.ts)."""
+        pairs = alarm.sensor_max_values or []
+        if pairs:
+            return [
+                (pair.get("sensor_id"), pair.get("max_value"))
+                for pair in pairs
+                if pair.get("sensor_id") is not None
+            ]
+        if alarm.sensor_id is not None:
+            return [(alarm.sensor_id, alarm.max_value)]
+        return []
 
-        Returns {root: [alarms]}.
-        """
-        parent = {}
-
-        def find(atom):
-            parent.setdefault(atom, atom)
-            root = atom
-            while parent[root] != root:
-                root = parent[root]
-            while parent[atom] != root:
-                parent[atom], atom = root, parent[atom]
-            return root
-
-        def union(a, b):
-            root_a, root_b = find(a), find(b)
-            if root_a != root_b:
-                parent[root_a] = root_b
-
-        points = list(ProgeoMeasurePoint.objects.using(db).filter(location_id=location_id))
-        for i in range(len(points)):
-            for j in range(i + 1, len(points)):
-                distance = math.dist((points[i].x, points[i].y), (points[j].x, points[j].y))
-                if distance <= neighbor_distance:
-                    union(("point", points[i].sensor_order), ("point", points[j].sensor_order))
-
-        for alarm in alarms:
-            if not alarm.measurement_id or not alarm.measurement.device_id:
+    @classmethod
+    def _sensor_peak_value(cls, alarm, sensor_id):
+        """This alarm's highest recorded value for one specific sensor:
+        prefers the per-measurement history (max_values, filtered to
+        sensor_id), then falls back to the matching sensor_max_values/legacy
+        entry."""
+        best = None
+        for entry in (alarm.max_values or []):
+            if entry.get("sensor_id") != sensor_id:
                 continue
-            device_atom = ("device", alarm.measurement.device_id)
-            find(device_atom)
-            for pair in (alarm.sensor_max_values or []):
-                sensor_id = pair.get("sensor_id")
-                if sensor_id is not None:
-                    union(device_atom, ("point", sensor_id))
+            value = entry.get("value")
+            if isinstance(value, (int, float)) and (best is None or value > best):
+                best = value
+        if best is not None:
+            return best
+        for pair_sensor_id, value in cls._sensor_max_value_pairs(alarm):
+            if pair_sensor_id == sensor_id and isinstance(value, (int, float)):
+                return value
+        return None
 
+    @classmethod
+    def _sensor_measurement_history(cls, alarm, sensor_id):
+        """Every per-measurement (ts, value) pair max_values recorded for one
+        specific sensor during this alarm's life - the real time series
+        behind the single _sensor_peak_value() snapshot. Used by
+        _build_cluster to plot a proper Zeitreihe (one point per evaluated
+        measurement) instead of one point per alarm row, which is too sparse
+        for a "last 24h/7 days" view once an alarm has been open a while."""
+        entries = []
+        for entry in (alarm.max_values or []):
+            if entry.get("sensor_id") != sensor_id:
+                continue
+            value = entry.get("value")
+            ts = entry.get("ts")
+            if isinstance(value, (int, float)) and ts:
+                entries.append((ts, value))
+        return entries
+
+    @classmethod
+    def _group_alarms_by_sensor(cls, alarms):
+        """Group alarms by every sensor_id they reported over-threshold - one
+        alarm can land in several sensors' groups. Returns {sensor_id: [alarms]}."""
         groups = defaultdict(list)
         for alarm in alarms:
-            if alarm.measurement_id and alarm.measurement.device_id:
-                key = find(("device", alarm.measurement.device_id))
-            else:
-                # No device to key off of at all - keep it as its own group
-                # rather than dropping it.
-                key = ("alarm", alarm.id)
-            groups[key].append(alarm)
+            for sensor_id, _value in cls._sensor_max_value_pairs(alarm):
+                groups[sensor_id].append(alarm)
         return groups
 
-    @staticmethod
-    def _build_cluster(cluster_key, alarms):
-        """Roll up one Verdachtsstelle - one or more devices whose alarms were
-        merged by `_group_alarms_by_proximity` - into worst state/severity
-        across members, merged sensor readings, every device involved, and
-        which member alarms are still pending acknowledgement. Device info is
-        derived from the alarms themselves (not from `cluster_key`, which is
-        only used as a fallback id when an alarm has no device at all)."""
+    @classmethod
+    def _build_cluster(cls, sensor_id, alarms):
+        """Roll up one Verdachtsstelle - a single sensor - into the worst
+        state/severity across every alarm that flagged it, its own peak
+        reading (not the alarm's overall peak, which may belong to a
+        different sensor of the same alarm), which member alarms are still
+        pending acknowledgement, and a small alarm history for the expand
+        panel."""
         status_to_state = {
             ProgeoAlarm.Status.NEU: "neu",
             ProgeoAlarm.Status.QUITTIERT: "quittiert",
@@ -269,8 +277,8 @@ class AlarmViewSet(ProgeoModalViewSet):
         ack_by = None
         ack_at = None
         pending_ack_alarm_ids = []
-        sensors = {}
         devices_by_id = {}
+        history = []
 
         for alarm in alarms:
             if alarm.measurement_id and alarm.measurement.device_id:
@@ -284,7 +292,7 @@ class AlarmViewSet(ProgeoModalViewSet):
             if severity_order[severity] > severity_order[worst_severity]:
                 worst_severity = severity
 
-            peak = alarm.peak_value
+            peak = cls._sensor_peak_value(alarm, sensor_id)
             if peak is not None and (max_value is None or peak > max_value):
                 max_value = peak
 
@@ -300,23 +308,37 @@ class AlarmViewSet(ProgeoModalViewSet):
             if state == "neu":
                 pending_ack_alarm_ids.append(alarm.id)
 
-            for pair in (alarm.sensor_max_values or []):
-                sensor_id = pair.get("sensor_id")
-                value = pair.get("max_value")
-                if sensor_id is None:
-                    continue
-                if sensor_id not in sensors or (
-                    value is not None and (sensors[sensor_id] is None or value > sensors[sensor_id])
-                ):
-                    sensors[sensor_id] = value
+            measurement_history = cls._sensor_measurement_history(alarm, sensor_id)
+            if measurement_history:
+                for ts, value in measurement_history:
+                    history.append({
+                        "id": f"{alarm.id}:{ts}",
+                        "triggered_at": ts,
+                        "value": value,
+                        "state": state,
+                    })
+            else:
+                # Older alarms with no recorded per-measurement development -
+                # fall back to the one-point-per-alarm snapshot.
+                history.append({
+                    "id": alarm.id,
+                    "triggered_at": start.isoformat() if start else None,
+                    "value": peak,
+                    "state": state,
+                })
 
         devices = [devices_by_id[key] for key in sorted(devices_by_id)]
         device_labels = [device.mac or device.raw_hash or str(device.id) for device in devices]
+        history.sort(key=lambda entry: entry["triggered_at"] or "", reverse=True)
+        # A long-running alarm's per-measurement history can otherwise grow
+        # unbounded - keep the most recent slice (already newest-first).
+        history = history[:500]
 
         return {
-            "id": "cluster-" + ("-".join(str(device.id) for device in devices) or f"alarm-{cluster_key}"),
+            "id": f"sensor-{sensor_id}",
+            "sensor_id": sensor_id,
             "device_ids": [device.id for device in devices],
-            "device_label": ", ".join(device_labels) if device_labels else str(cluster_key),
+            "device_label": ", ".join(device_labels) if device_labels else None,
             "device_type": devices[0].type if devices else None,
             "alarm_ids": sorted(alarm.id for alarm in alarms),
             "state": worst_state,
@@ -326,11 +348,28 @@ class AlarmViewSet(ProgeoModalViewSet):
             "ack_by": ack_by,
             "ack_at": ack_at,
             "pending_ack_alarm_ids": pending_ack_alarm_ids,
-            "sensors": [
-                {"sensor_id": sensor_id, "max_value": value}
-                for sensor_id, value in sensors.items()
-            ],
+            "alarms": history,
         }
+
+    @classmethod
+    def _top_sensors(cls, groups, limit=5):
+        """The `limit` sensors most often responsible for an alarm in this
+        window, ranked by alarm count (ties broken by highest peak reading) -
+        the data behind the Status tab's "Top 5 Sensoren" chart."""
+        rows = []
+        for sensor_id, alarms in groups.items():
+            peak = None
+            for alarm in alarms:
+                value = cls._sensor_peak_value(alarm, sensor_id)
+                if value is not None and (peak is None or value > peak):
+                    peak = value
+            rows.append({
+                "sensor_id": sensor_id,
+                "alarm_count": len(alarms),
+                "max_value": peak,
+            })
+        rows.sort(key=lambda row: (-row["alarm_count"], -(row["max_value"] or 0)))
+        return rows[:limit]
 
     @require_module_permissions("module_measurements_enabled")
     def retrieve(self, request, pk=None, *args, **kwargs):

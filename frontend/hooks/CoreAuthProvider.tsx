@@ -70,7 +70,7 @@ const defaultAuthContextValue: AuthContextType = {
   location: '/',
 };
 
-export const AuthContext = createContext<AuthContextType>(
+const AuthContext = createContext<AuthContextType>(
   defaultAuthContextValue,
 );
 
