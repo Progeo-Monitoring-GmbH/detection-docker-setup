@@ -38,12 +38,26 @@ type UserContact = {
  * this object, if any (account members may have none = silent).
  */
 type Member = UserContact & {
-  access: 'account' | 'single';
+  access: Access;
   single: boolean;
   rule: AccessRule | null;
 };
 
 type Scope = 'single' | 'account';
+/** "staff" = ProGeo team: sees every object; managed in Einstellungen. */
+type Access = Scope | 'staff';
+
+const ACCESS_LABEL_KEYS: Record<Access, string> = {
+  single: 'rechte_scope_single',
+  account: 'rechte_scope_account',
+  staff: 'rechte_scope_staff',
+};
+
+const BADGE_COLORS: Record<Access, { background: string; color: string }> = {
+  single: { background: '#FBEAE4', color: '#C44D26' },
+  account: { background: '#E3ECF4', color: 'var(--progeo-blue)' },
+  staff: { background: 'var(--progeo-track-soft)', color: '#6E6868' },
+};
 
 // ProgeoAccess.NotifiTrans / NotifiTypes bit values.
 const TRANSPORT_OPTIONS = [
@@ -86,15 +100,14 @@ const segmentTrackStyle: CSSProperties = {
   width: 'fit-content',
 };
 
-const ScopeBadge = ({ scope, label }: { scope: Scope; label: string }) => (
+const ScopeBadge = ({ scope, label }: { scope: Access; label: string }) => (
   <span
     style={{
       fontSize: 11,
       fontWeight: 500,
       padding: '2px 9px',
       borderRadius: 'var(--progeo-radius-pill)',
-      background: scope === 'account' ? '#E3ECF4' : '#FBEAE4',
-      color: scope === 'account' ? 'var(--progeo-blue)' : '#C44D26',
+      ...BADGE_COLORS[scope],
       whiteSpace: 'nowrap',
     }}
   >
@@ -278,8 +291,7 @@ const LocationRechteTab = () => {
     );
   };
 
-  const accountCount = members.filter((m) => m.access === 'account').length;
-  const singleCount = members.length - accountCount;
+  const countOf = (access: Access) => members.filter((m) => m.access === access).length;
 
   const renderContactFix = (member: Member) => {
     const hasEmail = Boolean(member.email?.trim());
@@ -325,7 +337,13 @@ const LocationRechteTab = () => {
     const hasMobile = Boolean(member.mobile?.trim());
     const transport = member.rule?.transport ?? 0;
     const type = member.rule?.type ?? 0;
-    const isAccount = member.access === 'account';
+    // Only single-access can be revoked here; account/staff access is
+    // broader than this object. Staff notification rules are their
+    // Objektleitung assignment (Einstellungen tab), so read-only here.
+    const revokeLocked = member.access !== 'single';
+    const isStaff = member.access === 'staff';
+    const canEditRule = canEdit && !isStaff;
+    const lockedHint = isStaff ? t('rechte_staff_hint') : t('rechte_account_revoke_hint');
     return (
       <div
         key={member.user_id}
@@ -361,7 +379,7 @@ const LocationRechteTab = () => {
               <span style={{ fontSize: 14, fontWeight: 500 }}>{displayName(member)}</span>
               <ScopeBadge
                 scope={member.access}
-                label={t(isAccount ? 'rechte_scope_account' : 'rechte_scope_single')}
+                label={t(ACCESS_LABEL_KEYS[member.access])}
               />
             </div>
             <div style={{ fontSize: 12, color: '#8B8383' }}>{member.email || '–'}</div>
@@ -376,19 +394,19 @@ const LocationRechteTab = () => {
             <button
               type="button"
               onClick={() => setRevokeTarget(member)}
-              disabled={isAccount}
-              title={isAccount ? t('rechte_account_revoke_hint') : t('rechte_revoke')}
+              disabled={revokeLocked}
+              title={revokeLocked ? lockedHint : t('rechte_revoke')}
               style={{
                 height: 32,
                 padding: '0 12px',
                 border: 'none',
                 borderRadius: 9,
-                background: isAccount ? 'var(--progeo-track-soft)' : '#FBEAE4',
-                color: isAccount ? '#A9A2A2' : '#C44D26',
+                background: revokeLocked ? 'var(--progeo-track-soft)' : '#FBEAE4',
+                color: revokeLocked ? '#A9A2A2' : '#C44D26',
                 fontFamily: 'inherit',
                 fontSize: 12.5,
                 fontWeight: 500,
-                cursor: isAccount ? 'not-allowed' : 'pointer',
+                cursor: revokeLocked ? 'not-allowed' : 'pointer',
               }}
             >
               {t('rechte_revoke')}
@@ -402,7 +420,7 @@ const LocationRechteTab = () => {
             <div style={segmentTrackStyle}>
               {TRANSPORT_OPTIONS.map((option) => {
                 const disabled =
-                  !canEdit ||
+                  !canEditRule ||
                   (option.value === 1 && !hasEmail) ||
                   (option.value === 2 && !hasMobile) ||
                   (option.value === 4 && (!hasEmail || !hasMobile));
@@ -426,7 +444,7 @@ const LocationRechteTab = () => {
                   key={option.value}
                   label={t(option.labelKey)}
                   active={(type & option.value) !== 0}
-                  disabled={!canEdit || transport === 0}
+                  disabled={!canEditRule || transport === 0}
                   onClick={() => toggleType(member, option.value)}
                 />
               ))}
@@ -434,12 +452,10 @@ const LocationRechteTab = () => {
           </div>
         </div>
 
-        {renderContactFix(member)}
+        {!isStaff && renderContactFix(member)}
 
-        {isAccount && canEdit && (
-          <div style={{ paddingLeft: 48, fontSize: 12, color: '#8B8383' }}>
-            {t('rechte_account_revoke_hint')}
-          </div>
+        {revokeLocked && canEdit && (
+          <div style={{ paddingLeft: 48, fontSize: 12, color: '#8B8383' }}>{lockedHint}</div>
         )}
       </div>
     );
@@ -452,7 +468,11 @@ const LocationRechteTab = () => {
           <span style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
             {t('rechte_title')}
             <span style={{ fontSize: 12.5, color: '#8B8383', fontWeight: 400 }}>
-              {t('rechte_summary', { account: accountCount, single: singleCount })}
+              {t('rechte_summary', {
+                account: countOf('account'),
+                single: countOf('single'),
+                staff: countOf('staff'),
+              })}
             </span>
           </span>
         }
