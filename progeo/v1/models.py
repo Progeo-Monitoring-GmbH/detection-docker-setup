@@ -318,6 +318,12 @@ class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
     # a plain text field like `manager`, not a ProgeoAccess/staff relation.
     contact_person = models.CharField(max_length=100, null=True, blank=True)
 
+    # Link to this object's Airtable project record. Stored as a plain URL
+    # only - the Airtable integration (progeo/helper/airtable.py) is
+    # read-only today (imports Airtable -> local dump), so nothing here
+    # pushes to or syncs with Airtable automatically.
+    airtable_url = models.URLField(max_length=255, null=True, blank=True)
+
     project_id = models.IntegerField(null=True, blank=True)
     project_type = models.IntegerField(choices=PROJECT_TYPE_CHOICES, default=PROJECT_TYPE_CHOICES.UNKNOWN, null=True, blank=True)
 
@@ -481,6 +487,11 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
             return queryset
         if not account:
             return queryset.none()
+        if user:
+            # Single-access users (ProgeoAccess only) see just their locations.
+            from progeo.helper.location_access import location_q
+
+            return queryset.filter(location_q(user, account, "device__location__"))
         return queryset.filter(device__location__account=account)
 
     @classmethod

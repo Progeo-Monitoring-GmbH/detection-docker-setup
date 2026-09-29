@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { useOutletContext } from 'react-router';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
@@ -10,24 +11,39 @@ import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import LabeledInput from '../components/ui/kit/LabeledInput';
+import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import type { PortalOutletContext } from './LocationPortalLayout';
+import { formatDateTime } from './dateFormat';
 
 type AccessRule = {
   id: number;
   user?: number | null;
-  user_name?: string | null;
-  user_email?: string | null;
-  is_staff?: boolean;
   transport?: number | null;
   type?: number | null;
 };
 
-type AccessUser = {
-  id: number;
+type UserContact = {
+  user_id: number;
   username: string;
+  full_name?: string | null;
   email?: string | null;
   mobile?: string | null;
+  last_login?: string | null;
 };
+
+/**
+ * One person with access to this object: "account" = member of the
+ * object's Account (multi-access, all its objects), "single" = only a
+ * ProgeoAccess row for this object. `rule` is their notification rule for
+ * this object, if any (account members may have none = silent).
+ */
+type Member = UserContact & {
+  access: 'account' | 'single';
+  single: boolean;
+  rule: AccessRule | null;
+};
+
+type Scope = 'single' | 'account';
 
 // ProgeoAccess.NotifiTrans / NotifiTypes bit values.
 const TRANSPORT_OPTIONS = [
@@ -50,16 +66,55 @@ const initialsOf = (name?: string | null) =>
     .map((part) => part[0]?.toUpperCase())
     .join('') || '?';
 
+const displayName = (user: UserContact) => user.full_name || user.username;
+
+const fieldLabelStyle: CSSProperties = {
+  fontSize: 10.5,
+  letterSpacing: '.08em',
+  textTransform: 'uppercase',
+  color: '#8B8383',
+  fontWeight: 500,
+  marginBottom: 5,
+};
+
+const segmentTrackStyle: CSSProperties = {
+  display: 'flex',
+  gap: 3,
+  background: 'var(--progeo-track-soft)',
+  borderRadius: 'var(--progeo-radius-pill)',
+  padding: 3,
+  width: 'fit-content',
+};
+
+const ScopeBadge = ({ scope, label }: { scope: Scope; label: string }) => (
+  <span
+    style={{
+      fontSize: 11,
+      fontWeight: 500,
+      padding: '2px 9px',
+      borderRadius: 'var(--progeo-radius-pill)',
+      background: scope === 'account' ? '#E3ECF4' : '#FBEAE4',
+      color: scope === 'account' ? 'var(--progeo-blue)' : '#C44D26',
+      whiteSpace: 'nowrap',
+    }}
+  >
+    {label}
+  </span>
+);
+
 /**
- * Rechte (Berechtigungen): who has access to this object, and how they're
- * notified - the real content that used to live (mislabeled) on the
- * Benachrichtigungen route. Fully backed by ProgeoAccess via the existing
- * /v1/location/:id/access/ endpoints; no backend change needed here.
+ * Rechte (Berechtigungen): everyone who can see this object and how they are
+ * notified. Access comes from two sources (see backend
+ * progeo/helper/location_access.py):
  *
- * The mockup's "Rolle" (Nutzer/Kundenadmin) pill picker is deliberately not
- * reproduced: permissions in this app are global per user (Django module
- * permissions), not stored per-object anywhere ProgeoAccess or any other
- * model can represent - a picker here would not actually do anything.
+ * - Account membership (multi-access): sees every object of the account.
+ *   Can't be revoked here, since that would affect all of the account's
+ *   objects - shown with a hint instead.
+ * - A ProgeoAccess row (single-access): sees only this object. Revoking
+ *   deletes the row.
+ *
+ * The ProgeoAccess row doubles as the notification rule, so account members
+ * get one created on demand the first time their notifications are changed.
  */
 const LocationRechteTab = () => {
   const { locationId } = useOutletContext<PortalOutletContext>();
@@ -71,11 +126,16 @@ const LocationRechteTab = () => {
   const canEdit = hasPermission('module_notifications_edit');
   const canAdd = hasPermission('module_notifications_add');
 
-  const [rules, setRules] = useState<AccessRule[]>([]);
-  const [users, setUsers] = useState<AccessUser[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [candidates, setCandidates] = useState<UserContact[]>([]);
+  const [canGrantAccount, setCanGrantAccount] = useState(false);
   const [loading, setLoading] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
   const [newUserId, setNewUserId] = useState('');
+  const [newScope, setNewScope] = useState<Scope>('single');
+  const [adding, setAdding] = useState(false);
+  const [revokeTarget, setRevokeTarget] = useState<Member | null>(null);
+  const [revoking, setRevoking] = useState(false);
   const [contactEdit, setContactEdit] = useState<{
     userId: number;
     field: 'email' | 'mobile';
@@ -88,9 +148,9 @@ const LocationRechteTab = () => {
       auth,
       `/v1/location/${locationId}/access/`,
       (response) => {
-        const allRules = (response?.data?.access || []) as AccessRule[];
-        setRules(allRules.filter((rule) => !rule.is_staff));
-        setUsers((response?.data?.users || []) as AccessUser[]);
+        setMembers((response?.data?.members || []) as Member[]);
+        setCandidates((response?.data?.candidates || []) as UserContact[]);
+        setCanGrantAccount(Boolean(response?.data?.can_grant_account));
         setLoading(false);
       },
       (error) => {
@@ -105,20 +165,23 @@ const LocationRechteTab = () => {
     load();
   }, [load]);
 
-  const availableUsers = useMemo(
-    () => users.filter((user) => !rules.some((rule) => rule.user === user.id)),
-    [users, rules],
-  );
+  const updateMember = (userId: number, patch: Partial<Member>) =>
+    setMembers((prev) => prev.map((m) => (m.user_id === userId ? { ...m, ...patch } : m)));
 
-  const setTransport = (rule: AccessRule, value: number) => {
+  // Updates the member's rule, or creates one (account members without a
+  // rule are silent by default).
+  const saveRule = (member: Member, transport: number, type: number) => {
+    const body = member.rule
+      ? { id: member.rule.id, transport, type }
+      : { user_id: member.user_id, transport, type };
     void axiosConfig.perform_post(
       auth,
       `/v1/location/${locationId}/access/`,
-      { id: rule.id, transport: value, type: rule.type ?? 0 },
+      body,
       (response) => {
         const saved = response?.data?.access as AccessRule | undefined;
         if (saved) {
-          setRules((prev) => prev.map((r) => (r.id === saved.id ? saved : r)));
+          updateMember(member.user_id, { rule: saved });
         }
       },
       (error) => {
@@ -128,61 +191,70 @@ const LocationRechteTab = () => {
     );
   };
 
-  const toggleType = (rule: AccessRule, bit: number) => {
-    const nextType = (rule.type ?? 0) & bit ? (rule.type ?? 0) & ~bit : (rule.type ?? 0) | bit;
-    void axiosConfig.perform_post(
-      auth,
-      `/v1/location/${locationId}/access/`,
-      { id: rule.id, transport: rule.transport ?? 0, type: nextType },
-      (response) => {
-        const saved = response?.data?.access as AccessRule | undefined;
-        if (saved) {
-          setRules((prev) => prev.map((r) => (r.id === saved.id ? saved : r)));
-        }
-      },
-      (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not update: ${reason}`);
-      },
-    );
+  const setTransport = (member: Member, value: number) =>
+    saveRule(member, value, member.rule?.type ?? (value ? 1 : 0));
+
+  const toggleType = (member: Member, bit: number) => {
+    const current = member.rule?.type ?? 0;
+    saveRule(member, member.rule?.transport ?? 0, current & bit ? current & ~bit : current | bit);
   };
 
   const addUser = () => {
     if (!newUserId) {
       return;
     }
-    void axiosConfig.perform_post(
-      auth,
-      `/v1/location/${locationId}/access/`,
-      { user_id: Number(newUserId), transport: 1, type: 1 },
-      (response) => {
-        const saved = response?.data?.access as AccessRule | undefined;
-        if (saved) {
-          setRules((prev) => [...prev, saved]);
-        }
-        showSuccessBar(enqueueSnackbar, t('rechte_added'));
-        setNewUserId('');
-        setAddOpen(false);
-      },
-      (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not add user: ${reason}`);
-      },
-    );
+    setAdding(true);
+    const done = () => {
+      showSuccessBar(enqueueSnackbar, t('rechte_added'));
+      setAdding(false);
+      setNewUserId('');
+      setNewScope('single');
+      setAddOpen(false);
+      load();
+    };
+    const failed = (error: { response?: { data?: { reason?: string } }; message: string }) => {
+      const reason = error?.response?.data?.reason || error.message;
+      showErrorBar(enqueueSnackbar, `Could not add user: ${reason}`);
+      setAdding(false);
+    };
+    if (newScope === 'account') {
+      void axiosConfig.perform_post(
+        auth,
+        `/v1/location/${locationId}/access/account-member/`,
+        { user_id: Number(newUserId) },
+        done,
+        failed,
+      );
+    } else {
+      void axiosConfig.perform_post(
+        auth,
+        `/v1/location/${locationId}/access/`,
+        { user_id: Number(newUserId), transport: 1, type: 1 },
+        done,
+        failed,
+      );
+    }
   };
 
-  const removeRule = (rule: AccessRule) => {
+  const revoke = () => {
+    if (!revokeTarget?.rule) {
+      return;
+    }
+    setRevoking(true);
     void axiosConfig.perform_post(
       auth,
       `/v1/location/${locationId}/access/delete/`,
-      { id: rule.id },
+      { id: revokeTarget.rule.id },
       () => {
-        setRules((prev) => prev.filter((r) => r.id !== rule.id));
         showSuccessBar(enqueueSnackbar, t('rechte_removed'));
+        setRevoking(false);
+        setRevokeTarget(null);
+        load();
       },
       (error) => {
         const reason = error?.response?.data?.reason || error.message;
         showErrorBar(enqueueSnackbar, `Could not remove access: ${reason}`);
+        setRevoking(false);
       },
     );
   };
@@ -196,9 +268,11 @@ const LocationRechteTab = () => {
       `/v1/location/${locationId}/access/user/`,
       { user_id: contactEdit.userId, [contactEdit.field]: contactEdit.value.trim() },
       (response) => {
-        const updated = response?.data?.user as AccessUser | undefined;
+        const updated = response?.data?.user as
+          | { id: number; email?: string | null; mobile?: string | null }
+          | undefined;
         if (updated) {
-          setUsers((prev) => prev.map((user) => (user.id === updated.id ? updated : user)));
+          updateMember(updated.id, { email: updated.email, mobile: updated.mobile });
         }
         setContactEdit(null);
       },
@@ -209,256 +283,330 @@ const LocationRechteTab = () => {
     );
   };
 
-  return (
-    <PanelCard
-      title={
-        <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {t('rechte_title')}
-          <span style={{ fontSize: 12.5, color: '#8B8383', fontWeight: 400 }}>
-            {rules.length}
-          </span>
-        </span>
-      }
-      actions={
-        canAdd && (
-          <PillButton
-            variant="solid"
-            label={t('rechte_add_user')}
-            onClick={() => setAddOpen((open) => !open)}
-          />
-        )
-      }
-    >
-      {loading ? (
-        <div className="d-flex justify-content-center py-4 text-muted">
-          <Spinner animation="border" size="sm" />
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {addOpen && (
-            <div
-              style={{
-                background: 'var(--progeo-surface)',
-                borderRadius: 14,
-                padding: 16,
-                boxShadow: 'inset 0 0 0 1.5px var(--progeo-orange)',
-                display: 'flex',
-                gap: 12,
-                alignItems: 'flex-end',
-                flexWrap: 'wrap',
-              }}
-            >
-              <div style={{ minWidth: 220 }}>
-                <span
-                  style={{
-                    display: 'block',
-                    fontSize: 10.5,
-                    letterSpacing: '.08em',
-                    textTransform: 'uppercase',
-                    color: '#8B8383',
-                    fontWeight: 500,
-                    marginBottom: 5,
-                  }}
-                >
-                  {t('rechte_select_user')}
-                </span>
-                <select
-                  value={newUserId}
-                  onChange={(event) => setNewUserId(event.target.value)}
-                  style={{
-                    height: 38,
-                    border: 'none',
-                    borderRadius: 10,
-                    background: '#EFECEC',
-                    padding: '0 12px',
-                    fontFamily: 'inherit',
-                    fontSize: 13.5,
-                    color: 'var(--progeo-blue)',
-                    width: '100%',
-                  }}
-                >
-                  <option value="">{t('rechte_select_user_placeholder')}</option>
-                  {availableUsers.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.username}
-                      {user.email ? ` (${user.email})` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <PillButton label={t('rechte_add_confirm')} onClick={addUser} />
-              <PillButton
-                variant="ghost"
-                label={t('rechte_cancel')}
-                onClick={() => setAddOpen(false)}
+  const accountCount = members.filter((m) => m.access === 'account').length;
+  const singleCount = members.length - accountCount;
+
+  const renderContactFix = (member: Member) => {
+    const hasEmail = Boolean(member.email?.trim());
+    const hasMobile = Boolean(member.mobile?.trim());
+    if (!canEdit || (hasEmail && hasMobile)) {
+      return null;
+    }
+    const fields = [
+      !hasEmail && { field: 'email' as const, label: 'rechte_field_email', add: 'rechte_add_email' },
+      !hasMobile && { field: 'mobile' as const, label: 'rechte_field_mobile', add: 'rechte_add_mobile' },
+    ].filter(Boolean) as { field: 'email' | 'mobile'; label: string; add: string }[];
+    return (
+      <div style={{ paddingLeft: 48, display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+        {fields.map(({ field, label, add }) => {
+          const editing =
+            contactEdit && contactEdit.userId === member.user_id && contactEdit.field === field
+              ? contactEdit
+              : null;
+          return editing ? (
+            <div key={field} style={{ display: 'flex', gap: 6, alignItems: 'flex-end' }}>
+              <LabeledInput
+                label={t(label)}
+                value={editing.value}
+                onChange={(value) => setContactEdit({ ...editing, value })}
+              />
+              <PillButton label={t('rechte_save')} onClick={saveContact} />
+            </div>
+          ) : (
+            <PillButton
+              key={field}
+              variant="ghost"
+              label={t(add)}
+              onClick={() => setContactEdit({ userId: member.user_id, field, value: '' })}
+            />
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderMember = (member: Member) => {
+    const hasEmail = Boolean(member.email?.trim());
+    const hasMobile = Boolean(member.mobile?.trim());
+    const transport = member.rule?.transport ?? 0;
+    const type = member.rule?.type ?? 0;
+    const isAccount = member.access === 'account';
+    return (
+      <div
+        key={member.user_id}
+        style={{
+          background: 'var(--progeo-surface)',
+          borderRadius: 14,
+          padding: '14px 16px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: '50%',
+              background: 'var(--progeo-track-soft)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 12,
+              fontWeight: 600,
+              color: 'var(--progeo-blue)',
+              flexShrink: 0,
+            }}
+          >
+            {initialsOf(displayName(member))}
+          </div>
+          <div style={{ flex: 1, minWidth: 160 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 14, fontWeight: 500 }}>{displayName(member)}</span>
+              <ScopeBadge
+                scope={member.access}
+                label={t(isAccount ? 'rechte_scope_account' : 'rechte_scope_single')}
               />
             </div>
-          )}
-
-          {rules.length === 0 && (
-            <div style={{ background: 'var(--progeo-surface)', borderRadius: 14, padding: '22px 16px', fontSize: 13, color: '#8B8383' }}>
-              {t('rechte_empty')}
+            <div style={{ fontSize: 12, color: '#8B8383' }}>{member.email || '–'}</div>
+          </div>
+          <div style={{ minWidth: 110 }}>
+            <div style={{ ...fieldLabelStyle, marginBottom: 2 }}>{t('rechte_last_login')}</div>
+            <div style={{ fontSize: 12.5, color: '#6E6868' }}>
+              {member.last_login ? formatDateTime(member.last_login) : t('rechte_never_logged_in')}
             </div>
-          )}
-
-          {rules.map((rule) => {
-            const user = users.find((candidate) => candidate.id === rule.user);
-            const hasEmail = Boolean(user?.email?.trim());
-            const hasMobile = Boolean(user?.mobile?.trim());
-            const editingEmail =
-              contactEdit && contactEdit.userId === rule.user && contactEdit.field === 'email'
-                ? contactEdit
-                : null;
-            const editingMobile =
-              contactEdit && contactEdit.userId === rule.user && contactEdit.field === 'mobile'
-                ? contactEdit
-                : null;
-            return (
-              <div
-                key={rule.id}
-                style={{ background: 'var(--progeo-surface)', borderRadius: 14, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                  <div
-                    style={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: '50%',
-                      background: 'var(--progeo-track-soft)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: 12,
-                      fontWeight: 600,
-                      color: 'var(--progeo-blue)',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {initialsOf(rule.user_name)}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 140 }}>
-                    <div style={{ fontSize: 14, fontWeight: 500 }}>{rule.user_name || `#${rule.user}`}</div>
-                    <div style={{ fontSize: 12, color: '#8B8383' }}>{rule.user_email || '–'}</div>
-                  </div>
-                  {canEdit && (
-                    <button
-                      type="button"
-                      onClick={() => removeRule(rule)}
-                      title={t('rechte_revoke')}
-                      style={{
-                        height: 32,
-                        padding: '0 12px',
-                        border: 'none',
-                        borderRadius: 9,
-                        background: '#FBEAE4',
-                        color: '#C44D26',
-                        fontFamily: 'inherit',
-                        fontSize: 12.5,
-                        fontWeight: 500,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {t('rechte_revoke')}
-                    </button>
-                  )}
-                </div>
-
-                <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', paddingLeft: 48 }}>
-                  <div>
-                    <div style={{ fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase', color: '#8B8383', fontWeight: 500, marginBottom: 5 }}>
-                      {t('rechte_channel')}
-                    </div>
-                    <div style={{ display: 'flex', gap: 3, background: 'var(--progeo-track-soft)', borderRadius: 'var(--progeo-radius-pill)', padding: 3 }}>
-                      {TRANSPORT_OPTIONS.map((option) => {
-                        const disabled =
-                          !canEdit ||
-                          (option.value === 1 && !hasEmail) ||
-                          (option.value === 2 && !hasMobile) ||
-                          (option.value === 4 && (!hasEmail || !hasMobile));
-                        return (
-                          <PillButton
-                            key={option.value}
-                            label={t(option.labelKey)}
-                            active={(rule.transport ?? 0) === option.value}
-                            disabled={disabled}
-                            onClick={() => setTransport(rule, option.value)}
-                          />
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase', color: '#8B8383', fontWeight: 500, marginBottom: 5 }}>
-                      {t('rechte_type')}
-                    </div>
-                    <div style={{ display: 'flex', gap: 3, background: 'var(--progeo-track-soft)', borderRadius: 'var(--progeo-radius-pill)', padding: 3 }}>
-                      {TYPE_OPTIONS.map((option) => (
-                        <PillButton
-                          key={option.value}
-                          label={t(option.labelKey)}
-                          active={((rule.type ?? 0) & option.value) !== 0}
-                          disabled={!canEdit}
-                          onClick={() => toggleType(rule, option.value)}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {canEdit && (!hasEmail || !hasMobile) && (
-                  <div style={{ paddingLeft: 48, display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-                    {!hasEmail &&
-                      (editingEmail ? (
-                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                          <LabeledInput
-                            label={t('rechte_field_email')}
-                            value={editingEmail.value}
-                            onChange={(value) => setContactEdit({ ...editingEmail, value })}
-                          />
-                          <PillButton label={t('rechte_save')} onClick={saveContact} />
-                        </div>
-                      ) : (
-                        <PillButton
-                          variant="ghost"
-                          label={t('rechte_add_email')}
-                          onClick={() =>
-                            rule.user &&
-                            setContactEdit({ userId: rule.user, field: 'email', value: '' })
-                          }
-                        />
-                      ))}
-                    {!hasMobile &&
-                      (editingMobile ? (
-                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                          <LabeledInput
-                            label={t('rechte_field_mobile')}
-                            value={editingMobile.value}
-                            onChange={(value) => setContactEdit({ ...editingMobile, value })}
-                          />
-                          <PillButton label={t('rechte_save')} onClick={saveContact} />
-                        </div>
-                      ) : (
-                        <PillButton
-                          variant="ghost"
-                          label={t('rechte_add_mobile')}
-                          onClick={() =>
-                            rule.user &&
-                            setContactEdit({ userId: rule.user, field: 'mobile', value: '' })
-                          }
-                        />
-                      ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-
-          {!canEdit && !canAdd && (
-            <span style={{ fontSize: 12.5, color: '#8B8383' }}>{t('ui_no_permission_edit')}</span>
+          </div>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => setRevokeTarget(member)}
+              disabled={isAccount}
+              title={isAccount ? t('rechte_account_revoke_hint') : t('rechte_revoke')}
+              style={{
+                height: 32,
+                padding: '0 12px',
+                border: 'none',
+                borderRadius: 9,
+                background: isAccount ? 'var(--progeo-track-soft)' : '#FBEAE4',
+                color: isAccount ? '#A9A2A2' : '#C44D26',
+                fontFamily: 'inherit',
+                fontSize: 12.5,
+                fontWeight: 500,
+                cursor: isAccount ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {t('rechte_revoke')}
+            </button>
           )}
         </div>
-      )}
-    </PanelCard>
+
+        <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', paddingLeft: 48 }}>
+          <div>
+            <div style={fieldLabelStyle}>{t('rechte_channel')}</div>
+            <div style={segmentTrackStyle}>
+              {TRANSPORT_OPTIONS.map((option) => {
+                const disabled =
+                  !canEdit ||
+                  (option.value === 1 && !hasEmail) ||
+                  (option.value === 2 && !hasMobile) ||
+                  (option.value === 4 && (!hasEmail || !hasMobile));
+                return (
+                  <PillButton
+                    key={option.value}
+                    label={t(option.labelKey)}
+                    active={transport === option.value}
+                    disabled={disabled}
+                    onClick={() => setTransport(member, option.value)}
+                  />
+                );
+              })}
+            </div>
+          </div>
+          <div>
+            <div style={fieldLabelStyle}>{t('rechte_type')}</div>
+            <div style={segmentTrackStyle}>
+              {TYPE_OPTIONS.map((option) => (
+                <PillButton
+                  key={option.value}
+                  label={t(option.labelKey)}
+                  active={(type & option.value) !== 0}
+                  disabled={!canEdit || transport === 0}
+                  onClick={() => toggleType(member, option.value)}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {renderContactFix(member)}
+
+        {isAccount && canEdit && (
+          <div style={{ paddingLeft: 48, fontSize: 12, color: '#8B8383' }}>
+            {t('rechte_account_revoke_hint')}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <>
+      <PanelCard
+        title={
+          <span style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+            {t('rechte_title')}
+            <span style={{ fontSize: 12.5, color: '#8B8383', fontWeight: 400 }}>
+              {t('rechte_summary', { account: accountCount, single: singleCount })}
+            </span>
+          </span>
+        }
+        actions={
+          canAdd && (
+            <button
+              type="button"
+              onClick={() => setAddOpen((open) => !open)}
+              style={{
+                height: 36,
+                padding: '0 16px',
+                border: 'none',
+                borderRadius: 10,
+                background: 'var(--progeo-orange)',
+                color: '#fff',
+                fontFamily: 'inherit',
+                fontSize: 13,
+                fontWeight: 500,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                boxShadow: '0 4px 14px rgba(235, 99, 59, .28)',
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden="true">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              {t('rechte_add_user')}
+            </button>
+          )
+        }
+      >
+        {loading ? (
+          <div className="d-flex justify-content-center py-4 text-muted">
+            <Spinner animation="border" size="sm" />
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {addOpen && (
+              <div
+                style={{
+                  background: 'var(--progeo-surface)',
+                  borderRadius: 14,
+                  padding: 16,
+                  boxShadow: 'inset 0 0 0 1.5px var(--progeo-orange)',
+                  display: 'flex',
+                  gap: 16,
+                  alignItems: 'flex-end',
+                  flexWrap: 'wrap',
+                }}
+              >
+                <div style={{ minWidth: 240, flex: '1 1 240px' }}>
+                  <div style={fieldLabelStyle}>{t('rechte_select_user')}</div>
+                  {candidates.length === 0 ? (
+                    <div style={{ fontSize: 13, color: '#8B8383', height: 38, display: 'flex', alignItems: 'center' }}>
+                      {t('rechte_no_candidates')}
+                    </div>
+                  ) : (
+                    <select
+                      value={newUserId}
+                      onChange={(event) => setNewUserId(event.target.value)}
+                      autoComplete="off"
+                      style={{
+                        height: 38,
+                        border: 'none',
+                        borderRadius: 10,
+                        background: '#EFECEC',
+                        padding: '0 12px',
+                        fontFamily: 'inherit',
+                        fontSize: 13.5,
+                        color: 'var(--progeo-blue)',
+                        width: '100%',
+                      }}
+                    >
+                      <option value="">{t('rechte_select_user_placeholder')}</option>
+                      {candidates.map((user) => (
+                        <option key={user.user_id} value={user.user_id}>
+                          {displayName(user)}
+                          {user.email ? ` (${user.email})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+                {canGrantAccount && (
+                  <div>
+                    <div style={fieldLabelStyle}>{t('rechte_scope')}</div>
+                    <div style={segmentTrackStyle}>
+                      {(['single', 'account'] as Scope[]).map((scope) => (
+                        <PillButton
+                          key={scope}
+                          label={t(scope === 'account' ? 'rechte_scope_account' : 'rechte_scope_single')}
+                          title={scope === 'account' ? t('rechte_scope_account_hint') : undefined}
+                          active={newScope === scope}
+                          onClick={() => setNewScope(scope)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <PillButton
+                    label={t('rechte_add_confirm')}
+                    onClick={addUser}
+                    disabled={!newUserId || adding}
+                  />
+                  <PillButton
+                    variant="ghost"
+                    label={t('rechte_cancel')}
+                    onClick={() => setAddOpen(false)}
+                  />
+                </div>
+              </div>
+            )}
+
+            {members.length === 0 && (
+              <div
+                style={{
+                  background: 'var(--progeo-surface)',
+                  borderRadius: 14,
+                  padding: '22px 16px',
+                  fontSize: 13,
+                  color: '#8B8383',
+                }}
+              >
+                {t('rechte_empty')}
+              </div>
+            )}
+
+            {members.map(renderMember)}
+
+            {!canEdit && !canAdd && (
+              <span style={{ fontSize: 12.5, color: '#8B8383' }}>{t('ui_no_permission_edit')}</span>
+            )}
+          </div>
+        )}
+      </PanelCard>
+      <ConfirmDialog
+        show={revokeTarget !== null}
+        title={t('rechte_revoke_title')}
+        message={t('rechte_revoke_message', { name: revokeTarget ? displayName(revokeTarget) : '' })}
+        confirmLabel={t('rechte_revoke')}
+        cancelLabel={t('rechte_cancel')}
+        confirming={revoking}
+        onCancel={() => setRevokeTarget(null)}
+        onConfirm={revoke}
+      />
+    </>
   );
 };
 

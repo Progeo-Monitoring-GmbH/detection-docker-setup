@@ -136,3 +136,44 @@ def test_build_timeline_events_excludes_events_before_cutoff():
     )
 
     assert events == []
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_build_timeline_events_merges_flapping_alarms_into_one_episode():
+    now = timezone.now()
+    location = ProgeoLocation.objects.using("default").create(alarm_threshold=100)
+    device = ProgeoDevice.objects.using("default").create(raw_hash="timeline-device-3", location=location)
+
+    def make_alarm(sensor_id, triggered_minutes_ago, normalized_minutes_ago, max_value=150):
+        measurement = ProgeoMeasurement.objects.using("default").create(device=device, raw_data={})
+        return ProgeoAlarm.objects.using("default").create(
+            measurement=measurement,
+            sensor_id=sensor_id,
+            threshold=100,
+            max_value=max_value,
+            triggered_at=now - timezone.timedelta(minutes=triggered_minutes_ago),
+            normalized_at=now - timezone.timedelta(minutes=normalized_minutes_ago),
+        )
+
+    # Sensor 1 flaps three times within minutes -> one episode.
+    flapping = [make_alarm(1, 60, 55), make_alarm(1, 40, 35, max_value=280), make_alarm(1, 20, 15)]
+    # Sensor 2 fires once at the same time -> its own episode.
+    other = make_alarm(2, 40, 35)
+    # Sensor 1 again, long after the flapping stopped -> a new episode.
+    later_alarm = make_alarm(1, 60 * 24, 60 * 24 - 5)
+
+    events = LocationViewSet._build_timeline_events(
+        EMail.objects.using("default").none(),
+        ProgeoAlarm.objects.using("default").filter(pk__in=[a.pk for a in [*flapping, other, later_alarm]]),
+        now - timezone.timedelta(days=2),
+    )
+
+    triggered = [event for event in events if event["kind"] == "alarm_triggered"]
+    resolved = [event for event in events if event["kind"] == "alarm_resolved"]
+    assert len(triggered) == 3
+    assert len(resolved) == 3
+    episode = next(event for event in triggered if event["occurrences"] == 3)
+    assert episode["at"] == flapping[0].triggered_at
+    assert episode["max_value"] == 280
+    assert flapping[-1].normalized_at in [event["at"] for event in resolved]
+    assert flapping[0].normalized_at not in [event["at"] for event in resolved]

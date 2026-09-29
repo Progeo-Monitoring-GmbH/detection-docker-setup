@@ -10,6 +10,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.decorator import require_module_permissions
 from progeo.helper.basics import RequestFailed, RequestSuccess
+from progeo.helper.location_access import location_q, resolve_request_account
 from progeo.helper.cacher import cache_save_and_return, search_cache
 from progeo.helper.creator import create_MfS_log
 from progeo.v1.models import ProgeoAlarm
@@ -31,23 +32,7 @@ class AlarmViewSet(ProgeoModalViewSet):
 
     @staticmethod
     def _resolve_request_account(request):
-        account = getattr(request, "account", None)
-        user = getattr(request, "user", None)
-
-        if not user:
-            return account or _get_controller_account()
-
-        if user.is_staff or user.is_superuser:
-            return account or _get_controller_account()
-
-        if account and account.users.filter(pk=user.pk).exists():
-            return account
-
-        user_account = user.accounts.order_by("id").first()
-        if user_account:
-            return user_account
-
-        return account or _get_controller_account()
+        return resolve_request_account(request, fallback_account=_get_controller_account())
 
     @require_module_permissions("module_measurements_enabled")
     def list(self, request, *args, **kwargs):
@@ -87,6 +72,7 @@ class AlarmViewSet(ProgeoModalViewSet):
 
         rows = (
             ProgeoAlarm.objects.using(account.db_name)
+            .filter(location_q(request.user, account, "measurement__device__location__"))
             .filter(
                 # Still-active alarms count regardless of age - otherwise an
                 # alarm that's never been acknowledged silently drops out of
@@ -149,9 +135,12 @@ class AlarmViewSet(ProgeoModalViewSet):
         days = max(1, min(days, 365))
         cutoff = timezone.now() - timedelta(days=days)
 
-        db = account.db_name if account else "default"
+        if not account:
+            return RequestSuccess({"clusters": [], "top_sensors": []})
+        db = account.db_name
         alarms = list(
             ProgeoAlarm.objects.using(db)
+            .filter(location_q(request.user, account, "measurement__device__location__"))
             .filter(measurement__device__location_id=location_id)
             .filter(
                 Q(normalized_at__isnull=True)
@@ -384,12 +373,15 @@ class AlarmViewSet(ProgeoModalViewSet):
         acknowledged alarm keeps the original evaluated_at/evaluated_by.
         """
         account = self._resolve_request_account(request)
-        db_name = account.db_name if account else "default"
+        if not account:
+            return RequestFailed({"reason": "Alarm not found"})
+        db_name = account.db_name
         # Bypass the list window (last N days) so any alarm owned by the
         # account can be acknowledged, not just recently triggered ones.
         alarm = (
             ProgeoAlarm.objects.using(db_name)
             .select_related("measurement__device__location")
+            .filter(location_q(request.user, account, "measurement__device__location__"))
             .filter(pk=pk)
             .first()
         )
@@ -463,6 +455,7 @@ class AlarmViewSet(ProgeoModalViewSet):
 
         queryset = (
             ProgeoAlarm.objects.using(account.db_name)
+            .filter(location_q(self.request.user, account, "measurement__device__location__"))
             .filter(alarm_filter)
             .select_related("measurement__device__location")
             .order_by("-triggered_at", "-id")

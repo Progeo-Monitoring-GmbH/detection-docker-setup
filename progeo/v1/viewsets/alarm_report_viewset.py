@@ -7,6 +7,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.decorator import require_module_permissions
 from progeo.helper.basics import RequestFailed, RequestSuccess
+from progeo.helper.location_access import is_account_member, is_staff_admin
 from progeo.v1.models import AlarmDailyReport
 from progeo.v1.serializers import AlarmDailyReportSerializer
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
@@ -24,23 +25,15 @@ class AlarmReportViewSet(ProgeoModalViewSet):
 
     @staticmethod
     def _resolve_request_account(request):
+        # Daily reports aggregate a whole account, so only staff and account
+        # members get one - single-access users (ProgeoAccess) don't.
         account = getattr(request, "account", None)
         user = getattr(request, "user", None)
-
-        if not user:
+        if not user or is_staff_admin(user):
             return account or _get_controller_account()
-
-        if user.is_staff or user.is_superuser:
-            return account or _get_controller_account()
-
-        if account and account.users.filter(pk=user.pk).exists():
+        if is_account_member(user, account):
             return account
-
-        user_account = user.accounts.order_by("id").first()
-        if user_account:
-            return user_account
-
-        return account or _get_controller_account()
+        return user.accounts.order_by("id").first()
 
     @require_module_permissions("module_measurements_enabled")
     def list(self, request, *args, **kwargs):
