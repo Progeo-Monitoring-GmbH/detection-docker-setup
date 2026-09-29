@@ -1,4 +1,4 @@
-import axios, { AxiosInstance } from 'axios';
+import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import Cookies from 'js-cookie';
 import { AuthContextType } from '../hooks/CoreAuthProvider';
 import { defaultErrorCallback } from './helper.jsx';
@@ -45,6 +45,24 @@ export default class axiosConfig {
     return axiosConfig.getInstance.axiosHolder;
   }
 
+  /** Runs a request; on 401/403 the user is sent to the login page. */
+  private static async handle(
+    auth: AuthContextType | undefined,
+    request: Promise<AxiosResponse>,
+    callBackSuccess,
+    callBackError = defaultErrorCallback,
+  ) {
+    return await request.then(
+      (response) => callBackSuccess(response),
+      (error) => {
+        callBackError(error);
+        if ([401, 403].includes(error?.response?.status) && auth) {
+          auth.navigate(`/login?forward=${auth.location}`);
+        }
+      },
+    );
+  }
+
   static async perform_post(
     auth: AuthContextType | undefined,
     url: string,
@@ -54,20 +72,7 @@ export default class axiosConfig {
     config: IConfig = {},
   ) {
     axiosConfig.updateToken(config.token);
-    await axiosConfig.holder.post(url, data, config).then(
-      (response) => {
-        callBackSuccess(response);
-      },
-      (error) => {
-        callBackError(error);
-        if ([401, 403].includes(error?.response?.status)) {
-          if (auth) {
-            auth.navigate(`/login?forward=${auth.location}`);
-            return;
-          }
-        }
-      },
-    );
+    return axiosConfig.handle(auth, axiosConfig.holder.post(url, data, config), callBackSuccess, callBackError);
   }
 
   static async perform_patch(
@@ -79,20 +84,7 @@ export default class axiosConfig {
     config: IConfig = {},
   ) {
     axiosConfig.updateToken(config.token);
-    await axiosConfig.holder.patch(url, data, config).then(
-      (response) => {
-        callBackSuccess(response);
-      },
-      (error) => {
-        callBackError(error);
-        if ([401, 403].includes(error?.response?.status)) {
-          if (auth) {
-            auth.navigate(`/login?forward=${auth.location}`);
-            return;
-          }
-        }
-      },
-    );
+    return axiosConfig.handle(auth, axiosConfig.holder.patch(url, data, config), callBackSuccess, callBackError);
   }
 
   static async perform_get(
@@ -103,18 +95,7 @@ export default class axiosConfig {
     config = {},
   ) {
     axiosConfig.updateToken();
-    return await axiosConfig.holder.get(url, config).then(
-      (response) => callBackSuccess(response),
-      (error) => {
-        callBackError(error);
-        if ([401, 403].includes(error?.response?.status)) {
-          if (auth) {
-            auth.navigate(`/login?forward=${auth.location}`);
-            return;
-          }
-        }
-      },
-    );
+    return axiosConfig.handle(auth, axiosConfig.holder.get(url, config), callBackSuccess, callBackError);
   }
 
   static updateToken(token = '') {

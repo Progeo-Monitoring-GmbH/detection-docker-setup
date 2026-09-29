@@ -5,7 +5,7 @@ import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
-import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import { errorReason, showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
@@ -150,8 +150,7 @@ const BackupView = () => {
         setLoading(false);
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, t('backup_load_error', { reason }));
+        showErrorBar(enqueueSnackbar, t('backup_load_error', { reason: errorReason(error) }));
         setLoading(false);
       },
     );
@@ -178,8 +177,7 @@ const BackupView = () => {
         setBusyAction(null);
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, t(errorMessageKey, { reason }));
+        showErrorBar(enqueueSnackbar, t(errorMessageKey, { reason: errorReason(error) }));
         setBusyAction(null);
       },
     );
@@ -225,7 +223,7 @@ const BackupView = () => {
               {},
               () => resolve(),
               (error) => {
-                const reason = error?.response?.data?.reason || error.message;
+                const reason = errorReason(error);
                 showErrorBar(
                   enqueueSnackbar,
                   t('backup_delete_error', { reason: `${backup.name}: ${reason}` }),
@@ -284,8 +282,7 @@ const BackupView = () => {
         setBusyAction(null);
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, t('backup_download_error', { reason }));
+        showErrorBar(enqueueSnackbar, t('backup_download_error', { reason: errorReason(error) }));
         setBusyAction(null);
       },
     );

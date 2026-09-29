@@ -8,7 +8,8 @@ import axiosConfig from '../axiosConfig.tsx';
 import MeasurementSamplesCompareChart, {
   type MeasurementCompareRow,
 } from '../components/device/MeasurementSamplesCompareChart.tsx';
-import { showErrorBar } from '../components/ui/Snackbar.jsx';
+import { showRequestError } from '../components/ui/Snackbar.jsx';
+import { measurementsQuery } from './measurementQuery';
 
 type DeviceSummary = {
   id: number;
@@ -31,16 +32,9 @@ const MeasurementDetailView = () => {
 
   const loadMeasurements = (year?: number) => {
     setLoading(true);
-    const params = new URLSearchParams();
-    if (year) {
-      params.set('year', String(year));
-    } else {
-      params.set('limit', '300');
-    }
-
-    void axiosConfig.perform_get(
+        void axiosConfig.perform_get(
       auth,
-      `/v1/device/${id}/measurements/?${params.toString()}`,
+      `/v1/device/${id}/measurements/?${measurementsQuery(year)}`,
       (response) => {
         const payload = response?.data || {};
         const nextDevice = (payload.device || null) as DeviceSummary | null;
@@ -52,8 +46,7 @@ const MeasurementDetailView = () => {
         setLoading(false);
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not load measurements: ${reason}`);
+        showRequestError(enqueueSnackbar, 'Could not load measurements', error);
         setRows([]);
         setDevice(null);
         setLoading(false);

@@ -5,7 +5,7 @@ import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
-import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import { showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import KpiStrip from '../components/ui/kit/KpiStrip';
@@ -78,8 +78,7 @@ const LocationVerwaltungView = () => {
         if (error?.response?.status === 400 || error?.response?.status === 403) {
           setDenied(true);
         } else {
-          const reason = error?.response?.data?.reason || error.message;
-          showErrorBar(enqueueSnackbar, `Could not load objects: ${reason}`);
+          showRequestError(enqueueSnackbar, 'Could not load objects', error);
         }
         setLoading(false);
       },
@@ -122,8 +121,7 @@ const LocationVerwaltungView = () => {
         setPermsLoading(false);
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not load permissions: ${reason}`);
+        showRequestError(enqueueSnackbar, 'Could not load permissions', error);
         setPermsLoading(false);
       },
     );
@@ -147,8 +145,7 @@ const LocationVerwaltungView = () => {
         showSuccessBar(enqueueSnackbar, t('rechte_added'));
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not add user: ${reason}`);
+        showRequestError(enqueueSnackbar, 'Could not add user', error);
       },
     );
   };
@@ -166,8 +163,7 @@ const LocationVerwaltungView = () => {
         showSuccessBar(enqueueSnackbar, t('rechte_removed'));
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not remove access: ${reason}`);
+        showRequestError(enqueueSnackbar, 'Could not remove access', error);
       },
     );
   };

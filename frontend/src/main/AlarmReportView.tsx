@@ -21,7 +21,7 @@ import { useSnackbar } from 'notistack';
 
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
-import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import { showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import { plotTheme } from '../styles/plotTheme';
 
 type AlarmProjectStatus = {
@@ -298,8 +298,7 @@ const AlarmReportView = () => {
         }
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not load reports: ${reason}`);
+        showRequestError(enqueueSnackbar, 'Could not load reports', error);
         setLoading(false);
       },
     );
@@ -322,8 +321,7 @@ const AlarmReportView = () => {
           setReportLoading(false);
         },
         (error) => {
-          const reason = error?.response?.data?.reason || error.message;
-          showErrorBar(enqueueSnackbar, `Could not load report: ${reason}`);
+          showRequestError(enqueueSnackbar, 'Could not load report', error);
           setReportLoading(false);
         },
       );
@@ -352,8 +350,7 @@ const AlarmReportView = () => {
           setCompareLoading(false);
         },
         (error) => {
-          const reason = error?.response?.data?.reason || error.message;
-          showErrorBar(enqueueSnackbar, `Could not compare reports: ${reason}`);
+          showRequestError(enqueueSnackbar, 'Could not compare reports', error);
           setCompareLoading(false);
         },
       );
@@ -384,8 +381,7 @@ const AlarmReportView = () => {
         fetchReports();
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not generate report: ${reason}`);
+        showRequestError(enqueueSnackbar, 'Could not generate report', error);
         setGenerating(false);
       },
     );

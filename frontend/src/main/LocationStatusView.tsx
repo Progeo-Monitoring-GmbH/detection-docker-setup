@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
-import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import { errorReason, showErrorBar, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import SensorHeatmap2D from '../components/device/SensorHeatmap2D';
 import type { SensorHeatmapResponse } from '../components/device/SensorHeatmap3D';
 import LageplanZoneOverlay from '../components/device/LageplanZoneOverlay';
@@ -117,7 +117,7 @@ const LocationStatusView = ({
         setRequestingMeasurement(false);
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
+        const reason = errorReason(error);
         showErrorBar(
           enqueueSnackbar,
           t('status_request_measurement_error', { reason }),
@@ -141,8 +141,7 @@ const LocationStatusView = ({
         if (error?.response?.status === 403) {
           setHeatmapDenied(true);
         } else {
-          const reason = error?.response?.data?.reason || error.message;
-          showErrorBar(enqueueSnackbar, `Could not load heatmap: ${reason}`);
+          showRequestError(enqueueSnackbar, 'Could not load heatmap', error);
         }
         setHeatmapLoading(false);
       },
@@ -165,11 +164,7 @@ const LocationStatusView = ({
         if (error?.response?.status === 403) {
           setClustersDenied(true);
         } else {
-          const reason = error?.response?.data?.reason || error.message;
-          showErrorBar(
-            enqueueSnackbar,
-            `Could not load suspected leaks: ${reason}`,
-          );
+          showRequestError(enqueueSnackbar, 'Could not load suspected leaks', error);
         }
         setClustersLoading(false);
       },
@@ -369,11 +364,7 @@ const LocationStatusView = ({
               {},
               () => resolve(),
               (error) => {
-                const reason = error?.response?.data?.reason || error.message;
-                showErrorBar(
-                  enqueueSnackbar,
-                  `Could not acknowledge alarm: ${reason}`,
-                );
+                showRequestError(enqueueSnackbar, 'Could not acknowledge alarm', error);
                 resolve();
               },
             );

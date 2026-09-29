@@ -22,7 +22,7 @@ import { useSnackbar } from 'notistack';
 
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
-import { showErrorBar, showInfoBar } from '../components/ui/Snackbar.jsx';
+import { showInfoBar, showRequestError } from '../components/ui/Snackbar.jsx';
 
 const DEFAULT_CENTER = [51.1657, 10.4515];
 const FLASH_DURATION_MS = 30000;
@@ -247,8 +247,7 @@ const LocationsMapView = () => {
         setLoading(false);
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not load locations: ${reason}`);
+        showRequestError(enqueueSnackbar, 'Could not load locations', error);
         setLoading(false);
       },
     );

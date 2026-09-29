@@ -22,11 +22,7 @@ import { useSnackbar } from 'notistack';
 
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
-import {
-  showErrorBar,
-  showInfoBar,
-  showSuccessBar,
-} from '../components/ui/Snackbar.jsx';
+import { errorReason, showErrorBar, showInfoBar, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 
 type PermissionDef = {
   code: string;
@@ -308,8 +304,7 @@ const StaffAdmin = () => {
         setLoading(false);
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not load users: ${reason}`);
+        showRequestError(enqueueSnackbar, 'Could not load users', error);
         setLoading(false);
       },
     );
@@ -360,7 +355,7 @@ const StaffAdmin = () => {
           fetchUsers();
         },
         (error) => {
-          const reason = error?.response?.data?.reason || error.message;
+          const reason = errorReason(error);
           showErrorBar(
             enqueueSnackbar,
             `${isNew ? 'Could not create user' : 'Could not update user'}: ${reason}`,
@@ -384,8 +379,7 @@ const StaffAdmin = () => {
         setBusyId(null);
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not reset password: ${reason}`);
+        showRequestError(enqueueSnackbar, 'Could not reset password', error);
         setBusyId(null);
       },
     );
@@ -411,8 +405,7 @@ const StaffAdmin = () => {
         fetchUsers();
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not delete user: ${reason}`);
+        showRequestError(enqueueSnackbar, 'Could not delete user', error);
         setBusyId(null);
       },
     );

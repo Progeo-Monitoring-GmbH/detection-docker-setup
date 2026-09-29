@@ -1,4 +1,4 @@
-import { type CSSProperties, useEffect, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { Link, useLocation as useRouterLocation } from 'react-router';
 import {
   Bell,
@@ -10,18 +10,18 @@ import {
   Gear,
   Geo,
   Hdd,
-  House,
   Layers,
-  List,
   Map,
   People,
   Terminal,
-  X,
 } from 'react-bootstrap-icons';
 import { useAuth } from '../../../hooks/CoreAuthProvider.tsx';
 import usePermissions from '../../../hooks/usePermissions';
-
-const MOBILE_BREAKPOINT = 860;
+import SidebarShell, {
+  SIDEBAR_ACTIVE_SHADOW,
+  sidebarGroupLabelStyle,
+  sidebarItemBaseStyle,
+} from './SidebarShell';
 
 type Item = {
   key: string;
@@ -43,20 +43,6 @@ const AppSidebar = () => {
   const { hasPermission } = usePermissions();
   const routerLocation = useRouterLocation();
 
-  const [mobile, setMobile] = useState(
-    typeof window !== 'undefined' && window.innerWidth < MOBILE_BREAKPOINT,
-  );
-  const [menuOpen, setMenuOpen] = useState(false);
-
-  useEffect(() => {
-    const onResize = () => setMobile(window.innerWidth < MOBILE_BREAKPOINT);
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
-
-  useEffect(() => {
-    setMenuOpen(false);
-  }, [routerLocation.pathname]);
 
   const isStaffUser = Boolean((auth?.user as { is_staff?: boolean } | null)?.is_staff);
 
@@ -87,34 +73,14 @@ const AppSidebar = () => {
     { key: 'dev', label: 'Dev', icon: Terminal, to: '/dev', visible: true },
   ];
 
-  const groupLabelStyle: CSSProperties = {
-    fontSize: 10,
-    letterSpacing: '.12em',
-    textTransform: 'uppercase',
-    color: '#A09898',
-    fontWeight: 600,
-    padding: '16px 14px 7px',
-    marginTop: 8,
-    borderTop: '1px solid #D9D4D4',
-  };
+  const groupLabelStyle = sidebarGroupLabelStyle(true);
 
   const itemStyle = (active: boolean): CSSProperties => ({
-    display: 'flex',
-    alignItems: 'center',
+    ...sidebarItemBaseStyle,
     gap: 11,
-    width: '100%',
-    textAlign: 'left',
-    whiteSpace: 'nowrap',
-    padding: '11px 14px',
-    border: 'none',
-    borderRadius: 13,
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-    fontSize: 14,
-    fontWeight: 500,
     color: 'var(--progeo-blue)',
     background: active ? 'var(--progeo-surface)' : 'transparent',
-    boxShadow: active ? '0 3px 12px rgba(11, 54, 89, .1)' : 'none',
+    boxShadow: active ? SIDEBAR_ACTIVE_SHADOW : 'none',
   });
 
   const isActive = (to: string) => {
@@ -152,85 +118,10 @@ const AppSidebar = () => {
     </nav>
   );
 
-  if (mobile) {
-    return (
-      <aside
-        style={{
-          width: '100%',
-          display: 'flex',
-          flexDirection: 'column',
-          padding: '11px 12px',
-          position: 'sticky',
-          top: 0,
-          zIndex: 60,
-          background: 'var(--progeo-page-bg)',
-          boxShadow: '0 8px 18px -14px rgba(11, 54, 89, .3)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-          <House size={18} />
-          <div style={{ fontSize: 13, fontWeight: 600 }}>ProGeo</div>
-          <button
-            type="button"
-            onClick={() => setMenuOpen((open) => !open)}
-            aria-label="Menu"
-            style={{
-              marginLeft: 'auto',
-              width: 40,
-              height: 40,
-              flexShrink: 0,
-              border: 'none',
-              borderRadius: 12,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--progeo-blue)',
-              background: menuOpen ? 'var(--progeo-surface)' : 'transparent',
-            }}
-          >
-            {menuOpen ? <X size={20} /> : <List size={20} />}
-          </button>
-        </div>
-        {menuOpen && (
-          <button
-            type="button"
-            aria-label="Close menu"
-            onClick={() => setMenuOpen(false)}
-            style={{ position: 'fixed', inset: 0, background: 'rgba(11, 54, 89, .28)', zIndex: 55, border: 'none', padding: 0 }}
-          />
-        )}
-        {menuOpen && (
-          <div
-            style={{
-              position: 'absolute',
-              top: '100%',
-              left: 0,
-              right: 0,
-              background: 'var(--progeo-surface)',
-              padding: '8px 10px 14px',
-              borderRadius: '0 0 18px 18px',
-              boxShadow: '0 22px 44px rgba(11, 54, 89, .22)',
-              maxHeight: 'calc(100vh - 70px)',
-              overflow: 'auto',
-              zIndex: 62,
-            }}
-          >
-            {navContent}
-          </div>
-        )}
-      </aside>
-    );
-  }
-
   return (
-    <aside style={{ width: 220, flexShrink: 0, display: 'flex', flexDirection: 'column', padding: '20px 14px 18px 18px', gap: 22 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-        <House size={18} />
-        <div style={{ fontSize: 13, fontWeight: 600 }}>ProGeo</div>
-      </div>
+    <SidebarShell width={220} toggleLabel="Menu" closeLabel="Close menu">
       {navContent}
-    </aside>
+    </SidebarShell>
   );
 };
 

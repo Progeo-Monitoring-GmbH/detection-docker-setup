@@ -1,7 +1,7 @@
 import React from 'react';
 import axiosConfig from '../axiosConfig.tsx';
 import { Card, Col, Row, Button, ListGroup, Spinner } from 'react-bootstrap';
-import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import { showErrorBar, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import {
@@ -269,11 +269,7 @@ class AdminPanel extends React.PureComponent<AdminPanelProps, AdminPanelState> {
       },
       (error) => {
         this.setState({ loadingStorage: false });
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(
-          this.props.enqueueSnackbar,
-          `Could not load storage info: ${reason}`,
-        );
+        showRequestError(this.props.enqueueSnackbar, 'Could not load storage info', error);
       },
     );
   };
@@ -292,11 +288,7 @@ class AdminPanel extends React.PureComponent<AdminPanelProps, AdminPanelState> {
       },
       (error) => {
         this.setState({ loadingLogs: false });
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(
-          this.props.enqueueSnackbar,
-          `Could not load log file list: ${reason}`,
-        );
+        showRequestError(this.props.enqueueSnackbar, 'Could not load log file list', error);
       },
     );
   };
@@ -318,11 +310,7 @@ class AdminPanel extends React.PureComponent<AdminPanelProps, AdminPanelState> {
       },
       (error) => {
         this.setState({ loadingLogContent: false });
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(
-          this.props.enqueueSnackbar,
-          `Could not read log file: ${reason}`,
-        );
+        showRequestError(this.props.enqueueSnackbar, 'Could not read log file', error);
       },
     );
   };

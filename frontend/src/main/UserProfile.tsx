@@ -7,11 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
-import {
-  showErrorBar,
-  showInfoBar,
-  showSuccessBar,
-} from '../components/ui/Snackbar.jsx';
+import { errorReason, showErrorBar, showInfoBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import PillButton from '../components/ui/kit/PillButton';
 import LabeledInput from '../components/ui/kit/LabeledInput';
 
@@ -183,7 +179,7 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
         setLoading(false);
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
+        const reason = errorReason(error);
         showErrorBar(enqueueSnackbar, `${t('profile_load_error')}: ${reason}`);
         setLoading(false);
       },
@@ -219,7 +215,7 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
         onHide();
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
+        const reason = errorReason(error);
         showErrorBar(enqueueSnackbar, `${t('profile_settings_error')}: ${reason}`);
         setSaving(false);
       },
@@ -254,7 +250,7 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
         setIsSavingPassword(false);
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
+        const reason = errorReason(error);
         showErrorBar(enqueueSnackbar, `${t('profile_password_error')}: ${reason}`);
         setIsSavingPassword(false);
       },

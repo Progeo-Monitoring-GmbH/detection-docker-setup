@@ -4,7 +4,7 @@ import { useSnackbar } from 'notistack';
 
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import axiosConfig from '../../axiosConfig';
-import { showErrorBar, showSuccessBar } from '../ui/Snackbar.jsx';
+import { showRequestError, showSuccessBar } from '../ui/Snackbar.jsx';
 
 export type LocationEditRow = {
   id: number;
@@ -154,8 +154,7 @@ const LocationEditModal = ({
         showSuccessBar(enqueueSnackbar, 'Location updated successfully');
       })
       .catch((error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not update location: ${reason}`);
+        showRequestError(enqueueSnackbar, 'Could not update location', error);
         setSaving(false);
       });
   };

@@ -3,7 +3,7 @@ import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
-import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import { showErrorBar, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import LabeledInput from '../components/ui/kit/LabeledInput';
@@ -117,8 +117,7 @@ const LocationAnlegenView = () => {
         setCreating(false);
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not create object: ${reason}`);
+        showRequestError(enqueueSnackbar, 'Could not create object', error);
         setCreating(false);
       },
     );
@@ -152,8 +151,7 @@ const LocationAnlegenView = () => {
           setImporting(false);
         },
         (error) => {
-          const reason = error?.response?.data?.reason || error.message;
-          showErrorBar(enqueueSnackbar, `Could not import data: ${reason}`);
+          showRequestError(enqueueSnackbar, 'Could not import data', error);
           setImporting(false);
         },
       );

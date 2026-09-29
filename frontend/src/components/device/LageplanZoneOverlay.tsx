@@ -1,3 +1,5 @@
+import { getBackendUrl } from '../../backendUrl';
+
 export type LageplanZonePoint = {
   pos: number;
   x: number;
@@ -11,14 +13,6 @@ type LageplanZoneOverlayProps = {
   imageUrl: string | null;
   points: LageplanZonePoint[];
   height?: number;
-};
-
-const getBackendUrl = (path: string) => {
-  if (/^https?:\/\//i.test(path)) {
-    return path;
-  }
-  const backendUrl = import.meta.env.VITE_BACKEND_URL || window.location.origin;
-  return `${backendUrl.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
 };
 
 type ZoneGroup = {
