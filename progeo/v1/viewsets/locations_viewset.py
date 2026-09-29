@@ -21,6 +21,7 @@ from progeo.decorator import (
     require_module_permissions,
 )
 from progeo.helper.basics import RequestFailed, RequestSuccess, save_check_dir
+from progeo.helper.location_access import location_q, resolve_request_accounts
 from progeo.settings import UPLOAD_DIR
 from progeo.v1.models import (
     Account,
@@ -76,23 +77,10 @@ class LocationViewSet(ProgeoModalViewSet):
     @staticmethod
     def _resolve_request_accounts(request):
         """All accounts the current user has access to (a user can belong to
-        several accounts, each backed by its own database)."""
+        several accounts, each backed by its own database) - via membership
+        or single-access ProgeoAccess rows, see helper/location_access.py."""
         account = getattr(request, "account", None)
-        user = getattr(request, "user", None)
-
-        if not user:
-            controller_account = account or _get_controller_account()
-            return [controller_account] if controller_account else []
-
-        if user.is_staff or user.is_superuser:
-            controller_account = account or _get_controller_account()
-            return [controller_account] if controller_account else []
-
-        accounts = list(user.accounts.order_by("id"))
-        if accounts:
-            return accounts
-
-        return [account] if account else []
+        return resolve_request_accounts(request, fallback_account=account or _get_controller_account())
 
     @classmethod
     def _primary_account(cls, request):
@@ -105,8 +93,9 @@ class LocationViewSet(ProgeoModalViewSet):
     def _find_location(cls, request, pk=None, project_id=None):
         """Look up a location by pk or project_id across every account the
         user has access to, since ids are only unique within one account's db."""
+        user = getattr(request, "user", None)
         for account in cls._resolve_request_accounts(request):
-            qs = ProgeoLocation.objects.using(account.db_name).filter(account=account)
+            qs = ProgeoLocation.objects.using(account.db_name).filter(location_q(user, account))
             location = qs.filter(pk=pk).first() if pk is not None else qs.filter(project_id=project_id).first()
             if location:
                 return location, account
@@ -114,7 +103,6 @@ class LocationViewSet(ProgeoModalViewSet):
         # Staff-wide fallback: lets a staff/admin user act on a location
         # outside their own bound account (e.g. the Verwaltung cross-tenant
         # dashboard's permissions modal, reusing access/access_delete as-is).
-        user = getattr(request, "user", None)
         if user and _is_staff_admin(user):
             for account in Account.objects.using("default").all():
                 qs = ProgeoLocation.objects.using(account.db_name).filter(account=account)
@@ -150,7 +138,9 @@ class LocationViewSet(ProgeoModalViewSet):
         accounts = self._resolve_request_accounts(request)
         data = []
         for account in accounts:
-            locations = ProgeoLocation.objects.using(account.db_name).filter(account=account)
+            locations = ProgeoLocation.objects.using(account.db_name).filter(
+                location_q(request.user, account)
+            )
             data.extend(ProgeoLocationMinSerializer(locations, many=True).data)
         return Response(data=data)
 
@@ -182,11 +172,17 @@ class LocationViewSet(ProgeoModalViewSet):
         """Notification access rules (ProgeoAccess) of one location.
 
         GET  -> {"access": [...], "users": [{id, username, email, mobile}...],
-                 "staff_users": [{id, username, email}...]}
+                 "staff_users": [{id, username, email}...],
+                 "members": [...], "candidates": [...]}
                (requires module_notifications_enabled). "users" are this
-               account's customer users (Rechte candidates); "staff_users"
-               are ProGeo staff (Objektleitung candidates, Einstellungen) -
-               both are assigned the same way, via a POST below.
+               account's customer users; "staff_users" are ProGeo staff
+               (Objektleitung candidates, Einstellungen) - both are assigned
+               the same way, via a POST below. "members" is everyone with
+               access to this location (Rechte tab): account members
+               (access "account" - all locations of the account) and
+               single-access users (access "single" - a ProgeoAccess row for
+               this location only), each with their notification rule.
+               "candidates" are customer users that can still be added.
         POST -> create (module_notifications_add) or update an existing rule
                 (module_notifications_edit): body {user_id, transport, type}
                 or {id, transport, type, user_id?}. transport/type are the
@@ -218,10 +214,15 @@ class LocationViewSet(ProgeoModalViewSet):
                 {"id": user.id, "username": user.username, "email": user.email}
                 for user in User.objects.filter(is_staff=True).order_by("username")
             ]
+            members = self._access_members(location, account, rows)
             return RequestSuccess({
                 "access": ProgeoAccessSerializer(rows, many=True).data,
                 "users": users,
                 "staff_users": staff_users,
+                "members": members,
+                "candidates": self._access_candidates(request, {member["user_id"] for member in members}),
+                "can_grant_account": _is_staff_admin(request.user)
+                or account.users.filter(pk=request.user.pk).exists(),
             })
 
         # Mutations need the dedicated edit/add permissions (creating a rule
@@ -233,6 +234,10 @@ class LocationViewSet(ProgeoModalViewSet):
 
         access_id = request.data.get("id")
         user_id = request.data.get("user_id")
+        # A ProgeoAccess row grants visibility of the location (single-access),
+        # so the user must be someone the requester may hand access to.
+        if user_id is not None and not self._may_grant_access(request, location, account, user_id):
+            return RequestFailed({"reason": "User not found"})
         if access_id:
             rule = ProgeoAccess.objects.using(db_name).filter(pk=access_id, location=location).first()
             if not rule:
@@ -261,6 +266,96 @@ class LocationViewSet(ProgeoModalViewSet):
                 return RequestFailed({"reason": "type must be an integer"})
         rule.save(using=db_name)
         return RequestSuccess({"access": ProgeoAccessSerializer(rule).data})
+
+    @staticmethod
+    def _user_contact(user):
+        profile = getattr(user, "profile", None)
+        return {
+            "user_id": user.id,
+            "username": user.username,
+            "full_name": user.get_full_name() or None,
+            "email": user.email or None,
+            "mobile": profile.mobile if profile is not None else None,
+            "last_login": user.last_login,
+        }
+
+    @classmethod
+    def _access_members(cls, location, account, rules):
+        """Everyone with access to `location`, ProGeo staff excluded: account
+        members (multi-access) first, then single-access ProgeoAccess users.
+        A member can be both - then access is "account" and single is True."""
+        rules_by_user = {rule.user_id: rule for rule in rules if rule.user_id}
+        members = []
+        seen = set()
+        for user in account.users.filter(is_staff=False).order_by("username"):
+            rule = rules_by_user.get(user.id)
+            members.append({
+                **cls._user_contact(user),
+                "access": "account",
+                "single": rule is not None,
+                "rule": ProgeoAccessSerializer(rule).data if rule else None,
+            })
+            seen.add(user.id)
+        single_users = User.objects.filter(pk__in=set(rules_by_user) - seen, is_staff=False).order_by("username")
+        for user in single_users:
+            members.append({
+                **cls._user_contact(user),
+                "access": "single",
+                "single": True,
+                "rule": ProgeoAccessSerializer(rules_by_user[user.id]).data,
+            })
+        return members
+
+    @classmethod
+    def _may_grant_access(cls, request, location, account, user_id):
+        try:
+            user_id = int(user_id)
+        except (TypeError, ValueError):
+            return False
+        if account.users.filter(pk=user_id).exists():
+            return True
+        if ProgeoAccess.objects.using(account.db_name).filter(location=location, user_id=user_id).exists():
+            return True
+        # ProGeo staff (Objektleitung, Einstellungen tab) - assignable by staff only.
+        if _is_staff_admin(request.user) and User.objects.filter(pk=user_id, is_staff=True).exists():
+            return True
+        return user_id in {candidate["user_id"] for candidate in cls._access_candidates(request, set())}
+
+    @classmethod
+    def _access_candidates(cls, request, exclude_ids):
+        """Customer users that can be granted access. Staff pick from every
+        customer; everyone else only from the accounts they belong to, so no
+        users of foreign tenants are exposed."""
+        users = User.objects.filter(is_staff=False, is_superuser=False, is_active=True)
+        if not _is_staff_admin(request.user):
+            users = users.filter(accounts__in=request.user.accounts.all()).distinct()
+        return [
+            cls._user_contact(user)
+            for user in users.exclude(pk__in=exclude_ids).order_by("username")
+        ]
+
+    @require_module_permissions("module_notifications_enabled", "module_notifications_add")
+    @action(detail=True, url_path="access/account-member", methods=["POST"])
+    def access_account_member(self, request, pk=None, *args, **kwargs):
+        """Grant multi-access: add a user to this location's Account, i.e. to
+        every location of that account. POST {"user_id": N}. Only staff and
+        members of that account may do this. Revoking account membership is
+        intentionally not offered per location (it would affect all of them)."""
+        location, account = self._find_location(request, pk=pk)
+        if not location:
+            return RequestFailed({"reason": "Location not found"})
+        if not (_is_staff_admin(request.user) or account.users.filter(pk=request.user.pk).exists()):
+            return permission_denied_response(["account_member"])
+        try:
+            user_id = int(request.data.get("user_id"))
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "user_id required"})
+        allowed_ids = {candidate["user_id"] for candidate in self._access_candidates(request, set())}
+        user = User.objects.filter(pk=user_id).first()
+        if not user or user_id not in allowed_ids and not account.users.filter(pk=user_id).exists():
+            return RequestFailed({"reason": "User not found"})
+        account.users.add(user)
+        return RequestSuccess({"user_id": user.id, "account": account.id})
 
     @require_module_permissions("module_notifications_enabled", "module_notifications_edit")
     @action(detail=True, url_path="access/delete", methods=["POST"])
@@ -301,6 +396,15 @@ class LocationViewSet(ProgeoModalViewSet):
                 account = candidate_account
                 user = found_user
                 break
+
+        # Single-access users of this location aren't account members.
+        if not user:
+            location, location_account = self._find_location(request, pk=pk)
+            if location and ProgeoAccess.objects.using(location_account.db_name).filter(
+                location=location, user_id=user_id
+            ).exists():
+                account = location_account
+                user = User.objects.filter(pk=user_id).first()
 
         if not account or not user:
             return RequestFailed({"reason": "User not found in any of your accounts"})
@@ -459,30 +563,65 @@ class LocationViewSet(ProgeoModalViewSet):
                 "error": email.error,
             })
 
-        for alarm in alarms:
-            if alarm.triggered_at and alarm.triggered_at >= cutoff:
+        for episode in LocationViewSet._group_alarm_episodes(alarms):
+            first, last = episode[0], episode[-1]
+            if first.triggered_at and first.triggered_at >= cutoff:
+                strongest = max(episode, key=lambda alarm: alarm.peak_value or 0)
                 events.append({
                     "kind": "alarm_triggered",
-                    "at": alarm.triggered_at,
-                    "detail": alarm.sensor_id,
-                    "severity": alarm.severity,
-                    "max_value": alarm.peak_value,
+                    "at": first.triggered_at,
+                    "detail": first.sensor_id,
+                    "severity": strongest.severity,
+                    "max_value": strongest.peak_value,
+                    "occurrences": len(episode),
                 })
-            if alarm.evaluated_at and alarm.evaluated_at >= cutoff:
+            acknowledged = next((alarm for alarm in episode if alarm.evaluated_at), None)
+            if acknowledged and acknowledged.evaluated_at >= cutoff:
                 events.append({
                     "kind": "alarm_acknowledged",
-                    "at": alarm.evaluated_at,
-                    "detail": getattr(alarm.evaluated_by, "username", None),
+                    "at": acknowledged.evaluated_at,
+                    "detail": getattr(acknowledged.evaluated_by, "username", None),
                 })
-            if alarm.normalized_at and alarm.normalized_at >= cutoff:
+            # Only the episode's final alarm decides whether it is resolved -
+            # an earlier alarm's normalized_at is followed by a re-trigger.
+            if last.normalized_at and last.normalized_at >= cutoff:
                 events.append({
                     "kind": "alarm_resolved",
-                    "at": alarm.normalized_at,
+                    "at": last.normalized_at,
                     "detail": None,
                 })
 
         events.sort(key=lambda event: event["at"], reverse=True)
         return events
+
+    # Alarms of the same sensor that re-trigger within this gap after the
+    # previous one normalized are one flapping episode, not separate events.
+    ALARM_EPISODE_GAP = timedelta(hours=1)
+
+    @staticmethod
+    def _group_alarm_episodes(alarms):
+        """Group alarms per sensor into episodes of consecutive alarms whose
+        re-trigger follows the previous normalization within ALARM_EPISODE_GAP.
+        Sensors hovering around the threshold otherwise produce dozens of
+        near-identical triggered/resolved pairs per day."""
+        alarms = list(alarms)
+        episodes = []
+        open_by_sensor = {}
+        timed = sorted((alarm for alarm in alarms if alarm.triggered_at), key=lambda alarm: alarm.triggered_at)
+        for alarm in timed:
+            episode = open_by_sensor.get(alarm.sensor_id)
+            previous = episode[-1] if episode else None
+            if previous and (
+                previous.normalized_at is None
+                or alarm.triggered_at - previous.normalized_at <= LocationViewSet.ALARM_EPISODE_GAP
+            ):
+                episode.append(alarm)
+                continue
+            episode = [alarm]
+            episodes.append(episode)
+            open_by_sensor[alarm.sensor_id] = episode
+        episodes.extend([alarm] for alarm in alarms if not alarm.triggered_at)
+        return episodes
 
     @require_module_permissions("module_locations_enabled")
     @action(detail=False, url_path="geo_export", methods=["GET"])
@@ -500,7 +639,7 @@ class LocationViewSet(ProgeoModalViewSet):
         for account in accounts:
             rows.extend(
                 ProgeoLocation.objects.using(account.db_name)
-                .filter(account=account)
+                .filter(location_q(request.user, account))
                 .order_by("id")
                 .values(*LOCATION_GEO_CSV_FIELDS)
             )
@@ -543,7 +682,7 @@ class LocationViewSet(ProgeoModalViewSet):
         by_project_id = {}
         by_id = {}
         for account in accounts:
-            for loc in ProgeoLocation.objects.using(account.db_name).filter(account=account):
+            for loc in ProgeoLocation.objects.using(account.db_name).filter(location_q(request.user, account)):
                 if loc.project_id is not None:
                     by_project_id[loc.project_id] = (loc, account)
                 by_id[loc.pk] = (loc, account)
@@ -694,7 +833,7 @@ class LocationViewSet(ProgeoModalViewSet):
         # green = has measurements, gray = no measurements at all.
         queryset = (
             ProgeoLocation.objects.using(account.db_name)
-            .filter(account=account)
+            .filter(location_q(self.request.user, account))
             .annotate(
                 measurement_count=Count("progeodevice__progeomeasurement", distinct=True),
                 last_measurement_at=Max("progeodevice__progeomeasurement__last_fetched"),

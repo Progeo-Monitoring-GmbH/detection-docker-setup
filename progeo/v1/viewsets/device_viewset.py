@@ -15,6 +15,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from progeo.authentication import LimitedTokenAuthentication
 from progeo.decorator import calc_runtime, require_module_permissions
 from progeo.helper.basics import RequestFailed, RequestSuccess, elog, ilog
+from progeo.helper.location_access import location_q, resolve_request_account
 from progeo.helper.creator import create_MfS_log
 from progeo.helper.measurement_utils import flatten_numeric_values
 from progeo.management.commands.patch_live import fetch_device_locations
@@ -45,23 +46,7 @@ class DeviceViewSet(ProgeoModalViewSet):
 
     @staticmethod
     def _resolve_request_account(request):
-        account = getattr(request, "account", None)
-        user = getattr(request, "user", None)
-
-        if not user:
-            return account or _get_controller_account()
-
-        if user.is_staff or user.is_superuser:
-            return account or _get_controller_account()
-
-        if account and account.users.filter(pk=user.pk).exists():
-            return account
-
-        user_account = user.accounts.order_by("id").first()
-        if user_account:
-            return user_account
-
-        return account or _get_controller_account()
+        return resolve_request_account(request, fallback_account=_get_controller_account())
 
     @require_module_permissions("module_devices_enabled")
     def list(self, request, *args, **kwargs):
@@ -93,7 +78,9 @@ class DeviceViewSet(ProgeoModalViewSet):
 
         if not account:
             return ProgeoDevice.objects.none()
-        return ProgeoDevice.objects.using(account.db_name).filter(location__account=account)
+        return ProgeoDevice.objects.using(account.db_name).filter(
+            location_q(self.request.user, account, "location__")
+        )
     
 
     @calc_runtime
@@ -666,8 +653,10 @@ class DeviceViewSet(ProgeoModalViewSet):
     @require_module_permissions("module_measurements_enabled")
     @action(detail=True, url_path="measurements", methods=["GET"])
     def measurements(self, request, pk=None, *args, **kwargs):
-        account = getattr(request, "account", None) or _get_controller_account()
-        db_name = account.db_name if account else "default"
+        account = self._resolve_request_account(request)
+        if not account:
+            return RequestFailed({"reason": "Device not found"})
+        db_name = account.db_name
 
         try:
             limit = int(request.query_params.get("limit", 250))
@@ -695,7 +684,12 @@ class DeviceViewSet(ProgeoModalViewSet):
         except (TypeError, ValueError):
             return RequestFailed({"reason": "from/to must be ISO-8601 timestamps"})
 
-        device = ProgeoDevice.objects.using(db_name).filter(pk=pk).first()
+        device = (
+            ProgeoDevice.objects.using(db_name)
+            .filter(location_q(request.user, account, "location__"))
+            .filter(pk=pk)
+            .first()
+        )
         if not device:
             return RequestFailed({"reason": "Device not found"})
 

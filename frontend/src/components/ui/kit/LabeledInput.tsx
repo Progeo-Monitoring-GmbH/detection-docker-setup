@@ -7,6 +7,12 @@ type LabeledInputProps = {
   readOnly?: boolean;
   type?: string;
   title?: string;
+  /**
+   * Defaults to a non-standard token: Chrome ignores `off` for address-like
+   * fields and would offer to save the Objekt address/contact data as the
+   * user's own address when navigating away.
+   */
+  autoComplete?: string;
 };
 
 /** Uppercase small label above a soft-surface input, as used on the Objekt/Einstellungen panels. */
@@ -17,6 +23,7 @@ const LabeledInput = ({
   readOnly = false,
   type = 'text',
   title,
+  autoComplete = 'progeo-no-autofill',
 }: LabeledInputProps) => {
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>
@@ -36,6 +43,7 @@ const LabeledInput = ({
         value={value}
         readOnly={readOnly}
         title={title}
+        autoComplete={autoComplete}
         onChange={(event: ChangeEvent<HTMLInputElement>) => onChange?.(event.target.value)}
         style={{
           height: 40,

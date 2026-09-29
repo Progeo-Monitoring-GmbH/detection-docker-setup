@@ -67,12 +67,16 @@ const LandingPage = () => {
       return;
     }
 
-    const forwardUrl = getSinglePermissionForwardUrl(permissions);
+    // The locations overview is the portal's home; the module picker below is
+    // only a fallback for accounts without the locations module.
+    const forwardUrl = hasPermission('module_locations_enabled')
+      ? '/location/overview/'
+      : getSinglePermissionForwardUrl(permissions);
 
     if (forwardUrl) {
       auth.navigate(forwardUrl);
     }
-  }, [auth, isLoading, permissions]);
+  }, [auth, isLoading, permissions, hasPermission]);
 
   if (!auth.token || !auth.user) {
     return (
@@ -105,7 +109,7 @@ const LandingPage = () => {
     );
   }
 
-  if (availableModules.length > 1) {
+  if (availableModules.length > 1 && !hasPermission('module_locations_enabled')) {
     return (
       <Row className="mt-3 g-3">
         <Col xs={12}>

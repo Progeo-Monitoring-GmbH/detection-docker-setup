@@ -7,7 +7,6 @@ import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
 import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import PanelCard from '../components/ui/kit/PanelCard';
-import PillButton from '../components/ui/kit/PillButton';
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import SeverityBadge, { type Severity } from '../components/ui/kit/SeverityBadge';
 import { useProgeoRole } from './roleModel';
@@ -22,6 +21,8 @@ type TimelineEvent = {
   error?: string | null;
   severity?: Severity;
   max_value?: number | null;
+  /** Number of flapping alarms merged into this triggered event. */
+  occurrences?: number;
 };
 
 type TestRecipient = {
@@ -149,9 +150,15 @@ const LocationNotificationsTab = () => {
         : t('benach_email_failed', { recipients: event.detail, reason: event.error || '?' });
     }
     if (event.kind === 'alarm_triggered') {
-      return event.max_value != null
-        ? t('benach_sensor_reading', { sensor: event.detail, value: Math.round(event.max_value) })
-        : null;
+      const parts = [
+        event.max_value != null
+          ? t('benach_sensor_reading', { sensor: event.detail, value: Math.round(event.max_value) })
+          : null,
+        event.occurrences && event.occurrences > 1
+          ? t('benach_occurrences', { count: event.occurrences })
+          : null,
+      ].filter(Boolean);
+      return parts.length ? parts.join(' · ') : null;
     }
     if (event.kind === 'alarm_acknowledged') {
       return event.detail ? t('benach_acknowledged_by', { name: event.detail }) : null;
@@ -178,7 +185,31 @@ const LocationNotificationsTab = () => {
       title={t('benach_title')}
       actions={
         isStaff && (
-          <PillButton label={t('benach_test_button')} onClick={openTest} />
+          <button
+            type="button"
+            onClick={openTest}
+            style={{
+              height: 36,
+              padding: '0 16px',
+              border: 'none',
+              borderRadius: 10,
+              background: 'var(--progeo-orange)',
+              color: '#fff',
+              fontFamily: 'inherit',
+              fontSize: 13,
+              fontWeight: 500,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 7,
+              boxShadow: '0 4px 14px rgba(235, 99, 59, .28)',
+            }}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 2.7s-6 6.6-6 11.3a6 6 0 0 0 12 0c0-4.7-6-11.3-6-11.3z" />
+            </svg>
+            {t('benach_test_button')}
+          </button>
         )
       }
     >
