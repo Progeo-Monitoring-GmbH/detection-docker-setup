@@ -9,23 +9,15 @@ import {
   type TimelineAlarm,
 } from '../../main/alarmUtils';
 import axiosConfig from '../../axiosConfig.tsx';
-import { showErrorBar } from '../ui/Snackbar.jsx';
+import { showErrorBar, showRequestError } from '../ui/Snackbar.jsx';
 import MeasurementSamplesCompareChart, {
   type MeasurementCompareRow,
 } from './MeasurementSamplesCompareChart.tsx';
+import { toLocalIso } from '../../main/dateFormat';
 
 /** Measurements are loaded for triggered_at ± this window. */
 const ALARM_WINDOW_MS = 6 * 60 * 60 * 1000;
 
-/** ms -> naive local ISO string (matches the backend from/to params). */
-const toLocalIso = (ms: number): string => {
-  const date = new Date(ms);
-  const pad = (value: number) => String(value).padStart(2, '0');
-  return (
-    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
-    `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
-  );
-};
 
 type AlarmMeasurementCompareChartProps = {
   alarm: TimelineAlarm;
@@ -95,8 +87,7 @@ const AlarmMeasurementCompareChart = ({
         setOpen(true);
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not load measurements: ${reason}`);
+        showRequestError(enqueueSnackbar, 'Could not load measurements', error);
         setLoading(false);
       },
     );

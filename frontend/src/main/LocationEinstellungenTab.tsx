@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
-import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import { showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
@@ -107,8 +107,7 @@ const LocationEinstellungenTab = () => {
         setSavingThreshold(false);
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not save: ${reason}`);
+        showRequestError(enqueueSnackbar, 'Could not save', error);
         setSavingThreshold(false);
       },
     );
@@ -126,8 +125,7 @@ const LocationEinstellungenTab = () => {
         }
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not save threshold: ${reason}`);
+        showRequestError(enqueueSnackbar, 'Could not save threshold', error);
       },
     );
   };
@@ -160,8 +158,7 @@ const LocationEinstellungenTab = () => {
         showSuccessBar(enqueueSnackbar, t('einstell_saved'));
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not save device: ${reason}`);
+        showRequestError(enqueueSnackbar, 'Could not save device', error);
       },
     );
   };
@@ -174,8 +171,7 @@ const LocationEinstellungenTab = () => {
       { pe_geschaltet: value === 'ja' },
       () => showSuccessBar(enqueueSnackbar, t('einstell_saved')),
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not save: ${reason}`);
+        showRequestError(enqueueSnackbar, 'Could not save', error);
       },
     );
   };
@@ -225,8 +221,7 @@ const LocationEinstellungenTab = () => {
         setAddStaffId('');
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not assign staff: ${reason}`);
+        showRequestError(enqueueSnackbar, 'Could not assign staff', error);
       },
     );
   };
@@ -238,8 +233,7 @@ const LocationEinstellungenTab = () => {
       { id: rule.id },
       () => setStaffRules((prev) => prev.filter((r) => r.id !== rule.id)),
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not remove staff: ${reason}`);
+        showRequestError(enqueueSnackbar, 'Could not remove staff', error);
       },
     );
   };

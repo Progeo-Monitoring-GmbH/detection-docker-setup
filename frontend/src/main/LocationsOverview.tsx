@@ -7,29 +7,16 @@ import { useNavigate } from 'react-router';
 
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
-import { showErrorBar } from '../components/ui/Snackbar.jsx';
+import { showRequestError } from '../components/ui/Snackbar.jsx';
 import MeasurementSamplesCompareChart, {
   type MeasurementCompareRow,
 } from '../components/device/MeasurementSamplesCompareChart.tsx';
 import LocationEditModal, {
   type LocationEditRow,
 } from '../components/modal/LocationEditModal.tsx';
+import { measurementsQuery } from './measurementQuery';
 
-type LocationRow = {
-  id: number;
-  name?: string | null;
-  city?: string | null;
-  address?: string | null;
-  plz?: string | null;
-  manager?: string | null;
-  telefon?: string | null;
-  mail?: string | null;
-  project_id?: number | null;
-  latitude?: number | null;
-  longitude?: number | null;
-  alarm_threshold?: number | null;
-  device_count?: number;
-  has_device?: boolean;
+type LocationRow = LocationEditRow & {
   measurement_count?: number;
   last_measurement_at?: string | null;
 };
@@ -120,8 +107,7 @@ const LocationsOverview = () => {
         }
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not load locations: ${reason}`);
+        showRequestError(enqueueSnackbar, 'Could not load locations', error);
         setLoading(false);
       },
     );
@@ -160,11 +146,7 @@ const LocationsOverview = () => {
       },
       (error) => {
         ids.forEach((id) => loadedAlarmIds.current.delete(id));
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(
-          enqueueSnackbar,
-          `Could not load alarm summary: ${reason}`,
-        );
+        showRequestError(enqueueSnackbar, 'Could not load alarm summary', error);
       },
     );
   };
@@ -199,11 +181,7 @@ const LocationsOverview = () => {
       (error) => {
         // Allow a retry on the next page change instead of silently missing data.
         ids.forEach((id) => loadedDetailIds.current.delete(id));
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(
-          enqueueSnackbar,
-          `Could not load location details: ${reason}`,
-        );
+        showRequestError(enqueueSnackbar, 'Could not load location details', error);
       },
     );
   };
@@ -214,15 +192,9 @@ const LocationsOverview = () => {
 
   const fetchLocationMeasurements = (locationId: number, year?: number) => {
     setMeasurementsLoading(true);
-    const params = new URLSearchParams();
-    if (year) {
-      params.set('year', String(year));
-    } else {
-      params.set('limit', '300');
-    }
-    void axiosConfig.perform_get(
+        void axiosConfig.perform_get(
       auth,
-      `/v1/location/${locationId}/measurements/?${params.toString()}`,
+      `/v1/location/${locationId}/measurements/?${measurementsQuery(year)}`,
       (response) => {
         const measurements = (response?.data?.measurements ||
           []) as MeasurementCompareRow[];
@@ -230,11 +202,7 @@ const LocationsOverview = () => {
         setMeasurementsLoading(false);
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(
-          enqueueSnackbar,
-          `Could not load location measurements: ${reason}`,
-        );
+        showRequestError(enqueueSnackbar, 'Could not load location measurements', error);
         setSelectedMeasurements([]);
         setMeasurementsLoading(false);
       },

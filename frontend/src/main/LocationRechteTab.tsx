@@ -7,7 +7,7 @@ import { Spinner } from 'react-bootstrap';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
-import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import { showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import LabeledInput from '../components/ui/kit/LabeledInput';
@@ -154,8 +154,7 @@ const LocationRechteTab = () => {
         setLoading(false);
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not load access rules: ${reason}`);
+        showRequestError(enqueueSnackbar, 'Could not load access rules', error);
         setLoading(false);
       },
     );
@@ -185,8 +184,7 @@ const LocationRechteTab = () => {
         }
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not update: ${reason}`);
+        showRequestError(enqueueSnackbar, 'Could not update', error);
       },
     );
   };
@@ -213,8 +211,7 @@ const LocationRechteTab = () => {
       load();
     };
     const failed = (error: { response?: { data?: { reason?: string } }; message: string }) => {
-      const reason = error?.response?.data?.reason || error.message;
-      showErrorBar(enqueueSnackbar, `Could not add user: ${reason}`);
+      showRequestError(enqueueSnackbar, 'Could not add user', error);
       setAdding(false);
     };
     if (newScope === 'account') {
@@ -252,8 +249,7 @@ const LocationRechteTab = () => {
         load();
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not remove access: ${reason}`);
+        showRequestError(enqueueSnackbar, 'Could not remove access', error);
         setRevoking(false);
       },
     );
@@ -277,8 +273,7 @@ const LocationRechteTab = () => {
         setContactEdit(null);
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not update contact data: ${reason}`);
+        showRequestError(enqueueSnackbar, 'Could not update contact data', error);
       },
     );
   };

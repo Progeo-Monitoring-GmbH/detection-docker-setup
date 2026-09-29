@@ -13,7 +13,8 @@ import {
 } from 'react-bootstrap';
 import { ArrowLeft } from 'react-bootstrap-icons';
 import axiosConfig from '../axiosConfig';
-import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import { defaultErrorCallback } from '../helper.jsx';
+import { showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import { useSnackbar } from 'notistack';
 
 type DeviceData = {
@@ -190,15 +191,8 @@ const DeviceDetailView = () => {
         setLoading(false);
       },
       (error) => {
-        showErrorBar(
-          enqueueSnackbar,
-          `Could not fetch device: ${error.message}`,
-        );
-        if (error.response) {
-          console.error(error.response.data);
-        } else {
-          console.error(error);
-        }
+        showRequestError(enqueueSnackbar, 'Could not fetch device', error);
+        defaultErrorCallback(error);
         setLoading(false);
       },
     );
@@ -221,8 +215,7 @@ const DeviceDetailView = () => {
       setConfigContent(toLuaConfig(parsed));
       showSuccessBar(enqueueSnackbar, 'Config loaded successfully');
     } catch (error: any) {
-      const reason = error?.response?.data?.reason || error.message;
-      showErrorBar(enqueueSnackbar, `Could not load config: ${reason}`);
+      showRequestError(enqueueSnackbar, 'Could not load config', error);
       console.error(error);
     } finally {
       setLoadingConfig(false);
@@ -241,8 +234,7 @@ const DeviceDetailView = () => {
       });
       showSuccessBar(enqueueSnackbar, 'Config saved successfully');
     } catch (error: any) {
-      const reason = error?.response?.data?.reason || error.message;
-      showErrorBar(enqueueSnackbar, `Could not save config: ${reason}`);
+      showRequestError(enqueueSnackbar, 'Could not save config', error);
       console.error(error);
     } finally {
       setSavingConfig(false);

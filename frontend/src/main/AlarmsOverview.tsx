@@ -12,7 +12,7 @@ import {
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
-import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import { showErrorBar, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import { FilterComponent } from '../components/ui/FilterComponent.jsx';
 import SensorHeatmap2D from '../components/device/SensorHeatmap2D.tsx';
 import { type SensorHeatmapResponse } from '../components/device/SensorHeatmap3D.tsx';
@@ -23,6 +23,7 @@ import AlarmTimeline, {
   isAlarmActive,
   parseTimestamp,
 } from './AlarmTimeline.tsx';
+import { toLocalIso } from './dateFormat';
 
 type AlarmDevice = {
   id?: number | null;
@@ -89,14 +90,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * matching the format the backend serializer emits, so `from`/`to` round-trip
  * through datetime.fromisoformat on the server.
  */
-const toLocalIso = (ms: number): string => {
-  const date = new Date(ms);
-  const pad = (value: number) => String(value).padStart(2, '0');
-  return (
-    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
-    `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
-  );
-};
 
 const STATUS_LABELS: Record<number, { label: string; variant: string }> = {
   0: { label: 'Neu', variant: 'warning' },
@@ -173,8 +166,7 @@ const AlarmsOverview = () => {
           onSuccess?.();
         },
         (error) => {
-          const reason = error?.response?.data?.reason || error.message;
-          showErrorBar(enqueueSnackbar, `Could not load alarms: ${reason}`);
+          showRequestError(enqueueSnackbar, 'Could not load alarms', error);
           setLoading(false);
         },
       );
@@ -279,11 +271,7 @@ const AlarmsOverview = () => {
           setHeatmapLoading(false);
         },
         (error) => {
-          const reason = error?.response?.data?.reason || error.message;
-          showErrorBar(
-            enqueueSnackbar,
-            `Could not load alarm heatmap: ${reason}`,
-          );
+          showRequestError(enqueueSnackbar, 'Could not load alarm heatmap', error);
           setHeatmapResponse(null);
           setHeatmapLoading(false);
         },
@@ -318,11 +306,7 @@ const AlarmsOverview = () => {
           setAcknowledgingId(null);
         },
         (error) => {
-          const reason = error?.response?.data?.reason || error.message;
-          showErrorBar(
-            enqueueSnackbar,
-            `Could not acknowledge alarm: ${reason}`,
-          );
+          showRequestError(enqueueSnackbar, 'Could not acknowledge alarm', error);
           setAcknowledgingId(null);
         },
       );

@@ -4,7 +4,7 @@ import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
-import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import { errorReason, showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import PanelCard from '../components/ui/kit/PanelCard';
 import LabeledInput from '../components/ui/kit/LabeledInput';
 import type { LocationDetail } from './locationTypes';
@@ -108,8 +108,7 @@ const LocationObjektTab = () => {
         setSaving(false);
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, t('objekt_save_error', { reason }));
+        showErrorBar(enqueueSnackbar, t('objekt_save_error', { reason: errorReason(error) }));
         setSaving(false);
       },
     );

@@ -4,7 +4,7 @@ import { Spinner } from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
-import { showErrorBar } from '../components/ui/Snackbar.jsx';
+import { showRequestError } from '../components/ui/Snackbar.jsx';
 import LocationSidebar from '../components/sidebar/LocationSidebar';
 import TopBar from '../components/topbar/TopBar';
 import type { LocationDetail } from './locationTypes';
@@ -45,8 +45,7 @@ const LocationPortalLayout = () => {
         setLoading(false);
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not load location: ${reason}`);
+        showRequestError(enqueueSnackbar, 'Could not load location', error);
         setLoading(false);
       },
     );

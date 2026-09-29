@@ -5,7 +5,7 @@ import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
-import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import { showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import PanelCard from '../components/ui/kit/PanelCard';
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import SeverityBadge, { type Severity } from '../components/ui/kit/SeverityBadge';
@@ -67,8 +67,7 @@ const LocationNotificationsTab = () => {
         setTestRecipients((response?.data?.recipients || []) as TestRecipient[]);
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not load recipients: ${reason}`);
+        showRequestError(enqueueSnackbar, 'Could not load recipients', error);
       },
     );
   };
@@ -95,8 +94,7 @@ const LocationNotificationsTab = () => {
         load();
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not send test notification: ${reason}`);
+        showRequestError(enqueueSnackbar, 'Could not send test notification', error);
         setTestSending(false);
       },
     );
@@ -116,8 +114,7 @@ const LocationNotificationsTab = () => {
         if (error?.response?.status === 403) {
           setDenied(true);
         } else {
-          const reason = error?.response?.data?.reason || error.message;
-          showErrorBar(enqueueSnackbar, `Could not load event history: ${reason}`);
+          showRequestError(enqueueSnackbar, 'Could not load event history', error);
         }
         setLoading(false);
       },

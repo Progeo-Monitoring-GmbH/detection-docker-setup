@@ -4,7 +4,7 @@ import { CloudArrowDown, FileEarmarkText } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
-import { showErrorBar } from '../components/ui/Snackbar.jsx';
+import { showErrorBar, showRequestError } from '../components/ui/Snackbar.jsx';
 
 type LegacyImportReport = {
   project_id?: number | null;
@@ -64,8 +64,7 @@ const LegacyImportView = () => {
         setLoading(false);
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not fetch legacy data: ${reason}`);
+        showRequestError(enqueueSnackbar, 'Could not fetch legacy data', error);
         setLoading(false);
       },
     );

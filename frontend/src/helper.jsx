@@ -166,15 +166,7 @@ export async function standardFetchData(
     (response) => {
       setter(response.data);
     },
-    (error) => {
-      callBackError(error);
-      if ([401, 403].includes(error?.response?.status)) {
-        if (auth) {
-          auth.navigate(`/login?forward=${auth.location}`);
-          return;
-        }
-      }
-    },
+    callBackError,
     header,
   );
 }

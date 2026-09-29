@@ -1,75 +1,30 @@
 import { useEffect, useState } from 'react';
 import { Button, Card, Container, Spinner } from 'react-bootstrap';
-import { ArrowLeft, Grid3x3Gap } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
-import { useNavigate, useParams, useSearchParams } from 'react-router';
+import { useParams, useSearchParams } from 'react-router';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig.tsx';
 import SensorHeatmap2D from '../components/device/SensorHeatmap2D.tsx';
-import {
-  type SensorHeatmapLocation,
-  type SensorHeatmapResponse,
-} from '../components/device/SensorHeatmap3D.tsx';
-import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import { type SensorHeatmapLocation } from '../components/device/SensorHeatmap3D.tsx';
+import { showErrorBar, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import { HeatmapViewHeader, useLocationHeatmap } from './locationHeatmapShared';
 
 const MAX_LIMIT = 2000;
 const LOAD_MORE_STEP = 100;
 
 const LocationHeatmap2DView = () => {
   const { id } = useParams();
-  const navigate = useNavigate();
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
   const [searchParams] = useSearchParams();
   const withSliders =
     searchParams.get('with_sliders') === 'true' ||
     searchParams.get('with_silder') === 'true';
-  const [loading, setLoading] = useState(true);
-  const [response, setResponse] = useState<SensorHeatmapResponse | null>(null);
-  const [limit, setLimit] = useState(10);
-  const [reloadVersion, setReloadVersion] = useState(0);
+  const { loading, response, limit, setLimit, refresh } = useLocationHeatmap(id);
   const [alignment, setAlignment] = useState<SensorHeatmapLocation | null>(
     null,
   );
   const [saving, setSaving] = useState(false);
-
-  const loadHeatmap = (requestedLimit: number) => {
-    if (!id) {
-      return;
-    }
-
-    setLoading(true);
-    void axiosConfig.perform_get(
-      auth,
-      `/v1/location/${id}/heatmap/?limit=${requestedLimit}`,
-      (result) => {
-        setResponse((result?.data || null) as SensorHeatmapResponse | null);
-        setLoading(false);
-      },
-      (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(
-          enqueueSnackbar,
-          `Could not load location heatmap: ${reason}`,
-        );
-        setResponse(null);
-        setLoading(false);
-      },
-    );
-  };
-
-  useEffect(() => {
-    if (!id) {
-      return undefined;
-    }
-
-    setLoading(true);
-    const timeoutId = window.setTimeout(() => {
-      loadHeatmap(limit);
-    }, 900);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [id, limit, reloadVersion]);
 
   useEffect(() => {
     setAlignment(null);
@@ -128,8 +83,7 @@ const LocationHeatmap2DView = () => {
         setSaving(false);
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not store alignment: ${reason}`);
+        showRequestError(enqueueSnackbar, 'Could not store alignment', error);
         setSaving(false);
       },
     );
@@ -152,32 +106,7 @@ const LocationHeatmap2DView = () => {
 
   return (
     <Container className="py-4">
-      <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3 p-3">
-        <div className="d-flex gap-2">
-          <Button
-            variant="outline-secondary"
-            onClick={() => navigate('/location/overview/')}
-          >
-            <ArrowLeft className="me-2" />
-            Back to Locations
-          </Button>
-          <Button
-            variant="outline-primary"
-            onClick={() => navigate(`/location/${id}/heatplot`)}
-          >
-            <Grid3x3Gap className="me-2" />
-            3D Heatmap
-          </Button>
-        </div>
-
-        <Button
-          variant="outline-primary"
-          onClick={() => setReloadVersion((version) => version + 1)}
-          disabled={loading}
-        >
-          Refresh
-        </Button>
-      </div>
+      <HeatmapViewHeader id={id} switchTo="heatplot" loading={loading} onRefresh={refresh} className="p-3" />
 
       <Card className="border-0 shadow-sm mb-3 p-3">
         <Card.Body>

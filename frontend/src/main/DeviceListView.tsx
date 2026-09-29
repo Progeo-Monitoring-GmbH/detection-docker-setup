@@ -2,7 +2,8 @@ import { useContext, useEffect, useState } from 'react';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import { Button, Row, Col, Spinner } from 'react-bootstrap';
 import axiosConfig from '../axiosConfig';
-import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import { defaultErrorCallback } from '../helper.jsx';
+import { showErrorBar, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import { useSnackbar } from 'notistack';
 import { WebsocketContext } from '../components/ws/websocketContext';
 import DeviceCard from '../components/device/DeviceCard';
@@ -29,15 +30,8 @@ const DeviceListView = () => {
         setLoading(false);
       },
       (error) => {
-        showErrorBar(
-          enqueueSnackbar,
-          `Could not fetch devices: ${error.message}`,
-        );
-        if (error.response) {
-          console.error(error.response.data);
-        } else {
-          console.error(error);
-        }
+        showRequestError(enqueueSnackbar, 'Could not fetch devices', error);
+        defaultErrorCallback(error);
         setLoading(false);
       },
     );
@@ -162,15 +156,8 @@ const DeviceListView = () => {
         setDeleteTargetId(null);
       },
       (error) => {
-        showErrorBar(
-          enqueueSnackbar,
-          `Could not delete device: ${error.message}`,
-        );
-        if (error.response) {
-          console.error(error.response.data);
-        } else {
-          console.error(error);
-        }
+        showRequestError(enqueueSnackbar, 'Could not delete device', error);
+        defaultErrorCallback(error);
         setDeleteTargetId(null);
         setLoading(false);
       },

@@ -4,10 +4,7 @@ import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
-import {
-  showErrorBar,
-  showSuccessBar,
-} from '../components/ui/Snackbar.jsx';
+import { errorReason, showErrorBar, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 
 const PASSWORD_MASK = '********';
 
@@ -70,6 +67,109 @@ const TestFeedback = ({ result }: { result: TestResult | null }) => {
   );
 };
 
+type InterfaceKind = 'smtp' | 'modbus' | 'sms';
+
+/**
+ * Load/save/test plumbing shared by the interface cards: GET/POST
+ * /v1/interface/<kind>/ and POST /v1/interface/<kind>/test/ with the
+ * (possibly unsaved) form values.
+ */
+const useInterfaceConfig = <T extends object>(kind: InterfaceKind, label: string) => {
+  const auth = useAuth();
+  const { enqueueSnackbar } = useSnackbar();
+  const [config, setConfig] = useState<T | null>(null);
+  const [form, setForm] = useState<T>({} as T);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<TestResult | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    void axiosConfig.perform_get(
+      auth,
+      `/v1/interface/${kind}/`,
+      (response) => {
+        const cfg = (response?.data?.config || {}) as T;
+        setConfig(cfg);
+        setForm({ ...cfg });
+        setLoading(false);
+      },
+      (error) => {
+        showRequestError(enqueueSnackbar, `Could not load ${label} config`, error);
+        setLoading(false);
+      },
+    );
+  }, [auth, enqueueSnackbar, kind, label]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const save = () => {
+    setSaving(true);
+    void axiosConfig.perform_post(
+      auth,
+      `/v1/interface/${kind}/`,
+      { ...form },
+      () => {
+        showSuccessBar(enqueueSnackbar, `${label} config saved.`);
+        load();
+        setSaving(false);
+      },
+      (error) => {
+        showRequestError(enqueueSnackbar, `Could not save ${label} config`, error);
+        setSaving(false);
+      },
+    );
+  };
+
+  // Sends the unsaved form values so a test can validate them before saving.
+  const runTest = (extra: Record<string, unknown> = {}) => {
+    setTesting(true);
+    setTestResult(null);
+    void axiosConfig.perform_post(
+      auth,
+      `/v1/interface/${kind}/test/`,
+      { ...extra, ...form },
+      (response) => {
+        setTestResult((response?.data?.test || {}) as TestResult);
+        setTesting(false);
+      },
+      (error) => {
+        setTestResult({ ok: false, steps: [], error: `Request failed: ${errorReason(error)}` });
+        setTesting(false);
+      },
+    );
+  };
+
+  return { config, form, setForm, loading, saving, save, testing, testResult, setTestResult, runTest };
+};
+
+const ConfigLoadingCard = ({ label }: { label: string }) => (
+  <Card className="border-0 shadow-sm p-2">
+    <Card.Body className="d-flex gap-2 text-muted py-4">
+      <Spinner size="sm" animation="border" /> Loading {label} config...
+    </Card.Body>
+  </Card>
+);
+
+const ReadOnlyHint = ({ permission, action = 'zum Bearbeiten' }: { permission: string; action?: string }) => (
+  <span className="small text-muted">
+    Nur ansehen – {action} fehlt <code>{permission}</code>.
+  </span>
+);
+
+const BusyLabel = ({ busy, busyText, children }: { busy: boolean; busyText: string; children: string }) =>
+  busy ? (
+    <>
+      <Spinner size="sm" animation="border" className="me-1" />
+      {busyText}
+    </>
+  ) : (
+    <>{children}</>
+  );
+
 /**
  * Schnittstelle tab: runtime configuration of the SMTP server, the Modbus
  * connection and the Esendex SMS gateway (stored in SystemConfig, falls back
@@ -102,94 +202,16 @@ const LocationInterfaceTab = () => {
 };
 
 const SmtpConfigCard = () => {
-  const auth = useAuth();
-  const { enqueueSnackbar } = useSnackbar();
   const { hasPermission } = usePermissions();
   const canEdit = hasPermission('module_interface_smtp_edit');
-  const [config, setConfig] = useState<SmtpConfig | null>(null);
-  const [form, setForm] = useState<SmtpConfig>({});
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<TestResult | null>(null);
-
-  const load = useCallback(() => {
-    setLoading(true);
-    void axiosConfig.perform_get(
-      auth,
-      '/v1/interface/smtp/',
-      (response) => {
-        const cfg = (response?.data?.config || {}) as SmtpConfig;
-        setConfig(cfg);
-        setForm({ ...cfg });
-        setLoading(false);
-      },
-      (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not load SMTP config: ${reason}`);
-        setLoading(false);
-      },
-    );
-  }, [auth, enqueueSnackbar]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
+  const { config, form, setForm, loading, saving, save, testing, testResult, runTest } =
+    useInterfaceConfig<SmtpConfig>('smtp', 'SMTP');
 
   const set = (field: keyof SmtpConfig) => (event) =>
     setForm((prev) => ({ ...prev, [field]: event.target.value }));
 
-  const save = () => {
-    setSaving(true);
-    void axiosConfig.perform_post(
-      auth,
-      '/v1/interface/smtp/',
-      { ...form },
-      () => {
-        showSuccessBar(enqueueSnackbar, 'SMTP config saved.');
-        load();
-        setSaving(false);
-      },
-      (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not save SMTP config: ${reason}`);
-        setSaving(false);
-      },
-    );
-  };
-
-  const runTest = () => {
-    setTesting(true);
-    setTestResult(null);
-    // Send the unsaved form values so a test can validate them before saving.
-    void axiosConfig.perform_post(
-      auth,
-      '/v1/interface/smtp/test/',
-      { ...form },
-      (response) => {
-        setTestResult((response?.data?.test || {}) as TestResult);
-        setTesting(false);
-      },
-      (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        setTestResult({
-          ok: false,
-          steps: [],
-          error: `Request failed: ${reason}`,
-        });
-        setTesting(false);
-      },
-    );
-  };
-
   if (loading) {
-    return (
-      <Card className="border-0 shadow-sm p-2">
-        <Card.Body className="d-flex gap-2 text-muted py-4">
-          <Spinner size="sm" animation="border" /> Loading SMTP config...
-        </Card.Body>
-      </Card>
-    );
+    return <ConfigLoadingCard label="SMTP" />;
   }
 
   return (
@@ -275,25 +297,15 @@ const SmtpConfigCard = () => {
           <Button
             size="sm"
             variant="outline-secondary"
-            onClick={runTest}
+            onClick={() => runTest()}
             disabled={testing || saving}
             title="Connects to the server, checks TLS and login. No mail is sent."
           >
-            {testing ? (
-              <>
-                <Spinner size="sm" animation="border" className="me-1" />
-                Testing…
-              </>
-            ) : (
-              'Test connection'
-            )}
+            <BusyLabel busy={testing} busyText="Testing…">
+              Test connection
+            </BusyLabel>
           </Button>
-          {!canEdit && (
-            <span className="small text-muted">
-              Nur ansehen – zum Bearbeiten fehlt{' '}
-              <code>module_interface_smtp_edit</code>.
-            </span>
-          )}
+          {!canEdit && <ReadOnlyHint permission="module_interface_smtp_edit" />}
         </div>
         <TestFeedback result={testResult} />
       </Card.Body>
@@ -302,36 +314,10 @@ const SmtpConfigCard = () => {
 };
 
 const ModbusConfigCard = () => {
-  const auth = useAuth();
-  const { enqueueSnackbar } = useSnackbar();
   const { hasPermission } = usePermissions();
   const canEdit = hasPermission('module_interface_modbus_edit');
-  const [form, setForm] = useState<ModbusConfig>({});
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<TestResult | null>(null);
-
-  const load = useCallback(() => {
-    setLoading(true);
-    void axiosConfig.perform_get(
-      auth,
-      '/v1/interface/modbus/',
-      (response) => {
-        setForm((response?.data?.config || {}) as ModbusConfig);
-        setLoading(false);
-      },
-      (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not load Modbus config: ${reason}`);
-        setLoading(false);
-      },
-    );
-  }, [auth, enqueueSnackbar]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
+  const { form, setForm, loading, saving, save, testing, testResult, runTest } =
+    useInterfaceConfig<ModbusConfig>('modbus', 'Modbus');
 
   const setNum = (field: keyof ModbusConfig) => (event) =>
     setForm((prev) => ({
@@ -339,57 +325,8 @@ const ModbusConfigCard = () => {
       [field]: Number(event.target.value),
     }));
 
-  const save = () => {
-    setSaving(true);
-    void axiosConfig.perform_post(
-      auth,
-      '/v1/interface/modbus/',
-      { ...form },
-      () => {
-        showSuccessBar(enqueueSnackbar, 'Modbus config saved.');
-        load();
-        setSaving(false);
-      },
-      (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not save Modbus config: ${reason}`);
-        setSaving(false);
-      },
-    );
-  };
-
-  const runTest = () => {
-    setTesting(true);
-    setTestResult(null);
-    // Send the unsaved form values so a test can validate them before saving.
-    void axiosConfig.perform_post(
-      auth,
-      '/v1/interface/modbus/test/',
-      { ...form },
-      (response) => {
-        setTestResult((response?.data?.test || {}) as TestResult);
-        setTesting(false);
-      },
-      (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        setTestResult({
-          ok: false,
-          steps: [],
-          error: `Request failed: ${reason}`,
-        });
-        setTesting(false);
-      },
-    );
-  };
-
   if (loading) {
-    return (
-      <Card className="border-0 shadow-sm p-2">
-        <Card.Body className="d-flex gap-2 text-muted py-4">
-          <Spinner size="sm" animation="border" /> Loading Modbus config...
-        </Card.Body>
-      </Card>
-    );
+    return <ConfigLoadingCard label="Modbus" />;
   }
 
   return (
@@ -467,25 +404,15 @@ const ModbusConfigCard = () => {
           <Button
             size="sm"
             variant="outline-secondary"
-            onClick={runTest}
+            onClick={() => runTest()}
             disabled={testing || saving}
             title="Connects to the server and reads the register at the start address. Nothing is written."
           >
-            {testing ? (
-              <>
-                <Spinner size="sm" animation="border" className="me-1" />
-                Testing…
-              </>
-            ) : (
-              'Test connection'
-            )}
+            <BusyLabel busy={testing} busyText="Testing…">
+              Test connection
+            </BusyLabel>
           </Button>
-          {!canEdit && (
-            <span className="small text-muted">
-              Nur ansehen – zum Bearbeiten fehlt{' '}
-              <code>module_interface_modbus_edit</code>.
-            </span>
-          )}
+          {!canEdit && <ReadOnlyHint permission="module_interface_modbus_edit" />}
         </div>
         <TestFeedback result={testResult} />
       </Card.Body>
@@ -499,100 +426,37 @@ const ModbusConfigCard = () => {
  * module_interface_sms_edit to save or to send the test SMS.
  */
 const EsendexSmsCard = () => {
-  const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
   const { hasPermission } = usePermissions();
   const canEdit = hasPermission('module_interface_sms_edit');
-  const [config, setConfig] = useState<EsendexConfig | null>(null);
-  const [form, setForm] = useState<EsendexConfig>({});
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [smsTo, setSmsTo] = useState('');
-  const [sending, setSending] = useState(false);
-  const [testResult, setTestResult] = useState<TestResult | null>(null);
-
-  const load = useCallback(() => {
-    setLoading(true);
-    void axiosConfig.perform_get(
-      auth,
-      '/v1/interface/sms/',
-      (response) => {
-        const cfg = (response?.data?.config || {}) as EsendexConfig;
-        setConfig(cfg);
-        setForm({ ...cfg });
-        setLoading(false);
-      },
-      (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not load SMS config: ${reason}`);
-        setLoading(false);
-      },
-    );
-  }, [auth, enqueueSnackbar]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
+  const {
+    config,
+    form,
+    setForm,
+    loading,
+    saving,
+    save,
+    testing: sending,
+    testResult,
+    setTestResult,
+    runTest,
+  } = useInterfaceConfig<EsendexConfig>('sms', 'SMS');
 
   const set = (field: keyof EsendexConfig) => (event) =>
     setForm((prev) => ({ ...prev, [field]: event.target.value }));
 
-  const save = () => {
-    setSaving(true);
-    void axiosConfig.perform_post(
-      auth,
-      '/v1/interface/sms/',
-      { ...form },
-      () => {
-        showSuccessBar(enqueueSnackbar, 'SMS config saved.');
-        load();
-        setSaving(false);
-      },
-      (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not save SMS config: ${reason}`);
-        setSaving(false);
-      },
-    );
-  };
-
+  // Sending a real SMS needs the sms_edit permission.
   const sendTestSms = () => {
     if (!smsTo.trim()) {
       showErrorBar(enqueueSnackbar, 'Enter a recipient phone number first.');
       return;
     }
-    setSending(true);
-    setTestResult(null);
-    // The unsaved form values travel along so credentials can be validated
-    // before saving them. Sending a real SMS needs the sms_edit permission.
-    void axiosConfig.perform_post(
-      auth,
-      '/v1/interface/sms/test/',
-      { to: smsTo.trim(), ...form },
-      (response) => {
-        setTestResult((response?.data?.test || {}) as TestResult);
-        setSending(false);
-      },
-      (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        setTestResult({
-          ok: false,
-          steps: [],
-          error: `Request failed: ${reason}`,
-        });
-        setSending(false);
-      },
-    );
+    runTest({ to: smsTo.trim() });
   };
 
   if (loading) {
-    return (
-      <Card className="border-0 shadow-sm p-2">
-        <Card.Body className="d-flex gap-2 text-muted py-4">
-          <Spinner size="sm" animation="border" /> Loading SMS config...
-        </Card.Body>
-      </Card>
-    );
+    return <ConfigLoadingCard label="SMS" />;
   }
 
   return (
@@ -660,10 +524,10 @@ const EsendexSmsCard = () => {
             </Button>
           )}
           {!canEdit && (
-            <span className="small text-muted">
-              Nur ansehen – zum Bearbeiten und zum Versenden fehlt{' '}
-              <code>module_interface_sms_edit</code>.
-            </span>
+            <ReadOnlyHint
+              permission="module_interface_sms_edit"
+              action="zum Bearbeiten und zum Versenden"
+            />
           )}
         </div>
 
@@ -694,14 +558,9 @@ const EsendexSmsCard = () => {
                 disabled={sending || saving || !smsTo.trim()}
                 title="Sends one real SMS via Esendex (costs one SMS)."
               >
-                {sending ? (
-                  <>
-                    <Spinner size="sm" animation="border" className="me-1" />
-                    Sending…
-                  </>
-                ) : (
-                  'Send test SMS'
-                )}
+                <BusyLabel busy={sending} busyText="Sending…">
+                  Send test SMS
+                </BusyLabel>
               </Button>
             </div>
             <div className="small text-muted mt-1">

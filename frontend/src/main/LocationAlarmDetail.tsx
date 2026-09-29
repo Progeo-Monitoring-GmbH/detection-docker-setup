@@ -13,7 +13,7 @@ import { useSnackbar } from 'notistack';
 import { useNavigate, useParams } from 'react-router';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
-import { showErrorBar } from '../components/ui/Snackbar.jsx';
+import { showRequestError } from '../components/ui/Snackbar.jsx';
 import AlarmTimeline, {
   alarmStartTime,
   formatDuration,
@@ -104,8 +104,7 @@ const LocationAlarmDetail = ({
         setLocation((response?.data || null) as LocationDetail | null);
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not load location: ${reason}`);
+        showRequestError(enqueueSnackbar, 'Could not load location', error);
       },
     );
   }, [auth, enqueueSnackbar, id, preloaded]);
@@ -123,8 +122,7 @@ const LocationAlarmDetail = ({
         setLoading(false);
       },
       (error) => {
-        const reason = error?.response?.data?.reason || error.message;
-        showErrorBar(enqueueSnackbar, `Could not load alarms: ${reason}`);
+        showRequestError(enqueueSnackbar, 'Could not load alarms', error);
         setLoading(false);
       },
     );

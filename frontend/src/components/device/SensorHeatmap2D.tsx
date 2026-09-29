@@ -13,6 +13,7 @@ import {
   AggregationMode,
   useHeatmapFrameExport,
 } from './useHeatmapFrameExport';
+import { getBackendUrl } from '../../backendUrl';
 
 type SensorHeatmap2DProps = {
   response: SensorHeatmapResponse | null | undefined;
@@ -48,14 +49,6 @@ type HoveredSensor = {
 
 const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, value));
-
-const getBackendUrl = (path: string) => {
-  if (/^https?:\/\//i.test(path)) {
-    return path;
-  }
-  const backendUrl = import.meta.env.VITE_BACKEND_URL || window.location.origin;
-  return `${backendUrl.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
-};
 
 /**
  * Auto bandwidth: use the median nearest-neighbour distance so that

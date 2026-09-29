@@ -11,3 +11,13 @@ export const formatDateTime = (value?: string | null): string => {
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? '–' : parsed.toLocaleString();
 };
+
+/** ms -> naive local ISO string (matches the backend from/to params). */
+export const toLocalIso = (ms: number): string => {
+  const date = new Date(ms);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+    `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+  );
+};

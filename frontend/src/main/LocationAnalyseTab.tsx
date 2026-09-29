@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
 import { openPostResponseInNewTab, openResponseInNewTab } from '../helper';
-import { showErrorBar } from '../components/ui/Snackbar.jsx';
+import { showRequestError } from '../components/ui/Snackbar.jsx';
 import SensorHeatmap2D from '../components/device/SensorHeatmap2D.tsx';
 import { type SensorHeatmapResponse } from '../components/device/SensorHeatmap3D.tsx';
 import MeasurementSamplesCompareChart, {
@@ -58,8 +58,7 @@ const LocationAnalyseTab = () => {
           done();
         },
         (error) => {
-          const reason = error?.response?.data?.reason || error.message;
-          showErrorBar(enqueueSnackbar, `Could not load heatmap: ${reason}`);
+          showRequestError(enqueueSnackbar, 'Could not load heatmap', error);
           done();
         },
       );
@@ -76,8 +75,7 @@ const LocationAnalyseTab = () => {
           done();
         },
         (error) => {
-          const reason = error?.response?.data?.reason || error.message;
-          showErrorBar(enqueueSnackbar, `Could not load measurements: ${reason}`);
+          showRequestError(enqueueSnackbar, 'Could not load measurements', error);
           done();
         },
       );

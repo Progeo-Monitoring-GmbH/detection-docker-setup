@@ -15,6 +15,8 @@ import RedDropbox from '../components/form/RedDropbox.tsx';
 import ImageCanvasStage from '../components/ui/ImageCanvasStage.tsx';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
+import { getBackendUrl } from '../backendUrl';
+import type { SensorHeatmapLageplanData } from '../components/device/SensorHeatmap3D';
 
 type WizardStep = 1 | 2 | 3 | 4;
 
@@ -47,20 +49,7 @@ type MeasurePointsResponse = {
   flip_x?: boolean;
   flip_y?: boolean;
   // New: array of all lageplans with full metadata
-  lageplans?: Array<{
-    id: number;
-    name?: string;
-    is_active?: boolean;
-    url?: string | null;
-    offset_x?: number | null;
-    offset_y?: number | null;
-    scale_x?: number | null;
-    scale_y?: number | null;
-    flip_x?: boolean;
-    flip_y?: boolean;
-    offset_latitude?: number | null;
-    offset_longitude?: number | null;
-  }> | null;
+  lageplans?: Array<SensorHeatmapLageplanData & { id: number }> | null;
 };
 
 type DeviceOption = {
@@ -95,16 +84,6 @@ const LageplanWizardView = () => {
     () => locations.find((loc) => loc.id === selectedLocationId) ?? null,
     [locations, selectedLocationId],
   );
-
-  const getBackendUrl = (path: string) => {
-    if (/^https?:\/\//i.test(path)) {
-      return path;
-    }
-
-    const backendUrl =
-      import.meta.env.VITE_BACKEND_URL || window.location.origin;
-    return `${backendUrl.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
-  };
 
   const progress = useMemo(() => {
     if (step === 1) {
