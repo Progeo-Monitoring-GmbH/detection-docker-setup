@@ -281,13 +281,14 @@ class LocationViewSet(ProgeoModalViewSet):
 
     @classmethod
     def _access_members(cls, location, account, rules):
-        """Everyone with access to `location`, ProGeo staff excluded: account
-        members (multi-access) first, then single-access ProgeoAccess users.
-        A member can be both - then access is "account" and single is True."""
+        """Everyone with access to `location`: account members (multi-access)
+        first, then single-access ProgeoAccess users, then ProGeo staff (who
+        see every location). A member can also have a rule - then `single` is
+        True. A staff member's rule is their Objektleitung assignment."""
         rules_by_user = {rule.user_id: rule for rule in rules if rule.user_id}
         members = []
         seen = set()
-        for user in account.users.filter(is_staff=False).order_by("username"):
+        for user in account.users.filter(is_staff=False, is_superuser=False).order_by("username"):
             rule = rules_by_user.get(user.id)
             members.append({
                 **cls._user_contact(user),
@@ -296,13 +297,24 @@ class LocationViewSet(ProgeoModalViewSet):
                 "rule": ProgeoAccessSerializer(rule).data if rule else None,
             })
             seen.add(user.id)
-        single_users = User.objects.filter(pk__in=set(rules_by_user) - seen, is_staff=False).order_by("username")
+        single_users = User.objects.filter(
+            pk__in=set(rules_by_user) - seen, is_staff=False, is_superuser=False
+        ).order_by("username")
         for user in single_users:
             members.append({
                 **cls._user_contact(user),
                 "access": "single",
                 "single": True,
                 "rule": ProgeoAccessSerializer(rules_by_user[user.id]).data,
+            })
+        staff = User.objects.filter(Q(is_staff=True) | Q(is_superuser=True), is_active=True).order_by("username")
+        for user in staff:
+            rule = rules_by_user.get(user.id)
+            members.append({
+                **cls._user_contact(user),
+                "access": "staff",
+                "single": rule is not None,
+                "rule": ProgeoAccessSerializer(rule).data if rule else None,
             })
         return members
 

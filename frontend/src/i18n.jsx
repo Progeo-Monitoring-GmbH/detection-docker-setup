@@ -363,7 +363,10 @@ i18n
           rechte_revoke_title: 'Revoke access?',
           rechte_revoke_message:
             '{{name}} loses access to this object and no longer receives notifications for it.',
-          rechte_summary: '{{account}} via account · {{single}} individually',
+          rechte_summary: '{{account}} via account · {{single}} individually · {{staff}} ProGeo team',
+          rechte_scope_staff: 'ProGeo team (all objects)',
+          rechte_staff_hint:
+            'ProGeo staff can access every object. Their notifications are set via Objektleitung in the settings tab.',
           rechte_no_candidates: 'No further users available.',
           benach_title: 'Event history',
           benach_empty: 'No events in the last 90 days.',
@@ -766,7 +769,10 @@ i18n
           rechte_revoke_title: 'Zugriff entziehen?',
           rechte_revoke_message:
             '{{name}} verliert den Zugriff auf dieses Objekt und erhält keine Benachrichtigungen mehr dazu.',
-          rechte_summary: '{{account}} über das Konto · {{single}} einzeln',
+          rechte_summary: '{{account}} über das Konto · {{single}} einzeln · {{staff}} ProGeo-Team',
+          rechte_scope_staff: 'ProGeo-Team (alle Objekte)',
+          rechte_staff_hint:
+            'ProGeo-Mitarbeitende haben Zugriff auf alle Objekte. Ihre Benachrichtigungen werden über die Objektleitung in den Einstellungen festgelegt.',
           rechte_no_candidates: 'Keine weiteren Nutzer verfügbar.',
           benach_title: 'Ereignisverlauf',
           benach_empty: 'Keine Ereignisse in den letzten 90 Tagen.',
