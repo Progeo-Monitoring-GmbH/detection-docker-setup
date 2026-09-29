@@ -263,6 +263,34 @@ const BackupView = () => {
       'backup_restore_error',
     );
 
+  // Fetches a short-lived signed link, then lets the browser download the
+  // file natively - dumps can be several GB, too big to buffer as a blob.
+  const downloadBackup = (backup: BackupRow) => {
+    setBusyAction(`download-${backup.id}`);
+    void axiosConfig.perform_get(
+      auth,
+      `/v1/${account}/backup/${backup.id}/download/`,
+      (response) => {
+        const token = response?.data?.token as string | undefined;
+        if (token) {
+          const link = document.createElement('a');
+          link.href = axiosConfig.holder.getUri({
+            url: `/v1/${account}/backup/download/file/`,
+            params: { token },
+          });
+          link.download = backup.name;
+          link.click();
+        }
+        setBusyAction(null);
+      },
+      (error) => {
+        const reason = error?.response?.data?.reason || error.message;
+        showErrorBar(enqueueSnackbar, t('backup_download_error', { reason }));
+        setBusyAction(null);
+      },
+    );
+  };
+
   const columns: TableColumn<BackupRow>[] = [
     {
       name: t('backup_col_name'),
@@ -270,6 +298,29 @@ const BackupView = () => {
       sortable: true,
       grow: 2,
       wrap: true,
+      cell: (row) => (
+        <button
+          type="button"
+          onClick={() => downloadBackup(row)}
+          disabled={busyAction === `download-${row.id}`}
+          title={t('backup_download')}
+          style={{
+            border: 'none',
+            background: 'none',
+            padding: 0,
+            fontFamily: 'inherit',
+            fontSize: 'inherit',
+            color: 'var(--progeo-blue)',
+            textAlign: 'left',
+            textDecoration: 'underline',
+            textUnderlineOffset: 3,
+            cursor: busyAction === `download-${row.id}` ? 'progress' : 'pointer',
+            wordBreak: 'break-all',
+          }}
+        >
+          {row.name}
+        </button>
+      ),
     },
     {
       name: t('backup_col_date'),

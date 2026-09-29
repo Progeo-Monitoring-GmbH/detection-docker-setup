@@ -1,19 +1,33 @@
 import os.path
 
+from django.core import signing
 from django.core.management import call_command
+from django.http import FileResponse
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.decorator import calc_runtime, require_module_permissions
-from progeo.helper.basics import RequestSuccess, delete_file
+from progeo.helper.basics import RequestFailed, RequestSuccess, delete_file
 from progeo.helper.creator import create_MfS_log
 from progeo.settings import BACKUP_DIR
 from progeo.v1.models import Backup
 from progeo.v1.serializers import BackupSerializer
 from progeo.v1.viewsets.base_viewsets import StandardResultsSetPagination
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
+
+DOWNLOAD_SALT = "backup-download"
+DOWNLOAD_TOKEN_MAX_AGE = 60
+
+
+def _backup_path(backup):
+    """Absolute path of the backup's file, or None if it's missing or its
+    name (from the DB) would point outside BACKUP_DIR."""
+    path = os.path.realpath(backup.get_file_path())
+    if os.path.dirname(path) != os.path.realpath(BACKUP_DIR) or not os.path.isfile(path):
+        return None
+    return path
 
 
 class BackupViewSet(ProgeoModalViewSet):
@@ -53,6 +67,43 @@ class BackupViewSet(ProgeoModalViewSet):
         create_MfS_log(request)
 
         return RequestSuccess()
+
+    @require_module_permissions("module_backup_enabled")
+    @action(detail=True, url_path="download", methods=["GET"])
+    def download_backup(self, request, pk, *args, **kwargs):
+        """Hand out a short-lived signed link to the dump file. The browser
+        then downloads it natively (streamed, with progress) instead of
+        buffering multi-GB dumps in memory via an authenticated XHR."""
+        backup = self.get_object()
+        if not _backup_path(backup):
+            return RequestFailed({"reason": "Backup file not found"})
+        token = signing.TimestampSigner(salt=DOWNLOAD_SALT).sign(f"{request.account.db_name}:{backup.pk}")
+        create_MfS_log(request)
+        # The client opens <backup base>/download/file/?token=<token>.
+        return RequestSuccess({"token": token})
+
+    @action(
+        detail=False,
+        url_path="download/file",
+        methods=["GET"],
+        authentication_classes=[],
+        permission_classes=[AllowAny],
+    )
+    def download_backup_file(self, request, *args, **kwargs):
+        """Serve the file behind a link from download_backup - the signed
+        token is the authorization, valid for DOWNLOAD_TOKEN_MAX_AGE seconds."""
+        try:
+            value = signing.TimestampSigner(salt=DOWNLOAD_SALT).unsign(
+                request.query_params.get("token", ""), max_age=DOWNLOAD_TOKEN_MAX_AGE
+            )
+            db_name, backup_id = value.rsplit(":", 1)
+        except (signing.BadSignature, ValueError):
+            return RequestFailed({"reason": "Download link invalid or expired"})
+        backup = Backup.objects.using(db_name).filter(pk=backup_id).first()
+        path = _backup_path(backup) if backup else None
+        if not path:
+            return RequestFailed({"reason": "Backup file not found"})
+        return FileResponse(open(path, "rb"), as_attachment=True, filename=os.path.basename(path))
 
     @calc_runtime
     @require_module_permissions("module_backup_enabled", "module_backup_delete")
