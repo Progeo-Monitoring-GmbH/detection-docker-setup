@@ -13,10 +13,24 @@ import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import LabeledInput from '../components/ui/kit/LabeledInput';
 import type { PortalOutletContext } from './LocationPortalLayout';
 
-type MeasurePoint = {
-  id: number;
+/** One sensor of the object; `id` is null while it has no ProgeoMeasurePoint. */
+type SensorThreshold = {
   sensor_order: number;
+  id: number | null;
+  name: string | null;
   threshold: number | null;
+};
+
+const thresholdInputStyle = {
+  width: 90,
+  height: 30,
+  border: 'none',
+  borderRadius: 8,
+  background: 'var(--progeo-surface)',
+  padding: '0 8px',
+  fontFamily: 'inherit',
+  fontSize: 12.5,
+  color: 'var(--progeo-blue)',
 };
 
 type Device = {
@@ -75,9 +89,12 @@ const LocationEinstellungenTab = () => {
   // -- Schwellwerte ---------------------------------------------------
   const [threshold, setThreshold] = useState(String(location?.alarm_threshold ?? ''));
   const [savingThreshold, setSavingThreshold] = useState(false);
-  const [points, setPoints] = useState<MeasurePoint[]>([]);
+  const [sensors, setSensors] = useState<SensorThreshold[]>([]);
+  // Edited-but-unsaved inputs, keyed by sensor_order ('' = clear override).
+  const [drafts, setDrafts] = useState<Record<number, string>>({});
   const [pointsOpen, setPointsOpen] = useState(false);
   const [pointsLoading, setPointsLoading] = useState(true);
+  const [savingPoints, setSavingPoints] = useState(false);
 
   const loadPoints = useCallback(() => {
     setPointsLoading(true);
@@ -85,7 +102,8 @@ const LocationEinstellungenTab = () => {
       auth,
       `/v1/location/${locationId}/measurepoints/`,
       (response) => {
-        setPoints((response?.data?.measurepoints || []) as MeasurePoint[]);
+        setSensors((response?.data?.sensors || []) as SensorThreshold[]);
+        setDrafts({});
         setPointsLoading(false);
       },
       () => setPointsLoading(false),
@@ -113,19 +131,33 @@ const LocationEinstellungenTab = () => {
     );
   };
 
-  const savePointThreshold = (point: MeasurePoint, value: string) => {
+  const changedSensors = sensors.filter(
+    (sensor) =>
+      sensor.sensor_order in drafts &&
+      drafts[sensor.sensor_order] !== String(sensor.threshold ?? ''),
+  );
+
+  // Saves every edited sensor at once; the backend updates its
+  // ProgeoMeasurePoint or creates one if the sensor has none yet.
+  const savePointThresholds = () => {
+    setSavingPoints(true);
     void axiosConfig.perform_post(
       auth,
       `/v1/location/${locationId}/measurepoints/`,
-      { id: point.id, threshold: value === '' ? null : Number(value) },
-      (response) => {
-        const saved = response?.data?.measurepoint as MeasurePoint | undefined;
-        if (saved) {
-          setPoints((prev) => prev.map((p) => (p.id === saved.id ? saved : p)));
-        }
+      {
+        points: changedSensors.map((sensor) => {
+          const value = drafts[sensor.sensor_order].trim();
+          return { sensor_order: sensor.sensor_order, threshold: value === '' ? null : Number(value) };
+        }),
+      },
+      () => {
+        showSuccessBar(enqueueSnackbar, t('einstell_saved'));
+        setSavingPoints(false);
+        loadPoints();
       },
       (error) => {
-        showRequestError(enqueueSnackbar, 'Could not save threshold', error);
+        showRequestError(enqueueSnackbar, 'Could not save thresholds', error);
+        setSavingPoints(false);
       },
     );
   };
@@ -262,11 +294,24 @@ const LocationEinstellungenTab = () => {
             </div>
           </div>
 
-          <PillButton
-            variant="ghost"
-            label={pointsOpen ? t('einstell_points_hide') : t('einstell_points_show')}
+          <button
+            type="button"
             onClick={() => setPointsOpen((open) => !open)}
-          />
+            aria-expanded={pointsOpen}
+            style={{
+              alignSelf: 'flex-start',
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              fontFamily: 'inherit',
+              fontSize: 12.5,
+              fontWeight: 500,
+              color: 'var(--progeo-orange)',
+              cursor: 'pointer',
+            }}
+          >
+            {pointsOpen ? t('einstell_points_hide') : t('einstell_points_show')}
+          </button>
 
           {pointsOpen && (
             <div style={{ background: 'var(--progeo-track-soft)', borderRadius: 11, overflow: 'hidden' }}>
@@ -278,23 +323,45 @@ const LocationEinstellungenTab = () => {
                 <div className="d-flex justify-content-center py-3 text-muted">
                   <Spinner animation="border" size="sm" />
                 </div>
+              ) : sensors.length === 0 ? (
+                <div style={{ padding: '10px 12px', fontSize: 12.5, color: '#8B8383', borderTop: '1px solid #E4E0E0' }}>
+                  {t('einstell_points_empty')}
+                </div>
               ) : (
-                points.map((point) => (
-                  <div key={point.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, padding: '8px 12px', fontSize: 12.5, borderTop: '1px solid #E4E0E0', alignItems: 'center' }}>
-                    <span style={{ fontWeight: 600 }}>#{point.sensor_order}</span>
+                sensors.map((sensor) => (
+                  <div key={sensor.sensor_order} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, padding: '8px 12px', fontSize: 12.5, borderTop: '1px solid #E4E0E0', alignItems: 'center' }}>
+                    <span style={{ fontWeight: 600 }}>
+                      {sensor.name || t('einstell_points_sensor', { sensor: sensor.sensor_order })}
+                    </span>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <input
                         type="number"
-                        defaultValue={point.threshold ?? ''}
+                        value={drafts[sensor.sensor_order] ?? String(sensor.threshold ?? '')}
                         readOnly={!canEdit}
-                        placeholder={t('einstell_points_inherited')}
-                        onBlur={(event) => savePointThreshold(point, event.target.value)}
-                        style={{ width: 90, height: 30, border: 'none', borderRadius: 8, background: 'var(--progeo-surface)', padding: '0 8px', fontFamily: 'inherit', fontSize: 12.5, color: 'var(--progeo-blue)' }}
+                        placeholder={
+                          location?.alarm_threshold != null
+                            ? `${t('einstell_points_inherited')} (${location.alarm_threshold})`
+                            : t('einstell_points_inherited')
+                        }
+                        onChange={(event) =>
+                          setDrafts((prev) => ({ ...prev, [sensor.sensor_order]: event.target.value }))
+                        }
+                        style={thresholdInputStyle}
                       />
                       <span style={{ fontSize: 11.5, color: '#8B8383' }}>mV</span>
                     </span>
                   </div>
                 ))
+              )}
+              {canEdit && sensors.length > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderTop: '1px solid #E4E0E0', flexWrap: 'wrap' }}>
+                  <PillButton
+                    label={t('einstell_save')}
+                    onClick={savePointThresholds}
+                    disabled={savingPoints || changedSensors.length === 0}
+                  />
+                  <span style={{ fontSize: 11.5, color: '#8B8383' }}>{t('einstell_points_hint')}</span>
+                </div>
               )}
             </div>
           )}

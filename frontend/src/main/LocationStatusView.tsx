@@ -43,10 +43,16 @@ type VerdachtsstelleCluster = {
   device_label: string | null;
   device_type: string | null;
   alarm_ids: number[];
+  /** Current state: "geloest" once no alarm of this sensor is open anymore. */
   state: AlarmState;
+  /** Whether an alarm of this sensor is still open (not normalized). */
+  active: boolean;
   severity: Severity;
   max_value: number | null;
+  /** Start of the sensor's latest alarm episode (re-triggers merged). */
   since: string | null;
+  /** When that episode ended; null while still active. */
+  resolved_at: string | null;
   ack_by: string | null;
   ack_at: string | null;
   pending_ack_alarm_ids: number[];
@@ -237,19 +243,33 @@ const LocationStatusView = ({
     [sensorPoints, thresholdValue],
   );
 
+  // The placed ProgeoMeasurePoint of a sensor, if any: its name and own
+  // threshold override win over the generic label/object default.
+  const measurePointOf = useCallback(
+    (sensorId: number) => sensorPoints.find((point) => point.pos === sensorId),
+    [sensorPoints],
+  );
+  const sensorLabel = useCallback(
+    (sensorId: number) =>
+      measurePointOf(sensorId)?.name || t('status_sensor_label', { sensor: sensorId }),
+    [measurePointOf, t],
+  );
+
+  // Every Verdachtsstelle with readings in the range - resolved ones too,
+  // it's a history chart.
   const zeitreiheSeries = useMemo(() => {
     const cutoff = Date.now() - ZEITREIHE_RANGE_DAYS[zeitreiheRange] * 24 * 60 * 60 * 1000;
-    return openClusters.map((cluster) => ({
-      id: cluster.id,
-      label: t('status_sensor_label', { sensor: cluster.sensor_id }),
-      threshold:
-        sensorPoints.find((point) => point.pos === cluster.sensor_id)?.threshold ??
-        thresholdValue,
-      points: cluster.alarms.filter(
-        (alarm) => alarm.triggered_at && new Date(alarm.triggered_at).getTime() >= cutoff,
-      ),
-    }));
-  }, [openClusters, sensorPoints, thresholdValue, zeitreiheRange, t]);
+    return clusters.map((cluster) => {
+      return {
+        id: cluster.id,
+        label: sensorLabel(cluster.sensor_id),
+        threshold: measurePointOf(cluster.sensor_id)?.threshold ?? thresholdValue,
+        points: cluster.alarms.filter(
+          (alarm) => alarm.triggered_at && new Date(alarm.triggered_at).getTime() >= cutoff,
+        ),
+      };
+    });
+  }, [clusters, measurePointOf, sensorLabel, thresholdValue, zeitreiheRange]);
 
   // Plain sensor table: built from ProgeoMeasurePoint when placed (name +
   // its own threshold override), otherwise straight from the heatmap's raw
@@ -497,6 +517,7 @@ const LocationStatusView = ({
             }
             emptyLabel={t('status_zeitreihe_empty')}
             meanOfLabel={(count) => t('status_zeitreihe_mean_of', { count })}
+            thresholdLabel={t('status_zeitreihe_threshold_legend')}
           />
         </PanelCard>
       ) : (
@@ -610,6 +631,7 @@ const LocationStatusView = ({
                   <VerdachtsstelleRow
                     key={cluster.id}
                     cluster={cluster}
+                    label={sensorLabel(cluster.sensor_id)}
                     expanded={expanded.has(cluster.id)}
                     onToggle={() => toggleExpanded(cluster.id)}
                     onAcknowledge={() => acknowledgeCluster(cluster)}
@@ -629,6 +651,7 @@ const LocationStatusView = ({
 
 type VerdachtsstelleRowProps = {
   cluster: VerdachtsstelleCluster;
+  label: string;
   expanded: boolean;
   onToggle: () => void;
   onAcknowledge: () => void;
@@ -636,8 +659,16 @@ type VerdachtsstelleRowProps = {
   t: (key: string, options?: Record<string, unknown>) => string;
 };
 
+const formatDate = (value: string) =>
+  new Date(value).toLocaleDateString(undefined, {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+
 const VerdachtsstelleRow = ({
   cluster,
+  label,
   expanded,
   onToggle,
   onAcknowledge,
@@ -676,7 +707,7 @@ const VerdachtsstelleRow = ({
             }}
           >
             <span style={{ fontSize: 14, fontWeight: 500 }}>
-              {t('status_sensor_label', { sensor: cluster.sensor_id })}
+              {label}
               {cluster.device_label && (
                 <span style={{ fontWeight: 400, color: '#8B8383' }}>
                   {' '}
@@ -685,15 +716,6 @@ const VerdachtsstelleRow = ({
                 </span>
               )}
             </span>
-            {cluster.alarm_ids.length > 0 && (
-              <span
-                style={{ fontSize: 11.5, fontWeight: 400, color: '#8B8383' }}
-              >
-                {t('status_alarm_ids', {
-                  size: cluster.alarm_ids.length,
-                })}
-              </span>
-            )}
             <StateBadge
               state={cluster.state}
               label={t(`ui_${cluster.state}`)}
@@ -711,14 +733,10 @@ const VerdachtsstelleRow = ({
               color: '#8B8383',
             }}
           >
-            {cluster.since &&
-              t('status_since', {
-                date: new Date(cluster.since).toLocaleDateString(undefined, {
-                  day: '2-digit',
-                  month: '2-digit',
-                  year: 'numeric',
-                }),
-              })}
+            {cluster.active
+              ? cluster.since && t('status_since', { date: formatDate(cluster.since) })
+              : cluster.resolved_at &&
+                t('status_resolved_at', { date: formatDate(cluster.resolved_at) })}
           </span>
         </span>
         <span
@@ -729,7 +747,7 @@ const VerdachtsstelleRow = ({
           }}
         >
           {cluster.max_value != null
-            ? `${Math.round(cluster.max_value)} mV`
+            ? t('status_peak_value', { value: Math.round(cluster.max_value) })
             : '–'}
         </span>
       </button>

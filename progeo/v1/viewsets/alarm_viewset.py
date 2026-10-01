@@ -237,12 +237,19 @@ class AlarmViewSet(ProgeoModalViewSet):
 
     @classmethod
     def _build_cluster(cls, sensor_id, alarms):
-        """Roll up one Verdachtsstelle - a single sensor - into the worst
-        state/severity across every alarm that flagged it, its own peak
-        reading (not the alarm's overall peak, which may belong to a
+        """Roll up one Verdachtsstelle - a single sensor: its current state,
+        the worst severity and its own peak reading across every alarm that
+        flagged it (not the alarm's overall peak, which may belong to a
         different sensor of the same alarm), which member alarms are still
         pending acknowledgement, and a small alarm history for the expand
-        panel."""
+        panel.
+
+        The state describes *now*, not the worst ever: "neu"/"quittiert"
+        only while an alarm is still open (not normalized), else "geloest".
+        Old unacknowledged alarms of a resolved sensor stay acknowledgeable
+        via pending_ack_alarm_ids. `since` is the start of the current
+        episode (re-triggers within ProgeoAlarm.EPISODE_GAP merged), and
+        `resolved_at` when the sensor is no longer active."""
         status_to_state = {
             ProgeoAlarm.Status.NEU: "neu",
             ProgeoAlarm.Status.QUITTIERT: "quittiert",
@@ -252,17 +259,14 @@ class AlarmViewSet(ProgeoModalViewSet):
             # the frontend doesn't model.
             ProgeoAlarm.Status.STOERUNG: "neu",
         }
-        state_order = {"geloest": 0, "quittiert": 1, "neu": 2}
         severity_order = {
             ProgeoAlarm.Severity.BEOBACHTEN: 0,
             ProgeoAlarm.Severity.ALARM: 1,
             ProgeoAlarm.Severity.KRITISCH: 2,
         }
 
-        worst_state = "geloest"
         worst_severity = ProgeoAlarm.Severity.BEOBACHTEN
         max_value = None
-        since = None
         ack_by = None
         ack_at = None
         pending_ack_alarm_ids = []
@@ -274,8 +278,6 @@ class AlarmViewSet(ProgeoModalViewSet):
                 devices_by_id[alarm.measurement.device_id] = alarm.measurement.device
 
             state = status_to_state.get(alarm.status, "neu")
-            if state_order[state] > state_order[worst_state]:
-                worst_state = state
 
             severity = alarm.severity
             if severity_order[severity] > severity_order[worst_severity]:
@@ -286,8 +288,6 @@ class AlarmViewSet(ProgeoModalViewSet):
                 max_value = peak
 
             start = alarm.triggered_at or alarm.last_fetched
-            if start and (since is None or start < since):
-                since = start
 
             if alarm.status == ProgeoAlarm.Status.QUITTIERT and alarm.evaluated_by_id:
                 if ack_at is None or (alarm.evaluated_at and alarm.evaluated_at > ack_at):
@@ -316,6 +316,15 @@ class AlarmViewSet(ProgeoModalViewSet):
                     "state": state,
                 })
 
+        open_alarms = [alarm for alarm in alarms if alarm.normalized_at is None]
+        if not open_alarms:
+            current_state = "geloest"
+        elif any(status_to_state.get(alarm.status, "neu") == "neu" for alarm in open_alarms):
+            current_state = "neu"
+        else:
+            current_state = "quittiert"
+        since, resolved_at = cls._current_episode(alarms)
+
         devices = [devices_by_id[key] for key in sorted(devices_by_id)]
         device_labels = [device.mac or device.raw_hash or str(device.id) for device in devices]
         history.sort(key=lambda entry: entry["triggered_at"] or "", reverse=True)
@@ -330,15 +339,42 @@ class AlarmViewSet(ProgeoModalViewSet):
             "device_label": ", ".join(device_labels) if device_labels else None,
             "device_type": devices[0].type if devices else None,
             "alarm_ids": sorted(alarm.id for alarm in alarms),
-            "state": worst_state,
+            "state": current_state,
+            "active": bool(open_alarms),
             "severity": worst_severity,
             "max_value": max_value,
             "since": since,
+            "resolved_at": resolved_at,
             "ack_by": ack_by,
             "ack_at": ack_at,
             "pending_ack_alarm_ids": pending_ack_alarm_ids,
             "alarms": history,
         }
+
+    @staticmethod
+    def _current_episode(alarms):
+        """(since, resolved_at) of a sensor's latest episode: the trigger time
+        of its first alarm and, once over, the normalization of its last.
+        Walks back from the newest alarm while each re-trigger followed the
+        previous normalization within ProgeoAlarm.EPISODE_GAP."""
+        timed = sorted(
+            (alarm for alarm in alarms if alarm.triggered_at or alarm.last_fetched),
+            key=lambda alarm: alarm.triggered_at or alarm.last_fetched,
+        )
+        if not timed:
+            return None, None
+        episode_start = len(timed) - 1
+        while episode_start > 0:
+            previous, current = timed[episode_start - 1], timed[episode_start]
+            current_start = current.triggered_at or current.last_fetched
+            if previous.normalized_at and current_start - previous.normalized_at > ProgeoAlarm.EPISODE_GAP:
+                break
+            episode_start -= 1
+        episode = timed[episode_start:]
+        since = episode[0].triggered_at or episode[0].last_fetched
+        if any(alarm.normalized_at is None for alarm in episode):
+            return since, None
+        return since, max(alarm.normalized_at for alarm in episode)
 
     @classmethod
     def _top_sensors(cls, groups, limit=5):

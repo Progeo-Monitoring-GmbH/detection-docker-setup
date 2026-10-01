@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 from django.contrib.auth.models import User
 from django.core.files.storage import FileSystemStorage
+from django.db import transaction
 from django.db.models import Count, Max, Q
 from django.http import HttpResponse
 from django.utils import timezone
@@ -67,6 +68,10 @@ LOCATION_GEO_FIELDS = [
 ]
 
 LOCATION_GEO_CSV_FIELDS = ["id", "project_id", *LOCATION_GEO_FIELDS]
+
+# PDF-Report table limits: latest N measurements, sensors per table width.
+PDF_MAX_ROWS = 200
+PDF_SENSORS_PER_TABLE = 14
 
 
 class LocationViewSet(ProgeoModalViewSet):
@@ -450,55 +455,122 @@ class LocationViewSet(ProgeoModalViewSet):
     @action(detail=True, url_path="measurepoints", methods=["GET", "POST"])
     def measurepoints(self, request, pk=None, *args, **kwargs):
         """
-        Per-measurement-point threshold overrides (Einstellungen / Schwellwerte).
+        Per-sensor threshold overrides (Einstellungen / Schwellwerte).
 
-        GET  -> {"measurepoints": [ProgeoMeasurePointSerializer...]}
-        POST -> update one point's threshold (module_locations_edit):
-                body {"id": <mp_id>, "threshold": <number|null>}. null clears
-                the override so the point falls back to the object's
-                alarm_threshold (existing severity logic already does this
-                fallback when threshold is unset).
+        GET  -> {"measurepoints": [ProgeoMeasurePointSerializer...],
+                 "sensors": [{sensor_order, id, name, threshold}...]}
+                "sensors" lists every sensor of the object - each existing
+                ProgeoMeasurePoint plus every sensor reporting measurements
+                (1-based, see _sensor_count) - so thresholds can be set for
+                sensors that have no measure point yet (id null).
+        POST -> set thresholds (module_locations_edit): body
+                {"points": [{"sensor_order": n, "threshold": <number|null>}]}
+                (or a single {"sensor_order"|"id", "threshold"}). Updates the
+                sensor's ProgeoMeasurePoint, creating an unplaced one (position
+                0/0) if none exists. null clears the override so the point
+                falls back to the object's alarm_threshold.
         """
         location, account = self._find_location(request, pk=pk)
         if not location:
             return RequestFailed({"reason": "Location not found"})
         db_name = account.db_name
+        points_qs = ProgeoMeasurePoint.objects.using(db_name).filter(location=location)
 
         if request.method == "GET":
-            points = (
-                ProgeoMeasurePoint.objects.using(db_name)
-                .filter(location=location)
-                .order_by("sensor_order")
-            )
-            return RequestSuccess(
-                {"measurepoints": ProgeoMeasurePointSerializer(points, many=True).data}
-            )
+            points = list(points_qs.order_by("sensor_order"))
+            by_order = {point.sensor_order: point for point in points}
+            sensor_orders = sorted(set(by_order) | set(range(1, self._sensor_count(location, db_name) + 1)))
+            return RequestSuccess({
+                "measurepoints": ProgeoMeasurePointSerializer(points, many=True).data,
+                "sensors": [
+                    {
+                        "sensor_order": order,
+                        "id": by_order[order].pk if order in by_order else None,
+                        "name": by_order[order].name if order in by_order else None,
+                        "threshold": by_order[order].threshold if order in by_order else None,
+                    }
+                    for order in sensor_orders
+                ],
+            })
 
         if not has_module_permissions(request.user, "module_locations_edit"):
             return permission_denied_response(["module_locations_edit"])
 
-        try:
-            mp_id = int(request.data.get("id"))
-        except (TypeError, ValueError):
-            return RequestFailed({"reason": "id required"})
-        point = (
-            ProgeoMeasurePoint.objects.using(db_name)
-            .filter(pk=mp_id, location=location)
-            .first()
-        )
-        if not point:
-            return RequestFailed({"reason": "Measurement point not found"})
+        entries = request.data.get("points")
+        if entries is None:
+            entries = [request.data]
+        if not isinstance(entries, list):
+            return RequestFailed({"reason": "points must be a list"})
 
-        threshold = request.data.get("threshold")
-        if threshold in (None, ""):
-            point.threshold = None
-        else:
-            try:
-                point.threshold = float(threshold)
-            except (TypeError, ValueError):
-                return RequestFailed({"reason": "threshold must be a number"})
-        point.save(using=db_name, update_fields=["threshold"])
-        return RequestSuccess({"measurepoint": ProgeoMeasurePointSerializer(point).data})
+        # Validate everything first so a bad entry doesn't leave a half-saved batch.
+        changes = []
+        for entry in entries:
+            threshold = entry.get("threshold")
+            if threshold in (None, ""):
+                threshold = None
+            else:
+                try:
+                    threshold = float(threshold)
+                except (TypeError, ValueError):
+                    return RequestFailed({"reason": "threshold must be a number"})
+            if entry.get("sensor_order") not in (None, ""):
+                try:
+                    sensor_order = int(entry.get("sensor_order"))
+                except (TypeError, ValueError):
+                    return RequestFailed({"reason": "sensor_order must be an integer"})
+                if sensor_order < 1:
+                    return RequestFailed({"reason": "sensor_order starts at 1"})
+                changes.append((None, sensor_order, threshold))
+            else:
+                try:
+                    mp_id = int(entry.get("id"))
+                except (TypeError, ValueError):
+                    return RequestFailed({"reason": "sensor_order or id required"})
+                if not points_qs.filter(pk=mp_id).exists():
+                    return RequestFailed({"reason": "Measurement point not found"})
+                changes.append((mp_id, None, threshold))
+
+        saved = []
+        with transaction.atomic(using=db_name):
+            for mp_id, sensor_order, threshold in changes:
+                if mp_id is not None:
+                    point = points_qs.get(pk=mp_id)
+                    point.threshold = threshold
+                    point.save(using=db_name, update_fields=["threshold"])
+                else:
+                    point = points_qs.filter(sensor_order=sensor_order).order_by("id").first()
+                    if point:
+                        point.threshold = threshold
+                        point.save(using=db_name, update_fields=["threshold"])
+                    else:
+                        # No measure point yet: create an unplaced one just to
+                        # carry the threshold (position fields are required).
+                        point = ProgeoMeasurePoint(
+                            location=location,
+                            sensor_order=sensor_order,
+                            threshold=threshold,
+                            x=0, y=0, nx=0, ny=0, grid_x=0, grid_y=0,
+                        )
+                        point.save(using=db_name)
+                saved.append(point)
+
+        serialized = ProgeoMeasurePointSerializer(saved, many=True).data
+        return RequestSuccess({
+            "measurepoints": serialized,
+            # Single-entry callers read the one saved point here.
+            "measurepoint": serialized[0] if len(serialized) == 1 else None,
+        })
+
+    @staticmethod
+    def _sensor_count(location, db_name, sample=50):
+        """How many sensors the object's devices report (pairs per
+        measurement), over its latest `sample` measurements."""
+        measurements = (
+            ProgeoMeasurement.objects.using(db_name)
+            .filter(device__location=location)
+            .order_by("-id")[:sample]
+        )
+        return max((len(measurement.get_pairs()) for measurement in measurements), default=0)
 
     @require_module_permissions("module_locations_enabled")
     @action(detail=True, url_path="devices", methods=["GET"])
@@ -606,14 +678,11 @@ class LocationViewSet(ProgeoModalViewSet):
         events.sort(key=lambda event: event["at"], reverse=True)
         return events
 
-    # Alarms of the same sensor that re-trigger within this gap after the
-    # previous one normalized are one flapping episode, not separate events.
-    ALARM_EPISODE_GAP = timedelta(hours=1)
-
     @staticmethod
     def _group_alarm_episodes(alarms):
         """Group alarms per sensor into episodes of consecutive alarms whose
-        re-trigger follows the previous normalization within ALARM_EPISODE_GAP.
+        re-trigger follows the previous normalization within
+        ProgeoAlarm.EPISODE_GAP.
         Sensors hovering around the threshold otherwise produce dozens of
         near-identical triggered/resolved pairs per day."""
         alarms = list(alarms)
@@ -625,7 +694,7 @@ class LocationViewSet(ProgeoModalViewSet):
             previous = episode[-1] if episode else None
             if previous and (
                 previous.normalized_at is None
-                or alarm.triggered_at - previous.normalized_at <= LocationViewSet.ALARM_EPISODE_GAP
+                or alarm.triggered_at - previous.normalized_at <= ProgeoAlarm.EPISODE_GAP
             ):
                 episode.append(alarm)
                 continue
@@ -975,13 +1044,10 @@ class LocationViewSet(ProgeoModalViewSet):
             timestamps.append(ts)
             pairs = measurement.get_pairs()
 
+            # 1-based like ProgeoMeasurePoint.sensor_order (pair index + 1),
+            # so sensor_points[].pos looks up its own series.
             for idz, sample in enumerate(pairs):
-                try:
-                    samples = _map.get(idz, [])
-                    samples.append(sample)
-                    _map.update({idz: samples})
-                except KeyError:
-                    print(f"Warning: No point found for sensor_order {idz} in _map {_map}")
+                _map.setdefault(idz + 1, []).append(sample)
 
             '''
             for idz, sample in enumerate(measurement.samples):
@@ -1107,10 +1173,11 @@ class LocationViewSet(ProgeoModalViewSet):
 
     @classmethod
     def _measurement_series(cls, location, account, db_name, request, limit=2000):
-        """Shared by get_heatmap_data/export_csv/export_pdf: the location's
-        measurement points plus, per point (keyed by sensor_order), the
-        aligned value series over `timestamps` - same query shape
-        get_heatmap_data already uses, just reused instead of duplicated."""
+        """Shared by export_csv/export_pdf: the location's measurement
+        points, the measurement timestamps (oldest first, the latest `limit`)
+        and per sensor (1-based, = ProgeoMeasurePoint.sensor_order) a value
+        series aligned with `timestamps` - None where a measurement has no
+        value for that sensor."""
         time_from = request.query_params.get("from")
         time_to = request.query_params.get("to")
         if time_from:
@@ -1128,15 +1195,25 @@ class LocationViewSet(ProgeoModalViewSet):
             queryset = queryset.filter(last_fetched__gte=time_from)
         if time_to:
             queryset = queryset.filter(last_fetched__lte=time_to)
-        queryset = queryset[:limit]
+        measurements = list(queryset.order_by("-last_fetched", "-id")[:limit])[::-1]
 
-        timestamps = []
-        series = {}
-        for measurement in queryset:
-            timestamps.append(measurement.last_fetched)
-            for idz, sample in enumerate(measurement.get_pairs()):
-                series.setdefault(idz, []).append(sample)
+        timestamps = [measurement.last_fetched for measurement in measurements]
+        rows = [measurement.get_pairs() for measurement in measurements]
+        sensor_count = max((len(pairs) for pairs in rows), default=0)
+        series = {
+            sensor: [pairs[sensor - 1] if sensor <= len(pairs) else None for pairs in rows]
+            for sensor in range(1, sensor_count + 1)
+        }
         return points, timestamps, series
+
+    @staticmethod
+    def _sensor_columns(points, series):
+        """[(sensor_number, header)] - one column per sensor that has data or
+        a placed ProgeoMeasurePoint, in sensor order. Named after the measure
+        point where one exists, otherwise just numbered ("Sensor 1", ...)."""
+        names = {point.sensor_order: point.name for point in points}
+        sensors = sorted(set(series) | set(names))
+        return [(sensor, names.get(sensor) or f"Sensor {sensor}") for sensor in sensors]
 
     @require_module_permissions("module_locations_enabled", "module_measurements_enabled")
     @action(detail=True, url_path="export_csv", methods=["GET"])
@@ -1157,13 +1234,14 @@ class LocationViewSet(ProgeoModalViewSet):
         response["Content-Disposition"] = (
             f'attachment; filename="{location.project_id or location.id}-messwerte.csv"'
         )
+        columns = self._sensor_columns(points, series)
         writer = csv.writer(response)
-        writer.writerow(["timestamp"] + [point.name or f"#{point.sensor_order}" for point in points])
+        writer.writerow(["timestamp"] + [header for _sensor, header in columns])
         for index, ts in enumerate(timestamps):
             row = [ts.isoformat() if ts else ""]
-            for point in points:
-                values = series.get(point.sensor_order, [])
-                row.append(values[index] if index < len(values) else "")
+            for sensor, _header in columns:
+                value = series.get(sensor, [None] * len(timestamps))[index]
+                row.append("" if value is None else value)
             writer.writerow(row)
         return response
 
@@ -1176,14 +1254,17 @@ class LocationViewSet(ProgeoModalViewSet):
         from io import BytesIO
 
         from reportlab.lib import colors
-        from reportlab.lib.pagesizes import A4
-        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import mm
         from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
         buffer = BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=A4, title="ProGeo Messbericht")
+        doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), title="ProGeo Messbericht")
         styles = getSampleStyleSheet()
+        header_style = ParagraphStyle(
+            "SensorHeader", parent=styles["BodyText"], textColor=colors.white, fontSize=7, leading=8
+        )
         elements = [
             Paragraph(
                 f"Messbericht — Objekt {location.project_id or ''} · {location.name or ''}",
@@ -1192,27 +1273,34 @@ class LocationViewSet(ProgeoModalViewSet):
             Spacer(1, 8 * mm),
         ]
 
-        header = ["Zeitpunkt"] + [point.name or f"#{point.sensor_order}" for point in points]
-        rows = [header]
-        for index, ts in enumerate(timestamps):
-            row = [ts.strftime("%d.%m.%Y %H:%M") if ts else "-"]
-            for point in points:
-                values = series.get(point.sensor_order, [])
-                value = values[index] if index < len(values) else None
-                row.append("" if value is None else f"{value:.0f}")
-            rows.append(row)
+        columns = LocationViewSet._sensor_columns(points, series)
         # Cap rows so the PDF stays a reasonable size/generation time.
-        if len(rows) > 201:
-            rows = [rows[0], *rows[-200:]]
+        row_indexes = range(max(0, len(timestamps) - PDF_MAX_ROWS), len(timestamps))
+        if not columns:
+            elements.append(Paragraph("Keine Messwerte im gewählten Zeitraum.", styles["Normal"]))
 
-        table = Table(rows, repeatRows=1)
-        table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0B3659")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("FONTSIZE", (0, 0), (-1, -1), 7),
-            ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#DCD7D8")),
-        ]))
-        elements.append(table)
+        # Many sensors don't fit one page width - split them into column
+        # groups, each its own table with the timestamp column repeated.
+        for start in range(0, len(columns), PDF_SENSORS_PER_TABLE):
+            group = columns[start:start + PDF_SENSORS_PER_TABLE]
+            rows = [["Zeitpunkt"] + [Paragraph(header, header_style) for _sensor, header in group]]
+            for index in row_indexes:
+                ts = timestamps[index]
+                row = [ts.strftime("%d.%m.%Y %H:%M") if ts else "-"]
+                for sensor, _header in group:
+                    value = series.get(sensor, [None] * len(timestamps))[index]
+                    row.append("" if value is None else f"{value:.0f}")
+                rows.append(row)
+
+            table = Table(rows, repeatRows=1)
+            table.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0B3659")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTSIZE", (0, 0), (-1, -1), 7),
+                ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
+                ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#DCD7D8")),
+            ]))
+            elements.extend([table, Spacer(1, 6 * mm)])
         doc.build(elements)
         return buffer.getvalue()
 
