@@ -371,7 +371,7 @@ def create_email_safe(sent_to: str, message: str, files: str = "", subject: str 
 			"location_id": getattr(location, "pk", None),
 		})
 
-	return _safe_get_or_create(
+	email, created = _safe_get_or_create(
 		EMail,
 		db,
 		lookup={"raw_hash": raw_hash},
@@ -385,6 +385,13 @@ def create_email_safe(sent_to: str, message: str, files: str = "", subject: str 
 			"error": error,
 		},
 	)
+	# The same mail sent again (e.g. a retry after a failure) reuses its row -
+	# the latest attempt's outcome must win, not the first one's.
+	if email is not None and not created and (email.sent != sent or email.error != error):
+		email.sent = sent
+		email.error = error
+		email.save(using=db, update_fields=["sent", "error"])
+	return email, created
 
 
 def create_limited_token_safe(account: Account, user: User | None = None, purpose: str = "",

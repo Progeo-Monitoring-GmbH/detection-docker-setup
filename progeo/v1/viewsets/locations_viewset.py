@@ -22,7 +22,7 @@ from progeo.decorator import (
     require_module_permissions,
 )
 from progeo.helper.basics import RequestFailed, RequestSuccess, save_check_dir
-from progeo.helper.location_access import location_q, resolve_request_accounts
+from progeo.helper.location_access import configured_accounts, location_q, resolve_request_accounts
 from progeo.settings import UPLOAD_DIR
 from progeo.v1.models import (
     Account,
@@ -46,6 +46,18 @@ from progeo.v1.serializers import (
 )
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.v1.viewsets.setup_viewset import _get_controller_account
+
+
+def _as_bool(value) -> bool:
+    """Request flag -> bool; "false"/"0"/"off" are False (bool("false") is True)."""
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in ("1", "true", "yes", "on"):
+            return True
+        if normalized in ("", "0", "false", "no", "off"):
+            return False
+        raise ValueError(f"not a boolean: {value!r}")
+    return bool(value)
 
 
 def _is_staff_admin(user) -> bool:
@@ -109,7 +121,7 @@ class LocationViewSet(ProgeoModalViewSet):
         # outside their own bound account (e.g. the Verwaltung cross-tenant
         # dashboard's permissions modal, reusing access/access_delete as-is).
         if user and _is_staff_admin(user):
-            for account in Account.objects.using("default").all():
+            for account in configured_accounts():
                 qs = ProgeoLocation.objects.using(account.db_name).filter(account=account)
                 location = (
                     qs.filter(pk=pk).first() if pk is not None else qs.filter(project_id=project_id).first()
@@ -709,7 +721,7 @@ class LocationViewSet(ProgeoModalViewSet):
     def geo_export(self, request, *args, **kwargs):
         """Export the geo- and address data of every location of the current account.
 
-        Returns JSON by default; pass `?format=csv` for a spreadsheet download.
+        Returns JSON by default; pass `?output=csv` for a spreadsheet download.
         The exported rows can be sent back to geo_import to update locations.
         """
         accounts = self._resolve_request_accounts(request)
@@ -725,7 +737,9 @@ class LocationViewSet(ProgeoModalViewSet):
                 .values(*LOCATION_GEO_CSV_FIELDS)
             )
 
-        if request.query_params.get("format", "").lower() == "csv":
+        # Not "?format=": DRF reserves that for its renderer selection and
+        # answers 404 for unknown formats before the view runs.
+        if request.query_params.get("output", "").lower() == "csv":
             response = HttpResponse(content_type="text/csv")
             response["Content-Disposition"] = 'attachment; filename="locations-geo-address.csv"'
             writer = csv.DictWriter(response, fieldnames=LOCATION_GEO_CSV_FIELDS)
@@ -863,8 +877,8 @@ class LocationViewSet(ProgeoModalViewSet):
             offset_y = int(request.data.get("offset_y"))
             scale_x = float(request.data.get("scale_x"))
             scale_y = float(request.data.get("scale_y"))
-            flip_x = bool(request.data.get("flip_x", False))
-            flip_y = bool(request.data.get("flip_y", False))
+            flip_x = _as_bool(request.data.get("flip_x", False))
+            flip_y = _as_bool(request.data.get("flip_y", False))
         except (TypeError, ValueError):
             return RequestFailed({"reason": "Invalid alignment values"})
 
@@ -873,13 +887,20 @@ class LocationViewSet(ProgeoModalViewSet):
         if not 0.1 <= scale_x <= 5.0 or not 0.1 <= scale_y <= 5.0:
             return RequestFailed({"reason": "Scales must be between 0.1 and 5.0"})
 
-        location.offset_x = offset_x
-        location.offset_y = offset_y
-        location.scale_x = scale_x
-        location.scale_y = scale_y
-        location.flip_x = flip_x
-        location.flip_y = flip_y
-        location.save(using=db_name, update_fields=[
+        # The alignment belongs to the Lageplan image, not the location: the
+        # active one (same choice as the status view), else the first.
+        lageplans = ProgeoLageplan.objects.using(db_name).filter(location=location).order_by("-id")
+        lageplan = lageplans.filter(is_active=True).first() or lageplans.first()
+        if not lageplan:
+            return RequestFailed({"reason": "No Lageplan uploaded for this location"})
+
+        lageplan.offset_x = offset_x
+        lageplan.offset_y = offset_y
+        lageplan.scale_x = scale_x
+        lageplan.scale_y = scale_y
+        lageplan.flip_x = flip_x
+        lageplan.flip_y = flip_y
+        lageplan.save(using=db_name, update_fields=[
             "offset_x",
             "offset_y",
             "scale_x",
@@ -890,6 +911,7 @@ class LocationViewSet(ProgeoModalViewSet):
 
         return RequestSuccess({
             "location_id": location.project_id,
+            "lageplan_id": lageplan.pk,
             "offset_x": offset_x,
             "offset_y": offset_y,
             "scale_x": scale_x,
@@ -1404,7 +1426,7 @@ class LocationViewSet(ProgeoModalViewSet):
             return RequestFailed({"reason": "Staff access required"})
 
         rows = []
-        for account in Account.objects.using("default").all().order_by("name"):
+        for account in sorted(configured_accounts(), key=lambda account: account.name or ""):
             locations = list(ProgeoLocation.objects.using(account.db_name).filter(account=account))
             if not locations:
                 continue

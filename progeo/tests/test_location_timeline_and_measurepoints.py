@@ -30,10 +30,10 @@ def test_access_serializer_reports_is_staff_for_staff_and_customer_users():
     from progeo.v1.models import ProgeoAccess
 
     staff_rule = ProgeoAccess.objects.using("default").create(
-        location=location, user=staff_user, transport=1, type=1
+        location=location, user_id=staff_user.id, transport=1, type=1
     )
     customer_rule = ProgeoAccess.objects.using("default").create(
-        location=location, user=customer_user, transport=1, type=1
+        location=location, user_id=customer_user.id, transport=1, type=1
     )
 
     assert ProgeoAccessSerializer(staff_rule).data["is_staff"] is True

@@ -6,6 +6,7 @@ from datetime import timedelta
 from uuid import uuid4
 
 from celery.result import AsyncResult
+from django.db import transaction
 from django.utils import timezone
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from rest_framework.decorators import action
@@ -13,6 +14,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.decorator import calc_runtime, require_module_permissions
+from progeo.helper.location_access import location_q, resolve_request_accounts
 from progeo.helper.basics import RequestFailed, RequestSuccess, save_check_dir
 from progeo.helper.docker_helper import start_cad_factory
 from progeo.helper.pdf_cropper import process_pdf_to_png_and_extract_crosses
@@ -48,6 +50,51 @@ from progeo.v1.viewsets.setup_viewset import (
 )
 
 # ######################################################################################################################
+
+
+def _request_accounts(request):
+    """Accounts whose data the request's user may see (staff: the request's
+    account; others: their memberships and single-access accounts)."""
+    fallback = getattr(request, "account", None) or _get_controller_account()
+    return resolve_request_accounts(request, fallback_account=fallback)
+
+
+def _measure_point_location(request, params):
+    """(location, db_name, error_response) for measure_points: by project id
+    (`location_id`) or by device (`device_id`), within the user's access."""
+    from progeo.v1.viewsets.locations_viewset import LocationViewSet
+
+    location_id_raw = params.get("location_id")
+    device_id_raw = params.get("device_id")
+    if not location_id_raw and not device_id_raw:
+        return None, None, RequestFailed({"reason": "Missing parameter: location_id"})
+
+    if location_id_raw:
+        try:
+            location_id = int(location_id_raw)
+        except (TypeError, ValueError):
+            return None, None, RequestFailed({"reason": "location_id must be an integer"})
+        location, account = LocationViewSet._find_location(request, project_id=location_id)
+        if not location:
+            return None, None, RequestFailed({"reason": f"Location not found for id {location_id}"})
+        return location, account.db_name, None
+
+    try:
+        device_id = int(device_id_raw)
+    except (TypeError, ValueError):
+        return None, None, RequestFailed({"reason": "device_id must be an integer"})
+    user = getattr(request, "user", None)
+    for account in _request_accounts(request):
+        device = (
+            ProgeoDevice.objects.using(account.db_name)
+            .filter(location_q(user, account, "location__"))
+            .filter(pk=device_id)
+            .select_related("location")
+            .first()
+        )
+        if device and device.location:
+            return device.location, account.db_name, None
+    return None, None, RequestFailed({"reason": f"No location found for device {device_id}"})
 
 
 def get_connected_devices(*args, **kwargs) -> dict:
@@ -184,9 +231,6 @@ class StatusViewSet(ProgeoModalViewSet):
     @require_module_permissions("module_measurements_enabled")
     @action(detail=False, url_path="measurements", methods=["GET"])
     def measurements(self, request, *args, **kwargs):
-        account = getattr(request, "account", None) or _get_controller_account()
-        db_name = account.db_name if account else "default"
-
         since_hours_raw = request.query_params.get("since_hours")
         since = None
         if since_hours_raw not in [None, ""]:
@@ -196,11 +240,16 @@ class StatusViewSet(ProgeoModalViewSet):
             except (TypeError, ValueError):
                 return RequestFailed({"reason": "since_hours must be an integer"})
 
-        queryset = ProgeoMeasurement.for_account(account, using=db_name, user=request.user).select_related("device").order_by("-id")
-        if since:
-            queryset = queryset.filter(last_fetched__gte=since)
-
-        serialized = ProgeoMeasurementSerializer(queryset, many=True).data
+        serialized = []
+        for account in _request_accounts(request):
+            queryset = (
+                ProgeoMeasurement.for_account(account, using=account.db_name, user=request.user)
+                .select_related("device")
+                .order_by("-id")
+            )
+            if since:
+                queryset = queryset.filter(last_fetched__gte=since)
+            serialized.extend(ProgeoMeasurementSerializer(queryset, many=True).data)
 
         grouped = {}
         for item in serialized:
@@ -234,8 +283,6 @@ class StatusViewSet(ProgeoModalViewSet):
     @require_module_permissions("module_measurements_enabled")
     @action(detail=False, url_path="measurements/watch", methods=["POST"])
     def measurements_watch(self, request, *args, **kwargs):
-        account = getattr(request, "account", None) or _get_controller_account()
-        db_name = account.db_name if account else "default"
         payload = request.data if isinstance(request.data, dict) else {}
 
         measurement_id = payload.get("measurement_id")
@@ -257,7 +304,14 @@ class StatusViewSet(ProgeoModalViewSet):
         except (TypeError, ValueError):
             return RequestFailed({"reason": "measurement_id must be an integer"})
 
-        measurement = ProgeoMeasurement.get_for_account(account, measurement_id, using=db_name, user=request.user)
+        measurement = None
+        for account in _request_accounts(request):
+            measurement = ProgeoMeasurement.get_for_account(
+                account, measurement_id, using=account.db_name, user=request.user
+            )
+            if measurement:
+                db_name = account.db_name
+                break
         if not measurement:
             return RequestFailed({"reason": "Measurement not found"})
 
@@ -536,21 +590,13 @@ class StatusViewSet(ProgeoModalViewSet):
     @require_module_permissions("module_devices_enabled", "module_devices_edit")
     @action(detail=False, url_path="measure_points", methods=["GET", "POST"])
     def measure_points(self, request, *args, **kwargs):
-        account = getattr(request, "account", None) or _get_controller_account()        
-        db_name = account.db_name if account else "default"
-
-        location_id_raw = request.query_params.get("location_id") if request.method == "GET" else request.data.get("location_id")
-        if not location_id_raw:
-            return RequestFailed({"reason": "Missing parameter: location_id"})
-
-        try:
-            location_id = int(location_id_raw)
-        except (TypeError, ValueError):
-            return RequestFailed({"reason": "location_id must be an integer"})
-
-        location = ProgeoLocation.objects.using(db_name).filter(project_id=location_id, account=account).first()
-        if not location:
-            return RequestFailed({"reason": f"Location not found for id {location_id} and account {account.id if account else 'None'}"})
+        """Measure points of a location, addressed by its project id
+        (`location_id`) or by one of its devices (`device_id`, used by the
+        device editor). Only locations the user has access to are found."""
+        params = request.query_params if request.method == "GET" else request.data
+        location, db_name, error = _measure_point_location(request, params)
+        if error:
+            return error
 
         if request.method == "GET":
             points_qs = ProgeoMeasurePoint.objects.using(db_name).filter(location=location).order_by("sensor_order")
@@ -579,21 +625,22 @@ class StatusViewSet(ProgeoModalViewSet):
                         response_data["flip_x"] = active_lageplan.flip_x
                         response_data["flip_y"] = active_lageplan.flip_y
                 else:
-                    # Fallback to legacy fields
-                    lageplan = location.lageplan
-                    response_data["lageplan_url"] = posixpath.join("media", "uploads", lageplan.name) if lageplan else None
-                    response_data["offset_x"] = location.offset_x
-                    response_data["offset_y"] = location.offset_y
-                    response_data["scale_x"] = location.scale_x
-                    response_data["scale_y"] = location.scale_y
-                    response_data["flip_x"] = location.flip_x
-                    response_data["flip_y"] = location.flip_y
+                    # No Lageplan uploaded yet (the old per-location lageplan/
+                    # offset fields were moved to ProgeoLageplan).
+                    response_data["lageplans"] = []
+                    response_data["lageplan_url"] = None
             return RequestSuccess(response_data)
 
         raw_points = request.data.get("points")
         if not isinstance(raw_points, list):
             return RequestFailed({"reason": "points must be a list"})
 
+        # Re-placing the points must not lose what was set per sensor
+        # elsewhere (name, threshold override in Einstellungen).
+        kept = {
+            point.sensor_order: point
+            for point in ProgeoMeasurePoint.objects.using(db_name).filter(location=location)
+        }
         normalized_points = []
         for idx, point in enumerate(raw_points, start=1):
             if not isinstance(point, dict):
@@ -604,16 +651,27 @@ class StatusViewSet(ProgeoModalViewSet):
             except (TypeError, ValueError):
                 return RequestFailed({"reason": f"points[{idx - 1}] has invalid x/y"})
 
+            previous = kept.get(idx)
             normalized_points.append(ProgeoMeasurePoint(
                 location=location,
                 sensor_order=idx,
+                # x/y and nx/ny are both the normalized 0..1 position here
+                # (the device editor reads nx/ny); no grid for hand-placed points.
                 x=x,
                 y=y,
+                nx=x,
+                ny=y,
+                grid_x=0,
+                grid_y=0,
+                name=previous.name if previous else None,
+                threshold=previous.threshold if previous else None,
+                last_value=previous.last_value if previous else None,
             ))
 
-        ProgeoMeasurePoint.objects.using(db_name).filter(location=location).delete()
-        if normalized_points:
-            ProgeoMeasurePoint.objects.using(db_name).bulk_create(normalized_points)
+        with transaction.atomic(using=db_name):
+            ProgeoMeasurePoint.objects.using(db_name).filter(location=location).delete()
+            if normalized_points:
+                ProgeoMeasurePoint.objects.using(db_name).bulk_create(normalized_points)
 
         stored_qs = ProgeoMeasurePoint.objects.using(db_name).filter(location=location).order_by("sensor_order", "id")
         stored = ProgeoMeasurePointSerializer(stored_qs, many=True).data

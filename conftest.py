@@ -23,11 +23,71 @@ if sys.platform.startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 
-# OVERWRITE DEFAULT FIXTURE SO DB WILL STAY INTACT
-@pytest.fixture()
-def django_db_setup():
+def _reset_sequences(db_alias):
+    """Realign every table's id sequence with its rows. A restored backup can
+    leave sequences behind the data, so creating a row then collides with an
+    existing primary key."""
+    from django.apps import apps
+    from django.core.management.color import no_style
+    from django.db import connections
+
+    connection = connections[db_alias]
+    statements = connection.ops.sequence_reset_sql(no_style(), apps.get_models())
+    with connection.cursor() as cursor:
+        for statement in statements:
+            cursor.execute(statement)
+
+
+def _ensure_permissions(db_alias):
+    """Create the module_* permissions that `migrate` creates on the real
+    default database but - because of the database router - never on
+    unit_tests, so tests can grant them. Idempotent."""
+    from django.contrib.auth.models import Permission
+    from django.contrib.contenttypes.models import ContentType
+
+    from progeo.v1.models import MODULE_PERMISSION_DEFINITIONS, UserModulePermissions
+
+    # Proxy-model permissions hang off the proxy's own content type.
+    content_type, _ = ContentType.objects.db_manager(db_alias).get_or_create(
+        app_label=UserModulePermissions._meta.app_label,
+        model=UserModulePermissions._meta.model_name,
+    )
+    for codename, name in MODULE_PERMISSION_DEFINITIONS:
+        Permission.objects.using(db_alias).get_or_create(
+            content_type=content_type, codename=codename, defaults={"name": name}
+        )
+
+
+# OVERWRITE DEFAULT FIXTURE SO DB WILL STAY INTACT: the unit_tests database is
+# never created, dropped or restored by the suite. Isolation comes from
+# pytest-django's per-test transaction rollback (the `db` fixture), so tests
+# can't leak rows into each other or regress the schema. Run
+# `manage.py migrate --database=unit_tests` after adding migrations.
+@pytest.fixture(scope="session")
+def django_db_setup(django_db_blocker):
+    from django.db import connections
+
+    # The test settings point both "default" and "unit_tests" at the same
+    # physical database. Separate connections would mean separate
+    # transactions, so rows a test writes through one alias would be
+    # invisible to the other (FK violations, router errors). Share one.
+    connections["unit_tests"] = connections["default"]
+    with django_db_blocker.unblock():
+        _reset_sequences("unit_tests")
+        _ensure_permissions("default")
     yield
-    call_command("dbrestore", "--noinput", "--skip-checks", "--traceback", "--database=unit_tests")
+
+
+# Both aliases share one connection (see django_db_setup), so every test must
+# be allowed to use both - otherwise Django's per-test database allow-list
+# blocks the shared connection for the alias a test didn't declare.
+TEST_DATABASES = ["default", "unit_tests"]
+
+
+def pytest_collection_modifyitems(items):
+    for item in items:
+        if item.get_closest_marker("django_db") is None:
+            item.add_marker(pytest.mark.django_db(databases=TEST_DATABASES))
 
 
 @pytest.fixture(autouse=True)

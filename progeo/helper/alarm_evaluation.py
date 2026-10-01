@@ -74,17 +74,21 @@ def evaluate_measurements_db(db: str, start, end, project_id: int = None) -> tup
     for measurement in measurements:
         location = measurement.device.location
         if location is None:
-            if measurement.device:
-                location, created = ProgeoLocation.objects.using(db).get_or_create(project_id=measurement.device.project_id)
-                if created:
-                    ilog(f"Created new Location {location} for device {measurement.device}!")
-                    location.save(using=db)
-                device = measurement.device
-                device.location = location
-                device.save(using=db)
-            else:
-                elog(f"No Location found for measurement {measurement} | device={measurement.device}!")
+            device = measurement.device
+            if device is None or device.project_id is None:
+                # Without a project id there is no way to know the location -
+                # skip it instead of guessing (get_or_create(project_id=None)
+                # matched every project-less location and aborted the pass).
+                elog(f"No Location found for measurement {measurement} | device={device}!")
                 continue
+            location = (
+                ProgeoLocation.objects.using(db).filter(project_id=device.project_id).order_by("id").first()
+            )
+            if location is None:
+                location = ProgeoLocation.objects.using(db).create(project_id=device.project_id)
+                ilog(f"Created new Location {location} for device {device}!")
+            device.location = location
+            device.save(using=db, update_fields=["location"])
 
         if location_id != location.project_id:
             location_ids += 1

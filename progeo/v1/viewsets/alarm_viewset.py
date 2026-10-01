@@ -127,6 +127,10 @@ class AlarmViewSet(ProgeoModalViewSet):
         location_id = request.query_params.get("location")
         if not location_id:
             return RequestFailed({"reason": "location is required"})
+        try:
+            location_id = int(location_id)
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "location must be an integer"})
 
         try:
             days = int(request.query_params.get("days", DEFAULT_ALARM_DAYS))
@@ -427,7 +431,9 @@ class AlarmViewSet(ProgeoModalViewSet):
         if alarm.status != STATUS_ACKNOWLEDGED or alarm.evaluated_at is None:
             user = getattr(request, "user", None)
             alarm.evaluated_at = timezone.now()
-            alarm.evaluated_by = user if user and user.is_authenticated else None
+            # By id: the database router forbids assigning a User instance
+            # (default DB) to a model of an account database.
+            alarm.evaluated_by_id = user.pk if user and user.is_authenticated else None
             alarm.status = STATUS_ACKNOWLEDGED
             alarm.save(
                 using=db_name,

@@ -165,10 +165,10 @@ def test_create_progeo_alarm_safe_uses_current_alarm_model():
 
     alarm, created = create_progeo_alarm_safe(
         measurement=measurement,
-        triggered=True,
+        sensor_id=3,
         threshold=25.5,
         max_value=42.0,
-        evaluated_at=evaluated_at,
+        triggered_at=evaluated_at,
         status=2,
         db="default",
     )
@@ -177,9 +177,11 @@ def test_create_progeo_alarm_safe_uses_current_alarm_model():
     assert alarm is not None
     assert alarm.status == 2
     assert alarm.triggered_at == evaluated_at
-    assert alarm.evaluated_at == evaluated_at
     assert alarm.threshold == 25.5
     assert alarm.max_value == 42.0
+    # The reading is recorded in the alarm's development history.
+    assert [entry["value"] for entry in alarm.max_values] == [42.0]
+    assert alarm.max_values[0]["sensor_id"] == 3
 
 
 @pytest.mark.django_db(databases=["unit_tests", "default"])
@@ -281,13 +283,18 @@ def test_catch_legacy_field_data_builds_samples_from_payload_value_arrays(api_cl
         round(calc_resistances(vdc_intput=11.524, idc_intput=0).get("r_vdc_ohm"), 2),
         round(calc_resistances(vdc_intput=11.525, idc_intput=0).get("r_vdc_ohm"), 2),
     ]
-    assert body.get("samples") == expected
+    assert body.get("sample") == expected
 
     saved = ProgeoMeasurement.objects.using("default").order_by("-id").first()
     assert saved is not None
     assert saved.project_id == 7001
-    assert saved.device.raw_hash == "7001"
+    # An IMEI in the payload identifies the device, not the project_id.
+    assert saved.device.raw_hash == "863663069840161"
     assert saved.samples == expected
+    # The IMEI doesn't fit ProgeoLocation.project_id - the location is keyed by name.
+    assert saved.device.location is not None
+    assert saved.device.location.project_id is None
+    assert saved.device.location.name == "863663069840161"
 
 
 @pytest.mark.django_db(databases=["unit_tests", "default"])
