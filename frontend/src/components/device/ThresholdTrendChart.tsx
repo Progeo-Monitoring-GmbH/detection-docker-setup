@@ -23,9 +23,21 @@ type ThresholdTrendChartProps = {
   onToggleSeries: (id: string) => void;
   emptyLabel: string;
   meanOfLabel: (count: number) => string;
+  /** Legend text for the dotted 1x threshold line. */
+  thresholdLabel: string;
 };
 
-const COLORS = ['var(--progeo-orange)', 'var(--progeo-blue)', '#3F7A1C', '#9A7208', '#8B8383'];
+// Series hues deliberately avoid red/orange/green: those already mean
+// "over / under threshold" in the background bands and the orange threshold
+// line. Order validated for colour-vision deficiency (dataviz palette check:
+// worst adjacent CVD ΔE 20.4, normal-vision ≥ 15). Assigned in fixed order;
+// beyond the pool, series repeat a hue with a dashed line instead of
+// generating new colours.
+const COLORS = ['#2a78d6', '#eda100', '#1a9bb5', '#4a3aa7', '#e87ba4'];
+const REPEAT_DASH = '6 4';
+
+const THRESHOLD_COLOR = 'var(--progeo-orange)';
+const THRESHOLD_DASH = '2 4';
 
 // Compact plot area - a short, wide strip instead of a mostly-empty square.
 const VB_W = 1000;
@@ -54,6 +66,22 @@ type HoverInfo = {
   ratio: number;
   count: number;
 };
+
+/** Legend sample of a series/threshold line, dashed like the line itself. */
+const LegendSwatch = ({ color, dash, width = 2.5 }: { color: string; dash?: string; width?: number }) => (
+  <svg width={18} height={6} style={{ flexShrink: 0 }} aria-hidden="true">
+    <line
+      x1={0}
+      x2={18}
+      y1={3}
+      y2={3}
+      stroke={color}
+      strokeWidth={width}
+      strokeDasharray={dash}
+      strokeLinecap="round"
+    />
+  </svg>
+);
 
 const formatTime = (time: number) =>
   new Date(time).toLocaleString(undefined, {
@@ -110,6 +138,7 @@ const ThresholdTrendChart = ({
   onToggleSeries,
   emptyLabel,
   meanOfLabel,
+  thresholdLabel,
 }: ThresholdTrendChartProps) => {
   const [hover, setHover] = useState<HoverInfo | null>(null);
 
@@ -120,6 +149,7 @@ const ThresholdTrendChart = ({
         id: entry.id,
         label: entry.label,
         color: COLORS[index % COLORS.length],
+        dash: index >= COLORS.length ? REPEAT_DASH : undefined,
         points: entry.points
           .filter((point) => point.triggered_at && point.value != null)
           .map((point) => ({
@@ -226,7 +256,7 @@ const ThresholdTrendChart = ({
               </text>
             </g>
           ))}
-          <line x1={X0} x2={X1} y1={thresholdY} y2={thresholdY} stroke="var(--progeo-orange)" strokeWidth={1.3} strokeDasharray="2 4" opacity={0.75} />
+          <line x1={X0} x2={X1} y1={thresholdY} y2={thresholdY} stroke={THRESHOLD_COLOR} strokeWidth={1.3} strokeDasharray={THRESHOLD_DASH} opacity={0.75} />
 
           <text x={X0} y={VB_H - 2} textAnchor="start" fontSize={9} fill="#8B8383">
             {formatTime(minTime)}
@@ -241,6 +271,7 @@ const ThresholdTrendChart = ({
                 points={entry.display.map((point) => `${toX(point.time)},${toY(point.ratio)}`).join(' ')}
                 fill="none"
                 stroke={entry.color}
+                strokeDasharray={entry.dash}
                 strokeWidth={1.8}
                 strokeLinejoin="round"
               />
@@ -318,17 +349,26 @@ const ThresholdTrendChart = ({
               color: hiddenSeries.has(entry.id) ? '#B8B0B0' : '#6E6868',
             }}
           >
-            <span
-              style={{
-                width: 14,
-                height: 2.5,
-                borderRadius: 2,
-                background: hiddenSeries.has(entry.id) ? '#B8B0B0' : entry.color,
-              }}
+            <LegendSwatch
+              color={hiddenSeries.has(entry.id) ? '#B8B0B0' : entry.color}
+              dash={entry.dash}
             />
             {entry.label}
           </button>
         ))}
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            fontSize: 12.5,
+            color: '#6E6868',
+            marginLeft: 'auto',
+          }}
+        >
+          <LegendSwatch color={THRESHOLD_COLOR} dash={THRESHOLD_DASH} width={1.3} />
+          {thresholdLabel}
+        </span>
       </div>
     </div>
   );

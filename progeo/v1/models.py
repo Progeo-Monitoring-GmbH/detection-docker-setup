@@ -646,6 +646,10 @@ class ProgeoAlarm(ProgeoModel, auto_prefetch.Model):
     # frontend: heat=1 (fully "kritisch") at 3x the alarm threshold.
     HEAT_FULL_MULTIPLIER = 3
 
+    # A sensor that re-triggers within this gap after its previous alarm
+    # normalized is still the same (flapping) episode, not a new event.
+    EPISODE_GAP = datetime.timedelta(hours=1)
+
     measurement = models.ForeignKey(ProgeoMeasurement, on_delete=models.CASCADE, related_name='alarms')
 
     triggered_at = models.DateTimeField(null=True, blank=True)

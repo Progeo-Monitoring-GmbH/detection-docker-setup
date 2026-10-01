@@ -206,6 +206,68 @@ def test_build_cluster_all_resolved_reports_geloest():
     assert cluster["pending_ack_alarm_ids"] == []
 
 
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_build_cluster_normalized_but_unacknowledged_is_geloest_and_still_acknowledgeable():
+    """State describes now: a sensor with no open alarm is resolved, even if
+    old alarms were never acknowledged - those stay pending for Quittieren."""
+    now = timezone.now()
+    location = ProgeoLocation.objects.using("default").create(alarm_threshold=100)
+    device = ProgeoDevice.objects.using("default").create(raw_hash="unacked-device", location=location)
+    measurement = ProgeoMeasurement.objects.using("default").create(device=device, raw_data={})
+
+    alarm = ProgeoAlarm.objects.using("default").create(
+        measurement=measurement,
+        threshold=100,
+        max_value=150,
+        status=ProgeoAlarm.Status.NEU,
+        triggered_at=now - timezone.timedelta(hours=3),
+        normalized_at=now - timezone.timedelta(hours=2),
+        sensor_max_values=[{"sensor_id": 4, "max_value": 150}],
+    )
+
+    cluster = AlarmViewSet._build_cluster(4, [alarm])
+
+    assert cluster["state"] == "geloest"
+    assert cluster["active"] is False
+    assert cluster["resolved_at"] == alarm.normalized_at
+    assert cluster["pending_ack_alarm_ids"] == [alarm.id]
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_build_cluster_since_is_start_of_current_flapping_episode():
+    now = timezone.now()
+    location = ProgeoLocation.objects.using("default").create(alarm_threshold=100)
+    device = ProgeoDevice.objects.using("default").create(raw_hash="episode-device", location=location)
+
+    def make_alarm(triggered_hours_ago, normalized_hours_ago):
+        measurement = ProgeoMeasurement.objects.using("default").create(device=device, raw_data={})
+        return ProgeoAlarm.objects.using("default").create(
+            measurement=measurement,
+            threshold=100,
+            max_value=150,
+            status=ProgeoAlarm.Status.NEU,
+            triggered_at=now - timezone.timedelta(hours=triggered_hours_ago),
+            normalized_at=(
+                now - timezone.timedelta(hours=normalized_hours_ago)
+                if normalized_hours_ago is not None
+                else None
+            ),
+            sensor_max_values=[{"sensor_id": 5, "max_value": 150}],
+        )
+
+    old = make_alarm(48, 47)  # a separate, long-finished episode
+    flap_start = make_alarm(3, 2.9)
+    flap_middle = make_alarm(2.7, 2.6)  # re-triggers within the episode gap
+    still_open = make_alarm(2.4, None)
+
+    cluster = AlarmViewSet._build_cluster(5, [old, flap_start, flap_middle, still_open])
+
+    assert cluster["state"] == "neu"
+    assert cluster["active"] is True
+    assert cluster["since"] == flap_start.triggered_at
+    assert cluster["resolved_at"] is None
+
+
 # -- AlarmViewSet._group_alarms_by_sensor / _top_sensors -------------------
 
 @pytest.mark.django_db(databases=["unit_tests", "default"])
