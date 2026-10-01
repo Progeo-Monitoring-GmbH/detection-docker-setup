@@ -22,7 +22,9 @@ from progeo.helper.cacher import search_clear_cache
 from progeo.helper.creator import create_MfS_log
 from progeo.helper.emails import send_info_mail
 from progeo.security import save_clean_path
-from progeo.settings import DJANGO_DATABASES, UPLOAD_DIR
+from django.conf import settings
+
+from progeo.settings import UPLOAD_DIR
 from progeo.tasks import ping
 from progeo.v1.creator import create_account_safe
 from progeo.v1.helper import generate_hash
@@ -38,10 +40,13 @@ def _get_controller_account():
         if not account_name:
             raise Exception("CONTROLLER_DEFAULT_ACCOUNT is not set")
 
-        if not DJANGO_DATABASES:
+        # Via django.conf so the active settings module decides (the test
+        # settings define their own databases).
+        databases = getattr(settings, "DJANGO_DATABASES", [])
+        if not databases:
             raise Exception("DJANGO_DATABASES is empty")
 
-        account, _ = create_account_safe(name=account_name, db_name=DJANGO_DATABASES[0])
+        account, _ = create_account_safe(name=account_name, db_name=databases[0])
         if not account:
             raise Exception("Failed to get or create controller account")
 

@@ -21,6 +21,17 @@ def is_staff_admin(user) -> bool:
     return bool(getattr(user, "is_staff", False) or getattr(user, "is_superuser", False))
 
 
+def configured_accounts():
+    """Every Account whose database this deployment actually configures -
+    an Account can reference a database (e.g. "main_db") that only exists
+    elsewhere, and querying it would crash."""
+    return [
+        account
+        for account in Account.objects.using("default").order_by("id")
+        if account.db_name in connections.databases
+    ]
+
+
 def is_account_member(user, account) -> bool:
     if not user or not account or not getattr(user, "pk", None):
         return False
@@ -48,8 +59,8 @@ def user_accounts(user) -> list[Account]:
         return []
     accounts = list(user.accounts.order_by("id"))
     member_ids = {account.pk for account in accounts}
-    for account in Account.objects.using("default").exclude(pk__in=member_ids).order_by("id"):
-        if single_access_location_ids(user, account):
+    for account in configured_accounts():
+        if account.pk not in member_ids and single_access_location_ids(user, account):
             accounts.append(account)
     return accounts
 

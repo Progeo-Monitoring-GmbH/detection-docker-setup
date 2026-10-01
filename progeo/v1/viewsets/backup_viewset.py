@@ -61,7 +61,7 @@ class BackupViewSet(ProgeoModalViewSet):
 
             backup, created = Backup.objects.using(request.account.db_name).get_or_create(name=_f, account=request.account)
             if created:
-                backup.user = request.user
+                backup.user_id = request.user.pk  # by id - see the database router
                 backup.save()
 
         create_MfS_log(request)

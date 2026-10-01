@@ -72,17 +72,22 @@ export const formatDuration = (seconds: number): string => {
   return parts.join(' ');
 };
 
+/** A finite number, or null for null/undefined/''/NaN (Number(null) is 0). */
+const finiteOrNull = (value: unknown): number | null => {
+  if (value == null || value === '') {
+    return null;
+  }
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+};
+
 export const parseTimestamp = (raw?: string | null): number | null => {
   if (!raw) {
     return null;
   }
-  // ISO-8601 (preferred, emitted by ProgeoAlarmSerializer).
-  const ms = Date.parse(raw);
-  if (!Number.isNaN(ms)) {
-    return ms;
-  }
-  // Fallback: the project-wide pretty format "%d.%m.%Y, %H:%M" (e.g.
-  // "19.08.2026, 11:08") in case a stale/cached payload shows up.
+  // The project-wide pretty format "%d.%m.%Y, %H:%M" (e.g. "19.08.2026,
+  // 11:08") from stale/cached payloads. Checked before Date.parse, which
+  // would read "01.02.2026" US-style as 2 January.
   const prettyMatch =
     /^(\d{2})\.(\d{2})\.(\d{4}),\s*(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(
       raw.trim(),
@@ -97,9 +102,16 @@ export const parseTimestamp = (raw?: string | null): number | null => {
       Number(minute),
       second ? Number(second) : 0,
     );
-    return Number.isNaN(date.getTime()) ? null : date.getTime();
+    // Reject impossible dates (e.g. 31.02.) instead of rolling them over.
+    const valid =
+      date.getFullYear() === Number(year) &&
+      date.getMonth() === Number(month) - 1 &&
+      date.getDate() === Number(day);
+    return valid ? date.getTime() : null;
   }
-  return null;
+  // ISO-8601 (preferred, emitted by ProgeoAlarmSerializer).
+  const ms = Date.parse(raw);
+  return Number.isNaN(ms) ? null : ms;
 };
 
 /**
@@ -154,11 +166,10 @@ export const alarmRainSpans = (alarm: {
     if (start == null || !Number.isFinite(duration) || duration <= 0) {
       continue;
     }
-    const amount = Number(event.amount);
     spans.push({
       start,
       end: Math.max(start + duration * 60 * 60 * 1000, start),
-      amount: Number.isFinite(amount) ? amount : null,
+      amount: finiteOrNull(event.amount),
     });
   }
 
@@ -204,24 +215,20 @@ export const alarmPeakValue = (alarm: {
 }): number | null => {
   const history = Array.isArray(alarm.max_values) ? alarm.max_values : [];
   const peak = history.reduce<number | null>((best, entry) => {
-    const value = Number(entry?.value);
-    if (!Number.isFinite(value)) {
+    const value = finiteOrNull(entry?.value);
+    if (value == null) {
       return best;
     }
     return best == null || value > best ? value : best;
   }, null);
   const sensorPeak = alarmSensors(alarm).reduce<number | null>((best, pair) => {
-    const value = Number(pair?.max_value);
-    if (!Number.isFinite(value)) {
+    const value = finiteOrNull(pair?.max_value);
+    if (value == null) {
       return best;
     }
     return best == null || value > best ? value : best;
   }, null);
-  return (
-    peak ??
-    sensorPeak ??
-    (Number.isFinite(Number(alarm.max_value)) ? Number(alarm.max_value) : null)
-  );
+  return peak ?? sensorPeak ?? finiteOrNull(alarm.max_value);
 };
 
 /** Hex color -> [r, g, b]. */

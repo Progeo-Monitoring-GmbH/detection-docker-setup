@@ -171,6 +171,19 @@ def get_device_type(measurement, device_id) -> ProgeoDevice.DeviceType:
     elif isinstance(measurement, dict):
         return ProgeoDevice.DeviceType.LEGACY
 
+PROJECT_ID_MAX = 2**31 - 1
+
+
+def _as_project_id(device_id):
+    """The device id as a ProgeoLocation.project_id, or None if it isn't a
+    number that fits the integer column."""
+    try:
+        value = int(str(device_id).strip())
+    except (TypeError, ValueError):
+        return None
+    return value if 0 <= value <= PROJECT_ID_MAX else None
+
+
 def save_measurement_from_legacy_data(measurement, device_id: str, battery_V: int = None, last_battery_percentage: int = None):
     db_name = "default"
     device, created = ProgeoDevice.objects.using(db_name).get_or_create(raw_hash=device_id)
@@ -181,12 +194,23 @@ def save_measurement_from_legacy_data(measurement, device_id: str, battery_V: in
         device.save(using=db_name)
 
         account = _get_controller_account()
-        location, _ = ProgeoLocation.objects.using(db_name).get_or_create(
+        # project_id is a 32-bit integer column: IMEI-style ids (15 digits)
+        # don't fit, so those locations are keyed by name instead.
+        project_id = _as_project_id(device_id)
+        if project_id is not None:
+            location, _ = ProgeoLocation.objects.using(db_name).get_or_create(
                 account=account,
-                project_id=device_id,
+                project_id=project_id,
             )
-        location.devices.add(device)
-        location.save(using=db_name)
+        else:
+            location, _ = ProgeoLocation.objects.using(db_name).get_or_create(
+                account=account,
+                project_id=None,
+                name=str(device_id),
+            )
+        # ProgeoDevice.location is a plain FK (no reverse "devices" manager).
+        device.location = location
+        device.save(using=db_name, update_fields=["location"])
 
 
     if isinstance(measurement, DataMeasurement):
@@ -229,8 +253,7 @@ def save_measurement_from_legacy_data(measurement, device_id: str, battery_V: in
         if last_battery_percentage is not None:
             data["last_battery_percentage"] = last_battery_percentage
         
-        samples = data.get("samples", [])
-        del data["samples"]
+        samples = data.pop("samples", [])
 
         measure = ProgeoMeasurement.objects.using(db_name).create(
             device=device,
@@ -238,8 +261,9 @@ def save_measurement_from_legacy_data(measurement, device_id: str, battery_V: in
             samples=samples,
             raw_data=data,
         )
-        if len(data["resistance_rows"]) >= 1:
-            sample = data["resistance_rows"][0]
+        resistance_rows = data.get("resistance_rows") or []
+        if resistance_rows:
+            sample = resistance_rows[0]
             timestamp = sample.get("timestamp")
             parsed_timestamp = parse_sample_timestamp(timestamp)
             if parsed_timestamp is not None:

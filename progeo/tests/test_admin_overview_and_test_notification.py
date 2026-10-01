@@ -82,10 +82,10 @@ def test_notification_recipients_resolves_active_channels_only():
     silent_user = User.objects.using("default").create(username="recipient-silent", email="silent@example.com")
 
     ProgeoAccess.objects.using("default").create(
-        location=location, user=email_user, transport=ProgeoAccess.NotifiTrans.EMAIL,
+        location=location, user_id=email_user.id, transport=ProgeoAccess.NotifiTrans.EMAIL,
     )
     ProgeoAccess.objects.using("default").create(
-        location=location, user=silent_user, transport=ProgeoAccess.NotifiTrans.SILENT,
+        location=location, user_id=silent_user.id, transport=ProgeoAccess.NotifiTrans.SILENT,
     )
 
     recipients = LocationViewSet._notification_recipients(location, "default")
