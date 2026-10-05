@@ -6,7 +6,12 @@ import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
-import { errorReason, showErrorBar, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import {
+  errorReason,
+  showErrorBar,
+  showRequestError,
+  showSuccessBar,
+} from '../components/ui/Snackbar.jsx';
 import SensorHeatmap2D from '../components/device/SensorHeatmap2D';
 import type { SensorHeatmapResponse } from '../components/device/SensorHeatmap3D';
 import LageplanZoneOverlay from '../components/device/LageplanZoneOverlay';
@@ -170,7 +175,11 @@ const LocationStatusView = ({
         if (error?.response?.status === 403) {
           setClustersDenied(true);
         } else {
-          showRequestError(enqueueSnackbar, 'Could not load suspected leaks', error);
+          showRequestError(
+            enqueueSnackbar,
+            'Could not load suspected leaks',
+            error,
+          );
         }
         setClustersLoading(false);
       },
@@ -251,21 +260,26 @@ const LocationStatusView = ({
   );
   const sensorLabel = useCallback(
     (sensorId: number) =>
-      measurePointOf(sensorId)?.name || t('status_sensor_label', { sensor: sensorId }),
+      measurePointOf(sensorId)?.name ||
+      t('status_sensor_label', { sensor: sensorId }),
     [measurePointOf, t],
   );
 
   // Every Verdachtsstelle with readings in the range - resolved ones too,
   // it's a history chart.
   const zeitreiheSeries = useMemo(() => {
-    const cutoff = Date.now() - ZEITREIHE_RANGE_DAYS[zeitreiheRange] * 24 * 60 * 60 * 1000;
+    const cutoff =
+      Date.now() - ZEITREIHE_RANGE_DAYS[zeitreiheRange] * 24 * 60 * 60 * 1000;
     return clusters.map((cluster) => {
       return {
         id: cluster.id,
         label: sensorLabel(cluster.sensor_id),
-        threshold: measurePointOf(cluster.sensor_id)?.threshold ?? thresholdValue,
+        threshold:
+          measurePointOf(cluster.sensor_id)?.threshold ?? thresholdValue,
         points: cluster.alarms.filter(
-          (alarm) => alarm.triggered_at && new Date(alarm.triggered_at).getTime() >= cutoff,
+          (alarm) =>
+            alarm.triggered_at &&
+            new Date(alarm.triggered_at).getTime() >= cutoff,
         ),
       };
     });
@@ -384,7 +398,11 @@ const LocationStatusView = ({
               {},
               () => resolve(),
               (error) => {
-                showRequestError(enqueueSnackbar, 'Could not acknowledge alarm', error);
+                showRequestError(
+                  enqueueSnackbar,
+                  'Could not acknowledge alarm',
+                  error,
+                );
                 resolve();
               },
             );
@@ -477,7 +495,14 @@ const LocationStatusView = ({
         kpiTiles.length > 0 && <KpiStrip tiles={kpiTiles} />
       )}
 
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', padding: '2px 2px 0' }}>
+      <div
+        style={{
+          display: 'flex',
+          gap: 12,
+          flexWrap: 'wrap',
+          padding: '2px 2px 0',
+        }}
+      >
         <SegmentedControl
           options={[
             { value: 'roof', label: t('status_view_roof') },
@@ -521,129 +546,116 @@ const LocationStatusView = ({
           />
         </PanelCard>
       ) : (
-      <div
-        style={{
-          display: 'flex',
-          gap: 14,
-          alignItems: 'flex-start',
-          flexWrap: 'wrap',
-        }}
-      >
-        <div style={{ flex: '1 1 560px', minWidth: 0 }}>
-          <PanelCard title={t('status_dachansicht_title')}>
-            {heatmapDenied ? (
-              <div style={{ color: '#8B8383', fontSize: 13 }}>
-                {t('status_no_measurement_access')}
-              </div>
-            ) : !hasLageplan ? (
-              <div style={{ color: '#8B8383', fontSize: 13 }}>
-                {t('status_no_lageplan')}
-              </div>
-            ) : !hasMeasurePoints ? (
-              <SensorListTable rows={sensorRows} />
-            ) : isDfh ? (
-              <LageplanZoneOverlay
-                imageUrl={activeLageplan?.url ?? null}
-                points={zonePoints}
-                height={480}
-              />
-            ) : (
-              <>
-                <div
+        <div
+          style={{
+            display: 'flex',
+            gap: 14,
+            alignItems: 'flex-start',
+            flexWrap: 'wrap',
+          }}
+        >
+          <div style={{ flex: '1 1 560px', minWidth: 0 }}>
+            <PanelCard title={t('status_dachansicht_title')}>
+              {heatmapDenied ? (
+                <div style={{ color: '#8B8383', fontSize: 13 }}>
+                  {t('status_no_measurement_access')}
+                </div>
+              ) : !hasLageplan ? (
+                <div style={{ color: '#8B8383', fontSize: 13 }}>
+                  {t('status_no_lageplan')}
+                </div>
+              ) : !hasMeasurePoints ? (
+                <SensorListTable rows={sensorRows} />
+              ) : isDfh ? (
+                <LageplanZoneOverlay
+                  imageUrl={activeLageplan?.url ?? null}
+                  points={zonePoints}
+                  height={480}
+                />
+              ) : (
+                <>
+                  <div
+                    style={{
+                      position: 'relative',
+                      borderRadius: 14,
+                      background: 'var(--progeo-surface)',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <SensorHeatmap2D
+                      response={heatmap}
+                      height={480}
+                      hideChrome
+                    />
+                  </div>
+
+                  {isSmartex && (
+                    <div style={{ marginTop: 14 }}>
+                      <SensorListTable rows={sensorRows} />
+                    </div>
+                  )}
+                </>
+              )}
+            </PanelCard>
+          </div>
+
+          <div style={{ flex: '1 1 380px', minWidth: 0 }}>
+            <PanelCard
+              title={t('status_verdachtsstellen_title')}
+              actions={
+                <a
+                  href="#"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    navigate(`/location/${locationId}/alarms`);
+                  }}
                   style={{
-                    position: 'relative',
-                    borderRadius: 14,
-                    background: 'var(--progeo-surface)',
-                    overflow: 'hidden',
+                    fontSize: 12.5,
+                    color: 'var(--progeo-orange)',
+                    fontWeight: 500,
                   }}
                 >
-                  <SensorHeatmap2D response={heatmap} height={480} hideChrome />
+                  {t('status_view_all')}
+                </a>
+              }
+            >
+              {clustersDenied ? (
+                <div style={{ color: '#8B8383', fontSize: 13 }}>
+                  {t('status_no_measurement_access')}
                 </div>
-                <div style={{ marginTop: 14 }}>
-                  <LegendGradientBar
-                    title={t('status_legend_title')}
-                    stops={[
-                      plotTheme.brandBlue,
-                      plotTheme.contrastCyan,
-                      plotTheme.contrastYellow,
-                      plotTheme.brandOrange,
-                    ]}
-                    ticks={
-                      thresholdValue
-                        ? [
-                            '0 mV',
-                            `${thresholdValue} mV`,
-                            `${thresholdValue * 3} mV`,
-                          ]
-                        : ['0 mV']
-                    }
-                  />
+              ) : clusters.length === 0 ? (
+                <div
+                  style={{
+                    background: 'var(--progeo-surface)',
+                    borderRadius: 14,
+                    padding: '22px 16px',
+                    fontSize: 13,
+                    color: '#8B8383',
+                  }}
+                >
+                  {t('status_verdachtsstellen_empty')}
                 </div>
-                {isSmartex && (
-                  <div style={{ marginTop: 14 }}>
-                    <SensorListTable rows={sensorRows} />
-                  </div>
-                )}
-              </>
-            )}
-          </PanelCard>
+              ) : (
+                <div
+                  style={{ display: 'flex', flexDirection: 'column', gap: 2 }}
+                >
+                  {clusters.map((cluster) => (
+                    <VerdachtsstelleRow
+                      key={cluster.id}
+                      cluster={cluster}
+                      label={sensorLabel(cluster.sensor_id)}
+                      expanded={expanded.has(cluster.id)}
+                      onToggle={() => toggleExpanded(cluster.id)}
+                      onAcknowledge={() => acknowledgeCluster(cluster)}
+                      acknowledging={acknowledging.has(cluster.id)}
+                      t={t}
+                    />
+                  ))}
+                </div>
+              )}
+            </PanelCard>
+          </div>
         </div>
-
-        <div style={{ flex: '1 1 380px', minWidth: 0 }}>
-          <PanelCard
-            title={t('status_verdachtsstellen_title')}
-            actions={
-              <a
-                href="#"
-                onClick={(event) => {
-                  event.preventDefault();
-                  navigate(`/location/${locationId}/alarms`);
-                }}
-                style={{
-                  fontSize: 12.5,
-                  color: 'var(--progeo-orange)',
-                  fontWeight: 500,
-                }}
-              >
-                {t('status_view_all')}
-              </a>
-            }
-          >
-            {clustersDenied ? (
-              <div style={{ color: '#8B8383', fontSize: 13 }}>
-                {t('status_no_measurement_access')}
-              </div>
-            ) : clusters.length === 0 ? (
-              <div
-                style={{
-                  background: 'var(--progeo-surface)',
-                  borderRadius: 14,
-                  padding: '22px 16px',
-                  fontSize: 13,
-                  color: '#8B8383',
-                }}
-              >
-                {t('status_verdachtsstellen_empty')}
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {clusters.map((cluster) => (
-                  <VerdachtsstelleRow
-                    key={cluster.id}
-                    cluster={cluster}
-                    label={sensorLabel(cluster.sensor_id)}
-                    expanded={expanded.has(cluster.id)}
-                    onToggle={() => toggleExpanded(cluster.id)}
-                    onAcknowledge={() => acknowledgeCluster(cluster)}
-                    acknowledging={acknowledging.has(cluster.id)}
-                    t={t}
-                  />
-                ))}
-              </div>
-            )}
-          </PanelCard>
-        </div>
-      </div>
       )}
     </div>
   );
@@ -734,9 +746,12 @@ const VerdachtsstelleRow = ({
             }}
           >
             {cluster.active
-              ? cluster.since && t('status_since', { date: formatDate(cluster.since) })
+              ? cluster.since &&
+                t('status_since', { date: formatDate(cluster.since) })
               : cluster.resolved_at &&
-                t('status_resolved_at', { date: formatDate(cluster.resolved_at) })}
+                t('status_resolved_at', {
+                  date: formatDate(cluster.resolved_at),
+                })}
           </span>
         </span>
         <span
@@ -818,9 +833,14 @@ const VerdachtsstelleRow = ({
                     : '–'}
                 </span>
                 <span>
-                  <StateBadge state={entry.state} label={t(`ui_${entry.state}`)} />
+                  <StateBadge
+                    state={entry.state}
+                    label={t(`ui_${entry.state}`)}
+                  />
                 </span>
-                <span style={{ fontWeight: 600, color: 'var(--progeo-orange)' }}>
+                <span
+                  style={{ fontWeight: 600, color: 'var(--progeo-orange)' }}
+                >
                   {entry.value != null ? `${Math.round(entry.value)} mV` : '–'}
                 </span>
               </div>

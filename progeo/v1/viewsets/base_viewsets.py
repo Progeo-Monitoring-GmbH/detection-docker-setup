@@ -8,10 +8,13 @@ from django.http import HttpResponse, JsonResponse
 from django.views import View
 from django.views.static import serve as serve_media
 from rest_framework import status
+from rest_framework.authentication import TokenAuthentication
+from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.views import TokenObtainPairView
 
@@ -48,12 +51,28 @@ class AuthenticatedMediaView(View):
     as before (dev / non-nginx deployments).
     """
 
+    @staticmethod
+    def _authenticated_user(request):
+        """The session user, else one from the Authorization header - the
+        SPA authenticates via JWT/Token, not the session cookie."""
+        if request.user.is_authenticated:
+            return request.user
+        for authenticator in (JWTAuthentication(), TokenAuthentication()):
+            try:
+                result = authenticator.authenticate(request)
+            except (AuthenticationFailed, InvalidToken, TokenError):
+                continue
+            if result:
+                return result[0]
+        return None
+
     def get(self, request, path):
-        if not request.user.is_authenticated:
+        user = self._authenticated_user(request)
+        if user is None:
             # Return a 403 Forbidden response if the user is not authenticated
             return JsonResponse({"code": 403, "reason": "Just no!"}, status=403)
 
-        if path.startswith("backup") and not request.user.is_superuser:
+        if path.startswith("backup") and not user.is_superuser:
             # Backups are restricted to superusers.
             return JsonResponse({"code": 403, "reason": "Just no!"}, status=403)
 

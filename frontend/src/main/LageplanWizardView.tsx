@@ -169,6 +169,7 @@ const LageplanWizardView = () => {
               scale_x: data.scale_x ?? 1,
               scale_y: data.scale_y ?? 1,
               flip_x: data.flip_x ?? false,
+              flip_y: data.flip_y ?? false,
             });
             setStep(4);
           }
@@ -225,6 +226,7 @@ const LageplanWizardView = () => {
     offsetY: number;
     scaleX: number;
     scaleY: number;
+    flipY: boolean;
   }) => {
     if (selectedLocationId === null) {
       setError('Select a location before storing the alignment.');
@@ -242,6 +244,7 @@ const LageplanWizardView = () => {
         offset_y: values.offsetY,
         scale_x: values.scaleX,
         scale_y: values.scaleY,
+        flip_y: values.flipY,
       },
       () => setIsProcessing(false),
       (saveError) => {
@@ -251,42 +254,32 @@ const LageplanWizardView = () => {
     );
   };
 
-  const handleSourceUpload = async (payload: FormData) => {
-    console.log('Source upload payload:', payload);
-    const file = payload['files0'];
-    if (!(file instanceof File)) {
-      setError('No source file found in the upload payload.');
+  // RedDropbox (instantFileUpload) passes the upload response, which carries
+  // the stored Lageplan - see StatusViewSet.upload_measure_points_from_png.
+  const handleSourceUpload = (response: Record<string, unknown>) => {
+    const lageplanUrl =
+      typeof response?.lageplan_url === 'string' ? response.lageplan_url : '';
+    if (!lageplanUrl) {
+      setError('The upload response did not contain the stored Lageplan.');
       return;
     }
 
-    const ext = getFileExt(file.name);
-    const isPng = ext === 'png';
-
-    if (!isPng) {
-      setError('Only PNG files are supported in step two.');
-      return;
-    }
-
-    setIsProcessing(true);
+    const fileName = lageplanUrl.split('/').pop() || 'lageplan.png';
     setError('');
-    setSourceFileName(file.name);
-
-    try {
-      const objectUrl = URL.createObjectURL(file);
-      const nextMeta: ImportedSource = {
-        fileName: file.name,
-        imageUrl: objectUrl,
-        type: 'png',
-      };
-      setSourceMeta(nextMeta);
-      setStep(4);
-    } catch (exc) {
-      setError(
-        `Could not prepare the uploaded file: ${(exc as Error).message}`,
-      );
-    } finally {
-      setIsProcessing(false);
-    }
+    setSourceFileName(fileName);
+    // A freshly stored Lageplan starts with the default alignment.
+    setSourceMeta({
+      fileName,
+      imageUrl: getBackendUrl(lageplanUrl),
+      type: getFileExt(fileName) === 'pdf' ? 'pdf' : 'png',
+      offset_x: 0,
+      offset_y: 0,
+      scale_x: 1,
+      scale_y: 1,
+      flip_x: false,
+      flip_y: false,
+    });
+    setStep(4);
   };
 
   const renderStepOne = () => (

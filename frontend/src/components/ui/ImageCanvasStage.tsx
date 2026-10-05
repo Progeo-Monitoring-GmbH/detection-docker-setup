@@ -5,6 +5,24 @@ import { useAuth } from '../../../hooks/CoreAuthProvider';
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
 
+const CANVAS_WIDTH = 900;
+const CANVAS_HEIGHT = 600;
+const CANVAS_PADDING = 32;
+
+/**
+ * Scale at which the alignment canvas fits a Lageplan of the given size (at
+ * zoom 1). A Lageplan's stored offset_x/offset_y are canvas pixels at this
+ * scale, so offset_x / (width * alignmentBaseScale(...)) is the offset as a
+ * fraction of the image - SensorHeatmap2D uses this to place points the
+ * same way.
+ */
+export const alignmentBaseScale = (imageWidth: number, imageHeight: number) =>
+  Math.min(
+    (CANVAS_WIDTH - CANVAS_PADDING) / imageWidth,
+    (CANVAS_HEIGHT - CANVAS_PADDING) / imageHeight,
+    1.5,
+  );
+
 type ImageCanvasStageProps = {
   imageUrl?: string;
   locationId?: number;
@@ -25,6 +43,7 @@ type ImageCanvasStageProps = {
     offsetY: number;
     scaleX: number;
     scaleY: number;
+    flipY: boolean;
   }) => void;
 };
 
@@ -48,6 +67,7 @@ const ImageCanvasStage = ({
   } | null>(null);
 
   const [image, setImage] = useState<HTMLImageElement | null>(null);
+  const [imageError, setImageError] = useState('');
   const [zoom, setZoom] = useState(1);
   const [offsetX, setOffsetX] = useState(0);
   const [offsetY, setOffsetY] = useState(0);
@@ -60,16 +80,62 @@ const ImageCanvasStage = ({
   );
 
   useEffect(() => {
+    setImage(null);
+    setImageError('');
     if (!imageUrl) {
-      setImage(null);
       return;
     }
 
-    const nextImage = new Image();
-    nextImage.onload = () => setImage(nextImage);
-    nextImage.onerror = () => setImage(null);
-    nextImage.src = imageUrl;
-  }, [imageUrl]);
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    const loadImage = (src: string) => {
+      const nextImage = new Image();
+      nextImage.onload = () => {
+        if (!cancelled) {
+          setImage(nextImage);
+        }
+      };
+      nextImage.onerror = () => {
+        if (!cancelled) {
+          setImageError('The Lageplan image could not be displayed.');
+        }
+      };
+      nextImage.src = src;
+    };
+
+    // Local previews (blob:/data:) load directly; backend media requires the
+    // Authorization header, which a plain <img> request can't send.
+    if (/^(blob|data):/i.test(imageUrl)) {
+      loadImage(imageUrl);
+    } else {
+      void axiosConfig.perform_get(
+        auth,
+        imageUrl,
+        (response) => {
+          if (cancelled) {
+            return;
+          }
+          objectUrl = URL.createObjectURL(response.data as Blob);
+          loadImage(objectUrl);
+        },
+        (loadError) => {
+          if (!cancelled) {
+            setImageError(
+              `Could not load the Lageplan image: ${(loadError as Error).message}`,
+            );
+          }
+        },
+        { responseType: 'blob' },
+      );
+    }
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [auth, imageUrl]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -87,10 +153,9 @@ const ImageCanvasStage = ({
     ctx.fillStyle = '#f5f6f8';
     ctx.fillRect(0, 0, width, height);
 
-    const baseScale = Math.min(
-      (width - 32) / image.naturalWidth,
-      (height - 32) / image.naturalHeight,
-      1.5,
+    const baseScale = alignmentBaseScale(
+      image.naturalWidth,
+      image.naturalHeight,
     );
     const drawWidth = image.naturalWidth * baseScale * zoom;
     const drawHeight = image.naturalHeight * baseScale * zoom;
@@ -226,8 +291,8 @@ const ImageCanvasStage = ({
 
       <canvas
         ref={canvasRef}
-        width={900}
-        height={600}
+        width={CANVAS_WIDTH}
+        height={CANVAS_HEIGHT}
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
         style={{
@@ -239,6 +304,10 @@ const ImageCanvasStage = ({
           cursor: dragRef.current ? 'grabbing' : 'grab',
         }}
       />
+
+      {imageError && (
+        <div className="alert alert-danger mb-0 py-2 small">{imageError}</div>
+      )}
 
       <div className="d-flex justify-content-between align-items-center text-muted small">
         <span>Zoom: {zoom.toFixed(2)}x</span>
@@ -343,6 +412,7 @@ const ImageCanvasStage = ({
                     offsetY: pointOffsetY,
                     scaleX: pointScaleX,
                     scaleY: pointScaleY,
+                    flipY: isVerticallyFlipped,
                   })
                 }
               >

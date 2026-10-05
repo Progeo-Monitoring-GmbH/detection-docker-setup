@@ -616,12 +616,12 @@ class StatusViewSet(ProgeoModalViewSet):
             if with_lageplan:
                 from progeo.v1.serializers import ProgeoLageplanSerializer
                 
-                lageplans_qs = location.lageplans.all()
+                lageplans_qs = location.lageplans.order_by("-is_active", "-id")
                 if lageplans_qs.exists():
                     lageplans_serialized = ProgeoLageplanSerializer(lageplans_qs, many=True).data
                     response_data["lageplans"] = lageplans_serialized
                     # Flat fields of the active lageplan (used by the Lageplan wizard)
-                    active_lageplan = lageplans_qs.filter(is_active=True).first() or lageplans_qs.first()
+                    active_lageplan = lageplans_qs.first()
                     if active_lageplan and active_lageplan.lageplan:
                         response_data["lageplan_url"] = posixpath.join("media", "uploads", active_lageplan.lageplan.name) if hasattr(active_lageplan.lageplan, "name") else None
                         response_data["offset_x"] = active_lageplan.offset_x

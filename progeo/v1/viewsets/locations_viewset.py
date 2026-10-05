@@ -1054,8 +1054,10 @@ class LocationViewSet(ProgeoModalViewSet):
         for point in points:
             sensor_points.append({
                 "pos": point.sensor_order,
-                "x": round(((point.nx / 1.6) + 0.1) * 1.2, 4),
-                "y": round(((point.ny / 1.6) + 0.1) * 1.2, 4),
+                # Raw normalized coordinates - the Lageplan's own alignment
+                # (offset/scale) maps them onto the plan, see SensorHeatmap2D.
+                "x": round(point.nx, 4),
+                "y": round(point.ny, 4),
                 "name": point.name,
                 "last_value": point.last_value,
                 "threshold": point.threshold,

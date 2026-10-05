@@ -146,8 +146,10 @@ class LocationSerializer(ProgeoBaseSerializer):
         heatmap can offer a plan switcher when several lageplans exist.
         """
         try:
+            # Active and newest first - the plan /v1/location/update/ stores
+            # the alignment on, so every view shows that one by default.
             data = ProgeoLageplanSerializer(
-                obj.lageplans.all(), many=True
+                obj.lageplans.order_by("-is_active", "-id"), many=True
             ).data
             return data if data else None
         except Exception:

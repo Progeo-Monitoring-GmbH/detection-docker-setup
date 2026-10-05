@@ -14,6 +14,7 @@ import {
   useHeatmapFrameExport,
 } from './useHeatmapFrameExport';
 import { getBackendUrl } from '../../backendUrl';
+import { alignmentBaseScale } from '../ui/ImageCanvasStage';
 
 type SensorHeatmap2DProps = {
   response: SensorHeatmapResponse | null | undefined;
@@ -91,7 +92,15 @@ const computeAutoSigma = (points: Array<{ x: number; y: number }>) => {
 const HEAT_FULL_MULTIPLIER = 3;
 
 /**
- * Weighted Gaussian splatting on a regular grid over [0, 1] x [0, 1]:
+ * Width of the heat field's border around the outermost sensors, in sigmas -
+ * at 3 sigma a sensor's kernel has faded to ~1%.
+ */
+const HEAT_BORDER_SIGMAS = 3;
+
+/**
+ * Weighted Gaussian splatting on a regular grid over [-pad, 1 + pad]^2 - the
+ * padding lets the heat of sensors on the border fade out instead of being
+ * cut off at the outermost points:
  *
  *   heat(x) = sum_i weight_i * exp(-d(x, point_i)^2 / (2 * sigma^2))
  *
@@ -105,12 +114,16 @@ const buildWeightedGrid = (
   resolution: number,
   sigma: number,
   referenceMax: number | null = null,
+  pad = 0,
 ) => {
   const res = Math.max(2, resolution);
-  const axis = Array.from({ length: res }, (_, index) => index / (res - 1));
+  const span = 1 + 2 * pad;
+  // Normalized length of one grid cell.
+  const cell = span / (res - 1);
+  const axis = Array.from({ length: res }, (_, index) => -pad + index * cell);
   const grid = Array.from({ length: res }, () => new Float64Array(res));
 
-  const radiusCells = Math.ceil(clamp(sigma * 3, 0.001, 1) * (res - 1));
+  const radiusCells = Math.ceil(clamp(sigma * 3, 0.001, span) / cell);
   const twoSigmaSquared = 2 * sigma * sigma;
 
   points.forEach((point) => {
@@ -118,17 +131,17 @@ const buildWeightedGrid = (
       return;
     }
 
-    const cx = clamp(point.x, 0, 1) * (res - 1);
-    const cy = clamp(point.y, 0, 1) * (res - 1);
+    const cx = (clamp(point.x, 0, 1) + pad) / cell;
+    const cy = (clamp(point.y, 0, 1) + pad) / cell;
     const startX = Math.max(0, Math.floor(cx - radiusCells));
     const endX = Math.min(res - 1, Math.ceil(cx + radiusCells));
     const startY = Math.max(0, Math.floor(cy - radiusCells));
     const endY = Math.min(res - 1, Math.ceil(cy + radiusCells));
 
     for (let gy = startY; gy <= endY; gy += 1) {
-      const dyNormalized = (gy - cy) / (res - 1);
+      const dyNormalized = (gy - cy) * cell;
       for (let gx = startX; gx <= endX; gx += 1) {
-        const dxNormalized = (gx - cx) / (res - 1);
+        const dxNormalized = (gx - cx) * cell;
         const distanceSquared =
           dxNormalized * dxNormalized + dyNormalized * dyNormalized;
         const kernel = Math.exp(-distanceSquared / twoSigmaSquared);
@@ -281,7 +294,9 @@ const SensorHeatmap2D = ({
       .map((point) => ({
         pos: point.pos,
         x: Number(point.x),
-        y: isFlippedY ? 1 - Number(point.y) : Number(point.y),
+        // ny = 0 is the top of the plan (as in the alignment wizard); a
+        // vertically flipped plan uses ny as-is.
+        y: isFlippedY ? Number(point.y) : 1 - Number(point.y),
         series: Array.isArray(data[String(point.pos)])
           ? data[String(point.pos)]
           : [],
@@ -366,7 +381,7 @@ const SensorHeatmap2D = ({
         : null;
 
     // Lageplan alignment: the alignment wizard maps normalized coordinates to
-    // image pixels via  pixel = offset + coord * imageSize * scale. The plot
+    // canvas pixels via  pixel = offset + coord * drawnImageSize * scale. The plot
     // uses a normalized-to-image space where the image always spans
     // [0, 1] x [0, 1] and the sensor coordinates are scaled up by
     // scale_x/scale_y (plus the offsets) so the points land exactly where the
@@ -380,13 +395,16 @@ const SensorHeatmap2D = ({
     const offsetX = Number.isFinite(rawOffsetX) ? rawOffsetX : 0;
     const offsetY = Number.isFinite(rawOffsetY) ? rawOffsetY : 0;
 
-    // Offsets are normalized by the image size; they only apply once the
-    // image has actually loaded, and degrade gracefully before that.
+    // Offsets are canvas pixels of the alignment wizard (ImageCanvasStage),
+    // where the plan is drawn at alignmentBaseScale - so they are normalized
+    // by the image size at that scale. They only apply once the image has
+    // actually loaded, and degrade gracefully before that.
     const sizeKnown = Boolean(lageplanUrl && imageSize);
     const imgWidth = imageSize?.width ?? 1;
     const imgHeight = imageSize?.height ?? 1;
-    const offsetNormX = sizeKnown ? offsetX / imgWidth : 0;
-    const offsetNormY = sizeKnown ? offsetY / imgHeight : 0;
+    const wizardScale = sizeKnown ? alignmentBaseScale(imgWidth, imgHeight) : 1;
+    const offsetNormX = sizeKnown ? offsetX / (imgWidth * wizardScale) : 0;
+    const offsetNormY = sizeKnown ? offsetY / (imgHeight * wizardScale) : 0;
 
     // sensors.x/y follow the mirrored convention (y = 1 - ny, or raw ny when
     // the lageplan is flipped), so the plot y transform collapses to:
@@ -403,6 +421,7 @@ const SensorHeatmap2D = ({
       resolution,
       usedSigma,
       heatReference,
+      HEAT_BORDER_SIGMAS * usedSigma,
     );
     const xAxis = axis.map((value) => toPlotX(value));
     const yAxis = axis.map((value) => toPlotY(value));
@@ -411,15 +430,17 @@ const SensorHeatmap2D = ({
       (point) => point.weight > 0,
     ).length;
 
-    // Fixed 0.1 margin around the drawn sensor points; the lageplan's
-    // [0, 1] span is always included so the plan stays visible behind them.
-    const margin = 0.1;
+    // The view is cropped to the sensor points and their heat border (plus a
+    // small margin) - the rest of the lageplan is mostly empty paper.
+    const margin = 0.02;
     const plotXs = sensors.map((sensor) => toPlotX(sensor.x));
     const plotYs = sensors.map((sensor) => toPlotY(sensor.y));
-    const xMin = Math.min(0, ...plotXs) - margin;
-    const xMax = Math.max(1, ...plotXs) + margin;
-    const yMin = Math.min(0, ...plotYs) - margin;
-    const yMax = Math.max(1, ...plotYs) + margin;
+    const heatXs = [xAxis[0], xAxis[xAxis.length - 1]];
+    const heatYs = [yAxis[0], yAxis[yAxis.length - 1]];
+    const xMin = Math.min(...plotXs, ...heatXs) - margin;
+    const xMax = Math.max(...plotXs, ...heatXs) + margin;
+    const yMin = Math.min(...plotYs, ...heatYs) - margin;
+    const yMax = Math.max(...plotYs, ...heatYs) + margin;
 
     // Values shown in the sensor tooltip (per aggregation mode), aligned with
     // the scatter points.
@@ -566,87 +587,124 @@ const SensorHeatmap2D = ({
 
   const handlePlotUnhover = () => setHoveredSensor(null);
 
+  const planSelectValue = plans ? Math.min(planIndex, plans.length - 1) : 0;
+
+  const plotMargin = { l: 4, r: 16, t: 4, b: 4 };
+
+  // Fit the plot height to the content: the axes keep the plan's aspect
+  // ratio, so a fixed height would leave empty bands above/below a wide
+  // plan. `height` is the upper bound.
+  const plotHeight = useMemo(() => {
+    if (!chart || wrapSize.width <= 0) {
+      return height;
+    }
+    const xSpan = chart.xRange[1] - chart.xRange[0];
+    const ySpan = chart.yRange[1] - chart.yRange[0];
+    // Rough width of plotly's (compact) colorbar incl. its labels.
+    const colorbarWidth = 50;
+    const plotWidth =
+      wrapSize.width - plotMargin.l - plotMargin.r - colorbarWidth;
+    if (xSpan <= 0 || ySpan <= 0 || plotWidth <= 0) {
+      return height;
+    }
+    const contentHeight = (plotWidth * ySpan * chart.scaleRatio) / xSpan;
+    return Math.round(
+      clamp(contentHeight + plotMargin.t + plotMargin.b, 160, height),
+    );
+  }, [chart, wrapSize.width, height, plotMargin.l, plotMargin.r, plotMargin.t, plotMargin.b]);
+
   const body = (
     <>
-        <div className="d-flex flex-wrap justify-content-between align-items-center mb-2 p-3">
-          {chart && (
-            <small className="text-muted">
-              {sensors.length} sensors, {timestamps.length} timestamps,
-              {activePlan?.name
-                ? ` ${activePlan.name}`
-                : lageplanUrl
-                  ? ' Lageplan'
-                  : ' No Lageplan'}
-              {chart.activeCount > 0
-                ? `, ${chart.activeCount} active, \u03C3=${chart.usedSigma.toFixed(
-                    3,
-                  )}`
-                : ''}
-              {chart.heatReference
-                ? `, heat=1 \u2265 ${chart.heatReference}`
-                : ''}
-            </small>
-          )}
-        </div>
-
-        {/* Lageplan switcher: several lageplans of this location. Hidden in
-            the alignment wizard mode (alignment prop takes precedence). */}
-        {!alignment && plans && plans.length > 1 && (
-          <div className="d-flex flex-wrap align-items-center gap-2 mb-2 px-3">
-            <small className="text-muted fw-semibold">Lageplan:</small>
-            <Form.Select
-              aria-label="Select lageplan"
-              value={Math.min(planIndex, plans.length - 1)}
-              onChange={(event) => setPlanIndex(Number(event.target.value))}
-              style={{ width: 220 }}
-            >
-              {plans.map((plan, index) => (
-                <option key={plan.id ?? index} value={index}>
-                  {plan.name || `Lageplan ${index + 1}`}
-                  {plan.is_active ? ' (aktiv)' : ''}
-                </option>
-              ))}
-            </Form.Select>
-            <small className="text-muted">
-              {Math.min(planIndex, plans.length - 1) + 1} / {plans.length}
-            </small>
-          </div>
-        )}
-
-        {!chart ? (
-          <div className="text-muted py-5 text-center">
-            No sensor measurements available.
-          </div>
-        ) : (
-          <>
-            <div className="d-flex flex-wrap align-items-center gap-3 mb-3 p-3">
+      {chart && (
+        <div className="px-2 pt-2">
+          {/* One compact toolbar row (wraps on narrow cards). The Lageplan
+              switcher is hidden in the alignment wizard mode (alignment prop
+              takes precedence). */}
+          <div className="d-flex flex-wrap align-items-center gap-2">
+            {!alignment && plans && plans.length > 1 && (
               <Form.Select
-                aria-label="Aggregation mode"
-                value={mode}
-                onChange={(event) =>
-                  setMode(event.target.value as AggregationMode)
-                }
-                style={{ width: 170 }}
-                disabled={videoExporting}
+                size="sm"
+                aria-label="Select lageplan"
+                title={`Lageplan ${planSelectValue + 1} / ${plans.length}`}
+                value={planSelectValue}
+                onChange={(event) => setPlanIndex(Number(event.target.value))}
+                style={{ width: 'auto', maxWidth: 200 }}
               >
-                <option value="slice">Single timestamp</option>
-                <option value="avg">Average</option>
-                <option value="max">Maximum</option>
+                {plans.map((plan, index) => (
+                  <option key={plan.id ?? index} value={index}>
+                    {plan.name || `Lageplan ${index + 1}`}
+                    {plan.is_active ? ' (aktiv)' : ''}
+                  </option>
+                ))}
               </Form.Select>
+            )}
 
+            <Form.Select
+              size="sm"
+              aria-label="Aggregation mode"
+              value={mode}
+              onChange={(event) =>
+                setMode(event.target.value as AggregationMode)
+              }
+              style={{ width: 'auto' }}
+              disabled={videoExporting}
+            >
+              <option value="slice">Single timestamp</option>
+              <option value="avg">Average</option>
+              <option value="max">Maximum</option>
+            </Form.Select>
+
+            <Form.Check
+              type="switch"
+              id="heatmap2d-auto-sigma"
+              className="small mb-0"
+              label={'Auto σ'}
+              checked={sigma === 'auto'}
+              onChange={(event) =>
+                setSigma(event.target.checked ? 'auto' : 0.04)
+              }
+              disabled={videoExporting}
+            />
+
+            <div className="ms-auto d-flex align-items-center gap-2">
+              {videoExporting ? (
+                <>
+                  <Spinner size="sm" animation="border" />
+                  <span className="text-muted small">
+                    {Math.round((videoProgress ?? 0) * 100)}%
+                  </span>
+                </>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline-danger"
+                  onClick={() => void exportFrames()}
+                  disabled={timestamps.length < 2}
+                  aria-label="Export Frames"
+                  title="Export Frames: capture PNG frames of the heatmap animation and download them together with an ffmpeg script that assembles an MP4"
+                >
+                  <Film />
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {(mode === 'slice' || sigma !== 'auto') && (
+            <div className="d-flex flex-wrap align-items-center gap-3 mt-1">
               {mode === 'slice' && (
-                <div className="flex-grow-1" style={{ minWidth: 240 }}>
+                <div className="flex-grow-1" style={{ minWidth: 200 }}>
                   <label
                     htmlFor="heatmap2d-timestamp"
-                    className="form-label small mb-0"
+                    className="form-label small text-muted mb-0"
                   >
                     {timestamps.length
-                      ? `Timestamp ${timestampIndex + 1}/${timestamps.length}: ${formatTimestamp(timestamps[timestampIndex])}`
+                      ? `${timestampIndex + 1}/${timestamps.length}: ${formatTimestamp(timestamps[timestampIndex])}`
                       : 'Timestamp'}
-                  </label>                  <input
+                  </label>
+                  <input
                     id="heatmap2d-timestamp"
                     type="range"
-                    className="form-range"
+                    className="form-range d-block"
                     min={0}
                     max={Math.max(timestamps.length - 1, 0)}
                     step={1}
@@ -659,29 +717,18 @@ const SensorHeatmap2D = ({
                 </div>
               )}
 
-              <Form.Check
-                type="switch"
-                id="heatmap2d-auto-sigma"
-                label={'Auto \u03C3'}
-                checked={sigma === 'auto'}
-                onChange={(event) =>
-                  setSigma(event.target.checked ? 'auto' : 0.04)
-                }
-                disabled={videoExporting}
-              />
-
               {sigma !== 'auto' && (
-                <div style={{ width: 200 }}>
+                <div style={{ width: 180 }}>
                   <label
                     htmlFor="heatmap2d-sigma"
-                    className="form-label small mb-0"
+                    className="form-label small text-muted mb-0"
                   >
-                    {'\u03C3'} (kernel width): {sigma}
+                    {'σ'} (kernel width): {sigma}
                   </label>
                   <input
                     id="heatmap2d-sigma"
                     type="range"
-                    className="form-range"
+                    className="form-range d-block"
                     min={0.005}
                     max={0.15}
                     step={0.005}
@@ -691,33 +738,27 @@ const SensorHeatmap2D = ({
                   />
                 </div>
               )}
-
-              <div className="ms-auto d-flex align-items-center gap-2">
-                {videoExporting ? (
-                  <>
-                    <Spinner size="sm" animation="border" />
-                    <span className="text-muted small">
-                      Rendering frames\u2026{' '}
-                      {Math.round((videoProgress ?? 0) * 100)}%
-                    </span>
-                  </>
-                ) : (
-                  <Button
-                    size="sm"
-                    variant="outline-danger"
-                    onClick={() => void exportFrames()}
-                    disabled={timestamps.length < 2}
-                    title="Capture PNG frames of the heatmap animation and download them together with an ffmpeg script that assembles an MP4"
-                  >
-                    <Film className="me-1" />
-                    Export Frames
-                  </Button>
-                )}
-              </div>
             </div>
+          )}
 
+          <div className="text-muted" style={{ fontSize: '0.75rem' }}>
+            {sensors.length} sensors, {timestamps.length} timestamps
+            {chart.activeCount > 0
+              ? `, ${chart.activeCount} active, σ=${chart.usedSigma.toFixed(3)}`
+              : ''}
+            {chart.heatReference ? `, heat=1 ≥ ${chart.heatReference}` : ''}
+          </div>
+        </div>
+      )}
+
+      {!chart ? (
+        <div className="text-muted py-5 text-center">
+          No sensor measurements available.
+        </div>
+      ) : (
+          <>
             {videoError && (
-              <div className="text-danger small mb-2">{videoError}</div>
+              <div className="text-danger small mb-2 px-2">{videoError}</div>
             )}
 
             <div
@@ -743,29 +784,34 @@ const SensorHeatmap2D = ({
                     ],
                     opacity: 0.7,
                     colorbar: {
-                      title: { text: 'Heat' },
-                      thickness: 14,
+                      title: { text: 'Heat', font: { size: 11 } },
+                      thickness: 10,
+                      xpad: 4,
+                      tickfont: { size: 10 },
+                      nticks: 6,
                     },
-                    hovertemplate:
-                      'x: %{x:.3f}<br>y: %{y:.3f}<br>Heat: %{z:.3f}<extra></extra>',
+                    hovertemplate: 'Heat: %{z:.3f}<extra></extra>',
                   },
                   chart.sensorScatter,
                 ]}
                 layout={{
-                  height,
+                  height: plotHeight,
                   autosize: true,
-                  margin: { l: 44, r: 16, t: 12, b: 44 },
+                  margin: plotMargin,
                   paper_bgcolor: 'transparent',
                   plot_bgcolor: 'transparent',
                   images: chart.image ? [chart.image] : [],
+                  // The axes only position the plan - no ticks, labels or grid.
                   xaxis: {
                     range: chart.xRange,
                     constrain: 'domain',
+                    visible: false,
                   },
                   yaxis: {
                     range: chart.yRange,
                     scaleanchor: 'x',
                     scaleratio: chart.scaleRatio,
+                    visible: false,
                   },
                   font: { family: 'inherit', color: plotTheme.brandBlue },
                 }}
