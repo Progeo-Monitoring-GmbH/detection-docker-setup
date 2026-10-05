@@ -111,6 +111,9 @@ def get_connected_devices(*args, **kwargs) -> dict:
                     mac = parts[1]
                     ip = parts[2]
                     hostname = parts[3] if len(parts) > 3 else "unknown"
+                    # Only measurement nodes, not regular hotspot clients.
+                    if not hostname.upper().startswith("NODE-"):
+                        continue
 
                     devices.append({
                         "mac": mac,

@@ -11,11 +11,8 @@ from progeo.settings import (
     PROGEO_CONFIG_ENABLE_MEASUREMENTS,
     PROGEO_CONFIG_HAS_ROOT_SERVER,
 )
-from progeo.v1.creator import (
-    create_progeo_location_safe,
-    create_progeo_measurement_safe,
-)
-from progeo.v1.models import ProgeoDevice
+from progeo.v1.creator import create_progeo_measurement_safe
+from progeo.v1.models import ProgeoDevice, ProgeoLocation
 from progeo.v1.serializers import ProgeoMeasurementSerializer
 from progeo.v1.viewsets.setup_viewset import _get_controller_account
 from progeo.v1.viewsets.status_viewset import get_connected_devices
@@ -91,6 +88,14 @@ class Command(BaseCommand):
             raise CommandError("Could not read connected devices", connected_devices)
 
         account = _get_controller_account()
+
+        root_location_id = (os.getenv("CONTROLLER_ROOT_LOCATION_ID") or "").strip()
+        if not root_location_id:
+            raise CommandError("CONTROLLER_ROOT_LOCATION_ID is not set")
+        location = ProgeoLocation.objects.using(account.db_name).filter(pk=root_location_id).first()
+        if not location:
+            raise CommandError(f"Root location {root_location_id} (CONTROLLER_ROOT_LOCATION_ID) does not exist")
+
         found_devices = []
 
         dlog(f"Scanning {len(connected_devices)} connected device(s)")
@@ -113,12 +118,6 @@ class Command(BaseCommand):
             device_hash = payload.get("device_hash")
             if not device_hash:
                 dlog(f"Skipping device at {ip_address}: no device identifier")
-                continue
-
-            location_label = os.getenv("CONTROLLER_DEFAULT_ACCOUNT", "Unknown Location")
-            location, _ = create_progeo_location_safe(account=account, address=location_label)
-            if not location:
-                elog(f"Skipping device at {ip_address}: failed to create location")
                 continue
 
             device = ProgeoDevice.objects.filter(mac=device_info.get("mac")).first()
