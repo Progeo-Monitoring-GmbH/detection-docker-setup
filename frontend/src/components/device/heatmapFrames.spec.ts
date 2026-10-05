@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { buildFrameArchive, drawFrameLabel, formatTimestamp, sleep } from './heatmapFrames';
+import { buildStoredZip } from './frameZip';
+import { drawFrameLabel, formatTimestamp, sleep } from './heatmapFrames';
 
 /** Reads every entry (name -> text) of a store-only zip via its local headers. */
 const readStoredZip = async (blob: Blob) => {
@@ -14,8 +15,13 @@ const readStoredZip = async (blob: Blob) => {
     const extraLength = view.getUint16(offset + 28, true);
     const nameStart = offset + 30;
     const dataStart = nameStart + nameLength + extraLength;
-    const name = decoder.decode(bytes.subarray(nameStart, nameStart + nameLength));
-    entries.set(name, decoder.decode(bytes.subarray(dataStart, dataStart + size)));
+    const name = decoder.decode(
+      bytes.subarray(nameStart, nameStart + nameLength),
+    );
+    entries.set(
+      name,
+      decoder.decode(bytes.subarray(dataStart, dataStart + size)),
+    );
     offset = dataStart + size;
   }
   return entries;
@@ -81,10 +87,23 @@ describe('drawFrameLabel', () => {
 
   it('draws a pill in the bottom-right corner with the frame counter', () => {
     const ctx = makeCtx(true);
-    drawFrameLabel(ctx as unknown as CanvasRenderingContext2D, 800, 600, null, 3, 10);
+    drawFrameLabel(
+      ctx as unknown as CanvasRenderingContext2D,
+      800,
+      600,
+      null,
+      3,
+      10,
+    );
 
     // box = text 100 + 2*14 padding = 128 wide, 34 high, 16px from the edges
-    expect(ctx.roundRect).toHaveBeenCalledWith(800 - 128 - 16, 600 - 34 - 16, 128, 34, 6);
+    expect(ctx.roundRect).toHaveBeenCalledWith(
+      800 - 128 - 16,
+      600 - 34 - 16,
+      128,
+      34,
+      6,
+    );
     expect(ctx.fill).toHaveBeenCalled();
     expect(ctx.fillRect).not.toHaveBeenCalled();
     const [text] = ctx.fillText.mock.calls[0];
@@ -94,49 +113,35 @@ describe('drawFrameLabel', () => {
 
   it('falls back to fillRect when roundRect is unavailable', () => {
     const ctx = makeCtx(false);
-    drawFrameLabel(ctx as unknown as CanvasRenderingContext2D, 800, 600, null, 1, 1);
+    drawFrameLabel(
+      ctx as unknown as CanvasRenderingContext2D,
+      800,
+      600,
+      null,
+      1,
+      1,
+    );
     expect(ctx.fillRect).toHaveBeenCalledWith(656, 550, 128, 34);
   });
 });
 
-describe('buildFrameArchive', () => {
-  const frames = [
-    { name: 'frame_0001.png', data: new Uint8Array([1, 2, 3]) },
-    { name: 'frame_0002.png', data: new Uint8Array([4, 5]) },
-  ];
-  const command = 'ffmpeg -framerate 4 -i frame_%04d.png -pix_fmt yuv420p sensor-heatmap.mp4';
-
-  it('contains all frames plus the scripts and README', async () => {
-    const entries = await readStoredZip(buildFrameArchive(frames, command));
-    expect([...entries.keys()]).toEqual([
-      'frame_0001.png',
-      'frame_0002.png',
-      'make_video.bat',
-      'make_video.sh',
-      'README.txt',
+describe('buildStoredZip', () => {
+  it('stores the frames under their names and contents', async () => {
+    const encoder = new TextEncoder();
+    const entries = await readStoredZip(
+      buildStoredZip([
+        { name: 'frames/frame_0001.png', data: encoder.encode('first') },
+        { name: 'frames/frame_0002.png', data: encoder.encode('second') },
+      ]),
+    );
+    expect([...entries.entries()]).toEqual([
+      ['frames/frame_0001.png', 'first'],
+      ['frames/frame_0002.png', 'second'],
     ]);
   });
 
-  it('escapes % as %% in the Windows batch file and uses CRLF', async () => {
-    const entries = await readStoredZip(buildFrameArchive(frames, command));
-    const bat = entries.get('make_video.bat')!;
-    expect(bat).toContain('frame_%%04d.png');
-    expect(bat).not.toMatch(/[^%]%04d/);
-    expect(bat.split('\r\n')[0]).toBe('@echo off');
-    expect(bat).toContain('\r\n');
-  });
-
-  it('keeps the command verbatim in the shell script and README', async () => {
-    const entries = await readStoredZip(buildFrameArchive(frames, command));
-    const sh = entries.get('make_video.sh')!;
-    expect(sh.startsWith('#!/usr/bin/env bash\n')).toBe(true);
-    expect(sh).toContain(`\n${command}\n`);
-    expect(sh).not.toContain('\r');
-    expect(entries.get('README.txt')).toContain(`    ${command}`);
-  });
-
-  it('works with zero frames', async () => {
-    const entries = await readStoredZip(buildFrameArchive([], command));
-    expect(entries.size).toBe(3);
+  it('works with zero entries', async () => {
+    const entries = await readStoredZip(buildStoredZip([]));
+    expect(entries.size).toBe(0);
   });
 });

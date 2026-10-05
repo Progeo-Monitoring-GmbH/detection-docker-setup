@@ -1,11 +1,9 @@
 /**
  * Frame-export helpers for the sensor heatmap: capture PNG frames from the
- * plot, draw a timestamp label onto a canvas, and package the frames together
- * with ffmpeg scripts into a ZIP. Extracted from SensorHeatmap2D so the
- * component stays focused on rendering.
+ * plot and draw a timestamp label onto a canvas. The frames are rendered into
+ * a video on the backend (see useHeatmapFrameExport). Extracted from
+ * SensorHeatmap2D so the component stays focused on rendering.
  */
-
-import { buildStoredZip } from './frameZip';
 
 export const formatTimestamp = (timestamp: number | null | undefined) => {
   if (timestamp == null) {
@@ -92,68 +90,4 @@ export const drawFrameLabel = (
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   ctx.fillText(text, x + padX, y + boxHeight / 2 + padY - 8);
-};
-
-/**
- * Package captured PNG frames plus ffmpeg scripts (Windows .bat + Linux/macOS
- * .sh) and a README into a store-only ZIP. The scripts assemble the frames
- * into an MP4 with ffmpeg.
- */
-export const buildFrameArchive = (
-  frameFiles: Array<{ name: string; data: Uint8Array }>,
-  ffmpegCommand: string,
-): Blob => {
-  const encoder = new TextEncoder();
-
-  const makeVideoBat = [
-    '@echo off',
-    'REM Assemble the sensor heatmap frames into an MP4 (Windows).',
-    'REM Requires ffmpeg (https://ffmpeg.org/) on PATH.',
-    ffmpegCommand.replace(/%/g, '%%'),
-    'if errorlevel 1 goto :error',
-    'echo.',
-    'echo Done: sensor-heatmap.mp4',
-    'pause',
-    'exit /b 0',
-    ':error',
-    'echo ffmpeg failed - is it installed and on PATH?',
-    'pause',
-    'exit /b 1',
-    '',
-  ].join('\r\n');
-
-  const makeVideoSh = [
-    '#!/usr/bin/env bash',
-    '# Assemble the sensor heatmap frames into an MP4 (Linux/macOS).',
-    '# Requires ffmpeg (https://ffmpeg.org/) on PATH.',
-    'set -e',
-    ffmpegCommand,
-    'echo "Done: sensor-heatmap.mp4"',
-    '',
-  ].join('\n');
-
-  const readme = [
-    'Sensor heatmap video frames',
-    '==========================',
-    '',
-    'Each frame is a lossless PNG of the heatmap at one timestamp, labeled',
-    'with the timestamp date/time and a frame counter.',
-    '',
-    'To assemble an MP4 with ffmpeg:',
-    '',
-    `    ${ffmpegCommand}`,
-    '',
-    'Or run make_video.bat (Windows) / make_video.sh (Linux/macOS) from',
-    'this folder after installing ffmpeg (https://ffmpeg.org/).',
-    '',
-    'Tip: raise -framerate for a smoother video, e.g. -framerate 12.',
-    '',
-  ].join('\n');
-
-  return buildStoredZip([
-    ...frameFiles,
-    { name: 'make_video.bat', data: encoder.encode(makeVideoBat) },
-    { name: 'make_video.sh', data: encoder.encode(makeVideoSh) },
-    { name: 'README.txt', data: encoder.encode(readme) },
-  ]);
 };

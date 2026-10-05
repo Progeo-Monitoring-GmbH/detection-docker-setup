@@ -1,8 +1,11 @@
 import { useCallback, useRef, useState } from 'react';
 import Plotly from 'plotly.js/dist/plotly';
 
+import { useAuth } from '../../../hooks/CoreAuthProvider';
+import axiosConfig from '../../axiosConfig';
+import { getBackendUrl } from '../../backendUrl';
+import { buildStoredZip } from './frameZip';
 import {
-  buildFrameArchive,
   canvasToPngBlob,
   downloadBlob,
   drawFrameLabel,
@@ -12,8 +15,24 @@ import {
 
 export type AggregationMode = 'slice' | 'avg' | 'max';
 
+/** capturing: frames in the browser, rendering: ffmpeg on the server. */
+export type VideoExportStage =
+  | 'capturing'
+  | 'uploading'
+  | 'rendering'
+  | 'downloading';
+
 const MAX_FRAMES = 120;
 const FRAME_SLEEP_MS = 25;
+const VIDEO_FRAMERATE = 8;
+const RESULT_POLL_MS = 1500;
+const RESULT_TIMEOUT_MS = 10 * 60 * 1000;
+
+const requestErrorMessage = (error: unknown, fallback: string) => {
+  const response = (error as { response?: { data?: { reason?: string } } })
+    ?.response;
+  return response?.data?.reason || (error as Error)?.message || fallback;
+};
 
 type UseHeatmapFrameExportOptions = {
   /** The plot div that react-plotly.js mounts; used for Plotly.toImage. */
@@ -29,6 +48,8 @@ type UseHeatmapFrameExportOptions = {
 
 type HeatmapFrameExport = {
   videoExporting: boolean;
+  videoStage: VideoExportStage | null;
+  /** Progress of the capturing stage (0..1). */
   videoProgress: number;
   videoError: string | null;
   /** Call after the Plot's onAfterPlot fires so frame redraws can be awaited. */
@@ -37,11 +58,12 @@ type HeatmapFrameExport = {
 };
 
 /**
- * Captures the heatmap animation over all timestamps as PNG frames and
- * downloads them as a ZIP together with ffmpeg scripts that assemble the
- * frames into an MP4. Frames are captured from the plot itself via
- * Plotly.toImage, drawn onto a canvas with a white background and the frame's
- * timestamp label, and stored as lossless PNGs.
+ * Captures the heatmap animation over all timestamps as PNG frames and has
+ * the backend render them into an MP4 (celery task running ffmpeg, see
+ * progeo/helper/heatmap_video.py), then downloads the ZIP with the frames and
+ * the video - users don't need ffmpeg themselves. Frames are captured from
+ * the plot itself via Plotly.toImage, drawn onto a canvas with a white
+ * background and the frame's timestamp label, and stored as lossless PNGs.
  */
 export const useHeatmapFrameExport = ({
   plotRef,
@@ -52,7 +74,9 @@ export const useHeatmapFrameExport = ({
   setTimestampIndex,
   setMode,
 }: UseHeatmapFrameExportOptions): HeatmapFrameExport => {
+  const auth = useAuth();
   const [videoExporting, setVideoExporting] = useState(false);
+  const [videoStage, setVideoStage] = useState<VideoExportStage | null>(null);
   const [videoProgress, setVideoProgress] = useState(0);
   const [videoError, setVideoError] = useState<string | null>(null);
 
@@ -74,6 +98,84 @@ export const useHeatmapFrameExport = ({
     resolve?.();
   }, []);
 
+  /** Uploads the frames ZIP and returns the render task's id. */
+  const startRendering = useCallback(
+    (upload: FormData) =>
+      new Promise<string>((resolve, reject) => {
+        void axiosConfig.perform_post(
+          auth,
+          '/v1/location/heatmap_video/',
+          upload,
+          (response) => {
+            const taskId = response?.data?.task_id;
+            if (taskId) {
+              resolve(String(taskId));
+            } else {
+              reject(new Error('The server did not start the video rendering.'));
+            }
+          },
+          (error) =>
+            reject(
+              new Error(requestErrorMessage(error, 'Uploading the frames failed.')),
+            ),
+          { headers: { 'Content-Type': 'multipart/form-data' } },
+        );
+      }),
+    [auth],
+  );
+
+  /** Polls the render task; resolves with the result ZIP's media URL. */
+  const waitForResult = useCallback(
+    async (taskId: string) => {
+      const deadline = Date.now() + RESULT_TIMEOUT_MS;
+      while (Date.now() < deadline) {
+        await sleep(RESULT_POLL_MS);
+        const result = await new Promise<{
+          ready?: boolean;
+          url?: string;
+          error?: string;
+        }>((resolve, reject) => {
+          void axiosConfig.perform_get(
+            auth,
+            `/v1/location/heatmap_video_result/?task_id=${encodeURIComponent(taskId)}`,
+            (response) => resolve(response?.data ?? {}),
+            (error) =>
+              reject(
+                new Error(
+                  requestErrorMessage(error, 'Checking the video rendering failed.'),
+                ),
+              ),
+          );
+        });
+        if (result.ready) {
+          if (result.url) {
+            return result.url;
+          }
+          throw new Error(result.error || 'The video rendering failed.');
+        }
+      }
+      throw new Error('The video rendering took too long.');
+    },
+    [auth],
+  );
+
+  const downloadResult = useCallback(
+    (url: string) =>
+      new Promise<Blob>((resolve, reject) => {
+        void axiosConfig.perform_get(
+          auth,
+          getBackendUrl(url),
+          (response) => resolve(response.data as Blob),
+          (error) =>
+            reject(
+              new Error(requestErrorMessage(error, 'Downloading the video failed.')),
+            ),
+          { responseType: 'blob' },
+        );
+      }),
+    [auth],
+  );
+
   const exportFrames = useCallback(async () => {
     const gd = plotRef.current;
     if (!gd || !chartReady || timestamps.length < 2 || videoExporting) {
@@ -81,6 +183,7 @@ export const useHeatmapFrameExport = ({
     }
 
     setVideoExporting(true);
+    setVideoStage('capturing');
     setVideoProgress(0);
     setVideoError(null);
 
@@ -169,26 +272,35 @@ export const useHeatmapFrameExport = ({
         })),
       );
 
-      const ffmpegCommand =
-        'ffmpeg -y -framerate 8 -i frames/frame_%04d.png -c:v libx264 ' +
-        '-preset medium -crf 20 -pix_fmt yuv420p -movflags +faststart ' +
-        'sensor-heatmap.mp4';
+      // The plot is no longer needed - restore it while the server renders.
+      setTimestampIndex(initialIndex);
+      setMode(initialMode);
 
-      const zipBlob = buildFrameArchive(frameFiles, ffmpegCommand);
+      setVideoStage('uploading');
+      const upload = new FormData();
+      upload.append('frames', buildStoredZip(frameFiles), 'frames.zip');
+      upload.append('framerate', String(VIDEO_FRAMERATE));
+      const taskId = await startRendering(upload);
+
+      setVideoStage('rendering');
+      const resultUrl = await waitForResult(taskId);
+
+      setVideoStage('downloading');
+      const zipBlob = await downloadResult(resultUrl);
       downloadBlob(
         zipBlob,
-        `sensor-heatmap-frames-${new Date()
+        `sensor-heatmap-${new Date()
           .toISOString()
           .slice(0, 19)
           .replace(/[:T]/g, '-')}.zip`,
       );
-      setVideoProgress(1);
     } catch (error) {
-      setVideoError((error as Error).message || 'Frame export failed.');
+      setVideoError((error as Error).message || 'Video export failed.');
     } finally {
       setTimestampIndex(initialIndex);
       setMode(initialMode);
       setVideoExporting(false);
+      setVideoStage(null);
     }
   }, [
     plotRef,
@@ -200,10 +312,14 @@ export const useHeatmapFrameExport = ({
     setMode,
     videoExporting,
     waitForPlotRedraw,
+    startRendering,
+    waitForResult,
+    downloadResult,
   ]);
 
   return {
     videoExporting,
+    videoStage,
     videoProgress,
     videoError,
     handleAfterPlot,

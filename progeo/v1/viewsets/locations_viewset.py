@@ -1,9 +1,11 @@
 import csv
 import os
+import posixpath
 import tempfile
 import time
 from datetime import datetime, timedelta
 
+from celery.result import AsyncResult
 from django.contrib.auth.models import User
 from django.core.files.storage import FileSystemStorage
 from django.db import transaction
@@ -21,9 +23,11 @@ from progeo.decorator import (
     permission_denied_response,
     require_module_permissions,
 )
+from progeo.helper import heatmap_video
 from progeo.helper.basics import RequestFailed, RequestSuccess, save_check_dir
 from progeo.helper.location_access import configured_accounts, location_q, resolve_request_accounts
 from progeo.settings import UPLOAD_DIR
+from progeo.tasks import render_heatmap_video
 from progeo.v1.creator import save_lageplan_upload
 from progeo.v1.models import (
     Account,
@@ -85,6 +89,10 @@ LOCATION_GEO_CSV_FIELDS = ["id", "project_id", *LOCATION_GEO_FIELDS]
 # PDF-Report table limits: latest N measurements, sensors per table width.
 PDF_MAX_ROWS = 200
 PDF_SENSORS_PER_TABLE = 14
+
+# Upper bound for the browser-captured frames ZIP of the heatmap video export
+# (matches nginx's client_max_body_size).
+HEATMAP_VIDEO_MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 
 
 class LocationViewSet(ProgeoModalViewSet):
@@ -1012,6 +1020,45 @@ class LocationViewSet(ProgeoModalViewSet):
             "requested_devices": len(reachable),
             "task_ids": task_ids,
         })
+
+    @require_module_permissions("module_locations_enabled", "module_measurements_enabled")
+    @action(detail=False, url_path="heatmap_video", methods=["POST"])
+    def start_heatmap_video(self, request, *args, **kwargs):
+        """Heatmap video export: takes the browser-captured frames ("frames",
+        a ZIP of frames/frame_NNNN.png) and renders them into an MP4 in a
+        celery task. Poll heatmap_video_result with the returned task_id."""
+        frames = request.FILES.get("frames")
+        if not frames:
+            return RequestFailed({"reason": "Missing file: frames"})
+        if frames.size > HEATMAP_VIDEO_MAX_UPLOAD_BYTES:
+            return RequestFailed({"reason": "The frames upload is too large"})
+        try:
+            framerate = int(request.data.get("framerate", 8))
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "framerate must be an integer"})
+
+        job_id = heatmap_video.create_job(frames)
+        task = render_heatmap_video.delay(job_id, framerate)
+        return RequestSuccess({"task_id": task.id})
+
+    @require_module_permissions("module_locations_enabled", "module_measurements_enabled")
+    @action(detail=False, url_path="heatmap_video_result", methods=["GET"])
+    def heatmap_video_result(self, request, *args, **kwargs):
+        """State of a heatmap video task; once done, `url` is the media path
+        of the ZIP with frames + MP4."""
+        task_id = (request.query_params.get("task_id") or "").strip()
+        if not task_id:
+            return RequestFailed({"reason": "Missing query parameter: task_id"})
+
+        async_result = AsyncResult(task_id)
+        payload = {"task_id": task_id, "state": async_result.state, "ready": async_result.ready()}
+        if async_result.ready():
+            if async_result.successful():
+                path = (async_result.result or {}).get("path", "")
+                payload["url"] = posixpath.join("media", path)
+            else:
+                payload["error"] = str(async_result.result)
+        return RequestSuccess(payload)
 
     @require_module_permissions("module_locations_enabled", "module_measurements_enabled")
     @action(detail=True, url_path="heatmap", methods=["GET"])

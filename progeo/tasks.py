@@ -471,3 +471,12 @@ def swap_databases_new_year(db: str = None, year: int = None):
 
     ilog(f"[swap_databases_new_year] done: {results}")
     return {"year": year, "databases": results}
+
+
+@shared_task
+def render_heatmap_video(job_id: str, framerate: int = 8):
+    """Render uploaded heatmap frames into an MP4 and pack frames + video
+    into a ZIP; returns its media-relative path (see helper/heatmap_video.py)."""
+    from progeo.helper.heatmap_video import render_job
+
+    return {"path": render_job(job_id, framerate=framerate)}

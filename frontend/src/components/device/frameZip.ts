@@ -1,8 +1,8 @@
 /**
  * Minimal store-only ZIP writer for frame export. PNGs are already
  * compressed, so entries are stored without deflate, which keeps this
- * dependency-free and fast. The produced archive is a valid ZIP that any
- * unzip tool and ffmpeg can read.
+ * dependency-free and fast. The produced archive is a valid ZIP (Python's
+ * zipfile reads it on the backend).
  */
 
 const CRC_TABLE = (() => {

@@ -516,6 +516,7 @@ const SensorHeatmap2D = ({
 
   const {
     videoExporting,
+    videoStage,
     videoProgress,
     videoError,
     handleAfterPlot,
@@ -671,7 +672,13 @@ const SensorHeatmap2D = ({
                 <>
                   <Spinner size="sm" animation="border" />
                   <span className="text-muted small">
-                    {Math.round((videoProgress ?? 0) * 100)}%
+                    {videoStage === 'capturing'
+                      ? `Frames ${Math.round((videoProgress ?? 0) * 100)}%`
+                      : videoStage === 'uploading'
+                        ? 'Uploading…'
+                        : videoStage === 'rendering'
+                          ? 'Rendering video…'
+                          : 'Downloading…'}
                   </span>
                 </>
               ) : (
@@ -680,8 +687,8 @@ const SensorHeatmap2D = ({
                   variant="outline-danger"
                   onClick={() => void exportFrames()}
                   disabled={timestamps.length < 2}
-                  aria-label="Export Frames"
-                  title="Export Frames: capture PNG frames of the heatmap animation and download them together with an ffmpeg script that assembles an MP4"
+                  aria-label="Export video"
+                  title="Export video: capture the heatmap animation and download a ZIP with the MP4 video and its PNG frames"
                 >
                   <Film />
                 </Button>
