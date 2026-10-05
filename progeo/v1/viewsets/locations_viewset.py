@@ -39,6 +39,7 @@ from progeo.v1.models import (
     ProgeoLocation,
     ProgeoMeasurement,
     ProgeoMeasurePoint,
+    SMS,
     UserProfile,
 )
 from progeo.v1.serializers import (
@@ -614,13 +615,14 @@ class LocationViewSet(ProgeoModalViewSet):
     def get_locations_timeline(self, request, pk=None, *args, **kwargs):
         """
         Benachrichtigungen (Ereignisverlauf): a chronological feed merging
-        sent e-mails (EMail) and alarm lifecycle events (triggered/
-        acknowledged/resolved) for this location. Optional ?days= (default
-        30, capped at 365). Returns {"events": [...]}, most recent first.
+        sent e-mails (EMail), sent SMS (SMS) and alarm lifecycle events
+        (triggered/acknowledged/resolved) for this location. Optional ?days=
+        (default 30, capped at 365). Returns {"events": [...]}, most recent
+        first.
 
         Deliberately not included (no data exists for it): per-recipient
         delivery/read receipts (EMail.sent_to is one string for the whole
-        send), SMS send logging, SMS-reply acknowledgement.
+        send), SMS-reply acknowledgement.
         """
         location, account = self._find_location(request, pk=pk)
         if not location:
@@ -639,6 +641,11 @@ class LocationViewSet(ProgeoModalViewSet):
             .filter(location=location, created__gte=cutoff)
             .order_by("-created")
         )
+        sms = (
+            SMS.objects.using(db_name)
+            .filter(location=location, created__gte=cutoff)
+            .order_by("-created")
+        )
         alarms = (
             ProgeoAlarm.objects.using(db_name)
             .filter(measurement__device__location=location)
@@ -649,13 +656,13 @@ class LocationViewSet(ProgeoModalViewSet):
             )
             .select_related("evaluated_by")
         )
-        events = self._build_timeline_events(emails, alarms, cutoff)
+        events = self._build_timeline_events(emails, alarms, cutoff, sms=sms)
         return RequestSuccess({"events": events})
 
     @staticmethod
-    def _build_timeline_events(emails, alarms, cutoff):
+    def _build_timeline_events(emails, alarms, cutoff, sms=()):
         """Pure merge/sort step of `timeline`, split out so it's testable
-        without a request/account - takes already-queried emails/alarms."""
+        without a request/account - takes already-queried emails/alarms/sms."""
         events = []
 
         for email in emails:
@@ -666,6 +673,16 @@ class LocationViewSet(ProgeoModalViewSet):
                 "detail": email.sent_to,
                 "success": email.sent,
                 "error": email.error,
+            })
+
+        for message in sms:
+            events.append({
+                "kind": "sms",
+                "at": message.created,
+                "title": None,
+                "detail": message.sent_to,
+                "success": message.sent,
+                "error": message.error,
             })
 
         for episode in LocationViewSet._group_alarm_episodes(alarms):
@@ -1235,6 +1252,8 @@ class LocationViewSet(ProgeoModalViewSet):
                     esendex.send_sms(
                         recipient["mobile"],
                         f"ProGeo Testleackage - Objekt {location.project_id or ''} {location.name or ''}",
+                        location=location,
+                        db=db_name,
                     )
                     result["sms_ok"] = True
                 except EsendexError as exc:

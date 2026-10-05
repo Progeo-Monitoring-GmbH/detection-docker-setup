@@ -13,7 +13,7 @@ import { useProgeoRole } from './roleModel';
 import type { PortalOutletContext } from './LocationPortalLayout';
 
 type TimelineEvent = {
-  kind: 'email' | 'alarm_triggered' | 'alarm_acknowledged' | 'alarm_resolved';
+  kind: 'email' | 'sms' | 'alarm_triggered' | 'alarm_acknowledged' | 'alarm_resolved';
   at: string;
   title?: string | null;
   detail?: string | number | null;
@@ -129,6 +129,8 @@ const LocationNotificationsTab = () => {
     switch (event.kind) {
       case 'email':
         return event.title || t('benach_event_email');
+      case 'sms':
+        return t('benach_event_sms');
       case 'alarm_triggered':
         return t('benach_event_triggered');
       case 'alarm_acknowledged':
@@ -141,7 +143,7 @@ const LocationNotificationsTab = () => {
   };
 
   const eventDetail = (event: TimelineEvent): string | null => {
-    if (event.kind === 'email') {
+    if (event.kind === 'email' || event.kind === 'sms') {
       return event.success
         ? t('benach_email_sent_to', { recipients: event.detail })
         : t('benach_email_failed', { recipients: event.detail, reason: event.error || '?' });
@@ -164,7 +166,7 @@ const LocationNotificationsTab = () => {
   };
 
   const dotColor = (event: TimelineEvent): string => {
-    if (event.kind === 'email') {
+    if (event.kind === 'email' || event.kind === 'sms') {
       return event.success ? '#3F7A1C' : '#C44D26';
     }
     if (event.kind === 'alarm_resolved') {

@@ -11,7 +11,7 @@ import pytest
 from django.utils import timezone
 
 from progeo.tests import factories as f
-from progeo.v1.models import EMail, ProgeoAlarm
+from progeo.v1.models import SMS, EMail, ProgeoAlarm
 
 MEASURE = ("module_measurements_enabled",)
 NOTIFY = ("module_notifications_enabled",)
@@ -239,6 +239,14 @@ def _email(location, ago, subject="Mail", sent=True, error=None):
     return mail
 
 
+def _sms(location, ago, sent=True, error=None):
+    message = SMS.objects.using(f.DB).create(
+        location=location, sent_to="+4915100", message="body", sent=sent, error=error,
+    )
+    SMS.objects.using(f.DB).filter(pk=message.pk).update(created=timezone.now() - ago)
+    return message
+
+
 def _timeline(api_client, location, **params):
     response = api_client.get(f"/v1/location/{location.id}/timeline/", params)
     assert response.status_code == 200, response.content
@@ -308,3 +316,18 @@ def test_timeline_requires_notifications_permission(api_client, world):
 
     assert response.status_code == 403
     assert response.json()["missing_permissions"] == ["module_notifications_enabled"]
+
+
+
+def test_timeline_includes_sms_of_the_location(api_client, world):
+    _account, location, other, _device, member = world
+    _email(location, f.minutes(30))
+    _sms(location, f.minutes(20), sent=False, error="Esendex API answered HTTP 401.")
+    _sms(other, f.minutes(10))
+    api_client.force_authenticate(user=member)
+
+    events = _timeline(api_client, location)
+
+    assert [event["kind"] for event in events] == ["sms", "email"]
+    sms = events[0]
+    assert (sms["detail"], sms["success"], sms["error"]) == ("+4915100", False, "Esendex API answered HTTP 401.")

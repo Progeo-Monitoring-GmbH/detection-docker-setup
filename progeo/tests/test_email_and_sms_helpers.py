@@ -1,17 +1,18 @@
 """Mail + SMS helpers: progeo/helper/emailhelper.py and progeo/helper/esendex.py.
 
 Templates are rendered from progeo/templates/emails, every mail attempt is
-logged as an EMail row (sent/error), and Esendex errors surface as
-EsendexError. smtplib and requests are always faked - nothing leaves the box.
+logged as an EMail row and every SMS attempt as an SMS row (sent/error), and
+Esendex errors surface as EsendexError. smtplib and requests are always faked - nothing leaves the box.
 """
 import base64
 
 import pytest
 import requests
+from django.db.models.query import QuerySet
 
 from progeo.helper import emailhelper, esendex, interface_config
 from progeo.tests import factories as f
-from progeo.v1.models import EMail, SystemConfig
+from progeo.v1.models import SMS, EMail, SystemConfig
 
 SMTP = {"sender": "noreply@example.com", "reply_to": "reply@example.com", "server": "smtp.example.com",
         "port": 2525, "username": "mailer", "password": "pw"}
@@ -401,3 +402,55 @@ def test_esendex_long_error_bodies_are_truncated(esendex_api):
 )
 def test_dig(data, path, expected):
     assert esendex._dig(data, *path) == expected
+
+
+
+# -- SMS log -------------------------------------------------------------------
+
+def _sms_log():
+    return list(SMS.objects.using(f.DB).order_by("id").values(
+        "location_id", "sent_to", "sender", "message", "sent", "batch_id", "error",
+    ))
+
+
+def test_sent_sms_is_logged_with_location_and_batch(esendex_api):
+    location = f.make_location(f.make_account())
+
+    esendex.send_sms(" +4915100 ", "Hallo", cfg=ESENDEX, location=location, db=f.DB)
+
+    assert _sms_log() == [{
+        "location_id": location.pk, "sent_to": "+4915100", "sender": "Progeo", "message": "Hallo",
+        "sent": True, "batch_id": "B-1", "error": None,
+    }]
+
+
+def test_sms_api_error_is_logged_and_still_raised(esendex_api):
+    _calls, reply = esendex_api
+    reply["response"] = FakeResponse(401, text="Unauthorised")
+
+    with pytest.raises(esendex.EsendexError):
+        esendex.send_sms("+491", "x", cfg=ESENDEX, sender="Alarm")
+
+    [row] = _sms_log()
+    assert (row["sent"], row["sender"], row["batch_id"], row["location_id"]) == (False, "Alarm", None, None)
+    assert row["error"].startswith("Esendex API answered HTTP 401")
+
+
+def test_sms_without_config_is_logged_too(esendex_api):
+    with pytest.raises(esendex.EsendexError):
+        esendex.send_sms("+491", "x")
+
+    [row] = _sms_log()
+    assert row["sent"] is False
+    assert row["error"].startswith("Esendex is not configured")
+
+
+def test_failing_sms_log_does_not_break_the_send(esendex_api, monkeypatch):
+    def _broken_create(*args, **kwargs):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(QuerySet, "create", _broken_create)
+
+    result = esendex.send_sms("+491", "x", cfg=ESENDEX)
+
+    assert result["success"] is True

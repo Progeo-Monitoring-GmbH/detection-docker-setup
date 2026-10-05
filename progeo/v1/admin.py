@@ -24,6 +24,7 @@ from progeo.v1.models import (
     ProgeoLocation,
     ProgeoMeasurement,
     ProgeoMeasurePoint,
+    SMS,
     UserModulePermissions,
 )
 
@@ -136,6 +137,11 @@ class EMailAdmin(MultiDBModelAdmin):
     list_display = ("created", "sent", "location", "sent_to", "subject", "error")
     list_filter = ("sent", "location")
     search_fields = ("sent_to", "subject", "message")
+
+class SMSAdmin(MultiDBModelAdmin):
+    list_display = ("created", "sent", "location", "sent_to", "sender", "batch_id", "error")
+    list_filter = ("sent", "location")
+    search_fields = ("sent_to", "message", "batch_id")
 
 class ProgeoAccessAdmin(MultiDBModelAdmin):
     pass
@@ -267,6 +273,7 @@ register_models = [
     {"model": ProgeoLageplan, "admin": ProgeoLageplanAdmin, "custom": True},
     {"model": ProgeoAccess, "admin": ProgeoAccessAdmin, "custom": True},
     {"model": EMail, "admin": EMailAdmin, "custom": True},
+    {"model": SMS, "admin": SMSAdmin, "custom": True},
     
 ]
 

@@ -19,6 +19,7 @@ from progeo.v1.models import (
     ProgeoLocation,
     ProgeoMeasurement,
     ProgeoMeasurePoint,
+    SMS,
 )
 
 # Whitelisted models this endpoint can export/import, keyed by the exact
@@ -37,6 +38,7 @@ EXPORTABLE_MODELS = {
     "ProgeoAlarm": ProgeoAlarm,
     "ProgeoAccess": ProgeoAccess,
     "EMail": EMail,
+    "SMS": SMS,
     "AlarmDailyReport": AlarmDailyReport,
 }
 

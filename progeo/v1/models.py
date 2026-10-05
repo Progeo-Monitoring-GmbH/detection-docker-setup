@@ -922,6 +922,35 @@ class EMail(ProgeoModel, auto_prefetch.Model):
         return f"{_id} {status} 📧 {self.created.strftime('%d.%m.%y %H:%M')} => {self.sent_to[:50]}, Length={len(self.message)}, Files={self.files}"
 
 
+class SMS(ProgeoModel, auto_prefetch.Model):
+    """Log of every SMS send attempt through Esendex (helper/esendex.py) -
+    one row per message, also when sending failed or was not configured."""
+    # Optional link to the location (project) the SMS belongs to, e.g. a
+    # Testleackage; system/test SMS are stored without a location.
+    location = models.ForeignKey(
+        ProgeoLocation,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="sms",
+    )
+    created = models.DateTimeField(auto_now_add=True)
+    sent_to = models.CharField(max_length=64)
+    sender = models.CharField(max_length=64, null=True, blank=True)
+    message = models.TextField()
+    # Send outcome: True = accepted by Esendex, False = failed (kept for the log).
+    sent = models.BooleanField(default=False)
+    # Esendex batch id of an accepted message, for support requests.
+    batch_id = models.CharField(max_length=64, null=True, blank=True)
+    # Human-readable reason when the SMS could not be sent.
+    error = models.TextField(null=True, blank=True)
+
+    def __str__(self):
+        _id = f"[{self.pk}] " if DEBUG else ""
+        status = "✅" if self.sent else "⚠️"
+        return f"{_id} {status} 📱 {self.created.strftime('%d.%m.%y %H:%M')} => {self.sent_to}, Length={len(self.message)}"
+
+
 # ==============================================================================================
 
 
