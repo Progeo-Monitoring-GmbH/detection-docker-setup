@@ -86,7 +86,6 @@ def send_sms(to: str, body: str, cfg: dict | None = None, sender: str | None = N
         EsendexError: missing config, network failure or an API error response
             (the response body is included so it can be shown in the UI).
     """
-    print(f"Effective Esendex config: {cfg}")
     cfg = _effective_cfg(cfg)
     account_reference = cfg.get("account_reference")
     username = cfg.get("username")
@@ -136,8 +135,13 @@ def send_sms(to: str, body: str, cfg: dict | None = None, sender: str | None = N
     except ValueError:
         data = None
 
-    batch_id = _dig(data, "batchid") or _dig(data, "batch", "id") or _dig(data, "batch_id")
-    message_ids = _dig(data, "messages", "message", "id") or _dig(data, "messageids")
+    # Esendex answers {"batch": {"batchid": ..., "messageheaders": [{"id": ...}]}}.
+    batch_id = (_dig(data, "batch", "batchid") or _dig(data, "batchid")
+                or _dig(data, "batch", "id") or _dig(data, "batch_id"))
+    headers = _dig(data, "batch", "messageheaders")
+    message_ids = (
+        [h["id"] for h in headers if isinstance(h, dict) and h.get("id")] if isinstance(headers, list) else None
+    ) or _dig(data, "messages", "message", "id") or _dig(data, "messageids")
     message_id = _dig(data, "messageid")
     if isinstance(batch_id, list):
         batch_id = batch_id[0] if batch_id else None

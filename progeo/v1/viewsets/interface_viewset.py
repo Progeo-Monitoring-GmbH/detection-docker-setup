@@ -132,7 +132,6 @@ class InterfaceViewSet(ViewSet):
         """GET: current Esendex SMS config (password masked). POST: save it."""
         if request.method == "GET":
             cfg = dict(get_esendex_config())
-            print(f"Current Esendex config: {cfg}")
             if cfg.get("password"):
                 cfg["password"] = PASSWORD_MASK
             return RequestSuccess({"config": cfg})

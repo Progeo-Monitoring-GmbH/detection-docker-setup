@@ -361,6 +361,9 @@ def test_send_sms_api_errors(esendex_api, response, message):
 @pytest.mark.parametrize(
     "payload, batch_id, message_ids",
     [
+        # Real Esendex answer shape.
+        ({"batch": {"batchid": "B-1", "messageheaders": [{"id": "M-1"}, {"id": "M-2"}]}, "errors": None},
+         "B-1", ["M-1", "M-2"]),
         ({"batch": {"id": "B-2"}}, "B-2", []),
         ({"batch_id": ["B-3", "B-4"]}, "B-3", []),
         ({"messageid": "M-9"}, None, ["M-9"]),
