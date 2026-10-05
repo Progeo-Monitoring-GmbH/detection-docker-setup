@@ -104,7 +104,7 @@ const LageplanWizardView = () => {
       try {
         await axiosConfig.perform_get(
           auth,
-          '/v1/location/',
+          '/v1/location/min/',
           (response) => {
             const list = Array.isArray(response?.data) ? response.data : [];
 

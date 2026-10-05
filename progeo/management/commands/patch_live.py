@@ -7,7 +7,7 @@ from progeo.helper.basics import dlog, elog, ilog
 from progeo.helper.legacy.geo import GeoHelper
 from progeo.management.commands._base import BaseCommand
 from progeo.settings import SETUP_DIR
-from progeo.v1.creator import save_location_lageplan
+from progeo.v1.creator import save_lageplan_upload
 from progeo.v1.legacy.executor import fetch_legacy_data, parse_sample_timestamp
 from progeo.v1.legacy.helper_resistance import MAX_JSON_SAFE_RESISTANCE_OHM
 from progeo.v1.models import Account, ProgeoDevice, ProgeoLocation, ProgeoMeasurement
@@ -234,7 +234,7 @@ class Command(BaseCommand):
             fetch_device_locations()
 
         if patch == "fetch_lageplan":
-            locations = ProgeoLocation.objects.filter(lageplan__isnull=True).all()
+            locations = ProgeoLocation.objects.filter(lageplans__isnull=True).all()
             for location in locations:
                 url = f"http://data-progeo.net/DB/upload/{location.project_id}/system/{location.project_id}.png"
                 try:
@@ -254,7 +254,7 @@ class Command(BaseCommand):
                     dlog(f"Empty lageplan response for project {location.project_id}")
                     continue
 
-                save_location_lageplan(location, content, f"{location.project_id}.png")
+                save_lageplan_upload(location, content, f"{location.project_id}.png")
                 dlog(f"Fetched lageplan for project {location.project_id}")
 
         if patch == "fix_unknown_location":

@@ -11,6 +11,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 
 from progeo.helper import emailhelper, esendex
 from progeo.tests import factories as f
+from progeo.v1 import creator
 from progeo.v1.models import ProgeoAccess, ProgeoLageplan, ProgeoLocation, UserProfile
 from progeo.v1.viewsets import locations_viewset
 
@@ -250,6 +251,7 @@ def staff_client(api_client):
 @pytest.fixture
 def upload_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(locations_viewset, "UPLOAD_DIR", str(tmp_path))
+    monkeypatch.setattr(creator, "UPLOAD_DIR", str(tmp_path))
     return tmp_path
 
 

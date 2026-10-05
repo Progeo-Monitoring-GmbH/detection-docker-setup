@@ -1,10 +1,9 @@
 import os
-import tempfile
 import time
 from typing import Any
 
 from django.contrib.auth.models import User
-from django.core.files import File
+from django.core.files.base import ContentFile
 from django.core.files.storage import FileSystemStorage
 from django.db.models import Q
 from django.utils import timezone
@@ -20,6 +19,7 @@ from progeo.v1.models import (
 	MfSLog,
 	ProgeoAlarm,
 	ProgeoDevice,
+	ProgeoLageplan,
 	ProgeoLocation,
 	ProgeoMeasurement,
 	ProgeoMeasurePoint,
@@ -121,34 +121,26 @@ def create_progeo_measure_point_safe(location: ProgeoLocation, sensor_order: int
 	)
 
 
-def save_location_lageplan(location: ProgeoLocation, source: bytes | Any, original_name: str,
-							db: str | None = None) -> str:
-	"""Store a lageplan image for a location and persist the reference.
+def save_lageplan_upload(location: ProgeoLocation, source: bytes | Any, original_name: str,
+						 db: str = "default") -> ProgeoLageplan:
+	"""Store a lageplan file for a location as a new ProgeoLageplan row.
 
-	``source`` is either raw bytes or a Django uploaded file (anything with ``.chunks()``).
+	``source`` is either raw bytes or a Django uploaded file. The file lands in
+	UPLOAD_DIR/lageplan/ and ProgeoLageplan.lageplan.name is stored relative to
+	UPLOAD_DIR (see parse_lageplan_labels.py for why that convention matters).
 	"""
-	db_name = "default"
-
 	save_check_dir(UPLOAD_DIR, "lageplan")
 	suffix = os.path.splitext(original_name)[1] or ".png"
 	filename = os.path.join("lageplan", f"{location.id}_{location.project_id or ''}_{int(time.time())}{suffix}").replace(os.sep, "/")
 
-	chunks = [bytes(source)] if isinstance(source, (bytes, bytearray)) else source.chunks()
+	if isinstance(source, (bytes, bytearray)):
+		source = ContentFile(bytes(source), name=original_name)
 
 	fs = FileSystemStorage(location=UPLOAD_DIR)
-	with tempfile.NamedTemporaryFile() as temporary_file:
-		for chunk in chunks:
-			temporary_file.write(chunk)
-		temporary_file.flush()
-		temporary_file.seek(0)
-		new_file = fs.save(filename, File(temporary_file, name=original_name))
-
-	location.lageplan = new_file
-	try:
-		location.save(using=db_name)
-	except Exception as exc:
-		elog(f"Failed saving location lageplan for project {location.project_id}: {exc}")
-	return new_file
+	saved_name = fs.save(filename, source)
+	return ProgeoLageplan.objects.using(db).create(
+		location=location, lageplan=saved_name, name=original_name,
+	)
 
 
 def _alarm_window_end(alarm) -> Any:

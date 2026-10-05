@@ -21,7 +21,7 @@ export type SensorHeatmapLageplanData = {
 export type SensorHeatmapLocation = {
   id?: number | null;
   project_id?: number | null;
-  // Backward compatibility: primary lageplan fields (from LocationSerializer.get_lageplan_url/lageplans)
+  // Effective fields of the selected lageplan (merged in by SensorHeatmap2D / LocationHeatmap2DView)
   lageplan_url?: string | null;
   offset_x?: number | null;
   offset_y?: number | null;
@@ -29,7 +29,7 @@ export type SensorHeatmapLocation = {
   scale_y?: number | null;
   flip_x?: boolean;
   flip_y?: boolean;
-  // New: array of all lageplans with full metadata
+  // All lageplans of the location (LocationSerializer.get_lageplans)
   lageplans?: SensorHeatmapLageplanData[] | null;
   alarm_threshold?: number | null;
   parent_location?: number | null;

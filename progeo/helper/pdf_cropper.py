@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 
 import cv2
@@ -175,13 +176,17 @@ def normalize_points(points, width, height):
 
 def process_pdf_to_png_and_extract_crosses(pdf_path: Path, dpi: int = 300):
 
-    output_dir = UPLOAD_DIR / "pdf_2_png"
-    output_dir.mkdir(exist_ok=True)
+    output_dir = Path(UPLOAD_DIR) / "pdf_2_png"
+    os.makedirs(output_dir, exist_ok=True)
 
     print(f"Processing PDF: {pdf_path} at {dpi} DPI. Output directory: {output_dir}")
     try:
         import pymupdf
-        doc = pymupdf.open(pdf_path)
+        if hasattr(pdf_path, "read"):
+            # Django UploadedFile (in-memory or temporary) – open from bytes
+            doc = pymupdf.open(stream=pdf_path.read(), filetype="pdf")
+        else:
+            doc = pymupdf.open(pdf_path)
 
         scale = dpi / 72
         matrix = pymupdf.Matrix(scale, scale)
@@ -189,6 +194,7 @@ def process_pdf_to_png_and_extract_crosses(pdf_path: Path, dpi: int = 300):
         print("pymupdf is not installed.")
         return None
 
+    json_path = None
     for page_number, page in enumerate(doc, start=1):
         pix = page.get_pixmap(
             matrix=matrix,

@@ -395,14 +395,7 @@ class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
 class ProgeoLageplan(ProgeoModel, auto_prefetch.Model):
     """
     Lageplan (site plan) data for a location.
-    A location can have multiple lagelans (e.g., different versions, floors, etc.).
-    
-    This model replaces the deprecated lageplan fields in ProgeoLocation:
-    - lageplan (FileField)
-    - offset_x, offset_y
-    - scale_x, scale_y
-    - flip_x, flip_y
-    - offset_latitude, offset_longitude
+    A location can have multiple lageplans (e.g., different versions, floors, etc.).
     """
     
     location = models.ForeignKey(ProgeoLocation, on_delete=models.CASCADE, related_name='lageplans')

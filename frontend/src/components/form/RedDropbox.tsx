@@ -46,6 +46,9 @@ const RedDropbox = ({
     if (key === 'pdf') {
       return { 'application/pdf': ['.pdf'] };
     }
+    if (key === 'json') {
+      return { 'application/json': ['.json'] };
+    }
     return { '*/*': [] };
   };
 

@@ -21,7 +21,7 @@ from progeo.helper.pdf_cropper import process_pdf_to_png_and_extract_crosses
 from progeo.settings import SETUP_DIR, UPLOAD_DIR
 from progeo.tasks import collect_host_storage_info
 from progeo.tasks import identify_device as identify_device_task
-from progeo.v1.creator import create_progeo_measure_point_safe, save_location_lageplan
+from progeo.v1.creator import create_progeo_measure_point_safe, save_lageplan_upload
 from progeo.v1.helper import dlog
 from progeo.v1.log_files_helper import (
         allowed_log_files,
@@ -465,9 +465,14 @@ class StatusViewSet(ProgeoModalViewSet):
         if not upload:
             return RequestFailed({"reason": "No file uploaded."})
 
-        new_file = save_location_lageplan(location, upload, upload.name, db=db_name)
-        print(f"Lageplan uploaded for location {location.id} at {location.lageplan.url}")
-        return RequestSuccess({"message": "Lageplan uploaded successfully.", "files0": new_file})
+        lageplan = save_lageplan_upload(location, upload, upload.name, db=db_name)
+        dlog(f"Lageplan uploaded for location {location.id} at {lageplan.lageplan.name}")
+        return RequestSuccess({
+            "message": "Lageplan uploaded successfully.",
+            "files0": lageplan.lageplan.name,
+            "lageplan_id": lageplan.pk,
+            "lageplan_url": posixpath.join("media", "uploads", lageplan.lageplan.name),
+        })
 
     @calc_runtime
     @require_module_permissions("module_devices_enabled", "module_devices_edit")
@@ -609,15 +614,13 @@ class StatusViewSet(ProgeoModalViewSet):
                 "1", "true", "yes", "on"
             }
             if with_lageplan:
-                # Prefer new ProgeoLageplan model, fallback to legacy fields
                 from progeo.v1.serializers import ProgeoLageplanSerializer
                 
                 lageplans_qs = location.lageplans.all()
                 if lageplans_qs.exists():
-                    # New model: return all lageplans
                     lageplans_serialized = ProgeoLageplanSerializer(lageplans_qs, many=True).data
                     response_data["lageplans"] = lageplans_serialized
-                    # Also include primary (active) lageplan data for backward compatibility
+                    # Flat fields of the active lageplan (used by the Lageplan wizard)
                     active_lageplan = lageplans_qs.filter(is_active=True).first() or lageplans_qs.first()
                     if active_lageplan and active_lageplan.lageplan:
                         response_data["lageplan_url"] = posixpath.join("media", "uploads", active_lageplan.lageplan.name) if hasattr(active_lageplan.lageplan, "name") else None
@@ -628,8 +631,7 @@ class StatusViewSet(ProgeoModalViewSet):
                         response_data["flip_x"] = active_lageplan.flip_x
                         response_data["flip_y"] = active_lageplan.flip_y
                 else:
-                    # No Lageplan uploaded yet (the old per-location lageplan/
-                    # offset fields were moved to ProgeoLageplan).
+                    # No Lageplan uploaded yet.
                     response_data["lageplans"] = []
                     response_data["lageplan_url"] = None
             return RequestSuccess(response_data)

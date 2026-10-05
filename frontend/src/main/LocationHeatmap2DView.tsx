@@ -42,16 +42,22 @@ const LocationHeatmap2DView = () => {
     if (!loc || loc.id == null || String(loc.id) !== String(id)) {
       return;
     }
+    // The alignment lives on the location's active lageplan (the one
+    // /v1/location/update/ writes to).
+    const plans = loc.lageplans ?? [];
+    const plan = plans.find((p) => p.is_active) ?? plans[0] ?? null;
     setAlignment((current) => {
       if (current) {
         return current;
       }
       return {
-        lageplan_url: loc.lageplan_url ?? null,
-        offset_x: loc.offset_x ?? 0,
-        offset_y: loc.offset_y ?? 0,
-        scale_x: loc.scale_x ?? 1,
-        scale_y: loc.scale_y ?? 1,
+        lageplan_url: plan?.url ?? null,
+        offset_x: plan?.offset_x ?? 0,
+        offset_y: plan?.offset_y ?? 0,
+        scale_x: plan?.scale_x ?? 1,
+        scale_y: plan?.scale_y ?? 1,
+        flip_x: Boolean(plan?.flip_x),
+        flip_y: Boolean(plan?.flip_y),
       };
     });
   }, [withSliders, response, id]);

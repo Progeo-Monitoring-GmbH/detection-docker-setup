@@ -177,9 +177,6 @@ class DeviceViewSet(ProgeoModalViewSet):
         except ValueError:
             return None
 
-        
-
-
 
     @action(detail=False, url_path="sample/debug", authentication_classes=[LimitedTokenAuthentication], methods=["POST"])
     def catch_legacy_data_debug(self, request, *args, **kwargs):

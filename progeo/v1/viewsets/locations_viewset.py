@@ -24,6 +24,7 @@ from progeo.decorator import (
 from progeo.helper.basics import RequestFailed, RequestSuccess, save_check_dir
 from progeo.helper.location_access import configured_accounts, location_q, resolve_request_accounts
 from progeo.settings import UPLOAD_DIR
+from progeo.v1.creator import save_lageplan_upload
 from progeo.v1.models import (
     Account,
     EMail,
@@ -1451,26 +1452,6 @@ class LocationViewSet(ProgeoModalViewSet):
         return RequestSuccess({"objects": rows, "kpis": kpis, "count": len(rows)})
 
     @staticmethod
-    def _save_lageplan_upload(location, uploaded_file, db_name):
-        """Stores one uploaded visualization file as a new ProgeoLageplan
-        row, following the same physical-path convention every existing
-        lageplan already uses (UPLOAD_DIR/lageplan/<file>,
-        ProgeoLageplan.lageplan.name relative to UPLOAD_DIR - see
-        parse_lageplan_labels.py's own path-resolution fix for why this
-        matters) rather than the deprecated save_location_lageplan helper,
-        which still writes to a removed ProgeoLocation.lageplan field."""
-        save_check_dir(UPLOAD_DIR, "lageplan")
-        suffix = os.path.splitext(uploaded_file.name)[1] or ".png"
-        filename = os.path.join(
-            "lageplan", f"{location.id}_{location.project_id or ''}_{int(time.time())}{suffix}"
-        ).replace(os.sep, "/")
-        fs = FileSystemStorage(location=UPLOAD_DIR)
-        saved_name = fs.save(filename, uploaded_file)
-        return ProgeoLageplan.objects.using(db_name).create(
-            location=location, lageplan=saved_name, name=uploaded_file.name,
-        )
-
-    @staticmethod
     def _save_coordinate_upload(location, uploaded_file):
         """Coordinate-list files (CSV/XLSX) from Anlegen are stored on disk
         (same UPLOAD_DIR convention) but deliberately NOT auto-processed
@@ -1541,7 +1522,7 @@ class LocationViewSet(ProgeoModalViewSet):
         )
 
         lageplan_ids = [
-            self._save_lageplan_upload(location, uploaded, db_name).id
+            save_lageplan_upload(location, uploaded, uploaded.name, db=db_name).id
             for uploaded in request.FILES.getlist("visualization_files")
         ]
         coordinate_files = [
