@@ -473,7 +473,9 @@ def swap_databases_new_year(db: str = None, year: int = None):
     return {"year": year, "databases": results}
 
 
-@shared_task
+# track_started: the result endpoint reports STARTED while ffmpeg runs, so the
+# frontend can tell a busy render from a task no worker has picked up.
+@shared_task(track_started=True)
 def render_heatmap_video(job_id: str, framerate: int = 8):
     """Render uploaded heatmap frames into an MP4 and pack frames + video
     into a ZIP; returns its media-relative path (see helper/heatmap_video.py)."""

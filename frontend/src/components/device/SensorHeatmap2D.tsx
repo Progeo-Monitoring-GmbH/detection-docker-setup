@@ -517,6 +517,8 @@ const SensorHeatmap2D = ({
   const {
     videoExporting,
     videoStage,
+    videoResultUrl,
+    downloadVideoResult,
     videoProgress,
     videoError,
     handleAfterPlot,
@@ -766,6 +768,19 @@ const SensorHeatmap2D = ({
           <>
             {videoError && (
               <div className="text-danger small mb-2 px-2">{videoError}</div>
+            )}
+            {videoResultUrl && !videoExporting && (
+              <div className="small mb-1 px-2">
+                Video ready -{' '}
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="p-0 align-baseline"
+                  onClick={() => void downloadVideoResult()}
+                >
+                  download ZIP (MP4 + frames)
+                </Button>
+              </div>
             )}
 
             <div

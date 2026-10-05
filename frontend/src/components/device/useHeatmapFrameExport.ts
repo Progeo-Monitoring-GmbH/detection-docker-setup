@@ -27,6 +27,8 @@ const FRAME_SLEEP_MS = 25;
 const VIDEO_FRAMERATE = 8;
 const RESULT_POLL_MS = 1500;
 const RESULT_TIMEOUT_MS = 10 * 60 * 1000;
+// A task still PENDING after this long was never picked up by a worker.
+const PENDING_TIMEOUT_MS = 2 * 60 * 1000;
 
 const requestErrorMessage = (error: unknown, fallback: string) => {
   const response = (error as { response?: { data?: { reason?: string } } })
@@ -51,6 +53,9 @@ type HeatmapFrameExport = {
   videoStage: VideoExportStage | null;
   /** Progress of the capturing stage (0..1). */
   videoProgress: number;
+  /** Media URL of the last rendered ZIP (frames + MP4), for re-downloading. */
+  videoResultUrl: string | null;
+  downloadVideoResult: () => Promise<void>;
   videoError: string | null;
   /** Call after the Plot's onAfterPlot fires so frame redraws can be awaited. */
   handleAfterPlot: () => void;
@@ -77,6 +82,7 @@ export const useHeatmapFrameExport = ({
   const auth = useAuth();
   const [videoExporting, setVideoExporting] = useState(false);
   const [videoStage, setVideoStage] = useState<VideoExportStage | null>(null);
+  const [videoResultUrl, setVideoResultUrl] = useState<string | null>(null);
   const [videoProgress, setVideoProgress] = useState(0);
   const [videoError, setVideoError] = useState<string | null>(null);
 
@@ -127,10 +133,11 @@ export const useHeatmapFrameExport = ({
   /** Polls the render task; resolves with the result ZIP's media URL. */
   const waitForResult = useCallback(
     async (taskId: string) => {
-      const deadline = Date.now() + RESULT_TIMEOUT_MS;
-      while (Date.now() < deadline) {
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < RESULT_TIMEOUT_MS) {
         await sleep(RESULT_POLL_MS);
         const result = await new Promise<{
+          state?: string;
           ready?: boolean;
           url?: string;
           error?: string;
@@ -152,6 +159,14 @@ export const useHeatmapFrameExport = ({
             return result.url;
           }
           throw new Error(result.error || 'The video rendering failed.');
+        }
+        if (
+          result.state === 'PENDING' &&
+          Date.now() - startedAt > PENDING_TIMEOUT_MS
+        ) {
+          throw new Error(
+            'No server worker picked up the video rendering - is the Celery worker running (and up to date)?',
+          );
         }
       }
       throw new Error('The video rendering took too long.');
@@ -176,6 +191,32 @@ export const useHeatmapFrameExport = ({
     [auth],
   );
 
+  const saveResult = useCallback(
+    async (url: string) => {
+      const zipBlob = await downloadResult(url);
+      downloadBlob(
+        zipBlob,
+        `sensor-heatmap-${new Date()
+          .toISOString()
+          .slice(0, 19)
+          .replace(/[:T]/g, '-')}.zip`,
+      );
+    },
+    [downloadResult],
+  );
+
+  const downloadVideoResult = useCallback(async () => {
+    if (!videoResultUrl) {
+      return;
+    }
+    setVideoError(null);
+    try {
+      await saveResult(videoResultUrl);
+    } catch (error) {
+      setVideoError((error as Error).message || 'Downloading the video failed.');
+    }
+  }, [videoResultUrl, saveResult]);
+
   const exportFrames = useCallback(async () => {
     const gd = plotRef.current;
     if (!gd || !chartReady || timestamps.length < 2 || videoExporting) {
@@ -186,6 +227,7 @@ export const useHeatmapFrameExport = ({
     setVideoStage('capturing');
     setVideoProgress(0);
     setVideoError(null);
+    setVideoResultUrl(null);
 
     const initialMode = mode;
     const initialIndex = timestampIndex;
@@ -285,15 +327,11 @@ export const useHeatmapFrameExport = ({
       setVideoStage('rendering');
       const resultUrl = await waitForResult(taskId);
 
+      // Kept so the toolbar can offer the result again in case the
+      // browser blocked the automatic download.
+      setVideoResultUrl(resultUrl);
       setVideoStage('downloading');
-      const zipBlob = await downloadResult(resultUrl);
-      downloadBlob(
-        zipBlob,
-        `sensor-heatmap-${new Date()
-          .toISOString()
-          .slice(0, 19)
-          .replace(/[:T]/g, '-')}.zip`,
-      );
+      await saveResult(resultUrl);
     } catch (error) {
       setVideoError((error as Error).message || 'Video export failed.');
     } finally {
@@ -314,12 +352,14 @@ export const useHeatmapFrameExport = ({
     waitForPlotRedraw,
     startRendering,
     waitForResult,
-    downloadResult,
+    saveResult,
   ]);
 
   return {
     videoExporting,
     videoStage,
+    videoResultUrl,
+    downloadVideoResult,
     videoProgress,
     videoError,
     handleAfterPlot,
