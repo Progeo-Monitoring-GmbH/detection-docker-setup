@@ -32,7 +32,6 @@ import socket
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
-from typing import Optional
 
 import requests
 from requests.exceptions import RequestException
@@ -73,19 +72,19 @@ class DnsResult:
     resolved: bool
     chain: list = field(default_factory=list)      # CNAME hops, in order
     addresses: list = field(default_factory=list)  # final A/AAAA records
-    error: Optional[str] = None
-    nslookup_raw: Optional[str] = None
+    error: str | None = None
+    nslookup_raw: str | None = None
 
 
 @dataclass
 class HttpResult:
-    scheme: Optional[str] = None
-    status_code: Optional[int] = None
-    final_url: Optional[str] = None
-    server: Optional[str] = None
+    scheme: str | None = None
+    status_code: int | None = None
+    final_url: str | None = None
+    server: str | None = None
     redirected: bool = False
-    title: Optional[str] = None
-    error: Optional[str] = None
+    title: str | None = None
+    error: str | None = None
 
 
 @dataclass
@@ -96,7 +95,7 @@ class HostReport:
     verdict: str
 
 
-def _raw_nslookup(hostname: str, timeout: int) -> Optional[str]:
+def _raw_nslookup(hostname: str, timeout: int) -> str | None:
     """Best-effort raw `nslookup` output for manual inspection - never used
     to decide the verdict (see module docstring for why)."""
     try:

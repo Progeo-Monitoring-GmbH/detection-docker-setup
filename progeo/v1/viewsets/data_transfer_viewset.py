@@ -11,6 +11,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from progeo.helper.basics import RequestFailed, RequestSuccess, elog
 from progeo.settings import DATABASES
 from progeo.v1.models import (
+    SMS,
     AlarmDailyReport,
     EMail,
     ProgeoAccess,
@@ -19,7 +20,6 @@ from progeo.v1.models import (
     ProgeoLocation,
     ProgeoMeasurement,
     ProgeoMeasurePoint,
-    SMS,
 )
 
 # Whitelisted models this endpoint can export/import, keyed by the exact

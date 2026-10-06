@@ -60,8 +60,7 @@ def create_job(frames_zip) -> str:
     directory = job_dir(job_id)
     os.makedirs(directory, exist_ok=True)
     with open(os.path.join(directory, FRAMES_ZIP_NAME), "wb") as fh:
-        for chunk in frames_zip.chunks():
-            fh.write(chunk)
+        fh.writelines(frames_zip.chunks())
     return job_id
 
 

@@ -15,8 +15,8 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from progeo.authentication import LimitedTokenAuthentication
 from progeo.decorator import calc_runtime, require_module_permissions
 from progeo.helper.basics import RequestFailed, RequestSuccess, elog, ilog
-from progeo.helper.location_access import location_q, resolve_request_account
 from progeo.helper.creator import create_MfS_log
+from progeo.helper.location_access import location_q, resolve_request_account
 from progeo.helper.measurement_utils import flatten_numeric_values
 from progeo.management.commands.patch_live import fetch_device_locations
 from progeo.tasks import download_device_config as download_device_config_task

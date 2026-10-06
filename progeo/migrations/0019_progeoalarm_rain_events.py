@@ -1,5 +1,5 @@
 import jsonfield.fields
-from django.db import migrations, models
+from django.db import migrations
 
 
 def forward_rain_to_events(apps, schema_editor):

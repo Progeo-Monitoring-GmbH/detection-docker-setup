@@ -14,7 +14,11 @@ import threading
 import time
 from dataclasses import dataclass, field
 
-from pymodbus.datastore import ModbusDeviceContext, ModbusSequentialDataBlock, ModbusServerContext
+from pymodbus.datastore import (
+	ModbusDeviceContext,
+	ModbusSequentialDataBlock,
+	ModbusServerContext,
+)
 from pymodbus.server import ModbusTcpServer
 
 REGISTER_COUNT = 65536

@@ -76,7 +76,10 @@ class Command(BaseCommand):
         okaylog("GLT reachable.", tag="[MODBUS]")
 
     def _send(self, cfg, payload, verify):
-        from progeo.helper.modbus_tcp import receive_json_over_modbus_tcp, send_json_over_modbus_tcp
+        from progeo.helper.modbus_tcp import (
+            receive_json_over_modbus_tcp,
+            send_json_over_modbus_tcp,
+        )
 
         try:
             result = send_json_over_modbus_tcp(payload, cfg=cfg)

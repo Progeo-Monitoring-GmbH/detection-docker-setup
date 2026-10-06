@@ -14,9 +14,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.decorator import calc_runtime, require_module_permissions
-from progeo.helper.location_access import location_q, resolve_request_accounts
 from progeo.helper.basics import RequestFailed, RequestSuccess, save_check_dir
 from progeo.helper.docker_helper import start_cad_factory
+from progeo.helper.location_access import location_q, resolve_request_accounts
 from progeo.helper.pdf_cropper import process_pdf_to_png_and_extract_crosses
 from progeo.settings import SETUP_DIR, UPLOAD_DIR
 from progeo.tasks import collect_host_storage_info
@@ -24,29 +24,29 @@ from progeo.tasks import identify_device as identify_device_task
 from progeo.v1.creator import create_progeo_measure_point_safe, save_lageplan_upload
 from progeo.v1.helper import dlog
 from progeo.v1.log_files_helper import (
-        allowed_log_files,
-        allowed_log_roots,
-        read_log_file,
-        summarize_log_files,
-        tail_file,
+    allowed_log_files,
+    allowed_log_roots,
+    read_log_file,
+    summarize_log_files,
+    tail_file,
 )
 from progeo.v1.models import (
-        ProgeoDevice,
-        ProgeoLocation,
-        ProgeoMeasurement,
-        ProgeoMeasurePoint,
+    ProgeoDevice,
+    ProgeoLocation,
+    ProgeoMeasurement,
+    ProgeoMeasurePoint,
 )
 from progeo.v1.serializers import (
-        DeviceSerializer,
-        ProgeoMeasurementSerializer,
-        ProgeoMeasurePointSerializer,
+    DeviceSerializer,
+    ProgeoMeasurementSerializer,
+    ProgeoMeasurePointSerializer,
 )
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.v1.viewsets.setup_viewset import (
-        _get_controller_account,
-        get_latest_alarm_measurement,
-        get_latest_measurement,
-        ping_host_quick,
+    _get_controller_account,
+    get_latest_alarm_measurement,
+    get_latest_measurement,
+    ping_host_quick,
 )
 
 # ######################################################################################################################

@@ -1,15 +1,20 @@
 import { Card, Container, Spinner } from 'react-bootstrap';
 import { useParams } from 'react-router';
-import SensorHeatmap3D from '../components/device/SensorHeatmap3D.tsx';
 import { HeatmapViewHeader, useLocationHeatmap } from './locationHeatmapShared';
 
 const LocationHeatplotView = () => {
   const { id } = useParams();
-  const { loading, response, limit, setLimit, refresh } = useLocationHeatmap(id);
+  const { loading, response, limit, setLimit, refresh } =
+    useLocationHeatmap(id);
 
   return (
     <Container className="py-4">
-      <HeatmapViewHeader id={id} switchTo="heatmap2d" loading={loading} onRefresh={refresh} />
+      <HeatmapViewHeader
+        id={id}
+        switchTo="heatmap2d"
+        loading={loading}
+        onRefresh={refresh}
+      />
 
       <Card className="border-0 shadow-sm mb-3">
         <Card.Body>
@@ -38,18 +43,13 @@ const LocationHeatplotView = () => {
         </Card.Body>
       </Card>
 
-      {loading ? (
+      {loading && (
         <Card className="border-0 shadow-sm">
           <Card.Body className="d-flex align-items-center gap-2 text-muted">
             <Spinner size="sm" animation="border" />
             Loading sensor measurements...
           </Card.Body>
         </Card>
-      ) : (
-        <SensorHeatmap3D
-          response={response}
-          title={`Location ${id} sensor measurements`}
-        />
       )}
     </Container>
   );

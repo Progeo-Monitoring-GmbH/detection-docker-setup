@@ -27,11 +27,16 @@ from progeo.decorator import (
 )
 from progeo.helper import heatmap_video, plan_meters
 from progeo.helper.basics import RequestFailed, RequestSuccess, save_check_dir
-from progeo.helper.location_access import configured_accounts, location_q, resolve_request_accounts
+from progeo.helper.location_access import (
+    configured_accounts,
+    location_q,
+    resolve_request_accounts,
+)
 from progeo.settings import UPLOAD_DIR
 from progeo.tasks import render_heatmap_video
 from progeo.v1.creator import save_lageplan_upload
 from progeo.v1.models import (
+    SMS,
     Account,
     EMail,
     ProgeoAccess,
@@ -41,7 +46,6 @@ from progeo.v1.models import (
     ProgeoLocation,
     ProgeoMeasurement,
     ProgeoMeasurePoint,
-    SMS,
     UserProfile,
 )
 from progeo.v1.serializers import (
@@ -1441,7 +1445,13 @@ class LocationViewSet(ProgeoModalViewSet):
         from reportlab.lib.pagesizes import A4, landscape
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import mm
-        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+        from reportlab.platypus import (
+            Paragraph,
+            SimpleDocTemplate,
+            Spacer,
+            Table,
+            TableStyle,
+        )
 
         buffer = BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), title="ProGeo Messbericht")

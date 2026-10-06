@@ -3,6 +3,7 @@ import ipaddress
 import os
 import subprocess
 
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.http import HttpResponse
 from rest_framework import viewsets
@@ -22,8 +23,6 @@ from progeo.helper.cacher import search_clear_cache
 from progeo.helper.creator import create_MfS_log
 from progeo.helper.emails import send_info_mail
 from progeo.security import save_clean_path
-from django.conf import settings
-
 from progeo.settings import UPLOAD_DIR
 from progeo.tasks import ping
 from progeo.v1.creator import create_account_safe

@@ -1,7 +1,6 @@
 from collections import defaultdict
 
 from django.db import transaction
-from django.db.models import Q
 
 from progeo.helper.basics import elog, ilog, wlog
 from progeo.management.commands._base import BaseCommand

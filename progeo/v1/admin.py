@@ -12,6 +12,7 @@ from rest_framework_simplejwt.token_blacklist.models import (
 from progeo.helper.basics import dlog, elog, ilog, okaylog
 from progeo.v1.models import (
     MODULE_PERMISSION_CODES,
+    SMS,
     Account,
     AlarmDailyReport,
     EMail,
@@ -24,7 +25,6 @@ from progeo.v1.models import (
     ProgeoLocation,
     ProgeoMeasurement,
     ProgeoMeasurePoint,
-    SMS,
     UserModulePermissions,
 )
 
