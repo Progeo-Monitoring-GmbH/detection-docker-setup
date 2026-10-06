@@ -12,6 +12,9 @@ const RedirectToStatus = () => {
 
 const AppLayout = React.lazy(() => import('./main/AppLayout.tsx'));
 const LoginForm = React.lazy(() => import('./components/auth/LoginForm'));
+const PrivacyPolicyPage = React.lazy(
+  () => import('./main/PrivacyPolicyPage.tsx'),
+);
 const TokenTransit = React.lazy(() => import('./main/TokenTransit'));
 const BackupView = React.lazy(() => import('./main/BackupView'));
 const TokenLogin = React.lazy(() => import('./main/TokenLogin'));
@@ -38,8 +41,12 @@ const LocationPortalLayout = React.lazy(
 const GuardedPortalPage = React.lazy(
   () => import('./main/GuardedPortalPage.tsx'),
 );
-const LocationStatusTab = React.lazy(() => import('./main/LocationStatusTab.tsx'));
-const LocationObjektTab = React.lazy(() => import('./main/LocationObjektTab.tsx'));
+const LocationStatusTab = React.lazy(
+  () => import('./main/LocationStatusTab.tsx'),
+);
+const LocationObjektTab = React.lazy(
+  () => import('./main/LocationObjektTab.tsx'),
+);
 const LocationAnalyseTabRoute = React.lazy(
   () => import('./main/LocationAnalyseTab.tsx'),
 );
@@ -49,7 +56,9 @@ const LocationNotificationsTabRoute = React.lazy(
 const LocationInterfaceTab = React.lazy(
   () => import('./main/LocationInterfaceTab.tsx'),
 );
-const LocationRechteTab = React.lazy(() => import('./main/LocationRechteTab.tsx'));
+const LocationRechteTab = React.lazy(
+  () => import('./main/LocationRechteTab.tsx'),
+);
 const LocationEinstellungenTab = React.lazy(
   () => import('./main/LocationEinstellungenTab.tsx'),
 );
@@ -83,7 +92,9 @@ const LageplanWizardView = React.lazy(
 const LocationsMapView = React.lazy(
   () => import('./main/LocationsMapView.jsx'),
 );
-const LegacyImportView = React.lazy(() => import('./main/LegacyImportView.tsx'));
+const LegacyImportView = React.lazy(
+  () => import('./main/LegacyImportView.tsx'),
+);
 const LocationVerwaltungView = React.lazy(
   () => import('./main/LocationVerwaltungView.tsx'),
 );
@@ -95,6 +106,9 @@ const CoreRoutes = () => {
   return (
     <Routes>
       <Route path={`/login`} element={<LoginForm />} />
+      {/* Public - must stay reachable without login (GDPR information duty). */}
+      <Route path="/datenschutz" element={<PrivacyPolicyPage />} />
+      <Route path="/privacy" element={<Navigate to="/datenschutz" replace />} />
 
       {/* Object/location monitoring portal - its own mockup-driven sidebar. */}
       <Route element={<LocationPortalLayout />}>
@@ -135,9 +149,18 @@ const CoreRoutes = () => {
         />
         <Route path="/alarms/" element={<AlarmsOverview />} />
         <Route path="/alarms/report/" element={<AlarmReportView />} />
-        <Route path="/location/:id/heatplot" element={<LocationHeatplotView />} />
-        <Route path="/locations/:id/heatplot" element={<LocationHeatplotView />} />
-        <Route path="/location/:id/heatmap2d" element={<LocationHeatmap2DView />} />
+        <Route
+          path="/location/:id/heatplot"
+          element={<LocationHeatplotView />}
+        />
+        <Route
+          path="/locations/:id/heatplot"
+          element={<LocationHeatplotView />}
+        />
+        <Route
+          path="/location/:id/heatmap2d"
+          element={<LocationHeatmap2DView />}
+        />
         <Route path="/location/:id/alarms" element={<LocationAlarmDetail />} />
         <Route path="/device/:id/update/" element={<DeviceDetailView />} />
         <Route path="/device/:id/editor/" element={<DeviceEditorView />} />

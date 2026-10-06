@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import CookieBanner from './CookieBanner';
 import { ConsentProvider, useConsent } from './ConsentProvider';
@@ -26,11 +27,13 @@ const SettingsTrigger = () => {
 const renderBanner = () => {
   act(() =>
     root.render(
-      <ConsentProvider>
-        <SettingsTrigger />
-        <MapConsentNotice />
-        <CookieBanner />
-      </ConsentProvider>,
+      <MemoryRouter>
+        <ConsentProvider>
+          <SettingsTrigger />
+          <MapConsentNotice />
+          <CookieBanner />
+        </ConsentProvider>
+      </MemoryRouter>,
     ),
   );
 };

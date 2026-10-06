@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { Button, Col, Container, Form, InputGroup, Row } from 'react-bootstrap';
-import { useSearchParams } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import { useForm } from 'react-hook-form';
 import { useSnackbar } from 'notistack';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
+import { PRIVACY_POLICY_URL } from '../privacy/consent';
 
 const LoginForm = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -11,6 +13,7 @@ const LoginForm = () => {
   const { register, handleSubmit } = useForm();
   const [showPasswd, setShowPasswd] = useState(false);
   const auth = useAuth();
+  const { t } = useTranslation();
 
   const onSubmit = async (data) => {
     const forward = searchParams.get('forward') || '/v1/0/overview';
@@ -56,6 +59,9 @@ const LoginForm = () => {
               Login
             </Button>
           </Form>
+          <div className="mt-4 small">
+            <Link to={PRIVACY_POLICY_URL}>{t('consent_privacy_policy')}</Link>
+          </div>
         </Col>
       </Row>
     </Container>

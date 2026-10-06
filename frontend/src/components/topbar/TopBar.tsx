@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router';
 import { DoorOpen, InfoCircle } from 'react-bootstrap-icons';
 import { useAuth } from '../../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../../axiosConfig';
@@ -144,14 +145,13 @@ const TopBar = () => {
                 borderTop: '1px solid var(--progeo-track)',
               }}
             >
-              <a
-                href={PRIVACY_POLICY_URL}
-                target="_blank"
-                rel="noopener noreferrer"
+              <Link
+                to={PRIVACY_POLICY_URL}
+                onClick={() => setInfoOpen(false)}
                 style={{ color: 'var(--progeo-blue)' }}
               >
                 {t('consent_privacy_policy')}
-              </a>
+              </Link>
               <button
                 type="button"
                 onClick={() => {

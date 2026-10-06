@@ -57,7 +57,8 @@ i18n
           backup_delete_all_confirm_body:
             'Are you really sure? This permanently deletes every backup file for this account. This cannot be undone.',
           backup_delete_selected: 'Delete Selected ({{count}})',
-          backup_delete_selected_confirm_title: 'Delete {{count}} selected backup(s)?',
+          backup_delete_selected_confirm_title:
+            'Delete {{count}} selected backup(s)?',
           backup_delete_selected_confirm_body:
             'Are you really sure? This permanently deletes the selected backup files. This cannot be undone.',
           backup_deleted_selected: 'Deleted {{count}} backup(s).',
@@ -215,8 +216,7 @@ i18n
           status_since: 'since {{date}}',
           status_no_measurement_access:
             'No access to measurement data for this location.',
-          status_no_lageplan:
-            'No Lageplan uploaded for this location yet.',
+          status_no_lageplan: 'No Lageplan uploaded for this location yet.',
           status_sensor_table_sensor: 'Sensor',
           status_sensor_table_value: 'Value',
           status_sensor_table_threshold: 'Threshold',
@@ -265,7 +265,8 @@ i18n
           analyse_export_csv: 'CSV export',
           analyse_export_pdf: 'PDF report',
           analyse_export_csv_done: 'CSV export created — download started.',
-          analyse_export_pdf_done: 'PDF report created and sent to the recipients of this object.',
+          analyse_export_pdf_done:
+            'PDF report created and sent to the recipients of this object.',
           nav_benach: 'Notifications',
           nav_rechte: 'Permissions',
           nav_einstell: 'Settings',
@@ -293,15 +294,18 @@ i18n
           verwaltung_filter_all: 'All',
           verwaltung_filter_ok: 'OK',
           anlegen_title: 'Create object',
-          anlegen_notice: 'Staff only. Creates a new object under an existing account.',
+          anlegen_notice:
+            'Staff only. Creates a new object under an existing account.',
           anlegen_section_stammdaten: 'Basic data',
-          anlegen_section_stammdaten_hint: 'Number and name identify the object in the portal.',
+          anlegen_section_stammdaten_hint:
+            'Number and name identify the object in the portal.',
           anlegen_field_account: 'Account',
           anlegen_field_account_placeholder: 'Select account…',
           anlegen_field_nr: 'Object no.',
           anlegen_field_name: 'Object name',
           anlegen_field_airtable: 'Airtable project',
-          anlegen_field_airtable_hint: 'Stored as a link only - nothing is synced with Airtable automatically.',
+          anlegen_field_airtable_hint:
+            'Stored as a link only - nothing is synced with Airtable automatically.',
           anlegen_section_adresse: 'Address',
           anlegen_section_adresse_hint: 'Location of the monitored area.',
           anlegen_field_address: 'Street',
@@ -309,7 +313,8 @@ i18n
           anlegen_field_city: 'City',
           anlegen_field_country: 'Country',
           anlegen_section_ansprechpartner: 'Customer contact',
-          anlegen_section_ansprechpartner_hint: 'Receives notifications and portal access.',
+          anlegen_section_ansprechpartner_hint:
+            'Receives notifications and portal access.',
           anlegen_field_manager: 'Name',
           anlegen_field_mail: 'E-mail',
           anlegen_field_telefon: 'Phone',
@@ -317,11 +322,14 @@ i18n
           anlegen_section_produkt_hint: 'Sensor system used.',
           anlegen_field_project_type: 'Product',
           anlegen_section_files: 'Files',
-          anlegen_section_files_hint: 'Visualization and coordinate lists for the object.',
+          anlegen_section_files_hint:
+            'Visualization and coordinate lists for the object.',
           anlegen_field_visualization: 'Visualization files',
-          anlegen_field_visualization_hint: 'Roof plan, sections, drawings (PDF, DWG, PNG)',
+          anlegen_field_visualization_hint:
+            'Roof plan, sections, drawings (PDF, DWG, PNG)',
           anlegen_field_coordinates: 'Coordinate lists',
-          anlegen_field_coordinates_hint: 'Measure point coordinates per component (CSV, XLSX)',
+          anlegen_field_coordinates_hint:
+            'Measure point coordinates per component (CSV, XLSX)',
           anlegen_choose_files: 'Choose files',
           anlegen_import_data: 'Import data',
           anlegen_create: 'Create object',
@@ -357,7 +365,8 @@ i18n
           rechte_scope: 'Access',
           rechte_scope_single: 'This object only',
           rechte_scope_account: 'All objects of the account',
-          rechte_scope_account_hint: 'Grants access to every object of this account.',
+          rechte_scope_account_hint:
+            'Grants access to every object of this account.',
           rechte_account_revoke_hint:
             'Access via the account - applies to all its objects and cannot be revoked here.',
           rechte_last_login: 'Last login',
@@ -365,7 +374,8 @@ i18n
           rechte_revoke_title: 'Revoke access?',
           rechte_revoke_message:
             '{{name}} loses access to this object and no longer receives notifications for it.',
-          rechte_summary: '{{account}} via account · {{single}} individually · {{staff}} ProGeo team',
+          rechte_summary:
+            '{{account}} via account · {{single}} individually · {{staff}} ProGeo team',
           rechte_scope_staff: 'ProGeo team (all objects)',
           rechte_staff_hint:
             'ProGeo staff can access every object. Their notifications are set via Objektleitung in the settings tab.',
@@ -378,7 +388,8 @@ i18n
             'Every recipient of this object receives a notification marked as a test. The send is documented in the event history.',
           benach_test_no_recipients: 'No recipients with active notifications.',
           benach_test_send: 'Send test notification',
-          benach_test_sent: '{{ok}}/{{total}} recipient(s) notified successfully.',
+          benach_test_sent:
+            '{{ok}}/{{total}} recipient(s) notified successfully.',
           benach_event_email: 'E-mail',
           benach_event_sms: 'SMS',
           benach_event_triggered: 'Suspected leak detected',
@@ -399,7 +410,8 @@ i18n
           einstell_points_hide: 'Hide thresholds per measuring point',
           einstell_points_sensor: 'Sensor {{sensor}}',
           einstell_points_empty: 'No sensors known for this object yet.',
-          einstell_points_hint: "Leave empty to use the object's alarm threshold.",
+          einstell_points_hint:
+            "Leave empty to use the object's alarm threshold.",
           einstell_points_threshold: 'Threshold',
           einstell_points_inherited: 'inherited',
           einstell_section_system: 'System settings',
@@ -424,6 +436,9 @@ i18n
           topbar_role_nutzer: 'User',
           topbar_role_kundenadmin: 'Customer admin',
           topbar_role_progeo_admin: 'ProGeo admin',
+          privacy_back_to_app: 'Back to the application',
+          privacy_german_only:
+            'This privacy policy is currently available in German only. The German version is legally binding.',
           consent_title: 'Privacy settings',
           consent_intro:
             'We only use technically necessary cookies and browser storage to sign you in and to run this application securely. With your consent, maps additionally load map tiles from external providers. You can change your choice at any time via the info menu (i) in the top bar.',
@@ -470,22 +485,29 @@ i18n
           backup_empty: 'Noch keine Backups vorhanden.',
           backup_load_error: 'Backups konnten nicht geladen werden: {{reason}}',
           backup_download: 'Herunterladen',
-          backup_download_error: 'Backup konnte nicht heruntergeladen werden: {{reason}}',
+          backup_download_error:
+            'Backup konnte nicht heruntergeladen werden: {{reason}}',
           backup_reloaded: 'Backups neu geladen.',
-          backup_reload_error: 'Backups konnten nicht neu geladen werden: {{reason}}',
+          backup_reload_error:
+            'Backups konnten nicht neu geladen werden: {{reason}}',
           backup_created: 'Backup erstellt.',
-          backup_create_error: 'Backup konnte nicht erstellt werden: {{reason}}',
+          backup_create_error:
+            'Backup konnte nicht erstellt werden: {{reason}}',
           backup_deleted: 'Backup gelöscht.',
-          backup_delete_error: 'Backup konnte nicht gelöscht werden: {{reason}}',
+          backup_delete_error:
+            'Backup konnte nicht gelöscht werden: {{reason}}',
           backup_deleted_all: 'Alle Backups wurden gelöscht.',
-          backup_delete_all_error: 'Backups konnten nicht gelöscht werden: {{reason}}',
+          backup_delete_all_error:
+            'Backups konnten nicht gelöscht werden: {{reason}}',
           backup_restored: '"{{name}}" wiederhergestellt.',
-          backup_restore_error: 'Backup konnte nicht wiederhergestellt werden: {{reason}}',
+          backup_restore_error:
+            'Backup konnte nicht wiederhergestellt werden: {{reason}}',
           backup_delete_all_confirm_title: 'Alle Backups löschen?',
           backup_delete_all_confirm_body:
             'Bist du dir wirklich sicher? Dadurch werden alle Backup-Dateien dieses Kontos endgültig gelöscht. Das kann nicht rückgängig gemacht werden.',
           backup_delete_selected: 'Auswahl löschen ({{count}})',
-          backup_delete_selected_confirm_title: '{{count}} ausgewählte Backup(s) löschen?',
+          backup_delete_selected_confirm_title:
+            '{{count}} ausgewählte Backup(s) löschen?',
           backup_delete_selected_confirm_body:
             'Bist du dir wirklich sicher? Dadurch werden die ausgewählten Backup-Dateien endgültig gelöscht. Das kann nicht rückgängig gemacht werden.',
           backup_deleted_selected: '{{count}} Backup(s) gelöscht.',
@@ -696,7 +718,8 @@ i18n
           analyse_export_csv: 'CSV-Export',
           analyse_export_pdf: 'PDF-Report',
           analyse_export_csv_done: 'CSV-Export erstellt — Download gestartet.',
-          analyse_export_pdf_done: 'PDF-Report erstellt und an die Empfänger dieses Objekts versendet.',
+          analyse_export_pdf_done:
+            'PDF-Report erstellt und an die Empfänger dieses Objekts versendet.',
           nav_benach: 'Benachrichtigungen',
           nav_rechte: 'Berechtigungen',
           nav_einstell: 'Einstellungen',
@@ -725,15 +748,18 @@ i18n
           verwaltung_filter_all: 'Alle',
           verwaltung_filter_ok: 'OK',
           anlegen_title: 'Objekt anlegen',
-          anlegen_notice: 'Nur für ProGeo®-Admins. Legt ein neues Objekt unter einem bestehenden Kunden-Account an.',
+          anlegen_notice:
+            'Nur für ProGeo®-Admins. Legt ein neues Objekt unter einem bestehenden Kunden-Account an.',
           anlegen_section_stammdaten: 'Stammdaten',
-          anlegen_section_stammdaten_hint: 'Nummer und Name identifizieren das Objekt im Portal.',
+          anlegen_section_stammdaten_hint:
+            'Nummer und Name identifizieren das Objekt im Portal.',
           anlegen_field_account: 'Account',
           anlegen_field_account_placeholder: 'Account auswählen…',
           anlegen_field_nr: 'Objekt-Nr.',
           anlegen_field_name: 'Objekt-Name',
           anlegen_field_airtable: 'Projekt auf Airtable',
-          anlegen_field_airtable_hint: 'Wird nur als Link gespeichert - es findet kein automatischer Abgleich mit Airtable statt.',
+          anlegen_field_airtable_hint:
+            'Wird nur als Link gespeichert - es findet kein automatischer Abgleich mit Airtable statt.',
           anlegen_section_adresse: 'Adresse',
           anlegen_section_adresse_hint: 'Standort der überwachten Fläche.',
           anlegen_field_address: 'Straße',
@@ -741,7 +767,8 @@ i18n
           anlegen_field_city: 'Stadt',
           anlegen_field_country: 'Land',
           anlegen_section_ansprechpartner: 'Ansprechpartner Kunde',
-          anlegen_section_ansprechpartner_hint: 'Erhält Benachrichtigungen und den Zugang zum Portal.',
+          anlegen_section_ansprechpartner_hint:
+            'Erhält Benachrichtigungen und den Zugang zum Portal.',
           anlegen_field_manager: 'Name',
           anlegen_field_mail: 'E-Mail',
           anlegen_field_telefon: 'Telefon',
@@ -749,11 +776,14 @@ i18n
           anlegen_section_produkt_hint: 'Eingesetzte Sensorik.',
           anlegen_field_project_type: 'Produkt',
           anlegen_section_files: 'Dateien',
-          anlegen_section_files_hint: 'Visualisierung und Koordinatenlisten des Objekts.',
+          anlegen_section_files_hint:
+            'Visualisierung und Koordinatenlisten des Objekts.',
           anlegen_field_visualization: 'Visualisierungsdateien',
-          anlegen_field_visualization_hint: 'Dachaufsicht, Schnitte, Pläne (PDF, DWG, PNG)',
+          anlegen_field_visualization_hint:
+            'Dachaufsicht, Schnitte, Pläne (PDF, DWG, PNG)',
           anlegen_field_coordinates: 'Koordinatenlisten',
-          anlegen_field_coordinates_hint: 'Messpunkt-Koordinaten je Bauteil (CSV, XLSX)',
+          anlegen_field_coordinates_hint:
+            'Messpunkt-Koordinaten je Bauteil (CSV, XLSX)',
           anlegen_choose_files: 'Dateien auswählen',
           anlegen_import_data: 'Daten importieren',
           anlegen_create: 'Objekt anlegen',
@@ -761,7 +791,8 @@ i18n
           anlegen_name_required: 'Bitte mindestens Nummer und Name angeben.',
           anlegen_account_required: 'Bitte einen Account auswählen.',
           anlegen_created: 'Objekt {{nr}} — {{name}} angelegt.',
-          anlegen_import_done: '{{created}} angelegt, {{updated}} aktualisiert.',
+          anlegen_import_done:
+            '{{created}} angelegt, {{updated}} aktualisiert.',
           rechte_title: 'Nutzer dieses Objekts',
           rechte_add_user: 'Nutzer hinzufügen',
           rechte_select_user: 'Nutzer',
@@ -789,7 +820,8 @@ i18n
           rechte_scope: 'Zugriff',
           rechte_scope_single: 'Nur dieses Objekt',
           rechte_scope_account: 'Alle Objekte des Kontos',
-          rechte_scope_account_hint: 'Gewährt Zugriff auf alle Objekte dieses Kontos.',
+          rechte_scope_account_hint:
+            'Gewährt Zugriff auf alle Objekte dieses Kontos.',
           rechte_account_revoke_hint:
             'Zugriff über das Konto – gilt für alle Objekte des Kontos und kann hier nicht entzogen werden.',
           rechte_last_login: 'Letzter Login',
@@ -797,7 +829,8 @@ i18n
           rechte_revoke_title: 'Zugriff entziehen?',
           rechte_revoke_message:
             '{{name}} verliert den Zugriff auf dieses Objekt und erhält keine Benachrichtigungen mehr dazu.',
-          rechte_summary: '{{account}} über das Konto · {{single}} einzeln · {{staff}} ProGeo-Team',
+          rechte_summary:
+            '{{account}} über das Konto · {{single}} einzeln · {{staff}} ProGeo-Team',
           rechte_scope_staff: 'ProGeo-Team (alle Objekte)',
           rechte_staff_hint:
             'ProGeo-Mitarbeitende haben Zugriff auf alle Objekte. Ihre Benachrichtigungen werden über die Objektleitung in den Einstellungen festgelegt.',
@@ -808,9 +841,11 @@ i18n
           benach_test_title: 'Testleckage auslösen',
           benach_test_description:
             'Alle Empfänger dieses Objekts erhalten eine als Test gekennzeichnete Benachrichtigung. Der Versand wird im Ereignisverlauf dokumentiert.',
-          benach_test_no_recipients: 'Keine Empfänger mit aktiver Benachrichtigung.',
+          benach_test_no_recipients:
+            'Keine Empfänger mit aktiver Benachrichtigung.',
           benach_test_send: 'Testbenachrichtigung senden',
-          benach_test_sent: '{{ok}}/{{total}} Empfänger erfolgreich benachrichtigt.',
+          benach_test_sent:
+            '{{ok}}/{{total}} Empfänger erfolgreich benachrichtigt.',
           benach_event_email: 'E-Mail',
           benach_event_sms: 'SMS',
           benach_event_triggered: 'Verdachtsstelle erkannt',
@@ -831,8 +866,10 @@ i18n
           einstell_points_show: 'Schwellwerte je Messpunkt festlegen',
           einstell_points_hide: 'Schwellwerte je Messpunkt ausblenden',
           einstell_points_sensor: 'Sensor {{sensor}}',
-          einstell_points_empty: 'Für dieses Objekt sind noch keine Sensoren bekannt.',
-          einstell_points_hint: 'Leer lassen, um die Alarmschwelle des Objekts zu übernehmen.',
+          einstell_points_empty:
+            'Für dieses Objekt sind noch keine Sensoren bekannt.',
+          einstell_points_hint:
+            'Leer lassen, um die Alarmschwelle des Objekts zu übernehmen.',
           einstell_points_threshold: 'Schwellwert',
           einstell_points_inherited: 'geerbt',
           einstell_section_system: 'Systemeinstellungen',
@@ -857,6 +894,9 @@ i18n
           topbar_role_nutzer: 'Nutzer',
           topbar_role_kundenadmin: 'Kundenadmin',
           topbar_role_progeo_admin: 'ProGeo-Admin',
+          privacy_back_to_app: 'Zurück zur Anwendung',
+          privacy_german_only:
+            'Diese Datenschutzerklärung ist derzeit nur auf Deutsch verfügbar.',
           consent_title: 'Datenschutz-Einstellungen',
           consent_intro:
             'Wir verwenden nur technisch notwendige Cookies und Browser-Speicher, um Sie anzumelden und diese Anwendung sicher zu betreiben. Mit Ihrer Einwilligung laden Karten zusätzlich Kartenkacheln von externen Anbietern. Ihre Auswahl können Sie jederzeit über das Info-Menü (i) in der Kopfleiste ändern.',

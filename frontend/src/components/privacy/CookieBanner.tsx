@@ -9,6 +9,7 @@ import {
 import { Form } from 'react-bootstrap';
 import { X } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router';
 import { PRIVACY_POLICY_URL } from './consent';
 import { useConsent } from './ConsentProvider';
 
@@ -158,14 +159,12 @@ const CookieBanner = () => {
 
       <p id={descId} style={{ margin: '8px 0 14px' }}>
         {t('consent_intro')}{' '}
-        <a
-          href={PRIVACY_POLICY_URL}
-          target="_blank"
-          rel="noopener noreferrer"
+        <Link
+          to={PRIVACY_POLICY_URL}
           style={{ color: 'var(--progeo-blue)', fontWeight: 600 }}
         >
           {t('consent_privacy_policy')}
-        </a>
+        </Link>
       </p>
 
       {showDetails && (
