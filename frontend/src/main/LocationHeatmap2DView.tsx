@@ -3,6 +3,7 @@ import { Button, Card, Container, Spinner } from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
 import { useParams, useSearchParams } from 'react-router';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
+import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig.tsx';
 import SensorHeatmap2D from '../components/device/SensorHeatmap2D.tsx';
 import { type SensorHeatmapLocation } from '../components/device/SensorHeatmap3D.tsx';
@@ -16,6 +17,9 @@ const LocationHeatmap2DView = () => {
   const { id } = useParams();
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
+  const { hasPermission } = usePermissions();
+  // Backend: /v1/location/update/ requires module_locations_edit.
+  const canStoreAlignment = hasPermission('module_locations_edit');
   const [searchParams] = useSearchParams();
   const withSliders =
     searchParams.get('with_sliders') === 'true' ||
@@ -244,13 +248,15 @@ const LocationHeatmap2DView = () => {
                 />
               </div>
               <div className="col-12 d-flex gap-2">
-                <Button
-                  variant="primary"
-                  onClick={saveAlignment}
-                  disabled={saving || !alignment || projectId == null}
-                >
-                  {saving ? 'Storing\u2026' : 'Store alignment'}
-                </Button>
+                {canStoreAlignment && (
+                  <Button
+                    variant="primary"
+                    onClick={saveAlignment}
+                    disabled={saving || !alignment || projectId == null}
+                  >
+                    {saving ? 'Storing\u2026' : 'Store alignment'}
+                  </Button>
+                )}
                 <Button
                   variant="outline-secondary"
                   onClick={resetAlignmentValues}

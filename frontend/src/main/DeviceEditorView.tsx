@@ -9,6 +9,7 @@ import {
 } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
+import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
 import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import RedDropbox from '../components/form/RedDropbox.tsx';
@@ -36,6 +37,10 @@ const DeviceEditorView = () => {
   const navigate = useNavigate();
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
+  const { hasPermission } = usePermissions();
+  // Backend: measure_points (load + store) and upload_cad require
+  // module_devices_edit.
+  const canEdit = hasPermission('module_devices_edit');
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const canvasWrapperRef = useRef<HTMLDivElement | null>(null);
@@ -387,22 +392,28 @@ const DeviceEditorView = () => {
           <ArrowLeft className="me-2" />
           Back to Device
         </Button>
-        <div className="d-flex gap-2">
-          <Button
-            variant={isAddMode ? 'success' : 'outline-success'}
-            onClick={() => setIsAddMode((prev) => !prev)}
-          >
-            <PlusCircle className="me-2" />
-            {isAddMode ? 'Add-Mode On' : 'Add-Mode Off'}
-          </Button>
-          <Button variant="outline-dark" onClick={() => setPoints([])}>
-            Clear
-          </Button>
-          <Button variant="primary" onClick={handleStore} disabled={isStoring}>
-            <Floppy className="me-2" />
-            {isStoring ? 'Storing...' : 'Store'}
-          </Button>
-        </div>
+        {canEdit && (
+          <div className="d-flex gap-2">
+            <Button
+              variant={isAddMode ? 'success' : 'outline-success'}
+              onClick={() => setIsAddMode((prev) => !prev)}
+            >
+              <PlusCircle className="me-2" />
+              {isAddMode ? 'Add-Mode On' : 'Add-Mode Off'}
+            </Button>
+            <Button variant="outline-dark" onClick={() => setPoints([])}>
+              Clear
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleStore}
+              disabled={isStoring}
+            >
+              <Floppy className="me-2" />
+              {isStoring ? 'Storing...' : 'Store'}
+            </Button>
+          </div>
+        )}
       </div>
 
       <Card>
@@ -426,28 +437,30 @@ const DeviceEditorView = () => {
           </div>
         </Card.Header>
         <Card.Body>
-          <RedDropbox
-            auth={auth}
-            url={`/v1/status/measure_points/upload_cad/?device_id=${encodeURIComponent(String(id || ''))}`}
-            accept="cad"
-            maxSizeMB={150}
-            withPreview={false}
-            instantFileUpload={true}
-            callBackProcessing={(data) => {
-              const incoming = Array.isArray(data?.points) ? data.points : [];
-              const loaded = incoming.map((point: any, index: number) => ({
-                id: index + 1,
-                x: clamp(Number(point.x) * CANVAS_WIDTH, 0, CANVAS_WIDTH),
-                y: clamp(Number(point.y) * CANVAS_HEIGHT, 0, CANVAS_HEIGHT),
-                reference: !!point.reference,
-              }));
-              setPoints(markReferencePoint(loaded));
-              showSuccessBar(
-                enqueueSnackbar,
-                `Imported ${loaded.length} point(s) from CAD`,
-              );
-            }}
-          />
+          {canEdit && (
+            <RedDropbox
+              auth={auth}
+              url={`/v1/status/measure_points/upload_cad/?device_id=${encodeURIComponent(String(id || ''))}`}
+              accept="cad"
+              maxSizeMB={150}
+              withPreview={false}
+              instantFileUpload={true}
+              callBackProcessing={(data) => {
+                const incoming = Array.isArray(data?.points) ? data.points : [];
+                const loaded = incoming.map((point: any, index: number) => ({
+                  id: index + 1,
+                  x: clamp(Number(point.x) * CANVAS_WIDTH, 0, CANVAS_WIDTH),
+                  y: clamp(Number(point.y) * CANVAS_HEIGHT, 0, CANVAS_HEIGHT),
+                  reference: !!point.reference,
+                }));
+                setPoints(markReferencePoint(loaded));
+                showSuccessBar(
+                  enqueueSnackbar,
+                  `Imported ${loaded.length} point(s) from CAD`,
+                );
+              }}
+            />
+          )}
 
           <div
             ref={canvasWrapperRef}

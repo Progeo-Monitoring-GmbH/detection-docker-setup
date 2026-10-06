@@ -6,6 +6,7 @@ import { useSnackbar } from 'notistack';
 import { useNavigate } from 'react-router';
 
 import { useAuth } from '../../hooks/CoreAuthProvider';
+import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
 import { showRequestError } from '../components/ui/Snackbar.jsx';
 import MeasurementSamplesCompareChart, {
@@ -44,6 +45,14 @@ const ROW_STYLES = {
 
 const LocationsOverview = () => {
   const auth = useAuth();
+  const { hasPermission } = usePermissions();
+  // Backend: PATCH /v1/location/{id}/ requires module_locations_edit.
+  const canEdit = hasPermission('module_locations_edit');
+  // Deleting goes through the Django admin, which needs a staff account on
+  // top of the module permission.
+  const canDelete =
+    hasPermission('module_locations_delete') &&
+    Boolean((auth?.user as { is_staff?: boolean } | null)?.is_staff);
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
   // Only auto-forward on the very first load (an account with a single
@@ -413,28 +422,32 @@ const LocationsOverview = () => {
       width: '300px',
       cell: (row) => (
         <div className="d-flex gap-2">
-          <Button
-            size="sm"
-            variant="outline-primary"
-            title="Edit location"
-            onClick={(event) => {
-              event.stopPropagation();
-              openEditModal(row);
-            }}
-          >
-            <i className="bi bi-pencil"></i>
-          </Button>
-          <Button
-            size="sm"
-            variant="outline-danger"
-            title="Open in Django admin for delete"
-            href={`${import.meta.env.VITE_BACKEND_URL}/aadmin/progeo/progeolocation/${row.id}/delete/`}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(event) => event.stopPropagation()}
-          >
-            Delete
-          </Button>
+          {canEdit && (
+            <Button
+              size="sm"
+              variant="outline-primary"
+              title="Edit location"
+              onClick={(event) => {
+                event.stopPropagation();
+                openEditModal(row);
+              }}
+            >
+              <i className="bi bi-pencil"></i>
+            </Button>
+          )}
+          {canDelete && (
+            <Button
+              size="sm"
+              variant="outline-danger"
+              title="Open in Django admin for delete"
+              href={`${import.meta.env.VITE_BACKEND_URL}/aadmin/progeo/progeolocation/${row.id}/delete/`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(event) => event.stopPropagation()}
+            >
+              Delete
+            </Button>
+          )}
           <Button
             size="sm"
             variant="outline-warning"

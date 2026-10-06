@@ -194,13 +194,14 @@ class StaffUserDetailView(APIView):
         denied_codes = []
         update_fields = []
 
-        # Email
+        # Email (optional, like on create - empty clears it)
         if "email" in data:
             email = (data.get("email") or "").strip()
-            try:
-                validate_email(email)
-            except ValidationError:
-                return RequestFailed({"reason": "invalid email address"})
+            if email:
+                try:
+                    validate_email(email)
+                except ValidationError:
+                    return RequestFailed({"reason": "invalid email address"})
             user.email = email
             update_fields.append("email")
 

@@ -194,7 +194,7 @@ def test_update_accepts_put_and_patch(api_client, staff, method):
     assert _user(target.pk).email == "p@example.com"
 
 
-@pytest.mark.parametrize("email", ["", "nope", None])
+@pytest.mark.parametrize("email", ["nope", "a@", "@b.de"])
 def test_update_rejects_invalid_email(api_client, staff, email):
     target = f.make_user(email="keep@example.com")
 
@@ -202,6 +202,16 @@ def test_update_rejects_invalid_email(api_client, staff, email):
 
     assert response.status_code == 400
     assert _user(target.pk).email == "keep@example.com"
+
+
+@pytest.mark.parametrize("email", ["", "   ", None])
+def test_update_with_empty_email_clears_it(api_client, staff, email):
+    target = f.make_user(email="old@example.com")
+
+    body = api_client.post(f"{BASE}{target.pk}/update/", {"email": email}, format="json").json()
+
+    assert body["success"] is True
+    assert _user(target.pk).email == ""
 
 
 def test_update_unknown_user(api_client, staff):

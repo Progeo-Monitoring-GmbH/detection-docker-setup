@@ -63,10 +63,11 @@ const AppSidebar = () => {
   ];
   const showAdminGroup = adminItems.some((item) => item.visible);
 
-  // Unconditional today (Navbar.jsx never gated the Tools menu) - kept that way.
+  // Mostly unconditional (Navbar.jsx never gated the Tools menu); the
+  // Lageplan wizard only works with module_devices_edit (measure_points).
   const toolItems: Item[] = [
     { key: 'factory', label: 'Factory', icon: Map, to: '/factory/', visible: true },
-    { key: 'lageplan', label: 'Lageplan Wizard', icon: Layers, to: '/lageplan/wizard/', visible: true },
+    { key: 'lageplan', label: 'Lageplan Wizard', icon: Layers, to: '/lageplan/wizard/', visible: hasPermission('module_devices_edit') },
     { key: 'map', label: 'Map', icon: Geo, to: '/map/', visible: true },
     { key: 'legacy', label: 'Legacy Import', icon: FileEarmarkText, to: '/legacy/import/', visible: true },
     { key: 'ws-debug', label: 'WS Debug', icon: Broadcast, to: '/ws-debug', visible: true },

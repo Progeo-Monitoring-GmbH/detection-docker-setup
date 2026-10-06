@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
+import usePermissions from '../../hooks/usePermissions';
 import {
   Button,
   Container,
@@ -147,6 +148,9 @@ const DeviceDetailView = () => {
   const navigate = useNavigate();
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
+  const { hasPermission } = usePermissions();
+  // Backend: config/upload requires module_devices_edit.
+  const canEdit = hasPermission('module_devices_edit');
 
   const [device, setDevice] = useState<DeviceModel | null>(null);
   const [loading, setLoading] = useState(false);
@@ -495,14 +499,16 @@ const DeviceDetailView = () => {
                 {loadingConfig ? 'Loading...' : 'Load Config'}
               </Button>
 
-              <Button
-                type="button"
-                variant="success"
-                onClick={handleSaveConfig}
-                disabled={savingConfig || loadingConfig}
-              >
-                {savingConfig ? 'Saving...' : 'Save Config'}
-              </Button>
+              {canEdit && (
+                <Button
+                  type="button"
+                  variant="success"
+                  onClick={handleSaveConfig}
+                  disabled={savingConfig || loadingConfig}
+                >
+                  {savingConfig ? 'Saving...' : 'Save Config'}
+                </Button>
+              )}
             </div>
           </Form>
         </Card.Body>

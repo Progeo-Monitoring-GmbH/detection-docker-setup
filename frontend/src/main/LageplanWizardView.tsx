@@ -14,6 +14,7 @@ import { Typeahead } from 'react-bootstrap-typeahead';
 import RedDropbox from '../components/form/RedDropbox.tsx';
 import ImageCanvasStage from '../components/ui/ImageCanvasStage.tsx';
 import { useAuth } from '../../hooks/CoreAuthProvider';
+import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
 import { getBackendUrl } from '../backendUrl';
 import type { SensorHeatmapLageplanData } from '../components/device/SensorHeatmap3D';
@@ -64,6 +65,12 @@ const getFileExt = (name: string) => name.split('.').pop()?.toLowerCase() ?? '';
 
 const LageplanWizardView = () => {
   const auth = useAuth();
+  const { hasPermission, isLoading: permissionsLoading } = usePermissions();
+  // Backend: every measure_points endpoint (load + uploads) requires
+  // module_devices_edit; storing the alignment (/v1/location/update/)
+  // requires module_locations_edit.
+  const canEditDevices = hasPermission('module_devices_edit');
+  const canEditLocation = hasPermission('module_locations_edit');
   const [step, setStep] = useState<WizardStep>(1);
   const [selectedLocationId, setSelectedLocationId] = useState<number | null>(
     null,
@@ -442,13 +449,23 @@ const LageplanWizardView = () => {
             fileName={sourceMeta.fileName}
             locationId={selectedLocationId}
             measurePoints={measurePoints}
-            withSliders
-            onSaveSliders={handleSaveSliders}
+            withSliders={canEditLocation}
+            onSaveSliders={canEditLocation ? handleSaveSliders : undefined}
           />
         )}
       </Card.Body>
     </Card>
   );
+
+  if (!permissionsLoading && !canEditDevices) {
+    return (
+      <Container className="py-4">
+        <Alert variant="warning" className="mb-0">
+          You do not have permission to edit measure points.
+        </Alert>
+      </Container>
+    );
+  }
 
   return (
     <Container className="py-4">

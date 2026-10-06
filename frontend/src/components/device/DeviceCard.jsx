@@ -10,7 +10,14 @@ import { useNavigate } from 'react-router';
 import { prettyDate } from '../../helper';
 import '../ui/css/DeviceCard.css';
 
-const DeviceCard = ({ device, onIdentify, onDelete, loading }) => {
+const DeviceCard = ({
+  device,
+  onIdentify,
+  onDelete,
+  loading,
+  canEdit = true,
+  canDelete = true,
+}) => {
   const navigate = useNavigate();
 
   return (
@@ -75,25 +82,29 @@ const DeviceCard = ({ device, onIdentify, onDelete, loading }) => {
             Identify
           </Button>
 
-          <Button
-            variant="outline-warning"
-            size="sm"
-            onClick={() => navigate(`/device/${device.id}/update`)}
-            title="Update device settings"
-          >
-            <PencilSquare className="me-1" />
-            Edit
-          </Button>
+          {canEdit && (
+            <Button
+              variant="outline-warning"
+              size="sm"
+              onClick={() => navigate(`/device/${device.id}/update`)}
+              title="Update device settings"
+            >
+              <PencilSquare className="me-1" />
+              Edit
+            </Button>
+          )}
 
-          <Button
-            variant="outline-info"
-            size="sm"
-            onClick={() => navigate(`/device/${device.id}/editor/`)}
-            title="Open sensor editor"
-          >
-            <Image className="me-1" />
-            Editor
-          </Button>
+          {canEdit && (
+            <Button
+              variant="outline-info"
+              size="sm"
+              onClick={() => navigate(`/device/${device.id}/editor/`)}
+              title="Open sensor editor"
+            >
+              <Image className="me-1" />
+              Editor
+            </Button>
+          )}
 
           <Button
             variant="outline-primary"
@@ -104,16 +115,18 @@ const DeviceCard = ({ device, onIdentify, onDelete, loading }) => {
             Details
           </Button>
 
-          <Button
-            variant="outline-danger"
-            size="sm"
-            onClick={() => onDelete(device.id)}
-            disabled={loading}
-            title="Delete device"
-          >
-            <Trash className="me-1" />
-            Delete
-          </Button>
+          {canDelete && (
+            <Button
+              variant="outline-danger"
+              size="sm"
+              onClick={() => onDelete(device.id)}
+              disabled={loading}
+              title="Delete device"
+            >
+              <Trash className="me-1" />
+              Delete
+            </Button>
+          )}
         </div>
       </Card.Body>
     </Card>

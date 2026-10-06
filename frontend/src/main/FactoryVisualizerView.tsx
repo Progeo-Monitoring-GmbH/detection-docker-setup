@@ -9,6 +9,7 @@ import {
 import { Alert, Button, Card, Col, Container, Row } from 'react-bootstrap';
 import RedDropbox from '../components/form/RedDropbox.tsx';
 import { useAuth } from '../../hooks/CoreAuthProvider';
+import usePermissions from '../../hooks/usePermissions';
 
 type FactoryPoint = {
   pos: number;
@@ -164,6 +165,7 @@ const parseSemicolonPointsText = (text: string): FactoryPoint[] => {
 
 const FactoryVisualizerView = () => {
   const auth = useAuth();
+  const { hasPermission } = usePermissions();
   const [points, setPoints] = useState<FactoryPoint[]>([]);
   const [sourceName, setSourceName] = useState<string>('');
   const [error, setError] = useState<string>('');
@@ -542,14 +544,17 @@ const FactoryVisualizerView = () => {
           <Card>
             <Card.Header>Import JSON/TXT</Card.Header>
             <Card.Body>
-              <RedDropbox
-                auth={auth}
-                url="/v1/status/measure_points/upload_cad/"
-                accept="doc"
-                withPreview={false}
-                instantFileUpload={false}
-                callBackProcessing={handleImportedData}
-              />
+              {/* Backend: upload_cad requires module_devices_edit. */}
+              {hasPermission('module_devices_edit') && (
+                <RedDropbox
+                  auth={auth}
+                  url="/v1/status/measure_points/upload_cad/"
+                  accept="doc"
+                  withPreview={false}
+                  instantFileUpload={false}
+                  callBackProcessing={handleImportedData}
+                />
+              )}
 
               <div className="d-flex gap-2 mt-2">
                 <Button

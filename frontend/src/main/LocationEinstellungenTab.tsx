@@ -87,7 +87,14 @@ const LocationEinstellungenTab = () => {
   const { hasPermission } = usePermissions();
   const { t } = useTranslation();
 
+  // Each setting is gated by the permission its endpoint checks:
+  // PATCH /v1/location/ + measurepoints -> module_locations_edit,
+  // PATCH /v1/device/ -> module_devices_edit, access (Objektleitung)
+  // -> module_notifications_add (assign) / module_notifications_edit (remove).
   const canEdit = hasPermission('module_locations_edit');
+  const canEditDevices = hasPermission('module_devices_edit');
+  const canAssignStaff = hasPermission('module_notifications_add');
+  const canRemoveStaff = hasPermission('module_notifications_edit');
 
   // -- Schwellwerte ---------------------------------------------------
   const [threshold, setThreshold] = useState(
@@ -505,7 +512,7 @@ const LocationEinstellungenTab = () => {
                   <LabeledInput
                     label={t('einstell_product')}
                     value={device.hardware || ''}
-                    readOnly={!canEdit}
+                    readOnly={!canEditDevices}
                     onChange={(value) =>
                       setDevices((prev) =>
                         prev.map((d) =>
@@ -530,7 +537,7 @@ const LocationEinstellungenTab = () => {
                     </span>
                     <select
                       value={device.pull_resistance ?? ''}
-                      disabled={!canEdit}
+                      disabled={!canEditDevices}
                       onChange={(event) =>
                         saveDeviceField(
                           device,
@@ -558,7 +565,7 @@ const LocationEinstellungenTab = () => {
                     </select>
                   </label>
                 </div>
-                {canEdit && (
+                {canEditDevices && (
                   <div style={{ marginTop: 10 }}>
                     <PillButton
                       label={t('einstell_save')}
@@ -643,7 +650,7 @@ const LocationEinstellungenTab = () => {
                       {rule.user_email}
                     </div>
                   </div>
-                  {canEdit && (
+                  {canRemoveStaff && (
                     <PillButton
                       variant="ghost"
                       label={t('rechte_revoke')}
@@ -657,7 +664,7 @@ const LocationEinstellungenTab = () => {
                   {t('einstell_objektleitung_empty')}
                 </span>
               )}
-              {canEdit && (
+              {canAssignStaff && (
                 <div
                   style={{
                     display: 'flex',

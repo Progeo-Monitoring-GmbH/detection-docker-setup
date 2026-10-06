@@ -4,6 +4,7 @@ import { useParams } from 'react-router';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
+import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
 import { errorReason, showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import PanelCard from '../components/ui/kit/PanelCard';
@@ -106,6 +107,9 @@ const BackupView = () => {
   const { account } = useParams();
   const { t } = useTranslation();
   const { enqueueSnackbar } = useSnackbar();
+  const { hasPermission } = usePermissions();
+  // Backend: delete/deleteAll require module_backup_delete.
+  const canDelete = hasPermission('module_backup_delete');
 
   const [backups, setBackups] = useState<BackupRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -368,18 +372,20 @@ const BackupView = () => {
           >
             {t('backup_restore')}
           </button>
-          <button
-            type="button"
-            onClick={() => deleteBackup(row)}
-            disabled={isBulkBusy || busyAction === `delete-${row.id}`}
-            style={{
-              ...smallActionButtonStyle(isBulkBusy || busyAction === `delete-${row.id}`),
-              background: '#FBEAE4',
-              color: '#C44D26',
-            }}
-          >
-            {t('backup_delete')}
-          </button>
+          {canDelete && (
+            <button
+              type="button"
+              onClick={() => deleteBackup(row)}
+              disabled={isBulkBusy || busyAction === `delete-${row.id}`}
+              style={{
+                ...smallActionButtonStyle(isBulkBusy || busyAction === `delete-${row.id}`),
+                background: '#FBEAE4',
+                color: '#C44D26',
+              }}
+            >
+              {t('backup_delete')}
+            </button>
+          )}
         </div>
       ),
       width: '260px',
@@ -403,16 +409,18 @@ const BackupView = () => {
           >
             {t('backup_create')}
           </button>
-          <button
-            type="button"
-            onClick={() => setConfirmOpen(true)}
-            disabled={isBulkBusy}
-            style={buttonStyle('danger', isBulkBusy)}
-          >
-            {hasSelection
-              ? t('backup_delete_selected', { count: selectedRows.length })
-              : t('backup_delete_all')}
-          </button>
+          {canDelete && (
+            <button
+              type="button"
+              onClick={() => setConfirmOpen(true)}
+              disabled={isBulkBusy}
+              style={buttonStyle('danger', isBulkBusy)}
+            >
+              {hasSelection
+                ? t('backup_delete_selected', { count: selectedRows.length })
+                : t('backup_delete_all')}
+            </button>
+          )}
         </div>
       </PanelCard>
 
@@ -455,7 +463,8 @@ const BackupView = () => {
           progressPending={loading}
           highlightOnHover
           dense
-          selectableRows
+          // Row selection only feeds "delete selected".
+          selectableRows={canDelete}
           onSelectedRowsChange={({ selectedRows: rows }) => setSelectedRows(rows)}
           clearSelectedRows={clearSelectionToggle}
           noDataComponent={

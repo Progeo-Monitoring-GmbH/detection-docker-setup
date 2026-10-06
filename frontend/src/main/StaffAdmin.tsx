@@ -19,10 +19,17 @@ import {
 import DataTable from 'react-data-table-component';
 import type { TableColumn } from 'react-data-table-component';
 import { useSnackbar } from 'notistack';
+import { Trans, useTranslation } from 'react-i18next';
 
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
-import { errorReason, showErrorBar, showInfoBar, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import {
+  errorReason,
+  showErrorBar,
+  showInfoBar,
+  showRequestError,
+  showSuccessBar,
+} from '../components/ui/Snackbar.jsx';
 
 type PermissionDef = {
   code: string;
@@ -88,6 +95,7 @@ const UserFormModal = ({
   onSave: (data: Record<string, unknown>) => void;
   onGeneratePassword?: (user: StaffUser) => void;
 }) => {
+  const { t } = useTranslation();
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -140,16 +148,16 @@ const UserFormModal = ({
         <Form>
           {isNew && (
             <Form.Group className="mb-3">
-              <Form.Label>Username</Form.Label>
+              <Form.Label>{t('staff_field_username')}</Form.Label>
               <Form.Control
                 value={username}
                 onChange={(event) => setUsername(event.target.value)}
-                placeholder="login name"
+                placeholder={t('staff_field_username_placeholder')}
               />
             </Form.Group>
           )}
           <Form.Group className="mb-3">
-            <Form.Label>Email address</Form.Label>
+            <Form.Label>{t('staff_field_email')}</Form.Label>
             <Form.Control
               type="email"
               value={email}
@@ -159,12 +167,12 @@ const UserFormModal = ({
           </Form.Group>
           {isNew && (
             <Form.Group className="mb-3">
-              <Form.Label>Initial password</Form.Label>
+              <Form.Label>{t('staff_field_password')}</Form.Label>
               <Form.Control
                 type="text"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                placeholder="leave empty to generate one"
+                placeholder={t('staff_field_password_placeholder')}
               />
             </Form.Group>
           )}
@@ -173,23 +181,23 @@ const UserFormModal = ({
             <Form.Check
               type="switch"
               id="staff-switch"
-              label="Staff member"
+              label={t('staff_field_is_staff')}
               checked={isStaff}
               onChange={(event) => setIsStaff(event.target.checked)}
             />
             <Form.Check
               type="switch"
               id="active-switch"
-              label="Active"
+              label={t('staff_field_is_active')}
               checked={isActive}
               onChange={(event) => setIsActive(event.target.checked)}
             />
           </div>
 
           <Form.Label className="d-block">
-            Permissions{' '}
+            {t('staff_field_permissions')}{' '}
             <small className="text-muted">
-              (only permissions you have yourself can be granted)
+              {t('staff_field_permissions_hint')}
             </small>
           </Form.Label>
           <div
@@ -197,7 +205,7 @@ const UserFormModal = ({
             style={{ maxHeight: 220, overflowY: 'auto' }}
           >
             {permissionDefs.length === 0 && (
-              <small className="text-muted">No permissions available.</small>
+              <small className="text-muted">{t('staff_no_permissions')}</small>
             )}
             {permissionDefs.map((def) => {
               const grantable = grantableCodes.includes(def.code);
@@ -216,7 +224,7 @@ const UserFormModal = ({
           </div>
           {grantableCodes.length === 0 && (
             <small className="text-muted">
-              You have no grantable permissions yourself.
+              {t('staff_no_grantable_permissions')}
             </small>
           )}
         </Form>
@@ -228,14 +236,14 @@ const UserFormModal = ({
             onClick={() => onGeneratePassword(user)}
           >
             <Key className="me-1" />
-            Generate password
+            {t('staff_generate_password')}
           </Button>
         )}
         <Button variant="secondary" onClick={onHide}>
-          Cancel
+          {t('staff_cancel')}
         </Button>
         <Button variant="primary" onClick={handleSubmit}>
-          Save
+          {t('staff_save')}
         </Button>
       </Modal.Footer>
     </Modal>
@@ -252,30 +260,38 @@ const PasswordResultModal = ({
   onHide: () => void;
   username: string;
   password: string;
-}) => (
-  <Modal show={show} onHide={onHide} centered>
-    <Modal.Header closeButton>
-      <Modal.Title>Generated password</Modal.Title>
-    </Modal.Header>
-    <Modal.Body>
-      <p>
-        New password for <strong>{username}</strong> (shown only once):
-      </p>
-      <Form.Control
-        readOnly
-        value={password}
-        onFocus={(event) => event.target.select()}
-      />
-    </Modal.Body>
-    <Modal.Footer>
-      <Button variant="primary" onClick={onHide}>
-        Close
-      </Button>
-    </Modal.Footer>
-  </Modal>
-);
+}) => {
+  const { t } = useTranslation();
+  return (
+    <Modal show={show} onHide={onHide} centered>
+      <Modal.Header closeButton>
+        <Modal.Title>{t('staff_password_result_title')}</Modal.Title>
+      </Modal.Header>
+      <Modal.Body>
+        <p>
+          <Trans
+            i18nKey="staff_password_result_text"
+            values={{ username }}
+            components={{ strong: <strong /> }}
+          />
+        </p>
+        <Form.Control
+          readOnly
+          value={password}
+          onFocus={(event) => event.target.select()}
+        />
+      </Modal.Body>
+      <Modal.Footer>
+        <Button variant="primary" onClick={onHide}>
+          {t('staff_close')}
+        </Button>
+      </Modal.Footer>
+    </Modal>
+  );
+};
 
 const StaffAdmin = () => {
+  const { t } = useTranslation();
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
 
@@ -304,11 +320,11 @@ const StaffAdmin = () => {
         setLoading(false);
       },
       (error) => {
-        showRequestError(enqueueSnackbar, 'Could not load users', error);
+        showRequestError(enqueueSnackbar, t('staff_load_error'), error);
         setLoading(false);
       },
     );
-  }, [auth, enqueueSnackbar]);
+  }, [auth, enqueueSnackbar, t]);
 
   useEffect(() => {
     if (isStaff) {
@@ -336,7 +352,7 @@ const StaffAdmin = () => {
           if (denied.length > 0) {
             showInfoBar(
               enqueueSnackbar,
-              `Denied permissions (not held by you): ${denied.join(', ')}`,
+              t('staff_denied_permissions', { codes: denied.join(', ') }),
             );
           }
           if (generated) {
@@ -347,7 +363,7 @@ const StaffAdmin = () => {
           }
           showSuccessBar(
             enqueueSnackbar,
-            isNew ? 'User created.' : 'User updated.',
+            isNew ? t('staff_user_created') : t('staff_user_updated'),
           );
           setShowCreate(false);
           setEditUser(null);
@@ -358,7 +374,9 @@ const StaffAdmin = () => {
           const reason = errorReason(error);
           showErrorBar(
             enqueueSnackbar,
-            `${isNew ? 'Could not create user' : 'Could not update user'}: ${reason}`,
+            isNew
+              ? t('staff_create_error', { reason })
+              : t('staff_update_error', { reason }),
           );
           setBusyId(null);
         },
@@ -379,7 +397,7 @@ const StaffAdmin = () => {
         setBusyId(null);
       },
       (error) => {
-        showRequestError(enqueueSnackbar, 'Could not reset password', error);
+        showRequestError(enqueueSnackbar, t('staff_password_error'), error);
         setBusyId(null);
       },
     );
@@ -387,7 +405,7 @@ const StaffAdmin = () => {
 
   const handleDelete = (user: StaffUser) => {
     if (
-      !window.confirm(`Delete user "${user.username}"? This cannot be undone.`)
+      !window.confirm(t('staff_delete_confirm', { username: user.username }))
     ) {
       return;
     }
@@ -399,13 +417,15 @@ const StaffAdmin = () => {
       (result) => {
         showSuccessBar(
           enqueueSnackbar,
-          `User "${result?.data?.deleted || user.username}" deleted.`,
+          t('staff_user_deleted', {
+            username: result?.data?.deleted || user.username,
+          }),
         );
         setBusyId(null);
         fetchUsers();
       },
       (error) => {
-        showRequestError(enqueueSnackbar, 'Could not delete user', error);
+        showRequestError(enqueueSnackbar, t('staff_delete_error'), error);
         setBusyId(null);
       },
     );
@@ -414,7 +434,7 @@ const StaffAdmin = () => {
   const columns = useMemo<TableColumn<StaffUser>[]>(
     () => [
       {
-        name: 'Username',
+        name: t('staff_col_username'),
         selector: (row) => row.username,
         sortable: true,
         cell: (row) => (
@@ -427,38 +447,42 @@ const StaffAdmin = () => {
         ),
       },
       {
-        name: 'Email',
+        name: t('staff_col_email'),
         selector: (row) => row.email || '-',
         sortable: true,
       },
       {
-        name: 'Staff',
+        name: t('staff_col_staff'),
         cell: (row) =>
           row.is_staff ? (
             <Badge bg="warning" text="dark">
-              staff
+              {t('staff_badge_staff')}
             </Badge>
           ) : (
-            <Badge bg="secondary">user</Badge>
+            <Badge bg="secondary">{t('staff_badge_user')}</Badge>
           ),
         width: '80px',
       },
       {
-        name: 'Active',
+        name: t('staff_col_active'),
         cell: (row) =>
           row.is_active ? (
-            <Badge bg="success">active</Badge>
+            <Badge bg="success">{t('staff_badge_active')}</Badge>
           ) : (
-            <Badge bg="danger">inactive</Badge>
+            <Badge bg="danger">{t('staff_badge_inactive')}</Badge>
           ),
         width: '90px',
       },
       {
-        name: 'Permissions',
+        name: t('staff_col_permissions'),
         cell: (row) => {
           const enabled = rowPermissions(row);
           if (enabled.length === 0) {
-            return <span className="text-muted small">none</span>;
+            return (
+              <span className="text-muted small">
+                {t('staff_permissions_none')}
+              </span>
+            );
           }
           return (
             <span className="d-flex flex-wrap gap-1">
@@ -477,14 +501,14 @@ const StaffAdmin = () => {
         },
       },
       {
-        name: 'Actions',
+        name: t('staff_col_actions'),
         width: '180px',
         cell: (row) => (
           <span className="d-flex gap-1">
             <Button
               size="sm"
               variant="outline-primary"
-              title="Edit user"
+              title={t('staff_edit_user')}
               disabled={busyId === row.id}
               onClick={() => setEditUser(row)}
             >
@@ -493,7 +517,7 @@ const StaffAdmin = () => {
             <Button
               size="sm"
               variant="outline-warning"
-              title="Generate new password"
+              title={t('staff_generate_new_password')}
               disabled={busyId === row.id}
               onClick={() => handleGeneratePassword(row)}
             >
@@ -502,7 +526,7 @@ const StaffAdmin = () => {
             <Button
               size="sm"
               variant="outline-danger"
-              title="Delete user"
+              title={t('staff_delete_user')}
               disabled={busyId === row.id}
               onClick={() => handleDelete(row)}
             >
@@ -513,7 +537,7 @@ const StaffAdmin = () => {
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [busyId],
+    [busyId, t],
   );
 
   if (!isStaff) {
@@ -522,10 +546,8 @@ const StaffAdmin = () => {
         <Card className="border-0 shadow-sm my-5">
           <Card.Body className="text-center py-5">
             <ShieldLock size={40} className="text-muted mb-3" />
-            <h5>Staff access required</h5>
-            <p className="text-muted mb-0">
-              You need a staff account to manage users.
-            </p>
+            <h5>{t('staff_access_required')}</h5>
+            <p className="text-muted mb-0">{t('staff_access_required_hint')}</p>
           </Card.Body>
         </Card>
       </Container>
@@ -539,7 +561,7 @@ const StaffAdmin = () => {
           <div className="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
             <h5 className="mb-0">
               <ShieldLock className="me-2 text-warning" />
-              Staff Admin
+              {t('staff_title')}
             </h5>
             <div className="d-flex gap-2">
               <Button
@@ -548,7 +570,7 @@ const StaffAdmin = () => {
                 onClick={fetchUsers}
               >
                 <ArrowRepeat className="me-1" />
-                Refresh
+                {t('staff_refresh')}
               </Button>
               <Button
                 variant="primary"
@@ -556,7 +578,7 @@ const StaffAdmin = () => {
                 onClick={() => setShowCreate(true)}
               >
                 <PersonPlus className="me-1" />
-                Add user
+                {t('staff_add_user')}
               </Button>
             </div>
           </div>
@@ -571,7 +593,7 @@ const StaffAdmin = () => {
             progressComponent={
               <div className="d-flex align-items-center gap-2 text-muted py-4">
                 <Spinner size="sm" animation="border" />
-                Loading users...
+                {t('staff_loading')}
               </div>
             }
             highlightOnHover
@@ -584,7 +606,7 @@ const StaffAdmin = () => {
       <UserFormModal
         show={showCreate}
         onHide={() => setShowCreate(false)}
-        title="Add user"
+        title={t('staff_add_user')}
         user={null}
         isNew
         grantableCodes={response.grantable_codes}
@@ -595,7 +617,9 @@ const StaffAdmin = () => {
       <UserFormModal
         show={editUser != null}
         onHide={() => setEditUser(null)}
-        title={`Edit user: ${editUser?.username || ''}`}
+        title={t('staff_edit_user_title', {
+          username: editUser?.username || '',
+        })}
         user={editUser}
         isNew={false}
         grantableCodes={response.grantable_codes}

@@ -1,5 +1,6 @@
 import { useContext, useEffect, useState } from 'react';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
+import usePermissions from '../../hooks/usePermissions';
 import { Button, Row, Col, Spinner } from 'react-bootstrap';
 import axiosConfig from '../axiosConfig';
 import { defaultErrorCallback } from '../helper.jsx';
@@ -19,6 +20,7 @@ const DeviceListView = () => {
   const wsMessage = ctx.wsMessage;
   const [show, setShow] = useContext(CoreModalContext);
   const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
+  const { hasPermission } = usePermissions();
 
   const fetchDevices = async () => {
     setLoading(true);
@@ -239,6 +241,8 @@ const DeviceListView = () => {
                 onIdentify={handleIdentify}
                 onDelete={handleDelete}
                 loading={loading}
+                canEdit={hasPermission('module_devices_edit')}
+                canDelete={hasPermission('module_devices_delete')}
               />
             </Col>
           ))}
