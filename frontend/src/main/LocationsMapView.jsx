@@ -23,6 +23,8 @@ import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
 import { showInfoBar, showRequestError } from '../components/ui/Snackbar.jsx';
+import { useConsent } from '../components/privacy/ConsentProvider';
+import MapConsentNotice from '../components/privacy/MapConsentNotice';
 
 const DEFAULT_CENTER = [51.1657, 10.4515];
 const FLASH_DURATION_MS = 30000;
@@ -226,6 +228,7 @@ const blendHexColor = (fromHex, toHex, t) => {
 
 const LocationsMapView = () => {
   const auth = useAuth();
+  const { allows } = useConsent();
   const { enqueueSnackbar } = useSnackbar();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -419,7 +422,7 @@ const LocationsMapView = () => {
                 {rows.length} total
               </span>
             </Card.Header>
-            <Card.Body style={{ padding: 0 }}>
+            <Card.Body style={{ padding: 0, position: 'relative' }}>
               {loading ? (
                 <div
                   className="d-flex justify-content-center align-items-center"
@@ -434,10 +437,12 @@ const LocationsMapView = () => {
                   style={{ height: '100vh', width: '100%' }}
                   scrollWheelZoom
                 >
-                  <TileLayer
-                    attribution="Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community"
-                    url={TILE_URL}
-                  />
+                  {allows('externalMaps') && (
+                    <TileLayer
+                      attribution="Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community"
+                      url={TILE_URL}
+                    />
+                  )}
                   <MapViewportController
                     markers={mappableRows}
                     selectedLocation={selectedLocation}
@@ -518,6 +523,7 @@ const LocationsMapView = () => {
                   })}
                 </MapContainer>
               )}
+              {!loading && <MapConsentNotice placement="top" />}
             </Card.Body>
           </Card>
         </Col>

@@ -5,6 +5,8 @@ import { useAuth } from '../../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../../axiosConfig';
 import { useProgeoRole, type ProgeoRole } from '../../main/roleModel';
 import { UserProfileModal } from '../../main/UserProfile.tsx';
+import { PRIVACY_POLICY_URL } from '../privacy/consent';
+import { useConsent } from '../privacy/ConsentProvider';
 
 const ROLE_LABEL_KEY: Record<ProgeoRole, string> = {
   nutzer: 'topbar_role_nutzer',
@@ -21,6 +23,7 @@ const TopBar = () => {
   const auth = useAuth();
   const { t, i18n } = useTranslation();
   const role = useProgeoRole();
+  const { openSettings } = useConsent();
 
   const [username, setUsername] = useState('');
   const [infoOpen, setInfoOpen] = useState(false);
@@ -131,6 +134,45 @@ const TopBar = () => {
             }}
           >
             {t('topbar_info_company')}
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 4,
+                marginTop: 10,
+                paddingTop: 10,
+                borderTop: '1px solid var(--progeo-track)',
+              }}
+            >
+              <a
+                href={PRIVACY_POLICY_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: 'var(--progeo-blue)' }}
+              >
+                {t('consent_privacy_policy')}
+              </a>
+              <button
+                type="button"
+                onClick={() => {
+                  setInfoOpen(false);
+                  openSettings();
+                }}
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  padding: 0,
+                  color: 'var(--progeo-blue)',
+                  textAlign: 'left',
+                  textDecoration: 'underline',
+                  fontFamily: 'inherit',
+                  fontSize: 'inherit',
+                  cursor: 'pointer',
+                }}
+              >
+                {t('consent_open_settings')}
+              </button>
+            </div>
           </div>
         )}
       </div>

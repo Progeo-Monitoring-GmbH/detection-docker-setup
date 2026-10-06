@@ -424,6 +424,26 @@ i18n
           topbar_role_nutzer: 'User',
           topbar_role_kundenadmin: 'Customer admin',
           topbar_role_progeo_admin: 'ProGeo admin',
+          consent_title: 'Privacy settings',
+          consent_intro:
+            'We only use technically necessary cookies and browser storage to sign you in and to run this application securely. With your consent, maps additionally load map tiles from external providers. You can change your choice at any time via the info menu (i) in the top bar.',
+          consent_privacy_policy: 'Privacy policy',
+          consent_reject: 'Necessary only',
+          consent_accept_all: 'Accept all',
+          consent_customize: 'Customize',
+          consent_save: 'Save selection',
+          consent_close: 'Close',
+          consent_always_on: 'Always active',
+          consent_necessary_title: 'Strictly necessary',
+          consent_necessary_desc:
+            'Sign-in token, CSRF protection, session cache, language preference and this privacy choice. Required for the application to work; cannot be disabled.',
+          consent_maps_title: 'External map services',
+          consent_maps_desc:
+            'Loads map tiles from OpenStreetMap and Esri ArcGIS Online. Your IP address and the requested map area are transmitted to these providers, possibly to servers outside the EU.',
+          consent_maps_blocked:
+            'The map background comes from an external provider and is blocked by your privacy settings.',
+          consent_maps_enable: 'Load map',
+          consent_open_settings: 'Privacy settings',
           topbar_info_title: 'Info',
           topbar_info_company:
             'ProGeo® Monitoring Systeme und Services GmbH & Co. KG',
@@ -837,6 +857,26 @@ i18n
           topbar_role_nutzer: 'Nutzer',
           topbar_role_kundenadmin: 'Kundenadmin',
           topbar_role_progeo_admin: 'ProGeo-Admin',
+          consent_title: 'Datenschutz-Einstellungen',
+          consent_intro:
+            'Wir verwenden nur technisch notwendige Cookies und Browser-Speicher, um Sie anzumelden und diese Anwendung sicher zu betreiben. Mit Ihrer Einwilligung laden Karten zusätzlich Kartenkacheln von externen Anbietern. Ihre Auswahl können Sie jederzeit über das Info-Menü (i) in der Kopfleiste ändern.',
+          consent_privacy_policy: 'Datenschutzerklärung',
+          consent_reject: 'Nur notwendige',
+          consent_accept_all: 'Alle akzeptieren',
+          consent_customize: 'Anpassen',
+          consent_save: 'Auswahl speichern',
+          consent_close: 'Schließen',
+          consent_always_on: 'Immer aktiv',
+          consent_necessary_title: 'Technisch notwendig',
+          consent_necessary_desc:
+            'Anmelde-Token, CSRF-Schutz, Sitzungs-Cache, Spracheinstellung und diese Datenschutz-Auswahl. Für den Betrieb der Anwendung erforderlich; kann nicht deaktiviert werden.',
+          consent_maps_title: 'Externe Kartendienste',
+          consent_maps_desc:
+            'Lädt Kartenkacheln von OpenStreetMap und Esri ArcGIS Online. Dabei werden Ihre IP-Adresse und der angefragte Kartenausschnitt an diese Anbieter übermittelt, ggf. auch an Server außerhalb der EU.',
+          consent_maps_blocked:
+            'Der Kartenhintergrund stammt von einem externen Anbieter und ist durch Ihre Datenschutz-Einstellungen blockiert.',
+          consent_maps_enable: 'Karte laden',
+          consent_open_settings: 'Datenschutz-Einstellungen',
           topbar_info_title: 'Info',
           topbar_info_company:
             'ProGeo® Monitoring Systeme und Services GmbH & Co. KG',

@@ -5,6 +5,8 @@ import { Geo } from 'react-bootstrap-icons';
 import PanelCard from '../components/ui/kit/PanelCard';
 import type { LocationDetail } from './locationTypes';
 import { formatDateTime } from './dateFormat';
+import { useConsent } from '../components/privacy/ConsentProvider';
+import MapConsentNotice from '../components/privacy/MapConsentNotice';
 
 // react-leaflet@5's shipped prop types don't resolve `center`/`zoom`/
 // `attribution`/`radius` etc. under this project's TS setup (every other
@@ -35,6 +37,7 @@ const hasCoordinates = (
 /** The mockup's "Standort" side panel: a single-marker map, or a placeholder when no coordinates are set. */
 const LocationStandortPanel = ({ location }: LocationStandortPanelProps) => {
   const { t } = useTranslation();
+  const { allows } = useConsent();
 
   return (
     <PanelCard title={t('objekt_standort_title')}>
@@ -48,22 +51,34 @@ const LocationStandortPanel = ({ location }: LocationStandortPanelProps) => {
         }}
       >
         {hasCoordinates(location) ? (
-          <AnyMapContainer
-            center={[location.latitude, location.longitude]}
-            zoom={15}
-            style={{ height: '100%', width: '100%' }}
-            scrollWheelZoom={false}
-            dragging={false}
-            zoomControl={false}
-            doubleClickZoom={false}
-          >
-            <AnyTileLayer attribution="&copy; OpenStreetMap contributors" url={TILE_URL} />
-            <AnyCircleMarker
+          <>
+            <AnyMapContainer
               center={[location.latitude, location.longitude]}
-              radius={7}
-              pathOptions={{ color: '#EB633B', fillColor: '#EB633B', fillOpacity: 0.9 }}
-            />
-          </AnyMapContainer>
+              zoom={15}
+              style={{ height: '100%', width: '100%' }}
+              scrollWheelZoom={false}
+              dragging={false}
+              zoomControl={false}
+              doubleClickZoom={false}
+            >
+              {allows('externalMaps') && (
+                <AnyTileLayer
+                  attribution="&copy; OpenStreetMap contributors"
+                  url={TILE_URL}
+                />
+              )}
+              <AnyCircleMarker
+                center={[location.latitude, location.longitude]}
+                radius={7}
+                pathOptions={{
+                  color: '#EB633B',
+                  fillColor: '#EB633B',
+                  fillOpacity: 0.9,
+                }}
+              />
+            </AnyMapContainer>
+            <MapConsentNotice />
+          </>
         ) : (
           <div
             style={{
@@ -80,13 +95,22 @@ const LocationStandortPanel = ({ location }: LocationStandortPanelProps) => {
           >
             <div>
               <Geo size={26} color="#EB633B" />
-              <div style={{ marginTop: 6 }}>{t('objekt_standort_placeholder')}</div>
+              <div style={{ marginTop: 6 }}>
+                {t('objekt_standort_placeholder')}
+              </div>
             </div>
           </div>
         )}
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 1, marginTop: 14 }}>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 1,
+          marginTop: 14,
+        }}
+      >
         <div
           style={{
             display: 'flex',
@@ -97,7 +121,9 @@ const LocationStandortPanel = ({ location }: LocationStandortPanelProps) => {
           }}
         >
           <span style={{ color: '#6E6868' }}>{t('objekt_fact_devices')}</span>
-          <span style={{ fontWeight: 500 }}>{location?.device_count ?? '–'}</span>
+          <span style={{ fontWeight: 500 }}>
+            {location?.device_count ?? '–'}
+          </span>
         </div>
         <div
           style={{
@@ -108,7 +134,9 @@ const LocationStandortPanel = ({ location }: LocationStandortPanelProps) => {
             fontSize: 13.5,
           }}
         >
-          <span style={{ color: '#6E6868' }}>{t('objekt_fact_last_measurement')}</span>
+          <span style={{ color: '#6E6868' }}>
+            {t('objekt_fact_last_measurement')}
+          </span>
           <span style={{ fontWeight: 500 }}>
             {formatDateTime(location?.last_measurement_at)}
           </span>

@@ -5,6 +5,7 @@ import { SnackbarProvider } from 'notistack';
 import CoreAuthProvider from '../hooks/CoreAuthProvider';
 import { ModalProvider } from './components/modal/coreModalContext';
 import CookieBanner from './components/privacy/CookieBanner';
+import { ConsentProvider } from './components/privacy/ConsentProvider';
 
 import CoreRoutes from './CoreRoutes';
 
@@ -17,22 +18,24 @@ function App() {
       dense={true}
       anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
     >
-      <ModalProvider>
-        <Container fluid={true} style={{ minWidth: '750px', margin: '0' }}>
-          <Row>
-            <Col md={1} style={{ padding: '0' }}></Col>
-            <Col md={10} style={{ padding: '0' }}>
-              <BrowserRouter>
-                <CoreAuthProvider>
-                  <CoreRoutes />
-                  <CookieBanner />
-                </CoreAuthProvider>
-              </BrowserRouter>
-            </Col>
-            <Col md={1} style={{ padding: '0' }}></Col>
-          </Row>
-        </Container>
-      </ModalProvider>
+      <ConsentProvider>
+        <ModalProvider>
+          <Container fluid={true} style={{ minWidth: '750px', margin: '0' }}>
+            <Row>
+              <Col md={1} style={{ padding: '0' }}></Col>
+              <Col md={10} style={{ padding: '0' }}>
+                <BrowserRouter>
+                  <CoreAuthProvider>
+                    <CoreRoutes />
+                    <CookieBanner />
+                  </CoreAuthProvider>
+                </BrowserRouter>
+              </Col>
+              <Col md={1} style={{ padding: '0' }}></Col>
+            </Row>
+          </Container>
+        </ModalProvider>
+      </ConsentProvider>
     </SnackbarProvider>
   );
 }
