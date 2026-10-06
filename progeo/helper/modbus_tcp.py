@@ -7,11 +7,13 @@ from progeo.helper.basics import elog
 from progeo.v1.helper import parse_float, parse_int
 
 
-def _get_modbus_config() -> dict[str, Any]:
-	# Runtime-editable config (SystemConfig) wins, env vars are the fallback.
-	from progeo.helper.interface_config import get_modbus_config
+def _get_modbus_config(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
+	"""Normalized config: ``cfg`` when given (e.g. unsaved form values or CLI
+	overrides), else the runtime-editable SystemConfig with env fallback."""
+	if cfg is None:
+		from progeo.helper.interface_config import get_modbus_config
 
-	cfg = get_modbus_config()
+		cfg = get_modbus_config()
 	return {
 		"host": cfg.get("host") or "127.0.0.1",
 		"port": parse_int(cfg.get("port"), 502),
@@ -42,18 +44,27 @@ def _json_to_registers(data: dict | list | str) -> tuple[list[int], int]:
 	return registers, payload_length
 
 
+# pymodbus renamed the unit keyword: unit= (<3.0) -> slave= (3.0-3.9) ->
+# device_id= (3.10+). Try the current name first, older ones as fallback.
+_UNIT_KWARGS = ("device_id", "slave", "unit")
+
+
 def _write_register_block(client: ModbusTcpClient, address: int, values: list[int], unit_id: int):
-	try:
-		return client.write_registers(address=address, values=values, slave=unit_id)
-	except TypeError:
-		return client.write_registers(address=address, values=values, unit=unit_id)
+	for kwarg in _UNIT_KWARGS:
+		try:
+			return client.write_registers(address=address, values=values, **{kwarg: unit_id})
+		except TypeError:
+			if kwarg == _UNIT_KWARGS[-1]:
+				raise
 
 
 def _read_register_block(client: ModbusTcpClient, address: int, count: int, unit_id: int):
-	try:
-		return client.read_holding_registers(address=address, count=count, slave=unit_id)
-	except TypeError:
-		return client.read_holding_registers(address=address, count=count, unit=unit_id)
+	for kwarg in _UNIT_KWARGS:
+		try:
+			return client.read_holding_registers(address=address, count=count, **{kwarg: unit_id})
+		except TypeError:
+			if kwarg == _UNIT_KWARGS[-1]:
+				raise
 
 
 def _registers_to_json(registers: list[int]) -> dict | list | str:
@@ -78,16 +89,7 @@ def test_modbus_connection(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
 	``{"ok": bool, "steps": [...], "error": str | None}`` so the UI can show
 	a step-by-step result.
 	"""
-	if cfg is None:
-		cfg = _get_modbus_config()
-	else:
-		cfg = {
-			"host": cfg.get("host") or "127.0.0.1",
-			"port": parse_int(cfg.get("port"), 502),
-			"unit_id": parse_int(cfg.get("unit_id"), 1),
-			"timeout": parse_float(cfg.get("timeout"), 3),
-			"start_address": parse_int(cfg.get("start_address"), 0),
-		}
+	cfg = _get_modbus_config(cfg)
 
 	host = cfg["host"]
 	port = cfg["port"]
@@ -139,7 +141,7 @@ def test_modbus_connection(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
 				pass
 
 
-def send_json_over_modbus_tcp(data: dict | list | str) -> dict[str, Any]:
+def send_json_over_modbus_tcp(data: dict | list | str, cfg: dict[str, Any] | None = None) -> dict[str, Any]:
 	"""
 	Sends JSON data over Modbus TCP by writing UTF-8 bytes into holding registers.
 
@@ -153,8 +155,10 @@ def send_json_over_modbus_tcp(data: dict | list | str) -> dict[str, Any]:
 	- MODBUS_TCP_UNIT_ID
 	- MODBUS_TCP_TIMEOUT
 	- MODBUS_TCP_START_ADDRESS
+
+	``cfg`` overrides the stored/env config (see ``_get_modbus_config``).
 	"""
-	cfg = _get_modbus_config()
+	cfg = _get_modbus_config(cfg)
 	registers, payload_length = _json_to_registers(data)
 
 	chunk_size = 120
@@ -195,15 +199,17 @@ def send_json_over_modbus_tcp(data: dict | list | str) -> dict[str, Any]:
 	}
 
 
-def receive_json_over_modbus_tcp(start_address: int | None = None) -> dict[str, Any]:
+def receive_json_over_modbus_tcp(start_address: int | None = None, cfg: dict[str, Any] | None = None) -> dict[str, Any]:
 	"""
 	Receives JSON data over Modbus TCP from holding registers.
 
 	Expected payload format in registers:
 	1) First 2 bytes = payload length (big-endian)
 	2) Following bytes = UTF-8 encoded JSON payload
+
+	``cfg`` overrides the stored/env config (see ``_get_modbus_config``).
 	"""
-	cfg = _get_modbus_config()
+	cfg = _get_modbus_config(cfg)
 	address = cfg["start_address"] if start_address is None else start_address
 	chunk_size = 120
 
