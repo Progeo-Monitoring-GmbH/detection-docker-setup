@@ -6,7 +6,10 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
-import { showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import {
+  showRequestError,
+  showSuccessBar,
+} from '../components/ui/Snackbar.jsx';
 import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
@@ -22,7 +25,7 @@ type SensorThreshold = {
 };
 
 const thresholdInputStyle = {
-  width: 90,
+  width: 120,
   height: 30,
   border: 'none',
   borderRadius: 8,
@@ -87,7 +90,9 @@ const LocationEinstellungenTab = () => {
   const canEdit = hasPermission('module_locations_edit');
 
   // -- Schwellwerte ---------------------------------------------------
-  const [threshold, setThreshold] = useState(String(location?.alarm_threshold ?? ''));
+  const [threshold, setThreshold] = useState(
+    String(location?.alarm_threshold ?? ''),
+  );
   const [savingThreshold, setSavingThreshold] = useState(false);
   const [sensors, setSensors] = useState<SensorThreshold[]>([]);
   // Edited-but-unsaved inputs, keyed by sensor_order ('' = clear override).
@@ -147,7 +152,10 @@ const LocationEinstellungenTab = () => {
       {
         points: changedSensors.map((sensor) => {
           const value = drafts[sensor.sensor_order].trim();
-          return { sensor_order: sensor.sensor_order, threshold: value === '' ? null : Number(value) };
+          return {
+            sensor_order: sensor.sensor_order,
+            threshold: value === '' ? null : Number(value),
+          };
         }),
       },
       () => {
@@ -165,7 +173,9 @@ const LocationEinstellungenTab = () => {
   // -- Systemeinstellungen ---------------------------------------------
   const [devices, setDevices] = useState<Device[]>([]);
   const [devicesLoading, setDevicesLoading] = useState(true);
-  const [peGeschaltet, setPeGeschaltet] = useState(location?.pe_geschaltet ? 'ja' : 'nein');
+  const [peGeschaltet, setPeGeschaltet] = useState(
+    location?.pe_geschaltet ? 'ja' : 'nein',
+  );
 
   useEffect(() => {
     setDevicesLoading(true);
@@ -180,13 +190,19 @@ const LocationEinstellungenTab = () => {
     );
   }, [auth, locationId]);
 
-  const saveDeviceField = (device: Device, field: 'hardware' | 'pull_resistance', value: string | number) => {
+  const saveDeviceField = (
+    device: Device,
+    field: 'hardware' | 'pull_resistance',
+    value: string | number,
+  ) => {
     void axiosConfig.perform_patch(
       auth,
       `/v1/device/${device.id}/`,
       { [field]: value },
       () => {
-        setDevices((prev) => prev.map((d) => (d.id === device.id ? { ...d, [field]: value } : d)));
+        setDevices((prev) =>
+          prev.map((d) => (d.id === device.id ? { ...d, [field]: value } : d)),
+        );
         showSuccessBar(enqueueSnackbar, t('einstell_saved'));
       },
       (error) => {
@@ -271,13 +287,40 @@ const LocationEinstellungenTab = () => {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 900 }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 14,
+        maxWidth: 900,
+      }}
+    >
       <PanelCard title={t('einstell_section_thresholds')}>
-        <div style={{ background: 'var(--progeo-surface)', borderRadius: 13, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+        <div
+          style={{
+            background: 'var(--progeo-surface)',
+            borderRadius: 13,
+            padding: '14px 16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12,
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 16,
+              flexWrap: 'wrap',
+            }}
+          >
             <div style={{ flex: 1, minWidth: 180 }}>
-              <div style={{ fontSize: 13.5, fontWeight: 500 }}>{t('einstell_alarm_threshold')}</div>
-              <div style={{ fontSize: 12, color: '#8B8383', marginTop: 2 }}>{t('einstell_alarm_threshold_hint')}</div>
+              <div style={{ fontSize: 13.5, fontWeight: 500 }}>
+                {t('einstell_alarm_threshold')}
+              </div>
+              <div style={{ fontSize: 12, color: '#8B8383', marginTop: 2 }}>
+                {t('einstell_alarm_threshold_hint')}
+              </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <input
@@ -285,11 +328,25 @@ const LocationEinstellungenTab = () => {
                 value={threshold}
                 readOnly={!canEdit}
                 onChange={(event) => setThreshold(event.target.value)}
-                style={{ height: 38, width: 110, border: 'none', borderRadius: 10, background: 'var(--progeo-track-soft)', padding: '0 12px', fontFamily: 'inherit', fontSize: 14, color: 'var(--progeo-blue)' }}
+                style={{
+                  height: 38,
+                  width: 110,
+                  border: 'none',
+                  borderRadius: 10,
+                  background: 'var(--progeo-track-soft)',
+                  padding: '0 12px',
+                  fontFamily: 'inherit',
+                  fontSize: 14,
+                  color: 'var(--progeo-blue)',
+                }}
               />
               <span style={{ fontSize: 13, color: '#8B8383' }}>mV</span>
               {canEdit && (
-                <PillButton label={t('einstell_save')} onClick={saveObjectThreshold} disabled={savingThreshold} />
+                <PillButton
+                  label={t('einstell_save')}
+                  onClick={saveObjectThreshold}
+                  disabled={savingThreshold}
+                />
               )}
             </div>
           </div>
@@ -314,8 +371,26 @@ const LocationEinstellungenTab = () => {
           </button>
 
           {pointsOpen && (
-            <div style={{ background: 'var(--progeo-track-soft)', borderRadius: 11, overflow: 'hidden' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, padding: '9px 12px', fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', color: '#8B8383', fontWeight: 500 }}>
+            <div
+              style={{
+                background: 'var(--progeo-track-soft)',
+                borderRadius: 11,
+                overflow: 'hidden',
+              }}
+            >
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: 10,
+                  padding: '9px 12px',
+                  fontSize: 10.5,
+                  letterSpacing: '.06em',
+                  textTransform: 'uppercase',
+                  color: '#8B8383',
+                  fontWeight: 500,
+                }}
+              >
                 <span>{t('status_col_mp')}</span>
                 <span>{t('einstell_points_threshold')}</span>
               </div>
@@ -324,19 +399,45 @@ const LocationEinstellungenTab = () => {
                   <Spinner animation="border" size="sm" />
                 </div>
               ) : sensors.length === 0 ? (
-                <div style={{ padding: '10px 12px', fontSize: 12.5, color: '#8B8383', borderTop: '1px solid #E4E0E0' }}>
+                <div
+                  style={{
+                    padding: '10px 12px',
+                    fontSize: 12.5,
+                    color: '#8B8383',
+                    borderTop: '1px solid #E4E0E0',
+                  }}
+                >
                   {t('einstell_points_empty')}
                 </div>
               ) : (
                 sensors.map((sensor) => (
-                  <div key={sensor.sensor_order} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, padding: '8px 12px', fontSize: 12.5, borderTop: '1px solid #E4E0E0', alignItems: 'center' }}>
+                  <div
+                    key={sensor.sensor_order}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: 10,
+                      padding: '8px 12px',
+                      fontSize: 12.5,
+                      borderTop: '1px solid #E4E0E0',
+                      alignItems: 'center',
+                    }}
+                  >
                     <span style={{ fontWeight: 600 }}>
-                      {sensor.name || t('einstell_points_sensor', { sensor: sensor.sensor_order })}
+                      {sensor.name ||
+                        t('einstell_points_sensor', {
+                          sensor: sensor.sensor_order,
+                        })}
                     </span>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span
+                      style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                    >
                       <input
                         type="number"
-                        value={drafts[sensor.sensor_order] ?? String(sensor.threshold ?? '')}
+                        value={
+                          drafts[sensor.sensor_order] ??
+                          String(sensor.threshold ?? '')
+                        }
                         readOnly={!canEdit}
                         placeholder={
                           location?.alarm_threshold != null
@@ -344,23 +445,39 @@ const LocationEinstellungenTab = () => {
                             : t('einstell_points_inherited')
                         }
                         onChange={(event) =>
-                          setDrafts((prev) => ({ ...prev, [sensor.sensor_order]: event.target.value }))
+                          setDrafts((prev) => ({
+                            ...prev,
+                            [sensor.sensor_order]: event.target.value,
+                          }))
                         }
                         style={thresholdInputStyle}
                       />
-                      <span style={{ fontSize: 11.5, color: '#8B8383' }}>mV</span>
+                      <span style={{ fontSize: 11.5, color: '#8B8383' }}>
+                        mV
+                      </span>
                     </span>
                   </div>
                 ))
               )}
               {canEdit && sensors.length > 0 && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderTop: '1px solid #E4E0E0', flexWrap: 'wrap' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    padding: '10px 12px',
+                    borderTop: '1px solid #E4E0E0',
+                    flexWrap: 'wrap',
+                  }}
+                >
                   <PillButton
                     label={t('einstell_save')}
                     onClick={savePointThresholds}
                     disabled={savingPoints || changedSensors.length === 0}
                   />
-                  <span style={{ fontSize: 11.5, color: '#8B8383' }}>{t('einstell_points_hint')}</span>
+                  <span style={{ fontSize: 11.5, color: '#8B8383' }}>
+                    {t('einstell_points_hint')}
+                  </span>
                 </div>
               )}
             </div>
@@ -376,23 +493,62 @@ const LocationEinstellungenTab = () => {
             </div>
           ) : (
             devices.map((device) => (
-              <div key={device.id} style={{ background: 'var(--progeo-surface)', borderRadius: 13, padding: '13px 16px' }}>
+              <div
+                key={device.id}
+                style={{
+                  background: 'var(--progeo-surface)',
+                  borderRadius: 13,
+                  padding: '13px 16px',
+                }}
+              >
                 <div style={gridStyle}>
                   <LabeledInput
                     label={t('einstell_product')}
                     value={device.hardware || ''}
                     readOnly={!canEdit}
-                    onChange={(value) => setDevices((prev) => prev.map((d) => (d.id === device.id ? { ...d, hardware: value } : d)))}
+                    onChange={(value) =>
+                      setDevices((prev) =>
+                        prev.map((d) =>
+                          d.id === device.id ? { ...d, hardware: value } : d,
+                        ),
+                      )
+                    }
                   />
-                  <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                    <span style={{ fontSize: 11, letterSpacing: '.07em', textTransform: 'uppercase', color: '#8B8383', fontWeight: 500 }}>
+                  <label
+                    style={{ display: 'flex', flexDirection: 'column', gap: 5 }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 11,
+                        letterSpacing: '.07em',
+                        textTransform: 'uppercase',
+                        color: '#8B8383',
+                        fontWeight: 500,
+                      }}
+                    >
                       {t('einstell_resistance')}
                     </span>
                     <select
                       value={device.pull_resistance ?? ''}
                       disabled={!canEdit}
-                      onChange={(event) => saveDeviceField(device, 'pull_resistance', Number(event.target.value))}
-                      style={{ height: 40, border: 'none', borderRadius: 11, background: 'var(--progeo-surface)', boxShadow: '0 1px 4px rgba(11,54,89,.09)', padding: '0 13px', fontFamily: 'inherit', fontSize: 14, color: 'var(--progeo-blue)' }}
+                      onChange={(event) =>
+                        saveDeviceField(
+                          device,
+                          'pull_resistance',
+                          Number(event.target.value),
+                        )
+                      }
+                      style={{
+                        height: 40,
+                        border: 'none',
+                        borderRadius: 11,
+                        background: 'var(--progeo-surface)',
+                        boxShadow: '0 1px 4px rgba(11,54,89,.09)',
+                        padding: '0 13px',
+                        fontFamily: 'inherit',
+                        fontSize: 14,
+                        color: 'var(--progeo-blue)',
+                      }}
                     >
                       {RESISTANCE_OPTIONS.map((option) => (
                         <option key={option.value} value={option.value}>
@@ -406,7 +562,13 @@ const LocationEinstellungenTab = () => {
                   <div style={{ marginTop: 10 }}>
                     <PillButton
                       label={t('einstell_save')}
-                      onClick={() => saveDeviceField(device, 'hardware', device.hardware || '')}
+                      onClick={() =>
+                        saveDeviceField(
+                          device,
+                          'hardware',
+                          device.hardware || '',
+                        )
+                      }
                     />
                   </div>
                 )}
@@ -414,13 +576,29 @@ const LocationEinstellungenTab = () => {
             ))
           )}
           {!devicesLoading && devices.length === 0 && (
-            <span style={{ fontSize: 12.5, color: '#8B8383' }}>{t('einstell_no_devices')}</span>
+            <span style={{ fontSize: 12.5, color: '#8B8383' }}>
+              {t('einstell_no_devices')}
+            </span>
           )}
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, background: 'var(--progeo-surface)', borderRadius: 13, padding: '13px 16px', flexWrap: 'wrap' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 16,
+              background: 'var(--progeo-surface)',
+              borderRadius: 13,
+              padding: '13px 16px',
+              flexWrap: 'wrap',
+            }}
+          >
             <div style={{ flex: 1, minWidth: 180 }}>
-              <div style={{ fontSize: 13.5, fontWeight: 500 }}>{t('einstell_pe_geschaltet')}</div>
-              <div style={{ fontSize: 12, color: '#8B8383', marginTop: 2 }}>{t('einstell_pe_geschaltet_hint')}</div>
+              <div style={{ fontSize: 13.5, fontWeight: 500 }}>
+                {t('einstell_pe_geschaltet')}
+              </div>
+              <div style={{ fontSize: 12, color: '#8B8383', marginTop: 2 }}>
+                {t('einstell_pe_geschaltet_hint')}
+              </div>
             </div>
             <SegmentedControl
               options={[
@@ -443,25 +621,65 @@ const LocationEinstellungenTab = () => {
           ) : (
             <>
               {staffRules.map((rule) => (
-                <div key={rule.id} style={{ display: 'flex', alignItems: 'center', gap: 14, background: 'var(--progeo-surface)', borderRadius: 13, padding: '12px 16px', flexWrap: 'wrap' }}>
+                <div
+                  key={rule.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 14,
+                    background: 'var(--progeo-surface)',
+                    borderRadius: 13,
+                    padding: '12px 16px',
+                    flexWrap: 'wrap',
+                  }}
+                >
                   <div style={{ flex: 1, minWidth: 150 }}>
-                    <div style={{ fontSize: 13.5, fontWeight: 500 }}>{rule.user_name}</div>
-                    <div style={{ fontSize: 12, color: '#8B8383', marginTop: 2 }}>{rule.user_email}</div>
+                    <div style={{ fontSize: 13.5, fontWeight: 500 }}>
+                      {rule.user_name}
+                    </div>
+                    <div
+                      style={{ fontSize: 12, color: '#8B8383', marginTop: 2 }}
+                    >
+                      {rule.user_email}
+                    </div>
                   </div>
                   {canEdit && (
-                    <PillButton variant="ghost" label={t('rechte_revoke')} onClick={() => removeStaff(rule)} />
+                    <PillButton
+                      variant="ghost"
+                      label={t('rechte_revoke')}
+                      onClick={() => removeStaff(rule)}
+                    />
                   )}
                 </div>
               ))}
               {staffRules.length === 0 && (
-                <span style={{ fontSize: 12.5, color: '#8B8383' }}>{t('einstell_objektleitung_empty')}</span>
+                <span style={{ fontSize: 12.5, color: '#8B8383' }}>
+                  {t('einstell_objektleitung_empty')}
+                </span>
               )}
               {canEdit && (
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: 10,
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                  }}
+                >
                   <select
                     value={addStaffId}
                     onChange={(event) => setAddStaffId(event.target.value)}
-                    style={{ height: 38, minWidth: 220, border: 'none', borderRadius: 10, background: 'var(--progeo-track-soft)', padding: '0 12px', fontFamily: 'inherit', fontSize: 13.5, color: 'var(--progeo-blue)' }}
+                    style={{
+                      height: 38,
+                      minWidth: 220,
+                      border: 'none',
+                      borderRadius: 10,
+                      background: 'var(--progeo-track-soft)',
+                      padding: '0 12px',
+                      fontFamily: 'inherit',
+                      fontSize: 13.5,
+                      color: 'var(--progeo-blue)',
+                    }}
                   >
                     <option value="">{t('einstell_select_staff')}</option>
                     {availableStaff.map((staff) => (

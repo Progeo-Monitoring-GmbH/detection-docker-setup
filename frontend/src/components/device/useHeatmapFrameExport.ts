@@ -13,14 +13,9 @@ import {
   sleep,
 } from './heatmapFrames';
 
-export type AggregationMode = 'slice' | 'avg' | 'max';
-
 /** capturing: frames in the browser, rendering: ffmpeg on the server. */
 export type VideoExportStage =
-  | 'capturing'
-  | 'uploading'
-  | 'rendering'
-  | 'downloading';
+  'capturing' | 'uploading' | 'rendering' | 'downloading';
 
 const MAX_FRAMES = 120;
 const FRAME_SLEEP_MS = 25;
@@ -42,10 +37,8 @@ type UseHeatmapFrameExportOptions = {
   /** Whether a chart is currently rendered (false -> export is disabled). */
   chartReady: boolean;
   timestamps: number[];
-  mode: AggregationMode;
   timestampIndex: number;
   setTimestampIndex: (index: number) => void;
-  setMode: (mode: AggregationMode) => void;
 };
 
 type HeatmapFrameExport = {
@@ -74,10 +67,8 @@ export const useHeatmapFrameExport = ({
   plotRef,
   chartReady,
   timestamps,
-  mode,
   timestampIndex,
   setTimestampIndex,
-  setMode,
 }: UseHeatmapFrameExportOptions): HeatmapFrameExport => {
   const auth = useAuth();
   const [videoExporting, setVideoExporting] = useState(false);
@@ -117,12 +108,16 @@ export const useHeatmapFrameExport = ({
             if (taskId) {
               resolve(String(taskId));
             } else {
-              reject(new Error('The server did not start the video rendering.'));
+              reject(
+                new Error('The server did not start the video rendering.'),
+              );
             }
           },
           (error) =>
             reject(
-              new Error(requestErrorMessage(error, 'Uploading the frames failed.')),
+              new Error(
+                requestErrorMessage(error, 'Uploading the frames failed.'),
+              ),
             ),
           { headers: { 'Content-Type': 'multipart/form-data' } },
         );
@@ -149,7 +144,10 @@ export const useHeatmapFrameExport = ({
             (error) =>
               reject(
                 new Error(
-                  requestErrorMessage(error, 'Checking the video rendering failed.'),
+                  requestErrorMessage(
+                    error,
+                    'Checking the video rendering failed.',
+                  ),
                 ),
               ),
           );
@@ -183,7 +181,9 @@ export const useHeatmapFrameExport = ({
           (response) => resolve(response.data as Blob),
           (error) =>
             reject(
-              new Error(requestErrorMessage(error, 'Downloading the video failed.')),
+              new Error(
+                requestErrorMessage(error, 'Downloading the video failed.'),
+              ),
             ),
           { responseType: 'blob' },
         );
@@ -213,7 +213,9 @@ export const useHeatmapFrameExport = ({
     try {
       await saveResult(videoResultUrl);
     } catch (error) {
-      setVideoError((error as Error).message || 'Downloading the video failed.');
+      setVideoError(
+        (error as Error).message || 'Downloading the video failed.',
+      );
     }
   }, [videoResultUrl, saveResult]);
 
@@ -229,7 +231,6 @@ export const useHeatmapFrameExport = ({
     setVideoError(null);
     setVideoResultUrl(null);
 
-    const initialMode = mode;
     const initialIndex = timestampIndex;
     const frameStep = Math.max(1, Math.ceil(timestamps.length / MAX_FRAMES));
     const frameIndices: number[] = [];
@@ -244,13 +245,8 @@ export const useHeatmapFrameExport = ({
     const height = Math.min(Math.max(gd.clientHeight || 540, 240), 720);
 
     try {
-      // The animation walks the timestamp slider, so force slice mode for the
-      // duration of the export and restore the previous mode afterwards.
-      if (mode !== 'slice') {
-        setMode('slice');
-        await waitForPlotRedraw();
-      }
-
+      // The animation walks the timestamp slider; the previous position is
+      // restored afterwards.
       const canvas = document.createElement('canvas');
       canvas.width = width;
       canvas.height = height;
@@ -316,7 +312,6 @@ export const useHeatmapFrameExport = ({
 
       // The plot is no longer needed - restore it while the server renders.
       setTimestampIndex(initialIndex);
-      setMode(initialMode);
 
       setVideoStage('uploading');
       const upload = new FormData();
@@ -336,7 +331,6 @@ export const useHeatmapFrameExport = ({
       setVideoError((error as Error).message || 'Video export failed.');
     } finally {
       setTimestampIndex(initialIndex);
-      setMode(initialMode);
       setVideoExporting(false);
       setVideoStage(null);
     }
@@ -344,10 +338,8 @@ export const useHeatmapFrameExport = ({
     plotRef,
     chartReady,
     timestamps,
-    mode,
     timestampIndex,
     setTimestampIndex,
-    setMode,
     videoExporting,
     waitForPlotRedraw,
     startRendering,

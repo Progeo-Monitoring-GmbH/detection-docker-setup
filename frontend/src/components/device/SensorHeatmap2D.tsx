@@ -10,7 +10,6 @@ import {
   SensorHeatmapResponse,
 } from './SensorHeatmap3D';
 import {
-  AggregationMode,
   useHeatmapFrameExport,
 } from './useHeatmapFrameExport';
 import { getBackendUrl } from '../../backendUrl';
@@ -92,8 +91,10 @@ const computeAutoSigma = (points: Array<{ x: number; y: number }>) => {
 const HEAT_FULL_MULTIPLIER = 3;
 
 /**
- * Width of the heat field's border around the outermost sensors, in sigmas -
- * at 3 sigma a sensor's kernel has faded to ~1%.
+ * Width of the heat field's border around the outermost sensors, in sigmas of
+ * the automatic kernel width (from the sensor spacing) - at 3 sigma a kernel
+ * has faded to ~1%. Deliberately independent of a manually chosen sigma, so
+ * changing the kernel width doesn't change the map's margin.
  */
 const HEAT_BORDER_SIGMAS = 3;
 
@@ -183,7 +184,6 @@ const SensorHeatmap2D = ({
   alignment = null,
   hideChrome = false,
 }: SensorHeatmap2DProps) => {
-  const [mode, setMode] = useState<AggregationMode>('slice');
   const [timestampIndex, setTimestampIndex] = useState(0);
   const [sigma, setSigma] = useState<'auto' | number>('auto');
   const [imageSize, setImageSize] = useState<ImageSize | null>(null);
@@ -325,34 +325,13 @@ const SensorHeatmap2D = ({
       return [];
     }
 
+    // Heat of the selected timestamp.
     return sensors.map((sensor) => {
-      let weight = 0;
-
-      if (mode === 'slice') {
-        const value = sensor.series[timestampIndex];
-        weight =
-          value == null || !Number.isFinite(Number(value))
-            ? 0
-            : Math.abs(Number(value));
-      } else if (mode === 'avg') {
-        let sum = 0;
-        let count = 0;
-        sensor.series.forEach((value) => {
-          if (value == null || !Number.isFinite(Number(value))) {
-            return;
-          }
-          sum += Math.abs(Number(value));
-          count += 1;
-        });
-        weight = count ? sum / count : 0;
-      } else {
-        sensor.series.forEach((value) => {
-          if (value == null || !Number.isFinite(Number(value))) {
-            return;
-          }
-          weight = Math.max(weight, Math.abs(Number(value)));
-        });
-      }
+      const value = sensor.series[timestampIndex];
+      const weight =
+        value == null || !Number.isFinite(Number(value))
+          ? 0
+          : Math.abs(Number(value));
 
       return {
         pos: sensor.pos,
@@ -361,15 +340,15 @@ const SensorHeatmap2D = ({
         weight,
       };
     });
-  }, [sensors, timestamps.length, mode, timestampIndex]);
+  }, [sensors, timestamps.length, timestampIndex]);
 
   const chart = useMemo(() => {
     if (!timestamps.length || !sensors.length) {
       return null;
     }
 
-    const usedSigma =
-      sigma === 'auto' ? computeAutoSigma(sensors) : clamp(sigma, 0.005, 0.3);
+    const autoSigma = computeAutoSigma(sensors);
+    const usedSigma = sigma === 'auto' ? autoSigma : clamp(sigma, 0.005, 0.3);
 
     // Heat normalization: the field saturates (heat = 1) only when sensor
     // values reach HEAT_FULL_MULTIPLIER times the location's alarm threshold.
@@ -421,14 +400,10 @@ const SensorHeatmap2D = ({
       resolution,
       usedSigma,
       heatReference,
-      HEAT_BORDER_SIGMAS * usedSigma,
+      HEAT_BORDER_SIGMAS * autoSigma,
     );
     const xAxis = axis.map((value) => toPlotX(value));
     const yAxis = axis.map((value) => toPlotY(value));
-
-    const activeCount = weightedPoints.filter(
-      (point) => point.weight > 0,
-    ).length;
 
     // The view is cropped to the sensor points and their heat border (plus a
     // small margin) - the rest of the lageplan is mostly empty paper.
@@ -442,8 +417,7 @@ const SensorHeatmap2D = ({
     const yMin = Math.min(...plotYs, ...heatYs) - margin;
     const yMax = Math.max(...plotYs, ...heatYs) + margin;
 
-    // Values shown in the sensor tooltip (per aggregation mode), aligned with
-    // the scatter points.
+    // Values shown in the sensor tooltip, aligned with the scatter points.
     const sensorValues = sensors.map((sensor, index) => {
       const point = weightedPoints[index];
       return [
@@ -459,9 +433,6 @@ const SensorHeatmap2D = ({
       yAxis,
       grid,
       max,
-      usedSigma,
-      activeCount,
-      heatReference,
       xRange: [xMin, xMax],
       yRange: [yMin, yMax],
       // Display the lageplan at its true aspect ratio.
@@ -527,10 +498,8 @@ const SensorHeatmap2D = ({
     plotRef,
     chartReady: chart != null,
     timestamps,
-    mode,
     timestampIndex,
     setTimestampIndex,
-    setMode,
   });
 
   const [wrapSize, setWrapSize] = useState({ width: 0, height: 0 });
@@ -642,21 +611,6 @@ const SensorHeatmap2D = ({
               </Form.Select>
             )}
 
-            <Form.Select
-              size="sm"
-              aria-label="Aggregation mode"
-              value={mode}
-              onChange={(event) =>
-                setMode(event.target.value as AggregationMode)
-              }
-              style={{ width: 'auto' }}
-              disabled={videoExporting}
-            >
-              <option value="slice">Single timestamp</option>
-              <option value="avg">Average</option>
-              <option value="max">Maximum</option>
-            </Form.Select>
-
             <Form.Check
               type="switch"
               id="heatmap2d-auto-sigma"
@@ -698,64 +652,52 @@ const SensorHeatmap2D = ({
             </div>
           </div>
 
-          {(mode === 'slice' || sigma !== 'auto') && (
-            <div className="d-flex flex-wrap align-items-center gap-3 mt-1">
-              {mode === 'slice' && (
-                <div className="flex-grow-1" style={{ minWidth: 200 }}>
-                  <label
-                    htmlFor="heatmap2d-timestamp"
-                    className="form-label small text-muted mb-0"
-                  >
-                    {timestamps.length
-                      ? `${timestampIndex + 1}/${timestamps.length}: ${formatTimestamp(timestamps[timestampIndex])}`
-                      : 'Timestamp'}
-                  </label>
-                  <input
-                    id="heatmap2d-timestamp"
-                    type="range"
-                    className="form-range d-block"
-                    min={0}
-                    max={Math.max(timestamps.length - 1, 0)}
-                    step={1}
-                    value={timestampIndex}
-                    onChange={(event) =>
-                      setTimestampIndex(Number(event.target.value))
-                    }
-                    disabled={videoExporting}
-                  />
-                </div>
-              )}
-
-              {sigma !== 'auto' && (
-                <div style={{ width: 180 }}>
-                  <label
-                    htmlFor="heatmap2d-sigma"
-                    className="form-label small text-muted mb-0"
-                  >
-                    {'σ'} (kernel width): {sigma}
-                  </label>
-                  <input
-                    id="heatmap2d-sigma"
-                    type="range"
-                    className="form-range d-block"
-                    min={0.005}
-                    max={0.15}
-                    step={0.005}
-                    value={sigma}
-                    onChange={(event) => setSigma(Number(event.target.value))}
-                    disabled={videoExporting}
-                  />
-                </div>
-              )}
+          <div className="d-flex flex-wrap align-items-center gap-3 mt-1">
+            <div className="flex-grow-1" style={{ minWidth: 200 }}>
+              <label
+                htmlFor="heatmap2d-timestamp"
+                className="form-label small text-muted mb-0"
+              >
+                {timestamps.length
+                  ? `${timestampIndex + 1}/${timestamps.length}: ${formatTimestamp(timestamps[timestampIndex])}`
+                  : 'Timestamp'}
+              </label>
+              <input
+                id="heatmap2d-timestamp"
+                type="range"
+                className="form-range d-block"
+                min={0}
+                max={Math.max(timestamps.length - 1, 0)}
+                step={1}
+                value={timestampIndex}
+                onChange={(event) =>
+                  setTimestampIndex(Number(event.target.value))
+                }
+                disabled={videoExporting}
+              />
             </div>
-          )}
 
-          <div className="text-muted" style={{ fontSize: '0.75rem' }}>
-            {sensors.length} sensors, {timestamps.length} timestamps
-            {chart.activeCount > 0
-              ? `, ${chart.activeCount} active, σ=${chart.usedSigma.toFixed(3)}`
-              : ''}
-            {chart.heatReference ? `, heat=1 ≥ ${chart.heatReference}` : ''}
+            {sigma !== 'auto' && (
+              <div style={{ width: 180 }}>
+                <label
+                  htmlFor="heatmap2d-sigma"
+                  className="form-label small text-muted mb-0"
+                >
+                  {'σ'} (kernel width): {sigma}
+                </label>
+                <input
+                  id="heatmap2d-sigma"
+                  type="range"
+                  className="form-range d-block"
+                  min={0.005}
+                  max={0.15}
+                  step={0.005}
+                  value={sigma}
+                  onChange={(event) => setSigma(Number(event.target.value))}
+                  disabled={videoExporting}
+                />
+              </div>
+            )}
           </div>
         </div>
       )}

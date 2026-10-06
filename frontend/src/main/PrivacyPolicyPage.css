@@ -146,6 +146,7 @@
   margin-bottom: 10px;
   background: var(--progeo-track);
   color: var(--progeo-orange);
+  padding: 8px;
 }
 
 .privacy-highlight strong {
