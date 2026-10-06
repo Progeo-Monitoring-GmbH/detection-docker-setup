@@ -23,6 +23,40 @@ export const alignmentBaseScale = (imageWidth: number, imageHeight: number) =>
     1.5,
   );
 
+/** Where the plan is drawn on the canvas (canvas pixels) and at which scale
+ * (canvas pixels per image pixel). */
+const canvasLayout = (
+  canvas: { width: number; height: number },
+  image: HTMLImageElement,
+  zoom: number,
+  panX: number,
+  panY: number,
+) => {
+  const scale =
+    alignmentBaseScale(image.naturalWidth, image.naturalHeight) * zoom;
+  const drawWidth = image.naturalWidth * scale;
+  const drawHeight = image.naturalHeight * scale;
+  return {
+    scale,
+    drawWidth,
+    drawHeight,
+    drawX: canvas.width / 2 - drawWidth / 2 + panX,
+    drawY: canvas.height / 2 - drawHeight / 2 + panY,
+  };
+};
+
+type ImagePoint = [number, number];
+
+/** Click tools: pan (default), place the metric reference point, or pick
+ * the two points of a known distance for the meters-per-pixel calibration. */
+type CanvasTool = 'pan' | 'reference' | 'calibrate';
+
+export type PlanScaleValues = {
+  reference_x?: number;
+  reference_y?: number;
+  meters_per_pixel?: number;
+};
+
 type ImageCanvasStageProps = {
   imageUrl?: string;
   locationId?: number;
@@ -33,6 +67,9 @@ type ImageCanvasStageProps = {
     scale_y?: number;
     flip_x?: boolean;
     flip_y?: boolean;
+    reference_x?: number | null;
+    reference_y?: number | null;
+    meters_per_pixel?: number | null;
   };
   title?: string;
   fileName?: string;
@@ -45,6 +82,8 @@ type ImageCanvasStageProps = {
     scaleY: number;
     flipY: boolean;
   }) => void;
+  /** Stores the metric scale (reference point in image pixels, m/px). */
+  onSaveScale?: (values: PlanScaleValues) => void;
 };
 
 const ImageCanvasStage = ({
@@ -56,6 +95,7 @@ const ImageCanvasStage = ({
   withSliders = false,
   locationId,
   onSaveSliders,
+  onSaveScale,
 }: ImageCanvasStageProps) => {
   const auth = useAuth();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -78,6 +118,11 @@ const ImageCanvasStage = ({
   const [isVerticallyFlipped, setIsVerticallyFlipped] = useState(
     sourceMeta?.flip_y ?? false,
   );
+  const [tool, setTool] = useState<CanvasTool>('pan');
+  const [referencePoint, setReferencePoint] = useState<ImagePoint | null>(null);
+  const [calibrationPoints, setCalibrationPoints] = useState<ImagePoint[]>([]);
+  const [calibrationMeters, setCalibrationMeters] = useState('');
+  const [metersPerPixel, setMetersPerPixel] = useState('');
 
   useEffect(() => {
     setImage(null);
@@ -153,14 +198,17 @@ const ImageCanvasStage = ({
     ctx.fillStyle = '#f5f6f8';
     ctx.fillRect(0, 0, width, height);
 
-    const baseScale = alignmentBaseScale(
-      image.naturalWidth,
-      image.naturalHeight,
+    const { scale, drawWidth, drawHeight, drawX, drawY } = canvasLayout(
+      canvas,
+      image,
+      zoom,
+      offsetX,
+      offsetY,
     );
-    const drawWidth = image.naturalWidth * baseScale * zoom;
-    const drawHeight = image.naturalHeight * baseScale * zoom;
-    const drawX = width / 2 - drawWidth / 2 + offsetX;
-    const drawY = height / 2 - drawHeight / 2 + offsetY;
+    const toCanvas = ([x, y]: ImagePoint): ImagePoint => [
+      drawX + x * scale,
+      drawY + y * scale,
+    ];
 
     ctx.strokeStyle = '#cfd4da';
     ctx.strokeRect(0.5, 0.5, width - 1, height - 1);
@@ -197,7 +245,44 @@ const ImageCanvasStage = ({
       ctx.fillStyle = '#ffffff';
       ctx.fillText(label, pointX, pointY);
     });
+
+    // Calibration: the two picked points and the line between them.
+    if (calibrationPoints.length) {
+      const [first, second] = calibrationPoints.map(toCanvas);
+      ctx.strokeStyle = '#fd7e14';
+      ctx.fillStyle = '#fd7e14';
+      ctx.lineWidth = 2;
+      if (second) {
+        ctx.beginPath();
+        ctx.moveTo(first[0], first[1]);
+        ctx.lineTo(second[0], second[1]);
+        ctx.stroke();
+      }
+      [first, second].filter(Boolean).forEach(([x, y]) => {
+        ctx.beginPath();
+        ctx.arc(x, y, 5, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+
+    // Reference point (origin of the positions in meters): a crosshair.
+    if (referencePoint) {
+      const [x, y] = toCanvas(referencePoint);
+      ctx.strokeStyle = '#0d6efd';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x - 12, y);
+      ctx.lineTo(x + 12, y);
+      ctx.moveTo(x, y - 12);
+      ctx.lineTo(x, y + 12);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(x, y, 6, 0, Math.PI * 2);
+      ctx.stroke();
+    }
   }, [
+    referencePoint,
+    calibrationPoints,
     image,
     measurePoints,
     offsetX,
@@ -218,8 +303,40 @@ const ImageCanvasStage = ({
       setPointScaleX(sourceMeta.scale_x ?? 1);
       setPointScaleY(sourceMeta.scale_y ?? 1);
       setIsVerticallyFlipped(sourceMeta.flip_y ?? false);
+      setReferencePoint(
+        sourceMeta.reference_x != null && sourceMeta.reference_y != null
+          ? [sourceMeta.reference_x, sourceMeta.reference_y]
+          : null,
+      );
+      setMetersPerPixel(
+        sourceMeta.meters_per_pixel ? String(sourceMeta.meters_per_pixel) : '',
+      );
+      setCalibrationPoints([]);
+      setCalibrationMeters('');
+      setTool('pan');
     }
   }, [sourceMeta]);
+
+  // Two picked points + their real distance -> meters per image pixel.
+  const calibrationPixels =
+    calibrationPoints.length === 2
+      ? Math.hypot(
+          calibrationPoints[1][0] - calibrationPoints[0][0],
+          calibrationPoints[1][1] - calibrationPoints[0][1],
+        )
+      : null;
+  useEffect(() => {
+    const meters = Number(calibrationMeters.replace(',', '.'));
+    if (calibrationPixels && Number.isFinite(meters) && meters > 0) {
+      setMetersPerPixel(String(meters / calibrationPixels));
+    }
+  }, [calibrationPixels, calibrationMeters]);
+
+  const parsedMetersPerPixel = Number(metersPerPixel.replace(',', '.'));
+  const validMetersPerPixel =
+    Number.isFinite(parsedMetersPerPixel) && parsedMetersPerPixel > 0
+      ? parsedMetersPerPixel
+      : null;
 
   useEffect(() => {
     const handleMouseMove = (event: MouseEvent) => {
@@ -273,7 +390,50 @@ const ImageCanvasStage = ({
     setOffsetY(nextOffsetY);
   };
 
+  /** Image pixel under the mouse, or null outside the plan. */
+  const imagePointAt = (
+    event: React.MouseEvent<HTMLCanvasElement>,
+  ): ImagePoint | null => {
+    const canvas = canvasRef.current;
+    if (!canvas || !image) {
+      return null;
+    }
+    const rect = canvas.getBoundingClientRect();
+    // The canvas is scaled by CSS (width: 100%).
+    const canvasX = ((event.clientX - rect.left) * canvas.width) / rect.width;
+    const canvasY = ((event.clientY - rect.top) * canvas.height) / rect.height;
+    const { scale, drawX, drawY } = canvasLayout(
+      canvas,
+      image,
+      zoom,
+      offsetX,
+      offsetY,
+    );
+    const x = (canvasX - drawX) / scale;
+    const y = (canvasY - drawY) / scale;
+    if (x < 0 || y < 0 || x > image.naturalWidth || y > image.naturalHeight) {
+      return null;
+    }
+    return [x, y];
+  };
+
   const handleMouseDown = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    if (tool !== 'pan') {
+      const point = imagePointAt(event);
+      if (!point) {
+        return;
+      }
+      if (tool === 'reference') {
+        setReferencePoint(point);
+        setTool('pan');
+      } else {
+        // A third click starts a new measurement.
+        setCalibrationPoints((current) =>
+          current.length >= 2 ? [point] : [...current, point],
+        );
+      }
+      return;
+    }
     dragRef.current = {
       startX: event.clientX,
       startY: event.clientY,
@@ -301,7 +461,12 @@ const ImageCanvasStage = ({
           border: '1px solid #dfe3e8',
           borderRadius: 8,
           background: '#f5f6f8',
-          cursor: dragRef.current ? 'grabbing' : 'grab',
+          cursor:
+            tool !== 'pan'
+              ? 'crosshair'
+              : dragRef.current
+                ? 'grabbing'
+                : 'grab',
         }}
       />
 
@@ -420,6 +585,111 @@ const ImageCanvasStage = ({
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {withSliders && onSaveScale && (
+        <div className="border-top pt-2 d-flex flex-column gap-2">
+          <strong className="small">
+            Scale (positions in meters: x to the right, y up from the
+            reference point)
+          </strong>
+
+          <div className="d-flex flex-wrap align-items-center gap-2">
+            <button
+              type="button"
+              className={`btn btn-sm ${tool === 'reference' ? 'btn-primary' : 'btn-outline-primary'}`}
+              onClick={() =>
+                setTool((current) =>
+                  current === 'reference' ? 'pan' : 'reference',
+                )
+              }
+            >
+              Reference point
+            </button>
+            <span className="small text-muted">
+              {tool === 'reference'
+                ? 'Click the reference point on the plan.'
+                : referencePoint
+                  ? `at pixel (${Math.round(referencePoint[0])}, ${Math.round(referencePoint[1])})`
+                  : 'not set'}
+            </span>
+          </div>
+
+          <div className="d-flex flex-wrap align-items-center gap-2">
+            <button
+              type="button"
+              className={`btn btn-sm ${tool === 'calibrate' ? 'btn-warning' : 'btn-outline-warning'}`}
+              onClick={() => {
+                setTool((current) =>
+                  current === 'calibrate' ? 'pan' : 'calibrate',
+                );
+                setCalibrationPoints([]);
+              }}
+            >
+              Calibrate
+            </button>
+            {tool === 'calibrate' && calibrationPixels == null && (
+              <span className="small text-muted">
+                Click two points with a known distance (
+                {calibrationPoints.length}/2).
+              </span>
+            )}
+            {calibrationPixels != null && (
+              <>
+                <span className="small text-muted">
+                  {calibrationPixels.toFixed(1)} px =
+                </span>
+                <input
+                  type="number"
+                  className="form-control form-control-sm"
+                  style={{ width: 110 }}
+                  min="0"
+                  step="0.01"
+                  placeholder="meters"
+                  aria-label="Distance in meters"
+                  value={calibrationMeters}
+                  onChange={(event) => setCalibrationMeters(event.target.value)}
+                />
+                <span className="small text-muted">m</span>
+              </>
+            )}
+          </div>
+
+          <div className="d-flex flex-wrap align-items-center gap-2">
+            <label className="small mb-0" htmlFor="meters-per-pixel">
+              Meters per pixel
+            </label>
+            <input
+              id="meters-per-pixel"
+              type="number"
+              className="form-control form-control-sm"
+              style={{ width: 160 }}
+              min="0"
+              step="any"
+              value={metersPerPixel}
+              onChange={(event) => setMetersPerPixel(event.target.value)}
+            />
+            <button
+              type="button"
+              className="btn btn-sm btn-primary"
+              disabled={!referencePoint && !validMetersPerPixel}
+              onClick={() => {
+                const values: PlanScaleValues = {};
+                if (referencePoint) {
+                  values.reference_x = referencePoint[0];
+                  values.reference_y = referencePoint[1];
+                }
+                if (validMetersPerPixel) {
+                  values.meters_per_pixel = validMetersPerPixel;
+                }
+                setTool('pan');
+                onSaveScale(values);
+              }}
+            >
+              Store scale
+            </button>
+          </div>
         </div>
       )}
     </div>

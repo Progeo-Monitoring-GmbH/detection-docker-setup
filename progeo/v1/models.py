@@ -419,6 +419,14 @@ class ProgeoLageplan(ProgeoModel, auto_prefetch.Model):
     # Geographic offsets (for coordinate system adjustments)
     offset_latitude = models.FloatField(null=True, blank=True, help_text="Latitude offset for georeferencing")
     offset_longitude = models.FloatField(null=True, blank=True, help_text="Longitude offset for georeferencing")
+
+    # Metric scale: positions in meters are measured from the reference point
+    # (in pixels of the original image, x right / y down) with x to the right
+    # and y up - see helper/plan_meters.py. Set with the alignment wizard's
+    # reference point and two-point calibration.
+    reference_x = models.FloatField(null=True, blank=True, help_text="Reference point x (image pixels)")
+    reference_y = models.FloatField(null=True, blank=True, help_text="Reference point y (image pixels)")
+    meters_per_pixel = models.FloatField(null=True, blank=True, help_text="Meters per image pixel")
     
     # Metadata
     is_active = models.BooleanField(default=True, help_text="Whether this is the active/current lageplan")

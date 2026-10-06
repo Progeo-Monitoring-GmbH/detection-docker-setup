@@ -13,6 +13,7 @@ import {
   showSuccessBar,
 } from '../components/ui/Snackbar.jsx';
 import SensorHeatmap2D from '../components/device/SensorHeatmap2D';
+import { formatMeters } from '../components/device/planMeters';
 import type { SensorHeatmapResponse } from '../components/device/SensorHeatmap3D';
 import LageplanZoneOverlay from '../components/device/LageplanZoneOverlay';
 import SensorListTable, {
@@ -257,6 +258,17 @@ const LocationStatusView = ({
   const measurePointOf = useCallback(
     (sensorId: number) => sensorPoints.find((point) => point.pos === sensorId),
     [sensorPoints],
+  );
+  // Position in meters of a sensor's measure point, from the heatmap data
+  // (null while the active Lageplan isn't calibrated).
+  const metersOf = useCallback(
+    (sensorId: number): [number, number] | null => {
+      const point = measurePointOf(sensorId);
+      return point?.x_m != null && point.y_m != null
+        ? [point.x_m, point.y_m]
+        : null;
+    },
+    [measurePointOf],
   );
   const sensorLabel = useCallback(
     (sensorId: number) =>
@@ -644,6 +656,7 @@ const LocationStatusView = ({
                       key={cluster.id}
                       cluster={cluster}
                       label={sensorLabel(cluster.sensor_id)}
+                      meters={metersOf(cluster.sensor_id)}
                       expanded={expanded.has(cluster.id)}
                       onToggle={() => toggleExpanded(cluster.id)}
                       onAcknowledge={() => acknowledgeCluster(cluster)}
@@ -664,6 +677,8 @@ const LocationStatusView = ({
 type VerdachtsstelleRowProps = {
   cluster: VerdachtsstelleCluster;
   label: string;
+  /** Position of the leak's sensor in meters (calibrated Lageplan only). */
+  meters: [number, number] | null;
   expanded: boolean;
   onToggle: () => void;
   onAcknowledge: () => void;
@@ -681,6 +696,7 @@ const formatDate = (value: string) =>
 const VerdachtsstelleRow = ({
   cluster,
   label,
+  meters,
   expanded,
   onToggle,
   onAcknowledge,
@@ -752,6 +768,7 @@ const VerdachtsstelleRow = ({
                 t('status_resolved_at', {
                   date: formatDate(cluster.resolved_at),
                 })}
+            {meters && ` · ${formatMeters(meters)}`}
           </span>
         </span>
         <span

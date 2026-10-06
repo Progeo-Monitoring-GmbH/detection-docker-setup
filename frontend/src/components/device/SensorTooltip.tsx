@@ -1,12 +1,12 @@
 import CursorTooltip, { TooltipRow } from '../ui/CursorTooltip';
 import { alarmHeatColor } from '../../main/alarmUtils';
+import { formatMeters } from './planMeters';
 
 type SensorTooltipProps = {
   /** 1-based sensor position on the lageplan. */
   sensorPos: number;
-  /** Normalized (nx, ny) coordinates, as displayed on the plot. */
-  x: number;
-  y: number;
+  /** Position in meters on the lageplan; null when it isn't calibrated. */
+  meters: [number, number] | null;
   /** Current weight/value of the sensor (depends on the aggregation mode). */
   value: number;
   threshold?: number | null;
@@ -21,7 +21,7 @@ type SensorTooltipProps = {
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
 
-const SensorTooltip = ({ sensorPos, x, y, value, threshold, ...rest }: SensorTooltipProps) => (
+const SensorTooltip = ({ sensorPos, meters, value, threshold, ...rest }: SensorTooltipProps) => (
   <CursorTooltip
     width={200}
     dotColor={alarmHeatColor({ threshold, max_value: value, max_values: [] })}
@@ -29,9 +29,7 @@ const SensorTooltip = ({ sensorPos, x, y, value, threshold, ...rest }: SensorToo
     {...rest}
   >
     <TooltipRow label="Value">{Number.isFinite(value) ? round2(value) : '-'}</TooltipRow>
-    <TooltipRow label="Position">
-      ({round2(x)}, {round2(y)})
-    </TooltipRow>
+    {meters && <TooltipRow label="Position">{formatMeters(meters)}</TooltipRow>}
     {threshold != null && <TooltipRow label="Threshold">{threshold}</TooltipRow>}
   </CursorTooltip>
 );

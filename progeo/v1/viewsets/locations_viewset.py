@@ -1,4 +1,5 @@
 import csv
+import math
 import os
 import posixpath
 import tempfile
@@ -24,7 +25,7 @@ from progeo.decorator import (
     permission_denied_response,
     require_module_permissions,
 )
-from progeo.helper import heatmap_video
+from progeo.helper import heatmap_video, plan_meters
 from progeo.helper.basics import RequestFailed, RequestSuccess, save_check_dir
 from progeo.helper.location_access import configured_accounts, location_q, resolve_request_accounts
 from progeo.settings import UPLOAD_DIR
@@ -951,6 +952,55 @@ class LocationViewSet(ProgeoModalViewSet):
             "flip_y": flip_y,
         })
 
+    @require_module_permissions("module_locations_enabled", "module_locations_edit")
+    @action(detail=False, url_path="update_scale", methods=["POST"])
+    def update_scale(self, request, *args, **kwargs):
+        """Metric scale of the location's active Lageplan (see
+        helper/plan_meters.py): reference_x/reference_y (image pixels) and
+        meters_per_pixel. Only the fields sent are changed, so the reference
+        point and the calibration can be set separately."""
+        location_id = request.data.get("location_id")
+        if not location_id:
+            return RequestFailed({"reason": "Missing parameter: location_id"})
+
+        location, account = self._find_location(request, project_id=location_id)
+        if not location:
+            return RequestFailed({"reason": "Location not found"})
+        db_name = account.db_name
+
+        values = {}
+        try:
+            for field in ("reference_x", "reference_y", "meters_per_pixel"):
+                raw = request.data.get(field)
+                if raw is not None and raw != "":
+                    values[field] = float(raw)
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "Invalid scale values"})
+        if not values:
+            return RequestFailed({"reason": "Nothing to update"})
+        if not all(math.isfinite(value) for value in values.values()):
+            return RequestFailed({"reason": "Invalid scale values"})
+        if values.get("reference_x", 0) < 0 or values.get("reference_y", 0) < 0:
+            return RequestFailed({"reason": "The reference point must lie on the Lageplan"})
+        if "meters_per_pixel" in values and values["meters_per_pixel"] <= 0:
+            return RequestFailed({"reason": "meters_per_pixel must be positive"})
+
+        lageplan = ProgeoLageplan.objects.using(db_name).filter(location=location).order_by("-is_active", "-id").first()
+        if not lageplan:
+            return RequestFailed({"reason": "No Lageplan uploaded for this location"})
+
+        for field, value in values.items():
+            setattr(lageplan, field, value)
+        lageplan.save(using=db_name, update_fields=list(values))
+
+        return RequestSuccess({
+            "location_id": location.project_id,
+            "lageplan_id": lageplan.pk,
+            "reference_x": lageplan.reference_x,
+            "reference_y": lageplan.reference_y,
+            "meters_per_pixel": lageplan.meters_per_pixel,
+        })
+
     @require_module_permissions("module_locations_enabled", "module_locations_delete")
     def destroy(self, request, *args, **kwargs):
         return super().destroy(request, *args, **kwargs)
@@ -1150,13 +1200,21 @@ class LocationViewSet(ProgeoModalViewSet):
         sensor_points = []
         _map = {}
 
+        # Meter positions are measured on the active Lageplan (the one every
+        # view shows by default); None while it isn't calibrated.
+        plan = location.lageplans.order_by("-is_active", "-id").first()
+        plan_size = plan_meters.image_size(plan) if plan_meters.is_calibrated(plan) else None
+
         for point in points:
+            meters = plan_meters.point_meters(point.nx, point.ny, plan, plan_size)
             sensor_points.append({
                 "pos": point.sensor_order,
                 # Raw normalized coordinates - the Lageplan's own alignment
                 # (offset/scale) maps them onto the plan, see SensorHeatmap2D.
                 "x": round(point.nx, 4),
                 "y": round(point.ny, 4),
+                "x_m": round(meters[0], 2) if meters else None,
+                "y_m": round(meters[1], 2) if meters else None,
                 "name": point.name,
                 "last_value": point.last_value,
                 "threshold": point.threshold,

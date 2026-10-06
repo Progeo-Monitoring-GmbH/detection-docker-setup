@@ -12,7 +12,9 @@ import {
 } from 'react-bootstrap';
 import { Typeahead } from 'react-bootstrap-typeahead';
 import RedDropbox from '../components/form/RedDropbox.tsx';
-import ImageCanvasStage from '../components/ui/ImageCanvasStage.tsx';
+import ImageCanvasStage, {
+  type PlanScaleValues,
+} from '../components/ui/ImageCanvasStage.tsx';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
@@ -37,6 +39,9 @@ type ImportedSource = {
   scale_y?: number;
   flip_x?: boolean;
   flip_y?: boolean;
+  reference_x?: number | null;
+  reference_y?: number | null;
+  meters_per_pixel?: number | null;
 };
 
 type MeasurePointsResponse = {
@@ -49,6 +54,9 @@ type MeasurePointsResponse = {
   scale_y?: number;
   flip_x?: boolean;
   flip_y?: boolean;
+  reference_x?: number | null;
+  reference_y?: number | null;
+  meters_per_pixel?: number | null;
   // New: array of all lageplans with full metadata
   lageplans?: Array<SensorHeatmapLageplanData & { id: number }> | null;
 };
@@ -177,6 +185,9 @@ const LageplanWizardView = () => {
               scale_y: data.scale_y ?? 1,
               flip_x: data.flip_x ?? false,
               flip_y: data.flip_y ?? false,
+              reference_x: data.reference_x ?? null,
+              reference_y: data.reference_y ?? null,
+              meters_per_pixel: data.meters_per_pixel ?? null,
             });
             setStep(4);
           }
@@ -263,6 +274,27 @@ const LageplanWizardView = () => {
 
   // RedDropbox (instantFileUpload) passes the upload response, which carries
   // the stored Lageplan - see StatusViewSet.upload_measure_points_from_png.
+  // Metric scale of the active Lageplan (reference point + meters per pixel).
+  const handleSaveScale = async (values: PlanScaleValues) => {
+    if (selectedLocationId === null) {
+      setError('Select a location before storing the scale.');
+      return;
+    }
+
+    setIsProcessing(true);
+    setError('');
+    await axiosConfig.perform_post(
+      auth,
+      '/v1/location/update_scale/',
+      { location_id: selectedLocationId, ...values },
+      () => setIsProcessing(false),
+      (saveError) => {
+        setError(`Could not store the scale: ${(saveError as Error).message}`);
+        setIsProcessing(false);
+      },
+    );
+  };
+
   const handleSourceUpload = (response: Record<string, unknown>) => {
     const lageplanUrl =
       typeof response?.lageplan_url === 'string' ? response.lageplan_url : '';
@@ -451,6 +483,7 @@ const LageplanWizardView = () => {
             measurePoints={measurePoints}
             withSliders={canEditLocation}
             onSaveSliders={canEditLocation ? handleSaveSliders : undefined}
+            onSaveScale={canEditLocation ? handleSaveScale : undefined}
           />
         )}
       </Card.Body>

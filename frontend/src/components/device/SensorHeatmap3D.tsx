@@ -16,6 +16,10 @@ export type SensorHeatmapLageplanData = {
   flip_y?: boolean;
   offset_latitude?: number | null;
   offset_longitude?: number | null;
+  // Metric scale (see planMeters.ts).
+  reference_x?: number | null;
+  reference_y?: number | null;
+  meters_per_pixel?: number | null;
 };
 
 export type SensorHeatmapLocation = {
@@ -29,6 +33,9 @@ export type SensorHeatmapLocation = {
   scale_y?: number | null;
   flip_x?: boolean;
   flip_y?: boolean;
+  reference_x?: number | null;
+  reference_y?: number | null;
+  meters_per_pixel?: number | null;
   // All lageplans of the location (LocationSerializer.get_lageplans)
   lageplans?: SensorHeatmapLageplanData[] | null;
   alarm_threshold?: number | null;
@@ -47,6 +54,9 @@ export type SensorHeatmapResponse = {
     name?: string | null;
     last_value?: number | null;
     threshold?: number | null;
+    /** Position in meters on the active lageplan; null if not calibrated. */
+    x_m?: number | null;
+    y_m?: number | null;
   }>;
   location?: SensorHeatmapLocation | null;
 };

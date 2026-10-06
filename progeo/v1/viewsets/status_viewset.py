@@ -630,6 +630,9 @@ class StatusViewSet(ProgeoModalViewSet):
                         response_data["scale_y"] = active_lageplan.scale_y
                         response_data["flip_x"] = active_lageplan.flip_x
                         response_data["flip_y"] = active_lageplan.flip_y
+                        response_data["reference_x"] = active_lageplan.reference_x
+                        response_data["reference_y"] = active_lageplan.reference_y
+                        response_data["meters_per_pixel"] = active_lageplan.meters_per_pixel
                 else:
                     # No Lageplan uploaded yet.
                     response_data["lageplans"] = []

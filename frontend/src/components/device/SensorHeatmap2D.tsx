@@ -6,6 +6,7 @@ import Plot from 'react-plotly.js';
 import { plotTheme } from '../../styles/plotTheme';
 import { formatTimestamp } from './heatmapFrames';
 import { buildWeightedGrid, type WeightedPoint } from './heatmapGrid';
+import { formatMeters, pixelToMeters, pointMeters } from './planMeters';
 import SensorTooltip from './SensorTooltip';
 import {
   SensorHeatmapLocation,
@@ -37,8 +38,7 @@ type ImageSize = {
 
 type HoveredSensor = {
   pos: number;
-  x: number;
-  y: number;
+  meters: [number, number] | null;
   value: number;
   cursorX: number;
   cursorY: number;
@@ -164,6 +164,9 @@ const SensorHeatmap2D = ({
       scale_y: activePlan.scale_y ?? 1,
       flip_x: Boolean(activePlan.flip_x),
       flip_y: Boolean(activePlan.flip_y),
+      reference_x: activePlan.reference_x ?? null,
+      reference_y: activePlan.reference_y ?? null,
+      meters_per_pixel: activePlan.meters_per_pixel ?? null,
     };
   }, [baseLocation, activePlan]);
 
@@ -237,6 +240,9 @@ const SensorHeatmap2D = ({
     const positioned = sensorPoints
       .map((point) => ({
         pos: point.pos,
+        // Raw normalized position, for the position in meters.
+        nx: Number(point.x),
+        ny: Number(point.y),
         x: Number(point.x),
         // ny = 0 is the top of the plan (as in the alignment wizard); a
         // vertically flipped plan uses ny as-is.
@@ -258,6 +264,9 @@ const SensorHeatmap2D = ({
     const rows = Math.max(Math.ceil(count / columns), 1);
     return keys.map((key, index) => ({
       pos: Number(key) || index + 1,
+      // Not on the plan - no position in meters.
+      nx: null,
+      ny: null,
       x: (index % columns) / Math.max(columns - 1, 1),
       y: 1 - Math.floor(index / columns) / Math.max(rows - 1, 1),
       series: data[key] || [],
@@ -482,7 +491,12 @@ const SensorHeatmap2D = ({
     if (!point || !meta) {
       return;
     }
-    const [pos, x, y, value] = meta as number[];
+    const [pos, , , value] = meta as number[];
+    const sensor = sensors.find((candidate) => candidate.pos === pos);
+    const meters =
+      sensor?.nx != null && sensor.ny != null
+        ? pointMeters(sensor.nx, sensor.ny, location, imageSize)
+        : null;
 
     const wrap = plotWrapRef.current;
     const wrapRect = wrap?.getBoundingClientRect();
@@ -498,10 +512,38 @@ const SensorHeatmap2D = ({
         ? wrapRect.height / 2
         : 0;
 
-    setHoveredSensor({ pos, x, y, value, cursorX, cursorY });
+    setHoveredSensor({ pos, meters, value, cursorX, cursorY });
   };
 
-  const handlePlotUnhover = () => setHoveredSensor(null);
+  // Meter position of any point under the cursor (reported by the heat
+  // trace's cells). Plot x is the fraction of the image width; plot y runs
+  // up from the image's bottom edge (the image spans y 0..1).
+  const [cursorMeters, setCursorMeters] = useState<[number, number] | null>(
+    null,
+  );
+  const handleCursorHover = (event: {
+    points?: Array<{ x?: number; y?: number; data?: { type?: string } }>;
+  }) => {
+    const cell = (event.points || []).find(
+      (candidate) => candidate.data?.type === 'heatmap',
+    );
+    if (!cell || cell.x == null || cell.y == null || !imageSize) {
+      setCursorMeters(null);
+      return;
+    }
+    setCursorMeters(
+      pixelToMeters(
+        cell.x * imageSize.width,
+        (1 - cell.y) * imageSize.height,
+        location,
+      ),
+    );
+  };
+
+  const handlePlotUnhover = () => {
+    setHoveredSensor(null);
+    setCursorMeters(null);
+  };
 
   const planSelectValue = plans ? Math.min(planIndex, plans.length - 1) : 0;
 
@@ -735,15 +777,17 @@ const SensorHeatmap2D = ({
                 style={{ width: '100%' }}
                 useResizeHandler
                 onAfterPlot={handleAfterPlot}
-                onHover={handlePlotHover}
+                onHover={(event) => {
+                  handleCursorHover(event);
+                  handlePlotHover(event);
+                }}
                 onUnhover={handlePlotUnhover}
               />
 
               {hoveredSensor && (
                 <SensorTooltip
                   sensorPos={hoveredSensor.pos}
-                  x={hoveredSensor.x}
-                  y={hoveredSensor.y}
+                  meters={hoveredSensor.meters}
                   value={hoveredSensor.value}
                   threshold={
                     Number.isFinite(Number(location?.alarm_threshold))
@@ -755,6 +799,24 @@ const SensorHeatmap2D = ({
                   containerWidth={wrapSize.width}
                   containerHeight={wrapSize.height}
                 />
+              )}
+
+              {cursorMeters && (
+                <div
+                  className="small"
+                  style={{
+                    position: 'absolute',
+                    left: 8,
+                    bottom: 8,
+                    padding: '2px 8px',
+                    borderRadius: 6,
+                    background: 'rgba(255, 255, 255, 0.85)',
+                    color: plotTheme.brandBlue,
+                    pointerEvents: 'none',
+                  }}
+                >
+                  {formatMeters(cursorMeters)}
+                </div>
               )}
             </div>
           </>
