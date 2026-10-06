@@ -8,29 +8,32 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 LOG_FILE="${PROJECT_ROOT}/logs/backend/IP.txt"
 SERVICE_NAME="progeo-ip-logger"
-INTERVAL="30"
+# Address/route events arrive in bursts (DHCP lease, route setup); wait until
+# the kernel has been quiet this long before checking, so one change = one line.
+SETTLE_SECONDS="5"
 PING_HOSTS=("8.8.8.8" "1.1.1.1")
 HTTP_CHECK_URL="http://connectivitycheck.gstatic.com/generate_204"
 
 usage() {
   cat <<'EOF'
 Usage:
-  bash scripts/ip_change_logger.sh [--interval <seconds>] [--once]
-  sudo bash scripts/ip_change_logger.sh --install [--interval <seconds>]
+  bash scripts/ip_change_logger.sh [--once]
+  sudo bash scripts/ip_change_logger.sh --install
   sudo bash scripts/ip_change_logger.sh --uninstall
 
 Description:
   Watches the IP of the interface that carries the default route (the uplink,
-  so the Pi's own Wi-Fi hotspot address is ignored). On start and on every
-  change a line is appended to logs/backend/IP.txt:
+  so the Pi's own Wi-Fi hotspot address is ignored). There is no polling: the
+  script sleeps on the kernel's netlink events (`ip monitor`) and only wakes
+  up when an address or route changes. On start and on every actual IP change
+  a line is appended to logs/backend/IP.txt:
 
     2026-10-06 07:40:12 +0200  ip=192.168.1.23  iface=eth0  internet=ok (ping 8.8.8.8, 18 ms)
 
 Options:
-  --interval <seconds>  Poll interval (default: 30).
-  --once                Log the current state once and exit.
-  --install             Install and start a systemd service (runs at boot).
-  --uninstall           Stop and remove the systemd service.
+  --once       Log the current state once and exit.
+  --install    Install and start a systemd service (runs at boot).
+  --uninstall  Stop and remove the systemd service.
 EOF
 }
 
@@ -89,16 +92,26 @@ log_line() {
   echo "${line}"
 }
 
+LAST_UPLINK=""
+
+log_if_changed() {
+  local ip iface
+  read -r ip iface < <(current_uplink)
+  # DHCP renewals re-announce the same address - only log real changes.
+  if [[ "${ip} ${iface}" != "${LAST_UPLINK}" ]]; then
+    log_line "${ip}" "${iface}"
+    LAST_UPLINK="${ip} ${iface}"
+  fi
+}
+
 watch_loop() {
-  local last="" ip iface
-  while true; do
-    read -r ip iface < <(current_uplink)
-    if [[ "${ip} ${iface}" != "${last}" ]]; then
-      log_line "${ip}" "${iface}"
-      last="${ip} ${iface}"
-    fi
-    sleep "${INTERVAL}"
-  done
+  log_if_changed
+  while read -r _; do
+    while read -r -t "${SETTLE_SECONDS}" _; do :; done
+    log_if_changed
+  done < <(ip -4 monitor address route)
+  # `ip monitor` only ends if it gets killed; exit non-zero so systemd restarts us.
+  fatal "ip monitor stopped."
 }
 
 install_service() {
@@ -112,7 +125,7 @@ After=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/env bash ${SCRIPT_DIR}/ip_change_logger.sh --interval ${INTERVAL}
+ExecStart=/usr/bin/env bash ${SCRIPT_DIR}/ip_change_logger.sh
 Restart=always
 RestartSec=10
 
@@ -136,10 +149,6 @@ uninstall_service() {
 MODE="watch"
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --interval)
-      INTERVAL="${2:-}"
-      shift 2
-      ;;
     --once)
       MODE="once"
       shift
@@ -162,8 +171,6 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
-
-[[ "${INTERVAL}" =~ ^[1-9][0-9]*$ ]] || fatal "--interval must be a positive integer."
 
 case "${MODE}" in
   install) install_service ;;
