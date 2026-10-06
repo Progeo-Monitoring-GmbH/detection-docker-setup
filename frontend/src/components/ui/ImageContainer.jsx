@@ -1,4 +1,5 @@
 import React, { useContext } from 'react';
+import { TrashFill } from 'react-bootstrap-icons';
 import { CoreModalContext } from '../modal/coreModalContext';
 
 const ImageContainer = (props) => {
@@ -12,8 +13,8 @@ const ImageContainer = (props) => {
       <div className={'py-2'}>
         <div className={'thumbHeaderDate mx-2'}>{image.created}</div>
         <div className={'thumbHeaderIcons'}>
-          <i
-            className="bi bi-trash-fill mx-2"
+          <TrashFill
+            className="mx-2"
             onClick={() =>
               setModalState({
                 ...modalState,

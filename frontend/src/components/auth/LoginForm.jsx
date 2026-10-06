@@ -4,6 +4,7 @@ import { Link, useSearchParams } from 'react-router';
 import { useForm } from 'react-hook-form';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
+import { Eye, EyeSlash } from 'react-bootstrap-icons';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import { PRIVACY_POLICY_URL } from '../privacy/consent';
 
@@ -47,10 +48,11 @@ const LoginForm = () => {
                   {...register('password')}
                 />
                 <InputGroup.Text>
-                  <i
-                    onClick={() => setShowPasswd(!showPasswd)}
-                    className={showPasswd ? 'bi bi-eye-slash' : 'bi bi-eye'}
-                  />
+                  {showPasswd ? (
+                    <EyeSlash onClick={() => setShowPasswd(!showPasswd)} />
+                  ) : (
+                    <Eye onClick={() => setShowPasswd(!showPasswd)} />
+                  )}
                 </InputGroup.Text>
               </InputGroup>
             </Form.Group>

@@ -100,6 +100,8 @@ export default ({ mode }) => {
     },
     define: {
       __APP_ENV__: JSON.stringify(env.APP_ENV),
+      // Plotly's source modules reference Node's `global` (its prebuilt bundle defines it the same way).
+      global: 'globalThis',
     },
     server: {
       host: env.VITE_FRONTEND_URL || '0.0.0.0',
@@ -114,7 +116,13 @@ export default ({ mode }) => {
           find: /^plotly\.js\/dist\/plotly$/,
           replacement: path.resolve(import.meta.dirname, 'src/plotly.ts'),
         },
-        { find: '@', replacement: path.resolve(import.meta.dirname, 'src') },
+        {
+          find: /^maplibre-gl\/dist\/maplibre-gl\.css$/,
+          replacement: path.resolve(import.meta.dirname, 'src/plotly-no-maplibre.css'),
+        },
+        // Plotly's source modules expect Node's Buffer; use the browser polyfill.
+        { find: /^buffer$/, replacement: 'buffer/' },
+        { find: '@', replacement:path.resolve(import.meta.dirname, 'src') },
         {
           find: /^~(.*)$/,
           replacement: '$1',

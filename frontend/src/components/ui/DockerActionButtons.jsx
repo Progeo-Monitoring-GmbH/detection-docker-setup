@@ -1,5 +1,11 @@
 import React from 'react';
 import { Button } from 'react-bootstrap';
+import {
+  Book,
+  BootstrapReboot,
+  PauseFill,
+  TrashFill,
+} from 'react-bootstrap-icons';
 import { showErrorBar, showSuccessBar } from './Snackbar';
 import { useSnackbar } from 'notistack';
 import axiosConfig from '../../axiosConfig';
@@ -92,7 +98,7 @@ const DockerActionButtons = ({ modalState, setModalState, id, status }) => {
         onClick={() => removeDockerContainer(id)}
         title={'Delete Container'}
       >
-        <i className="bi bi-trash-fill" />
+        <TrashFill />
       </Button>
       <Button
         variant="info"
@@ -103,7 +109,7 @@ const DockerActionButtons = ({ modalState, setModalState, id, status }) => {
         }}
         title={'Stop Container'}
       >
-        <i className="bi bi-pause-fill" />
+        <PauseFill />
       </Button>
       <Button
         variant="info"
@@ -113,7 +119,7 @@ const DockerActionButtons = ({ modalState, setModalState, id, status }) => {
         }}
         title={'Restart Container'}
       >
-        <i className="bi bi-bootstrap-reboot" />
+        <BootstrapReboot />
       </Button>
       <Button
         variant="info"
@@ -123,7 +129,7 @@ const DockerActionButtons = ({ modalState, setModalState, id, status }) => {
         }}
         title={'See Logs'}
       >
-        <i className="bi bi-book" />
+        <Book />
       </Button>
     </>
   );

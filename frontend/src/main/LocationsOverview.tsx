@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import DataTable from 'react-data-table-component';
 import type { TableColumn } from 'react-data-table-component';
 import { Button, Card, Form, Spinner } from 'react-bootstrap';
+import { Pencil } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
 import { useNavigate } from 'react-router';
 
@@ -432,7 +433,7 @@ const LocationsOverview = () => {
                 openEditModal(row);
               }}
             >
-              <i className="bi bi-pencil"></i>
+              <Pencil />
             </Button>
           )}
           {canDelete && (

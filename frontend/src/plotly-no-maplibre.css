@@ -1,0 +1,2 @@
+/* Intentionally empty: replaces maplibre-gl.css, which Plotly's registry
+   always bundles but only needs for map traces (not registered in src/plotly.ts). */

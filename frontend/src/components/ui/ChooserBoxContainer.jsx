@@ -1,6 +1,12 @@
 import { Button, Col, Row } from 'react-bootstrap';
 import React, { useState } from 'react';
 import { Typeahead } from 'react-bootstrap-typeahead';
+import {
+  CaretLeftFill,
+  CaretRightFill,
+  FastForwardFill,
+  RewindFill,
+} from 'react-bootstrap-icons';
 import BoxContainer from './BoxContainer';
 import { capitalizeFirstLetter } from '../../helper';
 
@@ -57,10 +63,10 @@ const ChooserBoxContainer = ({
             onClick={() => selectChooserStartOrEnd(false)}
             className={'me-2'}
           >
-            <i className="bi bi-rewind-fill" />
+            <RewindFill />
           </Button>
           <Button onClick={() => selectChooser(-1)}>
-            <i className="bi bi-caret-left-fill" />
+            <CaretLeftFill />
           </Button>
         </Col>
         <Col md={4}>
@@ -80,10 +86,10 @@ const ChooserBoxContainer = ({
         </Col>
         <Col md={1} style={{ minWidth: 120 }}>
           <Button onClick={() => selectChooser(+1)} className={'me-2'}>
-            <i className="bi bi-caret-right-fill" />
+            <CaretRightFill />
           </Button>
           <Button onClick={() => selectChooserStartOrEnd(true)}>
-            <i className="bi bi-fast-forward-fill" />
+            <FastForwardFill />
           </Button>
         </Col>
       </Row>
