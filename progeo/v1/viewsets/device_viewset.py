@@ -37,6 +37,11 @@ from progeo.v1.viewsets.setup_viewset import _get_controller_account
 
 # ######################################################################################################################
 
+# measurementId of a LoRaWAN uplink message -> ProgeoMeasurement field
+LORAWAN_MEASUREMENT_FIELDS = {
+    4097: "temperature",
+    4098: "humidity",
+}
 
 
 class DeviceViewSet(ProgeoModalViewSet):
@@ -365,6 +370,52 @@ class DeviceViewSet(ProgeoModalViewSet):
         )
 
         return RequestSuccess()
+
+    @action(detail=False, url_path=r"lorawan/(?P<project_id>\d+)/",
+            authentication_classes=[LimitedTokenAuthentication], methods=["POST"])
+    def catch_lorawan_data(self, request, project_id=None, token=None, *args, **kwargs):
+        """Store a LoRaWAN uplink forwarded by the network server.
+
+        project_id and the LimitedToken come from the URL, the decoded uplink
+        from request.data["object"]. Its messages are mapped onto measurement
+        fields by measurementId (see LORAWAN_MEASUREMENT_FIELDS).
+        """
+
+        #ilog("DeviceViewSet: catch_lorawan_data called | project_id:", project_id, "| request.data:", request.data, tag="[LORAWAN]")
+        uplink = request.data.get("object")
+        if not isinstance(uplink, dict):
+            return RequestFailed({"reason": "No object provided"})
+        if not uplink.get("valid", True) or uplink.get("err"):
+            return RequestFailed({"reason": "Invalid uplink", "err": uplink.get("err")})
+
+        values = {}
+        for message in uplink.get("messages") or []:
+            if not isinstance(message, dict):
+                continue
+            try:
+                field = LORAWAN_MEASUREMENT_FIELDS.get(int(message.get("measurementId")))
+                value = float(message.get("measurementValue"))
+            except (TypeError, ValueError):
+                elog(f"Invalid LoRaWAN message: {message}", tag="[LORAWAN]")
+                continue
+            if field is not None and math.isfinite(value):
+                values[field] = value
+
+        if not values:
+            return RequestFailed({"reason": "No known measurements provided"})
+        
+        device_id = request.data.get("devAddr")
+
+        measure = save_measurement_from_legacy_data(
+            measurement={"project_id": project_id, **values},
+            device_id=device_id or str(project_id),
+        )
+
+        return RequestSuccess({
+            "project_id": project_id,
+            "measurement_id": measure.pk,
+            **values,
+        })
 
     @calc_runtime
     @require_module_permissions("module_imei_enabled")

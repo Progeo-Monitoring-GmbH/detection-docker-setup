@@ -258,6 +258,8 @@ def save_measurement_from_legacy_data(measurement, device_id: str, battery_V: in
         measure = ProgeoMeasurement.objects.using(db_name).create(
             device=device,
             project_id=data.get("project_id"),
+            temperature=data.get("temperature"),
+            humidity=data.get("humidity"),
             samples=samples,
             raw_data=data,
         )
