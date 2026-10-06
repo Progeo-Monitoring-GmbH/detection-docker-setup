@@ -13,6 +13,8 @@ import {
 import {
   useHeatmapFrameExport,
 } from './useHeatmapFrameExport';
+import { useAuth } from '../../../hooks/CoreAuthProvider';
+import axiosConfig from '../../axiosConfig';
 import { getBackendUrl } from '../../backendUrl';
 import { alignmentBaseScale } from '../ui/ImageCanvasStage';
 
@@ -189,6 +191,8 @@ const SensorHeatmap2D = ({
   const [timestampIndex, setTimestampIndex] = useState(0);
   const [sigma, setSigma] = useState<'auto' | number>('auto');
   const [imageSize, setImageSize] = useState<ImageSize | null>(null);
+  // The lageplan as a data URL, see the loading effect below.
+  const [lageplanSrc, setLageplanSrc] = useState<string | null>(null);
   const [hoveredSensor, setHoveredSensor] = useState<HoveredSensor | null>(
     null,
   );
@@ -254,28 +258,51 @@ const SensorHeatmap2D = ({
     return raw ? getBackendUrl(raw) : null;
   }, [location]);
 
+  const auth = useAuth();
+  const authRef = useRef(auth);
+  authRef.current = auth;
+
+  // Load the lageplan once per plan - with the Authorization header (media
+  // is authenticated) - and hand plotly a data URL. Given the backend URL,
+  // plotly would fetch it itself without that header, and again for every
+  // Plotly.toImage of the video export.
   useEffect(() => {
+    setLageplanSrc(null);
+    setImageSize(null);
     if (!lageplanUrl) {
-      setImageSize(null);
       return undefined;
     }
 
     let cancelled = false;
-    const image = new Image();
-    image.onload = () => {
-      if (!cancelled) {
-        setImageSize({
-          width: image.naturalWidth,
-          height: image.naturalHeight,
-        });
-      }
-    };
-    image.onerror = () => {
-      if (!cancelled) {
-        setImageSize(null);
-      }
-    };
-    image.src = lageplanUrl;
+    void axiosConfig.perform_get(
+      authRef.current,
+      lageplanUrl,
+      (response) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (cancelled || typeof reader.result !== 'string') {
+            return;
+          }
+          const dataUrl = reader.result;
+          const image = new Image();
+          image.onload = () => {
+            if (!cancelled) {
+              setImageSize({
+                width: image.naturalWidth,
+                height: image.naturalHeight,
+              });
+              setLageplanSrc(dataUrl);
+            }
+          };
+          image.src = dataUrl;
+        };
+        reader.readAsDataURL(response.data as Blob);
+      },
+      () => {
+        // No plan image - the heatmap is still shown without it.
+      },
+      { responseType: 'blob' },
+    );
 
     return () => {
       cancelled = true;
@@ -380,7 +407,7 @@ const SensorHeatmap2D = ({
     // where the plan is drawn at alignmentBaseScale - so they are normalized
     // by the image size at that scale. They only apply once the image has
     // actually loaded, and degrade gracefully before that.
-    const sizeKnown = Boolean(lageplanUrl && imageSize);
+    const sizeKnown = Boolean(lageplanSrc && imageSize);
     const imgWidth = imageSize?.width ?? 1;
     const imgHeight = imageSize?.height ?? 1;
     const wizardScale = sizeKnown ? alignmentBaseScale(imgWidth, imgHeight) : 1;
@@ -439,9 +466,9 @@ const SensorHeatmap2D = ({
       yRange: [yMin, yMax],
       // Display the lageplan at its true aspect ratio.
       scaleRatio: sizeKnown && imgWidth > 0 ? imgHeight / imgWidth : 1,
-      image: lageplanUrl
+      image: lageplanSrc
         ? {
-            source: lageplanUrl,
+            source: lageplanSrc,
             xref: 'x',
             yref: 'y',
             x: 0,
@@ -483,7 +510,7 @@ const SensorHeatmap2D = ({
     sigma,
     resolution,
     location,
-    lageplanUrl,
+    lageplanSrc,
     imageSize,
   ]);
 

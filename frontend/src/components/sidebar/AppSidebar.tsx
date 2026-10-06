@@ -15,6 +15,7 @@ import {
   People,
   Terminal,
 } from 'react-bootstrap-icons';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../../hooks/CoreAuthProvider.tsx';
 import usePermissions from '../../../hooks/usePermissions';
 import SidebarShell, {
@@ -34,45 +35,145 @@ type Item = {
 /**
  * General-purpose sidebar for every route that isn't the object/location
  * monitoring portal (that one has its own mockup-driven LocationSidebar).
- * A faithful 1:1 port of the retired Navbar.jsx's item list/permission
- * gates - nothing invented, except a "Devices" entry point that Navbar.jsx
- * never had despite the route already existing.
+ *
+ * Visibility: staff see Locations, Staff Admin and Backup; everything else is
+ * superuser-only. is_staff and is_superuser are separate roles - superusers
+ * see every item, staff only the ones explicitly listed for them. Locations
+ * and Backup additionally need their module permission (superusers pass
+ * hasPermission automatically).
  */
 const AppSidebar = () => {
   const auth = useAuth();
-  const { hasPermission } = usePermissions();
+  const { t } = useTranslation();
+  const { hasPermission, isAdmin: isSuperuser } = usePermissions();
   const routerLocation = useRouterLocation();
 
-
-  const isStaffUser = Boolean((auth?.user as { is_staff?: boolean } | null)?.is_staff);
+  const isStaffUser = Boolean(
+    (auth?.user as { is_staff?: boolean } | null)?.is_staff,
+  );
 
   const topItems: Item[] = [
-    { key: 'location', label: 'Locations', icon: Geo, to: '/location/overview/', visible: hasPermission('module_locations_enabled') },
-    { key: 'device', label: 'Devices', icon: Hdd, to: '/device/overview', visible: hasPermission('module_devices_enabled') },
-    { key: 'alarms', label: 'Alarms', icon: Bell, to: '/alarms/', visible: hasPermission('module_measurements_enabled') },
-    { key: 'alarm-report', label: 'Reports', icon: Calendar3, to: '/alarms/report/', visible: hasPermission('module_measurements_enabled') },
+    {
+      key: 'location',
+      label: t('sidebar_locations'),
+      icon: Geo,
+      to: '/location/overview/',
+      visible: hasPermission('module_locations_enabled'),
+    },
+    {
+      key: 'device',
+      label: t('sidebar_devices'),
+      icon: Hdd,
+      to: '/device/overview',
+      visible: isSuperuser,
+    },
+    {
+      key: 'alarms',
+      label: t('sidebar_alarms'),
+      icon: Bell,
+      to: '/alarms/',
+      visible: isSuperuser,
+    },
+    {
+      key: 'alarm-report',
+      label: t('sidebar_reports'),
+      icon: Calendar3,
+      to: '/alarms/report/',
+      visible: isSuperuser,
+    },
   ];
 
   const adminItems: Item[] = [
-    { key: 'staff', label: 'Staff Admin', icon: People, to: '/staff/', visible: isStaffUser },
-    { key: 'verwaltung', label: 'Object management', icon: Geo, to: '/verwaltung/', visible: isStaffUser },
-    { key: 'anlegen', label: 'Create object', icon: Layers, to: '/anlegen/', visible: isStaffUser },
-    { key: 'backup', label: 'Backup', icon: Database, to: '/backup/1/overview/', visible: hasPermission('module_backup_enabled') },
-    { key: 'docker', label: 'Docker', icon: Box, to: '/docker/', visible: hasPermission('module_docker_enabled') },
-    { key: 'admin-panel', label: 'Admin Panel', icon: Gear, to: '/admin/panel/', visible: hasPermission('module_admin_enabled') },
+    {
+      key: 'staff',
+      label: t('sidebar_staff_admin'),
+      icon: People,
+      to: '/staff/',
+      visible: isStaffUser || isSuperuser,
+    },
+    {
+      key: 'verwaltung',
+      label: t('sidebar_object_management'),
+      icon: Geo,
+      to: '/verwaltung/',
+      visible: isSuperuser,
+    },
+    {
+      key: 'anlegen',
+      label: t('sidebar_create_object'),
+      icon: Layers,
+      to: '/anlegen/',
+      visible: isSuperuser,
+    },
+    {
+      key: 'backup',
+      label: t('sidebar_backup'),
+      icon: Database,
+      to: '/backup/1/overview/',
+      visible: hasPermission('module_backup_enabled'),
+    },
+    {
+      key: 'docker',
+      label: t('sidebar_docker'),
+      icon: Box,
+      to: '/docker/',
+      visible: isSuperuser,
+    },
+    {
+      key: 'admin-panel',
+      label: t('sidebar_admin_panel'),
+      icon: Gear,
+      to: '/admin/panel/',
+      visible: isSuperuser,
+    },
   ];
   const showAdminGroup = adminItems.some((item) => item.visible);
 
-  // Mostly unconditional (Navbar.jsx never gated the Tools menu); the
-  // Lageplan wizard only works with module_devices_edit (measure_points).
   const toolItems: Item[] = [
-    { key: 'factory', label: 'Factory', icon: Map, to: '/factory/', visible: true },
-    { key: 'lageplan', label: 'Lageplan Wizard', icon: Layers, to: '/lageplan/wizard/', visible: hasPermission('module_devices_edit') },
-    { key: 'map', label: 'Map', icon: Geo, to: '/map/', visible: true },
-    { key: 'legacy', label: 'Legacy Import', icon: FileEarmarkText, to: '/legacy/import/', visible: true },
-    { key: 'ws-debug', label: 'WS Debug', icon: Broadcast, to: '/ws-debug', visible: true },
-    { key: 'dev', label: 'Dev', icon: Terminal, to: '/dev', visible: true },
+    {
+      key: 'factory',
+      label: t('sidebar_factory'),
+      icon: Map,
+      to: '/factory/',
+      visible: isSuperuser,
+    },
+    {
+      key: 'lageplan',
+      label: t('sidebar_lageplan_wizard'),
+      icon: Layers,
+      to: '/lageplan/wizard/',
+      visible: isSuperuser,
+    },
+    {
+      key: 'map',
+      label: t('sidebar_map'),
+      icon: Geo,
+      to: '/map/',
+      visible: isSuperuser,
+    },
+    {
+      key: 'legacy',
+      label: t('sidebar_legacy_import'),
+      icon: FileEarmarkText,
+      to: '/legacy/import/',
+      visible: isSuperuser,
+    },
+    {
+      key: 'ws-debug',
+      label: t('sidebar_ws_debug'),
+      icon: Broadcast,
+      to: '/ws-debug',
+      visible: isSuperuser,
+    },
+    {
+      key: 'dev',
+      label: t('sidebar_dev'),
+      icon: Terminal,
+      to: '/dev',
+      visible: isSuperuser,
+    },
   ];
+  const showToolsGroup = toolItems.some((item) => item.visible);
 
   const groupLabelStyle = sidebarGroupLabelStyle(true);
 
@@ -86,7 +187,10 @@ const AppSidebar = () => {
 
   const isActive = (to: string) => {
     const prefix = to.endsWith('/') ? to : `${to}/`;
-    return routerLocation.pathname === to || routerLocation.pathname.startsWith(prefix);
+    return (
+      routerLocation.pathname === to ||
+      routerLocation.pathname.startsWith(prefix)
+    );
   };
 
   const renderItem = (item: Item) => {
@@ -97,7 +201,15 @@ const AppSidebar = () => {
     return (
       <Link key={item.key} to={item.to} style={itemStyle(isActive(item.to))}>
         <Icon size={17} style={{ flexShrink: 0 }} />
-        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
+        <span
+          style={{
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {item.label}
+        </span>
       </Link>
     );
   };
@@ -108,19 +220,26 @@ const AppSidebar = () => {
 
       {showAdminGroup && (
         <>
-          <div style={groupLabelStyle}>Admin</div>
+          <div style={groupLabelStyle}>{t('sidebar_group_admin')}</div>
           {adminItems.map(renderItem)}
         </>
       )}
 
-      <div style={groupLabelStyle}>Tools</div>
-      {toolItems.map(renderItem)}
-
+      {showToolsGroup && (
+        <>
+          <div style={groupLabelStyle}>{t('sidebar_group_tools')}</div>
+          {toolItems.map(renderItem)}
+        </>
+      )}
     </nav>
   );
 
   return (
-    <SidebarShell width={220} toggleLabel="Menu" closeLabel="Close menu">
+    <SidebarShell
+      width={220}
+      toggleLabel={t('nav_menu_toggle')}
+      closeLabel={t('nav_menu_close')}
+    >
       {navContent}
     </SidebarShell>
   );

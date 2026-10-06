@@ -43,9 +43,27 @@ server {
     # served here - direct external requests are refused, so authentication
     # stays enforced. The directory mirrors the ./media bind mount of the
     # backend container.
+    #
+    # The internal redirect drops the Django response's own headers, incl.
+    # the CORS ones corsheaders set - without them the frontend (another
+    # origin) can't read media via fetch/XHR. Re-add them from the original
+    # response ($upstream_http_*; empty values are not sent). add_header in a
+    # location disables inheriting the server's add_header lines, so those
+    # are repeated here.
     location /protected-media/ {
         internal;
         alias /media/;
+
+        add_header Access-Control-Allow-Origin $upstream_http_access_control_allow_origin always;
+        add_header Access-Control-Allow-Credentials $upstream_http_access_control_allow_credentials always;
+        add_header Vary $upstream_http_vary always;
+
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header Content-Security-Policy "upgrade-insecure-requests" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
     }
 }
 
