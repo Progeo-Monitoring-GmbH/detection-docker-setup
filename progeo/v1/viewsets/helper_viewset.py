@@ -34,9 +34,12 @@ def get_sum_amount(queryset: QuerySet):
     return get_sum_of_field(queryset, "amount")
 
 
-def was_active_at(_date=get_today(), active_since=None, active_till=None):
+def was_active_at(_date=None, active_since=None, active_till=None):
     if not active_since:
         return False
+
+    if _date is None:
+        _date = get_today()
 
     if isinstance(_date, datetime.datetime):
         _date = _date.date()
@@ -66,7 +69,7 @@ def _get_marker_colors(infos):
         else:
             colors.append("green")
 
-    return dict(color=colors)
+    return {"color": colors}
 
 
 def _get_marker_text(infos):

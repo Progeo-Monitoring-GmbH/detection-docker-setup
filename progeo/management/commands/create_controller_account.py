@@ -24,7 +24,7 @@ class Command(BaseCommand):
         if not DATABASES:
             raise CommandError("DATABASES is empty")
 
-        db_name = list(DATABASES.keys())[0]
+        db_name = next(iter(DATABASES.keys()))
         account, created = create_account_safe(name=account_name, db_name=db_name)
         if not account:
             raise CommandError("Failed to create controller account")

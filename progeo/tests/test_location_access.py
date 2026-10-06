@@ -41,7 +41,7 @@ def test_account_member_sees_all_locations_of_the_account(setup_account):
 
 @pytest.mark.django_db(databases=["unit_tests", "default"])
 def test_single_access_user_sees_only_granted_location(setup_account):
-    account, first, second = setup_account
+    account, first, _second = setup_account
     single = User.objects.using("default").create(username="single")
     ProgeoAccess.objects.using("default").create(location=first, user_id=single.id, transport=1, type=1)
 

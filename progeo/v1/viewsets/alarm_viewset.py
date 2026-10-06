@@ -293,10 +293,10 @@ class AlarmViewSet(ProgeoModalViewSet):
 
             start = alarm.triggered_at or alarm.last_fetched
 
-            if alarm.status == ProgeoAlarm.Status.QUITTIERT and alarm.evaluated_by_id:
-                if ack_at is None or (alarm.evaluated_at and alarm.evaluated_at > ack_at):
-                    ack_by = getattr(alarm.evaluated_by, "username", None)
-                    ack_at = alarm.evaluated_at
+            if (alarm.status == ProgeoAlarm.Status.QUITTIERT and alarm.evaluated_by_id
+                    and (ack_at is None or (alarm.evaluated_at and alarm.evaluated_at > ack_at))):
+                ack_by = getattr(alarm.evaluated_by, "username", None)
+                ack_at = alarm.evaluated_at
 
             if state == "neu":
                 pending_ack_alarm_ids.append(alarm.id)
@@ -402,7 +402,7 @@ class AlarmViewSet(ProgeoModalViewSet):
 
     @require_module_permissions("module_measurements_enabled")
     def retrieve(self, request, pk=None, *args, **kwargs):
-        return super().retrieve(request, pk=pk, *args, **kwargs)
+        return super().retrieve(request, *args, pk=pk, **kwargs)
 
     @require_module_permissions("module_measurements_enabled")
     @action(detail=True, url_path="acknowledge", methods=["POST"])

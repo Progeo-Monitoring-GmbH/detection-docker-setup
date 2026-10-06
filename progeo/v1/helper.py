@@ -220,7 +220,7 @@ def parse_boolean(value):
 def parse_int(value, default=None):
     if value == "None" or value is None:
         return default
-    if value != value:
+    if value != value:  # noqa: PLR0124 - NaN check
         return default
     try:
         return int(value)
@@ -259,7 +259,7 @@ def json_encoder(obj):
 
     if isinstance(obj, datetime):
         return obj.strftime("%Y-%m-%d, %H:%M:%S")
-    raise TypeError("Type %s not serializable" % type(obj))
+    raise TypeError(f"Type {type(obj)} not serializable")
 
 
 def get_image_as_base64(_fpath: str):
@@ -293,7 +293,7 @@ def comparator(value_1, value_2, _comparator):
 def is_utf16(file_path):
     with open(file_path, 'rb') as file:
         first_bytes = file.read(2)
-        return first_bytes.startswith(b'\xFF\xFE') or first_bytes.startswith(b'\xFE\xFF')
+        return first_bytes.startswith((b'\xff\xfe', b'\xfe\xff'))
 
 
 def get_extension(filename):

@@ -15,7 +15,7 @@ class Command(BaseCommand):
     )
 
     def handle(self, *args, **options):
-        for db in DATABASES.keys():
+        for db in DATABASES:
             with connections[db].cursor() as cursor:
                 cursor.execute("DROP SCHEMA public CASCADE;")
                 cursor.execute("CREATE SCHEMA public;")

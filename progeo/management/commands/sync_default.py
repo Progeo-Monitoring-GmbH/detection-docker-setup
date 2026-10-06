@@ -74,7 +74,7 @@ def copy_model(model, db, from_db='default'):
 
             try:
                 # Create or update object in the target DB
-                target_obj, created = model.objects.using(db).update_or_create(
+                target_obj, _created = model.objects.using(db).update_or_create(
                     pk=source_obj.pk,
                     defaults=data
                 )

@@ -204,11 +204,10 @@ def merge_alarm_into(target: ProgeoAlarm, source: ProgeoAlarm, db: str) -> Proge
 		target.normalized_at = None
 
 	# Highest peak value wins, together with its sensor.
-	if source.max_value is not None:
-		if target.max_value is None or source.max_value > target.max_value:
-			target.max_value = source.max_value
-			if source.sensor_id is not None:
-				target.sensor_id = source.sensor_id
+	if source.max_value is not None and (target.max_value is None or source.max_value > target.max_value):
+		target.max_value = source.max_value
+		if source.sensor_id is not None:
+			target.sensor_id = source.sensor_id
 
 	# Union of development history, sorted by timestamp, deduplicated.
 	merged_values = list(target.max_values or []) + list(source.max_values or [])

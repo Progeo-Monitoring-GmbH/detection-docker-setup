@@ -1,3 +1,4 @@
+import itertools
 import logging
 from datetime import datetime, timedelta
 
@@ -115,10 +116,10 @@ class WeatherHelper:
             window_start = triggered_at - RAIN_LOOKBACK
             window_end = normalized_at or still_active_at or window_start
             # Overlap between [window_start, window_end] and [rain_start, rain_end].
-            if rain_start <= window_end and window_start <= rain_end:
-                if earliest_triggered is None or triggered_at < earliest_triggered:
-                    earliest_triggered = triggered_at
-                    earliest_pk = pk
+            if (rain_start <= window_end and window_start <= rain_end
+                    and (earliest_triggered is None or triggered_at < earliest_triggered)):
+                earliest_triggered = triggered_at
+                earliest_pk = pk
 
         # No other alarm covers this rain window -> this alarm is the first one.
         if earliest_pk is None:
@@ -181,7 +182,7 @@ class WeatherHelper:
 
         groups = []
         current = [rain_entries[0]]
-        for previous, entry in zip(rain_entries, rain_entries[1:]):
+        for previous, entry in itertools.pairwise(rain_entries):
             if entry[0] - previous[0] <= timedelta(hours=1):
                 current.append(entry)
             else:

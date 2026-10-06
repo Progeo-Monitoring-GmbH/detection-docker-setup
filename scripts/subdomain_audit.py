@@ -105,6 +105,7 @@ def _raw_nslookup(hostname: str, timeout: int) -> str | None:
             text=True,
             timeout=timeout,
             errors="replace",
+            check=False,
         )
         return (proc.stdout + proc.stderr).strip() or None
     except (OSError, subprocess.SubprocessError):

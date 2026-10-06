@@ -36,7 +36,7 @@ def parse_date_bound(value, start_of_day=False, end_of_day=False):
     return moment
 
 
-def evaluate_measurements_db(db: str, start, end, project_id: int = None) -> tuple[int, int]:
+def evaluate_measurements_db(db: str, start, end, project_id: int | None = None) -> tuple[int, int]:
     """Evaluate every measurement in [start, end] of every location in one pass."""
     from django.db.models import Q
 

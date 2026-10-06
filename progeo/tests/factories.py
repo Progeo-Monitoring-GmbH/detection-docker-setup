@@ -93,7 +93,7 @@ def make_measurement(device, pairs=(), fetched_at=None, **fields):
 
 
 def make_measure_point(location, sensor_order, name=None, threshold=None, **fields):
-    defaults = dict(x=0, y=0, nx=0, ny=0, grid_x=0, grid_y=0)
+    defaults = {"x": 0, "y": 0, "nx": 0, "ny": 0, "grid_x": 0, "grid_y": 0}
     defaults.update(fields)
     return ProgeoMeasurePoint.objects.using(DB).create(
         location=location, sensor_order=sensor_order, name=name, threshold=threshold, **defaults

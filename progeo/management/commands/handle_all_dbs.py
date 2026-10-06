@@ -15,7 +15,7 @@ def check_db_exists_for(db):
         return False
 
     for _f in _files:
-        if (_f.endswith(".psql") or _f.endswith(".psql.gz")) and _f.startswith(db):
+        if (_f.endswith((".psql", ".psql.gz"))) and _f.startswith(db):
             return True
     return False
 
@@ -40,7 +40,7 @@ class Command(BaseCommand):
 
         cmd = options.get("command")
         if cmd in ["dbbackup", "dbrestore"]:
-            for db in DATABASES.keys():
+            for db in DATABASES:
                 if cmd == "dbrestore" and not check_db_exists_for(db):
                     ilog(f"Skipping for db={db}")
                     continue

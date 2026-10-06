@@ -122,7 +122,8 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         
-        records = json.loads(open("airtable_projects_min.json", "r", encoding="utf-8").read())
+        with open("airtable_projects_min.json", encoding="utf-8") as f:
+            records = json.load(f)
         project_ids = ProgeoLocation.objects.values_list('project_id', flat=True)
         new_projects_count = 0
         existing_projects_count = 0

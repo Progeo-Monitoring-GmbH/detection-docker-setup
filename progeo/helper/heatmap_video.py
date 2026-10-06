@@ -117,7 +117,7 @@ def _run_ffmpeg(frames_dir: str, video_path: str, framerate: int) -> None:
         video_path,
     ]
     try:
-        completed = subprocess.run(command, capture_output=True, text=True, timeout=FFMPEG_TIMEOUT_SECONDS)
+        completed = subprocess.run(command, capture_output=True, text=True, timeout=FFMPEG_TIMEOUT_SECONDS, check=False)
     except FileNotFoundError as exc:
         raise HeatmapVideoError("ffmpeg is not installed on the server.") from exc
     except subprocess.TimeoutExpired as exc:

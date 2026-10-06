@@ -197,7 +197,7 @@ class AccountViewSet(ProgeoModalViewSet):
     permission_classes = [IsAuthenticated]
 
     def list(self, request, *args, **kwargs):
-        return super().list(request, no_cache=True, *args, **kwargs)
+        return super().list(request, *args, no_cache=True, **kwargs)
 
     def get_queryset(self):
         return Account.objects.filter(users=self.request.user)  # TODO

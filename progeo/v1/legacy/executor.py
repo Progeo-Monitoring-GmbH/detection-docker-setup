@@ -148,9 +148,7 @@ def is_imei(value):
     if not isinstance(value, str):
         return False
     text = value.strip()
-    if len(text) != 15 or not text.isdigit():
-        return False
-    return True
+    return len(text) == 15 and text.isdigit()
 
 
 def _legacy_measurement_datetime(measurement):
@@ -197,7 +195,7 @@ def _get_or_create_location(db_name, account, project_id, name):
     return location
 
 
-def save_measurement_from_legacy_data(measurement, device_id: str, battery_V: int = None, last_battery_percentage: int = None,
+def save_measurement_from_legacy_data(measurement, device_id: str, battery_V: int | None = None, last_battery_percentage: int | None = None,
                                       project_id=None, account=None):
     """project_id: the location to file a new device under. Defaults to the
     device_id itself, which is the project id for legacy devices.
@@ -375,7 +373,6 @@ def parse_legacy_data_measurement(data, broadcast=True):
         raise ValueError("Legacy data requires at least 25 indexed values")
 
     samples = values[25:]
-    last = samples[-1] if samples else 0
     measurement = DataMeasurement(
         project_id=values[0],
         m_headerlines=values[2],

@@ -55,11 +55,11 @@ class DeviceViewSet(ProgeoModalViewSet):
 
     @require_module_permissions("module_devices_enabled")
     def list(self, request, *args, **kwargs):
-        return super().list(request, no_cache=True, *args, **kwargs)
+        return super().list(request, *args, no_cache=True, **kwargs)
 
     @require_module_permissions("module_devices_enabled")
     def retrieve(self, request, pk=None, *args, **kwargs):
-        return super().retrieve(request, pk=pk, *args, **kwargs)
+        return super().retrieve(request, *args, pk=pk, **kwargs)
 
     @require_module_permissions("module_devices_enabled", "module_devices_edit")
     def create(self, request, *args, **kwargs):
@@ -250,7 +250,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         samples = []
         resistance_rows = []
         if isinstance(raw_values, dict):
-            series_keys = [key for key in raw_values.keys() if str(key).isdigit()]
+            series_keys = [key for key in raw_values if str(key).isdigit()]
             ilog(f"catch_legacy_imei_data | series_keys: {series_keys} | raw_values: {raw_values}", tag="[IMEI]")
             for key in sorted(series_keys, key=int):
                 row = raw_values.get(key)

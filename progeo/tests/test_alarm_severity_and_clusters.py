@@ -13,7 +13,7 @@ from progeo.v1.viewsets.alarm_viewset import AlarmViewSet
 
 def _make_alarm(**overrides):
     """An unsaved ProgeoAlarm with just enough fields for the severity/peak_value properties."""
-    defaults = dict(threshold=100, max_value=None, sensor_max_values=[], max_values=[])
+    defaults = {"threshold": 100, "max_value": None, "sensor_max_values": [], "max_values": []}
     defaults.update(overrides)
     return ProgeoAlarm(**defaults)
 

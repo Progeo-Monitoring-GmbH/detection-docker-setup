@@ -240,7 +240,7 @@ class ProgeoModel(RootModel):
         return super().save(*args, **kwargs)
 
     def delete(self, using, *args, **kwargs):
-        super().delete(using=using, *args, **kwargs)
+        super().delete(*args, using=using, **kwargs)
 
 
 class ProgeoPolyModel(RootModel):
@@ -544,9 +544,8 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
         _idx, _value = None, None
         for idx, sample in enumerate(pairs):
             value = int(sample)
-            if value > alarm_threshold:
-                if _value is None or value > _value:
-                    _idx, _value = idx, value
+            if value > alarm_threshold and (_value is None or value > _value):
+                _idx, _value = idx, value
         return _idx, _value
 
     def evaluate_all(self, alarm_threshold, limit: int = 10):

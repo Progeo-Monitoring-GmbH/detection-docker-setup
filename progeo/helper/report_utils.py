@@ -258,7 +258,7 @@ def generate_daily_report_db(db: str, report_date) -> bool:
     )
     email_disconnected_projects(db, report_date, projects, previous_report)
 
-    report, _ = AlarmDailyReport.objects.using(db).update_or_create(
+    _report, _ = AlarmDailyReport.objects.using(db).update_or_create(
         account=account,
         date=report_date,
         defaults={

@@ -193,7 +193,7 @@ def collect_layer_polyline_points_raw(dxf_path: Path, layer_name: str) -> list[d
         number = _to_float(value)
         if number is None:
             return None
-        return int(round(number * 10))
+        return round(number * 10)
 
     def values_as_list(data: Any) -> list[Any]:
         if data is None:
@@ -328,7 +328,7 @@ def detect_first_valid_layer(dxf_path: Path, valid_layers: list[str]) -> str | N
     return None
 
 def scale_to_int(value: float) -> int:
-    return int(round(float(value) * 10))
+    return round(float(value) * 10)
 
 
 def _cluster_axis_values(values: list[int], tolerance: int) -> tuple[list[int], dict[int, int]]:
@@ -348,7 +348,7 @@ def _cluster_axis_values(values: list[int], tolerance: int) -> tuple[list[int], 
     representatives: list[int] = []
     lookup: dict[int, int] = {}
     for group in groups:
-        representative = int(round(sum(group) / len(group)))
+        representative = round(sum(group) / len(group))
         representatives.append(representative)
         for item in group:
             lookup[item] = representative
@@ -375,7 +375,7 @@ def _normalize_points_with_grid(raw_points: list[dict[str, int]], coord_margin: 
     ref_x = reference["x"]
     ref_y = reference["y"]
 
-    tolerance = max(0, int(round(float(coord_margin) * 10)))
+    tolerance = max(0, round(float(coord_margin) * 10))
     offset_x_values = [point["x"] - ref_x for point in raw_points]
     offset_y_values = [point["y"] - ref_y for point in raw_points]
     

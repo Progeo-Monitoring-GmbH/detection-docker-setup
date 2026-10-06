@@ -148,7 +148,7 @@ class LocationViewSet(ProgeoModalViewSet):
 
     @require_module_permissions("module_locations_enabled")
     def list(self, request, *args, **kwargs):
-        return super().list(request, no_cache=False, *args, **kwargs)
+        return super().list(request, *args, no_cache=False, **kwargs)
     
     @require_module_permissions("module_locations_enabled")
     @action(detail=False, url_path="project-types", methods=["GET"])
@@ -201,7 +201,7 @@ class LocationViewSet(ProgeoModalViewSet):
 
     @require_module_permissions("module_locations_enabled")
     def retrieve(self, request, pk=None, *args, **kwargs):
-        return super().retrieve(request, pk=pk, *args, **kwargs)
+        return super().retrieve(request, *args, pk=pk, **kwargs)
 
     @require_module_permissions("module_notifications_enabled")
     @action(detail=True, url_path="access", methods=["GET", "POST"])

@@ -434,7 +434,7 @@ class StatusViewSet(ProgeoModalViewSet):
         json_path = request.FILES.get("files0")
         data = json.load(json_path)
         for point in data:
-            measure_point, _ = create_progeo_measure_point_safe(location=location, sensor_order=point.get('pos'),
+            _measure_point, _ = create_progeo_measure_point_safe(location=location, sensor_order=point.get('pos'),
                                                                  x=point.get('x'), y=point.get('y'), 
                                                                  nx=point.get('nx'), ny=point.get('ny'), 
                                                                  grid_x=point.get('gx'), grid_y=point.get('gy'), 
@@ -717,7 +717,7 @@ class StatusViewSet(ProgeoModalViewSet):
                     defaults={"location": location, "mac": mac,
                               "device_ip": connected.get("ip"),
                               "hardware": hostname, "version": "v1",
-                              "project_id": os.getenv("CONTROLLER_PROJECT_ID", 0)},
+                              "project_id": int(os.getenv("CONTROLLER_PROJECT_ID", "0"))},
                 )
                 if not device.mac:
                     device.mac = mac

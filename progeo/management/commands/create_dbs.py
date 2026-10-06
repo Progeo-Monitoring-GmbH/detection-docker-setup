@@ -34,7 +34,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
 
-        for db in DATABASES.keys():
+        for db in DATABASES:
             try:
                 dlog("create_dbs", f"--database={db}")
                 if self._database_exists(db):

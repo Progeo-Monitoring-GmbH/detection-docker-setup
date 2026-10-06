@@ -55,9 +55,9 @@ def find_pink_rectangle(image_bgr: np.ndarray):
                 if dx == 0 and dy == 0:
                     continue
                 nx, ny = x + dx, y + dy
-                if 0 <= nx < w and 0 <= ny < h and (nx, ny) not in visited:
-                    if gray[ny, nx] < white_threshold:
-                        stack.append((nx, ny))
+                if (0 <= nx < w and 0 <= ny < h and (nx, ny) not in visited
+                        and gray[ny, nx] < white_threshold):
+                    stack.append((nx, ny))
 
     if len(points) < 200:
         print(f"Warning: Region too small ({len(points)} pixels).")
@@ -135,7 +135,7 @@ def find_blue_cross_centers(image_bgr: np.ndarray):
         if area < 8 or area > 2000:
             continue
 
-        x, y, w, h = cv2.boundingRect(contour)
+        _x, _y, w, h = cv2.boundingRect(contour)
         if max(w, h) > 25:
             continue
 
@@ -143,8 +143,8 @@ def find_blue_cross_centers(image_bgr: np.ndarray):
         if m["m00"] == 0:
             continue
 
-        cx = int(round(m["m10"] / m["m00"]))
-        cy = int(round(m["m01"] / m["m00"]))
+        cx = round(m["m10"] / m["m00"])
+        cy = round(m["m01"] / m["m00"])
         centers.append((cx, cy))
 
     deduped = []

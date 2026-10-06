@@ -55,7 +55,7 @@ def test_summary_counts_alarms_and_active_ones_per_location(api_client, world):
 
 
 def test_summary_ids_filter(api_client, world):
-    _account, location, other_location, device, member = world
+    _account, _location, other_location, device, member = world
     f.make_alarm(device, triggered_ago=f.minutes(30))
     f.make_alarm(f.make_device(other_location), triggered_ago=f.minutes(5))
     api_client.force_authenticate(user=member)
@@ -94,7 +94,7 @@ def test_summary_days_are_clamped(api_client, world, days, counted):
 
 
 def test_summary_is_scoped_for_single_access_users(api_client, world):
-    _account, location, other_location, device, _member = world
+    _account, _location, other_location, device, _member = world
     f.make_alarm(device, triggered_ago=f.minutes(30))
     f.make_alarm(f.make_device(other_location), triggered_ago=f.minutes(5))
     single = f.make_user(perms=MEASURE)
@@ -121,7 +121,7 @@ def test_summary_requires_permission(api_client, world):
 
 @pytest.fixture
 def cluster_world(world):
-    account, location, _other, device, member = world
+    _account, location, _other, device, member = world
     acker = f.make_user(username=f.unique("acker"))
     alarms = {
         "neu_low": f.make_alarm(device, sensor_id=1, value=150, triggered_ago=f.minutes(30)),

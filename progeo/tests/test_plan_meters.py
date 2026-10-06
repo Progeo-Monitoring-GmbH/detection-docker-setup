@@ -14,8 +14,8 @@ VIEW = ("module_locations_enabled", "module_measurements_enabled")
 
 
 def _plan(**fields):
-    defaults = dict(offset_x=0, offset_y=0, scale_x=1, scale_y=1, flip_y=False,
-                    reference_x=100, reference_y=200, meters_per_pixel=0.01)
+    defaults = {"offset_x": 0, "offset_y": 0, "scale_x": 1, "scale_y": 1, "flip_y": False,
+                    "reference_x": 100, "reference_y": 200, "meters_per_pixel": 0.01}
     return SimpleNamespace(**{**defaults, **fields})
 
 

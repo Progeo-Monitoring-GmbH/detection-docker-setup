@@ -31,7 +31,7 @@ def _members_by_name(body):
 
 
 def test_members_list_account_single_and_staff(api_client, setup):
-    account, location, admin = setup
+    _account, location, admin = setup
     single = f.make_user(username=f.unique("single"))
     rule = f.make_access(location, single)
     staff = f.make_user(username=f.unique("staff"), staff=True)
@@ -47,7 +47,7 @@ def test_members_list_account_single_and_staff(api_client, setup):
 
 
 def test_account_member_with_rule_stays_account_access(api_client, setup):
-    account, location, admin = setup
+    _account, location, admin = setup
     rule = f.make_access(location, admin)
     api_client.force_authenticate(user=admin)
 
@@ -59,7 +59,7 @@ def test_account_member_with_rule_stays_account_access(api_client, setup):
 
 
 def test_candidates_are_limited_to_the_requesters_accounts(api_client, setup):
-    account, location, admin = setup
+    account, _location, admin = setup
     colleague = f.make_user(accounts=[account])
     other_account = f.make_account()
     foreigner = f.make_user(accounts=[other_account])
@@ -79,7 +79,7 @@ def test_candidates_are_limited_to_the_requesters_accounts(api_client, setup):
 
 
 def test_granting_single_access_to_a_foreign_user_is_refused(api_client, setup):
-    account, location, admin = setup
+    _account, location, admin = setup
     foreigner = f.make_user(accounts=[f.make_account()])
     api_client.force_authenticate(user=admin)
 
@@ -94,7 +94,7 @@ def test_granting_single_access_to_a_foreign_user_is_refused(api_client, setup):
 
 
 def test_staff_can_grant_single_access_to_any_customer(api_client, setup):
-    account, location, _admin = setup
+    _account, location, _admin = setup
     customer = f.make_user()
     api_client.force_authenticate(user=f.make_user(staff=True))
 
@@ -123,7 +123,7 @@ def test_updating_a_rule_needs_edit_permission(api_client, setup):
 
 
 def test_rule_update_validates_integers(api_client, setup):
-    account, location, admin = setup
+    _account, location, admin = setup
     rule = f.make_access(location, admin)
     api_client.force_authenticate(user=admin)
 
@@ -135,7 +135,7 @@ def test_rule_update_validates_integers(api_client, setup):
 
 
 def test_delete_rule_revokes_single_access(api_client, setup):
-    account, location, admin = setup
+    _account, location, admin = setup
     single = f.make_user()
     rule = f.make_access(location, single)
     api_client.force_authenticate(user=admin)
@@ -147,7 +147,7 @@ def test_delete_rule_revokes_single_access(api_client, setup):
 
 
 def test_account_member_endpoint_adds_membership(api_client, setup):
-    account, location, admin = setup
+    account, location, _admin = setup
     newcomer = f.make_user(accounts=[f.make_account()])
     api_client.force_authenticate(user=f.make_user(staff=True))
 

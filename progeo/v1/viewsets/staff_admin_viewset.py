@@ -240,10 +240,10 @@ class StaffUserDetailView(APIView):
         })
 
     def put(self, request, pk=None, *args, **kwargs):
-        return self.post(request, pk=pk, *args, **kwargs)
+        return self.post(request, *args, pk=pk, **kwargs)
 
     def patch(self, request, pk=None, *args, **kwargs):
-        return self.post(request, pk=pk, *args, **kwargs)
+        return self.post(request, *args, pk=pk, **kwargs)
 
 
 class StaffUserPasswordView(APIView):

@@ -212,7 +212,7 @@ def test_alarms_of_other_devices_stay_open(window, site):
 # -- evaluate_measurements_db: scoping / setup ----------------------------------
 
 def test_only_measurements_inside_the_window_count(window, site):
-    start, at, end = window
+    start, _at, end = window
     _location, device = site
     f.make_measurement(device, pairs=[150], fetched_at=start - datetime.timedelta(minutes=1))
     f.make_measurement(device, pairs=[150], fetched_at=end + datetime.timedelta(minutes=1))

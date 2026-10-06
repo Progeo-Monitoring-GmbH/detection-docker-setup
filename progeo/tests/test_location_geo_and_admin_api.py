@@ -42,7 +42,7 @@ def _import(api_client, rows):
 # -- geo_export --------------------------------------------------------------
 
 def test_geo_export_lists_only_the_users_locations(api_client, geo_world):
-    _account, first, second, foreign, member = geo_world
+    _account, first, second, _foreign, member = geo_world
     api_client.force_authenticate(user=member)
 
     body = api_client.get("/v1/location/geo_export/").json()
@@ -427,7 +427,7 @@ def test_test_notification_sends_per_channel_and_reports_errors(staff_client, no
     assert results["E-Mail + SMS"]["sms_ok"] is False
     assert "missing password" in results["E-Mail + SMS"]["sms_error"]
     assert sorted(mail[0][0] for mail in channels["mail"]) == ["both@example.com", "mail@example.com"]
-    sent_to, template, context, location_id = channels["mail"][0]
+    _sent_to, template, context, location_id = channels["mail"][0]
     assert template == "test_leakage.txt"
     assert (context["project_nr"], context["project_name"], location_id) == (920001, "Halle 3", notification_world.id)
     assert all("Objekt 920001 Halle 3" in sms[1] for sms in channels["sms"])

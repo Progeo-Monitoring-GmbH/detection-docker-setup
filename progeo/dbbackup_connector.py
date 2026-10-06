@@ -96,7 +96,7 @@ class RestrictSafePgDumpConnector(PgDumpConnector):
     @classmethod
     def _strip_restrict(cls, stream):
         """Return a copy of `stream` (bytes) without the restrict meta-commands."""
-        filtered = SpooledTemporaryFile(
+        filtered = SpooledTemporaryFile(  # noqa: SIM115 - returned to caller
             max_size=dbbackup_settings.TMP_FILE_MAX_SIZE,
             dir=dbbackup_settings.TMP_DIR,
             mode="w+b",

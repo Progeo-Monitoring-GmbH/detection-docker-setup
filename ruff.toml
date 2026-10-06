@@ -1,0 +1,10 @@
+[lint.per-file-ignores]
+# Django/DRF declare config as mutable class attributes (Meta.fields, operations,
+# queryset filters, router routes, ...) — annotating them as ClassVar adds noise only.
+"progeo/migrations/*" = ["RUF012"]
+"progeo/router.py" = ["RUF012"]
+"progeo/v1/admin.py" = ["RUF012"]
+"progeo/v1/models.py" = ["RUF012"]
+"progeo/v1/serializers.py" = ["RUF012"]
+"progeo/v1/viewsets/*" = ["RUF012"]
+"progeo/tests/*" = ["RUF012"]

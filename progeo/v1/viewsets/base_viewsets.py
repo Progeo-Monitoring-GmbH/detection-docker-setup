@@ -113,7 +113,7 @@ class ProgeoTokenObtainPairView(TokenObtainPairView):
     def post(self, request, *args, **kwargs) -> Response:
         serializer = self.get_serializer(data=request.data)
         from ipware import get_client_ip
-        ip, is_routable = get_client_ip(request)
+        _ip, _is_routable = get_client_ip(request)
         try:
             serializer.is_valid(raise_exception=True)
         except TokenError as e:

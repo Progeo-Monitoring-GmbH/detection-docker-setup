@@ -16,7 +16,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
 
-        for db in DATABASES.keys():
+        for db in DATABASES:
             try:
                 dlog("migrate", f"--database={db}")
                 call_command("migrate", f"--database={db}")

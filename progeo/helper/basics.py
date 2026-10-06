@@ -58,7 +58,7 @@ def _log(*msg, color: AnsiFore, tag):
     :param tag: leading tag for the print line
     """
     _now = time.time()
-    time_with_ms = "%s.%03d" % (time.strftime('%X', time.localtime(_now)), _now % 1 * 1000)
+    time_with_ms = f"{time.strftime('%X', time.localtime(_now))}.{int(_now % 1 * 1000):03d}"
     print(color, time_with_ms, f"{tag: <15}", *msg, Style.RESET_ALL)
 
 
@@ -355,7 +355,7 @@ def json_encoder(obj):
 
     if isinstance(obj, datetime):
         return obj.strftime("%Y-%m-%d, %H:%M:%S")
-    raise TypeError("Type %s not serializable" % type(obj))
+    raise TypeError(f"Type {type(obj)} not serializable")
 
 
 def check_raise_config(wanted_keys: list, existing_keys: list):

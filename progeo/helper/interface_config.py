@@ -124,5 +124,5 @@ def _save(key: str, values: dict, default: dict, secret_field: str | None) -> di
         if secret_field is not None and field == secret_field and str(value).strip() in ("", "********"):
             value = current.get(field, "")
         merged[field] = value
-    row, _ = SystemConfig.objects.update_or_create(key=key, defaults={"value": merged})
+    _row, _ = SystemConfig.objects.update_or_create(key=key, defaults={"value": merged})
     return merged

@@ -129,7 +129,7 @@ class Command(BaseCommand):
             if location.project_id is not None:
                 by_project_id[location.project_id].append(location)
         best_by_project_id = {
-            project_id: sorted(candidates, key=location_rank)[0]
+            project_id: min(candidates, key=location_rank)
             for project_id, candidates in by_project_id.items()
         }
         placeholder_ids = {location.pk for location in locations if is_placeholder(location)}

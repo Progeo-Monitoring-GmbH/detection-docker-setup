@@ -16,7 +16,7 @@ from progeo.helper.basics import dlog
 logger = get_task_logger(__name__)
 
 _redis_host = os.getenv("REDIS_HOST", "localhost")
-_redis_port = os.getenv("REDIS_PORT", 6379)
+_redis_port = os.getenv("REDIS_PORT", "6379")
 _redis_password = os.getenv("REDIS_PASSWORD", "")
 _redis_password_encoded = quote(_redis_password, safe="") if _redis_password else ""
 _redis_auth = f":{_redis_password_encoded}@" if _redis_password_encoded else ""

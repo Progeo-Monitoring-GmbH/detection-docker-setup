@@ -38,7 +38,7 @@ def location_has_geo_position(project_id):
     Returns True if a location was found with both latitude and longitude set, False otherwise
     (including when no location exists at all).
     """
-    for db in DATABASES.keys():
+    for db in DATABASES:
         location = ProgeoLocation.objects.using(db).filter(project_id=project_id).first()
         if location is not None:
             return location.latitude is not None and location.longitude is not None

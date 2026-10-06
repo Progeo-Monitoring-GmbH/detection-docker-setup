@@ -42,7 +42,7 @@ class BackupViewSet(ProgeoModalViewSet):
 
     @require_module_permissions("module_backup_enabled")
     def retrieve(self, request, pk=None, *args, **kwargs):
-        return super().retrieve(request, pk=pk, *args, **kwargs)
+        return super().retrieve(request, *args, pk=pk, **kwargs)
 
     def get_queryset(self):
         return Backup.objects.using(self.request.account.db_name)\
@@ -55,7 +55,7 @@ class BackupViewSet(ProgeoModalViewSet):
     def parse_backups(self, request, *args, **kwargs):
         _files = os.listdir(BACKUP_DIR)
         for _f in _files:
-            is_backup_file = _f.endswith(".psql") or _f.endswith(f".psql{Backup.COMPRESSED_SUFFIX}")
+            is_backup_file = _f.endswith((".psql", f".psql{Backup.COMPRESSED_SUFFIX}"))
             if not is_backup_file or request.account.db_name not in _f:
                 continue
 

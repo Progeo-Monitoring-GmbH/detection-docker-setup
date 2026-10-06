@@ -8,7 +8,7 @@ def ping():
 
 
 @shared_task
-def download_device_config(device_ip: str, path: str = None):
+def download_device_config(device_ip: str, path: str | None = None):
     """Download the device config file from a private IPv4 device."""
     import logging
 
@@ -44,7 +44,7 @@ def download_device_config(device_ip: str, path: str = None):
 
 
 @shared_task
-def upload_device_config(device_ip: str, content: str, path: str = None):
+def upload_device_config(device_ip: str, content: str, path: str | None = None):
     """Upload the device config file to a private IPv4 device."""
     import logging
 
@@ -187,7 +187,7 @@ def request_device_measurement(device_id: int):
 
 
 @shared_task
-def evaluate_measurement(measurement_id: int, account_id: int = None):
+def evaluate_measurement(measurement_id: int, account_id: int | None = None):
     """Evaluate a single measurement: update sensor points and compute spots."""
     from progeo.helper.basics import dlog as _dlog
     from progeo.helper.measurement_utils import (
@@ -256,8 +256,8 @@ def evaluate_measurement(measurement_id: int, account_id: int = None):
 
 
 @shared_task
-def evaluate_measurements(db: str = None, lookback_hours: int = 1, days: int = None,
-                          start_date=None, end_date=None, project_id: int = None):
+def evaluate_measurements(db: str | None = None, lookback_hours: int = 1, days: int | None = None,
+                          start_date=None, end_date=None, project_id: int | None = None):
     """
     Evaluate measurements (default: of the last hour) for every location and raise
     or prolong alarms via create_progeo_alarm_safe.
@@ -331,7 +331,7 @@ def evaluate_measurements(db: str = None, lookback_hours: int = 1, days: int = N
 
 
 @shared_task
-def check_existing_alarms(db: str = None, silence_hours: int = 24):
+def check_existing_alarms(db: str | None = None, silence_hours: int = 24):
     """
     Re-evaluate every still-active (unnormalized) alarm against its device's
     latest measurement and normalize alarms that no longer exceed the location
@@ -377,7 +377,7 @@ def check_existing_alarms(db: str = None, silence_hours: int = 24):
 
 
 @shared_task
-def generate_daily_alarm_report(db: str = None, report_date=None):
+def generate_daily_alarm_report(db: str | None = None, report_date=None):
     """
     Bundle the alarm data of one day into an AlarmDailyReport for every account.
 
@@ -433,7 +433,7 @@ def collect_host_storage_info():
 
 
 @shared_task
-def swap_databases_new_year(db: str = None, year: int = None):
+def swap_databases_new_year(db: str | None = None, year: int | None = None):
     """
     Archive every account database for the year on New Year's Eve.
 

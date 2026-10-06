@@ -19,7 +19,7 @@ class Command(BaseCommand):
     @staticmethod
     def handle_model(_models_list):
         _models = list(_models_list)
-        for db in DATABASES.keys():
+        for db in DATABASES:
             dlog(f"db={db: <20} | models={_models}")
             for _model in _models:
                 if not _model:

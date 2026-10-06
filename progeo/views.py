@@ -14,7 +14,7 @@ class ExtendedObtainAuthToken(ObtainAuthToken):
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data['user']
         # login(request, user)   # TODO fix later
-        token, created = Token.objects.get_or_create(user=user)
+        token, _created = Token.objects.get_or_create(user=user)
         return Response({'token': token.key})
 
 

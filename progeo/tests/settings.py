@@ -200,7 +200,7 @@ CORS_ALLOW_CREDENTIALS = True
 DEFAULT_AUTO_FIELD = "django.db.models.AutoField"
 
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_PORT = os.getenv("REDIS_PORT", 6379)
+REDIS_PORT = os.getenv("REDIS_PORT", "6379")
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
 REDIS_AUTH = f":{REDIS_PASSWORD}@" if REDIS_PASSWORD else ""
 REDIS_URL = f"redis://{REDIS_AUTH}{REDIS_HOST}:{REDIS_PORT}/1"
@@ -293,11 +293,11 @@ if os.getenv("SECURE_REDIRECT_EXEMPT"):
 
 SECURE_REFERRER_POLICY = os.getenv("SECURE_REFERRER_POLICY")
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-SESSION_COOKIE_SECURE = parse_boolean(os.getenv("SESSION_COOKIE_SECURE", False))
-CSRF_COOKIE_SECURE = parse_boolean(os.getenv("CSRF_COOKIE_SECURE", False))
-SECURE_HSTS_SECONDS = parse_int(os.getenv("SECURE_HSTS_SECONDS", 0))
-SECURE_HSTS_PRELOAD = parse_boolean(os.getenv("SECURE_HSTS_PRELOAD", False))
-SECURE_SSL_REDIRECT = parse_boolean(os.getenv("SECURE_SSL_REDIRECT", False))
+SESSION_COOKIE_SECURE = parse_boolean(os.getenv("SESSION_COOKIE_SECURE", "False"))
+CSRF_COOKIE_SECURE = parse_boolean(os.getenv("CSRF_COOKIE_SECURE", "False"))
+SECURE_HSTS_SECONDS = parse_int(os.getenv("SECURE_HSTS_SECONDS", "0"))
+SECURE_HSTS_PRELOAD = parse_boolean(os.getenv("SECURE_HSTS_PRELOAD", "False"))
+SECURE_SSL_REDIRECT = parse_boolean(os.getenv("SECURE_SSL_REDIRECT", "False"))
 SECURE_SSL_HOST = os.getenv("SECURE_SSL_HOST")
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 
@@ -316,7 +316,7 @@ DATA_UPLOAD_MAX_NUMBER_FIELDS = 5000
 
 SHOW_LAST_TAGS = 25
 
-TIME_CALC_OFFSET = parse_int(os.getenv("TIME_CALC_OFFSET", 0))
+TIME_CALC_OFFSET = parse_int(os.getenv("TIME_CALC_OFFSET", "0"))
 
 PRETTY_DATE_FORMAT = "%d.%m.%Y, %H:%M"
 

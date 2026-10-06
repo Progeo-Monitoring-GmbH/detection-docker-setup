@@ -35,6 +35,7 @@ def run_psql(db: str, sql: str, env=None, timeout: int = 600):
         text=True,
         timeout=timeout,
         env=env or pg_env(),
+        check=False,
     )
     if result.returncode != 0:
         raise RuntimeError(f"psql on '{db}' failed: {result.stderr.strip()}")
@@ -51,7 +52,7 @@ def run_pg_dump(db: str, output_path: str, exclude: tuple = (), include: tuple =
         args += ["-t", table]
     if schema_only:
         args.append("--schema-only")
-    result = subprocess.run(args, capture_output=True, text=True, timeout=timeout, env=env or pg_env())
+    result = subprocess.run(args, capture_output=True, text=True, timeout=timeout, env=env or pg_env(), check=False)
     if result.returncode != 0:
         raise RuntimeError(f"pg_dump of '{db}' failed: {result.stderr.strip()}")
 
@@ -64,6 +65,7 @@ def run_pg_restore(db: str, dump_path: str, env=None, timeout: int = 1800):
         text=True,
         timeout=timeout,
         env=env or pg_env(),
+        check=False,
     )
     if result.returncode != 0:
         raise RuntimeError(f"pg_restore into '{db}' failed: {result.stderr.strip()}")

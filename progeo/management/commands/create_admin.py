@@ -32,4 +32,4 @@ class Command(BaseCommand):
 
             # Create a Token for watch-dog
             _user = user.objects.get(username=username)
-            token, _ = Token.objects.get_or_create(user=_user)
+            _token, _ = Token.objects.get_or_create(user=_user)
