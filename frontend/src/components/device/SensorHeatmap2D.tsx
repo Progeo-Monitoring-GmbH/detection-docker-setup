@@ -5,6 +5,7 @@ import { Film } from 'react-bootstrap-icons';
 import Plot from 'react-plotly.js';
 import { plotTheme } from '../../styles/plotTheme';
 import { formatTimestamp } from './heatmapFrames';
+import { buildWeightedGrid, type WeightedPoint } from './heatmapGrid';
 import SensorTooltip from './SensorTooltip';
 import {
   SensorHeatmapLocation,
@@ -27,13 +28,6 @@ type SensorHeatmap2DProps = {
   alignment?: SensorHeatmapLocation | null;
   /** Skip the component's own Card chrome so it can sit inside another panel wrapper. */
   hideChrome?: boolean;
-};
-
-type WeightedPoint = {
-  pos: number;
-  x: number;
-  y: number;
-  weight: number;
 };
 
 type ImageSize = {
@@ -100,85 +94,6 @@ const HEAT_FULL_MULTIPLIER = 3;
  * changing the kernel width doesn't change the map's margin.
  */
 const HEAT_BORDER_SIGMAS = 3;
-
-/**
- * Weighted Gaussian splatting on a regular grid over [-pad, 1 + pad]^2 - the
- * padding lets the heat of sensors on the border fade out instead of being
- * cut off at the outermost points:
- *
- *   heat(x) = sum_i weight_i * exp(-d(x, point_i)^2 / (2 * sigma^2))
- *
- * When `referenceMax` is given (absolute scaling), the accumulated field is
- * divided by it and clamped to [0, 1] - heat only reaches 1 for sensor
- * values far above the alarm threshold. Without it the field is normalized
- * by its own maximum (relative fallback).
- */
-const buildWeightedGrid = (
-  points: WeightedPoint[],
-  resolution: number,
-  sigma: number,
-  referenceMax: number | null = null,
-  pad = 0,
-) => {
-  const res = Math.max(2, resolution);
-  const span = 1 + 2 * pad;
-  // Normalized length of one grid cell.
-  const cell = span / (res - 1);
-  const axis = Array.from({ length: res }, (_, index) => -pad + index * cell);
-  const grid = Array.from({ length: res }, () => new Float64Array(res));
-
-  const radiusCells = Math.ceil(clamp(sigma * 3, 0.001, span) / cell);
-  const twoSigmaSquared = 2 * sigma * sigma;
-
-  points.forEach((point) => {
-    if (!Number.isFinite(point.weight) || point.weight <= 0) {
-      return;
-    }
-
-    const cx = (clamp(point.x, 0, 1) + pad) / cell;
-    const cy = (clamp(point.y, 0, 1) + pad) / cell;
-    const startX = Math.max(0, Math.floor(cx - radiusCells));
-    const endX = Math.min(res - 1, Math.ceil(cx + radiusCells));
-    const startY = Math.max(0, Math.floor(cy - radiusCells));
-    const endY = Math.min(res - 1, Math.ceil(cy + radiusCells));
-
-    for (let gy = startY; gy <= endY; gy += 1) {
-      const dyNormalized = (gy - cy) * cell;
-      for (let gx = startX; gx <= endX; gx += 1) {
-        const dxNormalized = (gx - cx) * cell;
-        const distanceSquared =
-          dxNormalized * dxNormalized + dyNormalized * dyNormalized;
-        const kernel = Math.exp(-distanceSquared / twoSigmaSquared);
-        grid[gy][gx] += point.weight * kernel;
-      }
-    }
-  });
-
-  let max = 0;
-  grid.forEach((row) => {
-    row.forEach((value) => {
-      if (value > max) {
-        max = value;
-      }
-    });
-  });
-
-  if (referenceMax != null && referenceMax > 0) {
-    grid.forEach((row) => {
-      for (let index = 0; index < row.length; index += 1) {
-        row[index] = clamp(row[index] / referenceMax, 0, 1);
-      }
-    });
-  } else if (max > 0) {
-    grid.forEach((row) => {
-      for (let index = 0; index < row.length; index += 1) {
-        row[index] /= max;
-      }
-    });
-  }
-
-  return { axis, grid, max };
-};
 
 const SensorHeatmap2D = ({
   response,
