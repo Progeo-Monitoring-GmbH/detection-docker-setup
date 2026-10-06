@@ -371,7 +371,7 @@ class DeviceViewSet(ProgeoModalViewSet):
 
         return RequestSuccess()
 
-    @action(detail=False, url_path=r"lorawan/(?P<project_id>\d+)/",
+    @action(detail=False, url_path=r"lorawan/(?P<project_id>\d+)",
             authentication_classes=[LimitedTokenAuthentication], methods=["POST"])
     def catch_lorawan_data(self, request, project_id=None, token=None, *args, **kwargs):
         """Store a LoRaWAN uplink forwarded by the network server.
@@ -409,6 +409,10 @@ class DeviceViewSet(ProgeoModalViewSet):
         measure = save_measurement_from_legacy_data(
             measurement={"project_id": project_id, **values},
             device_id=device_id or str(project_id),
+            project_id=project_id,
+            # The token's account lives in the DB the device data is written to;
+            # the controller account may not (it's in DJANGO_DATABASES[0]).
+            account=request.auth.account,
         )
 
         return RequestSuccess({

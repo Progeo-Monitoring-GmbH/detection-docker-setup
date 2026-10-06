@@ -184,7 +184,25 @@ def _as_project_id(device_id):
     return value if 0 <= value <= PROJECT_ID_MAX else None
 
 
-def save_measurement_from_legacy_data(measurement, device_id: str, battery_V: int = None, last_battery_percentage: int = None):
+def _get_or_create_location(db_name, account, project_id, name):
+    """The account's location for project_id (or, without one, for name).
+
+    project_id/name aren't unique on ProgeoLocation, so duplicates may already
+    exist; the oldest wins instead of get_or_create's MultipleObjectsReturned.
+    """
+    lookup = {"project_id": project_id} if project_id is not None else {"project_id": None, "name": name}
+    location = ProgeoLocation.objects.using(db_name).filter(account=account, **lookup).order_by("pk").first()
+    if location is None:
+        location = ProgeoLocation.objects.using(db_name).create(account=account, **lookup)
+    return location
+
+
+def save_measurement_from_legacy_data(measurement, device_id: str, battery_V: int = None, last_battery_percentage: int = None,
+                                      project_id=None, account=None):
+    """project_id: the location to file a new device under. Defaults to the
+    device_id itself, which is the project id for legacy devices.
+    account: owner of a newly created location. Must live in the "default" DB;
+    defaults to the controller account."""
     db_name = "default"
     device, created = ProgeoDevice.objects.using(db_name).get_or_create(raw_hash=device_id)
 
@@ -193,21 +211,12 @@ def save_measurement_from_legacy_data(measurement, device_id: str, battery_V: in
         device.type = get_device_type(measurement, device_id)
         device.save(using=db_name)
 
-        account = _get_controller_account()
+    if device.location_id is None:
+        account = account or _get_controller_account()
         # project_id is a 32-bit integer column: IMEI-style ids (15 digits)
         # don't fit, so those locations are keyed by name instead.
-        project_id = _as_project_id(device_id)
-        if project_id is not None:
-            location, _ = ProgeoLocation.objects.using(db_name).get_or_create(
-                account=account,
-                project_id=project_id,
-            )
-        else:
-            location, _ = ProgeoLocation.objects.using(db_name).get_or_create(
-                account=account,
-                project_id=None,
-                name=str(device_id),
-            )
+        location_project_id = _as_project_id(device_id if project_id is None else project_id)
+        location = _get_or_create_location(db_name, account, location_project_id, name=str(device_id))
         # ProgeoDevice.location is a plain FK (no reverse "devices" manager).
         device.location = location
         device.save(using=db_name, update_fields=["location"])
