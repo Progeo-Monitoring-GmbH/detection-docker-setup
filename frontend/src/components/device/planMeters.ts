@@ -75,6 +75,7 @@ export const pointMeters = (
   return pixelToMeters(...planPixel(nx, ny, plan, size), plan);
 };
 
-/** "x 12.34 m, y -3.21 m" */
+/** "x 12.34 m, y 3.21 m" - distances from the reference point, always
+ * shown as absolute values (the sign/direction is not displayed). */
 export const formatMeters = ([x, y]: [number, number]) =>
-  `x ${x.toFixed(2)} m, y ${y.toFixed(2)} m`;
+  `x ${Math.abs(x).toFixed(2)} m, y ${Math.abs(y).toFixed(2)} m`;

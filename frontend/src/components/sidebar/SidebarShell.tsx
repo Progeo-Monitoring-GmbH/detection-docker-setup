@@ -81,7 +81,7 @@ const Brand = ({
 );
 
 /**
- * Chrome shared by AppSidebar and LocationSidebar: a fixed-width sidebar on
+ * Chrome of LocationSidebar (the app's sidebar): a fixed-width sidebar on
  * desktop, and a sticky top bar with a burger dropdown below
  * MOBILE_BREAKPOINT (closed again on every route change).
  */

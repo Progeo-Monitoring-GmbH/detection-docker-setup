@@ -6,7 +6,12 @@ import Plot from 'react-plotly.js';
 import { plotTheme } from '../../styles/plotTheme';
 import { formatTimestamp } from './heatmapFrames';
 import { buildWeightedGrid, type WeightedPoint } from './heatmapGrid';
-import { formatMeters, pixelToMeters, pointMeters } from './planMeters';
+import {
+  formatMeters,
+  isCalibrated,
+  pixelToMeters,
+  pointMeters,
+} from './planMeters';
 import SensorTooltip from './SensorTooltip';
 import {
   SensorHeatmapLocation,
@@ -365,10 +370,24 @@ const SensorHeatmap2D = ({
     const plotYs = sensors.map((sensor) => toPlotY(sensor.y));
     const heatXs = [xAxis[0], xAxis[xAxis.length - 1]];
     const heatYs = [yAxis[0], yAxis[yAxis.length - 1]];
-    const xMin = Math.min(...plotXs, ...heatXs) - margin;
-    const xMax = Math.max(...plotXs, ...heatXs) + margin;
-    const yMin = Math.min(...plotYs, ...heatYs) - margin;
-    const yMax = Math.max(...plotYs, ...heatYs) + margin;
+
+    // Reference point of the positions in meters (image pixels -> plot: x
+    // is the fraction of the width, y runs up from the image's bottom edge).
+    // It is kept inside the view.
+    const referencePlot: [number, number] | null =
+      sizeKnown && isCalibrated(location)
+        ? [
+            (location?.reference_x as number) / imgWidth,
+            1 - (location?.reference_y as number) / imgHeight,
+          ]
+        : null;
+    const refXs = referencePlot ? [referencePlot[0]] : [];
+    const refYs = referencePlot ? [referencePlot[1]] : [];
+
+    const xMin = Math.min(...plotXs, ...heatXs, ...refXs) - margin;
+    const xMax = Math.max(...plotXs, ...heatXs, ...refXs) + margin;
+    const yMin = Math.min(...plotYs, ...heatYs, ...refYs) - margin;
+    const yMax = Math.max(...plotYs, ...heatYs, ...refYs) + margin;
 
     // Values shown in the sensor tooltip, aligned with the scatter points.
     const sensorValues = sensors.map((sensor, index) => {
@@ -407,6 +426,24 @@ const SensorHeatmap2D = ({
           }
         : null,
       sensorValues,
+      referencePlot,
+      referenceTrace: referencePlot
+        ? {
+            type: 'scatter',
+            mode: 'markers',
+            x: [referencePlot[0]],
+            y: [referencePlot[1]],
+            marker: {
+              symbol: 'circle-cross-open',
+              size: 18,
+              color: plotTheme.brandOrange,
+              line: { width: 2.5 },
+            },
+            hoverinfo: 'skip',
+            showlegend: false,
+            name: 'Reference point',
+          }
+        : null,
       sensorScatter: {
         type: 'scatter',
         mode: 'markers+text',
@@ -515,34 +552,66 @@ const SensorHeatmap2D = ({
     setHoveredSensor({ pos, meters, value, cursorX, cursorY });
   };
 
-  // Meter position of any point under the cursor (reported by the heat
-  // trace's cells). Plot x is the fraction of the image width; plot y runs
-  // up from the image's bottom edge (the image spans y 0..1).
-  const [cursorMeters, setCursorMeters] = useState<[number, number] | null>(
-    null,
-  );
+  // Meter position of the point under the cursor (a heat cell or a sensor
+  // marker) plus the two dotted dimension lines from the reference point:
+  // horizontal for x, vertical for y. Plot x is the fraction of the image
+  // width; plot y runs up from the image's bottom edge (image spans 0..1).
+  const [cursorInfo, setCursorInfo] = useState<{
+    meters: [number, number];
+    reference: [number, number];
+    cursor: [number, number];
+  } | null>(null);
+
+  /** Pixel position (relative to the plot wrapper) of plot coordinates. */
+  const plotToPixel = (x: number, y: number): [number, number] | null => {
+    const gd = plotWrapRef.current?.querySelector('.js-plotly-plot') as
+      | (HTMLElement & {
+          _fullLayout?: {
+            _size: { l: number; t: number };
+            xaxis: { l2p: (value: number) => number };
+            yaxis: { l2p: (value: number) => number };
+          };
+        })
+      | null;
+    const fullLayout = gd?._fullLayout;
+    if (!fullLayout) {
+      return null;
+    }
+    return [
+      fullLayout._size.l + fullLayout.xaxis.l2p(x),
+      fullLayout._size.t + fullLayout.yaxis.l2p(y),
+    ];
+  };
+
   const handleCursorHover = (event: {
-    points?: Array<{ x?: number; y?: number; data?: { type?: string } }>;
+    points?: Array<{ x?: unknown; y?: unknown }>;
   }) => {
-    const cell = (event.points || []).find(
-      (candidate) => candidate.data?.type === 'heatmap',
+    const point = (event.points || []).find(
+      (candidate) =>
+        typeof candidate.x === 'number' && typeof candidate.y === 'number',
     );
-    if (!cell || cell.x == null || cell.y == null || !imageSize) {
-      setCursorMeters(null);
+    const referencePlot = chart?.referencePlot;
+    if (!point || !imageSize || !referencePlot) {
+      setCursorInfo(null);
       return;
     }
-    setCursorMeters(
-      pixelToMeters(
-        cell.x * imageSize.width,
-        (1 - cell.y) * imageSize.height,
-        location,
-      ),
+    const x = point.x as number;
+    const y = point.y as number;
+    const meters = pixelToMeters(
+      x * imageSize.width,
+      (1 - y) * imageSize.height,
+      location,
+    );
+    const cursor = plotToPixel(x, y);
+    const reference = plotToPixel(referencePlot[0], referencePlot[1]);
+    setCursorInfo(
+      meters && cursor && reference ? { meters, reference, cursor } : null,
     );
   };
 
   const handlePlotUnhover = () => {
     setHoveredSensor(null);
-    setCursorMeters(null);
+    setCursorInfo(null);
   };
 
   const planSelectValue = plans ? Math.min(planIndex, plans.length - 1) : 0;
@@ -747,6 +816,7 @@ const SensorHeatmap2D = ({
                     hovertemplate: 'Heat: %{z:.3f}<extra></extra>',
                   },
                   chart.sensorScatter,
+                  ...(chart.referenceTrace ? [chart.referenceTrace] : []),
                 ]}
                 layout={{
                   height: plotHeight,
@@ -801,7 +871,43 @@ const SensorHeatmap2D = ({
                 />
               )}
 
-              {cursorMeters && (
+              {cursorInfo && (
+                <svg
+                  aria-hidden
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    width: '100%',
+                    height: '100%',
+                    pointerEvents: 'none',
+                    overflow: 'visible',
+                  }}
+                >
+                  <g
+                    stroke={plotTheme.brandOrange}
+                    strokeWidth={2}
+                    strokeDasharray="2 4"
+                    strokeLinecap="round"
+                  >
+                    {/* x: along the reference point's row */}
+                    <line
+                      x1={cursorInfo.reference[0]}
+                      y1={cursorInfo.reference[1]}
+                      x2={cursorInfo.cursor[0]}
+                      y2={cursorInfo.reference[1]}
+                    />
+                    {/* y: up/down to the cursor */}
+                    <line
+                      x1={cursorInfo.cursor[0]}
+                      y1={cursorInfo.reference[1]}
+                      x2={cursorInfo.cursor[0]}
+                      y2={cursorInfo.cursor[1]}
+                    />
+                  </g>
+                </svg>
+              )}
+
+              {cursorInfo && (
                 <div
                   className="small"
                   style={{
@@ -815,7 +921,7 @@ const SensorHeatmap2D = ({
                     pointerEvents: 'none',
                   }}
                 >
-                  {formatMeters(cursorMeters)}
+                  {formatMeters(cursorInfo.meters)}
                 </div>
               )}
             </div>

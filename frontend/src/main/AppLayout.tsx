@@ -1,11 +1,11 @@
 import { Outlet } from 'react-router';
-import AppSidebar from '../components/sidebar/AppSidebar';
+import LocationSidebar from '../components/sidebar/LocationSidebar';
 import TopBar from '../components/topbar/TopBar';
 
 /**
- * Generic sidebar shell for every route outside the object/location
- * monitoring portal (which has its own LocationPortalLayout). Unlike that
- * one, this needs no per-route data - it's just chrome + <Outlet/>.
+ * Layout for every route outside the object/location monitoring portal
+ * (LocationPortalLayout): the same sidebar, just without an open location,
+ * so it needs no per-route data - it's just chrome + <Outlet/>.
  */
 const AppLayout = () => {
   const mobile = typeof window !== 'undefined' && window.innerWidth < 860;
@@ -19,7 +19,7 @@ const AppLayout = () => {
         background: 'var(--progeo-page-bg)',
       }}
     >
-      <AppSidebar />
+      <LocationSidebar />
       <div
         style={{
           flex: 1,

@@ -66,7 +66,8 @@ describe('pointMeters', () => {
 });
 
 describe('formatMeters', () => {
-  it('rounds to centimeters', () => {
-    expect(formatMeters([12.345, -3.2])).toBe('x 12.35 m, y -3.20 m');
+  it('rounds to centimeters and shows absolute distances', () => {
+    expect(formatMeters([12.345, -3.2])).toBe('x 12.35 m, y 3.20 m');
+    expect(formatMeters([-0.004, 0])).toBe('x 0.00 m, y 0.00 m');
   });
 });
