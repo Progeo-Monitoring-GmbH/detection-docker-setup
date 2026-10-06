@@ -10,6 +10,7 @@ export const plotTheme = {
   contrastViolet: '#9577b3',
   contrastYellow: '#fbbc15',
   contrastCyan: '#61aac5',
+  green: '#0bff17',
 };
 
 export const plotSeriesColors = [

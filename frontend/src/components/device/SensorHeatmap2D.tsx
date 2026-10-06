@@ -17,9 +17,7 @@ import {
   SensorHeatmapLocation,
   SensorHeatmapResponse,
 } from './SensorHeatmap3D';
-import {
-  useHeatmapFrameExport,
-} from './useHeatmapFrameExport';
+import { useHeatmapFrameExport } from './useHeatmapFrameExport';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import axiosConfig from '../../axiosConfig';
 import { getBackendUrl } from '../../backendUrl';
@@ -392,12 +390,7 @@ const SensorHeatmap2D = ({
     // Values shown in the sensor tooltip, aligned with the scatter points.
     const sensorValues = sensors.map((sensor, index) => {
       const point = weightedPoints[index];
-      return [
-        sensor.pos,
-        sensor.x,
-        sensor.y,
-        point ? point.weight : 0,
-      ];
+      return [sensor.pos, sensor.x, sensor.y, point ? point.weight : 0];
     });
 
     return {
@@ -435,9 +428,9 @@ const SensorHeatmap2D = ({
             y: [referencePlot[1]],
             marker: {
               symbol: 'circle-cross-open',
-              size: 18,
-              color: plotTheme.brandOrange,
-              line: { width: 2.5 },
+              size: 16,
+              color: plotTheme.green,
+              line: { width: 1.5 },
             },
             hoverinfo: 'skip',
             showlegend: false,
@@ -638,7 +631,15 @@ const SensorHeatmap2D = ({
     return Math.round(
       clamp(contentHeight + plotMargin.t + plotMargin.b, 160, height),
     );
-  }, [chart, wrapSize.width, height, plotMargin.l, plotMargin.r, plotMargin.t, plotMargin.b]);
+  }, [
+    chart,
+    wrapSize.width,
+    height,
+    plotMargin.l,
+    plotMargin.r,
+    plotMargin.t,
+    plotMargin.b,
+  ]);
 
   const body = (
     <>
@@ -779,154 +780,154 @@ const SensorHeatmap2D = ({
           No sensor measurements available.
         </div>
       ) : (
-          <>
-            {videoError && (
-              <div className="text-danger small mb-2 px-2">{videoError}</div>
+        <>
+          {videoError && (
+            <div className="text-danger small mb-2 px-2">{videoError}</div>
+          )}
+
+          <div
+            ref={plotWrapRef}
+            className="heatmap2d-plot-wrap"
+            style={{ position: 'relative' }}
+          >
+            <Plot
+              ref={plotRef}
+              data={[
+                {
+                  type: 'heatmap',
+                  x: chart.xAxis,
+                  y: chart.yAxis,
+                  z: chart.grid.map((row) => Array.from(row)),
+                  zmin: 0,
+                  zmax: 1,
+                  colorscale: [
+                    [0, plotTheme.brandBlue],
+                    [0.35, plotTheme.contrastCyan],
+                    [0.65, plotTheme.contrastYellow],
+                    [1, plotTheme.brandOrange],
+                  ],
+                  opacity: 0.7,
+                  colorbar: {
+                    title: { text: 'Heat', font: { size: 11 } },
+                    thickness: 10,
+                    xpad: 4,
+                    tickfont: { size: 10 },
+                    nticks: 6,
+                  },
+                  hovertemplate: 'Heat: %{z:.3f}<extra></extra>',
+                },
+                chart.sensorScatter,
+                ...(chart.referenceTrace ? [chart.referenceTrace] : []),
+              ]}
+              layout={{
+                height: plotHeight,
+                autosize: true,
+                margin: plotMargin,
+                paper_bgcolor: 'transparent',
+                plot_bgcolor: 'transparent',
+                images: chart.image ? [chart.image] : [],
+                // The axes only position the plan - no ticks, labels or grid.
+                xaxis: {
+                  range: chart.xRange,
+                  constrain: 'domain',
+                  visible: false,
+                },
+                yaxis: {
+                  range: chart.yRange,
+                  scaleanchor: 'x',
+                  scaleratio: chart.scaleRatio,
+                  visible: false,
+                },
+                font: { family: 'inherit', color: plotTheme.brandBlue },
+              }}
+              config={{
+                responsive: true,
+                displaylogo: false,
+                modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+              }}
+              style={{ width: '100%' }}
+              useResizeHandler
+              onAfterPlot={handleAfterPlot}
+              onHover={(event) => {
+                handleCursorHover(event);
+                handlePlotHover(event);
+              }}
+              onUnhover={handlePlotUnhover}
+            />
+
+            {hoveredSensor && (
+              <SensorTooltip
+                sensorPos={hoveredSensor.pos}
+                meters={hoveredSensor.meters}
+                value={hoveredSensor.value}
+                threshold={
+                  Number.isFinite(Number(location?.alarm_threshold))
+                    ? Number(location?.alarm_threshold)
+                    : null
+                }
+                cursorX={hoveredSensor.cursorX}
+                cursorY={hoveredSensor.cursorY}
+                containerWidth={wrapSize.width}
+                containerHeight={wrapSize.height}
+              />
             )}
 
-            <div
-              ref={plotWrapRef}
-              className="heatmap2d-plot-wrap"
-              style={{ position: 'relative' }}
-            >
-              <Plot
-                ref={plotRef}
-                data={[
-                  {
-                    type: 'heatmap',
-                    x: chart.xAxis,
-                    y: chart.yAxis,
-                    z: chart.grid.map((row) => Array.from(row)),
-                    zmin: 0,
-                    zmax: 1,
-                    colorscale: [
-                      [0, plotTheme.brandBlue],
-                      [0.35, plotTheme.contrastCyan],
-                      [0.65, plotTheme.contrastYellow],
-                      [1, plotTheme.brandOrange],
-                    ],
-                    opacity: 0.7,
-                    colorbar: {
-                      title: { text: 'Heat', font: { size: 11 } },
-                      thickness: 10,
-                      xpad: 4,
-                      tickfont: { size: 10 },
-                      nticks: 6,
-                    },
-                    hovertemplate: 'Heat: %{z:.3f}<extra></extra>',
-                  },
-                  chart.sensorScatter,
-                  ...(chart.referenceTrace ? [chart.referenceTrace] : []),
-                ]}
-                layout={{
-                  height: plotHeight,
-                  autosize: true,
-                  margin: plotMargin,
-                  paper_bgcolor: 'transparent',
-                  plot_bgcolor: 'transparent',
-                  images: chart.image ? [chart.image] : [],
-                  // The axes only position the plan - no ticks, labels or grid.
-                  xaxis: {
-                    range: chart.xRange,
-                    constrain: 'domain',
-                    visible: false,
-                  },
-                  yaxis: {
-                    range: chart.yRange,
-                    scaleanchor: 'x',
-                    scaleratio: chart.scaleRatio,
-                    visible: false,
-                  },
-                  font: { family: 'inherit', color: plotTheme.brandBlue },
+            {cursorInfo && (
+              <svg
+                aria-hidden
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
+                  pointerEvents: 'none',
+                  overflow: 'visible',
                 }}
-                config={{
-                  responsive: true,
-                  displaylogo: false,
-                  modeBarButtonsToRemove: ['lasso2d', 'select2d'],
-                }}
-                style={{ width: '100%' }}
-                useResizeHandler
-                onAfterPlot={handleAfterPlot}
-                onHover={(event) => {
-                  handleCursorHover(event);
-                  handlePlotHover(event);
-                }}
-                onUnhover={handlePlotUnhover}
-              />
-
-              {hoveredSensor && (
-                <SensorTooltip
-                  sensorPos={hoveredSensor.pos}
-                  meters={hoveredSensor.meters}
-                  value={hoveredSensor.value}
-                  threshold={
-                    Number.isFinite(Number(location?.alarm_threshold))
-                      ? Number(location?.alarm_threshold)
-                      : null
-                  }
-                  cursorX={hoveredSensor.cursorX}
-                  cursorY={hoveredSensor.cursorY}
-                  containerWidth={wrapSize.width}
-                  containerHeight={wrapSize.height}
-                />
-              )}
-
-              {cursorInfo && (
-                <svg
-                  aria-hidden
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    width: '100%',
-                    height: '100%',
-                    pointerEvents: 'none',
-                    overflow: 'visible',
-                  }}
+              >
+                <g
+                  stroke={plotTheme.green}
+                  strokeWidth={2}
+                  strokeDasharray="2 4"
+                  strokeLinecap="round"
                 >
-                  <g
-                    stroke={plotTheme.brandOrange}
-                    strokeWidth={2}
-                    strokeDasharray="2 4"
-                    strokeLinecap="round"
-                  >
-                    {/* x: along the reference point's row */}
-                    <line
-                      x1={cursorInfo.reference[0]}
-                      y1={cursorInfo.reference[1]}
-                      x2={cursorInfo.cursor[0]}
-                      y2={cursorInfo.reference[1]}
-                    />
-                    {/* y: up/down to the cursor */}
-                    <line
-                      x1={cursorInfo.cursor[0]}
-                      y1={cursorInfo.reference[1]}
-                      x2={cursorInfo.cursor[0]}
-                      y2={cursorInfo.cursor[1]}
-                    />
-                  </g>
-                </svg>
-              )}
+                  {/* x: along the reference point's row */}
+                  <line
+                    x1={cursorInfo.reference[0]}
+                    y1={cursorInfo.reference[1]}
+                    x2={cursorInfo.cursor[0]}
+                    y2={cursorInfo.reference[1]}
+                  />
+                  {/* y: up/down to the cursor */}
+                  <line
+                    x1={cursorInfo.cursor[0]}
+                    y1={cursorInfo.reference[1]}
+                    x2={cursorInfo.cursor[0]}
+                    y2={cursorInfo.cursor[1]}
+                  />
+                </g>
+              </svg>
+            )}
 
-              {cursorInfo && (
-                <div
-                  className="small"
-                  style={{
-                    position: 'absolute',
-                    left: 8,
-                    bottom: 8,
-                    padding: '2px 8px',
-                    borderRadius: 6,
-                    background: 'rgba(255, 255, 255, 0.85)',
-                    color: plotTheme.brandBlue,
-                    pointerEvents: 'none',
-                  }}
-                >
-                  {formatMeters(cursorInfo.meters)}
-                </div>
-              )}
-            </div>
-          </>
-        )}
+            {cursorInfo && (
+              <div
+                className="small"
+                style={{
+                  position: 'absolute',
+                  left: 8,
+                  bottom: 8,
+                  padding: '2px 8px',
+                  borderRadius: 6,
+                  background: 'rgba(255, 255, 255, 0.85)',
+                  color: plotTheme.brandBlue,
+                  pointerEvents: 'none',
+                }}
+              >
+                {formatMeters(cursorInfo.meters)}
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </>
   );
 

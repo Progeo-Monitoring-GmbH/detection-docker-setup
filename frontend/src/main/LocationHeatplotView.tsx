@@ -4,8 +4,7 @@ import { HeatmapViewHeader, useLocationHeatmap } from './locationHeatmapShared';
 
 const LocationHeatplotView = () => {
   const { id } = useParams();
-  const { loading, response, limit, setLimit, refresh } =
-    useLocationHeatmap(id);
+  const { loading, limit, setLimit, refresh } = useLocationHeatmap(id);
 
   return (
     <Container className="py-4">
