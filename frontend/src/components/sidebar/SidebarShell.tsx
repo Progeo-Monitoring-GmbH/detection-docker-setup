@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useLocation as useRouterLocation } from 'react-router';
-import { House, List, X } from 'react-bootstrap-icons';
+import { List, X } from 'react-bootstrap-icons';
 
 const MOBILE_BREAKPOINT = 860;
 
@@ -45,13 +45,24 @@ type SidebarShellProps = {
   children: ReactNode;
 };
 
-const Brand = ({ subtitle, mobile }: { subtitle?: string; mobile: boolean }) => (
+const Brand = ({
+  subtitle,
+  mobile,
+}: {
+  subtitle?: string;
+  mobile: boolean;
+}) => (
   <>
-    <House size={18} />
-    <div style={{ fontSize: 13, fontWeight: 600 }}>ProGeo</div>
+    <img
+      src="/assets/progeo-logo.png"
+      alt="ProGeo"
+      style={{ height: 20, width: 'auto', flexShrink: 0, display: 'block' }}
+    />
     {subtitle && (
       <>
-        <div style={{ width: 1, height: 22, background: '#D0CACA', flexShrink: 0 }} />
+        <div
+          style={{ width: 1, height: 22, background: '#D0CACA', flexShrink: 0 }}
+        />
         <div
           style={{
             fontSize: 10,
@@ -74,7 +85,13 @@ const Brand = ({ subtitle, mobile }: { subtitle?: string; mobile: boolean }) => 
  * desktop, and a sticky top bar with a burger dropdown below
  * MOBILE_BREAKPOINT (closed again on every route change).
  */
-const SidebarShell = ({ width, subtitle, toggleLabel, closeLabel, children }: SidebarShellProps) => {
+const SidebarShell = ({
+  width,
+  subtitle,
+  toggleLabel,
+  closeLabel,
+  children,
+}: SidebarShellProps) => {
   const routerLocation = useRouterLocation();
   const [mobile, setMobile] = useState(
     typeof window !== 'undefined' && window.innerWidth < MOBILE_BREAKPOINT,

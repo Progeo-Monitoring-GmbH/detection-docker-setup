@@ -167,6 +167,29 @@ i18n
           measurement_compare_pair_index_axis: 'Sensor Index',
           measurement_compare_absolute_delta_axis: 'Absolute Delta',
           measurement_compare_pair_sum_axis: 'Sensor Sum',
+          heatmap_video_export: 'Export video',
+          heatmap_video_export_title:
+            'Export video: capture the heatmap animation and download a ZIP with the MP4 video and its PNG frames',
+          heatmap_video_stage_capturing: 'Frames {{percent}}%',
+          heatmap_video_stage_uploading: 'Uploading…',
+          heatmap_video_stage_rendering: 'Rendering video…',
+          heatmap_video_stage_downloading: 'Downloading…',
+          heatmap_video_ready: 'Video ready',
+          heatmap_video_download: 'download ZIP (MP4 + frames)',
+          heatmap_video_frame_label: 'frame',
+          heatmap_video_error_not_started:
+            'The server did not start the video rendering.',
+          heatmap_video_error_upload: 'Uploading the frames failed.',
+          heatmap_video_error_poll: 'Checking the video rendering failed.',
+          heatmap_video_error_render: 'The video rendering failed.',
+          heatmap_video_error_no_worker:
+            'No server worker picked up the video rendering - is the Celery worker running (and up to date)?',
+          heatmap_video_error_timeout: 'The video rendering took too long.',
+          heatmap_video_error_download: 'Downloading the video failed.',
+          heatmap_video_error_canvas: 'Canvas 2D context unavailable.',
+          heatmap_video_error_decode: 'Could not decode the captured frame.',
+          heatmap_video_error_no_frames: 'No frames could be captured.',
+          heatmap_video_error_failed: 'Video export failed.',
           ui_quittieren: 'Acknowledge',
           ui_neu: 'New',
           ui_quittiert: 'Acknowledged',
@@ -617,6 +640,34 @@ i18n
           measurement_compare_pair_index_axis: 'Sensor-Index',
           measurement_compare_absolute_delta_axis: 'Absolutes Delta',
           measurement_compare_pair_sum_axis: 'Sensor-Summe',
+          heatmap_video_export: 'Video exportieren',
+          heatmap_video_export_title:
+            'Video exportieren: Heatmap-Animation aufnehmen und ein ZIP mit dem MP4-Video und den PNG-Frames herunterladen',
+          heatmap_video_stage_capturing: 'Frames {{percent}} %',
+          heatmap_video_stage_uploading: 'Wird hochgeladen…',
+          heatmap_video_stage_rendering: 'Video wird erstellt…',
+          heatmap_video_stage_downloading: 'Wird heruntergeladen…',
+          heatmap_video_ready: 'Video fertig',
+          heatmap_video_download: 'ZIP herunterladen (MP4 + Frames)',
+          heatmap_video_frame_label: 'Frame',
+          heatmap_video_error_not_started:
+            'Der Server hat die Videoerstellung nicht gestartet.',
+          heatmap_video_error_upload: 'Hochladen der Frames fehlgeschlagen.',
+          heatmap_video_error_poll:
+            'Status der Videoerstellung konnte nicht abgefragt werden.',
+          heatmap_video_error_render: 'Videoerstellung fehlgeschlagen.',
+          heatmap_video_error_no_worker:
+            'Kein Server-Worker hat die Videoerstellung übernommen – läuft der Celery-Worker (in aktueller Version)?',
+          heatmap_video_error_timeout:
+            'Die Videoerstellung hat zu lange gedauert.',
+          heatmap_video_error_download:
+            'Herunterladen des Videos fehlgeschlagen.',
+          heatmap_video_error_canvas: 'Canvas-2D-Kontext nicht verfügbar.',
+          heatmap_video_error_decode:
+            'Der aufgenommene Frame konnte nicht dekodiert werden.',
+          heatmap_video_error_no_frames:
+            'Es konnten keine Frames aufgenommen werden.',
+          heatmap_video_error_failed: 'Videoexport fehlgeschlagen.',
           ui_quittieren: 'Quittieren',
           ui_neu: 'Neu',
           ui_quittiert: 'Quittiert',

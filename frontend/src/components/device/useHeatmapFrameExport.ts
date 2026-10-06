@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import Plotly from 'plotly.js/dist/plotly';
+import { useTranslation } from 'react-i18next';
 
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import axiosConfig from '../../axiosConfig';
@@ -71,6 +72,7 @@ export const useHeatmapFrameExport = ({
   setTimestampIndex,
 }: UseHeatmapFrameExportOptions): HeatmapFrameExport => {
   const auth = useAuth();
+  const { t } = useTranslation();
   const [videoExporting, setVideoExporting] = useState(false);
   const [videoStage, setVideoStage] = useState<VideoExportStage | null>(null);
   const [videoResultUrl, setVideoResultUrl] = useState<string | null>(null);
@@ -108,21 +110,19 @@ export const useHeatmapFrameExport = ({
             if (taskId) {
               resolve(String(taskId));
             } else {
-              reject(
-                new Error('The server did not start the video rendering.'),
-              );
+              reject(new Error(t('heatmap_video_error_not_started')));
             }
           },
           (error) =>
             reject(
               new Error(
-                requestErrorMessage(error, 'Uploading the frames failed.'),
+                requestErrorMessage(error, t('heatmap_video_error_upload')),
               ),
             ),
           { headers: { 'Content-Type': 'multipart/form-data' } },
         );
       }),
-    [auth],
+    [auth, t],
   );
 
   /** Polls the render task; resolves with the result ZIP's media URL. */
@@ -144,10 +144,7 @@ export const useHeatmapFrameExport = ({
             (error) =>
               reject(
                 new Error(
-                  requestErrorMessage(
-                    error,
-                    'Checking the video rendering failed.',
-                  ),
+                  requestErrorMessage(error, t('heatmap_video_error_poll')),
                 ),
               ),
           );
@@ -156,20 +153,18 @@ export const useHeatmapFrameExport = ({
           if (result.url) {
             return result.url;
           }
-          throw new Error(result.error || 'The video rendering failed.');
+          throw new Error(result.error || t('heatmap_video_error_render'));
         }
         if (
           result.state === 'PENDING' &&
           Date.now() - startedAt > PENDING_TIMEOUT_MS
         ) {
-          throw new Error(
-            'No server worker picked up the video rendering - is the Celery worker running (and up to date)?',
-          );
+          throw new Error(t('heatmap_video_error_no_worker'));
         }
       }
-      throw new Error('The video rendering took too long.');
+      throw new Error(t('heatmap_video_error_timeout'));
     },
-    [auth],
+    [auth, t],
   );
 
   const downloadResult = useCallback(
@@ -182,13 +177,13 @@ export const useHeatmapFrameExport = ({
           (error) =>
             reject(
               new Error(
-                requestErrorMessage(error, 'Downloading the video failed.'),
+                requestErrorMessage(error, t('heatmap_video_error_download')),
               ),
             ),
           { responseType: 'blob' },
         );
       }),
-    [auth],
+    [auth, t],
   );
 
   const saveResult = useCallback(
@@ -214,10 +209,10 @@ export const useHeatmapFrameExport = ({
       await saveResult(videoResultUrl);
     } catch (error) {
       setVideoError(
-        (error as Error).message || 'Downloading the video failed.',
+        (error as Error).message || t('heatmap_video_error_download'),
       );
     }
-  }, [videoResultUrl, saveResult]);
+  }, [videoResultUrl, saveResult, t]);
 
   const exportFrames = useCallback(async () => {
     const gd = plotRef.current;
@@ -252,7 +247,7 @@ export const useHeatmapFrameExport = ({
       canvas.height = height;
       const ctx = canvas.getContext('2d');
       if (!ctx) {
-        throw new Error('Canvas 2D context unavailable.');
+        throw new Error(t('heatmap_video_error_canvas'));
       }
 
       const frameBlobs: Blob[] = [];
@@ -273,7 +268,11 @@ export const useHeatmapFrameExport = ({
           height,
           scale: 1,
         });
-        await loadImageFromDataUrl(frameImage, dataUrl);
+        await loadImageFromDataUrl(
+          frameImage,
+          dataUrl,
+          t('heatmap_video_error_decode'),
+        );
 
         // The plot paper is transparent, so paint a background first to keep
         // the frames from rendering black on dark video players.
@@ -287,6 +286,7 @@ export const useHeatmapFrameExport = ({
           timestamps[frameIndex],
           frame + 1,
           frameIndices.length,
+          t('heatmap_video_frame_label'),
         );
 
         const blob = await canvasToPngBlob(canvas);
@@ -300,7 +300,7 @@ export const useHeatmapFrameExport = ({
       }
 
       if (!frameBlobs.length) {
-        throw new Error('No frames could be captured.');
+        throw new Error(t('heatmap_video_error_no_frames'));
       }
 
       const frameFiles = await Promise.all(
@@ -328,7 +328,9 @@ export const useHeatmapFrameExport = ({
       setVideoStage('downloading');
       await saveResult(resultUrl);
     } catch (error) {
-      setVideoError((error as Error).message || 'Video export failed.');
+      setVideoError(
+        (error as Error).message || t('heatmap_video_error_failed'),
+      );
     } finally {
       setTimestampIndex(initialIndex);
       setVideoExporting(false);
@@ -345,6 +347,7 @@ export const useHeatmapFrameExport = ({
     startRendering,
     waitForResult,
     saveResult,
+    t,
   ]);
 
   return {

@@ -146,7 +146,11 @@ const LocationsOverview = () => {
       },
       (error) => {
         ids.forEach((id) => loadedAlarmIds.current.delete(id));
-        showRequestError(enqueueSnackbar, 'Could not load alarm summary', error);
+        showRequestError(
+          enqueueSnackbar,
+          'Could not load alarm summary',
+          error,
+        );
       },
     );
   };
@@ -165,7 +169,7 @@ const LocationsOverview = () => {
 
     void axiosConfig.perform_get(
       auth,
-      `/v1/location/details/?ids=${ids.join(',')}`,
+      `/v1/location/details/?ids=${ids.join(',')}&skip_lageplans=1`,
       (response) => {
         const details = (response?.data || []) as LocationRow[];
         const detailsById = new Map(
@@ -181,7 +185,11 @@ const LocationsOverview = () => {
       (error) => {
         // Allow a retry on the next page change instead of silently missing data.
         ids.forEach((id) => loadedDetailIds.current.delete(id));
-        showRequestError(enqueueSnackbar, 'Could not load location details', error);
+        showRequestError(
+          enqueueSnackbar,
+          'Could not load location details',
+          error,
+        );
       },
     );
   };
@@ -192,7 +200,7 @@ const LocationsOverview = () => {
 
   const fetchLocationMeasurements = (locationId: number, year?: number) => {
     setMeasurementsLoading(true);
-        void axiosConfig.perform_get(
+    void axiosConfig.perform_get(
       auth,
       `/v1/location/${locationId}/measurements/?${measurementsQuery(year)}`,
       (response) => {
@@ -202,7 +210,11 @@ const LocationsOverview = () => {
         setMeasurementsLoading(false);
       },
       (error) => {
-        showRequestError(enqueueSnackbar, 'Could not load location measurements', error);
+        showRequestError(
+          enqueueSnackbar,
+          'Could not load location measurements',
+          error,
+        );
         setSelectedMeasurements([]);
         setMeasurementsLoading(false);
       },
@@ -439,17 +451,6 @@ const LocationsOverview = () => {
           >
             Alarms
           </Button>
-          <Button
-            size="sm"
-            variant="outline-secondary"
-            title="Compare measurements of this location"
-            onClick={(event) => {
-              event.stopPropagation();
-              handleCompareClick(row);
-            }}
-          >
-            Compare
-          </Button>
         </div>
       ),
     },
@@ -521,40 +522,6 @@ const LocationsOverview = () => {
         onRowClicked={handleRowClick}
         dense
       />
-
-      <Card className="border-0 shadow-sm mt-3">
-        <Card.Body>
-          {measurementsLoading ? (
-            <div className="d-flex align-items-center gap-2 text-muted">
-              <Spinner size="sm" animation="border" />
-              Loading location measurements...
-            </div>
-          ) : !selectedLocationId ? (
-            <div className="text-muted">
-              Click "Compare" on a row to display measurements from all devices
-              connected to that location.
-            </div>
-          ) : selectedMeasurements.length === 0 ? (
-            <div className="text-muted">
-              No measurements found for devices in this location.
-            </div>
-          ) : (
-            <MeasurementSamplesCompareChart
-              rows={selectedMeasurements}
-              onLoadCurrentYear={
-                selectedLocationId
-                  ? () =>
-                      fetchLocationMeasurements(
-                        selectedLocationId,
-                        new Date().getFullYear(),
-                      )
-                  : null
-              }
-              isLoadingCurrentYear={measurementsLoading}
-            />
-          )}
-        </Card.Body>
-      </Card>
 
       <LocationEditModal
         show={showEditModal}

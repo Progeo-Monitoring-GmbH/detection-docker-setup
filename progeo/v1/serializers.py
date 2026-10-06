@@ -134,10 +134,17 @@ class LocationSerializer(ProgeoBaseSerializer):
         model = ProgeoLocation
         fields = "__all__"
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # context={"skip_lageplans": True} drops the field entirely, so its
+        # per-location queries don't run (e.g. the locations overview table).
+        if self.context.get("skip_lageplans"):
+            self.fields.pop("lageplans", None)
+
     @staticmethod
     def get_clazz_name(_):
         return "ProgeoLocation"
-    
+
     @staticmethod
     def get_lageplans(obj):
         """

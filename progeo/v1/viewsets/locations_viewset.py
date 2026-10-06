@@ -9,7 +9,8 @@ from celery.result import AsyncResult
 from django.contrib.auth.models import User
 from django.core.files.storage import FileSystemStorage
 from django.db import transaction
-from django.db.models import Count, Max, Q
+from django.db.models import Count, IntegerField, Max, OuterRef, Q, Subquery
+from django.db.models.functions import Coalesce
 from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
@@ -176,7 +177,8 @@ class LocationViewSet(ProgeoModalViewSet):
     def details(self, request, *args, **kwargs):
         """Batch-load the full location fields (device/measurement counts,
         last measurement) for a set of ids, e.g. the rows currently visible
-        on the paginated locations table after the fast `min` load."""
+        on the paginated locations table after the fast `min` load.
+        `skip_lageplans=1` leaves out the lageplans (not needed for tables)."""
         ids_param = request.query_params.get("ids", "")
         try:
             ids = [int(value) for value in ids_param.split(",") if value.strip()]
@@ -185,8 +187,11 @@ class LocationViewSet(ProgeoModalViewSet):
         if not ids:
             return Response(data=[])
 
+        skip_lageplans = (request.query_params.get("skip_lageplans") or "").strip().lower() in {
+            "1", "true", "yes", "on"
+        }
         queryset = self.get_queryset().filter(id__in=ids)
-        data = LocationSerializer(queryset, many=True).data
+        data = LocationSerializer(queryset, many=True, context={"skip_lageplans": skip_lageplans}).data
         return Response(data=data)
 
     @require_module_permissions("module_locations_enabled")
@@ -960,12 +965,39 @@ class LocationViewSet(ProgeoModalViewSet):
 
         # Annotate measurement availability so the frontend can color rows:
         # green = has measurements, gray = no measurements at all.
+        # Correlated subqueries instead of JOIN + GROUP BY: the join fans out to
+        # every measurement row of every location before aggregating (and
+        # COUNT(DISTINCT) then sorts all of them), which takes tens of seconds
+        # on large measurement tables.
+        location_measurements = (
+            ProgeoMeasurement.objects.filter(device__location=OuterRef("pk")).order_by().values("device__location")
+        )
+        # COUNT(*) instead of COUNT(id): needs no heap columns, so Postgres can
+        # answer it from the device_id index alone.
+        measurement_count = Subquery(
+            location_measurements.annotate(count=Count("*")).values("count")[:1],
+            output_field=IntegerField(),
+        )
+        # Newest measurement = highest pk (ids are chronological). Deliberately
+        # MAX(id) grouped by location, not ORDER BY id DESC LIMIT 1: for the
+        # latter Postgres walks the whole measurement pkey backwards until it
+        # hits one of the location's devices - the entire table for locations
+        # without recent measurements.
+        newest_measurement_id = Subquery(
+            location_measurements.annotate(newest=Max("pk")).values("newest")[:1],
+            output_field=IntegerField(),
+        )
         queryset = (
             ProgeoLocation.objects.using(account.db_name)
             .filter(location_q(self.request.user, account))
+            .annotate(measurement_count=Coalesce(measurement_count, 0))
+            # alias, not annotate: only used inside last_measurement_at, so it
+            # isn't selected (and computed) a second time.
+            .alias(newest_measurement_id=newest_measurement_id)
             .annotate(
-                measurement_count=Count("progeodevice__progeomeasurement", distinct=True),
-                last_measurement_at=Max("progeodevice__progeomeasurement__last_fetched"),
+                last_measurement_at=Subquery(
+                    ProgeoMeasurement.objects.filter(pk=OuterRef("newest_measurement_id")).values("last_fetched")[:1]
+                ),
             )
             .order_by("id")
         )
@@ -1109,7 +1141,10 @@ class LocationViewSet(ProgeoModalViewSet):
             queryset = queryset.filter(last_fetched__gte=time_from)
         if time_to:
             queryset = queryset.filter(last_fetched__lte=time_to)
-        queryset = queryset[:limit]
+        # Newest `limit` measurements (pk order is chronological), then
+        # reversed so the frames (slider and video export) run oldest -> newest.
+        queryset = list(queryset.order_by("-pk")[:limit])
+        queryset.reverse()
 
         timestamps = []
         sensor_points = []

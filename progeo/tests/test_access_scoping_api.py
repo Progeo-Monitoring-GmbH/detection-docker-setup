@@ -6,8 +6,11 @@ staff -> everything. Covers the location list/detail endpoints and the data
 hanging off a location (devices, alarms, measurements).
 """
 import pytest
+from django.utils import timezone
+from rest_framework import serializers
 
 from progeo.tests import factories as f
+from progeo.v1.models import ProgeoMeasurement
 
 READ_PERMS = ("module_locations_enabled", "module_measurements_enabled", "module_devices_enabled")
 
@@ -152,3 +155,50 @@ def test_endpoints_require_module_permissions(api_client, world):
 def test_unauthenticated_requests_are_rejected(api_client, world):
     response = api_client.get("/v1/location/min/")
     assert response.status_code in (401, 403)
+
+
+def test_location_details_reports_measurement_count_and_last_measurement(api_client, world):
+    user = f.make_user(perms=READ_PERMS)
+    world["account"].users.add(user)
+    api_client.force_authenticate(user=user)
+
+    second_device = f.make_device(world["granted"])
+    f.make_measurement(second_device, fetched_at=timezone.now() - f.minutes(60))
+    f.make_measurement(world["granted_device"], fetched_at=timezone.now() - f.minutes(30))
+    f.make_measurement(second_device, fetched_at=timezone.now() - f.minutes(5))
+    # The fixture's alarm may bring its own measurements - compare against the ORM.
+    granted_measurements = ProgeoMeasurement.objects.using(f.DB).filter(device__location=world["granted"])
+    expected_count = granted_measurements.count()
+    assert expected_count >= 3
+    # Newest by pk - measurement ids are chronological.
+    expected_last = granted_measurements.order_by("-pk").values_list("last_fetched", flat=True).first()
+
+    ids = f"{world['granted'].id},{world['other'].id}"
+    response = api_client.get(f"/v1/location/details/?ids={ids}")
+    assert response.status_code == 200, response.content
+    rows = {row["id"]: row for row in response.json()}
+
+    granted = rows[world["granted"].id]
+    assert granted["measurement_count"] == expected_count
+    assert granted["last_measurement_at"] == serializers.DateTimeField().to_representation(expected_last)
+
+    other = rows[world["other"].id]
+    other_count = ProgeoMeasurement.objects.using(f.DB).filter(device__location=world["other"]).count()
+    assert other["measurement_count"] == other_count
+
+
+def test_location_details_skip_lageplans(api_client, world):
+    user = f.make_user(perms=READ_PERMS)
+    world["account"].users.add(user)
+    api_client.force_authenticate(user=user)
+    url = f"/v1/location/details/?ids={world['granted'].id}"
+
+    full = api_client.get(url)
+    assert full.status_code == 200, full.content
+    assert "lageplans" in full.json()[0]
+
+    slim = api_client.get(f"{url}&skip_lageplans=1")
+    assert slim.status_code == 200, slim.content
+    row = slim.json()[0]
+    assert "lageplans" not in row
+    assert "measurement_count" in row

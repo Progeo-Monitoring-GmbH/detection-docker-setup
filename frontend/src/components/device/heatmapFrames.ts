@@ -47,11 +47,11 @@ export const downloadBlob = (blob: Blob, filename: string) => {
 export const loadImageFromDataUrl = (
   image: HTMLImageElement,
   dataUrl: string,
+  errorMessage = 'Could not decode the captured frame.',
 ) =>
   new Promise<void>((resolve, reject) => {
     image.onload = () => resolve();
-    image.onerror = () =>
-      reject(new Error('Could not decode the captured frame.'));
+    image.onerror = () => reject(new Error(errorMessage));
     image.src = dataUrl;
   });
 
@@ -66,8 +66,9 @@ export const drawFrameLabel = (
   timestamp: number | null | undefined,
   frameNumber: number,
   totalFrames: number,
+  frameWord = 'frame',
 ) => {
-  const text = `${formatTimestamp(timestamp)}  \u00B7  frame ${frameNumber}/${totalFrames}`;
+  const text = `${formatTimestamp(timestamp)}  \u00B7  ${frameWord} ${frameNumber}/${totalFrames}`;
   ctx.font = '600 20px system-ui, -apple-system, "Segoe UI", sans-serif';
   const textWidth = ctx.measureText(text).width;
   const padX = 14;

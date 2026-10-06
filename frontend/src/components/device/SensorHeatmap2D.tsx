@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button, Card, Form, Spinner } from 'react-bootstrap';
 import { Film } from 'react-bootstrap-icons';
 import Plot from 'react-plotly.js';
@@ -184,6 +185,7 @@ const SensorHeatmap2D = ({
   alignment = null,
   hideChrome = false,
 }: SensorHeatmap2DProps) => {
+  const { t } = useTranslation();
   const [timestampIndex, setTimestampIndex] = useState(0);
   const [sigma, setSigma] = useState<'auto' | number>('auto');
   const [imageSize, setImageSize] = useState<ImageSize | null>(null);
@@ -629,25 +631,42 @@ const SensorHeatmap2D = ({
                   <Spinner size="sm" animation="border" />
                   <span className="text-muted small">
                     {videoStage === 'capturing'
-                      ? `Frames ${Math.round((videoProgress ?? 0) * 100)}%`
+                      ? t('heatmap_video_stage_capturing', {
+                          percent: Math.round((videoProgress ?? 0) * 100),
+                        })
                       : videoStage === 'uploading'
-                        ? 'Uploading…'
+                        ? t('heatmap_video_stage_uploading')
                         : videoStage === 'rendering'
-                          ? 'Rendering video…'
-                          : 'Downloading…'}
+                          ? t('heatmap_video_stage_rendering')
+                          : t('heatmap_video_stage_downloading')}
                   </span>
                 </>
               ) : (
-                <Button
-                  size="sm"
-                  variant="outline-danger"
-                  onClick={() => void exportFrames()}
-                  disabled={timestamps.length < 2}
-                  aria-label="Export video"
-                  title="Export video: capture the heatmap animation and download a ZIP with the MP4 video and its PNG frames"
-                >
-                  <Film />
-                </Button>
+                <>
+                  {videoResultUrl && (
+                    <span className="small">
+                      {t('heatmap_video_ready')} -{' '}
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="p-0 align-baseline"
+                        onClick={() => void downloadVideoResult()}
+                      >
+                        {t('heatmap_video_download')}
+                      </Button>
+                    </span>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline-danger"
+                    onClick={() => void exportFrames()}
+                    disabled={timestamps.length < 2}
+                    aria-label={t('heatmap_video_export')}
+                    title={t('heatmap_video_export_title')}
+                  >
+                    <Film />
+                  </Button>
+                </>
               )}
             </div>
           </div>
@@ -710,19 +729,6 @@ const SensorHeatmap2D = ({
           <>
             {videoError && (
               <div className="text-danger small mb-2 px-2">{videoError}</div>
-            )}
-            {videoResultUrl && !videoExporting && (
-              <div className="small mb-1 px-2">
-                Video ready -{' '}
-                <Button
-                  variant="link"
-                  size="sm"
-                  className="p-0 align-baseline"
-                  onClick={() => void downloadVideoResult()}
-                >
-                  download ZIP (MP4 + frames)
-                </Button>
-              </div>
             )}
 
             <div
