@@ -11,19 +11,19 @@ export default ({ mode }) => {
   return defineConfig({
     base: '/',
     plugins: [
-      visualizer({ open: env.VITE_DEBUG !== '0' }),
+      visualizer({ open: env.VITE_DEBUG !== '0', gzipSize: true }),
       react({
         jsxImportSource: 'react',
       }),
     ],
     build: {
-      target: 'es2020', // Adjust according to desired browser support
+      // No explicit target: Vite's default ('baseline-widely-available')
+      // avoids down-levelling syntax that every supported browser already has.
       minify: 'oxc',
       sourcemap: env.VITE_DEBUG === '1' ? 'inline' : false,
       cssCodeSplit: true,
-      rollupOptions: {
+      rolldownOptions: {
         treeshake: {
-          preset: 'recommended',
           // Keep side effects for i18n bootstrap modules; everything else remains aggressively tree-shaken.
           moduleSideEffects: (id) => {
             return (
@@ -34,22 +34,54 @@ export default ({ mode }) => {
             );
           },
           propertyReadSideEffects: false,
-          tryCatchDeoptimization: false,
           unknownGlobalSideEffects: false,
         },
         output: {
-          manualChunks(id) {
-            if (!id.includes('node_modules')) return;
-            if (id.includes('react') || id.includes('scheduler'))
-              return 'vendor-react';
-            if (id.includes('@mui') || id.includes('@emotion'))
-              return 'vendor-mui';
-            if (id.includes('bootstrap') || id.includes('bootswatch'))
-              return 'vendor-bootstrap';
-            if (id.includes('i18next')) return 'vendor-i18n';
-            if (id.includes('axios') || id.includes('jwt-decode'))
-              return 'vendor-network';
-            return 'vendor';
+          comments: { legal: false },
+          codeSplitting: {
+            groups: [
+              // Long-lived, cacheable chunks for the core libraries.
+              {
+                name: 'vendor-react',
+                test: /node_modules[\\/](react|react-dom|react-router|scheduler)[\\/]/,
+                priority: 30,
+              },
+              {
+                name: 'vendor-mui',
+                test: /node_modules[\\/](@mui|@emotion)[\\/]/,
+                priority: 20,
+              },
+              {
+                name: 'vendor-i18n',
+                test: /node_modules[\\/](i18next|react-i18next|i18next-[^\\/]+)[\\/]/,
+                priority: 20,
+              },
+              {
+                name: 'vendor-network',
+                test: /node_modules[\\/](axios|jwt-decode)[\\/]/,
+                priority: 20,
+              },
+              // Heavy libraries only some (lazy) routes need: one shared chunk
+              // each, loaded on demand instead of with the first page.
+              {
+                name: 'vendor-plotly',
+                test: /node_modules[\\/](plotly\.js|react-plotly\.js)[\\/]|src[\\/]plotly\.ts$/,
+                priority: 20,
+              },
+              {
+                name: 'vendor-leaflet',
+                test: /node_modules[\\/](leaflet|react-leaflet|@react-leaflet)[\\/]/,
+                priority: 20,
+              },
+              // Everything else the first page needs. Libraries used only by
+              // lazy routes are left to rolldown's automatic splitting.
+              {
+                name: 'vendor',
+                test: /node_modules/,
+                tags: ['$initial'],
+                priority: 10,
+              },
+            ],
           },
         },
       },
@@ -77,6 +109,11 @@ export default ({ mode }) => {
     },
     resolve: {
       alias: [
+        // react-plotly.js imports the full Plotly bundle; use our slim one (src/plotly.ts).
+        {
+          find: /^plotly\.js\/dist\/plotly$/,
+          replacement: path.resolve(import.meta.dirname, 'src/plotly.ts'),
+        },
         { find: '@', replacement: path.resolve(import.meta.dirname, 'src') },
         {
           find: /^~(.*)$/,

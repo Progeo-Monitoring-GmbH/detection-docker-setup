@@ -1,4 +1,4 @@
-FROM node:24-alpine3.21 AS node
+FROM node:24-alpine AS node
 
 ARG FRONTEND_URL
 ARG BACKEND_URL
@@ -7,7 +7,7 @@ ARG BACKEND_IP
 
 WORKDIR /home/progeo-frontend
 
-COPY ./frontend/package.json .
+COPY ./frontend/package.json ./frontend/package-lock.json ./
 COPY ./docker/frontend/.env.production ./.env
 
 RUN sed -i -r "s|FRONTEND-TEMPLATE|${FRONTEND_URL}|g" ./.env
@@ -15,7 +15,7 @@ RUN sed -i -r "s|BACKEND-TEMPLATE|${BACKEND_URL}|g" ./.env
 RUN sed -i -r "s|BACKEND-IP-TEMPLATE|${BACKEND_IP:-${BACKEND_URL}}:${BACKEND_PORT}|g" ./.env
 RUN sed -i -r "s|URL-TEMPLATE-WITH-PORT|${BACKEND_URL}:${BACKEND_PORT}|g" ./.env
 
-RUN npm install
+RUN npm ci
 
 COPY ./frontend .
 RUN npm audit fix --dry-run --json 2>&1 | tee npm-audit.log
