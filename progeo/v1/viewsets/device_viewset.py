@@ -404,7 +404,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         if not values:
             return RequestFailed({"reason": "No known measurements provided"})
         
-        device_id = request.data.get("devAddr")
+        device_id = request.data.get("devEui")
 
         measure = save_measurement_from_legacy_data(
             measurement={"project_id": project_id, **values},

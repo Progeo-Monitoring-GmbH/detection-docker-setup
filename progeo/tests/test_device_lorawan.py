@@ -45,20 +45,20 @@ def test_catch_lorawan_data_stores_temperature_and_humidity(api_client):
 
 @pytest.mark.django_db(databases=["unit_tests", "default"])
 def test_catch_lorawan_data_creates_location_for_unknown_project(api_client):
-    devaddr = unique("devaddr")
+    devEui = unique("devEui")
     assert not ProgeoLocation.objects.using("default").filter(project_id=7002).exists()
 
     response = api_client.post(f"/v1/device/lorawan/7002/?token={_make_token()}",
-                               {**LORAWAN_UPLINK, "devAddr": devaddr}, format="json")
+                               {**LORAWAN_UPLINK, "devEui": devEui}, format="json")
 
     assert response.status_code == 200, response.content
     stored = ProgeoMeasurement.objects.using("default").get(pk=response.json()["measurement_id"])
-    assert stored.device.raw_hash == devaddr
+    assert stored.device.raw_hash == devEui
     assert stored.device.location.project_id == 7002
 
     # A second uplink reuses the device and its location.
     response = api_client.post(f"/v1/device/lorawan/7002/?token={_make_token()}",
-                               {**LORAWAN_UPLINK, "devAddr": devaddr}, format="json")
+                               {**LORAWAN_UPLINK, "devEui": devEui}, format="json")
     assert response.status_code == 200, response.content
     assert ProgeoLocation.objects.using("default").filter(project_id=7002).count() == 1
 
