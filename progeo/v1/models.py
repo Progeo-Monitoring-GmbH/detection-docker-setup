@@ -64,12 +64,9 @@ def _select_permissions(*codes):
 DEFAULT_USER_PERMISSIONS = _select_permissions(
     "module_navbar_enabled",
     "module_locations_enabled",
-    "module_locations_edit",
-    "module_devices_enabled",
-    "module_devices_edit",
     "module_measurements_enabled",
-    "module_profile_mail_edit",
     "module_notifications_enabled",
+    "module_profile_mail_edit",
 )
 
 DEFAULT_STAFF_PERMISSIONS = _select_permissions(

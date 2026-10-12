@@ -5,11 +5,33 @@ import { SnackbarProvider } from 'notistack';
 import CoreAuthProvider from '../hooks/CoreAuthProvider';
 import { ModalProvider } from './components/modal/coreModalContext';
 import CookieBanner from './components/privacy/CookieBanner';
-import { ConsentProvider } from './components/privacy/ConsentProvider';
+import { ConsentProvider, useConsent } from './components/privacy/ConsentProvider';
 
 import CoreRoutes from './CoreRoutes';
 
 import './i18n';
+
+/**
+ * Keeps the app unusable until the user has accepted or declined the cookie
+ * banner - the banner itself floats on top (see CookieBanner) and stays
+ * interactive regardless.
+ */
+function GatedMain() {
+  const { consent } = useConsent();
+  const locked = consent === null;
+  return (
+    <div
+      aria-hidden={locked}
+      style={{
+        pointerEvents: locked ? 'none' : 'auto',
+        filter: locked ? 'blur(2px)' : 'none',
+        userSelect: locked ? 'none' : 'auto',
+      }}
+    >
+      <CoreRoutes />
+    </div>
+  );
+}
 
 function App() {
   return (
@@ -26,7 +48,7 @@ function App() {
               <Col md={10} style={{ padding: '0' }}>
                 <BrowserRouter>
                   <CoreAuthProvider>
-                    <CoreRoutes />
+                    <GatedMain />
                     <CookieBanner />
                   </CoreAuthProvider>
                 </BrowserRouter>

@@ -81,11 +81,29 @@ const LocationSidebar = ({
     );
   }, [auth, hasPermission, locationId]);
 
-  const visibleItems = PORTAL_NAV_ITEMS.filter((item) => hasPermission(item.permission));
+  // "Einstellungen" is superuser-only, regardless of module permissions.
+  const visibleItems = PORTAL_NAV_ITEMS.filter((item) =>
+    item.key === 'einstell' ? isSuperuser : hasPermission(item.permission),
+  );
   // Staff (progeo-admin) and superusers manage objects.
   const canCreateLocation = role === 'progeo-admin' || isSuperuser;
   const isStaffUser = role === 'progeo-admin';
   const verwaltungPath = canCreateLocation ? '/verwaltung/' : '/location/overview/';
+
+  const [locationCount, setLocationCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!canCreateLocation || !hasPermission('module_locations_enabled')) {
+      setLocationCount(null);
+      return;
+    }
+    void axiosConfig.perform_get(
+      auth,
+      '/v1/location/min/',
+      (response) => setLocationCount(((response?.data || []) as unknown[]).length),
+      () => setLocationCount(null),
+    );
+  }, [auth, canCreateLocation, hasPermission]);
 
   // Cross-object modules, listed under "Alle Objekte". The location list is
   // only extra for object managers - everyone else's "Verwaltung" link above
@@ -96,7 +114,8 @@ const LocationSidebar = ({
       label: t('sidebar_locations'),
       icon: Geo,
       to: '/location/overview/',
-      visible: canCreateLocation && hasPermission('module_locations_enabled'),
+      visible:
+        canCreateLocation && hasPermission('module_locations_enabled') && (locationCount ?? 0) > 1,
     },
     { key: 'device', label: t('sidebar_devices'), icon: Hdd, to: '/device/overview', visible: isSuperuser },
     { key: 'alarms', label: t('sidebar_alarms'), icon: Bell, to: '/alarms/', visible: isSuperuser },

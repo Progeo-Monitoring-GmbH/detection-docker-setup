@@ -436,30 +436,3 @@ def create_mfs_log_safe(account: Account, url: str, data: dict | None = None, us
 	)
 
 
-def create_all_models_safe(account_name: str, db_name: str, user: User | None = None) -> dict[str, Any]:
-	account, _ = create_account_safe(name=account_name, db_name=db_name)
-	if not account:
-		return {"account": None}
-
-	location, _ = create_progeo_location_safe(account=account, address="unknown")
-	device, _ = create_progeo_device_safe(location=location) if location else (None, False)
-	measurement, _ = create_progeo_measurement_safe(device=device, raw_data={}) if device else (None, False)
-	measure_point, _ = create_progeo_measure_point_safe(device=device, sensor_order=1, x=0.0, y=0.0, nx=0.0, ny=0.0) if device else (None, False)
-	alarm, _ = create_progeo_alarm_safe(measurement=measurement, threshold=100.0, max_value=0.0) if measurement else (None, False)
-	email, _ = create_email_safe(sent_to="unknown@example.com", message="initialized", db="default")
-	token, _ = create_limited_token_safe(account=account, user=user, purpose="init")
-	backup, _ = create_backup_safe(account=account, name="initial.backup", user=user)
-	mfs_log, _ = create_mfs_log_safe(account=account, user=user, url="http://localhost/init", data={"init": True})
-
-	return {
-		"account": account,
-		"location": location,
-		"device": device,
-		"measurement": measurement,
-		"measure_point": measure_point,
-		"alarm": alarm,
-		"email": email,
-		"limited_token": token,
-		"backup": backup,
-		"mfs_log": mfs_log,
-	}

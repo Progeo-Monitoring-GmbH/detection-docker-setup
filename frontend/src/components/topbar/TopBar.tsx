@@ -4,16 +4,9 @@ import { Link } from 'react-router';
 import { DoorOpen, InfoCircle } from 'react-bootstrap-icons';
 import { useAuth } from '../../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../../axiosConfig';
-import { useProgeoRole, type ProgeoRole } from '../../main/roleModel';
 import { UserProfileModal } from '../../main/UserProfile.tsx';
 import { PRIVACY_POLICY_URL } from '../privacy/consent';
 import { useConsent } from '../privacy/ConsentProvider';
-
-const ROLE_LABEL_KEY: Record<ProgeoRole, string> = {
-  nutzer: 'topbar_role_nutzer',
-  kundenadmin: 'topbar_role_kundenadmin',
-  'progeo-admin': 'topbar_role_progeo_admin',
-};
 
 const LANGUAGES: { code: 'de' | 'en'; label: string }[] = [
   { code: 'de', label: 'DE' },
@@ -23,7 +16,6 @@ const LANGUAGES: { code: 'de' | 'en'; label: string }[] = [
 const TopBar = () => {
   const auth = useAuth();
   const { t, i18n } = useTranslation();
-  const role = useProgeoRole();
   const { openSettings } = useConsent();
 
   const [username, setUsername] = useState('');
@@ -90,21 +82,6 @@ const TopBar = () => {
         justifyContent: 'flex-end',
       }}
     >
-      <span
-        style={{
-          fontSize: 11,
-          fontWeight: 600,
-          letterSpacing: '.03em',
-          textTransform: 'uppercase',
-          color: 'var(--progeo-blue)',
-          background: 'var(--progeo-track)',
-          borderRadius: 'var(--progeo-radius-pill)',
-          padding: '6px 12px',
-        }}
-      >
-        {t(ROLE_LABEL_KEY[role])}
-      </span>
-
       <div style={{ position: 'relative' }}>
         <button
           type="button"

@@ -3,7 +3,6 @@ import ipaddress
 import os
 import subprocess
 
-from django.conf import settings
 from django.contrib.auth.models import User
 from django.http import HttpResponse
 from rest_framework import viewsets
@@ -25,7 +24,6 @@ from progeo.helper.emails import send_info_mail
 from progeo.security import save_clean_path
 from progeo.settings import UPLOAD_DIR
 from progeo.tasks import ping
-from progeo.v1.creator import create_account_safe
 from progeo.v1.helper import generate_hash
 from progeo.v1.models import Account, ProgeoMeasurement
 from progeo.v1.serializers import AccountSerializer, FileSerializer
@@ -35,21 +33,22 @@ from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 
 
 def _get_controller_account():
+        # Accounts are created manually (admin/management command), never by this
+        # code path, so this only looks one up — it never creates one.
         account_name = (os.getenv("CONTROLLER_DEFAULT_ACCOUNT") or "").strip()
         if not account_name:
             raise Exception("CONTROLLER_DEFAULT_ACCOUNT is not set")
 
-        # Via django.conf so the active settings module decides (the test
-        # settings define their own databases).
-        databases = getattr(settings, "DJANGO_DATABASES", [])
-        if not databases:
-            raise Exception("DJANGO_DATABASES is empty")
+        accounts = list(Account.objects.using("default").filter(name=account_name))
+        if not accounts:
+            raise Exception(
+                f"Controller account '{account_name}' not found in the 'default' database. "
+                "Create it manually first, e.g. via `python manage.py create_controller_account`."
+            )
+        if len(accounts) > 1:
+            raise Exception(f"Multiple accounts named '{account_name}' found in 'default'; expected exactly one.")
 
-        account, _ = create_account_safe(name=account_name, db_name=databases[0])
-        if not account:
-            raise Exception("Failed to get or create controller account")
-
-        return account
+        return accounts[0]
 
 
 
