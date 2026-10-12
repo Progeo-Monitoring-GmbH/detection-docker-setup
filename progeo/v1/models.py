@@ -840,6 +840,9 @@ class ProgeoAccess(ProgeoModel, auto_prefetch.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, null=True)
     transport = models.IntegerField(choices=NotifiTrans.choices, null=True, blank=True)
     type = models.IntegerField(choices=NotifiTypes.choices, null=True, blank=True)
+    # Objektleitung assignment (Einstellungen tab). Usually a ProGeo staff
+    # user, but can be a customer account created from just an email address.
+    objektleitung = models.BooleanField(default=False, blank=True)
 
     def check_has_email(self):
         user_email = self.user.email if self.user else None

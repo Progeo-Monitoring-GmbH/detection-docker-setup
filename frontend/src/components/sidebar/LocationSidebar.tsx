@@ -74,18 +74,29 @@ const LocationSidebar = ({
       auth,
       `/v1/alarm/clusters/?location=${locationId}&days=90`,
       (response) => {
-        const clusters = (response?.data?.clusters || []) as { state: string }[];
-        setOpenClusterCount(clusters.filter((cluster) => cluster.state !== 'geloest').length);
+        const clusters = (response?.data?.clusters || []) as {
+          state: string;
+        }[];
+        setOpenClusterCount(
+          clusters.filter((cluster) => cluster.state !== 'geloest').length,
+        );
       },
       () => setOpenClusterCount(null),
     );
   }, [auth, hasPermission, locationId]);
 
-  const visibleItems = PORTAL_NAV_ITEMS.filter((item) => hasPermission(item.permission));
-  // Staff (progeo-admin) and superusers manage objects.
-  const canCreateLocation = role === 'progeo-admin' || isSuperuser;
-  const isStaffUser = role === 'progeo-admin';
-  const verwaltungPath = canCreateLocation ? '/verwaltung/' : '/location/overview/';
+  const visibleItems = PORTAL_NAV_ITEMS.filter((item) =>
+    hasPermission(item.permission),
+  );
+  // ProGeo-Admins (superusers) manage objects.
+  const canCreateLocation = role === 'progeo-admin';
+  // The Staff-Admin page is open to staff too, independent of the role.
+  const isStaffUser = Boolean(
+    (auth?.user as { is_staff?: boolean } | null)?.is_staff,
+  );
+  const verwaltungPath = canCreateLocation
+    ? '/verwaltung/'
+    : '/location/overview/';
 
   // Cross-object modules, listed under "Alle Objekte". The location list is
   // only extra for object managers - everyone else's "Verwaltung" link above
@@ -98,8 +109,20 @@ const LocationSidebar = ({
       to: '/location/overview/',
       visible: canCreateLocation && hasPermission('module_locations_enabled'),
     },
-    { key: 'device', label: t('sidebar_devices'), icon: Hdd, to: '/device/overview', visible: isSuperuser },
-    { key: 'alarms', label: t('sidebar_alarms'), icon: Bell, to: '/alarms/', visible: isSuperuser },
+    {
+      key: 'device',
+      label: t('sidebar_devices'),
+      icon: Hdd,
+      to: '/device/overview',
+      visible: isSuperuser,
+    },
+    {
+      key: 'alarms',
+      label: t('sidebar_alarms'),
+      icon: Bell,
+      to: '/alarms/',
+      visible: isSuperuser,
+    },
     {
       key: 'alarm-report',
       label: t('sidebar_reports'),
@@ -124,7 +147,13 @@ const LocationSidebar = ({
       to: '/backup/1/overview/',
       visible: hasPermission('module_backup_enabled'),
     },
-    { key: 'docker', label: t('sidebar_docker'), icon: Box, to: '/docker/', visible: isSuperuser },
+    {
+      key: 'docker',
+      label: t('sidebar_docker'),
+      icon: Box,
+      to: '/docker/',
+      visible: isSuperuser,
+    },
     {
       key: 'admin-panel',
       label: t('sidebar_admin_panel'),
@@ -135,7 +164,13 @@ const LocationSidebar = ({
   ];
 
   const toolItems: ModuleItem[] = [
-    { key: 'factory', label: t('sidebar_factory'), icon: Map, to: '/factory/', visible: isSuperuser },
+    {
+      key: 'factory',
+      label: t('sidebar_factory'),
+      icon: Map,
+      to: '/factory/',
+      visible: isSuperuser,
+    },
     {
       key: 'lageplan',
       label: t('sidebar_lageplan_wizard'),
@@ -143,7 +178,13 @@ const LocationSidebar = ({
       to: '/lageplan/wizard/',
       visible: isSuperuser,
     },
-    { key: 'map', label: t('sidebar_map'), icon: Geo, to: '/map/', visible: isSuperuser },
+    {
+      key: 'map',
+      label: t('sidebar_map'),
+      icon: Geo,
+      to: '/map/',
+      visible: isSuperuser,
+    },
     {
       key: 'legacy',
       label: t('sidebar_legacy_import'),
@@ -151,13 +192,28 @@ const LocationSidebar = ({
       to: '/legacy/import/',
       visible: isSuperuser,
     },
-    { key: 'ws-debug', label: t('sidebar_ws_debug'), icon: Broadcast, to: '/ws-debug', visible: isSuperuser },
-    { key: 'dev', label: t('sidebar_dev'), icon: Terminal, to: '/dev', visible: isSuperuser },
+    {
+      key: 'ws-debug',
+      label: t('sidebar_ws_debug'),
+      icon: Broadcast,
+      to: '/ws-debug',
+      visible: isSuperuser,
+    },
+    {
+      key: 'dev',
+      label: t('sidebar_dev'),
+      icon: Terminal,
+      to: '/dev',
+      visible: isSuperuser,
+    },
   ];
 
   const isActivePrefix = (to: string) => {
     const prefix = to.endsWith('/') ? to : `${to}/`;
-    return routerLocation.pathname === to || routerLocation.pathname.startsWith(prefix);
+    return (
+      routerLocation.pathname === to ||
+      routerLocation.pathname.startsWith(prefix)
+    );
   };
 
   const itemStyle = (active: boolean, global: boolean): CSSProperties => ({
@@ -165,8 +221,16 @@ const LocationSidebar = ({
     justifyContent: 'space-between',
     gap: 8,
     color: global ? '#4F6B85' : 'var(--progeo-blue)',
-    background: active ? (global ? '#E2DFDE' : 'var(--progeo-surface)') : 'transparent',
-    boxShadow: active ? (global ? 'inset 0 0 0 1px #D0CACA' : SIDEBAR_ACTIVE_SHADOW) : 'none',
+    background: active
+      ? global
+        ? '#E2DFDE'
+        : 'var(--progeo-surface)'
+      : 'transparent',
+    boxShadow: active
+      ? global
+        ? 'inset 0 0 0 1px #D0CACA'
+        : SIDEBAR_ACTIVE_SHADOW
+      : 'none',
   });
 
   const renderIcon = (d: string) => (
@@ -191,10 +255,27 @@ const LocationSidebar = ({
     }
     const Icon = item.icon;
     return (
-      <Link key={item.key} to={item.to} style={itemStyle(isActivePrefix(item.to), true)}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
+      <Link
+        key={item.key}
+        to={item.to}
+        style={itemStyle(isActivePrefix(item.to), true)}
+      >
+        <span
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 11,
+            minWidth: 0,
+          }}
+        >
           <Icon size={17} style={{ flexShrink: 0 }} />
-          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <span
+            style={{
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
             {item.label}
           </span>
         </span>
@@ -221,9 +302,22 @@ const LocationSidebar = ({
             const badge = item.key === 'status' ? openClusterCount : null;
             return (
               <Link key={item.key} to={path} style={itemStyle(active, false)}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
+                <span
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 11,
+                    minWidth: 0,
+                  }}
+                >
                   {renderIcon(item.icon)}
-                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <span
+                    style={{
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
                     {t(item.labelKey)}
                   </span>
                 </span>
@@ -252,14 +346,31 @@ const LocationSidebar = ({
         to={verwaltungPath}
         style={itemStyle(routerLocation.pathname === verwaltungPath, true)}
       >
-        <span style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
+        <span
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 11,
+            minWidth: 0,
+          }}
+        >
           {renderIcon('M4 6h16M4 12h16M4 18h16')}
           <span>{t('nav_verwaltung')}</span>
         </span>
       </Link>
       {canCreateLocation && (
-        <Link to="/anlegen/" style={itemStyle(routerLocation.pathname === '/anlegen/', true)}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
+        <Link
+          to="/anlegen/"
+          style={itemStyle(routerLocation.pathname === '/anlegen/', true)}
+        >
+          <span
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 11,
+              minWidth: 0,
+            }}
+          >
             {renderIcon('M12 5v14M5 12h14')}
             <span>{t('nav_anlegen')}</span>
           </span>

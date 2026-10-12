@@ -5,6 +5,7 @@ Members come from Account membership (multi-access), ProgeoAccess rows
 the requester may hand access to.
 """
 import pytest
+from django.contrib.auth.models import User
 
 from progeo.tests import factories as f
 from progeo.v1.models import ProgeoAccess
@@ -171,3 +172,59 @@ def test_account_member_endpoint_refuses_non_members(api_client, setup):
 
     assert response.status_code == 403
     assert not account.users.filter(pk=single_only.id).exists()
+
+
+def _assign_by_email(api_client, location, email):
+    return api_client.post(
+        f"/v1/location/{location.id}/access/",
+        {"email": email, "transport": 1, "type": 1},
+        format="json",
+    )
+
+
+def test_objektleitung_by_email_creates_a_passwordless_customer_account(api_client, setup):
+    _account, location, _admin = setup
+    email = f"{f.unique('objektleitung')}@example.com"
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    response = _assign_by_email(api_client, location, email.upper())
+
+    assert response.status_code == 200, response.content
+    user = User.objects.using(f.DB).get(email=email)
+    assert (user.username, user.is_staff, user.is_superuser, user.is_active) == (email, False, False, True)
+    assert not user.has_usable_password()
+    rule = ProgeoAccess.objects.using(f.DB).get(location=location, user=user)
+    assert (rule.objektleitung, rule.transport, rule.type) == (True, 1, 1)
+    assert response.json()["access"]["objektleitung"] is True
+
+
+def test_objektleitung_by_email_reuses_the_existing_account(api_client, setup):
+    _account, location, _admin = setup
+    existing = f.make_user(email=f"{f.unique('known')}@example.com")
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    response = _assign_by_email(api_client, location, existing.email.upper())
+
+    assert response.status_code == 200, response.content
+    assert User.objects.using(f.DB).filter(email__iexact=existing.email).count() == 1
+    assert ProgeoAccess.objects.using(f.DB).get(location=location, user=existing).objektleitung is True
+
+
+def test_objektleitung_by_email_is_staff_only(api_client, setup):
+    _account, location, admin = setup
+    email = f"{f.unique('nope')}@example.com"
+    api_client.force_authenticate(user=admin)
+
+    response = _assign_by_email(api_client, location, email)
+
+    assert response.status_code == 403
+    assert not User.objects.using(f.DB).filter(email=email).exists()
+
+
+def test_objektleitung_by_email_rejects_invalid_addresses(api_client, setup):
+    _account, location, _admin = setup
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    response = _assign_by_email(api_client, location, "not-an-email")
+
+    assert response.json() == {"reason": "invalid email address", "success": False}

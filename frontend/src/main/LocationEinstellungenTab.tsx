@@ -15,6 +15,8 @@ import PillButton from '../components/ui/kit/PillButton';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import LabeledInput from '../components/ui/kit/LabeledInput';
 import type { PortalOutletContext } from './LocationPortalLayout';
+import { getProjectTypeLabel } from './projectType';
+import { useProgeoRole } from './roleModel';
 
 /** One sensor of the object; `id` is null while it has no ProgeoMeasurePoint. */
 type SensorThreshold = {
@@ -48,6 +50,7 @@ type AccessRule = {
   user_name?: string | null;
   user_email?: string | null;
   is_staff?: boolean;
+  objektleitung?: boolean;
   transport?: number | null;
   type?: number | null;
 };
@@ -56,6 +59,40 @@ type StaffUser = {
   id: number;
   username: string;
   email?: string | null;
+};
+
+type ProjectTypeOption = { value: number; label: string };
+
+const selectStyle = {
+  height: 40,
+  border: 'none',
+  borderRadius: 11,
+  background: 'var(--progeo-surface)',
+  boxShadow: '0 1px 4px rgba(11,54,89,.09)',
+  padding: '0 13px',
+  fontFamily: 'inherit',
+  fontSize: 14,
+  color: 'var(--progeo-blue)',
+};
+
+const fieldLabelStyle = {
+  fontSize: 11,
+  letterSpacing: '.07em',
+  textTransform: 'uppercase' as const,
+  color: '#8B8383',
+  fontWeight: 500,
+};
+
+const addRowInputStyle = {
+  height: 38,
+  minWidth: 220,
+  border: 'none',
+  borderRadius: 10,
+  background: 'var(--progeo-track-soft)',
+  padding: '0 12px',
+  fontFamily: 'inherit',
+  fontSize: 13.5,
+  color: 'var(--progeo-blue)',
 };
 
 // ProgeoDevice.Resistance IntegerChoices (progeo/v1/models.py).
@@ -86,6 +123,16 @@ const LocationEinstellungenTab = () => {
   const { enqueueSnackbar } = useSnackbar();
   const { hasPermission } = usePermissions();
   const { t } = useTranslation();
+  const role = useProgeoRole();
+  const authUser = auth?.user as {
+    is_staff?: boolean;
+    is_superuser?: boolean;
+  } | null;
+  // The backend lets staff and superusers assign ProGeo staff / an
+  // Objektleitung by email (locations_viewset._objektleitung_user).
+  const canAssignByEmail = Boolean(
+    authUser?.is_staff || authUser?.is_superuser,
+  );
 
   // Each setting is gated by the permission its endpoint checks:
   // PATCH /v1/location/ + measurepoints -> module_locations_edit,
@@ -95,6 +142,8 @@ const LocationEinstellungenTab = () => {
   const canEditDevices = hasPermission('module_devices_edit');
   const canAssignStaff = hasPermission('module_notifications_add');
   const canRemoveStaff = hasPermission('module_notifications_edit');
+  // Same rule as the Objekt tab's product field.
+  const canEditProduct = role === 'progeo-admin';
 
   // -- Schwellwerte ---------------------------------------------------
   const [threshold, setThreshold] = useState(
@@ -197,10 +246,63 @@ const LocationEinstellungenTab = () => {
     );
   }, [auth, locationId]);
 
+  // Produkt = ProgeoLocation.project_type (PROJECT_TYPE_CHOICES), not a
+  // device field; options come from the backend like on the Objekt tab.
+  // The last choice made here wins over the outlet's (possibly stale)
+  // location; keyed by locationId so switching objects drops it.
+  const [projectTypeDraft, setProjectTypeDraft] = useState<{
+    locationId: typeof locationId;
+    value: string;
+  } | null>(null);
+  const projectType =
+    projectTypeDraft?.locationId === locationId
+      ? projectTypeDraft.value
+      : String(location?.project_type ?? '');
+  const [projectTypeOptions, setProjectTypeOptions] = useState<
+    ProjectTypeOption[]
+  >([]);
+
+  useEffect(() => {
+    void axiosConfig.perform_get(
+      auth,
+      '/v1/location/project-types/',
+      (response) => {
+        setProjectTypeOptions(
+          (response?.data?.project_types || []) as ProjectTypeOption[],
+        );
+      },
+      () => {
+        // Non-fatal: the read-only label below works without the options.
+      },
+    );
+  }, [auth]);
+
+  const projectTypeLabel = (value: number | null) =>
+    getProjectTypeLabel(
+      t,
+      value,
+      projectTypeOptions.find((option) => option.value === value)?.label,
+    );
+
+  const saveProjectType = (value: string) => {
+    const previous = projectType;
+    setProjectTypeDraft({ locationId, value });
+    void axiosConfig.perform_patch(
+      auth,
+      `/v1/location/${locationId}/`,
+      { project_type: value === '' ? null : Number(value) },
+      () => showSuccessBar(enqueueSnackbar, t('einstell_saved')),
+      (error) => {
+        setProjectTypeDraft({ locationId, value: previous });
+        showRequestError(enqueueSnackbar, 'Could not save', error);
+      },
+    );
+  };
+
   const saveDeviceField = (
     device: Device,
-    field: 'hardware' | 'pull_resistance',
-    value: string | number,
+    field: 'pull_resistance',
+    value: number,
   ) => {
     void axiosConfig.perform_patch(
       auth,
@@ -236,6 +338,8 @@ const LocationEinstellungenTab = () => {
   const [staffCandidates, setStaffCandidates] = useState<StaffUser[]>([]);
   const [staffLoading, setStaffLoading] = useState(true);
   const [addStaffId, setAddStaffId] = useState('');
+  const [addEmail, setAddEmail] = useState('');
+  const [addingEmail, setAddingEmail] = useState(false);
 
   const loadStaffAccess = useCallback(() => {
     setStaffLoading(true);
@@ -244,7 +348,9 @@ const LocationEinstellungenTab = () => {
       `/v1/location/${locationId}/access/`,
       (response) => {
         const rules = (response?.data?.access || []) as AccessRule[];
-        setStaffRules(rules.filter((rule) => rule.is_staff));
+        setStaffRules(
+          rules.filter((rule) => rule.is_staff || rule.objektleitung),
+        );
         setStaffCandidates((response?.data?.staff_users || []) as StaffUser[]);
         setStaffLoading(false);
       },
@@ -267,7 +373,12 @@ const LocationEinstellungenTab = () => {
     void axiosConfig.perform_post(
       auth,
       `/v1/location/${locationId}/access/`,
-      { user_id: Number(addStaffId), transport: 1, type: 1 },
+      {
+        user_id: Number(addStaffId),
+        transport: 1,
+        type: 1,
+        objektleitung: true,
+      },
       (response) => {
         const saved = response?.data?.access as AccessRule | undefined;
         if (saved) {
@@ -277,6 +388,37 @@ const LocationEinstellungenTab = () => {
       },
       (error) => {
         showRequestError(enqueueSnackbar, 'Could not assign staff', error);
+      },
+    );
+  };
+
+  // Objektleitung by email: the backend reuses the account with that email
+  // or creates one (no password), so alarm emails reach that address via
+  // the usual ProgeoAccess rule.
+  const addByEmail = () => {
+    const email = addEmail.trim();
+    if (!email) {
+      return;
+    }
+    setAddingEmail(true);
+    void axiosConfig.perform_post(
+      auth,
+      `/v1/location/${locationId}/access/`,
+      { email, transport: 1, type: 1 },
+      (response) => {
+        const saved = response?.data?.access as AccessRule | undefined;
+        if (saved) {
+          setStaffRules((prev) => [
+            ...prev.filter((rule) => rule.id !== saved.id),
+            saved,
+          ]);
+        }
+        setAddEmail('');
+        setAddingEmail(false);
+      },
+      (error) => {
+        showRequestError(enqueueSnackbar, 'Could not assign email', error);
+        setAddingEmail(false);
       },
     );
   };
@@ -494,6 +636,44 @@ const LocationEinstellungenTab = () => {
 
       <PanelCard title={t('einstell_section_system')}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div
+            style={{
+              background: 'var(--progeo-surface)',
+              borderRadius: 13,
+              padding: '13px 16px',
+            }}
+          >
+            <div style={gridStyle}>
+              {canEditProduct && projectTypeOptions.length > 0 ? (
+                <label
+                  style={{ display: 'flex', flexDirection: 'column', gap: 5 }}
+                >
+                  <span style={fieldLabelStyle}>{t('einstell_product')}</span>
+                  <select
+                    value={projectType}
+                    onChange={(event) => saveProjectType(event.target.value)}
+                    style={selectStyle}
+                  >
+                    {projectType === '' && <option value="">–</option>}
+                    {projectTypeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {projectTypeLabel(option.value)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <LabeledInput
+                  label={t('einstell_product')}
+                  value={projectTypeLabel(
+                    projectType === '' ? null : Number(projectType),
+                  )}
+                  readOnly
+                />
+              )}
+            </div>
+          </div>
+
           {devicesLoading ? (
             <div className="d-flex justify-content-center py-3 text-muted">
               <Spinner animation="border" size="sm" />
@@ -508,31 +688,16 @@ const LocationEinstellungenTab = () => {
                   padding: '13px 16px',
                 }}
               >
+                <div
+                  style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 10 }}
+                >
+                  {device.hardware || `#${device.id}`}
+                </div>
                 <div style={gridStyle}>
-                  <LabeledInput
-                    label={t('einstell_product')}
-                    value={device.hardware || ''}
-                    readOnly={!canEditDevices}
-                    onChange={(value) =>
-                      setDevices((prev) =>
-                        prev.map((d) =>
-                          d.id === device.id ? { ...d, hardware: value } : d,
-                        ),
-                      )
-                    }
-                  />
                   <label
                     style={{ display: 'flex', flexDirection: 'column', gap: 5 }}
                   >
-                    <span
-                      style={{
-                        fontSize: 11,
-                        letterSpacing: '.07em',
-                        textTransform: 'uppercase',
-                        color: '#8B8383',
-                        fontWeight: 500,
-                      }}
-                    >
+                    <span style={fieldLabelStyle}>
                       {t('einstell_resistance')}
                     </span>
                     <select
@@ -545,17 +710,7 @@ const LocationEinstellungenTab = () => {
                           Number(event.target.value),
                         )
                       }
-                      style={{
-                        height: 40,
-                        border: 'none',
-                        borderRadius: 11,
-                        background: 'var(--progeo-surface)',
-                        boxShadow: '0 1px 4px rgba(11,54,89,.09)',
-                        padding: '0 13px',
-                        fontFamily: 'inherit',
-                        fontSize: 14,
-                        color: 'var(--progeo-blue)',
-                      }}
+                      style={selectStyle}
                     >
                       {RESISTANCE_OPTIONS.map((option) => (
                         <option key={option.value} value={option.value}>
@@ -565,20 +720,6 @@ const LocationEinstellungenTab = () => {
                     </select>
                   </label>
                 </div>
-                {canEditDevices && (
-                  <div style={{ marginTop: 10 }}>
-                    <PillButton
-                      label={t('einstell_save')}
-                      onClick={() =>
-                        saveDeviceField(
-                          device,
-                          'hardware',
-                          device.hardware || '',
-                        )
-                      }
-                    />
-                  </div>
-                )}
               </div>
             ))
           )}
@@ -676,17 +817,7 @@ const LocationEinstellungenTab = () => {
                   <select
                     value={addStaffId}
                     onChange={(event) => setAddStaffId(event.target.value)}
-                    style={{
-                      height: 38,
-                      minWidth: 220,
-                      border: 'none',
-                      borderRadius: 10,
-                      background: 'var(--progeo-track-soft)',
-                      padding: '0 12px',
-                      fontFamily: 'inherit',
-                      fontSize: 13.5,
-                      color: 'var(--progeo-blue)',
-                    }}
+                    style={addRowInputStyle}
                   >
                     <option value="">{t('einstell_select_staff')}</option>
                     {availableStaff.map((staff) => (
@@ -697,6 +828,38 @@ const LocationEinstellungenTab = () => {
                   </select>
                   <PillButton label={t('einstell_assign')} onClick={addStaff} />
                 </div>
+              )}
+              {canAssignStaff && canAssignByEmail && (
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    addByEmail();
+                  }}
+                  style={{
+                    display: 'flex',
+                    gap: 10,
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <input
+                    type="email"
+                    required
+                    value={addEmail}
+                    placeholder={t('einstell_objektleitung_email')}
+                    aria-label={t('einstell_objektleitung_email')}
+                    onChange={(event) => setAddEmail(event.target.value)}
+                    style={addRowInputStyle}
+                  />
+                  <PillButton
+                    label={t('einstell_assign')}
+                    onClick={addByEmail}
+                    disabled={addingEmail}
+                  />
+                  <span style={{ fontSize: 11.5, color: '#8B8383' }}>
+                    {t('einstell_objektleitung_email_hint')}
+                  </span>
+                </form>
               )}
             </>
           )}

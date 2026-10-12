@@ -8,7 +8,9 @@ from datetime import datetime, timedelta
 
 from celery.result import AsyncResult
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
 from django.core.files.storage import FileSystemStorage
+from django.core.validators import validate_email
 from django.db import transaction
 from django.db.models import Count, IntegerField, Max, OuterRef, Q, Subquery
 from django.db.models.functions import Coalesce
@@ -223,7 +225,10 @@ class LocationViewSet(ProgeoModalViewSet):
         POST -> create (module_notifications_add) or update an existing rule
                 (module_notifications_edit): body {user_id, transport, type}
                 or {id, transport, type, user_id?}. transport/type are the
-                ProgeoAccess bitmask ints.
+                ProgeoAccess bitmask ints. Optional "objektleitung" flags the
+                rule as an Objektleitung assignment. Instead of user_id, staff
+                may send {email, transport, type} to assign an Objektleitung
+                by email address (see _objektleitung_user).
         """
         location, account = self._find_location(request, pk=pk)
         if not location:
@@ -271,9 +276,17 @@ class LocationViewSet(ProgeoModalViewSet):
 
         access_id = request.data.get("id")
         user_id = request.data.get("user_id")
+        email = (request.data.get("email") or "").strip()
+        objektleitung = request.data.get("objektleitung")
+        if email and not access_id and user_id is None:
+            user, error = self._objektleitung_user(request, email)
+            if error:
+                return error
+            user_id = user.id
+            objektleitung = True
         # A ProgeoAccess row grants visibility of the location (single-access),
         # so the user must be someone the requester may hand access to.
-        if user_id is not None and not self._may_grant_access(request, location, account, user_id):
+        elif user_id is not None and not self._may_grant_access(request, location, account, user_id):
             return RequestFailed({"reason": "User not found"})
         if access_id:
             rule = ProgeoAccess.objects.using(db_name).filter(pk=access_id, location=location).first()
@@ -301,8 +314,41 @@ class LocationViewSet(ProgeoModalViewSet):
                 rule.type = int(request.data.get("type"))
             except (TypeError, ValueError):
                 return RequestFailed({"reason": "type must be an integer"})
+        if objektleitung is not None:
+            try:
+                rule.objektleitung = _as_bool(objektleitung)
+            except ValueError:
+                return RequestFailed({"reason": "objektleitung must be a boolean"})
         rule.save(using=db_name)
         return RequestSuccess({"access": ProgeoAccessSerializer(rule).data})
+
+    @staticmethod
+    def _objektleitung_user(request, email):
+        """Objektleitung by email address (Einstellungen tab): the existing
+        account with that email, or a new customer account without a usable
+        password, whose ProgeoAccess rule keeps the email notifications going
+        to that address. Staff only, like assigning staff users.
+        Returns (user, None) or (None, error response)."""
+        if not _is_staff_admin(request.user):
+            return None, permission_denied_response(["staff"])
+        email = email.lower()
+        try:
+            validate_email(email)
+        except ValidationError:
+            return None, RequestFailed({"reason": "invalid email address"})
+        matches = list(User.objects.filter(email__iexact=email).order_by("pk")[:2])
+        if len(matches) > 1:
+            return None, RequestFailed({"reason": "Several accounts use this email address"})
+        if matches:
+            return matches[0], None
+        if len(email) > User._meta.get_field("username").max_length:
+            return None, RequestFailed({"reason": "email address too long"})
+        if User.objects.filter(username__iexact=email).exists():
+            return None, RequestFailed({"reason": f"Username '{email}' already exists"})
+        user = User(username=email, email=email, is_staff=False, is_superuser=False, is_active=True)
+        user.set_unusable_password()
+        user.save()
+        return user, None
 
     @staticmethod
     def _user_contact(user):

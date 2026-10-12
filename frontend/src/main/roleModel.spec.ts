@@ -10,7 +10,9 @@ vi.mock('../../hooks/CoreAuthProvider.tsx', () => ({
   useAuth: () => ({ user: mocks.user }),
 }));
 vi.mock('../../hooks/usePermissions', () => ({
-  default: () => ({ hasPermission: (code: string) => mocks.permissions.has(code) }),
+  default: () => ({
+    hasPermission: (code: string) => mocks.permissions.has(code),
+  }),
 }));
 
 beforeEach(() => {
@@ -21,15 +23,18 @@ beforeEach(() => {
 // useProgeoRole only composes the (mocked) auth/permission hooks, so it can be
 // called directly without rendering a component.
 describe('useProgeoRole', () => {
-  it('maps staff users to progeo-admin', () => {
-    mocks.user = { is_staff: true };
+  it('maps superusers to progeo-admin', () => {
+    mocks.user = { is_superuser: true };
+    expect(useProgeoRole()).toBe('progeo-admin');
+    mocks.user = { is_superuser: true, is_staff: true };
     expect(useProgeoRole()).toBe('progeo-admin');
   });
 
-  it('lets staff win over the edit permission', () => {
+  it('maps staff users to kundenadmin, even without the edit permission', () => {
     mocks.user = { is_staff: true };
+    expect(useProgeoRole()).toBe('kundenadmin');
     mocks.permissions.add('module_locations_edit');
-    expect(useProgeoRole()).toBe('progeo-admin');
+    expect(useProgeoRole()).toBe('kundenadmin');
   });
 
   it('maps non-staff users with module_locations_edit to kundenadmin', () => {

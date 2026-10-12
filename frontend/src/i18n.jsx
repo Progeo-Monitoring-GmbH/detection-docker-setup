@@ -455,6 +455,9 @@ i18n
           einstell_objektleitung_empty:
             'No staff assigned - internal notifications will not be sent.',
           einstell_select_staff: 'Select staff member…',
+          einstell_objektleitung_email: 'or enter an email address…',
+          einstell_objektleitung_email_hint:
+            'Creates an account without a password if none exists; it receives the alarm emails.',
           einstell_assign: 'Assign',
           topbar_role_nutzer: 'User',
           topbar_role_kundenadmin: 'Customer admin',
@@ -1013,6 +1016,9 @@ i18n
           einstell_objektleitung_empty:
             'Keine Objektleitung zugewiesen — interne Benachrichtigungen werden nicht versendet.',
           einstell_select_staff: 'Mitarbeiter auswählen…',
+          einstell_objektleitung_email: 'oder E-Mail-Adresse eingeben…',
+          einstell_objektleitung_email_hint:
+            'Legt bei Bedarf ein Konto ohne Passwort an; es erhält die Alarm-E-Mails.',
           einstell_assign: 'Zuweisen',
           topbar_role_nutzer: 'Nutzer',
           topbar_role_kundenadmin: 'Kundenadmin',

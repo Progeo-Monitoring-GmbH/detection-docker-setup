@@ -507,6 +507,7 @@ class ProgeoAccessSerializer(ProgeoBaseSerializer):
             "user_name",
             "user_email",
             "is_staff",
+            "objektleitung",
             "transport",
             "type",
             "transport_unpacked",
