@@ -5,6 +5,13 @@ SENSITIVE_PARAMS = {
     "token",
 }
 
+class BelowWarningFilter(logging.Filter):
+    """Let only records below WARNING through (WARNING and above go to stderr)."""
+
+    def filter(self, record):
+        return record.levelno < logging.WARNING
+
+
 class SanitizeURLFilter(logging.Filter):
     def filter(self, record):
         record.cleaned_path = "-"

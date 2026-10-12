@@ -376,42 +376,56 @@ SHOW_LAST_TAGS = 25
 
 TIME_CALC_OFFSET = parse_int(os.getenv("TIME_CALC_OFFSET", "0"))
 
-LOG_DIR = os.path.join(BASE_DIR, "logs", "backend")
-REQUEST_LOG_FILE = os.path.join(LOG_DIR, "request.log")
-
-LOGGING_OUT = {
+# stdout -> backend.log (INFO), stderr -> backend.err.log (WARNING+: 4xx/5xx requests, exceptions, security).
+# Supervisor splits the two streams; see docker/backend/supervisord.conf.
+LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
     "filters": {
+        "below_warning": {
+            "()": "progeo.logging.BelowWarningFilter",
+        },
         "sanitize_url": {
             "()": "progeo.logging.SanitizeURLFilter",
         },
     },
     "formatters": {
-        "request_file": {
+        "default": {
             "format": "[%(asctime)s] [%(levelname)s] [%(name)s] %(cleaned_path)s %(message)s",
             "datefmt": "%Y-%m-%d %H:%M:%S",
         },
     },
     "handlers": {
-        "request_file": {
+        "stdout": {
             "level": "INFO",
-            "class": "logging.FileHandler",
-            "filename": REQUEST_LOG_FILE,
-            "formatter": "request_file",
+            "class": "logging.StreamHandler",
+            "stream": "ext://sys.stdout",
+            "formatter": "default",
+            "filters": ["below_warning", "sanitize_url"],
+        },
+        "stderr": {
+            "level": "WARNING",
+            "class": "logging.StreamHandler",
+            "stream": "ext://sys.stderr",
+            "formatter": "default",
             "filters": ["sanitize_url"],
         },
     },
+    "root": {
+        "handlers": ["stdout", "stderr"],
+        "level": "INFO",
+    },
     "loggers": {
-        "django.request": {
-            "handlers": ["request_file"],
+        # Django's defaults only print to the console when DEBUG=True; route through root instead.
+        "django": {
+            "handlers": [],
             "level": "INFO",
-            "propagate": False,
+            "propagate": True,
         },
         "django.server": {
-            "handlers": ["request_file"],
+            "handlers": [],
             "level": "INFO",
-            "propagate": False,
+            "propagate": True,
         },
     },
 }
