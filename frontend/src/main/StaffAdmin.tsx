@@ -74,6 +74,16 @@ const permissionLabel = (code: string): string => {
 const rowPermissions = (user: StaffUser): string[] =>
   Object.keys(user.permissions || {}).filter((code) => user.permissions[code]);
 
+/** Mirrors the backend's DEFAULT_USER_PERMISSIONS (progeo/v1/models.py) -
+ * preselected for a new user; the backend applies these regardless. */
+const DEFAULT_NEW_USER_PERMISSIONS = [
+  'module_navbar_enabled',
+  'module_locations_enabled',
+  'module_measurements_enabled',
+  'module_notifications_enabled',
+  'module_profile_mail_edit',
+];
+
 const UserFormModal = ({
   show,
   onHide,
@@ -112,8 +122,12 @@ const UserFormModal = ({
     setPassword('');
     setIsStaff(Boolean(user?.is_staff));
     setIsActive(user ? Boolean(user.is_active) : true);
-    setSelectedPerms(rowPermissions(user || ({} as StaffUser)));
-  }, [show, user]);
+    setSelectedPerms(
+      user
+        ? rowPermissions(user)
+        : DEFAULT_NEW_USER_PERMISSIONS.filter((code) => grantableCodes.includes(code)),
+    );
+  }, [show, user, grantableCodes]);
 
   const togglePermission = (code: string) => {
     setSelectedPerms((current) =>

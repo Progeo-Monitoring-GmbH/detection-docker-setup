@@ -9,10 +9,14 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
 from progeo.helper.basics import RequestFailed, RequestSuccess
-from progeo.v1.models import MODULE_PERMISSION_CODES, MODULE_PERMISSION_DEFINITIONS
+from progeo.v1.models import DEFAULT_USER_PERMISSIONS, MODULE_PERMISSION_CODES, MODULE_PERMISSION_DEFINITIONS
 
 # Users / permissions always live on the default database.
 _USER_DB = "default"
+
+# Automatically granted to every newly created user, on top of whatever the
+# creating admin explicitly selects.
+_DEFAULT_USER_PERMISSION_CODES = {code for code, _ in DEFAULT_USER_PERMISSIONS}
 
 
 def _is_staff_admin(user) -> bool:
@@ -156,7 +160,8 @@ class StaffUserListView(APIView):
                 is_superuser=is_superuser,
                 is_active=bool(data.get("is_active", True)),
             )
-            denied_codes = _apply_permissions(user, data.get("permissions", []), grantable)
+            requested_codes = set(data.get("permissions", [])) | _DEFAULT_USER_PERMISSION_CODES
+            denied_codes = _apply_permissions(user, requested_codes, grantable)
 
         return RequestSuccess({
             "user": _user_payload(user, grantable),
