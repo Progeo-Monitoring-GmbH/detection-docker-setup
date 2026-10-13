@@ -1,7 +1,10 @@
 #!/bin/bash
 
 # Open Wi-Fi Hotspot Setup Script for Raspberry Pi
-# SSID and password are read from .env when available
+# SSID and password are read from .env when available; values saved from the
+# dashboard (media/setup/controller_wifi.env, written by the backend) win.
+# The controller-wifi.path unit installed below reruns this script whenever
+# that file changes.
 
 set -euo pipefail
 
@@ -21,6 +24,25 @@ if [[ -f "${ENV_FILE}" ]]; then
   set +a
 fi
 
+# Written by the backend container, so it is read as plain KEY=value data and
+# never sourced (nothing in it may be executed as root).
+WIFI_OVERRIDE_FILE="${PROJECT_ROOT}/media/setup/controller_wifi.env"
+if [[ -f "${WIFI_OVERRIDE_FILE}" ]]; then
+  override_ssid=""
+  override_password=""
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    case "${line%%=*}" in
+      CONTROLLER_SSID) override_ssid="${line#*=}" ;;
+      CONTROLLER_PASSWORD) override_password="${line#*=}" ;;
+    esac
+  done < "${WIFI_OVERRIDE_FILE}"
+  if [[ -n "${override_ssid}" ]]; then
+    echo "Using Wi-Fi credentials from ${WIFI_OVERRIDE_FILE}"
+    CONTROLLER_SSID="${override_ssid}"
+    CONTROLLER_PASSWORD="${override_password}"
+  fi
+fi
+
 CONTROLLER_IP="${CONTROLLER_IP:-192.168.161.1}"
 SSID="${CONTROLLER_SSID:-"ProGeoController"}"
 PASSWORD="${CONTROLLER_PASSWORD:-}"
@@ -37,6 +59,11 @@ fi
 
 if [[ -n "${PASSWORD}" ]] && (( ${#PASSWORD} < 8 || ${#PASSWORD} > 63 )); then
   echo "Error: CONTROLLER_PASSWORD must be 8-63 characters for WPA2."
+  exit 1
+fi
+
+if (( $(printf '%s' "${SSID}" | wc -c) > 32 )); then
+  echo "Error: CONTROLLER_SSID must be at most 32 bytes."
   exit 1
 fi
 
@@ -167,9 +194,45 @@ EOF
   ip link set wlan0 up
 }
 
-echo "Updating packages..."
-apt update
-apt install -y hostapd dnsmasq iw
+install_watcher() {
+  # Reruns this script (as root) when the backend saves new credentials.
+  # The delay lets the backend answer the request before the hotspot drops.
+  cat > /etc/systemd/system/controller-wifi.service <<EOF
+[Unit]
+Description=Reapply controller Wi-Fi hotspot after a credential change
+
+[Service]
+Type=oneshot
+ExecStartPre=/bin/sleep 5
+ExecStart=/bin/bash ${SCRIPT_DIR}/setup_wifi.sh
+EOF
+
+  cat > /etc/systemd/system/controller-wifi.path <<EOF
+[Unit]
+Description=Watch for controller Wi-Fi credential changes
+
+[Path]
+PathChanged=${WIFI_OVERRIDE_FILE}
+Unit=controller-wifi.service
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  systemctl daemon-reload
+  systemctl enable --now controller-wifi.path >/dev/null
+}
+
+# Reruns happen on a controller that may be offline - only hit apt when needed.
+missing_packages=()
+for package in hostapd dnsmasq iw; do
+  dpkg -s "${package}" >/dev/null 2>&1 || missing_packages+=("${package}")
+done
+if (( ${#missing_packages[@]} > 0 )); then
+  echo "Installing packages: ${missing_packages[*]}..."
+  apt update
+  apt install -y "${missing_packages[@]}"
+fi
 
 echo "Stopping services for configuration..."
 configure_service_restart_policy
@@ -272,6 +335,8 @@ if ! systemctl --quiet is-active hostapd; then
   journalctl -u hostapd -n 50 --no-pager || true
   exit 1
 fi
+
+install_watcher
 
 echo "Hotspot setup complete!"
 if [[ -n "${PASSWORD}" ]]; then

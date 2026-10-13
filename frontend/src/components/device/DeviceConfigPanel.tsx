@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import axiosConfig from '../../axiosConfig';
 import { showRequestError, showSuccessBar } from '../ui/Snackbar.jsx';
 import PillButton from '../ui/kit/PillButton';
 import LabeledInput from '../ui/kit/LabeledInput';
+import SegmentedControl from '../ui/kit/SegmentedControl';
 
 /** The ProgeoDevice fields the config file is seeded from. */
 export type ConfigDevice = {
@@ -26,6 +27,7 @@ type DeviceConfigForm = {
   measurement_interval_sec: number;
   measurement_sensors: number;
   measurement_protective_earth: number;
+  measurement_pulldown_resistance: number;
 };
 
 const CONFIG_PATH = 'config/device_config.lua';
@@ -43,7 +45,19 @@ const INTERVAL_OPTIONS = [
   { value: 86400, label: '24h' },
 ];
 
-const initialForm = (device: ConfigDevice): DeviceConfigForm => ({
+/** ProgeoDevice.Resistance choices (pulldown_resistance in the file). */
+const RESISTANCE_OPTIONS = [
+  { value: 136, labelKey: 'einstell_resistance_100k' },
+  { value: 72, labelKey: 'einstell_resistance_10k' },
+  { value: 40, labelKey: 'einstell_resistance_1k' },
+  { value: 24, labelKey: 'einstell_resistance_100' },
+  { value: 8, labelKey: 'einstell_resistance_off' },
+];
+
+const initialForm = (
+  device: ConfigDevice,
+  peSwitched: boolean,
+): DeviceConfigForm => ({
   wifi_ssid: '',
   wifi_pwd: '',
   device_model: 'smart',
@@ -52,7 +66,8 @@ const initialForm = (device: ConfigDevice): DeviceConfigForm => ({
   device_hash: device.raw_hash || '',
   measurement_interval_sec: device.data_interval || 3600,
   measurement_sensors: 16,
-  measurement_protective_earth: 0,
+  measurement_protective_earth: peSwitched ? 1 : 0,
+  measurement_pulldown_resistance: device.pull_resistance ?? 136,
 });
 
 const sectionContent = (lua: string, section: string) => {
@@ -107,10 +122,15 @@ const parseConfigContent = (
       'protective_earth',
       current.measurement_protective_earth,
     ),
+    measurement_pulldown_resistance: getNumberField(
+      measurement,
+      'pulldown_resistance',
+      current.measurement_pulldown_resistance,
+    ),
   };
 };
 
-const toLuaConfig = (config: DeviceConfigForm, pullResistance: number) => `return {
+const toLuaConfig = (config: DeviceConfigForm) => `return {
   wifi = {
     ssid = "${config.wifi_ssid}",
     pwd = "${config.wifi_pwd}"
@@ -122,7 +142,7 @@ const toLuaConfig = (config: DeviceConfigForm, pullResistance: number) => `retur
     device_hash = "${config.device_hash}"
   },
   measurement = {
-    pulldown_resistance = ${pullResistance},
+    pulldown_resistance = ${config.measurement_pulldown_resistance},
     interval_sec = ${config.measurement_interval_sec},
     sensors = ${config.measurement_sensors},
     protective_earth = ${config.measurement_protective_earth}
@@ -160,29 +180,49 @@ type DeviceConfigPanelProps = {
   device: ConfigDevice;
   /** Upload is gated by module_devices_edit on the backend. */
   canEdit: boolean;
+  /** The device's location; PE geschaltet is ProgeoLocation.pe_geschaltet. */
+  locationId: number | string;
+  peSwitched: boolean;
+  /** Called after ProgeoDevice.pull_resistance was saved. */
+  onPullResistanceSaved?: (value: number) => void;
+  /** Called after ProgeoLocation.pe_geschaltet was saved. */
+  onPeSwitchedSaved?: (value: boolean) => void;
 };
 
 /**
  * Reads/writes the device's config/device_config.lua (formerly the
- * standalone /device/:id/update page). The pull resistance isn't edited
- * here - it's the ProgeoDevice field selected right above in
- * Systemeinstellungen, written into the file on save.
+ * standalone /device/:id/update page).
+ *
+ * Dämpfungswiderstand and PE geschaltet are also stored in the database
+ * (ProgeoDevice.pull_resistance, ProgeoLocation.pe_geschaltet): changing
+ * them saves that field and immediately sends the updated config to the
+ * device - but only once the config was loaded from it, so an untouched
+ * default form (empty WiFi etc.) is never pushed by accident.
  */
-const DeviceConfigPanel = ({ device, canEdit }: DeviceConfigPanelProps) => {
+const DeviceConfigPanel = ({
+  device,
+  canEdit,
+  locationId,
+  peSwitched,
+  onPullResistanceSaved,
+  onPeSwitchedSaved,
+}: DeviceConfigPanelProps) => {
   const { enqueueSnackbar } = useSnackbar();
   const { t } = useTranslation();
   const [form, setForm] = useState<DeviceConfigForm>(() =>
-    initialForm(device),
+    initialForm(device, peSwitched),
   );
   const [loading, setLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
-  const pullResistance = device.pull_resistance ?? 136;
-  const content = toLuaConfig(form, pullResistance);
+  const content = toLuaConfig(form);
 
   const setField = (name: keyof DeviceConfigForm, value: string | number) =>
     setForm((previous) => ({ ...previous, [name]: value }));
 
-  const handleLoad = async () => {
+  // `announce` is off for the automatic load on open: a success toast every
+  // time the panel is expanded would be noise. Failures are always shown.
+  const handleLoad = async (announce = true) => {
     try {
       setLoading(true);
       axiosConfig.updateToken();
@@ -193,7 +233,10 @@ const DeviceConfigPanel = ({ device, canEdit }: DeviceConfigPanelProps) => {
       setForm((previous) =>
         parseConfigContent(response?.data?.content || '', previous),
       );
-      showSuccessBar(enqueueSnackbar, t('devcfg_loaded'));
+      setLoaded(true);
+      if (announce) {
+        showSuccessBar(enqueueSnackbar, t('devcfg_loaded'));
+      }
     } catch (error: any) {
       showRequestError(enqueueSnackbar, 'Could not load config', error);
     } finally {
@@ -201,13 +244,27 @@ const DeviceConfigPanel = ({ device, canEdit }: DeviceConfigPanelProps) => {
     }
   };
 
-  const handleSave = async () => {
+  // The panel is mounted when "show device configuration" is clicked, so
+  // this reads the file from the device on every open. The ref keeps
+  // StrictMode's double effect run from asking the device twice.
+  const autoLoaded = useRef(false);
+  useEffect(() => {
+    if (autoLoaded.current) {
+      return;
+    }
+    autoLoaded.current = true;
+    void handleLoad(false);
+    // Only on open - not when the device prop refreshes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const uploadConfig = async (config: DeviceConfigForm) => {
     try {
       setSaving(true);
       axiosConfig.updateToken();
       await axiosConfig.holder.post(`/v1/device/${device.id}/config/upload/`, {
         path: CONFIG_PATH,
-        content,
+        content: toLuaConfig(config),
       });
       showSuccessBar(enqueueSnackbar, t('devcfg_saved'));
     } catch (error: any) {
@@ -216,6 +273,58 @@ const DeviceConfigPanel = ({ device, canEdit }: DeviceConfigPanelProps) => {
       setSaving(false);
     }
   };
+
+  const handleSave = () => uploadConfig(form);
+
+  // Saves the database field, then pushes the changed config to the device.
+  const changeStoredSetting = async (
+    patch: Partial<DeviceConfigForm>,
+    saveField: () => Promise<unknown>,
+    onSaved: () => void,
+  ) => {
+    const previous = form;
+    const next = { ...form, ...patch };
+    setForm(next);
+    try {
+      setSaving(true);
+      axiosConfig.updateToken();
+      await saveField();
+      onSaved();
+    } catch (error: any) {
+      setForm(previous);
+      showRequestError(enqueueSnackbar, 'Could not save', error);
+      return;
+    } finally {
+      setSaving(false);
+    }
+    if (loaded) {
+      await uploadConfig(next);
+    } else {
+      showSuccessBar(enqueueSnackbar, t('devcfg_saved_not_sent'));
+    }
+  };
+
+  const changePullResistance = (value: number) =>
+    changeStoredSetting(
+      { measurement_pulldown_resistance: value },
+      () =>
+        axiosConfig.holder.patch(`/v1/device/${device.id}/`, {
+          pull_resistance: value,
+        }),
+      () => onPullResistanceSaved?.(value),
+    );
+
+  const changePeSwitched = (value: boolean) =>
+    changeStoredSetting(
+      { measurement_protective_earth: value ? 1 : 0 },
+      () =>
+        axiosConfig.holder.patch(`/v1/location/${locationId}/`, {
+          pe_geschaltet: value,
+        }),
+      () => onPeSwitchedSaved?.(value),
+    );
+
+  const busy = loading || saving;
 
   const textField = (name: keyof DeviceConfigForm, labelKey: string) => (
     <LabeledInput
@@ -277,7 +386,61 @@ const DeviceConfigPanel = ({ device, canEdit }: DeviceConfigPanelProps) => {
           </select>
         </label>
         {numberField('measurement_sensors', 'devcfg_sensors')}
-        {numberField('measurement_protective_earth', 'devcfg_protective_earth')}
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          <span style={fieldLabelStyle}>{t('einstell_resistance')}</span>
+          <select
+            value={form.measurement_pulldown_resistance}
+            disabled={!canEdit || busy}
+            onChange={(event) =>
+              void changePullResistance(Number(event.target.value))
+            }
+            style={selectStyle}
+          >
+            {/* A value on the device outside the known choices stays visible. */}
+            {!RESISTANCE_OPTIONS.some(
+              (option) => option.value === form.measurement_pulldown_resistance,
+            ) && (
+              <option value={form.measurement_pulldown_resistance}>
+                {form.measurement_pulldown_resistance}
+              </option>
+            )}
+            {RESISTANCE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {t(option.labelKey)}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 16,
+          flexWrap: 'wrap',
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 180 }}>
+          <div style={{ fontSize: 13.5, fontWeight: 500 }}>
+            {t('einstell_pe_geschaltet')}
+          </div>
+          <div style={{ fontSize: 12, color: '#8B8383', marginTop: 2 }}>
+            {t('einstell_pe_geschaltet_hint')}
+          </div>
+        </div>
+        <SegmentedControl
+          options={[
+            { value: 'ja', label: t('einstell_yes') },
+            { value: 'nein', label: t('einstell_no') },
+          ]}
+          value={form.measurement_protective_earth ? 'ja' : 'nein'}
+          onChange={
+            canEdit && !busy
+              ? (value) => void changePeSwitched(value === 'ja')
+              : () => {}
+          }
+        />
       </div>
 
       <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -303,14 +466,14 @@ const DeviceConfigPanel = ({ device, canEdit }: DeviceConfigPanelProps) => {
         <PillButton
           variant="ghost"
           label={loading ? t('devcfg_loading') : t('devcfg_load')}
-          onClick={handleLoad}
-          disabled={loading || saving}
+          onClick={() => handleLoad()}
+          disabled={busy}
         />
         {canEdit && (
           <PillButton
             label={saving ? t('devcfg_saving') : t('devcfg_save')}
             onClick={handleSave}
-            disabled={saving || loading}
+            disabled={busy}
           />
         )}
       </div>

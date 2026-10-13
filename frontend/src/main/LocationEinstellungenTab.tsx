@@ -12,7 +12,6 @@ import {
 } from '../components/ui/Snackbar.jsx';
 import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
-import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import LabeledInput from '../components/ui/kit/LabeledInput';
 import DeviceConfigPanel, {
   type ConfigDevice,
@@ -96,15 +95,6 @@ const addRowInputStyle = {
   fontSize: 13.5,
   color: 'var(--progeo-blue)',
 };
-
-// ProgeoDevice.Resistance IntegerChoices (progeo/v1/models.py).
-const RESISTANCE_OPTIONS = [
-  { value: 136, labelKey: 'einstell_resistance_100k' },
-  { value: 72, labelKey: 'einstell_resistance_10k' },
-  { value: 40, labelKey: 'einstell_resistance_1k' },
-  { value: 24, labelKey: 'einstell_resistance_100' },
-  { value: 8, labelKey: 'einstell_resistance_off' },
-];
 
 const gridStyle = {
   display: 'grid',
@@ -233,8 +223,9 @@ const LocationEinstellungenTab = () => {
   const [devicesLoading, setDevicesLoading] = useState(true);
   // Device ids whose config/device_config.lua editor is expanded.
   const [configOpen, setConfigOpen] = useState<Record<number, boolean>>({});
+  // Edited (and written into each device's config) inside DeviceConfigPanel.
   const [peGeschaltet, setPeGeschaltet] = useState(
-    location?.pe_geschaltet ? 'ja' : 'nein',
+    Boolean(location?.pe_geschaltet),
   );
 
   useEffect(() => {
@@ -298,40 +289,6 @@ const LocationEinstellungenTab = () => {
       () => showSuccessBar(enqueueSnackbar, t('einstell_saved')),
       (error) => {
         setProjectTypeDraft({ locationId, value: previous });
-        showRequestError(enqueueSnackbar, 'Could not save', error);
-      },
-    );
-  };
-
-  const saveDeviceField = (
-    device: Device,
-    field: 'pull_resistance',
-    value: number,
-  ) => {
-    void axiosConfig.perform_patch(
-      auth,
-      `/v1/device/${device.id}/`,
-      { [field]: value },
-      () => {
-        setDevices((prev) =>
-          prev.map((d) => (d.id === device.id ? { ...d, [field]: value } : d)),
-        );
-        showSuccessBar(enqueueSnackbar, t('einstell_saved'));
-      },
-      (error) => {
-        showRequestError(enqueueSnackbar, 'Could not save device', error);
-      },
-    );
-  };
-
-  const savePeGeschaltet = (value: string) => {
-    setPeGeschaltet(value);
-    void axiosConfig.perform_patch(
-      auth,
-      `/v1/location/${locationId}/`,
-      { pe_geschaltet: value === 'ja' },
-      () => showSuccessBar(enqueueSnackbar, t('einstell_saved')),
-      (error) => {
         showRequestError(enqueueSnackbar, 'Could not save', error);
       },
     );
@@ -697,33 +654,6 @@ const LocationEinstellungenTab = () => {
                 >
                   {device.hardware || `#${device.id}`}
                 </div>
-                <div style={gridStyle}>
-                  <label
-                    style={{ display: 'flex', flexDirection: 'column', gap: 5 }}
-                  >
-                    <span style={fieldLabelStyle}>
-                      {t('einstell_resistance')}
-                    </span>
-                    <select
-                      value={device.pull_resistance ?? ''}
-                      disabled={!canEditDevices}
-                      onChange={(event) =>
-                        saveDeviceField(
-                          device,
-                          'pull_resistance',
-                          Number(event.target.value),
-                        )
-                      }
-                      style={selectStyle}
-                    >
-                      {RESISTANCE_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {t(option.labelKey)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
                 <button
                   type="button"
                   onClick={() =>
@@ -754,6 +684,18 @@ const LocationEinstellungenTab = () => {
                   <DeviceConfigPanel
                     device={device}
                     canEdit={canEditDevices}
+                    locationId={locationId}
+                    peSwitched={peGeschaltet}
+                    onPullResistanceSaved={(value) =>
+                      setDevices((prev) =>
+                        prev.map((d) =>
+                          d.id === device.id
+                            ? { ...d, pull_resistance: value }
+                            : d,
+                        ),
+                      )
+                    }
+                    onPeSwitchedSaved={setPeGeschaltet}
                   />
                 )}
               </div>
@@ -764,35 +706,6 @@ const LocationEinstellungenTab = () => {
               {t('einstell_no_devices')}
             </span>
           )}
-
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 16,
-              background: 'var(--progeo-surface)',
-              borderRadius: 13,
-              padding: '13px 16px',
-              flexWrap: 'wrap',
-            }}
-          >
-            <div style={{ flex: 1, minWidth: 180 }}>
-              <div style={{ fontSize: 13.5, fontWeight: 500 }}>
-                {t('einstell_pe_geschaltet')}
-              </div>
-              <div style={{ fontSize: 12, color: '#8B8383', marginTop: 2 }}>
-                {t('einstell_pe_geschaltet_hint')}
-              </div>
-            </div>
-            <SegmentedControl
-              options={[
-                { value: 'ja', label: t('einstell_yes') },
-                { value: 'nein', label: t('einstell_no') },
-              ]}
-              value={peGeschaltet}
-              onChange={canEdit ? savePeGeschaltet : () => {}}
-            />
-          </div>
         </div>
       </PanelCard>
 

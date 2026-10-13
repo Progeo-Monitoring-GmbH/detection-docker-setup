@@ -457,7 +457,8 @@ i18n
           devcfg_hash: 'Device hash',
           devcfg_interval: 'Interval',
           devcfg_sensors: 'Sensors',
-          devcfg_protective_earth: 'Protective earth',
+          devcfg_saved_not_sent:
+            'Saved. Load the config from the device to send the change to it.',
           devcfg_preview: 'Config preview',
           devcfg_load: 'Load from device',
           devcfg_loading: 'Loading...',
@@ -1037,7 +1038,8 @@ i18n
           devcfg_hash: 'Geräte-Hash',
           devcfg_interval: 'Messintervall',
           devcfg_sensors: 'Sensoren',
-          devcfg_protective_earth: 'Schutzleiter (PE)',
+          devcfg_saved_not_sent:
+            'Gespeichert. Konfiguration vom Gerät laden, um die Änderung zu übertragen.',
           devcfg_preview: 'Konfigurationsvorschau',
           devcfg_load: 'Vom Gerät laden',
           devcfg_loading: 'Lädt...',

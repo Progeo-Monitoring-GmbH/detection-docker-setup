@@ -23,6 +23,7 @@ from progeo.helper.basics import (
         save_check_dir,
 )
 from progeo.helper.cacher import search_clear_cache
+from progeo.helper.controller_wifi import get_controller_wifi
 from progeo.helper.creator import create_MfS_log
 from progeo.helper.emails import send_info_mail
 from progeo.security import save_clean_path
@@ -187,10 +188,9 @@ class SetupViewSet(viewsets.ViewSet):
 
     @action(detail=False, url_path="controller/qrcodes", methods=["GET"])
     def get_controller_qrcodes(self, request, *args, **kwargs):
-        ssid = (os.getenv("CONTROLLER_SSID") or "").strip()
+        ssid, password = get_controller_wifi()
         if not ssid:
             return RequestFailed({"reason": "CONTROLLER_SSID is not set"})
-        password = os.getenv("CONTROLLER_PASSWORD") or ""
         frontend_url = (os.getenv("CONTROLLER_FRONTEND_URL") or "").strip() or DEFAULT_CONTROLLER_FRONTEND_URL
 
         wifi_payload = build_wifi_payload(ssid, password)

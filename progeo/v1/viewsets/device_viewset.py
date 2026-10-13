@@ -15,6 +15,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from progeo.authentication import LimitedTokenAuthentication
 from progeo.decorator import calc_runtime, require_module_permissions
 from progeo.helper.basics import RequestFailed, RequestSuccess, elog, ilog
+from progeo.helper.controller_wifi import parse_lua_wifi, request_controller_wifi_update
 from progeo.helper.creator import create_MfS_log
 from progeo.helper.location_access import location_q, resolve_request_account
 from progeo.helper.measurement_utils import flatten_numeric_values
@@ -603,10 +604,23 @@ class DeviceViewSet(ProgeoModalViewSet):
                 "content": result.get("content", ""),
             })
 
+        # Devices join the controller hotspot, so changed wifi credentials in
+        # the device config are applied to the hotspot too (setup_wifi.sh on
+        # the host reruns). Only after the device accepted the new config.
+        controller_wifi = None
+        wifi = parse_lua_wifi(content)
+        if wifi:
+            controller_wifi = request_controller_wifi_update(*wifi)
+            if controller_wifi == "scheduled":
+                ilog(f"Controller wifi changed to '{wifi[0]}' via device {device.pk}; hotspot reconfiguration scheduled")
+            elif controller_wifi.startswith("invalid"):
+                elog(f"Controller wifi from device {device.pk} not applied: {controller_wifi}")
+
         return RequestSuccess({
             "task_id": task.id,
             "status_code": result.get("status_code"),
             "content": result.get("content", ""),
+            "controller_wifi": controller_wifi,
         })
 
     @calc_runtime
