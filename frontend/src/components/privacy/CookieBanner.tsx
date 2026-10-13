@@ -12,13 +12,15 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 import { PRIVACY_POLICY_URL } from './consent';
 import { useConsent } from './ConsentProvider';
+import './CookieBanner.css';
 
 // Accept and reject deliberately share one style: regulators (EDPB cookie
 // banner taskforce, German DSK) require both options to be equally prominent.
 const choiceButtonStyle: CSSProperties = {
-  flex: '1 1 0',
+  // Wraps to one button per row when two don't fit side by side.
+  flex: '1 1 140px',
   minHeight: 38,
-  padding: '0 16px',
+  padding: '6px 16px',
   border: 'none',
   borderRadius: 'var(--progeo-radius-pill)',
   background: 'var(--progeo-blue)',
@@ -27,7 +29,6 @@ const choiceButtonStyle: CSSProperties = {
   fontSize: 13,
   fontWeight: 600,
   cursor: 'pointer',
-  whiteSpace: 'nowrap',
 };
 
 const secondaryButtonStyle: CSSProperties = {
@@ -112,104 +113,90 @@ const CookieBanner = () => {
       aria-describedby={descId}
       tabIndex={-1}
       onKeyDown={onKeyDown}
-      style={{
-        position: 'fixed',
-        right: 16,
-        bottom: 16,
-        width: 'min(440px, calc(100vw - 32px))',
-        maxHeight: 'calc(100vh - 32px)',
-        overflowY: 'auto',
-        background: 'var(--progeo-panel-bg)',
-        color: 'var(--progeo-blue)',
-        borderRadius: 'var(--progeo-radius-panel)',
-        boxShadow: '0 14px 40px rgba(11, 54, 89, .25)',
-        padding: 20,
-        fontSize: 13,
-        lineHeight: 1.5,
-        zIndex: 2000,
-        outline: 'none',
-      }}
+      className="cookie-banner"
     >
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-        <h2
-          id={titleId}
-          style={{ flex: 1, margin: 0, fontSize: 16, fontWeight: 700 }}
-        >
-          {t('consent_title')}
-        </h2>
-        {canDismiss && (
-          <button
-            type="button"
-            onClick={closeSettings}
-            aria-label={t('consent_close')}
-            title={t('consent_close')}
+      <div className="cookie-banner__body">
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+          <h2
+            id={titleId}
+            style={{ flex: 1, margin: 0, fontSize: 16, fontWeight: 700 }}
+          >
+            {t('consent_title')}
+          </h2>
+          {canDismiss && (
+            <button
+              type="button"
+              onClick={closeSettings}
+              aria-label={t('consent_close')}
+              title={t('consent_close')}
+              style={{
+                border: 'none',
+                background: 'transparent',
+                color: 'var(--progeo-blue)',
+                padding: 0,
+                lineHeight: 0,
+                cursor: 'pointer',
+              }}
+            >
+              <X size={22} />
+            </button>
+          )}
+        </div>
+
+        <p id={descId} style={{ margin: '8px 0 0' }}>
+          {t('consent_intro')}{' '}
+          <Link
+            to={PRIVACY_POLICY_URL}
+            style={{ color: 'var(--progeo-blue)', fontWeight: 600 }}
+          >
+            {t('consent_privacy_policy')}
+          </Link>
+        </p>
+
+        {showDetails && (
+          <ul
             style={{
-              border: 'none',
-              background: 'transparent',
-              color: 'var(--progeo-blue)',
+              listStyle: 'none',
               padding: 0,
-              lineHeight: 0,
-              cursor: 'pointer',
+              margin: '14px 0 0',
+              display: 'grid',
+              gap: 8,
             }}
           >
-            <X size={22} />
-          </button>
+            <li style={categoryStyle}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                }}
+              >
+                <strong>{t('consent_necessary_title')}</strong>
+                <span style={{ fontSize: 12, color: '#6E6868' }}>
+                  {t('consent_always_on')}
+                </span>
+              </div>
+              <p style={categoryDescStyle}>{t('consent_necessary_desc')}</p>
+            </li>
+            <li style={categoryStyle}>
+              <Form.Check
+                type="switch"
+                id={mapsSwitchId}
+                checked={mapsChoice}
+                onChange={(event) => setMapsChoice(event.target.checked)}
+                label={<strong>{t('consent_maps_title')}</strong>}
+                aria-describedby={`${mapsSwitchId}-desc`}
+                style={{ marginBottom: 0 }}
+              />
+              <p id={`${mapsSwitchId}-desc`} style={categoryDescStyle}>
+                {t('consent_maps_desc')}
+              </p>
+            </li>
+          </ul>
         )}
       </div>
 
-      <p id={descId} style={{ margin: '8px 0 14px' }}>
-        {t('consent_intro')}{' '}
-        <Link
-          to={PRIVACY_POLICY_URL}
-          style={{ color: 'var(--progeo-blue)', fontWeight: 600 }}
-        >
-          {t('consent_privacy_policy')}
-        </Link>
-      </p>
-
-      {showDetails && (
-        <ul
-          style={{
-            listStyle: 'none',
-            padding: 0,
-            margin: '0 0 14px',
-            display: 'grid',
-            gap: 8,
-          }}
-        >
-          <li style={categoryStyle}>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                gap: 8,
-              }}
-            >
-              <strong>{t('consent_necessary_title')}</strong>
-              <span style={{ fontSize: 12, color: '#6E6868' }}>
-                {t('consent_always_on')}
-              </span>
-            </div>
-            <p style={categoryDescStyle}>{t('consent_necessary_desc')}</p>
-          </li>
-          <li style={categoryStyle}>
-            <Form.Check
-              type="switch"
-              id={mapsSwitchId}
-              checked={mapsChoice}
-              onChange={(event) => setMapsChoice(event.target.checked)}
-              label={<strong>{t('consent_maps_title')}</strong>}
-              aria-describedby={`${mapsSwitchId}-desc`}
-              style={{ marginBottom: 0 }}
-            />
-            <p id={`${mapsSwitchId}-desc`} style={categoryDescStyle}>
-              {t('consent_maps_desc')}
-            </p>
-          </li>
-        </ul>
-      )}
-
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+      <div className="cookie-banner__actions">
         <button type="button" onClick={rejectAll} style={choiceButtonStyle}>
           {t('consent_reject')}
         </button>

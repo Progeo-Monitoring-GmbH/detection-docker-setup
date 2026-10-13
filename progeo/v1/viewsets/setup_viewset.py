@@ -1,7 +1,11 @@
+import base64
 import csv
+import io
 import ipaddress
 import os
 import subprocess
+
+import qrcode
 
 from django.contrib.auth.models import User
 from django.http import HttpResponse
@@ -50,6 +54,29 @@ def _get_controller_account():
 
         return accounts[0]
 
+
+
+DEFAULT_CONTROLLER_FRONTEND_URL = "http://192.168.161.1:3003"
+
+
+def _escape_wifi_value(value):
+    # Characters with a meaning in the WIFI: QR syntax must be backslash-escaped.
+    for char in ("\\", ";", ",", ":", '"'):
+        value = value.replace(char, "\\" + char)
+    return value
+
+
+def build_wifi_payload(ssid, password):
+    # De-facto standard understood by the Android and iOS camera apps.
+    if not password:
+        return f"WIFI:T:nopass;S:{_escape_wifi_value(ssid)};;"
+    return f"WIFI:T:WPA;S:{_escape_wifi_value(ssid)};P:{_escape_wifi_value(password)};;"
+
+
+def qr_code_data_uri(payload):
+    buffer = io.BytesIO()
+    qrcode.make(payload, border=2).save(buffer, format="PNG")
+    return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
 
 
 def get_latest_measurement(device, db_name, account=None):
@@ -157,6 +184,20 @@ class SetupViewSet(viewsets.ViewSet):
 
         data = {"pw": new_password}
         return RequestSuccess(data)
+
+    @action(detail=False, url_path="controller/qrcodes", methods=["GET"])
+    def get_controller_qrcodes(self, request, *args, **kwargs):
+        ssid = (os.getenv("CONTROLLER_SSID") or "").strip()
+        if not ssid:
+            return RequestFailed({"reason": "CONTROLLER_SSID is not set"})
+        password = os.getenv("CONTROLLER_PASSWORD") or ""
+        frontend_url = (os.getenv("CONTROLLER_FRONTEND_URL") or "").strip() or DEFAULT_CONTROLLER_FRONTEND_URL
+
+        wifi_payload = build_wifi_payload(ssid, password)
+        return RequestSuccess({
+            "wifi": {"ssid": ssid, "payload": wifi_payload, "image": qr_code_data_uri(wifi_payload)},
+            "frontend": {"url": frontend_url, "payload": frontend_url, "image": qr_code_data_uri(frontend_url)},
+        })
 
     @action(detail=False, url_path="upload/delete", methods=["POST"])
     def delete_file(self, request, *args, **kwargs):
