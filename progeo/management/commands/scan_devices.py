@@ -12,7 +12,7 @@ from progeo.settings import (
     PROGEO_CONFIG_HAS_ROOT_SERVER,
 )
 from progeo.v1.creator import create_progeo_measurement_safe
-from progeo.v1.models import ProgeoDevice, ProgeoLocation
+from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurement
 from progeo.v1.serializers import ProgeoMeasurementSerializer
 from progeo.v1.viewsets.setup_viewset import _get_controller_account
 from progeo.v1.viewsets.status_viewset import get_connected_devices
@@ -166,13 +166,7 @@ class Command(BaseCommand):
                 continue
 
             status = "created" if created else "existing"
-            samples = measure_payload.get("samples")
-            if isinstance(samples, list):
-                pass
-            elif isinstance(samples, str):
-                samples = samples.replace('"', '').split(",")
-            else:
-                samples = []
+            samples = ProgeoMeasurement.normalize_samples(measure_payload.get("samples"))
 
             dlog(f"Stored measurement for {device.raw_hash} ({status})")
             measurement.project_id = found["payload"].get("project_id")

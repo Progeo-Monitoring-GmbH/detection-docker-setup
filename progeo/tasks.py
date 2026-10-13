@@ -133,7 +133,7 @@ def request_device_measurement(device_id: int):
 
     from progeo.helper.basics import dlog, elog
     from progeo.v1.creator import create_progeo_measurement_safe
-    from progeo.v1.models import ProgeoDevice
+    from progeo.v1.models import ProgeoDevice, ProgeoMeasurement
 
     device = ProgeoDevice.objects.filter(pk=device_id).first()
     if not device:
@@ -168,11 +168,9 @@ def request_device_measurement(device_id: int):
     if not measurement:
         return {"ok": False, "error": "Failed to store measurement"}
 
-    samples = measure_payload.get("samples") if isinstance(measure_payload, dict) else None
-    if isinstance(samples, str):
-        samples = samples.replace('"', '').split(",")
-    elif not isinstance(samples, list):
-        samples = []
+    samples = ProgeoMeasurement.normalize_samples(
+        measure_payload.get("samples") if isinstance(measure_payload, dict) else None
+    )
 
     measurement.project_id = (measure_payload.get("project_id") if isinstance(measure_payload, dict) else None) or device.project_id
     measurement.samples = samples
@@ -476,7 +474,7 @@ def swap_databases_new_year(db: str | None = None, year: int | None = None):
 # track_started: the result endpoint reports STARTED while ffmpeg runs, so the
 # frontend can tell a busy render from a task no worker has picked up.
 @shared_task(track_started=True)
-def render_heatmap_video(job_id: str, framerate: int = 8):
+def render_heatmap_video(job_id: str, framerate: int = 2):
     """Render uploaded heatmap frames into an MP4 and pack frames + video
     into a ZIP; returns its media-relative path (see helper/heatmap_video.py)."""
     from progeo.helper.heatmap_video import render_job

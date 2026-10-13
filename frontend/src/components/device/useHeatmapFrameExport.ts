@@ -20,7 +20,7 @@ export type VideoExportStage =
 
 const MAX_FRAMES = 120;
 const FRAME_SLEEP_MS = 25;
-const VIDEO_FRAMERATE = 8;
+const VIDEO_FRAMERATE = 2;
 const RESULT_POLL_MS = 1500;
 const RESULT_TIMEOUT_MS = 10 * 60 * 1000;
 // A task still PENDING after this long was never picked up by a worker.

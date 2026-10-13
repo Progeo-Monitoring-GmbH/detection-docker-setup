@@ -127,7 +127,7 @@ def _run_ffmpeg(frames_dir: str, video_path: str, framerate: int) -> None:
         raise HeatmapVideoError(f"ffmpeg failed: {detail[0]}")
 
 
-def render_job(job_id: str, framerate: int = 8) -> str:
+def render_job(job_id: str, framerate: int = 2) -> str:
     """Render a job's frames into an MP4 and build the result ZIP (frames +
     video). Returns the result's path relative to MEDIA_ROOT."""
     directory = job_dir(job_id)

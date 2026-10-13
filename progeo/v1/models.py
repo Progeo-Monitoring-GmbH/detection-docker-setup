@@ -1,4 +1,5 @@
 import datetime
+import math
 import os
 import re
 from enum import Enum
@@ -535,6 +536,39 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
             return values
 
         return []
+
+    @staticmethod
+    def normalize_samples(raw_samples):
+        """Parse samples (list or comma-separated string) into numbers for storage.
+
+        Integral values are stored as int, everything else as float, so the
+        JSON column holds `[0, 12.5, ...]` instead of `["0", "12.5", ...]`.
+        Non-numeric entries are dropped, as in `_coerce_numeric_samples`.
+        """
+        if isinstance(raw_samples, str):
+            raw_samples = raw_samples.replace('"', '').split(",")
+        if not isinstance(raw_samples, (list, tuple)):
+            return []
+
+        values = []
+        for value in raw_samples:
+            if isinstance(value, str):
+                value = value.strip()
+                if not value:
+                    continue
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                continue
+            if not math.isfinite(number):
+                continue
+            values.append(int(number) if number.is_integer() else number)
+        return values
+
+    def save(self, *args, **kwargs):
+        if self.samples is not None:
+            self.samples = self.normalize_samples(self.samples)
+        return super().save(*args, **kwargs)
 
     def evaluate(self, alarm_threshold):
         pairs = self.get_pairs()

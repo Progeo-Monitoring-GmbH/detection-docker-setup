@@ -1182,7 +1182,7 @@ class LocationViewSet(ProgeoModalViewSet):
         if frames.size > HEATMAP_VIDEO_MAX_UPLOAD_BYTES:
             return RequestFailed({"reason": "The frames upload is too large"})
         try:
-            framerate = int(request.data.get("framerate", 8))
+            framerate = int(request.data.get("framerate", 2))
         except (TypeError, ValueError):
             return RequestFailed({"reason": "framerate must be an integer"})
 
