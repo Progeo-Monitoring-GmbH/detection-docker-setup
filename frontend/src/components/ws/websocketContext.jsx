@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useEffect, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
+import { getWsBaseUrl } from '../../backendUrl';
 
 // Mirror the ReadyState values from the native WebSocket API.
 export const ReadyState = {
@@ -16,7 +17,7 @@ const RECONNECT_ATTEMPTS = 3;
 const RECONNECT_INTERVAL_MS = 3000;
 
 const WebSocketProvider = ({ children, url }) => {
-  const fullUrl = import.meta.env.VITE_WS_URL.concat(url);
+  const fullUrl = getWsBaseUrl().concat(url);
   const [readyState, setReadyState] = useState(ReadyState.UNINSTANTIATED);
   const [wsMessage, setWsMessage] = useState(null);
   const wsRef = useRef(null);

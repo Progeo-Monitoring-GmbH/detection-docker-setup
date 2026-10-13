@@ -1,4 +1,5 @@
 import { useContext, useEffect, useRef, useState } from 'react';
+import { getWsBaseUrl } from '../backendUrl';
 import { WebsocketContext } from '../components/ws/websocketContext';
 import { ReadyState } from '../components/ws/websocketContext';
 
@@ -18,7 +19,7 @@ function ts() {
 
 // ─── Native WS panel ─────────────────────────────────────────────────────────
 function NativePanel() {
-  const wsUrl = `${import.meta.env.VITE_WS_URL as string}/ws/commands/list`;
+  const wsUrl = `${getWsBaseUrl()}/ws/commands/list`;
   const [log, setLog] = useState<LogEntry[]>([]);
   const [nativeState, setNativeState] = useState<string>('idle');
   const wsRef = useRef<WebSocket | null>(null);
@@ -183,7 +184,7 @@ const WsDebugView = () => {
     <div style={{ padding: '1.5rem', maxWidth: 900 }}>
       <h3 style={{ marginBottom: '0.25rem' }}>WebSocket Debug</h3>
       <p style={{ color: '#888', marginBottom: '1.5rem', fontSize: 13 }}>
-        VITE_WS_URL = <code>{import.meta.env.VITE_WS_URL as string}</code>
+        WebSocket base = <code>{getWsBaseUrl()}</code>
       </p>
 
       <NativePanel />

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { getWsBaseUrl } from '../backendUrl';
 import {
   Badge,
   Card,
@@ -257,7 +258,7 @@ const LocationsMapView = () => {
   }, [auth, enqueueSnackbar]);
 
   useEffect(() => {
-    const wsUrl = `${import.meta.env.VITE_WS_URL}/ws/commands/list`;
+    const wsUrl = `${getWsBaseUrl()}/ws/commands/list`;
     const ws = new WebSocket(wsUrl);
 
     ws.onmessage = (event) => {

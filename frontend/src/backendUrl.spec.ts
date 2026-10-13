@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getBackendUrl } from './backendUrl';
+import { getBackendBaseUrl, getBackendUrl, getWsBaseUrl } from './backendUrl';
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -40,5 +40,39 @@ describe('getBackendUrl', () => {
   it('does not treat paths that merely start with "http" as absolute', () => {
     vi.stubEnv('VITE_BACKEND_URL', 'https://api.example.com');
     expect(getBackendUrl('http-files/x')).toBe('https://api.example.com/http-files/x');
+  });
+});
+
+describe('getBackendBaseUrl', () => {
+  it('uses VITE_BACKEND_URL without a trailing slash', () => {
+    vi.stubEnv('VITE_BACKEND_URL', 'https://api.example.com/');
+    expect(getBackendBaseUrl()).toBe('https://api.example.com');
+  });
+
+  it('falls back to the page origin (same-origin backend behind nginx)', () => {
+    vi.stubEnv('VITE_BACKEND_URL', '');
+    expect(getBackendBaseUrl()).toBe(window.location.origin);
+  });
+});
+
+describe('getWsBaseUrl', () => {
+  it('prefers VITE_WS_URL', () => {
+    vi.stubEnv('VITE_BACKEND_URL', 'https://api.example.com');
+    vi.stubEnv('VITE_WS_URL', 'wss://ws.example.com/');
+    expect(getWsBaseUrl()).toBe('wss://ws.example.com');
+  });
+
+  it('derives ws:// / wss:// from the backend URL', () => {
+    vi.stubEnv('VITE_WS_URL', '');
+    vi.stubEnv('VITE_BACKEND_URL', 'https://api.example.com');
+    expect(getWsBaseUrl()).toBe('wss://api.example.com');
+    vi.stubEnv('VITE_BACKEND_URL', 'http://192.168.161.1:3003');
+    expect(getWsBaseUrl()).toBe('ws://192.168.161.1:3003');
+  });
+
+  it('derives from the page origin when nothing is configured', () => {
+    vi.stubEnv('VITE_WS_URL', '');
+    vi.stubEnv('VITE_BACKEND_URL', '');
+    expect(getWsBaseUrl()).toBe(window.location.origin.replace(/^http/, 'ws'));
   });
 });

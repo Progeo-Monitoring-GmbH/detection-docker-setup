@@ -113,9 +113,6 @@ services:
       dockerfile: docker/frontend/Dockerfile
       args:
         FRONTEND_URL: ${FRONTEND_URL}
-        BACKEND_URL: ${BACKEND_URL}
-        BACKEND_IP: ${BACKEND_IP:-}
-        BACKEND_PORT: ${BACKEND_PORT}
         FRONTEND_PORT: ${FRONTEND_PORT}
     environment:
       - NODE_OPTIONS=--max-old-space-size=8196
@@ -123,6 +120,10 @@ services:
       - SHELL=/bin/sh
     ports:
       - '${LIMITED_ACCESS}${FRONTEND_PORT}:80'
+    volumes:
+      # Read-only media for X-Accel-Redirect downloads proxied through this
+      # container (see docker/frontend/default.conf).
+      - ./media:/media:ro
     networks:
       default_net:
         aliases:

@@ -9,6 +9,7 @@ import {
   useCallback,
 } from 'react';
 import { useLocation, useNavigate } from 'react-router';
+import { getBackendBaseUrl } from '../src/backendUrl';
 import { showErrorBar } from '../src/components/ui/Snackbar.jsx';
 
 type User = JwtPayload;
@@ -74,7 +75,7 @@ const AuthContext = createContext<AuthContextType>(
   defaultAuthContextValue,
 );
 
-const API_URL = import.meta.env.VITE_BACKEND_URL ?? '';
+const API_URL = getBackendBaseUrl();
 
 const CoreAuthProvider = ({ children }) => {
   const [token, setToken] = useState(localStorage.getItem('authToken') || '');

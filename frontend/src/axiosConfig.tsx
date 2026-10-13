@@ -1,6 +1,7 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import Cookies from 'js-cookie';
 import { AuthContextType } from '../hooks/CoreAuthProvider';
+import { getBackendBaseUrl } from './backendUrl';
 import { defaultErrorCallback } from './helper.jsx';
 
 const normalizeBackendUrl = (rawUrl?: string) => {
@@ -23,7 +24,7 @@ export default class axiosConfig {
 
   constructor() {
     this.axiosHolder = axios.create({
-      baseURL: normalizeBackendUrl(import.meta.env.VITE_BACKEND_URL),
+      baseURL: normalizeBackendUrl(getBackendBaseUrl()),
     });
 
     const csrftoken = Cookies.get('csrftoken');

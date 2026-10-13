@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
+import { getBackendUrl } from '../backendUrl';
 import { showRequestError } from '../components/ui/Snackbar.jsx';
 import MeasurementSamplesCompareChart, {
   type MeasurementCompareRow,
@@ -441,7 +442,7 @@ const LocationsOverview = () => {
               size="sm"
               variant="outline-danger"
               title="Open in Django admin for delete"
-              href={`${import.meta.env.VITE_BACKEND_URL}/aadmin/progeo/progeolocation/${row.id}/delete/`}
+              href={getBackendUrl(`/aadmin/progeo/progeolocation/${row.id}/delete/`)}
               target="_blank"
               rel="noopener noreferrer"
               onClick={(event) => event.stopPropagation()}
