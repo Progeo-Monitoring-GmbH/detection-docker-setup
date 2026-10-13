@@ -75,7 +75,9 @@ const PORTAL_NAV_COMPONENTS = {
   einstell: LocationEinstellungenTab,
   schnittstelle: LocationInterfaceTab,
 };
-const DeviceDetailView = React.lazy(() => import('./main/DeviceDetailView'));
+const DeviceSettingsRedirect = React.lazy(
+  () => import('./main/DeviceSettingsRedirect.tsx'),
+);
 const DeviceEditorView = React.lazy(() => import('./main/DeviceEditorView'));
 const MeasurementDetailView = React.lazy(
   () => import('./main/MeasurementDetailView'),
@@ -162,7 +164,11 @@ const CoreRoutes = () => {
           element={<LocationHeatmap2DView />}
         />
         <Route path="/location/:id/alarms" element={<LocationAlarmDetail />} />
-        <Route path="/device/:id/update/" element={<DeviceDetailView />} />
+        {/* Retired: device config moved to /location/:id/einstellungen. */}
+        <Route
+          path="/device/:id/update/"
+          element={<DeviceSettingsRedirect />}
+        />
         <Route path="/device/:id/editor/" element={<DeviceEditorView />} />
         <Route path="/device/:id/detail" element={<MeasurementDetailView />} />
         <Route path="/docker/" element={<DockerStatusView />} />

@@ -451,7 +451,7 @@ const LocationStatusView = ({
         <div style={{ minWidth: 0 }}>
           <div
             style={{
-              fontSize: 17,
+              fontSize: 28,
               fontWeight: 600,
               color: 'var(--progeo-blue)',
             }}

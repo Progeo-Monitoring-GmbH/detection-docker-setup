@@ -48,3 +48,4 @@ __pycache__/
 png_output/
 *.inspect.json
 .claude/settings.json
+.claude/

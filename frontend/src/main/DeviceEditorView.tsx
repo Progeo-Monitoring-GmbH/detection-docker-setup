@@ -387,10 +387,10 @@ const DeviceEditorView = () => {
       <div className="d-flex justify-content-between align-items-center mb-3">
         <Button
           variant="outline-secondary"
-          onClick={() => navigate(`/device/${id}/update`)}
+          onClick={() => navigate('/device/overview/')}
         >
           <ArrowLeft className="me-2" />
-          Back to Device
+          Back to Devices
         </Button>
         {canEdit && (
           <div className="d-flex gap-2">

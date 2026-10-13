@@ -49,7 +49,6 @@ type ApiResult = {
 
 const moduleTests: Array<{ name: string; importer: () => Promise<unknown> }> = [
   { name: 'DeviceListView', importer: () => import('./DeviceListView') },
-  { name: 'DeviceDetailView', importer: () => import('./DeviceDetailView') },
   { name: 'DeviceEditorView', importer: () => import('./DeviceEditorView') },
   { name: 'WsDebugView', importer: () => import('./WsDebugView') },
   { name: 'BackupView', importer: () => import('./BackupView.jsx') },

@@ -14,6 +14,9 @@ import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import LabeledInput from '../components/ui/kit/LabeledInput';
+import DeviceConfigPanel, {
+  type ConfigDevice,
+} from '../components/device/DeviceConfigPanel';
 import type { PortalOutletContext } from './LocationPortalLayout';
 import { getProjectTypeLabel } from './projectType';
 import { useProgeoRole } from './roleModel';
@@ -38,8 +41,7 @@ const thresholdInputStyle = {
   color: 'var(--progeo-blue)',
 };
 
-type Device = {
-  id: number;
+type Device = ConfigDevice & {
   hardware: string | null;
   pull_resistance: number | null;
 };
@@ -229,6 +231,8 @@ const LocationEinstellungenTab = () => {
   // -- Systemeinstellungen ---------------------------------------------
   const [devices, setDevices] = useState<Device[]>([]);
   const [devicesLoading, setDevicesLoading] = useState(true);
+  // Device ids whose config/device_config.lua editor is expanded.
+  const [configOpen, setConfigOpen] = useState<Record<number, boolean>>({});
   const [peGeschaltet, setPeGeschaltet] = useState(
     location?.pe_geschaltet ? 'ja' : 'nein',
   );
@@ -720,6 +724,38 @@ const LocationEinstellungenTab = () => {
                     </select>
                   </label>
                 </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setConfigOpen((prev) => ({
+                      ...prev,
+                      [device.id]: !prev[device.id],
+                    }))
+                  }
+                  aria-expanded={Boolean(configOpen[device.id])}
+                  style={{
+                    marginTop: 12,
+                    marginBottom: configOpen[device.id] ? 10 : 0,
+                    background: 'none',
+                    border: 'none',
+                    padding: 0,
+                    fontFamily: 'inherit',
+                    fontSize: 12.5,
+                    fontWeight: 500,
+                    color: 'var(--progeo-orange)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {configOpen[device.id]
+                    ? t('einstell_config_hide')
+                    : t('einstell_config_show')}
+                </button>
+                {configOpen[device.id] && (
+                  <DeviceConfigPanel
+                    device={device}
+                    canEdit={canEditDevices}
+                  />
+                )}
               </div>
             ))
           )}

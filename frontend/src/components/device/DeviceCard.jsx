@@ -86,7 +86,9 @@ const DeviceCard = ({
             <Button
               variant="outline-warning"
               size="sm"
-              onClick={() => navigate(`/device/${device.id}/update`)}
+              onClick={() =>
+                navigate(`/location/${device.location}/einstellungen`)
+              }
               title="Update device settings"
             >
               <PencilSquare className="me-1" />
