@@ -14,7 +14,7 @@ LANGUAGE_SESSION_KEY = "django_language"
 
 
 class UserProfileViewSet(viewsets.ViewSet):
-    authentication_classes = [SessionAuthentication, JWTAuthentication, TokenAuthentication]
+    authentication_classes = [JWTAuthentication, TokenAuthentication, SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     @staticmethod

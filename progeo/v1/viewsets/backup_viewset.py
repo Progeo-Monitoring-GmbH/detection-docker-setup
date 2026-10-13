@@ -34,7 +34,7 @@ class BackupViewSet(ProgeoModalViewSet):
     pagination_class = StandardResultsSetPagination
     serializer_class = BackupSerializer
     permission_classes = [IsAuthenticated]
-    authentication_classes = [SessionAuthentication, JWTAuthentication, TokenAuthentication]
+    authentication_classes = [JWTAuthentication, TokenAuthentication, SessionAuthentication]
 
     @require_module_permissions("module_backup_enabled")
     def list(self, request, *args, **kwargs):

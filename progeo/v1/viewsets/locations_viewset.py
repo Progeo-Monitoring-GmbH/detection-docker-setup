@@ -106,7 +106,7 @@ HEATMAP_VIDEO_MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 
 class LocationViewSet(ProgeoModalViewSet):
     serializer_class = LocationSerializer
-    authentication_classes = [SessionAuthentication, JWTAuthentication, TokenAuthentication]
+    authentication_classes = [JWTAuthentication, TokenAuthentication, SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     @staticmethod

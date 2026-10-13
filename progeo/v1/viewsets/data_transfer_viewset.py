@@ -98,7 +98,7 @@ class DataTransferViewSet(viewsets.ViewSet):
     of models). Not tied to module permissions - gated on is_staff/
     is_superuser like the other staff-admin endpoints."""
 
-    authentication_classes = [SessionAuthentication, JWTAuthentication, TokenAuthentication]
+    authentication_classes = [JWTAuthentication, TokenAuthentication, SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     @action(detail=False, url_path="export", methods=["GET"])

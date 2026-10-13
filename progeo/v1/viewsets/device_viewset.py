@@ -47,7 +47,7 @@ LORAWAN_MEASUREMENT_FIELDS = {
 
 class DeviceViewSet(ProgeoModalViewSet):
     serializer_class = DeviceSerializer
-    authentication_classes = [SessionAuthentication, JWTAuthentication, TokenAuthentication]
+    authentication_classes = [JWTAuthentication, TokenAuthentication, SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     @staticmethod
@@ -92,7 +92,7 @@ class DeviceViewSet(ProgeoModalViewSet):
     @calc_runtime
     @require_module_permissions("module_devices_enabled")
     @action(detail=False, url_path="forward/measurement",
-            authentication_classes=[SessionAuthentication, JWTAuthentication, TokenAuthentication, LimitedTokenAuthentication],
+            authentication_classes=[JWTAuthentication, TokenAuthentication, LimitedTokenAuthentication, SessionAuthentication],
             methods=["POST"])
     def forward_measurement(self, request, pk=None, *args, **kwargs):
         """Store a measurement forwarded from a node server as a NEW row.

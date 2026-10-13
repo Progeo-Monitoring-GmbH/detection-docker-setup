@@ -126,7 +126,7 @@ def get_connected_devices(*args, **kwargs) -> dict:
 
 class StatusViewSet(ProgeoModalViewSet):
     serializer_class = DeviceSerializer
-    authentication_classes = [SessionAuthentication, JWTAuthentication, TokenAuthentication]
+    authentication_classes = [JWTAuthentication, TokenAuthentication, SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     @staticmethod

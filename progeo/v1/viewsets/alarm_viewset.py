@@ -27,7 +27,7 @@ DEFAULT_ALARM_DAYS = 14
 
 class AlarmViewSet(ProgeoModalViewSet):
     serializer_class = ProgeoAlarmSerializer
-    authentication_classes = [SessionAuthentication, JWTAuthentication, TokenAuthentication]
+    authentication_classes = [JWTAuthentication, TokenAuthentication, SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     @staticmethod

@@ -44,7 +44,7 @@ MODULE_SMS_EDIT = "module_interface_sms_edit"
 class InterfaceViewSet(ViewSet):
     """Runtime SMTP / Modbus / SMS configuration (see helper/interface_config.py)."""
 
-    authentication_classes = [SessionAuthentication, JWTAuthentication, TokenAuthentication]
+    authentication_classes = [JWTAuthentication, TokenAuthentication, SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     # ------------------------------------------------------------------ #

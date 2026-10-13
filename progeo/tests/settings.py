@@ -81,11 +81,14 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.IsAuthenticated",
     ],
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.SessionAuthentication",
         "rest_framework.authentication.TokenAuthentication",
         "rest_framework.authentication.BasicAuthentication",
         "rest_framework_simplejwt.authentication.JWTAuthentication",
         "progeo.authentication.LimitedTokenAuthentication",
+        # Last: header-based auth (JWT/Token) must win. The SPA is same-origin, so
+        # the browser also sends the sessionid cookie set at login; if the session
+        # matched first, DRF would enforce CSRF and reject the POST (403).
+        "rest_framework.authentication.SessionAuthentication",
     ],
     "DEFAULT_PARSER_CLASSES": [
         "rest_framework.parsers.JSONParser",

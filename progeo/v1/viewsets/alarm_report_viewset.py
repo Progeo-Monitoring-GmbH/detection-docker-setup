@@ -20,7 +20,7 @@ DEFAULT_REPORT_LIMIT = 60
 
 class AlarmReportViewSet(ProgeoModalViewSet):
     serializer_class = AlarmDailyReportSerializer
-    authentication_classes = [SessionAuthentication, JWTAuthentication, TokenAuthentication]
+    authentication_classes = [JWTAuthentication, TokenAuthentication, SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     @staticmethod
