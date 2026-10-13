@@ -15,6 +15,9 @@ const LoginForm = React.lazy(() => import('./components/auth/LoginForm'));
 const PrivacyPolicyPage = React.lazy(
   () => import('./main/PrivacyPolicyPage.tsx'),
 );
+const ControllerQrCodePrintView = React.lazy(
+  () => import('./main/ControllerQrCodePrintView.tsx'),
+);
 const TokenTransit = React.lazy(() => import('./main/TokenTransit'));
 const BackupView = React.lazy(() => import('./main/BackupView'));
 const TokenLogin = React.lazy(() => import('./main/TokenLogin'));
@@ -111,6 +114,11 @@ const CoreRoutes = () => {
       {/* Public - must stay reachable without login (GDPR information duty). */}
       <Route path="/datenschutz" element={<PrivacyPolicyPage />} />
       <Route path="/privacy" element={<Navigate to="/datenschutz" replace />} />
+      {/* Print sheet - deliberately outside the layouts (no sidebar). */}
+      <Route
+        path="/setup/:account/controller/qrcodes/"
+        element={<ControllerQrCodePrintView />}
+      />
 
       {/* Object/location monitoring portal - its own mockup-driven sidebar. */}
       <Route element={<LocationPortalLayout />}>

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import axiosConfig from '../../axiosConfig';
@@ -31,6 +32,10 @@ type DeviceConfigForm = {
 };
 
 const CONFIG_PATH = 'config/device_config.lua';
+
+// The backend middleware currently resolves every request to account 1
+// (progeo/middlewares.py), and the frontend has no account id of its own.
+const QR_ACCOUNT_ID = 1;
 
 const INTERVAL_OPTIONS = [
   { value: 300, label: '5min' },
@@ -462,7 +467,14 @@ const DeviceConfigPanel = ({
         />
       </label>
 
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+      <div
+        style={{
+          display: 'flex',
+          gap: 10,
+          flexWrap: 'wrap',
+          alignItems: 'center',
+        }}
+      >
         <PillButton
           variant="ghost"
           label={loading ? t('devcfg_loading') : t('devcfg_load')}
@@ -476,6 +488,19 @@ const DeviceConfigPanel = ({
             disabled={busy}
           />
         )}
+        <Link
+          to={`/setup/${QR_ACCOUNT_ID}/controller/qrcodes/`}
+          target="_blank"
+          rel="noopener"
+          style={{
+            marginLeft: 'auto',
+            fontSize: 12.5,
+            fontWeight: 500,
+            color: 'var(--progeo-orange)',
+          }}
+        >
+          {t('devcfg_qrcodes')}
+        </Link>
       </div>
     </div>
   );

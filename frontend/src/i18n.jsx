@@ -466,6 +466,11 @@ i18n
           devcfg_save: 'Save to device',
           devcfg_saving: 'Saving...',
           devcfg_saved: 'Config saved.',
+          devcfg_qrcodes: 'Print controller QR codes',
+          qrprint_print: 'Print',
+          qrprint_wifi: 'Controller Wi-Fi',
+          qrprint_frontend: 'Controller frontend',
+          qrprint_load_failed: 'Could not load the QR codes.',
           einstell_pe_geschaltet: 'PE switched',
           einstell_pe_geschaltet_hint:
             'Potential equalization switched into the measuring circuit',
@@ -1047,6 +1052,11 @@ i18n
           devcfg_save: 'Auf Gerät speichern',
           devcfg_saving: 'Speichert...',
           devcfg_saved: 'Konfiguration gespeichert.',
+          devcfg_qrcodes: 'Controller-QR-Codes drucken',
+          qrprint_print: 'Drucken',
+          qrprint_wifi: 'Controller-WLAN',
+          qrprint_frontend: 'Controller-Oberfläche',
+          qrprint_load_failed: 'QR-Codes konnten nicht geladen werden.',
           einstell_pe_geschaltet: 'PE geschaltet',
           einstell_pe_geschaltet_hint:
             'Potentialausgleich am Messkreis geschaltet',
