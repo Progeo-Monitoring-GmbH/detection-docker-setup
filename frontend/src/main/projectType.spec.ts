@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   getProjectTypeLabel,
+  isLorawanProject,
   PROJECT_TYPE_BRAND_LABELS,
   PROJECT_TYPE_LABEL_KEYS,
 } from './projectType';
@@ -19,6 +20,7 @@ describe('getProjectTypeLabel', () => {
     expect(getProjectTypeLabel(spy, 1)).toBe('smartex');
     expect(getProjectTypeLabel(spy, 2)).toBe('geologger');
     expect(getProjectTypeLabel(spy, 3)).toBe('DFH');
+    expect(getProjectTypeLabel(spy, 6)).toBe('LoRaWan');
     expect(spy).not.toHaveBeenCalled();
   });
 
@@ -42,6 +44,15 @@ describe('getProjectTypeLabel', () => {
   it('prefers a known label over a given fallback', () => {
     expect(getProjectTypeLabel(t, 1, 'other')).toBe('smartex');
     expect(getProjectTypeLabel(t, 4, 'other')).toBe('t(objekt_project_type_development)');
+  });
+});
+
+describe('isLorawanProject', () => {
+  it('is true only for the LoRaWan project type', () => {
+    expect(isLorawanProject(6)).toBe(true);
+    [0, 1, 2, 3, 4, 5, 99, null, undefined].forEach((value) =>
+      expect(isLorawanProject(value)).toBe(false),
+    );
   });
 });
 

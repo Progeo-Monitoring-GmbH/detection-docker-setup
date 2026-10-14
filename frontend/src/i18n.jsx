@@ -221,6 +221,11 @@ i18n
           status_range_24h: 'Last 24 h',
           status_range_7d: 'Last 7 days',
           status_range_30d: 'Last 30 days',
+          climate_humidity_title: 'Humidity',
+          climate_temperature_title: 'Temperature',
+          climate_humidity_axis: 'Humidity (%)',
+          climate_temperature_axis: 'Temperature (°C)',
+          climate_empty: 'No humidity or temperature readings in this period.',
           status_legend_title: 'Effective potential',
           status_verdachtsstellen_title: 'Suspected leaks',
           status_verdachtsstellen_empty:
@@ -799,6 +804,11 @@ i18n
           status_range_24h: 'Letzte 24 h',
           status_range_7d: 'Letzte 7 Tage',
           status_range_30d: 'Letzte 30 Tage',
+          climate_humidity_title: 'Luftfeuchtigkeit',
+          climate_temperature_title: 'Temperatur',
+          climate_humidity_axis: 'Luftfeuchtigkeit (%)',
+          climate_temperature_axis: 'Temperatur (°C)',
+          climate_empty: 'Keine Feuchte- oder Temperaturwerte in diesem Zeitraum.',
           status_legend_title: 'Wirkpotenzial',
           status_verdachtsstellen_title: 'Verdachtsstellen',
           status_verdachtsstellen_empty:

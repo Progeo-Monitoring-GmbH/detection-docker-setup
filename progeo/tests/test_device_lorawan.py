@@ -2,7 +2,7 @@
 import pytest
 
 from progeo.tests.factories import make_account, make_user, unique
-from progeo.v1.models import LimitedToken, ProgeoLocation, ProgeoMeasurement
+from progeo.v1.models import LimitedToken, ProgeoDevice, ProgeoLocation, ProgeoMeasurement
 
 LORAWAN_UPLINK = {
     "object": {
@@ -53,14 +53,42 @@ def test_catch_lorawan_data_creates_location_for_unknown_project(api_client):
 
     assert response.status_code == 200, response.content
     stored = ProgeoMeasurement.objects.using("default").get(pk=response.json()["measurement_id"])
-    assert stored.device.raw_hash == devEui
+    assert stored.device.raw_hash.startswith("7002_S")
+    assert stored.device.hardware == devEui.upper()
+    assert stored.device.project_id == 7002
+    assert stored.device.type == ProgeoDevice.DeviceType.LORAWAN
     assert stored.device.location.project_id == 7002
+    assert stored.device.location.project_type == ProgeoLocation.PROJECT_TYPE_CHOICES.LORAWAN
 
     # A second uplink reuses the device and its location.
     response = api_client.post(f"/v1/device/lorawan/7002/?token={_make_token()}",
                                {**LORAWAN_UPLINK, "devEui": devEui}, format="json")
     assert response.status_code == 200, response.content
     assert ProgeoLocation.objects.using("default").filter(project_id=7002).count() == 1
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_catch_lorawan_data_numbers_new_sensors_per_project(api_client):
+    ProgeoDevice.objects.using("default").filter(raw_hash__startswith="7067_S").delete()
+    dev_euis = [unique("devEui").upper() for _ in range(2)]
+
+    for dev_eui in dev_euis:
+        response = api_client.post(f"/v1/device/lorawan/7067/?token={_make_token()}",
+                                   {**LORAWAN_UPLINK, "devEui": dev_eui}, format="json")
+        assert response.status_code == 200, response.content
+
+    sensors = {device.hardware: device for device in ProgeoDevice.objects.using("default").filter(hardware__in=dev_euis)}
+    assert sensors[dev_euis[0]].raw_hash == "7067_S1"
+    assert sensors[dev_euis[1]].raw_hash == "7067_S2"
+    assert all(device.project_id == 7067 for device in sensors.values())
+
+    # A later uplink finds the sensor again by its devEui (case-insensitive).
+    response = api_client.post(f"/v1/device/lorawan/7067/?token={_make_token()}",
+                               {**LORAWAN_UPLINK, "devEui": dev_euis[0].lower()}, format="json")
+    assert response.status_code == 200, response.content
+    stored = ProgeoMeasurement.objects.using("default").get(pk=response.json()["measurement_id"])
+    assert stored.device.raw_hash == "7067_S1"
+    assert ProgeoDevice.objects.using("default").filter(raw_hash__startswith="7067_S").count() == 2
 
 
 @pytest.mark.django_db(databases=["unit_tests", "default"])

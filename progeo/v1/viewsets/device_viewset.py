@@ -202,7 +202,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         
         save_measurement_from_legacy_data(
             measurement=measurement,
-            device_id=str(measurement.project_id)
+            project_id=measurement.project_id,
         )
 
         return RequestSuccess({"data": request.data, "measurement": asdict(measurement)})
@@ -317,7 +317,8 @@ class DeviceViewSet(ProgeoModalViewSet):
 
         save_measurement_from_legacy_data(
             measurement=data,
-            device_id=device_id,
+            project_id=project_id,
+            raw_hash=device_id,
         )
 
         return RequestSuccess({
@@ -367,7 +368,8 @@ class DeviceViewSet(ProgeoModalViewSet):
 
         save_measurement_from_legacy_data(
             measurement=data,
-            device_id=device_id or str(project_id),
+            project_id=project_id,
+            raw_hash=device_id,
             battery_V=battery_V,
             last_battery_percentage=int(last_battery) if last_battery is not None else None,
         )
@@ -407,15 +409,17 @@ class DeviceViewSet(ProgeoModalViewSet):
         if not values:
             return RequestFailed({"reason": "No known measurements provided"})
         
-        device_id = request.data.get("devEui")
+        dev_eui = (request.data.get("devEui") or "").strip().upper() or None
 
         measure = save_measurement_from_legacy_data(
             measurement={"project_id": project_id, **values},
-            device_id=device_id or str(project_id),
             project_id=project_id,
+            hardware=dev_eui,
             # The token's account lives in the DB the device data is written to;
             # the controller account may not (it's in DJANGO_DATABASES[0]).
             account=request.auth.account,
+            device_type=ProgeoDevice.DeviceType.LORAWAN,
+            project_type=ProgeoLocation.PROJECT_TYPE_CHOICES.LORAWAN,
         )
 
         return RequestSuccess({

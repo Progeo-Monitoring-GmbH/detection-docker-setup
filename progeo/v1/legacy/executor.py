@@ -7,6 +7,10 @@ from datetime import datetime
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from django.conf import settings
+from django.core.cache import cache
+from django.db import transaction
+from django.db.models.signals import post_delete
+from django.dispatch import receiver
 from django.utils import timezone
 from rest_framework.parsers import BaseParser
 
@@ -183,43 +187,148 @@ def _as_project_id(device_id):
     return value if 0 <= value <= PROJECT_ID_MAX else None
 
 
-def _get_or_create_location(db_name, account, project_id, name):
+def _get_or_create_location(db_name, account, project_id, name, project_type=None):
     """The account's location for project_id (or, without one, for name).
 
     project_id/name aren't unique on ProgeoLocation, so duplicates may already
     exist; the oldest wins instead of get_or_create's MultipleObjectsReturned.
+    project_type only applies to a newly created location.
     """
     lookup = {"project_id": project_id} if project_id is not None else {"project_id": None, "name": name}
     location = ProgeoLocation.objects.using(db_name).filter(account=account, **lookup).order_by("pk").first()
     if location is None:
-        location = ProgeoLocation.objects.using(db_name).create(account=account, **lookup)
+        extra = {"project_type": project_type} if project_type is not None else {}
+        location = ProgeoLocation.objects.using(db_name).create(account=account, **lookup, **extra)
     return location
 
 
-def save_measurement_from_legacy_data(measurement, device_id: str, battery_V: int | None = None, last_battery_percentage: int | None = None,
-                                      project_id=None, account=None):
-    """project_id: the location to file a new device under. Defaults to the
-    device_id itself, which is the project id for legacy devices.
-    account: owner of a newly created location. Must live in the "default" DB;
-    defaults to the controller account."""
-    db_name = "default"
-    device, created = ProgeoDevice.objects.using(db_name).get_or_create(raw_hash=device_id)
+# Device lookups are cached (pk only) so the ingestion hot path - several
+# measurements per second - inserts straight away instead of querying the
+# device each time. The full lookup/backfill below only runs on a cache miss.
+DEVICE_CACHE_TIMEOUT = 60 * 60
 
-    if created:
-        device.device_ip = None
-        device.type = get_device_type(measurement, device_id)
-        device.save(using=db_name)
+
+def _device_cache_key(db_name, raw_hash=None, hardware=None):
+    if hardware:
+        return f"progeo:device:{db_name}:hardware:{hardware}"
+    return f"progeo:device:{db_name}:raw_hash:{raw_hash}"
+
+
+@receiver(post_delete, sender=ProgeoDevice)
+def _forget_deleted_device(sender, instance, using, **kwargs):
+    keys = [_device_cache_key(using, raw_hash=instance.raw_hash)]
+    if instance.hardware:
+        keys.append(_device_cache_key(using, hardware=instance.hardware))
+    try:
+        cache.delete_many(keys)
+    except Exception:  # cache unavailable - entries expire on their own
+        pass
+
+
+def _next_sensor_hash(project_id, db_name):
+    """The project's next free "<project_id>_S<n>" - the raw_hash of a new
+    sensor that is identified by its hardware id (LoRaWAN devEui)."""
+    taken = set(
+        ProgeoDevice.objects.using(db_name)
+        .filter(raw_hash__startswith=f"{project_id}_S")
+        .values_list("raw_hash", flat=True)
+    )
+    number = 1
+    while f"{project_id}_S{number}" in taken:
+        number += 1
+    return f"{project_id}_S{number}"
+
+
+def get_device_id(project_id, raw_hash=None, hardware=None, device_type=None,
+                  account=None, project_type=None, db_name="default"):
+    """Cached pk of get_or_create_device(...) - keyed by hardware when given,
+    else by raw_hash (default: the project id)."""
+    if not raw_hash and not hardware and project_id in (None, ""):
+        raise ValueError("A device needs a project_id, raw_hash or hardware")
+    key = _device_cache_key(db_name, raw_hash=raw_hash or str(project_id), hardware=hardware)
+    try:
+        device_id = cache.get(key)
+    except Exception:  # cache unavailable - fall back to the database
+        device_id = None
+    if device_id is not None:
+        return device_id
+
+    device_id = get_or_create_device(project_id, raw_hash=raw_hash, hardware=hardware, device_type=device_type,
+                                     account=account, project_type=project_type, db_name=db_name).pk
+
+    def _remember():
+        try:
+            cache.set(key, device_id, DEVICE_CACHE_TIMEOUT)
+        except Exception:
+            pass
+
+    # Only cache committed devices: a rolled-back create must not leave a
+    # dangling pk behind.
+    transaction.on_commit(_remember, using=db_name)
+    return device_id
+
+
+def get_or_create_device(project_id, raw_hash=None, hardware=None, device_type=None,
+                         account=None, project_type=None, db_name="default"):
+    """The device a measurement belongs to, created on first contact.
+    Uncached - the ingestion path goes through get_device_id.
+
+    Looked up by hardware (e.g. a LoRaWAN devEui) when given, else by
+    raw_hash - which defaults to the project id, the identity of a legacy
+    device. A new device identified by hardware only is numbered within its
+    project (see _next_sensor_hash). project_id/hardware/type are backfilled
+    on existing devices that lack them, and a device without a location is
+    filed under project_id's.
+
+    account: owner of a newly created location (default: controller account).
+    project_type: project type of a newly created location.
+    """
+    devices = ProgeoDevice.objects.using(db_name)
+    location_project_id = _as_project_id(project_id)
+
+    device = devices.filter(hardware=hardware).first() if hardware else None
+    if device is None and (raw_hash or not hardware):
+        raw_hash = raw_hash or str(project_id)
+        device = devices.filter(raw_hash=raw_hash).first()
+    if device is None:
+        raw_hash = raw_hash or _next_sensor_hash(project_id, db_name)
+        device = devices.create(raw_hash=raw_hash, hardware=hardware, project_id=location_project_id,
+                                type=device_type)
+
+    backfill = {"project_id": location_project_id, "hardware": hardware, "type": device_type}
+    changed = [field for field, value in backfill.items() if value is not None and getattr(device, field) is None]
+    for field in changed:
+        setattr(device, field, backfill[field])
 
     if device.location_id is None:
-        account = account or _get_controller_account()
         # project_id is a 32-bit integer column: IMEI-style ids (15 digits)
-        # don't fit, so those locations are keyed by name instead.
-        location_project_id = _as_project_id(device_id if project_id is None else project_id)
-        location = _get_or_create_location(db_name, account, location_project_id, name=str(device_id))
-        # ProgeoDevice.location is a plain FK (no reverse "devices" manager).
-        device.location = location
-        device.save(using=db_name, update_fields=["location"])
+        # don't fit, so those locations are keyed by the raw_hash instead.
+        device.location = _get_or_create_location(db_name, account or _get_controller_account(), location_project_id,
+                                                  name=device.raw_hash, project_type=project_type)
+        changed.append("location")
 
+    if changed:
+        device.save(using=db_name, update_fields=changed)
+    return device
+
+
+def save_measurement_from_legacy_data(measurement, project_id, raw_hash=None, hardware=None, device_type=None,
+                                      battery_V: int | None = None, last_battery_percentage: int | None = None,
+                                      account=None, project_type=None):
+    """Store a legacy/IMEI/LoRaWAN measurement for its device (see
+    get_or_create_device for project_id/raw_hash/hardware/account/project_type).
+    device_type defaults to get_device_type. The device is resolved through
+    the cache (get_device_id), so a known device costs no query here."""
+    db_name = "default"
+    device_id = get_device_id(
+        project_id,
+        raw_hash=raw_hash,
+        hardware=hardware,
+        device_type=device_type or get_device_type(measurement, raw_hash),
+        account=account,
+        project_type=project_type,
+        db_name=db_name,
+    )
 
     if isinstance(measurement, DataMeasurement):
         data = measurement.get_relevant_info()
@@ -233,7 +342,7 @@ def save_measurement_from_legacy_data(measurement, device_id: str, battery_V: in
             start_index=data.get("start_index"),
             end_index=data.get("end_index"),
             points=data.get("points"),
-            device=device,
+            device_id=device_id,
             raw_data={
                 "status": data.get("status"),
                 "error": data.get("error", 0),
@@ -264,7 +373,7 @@ def save_measurement_from_legacy_data(measurement, device_id: str, battery_V: in
         samples = data.pop("samples", [])
 
         measure = ProgeoMeasurement.objects.using(db_name).create(
-            device=device,
+            device_id=device_id,
             project_id=data.get("project_id"),
             temperature=data.get("temperature"),
             humidity=data.get("humidity"),
@@ -473,7 +582,7 @@ def save_legacy_measurement_dedup(measurement, existing_datetimes=None) -> bool:
             return False
     save_measurement_from_legacy_data(
         measurement=measurement,
-        device_id=str(measurement.project_id),
+        project_id=measurement.project_id,
     )
     return True
 
@@ -587,7 +696,7 @@ def fetch_and_import_legacy_project(project_id: int, dry_run: bool = False) -> d
             try:
                 save_measurement_from_legacy_data(
                     measurement=measurement,
-                    device_id=str(project_id),
+                    project_id=project_id,
                 )
                 report["created"] += 1
             except Exception as exc:  # pragma: no cover
@@ -679,7 +788,7 @@ def fetch_legacy_data(target_dir=None, dry_run=True):
                                 try:
                                     save_measurement_from_legacy_data(
                                         measurement=measurement,
-                                        device_id=str(measurement.project_id),
+                                        project_id=measurement.project_id,
                                     )
                                     report["saved_total"] += 1
                                 except Exception as exc:  # pragma: no cover

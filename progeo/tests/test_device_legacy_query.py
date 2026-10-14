@@ -1,15 +1,19 @@
 import pytest
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.utils import timezone
 
 from progeo.v1.creator import create_progeo_alarm_safe
 from progeo.v1.legacy.executor import (
     DataMeasurement,
+    _device_cache_key,
+    get_device_id,
     parse_legacy_data_measurement,
     parse_sample_timestamp,
     save_measurement_from_legacy_data,
 )
 from progeo.v1.legacy.helper_resistance import calc_resistances
+from progeo.tests.factories import unique
 from progeo.v1.models import ProgeoDevice, ProgeoMeasurement
 
 LEGACY_SAMPLE_Y = (
@@ -115,11 +119,12 @@ def test_progeomeasurement_get_pairs_fast_path():
 def test_save_measurement_from_legacy_data_with_datameasurement():
     measurement = parse_legacy_data_measurement(LEGACY_SAMPLE_Y)
 
-    saved = save_measurement_from_legacy_data(measurement=measurement, device_id=str(measurement.project_id))
+    saved = save_measurement_from_legacy_data(measurement=measurement, project_id=measurement.project_id)
 
     assert saved is not None
     assert saved.project_id == 5709
     assert saved.device.raw_hash == "5709"
+    assert saved.device.project_id == 5709
     assert isinstance(saved.samples, list)
     assert saved.samples[:3] == [32, 59, 32]
     assert saved.start_index == 1
@@ -144,7 +149,7 @@ def test_save_measurement_from_legacy_data_with_dict_payload():
 
     saved = save_measurement_from_legacy_data(
         measurement=payload,
-        device_id="6001",
+        project_id=6001,
         battery_V=3800,
         last_battery_percentage=82,
     )
@@ -341,7 +346,7 @@ def test_measurements_watch_toggle(api_client):
     measurement = parse_legacy_data_measurement(LEGACY_SAMPLE_Y)
     saved = save_measurement_from_legacy_data(
         measurement=measurement,
-        device_id=str(measurement.project_id),
+        project_id=measurement.project_id,
     )
     assert saved.is_watching is False
 
@@ -356,3 +361,28 @@ def test_measurements_watch_toggle(api_client):
 
     saved.refresh_from_db(using="default")
     assert saved.is_watching is True
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_get_device_id_is_cached_and_forgotten_on_delete(django_capture_on_commit_callbacks,
+                                                          django_assert_num_queries):
+    raw_hash = unique("cached-device")
+    with django_capture_on_commit_callbacks(execute=True):
+        device_id = get_device_id(project_id=None, raw_hash=raw_hash)
+
+    # The hot path: a known device costs no query at all.
+    with django_assert_num_queries(0):
+        assert get_device_id(project_id=None, raw_hash=raw_hash) == device_id
+
+    ProgeoDevice.objects.using("default").filter(pk=device_id).delete()
+    assert cache.get(_device_cache_key("default", raw_hash=raw_hash)) is None
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_get_device_id_does_not_cache_uncommitted_devices():
+    raw_hash = unique("uncommitted-device")
+
+    get_device_id(project_id=None, raw_hash=raw_hash)
+
+    # Still inside the test transaction (rolled back afterwards) - nothing cached.
+    assert cache.get(_device_cache_key("default", raw_hash=raw_hash)) is None

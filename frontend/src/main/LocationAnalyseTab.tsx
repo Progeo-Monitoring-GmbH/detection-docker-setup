@@ -13,6 +13,8 @@ import MeasurementSamplesCompareChart, {
   type MeasurementCompareRow,
 } from '../components/device/MeasurementSamplesCompareChart.tsx';
 import type { PortalOutletContext } from './LocationPortalLayout';
+import LocationClimatePanels from './LocationClimatePanels';
+import { isLorawanProject } from './projectType';
 
 const HEATMAP_LIMIT = 300;
 
@@ -22,7 +24,10 @@ const HEATMAP_LIMIT = 300;
  * components.
  */
 const LocationAnalyseTab = () => {
-  const { locationId } = useOutletContext<PortalOutletContext>();
+  const { location, locationId } = useOutletContext<PortalOutletContext>();
+  // LoRaWAN objects have no samples - humidity/temperature charts replace
+  // the heatmap and the samples chart.
+  const isLorawan = isLorawanProject(location?.project_type);
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
   const { t } = useTranslation();
@@ -47,6 +52,9 @@ const LocationAnalyseTab = () => {
   };
 
   const loadAll = useCallback(() => {
+    if (isLorawan) {
+      return;
+    }
     setLoading(true);
 
     const loadHeatmap = (done: () => void) => {
@@ -90,7 +98,7 @@ const LocationAnalyseTab = () => {
     };
     loadHeatmap(done);
     loadMeasurements(done);
-  }, [auth, enqueueSnackbar, locationId]);
+  }, [auth, enqueueSnackbar, isLorawan, locationId]);
 
   useEffect(() => {
     loadAll();
@@ -118,35 +126,41 @@ const LocationAnalyseTab = () => {
         {exportMsg && <span className="text-success small">{exportMsg}</span>}
       </div>
 
-      <Card className="border-0 shadow-sm p-2">
-        <Card.Body>
-          <h5 className="mb-2">Heatmap</h5>
-          {loading && !heatmap ? (
-            <div className="d-flex align-items-center gap-2 text-muted py-4">
-              <Spinner size="sm" animation="border" /> Loading heatmap...
-            </div>
-          ) : (
-            <SensorHeatmap2D response={heatmap} />
-          )}
-        </Card.Body>
-      </Card>
+      {isLorawan ? (
+        <LocationClimatePanels locationId={locationId} />
+      ) : (
+        <>
+          <Card className="border-0 shadow-sm p-2">
+            <Card.Body>
+              <h5 className="mb-2">Heatmap</h5>
+              {loading && !heatmap ? (
+                <div className="d-flex align-items-center gap-2 text-muted py-4">
+                  <Spinner size="sm" animation="border" /> Loading heatmap...
+                </div>
+              ) : (
+                <SensorHeatmap2D response={heatmap} />
+              )}
+            </Card.Body>
+          </Card>
 
-      <Card className="border-0 shadow-sm p-2">
-        <Card.Body>
-          <h5 className="mb-2">Measurements (last {HEATMAP_LIMIT})</h5>
-          {loading && measurements.length === 0 ? (
-            <div className="d-flex align-items-center gap-2 text-muted py-4">
-              <Spinner size="sm" animation="border" /> Loading measurements...
-            </div>
-          ) : measurements.length === 0 ? (
-            <div className="text-muted py-4 text-center">
-              No measurements found for this location yet.
-            </div>
-          ) : (
-            <MeasurementSamplesCompareChart rows={measurements} />
-          )}
-        </Card.Body>
-      </Card>
+          <Card className="border-0 shadow-sm p-2">
+            <Card.Body>
+              <h5 className="mb-2">Measurements (last {HEATMAP_LIMIT})</h5>
+              {loading && measurements.length === 0 ? (
+                <div className="d-flex align-items-center gap-2 text-muted py-4">
+                  <Spinner size="sm" animation="border" /> Loading measurements...
+                </div>
+              ) : measurements.length === 0 ? (
+                <div className="text-muted py-4 text-center">
+                  No measurements found for this location yet.
+                </div>
+              ) : (
+                <MeasurementSamplesCompareChart rows={measurements} />
+              )}
+            </Card.Body>
+          </Card>
+        </>
+      )}
     </div>
   );
 };

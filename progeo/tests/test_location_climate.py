@@ -1,0 +1,60 @@
+"""LoRaWAN climate data: GET /v1/location/<pk>/climate/ - humidity and
+temperature per device instead of the samples-based heatmap."""
+from datetime import timedelta
+
+import pytest
+from django.utils import timezone
+
+from progeo.tests import factories as f
+from progeo.v1.models import ProgeoDevice, ProgeoLocation
+
+PERMS = ("module_locations_enabled", "module_measurements_enabled")
+
+
+@pytest.fixture
+def lorawan_location(api_client):
+    account = f.make_account()
+    location = f.make_location(account, project_id=4343, project_type=ProgeoLocation.PROJECT_TYPE_CHOICES.LORAWAN)
+    now = timezone.now()
+    sensor_b = f.make_device(location, raw_hash="b-sensor", type=ProgeoDevice.DeviceType.LORAWAN)
+    sensor_a = f.make_device(location, raw_hash="a-sensor", type=ProgeoDevice.DeviceType.LORAWAN)
+    # Created out of order on purpose: each series must be chronological.
+    f.make_measurement(sensor_a, humidity=55.0, temperature=21.5, fetched_at=now - timedelta(hours=1))
+    f.make_measurement(sensor_a, humidity=50.0, temperature=20.0, fetched_at=now - timedelta(hours=2))
+    f.make_measurement(sensor_b, humidity=60.0, temperature=19.0, fetched_at=now - timedelta(hours=1))
+    # Outside the default 7-day window, and one without climate values at all.
+    f.make_measurement(sensor_a, humidity=10.0, temperature=10.0, fetched_at=now - timedelta(days=30))
+    f.make_measurement(sensor_b, fetched_at=now - timedelta(minutes=5))
+    user = f.make_user(perms=PERMS, accounts=[account])
+    api_client.force_authenticate(user=user)
+    return location
+
+
+def test_climate_returns_one_chronological_series_per_device(api_client, lorawan_location):
+    response = api_client.get(f"/v1/location/{lorawan_location.id}/climate/")
+
+    assert response.status_code == 200, response.content
+    devices = response.json()["devices"]
+    assert [device["label"] for device in devices] == ["a-sensor", "b-sensor"]
+    assert all(device["type"] == "lorawan" for device in devices)
+
+    sensor_a, sensor_b = devices
+    assert sensor_a["humidity"] == [50.0, 55.0]
+    assert sensor_a["temperature"] == [20.0, 21.5]
+    assert sensor_a["timestamps"] == sorted(sensor_a["timestamps"])
+    assert sensor_b["humidity"] == [60.0]
+    assert sensor_b["temperature"] == [19.0]
+
+
+def test_climate_days_widens_the_window(api_client, lorawan_location):
+    response = api_client.get(f"/v1/location/{lorawan_location.id}/climate/?days=60")
+
+    assert response.status_code == 200, response.content
+    sensor_a = response.json()["devices"][0]
+    assert sensor_a["humidity"] == [10.0, 50.0, 55.0]
+
+
+def test_climate_rejects_invalid_days(api_client, lorawan_location):
+    response = api_client.get(f"/v1/location/{lorawan_location.id}/climate/?days=abc")
+
+    assert response.status_code == 400

@@ -1,6 +1,6 @@
 // Mirrors ProgeoLocation.PROJECT_TYPE_CHOICES (progeo/v1/models.py) - a fixed
 // Django IntegerChoices enum, safe to hardcode client-side for display.
-// Brand/product names (smartex, geologger, DFH) stay literal; the generic
+// Brand/product names (smartex, geologger, DFH, LoRaWan) stay literal; the generic
 // terms go through i18n. Shared by LocationObjektTab (editable dropdown,
 // backed by GET /v1/location/project-types/) and LocationStatusView (a
 // read-only label in the page header).
@@ -15,7 +15,15 @@ export const PROJECT_TYPE_BRAND_LABELS: Record<number, string> = {
   1: 'smartex',
   2: 'geologger',
   3: 'DFH',
+  6: 'LoRaWan',
 };
+
+// LoRaWAN objects report humidity/temperature per device instead of
+// samples, so they get climate charts instead of the heatmap.
+export const PROJECT_TYPE_LORAWAN = 6;
+
+export const isLorawanProject = (value: number | null | undefined): boolean =>
+  value === PROJECT_TYPE_LORAWAN;
 
 export const getProjectTypeLabel = (
   t: (key: string) => string,

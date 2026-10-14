@@ -301,6 +301,7 @@ class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
         DFH = 3, "DFH"
         DEVELOPMENT = 4, "Development"
         VERSUCH = 5, "Versuchsprojekte"
+        LORAWAN = 6, "LoRaWan"
         SONSTIGE = 99, "Sonstige"
 
     account = models.ForeignKey(Account, on_delete=models.CASCADE, null=True, blank=True)
@@ -448,6 +449,7 @@ class ProgeoDevice(ProgeoModel, auto_prefetch.Model):
         RELAY = "relay", "relay"
         ROOT = "root", "root"
         LEGACY = "legacy", "legacy"
+        LORAWAN = "lorawan", "lorawan"
 
     class Resistance(models.IntegerChoices):
         DEFAULT_100K = 136  # 100K = 0x88

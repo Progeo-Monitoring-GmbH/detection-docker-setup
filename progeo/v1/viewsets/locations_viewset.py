@@ -1308,6 +1308,56 @@ class LocationViewSet(ProgeoModalViewSet):
             "sensor_points": sensor_points
         })
 
+    @require_module_permissions("module_locations_enabled", "module_measurements_enabled")
+    @action(detail=True, url_path="climate", methods=["GET"])
+    def get_climate_data(self, request, pk=None, *args, **kwargs):
+        """Humidity/temperature series per device - the LoRaWAN counterpart
+        of `heatmap`. LoRaWAN measurements carry no samples, only
+        ProgeoMeasurement.humidity/temperature, and a location has several
+        devices, so every device gets its own series (oldest first)."""
+        try:
+            days = int(request.query_params.get("days", 7))
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "days must be an integer"})
+        days = max(1, min(days, 366))
+
+        location, account = self._find_location(request, pk=pk)
+        if not location:
+            return RequestFailed({"reason": "Location not found"})
+        db_name = account.db_name
+
+        since = timezone.now() - timedelta(days=days)
+        queryset = (
+            ProgeoMeasurement.for_account(account, using=db_name, user=request.user)
+            .filter(device__location=location, last_fetched__gte=since)
+            .filter(Q(humidity__isnull=False) | Q(temperature__isnull=False))
+            .select_related("device")
+            .order_by("last_fetched", "id")
+        )
+
+        devices = {}
+        for measurement in queryset:
+            device = measurement.device
+            entry = devices.get(device.pk)
+            if entry is None:
+                entry = devices[device.pk] = {
+                    "id": device.pk,
+                    "label": device.raw_hash or device.mac or str(device.pk),
+                    "type": device.type,
+                    "timestamps": [],
+                    "humidity": [],
+                    "temperature": [],
+                }
+            entry["timestamps"].append(measurement.last_fetched.timestamp())
+            entry["humidity"].append(measurement.humidity)
+            entry["temperature"].append(measurement.temperature)
+
+        return RequestSuccess({
+            "location": LocationSerializer(location).data,
+            "days": days,
+            "devices": sorted(devices.values(), key=lambda entry: entry["label"]),
+        })
+
     # ------------------------------------------------------------------
     # Testleackage, CSV/PDF export, Verwaltung, Anlegen
     # ------------------------------------------------------------------
