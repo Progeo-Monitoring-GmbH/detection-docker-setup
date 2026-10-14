@@ -14,7 +14,11 @@ from django.utils import timezone
 
 from progeo.helper import weather
 from progeo.helper.alarm_check import check_existing_alarms_db
-from progeo.helper.alarm_evaluation import evaluate_measurements_db, parse_date_bound
+from progeo.helper.alarm_evaluation import (
+    evaluate_measurement_instantly,
+    evaluate_measurements_db,
+    parse_date_bound,
+)
 from progeo.tests import factories as f
 from progeo.v1.models import ProgeoAlarm, ProgeoDevice, ProgeoLocation
 
@@ -451,3 +455,43 @@ def test_check_respects_sensor_threshold_override(site):
     check_existing_alarms_db(f.DB)
 
     assert _reload(alarm).normalized_at is not None
+
+
+# -- evaluate_measurement_instantly ----------------------------------------------
+
+def test_instant_evaluation_is_off_by_default(settings, window, site):
+    settings.PROGEO_CONFIG_EVALUATE_INSTANTLY = False
+    _location, device = site
+    measurement = f.make_measurement(device, pairs=[50, 180], fetched_at=window[1](10))
+
+    assert evaluate_measurement_instantly(measurement, f.DB) is False
+    assert _alarms(device) == []
+
+
+def test_instant_evaluation_triggers_and_normalizes(settings, window, site):
+    settings.PROGEO_CONFIG_EVALUATE_INSTANTLY = True
+    _location, device = site
+    over = f.make_measurement(device, pairs=[50, 180], fetched_at=window[1](10))
+
+    assert evaluate_measurement_instantly(over, f.DB) is True
+    [alarm] = _alarms(device)
+    assert (alarm.measurement_id, alarm.sensor_id, alarm.max_value) == (over.id, 2, 180)
+    assert alarm.normalized_at is None
+
+    below = f.make_measurement(device, pairs=[50, 60], fetched_at=window[1](20))
+    assert evaluate_measurement_instantly(below, f.DB) is False
+    alarm.refresh_from_db(using=f.DB)
+    assert alarm.normalized_at == below.last_fetched
+    assert alarm.status == ProgeoAlarm.Status.GELOEST
+
+
+def test_instant_evaluation_never_raises(settings, monkeypatch, window, site):
+    settings.PROGEO_CONFIG_EVALUATE_INSTANTLY = True
+    _location, device = site
+    measurement = f.make_measurement(device, pairs=[180], fetched_at=window[1](10))
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(type(measurement), "evaluate_all", boom)
+    assert evaluate_measurement_instantly(measurement, f.DB) is False

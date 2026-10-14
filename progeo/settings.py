@@ -39,6 +39,9 @@ PROGEO_CONFIG_HAS_ROOT_SERVER = (os.getenv("PROGEO_CONFIG_HAS_ROOT_SERVER") or "
 PROGEO_CONFIG_ENABLE_MAILING = parse_boolean(os.getenv("PROGEO_CONFIG_ENABLE_MAILING"))
 # Whether celery evaluates measurements / raises alarms on this server.
 PROGEO_CONFIG_ENABLE_MEASUREMENTS = parse_boolean(os.getenv("PROGEO_CONFIG_ENABLE_MEASUREMENTS"))
+# Evaluate every measurement for alarms as soon as it is stored instead of the
+# hourly evaluate_measurements beat task (meant for low-traffic servers).
+PROGEO_CONFIG_EVALUATE_INSTANTLY = parse_boolean(os.getenv("PROGEO_CONFIG_EVALUATE_INSTANTLY"))
 
 # Airtable (pyairtable) integration - see django.env.template. The API key is
 # a placeholder until a real personal access token is configured.

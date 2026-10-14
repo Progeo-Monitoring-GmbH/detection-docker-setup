@@ -11,6 +11,7 @@ from django.utils import timezone
 from rest_framework.parsers import BaseParser
 
 from progeo.consumer import GRP_NAME
+from progeo.helper.alarm_evaluation import evaluate_measurement_instantly
 from progeo.helper.basics import ilog
 from progeo.v1.legacy.helper_resistance import MAX_JSON_SAFE_RESISTANCE_OHM
 from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurement
@@ -286,6 +287,7 @@ def save_measurement_from_legacy_data(measurement, device_id: str, battery_V: in
 
 
     measure.save(using=db_name)
+    evaluate_measurement_instantly(measure, db_name)
 
     '''
     # To heavy load. Evaluate via cronjob

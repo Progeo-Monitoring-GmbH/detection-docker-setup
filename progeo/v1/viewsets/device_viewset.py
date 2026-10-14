@@ -14,6 +14,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.authentication import LimitedTokenAuthentication
 from progeo.decorator import calc_runtime, require_module_permissions
+from progeo.helper.alarm_evaluation import evaluate_measurement_instantly
 from progeo.helper.basics import RequestFailed, RequestSuccess, elog, ilog
 from progeo.helper.controller_wifi import parse_lua_wifi, request_controller_wifi_update
 from progeo.helper.creator import create_MfS_log
@@ -129,6 +130,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         # last_fetched=False keeps the forwarded timestamp; otherwise RootModel
         # would overwrite it with "now".
         measurement.save(using=db_name, last_fetched=last_fetched is None)
+        evaluate_measurement_instantly(measurement, db_name)
 
         return RequestSuccess({
             "data": ProgeoMeasurementSerializer(measurement).data,

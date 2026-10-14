@@ -40,10 +40,9 @@ def evaluate_measurements_db(db: str, start, end, project_id: int | None = None)
     """Evaluate every measurement in [start, end] of every location in one pass."""
     from django.db.models import Q
 
-    from progeo.helper.basics import dlog, elog, ilog
+    from progeo.helper.basics import dlog
     from progeo.helper.weather import WeatherHelper
-    from progeo.v1.creator import create_progeo_alarm_safe
-    from progeo.v1.models import ProgeoAlarm, ProgeoLocation, ProgeoMeasurement
+    from progeo.v1.models import ProgeoMeasurement
 
     # One shared helper for the whole pass: alarms of the same location share a
     # single API call, and rain is only attributed to the earliest alarm that
@@ -72,75 +71,129 @@ def evaluate_measurements_db(db: str, start, end, project_id: int | None = None)
     location_id = None
     dlog(f"Found Measurements: {measurements.count()}")
     for measurement in measurements:
-        location = measurement.device.location
+        location = _resolve_location(measurement, db)
         if location is None:
-            device = measurement.device
-            if device is None or device.project_id is None:
-                # Without a project id there is no way to know the location -
-                # skip it instead of guessing (get_or_create(project_id=None)
-                # matched every project-less location and aborted the pass).
-                elog(f"No Location found for measurement {measurement} | device={device}!")
-                continue
-            location = (
-                ProgeoLocation.objects.using(db).filter(project_id=device.project_id).order_by("id").first()
-            )
-            if location is None:
-                location = ProgeoLocation.objects.using(db).create(project_id=device.project_id)
-                ilog(f"Created new Location {location} for device {device}!")
-            device.location = location
-            device.save(using=db, update_fields=["location"])
+            continue
 
         if location_id != location.project_id:
             location_ids += 1
         location_id = location.project_id
 
-        threshold = location.alarm_threshold
-        # All sensors above the threshold (up to 10) — the alarm records every
-        # over-threshold sensor as a (sensor_id, max_value) pair.
-        over_threshold = measurement.evaluate_all(threshold)
-        alarm = None
-        if not over_threshold:
-            active_alarms = (
-                ProgeoAlarm.objects.using(db)
-                .filter(measurement__device=measurement.device, normalized_at__isnull=True)
-                .select_related("measurement__device__location")
-                .order_by("triggered_at", "id")
-            )
-            alarm = active_alarms.first()
-            if alarm:
-                # Normalize every still-active alarm of this device and check the
-                # earliest one for rain (later overlapping alarms are marked
-                # checked without rain data by the shared WeatherHelper).
-                # Alarms nobody ever acknowledged (still NEU) become GELOEST
-                # (resolved) here; already-acknowledged/stoerung alarms keep
-                # their status - only normalized_at changes for those.
-                active_alarms.filter(status=ProgeoAlarm.Status.NEU).update(
-                    normalized_at=measurement.last_fetched,
-                    status=ProgeoAlarm.Status.GELOEST,
-                )
-                active_alarms.exclude(status=ProgeoAlarm.Status.NEU).update(
-                    normalized_at=measurement.last_fetched,
-                )
-                alarm.normalized_at = measurement.last_fetched
-                alarm.fetch_weather(weather_helper)
-                dlog(f"ALARM NORMALIZED: location={location.project_id} at={measurement.last_fetched}")
-            continue
-
-        triggered += 1
-        dlog(f"ALARM TRIGGERED: location={location.project_id} at={measurement.last_fetched}")
-        sensor_max_values = [
-            {"sensor_id": idx + 1, "max_value": float(value)}  # 1-based sensor index
-            for idx, value in over_threshold
-        ]
-        peak_idx, peak_value = max(over_threshold, key=lambda pair: pair[1])
-        create_progeo_alarm_safe(
-            measurement=measurement,
-            sensor_id=peak_idx + 1,  # 1-based sensor index, matches sensor_order
-            max_value=float(peak_value),
-            sensor_max_values=sensor_max_values,
-            threshold=threshold,
-            triggered_at=measurement.last_fetched,
-            db=db,
-        )
+        if _evaluate_measurement(measurement, location, db, weather_helper):
+            triggered += 1
 
     return location_ids, triggered
+
+
+def evaluate_measurement_instantly(measurement, db: str = "default") -> bool:
+    """Evaluate one freshly stored measurement right away.
+
+    No-op unless PROGEO_CONFIG_EVALUATE_INSTANTLY is set; in that mode the
+    hourly evaluate_measurements beat task is not scheduled (see celery.py) and
+    every ingestion path calls this after saving. Never raises, so a failing
+    evaluation cannot break measurement ingestion. Returns True if an alarm
+    was triggered.
+    """
+    from django.conf import settings
+
+    from progeo.helper.basics import elog
+    from progeo.helper.weather import WeatherHelper
+
+    if not getattr(settings, "PROGEO_CONFIG_EVALUATE_INSTANTLY", False):
+        return False
+    if measurement is None or measurement.pk is None:
+        return False
+
+    try:
+        location = _resolve_location(measurement, db)
+        if location is None:
+            return False
+        return _evaluate_measurement(measurement, location, db, WeatherHelper())
+    except Exception as exc:
+        elog(f"[evaluate_measurement_instantly] measurement={measurement.pk} db={db} failed: {exc}")
+        return False
+
+
+def _resolve_location(measurement, db: str):
+    """Location of the measurement's device; attaches project-less devices to their project's location."""
+    from progeo.helper.basics import elog, ilog
+    from progeo.v1.models import ProgeoLocation
+
+    device = measurement.device
+    location = device.location if device is not None else None
+    if location is not None:
+        return location
+
+    if device is None or device.project_id is None:
+        # Without a project id there is no way to know the location -
+        # skip it instead of guessing (get_or_create(project_id=None)
+        # matched every project-less location and aborted the pass).
+        elog(f"No Location found for measurement {measurement} | device={device}!")
+        return None
+    location = (
+        ProgeoLocation.objects.using(db).filter(project_id=device.project_id).order_by("id").first()
+    )
+    if location is None:
+        location = ProgeoLocation.objects.using(db).create(project_id=device.project_id)
+        ilog(f"Created new Location {location} for device {device}!")
+    device.location = location
+    device.save(using=db, update_fields=["location"])
+    return location
+
+
+def _evaluate_measurement(measurement, location, db: str, weather_helper) -> bool:
+    """Raise/prolong an alarm for an over-threshold measurement, else normalize active alarms.
+
+    Returns True if the measurement triggered (or prolonged) an alarm.
+    """
+    from progeo.helper.basics import dlog
+    from progeo.v1.creator import create_progeo_alarm_safe
+    from progeo.v1.models import ProgeoAlarm
+
+    threshold = location.alarm_threshold
+    # All sensors above the threshold (up to 10) — the alarm records every
+    # over-threshold sensor as a (sensor_id, max_value) pair.
+    over_threshold = measurement.evaluate_all(threshold)
+    if not over_threshold:
+        active_alarms = (
+            ProgeoAlarm.objects.using(db)
+            .filter(measurement__device=measurement.device, normalized_at__isnull=True)
+            .select_related("measurement__device__location")
+            .order_by("triggered_at", "id")
+        )
+        alarm = active_alarms.first()
+        if alarm:
+            # Normalize every still-active alarm of this device and check the
+            # earliest one for rain (later overlapping alarms are marked
+            # checked without rain data by the shared WeatherHelper).
+            # Alarms nobody ever acknowledged (still NEU) become GELOEST
+            # (resolved) here; already-acknowledged/stoerung alarms keep
+            # their status - only normalized_at changes for those.
+            active_alarms.filter(status=ProgeoAlarm.Status.NEU).update(
+                normalized_at=measurement.last_fetched,
+                status=ProgeoAlarm.Status.GELOEST,
+            )
+            active_alarms.exclude(status=ProgeoAlarm.Status.NEU).update(
+                normalized_at=measurement.last_fetched,
+            )
+            alarm.normalized_at = measurement.last_fetched
+            alarm.fetch_weather(weather_helper)
+            dlog(f"ALARM NORMALIZED: location={location.project_id} at={measurement.last_fetched}")
+        return False
+
+    dlog(f"ALARM TRIGGERED: location={location.project_id} at={measurement.last_fetched}")
+    sensor_max_values = [
+        {"sensor_id": idx + 1, "max_value": float(value)}  # 1-based sensor index
+        for idx, value in over_threshold
+    ]
+    peak_idx, peak_value = max(over_threshold, key=lambda pair: pair[1])
+    create_progeo_alarm_safe(
+        measurement=measurement,
+        sensor_id=peak_idx + 1,  # 1-based sensor index, matches sensor_order
+        max_value=float(peak_value),
+        sensor_max_values=sensor_max_values,
+        threshold=threshold,
+        triggered_at=measurement.last_fetched,
+        db=db,
+    )
+    return True

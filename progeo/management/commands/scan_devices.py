@@ -5,6 +5,7 @@ import requests
 from django.core.management.base import CommandError
 from django.utils import timezone
 
+from progeo.helper.alarm_evaluation import evaluate_measurement_instantly
 from progeo.helper.basics import dlog, elog, ilog
 from progeo.management.commands._base import BaseCommand
 from progeo.settings import (
@@ -173,6 +174,7 @@ class Command(BaseCommand):
             measurement.samples = samples
             measurement.points = int(len(samples) / 2)
             measurement.save()
+            evaluate_measurement_instantly(measurement, account.db_name)
 
             if PROGEO_CONFIG_HAS_ROOT_SERVER:
                 try:

@@ -124,13 +124,14 @@ def request_device_measurement(device_id: int):
     creation or root-server-forwarding steps - this is a manual "take a
     reading now" request, not a rerun of the discovery scan. The stored
     measurement is picked up by the regular `evaluate_measurements` beat task
-    like any other, so no alarm-evaluation logic is duplicated here.
+    like any other (or evaluated right away with PROGEO_CONFIG_EVALUATE_INSTANTLY).
     """
     import ipaddress
 
     import requests
     from django.utils import timezone
 
+    from progeo.helper.alarm_evaluation import evaluate_measurement_instantly
     from progeo.helper.basics import dlog, elog
     from progeo.v1.creator import create_progeo_measurement_safe
     from progeo.v1.models import ProgeoDevice, ProgeoMeasurement
@@ -176,6 +177,7 @@ def request_device_measurement(device_id: int):
     measurement.samples = samples
     measurement.points = int(len(samples) / 2)
     measurement.save()
+    evaluate_measurement_instantly(measurement, measurement._state.db or "default")
 
     dlog(
         f"[request_device_measurement] stored measurement {measurement.pk} for device "

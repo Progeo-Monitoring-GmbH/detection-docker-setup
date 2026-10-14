@@ -44,11 +44,6 @@ celery_instance.conf.beat_schedule = {
         "task": "progeo.tasks.collect_host_storage_info",
         "schedule": crontab(minute=0),
     },
-    "evaluate-measurements-hourly": {
-        "task": "progeo.tasks.evaluate_measurements",
-        # Previously the "67 * * * *" cron entry (docker/backend/cronjobs/hourly.sh).
-        "schedule": crontab(minute="*/67"),
-    },
     "check-existing-alarms-quarter-hourly": {
         "task": "progeo.tasks.check_existing_alarms",
         # Normalizes alarms whose device stopped exceeding the threshold, so
@@ -68,6 +63,14 @@ celery_instance.conf.beat_schedule = {
         "schedule": crontab(month_of_year=12, day_of_month=31, hour=23, minute=50),
     },
 }
+if not settings.PROGEO_CONFIG_EVALUATE_INSTANTLY:
+    # With PROGEO_CONFIG_EVALUATE_INSTANTLY every measurement is evaluated when
+    # it is stored (evaluate_measurement_instantly), so the batch run is skipped.
+    celery_instance.conf.beat_schedule["evaluate-measurements-hourly"] = {
+        "task": "progeo.tasks.evaluate_measurements",
+        # Previously the "67 * * * *" cron entry (docker/backend/cronjobs/hourly.sh).
+        "schedule": crontab(minute="*/67"),
+    }
 celery_instance.autodiscover_tasks(lambda: settings.INSTALLED_APPS)
 
 # List to store running tasks
