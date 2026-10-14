@@ -208,30 +208,25 @@ def _get_or_create_location(db_name, account, project_id, name, project_type=Non
 DEVICE_CACHE_TIMEOUT = 60 * 60
 
 
-def _device_cache_key(db_name, raw_hash=None, hardware=None):
-    if hardware:
-        return f"progeo:device:{db_name}:hardware:{hardware}"
+def _device_cache_key(db_name, raw_hash):
     return f"progeo:device:{db_name}:raw_hash:{raw_hash}"
 
 
 @receiver(post_delete, sender=ProgeoDevice)
 def _forget_deleted_device(sender, instance, using, **kwargs):
-    keys = [_device_cache_key(using, raw_hash=instance.raw_hash)]
-    if instance.hardware:
-        keys.append(_device_cache_key(using, hardware=instance.hardware))
     try:
-        cache.delete_many(keys)
+        cache.delete(_device_cache_key(using, instance.raw_hash))
     except Exception:  # cache unavailable - entries expire on their own
         pass
 
 
-def _next_sensor_hash(project_id, db_name):
-    """The project's next free "<project_id>_S<n>" - the raw_hash of a new
-    sensor that is identified by its hardware id (LoRaWAN devEui)."""
+def _next_sensor_name(project_id, db_name):
+    """The project's next free "<project_id>_S<n>" - the hardware name of a
+    new numbered sensor (LoRaWAN)."""
     taken = set(
         ProgeoDevice.objects.using(db_name)
-        .filter(raw_hash__startswith=f"{project_id}_S")
-        .values_list("raw_hash", flat=True)
+        .filter(hardware__startswith=f"{project_id}_S")
+        .values_list("hardware", flat=True)
     )
     number = 1
     while f"{project_id}_S{number}" in taken:
@@ -239,13 +234,14 @@ def _next_sensor_hash(project_id, db_name):
     return f"{project_id}_S{number}"
 
 
-def get_device_id(project_id, raw_hash=None, hardware=None, device_type=None,
+def get_device_id(project_id, raw_hash=None, numbered_sensor=False, device_type=None,
                   account=None, project_type=None, db_name="default"):
-    """Cached pk of get_or_create_device(...) - keyed by hardware when given,
-    else by raw_hash (default: the project id)."""
-    if not raw_hash and not hardware and project_id in (None, ""):
-        raise ValueError("A device needs a project_id, raw_hash or hardware")
-    key = _device_cache_key(db_name, raw_hash=raw_hash or str(project_id), hardware=hardware)
+    """Cached pk of get_or_create_device(...), keyed by raw_hash (default:
+    the project id)."""
+    if not raw_hash and project_id in (None, ""):
+        raise ValueError("A device needs a project_id or a raw_hash")
+    raw_hash = raw_hash or str(project_id)
+    key = _device_cache_key(db_name, raw_hash)
     try:
         device_id = cache.get(key)
     except Exception:  # cache unavailable - fall back to the database
@@ -253,8 +249,9 @@ def get_device_id(project_id, raw_hash=None, hardware=None, device_type=None,
     if device_id is not None:
         return device_id
 
-    device_id = get_or_create_device(project_id, raw_hash=raw_hash, hardware=hardware, device_type=device_type,
-                                     account=account, project_type=project_type, db_name=db_name).pk
+    device_id = get_or_create_device(project_id, raw_hash=raw_hash, numbered_sensor=numbered_sensor,
+                                     device_type=device_type, account=account, project_type=project_type,
+                                     db_name=db_name).pk
 
     def _remember():
         try:
@@ -268,37 +265,36 @@ def get_device_id(project_id, raw_hash=None, hardware=None, device_type=None,
     return device_id
 
 
-def get_or_create_device(project_id, raw_hash=None, hardware=None, device_type=None,
+def get_or_create_device(project_id, raw_hash=None, numbered_sensor=False, device_type=None,
                          account=None, project_type=None, db_name="default"):
     """The device a measurement belongs to, created on first contact.
     Uncached - the ingestion path goes through get_device_id.
 
-    Looked up by hardware (e.g. a LoRaWAN devEui) when given, else by
-    raw_hash - which defaults to the project id, the identity of a legacy
-    device. A new device identified by hardware only is numbered within its
-    project (see _next_sensor_hash). project_id/hardware/type are backfilled
-    on existing devices that lack them, and a device without a location is
-    filed under project_id's.
+    Identified by raw_hash: the device's own id (IMEI, LoRaWAN devEui, ...),
+    defaulting to the project id - the identity of a legacy device.
+    numbered_sensor: the device is one of several sensors of the project and
+    is named "<project_id>_S<n>" in hardware (see _next_sensor_name).
+    project_id/hardware/type are backfilled on existing devices that lack
+    them, and a device without a location is filed under project_id's.
 
     account: owner of a newly created location (default: controller account).
     project_type: project type of a newly created location.
     """
+    raw_hash = raw_hash or str(project_id)
     devices = ProgeoDevice.objects.using(db_name)
     location_project_id = _as_project_id(project_id)
 
-    device = devices.filter(hardware=hardware).first() if hardware else None
-    if device is None and (raw_hash or not hardware):
-        raw_hash = raw_hash or str(project_id)
-        device = devices.filter(raw_hash=raw_hash).first()
+    device = devices.filter(raw_hash=raw_hash).first()
     if device is None:
-        raw_hash = raw_hash or _next_sensor_hash(project_id, db_name)
-        device = devices.create(raw_hash=raw_hash, hardware=hardware, project_id=location_project_id,
-                                type=device_type)
+        device = devices.create(raw_hash=raw_hash, project_id=location_project_id, type=device_type)
 
-    backfill = {"project_id": location_project_id, "hardware": hardware, "type": device_type}
+    backfill = {"project_id": location_project_id, "type": device_type}
     changed = [field for field, value in backfill.items() if value is not None and getattr(device, field) is None]
     for field in changed:
         setattr(device, field, backfill[field])
+    if numbered_sensor and not device.hardware:
+        device.hardware = _next_sensor_name(project_id, db_name)
+        changed.append("hardware")
 
     if device.location_id is None:
         # project_id is a 32-bit integer column: IMEI-style ids (15 digits)
@@ -312,18 +308,19 @@ def get_or_create_device(project_id, raw_hash=None, hardware=None, device_type=N
     return device
 
 
-def save_measurement_from_legacy_data(measurement, project_id, raw_hash=None, hardware=None, device_type=None,
-                                      battery_V: int | None = None, last_battery_percentage: int | None = None,
-                                      account=None, project_type=None):
+def save_measurement_from_legacy_data(measurement, project_id, raw_hash=None, numbered_sensor=False,
+                                      device_type=None, battery_V: int | None = None,
+                                      last_battery_percentage: int | None = None, account=None, project_type=None):
     """Store a legacy/IMEI/LoRaWAN measurement for its device (see
-    get_or_create_device for project_id/raw_hash/hardware/account/project_type).
-    device_type defaults to get_device_type. The device is resolved through
-    the cache (get_device_id), so a known device costs no query here."""
+    get_or_create_device for project_id/raw_hash/numbered_sensor/account/
+    project_type). device_type defaults to get_device_type. The device is
+    resolved through the cache (get_device_id), so a known device costs no
+    query here."""
     db_name = "default"
     device_id = get_device_id(
         project_id,
         raw_hash=raw_hash,
-        hardware=hardware,
+        numbered_sensor=numbered_sensor,
         device_type=device_type or get_device_type(measurement, raw_hash),
         account=account,
         project_type=project_type,

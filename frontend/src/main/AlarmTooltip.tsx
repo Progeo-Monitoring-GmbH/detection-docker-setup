@@ -84,8 +84,8 @@ const AlarmTooltip = ({
       onMouseLeave={onMouseLeave}
     >
       {alarm.location?.name && <TooltipRow label="Location">{alarm.location.name}</TooltipRow>}
-      {(alarm.device?.mac || alarm.device?.raw_hash) && (
-        <TooltipRow label="Device">{alarm.device?.mac || alarm.device?.raw_hash}</TooltipRow>
+      {(alarm.device?.display_name || alarm.device?.raw_hash) && (
+        <TooltipRow label="Device">{alarm.device?.display_name || alarm.device?.raw_hash}</TooltipRow>
       )}
       {sensors.length > 0 && (
         <TooltipRow label="Sensors">

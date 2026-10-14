@@ -1342,7 +1342,7 @@ class LocationViewSet(ProgeoModalViewSet):
             if entry is None:
                 entry = devices[device.pk] = {
                     "id": device.pk,
-                    "label": device.raw_hash or device.mac or str(device.pk),
+                    "label": device.display_name,
                     "type": device.type,
                     "timestamps": [],
                     "humidity": [],

@@ -258,7 +258,7 @@ const LocationAlarmDetail = ({
                   <dd className="col-sm-8">#{selectedAlarm.id}</dd>
                   <dt className="col-sm-4">Device</dt>
                   <dd className="col-sm-8">
-                    {selectedAlarm.device?.mac ||
+                    {selectedAlarm.device?.display_name ||
                       selectedAlarm.device?.raw_hash ||
                       '-'}
                   </dd>

@@ -97,6 +97,7 @@ class AccountSerializer(ProgeoBaseSerializer):
 
 class DeviceSerializer(ProgeoBaseSerializer):
     clazz = serializers.SerializerMethodField("get_clazz_name")
+    display_name = serializers.ReadOnlyField()
 
     class Meta:
         model = ProgeoDevice
@@ -446,6 +447,7 @@ class ProgeoAlarmSerializer(ProgeoBaseSerializer):
             "id": device.id,
             "mac": device.mac,
             "raw_hash": device.raw_hash,
+            "display_name": device.display_name,
         }
 
     @staticmethod

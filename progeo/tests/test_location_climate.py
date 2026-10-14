@@ -16,8 +16,10 @@ def lorawan_location(api_client):
     account = f.make_account()
     location = f.make_location(account, project_id=4343, project_type=ProgeoLocation.PROJECT_TYPE_CHOICES.LORAWAN)
     now = timezone.now()
-    sensor_b = f.make_device(location, raw_hash="b-sensor", type=ProgeoDevice.DeviceType.LORAWAN)
-    sensor_a = f.make_device(location, raw_hash="a-sensor", type=ProgeoDevice.DeviceType.LORAWAN)
+    sensor_b = f.make_device(location, raw_hash=f.unique("EUI-B"), hardware="b-sensor",
+                             type=ProgeoDevice.DeviceType.LORAWAN)
+    sensor_a = f.make_device(location, raw_hash=f.unique("EUI-A"), hardware="4343_S1", mac="a-sensor",
+                             type=ProgeoDevice.DeviceType.LORAWAN)
     # Created out of order on purpose: each series must be chronological.
     f.make_measurement(sensor_a, humidity=55.0, temperature=21.5, fetched_at=now - timedelta(hours=1))
     f.make_measurement(sensor_a, humidity=50.0, temperature=20.0, fetched_at=now - timedelta(hours=2))
@@ -35,6 +37,7 @@ def test_climate_returns_one_chronological_series_per_device(api_client, lorawan
 
     assert response.status_code == 200, response.content
     devices = response.json()["devices"]
+    # Labelled by the custom name (mac), falling back to the hardware name.
     assert [device["label"] for device in devices] == ["a-sensor", "b-sensor"]
     assert all(device["type"] == "lorawan" for device in devices)
 

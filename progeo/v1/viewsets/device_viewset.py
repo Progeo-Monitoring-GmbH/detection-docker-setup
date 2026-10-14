@@ -419,7 +419,8 @@ class DeviceViewSet(ProgeoModalViewSet):
         measure = save_measurement_from_legacy_data(
             measurement={"project_id": project_id, **values},
             project_id=project_id,
-            hardware=dev_eui,
+            raw_hash=dev_eui,
+            numbered_sensor=dev_eui is not None,
             # The token's account lives in the DB the device data is written to;
             # the controller account may not (it's in DJANGO_DATABASES[0]).
             account=request.auth.account,

@@ -10,6 +10,8 @@ export type AlarmDeviceLite = {
   id?: number | null;
   mac?: string | null;
   raw_hash?: string | null;
+  /** mac (custom name), else hardware, else raw_hash - see ProgeoDevice.display_name. */
+  display_name?: string | null;
 };
 
 export type AlarmMaxValueEntry = {

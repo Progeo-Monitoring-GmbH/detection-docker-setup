@@ -330,7 +330,7 @@ class AlarmViewSet(ProgeoModalViewSet):
         since, resolved_at = cls._current_episode(alarms)
 
         devices = [devices_by_id[key] for key in sorted(devices_by_id)]
-        device_labels = [device.mac or device.raw_hash or str(device.id) for device in devices]
+        device_labels = [device.display_name for device in devices]
         history.sort(key=lambda entry: entry["triggered_at"] or "", reverse=True)
         # A long-running alarm's per-measurement history can otherwise grow
         # unbounded - keep the most recent slice (already newest-first).

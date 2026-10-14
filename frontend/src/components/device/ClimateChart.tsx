@@ -30,6 +30,13 @@ const METRIC_COLORS: Record<ClimateMetric, string[]> = {
 };
 const DASHES = ['solid', 'dash', 'dot'] as const;
 
+const MUTED_TEXT = '#8B8383';
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Device names are user-editable (mac) and end up in Plotly's pseudo-HTML.
+const escapeHtml = (value: string) =>
+  value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
 type ClimateChartProps = {
   devices: ClimateDeviceSeries[];
   metric: ClimateMetric;
@@ -64,7 +71,7 @@ const ClimateChart = ({
           return {
             type: 'scatter' as const,
             mode: 'lines+markers' as const,
-            name: device.label,
+            name: escapeHtml(device.label),
             x: device.timestamps.map((ts) => new Date(ts * 1000)),
             y: device[metric],
             connectgaps: true,
@@ -74,14 +81,18 @@ const ClimateChart = ({
               dash: DASHES[Math.floor(index / colors.length) % DASHES.length],
             },
             marker: { size: 6, color },
-            hovertemplate: `%{y:.1f} ${unit}<br>%{x|%d.%m.%Y %H:%M}<extra>${device.label}</extra>`,
+            hoverlabel: { bordercolor: color },
+            hovertemplate:
+              `<span style="color:${color}">●</span> <b>${escapeHtml(device.label)}</b><br>` +
+              `<span style="font-size:16px"><b>%{y:.2f}</b></span> ${unit}<br>` +
+              `<span style="color:${MUTED_TEXT}">%{x|%d.%m.%Y, %H:%M}</span><extra></extra>`,
           };
         }),
     [devices, metric, unit],
   );
 
   if (traces.length === 0) {
-    return <div style={{ color: '#8B8383', fontSize: 13 }}>{emptyLabel}</div>;
+    return <div style={{ color: MUTED_TEXT, fontSize: 13 }}>{emptyLabel}</div>;
   }
 
   return (
@@ -92,22 +103,54 @@ const ClimateChart = ({
       config={{ responsive: true, displaylogo: false }}
       layout={{
         autosize: true,
-        margin: { l: 56, r: 16, t: 16, b: 40 },
-        font: { color: plotTheme.brandBlue },
-        plot_bgcolor: plotTheme.warmGray1,
+        // Minimal fixed margins - automargin grows them just enough for the
+        // tick labels, the axis title and the legend.
+        margin: { l: 8, r: 12, t: 8, b: 8 },
+        font: { color: plotTheme.brandBlue, size: 12 },
+        plot_bgcolor: plotTheme.white,
         paper_bgcolor: 'rgba(0,0,0,0)',
         showlegend: true,
-        legend: { orientation: 'h', y: -0.18 },
+        legend: {
+          orientation: 'h',
+          x: 0,
+          xanchor: 'left',
+          y: 1.02,
+          yanchor: 'bottom',
+          font: { size: 12 },
+        },
         hovermode: 'closest',
+        hoverlabel: {
+          bgcolor: plotTheme.white,
+          font: { size: 12, color: '#3A3535' },
+          align: 'left',
+        },
         xaxis: {
           type: 'date',
+          automargin: true,
           showgrid: true,
-          gridcolor: plotTheme.warmGray2,
+          gridcolor: plotTheme.warmGray1,
+          linecolor: plotTheme.warmGray2,
+          ticks: 'outside',
+          tickcolor: plotTheme.warmGray2,
+          ticklen: 4,
+          tickformatstops: [
+            { dtickrange: [null, DAY_MS], value: '%H:%M<br>%d.%m.' },
+            { dtickrange: [DAY_MS, null], value: '%d.%m.' },
+          ],
+          // Vertical guide through the hovered point.
+          showspikes: true,
+          spikemode: 'across',
+          spikesnap: 'data',
+          spikedash: 'dot',
+          spikecolor: plotTheme.warmGray4,
+          spikethickness: 1,
         },
         yaxis: {
-          title: { text: axisTitle },
+          title: { text: axisTitle, standoff: 12 },
+          automargin: true,
+          tickformat: '.2f',
           showgrid: true,
-          gridcolor: plotTheme.warmGray2,
+          gridcolor: plotTheme.warmGray1,
           zeroline: false,
         },
       }}

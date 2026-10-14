@@ -473,6 +473,12 @@ class ProgeoDevice(ProgeoModel, auto_prefetch.Model):
     data_interval = models.IntegerField(default=3600)
     pull_resistance = models.IntegerField(default=Resistance.DEFAULT_100K, choices=Resistance)
 
+    @property
+    def display_name(self):
+        """Name shown in the frontend: the custom name (mac) if set, else the
+        hardware name (e.g. "7067_S1" of a LoRaWAN sensor), else raw_hash."""
+        return self.mac or self.hardware or self.raw_hash or str(self.pk)
+
     def __str__(self):
         _id = f"[{self.pk}] " if DEBUG else ""
         return f"{_id} 🔧 {self.hardware or 'Unknown'} ({self.mac or 'No MAC'}) - {self.raw_hash}"

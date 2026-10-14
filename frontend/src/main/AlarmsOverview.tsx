@@ -29,6 +29,8 @@ type AlarmDevice = {
   id?: number | null;
   mac?: string | null;
   raw_hash?: string | null;
+  /** mac (custom name), else hardware, else raw_hash - see ProgeoDevice.display_name. */
+  display_name?: string | null;
 };
 
 type AlarmLocation = {
@@ -352,7 +354,7 @@ const AlarmsOverview = () => {
         String(row.id),
         row.location?.name,
         row.location?.project_id != null ? String(row.location.project_id) : '',
-        row.device?.mac,
+        row.device?.display_name,
         row.device?.raw_hash,
         row.sensor_id != null ? String(row.sensor_id) : '',
         (Array.isArray(row.sensor_max_values) ? row.sensor_max_values : [])
@@ -392,7 +394,7 @@ const AlarmsOverview = () => {
     },
     {
       name: 'Device',
-      cell: (row) => row.device?.mac || row.device?.raw_hash || '-',
+      cell: (row) => row.device?.display_name || row.device?.raw_hash || '-',
       sortable: true,
       grow: 1.2,
       wrap: true,
