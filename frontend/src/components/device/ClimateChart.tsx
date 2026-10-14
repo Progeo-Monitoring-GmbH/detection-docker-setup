@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import Plot from 'react-plotly.js';
-import { plotSeriesColors, plotTheme } from '../../styles/plotTheme';
+import { plotTheme } from '../../styles/plotTheme';
 
 /** One device of GET /v1/location/<pk>/climate/ - aligned series, oldest first. */
 export type ClimateDeviceSeries = {
@@ -19,6 +19,16 @@ export type ClimateResponse = {
 };
 
 export type ClimateMetric = 'humidity' | 'temperature';
+
+// Temperature reads warm, humidity cool. The shades vary in hue as well as
+// lightness so neighbouring devices stay apart; beyond six devices the
+// shades repeat with a different dash. A device keeps its index in both
+// charts, so it is the n-th red and the n-th blue.
+const METRIC_COLORS: Record<ClimateMetric, string[]> = {
+  temperature: ['#C62828', '#EF6C00', '#AD1457', '#D9605A', '#7B1F12', '#E8913A'],
+  humidity: ['#1565C0', '#00838F', '#5E35B1', '#4A9BE0', '#0D2F6B', '#2BA3B5'],
+};
+const DASHES = ['solid', 'dash', 'dot'] as const;
 
 type ClimateChartProps = {
   devices: ClimateDeviceSeries[];
@@ -44,18 +54,29 @@ const ClimateChart = ({
   const traces = useMemo(
     () =>
       devices
-        .filter((device) => device[metric].some((value) => value != null))
-        .map((device, index) => ({
-          type: 'scatter' as const,
-          mode: 'lines+markers' as const,
-          name: device.label,
-          x: device.timestamps.map((ts) => new Date(ts * 1000)),
-          y: device[metric],
-          connectgaps: true,
-          line: { color: plotSeriesColors[index % plotSeriesColors.length], width: 2 },
-          marker: { size: 4 },
-          hovertemplate: `%{y:.1f} ${unit}<br>%{x|%d.%m.%Y %H:%M}<extra>${device.label}</extra>`,
-        })),
+        // Index before filtering: a device's style follows the device, not
+        // which other devices happen to have readings.
+        .map((device, index) => ({ device, index }))
+        .filter(({ device }) => device[metric].some((value) => value != null))
+        .map(({ device, index }) => {
+          const colors = METRIC_COLORS[metric];
+          const color = colors[index % colors.length];
+          return {
+            type: 'scatter' as const,
+            mode: 'lines+markers' as const,
+            name: device.label,
+            x: device.timestamps.map((ts) => new Date(ts * 1000)),
+            y: device[metric],
+            connectgaps: true,
+            line: {
+              color,
+              width: 2,
+              dash: DASHES[Math.floor(index / colors.length) % DASHES.length],
+            },
+            marker: { size: 6, color },
+            hovertemplate: `%{y:.1f} ${unit}<br>%{x|%d.%m.%Y %H:%M}<extra>${device.label}</extra>`,
+          };
+        }),
     [devices, metric, unit],
   );
 

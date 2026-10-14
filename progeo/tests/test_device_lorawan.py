@@ -17,6 +17,34 @@ LORAWAN_UPLINK = {
 }
 
 
+
+def _chirpstack_uplink(dev_eui):
+    """Shape of a real ChirpStack uplink event (trimmed): the devEui sits in
+    deviceInfo, and ids/err arrive as floats."""
+    return {
+        "deduplicationId": "9dd3f61d-bd84-4f87-b6d3-f9bef9a2dcf8",
+        "time": "2026-10-14T13:04:17.818931+00:00",
+        "deviceInfo": {
+            "deviceProfileName": "SenseCAP-S210X-EU868",
+            "deviceName": "SenseCAP-S210X-EU868_Sensor1",
+            "devEui": dev_eui,
+            "tags": {},
+        },
+        "fCnt": 27,
+        "fPort": 2,
+        "data": "AQEQtEYAAAECEH7WAAClBg==",
+        "object": {
+            "valid": True,
+            "err": 0.0,
+            "messages": [
+                {"measurementId": 4097.0, "measurementValue": 18.1, "type": "report_telemetry"},
+                {"measurementValue": 54.91, "type": "report_telemetry", "measurementId": 4098.0},
+            ],
+            "payload": "010110B44600000102107ED60000A506",
+        },
+    }
+
+
 def _make_token():
     user = make_user()
     token = LimitedToken.objects.using("default").create(
@@ -89,6 +117,25 @@ def test_catch_lorawan_data_numbers_new_sensors_per_project(api_client):
     stored = ProgeoMeasurement.objects.using("default").get(pk=response.json()["measurement_id"])
     assert stored.device.raw_hash == "7067_S1"
     assert ProgeoDevice.objects.using("default").filter(raw_hash__startswith="7067_S").count() == 2
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_catch_lorawan_data_reads_dev_eui_from_chirpstack_device_info(api_client):
+    dev_euis = [unique("eui").lower() for _ in range(2)]
+
+    devices = []
+    for dev_eui in dev_euis:
+        response = api_client.post(f"/v1/device/lorawan/7068/?token={_make_token()}",
+                                   _chirpstack_uplink(dev_eui), format="json")
+        assert response.status_code == 200, response.content
+        assert response.json().get("temperature") == 18.1
+        assert response.json().get("humidity") == 54.91
+        devices.append(ProgeoMeasurement.objects.using("default").get(pk=response.json()["measurement_id"]).device)
+
+    # One device per sensor, not one per project.
+    assert [device.hardware for device in devices] == [dev_eui.upper() for dev_eui in dev_euis]
+    assert devices[0].pk != devices[1].pk
+    assert all(device.location.project_id == 7068 for device in devices)
 
 
 @pytest.mark.django_db(databases=["unit_tests", "default"])

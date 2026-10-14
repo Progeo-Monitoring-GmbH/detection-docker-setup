@@ -80,14 +80,27 @@ def django_db_setup(django_db_blocker):
 
 # Both aliases share one connection (see django_db_setup), so every test must
 # be allowed to use both - otherwise Django's per-test database allow-list
-# blocks the shared connection for the alias a test didn't declare.
+# blocks the shared connection for the alias a test didn't declare. A blocked
+# alias also blocks the other one, and the teardown then fails before the block
+# is lifted, which breaks every following test with DatabaseOperationForbidden.
 TEST_DATABASES = ["default", "unit_tests"]
 
 
 def pytest_collection_modifyitems(items):
     for item in items:
-        if item.get_closest_marker("django_db") is None:
+        marker = item.get_closest_marker("django_db")
+        if marker is None:
             item.add_marker(pytest.mark.django_db(databases=TEST_DATABASES))
+            continue
+        databases = marker.kwargs.get("databases")
+        if databases == "__all__" or (databases and set(TEST_DATABASES) <= set(databases)):
+            continue
+        # Keep the test's other options (transaction, reset_sequences, ...) and
+        # prepend so this marker is the closest one pytest-django picks up.
+        item.add_marker(
+            pytest.mark.django_db(*marker.args, **{**marker.kwargs, "databases": TEST_DATABASES}),
+            append=False,
+        )
 
 
 @pytest.fixture(autouse=True)

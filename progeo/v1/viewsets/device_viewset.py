@@ -410,7 +410,11 @@ class DeviceViewSet(ProgeoModalViewSet):
         if not values:
             return RequestFailed({"reason": "No known measurements provided"})
         
-        dev_eui = (request.data.get("devEui") or "").strip().upper() or None
+        # ChirpStack sends the sensor's devEui in deviceInfo; top-level
+        # devEui is accepted for other forwarders.
+        device_info = request.data.get("deviceInfo")
+        dev_eui = (device_info.get("devEui") if isinstance(device_info, dict) else None) or request.data.get("devEui")
+        dev_eui = str(dev_eui or "").strip().upper() or None
 
         measure = save_measurement_from_legacy_data(
             measurement={"project_id": project_id, **values},
