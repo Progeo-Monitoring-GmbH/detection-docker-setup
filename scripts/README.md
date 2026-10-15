@@ -39,6 +39,7 @@ scripts\install_git_docker_windows.bat C:\Progeo\code
 | `setup_uplink_network.sh` | Wired uplink: tries DHCP first and falls back to the static address from `.env` (`UPLINK_*`). A systemd timer switches back to DHCP once a server answers. Supports NetworkManager and dhcpcd. **root** |
 | `dhcp_probe.py` | Sends one DHCPDISCOVER and reports whether a server offers an address, without taking a lease. Used by `setup_uplink_network.sh --check`. Exit codes: 0 = offer, 1 = no offer, 2 = error. **root** |
 | `ip_change_logger.sh` | Appends a line to `logs/backend/IP.txt` each time the uplink IP changes, including an internet connectivity check. Can be installed as a systemd service. |
+| `network_report.sh` | Writes a network diagnostics report for the network admin: findings first (link, DHCP, IP conflict, gateway, DNS registration of the hostname, mDNS/LLMNR, firewall, switch port via LLDP/CDP), then the raw command output. Saved to `logs/network_report/latest.txt` and copied to the boot partition (`network_report.txt`). `--install` runs it 3 min after every boot. **root** |
 | `setup_reverse_ssh_shell.sh` | Sets up a persistent reverse SSH tunnel (autossh + systemd), so the device stays reachable behind NAT. **root** |
 
 ```bash
@@ -52,6 +53,9 @@ sudo python3 scripts/dhcp_probe.py eth0 10             # interface, timeout in s
 
 bash scripts/ip_change_logger.sh --once                # log the current state once
 sudo bash scripts/ip_change_logger.sh --install        # run as a service at boot
+
+sudo bash scripts/network_report.sh                    # write a report now (~2 min)
+sudo bash scripts/network_report.sh --install          # write one after every boot
 
 sudo bash scripts/setup_reverse_ssh_shell.sh \
   --server ubuntu@example.com --remote-port 22022 --install-key

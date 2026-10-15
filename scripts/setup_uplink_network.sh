@@ -76,7 +76,7 @@ ensure_env_defaults() {
     "UPLINK_INTERFACE=eth0" \
     "UPLINK_STATIC_IP=192.168.14.85" \
     "UPLINK_STATIC_NETMASK=255.255.240.0" \
-    "UPLINK_STATIC_GATEWAY=255.255.0.1" \
+    "UPLINK_STATIC_GATEWAY=192.168.0.1" \
     "UPLINK_STATIC_DNS="; do
     key="${entry%%=*}"
     if ! grep -q "^${key}=" "${ENV_FILE}"; then
