@@ -12,6 +12,8 @@ const RedirectToStatus = () => {
 
 const AppLayout = React.lazy(() => import('./main/AppLayout.tsx'));
 const LoginForm = React.lazy(() => import('./components/auth/LoginForm'));
+const DemoLogin = React.lazy(() => import('./main/DemoLogin.tsx'));
+const DemoView = React.lazy(() => import('./main/DemoView.tsx'));
 const PrivacyPolicyPage = React.lazy(
   () => import('./main/PrivacyPolicyPage.tsx'),
 );
@@ -111,6 +113,10 @@ const CoreRoutes = () => {
   return (
     <Routes>
       <Route path={`/login`} element={<LoginForm />} />
+      {/* Public demo: the link token logs in the read-only "demo" user. */}
+      <Route path="/demo/login/:token" element={<DemoLogin />} />
+      <Route path="/demo/" element={<DemoView />} />
+      <Route path="/demo/location/:id" element={<DemoView />} />
       {/* Public - must stay reachable without login (GDPR information duty). */}
       <Route path="/datenschutz" element={<PrivacyPolicyPage />} />
       <Route path="/privacy" element={<Navigate to="/datenschutz" replace />} />

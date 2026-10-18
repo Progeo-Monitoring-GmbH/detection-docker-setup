@@ -1,3 +1,6 @@
+import { useEffect, useRef, useState } from 'react';
+import { useAuth } from '../../../hooks/CoreAuthProvider';
+import axiosConfig from '../../axiosConfig';
 import { getBackendUrl } from '../../backendUrl';
 
 export type LageplanZonePoint = {
@@ -50,11 +53,45 @@ const LageplanZoneOverlay = ({ imageUrl, points, height = 480 }: LageplanZoneOve
 
   const resolvedUrl = imageUrl ? getBackendUrl(imageUrl) : null;
 
+  // Media files need the Authorization header, which a plain <img> can't send.
+  const auth = useAuth();
+  const authRef = useRef(auth);
+  authRef.current = auth;
+  const [imageSrc, setImageSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    setImageSrc(null);
+    if (!resolvedUrl) {
+      return undefined;
+    }
+    let cancelled = false;
+    void axiosConfig.perform_get(
+      authRef.current,
+      resolvedUrl,
+      (response) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (!cancelled && typeof reader.result === 'string') {
+            setImageSrc(reader.result);
+          }
+        };
+        reader.readAsDataURL(response.data as Blob);
+      },
+      () => {
+        // No plan image - the zones are still drawn without it.
+      },
+      { responseType: 'blob' },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [resolvedUrl]);
+
   return (
     <div style={{ position: 'relative', borderRadius: 14, overflow: 'hidden', background: 'var(--progeo-surface)' }}>
-      {resolvedUrl ? (
+      {imageSrc ? (
         <img
-          src={resolvedUrl}
+          src={imageSrc}
           alt="Lageplan"
           style={{ width: '100%', height, objectFit: 'contain', display: 'block' }}
         />

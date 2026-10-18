@@ -52,6 +52,7 @@ MODULE_PERMISSION_DEFINITIONS = (
     ("module_interface_smtp_edit", "Can edit smtp interface module"),
     ("module_interface_modbus_edit", "Can edit modbus interface module"),
     ("module_interface_sms_edit", "Can edit sms interface module"),
+    ("module_demo_enabled", "Can access demo view"),
 )
 
 # Descriptions are defined once above; the default sets below just select codes from it.

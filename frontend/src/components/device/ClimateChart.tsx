@@ -21,14 +21,35 @@ export type ClimateResponse = {
 export type ClimateMetric = 'humidity' | 'temperature';
 
 // Temperature reads warm, humidity cool. The shades vary in hue as well as
-// lightness so neighbouring devices stay apart; beyond six devices the
-// shades repeat with a different dash. A device keeps its index in both
-// charts, so it is the n-th red and the n-th blue.
+// lightness so neighbouring devices stay apart. A device keeps its index in
+// both charts, so it is the n-th red and the n-th blue. Lines are always
+// solid; beyond the fixed shades more are generated (see deviceColor).
 const METRIC_COLORS: Record<ClimateMetric, string[]> = {
-  temperature: ['#C62828', '#EF6C00', '#AD1457', '#D9605A', '#7B1F12', '#E8913A'],
-  humidity: ['#1565C0', '#00838F', '#5E35B1', '#4A9BE0', '#0D2F6B', '#2BA3B5'],
+  temperature: [
+    '#C62828', '#EF6C00', '#AD1457', '#D9605A', '#7B1F12', '#E8913A',
+    '#F9A825', '#8E24AA', '#BF360C', '#FF7043', '#6D4C41', '#E91E63',
+  ],
+  humidity: [
+    '#1565C0', '#00838F', '#5E35B1', '#4A9BE0', '#0D2F6B', '#2BA3B5',
+    '#2E7D32', '#3949AB', '#0277BD', '#26A69A', '#6A1B9A', '#00ACC1',
+  ],
 };
-const DASHES = ['solid', 'dash', 'dot'] as const;
+// Hue ranges of the generated shades: warm (reds/oranges) and cool (blues/greens).
+const GENERATED_HUES: Record<ClimateMetric, [number, number]> = {
+  temperature: [-20, 50],
+  humidity: [160, 270],
+};
+
+const deviceColor = (metric: ClimateMetric, index: number): string => {
+  const colors = METRIC_COLORS[metric];
+  if (index < colors.length) return colors[index];
+  const extra = index - colors.length;
+  const [from, to] = GENERATED_HUES[metric];
+  // Golden-angle steps spread hue and lightness so consecutive shades differ.
+  const hue = (from + ((extra * 137.5) % (to - from)) + 360) % 360;
+  const lightness = 32 + ((extra * 17) % 30);
+  return `hsl(${hue.toFixed(0)}, 65%, ${lightness}%)`;
+};
 
 const MUTED_TEXT = '#8B8383';
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -44,6 +65,9 @@ type ClimateChartProps = {
   unit: string;
   emptyLabel: string;
   height?: number;
+  /** Device whose line is highlighted (shared between the charts). */
+  hoveredDeviceId?: number | null;
+  onHoverDevice?: (deviceId: number | null) => void;
 };
 
 /**
@@ -57,8 +81,10 @@ const ClimateChart = ({
   unit,
   emptyLabel,
   height = 340,
+  hoveredDeviceId = null,
+  onHoverDevice,
 }: ClimateChartProps) => {
-  const traces = useMemo(
+  const baseTraces = useMemo(
     () =>
       devices
         // Index before filtering: a device's style follows the device, not
@@ -66,9 +92,9 @@ const ClimateChart = ({
         .map((device, index) => ({ device, index }))
         .filter(({ device }) => device[metric].some((value) => value != null))
         .map(({ device, index }) => {
-          const colors = METRIC_COLORS[metric];
-          const color = colors[index % colors.length];
+          const color = deviceColor(metric, index);
           return {
+            deviceId: device.id,
             type: 'scatter' as const,
             mode: 'lines+markers' as const,
             name: escapeHtml(device.label),
@@ -78,7 +104,6 @@ const ClimateChart = ({
             line: {
               color,
               width: 2,
-              dash: DASHES[Math.floor(index / colors.length) % DASHES.length],
             },
             marker: { size: 6, color },
             hoverlabel: { bordercolor: color },
@@ -91,6 +116,22 @@ const ClimateChart = ({
     [devices, metric, unit],
   );
 
+  // Highlight: the hovered device gets a thicker line, the others fade.
+  const traces = useMemo(
+    () =>
+      baseTraces.map(({ deviceId, ...trace }) => {
+        if (hoveredDeviceId == null) return trace;
+        const active = deviceId === hoveredDeviceId;
+        return {
+          ...trace,
+          opacity: active ? 1 : 0.3,
+          line: { ...trace.line, width: active ? 4 : 2 },
+          marker: { ...trace.marker, size: active ? 8 : 6 },
+        };
+      }),
+    [baseTraces, hoveredDeviceId],
+  );
+
   if (traces.length === 0) {
     return <div style={{ color: MUTED_TEXT, fontSize: 13 }}>{emptyLabel}</div>;
   }
@@ -98,11 +139,20 @@ const ClimateChart = ({
   return (
     <Plot
       data={traces}
+      onHover={(event) => {
+        const curve = event.points?.[0]?.curveNumber;
+        if (curve != null && baseTraces[curve]) {
+          onHoverDevice?.(baseTraces[curve].deviceId);
+        }
+      }}
+      onUnhover={() => onHoverDevice?.(null)}
       useResizeHandler
       style={{ width: '100%', height: `${height}px` }}
       config={{ responsive: true, displaylogo: false }}
       layout={{
         autosize: true,
+        // Keep zoom/pan when only the highlight changes.
+        uirevision: 'keep',
         // Minimal fixed margins - automargin grows them just enough for the
         // tick labels, the axis title and the legend.
         margin: { l: 8, r: 12, t: 8, b: 8 },

@@ -14,6 +14,9 @@ server {
     add_header X-Frame-Options "DENY" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
+    # First, before the other locations: drops .env/.git/... scanner requests.
+    include /etc/nginx/snippets/block_scanners.conf;
+
     location / {
         set $backend_upstream progeo-backend:8383;
         proxy_pass http://$backend_upstream;
@@ -84,6 +87,9 @@ server {
     add_header X-XSS-Protection "1; mode=block" always;
     add_header X-Frame-Options "DENY" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    # First, before the backend regex location below: drops scanner requests.
+    include /etc/nginx/snippets/block_scanners.conf;
 
     location / {
         set $frontend_upstream progeo-frontend:80;

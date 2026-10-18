@@ -23,6 +23,7 @@ RUN mkdir -p /etc/letsencrypt && \
     touch /etc/letsencrypt/options-ssl-nginx.conf
     
 COPY ./docker/nginx/conf.d /etc/nginx/conf.d
+COPY ./docker/nginx/snippets /etc/nginx/snippets
 COPY ./docker/nginx/nginx.conf /etc/nginx/nginx.conf
 COPY ./docker/nginx/generate_mkcert.sh /docker-entrypoint.d/40-generate_mkcert.sh
 COPY ./docker/nginx/fix_host_file.sh /docker-entrypoint.d/50-fix_hosts.sh

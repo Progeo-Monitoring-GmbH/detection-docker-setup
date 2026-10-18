@@ -20,6 +20,8 @@ const CLIMATE_RANGE_DAYS: Record<ClimateRange, number> = {
 
 type LocationClimatePanelsProps = {
   locationId: number;
+  /** Public demo view: read the series from /v1/demo/. */
+  demo?: boolean;
 };
 
 /**
@@ -27,7 +29,7 @@ type LocationClimatePanelsProps = {
  * so no heatmap - instead humidity and temperature per device, from
  * GET /v1/location/<pk>/climate/.
  */
-const LocationClimatePanels = ({ locationId }: LocationClimatePanelsProps) => {
+const LocationClimatePanels = ({ locationId, demo = false }: LocationClimatePanelsProps) => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
   const { t } = useTranslation();
@@ -36,13 +38,14 @@ const LocationClimatePanels = ({ locationId }: LocationClimatePanelsProps) => {
   const [climate, setClimate] = useState<ClimateResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
+  const [hoveredDeviceId, setHoveredDeviceId] = useState<number | null>(null);
 
   const loadClimate = useCallback(() => {
     setLoading(true);
     setDenied(false);
     void axiosConfig.perform_get(
       auth,
-      `/v1/location/${locationId}/climate/?days=${CLIMATE_RANGE_DAYS[range]}`,
+      `${demo ? '/v1/demo' : '/v1/location'}/${locationId}/climate/?days=${CLIMATE_RANGE_DAYS[range]}`,
       (response) => {
         setClimate((response?.data || null) as ClimateResponse | null);
         setLoading(false);
@@ -56,7 +59,7 @@ const LocationClimatePanels = ({ locationId }: LocationClimatePanelsProps) => {
         setLoading(false);
       },
     );
-  }, [auth, enqueueSnackbar, locationId, range]);
+  }, [auth, demo, enqueueSnackbar, locationId, range]);
 
   useEffect(() => {
     loadClimate();
@@ -80,6 +83,8 @@ const LocationClimatePanels = ({ locationId }: LocationClimatePanelsProps) => {
         axisTitle={axisTitle}
         unit={unit}
         emptyLabel={t('climate_empty')}
+        hoveredDeviceId={hoveredDeviceId}
+        onHoverDevice={setHoveredDeviceId}
       />
     );
 

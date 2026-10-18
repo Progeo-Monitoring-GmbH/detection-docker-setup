@@ -32,6 +32,8 @@ export interface AuthContextType {
   user: User | null;
   refreshApi: (refreshToken: string) => Promise<AuthRefresh>;
   loginAction: (data: AuthCredentials, forward?: string) => Promise<void>;
+  /** Adopt tokens issued elsewhere (the demo link) as the current session. */
+  loginWithTokens: (access: string, refresh: string) => void;
   logoutAction: (forward?: string) => void;
   navigate: (to: string, options?) => void;
   location: string;
@@ -66,6 +68,7 @@ const defaultAuthContextValue: AuthContextType = {
   user: null,
   refreshApi: (t) => refreshApi(t),
   loginAction: async () => {},
+  loginWithTokens: () => {},
   logoutAction: () => {},
   navigate: () => {},
   location: '/',
@@ -160,6 +163,12 @@ const CoreAuthProvider = ({ children }) => {
     [navigate, logoutAction], // depends on logoutAction as it is defined below
   );
 
+  const loginWithTokens = useCallback((access: string, refresh: string) => {
+    localStorage.setItem('authToken', access);
+    setToken(access);
+    setRefreshToken(refresh);
+  }, []);
+
   return (
     <AuthContext.Provider
       value={{
@@ -167,6 +176,7 @@ const CoreAuthProvider = ({ children }) => {
         user,
         refreshApi: () => refreshApi(refreshToken),
         loginAction,
+        loginWithTokens,
         logoutAction,
         navigate: (to, options) => navigate(to, options),
         location: getCurrentUrl(),

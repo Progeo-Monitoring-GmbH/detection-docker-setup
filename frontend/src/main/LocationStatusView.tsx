@@ -36,6 +36,8 @@ import LocationClimatePanels from './LocationClimatePanels';
 type LocationStatusViewProps = {
   location: LocationDetail | null;
   locationId: number;
+  /** Public demo view: reads /v1/demo/... and offers no write actions. */
+  demo?: boolean;
 };
 
 // The backend now owns severity/state/clustering entirely
@@ -93,6 +95,7 @@ const ZEITREIHE_RANGE_DAYS: Record<ZeitreiheRange, number> = {
 const LocationStatusView = ({
   location,
   locationId,
+  demo = false,
 }: LocationStatusViewProps) => {
   const auth = useAuth();
   const navigate = useNavigate();
@@ -149,7 +152,7 @@ const LocationStatusView = ({
     setHeatmapDenied(false);
     void axiosConfig.perform_get(
       auth,
-      `/v1/location/${locationId}/heatmap/?limit=${HEATMAP_LIMIT}`,
+      `${demo ? '/v1/demo' : '/v1/location'}/${locationId}/heatmap/?limit=${HEATMAP_LIMIT}`,
       (response) => {
         setHeatmap((response?.data || null) as SensorHeatmapResponse | null);
         setHeatmapLoading(false);
@@ -163,14 +166,16 @@ const LocationStatusView = ({
         setHeatmapLoading(false);
       },
     );
-  }, [auth, enqueueSnackbar, locationId]);
+  }, [auth, demo, enqueueSnackbar, locationId]);
 
   const loadClusters = useCallback(() => {
     setClustersLoading(true);
     setClustersDenied(false);
     void axiosConfig.perform_get(
       auth,
-      `/v1/alarm/clusters/?location=${locationId}&days=${ALARM_WINDOW_DAYS}`,
+      demo
+        ? `/v1/demo/alarm-clusters/?location=${locationId}&days=${ALARM_WINDOW_DAYS}`
+        : `/v1/alarm/clusters/?location=${locationId}&days=${ALARM_WINDOW_DAYS}`,
       (response) => {
         setClusters(
           (response?.data?.clusters || []) as VerdachtsstelleCluster[],
@@ -190,7 +195,7 @@ const LocationStatusView = ({
         setClustersLoading(false);
       },
     );
-  }, [auth, enqueueSnackbar, locationId]);
+  }, [auth, demo, enqueueSnackbar, locationId]);
 
   useEffect(() => {
     if (isLorawan) {
@@ -480,7 +485,7 @@ const LocationStatusView = ({
             </div>
           )}
         </div>
-        {!isLorawan && (
+        {!isLorawan && !demo && (
           <button
             type="button"
             onClick={requestMeasurement}
@@ -510,7 +515,7 @@ const LocationStatusView = ({
       </div>
 
       {isLorawan ? (
-        <LocationClimatePanels locationId={locationId} />
+        <LocationClimatePanels locationId={locationId} demo={demo} />
       ) : (
         <>
           {clustersLoading || heatmapLoading ? (
@@ -629,20 +634,22 @@ const LocationStatusView = ({
                 <PanelCard
                   title={t('status_verdachtsstellen_title')}
                   actions={
-                    <a
-                      href="#"
-                      onClick={(event) => {
-                        event.preventDefault();
-                        navigate(`/location/${locationId}/alarms`);
-                      }}
-                      style={{
-                        fontSize: 12.5,
-                        color: 'var(--progeo-orange)',
-                        fontWeight: 500,
-                      }}
-                    >
-                      {t('status_view_all')}
-                    </a>
+                    demo ? undefined : (
+                      <a
+                        href="#"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          navigate(`/location/${locationId}/alarms`);
+                        }}
+                        style={{
+                          fontSize: 12.5,
+                          color: 'var(--progeo-orange)',
+                          fontWeight: 500,
+                        }}
+                      >
+                        {t('status_view_all')}
+                      </a>
+                    )
                   }
                 >
                   {clustersDenied ? (
@@ -675,6 +682,7 @@ const LocationStatusView = ({
                           onToggle={() => toggleExpanded(cluster.id)}
                           onAcknowledge={() => acknowledgeCluster(cluster)}
                           acknowledging={acknowledging.has(cluster.id)}
+                          readOnly={demo}
                           t={t}
                         />
                       ))}
@@ -699,6 +707,8 @@ type VerdachtsstelleRowProps = {
   onToggle: () => void;
   onAcknowledge: () => void;
   acknowledging: boolean;
+  /** Demo view: no write actions. */
+  readOnly?: boolean;
   t: (key: string, options?: Record<string, unknown>) => string;
 };
 
@@ -717,6 +727,7 @@ const VerdachtsstelleRow = ({
   onToggle,
   onAcknowledge,
   acknowledging,
+  readOnly = false,
   t,
 }: VerdachtsstelleRowProps) => {
   const hasPendingAck = cluster.pending_ack_alarm_ids.length > 0;
@@ -889,6 +900,7 @@ const VerdachtsstelleRow = ({
           >
             <button
               type="button"
+              hidden={readOnly}
               onClick={onAcknowledge}
               disabled={!hasPendingAck || acknowledging}
               style={{
