@@ -202,9 +202,10 @@ const ClimateChart = ({
         graphRef.current = graphDiv;
         applyHighlight();
       }}
+      // Must not restyle here: react-plotly fires onUpdate on every
+      // plotly_restyle, so applying the highlight would loop forever.
       onUpdate={(_figure, graphDiv) => {
         graphRef.current = graphDiv;
-        applyHighlight();
       }}
       onHover={(event) => {
         const curve = event.points?.[0]?.curveNumber;
