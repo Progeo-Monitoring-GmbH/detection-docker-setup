@@ -469,6 +469,146 @@ class LocationViewSet(ProgeoModalViewSet):
             return RequestFailed({"reason": "Access rule not found"})
         return RequestSuccess({"deleted": access_id})
 
+    def _superuser_location(self, request, pk):
+        """(location, account, error) - measurement maintenance is superuser-only."""
+        if not getattr(request.user, "is_superuser", False):
+            return None, None, RequestFailed({"reason": "Superuser access required"})
+        location, account = self._find_location(request, pk=pk)
+        if not location:
+            return None, None, RequestFailed({"reason": "Location not found"})
+        return location, account, None
+
+    @action(detail=True, url_path="devices/names", methods=["GET", "POST"])
+    def device_names(self, request, pk=None, *args, **kwargs):
+        """Superuser: GET lists the location's devices with their custom name
+        (ProgeoDevice.mac); POST {"devices": [{"id", "name"}]} renames just
+        those devices (an empty name falls back to the hardware name)."""
+        location, account, error = self._superuser_location(request, pk)
+        if error:
+            return error
+        db_name = account.db_name
+        queryset = ProgeoDevice.objects.using(db_name).filter(location=location).order_by("hardware", "id")
+
+        if request.method == "GET":
+            return RequestSuccess({
+                "devices": [
+                    {
+                        "id": device.pk,
+                        "name": device.mac or "",
+                        "hardware": device.hardware,
+                        "type": device.type,
+                        "display_name": device.display_name,
+                    }
+                    for device in queryset
+                ]
+            })
+
+        changes = request.data.get("devices") if hasattr(request.data, "get") else None
+        if not isinstance(changes, list):
+            return RequestFailed({"reason": "devices must be a list of {id, name}"})
+        by_id = {device.pk: device for device in queryset}
+        max_len = ProgeoDevice._meta.get_field("mac").max_length
+        updates = []
+        for change in changes:
+            device = by_id.get(change.get("id")) if isinstance(change, dict) else None
+            name = change.get("name") if isinstance(change, dict) else None
+            if device is None or not isinstance(name, str):
+                return RequestFailed({"reason": "unknown device or invalid name", "entry": change})
+            name = name.strip()
+            if len(name) > max_len:
+                return RequestFailed({"reason": f"name is limited to {max_len} characters", "id": device.pk})
+            device.mac = name or None
+            updates.append(device)
+        with transaction.atomic(using=db_name):
+            for device in updates:
+                device.save(using=db_name, update_fields=["mac"])
+        return RequestSuccess({"updated": len(updates)})
+
+    @action(detail=True, url_path="measurements/clean", methods=["POST"])
+    def measurements_clean(self, request, pk=None, *args, **kwargs):
+        """Delete every measurement of the location (alarms hang off their
+        measurement and go with them). Devices, plans and points stay."""
+        location, account, error = self._superuser_location(request, pk)
+        if error:
+            return error
+        with transaction.atomic(using=account.db_name):
+            deleted, _ = (
+                ProgeoMeasurement.objects.using(account.db_name).filter(device__location=location).delete()
+            )
+        return RequestSuccess({"deleted": deleted})
+
+    @action(detail=True, url_path="measurements/export", methods=["GET"])
+    def measurements_export(self, request, pk=None, *args, **kwargs):
+        """All measurements of the location in the format of /v1/data/export/."""
+        import json
+
+        from progeo.v1.viewsets.data_transfer_viewset import _concrete_fields, _serialize_instance
+
+        location, account, error = self._superuser_location(request, pk)
+        if error:
+            return error
+        fields = _concrete_fields(ProgeoMeasurement)
+        rows = [
+            _serialize_instance("ProgeoMeasurement", fields, measurement)
+            for measurement in ProgeoMeasurement.objects.using(account.db_name)
+            .filter(device__location=location)
+            .order_by("pk")
+            .iterator()
+        ]
+        payload = json.dumps(
+            {"models": ["ProgeoMeasurement"], "count": len(rows), "data": rows}, indent=2, default=str
+        )
+        response = HttpResponse(payload, content_type="application/json")
+        response["Content-Disposition"] = f'attachment; filename="measurements_location_{location.pk}.json"'
+        return response
+
+    @action(detail=True, url_path="measurements/import", methods=["POST"])
+    def measurements_import(self, request, pk=None, *args, **kwargs):
+        """Import a measurement export (same format and update-or-create logic
+        as /v1/data/import/). Only ProgeoMeasurement rows of this location's
+        devices are accepted."""
+        from progeo.v1.viewsets.data_transfer_viewset import _concrete_fields, _row_to_kwargs
+
+        location, account, error = self._superuser_location(request, pk)
+        if error:
+            return error
+        payload = request.data
+        rows = payload.get("data") if isinstance(payload, dict) else payload
+        if not isinstance(rows, list):
+            return RequestFailed({"reason": 'Expected {"data": [...]} as returned by the export'})
+
+        db_name = account.db_name
+        device_ids = set(
+            ProgeoDevice.objects.using(db_name).filter(location=location).values_list("pk", flat=True)
+        )
+        fields = _concrete_fields(ProgeoMeasurement)
+        created = updated = 0
+        errors = []
+        for index, row in enumerate(rows):
+            if not isinstance(row, dict) or row.get("clazz") != "ProgeoMeasurement":
+                errors.append({"index": index, "reason": "not a ProgeoMeasurement row"})
+                continue
+            if row.get("device") not in device_ids:
+                errors.append({"index": index, "reason": "device does not belong to this location"})
+                continue
+            pk_value, row_kwargs = _row_to_kwargs(ProgeoMeasurement, fields, row)
+            try:
+                if pk_value is not None:
+                    _obj, was_created = ProgeoMeasurement.objects.using(db_name).update_or_create(
+                        pk=pk_value, defaults=row_kwargs
+                    )
+                else:
+                    ProgeoMeasurement.objects.using(db_name).create(**row_kwargs)
+                    was_created = True
+            except Exception as exc:
+                errors.append({"index": index, "id": pk_value, "reason": str(exc)})
+                continue
+            created += int(was_created)
+            updated += int(not was_created)
+        return RequestSuccess(
+            {"total": len(rows), "created": created, "updated": updated, "errors": errors}
+        )
+
     @require_module_permissions("module_notifications_enabled", "module_notifications_edit")
     @action(detail=True, url_path="access/user", methods=["POST"])
     def access_user_update(self, request, pk=None, *args, **kwargs):

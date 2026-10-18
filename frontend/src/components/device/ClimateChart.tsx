@@ -1,5 +1,6 @@
-import { useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import Plot from 'react-plotly.js';
+import Plotly from 'plotly.js/dist/plotly';
 import { plotTheme } from '../../styles/plotTheme';
 
 /** One device of GET /v1/location/<pk>/climate/ - aligned series, oldest first. */
@@ -42,7 +43,9 @@ const GENERATED_HUES: Record<ClimateMetric, [number, number]> = {
 
 const deviceColor = (metric: ClimateMetric, index: number): string => {
   const colors = METRIC_COLORS[metric];
-  if (index < colors.length) return colors[index];
+  if (index < colors.length) {
+    return colors[index];
+  }
   const extra = index - colors.length;
   const [from, to] = GENERATED_HUES[metric];
   // Golden-angle steps spread hue and lightness so consecutive shades differ.
@@ -52,6 +55,18 @@ const deviceColor = (metric: ClimateMetric, index: number): string => {
 };
 
 const MUTED_TEXT = '#8B8383';
+
+// One revision number per computed trace set (see Plot's revision prop).
+const revisions = new WeakMap<object, number>();
+let revisionCounter = 0;
+const revisionOf = (traces: object): number => {
+  let revision = revisions.get(traces);
+  if (revision === undefined) {
+    revision = ++revisionCounter;
+    revisions.set(traces, revision);
+  }
+  return revision;
+};
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 // Device names are user-editable (mac) and end up in Plotly's pseudo-HTML.
@@ -95,6 +110,7 @@ const ClimateChart = ({
           const color = deviceColor(metric, index);
           return {
             deviceId: device.id,
+            label: device.label,
             type: 'scatter' as const,
             mode: 'lines+markers' as const,
             name: escapeHtml(device.label),
@@ -116,29 +132,80 @@ const ClimateChart = ({
     [devices, metric, unit],
   );
 
-  // Highlight: the hovered device gets a thicker line, the others fade.
-  const traces = useMemo(
-    () =>
-      baseTraces.map(({ deviceId, ...trace }) => {
-        if (hoveredDeviceId == null) return trace;
-        const active = deviceId === hoveredDeviceId;
-        return {
-          ...trace,
-          opacity: active ? 1 : 0.3,
-          line: { ...trace.line, width: active ? 4 : 2 },
-          marker: { ...trace.marker, size: active ? 8 : 6 },
-        };
-      }),
-    [baseTraces, hoveredDeviceId],
-  );
+  // The hover highlight is applied straight to the plot (Plotly.restyle) and
+  // never goes through the data props: re-feeding data on every hover made
+  // Plotly redraw, flicker and re-fit the axes.
+  const graphRef = useRef<HTMLElement | null>(null);
+  const highlightRef = useRef<number | null>(hoveredDeviceId);
 
-  if (traces.length === 0) {
+  const applyHighlight = useCallback(() => {
+    const gd = graphRef.current;
+    if (!gd) {
+      return;
+    }
+    const active = highlightRef.current;
+    void Plotly.restyle(
+      gd as never,
+      {
+        'line.width': baseTraces.map((trace) => (trace.deviceId === active ? 4 : 2)),
+        opacity: baseTraces.map((trace) => (active == null || trace.deviceId === active ? 1 : 0.3)),
+      } as never,
+    );
+  }, [baseTraces]);
+
+  useEffect(() => {
+    highlightRef.current = hoveredDeviceId;
+    applyHighlight();
+  }, [applyHighlight, hoveredDeviceId]);
+
+  // Plot only re-renders when the revision changes, i.e. for new data - not
+  // when the parent re-renders because of the hovered device.
+  const revision = revisionOf(baseTraces);
+
+  if (baseTraces.length === 0) {
     return <div style={{ color: MUTED_TEXT, fontSize: 13 }}>{emptyLabel}</div>;
   }
 
   return (
+    <>
+    <div
+      style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px', marginBottom: 6 }}
+      onMouseLeave={() => onHoverDevice?.(null)}
+    >
+      {baseTraces.map((trace) => (
+        <span
+          key={trace.deviceId}
+          onMouseEnter={() => onHoverDevice?.(trace.deviceId)}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            fontSize: 12,
+            cursor: 'default',
+            color: '#3A3535',
+            fontWeight: hoveredDeviceId === trace.deviceId ? 700 : 400,
+            opacity: hoveredDeviceId == null || hoveredDeviceId === trace.deviceId ? 1 : 0.4,
+          }}
+        >
+          <span
+            style={{ width: 18, height: 3, borderRadius: 2, background: trace.line.color }}
+          />
+          {trace.label}
+        </span>
+      ))}
+    </div>
     <Plot
-      data={traces}
+      key={`${axisTitle}|${height}`}
+      data={baseTraces.map(({ deviceId: _id, label: _label, ...trace }) => trace)}
+      revision={revision}
+      onInitialized={(_figure, graphDiv) => {
+        graphRef.current = graphDiv;
+        applyHighlight();
+      }}
+      onUpdate={(_figure, graphDiv) => {
+        graphRef.current = graphDiv;
+        applyHighlight();
+      }}
       onHover={(event) => {
         const curve = event.points?.[0]?.curveNumber;
         if (curve != null && baseTraces[curve]) {
@@ -159,15 +226,7 @@ const ClimateChart = ({
         font: { color: plotTheme.brandBlue, size: 12 },
         plot_bgcolor: plotTheme.white,
         paper_bgcolor: 'rgba(0,0,0,0)',
-        showlegend: true,
-        legend: {
-          orientation: 'h',
-          x: 0,
-          xanchor: 'left',
-          y: 1.02,
-          yanchor: 'bottom',
-          font: { size: 12 },
-        },
+        showlegend: false,
         hovermode: 'closest',
         hoverlabel: {
           bgcolor: plotTheme.white,
@@ -205,6 +264,7 @@ const ClimateChart = ({
         },
       }}
     />
+    </>
   );
 };
 

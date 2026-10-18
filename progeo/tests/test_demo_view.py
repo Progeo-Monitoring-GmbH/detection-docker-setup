@@ -83,3 +83,62 @@ def test_demo_user_only_gets_demo_media(api_client, demo):
     assert api_client.get("/" + plan["url"] if not plan["url"].startswith("/") else plan["url"]).status_code == 200
     assert api_client.get("/media/backup/x.zip").status_code == 403
     assert api_client.get("/media/uploads/lageplan/other.png").status_code == 403
+
+
+def test_measurement_maintenance_is_superuser_only(api_client, demo):
+    from django.contrib.auth.models import User
+    from progeo.v1.models import ProgeoMeasurement
+
+    location = ProgeoLocation.objects.using("default").filter(account=demo.account, project_type=6).first()
+    base = f"/v1/location/{location.pk}/measurements"
+
+    _login(api_client, demo)
+    assert api_client.post(f"{base}/clean/").status_code == 400
+    assert api_client.get(f"{base}/export/").status_code == 400
+
+    admin = User.objects.using("default").create(username="mm_admin", is_superuser=True, is_staff=True)
+    api_client.credentials()
+    api_client.force_authenticate(admin)
+    exported = api_client.get(f"{base}/export/")
+    assert exported.status_code == 200, exported.content
+    payload = exported.json()
+    assert payload["count"] > 0
+
+    db = demo.account.db_name
+    cleaned = api_client.post(f"{base}/clean/")
+    assert cleaned.status_code == 200, cleaned.content
+    assert not ProgeoMeasurement.objects.using(db).filter(device__location=location).exists()
+
+    imported = api_client.post(f"{base}/import/", payload, format="json")
+    assert imported.status_code == 200, imported.content
+    assert imported.json()["created"] == payload["count"]
+
+
+def test_device_rename_sends_only_changes(api_client, demo):
+    from django.contrib.auth.models import User
+    from progeo.v1.models import ProgeoDevice
+
+    location = ProgeoLocation.objects.using("default").filter(account=demo.account, project_type=6).first()
+    url = f"/v1/location/{location.pk}/devices/names/"
+
+    _login(api_client, demo)
+    assert api_client.get(url).status_code == 400
+
+    admin = User.objects.using("default").create(username="rn_admin", is_superuser=True, is_staff=True)
+    api_client.credentials()
+    api_client.force_authenticate(admin)
+    devices = api_client.get(url).json()["devices"]
+    assert len(devices) == 4
+
+    first, second = devices[0], devices[1]
+    response = api_client.post(url, {"devices": [{"id": first["id"], "name": " Neu "}]}, format="json")
+    assert response.status_code == 200, response.content
+    assert response.json()["updated"] == 1
+    db = demo.account.db_name
+    assert ProgeoDevice.objects.using(db).get(pk=first["id"]).mac == "Neu"
+    assert ProgeoDevice.objects.using(db).get(pk=second["id"]).mac == second["name"] or not second["name"]
+
+    cleared = api_client.post(url, {"devices": [{"id": first["id"], "name": ""}]}, format="json")
+    assert cleared.status_code == 200
+    assert ProgeoDevice.objects.using(db).get(pk=first["id"]).mac is None
+    assert api_client.post(url, {"devices": [{"id": 999999, "name": "x"}]}, format="json").status_code == 400
