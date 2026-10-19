@@ -2,7 +2,10 @@
 
 import datetime
 
+from django.db import transaction
 from django.utils import timezone
+
+BULK_BATCH_SIZE = 500
 
 
 def check_existing_alarms_db(db: str, silence_hours: int = 24) -> tuple[int, int]:
@@ -34,8 +37,12 @@ def check_existing_alarms_db(db: str, silence_hours: int = 24) -> tuple[int, int
     now = timezone.now()
     silence_cutoff = now - datetime.timedelta(hours=silence_hours)
 
+    # Changed alarms are collected and written with one bulk_update per kind
+    # instead of an UPDATE per alarm (N+1).
+    prolonged_alarms = []
+    normalized_alarms = []
+
     checked = 0
-    normalized = 0
     for alarm in alarms:
         device = alarm.measurement.device
         if device is None:
@@ -59,7 +66,6 @@ def check_existing_alarms_db(db: str, silence_hours: int = 24) -> tuple[int, int
         still_exceeding = len(over_threshold) > 0
         silent = latest_at < silence_cutoff
 
-        update_fields = ["still_active_at", "normalized_at"]
         if alarm.triggered_at is None:
             # Backfill the trigger time for alarms that were created without
             # one (fall back to the measurement's own timestamps).
@@ -68,7 +74,6 @@ def check_existing_alarms_db(db: str, silence_hours: int = 24) -> tuple[int, int
                 or alarm.measurement.last_fetched
                 or latest_at
             )
-            update_fields.append("triggered_at")
 
         if still_exceeding and not silent:
             alarm.still_active_at = latest_at
@@ -87,7 +92,6 @@ def check_existing_alarms_db(db: str, silence_hours: int = 24) -> tuple[int, int
                         "value": max_value,
                         "sensor_id": sensor_id,
                     }]
-                    update_fields.append("max_values")
             # Refresh the strongest sensor + the full set of over-threshold pairs.
             sensor_pairs = [
                 {"sensor_id": idx + 1, "max_value": float(value)}
@@ -97,11 +101,7 @@ def check_existing_alarms_db(db: str, silence_hours: int = 24) -> tuple[int, int
             merged_pairs = merge_sensor_max_values(alarm.sensor_max_values, sensor_pairs)
             if merged_pairs != list(alarm.sensor_max_values or []):
                 alarm.sensor_max_values = merged_pairs
-                update_fields.append("sensor_max_values")
-            alarm.save(
-                using=db,
-                update_fields=["still_active_at", "triggered_at", "max_values", "sensor_max_values"],
-            )
+            prolonged_alarms.append(alarm)
             continue
 
         # Normalize: the alarm no longer reflects an active over-threshold state.
@@ -109,8 +109,18 @@ def check_existing_alarms_db(db: str, silence_hours: int = 24) -> tuple[int, int
         if alarm.status == ProgeoAlarm.Status.NEU:
             # Nobody ever acknowledged it - it resolved on its own.
             alarm.status = ProgeoAlarm.Status.GELOEST
-            update_fields.append("status")
-        alarm.save(using=db, update_fields=update_fields)
-        normalized += 1
+        normalized_alarms.append(alarm)
 
-    return checked, normalized
+    with transaction.atomic(using=db):
+        ProgeoAlarm.objects.using(db).bulk_update(
+            prolonged_alarms,
+            ["still_active_at", "triggered_at", "max_values", "sensor_max_values"],
+            batch_size=BULK_BATCH_SIZE,
+        )
+        ProgeoAlarm.objects.using(db).bulk_update(
+            normalized_alarms,
+            ["still_active_at", "normalized_at", "triggered_at", "status"],
+            batch_size=BULK_BATCH_SIZE,
+        )
+
+    return checked, len(normalized_alarms)

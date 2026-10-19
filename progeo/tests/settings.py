@@ -147,7 +147,7 @@ TEMPLATES = [
 
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
-DJANGO_DATABASES = ["default", "unit_tests", "dev_null"]
+DJANGO_DATABASES = ["default", "unit_tests"]
 dyn_dbs = {}
 for db in DJANGO_DATABASES:
     dyn_dbs.update({db: {
