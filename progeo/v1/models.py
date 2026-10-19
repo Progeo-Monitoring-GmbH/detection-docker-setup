@@ -1135,3 +1135,7 @@ class SystemConfig(ProgeoModel, auto_prefetch.Model):
     def __str__(self):
         _id = f"[{self.pk}] " if DEBUG else ""
         return f"{_id} ⚙️ {self.key}"
+
+
+# Mirrors users/accounts/locations/devices into the project databases.
+from progeo.helper import project_db_signals  # noqa: E402,F401

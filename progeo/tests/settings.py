@@ -171,8 +171,14 @@ DATABASES["default"] = {
     "TEST": {"NAME": "unit_tests"},
 }
 
+# Own prefix, so test project databases never show up as real projects on a
+# shared Postgres server (see progeo/helper/project_dbs.py).
+PROJECT_DB_PREFIX = "unit_tests_project_"
+PROJECT_DB_SPLIT = False
+PROJECT_DB_STRICT = False
 
 DATABASE_ROUTERS = [
+    "progeo.router.ProjectRouter",
     "progeo.router.DjangoRouter",
     "progeo.router.AccountRouter",
 ]

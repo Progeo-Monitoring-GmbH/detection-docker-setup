@@ -29,7 +29,9 @@ def check_existing_alarms_db(db: str, silence_hours: int = 24) -> tuple[int, int
         for measurement in (
             ProgeoMeasurement.objects.using(db)
             .filter(device_id__in=device_ids)
-            .order_by("device_id", "-last_fetched", "-id")
+            # pk is chronological, so -pk picks the newest measurement without
+            # sorting on the unindexed last_fetched column.
+            .order_by("device_id", "-pk")
             .distinct("device_id")
         )
     }

@@ -65,6 +65,38 @@ fi
 
 export DEBIAN_FRONTEND=noninteractive
 
+PROGEO_USER="progeo"
+PROGEO_HOME="/home/${PROGEO_USER}"
+
+ensure_progeo_user() {
+  if id "${PROGEO_USER}" >/dev/null 2>&1; then
+    log_info "User ${PROGEO_USER} already exists"
+    return 0
+  fi
+
+  local useradd_args=(-s /bin/bash -d "${PROGEO_HOME}")
+
+  # Reuse an existing group of the same name instead of failing on it.
+  if getent group "${PROGEO_USER}" >/dev/null 2>&1; then
+    useradd_args+=(-g "${PROGEO_USER}")
+  else
+    useradd_args+=(-U)
+  fi
+
+  # The home folder may already exist (e.g. the repository was cloned into it).
+  if [[ -d "${PROGEO_HOME}" ]]; then
+    useradd_args+=(-M)
+  else
+    useradd_args+=(-m)
+  fi
+
+  useradd "${useradd_args[@]}" "${PROGEO_USER}"
+  chown "${PROGEO_USER}:${PROGEO_USER}" "${PROGEO_HOME}"
+  log_success "Created user ${PROGEO_USER} (home: ${PROGEO_HOME})"
+}
+
+ensure_progeo_user
+
 replace_tildes_with_random_chars() {
   local target_file="$1"
 
@@ -203,6 +235,6 @@ ensure_file_from_template "${DJANGO_ENV_FILE}" "${DJANGO_ENV_TEMPLATE}"
 replace_tildes_with_random_chars "${ENV_FILE}"
 replace_tildes_with_random_chars "${DJANGO_ENV_FILE}"
 
-chown progeo:progeo "${ENV_FILE}" "${DJANGO_ENV_FILE}"
+chown "${PROGEO_USER}:${PROGEO_USER}" "${ENV_FILE}" "${DJANGO_ENV_FILE}"
 
 log_success "Done. Installed Git, Docker Compose, configured non-root Docker access, and set UFW (22, 80, 443)."

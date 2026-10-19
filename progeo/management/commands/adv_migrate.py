@@ -2,6 +2,7 @@
 from django.core.management import call_command
 
 from progeo.helper.basics import dlog, elog
+from progeo.helper.project_dbs import register_all_project_dbs
 from progeo.management.commands._base import BaseCommand
 from progeo.settings import DATABASES
 
@@ -9,14 +10,14 @@ from progeo.settings import DATABASES
 class Command(BaseCommand):
     help = (
         "Advanced migrations: runs 'migrate' against every configured database "
-        "(DATABASES).\n\n"
+        "(DATABASES) and every project database.\n\n"
         "Examples:\n"
         "  python manage.py adv_migrate"
     )
 
     def handle(self, *args, **options):
-
-        for db in DATABASES:
+        register_all_project_dbs()
+        for db in list(DATABASES):
             try:
                 dlog("migrate", f"--database={db}")
                 call_command("migrate", f"--database={db}")

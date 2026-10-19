@@ -451,12 +451,14 @@ def swap_databases_new_year(db: str | None = None, year: int | None = None):
 
     from progeo.helper.basics import elog, ilog
     from progeo.helper.db_swap import archive_single_db, pg_env
+    from progeo.helper.project_dbs import register_all_project_dbs
     from progeo.settings import DATABASES
 
     env = pg_env()
     if year is None:
         year = timezone.now().year
 
+    register_all_project_dbs()
     db_names = [db] if db else list(DATABASES.keys())
     results = {}
 

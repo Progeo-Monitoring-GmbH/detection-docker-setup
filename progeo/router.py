@@ -161,6 +161,55 @@ def check_class_module(model, module):
     return getattr(model, "__module__", "").startswith(module)
 
 
+class ProjectRouter:
+    """Routes the per-project models (helper/project_dbs.py: project_models)
+    to the project database of the current `use_project_db(...)` block, or
+    to the database an instance was loaded from. Inactive (returns None,
+    i.e. AccountRouter decides) while PROJECT_DB_SPLIT is off.
+
+    Explicit `.using(db)` calls bypass routers - those call sites have to
+    pick the project database themselves (project_db_for)."""
+
+    def _route(self, model, hints):
+        from progeo.helper.project_dbs import (
+            current_project_db,
+            is_project_alias,
+            is_project_model,
+            split_enabled,
+            strict_enabled,
+        )
+
+        if not split_enabled() or not is_project_model(model):
+            return None
+
+        alias = current_project_db()
+        if alias:
+            return alias
+
+        instance = hints.get("instance")
+        instance_db = getattr(getattr(instance, "_state", None), "db", None)
+        if is_project_alias(instance_db):
+            return instance_db
+
+        if strict_enabled():
+            raise RuntimeError(
+                f"{model.__name__} query without project database - wrap it in use_project_db(...) "
+                "or pass .using(project_db_for(...))"
+            )
+        if model not in self._warned:
+            self._warned.add(model)
+            wlog(f"{model.__name__} query without project database, using default", tag="[ROUTER]")
+        return None
+
+    _warned = set()
+
+    def db_for_read(self, model, **hints):
+        return self._route(model, hints)
+
+    def db_for_write(self, model, **hints):
+        return self._route(model, hints)
+
+
 class AccountRouter:
     def db_for_read(self, model, **hints):
         return "default"

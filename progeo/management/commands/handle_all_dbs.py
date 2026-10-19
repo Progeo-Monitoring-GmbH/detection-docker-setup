@@ -3,6 +3,7 @@
 from django.core.management import call_command
 
 from progeo.helper.basics import dlog, elog, ilog
+from progeo.helper.project_dbs import register_all_project_dbs
 from progeo.management.commands._base import BaseCommand
 from progeo.settings import BACKUP_DIR, DATABASES
 from progeo.v1.helper import convert_backup_date_to_timestamp
@@ -15,7 +16,9 @@ def check_db_exists_for(db):
         return False
 
     for _f in _files:
-        if (_f.endswith((".psql", ".psql.gz"))) and _f.startswith(db):
+        # "<db>-<server>-<date>.psql": the dash keeps "project_1" from
+        # matching the backups of "project_12".
+        if (_f.endswith((".psql", ".psql.gz"))) and _f.startswith(f"{db}-"):
             return True
     return False
 
@@ -23,8 +26,8 @@ def check_db_exists_for(db):
 class Command(BaseCommand):
     help = (
         "Backup or Restore all databases via dbbackup. Runs the given dbbackup "
-        "command against every configured database (skips dbrestore for databases "
-        "without an existing backup).\n\n"
+        "command against every configured database and every project database "
+        "(skips dbrestore for databases without an existing backup).\n\n"
         "Examples:\n"
         "  python manage.py handle_all_dbs --command dbbackup\n"
         "  python manage.py handle_all_dbs --command dbrestore\n"
@@ -40,7 +43,8 @@ class Command(BaseCommand):
 
         cmd = options.get("command")
         if cmd in ["dbbackup", "dbrestore"]:
-            for db in DATABASES:
+            register_all_project_dbs()
+            for db in list(DATABASES):
                 if cmd == "dbrestore" and not check_db_exists_for(db):
                     ilog(f"Skipping for db={db}")
                     continue
