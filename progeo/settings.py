@@ -6,6 +6,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from progeo.helper.basics import flog, read_env
+from progeo.sentry import init_sentry
 from progeo.v1.helper import parse_boolean, parse_int, parse_split_str
 
 BASE_DIR = Path(__file__).resolve(strict=True).parent.parent
@@ -382,8 +383,16 @@ SHOW_LAST_TAGS = 25
 
 TIME_CALC_OFFSET = parse_int(os.getenv("TIME_CALC_OFFSET", "0"))
 
+# Log directory shared by all backend processes (bind-mounted to ./logs/backend in docker).
+# Falls back to the repo's logs/backend when /var/log/progeo doesn't exist (local dev).
+LOG_DIR = os.getenv("LOG_DIR", "/var/log/progeo")
+if not (os.path.isdir(LOG_DIR) and os.access(LOG_DIR, os.W_OK)):
+    LOG_DIR = os.path.join(BASE_DIR, "logs", "backend")
+
 # stdout -> backend.log (INFO), stderr -> backend.err.log (WARNING+: 4xx/5xx requests, exceptions, security).
 # Supervisor splits the two streams; see docker/backend/supervisord.conf.
+# errors.jsonl: WARNING+ of every process (web, celery, cron commands, elog/wlog) as JSON lines,
+# size-rotated and kept across container restarts.
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -394,11 +403,17 @@ LOGGING = {
         "sanitize_url": {
             "()": "progeo.logging.SanitizeURLFilter",
         },
+        "skip_client_errors": {
+            "()": "progeo.logging.SkipClientErrorsFilter",
+        },
     },
     "formatters": {
         "default": {
             "format": "[%(asctime)s] [%(levelname)s] [%(name)s] %(cleaned_path)s %(message)s",
             "datefmt": "%Y-%m-%d %H:%M:%S",
+        },
+        "json": {
+            "()": "progeo.logging.JsonFormatter",
         },
     },
     "handlers": {
@@ -416,12 +431,28 @@ LOGGING = {
             "formatter": "default",
             "filters": ["sanitize_url"],
         },
+        "errors_file": {
+            "level": "WARNING",
+            "class": "progeo.logging.SharedRotatingFileHandler",
+            "filename": os.path.join(LOG_DIR, "errors.jsonl"),
+            "max_bytes": 10 * 1024 * 1024,
+            "backup_count": 5,
+            "formatter": "json",
+            "filters": ["sanitize_url", "skip_client_errors"],
+        },
     },
     "root": {
-        "handlers": ["stdout", "stderr"],
+        "handlers": ["stdout", "stderr", "errors_file"],
         "level": "INFO",
     },
     "loggers": {
+        # elog/wlog/flog/ilog (progeo.helper.basics) already print to the console themselves;
+        # their records only feed errors.jsonl and Sentry (breadcrumbs from INFO, events from ERROR).
+        "progeo.console": {
+            "handlers": ["errors_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
         # Django's defaults only print to the console when DEBUG=True; route through root instead.
         "django": {
             "handlers": [],
@@ -435,3 +466,12 @@ LOGGING = {
         },
     },
 }
+
+# Error tracking via sentry-sdk (GlitchTip on the main online system) - no-op unless SENTRY_DSN is set.
+if PROGEO_CONFIG_IS_ROOT_SERVER:
+    _server_role = "root"
+elif PROGEO_CONFIG_IS_NODE_SERVER:
+    _server_role = "node"
+else:
+    _server_role = "standalone"
+init_sentry(server_role=_server_role)

@@ -1,12 +1,14 @@
 import base64
 import csv
 import json
+import logging
 import os
 import pathlib
 import random
 import re
 import secrets
 import string
+import sys
 import time
 from datetime import date, datetime, timedelta
 from json import JSONDecodeError
@@ -50,6 +52,18 @@ def _cleaned_msg(*msg):
     return _msg
 
 
+# Besides the colored print, the log helpers emit a record on "progeo.console" (see LOGGING in
+# settings): WARNING+ ends up in errors.jsonl, ERROR+ in Sentry, INFO as Sentry breadcrumbs.
+_console_logger = logging.getLogger("progeo.console")
+
+
+def _emit(level: int, msg: str, tag: str):
+    # Called from inside an `except` block -> attach the traceback (Sentry groups by it).
+    exc_info = level >= logging.ERROR and sys.exc_info()[0] is not None
+    # stacklevel=3: record the caller of elog/wlog/..., not this helper.
+    _console_logger.log(level, f"{tag} {msg}", exc_info=exc_info, stacklevel=3)
+
+
 def _log(*msg, color: AnsiFore, tag):
     """
     blue console-output
@@ -75,40 +89,35 @@ def ilog(*msg, tag: str = "[INFO]", active=True):
     if active:
         _msg = _cleaned_msg(*msg)
         _log(_msg, color=Fore.BLUE, tag=tag)
-        # logger = logging.getLogger("progeo")
-        # logger.info(f"{tag: <15} {_msg}")
+        _emit(logging.INFO, _msg, tag)
 
 
 def elog(*msg, tag: str = "[ERROR]", active=True):
     if active:
         _msg = _cleaned_msg(*msg)
         _log(_msg, color=Fore.RED, tag=tag)
-        # logger = logging.getLogger("progeo")
-        # logger.error(f"{tag: <15} {_msg}")
+        _emit(logging.ERROR, _msg, tag)
 
 
 def flog(*msg, tag: str = "[FATAL]", active=True):
     if active:
         _msg = _cleaned_msg(*msg)
         _log(_msg, color=Fore.RED, tag=tag)
-        # logger = logging.getLogger("progeo")
-        # logger.fatal(f"{tag: <15} {_msg}")
+        _emit(logging.CRITICAL, _msg, tag)
 
 
 def okaylog(*msg, tag: str = "[OK]", active=True):
     if active:
         _msg = _cleaned_msg(*msg)
         _log(_msg, color=Fore.GREEN, tag=tag)
-        # logger = logging.getLogger("progeo")
-        # logger.info(f"{tag: <15} {_msg}")
+        _emit(logging.INFO, _msg, tag)
 
 
 def wlog(*msg, tag: str = "[???]", active=True):
     if active:
         _msg = _cleaned_msg(*msg)
         _log(_msg, color=Fore.YELLOW, tag=tag)
-        # logger = logging.getLogger("progeo")
-        # logger.warning(f"{tag: <15} {_msg}")
+        _emit(logging.WARNING, _msg, tag)
 
 
 def breaklog(show_time=False):

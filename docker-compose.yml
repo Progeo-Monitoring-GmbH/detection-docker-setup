@@ -91,6 +91,12 @@ services:
       DOCKER_HOST: unix:///var/run/docker.sock
       # Hand large media downloads (backups > 1GB) to nginx via X-Accel-Redirect.
       MEDIA_X_ACCEL: /protected-media
+      # Error tracking (progeo/sentry.py); disabled while SENTRY_DSN is empty.
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-dev}
+      SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.0}
+      SENTRY_SERVER_NAME: ${SENTRY_SERVER_NAME:-}
     group_add:
       - '${DOCKER_SOCKET_GID:-1001}'
     cap_add:

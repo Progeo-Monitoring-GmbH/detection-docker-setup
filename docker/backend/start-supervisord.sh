@@ -41,8 +41,12 @@ fix_docker_socket_permissions() {
 
 fix_docker_socket_permissions
 
-# Clean up legacy/unused celery log files so troubleshooting uses only active files.
-rm -rf /var/log/progeo/*.log || true
+# Keep the previous run's logs as <name>.log.prev so a crash/restart doesn't wipe the evidence.
+# (.log.1, .log.2, ... are taken by supervisord's own size rotation; errors.jsonl rotates itself.)
+for log_file in /var/log/progeo/*.log; do
+  [ -f "$log_file" ] || continue
+  mv -f "$log_file" "$log_file.prev" 2>/dev/null || true
+done
 
 for log_file in \
   /var/log/progeo/supervisord.log \

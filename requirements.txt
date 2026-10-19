@@ -93,6 +93,7 @@ requests_ratelimiter~=0.10.0
 resolvelib~=1.2.1
 rncryptor~=3.3.0
 ruff~=0.17.0            # ruff check --fix
+sentry-sdk~=2.72.0      # error tracking -> GlitchTip, only active with SENTRY_DSN (progeo/sentry.py)
 simplejson~=4.2.0
 tablib~=3.10.0
 Twisted[tls,http2]~=26.4.0

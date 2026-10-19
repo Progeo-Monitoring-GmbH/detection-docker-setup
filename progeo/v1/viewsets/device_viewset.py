@@ -386,7 +386,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         fields by measurementId (see LORAWAN_MEASUREMENT_FIELDS).
         """
 
-        ilog("DeviceViewSet: catch_lorawan_data called | project_id:", project_id, "| request.data:", request.data, tag="[LORAWAN]")
+        #ilog("DeviceViewSet: catch_lorawan_data called | project_id:", project_id, "| request.data:", request.data, tag="[LORAWAN]")
         
         uplink = request.data.get("object")
         if not isinstance(uplink, dict):
