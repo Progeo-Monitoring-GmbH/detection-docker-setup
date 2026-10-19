@@ -36,11 +36,11 @@ if ! PGPASSWORD="${POSTGRES_PASSWORD}" psql \
   exit 1
 fi
 
-pprint "[3] advanced migration"
-bash "${PROJECT_ROOT}/wait-for-it.sh" "${DOMAIN}" -- python manage.py adv_migrate
+pprint "[3] prepare databases (default, DJANGO_DATABASES, project databases)"
+bash "${PROJECT_ROOT}/wait-for-it.sh" "${DOMAIN}" -- python manage.py prepare_databases
 
 if [ $? -ne 0 ]; then
-  pprint "[ERROR] advanced migration"
+  pprint "[ERROR] databases are not ready - not starting the server"
   exit 1
 fi
 

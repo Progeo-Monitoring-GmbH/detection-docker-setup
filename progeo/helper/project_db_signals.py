@@ -4,11 +4,12 @@ cut-over `split_project_dbs` refreshes the mirrors on every run.
 
 Saves are copied after the "default" transaction commits. Deletes run
 through the ORM in the project database, so they cascade over the project
-rows there exactly like they did in "default" (device -> measurements ->
-alarms).
+rows there exactly like they did in "default" (location -> devices ->
+measurements -> alarms).
 """
 
 from django.contrib.auth.models import User
+from django.core.signals import request_started
 from django.db import DEFAULT_DB_ALIAS, connections, transaction
 from django.db.models.signals import m2m_changed, post_delete, post_save, pre_save
 from django.dispatch import receiver
@@ -17,11 +18,17 @@ from psycopg2 import sql
 from progeo.helper.basics import elog, wlog
 from progeo.helper.project_db_copy import transfer_rows
 from progeo.helper.project_dbs import (
+    bootstrap_project_dbs,
     existing_project_aliases,
     project_alias,
+    project_key,
     split_enabled,
 )
-from progeo.v1.models import Account, ProgeoDevice, ProgeoLocation
+from progeo.v1.models import Account, ProgeoLocation, UserProfile
+
+# Web processes (daphne, runserver) register the project databases on their
+# first request; celery does it in progeo/celery.py.
+request_started.connect(bootstrap_project_dbs, dispatch_uid="progeo.bootstrap_project_dbs")
 
 
 def _active(using, raw=False):
@@ -33,33 +40,25 @@ def _existing(aliases):
     return sorted(alias for alias in set(aliases) if alias in existing)
 
 
-def _location_aliases(location_id):
-    """Project databases that mirror a location: its own project and the
-    projects of all its child locations (parents are mirrored downwards)."""
-    table = sql.Identifier(ProgeoLocation._meta.db_table)
-    query = sql.SQL(
-        "WITH RECURSIVE tree AS ("
-        " SELECT id, project_id FROM {table} WHERE id = %s"
-        " UNION"
-        " SELECT c.id, c.project_id FROM {table} c JOIN tree ON c.parent_location_id = tree.id"
-        ") SELECT DISTINCT project_id FROM tree WHERE project_id IS NOT NULL"
-    ).format(table=table)
-    with connections[DEFAULT_DB_ALIAS].cursor() as cursor:
-        cursor.cursor.execute(query, [location_id])
-        return [project_alias(row[0]) for row in cursor.cursor.fetchall()]
-
-
-def _device_aliases(device):
-    project_id = getattr(device.location, "project_id", None) if device.location_id else None
-    return [project_alias(project_id)] if project_id is not None else []
-
-
-def _mirror_row(model, pk, aliases):
+def _mirror_row(model, pk, aliases, replace_where=None):
+    """Upsert one row into `aliases` after commit. `replace_where` (column,
+    value) first deletes rows that would clash on a unique column."""
     def run():
         where = sql.SQL("{} = %s").format(sql.Identifier(model._meta.pk.column))
         for alias in _existing(aliases):
             try:
-                transfer_rows(model, where, [pk], alias, upsert=True)
+                with transaction.atomic(using=alias):
+                    if replace_where:
+                        column, value = replace_where
+                        with connections[alias].cursor() as cursor:
+                            cursor.cursor.execute(
+                                sql.SQL("DELETE FROM {} WHERE {} = %s AND {} <> %s").format(
+                                    sql.Identifier(model._meta.db_table), sql.Identifier(column),
+                                    sql.Identifier(model._meta.pk.column),
+                                ),
+                                [value, pk],
+                            )
+                    transfer_rows(model, where, [pk], alias, upsert=True)
             except Exception as exc:  # noqa: BLE001 - the next sync_default / split run repairs the mirror
                 elog(f"mirror {model.__name__}#{pk} -> {alias} failed: {exc!r}", tag="[PROJECT_DB]")
 
@@ -80,11 +79,17 @@ def _delete_row(model, pk, aliases):
 # ---------------------------------------------------------------------------- users / accounts
 
 @receiver(post_save, sender=User)
-def _mirror_user(sender, instance, created, raw, using, update_fields=None, **kwargs):
+def _mirror_user(sender, instance, raw, using, update_fields=None, **kwargs):
     # Every login saves last_login - not worth a write into every project database.
     if not _active(using, raw) or (update_fields and set(update_fields) <= {"last_login"}):
         return
     _mirror_row(User, instance.pk, existing_project_aliases())
+
+
+@receiver(post_save, sender=UserProfile)
+def _mirror_user_profile(sender, instance, raw, using, **kwargs):
+    if _active(using, raw):
+        _mirror_row(UserProfile, instance.pk, existing_project_aliases(), replace_where=("user_id", instance.user_id))
 
 
 @receiver(post_save, sender=Account)
@@ -126,64 +131,70 @@ def _delete_user(sender, instance, using, **kwargs):
         _delete_row(User, instance.pk, existing_project_aliases())
 
 
+@receiver(post_delete, sender=UserProfile)
+def _delete_user_profile(sender, instance, using, **kwargs):
+    if _active(using):
+        _delete_row(UserProfile, instance.pk, existing_project_aliases())
+
+
 @receiver(post_delete, sender=Account)
 def _delete_account(sender, instance, using, **kwargs):
     if _active(using):
         _delete_row(Account, instance.pk, existing_project_aliases())
 
 
-# ---------------------------------------------------------------------------- locations / devices
+# ---------------------------------------------------------------------------- locations
+
+def _location_aliases(location_id):
+    """Project databases that mirror a location: its own project and the
+    projects of all its child locations (parents are mirrored downwards)."""
+    table = sql.Identifier(ProgeoLocation._meta.db_table)
+    query = sql.SQL(
+        "WITH RECURSIVE tree AS ("
+        " SELECT id, project_id FROM {table} WHERE id = %s"
+        " UNION"
+        " SELECT c.id, c.project_id FROM {table} c JOIN tree ON c.parent_location_id = tree.id"
+        ") SELECT DISTINCT project_id FROM tree"
+    ).format(table=table)
+    with connections[DEFAULT_DB_ALIAS].cursor() as cursor:
+        cursor.cursor.execute(query, [location_id])
+        return [project_alias(row[0]) for row in cursor.cursor.fetchall()]
+
 
 @receiver(pre_save, sender=ProgeoLocation)
-@receiver(pre_save, sender=ProgeoDevice)
 def _remember_project(sender, instance, raw, using, **kwargs):
-    """Remember where the row was mirrored before, to warn about moves."""
+    """Remember the project before the save, to warn about moves."""
     if not _active(using, raw) or not instance.pk:
         return
-    if sender is ProgeoLocation:
-        old = sender.objects.using(using).filter(pk=instance.pk).values_list("project_id", flat=True).first()
-    else:
-        old = sender.objects.using(using).filter(pk=instance.pk).values_list("location__project_id", flat=True).first()
-    instance._mirror_old_project_id = old
-
-
-def _warn_project_move(instance, new_project_id):
-    old = getattr(instance, "_mirror_old_project_id", None)
-    if old is not None and old != new_project_id:
-        wlog(
-            f"{type(instance).__name__}#{instance.pk} moved from project {old} to {new_project_id}: its "
-            f"measurements/alarms stay in {project_alias(old)} and are not visible in the new project",
-            tag="[PROJECT_DB]",
-        )
+    old = sender.objects.using(using).filter(pk=instance.pk).values_list("project_id", flat=True)
+    instance._mirror_old_project = old[0] if old else instance.project_id
 
 
 @receiver(post_save, sender=ProgeoLocation)
-def _mirror_location(sender, instance, raw, using, **kwargs):
+def _mirror_location(sender, instance, created, raw, using, **kwargs):
     if not _active(using, raw):
         return
-    _warn_project_move(instance, instance.project_id)
+
+    old = getattr(instance, "_mirror_old_project", instance.project_id)
+    if not created and project_key(old) != project_key(instance.project_id):
+        wlog(
+            f"ProgeoLocation#{instance.pk} moved from {project_alias(old)} to "
+            f"{project_alias(instance.project_id)}: its devices, measurements, alarms, ... stay in the old "
+            "database and are not visible in the new project",
+            tag="[PROJECT_DB]",
+        )
+
+    project_id = instance.project_id
+    if project_alias(project_id) not in existing_project_aliases():
+        # CREATE DATABASE + migrate takes too long for a request - the task
+        # creates it and mirrors this location into it.
+        from progeo.tasks import ensure_project_database
+
+        transaction.on_commit(lambda: ensure_project_database.delay(project_id), using=DEFAULT_DB_ALIAS)
     _mirror_row(ProgeoLocation, instance.pk, _location_aliases(instance.pk))
-
-
-@receiver(post_save, sender=ProgeoDevice)
-def _mirror_device(sender, instance, raw, using, **kwargs):
-    if not _active(using, raw):
-        return
-    _warn_project_move(instance, getattr(instance.location, "project_id", None) if instance.location_id else None)
-    _mirror_row(ProgeoDevice, instance.pk, _device_aliases(instance))
 
 
 @receiver(post_delete, sender=ProgeoLocation)
 def _delete_location(sender, instance, using, **kwargs):
-    if _active(using) and instance.project_id is not None:
+    if _active(using):
         _delete_row(ProgeoLocation, instance.pk, [project_alias(instance.project_id)])
-
-
-@receiver(post_delete, sender=ProgeoDevice)
-def _delete_device(sender, instance, using, **kwargs):
-    if not _active(using):
-        return
-    # The location may already be gone (cascade from a location delete).
-    location = ProgeoLocation.objects.using(using).filter(pk=instance.location_id).first()
-    if location is not None and location.project_id is not None:
-        _delete_row(ProgeoDevice, instance.pk, [project_alias(location.project_id)])

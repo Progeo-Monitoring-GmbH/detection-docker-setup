@@ -7,6 +7,7 @@ from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
+from progeo.helper.project_dbs import backup_project_key, database_of_backup
 from progeo.v1.helper import pretty_sizeof
 from progeo.v1.models import (
     Account,
@@ -254,10 +255,27 @@ class BackupSerializer(ProgeoBaseSerializer):
     is_compressed = serializers.BooleanField(read_only=True)
     size = serializers.SerializerMethodField("get_size_display")
     created_at = serializers.SerializerMethodField("get_created_at_display")
+    # Database the dump belongs to ("default", "4711", "unknown", ...), its
+    # project (project id, "unknown", or None for non-project databases) and
+    # the names of that project's locations - see helper/project_dbs.py.
+    database = serializers.SerializerMethodField()
+    project = serializers.SerializerMethodField()
+    project_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Backup
         fields = "__all__"
+
+    @staticmethod
+    def get_database(obj):
+        return database_of_backup(obj.name)
+
+    @staticmethod
+    def get_project(obj):
+        return backup_project_key(obj.name)
+
+    def get_project_name(self, obj):
+        return self.context.get("project_names", {}).get(backup_project_key(obj.name))
 
     @staticmethod
     def get_clazz_name(_):

@@ -15,9 +15,11 @@ Layout
   measurement -> device -> location work inside it.
 
 Project databases are not listed in settings or env. Every process
-registers the existing ones at boot (bootstrap_project_dbs, called from
-asgi.py / celery.py / manage.py commands that loop over DATABASES), and
-any other alias is derived from the project id and registered on first use.
+registers the existing ones once (bootstrap_project_dbs: first request /
+first celery task; commands looping over DATABASES call
+register_all_project_dbs), and any other alias is derived from the project
+id and registered on first use. `manage.py prepare_databases` (run-server.sh)
+creates and migrates them before the server starts.
 A new project only needs `python manage.py add_project_db <project_id>` -
 or nothing at all: saving a location with a new project_id queues it.
 """
@@ -175,18 +177,24 @@ def register_all_project_dbs():
     return [register_project_db(alias) for alias in existing_project_aliases(refresh=True)]
 
 
-def bootstrap_project_dbs():
-    """Process start (asgi.py, celery worker): register every existing
-    project database so admin, DATABASES loops and routing know them from
-    the first request on. Never fails the boot - an unreachable database
-    is logged and the aliases are registered lazily later."""
+_bootstrapped = {"done": False}
+
+
+def bootstrap_project_dbs(**kwargs):
+    """Register every existing project database once per process, so admin,
+    DATABASES loops and routing know them. Connected to request_started
+    (daphne, runserver) and celery's task_prerun - no database access at
+    import time. Never fails the request/task: if the server is unreachable
+    it is logged and tried again on the next one."""
+    if _bootstrapped["done"]:
+        return
     try:
         aliases = register_all_project_dbs()
     except Exception as exc:  # noqa: BLE001 - see docstring
         elog(f"could not register project databases: {exc!r}", tag="[PROJECT_DB]")
-        return []
+        return
+    _bootstrapped["done"] = True
     dlog(f"registered {len(aliases)} project databases", tag="[PROJECT_DB]")
-    return aliases
 
 
 def project_keys_in_use(source=DEFAULT_DB_ALIAS):
@@ -323,7 +331,7 @@ def locate_device(raw_hash):
         if ProgeoDevice.objects.using(register_project_db(alias)).filter(raw_hash=raw_hash).exists():
             try:
                 cache.set(key, alias, _DEVICE_DB_CACHE_TIMEOUT)
-            except Exception:  # noqa: BLE001 - cache unavailable
+            except Exception:  # noqa: BLE001, S110 - cache unavailable, the next lookup searches again
                 pass
             return alias
     return None

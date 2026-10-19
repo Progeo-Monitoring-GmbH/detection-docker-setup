@@ -8,7 +8,6 @@ from progeo.helper.project_db_copy import (
     align_sequences,
     find_conflicts,
     project_filters,
-    project_location_ids,
     purge_project,
     transfer_chunked,
     verify_project,
@@ -16,6 +15,8 @@ from progeo.helper.project_db_copy import (
 from progeo.helper.project_dbs import (
     ensure_project_db,
     project_alias,
+    project_key,
+    project_keys_in_use,
     project_models,
     register_project_db,
     split_enabled,
@@ -26,10 +27,13 @@ from progeo.management.commands._base import BaseCommand
 class Command(BaseCommand):
     help = (
         "Split the 'default' database into one database per project "
-        "(ProgeoLocation.project_id). Lageplans, measure points, measurements "
-        "and alarms move to '<PROJECT_DB_PREFIX><project_id>'; users, accounts, "
-        "locations and devices stay in 'default' and are mirrored into each "
-        "project database. See progeo/helper/project_dbs.py.\n\n"
+        "(ProgeoLocation.project_id). Everything hanging off a location - "
+        "lageplans, devices, measure points, access rules, mails, SMS, "
+        "measurements, alarms - moves to '<PROJECT_DB_PREFIX><project_id>', or to "
+        "'<PROJECT_DB_PREFIX>unknown' for locations without project_id and devices "
+        "without location. Users, accounts and the locations stay in 'default' "
+        "and are mirrored into each project database. See "
+        "progeo/helper/project_dbs.py.\n\n"
         "Phases (run in this order):\n"
         "  1. copy    (default) create/migrate the project databases, mirror the\n"
         "             shared rows, copy the project rows. Resumable: only rows\n"
@@ -42,15 +46,16 @@ class Command(BaseCommand):
         "Examples:\n"
         "  python manage.py split_project_dbs --dry-run\n"
         "  python manage.py split_project_dbs\n"
-        "  python manage.py split_project_dbs --project 4711 --project 4712\n"
+        "  python manage.py split_project_dbs --project 4711 --project unknown\n"
         "  python manage.py split_project_dbs --upsert          # final run, writers stopped\n"
         "  python manage.py split_project_dbs --verify\n"
         "  python manage.py split_project_dbs --purge"
     )
 
     def add_arguments(self, parser):
-        parser.add_argument("--project", type=int, action="append", dest="projects",
-                            help="Only this project_id (repeatable). Defaults to every project_id of a location.")
+        parser.add_argument("--project", type=project_key, action="append", dest="projects",
+                            help="Only this project_id or 'unknown' (repeatable). "
+                                 "Defaults to every project_id of a location plus 'unknown'.")
         parser.add_argument("--dry-run", action="store_true",
                             help="Only report what would move and the rows that stay in default.")
         parser.add_argument("--upsert", action="store_true",
@@ -66,9 +71,7 @@ class Command(BaseCommand):
         parser.add_argument("--noinput", action="store_true", help="Do not ask before purging.")
 
     def handle(self, *args, **options):
-        projects = options["projects"] or self._all_projects()
-        if not projects:
-            raise CommandError("No location has a project_id - nothing to split.")
+        projects = options["projects"] or project_keys_in_use()
 
         if options["dry_run"]:
             return self._dry_run(projects)
@@ -83,7 +86,7 @@ class Command(BaseCommand):
     def _dry_run(self, projects):
         self._report_conflicts()
         for project_id in projects:
-            filters = project_filters(project_location_ids(project_id))
+            filters = project_filters(project_id)
             counts = {model.__name__: self._count(model, *filters[model]) for model in project_models()}
             self.stdout.write(f"{project_alias(project_id):<20} {counts}")
 
@@ -100,7 +103,7 @@ class Command(BaseCommand):
             alias, created = ensure_project_db(project_id, migrate=True)
             self.stdout.write(f"[{index}/{len(projects)}] {alias} ({'created' if created else 'exists'}), mirrors synced")
 
-            filters = project_filters(project_location_ids(project_id))
+            filters = project_filters(project_id)
             for model in project_models():
                 where, params = filters[model]
                 copied, written = transfer_chunked(
@@ -153,18 +156,6 @@ class Command(BaseCommand):
         ))
 
     # ------------------------------------------------------------------ helpers
-
-    @staticmethod
-    def _all_projects():
-        from progeo.v1.models import ProgeoLocation
-
-        return list(
-            ProgeoLocation.objects.using(DEFAULT_DB_ALIAS)
-            .exclude(project_id__isnull=True)
-            .order_by("project_id")
-            .values_list("project_id", flat=True)
-            .distinct()
-        )
 
     def _report_conflicts(self):
         for label, count in find_conflicts().items():

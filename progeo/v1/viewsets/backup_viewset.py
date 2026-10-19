@@ -2,17 +2,29 @@ import os.path
 
 from django.core import signing
 from django.core.management import call_command
+from django.db import DEFAULT_DB_ALIAS, connections
 from django.http import FileResponse
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.decorator import calc_runtime, require_module_permissions
 from progeo.helper.basics import RequestFailed, RequestSuccess, delete_file
 from progeo.helper.creator import create_MfS_log
+from progeo.helper.project_dbs import (
+    UNKNOWN_PROJECT,
+    database_of_backup,
+    existing_project_aliases,
+    is_project_alias,
+    project_alias,
+    project_key,
+    project_key_from_alias,
+    register_project_db,
+)
 from progeo.settings import BACKUP_DIR
-from progeo.v1.models import Backup
+from progeo.v1.models import Backup, ProgeoLocation
 from progeo.v1.serializers import BackupSerializer
 from progeo.v1.viewsets.base_viewsets import StandardResultsSetPagination
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
@@ -30,6 +42,41 @@ def _backup_path(backup):
     return path
 
 
+def _requested_database(value):
+    """Database alias for a "project" filter/parameter: "default", a project
+    id or "unknown". None when not given; 400 for anything else - a typo must
+    never widen e.g. deleteAll to every backup."""
+    if value in (None, ""):
+        return None
+    if value == DEFAULT_DB_ALIAS:
+        return DEFAULT_DB_ALIAS
+    try:
+        return project_alias(value)
+    except ValueError:
+        raise ValidationError({"project": f"Unknown project: {value}"}) from None
+
+
+def _known_database(db):
+    """Register a project database (it must exist); False for databases
+    this server does not have."""
+    if is_project_alias(db):
+        if db not in existing_project_aliases(refresh=True):
+            return False
+        register_project_db(db)
+    return db in connections.settings
+
+
+def _project_names():
+    """{project key: "location, location"} - the names shown next to a
+    project's backups (locations live in the default database)."""
+    names = {}
+    rows = ProgeoLocation.objects.using(DEFAULT_DB_ALIAS).order_by("name").values_list("project_id", "name")
+    for project_id, name in rows:
+        if name:
+            names.setdefault(project_key(project_id), []).append(name)
+    return {key: ", ".join(values) for key, values in names.items()}
+
+
 class BackupViewSet(ProgeoModalViewSet):
     pagination_class = StandardResultsSetPagination
     serializer_class = BackupSerializer
@@ -45,9 +92,32 @@ class BackupViewSet(ProgeoModalViewSet):
         return super().retrieve(request, *args, pk=pk, **kwargs)
 
     def get_queryset(self):
-        return Backup.objects.using(self.request.account.db_name)\
-                             .filter(account=self.request.account)\
-                             .order_by("-id")
+        queryset = Backup.objects.using(self.request.account.db_name)\
+                                 .filter(account=self.request.account)\
+                                 .order_by("-id")
+        # ?project=<project_id|unknown|default> - dbbackup names the files
+        # "<database>-<server>-<datetime>.psql[.gz]".
+        database = _requested_database(self.request.query_params.get("project"))
+        if database:
+            queryset = queryset.filter(name__startswith=f"{database}-")
+        return queryset
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["project_names"] = _project_names()
+        return context
+
+    @require_module_permissions("module_backup_enabled")
+    @action(detail=False, url_path="projects", methods=["GET"])
+    def list_projects(self, request, *args, **kwargs):
+        """Databases that can be backed up: "default" plus every project
+        database, with the project's location names."""
+        names = _project_names()
+        projects = [{"database": DEFAULT_DB_ALIAS, "project": None, "name": None}]
+        for alias in existing_project_aliases(refresh=True):
+            key = project_key_from_alias(alias)
+            projects.append({"database": alias, "project": key, "name": names.get(key)})
+        return RequestSuccess({"projects": projects, "unknown": UNKNOWN_PROJECT})
 
     @calc_runtime
     @require_module_permissions("module_backup_enabled")
@@ -56,7 +126,8 @@ class BackupViewSet(ProgeoModalViewSet):
         _files = os.listdir(BACKUP_DIR)
         for _f in _files:
             is_backup_file = _f.endswith((".psql", f".psql{Backup.COMPRESSED_SUFFIX}"))
-            if not is_backup_file or request.account.db_name not in _f:
+            database = database_of_backup(_f)
+            if not is_backup_file or (database != request.account.db_name and not is_project_alias(database)):
                 continue
 
             backup, created = Backup.objects.using(request.account.db_name).get_or_create(name=_f, account=request.account)
@@ -140,7 +211,15 @@ class BackupViewSet(ProgeoModalViewSet):
     @require_module_permissions("module_backup_enabled")
     @action(detail=False, url_path="create", methods=["POST"])
     def create_backup(self, request, *args, **kwargs):
-        call_command("dbbackup")
+        # Body {"project": <project_id|unknown>} backs up that project's
+        # database instead of "default".
+        database = _requested_database((request.data or {}).get("project"))
+        if database and database != DEFAULT_DB_ALIAS:
+            if not _known_database(database):
+                return RequestFailed({"reason": f"Database {database} does not exist"})
+            call_command("dbbackup", f"--database={database}")
+        else:
+            call_command("dbbackup")
         self.parse_backups(request, *args, **kwargs)
         create_MfS_log(request)
 
@@ -151,7 +230,12 @@ class BackupViewSet(ProgeoModalViewSet):
     @action(detail=True, url_path="restore", methods=["POST"])
     def restore_backup(self, request, pk, *args, **kwargs):
         backup = Backup.objects.using(request.account.db_name).get(pk=pk)
-        restore_args = ["dbrestore", f"--input-file={backup.name}", "--noinput"]
+        # Restore into the database the dump was taken from - a project dump
+        # must never land in "default".
+        database = database_of_backup(backup.name)
+        if not _known_database(database):
+            return RequestFailed({"reason": f"Database {database} of this backup does not exist"})
+        restore_args = ["dbrestore", f"--input-file={backup.name}", f"--database={database}", "--noinput"]
         if backup.is_compressed:
             restore_args.append("--uncompress")
         call_command(*restore_args)

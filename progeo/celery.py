@@ -111,6 +111,10 @@ def configure_logging(*args, **kwargs):
 
 @task_prerun.connect
 def task_started_handler(task_id, task, *args, **kwargs):
+    from progeo.helper.project_dbs import bootstrap_project_dbs
+
+    # Once per worker process: register the per-project databases.
+    bootstrap_project_dbs()
     dlog(f"PreRun {args=} | {kwargs=}", logger=logger)
     # Also log directly to ensure we capture it
     import logging

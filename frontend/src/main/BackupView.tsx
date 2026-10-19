@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import DataTable, { type TableColumn } from 'react-data-table-component';
-import { useParams } from 'react-router';
+import { useParams, useSearchParams } from 'react-router';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
@@ -11,6 +11,16 @@ import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import { formatDateTime } from './dateFormat';
+import {
+  type BackupProject,
+  type BackupProjectOption,
+  backupListQuery,
+  createBackupBody,
+  filterValueOf,
+  parseProjectFilter,
+  projectLabel,
+  projectOfFilter,
+} from './backupProjects';
 
 type BackupRow = {
   id: number;
@@ -18,19 +28,11 @@ type BackupRow = {
   size: string | null;
   is_compressed: boolean;
   created_at: string | null;
+  // Database the dump belongs to and its project - see backupProjects.ts.
+  database: string | null;
+  project: BackupProject;
+  project_name: string | null;
 };
-
-// Large enough to get every backup in one call (the list is small - one row
-// per dump file on disk) so the DataTable can paginate/sort client-side
-// instead of round-tripping to the server for every page.
-const LIST_QUERY = 'page_size=1000';
-
-// django-dbbackup names files "{databasename}-{datetime}.psql[.gz]" (see
-// parse_backups in backup_viewset.py, which already relies on the db_name
-// being a literal substring of the filename) - the part before the first
-// "-" is the database alias ("default", "main_db", ...), used both to
-// display and to filter by database type.
-const dbTypeOf = (name: string) => name.split('-')[0] || name;
 
 const dataTableStyles = {
   headRow: {
@@ -117,27 +119,39 @@ const BackupView = () => {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<BackupRow[]>([]);
   const [clearSelectionToggle, setClearSelectionToggle] = useState(false);
-  const [selectedDbTypes, setSelectedDbTypes] = useState<string[]>([]);
+  const [projects, setProjects] = useState<BackupProjectOption[]>([]);
+
+  // The project filter lives in the URL (?project=4711), so a filtered view
+  // can be linked. The backend filters - list, reload and deleteAll all
+  // carry it, so "delete all" never reaches beyond the shown backups.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const projectFilter = parseProjectFilter(searchParams.get('project'));
+  const listQuery = backupListQuery(projectFilter);
 
   const hasSelection = selectedRows.length > 0;
   const isBulkBusy = busyAction === 'delete-all' || busyAction === 'delete-selected';
 
-  const availableDbTypes = useMemo(
-    () => Array.from(new Set(backups.map((backup) => dbTypeOf(backup.name)))).sort(),
-    [backups],
+  const selectedProject = useMemo(
+    () => projects.find((option) => filterValueOf(option.project) === projectFilter),
+    [projects, projectFilter],
   );
 
-  const filteredBackups = useMemo(() => {
-    if (selectedDbTypes.length === 0) {
-      return backups;
-    }
-    return backups.filter((backup) => selectedDbTypes.includes(dbTypeOf(backup.name)));
-  }, [backups, selectedDbTypes]);
-
-  const toggleDbTypeFilter = (dbType: string) => {
-    setSelectedDbTypes((prev) =>
-      prev.includes(dbType) ? prev.filter((value) => value !== dbType) : [...prev, dbType],
+  const changeProjectFilter = (value: string) => {
+    const next = parseProjectFilter(value);
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev);
+        if (next) {
+          params.set('project', next);
+        } else {
+          params.delete('project');
+        }
+        return params;
+      },
+      { replace: true },
     );
+    setSelectedRows([]);
+    setClearSelectionToggle((prev) => !prev);
   };
 
   const applyResponse = (response: { data?: { elements?: BackupRow[] } }) => {
@@ -148,7 +162,7 @@ const BackupView = () => {
     setLoading(true);
     void axiosConfig.perform_get(
       auth,
-      `/v1/${account}/backup/?${LIST_QUERY}`,
+      `/v1/${account}/backup/?${listQuery}`,
       (response) => {
         applyResponse(response);
         setLoading(false);
@@ -158,23 +172,33 @@ const BackupView = () => {
         setLoading(false);
       },
     );
-  }, [auth, account, enqueueSnackbar, t]);
+  }, [auth, account, listQuery, enqueueSnackbar, t]);
 
   useEffect(() => {
     loadBackups();
   }, [loadBackups]);
+
+  useEffect(() => {
+    void axiosConfig.perform_get(
+      auth,
+      `/v1/${account}/backup/projects/`,
+      (response) => setProjects((response?.data?.projects || []) as BackupProjectOption[]),
+      () => setProjects([]),
+    );
+  }, [auth, account]);
 
   const runAction = (
     key: string,
     url: string,
     successMessage: string,
     errorMessageKey: string,
+    body: Record<string, unknown> = {},
   ) => {
     setBusyAction(key);
     void axiosConfig.perform_post(
       auth,
-      `${url}${url.includes('?') ? '&' : '?'}${LIST_QUERY}`,
-      {},
+      `${url}${url.includes('?') ? '&' : '?'}${listQuery}`,
+      body,
       (response) => {
         applyResponse(response);
         showSuccessBar(enqueueSnackbar, successMessage);
@@ -195,13 +219,20 @@ const BackupView = () => {
       'backup_reload_error',
     );
 
+  // Backs up the selected project's database, or "default" when no project
+  // (or the main database) is selected.
   const createBackup = () =>
     runAction(
       'create',
       `/v1/${account}/backup/create/`,
       t('backup_created'),
       'backup_create_error',
+      createBackupBody(projectFilter),
     );
+
+  const filteredProject = projectOfFilter(projectFilter);
+  const projectFilterLabel =
+    filteredProject !== null ? projectLabel(t, filteredProject, selectedProject?.name) : null;
 
   const confirmDeleteAllBackups = () => {
     setConfirmOpen(false);
@@ -324,6 +355,13 @@ const BackupView = () => {
       ),
     },
     {
+      name: t('backup_col_project'),
+      selector: (row) => projectLabel(t, row.project, row.project_name, row.database),
+      sortable: true,
+      grow: 1,
+      wrap: true,
+    },
+    {
       name: t('backup_col_date'),
       selector: (row) => row.created_at || '',
       sortable: true,
@@ -407,7 +445,9 @@ const BackupView = () => {
             disabled={busyAction === 'create'}
             style={buttonStyle('primary', busyAction === 'create')}
           >
-            {t('backup_create')}
+            {projectFilterLabel
+              ? t('backup_create_for', { project: projectFilterLabel })
+              : t('backup_create')}
           </button>
           {canDelete && (
             <button
@@ -425,40 +465,49 @@ const BackupView = () => {
       </PanelCard>
 
       <PanelCard title={t('backup_available')}>
-        {availableDbTypes.length > 1 && (
-          <div
+        <div
+          style={{
+            display: 'flex',
+            gap: 8,
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            marginBottom: 12,
+          }}
+        >
+          <label
+            htmlFor="backup-project-filter"
             style={{
-              display: 'flex',
-              gap: 8,
-              flexWrap: 'wrap',
-              alignItems: 'center',
-              marginBottom: 12,
+              fontSize: 11,
+              letterSpacing: '.06em',
+              textTransform: 'uppercase',
+              color: '#8B8383',
+              fontWeight: 500,
             }}
           >
-            <span
-              style={{
-                fontSize: 11,
-                letterSpacing: '.06em',
-                textTransform: 'uppercase',
-                color: '#8B8383',
-                fontWeight: 500,
-              }}
-            >
-              {t('backup_filter_db_type')}
-            </span>
-            {availableDbTypes.map((dbType) => (
-              <PillButton
-                key={dbType}
-                label={dbType}
-                active={selectedDbTypes.includes(dbType)}
-                onClick={() => toggleDbTypeFilter(dbType)}
-              />
+            {t('backup_filter_project')}
+          </label>
+          <select
+            id="backup-project-filter"
+            className="form-select form-select-sm"
+            style={{ width: 'auto', minWidth: 220, maxWidth: '100%' }}
+            value={projectFilter}
+            onChange={(event) => changeProjectFilter(event.target.value)}
+          >
+            <option value="">{t('backup_project_all')}</option>
+            {projects.map((option) => (
+              <option key={option.database} value={filterValueOf(option.project)}>
+                {projectLabel(t, option.project, option.name, option.database)}
+              </option>
             ))}
-          </div>
-        )}
+            {/* A filter from the URL whose database is gone still shows. */}
+            {projectFilter && !selectedProject && (
+              <option value={projectFilter}>{projectFilter}</option>
+            )}
+          </select>
+        </div>
         <DataTable
           columns={columns}
-          data={filteredBackups}
+          data={backups}
           pagination
           progressPending={loading}
           highlightOnHover

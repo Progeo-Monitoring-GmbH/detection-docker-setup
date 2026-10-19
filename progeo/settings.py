@@ -215,12 +215,13 @@ DATABASES = {
     **dyn_dbs
 }
 
-# Per-project databases (progeo/helper/project_dbs.py): one database
-# "<PROJECT_DB_PREFIX><project_id>" per project, registered on first use.
+# Per-project databases (progeo/helper/project_dbs.py): one database per
+# project, named "<PROJECT_DB_PREFIX><project_id>" or "<PROJECT_DB_PREFIX>unknown"
+# (locations without project_id). The prefix is empty by default.
 # PROJECT_DB_SPLIT routes the project models there - only switch it on after
 # `split_project_dbs` copied the data. PROJECT_DB_STRICT raises on project-model
 # queries without a project instead of falling back to default.
-PROJECT_DB_PREFIX = os.getenv("PROJECT_DB_PREFIX", "project_")
+PROJECT_DB_PREFIX = os.getenv("PROJECT_DB_PREFIX", "")
 PROJECT_DB_SPLIT = parse_boolean(os.getenv("PROJECT_DB_SPLIT", "False"))
 PROJECT_DB_STRICT = parse_boolean(os.getenv("PROJECT_DB_STRICT", "False"))
 

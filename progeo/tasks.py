@@ -433,6 +433,17 @@ def collect_host_storage_info():
 
 
 @shared_task
+def ensure_project_database(project_id: int | None = None):
+    """Create, migrate and mirror the database of a project (None: "unknown").
+    Queued when a location is saved with a project that has no database yet
+    (helper/project_db_signals.py)."""
+    from progeo.helper.project_dbs import ensure_project_db
+
+    alias, created = ensure_project_db(project_id)
+    return {"alias": alias, "created": created}
+
+
+@shared_task
 def swap_databases_new_year(db: str | None = None, year: int | None = None):
     """
     Archive every account database for the year on New Year's Eve.

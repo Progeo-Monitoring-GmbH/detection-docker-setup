@@ -12,7 +12,12 @@ from tempfile import SpooledTemporaryFile
 from django.db import DEFAULT_DB_ALIAS, connections, transaction
 from psycopg2 import sql
 
-from progeo.helper.project_dbs import mirrored_models, project_models
+from progeo.helper.project_dbs import (
+    UNKNOWN_PROJECT,
+    mirrored_models,
+    project_key,
+    project_models,
+)
 
 # Chunks above this size spill from memory to a temp file.
 SPOOL_MAX_BYTES = 64 * 1024 * 1024
@@ -37,22 +42,39 @@ def _column(model, field_name):
 
 # ---------------------------------------------------------------------------- row filters
 
-def project_location_ids(project_id, source=DEFAULT_DB_ALIAS):
+def _location_filter(project):
+    """WHERE clause + params selecting the locations of a project key."""
     from progeo.v1.models import ProgeoLocation
 
-    return list(
-        ProgeoLocation.objects.using(source).filter(project_id=project_id).order_by("pk").values_list("pk", flat=True)
+    column = _column(ProgeoLocation, "project_id")
+    if project_key(project) == UNKNOWN_PROJECT:
+        return sql.SQL("{} IS NULL").format(column), []
+    return sql.SQL("{} = %s").format(column), [project_key(project)]
+
+
+def project_location_ids(project, source=DEFAULT_DB_ALIAS):
+    """Ids of the locations of a project key (UNKNOWN_PROJECT: no project_id)."""
+    from progeo.v1.models import ProgeoLocation
+
+    where, params = _location_filter(project)
+    query = sql.SQL("SELECT {pk} FROM {table} WHERE {where} ORDER BY {pk}").format(
+        pk=sql.Identifier(ProgeoLocation._meta.pk.column), table=_table(ProgeoLocation), where=where
     )
+    with connections[source].cursor() as cursor:
+        raw = _raw(cursor)
+        raw.execute(query, params)
+        return [row[0] for row in raw.fetchall()]
 
 
-def mirror_location_ids(project_id, source=DEFAULT_DB_ALIAS):
+def mirror_location_ids(project, source=DEFAULT_DB_ALIAS):
     """The project's locations plus all their parent locations (any project),
     which parent_location points to."""
     from progeo.v1.models import ProgeoLocation
 
+    where, params = _location_filter(project)
     query = sql.SQL(
         "WITH RECURSIVE loc AS ("
-        " SELECT {pk}, {parent} FROM {table} WHERE {project} = %s"
+        " SELECT {pk}, {parent} FROM {table} WHERE {where}"
         " UNION"
         " SELECT p.{pk}, p.{parent} FROM {table} p JOIN loc ON p.{pk} = loc.{parent}"
         ") SELECT {pk} FROM loc ORDER BY {pk}"
@@ -60,19 +82,24 @@ def mirror_location_ids(project_id, source=DEFAULT_DB_ALIAS):
         pk=sql.Identifier(ProgeoLocation._meta.pk.column),
         parent=_column(ProgeoLocation, "parent_location"),
         table=_table(ProgeoLocation),
-        project=_column(ProgeoLocation, "project_id"),
+        where=where,
     )
     with connections[source].cursor() as cursor:
         raw = _raw(cursor)
-        raw.execute(query, [project_id])
+        raw.execute(query, params)
         return [row[0] for row in raw.fetchall()]
 
 
-def project_filters(location_ids):
-    """{model: (WHERE clause, params)} selecting a project's PROJECT_MODELS rows
-    by the ids of its locations. Lageplan/MeasurePoint follow their location,
-    Measurement its device's location, Alarm its measurement."""
+def project_filters(project, source=DEFAULT_DB_ALIAS):
+    """{model: (WHERE clause, params)} selecting a project's project_models()
+    rows. Everything follows its location; Measurement its device, Alarm its
+    measurement. The unknown project also takes the rows without any
+    location (devices, measure points) - except mails/SMS without location,
+    which are system logs and stay in "default"."""
     from progeo.v1.models import (
+        SMS,
+        EMail,
+        ProgeoAccess,
         ProgeoAlarm,
         ProgeoDevice,
         ProgeoLageplan,
@@ -80,16 +107,21 @@ def project_filters(location_ids):
         ProgeoMeasurePoint,
     )
 
-    ids = list(location_ids)
+    ids = project_location_ids(project, source)
+    orphans = project_key(project) == UNKNOWN_PROJECT
+
+    def by_location(model):
+        return sql.SQL("{} = ANY(%s)").format(_column(model, "location")), [ids]
+
     lageplans = sql.SQL("SELECT {pk} FROM {table} WHERE {loc} = ANY(%s)").format(
         pk=sql.Identifier(ProgeoLageplan._meta.pk.column),
         table=_table(ProgeoLageplan),
         loc=_column(ProgeoLageplan, "location"),
     )
-    devices = sql.SQL("SELECT {pk} FROM {table} WHERE {loc} = ANY(%s)").format(
-        pk=sql.Identifier(ProgeoDevice._meta.pk.column),
-        table=_table(ProgeoDevice),
-        loc=_column(ProgeoDevice, "location"),
+    dev_loc = _column(ProgeoDevice, "location")
+    device_where = sql.SQL("{loc} = ANY(%s) OR (%s AND {loc} IS NULL)").format(loc=dev_loc)
+    devices = sql.SQL("SELECT {pk} FROM {table} WHERE {where}").format(
+        pk=sql.Identifier(ProgeoDevice._meta.pk.column), table=_table(ProgeoDevice), where=device_where
     )
     measurements = sql.SQL("SELECT {pk} FROM {table} WHERE {dev} IN ({devices})").format(
         pk=sql.Identifier(ProgeoMeasurement._meta.pk.column),
@@ -101,41 +133,47 @@ def project_filters(location_ids):
     mp_plan = _column(ProgeoMeasurePoint, "lageplan")
 
     return {
-        ProgeoLageplan: (sql.SQL("{} = ANY(%s)").format(_column(ProgeoLageplan, "location")), [ids]),
+        ProgeoLageplan: by_location(ProgeoLageplan),
+        ProgeoDevice: (device_where, [ids, orphans]),
         # A point must not reference a Lageplan of another project, the FK
         # would break in the project database - those stay behind (see
         # find_conflicts).
         ProgeoMeasurePoint: (
             sql.SQL(
-                "({loc} = ANY(%s) OR ({loc} IS NULL AND {plan} IN ({lageplans})))"
+                "({loc} = ANY(%s) OR ({loc} IS NULL AND {plan} IN ({lageplans}))"
+                " OR (%s AND {loc} IS NULL AND {plan} IS NULL))"
                 " AND ({plan} IS NULL OR {plan} IN ({lageplans}))"
             ).format(loc=mp_loc, plan=mp_plan, lageplans=lageplans),
-            [ids, ids, ids],
+            [ids, ids, orphans, ids],
         ),
-        ProgeoMeasurement: (sql.SQL("{} IN ({})").format(_column(ProgeoMeasurement, "device"), devices), [ids]),
-        ProgeoAlarm: (sql.SQL("{} IN ({})").format(_column(ProgeoAlarm, "measurement"), measurements), [ids]),
+        ProgeoAccess: by_location(ProgeoAccess),
+        EMail: by_location(EMail),
+        SMS: by_location(SMS),
+        ProgeoMeasurement: (
+            sql.SQL("{} IN ({})").format(_column(ProgeoMeasurement, "device"), devices), [ids, orphans]
+        ),
+        ProgeoAlarm: (sql.SQL("{} IN ({})").format(_column(ProgeoAlarm, "measurement"), measurements), [ids, orphans]),
     }
 
 
-def mirror_filters(project_id, source=DEFAULT_DB_ALIAS):
+def mirror_filters(project, source=DEFAULT_DB_ALIAS):
     """{model: (WHERE clause, params)} of the shared rows a project database
-    needs: all users/accounts, the project's locations (+ parents) and the
-    devices assigned to them."""
+    needs: all users (+ profiles) and accounts, the project's locations and
+    their parents."""
     from django.contrib.auth.models import User
 
-    from progeo.v1.models import Account, ProgeoDevice, ProgeoLocation
+    from progeo.v1.models import Account, ProgeoLocation, UserProfile
 
-    location_ids = project_location_ids(project_id, source)
     everything = (sql.SQL("TRUE"), [])
     return {
         User: everything,
+        UserProfile: everything,
         Account: everything,
         Account.users.through: everything,
         ProgeoLocation: (
             sql.SQL("{} = ANY(%s)").format(sql.Identifier(ProgeoLocation._meta.pk.column)),
-            [mirror_location_ids(project_id, source)],
+            [mirror_location_ids(project, source)],
         ),
-        ProgeoDevice: (sql.SQL("{} = ANY(%s)").format(_column(ProgeoDevice, "location")), [location_ids]),
     }
 
 
@@ -241,10 +279,11 @@ def mirror_shared(alias, project_id, source=DEFAULT_DB_ALIAS):
     with transaction.atomic(using=alias):
         for model in mirrored_models():
             where, params = filters[model]
-            if model._meta.auto_created:
-                # M2M rows (Account.users): `.set()` recreates them with new
-                # ids, so an upsert by id would hit the (account, user)
-                # unique constraint - replace the table instead.
+            if not model._meta.related_objects:
+                # Nothing points to these rows (Account.users, UserProfile),
+                # and they get recreated with new ids for the same user
+                # (`.set()`, a new profile) - an upsert by id would hit their
+                # unique constraints, so replace the table instead.
                 with connections[alias].cursor() as cursor:
                     _raw(cursor).execute(sql.SQL("DELETE FROM {}").format(_table(model)))
             copied, _, _ = transfer_rows(model, where, params, alias, upsert=True, source=source)
@@ -282,24 +321,33 @@ def align_sequences(alias, models, source=DEFAULT_DB_ALIAS):
 # ---------------------------------------------------------------------------- checks
 
 def find_conflicts(source=DEFAULT_DB_ALIAS):
-    """Rows the split leaves in "default" or that do not line up with the
-    project of their location. {label: count}."""
-    from django.db.models import F
+    """Rows the split leaves in "default", moves to "unknown" or that do not
+    line up with the project of their location. {label: count}."""
+    from django.db.models import F, Q
 
-    from progeo.v1.models import ProgeoDevice, ProgeoMeasurement, ProgeoMeasurePoint
+    from progeo.v1.models import (
+        SMS,
+        EMail,
+        ProgeoDevice,
+        ProgeoMeasurement,
+        ProgeoMeasurePoint,
+    )
 
     measurements = ProgeoMeasurement.objects.using(source)
-    points = ProgeoMeasurePoint.objects.using(source)
+    same_project = Q(lageplan__location__project_id=F("location__project_id")) | Q(
+        lageplan__location__project_id__isnull=True, location__project_id__isnull=True
+    )
     return {
-        "measurements of devices without location (stay in default)":
-            measurements.filter(device__location__isnull=True).count(),
-        "measurements of locations without project_id (stay in default)":
-            measurements.filter(device__location__isnull=False, device__location__project_id__isnull=True).count(),
-        "devices without location (no project)":
+        "devices without location (-> unknown)":
             ProgeoDevice.objects.using(source).filter(location__isnull=True).count(),
+        "measurements of locations without project_id (-> unknown)":
+            measurements.filter(device__location__isnull=False, device__location__project_id__isnull=True).count(),
+        "mails/SMS without location (system logs, stay in default)":
+            EMail.objects.using(source).filter(location__isnull=True).count()
+            + SMS.objects.using(source).filter(location__isnull=True).count(),
         "measure points whose Lageplan belongs to another project (stay in default)":
-            points.filter(lageplan__isnull=False, location__isnull=False)
-            .exclude(lageplan__location__project_id=F("location__project_id")).count(),
+            ProgeoMeasurePoint.objects.using(source).filter(lageplan__isnull=False, location__isnull=False)
+            .exclude(same_project).count(),
         "measurements whose own project_id differs from their location's (moved by location)":
             measurements.filter(project_id__isnull=False, device__location__project_id__isnull=False)
             .exclude(project_id=F("device__location__project_id")).count(),
@@ -341,7 +389,7 @@ def verify_project(project_id, alias, source=DEFAULT_DB_ALIAS):
     """Compare a project's PROJECT_MODELS rows in "default" with `alias`.
     {model: {"source": n, "missing": rows not in target, "target_only": rows
     only in target, "max_id": highest verified source pk}}."""
-    filters = project_filters(project_location_ids(project_id, source))
+    filters = project_filters(project_id, source)
     result = {}
     for model in project_models():
         where, params = filters[model]
@@ -387,7 +435,7 @@ def purge_project(project_id, verified, batch_size=5000, source=DEFAULT_DB_ALIAS
         if info["missing"]:
             raise RuntimeError(f"{model.__name__}: {info['missing']} rows are missing in the project database")
 
-    filters = project_filters(project_location_ids(project_id, source))
+    filters = project_filters(project_id, source)
     deleted = {}
     for model in reversed(project_models()):
         max_id = verified[model]["max_id"]

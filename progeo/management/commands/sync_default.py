@@ -5,7 +5,7 @@ from rest_framework.authtoken.models import Token
 
 from progeo.helper.basics import dlog, elog, okaylog
 from progeo.helper.project_db_copy import mirror_shared
-from progeo.helper.project_dbs import project_id_from_alias, register_all_project_dbs
+from progeo.helper.project_dbs import project_key_from_alias, register_all_project_dbs
 from progeo.management.commands._base import BaseCommand
 from progeo.sets import DJANGO_MODELS
 from progeo.settings import DJANGO_DATABASES
@@ -104,7 +104,7 @@ class Command(BaseCommand):
         # devices (helper/project_dbs.py).
         for alias in register_all_project_dbs():
             try:
-                mirror_shared(alias, project_id_from_alias(alias))
+                mirror_shared(alias, project_key_from_alias(alias))
                 okaylog(f"'default' => '{alias}' mirrors synced")
             except DatabaseError as e:
                 elog(f"Mirror sync to '{alias}' failed and was rolled back: {e!r}")
