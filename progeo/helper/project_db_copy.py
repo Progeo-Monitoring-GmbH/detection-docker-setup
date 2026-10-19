@@ -72,7 +72,13 @@ def project_filters(location_ids):
     """{model: (WHERE clause, params)} selecting a project's PROJECT_MODELS rows
     by the ids of its locations. Lageplan/MeasurePoint follow their location,
     Measurement its device's location, Alarm its measurement."""
-    from progeo.v1.models import ProgeoAlarm, ProgeoDevice, ProgeoLageplan, ProgeoMeasurement, ProgeoMeasurePoint
+    from progeo.v1.models import (
+        ProgeoAlarm,
+        ProgeoDevice,
+        ProgeoLageplan,
+        ProgeoMeasurement,
+        ProgeoMeasurePoint,
+    )
 
     ids = list(location_ids)
     lageplans = sql.SQL("SELECT {pk} FROM {table} WHERE {loc} = ANY(%s)").format(

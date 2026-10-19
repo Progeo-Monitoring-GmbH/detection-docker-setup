@@ -183,11 +183,18 @@ log_success "Package index updated"
 
 log_info "Installing Git and Docker Compose..."
 
-curl -fsSL https://get.docker.com | sh
+if command -v docker >/dev/null 2>&1; then
+  log_info "Docker already installed ($(docker --version)), skipping installation"
+else
+  curl -fsSL https://get.docker.com | sh
+fi
 systemctl start docker
 systemctl enable docker
 
-if apt-cache show docker-compose >/dev/null 2>&1; then
+if docker compose version >/dev/null 2>&1 || command -v docker-compose >/dev/null 2>&1; then
+  log_info "Docker Compose already installed, skipping installation"
+  apt-get install -y git
+elif apt-cache show docker-compose >/dev/null 2>&1; then
   apt-get install -y git docker-compose
 else
   apt-get install -y git docker-compose-plugin
@@ -236,5 +243,12 @@ replace_tildes_with_random_chars "${ENV_FILE}"
 replace_tildes_with_random_chars "${DJANGO_ENV_FILE}"
 
 chown "${PROGEO_USER}:${PROGEO_USER}" "${ENV_FILE}" "${DJANGO_ENV_FILE}"
+
+# docker/nginx/ssl/ is gitignored, but the nginx Dockerfile copies .mkcert (mkcert CA root dir).
+MKCERT_DIR="${PROJECT_ROOT}/docker/nginx/ssl/.mkcert"
+if [[ ! -d "${MKCERT_DIR}" ]]; then
+  mkdir -p "${MKCERT_DIR}"
+  log_success "Created empty ${MKCERT_DIR}"
+fi
 
 log_success "Done. Installed Git, Docker Compose, configured non-root Docker access, and set UFW (22, 80, 443)."

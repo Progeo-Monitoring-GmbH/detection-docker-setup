@@ -16,7 +16,11 @@ from psycopg2 import sql
 
 from progeo.helper.basics import elog, wlog
 from progeo.helper.project_db_copy import transfer_rows
-from progeo.helper.project_dbs import existing_project_aliases, project_alias, split_enabled
+from progeo.helper.project_dbs import (
+    existing_project_aliases,
+    project_alias,
+    split_enabled,
+)
 from progeo.v1.models import Account, ProgeoDevice, ProgeoLocation
 
 
@@ -56,7 +60,7 @@ def _mirror_row(model, pk, aliases):
         for alias in _existing(aliases):
             try:
                 transfer_rows(model, where, [pk], alias, upsert=True)
-            except Exception as exc:  # the next sync_default / split run repairs the mirror
+            except Exception as exc:  # noqa: BLE001 - the next sync_default / split run repairs the mirror
                 elog(f"mirror {model.__name__}#{pk} -> {alias} failed: {exc!r}", tag="[PROJECT_DB]")
 
     transaction.on_commit(run, using=DEFAULT_DB_ALIAS)
@@ -67,7 +71,7 @@ def _delete_row(model, pk, aliases):
         for alias in _existing(aliases):
             try:
                 model.objects.using(alias).filter(pk=pk).delete()
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - must not break the default write
                 elog(f"delete mirror {model.__name__}#{pk} in {alias} failed: {exc!r}", tag="[PROJECT_DB]")
 
     transaction.on_commit(run, using=DEFAULT_DB_ALIAS)
@@ -110,7 +114,7 @@ def _mirror_account_users(sender, instance, action, using, pk_set=None, **kwargs
                     through.objects.using(alias).filter(account_id__in=accounts).delete()
                     where = sql.SQL("account_id = ANY(%s)")
                     transfer_rows(through, where, [accounts], alias, upsert=True)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - must not break the default write
                 elog(f"mirror Account.users -> {alias} failed: {exc!r}", tag="[PROJECT_DB]")
 
     transaction.on_commit(run, using=DEFAULT_DB_ALIAS)

@@ -1138,4 +1138,4 @@ class SystemConfig(ProgeoModel, auto_prefetch.Model):
 
 
 # Mirrors users/accounts/locations/devices into the project databases.
-from progeo.helper import project_db_signals  # noqa: E402,F401
+from progeo.helper import project_db_signals  # noqa: F401

@@ -13,7 +13,13 @@ from progeo.helper.project_db_copy import (
     transfer_chunked,
     verify_project,
 )
-from progeo.helper.project_dbs import ensure_project_db, project_alias, project_models, register_project_db, split_enabled
+from progeo.helper.project_dbs import (
+    ensure_project_db,
+    project_alias,
+    project_models,
+    register_project_db,
+    split_enabled,
+)
 from progeo.management.commands._base import BaseCommand
 
 

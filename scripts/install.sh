@@ -1,18 +1,17 @@
 #!/usr/bin/env bash
-# One-liner installer: fetches this repository into the current directory,
-# prepares the system (scripts/setup_system.sh) and starts all containers.
+# One-liner installer: fetches this repository into the current directory and
+# prepares the system (scripts/setup_system.sh). Containers are not started here,
+# because .env / django.env must be edited first; scripts/finalize-install.sh does that.
 #
 #   curl -fsSL https://raw.githubusercontent.com/Progeo-Monitoring-GmbH/detection-docker-setup/main/scripts/install.sh | sudo bash
 #
 # Optional environment variables (pass them after sudo, e.g. `| sudo BRANCH=dev bash`):
 #   REPO_URL    git repository to clone (default: Progeo-Monitoring-GmbH/detection-docker-setup)
 #   BRANCH      branch to check out (default: main)
-#   SKIP_START  set to 1 to only install/configure, without building and starting containers
 set -euo pipefail
 
 REPO_URL="${REPO_URL:-https://github.com/Progeo-Monitoring-GmbH/detection-docker-setup.git}"
 BRANCH="${BRANCH:-main}"
-SKIP_START="${SKIP_START:-0}"
 
 if [[ -t 1 ]]; then
   COLOR_RED='\033[0;31m'
@@ -71,19 +70,6 @@ fetch_repository() {
   log_success "Repository ready in ${target_dir}"
 }
 
-start_containers() {
-  local target_dir="$1"
-  local compose=(docker compose)
-
-  if ! docker compose version >/dev/null 2>&1; then
-    compose=(docker-compose)
-  fi
-
-  log_info "Building and starting containers..."
-  (cd "${target_dir}" && "${compose[@]}" build && "${compose[@]}" up -d)
-  log_success "Containers started"
-}
-
 main() {
   if [[ "${EUID}" -ne 0 ]]; then
     fatal "Error: run this installer as root (e.g. curl ... | sudo bash)."
@@ -97,14 +83,12 @@ main() {
 
   bash "${target_dir}/scripts/setup_system.sh"
 
-  if [[ "${SKIP_START}" == "1" ]]; then
-    log_info "SKIP_START=1, not building/starting containers."
-    log_info "Start them later with: docker compose build && docker compose up -d"
-  else
-    start_containers "${target_dir}"
-  fi
-
-  log_success "Installation finished in ${target_dir}"
+  log_success "Installation prepared in ${target_dir}"
+  echo
+  log_info "Next steps:"
+  log_info "  1. Edit ${target_dir}/.env and ${target_dir}/django.env"
+  log_info "  2. Build and start the containers:"
+  echo "       sudo bash ${target_dir}/scripts/finalize-install.sh"
 }
 
 # Wrapped in main and called last so a partially downloaded script never runs.

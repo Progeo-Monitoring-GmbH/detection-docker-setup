@@ -2,13 +2,19 @@
 
 ## TL;DR
 
-Run this in an empty directory on a fresh Ubuntu/Debian host to clone the repo there, prepare the system and start all containers:
+Run this in an empty directory on a fresh Ubuntu/Debian host to clone the repo there and prepare the system:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Progeo-Monitoring-GmbH/detection-docker-setup/main/scripts/install.sh | sudo bash
 ```
 
-Optional: `| sudo BRANCH=<branch> bash` to use another branch, `| sudo SKIP_START=1 bash` to skip building/starting the containers. Re-running it inside an existing checkout updates it via `git pull`.
+Then edit `.env` and `django.env` and build/start all containers:
+
+```bash
+sudo bash scripts/finalize-install.sh
+```
+
+Optional: `| sudo BRANCH=<branch> bash` to use another branch. Re-running the installer inside an existing checkout updates it via `git pull`.
 
 ## What gets started
 

@@ -10,7 +10,8 @@ or Raspberry Pi OS.
 
 | Script | Purpose |
 | --- | --- |
-| `install.sh` | One-line installer: clones the repo into the current (empty) directory, runs `setup_system.sh` and builds and starts all containers. **root** |
+| `install.sh` | One-line installer: clones the repo into the current (empty) directory and runs `setup_system.sh`. It does not start the containers; it prints the `finalize-install.sh` command to run after editing `.env` / `django.env`. **root** |
+| `finalize-install.sh` | Second installation step: builds and starts all containers once `.env` / `django.env` have been edited. **root** |
 | `setup_system.sh` | Installs Docker, Docker Compose and Git, adds the sudo user to the `docker` group, enables UFW (ports 22/80/443), and creates `.env` / `django.env` from their templates. Every `~` in those files is replaced with a random character. **root** |
 | `install_git_docker_windows.bat` | Windows Server equivalent: enables WSL2, installs Git and Docker Desktop, and clones the repo. Run as Administrator; a reboot is needed afterwards. |
 | `setup_buildx.sh` | Purges Docker completely and reinstalls it with the Buildx and Compose plugins, then rebuilds all images. **Deletes all containers, images and volumes.** It offers a database backup first. **root** |
@@ -19,8 +20,11 @@ or Raspberry Pi OS.
 # Fresh machine (run inside an empty directory)
 curl -fsSL https://raw.githubusercontent.com/Progeo-Monitoring-GmbH/detection-docker-setup/main/scripts/install.sh | sudo bash
 
-# Other branch, install only (don't build/start the containers)
-curl -fsSL .../scripts/install.sh | sudo BRANCH=dev SKIP_START=1 bash
+# Other branch
+curl -fsSL .../scripts/install.sh | sudo BRANCH=dev bash
+
+# After editing .env / django.env: build and start the containers
+sudo bash scripts/finalize-install.sh
 
 # Already cloned: only prepare the system
 sudo bash scripts/setup_system.sh
