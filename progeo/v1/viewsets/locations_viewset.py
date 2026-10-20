@@ -18,14 +18,11 @@ from django.db.models import (
     Avg,
     Count,
     F,
-    IntegerField,
     Max,
     Min,
-    OuterRef,
     Q,
-    Subquery,
 )
-from django.db.models.functions import Coalesce, TruncDay
+from django.db.models.functions import TruncDay
 from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
@@ -74,6 +71,7 @@ from progeo.v1.serializers import (
     ProgeoMeasurePointSerializer,
     location_prefetches,
     prepare_locations,
+    with_measurement_stats,
 )
 from progeo.v1.viewsets.alarm_viewset import MAX_HISTORY_DAYS
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
@@ -1287,43 +1285,9 @@ class LocationViewSet(ProgeoModalViewSet):
 
         # Annotate measurement availability so the frontend can color rows:
         # green = has measurements, gray = no measurements at all.
-        # Correlated subqueries instead of JOIN + GROUP BY: the join fans out to
-        # every measurement row of every location before aggregating (and
-        # COUNT(DISTINCT) then sorts all of them), which takes tens of seconds
-        # on large measurement tables.
-        location_measurements = (
-            ProgeoMeasurement.objects.filter(device__location=OuterRef("pk")).order_by().values("device__location")
-        )
-        # COUNT(*) instead of COUNT(id): needs no heap columns, so Postgres can
-        # answer it from the device_id index alone.
-        measurement_count = Subquery(
-            location_measurements.annotate(count=Count("*")).values("count")[:1],
-            output_field=IntegerField(),
-        )
-        # Newest measurement = highest pk (ids are chronological). Deliberately
-        # MAX(id) grouped by location, not ORDER BY id DESC LIMIT 1: for the
-        # latter Postgres walks the whole measurement pkey backwards until it
-        # hits one of the location's devices - the entire table for locations
-        # without recent measurements.
-        newest_measurement_id = Subquery(
-            location_measurements.annotate(newest=Max("pk")).values("newest")[:1],
-            output_field=IntegerField(),
-        )
-        queryset = (
-            ProgeoLocation.objects.using(account.db_name)
-            .filter(location_q(self.request.user, account))
-            .annotate(measurement_count=Coalesce(measurement_count, 0))
-            # alias, not annotate: only used inside last_measurement_at, so it
-            # isn't selected (and computed) a second time.
-            .alias(newest_measurement_id=newest_measurement_id)
-            .annotate(
-                last_measurement_at=Subquery(
-                    ProgeoMeasurement.objects.filter(pk=OuterRef("newest_measurement_id")).values("last_fetched")[:1]
-                ),
-            )
-            .order_by("id")
-        )
-        return queryset
+        return with_measurement_stats(
+            ProgeoLocation.objects.using(account.db_name).filter(location_q(self.request.user, account))
+        ).order_by("id")
 
     @require_module_permissions("module_locations_enabled", "module_measurements_enabled")
     @action(detail=True, url_path="measurements", methods=["GET"])

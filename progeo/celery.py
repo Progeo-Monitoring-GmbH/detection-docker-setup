@@ -66,12 +66,6 @@ celery_instance.conf.beat_schedule = {
         # Current + next year's measurement partition in every project database.
         "schedule": crontab(day_of_month=1, hour=2, minute=30),
     },
-    "swap-databases-new-year": {
-        "task": "progeo.tasks.swap_databases_new_year",
-        # New Year's Eve, 23:50: archive every database as "<name>_<year>" and
-        # start a fresh one, carrying over the alarm/measurement id counters.
-        "schedule": crontab(month_of_year=12, day_of_month=31, hour=23, minute=50),
-    },
 }
 if not settings.PROGEO_CONFIG_EVALUATE_INSTANTLY:
     # With PROGEO_CONFIG_EVALUATE_INSTANTLY every measurement is evaluated when

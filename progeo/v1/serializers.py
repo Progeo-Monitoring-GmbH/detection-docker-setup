@@ -2,7 +2,16 @@ import os
 import posixpath
 from datetime import datetime
 
-from django.db.models import Prefetch, prefetch_related_objects
+from django.db.models import (
+    Count,
+    IntegerField,
+    Max,
+    OuterRef,
+    Prefetch,
+    Subquery,
+    prefetch_related_objects,
+)
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -130,6 +139,45 @@ def location_prefetches(db_name, lageplans=True):
     return prefetches
 
 
+def with_measurement_stats(locations):
+    """`locations` annotated with measurement_count and last_measurement_at,
+    computed in the database the queryset reads (each project database holds
+    a mirror of its locations).
+    Correlated subqueries instead of JOIN + GROUP BY: the join fans out to
+    every measurement row of every location before aggregating (and
+    COUNT(DISTINCT) then sorts all of them), which takes tens of seconds on
+    large measurement tables."""
+    location_measurements = (
+        ProgeoMeasurement.objects.filter(device__location=OuterRef("pk")).order_by().values("device__location")
+    )
+    # COUNT(*) instead of COUNT(id): needs no heap columns, so Postgres can
+    # answer it from the device_id index alone.
+    measurement_count = Subquery(
+        location_measurements.annotate(count=Count("*")).values("count")[:1],
+        output_field=IntegerField(),
+    )
+    # Newest measurement = highest pk (ids are chronological). Deliberately
+    # MAX(id) grouped by location, not ORDER BY id DESC LIMIT 1: for the
+    # latter Postgres walks the whole measurement pkey backwards until it
+    # hits one of the location's devices - the entire table for locations
+    # without recent measurements.
+    newest_measurement_id = Subquery(
+        location_measurements.annotate(newest=Max("pk")).values("newest")[:1],
+        output_field=IntegerField(),
+    )
+    return (
+        locations.annotate(measurement_count=Coalesce(measurement_count, 0))
+        # alias, not annotate: only used inside last_measurement_at, so it
+        # isn't selected (and computed) a second time.
+        .alias(newest_measurement_id=newest_measurement_id)
+        .annotate(
+            last_measurement_at=Subquery(
+                ProgeoMeasurement.objects.filter(pk=OuterRef("newest_measurement_id")).values("last_fetched")[:1]
+            ),
+        )
+    )
+
+
 def prepare_locations(locations, account=None, lageplans=True, stats=True):
     """Locations ready for LocationSerializer when their project rows live in
     different databases (PROJECT_DB_SPLIT): child locations from the
@@ -137,8 +185,6 @@ def prepare_locations(locations, account=None, lageplans=True, stats=True):
     (measurement_count, last_measurement_at - with the split off,
     get_queryset annotates them in SQL instead) from each project database,
     one query each per database. Returns the locations as a list."""
-    from django.db.models import Count, Max
-
     from progeo.helper.project_dbs import locations_by_db, map_databases
 
     locations = list(locations)
@@ -158,22 +204,17 @@ def prepare_locations(locations, account=None, lageplans=True, stats=True):
                 "lageplans", queryset=ProgeoLageplan.objects.using(db_name).order_by(*LAGEPLAN_ORDER)
             ))
         if stats:
-            rows = {
-                row["device__location_id"]: row
-                for row in ProgeoMeasurement.objects.using(db_name)
-                .filter(device__location_id__in=[location.pk for location in group])
-                .order_by().values("device__location_id")
-                .annotate(count=Count("*"), newest=Max("pk"))
+            # One query per database: the locations' mirrors there carry the
+            # stats as subqueries. A location without a mirror has no devices
+            # in that database (the foreign key needs it) - nothing to count.
+            stats_by_pk = {
+                pk: (count, last)
+                for pk, count, last in with_measurement_stats(
+                    ProgeoLocation.objects.using(db_name).filter(pk__in=[location.pk for location in group])
+                ).values_list("pk", "measurement_count", "last_measurement_at")
             }
-            newest = dict(
-                ProgeoMeasurement.objects.using(db_name)
-                .filter(pk__in=[row["newest"] for row in rows.values()])
-                .values_list("pk", "last_fetched")
-            )
             for location in group:
-                row = rows.get(location.pk)
-                location.measurement_count = row["count"] if row else 0
-                location.last_measurement_at = newest.get(row["newest"]) if row else None
+                location.measurement_count, location.last_measurement_at = stats_by_pk.get(location.pk, (0, None))
 
     # Up to ~1000 project databases per list: in parallel, never all open at once.
     map_databases(prepare, groups)

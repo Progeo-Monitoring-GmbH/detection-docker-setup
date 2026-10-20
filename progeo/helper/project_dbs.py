@@ -114,8 +114,8 @@ def project_alias(project_id):
 
 def project_key_from_alias(alias):
     """Project key (int or UNKNOWN_PROJECT) of a project alias, None for any
-    other alias - including the New Year's archives "<alias>_<year>" (see
-    helper/db_swap.py)."""
+    other alias - including the "<alias>_<year>" archives the former New
+    Year's swap left behind."""
     match = re.fullmatch(re.escape(project_db_prefix()) + rf"(\d+|{UNKNOWN_PROJECT})", alias or "")
     if not match:
         return None

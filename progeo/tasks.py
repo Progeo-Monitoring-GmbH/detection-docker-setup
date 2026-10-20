@@ -280,6 +280,7 @@ def _task_databases(db=None, measurements=False):
 
     from progeo.helper.project_dbs import (
         is_project_alias,
+        register_all_project_dbs,
         split_enabled,
         template_alias,
     )
@@ -287,6 +288,10 @@ def _task_databases(db=None, measurements=False):
     if db:
         return [db]
     split = split_enabled()
+    if split:
+        # Project databases created since this worker process registered
+        # them (activate_project_database in another process) count too.
+        register_all_project_dbs()
     # connections.settings: the active DATABASES incl. the registered project databases.
     return [
         name for name in connections.settings
@@ -445,7 +450,7 @@ def generate_daily_alarm_report(db: str | None = None, report_date=None):
     from django.utils import timezone
 
     from progeo.helper.basics import elog, ilog
-    from progeo.helper.project_dbs import release_connection
+    from progeo.helper.project_dbs import is_project_alias, release_connection
     from progeo.helper.report_utils import generate_daily_report_db
 
     if report_date is None:
@@ -453,7 +458,9 @@ def generate_daily_alarm_report(db: str | None = None, report_date=None):
     elif not hasattr(report_date, "year"):
         report_date = datetime.date.fromisoformat(str(report_date))
 
-    db_names = _task_databases(db)
+    # A report per account database: with the split on, the report of
+    # "default" reads its locations' project databases itself.
+    db_names = [db] if db else [name for name in _task_databases() if not is_project_alias(name)]
     total_reports = 0
 
     for db_name in db_names:
@@ -548,54 +555,6 @@ def activate_project_database(project_id: int | None = None):
     finally:
         with connections[DEFAULT_DB_ALIAS].cursor() as cursor:
             cursor.execute("SELECT pg_advisory_unlock(%s)", [lock_key])
-
-
-@shared_task
-def swap_databases_new_year(db: str | None = None, year: int | None = None):
-    """
-    Archive every account database for the year on New Year's Eve.
-
-    For each configured database: terminate connections, rename
-    "<name>" -> "<name>_<year>", create a fresh "<name>" (template0) and copy
-    all tables except progeo_progeoalarm / progeo_progeomeasurement. Those two
-    are recreated empty and their id sequences are set to the archived max, so
-    new alarms/measurements keep counting up instead of restarting at 1.
-
-    Scheduled through celery beat (31.12. 23:50); can be triggered manually:
-        python manage.py shell -c "from progeo.tasks import swap_databases_new_year; swap_databases_new_year()"
-        python manage.py shell -c "from progeo.tasks import swap_databases_new_year; swap_databases_new_year(db='default')"
-    """
-    from django.utils import timezone
-
-    from progeo.helper.basics import elog, ilog
-    from progeo.helper.db_swap import archive_single_db, pg_env
-    from progeo.helper.project_dbs import is_project_alias, template_alias
-    from progeo.settings import DATABASES, DEMO_DATABASE
-
-    env = pg_env()
-    if year is None:
-        year = timezone.now().year
-
-    # The demo database only holds generated data (demo_account) - nothing to
-    # archive; project databases keep their years as partitions instead
-    # (helper/project_db_partitions.py, ensure_measurement_partitions).
-    db_names = [db] if db else [
-        name for name in DATABASES
-        if name not in (DEMO_DATABASE, template_alias()) and not is_project_alias(name)
-    ]
-    results = {}
-
-    for db_name in db_names:
-        try:
-            detail = archive_single_db(db_name, year, env=env)
-            results[db_name] = {"ok": True, **detail}
-            ilog(f"[swap_databases_new_year] db={db_name} archived -> {detail['old_name']}")
-        except Exception as exc:
-            elog(f"[swap_databases_new_year] db={db_name} failed: {exc}")
-            results[db_name] = {"ok": False, "error": str(exc)}
-
-    ilog(f"[swap_databases_new_year] done: {results}")
-    return {"year": year, "databases": results}
 
 
 # track_started: the result endpoint reports STARTED while ffmpeg runs, so the

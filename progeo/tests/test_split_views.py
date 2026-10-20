@@ -7,10 +7,12 @@ database like split_project_dbs does, then rows that exist only there - what
 the app sees once ingestion writes into the project databases.
 """
 import datetime
+from contextlib import ExitStack
 
 import pytest
 from django.db import connections
 from django.test import override_settings
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from progeo.helper.location_access import forget_single_access, location_q
@@ -130,6 +132,47 @@ def test_alarm_overview_and_summary_include_the_project_databases_alarms(staff_c
     assert world["project_alarm"].pk in _ids(overview)
     assert _ids(per_location) == project_ids
     assert summary[str(location)]["count"] == len(project_ids)
+
+
+@WITH_PROJECT_DBS
+@LOCMEM_CACHE
+def test_locations_table_costs_one_query_per_project_database(api_client, world):
+    """Regression (Sentry N+1): the locations table's details read the stats
+    with two queries per project database, and the alarm summary checked the
+    user's account membership in "default" once per project database."""
+    account = world["account"]
+    user = f.make_user(perms=("module_locations_enabled", "module_measurements_enabled"), accounts=[account])
+    api_client.force_authenticate(user=user)
+    storage = f.make_location(account, project_id=None, name="Lager")  # the "unknown" project database
+    f.make_alarm(f.make_device(storage), triggered_ago=datetime.timedelta(hours=2))
+    _copy(None)
+
+    def queries(path, locations):
+        ids = ",".join(str(location.pk) for location in locations)
+        with SPLIT, ExitStack() as stack:
+            captured = {
+                alias: stack.enter_context(CaptureQueriesContext(connections[alias]))
+                for alias in (f.DB, ALIAS, UNKNOWN)
+            }
+            response = api_client.get(path.format(ids=ids))
+        assert response.status_code == 200, response.content
+        return response.json(), {alias: len(queries) for alias, queries in captured.items()}
+
+    for path in ("/v1/location/details/?ids={ids}&skip_lageplans=1", "/v1/alarm/location_summary/?ids={ids}"):
+        queries(path, [world["location"], storage])  # warm up per-process caches (permissions, databases)
+        _, single = queries(path, [world["location"]])
+        body, both = queries(path, [world["location"], storage])
+        assert both[ALIAS] == both[UNKNOWN] == 1, path
+        assert both[f.DB] == single[f.DB], path
+
+        if path.startswith("/v1/location/"):
+            rows = {row["id"]: row for row in body}
+            assert rows[world["location"].pk]["measurement_count"] == 3
+            assert rows[storage.pk]["measurement_count"] == 1
+            assert rows[storage.pk]["last_measurement_at"] is not None
+        else:
+            assert body["locations"][str(storage.pk)] == {"count": 1, "active": 1}
+            assert body["locations"][str(world["location"].pk)]["count"] == ProgeoAlarm.objects.using(ALIAS).count()
 
 
 @WITH_PROJECT_DBS
@@ -302,6 +345,86 @@ def test_a_stale_cached_database_is_looked_up_again(world):
         measure = _ingest(world, raw_hash)
 
     assert measure._state.db == ALIAS and measure.device_id == moved.pk
+
+
+# ---------------------------------------------------------------------------- daily report
+
+REPORT_DAY = timezone.localdate() - datetime.timedelta(days=3)
+
+
+def _alarm_on(db, device, report_date, value):
+    measurement = ProgeoMeasurement.objects.using(db).create(device_id=device.pk, raw_data={}, samples=[])
+    return ProgeoAlarm.objects.using(db).create(
+        measurement_id=measurement.pk, sensor_id=4, threshold=100, max_value=value,
+        sensor_max_values=[{"sensor_id": 4, "max_value": value}],
+        triggered_at=timezone.make_aware(datetime.datetime.combine(report_date, datetime.time(12))),
+    )
+
+
+def _report(day):
+    from progeo.v1.models import AlarmDailyReport
+
+    account = Account.objects.using(f.DB).filter(db_name=f.DB).first()
+    return AlarmDailyReport.objects.using(f.DB).filter(account=account, date=day).first()
+
+
+@WITH_PROJECT_DBS
+@LOCMEM_CACHE
+def test_daily_report_reads_the_project_databases(world, settings):
+    """Regression: with the split on the report ran per database - "default"
+    saw only the frozen copies (every project "disconnected"), the project
+    databases got account-less reports nobody reads."""
+    from progeo.tasks import generate_daily_alarm_report
+    from progeo.v1.models import AlarmDailyReport
+
+    settings.PROGEO_CONFIG_ENABLE_MAILING = False
+    location = world["location"]
+    _alarm_on(ALIAS, world["device"], REPORT_DAY, 180)
+    _alarm_on(f.DB, world["device"], REPORT_DAY, 999)  # a copy left in default - must not count
+
+    with SPLIT:
+        generate_daily_alarm_report(db=f.DB, report_date=REPORT_DAY)
+
+    report = _report(REPORT_DAY)
+    assert report.total_count == 1
+    assert report.max_value == 180
+    assert report.locations[str(location.pk)]["count"] == 1
+    assert [alarm["max_value"] for alarm in report.top_alarms] == [180]
+    assert report.projects[str(location.pk)]["measurement_count"] == ProgeoMeasurement.objects.using(ALIAS).count()
+    assert not AlarmDailyReport.objects.using(ALIAS).exists()
+
+
+@WITH_PROJECT_DBS
+@LOCMEM_CACHE
+def test_disconnect_mail_only_on_the_transition_since_the_day_before(world, monkeypatch):
+    from progeo.helper import emailhelper
+    from progeo.tasks import generate_daily_alarm_report
+
+    sent = []
+    monkeypatch.setattr(emailhelper, "smtp_configured", lambda: True)
+    monkeypatch.setattr(emailhelper, "send_template_mail",
+                        lambda recipients, template, context, location=None, db=None: sent.append(db) or True)
+    location = world["location"]
+    ProgeoLocation.objects.using(f.DB).filter(pk=location.pk).update(mail="halle@example.com")
+    key = str(location.pk)
+    day_before = REPORT_DAY - datetime.timedelta(days=1)
+
+    with SPLIT:
+        generate_daily_alarm_report(db=f.DB, report_date=day_before)
+        assert _report(day_before).projects[key]["status"] == "disconnected"
+        assert sent == []  # no report of the day before it: baseline, no mails
+
+        generate_daily_alarm_report(db=f.DB, report_date=REPORT_DAY)
+        assert sent == []  # still disconnected - no daily spam
+
+        previous = _report(day_before)
+        previous.projects[key]["status"] = "online"
+        previous.save(using=f.DB)
+        generate_daily_alarm_report(db=f.DB, report_date=REPORT_DAY)
+        generate_daily_alarm_report(db=f.DB, report_date=REPORT_DAY)  # a re-run doesn't mail again
+
+    assert sent == [ALIAS]  # the EMail row goes to the location's project database
+    assert _report(REPORT_DAY).projects[key]["emailed_disconnect"] is True
 
 
 # ---------------------------------------------------------------------------- map_databases

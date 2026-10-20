@@ -103,10 +103,10 @@ class AlarmViewSet(ProgeoModalViewSet):
         days = max(1, min(days, 365))
         cutoff = timezone.now() - timedelta(days=days)
 
-        def summary_rows(db_name, ids):
+        def summary_rows(db_name, visible):
             rows = (
                 ProgeoAlarm.objects.using(db_name)
-                .filter(location_q(request.user, account, "measurement__device__location__"))
+                .filter(visible)
                 .filter(
                     # Still-active alarms count regardless of age - otherwise an
                     # alarm that's never been acknowledged silently drops out of
@@ -117,8 +117,6 @@ class AlarmViewSet(ProgeoModalViewSet):
                     | Q(triggered_at__isnull=True, last_fetched__gte=cutoff)
                 )
             )
-            if ids:
-                rows = rows.filter(measurement__device__location_id__in=ids)
             return list(rows.values("measurement__device__location_id").annotate(
                 count=Count("id"),
                 active=Count("id", filter=Q(normalized_at__isnull=True)),
@@ -126,11 +124,23 @@ class AlarmViewSet(ProgeoModalViewSet):
 
         if split_enabled():
             # The locations' alarms are spread over the project databases.
+            # The groups hold only visible locations already: per database
+            # just their ids - location_q again would cost a membership
+            # query per database.
             groups = self._locations_by_db(request, account, location_ids)
-            rows = [row for chunk in map_databases(lambda db_name: summary_rows(db_name, groups[db_name]), groups)
-                    for row in chunk]
+            rows = [
+                row
+                for chunk in map_databases(
+                    lambda db_name: summary_rows(db_name, Q(measurement__device__location_id__in=groups[db_name])),
+                    groups,
+                )
+                for row in chunk
+            ]
         else:
-            rows = summary_rows(account.db_name, location_ids)
+            visible = location_q(request.user, account, "measurement__device__location__")
+            if location_ids:
+                visible &= Q(measurement__device__location_id__in=location_ids)
+            rows = summary_rows(account.db_name, visible)
 
         locations = {}
         for row in rows:
