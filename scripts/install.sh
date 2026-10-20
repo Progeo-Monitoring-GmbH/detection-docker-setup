@@ -53,10 +53,13 @@ fetch_repository() {
   local target_dir="$1"
 
   if [[ -d "${target_dir}/.git" ]]; then
-    log_info "Existing checkout found in ${target_dir}, updating..."
-    git -C "${target_dir}" fetch origin "${BRANCH}"
-    git -C "${target_dir}" checkout "${BRANCH}"
-    git -C "${target_dir}" pull --ff-only origin "${BRANCH}"
+    # As the checkout's owner: root has no deploy key and git rejects repos owned by others.
+    local owner
+    owner="$(stat -c %U "${target_dir}/.git")"
+    log_info "Existing checkout found in ${target_dir}, updating as ${owner}..."
+    sudo -u "${owner}" -H git -C "${target_dir}" fetch origin "${BRANCH}"
+    sudo -u "${owner}" -H git -C "${target_dir}" checkout "${BRANCH}"
+    sudo -u "${owner}" -H git -C "${target_dir}" pull --ff-only origin "${BRANCH}"
   elif [[ -z "$(ls -A "${target_dir}")" ]]; then
     log_info "Cloning ${REPO_URL} (${BRANCH}) into ${target_dir}..."
     git clone --branch "${BRANCH}" "${REPO_URL}" "${target_dir}"
@@ -64,10 +67,17 @@ fetch_repository() {
     fatal "Error: ${target_dir} is not empty and not a git checkout. Run the installer in an empty directory."
   fi
 
-  if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
-    chown -R "${SUDO_USER}:" "${target_dir}"
-  fi
   log_success "Repository ready in ${target_dir}"
+}
+
+# The checkout belongs to progeo (created by setup_system.sh), so `git pull` works as progeo.
+# media/ and logs/ are bind-mounted into the containers, which own what they write there.
+own_checkout() {
+  local target_dir="$1"
+
+  find "${target_dir}" \( -path "${target_dir}/media" -o -path "${target_dir}/logs" \) -prune \
+    -o -exec chown progeo:progeo {} +
+  log_success "${target_dir} is owned by progeo"
 }
 
 main() {
@@ -82,6 +92,7 @@ main() {
   fetch_repository "${target_dir}"
 
   bash "${target_dir}/scripts/setup_system.sh"
+  own_checkout "${target_dir}"
 
   log_success "Installation prepared in ${target_dir}"
   echo

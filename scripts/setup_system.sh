@@ -145,6 +145,8 @@ ensure_file_from_template() {
     if [[ -f "${template_file}" ]]; then
       cp "${template_file}" "${target_file}"
       log_success "Created ${target_file} from ${template_file}"
+      # Only on a fresh copy: on a rerun a '~' may be part of a value someone typed in.
+      replace_tildes_with_random_chars "${target_file}"
     else
       fatal "Error: ${template_file} not found, cannot create ${target_file}"
     fi
@@ -153,13 +155,28 @@ ensure_file_from_template() {
   fi
 }
 
-configure_non_root_docker() {
-  local target_user="${SUDO_USER:-}"
+ensure_progeo_sudo() {
+  if ! command -v sudo >/dev/null 2>&1; then
+    apt-get install -y sudo
+  fi
 
-  if [[ -z "${target_user}" || "${target_user}" == "root" ]]; then
-    log_info "Skipping non-root Docker setup (no sudo user detected)."
-    log_info "Run: sudo usermod -aG docker <your-user>"
-    return 0
+  if id -nG "${PROGEO_USER}" | tr ' ' '\n' | grep -qx sudo; then
+    log_info "User ${PROGEO_USER} is already in the sudo group"
+  else
+    usermod -aG sudo "${PROGEO_USER}"
+    log_success "Added ${PROGEO_USER} to the sudo group"
+  fi
+
+  # sudo asks for the user's own password; a locked account (no password) cannot use it.
+  if [[ "$(passwd -S "${PROGEO_USER}" | awk '{print $2}')" != "P" ]]; then
+    log_info "${PROGEO_USER} has no password yet. Set one so sudo works: sudo passwd ${PROGEO_USER}"
+  fi
+}
+
+configure_non_root_docker() {
+  local target_users=("${PROGEO_USER}")
+  if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" && "${SUDO_USER}" != "${PROGEO_USER}" ]]; then
+    target_users+=("${SUDO_USER}")
   fi
 
   if ! getent group docker >/dev/null 2>&1; then
@@ -167,19 +184,48 @@ configure_non_root_docker() {
     log_success "Created docker group"
   fi
 
-  usermod -aG docker "${target_user}"
-  log_success "Added ${target_user} to docker group"
+  local target_user
+  for target_user in "${target_users[@]}"; do
+    usermod -aG docker "${target_user}"
+    log_success "Added ${target_user} to docker group"
+  done
 
   if command -v systemctl >/dev/null 2>&1; then
     systemctl enable --now docker >/dev/null 2>&1 || true
   fi
 
-  log_info "${target_user} must log out/in (or reboot) before running docker without sudo."
+  log_info "${target_users[*]} must log out/in (or reboot) before running docker without sudo."
+}
+
+# The backend image creates its progeo user with these ids, so files it writes into the
+# bind-mounted media/ and logs/ belong to the host's progeo user. Kept if already numeric.
+ensure_docker_ids() {
+  local env_file="$1"
+  local key value
+  for key in DOCKER_UID DOCKER_GID; do
+    if [[ "${key}" == "DOCKER_UID" ]]; then
+      value="$(id -u "${PROGEO_USER}")"
+    else
+      value="$(id -g "${PROGEO_USER}")"
+    fi
+
+    if grep -qE "^${key}=\"?[0-9]+\"?\s*$" "${env_file}"; then
+      log_info "${key} already set in ${env_file}, keeping it"
+    elif grep -qE "^${key}=" "${env_file}"; then
+      sed -i -E "s/^${key}=.*/${key}=${value}/" "${env_file}"
+      log_success "Set ${key}=${value} in ${env_file}"
+    else
+      echo "${key}=${value}" >>"${env_file}"
+      log_success "Set ${key}=${value} in ${env_file}"
+    fi
+  done
 }
 
 log_info "Updating package index..."
 apt-get update -y
 log_success "Package index updated"
+
+ensure_progeo_sudo
 
 log_info "Installing Git and Docker Compose..."
 
@@ -217,7 +263,7 @@ configure_non_root_docker
 
 log_info "Installing and configuring UFW..."
 apt-get install -y ufw
-ufw --force reset
+# No `ufw reset`: on a rerun it would delete rules added later (e.g. 5353/udp for mDNS).
 ufw default deny incoming
 ufw default allow outgoing
 ufw allow 22/tcp
@@ -239,8 +285,7 @@ DJANGO_ENV_FILE="${PROJECT_ROOT}/django.env"
 ensure_file_from_template "${ENV_FILE}" "${ENV_TEMPLATE}"
 ensure_file_from_template "${DJANGO_ENV_FILE}" "${DJANGO_ENV_TEMPLATE}"
 
-replace_tildes_with_random_chars "${ENV_FILE}"
-replace_tildes_with_random_chars "${DJANGO_ENV_FILE}"
+ensure_docker_ids "${ENV_FILE}"
 
 chown "${PROGEO_USER}:${PROGEO_USER}" "${ENV_FILE}" "${DJANGO_ENV_FILE}"
 
