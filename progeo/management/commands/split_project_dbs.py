@@ -1,5 +1,7 @@
+import os
 import time
 
+from django.conf import settings
 from django.core.management.base import CommandError
 from django.db import DEFAULT_DB_ALIAS, DatabaseError, OperationalError, connections
 from psycopg2 import sql
@@ -14,6 +16,7 @@ from progeo.helper.project_db_copy import (
     verify_project,
 )
 from progeo.helper.project_dbs import (
+    UNKNOWN_PROJECT,
     existing_project_aliases,
     project_alias,
     project_key,
@@ -29,10 +32,56 @@ CONNECTION_RETRIES = 3
 CONNECTION_RETRY_SECONDS = 30
 
 
+# Resume point of the copy: the last project up to which every project was
+# copied completely. In media/ because that is mounted from the host - a
+# `docker compose run --rm` container loses everything else it writes.
+CHECKPOINT_FILE = os.path.join(settings.MEDIA_ROOT, ".env-migration")
+CHECKPOINT_KEY = "SPLIT_LAST_PROJECT_ID"
+
+
 def _close(alias):
     """Close `alias` - also after a failure before it was registered."""
     if alias in connections.settings:
         connections[alias].close()
+
+
+def _order(project):
+    """Sort key of project_keys_in_use(): ids ascending, 'unknown' last."""
+    project = project_key(project)
+    return (1, 0) if project == UNKNOWN_PROJECT else (0, project)
+
+
+def _read_env_file(path):
+    values = {}
+    if os.path.isfile(path):
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                key, sep, value = line.strip().partition("=")
+                if sep and not key.startswith("#"):
+                    values[key.strip()] = value.strip().strip('"')
+    return values
+
+
+def read_checkpoint(path=None):
+    """The project key stored in the checkpoint file, or None."""
+    value = _read_env_file(path or CHECKPOINT_FILE).get(CHECKPOINT_KEY)
+    try:
+        return project_key(value) if value else None
+    except ValueError:
+        return None
+
+
+def write_checkpoint(project, path=None):
+    """Store `project` as the resume point (other keys of the file are kept).
+    Written to a temp file and renamed, so a crash never leaves half a file."""
+    path = path or CHECKPOINT_FILE
+    values = _read_env_file(path)
+    values[CHECKPOINT_KEY] = str(project_key(project))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    partial = f"{path}.part"
+    with open(partial, "w", encoding="utf-8") as handle:
+        handle.writelines(f"{key}={value}\n" for key, value in values.items())
+    os.replace(partial, path)
 
 class Command(BaseCommand):
     help = (
@@ -55,7 +104,10 @@ class Command(BaseCommand):
         "             highest id, --upsert re-copies and updates them.\n"
         "             Projects whose database already holds all their rows\n"
         "             are skipped, so a crashed run resumes where it stopped\n"
-        "             (--recopy / --upsert copy every project again).\n"
+        "             (--recopy / --upsert copy every project again). Full runs\n"
+        "             keep the last project up to which all succeeded in\n"
+        "             media/.env-migration (SPLIT_LAST_PROJECT_ID) and jump past\n"
+        "             it straight away; delete the file to check from the start.\n"
         "  2. --verify  compare every project's rows in default and its database.\n"
         "  3. --purge   delete the verified rows from default (needs\n"
         "             PROJECT_DB_SPLIT=True, i.e. the app already uses the\n"
@@ -126,15 +178,38 @@ class Command(BaseCommand):
         skip_complete = not options["upsert"] and not options["recopy"]
         existing = set(existing_project_aliases(refresh=True)) if skip_complete else set()
 
+        # Checkpoint (media/.env-migration): only for full runs - a --project
+        # list neither reads nor moves it.
+        full_run = not options["projects"]
+        checkpoint = read_checkpoint() if full_run and skip_complete else None
+        if checkpoint is not None and project_alias(checkpoint) not in existing:
+            self.stdout.write(self.style.WARNING(
+                f"Ignoring {CHECKPOINT_KEY}={checkpoint} in {CHECKPOINT_FILE}: its database does not exist."
+            ))
+            checkpoint = None
+        start = 0
+        if checkpoint is not None:
+            start = sum(1 for project in projects if _order(project) <= _order(checkpoint))
+            self.stdout.write(
+                f"Resuming after {CHECKPOINT_KEY}={checkpoint} ({CHECKPOINT_FILE}): "
+                f"skipping the first {start} of {len(projects)} projects"
+            )
+        # The checkpoint only advances while every project so far succeeded,
+        # so a failed one is never skipped by a later run.
+        advance = full_run
+
         incomplete, errors = [], {}
-        skipped = 0
+        skipped = start
         for index, project_id in enumerate(projects, 1):
+            if checkpoint is not None and _order(project_id) <= _order(checkpoint):
+                continue
             alias = project_alias(project_id)
             prefix = f"[{index}/{len(projects)}] {alias}"
             try:
                 outcome = self._with_retry(prefix, alias, self._copy_one, prefix, project_id, alias, existing, options)
             except Exception as exc:  # noqa: BLE001 - one broken project must not stop the other ~1000
                 errors[alias] = repr(exc)
+                advance = False
                 self.stdout.write(self.style.ERROR(f"{prefix} failed, skipped for now: {exc!r}"))
                 continue
             finally:
@@ -144,6 +219,13 @@ class Command(BaseCommand):
                 skipped += 1
             elif outcome == "incomplete":
                 incomplete.append(alias)
+                advance = False
+            if advance:
+                try:
+                    write_checkpoint(project_id)
+                except OSError as exc:  # e.g. media/ not writable - copying matters more than resuming
+                    advance = False
+                    self.stdout.write(self.style.WARNING(f"Cannot write {CHECKPOINT_FILE}, no checkpoint: {exc!r}"))
 
         copied = len(projects) - skipped - len(incomplete) - len(errors)
         summary = f"Copied {copied} projects, {skipped} were already complete"

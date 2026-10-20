@@ -648,12 +648,15 @@ def test_projects_endpoint_lists_default_and_project_databases(staff_client, bac
 
 # ---------------------------------------------------------------------------- split_project_dbs resume
 
-def _split_command(monkeypatch, sync, existing=(), missing_in=()):
+def _split_command(monkeypatch, tmp_path, sync, existing=(), missing_in=()):
     """split_project_dbs with the database work faked: `sync(project)` stands
-    in for sync_project, verify reports rows missing for `missing_in`."""
+    in for sync_project, verify reports rows missing for `missing_in`. The
+    checkpoint file lives in tmp_path."""
     from io import StringIO
 
     from progeo.management.commands import split_project_dbs as split
+
+    monkeypatch.setattr(split, "CHECKPOINT_FILE", str(tmp_path / ".env-migration"))
 
     monkeypatch.setattr(split, "split_enabled", lambda: False)
     monkeypatch.setattr(split, "find_conflicts", dict)
@@ -665,7 +668,8 @@ def _split_command(monkeypatch, sync, existing=(), missing_in=()):
     monkeypatch.setattr(split.time, "sleep", lambda seconds: None)
     command = split.Command(stdout=StringIO())
     monkeypatch.setattr(command, "_report_connections", lambda: None)
-    options = {"upsert": False, "recopy": False, "chunk_size": 10, "no_legacy_files": True, "force": False}
+    options = {"projects": None, "upsert": False, "recopy": False, "chunk_size": 10, "no_legacy_files": True,
+               "force": False}
     return command, options
 
 
@@ -675,7 +679,7 @@ def _synced(project):
 
 
 @override_settings(PROJECT_DB_PREFIX="")
-def test_split_skips_complete_projects_and_broken_ones_do_not_stop_the_run(monkeypatch):
+def test_split_skips_complete_projects_and_broken_ones_do_not_stop_the_run(monkeypatch, tmp_path):
     from django.core.management.base import CommandError
     from django.db import OperationalError
 
@@ -689,7 +693,7 @@ def test_split_skips_complete_projects_and_broken_ones_do_not_stop_the_run(monke
             raise RuntimeError("broken project")
         return _synced(project)
 
-    command, options = _split_command(monkeypatch, sync, existing=["1"])
+    command, options = _split_command(monkeypatch, tmp_path, sync, existing=["1"])
     with pytest.raises(CommandError, match=r"failed: \['3'\]"):
         command._copy([1, 2, 3, 4], options)
 
@@ -698,14 +702,60 @@ def test_split_skips_complete_projects_and_broken_ones_do_not_stop_the_run(monke
     output = command.stdout.getvalue()
     assert "[1/4] 1 already complete - skipped" in output
     assert "[3/4] 3 failed, skipped for now" in output
+    # 4 succeeded, but the checkpoint stays before the broken 3.
+    assert (tmp_path / ".env-migration").read_text() == "SPLIT_LAST_PROJECT_ID=2\n"
 
 
 @override_settings(PROJECT_DB_PREFIX="")
-def test_split_copies_an_existing_but_incomplete_project_again(monkeypatch):
+def test_split_copies_an_existing_but_incomplete_project_again(monkeypatch, tmp_path):
     copied = []
     command, options = _split_command(
-        monkeypatch, lambda project: copied.append(project) or _synced(project), existing=["1"], missing_in=[1],
+        monkeypatch, tmp_path, lambda project: copied.append(project) or _synced(project),
+        existing=["1"], missing_in=[1],
     )
     with pytest.raises(Exception, match=r"rows missing after copy in \['1'\]"):
         command._copy([1], options)
     assert copied == [1]
+
+
+@override_settings(PROJECT_DB_PREFIX="")
+def test_split_resumes_after_the_checkpoint_and_unknown_comes_last(monkeypatch, tmp_path):
+    copied = []
+    command, options = _split_command(
+        monkeypatch, tmp_path, lambda project: copied.append(project) or _synced(project), existing=["1", "2"],
+    )
+    checkpoint = tmp_path / ".env-migration"
+    checkpoint.write_text("# kept\nOTHER=x\nSPLIT_LAST_PROJECT_ID=2\n")
+
+    command._copy([1, 2, 3, "unknown"], options)
+
+    assert copied == [3, "unknown"]  # 1 and 2 not even checked
+    assert "skipping the first 2 of 4 projects" in command.stdout.getvalue()
+    assert checkpoint.read_text() == "OTHER=x\nSPLIT_LAST_PROJECT_ID=unknown\n"
+
+
+@override_settings(PROJECT_DB_PREFIX="")
+def test_split_ignores_a_checkpoint_whose_database_does_not_exist(monkeypatch, tmp_path):
+    copied = []
+    command, options = _split_command(monkeypatch, tmp_path, lambda project: copied.append(project) or _synced(project))
+    (tmp_path / ".env-migration").write_text("SPLIT_LAST_PROJECT_ID=2\n")
+
+    command._copy([1, 2], options)
+
+    assert copied == [1, 2]
+    assert "Ignoring SPLIT_LAST_PROJECT_ID=2" in command.stdout.getvalue()
+
+
+@override_settings(PROJECT_DB_PREFIX="")
+def test_split_of_single_projects_neither_reads_nor_moves_the_checkpoint(monkeypatch, tmp_path):
+    copied = []
+    command, options = _split_command(
+        monkeypatch, tmp_path, lambda project: copied.append(project) or _synced(project), existing=["1", "2"],
+    )
+    checkpoint = tmp_path / ".env-migration"
+    checkpoint.write_text("SPLIT_LAST_PROJECT_ID=2\n")
+
+    command._copy([2, 3], {**options, "projects": [2, 3]})
+
+    assert copied == [3]  # 2 is complete (verify), not skipped by the checkpoint
+    assert checkpoint.read_text() == "SPLIT_LAST_PROJECT_ID=2\n"
