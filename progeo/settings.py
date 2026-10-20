@@ -2,6 +2,7 @@
 Django settings for progeo project.
 """
 import os
+import sys
 from datetime import timedelta
 from pathlib import Path
 
@@ -200,6 +201,12 @@ DJANGO_DATABASES = parse_split_str(os.getenv("DJANGO_DATABASES", ""), ";")
 if len(DJANGO_DATABASES) == 0:
     flog("DJANGO_DATABASES is empty")
 
+# Names the process in pg_stat_activity / ps on the database server (e.g.
+# "progeo manage.py split_project_dbs", "progeo celery worker"), so it shows
+# who holds the connections. Project databases copy it from "default".
+_process_words = [os.path.basename(sys.argv[0]), *(arg for arg in sys.argv[1:] if not arg.startswith("-"))]
+DB_APPLICATION_NAME = " ".join(["progeo", *_process_words[:3]])[:63]  # Postgres keeps 63 bytes
+
 dyn_dbs = {}
 for db in DJANGO_DATABASES:
     dyn_dbs.update({db: {
@@ -209,6 +216,7 @@ for db in DJANGO_DATABASES:
         "PASSWORD": os.getenv("POSTGRES_PASSWORD"),
         "HOST": os.getenv("POSTGRES_HOST"),
         "PORT": os.getenv("POSTGRES_PORT"),
+        "OPTIONS": {"application_name": DB_APPLICATION_NAME},
     }})
 
 DATABASES = {
@@ -219,6 +227,7 @@ DATABASES = {
         "PASSWORD": os.getenv("POSTGRES_PASSWORD"),
         "HOST": os.getenv("POSTGRES_HOST"),
         "PORT": os.getenv("POSTGRES_PORT"),
+        "OPTIONS": {"application_name": DB_APPLICATION_NAME},
     },
     **dyn_dbs
 }
