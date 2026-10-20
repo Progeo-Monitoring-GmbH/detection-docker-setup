@@ -50,6 +50,15 @@ def test_a_matching_length_check_is_verified_and_dropped(zero):
     assert measurement.samples == [0, 10, 0, 20, 0, 30, 0, 40]
 
 
+def test_a_length_that_counts_the_comma_before_it_matches_too():
+    """Regression: the 424-point controllers (project 4091) count the comma in
+    front of the length - every transmission failed and the file was dropped."""
+    body = _payload(4, [0, 10, 0, 20, 0, 30, 0, 40])
+
+    assert parse_legacy_data_measurement(f"{body},{len(body) + 1}", broadcast=False).length_check is True
+    assert parse_legacy_data_measurement(f"{body},{len(body) + 2}", broadcast=False).length_check is False
+
+
 def test_a_wrong_length_check_is_flagged_but_still_dropped():
     payload = _payload(4, [0, 10, 0, 20, 0, 30, 0, 40]) + ",0,95"
 

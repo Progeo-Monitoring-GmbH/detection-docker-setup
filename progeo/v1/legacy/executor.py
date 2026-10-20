@@ -511,6 +511,8 @@ def length_check(tokens):
     is the number of characters of the string before it - verified on all
     393,715 lines of the legacy gprs<project>.txt files. The 4-point
     controllers put a 0 in between, so the length may also exclude that.
+    Others (e.g. the 424-point controller of project 4091) count the comma
+    in front of the length as well, i.e. one more.
     True if it matches, False if not (truncated or garbled transmission),
     None without a value to check."""
     if len(tokens) < 2:
@@ -519,7 +521,7 @@ def length_check(tokens):
         expected = int(tokens[-1])
     except ValueError:
         return False
-    return any(len(",".join(tokens[:-cut])) == expected for cut in (1, 2))
+    return any(expected - len(",".join(tokens[:-cut])) in (0, 1) for cut in (1, 2))
 
 
 def cut_to_points(values, m_points):

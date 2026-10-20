@@ -342,11 +342,15 @@ def legacy_pairs_sql(prefix=""):
     p = sql.SQL(prefix)
     # Nested CASE: Postgres guarantees CASE order, not AND order - the jsonb
     # cast must only ever see text that looks like an array.
+    # The text is parsed once per row (s.j; OFFSET 0 keeps Postgres from
+    # inlining it again): a cast in the WHERE ran once per element, i.e.
+    # quadratic - 424-point controllers (project 4091) took ~0.1s per row.
     return sql.SQL(
         "CASE WHEN {p}eigenpotenzial IS NULL AND {p}end_index > 0 AND {p}samples ~ '^\\[.*\\]$' THEN "
         " (SELECT COALESCE(jsonb_agg(e ORDER BY o), '[]'::jsonb) "
-        "  FROM jsonb_array_elements({p}samples::jsonb) WITH ORDINALITY t(e, o) "
-        "  WHERE o <= LEAST(2 * {p}end_index, jsonb_array_length({p}samples::jsonb) / 2 * 2)) "
+        "  FROM (SELECT {p}samples::jsonb AS j OFFSET 0) s "
+        "  CROSS JOIN LATERAL jsonb_array_elements(s.j) WITH ORDINALITY t(e, o) "
+        "  WHERE o <= LEAST(2 * {p}end_index, jsonb_array_length(s.j) / 2 * 2)) "
         "END"
     ).format(p=p)
 
