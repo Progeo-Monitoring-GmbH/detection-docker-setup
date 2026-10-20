@@ -124,18 +124,26 @@ class Command(BaseCommand):
                 ))
 
             alias = result["alias"]
-            if not self._print_verification(project_id, alias):
-                failed.append(alias)
+            try:
+                if not self._print_verification(project_id, alias):
+                    failed.append(alias)
+            finally:
+                # ~1000 projects: an open connection each exceeds Postgres' max_connections (100).
+                connections[alias].close()
 
         if failed:
             raise CommandError(f"Rows missing after copy in: {failed} - run again (writers still active?)")
         self.stdout.write(self.style.SUCCESS(f"Copied {len(projects)} projects."))
 
     def _verify_all(self, projects):
-        failed = [
-            project_alias(project_id) for project_id in projects
-            if not self._print_verification(project_id, register_project_db(project_alias(project_id)))
-        ]
+        failed = []
+        for project_id in projects:
+            alias = register_project_db(project_alias(project_id))
+            try:
+                if not self._print_verification(project_id, alias):
+                    failed.append(alias)
+            finally:
+                connections[alias].close()
         if failed:
             raise CommandError(f"Rows missing in: {failed}")
         self.stdout.write(self.style.SUCCESS("All project rows are present in their databases."))
@@ -153,7 +161,10 @@ class Command(BaseCommand):
 
         for project_id in projects:
             alias = register_project_db(project_alias(project_id))
-            verified = verify_project(project_id, alias)
+            try:
+                verified = verify_project(project_id, alias)
+            finally:
+                connections[alias].close()
             missing = {m.__name__: i["missing"] for m, i in verified.items() if i["missing"]}
             if missing:
                 raise CommandError(f"{alias}: rows missing in project database {missing} - nothing deleted.")
