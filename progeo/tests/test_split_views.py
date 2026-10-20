@@ -9,6 +9,7 @@ the app sees once ingestion writes into the project databases.
 import datetime
 
 import pytest
+from django.db import connections
 from django.test import override_settings
 from django.utils import timezone
 
@@ -209,3 +210,198 @@ def test_devices_overview_collects_the_devices_of_every_project_database(staff_c
 
     hashes = {device["raw_hash"] for device in devices}
     assert set(ProgeoDevice.objects.using(ALIAS).values_list("raw_hash", flat=True)) <= hashes
+
+
+# ---------------------------------------------------------------------------- ingestion
+
+def _ingest(world, raw_hash, project_id=PROJECT, pairs=(5, 6)):
+    from progeo.v1.legacy.executor import save_measurement_from_legacy_data
+
+    return save_measurement_from_legacy_data(
+        {"project_id": project_id, "samples": f.samples_for(pairs)}, project_id,
+        raw_hash=raw_hash, account=world["account"],
+    )
+
+
+@WITH_PROJECT_DBS
+@LOCMEM_CACHE
+def test_measurements_of_a_known_device_go_to_its_project_database(world):
+    device = world["device"]
+    before = ProgeoMeasurement.objects.using(f.DB).count()
+
+    with SPLIT:
+        measure = _ingest(world, device.raw_hash)
+
+    assert measure._state.db == ALIAS
+    assert ProgeoMeasurement.objects.using(ALIAS).filter(pk=measure.pk, device_id=device.pk).exists()
+    assert ProgeoMeasurement.objects.using(f.DB).count() == before  # default untouched
+
+
+@WITH_PROJECT_DBS
+@LOCMEM_CACHE
+def test_a_new_device_of_a_project_with_database_is_created_there(world):
+    raw_hash = f.unique("new-sensor")
+
+    with SPLIT:
+        measure = _ingest(world, raw_hash)
+
+    device = ProgeoDevice.objects.using(ALIAS).get(raw_hash=raw_hash)
+    assert measure._state.db == ALIAS and measure.device_id == device.pk
+    assert not ProgeoDevice.objects.using(f.DB).filter(raw_hash=raw_hash).exists()
+    # Its location lives in default (and is mirrored into the project database).
+    assert ProgeoLocation.objects.using(f.DB).filter(pk=device.location_id).exists()
+    assert ProgeoLocation.objects.using(ALIAS).filter(pk=device.location_id).exists()
+
+
+@WITH_PROJECT_DBS
+@LOCMEM_CACHE
+def test_a_project_without_database_stays_in_default(world, monkeypatch, django_capture_on_commit_callbacks):
+    from progeo.tasks import activate_project_database
+
+    queued = []
+    monkeypatch.setattr(activate_project_database, "delay", lambda *args: queued.append(args))
+    monkeypatch.setattr(activate_project_database, "apply_async", lambda *args, **kwargs: None)
+    raw_hash = f.unique("dbless")
+
+    # The activation is queued on commit - which the test transaction never does.
+    with SPLIT, django_capture_on_commit_callbacks(execute=True):
+        measure = _ingest(world, raw_hash, project_id=990077)
+
+    assert measure._state.db == f.DB
+    assert ProgeoDevice.objects.using(f.DB).filter(raw_hash=raw_hash).exists()
+    assert queued == [(990077,)]  # its first device gives the project its database
+
+
+@WITH_PROJECT_DBS
+@LOCMEM_CACHE
+def test_split_off_ingestion_stays_in_default(world):
+    measure = _ingest(world, world["device"].raw_hash)
+
+    assert measure._state.db == f.DB
+
+
+@WITH_PROJECT_DBS
+@LOCMEM_CACHE
+def test_a_stale_cached_database_is_looked_up_again(world):
+    """The project moved into its database while the 60s cache still said
+    "default": the insert hits a device that is gone there - retried once."""
+    from django.core.cache import cache
+
+    from progeo.v1.legacy.executor import _device_cache_key, _ingest_db_cache_key
+
+    raw_hash = f.unique("moved")
+    moved = ProgeoDevice.objects.using(ALIAS).create(raw_hash=raw_hash, location_id=world["location"].pk)
+    cache.set(_ingest_db_cache_key(raw_hash), f.DB, 60)
+    cache.set(_device_cache_key(f.DB, raw_hash), moved.pk + 100000, 60)  # a pk that doesn't exist in default
+    # Production checks the deferred FK when the write's transaction commits;
+    # inside the test transaction it has to be made immediate.
+    with connections[f.DB].cursor() as cursor:
+        cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
+
+    with SPLIT:
+        measure = _ingest(world, raw_hash)
+
+    assert measure._state.db == ALIAS and measure.device_id == moved.pk
+
+
+# ---------------------------------------------------------------------------- map_databases
+
+def test_map_databases_runs_in_parallel_and_keeps_the_order():
+    import threading
+    import time
+
+    from progeo.helper.project_dbs import map_databases
+
+    threads = set()
+
+    def work(database):
+        threads.add(threading.current_thread().name)
+        time.sleep(0.01)
+        return database.upper()
+
+    names = [f"db{i}" for i in range(12)]
+    assert map_databases(work, names, workers=4) == [name.upper() for name in names]
+    assert len(threads) > 1
+    assert all(name.startswith("project-db") for name in threads)
+
+
+def test_map_databases_raises_the_first_error():
+    from progeo.helper.project_dbs import map_databases
+
+    def work(database):
+        if database == "broken":
+            raise RuntimeError(database)
+        return database
+
+    with pytest.raises(RuntimeError, match="broken"):
+        map_databases(work, ["a", "broken", "c"], workers=2)
+    with pytest.raises(RuntimeError, match="broken"):
+        map_databases(work, ["a", "broken", "c"], workers=1)
+
+
+@WITH_PROJECT_DBS
+@LOCMEM_CACHE
+def test_requested_measurement_is_stored_in_the_devices_database(world, monkeypatch):
+    import requests
+
+    from progeo.tasks import request_device_measurement
+
+    device = ProgeoDevice.objects.using(ALIAS).create(
+        raw_hash=f.unique("lan"), location_id=world["location"].pk, device_ip="192.168.1.5"
+    )
+
+    class Response:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"samples": [0, 10, 0, 20], "project_id": PROJECT}
+
+    monkeypatch.setattr(requests, "post", lambda *args, **kwargs: Response())
+    result = request_device_measurement(device.pk, ALIAS)
+
+    assert result["ok"] is True
+    assert ProgeoMeasurement.objects.using(ALIAS).filter(pk=result["measurement_id"], device_id=device.pk).exists()
+
+
+@WITH_PROJECT_DBS
+@LOCMEM_CACHE
+def test_legacy_import_finds_duplicates_in_the_project_database(world):
+    from progeo.tests.test_measurement_history import _payload
+    from progeo.v1.legacy.executor import (
+        parse_legacy_data_measurement,
+        save_legacy_measurement_dedup,
+    )
+
+    values = _payload(2, [0, 10, 0, 20]).split(",")
+    values[0] = str(PROJECT)  # the project id comes first
+    measurement = parse_legacy_data_measurement(",".join(values), broadcast=False, log=False)
+
+    with SPLIT:
+        first = save_legacy_measurement_dedup(measurement)
+        again = save_legacy_measurement_dedup(measurement)
+
+    assert first is True
+    assert again is False  # found in the project database, where the first one went
+
+
+@WITH_PROJECT_DBS
+@LOCMEM_CACHE
+@pytest.mark.parametrize("split", [False, True])
+def test_ingestion_reuses_the_projects_location_of_another_account(world, split):
+    """Regression: the location lookup was scoped to the ingesting (controller)
+    account - a project whose location belongs to its customer got a second,
+    unnamed one ("5180 - Unknown") on its device's first contact."""
+    customer = f.make_account()
+    location = f.make_location(customer, project_id=990055, name="Wohnhaus Witschel")
+    controller = world["account"]
+    assert customer.pk != controller.pk
+
+    with override_settings(PROJECT_DB_SPLIT=split):
+        measure = _ingest({"account": controller}, f.unique("legacy"), project_id=990055)
+
+    assert list(ProgeoLocation.objects.using(f.DB).filter(project_id=990055).values_list("pk", flat=True)) == [
+        location.pk
+    ]
+    device = ProgeoDevice.objects.using(measure._state.db).get(pk=measure.device_id)
+    assert device.location_id == location.pk

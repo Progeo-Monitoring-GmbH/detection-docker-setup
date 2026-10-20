@@ -27,7 +27,7 @@ from progeo.helper.location_access import (
     visible_locations_by_db,
 )
 from progeo.helper.measurement_utils import flatten_numeric_values
-from progeo.helper.project_dbs import release_connection, split_enabled
+from progeo.helper.project_dbs import location_db, release_connection, split_enabled
 from progeo.management.commands.patch_live import fetch_device_locations
 from progeo.tasks import download_device_config as download_device_config_task
 from progeo.tasks import upload_device_config as upload_device_config_task
@@ -35,6 +35,7 @@ from progeo.v1.creator import create_progeo_measurement_safe
 from progeo.v1.legacy.executor import (
     SafeLuaUploadParser,
     fetch_and_import_legacy_project,
+    ingest_db,
     ingest_legacy_query,
     parse_sample_timestamp,
     save_measurement_from_legacy_data,
@@ -136,6 +137,9 @@ class DeviceViewSet(ProgeoModalViewSet):
         if not data:
             return RequestFailed({"reason": "No measurement data provided"})
 
+        if split_enabled() and data.get("device_hash"):
+            # The device's own database - pks are only unique per database with the split on.
+            db_name = ingest_db(data.get("project_id"), data.get("device_hash"), account)
         device = self._resolve_forwarded_device(data, db_name)
         if device is None:
             return RequestFailed({"reason": "Device not found on this server"})
@@ -169,7 +173,8 @@ class DeviceViewSet(ProgeoModalViewSet):
         """
         queryset = ProgeoDevice.objects.using(db_name)
 
-        device_pk = data.get("device")
+        # With the split on, pks repeat across the project databases - the identity comes first.
+        device_pk = None if split_enabled() else data.get("device")
         if device_pk is not None:
             device = queryset.filter(pk=device_pk).first()
             if device:
@@ -699,7 +704,8 @@ class DeviceViewSet(ProgeoModalViewSet):
             account=account,
             address="unknown",
         )
-        device, created = ProgeoDevice.objects.using(db_name).get_or_create(
+        # The location stays in default, the device lives in its database (location_db).
+        device, created = ProgeoDevice.objects.using(location_db(location, account)).get_or_create(
             raw_hash=device_hash,
             defaults={"location": location},
         )

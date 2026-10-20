@@ -160,6 +160,37 @@ def release_connection(alias):
         connection.close()
 
 
+def map_databases(work, databases, workers=None):
+    """[work(database) for database in databases] for views spanning many
+    project databases - spread over up to PROJECT_DB_WORKERS threads (each
+    with its own connections, closed after every database), so ~1000
+    databases cost ~1000/N round trips in a row instead of ~1000. Results in
+    the order of `databases`; the first exception is raised. Sequential, in
+    this thread, with one worker or database (and in the tests: their rows
+    only exist inside the test transaction of this thread's connections)."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    databases = list(databases)
+    workers = min(workers or getattr(settings, "PROJECT_DB_WORKERS", None) or 8, len(databases))
+    if workers <= 1:
+        results = []
+        for database in databases:
+            try:
+                results.append(work(database))
+            finally:
+                release_connection(database)
+        return results
+
+    def run(database):
+        try:
+            return work(database)
+        finally:
+            connections.close_all()  # this worker thread's connections only
+
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="project-db") as pool:
+        return list(pool.map(run, databases))
+
+
 def registered_project_aliases():
     return sorted((a for a in connections.settings if is_project_alias(a)), key=_alias_sort_key)
 

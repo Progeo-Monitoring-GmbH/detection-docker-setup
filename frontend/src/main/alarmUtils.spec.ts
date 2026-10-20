@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { plotTheme } from '../styles/plotTheme';
 import {
   alarmHeatColor,
+  alarmKey,
   alarmPeakValue,
   alarmRainSpans,
   alarmSensors,
@@ -320,5 +321,18 @@ describe('alarmHeatColor', () => {
     [0, 10, 35, 99, 105, 150, 195, 250, 299].forEach((value) => {
       expect(alarmHeatColor({ threshold: 100, max_value: value })).toMatch(/^#[0-9a-f]{6}$/);
     });
+  });
+});
+
+describe('alarmKey', () => {
+  it('tells alarms with the same id in different project databases apart', () => {
+    const a = alarmKey({ id: 7, location: { id: 1 } });
+    const b = alarmKey({ id: 7, location: { id: 2 } });
+    expect(a).not.toBe(b);
+    expect(alarmKey({ id: 7, location: { id: 1 } })).toBe(a);
+  });
+
+  it('works without a location', () => {
+    expect(alarmKey({ id: 7 })).toBe(':7');
   });
 });

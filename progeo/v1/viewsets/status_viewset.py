@@ -24,7 +24,14 @@ from progeo.helper.location_access import (
     visible_locations_by_db,
 )
 from progeo.helper.pdf_cropper import process_pdf_to_png_and_extract_crosses
-from progeo.helper.project_dbs import location_db, release_connection, split_enabled
+from progeo.helper.project_dbs import (
+    existing_project_aliases,
+    location_db,
+    map_databases,
+    register_project_db,
+    release_connection,
+    split_enabled,
+)
 from progeo.settings import SETUP_DIR, UPLOAD_DIR
 from progeo.tasks import collect_host_storage_info
 from progeo.tasks import identify_device as identify_device_task
@@ -732,14 +739,20 @@ class StatusViewSet(ProgeoModalViewSet):
             if not mac:
                 continue
 
+            hostname = (connected.get("hostname") or "unknown").strip() or "unknown"
             device = ProgeoDevice.objects.using(db_name).filter(mac__iexact=mac).first()
+            if not device and split_enabled():
+                # With the split on the device lives in its location's database (location_db).
+                location = ProgeoLocation.objects.using(db_name).filter(account=account, address=hostname).first()
+                if location:
+                    device = ProgeoDevice.objects.using(location_db(location, account)).filter(mac__iexact=mac).first()
             if not device:
-                hostname = (connected.get("hostname") or "unknown").strip() or "unknown"
                 location, _ = ProgeoLocation.objects.using(db_name).get_or_create(
                     account=account,
                     address=hostname,
                 )
-                device, _ = ProgeoDevice.objects.using(db_name).get_or_create(
+                device_db = location_db(location, account)
+                device, _ = ProgeoDevice.objects.using(device_db).get_or_create(
                     raw_hash=f"mac:{mac}",
                     defaults={"location": location, "mac": mac,
                               "device_ip": connected.get("ip"),
@@ -748,7 +761,7 @@ class StatusViewSet(ProgeoModalViewSet):
                 )
                 if not device.mac:
                     device.mac = mac
-                    device.save(using=db_name)
+                    device.save(using=device_db)
 
             devices.append(device)
 
@@ -814,16 +827,15 @@ class StatusViewSet(ProgeoModalViewSet):
         
         if split_enabled():
             # The account's devices are spread over the project databases.
-            data = []
             # No user filter, like the query below: every device of the account.
-            for project_db, location_ids in visible_locations_by_db(None, account).items():
-                try:
-                    devices = ProgeoDevice.objects.using(project_db).select_related("location").filter(
-                        location__account=account, location_id__in=location_ids
-                    ).order_by("id")
-                    data.extend(DeviceSerializer(devices, many=True).data)
-                finally:
-                    release_connection(project_db)
+            groups = visible_locations_by_db(None, account)
+
+            def devices_of(project_db):
+                return DeviceSerializer(ProgeoDevice.objects.using(project_db).select_related("location").filter(
+                    location__account=account, location_id__in=groups[project_db]
+                ).order_by("id"), many=True).data
+
+            data = [device for chunk in map_databases(devices_of, groups) for device in chunk]
             data.sort(key=lambda device: device.get("id") or 0)
             return RequestSuccess({"devices": data})
         devices = ProgeoDevice.objects.using(db_name).select_related("location").filter(location__account=account).order_by("id")
@@ -845,13 +857,24 @@ class StatusViewSet(ProgeoModalViewSet):
         connected_by_mac = {device.get("mac"): device for device in connected_devices if device.get("mac")}
         connected_by_hostname = {device.get("hostname"): device for device in connected_devices if device.get("hostname")}
 
-        statuses = []
-        devices = ProgeoDevice.objects.using(db_name).select_related("location").all().order_by("id")
-        for device in devices:
-            dlog("Evaluating status for device", device.id, device.raw_hash)
-            latest_measurement = get_latest_measurement(device, db_name)
-            latest_alarm = get_latest_alarm_measurement(device, db_name)
+        # (device, latest measurement, latest alarm measurement) - with the split on
+        # from every project database too, read before the slow pings below so
+        # no connection stays open meanwhile.
+        rows = []
+        databases = [db_name, *existing_project_aliases()] if split_enabled() else [db_name]
+        for database in databases:
+            if database != db_name:
+                register_project_db(database)
+            try:
+                for device in ProgeoDevice.objects.using(database).select_related("location").order_by("id"):
+                    dlog("Evaluating status for device", device.id, device.raw_hash)
+                    rows.append((device, get_latest_measurement(device, database),
+                                 get_latest_alarm_measurement(device, database), DeviceSerializer(device).data))
+            finally:
+                release_connection(database)
 
+        statuses = []
+        for device, latest_measurement, latest_alarm, device_data in rows:
             latest_data = latest_measurement.raw_data if latest_measurement and isinstance(latest_measurement.raw_data, dict) else {}
             ip_address = latest_data.get("ip")
             mac_address = latest_data.get("mac")
@@ -872,7 +895,7 @@ class StatusViewSet(ProgeoModalViewSet):
                 }
 
             statuses.append({
-                "device": DeviceSerializer(device).data,
+                "device": device_data,
                 "online": online,
                 "last_alarm": last_alarm_payload
             })

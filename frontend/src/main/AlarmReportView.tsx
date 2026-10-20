@@ -695,7 +695,8 @@ const AlarmReportView = () => {
                                 <ul className="list-unstyled mb-0 small">
                                   {data.top_alarms.map((alarm) => (
                                     <li
-                                      key={alarm.id}
+                                      // ids repeat across project databases
+                                      key={`${alarm.location_id ?? alarm.location_name ?? ''}:${alarm.id}`}
                                       className="d-flex justify-content-between gap-2 py-1 border-bottom"
                                     >
                                       <span>

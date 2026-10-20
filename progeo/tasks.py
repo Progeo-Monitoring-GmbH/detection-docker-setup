@@ -117,7 +117,7 @@ def identify_device(ip: str):
 
 
 @shared_task
-def request_device_measurement(device_id: int):
+def request_device_measurement(device_id: int, db_name: str = "default"):
     """POST /measure to a single device's private-IP endpoint on demand.
 
     Mirrors what `manage.py scan_devices` does for its periodic scan (same
@@ -127,6 +127,9 @@ def request_device_measurement(device_id: int):
     reading now" request, not a rerun of the discovery scan. The stored
     measurement is picked up by the regular `evaluate_measurements` beat task
     like any other (or evaluated right away with PROGEO_CONFIG_EVALUATE_INSTANTLY).
+
+    db_name: the device's database (its project database with the split on -
+    device ids are only unique per database); "default" for queued old calls.
     """
     import ipaddress
 
@@ -135,10 +138,13 @@ def request_device_measurement(device_id: int):
 
     from progeo.helper.alarm_evaluation import evaluate_measurement_instantly
     from progeo.helper.basics import dlog, elog
+    from progeo.helper.project_dbs import is_project_alias, register_project_db
     from progeo.v1.creator import create_progeo_measurement_safe
     from progeo.v1.models import ProgeoDevice, ProgeoMeasurement
 
-    device = ProgeoDevice.objects.filter(pk=device_id).first()
+    if is_project_alias(db_name):
+        register_project_db(db_name)
+    device = ProgeoDevice.objects.using(db_name).filter(pk=device_id).first()
     if not device:
         return {"ok": False, "error": "Device not found"}
     if not device.device_ip:
@@ -167,6 +173,7 @@ def request_device_measurement(device_id: int):
     measurement, created = create_progeo_measurement_safe(
         device=device,
         raw_data={"measure": measure_payload, "requested_at": timezone.now().isoformat()},
+        db=db_name,
     )
     if not measurement:
         return {"ok": False, "error": "Failed to store measurement"}
@@ -179,8 +186,8 @@ def request_device_measurement(device_id: int):
     measurement.set_potentials(samples)
     if samples:
         measurement.raw_data = ProgeoMeasurement.without_samples(measurement.raw_data)
-    measurement.save()
-    evaluate_measurement_instantly(measurement, measurement._state.db or "default")
+    measurement.save(using=db_name)
+    evaluate_measurement_instantly(measurement, db_name)
 
     dlog(
         f"[request_device_measurement] stored measurement {measurement.pk} for device "

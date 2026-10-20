@@ -32,6 +32,13 @@ export type AlarmRainEvent = {
   amount?: number | null;
 };
 
+/**
+ * Identity of an alarm across locations: alarm ids are only unique within one
+ * project database, so lists spanning several locations key them by both.
+ */
+export const alarmKey = (alarm: { id: number; location?: AlarmLocationLite | null }): string =>
+  `${alarm.location?.id ?? ''}:${alarm.id}`;
+
 export type TimelineAlarm = {
   id: number;
   location?: AlarmLocationLite | null;

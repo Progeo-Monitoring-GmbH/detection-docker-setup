@@ -18,6 +18,7 @@ import SensorHeatmap2D from '../components/device/SensorHeatmap2D.tsx';
 import { type SensorHeatmapResponse } from '../components/device/SensorHeatmap3D.tsx';
 import AlarmMeasurementCompareChart from '../components/device/AlarmMeasurementCompareChart.tsx';
 import AlarmTimeline, {
+  alarmKey,
   alarmStartTime,
   formatDuration,
   isAlarmActive,
@@ -57,6 +58,8 @@ type AlarmSensorMaxValue = {
 
 type AlarmRow = {
   id: number;
+  /** alarmKey() - the table's row key (ids repeat across project databases). */
+  _key?: string;
   measurement?: number | null;
   device?: AlarmDevice | null;
   location?: AlarmLocation | null;
@@ -115,7 +118,8 @@ const AlarmsOverview = () => {
   const [filterText, setFilterText] = useState('');
   const [onlyActive, setOnlyActive] = useState(false);
   const [onlyLastHour, setOnlyLastHour] = useState(false);
-  const [acknowledgingId, setAcknowledgingId] = useState<number | null>(null);
+  // alarmKey() - ids repeat across project databases.
+  const [acknowledgingId, setAcknowledgingId] = useState<string | null>(null);
   const heatmapCardRef = useRef<HTMLDivElement | null>(null);
   // Only ticks while at least one alarm is active (or the last-hour filter is
   // on, so the window stays rolling); frozen otherwise, so the timeline does
@@ -292,7 +296,7 @@ const AlarmsOverview = () => {
 
   const acknowledgeAlarm = useCallback(
     (alarm: AlarmRow) => {
-      setAcknowledgingId(alarm.id);
+      setAcknowledgingId(alarmKey(alarm));
       void axiosConfig.perform_post(
         auth,
         // ?location=: alarm ids are only unique within one project database.
@@ -375,6 +379,11 @@ const AlarmsOverview = () => {
       return haystack.includes(needle);
     });
   }, [rows, filterText, onlyActive, onlyLastHour, now]);
+
+  const tableRows = useMemo(
+    () => filteredRows.map((row) => ({ ...row, _key: alarmKey(row) })),
+    [filteredRows],
+  );
 
   const columns: TableColumn<AlarmRow>[] = [
     {
@@ -485,7 +494,7 @@ const AlarmsOverview = () => {
           <Button
             size="sm"
             variant={acknowledged ? 'outline-success' : 'success'}
-            disabled={acknowledged || acknowledgingId === row.id}
+            disabled={acknowledged || acknowledgingId === alarmKey(row)}
             title={
               acknowledged
                 ? 'Alarm already acknowledged'
@@ -496,7 +505,7 @@ const AlarmsOverview = () => {
               acknowledgeAlarm(row);
             }}
           >
-            {acknowledgingId === row.id ? (
+            {acknowledgingId === alarmKey(row) ? (
               <Spinner size="sm" animation="border" />
             ) : (
               <Check2Circle className="me-1" />
@@ -510,7 +519,7 @@ const AlarmsOverview = () => {
 
   const conditionalRowStyles = [
     {
-      when: (row: AlarmRow) => row.id === selectedAlarm?.id,
+      when: (row: AlarmRow) => selectedAlarm !== null && alarmKey(row) === alarmKey(selectedAlarm),
       style: {
         backgroundColor: 'rgba(220, 53, 69, 0.10)',
         borderLeft: '3px solid #dc3545',
@@ -622,7 +631,7 @@ const AlarmsOverview = () => {
           <AlarmTimeline
             alarms={filteredRows}
             now={now}
-            selectedAlarmId={selectedAlarm?.id}
+            selectedAlarmKey={selectedAlarm ? alarmKey(selectedAlarm) : null}
             onSelectAlarm={(alarm) => fetchHeatmap(alarm)}
           />
         </Card.Body>
@@ -673,7 +682,8 @@ const AlarmsOverview = () => {
 
       <DataTable
         columns={columns}
-        data={filteredRows}
+        data={tableRows}
+        keyField="_key"
         pagination
         progressPending={loading}
         highlightOnHover

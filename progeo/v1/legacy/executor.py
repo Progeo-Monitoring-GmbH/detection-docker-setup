@@ -8,7 +8,7 @@ from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from django.conf import settings
 from django.core.cache import cache
-from django.db import transaction
+from django.db import DEFAULT_DB_ALIAS, IntegrityError, transaction
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 from django.utils import timezone
@@ -224,14 +224,27 @@ def _as_project_id(device_id):
 
 
 def _get_or_create_location(db_name, account, project_id, name, project_type=None):
-    """The account's location for project_id (or, without one, for name).
+    """The location for project_id (or, without one, the account's location
+    for name), created if there is none.
 
-    project_id/name aren't unique on ProgeoLocation, so duplicates may already
-    exist; the oldest wins instead of get_or_create's MultipleObjectsReturned.
-    project_type only applies to a newly created location.
+    project_id is the project's natural key (like patch_live treats it): the
+    location may belong to another account than the ingesting one (the
+    controller account) - scoping the lookup by account created a second,
+    unnamed duplicate of every project whose location had been moved to its
+    customer's account (see merge_duplicate_locations). The account's own
+    location wins, else the oldest (duplicates may exist); project_type only
+    applies to a newly created location.
     """
-    lookup = {"project_id": project_id} if project_id is not None else {"project_id": None, "name": name}
-    location = ProgeoLocation.objects.using(db_name).filter(account=account, **lookup).order_by("pk").first()
+    locations = ProgeoLocation.objects.using(db_name)
+    if project_id is not None:
+        location = (
+            locations.filter(project_id=project_id, account=account).order_by("pk").first()
+            or locations.filter(project_id=project_id).order_by("pk").first()
+        )
+        lookup = {"project_id": project_id}
+    else:
+        lookup = {"project_id": None, "name": name}
+        location = locations.filter(account=account, **lookup).order_by("pk").first()
     if location is None:
         extra = {"project_type": project_type} if project_type is not None else {}
         location = ProgeoLocation.objects.using(db_name).create(account=account, **lookup, **extra)
@@ -270,6 +283,73 @@ def _next_sensor_name(project_id, db_name):
     return f"{project_id}_S{number}"
 
 
+# ---------------------------------------------------------------------------- database of a measurement
+
+# With PROJECT_DB_SPLIT a device's measurements go to the database the device
+# lives in - cached briefly per raw_hash (the hot path), so a project that
+# just got its database (activate_project_database) is picked up within it.
+INGEST_DB_CACHE_TIMEOUT = 60
+
+
+def _ingest_db_cache_key(raw_hash):
+    return f"progeo:ingest-db:{raw_hash}"
+
+
+def forget_ingest_db(raw_hash):
+    try:
+        cache.delete(_ingest_db_cache_key(raw_hash))
+    except Exception:  # cache unavailable - nothing cached either
+        pass
+
+
+def ingest_db(project_id, raw_hash=None, account=None, project_type=None):
+    """Database a measurement of the device (raw_hash, default: the project
+    id) is written to - "default" while PROJECT_DB_SPLIT is off.
+
+    With the split on: a known device keeps its database (its location may
+    differ from the payload's project) - looked up in its project's database,
+    "default", then every project database (locate_device). A new device
+    goes to the database of its location (looked up or created in "default",
+    where locations live): the project's database, or "default" while the
+    project has none - its first device triggers activate_project_database."""
+    from progeo.helper.project_dbs import locate_device, location_db, split_enabled
+
+    if not split_enabled():
+        return DEFAULT_DB_ALIAS
+    raw_hash = raw_hash or str(project_id)
+    key = _ingest_db_cache_key(raw_hash)
+    try:
+        cached = cache.get(key)
+    except Exception:  # cache unavailable - look it up
+        cached = None
+    if cached:
+        return cached
+
+    location_project_id = _as_project_id(project_id)
+    project_location = None
+    if location_project_id is not None:
+        project_location = (
+            ProgeoLocation.objects.using(DEFAULT_DB_ALIAS).filter(project_id=location_project_id).order_by("pk").first()
+        )
+    candidates = [location_db(project_location)] if project_location else []
+    candidates = list(dict.fromkeys([*candidates, DEFAULT_DB_ALIAS]))
+    db_name = next(
+        (db for db in candidates if ProgeoDevice.objects.using(db).filter(raw_hash=raw_hash).exists()), None
+    ) or locate_device(raw_hash)
+    if db_name is None:
+        # New device: the database of the location it will be filed under.
+        location = project_location or _get_or_create_location(
+            DEFAULT_DB_ALIAS, account or _get_controller_account(), location_project_id,
+            name=raw_hash, project_type=project_type,
+        )
+        db_name = location_db(location)
+    try:
+        cache.set(key, db_name, INGEST_DB_CACHE_TIMEOUT)
+    except Exception:  # cache unavailable - looked up again next time
+        pass
+    return db_name
+
+
 def get_device_id(project_id, raw_hash=None, numbered_sensor=False, device_type=None,
                   account=None, project_type=None, db_name="default"):
     """Cached pk of get_or_create_device(...), keyed by raw_hash (default:
@@ -299,6 +379,22 @@ def get_device_id(project_id, raw_hash=None, numbered_sensor=False, device_type=
     # dangling pk behind.
     transaction.on_commit(_remember, using=db_name)
     return device_id
+
+
+def _mirror_location_now(location, db_name):
+    """Copy a location (and its parents - the FK needs them) into the project
+    database the device is about to be written to. The save signal mirrors it
+    only on commit, which an outer transaction delays past the device insert."""
+    from psycopg2 import sql
+
+    from progeo.helper.project_db_copy import transfer_rows
+
+    ids, current = [], location
+    while current is not None and current.pk not in ids:
+        ids.append(current.pk)
+        current = current.parent_location
+    # One transaction: the parent FK is checked at its end, the order doesn't matter.
+    transfer_rows(ProgeoLocation, sql.SQL("id = ANY(%s)"), [ids], db_name, upsert=True)
 
 
 def get_or_create_device(project_id, raw_hash=None, numbered_sensor=False, device_type=None,
@@ -335,8 +431,14 @@ def get_or_create_device(project_id, raw_hash=None, numbered_sensor=False, devic
     if device.location_id is None:
         # project_id is a 32-bit integer column: IMEI-style ids (15 digits)
         # don't fit, so those locations are keyed by the raw_hash instead.
-        device.location = _get_or_create_location(db_name, account or _get_controller_account(), location_project_id,
+        from progeo.helper.project_dbs import split_enabled
+
+        # Locations live in "default" with the split on (mirrored into the project database on save).
+        location_db_name = DEFAULT_DB_ALIAS if split_enabled() else db_name
+        device.location = _get_or_create_location(location_db_name, account or _get_controller_account(), location_project_id,
                                                   name=device.raw_hash, project_type=project_type)
+        if location_db_name != db_name:
+            _mirror_location_now(device.location, db_name)
         changed.append("location")
 
     if changed:
@@ -352,59 +454,93 @@ def save_measurement_from_legacy_data(measurement, project_id, raw_hash=None, nu
     project_type). device_type defaults to get_device_type. The device is
     resolved through the cache (get_device_id), so a known device costs no
     query here."""
-    db_name = "default"
+    device_type = device_type or get_device_type(measurement, raw_hash)
+    try:
+        return _store_legacy_measurement(measurement, project_id, raw_hash, numbered_sensor, device_type,
+                                         battery_V, last_battery_percentage, account, project_type)
+    except IntegrityError:
+        from progeo.helper.project_dbs import existing_project_aliases, split_enabled
+
+        if not split_enabled():
+            raise
+        # The project was just moved into its own database
+        # (activate_project_database): the cached database / device id point
+        # to rows that are gone - look both up again and store it there.
+        identity = raw_hash or str(project_id)
+        stale_db = ingest_db(project_id, raw_hash, account, project_type)
+        forget_ingest_db(identity)
+        _forget_device(stale_db, identity)
+        existing_project_aliases(refresh=True)
+        wlog(f"device {identity}: database changed while storing, retrying", tag="[LEGACY]")
+        return _store_legacy_measurement(measurement, project_id, raw_hash, numbered_sensor, device_type,
+                                         battery_V, last_battery_percentage, account, project_type)
+
+
+def _forget_device(db_name, raw_hash):
+    try:
+        cache.delete(_device_cache_key(db_name, raw_hash))
+    except Exception:  # cache unavailable - entries expire on their own
+        pass
+
+
+def _store_legacy_measurement(measurement, project_id, raw_hash, numbered_sensor, device_type,
+                              battery_V, last_battery_percentage, account, project_type):
+    db_name = ingest_db(project_id, raw_hash, account, project_type)
     device_id = get_device_id(
         project_id,
         raw_hash=raw_hash,
         numbered_sensor=numbered_sensor,
-        device_type=device_type or get_device_type(measurement, raw_hash),
+        device_type=device_type,
         account=account,
         project_type=project_type,
         db_name=db_name,
     )
 
-    if isinstance(measurement, DataMeasurement):
-        measure = ProgeoMeasurement.objects.using(db_name).create(
-            device_id=device_id, **legacy_measurement_fields(measurement)
-        )
-        # Stamp the measurement with its own datetime (m_date epoch) so imports
-        # can be deduplicated by project_id + datetime.
-        parsed_datetime = _legacy_measurement_datetime(measurement)
-        if parsed_datetime is not None:
-            measure.last_updated = parsed_datetime
-    elif isinstance(measurement, dict):
-        data = measurement
-        if battery_V is not None:
-            data["battery_V"] = battery_V
-        if last_battery_percentage is not None:
-            data["last_battery_percentage"] = last_battery_percentage
+    # Own transaction: the device FK is checked when it ends (deferred), so a
+    # device gone from this database raises here - and only this is rolled back.
+    with transaction.atomic(using=db_name):
+        if isinstance(measurement, DataMeasurement):
+            measure = ProgeoMeasurement.objects.using(db_name).create(
+                device_id=device_id, **legacy_measurement_fields(measurement)
+            )
+            # Stamp the measurement with its own datetime (m_date epoch) so imports
+            # can be deduplicated by project_id + datetime.
+            parsed_datetime = _legacy_measurement_datetime(measurement)
+            if parsed_datetime is not None:
+                measure.last_updated = parsed_datetime
+        elif isinstance(measurement, dict):
+            data = measurement
+            if battery_V is not None:
+                data["battery_V"] = battery_V
+            if last_battery_percentage is not None:
+                data["last_battery_percentage"] = last_battery_percentage
         
-        samples = data.pop("samples", [])
+            samples = data.pop("samples", [])
 
-        measure = ProgeoMeasurement.objects.using(db_name).create(
-            device_id=device_id,
-            project_id=data.get("project_id"),
-            temperature=data.get("temperature"),
-            humidity=data.get("humidity"),
-            battery=data.get("battery"),
-            samples=samples,
-            raw_data=data,
-        )
-        resistance_rows = data.get("resistance_rows") or []
-        if resistance_rows:
-            sample = resistance_rows[0]
-            timestamp = sample.get("timestamp")
-            parsed_timestamp = parse_sample_timestamp(timestamp)
-            if parsed_timestamp is not None:
-                measure.last_updated = parsed_timestamp
-            measure.resistance_idc = sample.get("r_idc_ohm", MAX_JSON_SAFE_RESISTANCE_OHM)
-            measure.resistance_vdc = sample.get("r_vdc_ohm", MAX_JSON_SAFE_RESISTANCE_OHM)
+            measure = ProgeoMeasurement.objects.using(db_name).create(
+                device_id=device_id,
+                project_id=data.get("project_id"),
+                temperature=data.get("temperature"),
+                humidity=data.get("humidity"),
+                battery=data.get("battery"),
+                samples=samples,
+                raw_data=data,
+            )
+            resistance_rows = data.get("resistance_rows") or []
+            if resistance_rows:
+                sample = resistance_rows[0]
+                timestamp = sample.get("timestamp")
+                parsed_timestamp = parse_sample_timestamp(timestamp)
+                if parsed_timestamp is not None:
+                    measure.last_updated = parsed_timestamp
+                measure.resistance_idc = sample.get("r_idc_ohm", MAX_JSON_SAFE_RESISTANCE_OHM)
+                measure.resistance_vdc = sample.get("r_vdc_ohm", MAX_JSON_SAFE_RESISTANCE_OHM)
 
-    else:
-        raise ValueError("Measurement must be a DataMeasurement instance or a dict | measurement:", measurement)
+        else:
+            raise ValueError("Measurement must be a DataMeasurement instance or a dict | measurement:", measurement)
 
 
-    measure.save(using=db_name)
+        measure.save(using=db_name)
     evaluate_measurement_instantly(measure, db_name)
 
     '''
@@ -659,7 +795,8 @@ def save_legacy_measurement_dedup(measurement, existing_datetimes=None) -> bool:
     given, the duplicate check is an in-memory lookup instead of one DB query
     per measurement.
     """
-    db_name = "default"
+    # Where save_measurement_from_legacy_data writes it - with the split on the project's database.
+    db_name = ingest_db(measurement.project_id)
     parsed_datetime = _legacy_measurement_datetime(measurement)
     if parsed_datetime is not None:
         if existing_datetimes is None:
@@ -772,7 +909,8 @@ def fetch_and_import_legacy_project(project_id: int, dry_run: bool = False) -> d
     if valid_datetimes:
         min_datetime, max_datetime = min(valid_datetimes), max(valid_datetimes)
         existing_datetimes = set(
-            ProgeoMeasurement.objects.using("default")
+            # The database the import writes into (ingest_db) - with the split on the project's.
+            ProgeoMeasurement.objects.using(ingest_db(project_id))
             .filter(
                 project_id=project_id,
                 last_updated__gte=min_datetime,

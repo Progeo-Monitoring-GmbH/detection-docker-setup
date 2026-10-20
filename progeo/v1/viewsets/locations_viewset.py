@@ -1385,7 +1385,8 @@ class LocationViewSet(ProgeoModalViewSet):
         if not reachable:
             return RequestFailed({"reason": "No device with a known IP address for this location"})
 
-        task_ids = [request_device_measurement.delay(device.pk).id for device in reachable]
+        # The device's database: ids are only unique per database with the split on.
+        task_ids = [request_device_measurement.delay(device.pk, device._state.db).id for device in reachable]
 
         return RequestSuccess({
             "requested_devices": len(reachable),

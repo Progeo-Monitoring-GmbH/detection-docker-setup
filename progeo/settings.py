@@ -257,6 +257,9 @@ DEMO_DATABASE = os.getenv("DEMO_DATABASE", "demo")
 PROJECT_DB_PREFIX = os.getenv("PROJECT_DB_PREFIX", "")
 PROJECT_DB_SPLIT = parse_boolean(os.getenv("PROJECT_DB_SPLIT", "False"))
 PROJECT_DB_STRICT = parse_boolean(os.getenv("PROJECT_DB_STRICT", "False"))
+# Threads for views spanning many project databases (project_dbs.map_databases);
+# each holds its own connection while it runs.
+PROJECT_DB_WORKERS = parse_int(os.getenv("PROJECT_DB_WORKERS"), 8)
 
 DATABASE_ROUTERS = [
     #"progeo.router.DjangoRouter",

@@ -19,7 +19,7 @@ from progeo.helper.location_access import (
     resolve_request_account,
     visible_locations_by_db,
 )
-from progeo.helper.project_dbs import release_connection, split_enabled
+from progeo.helper.project_dbs import map_databases, split_enabled
 from progeo.v1.models import ProgeoAlarm
 from progeo.v1.serializers import ProgeoAlarmSerializer
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
@@ -60,15 +60,15 @@ class AlarmViewSet(ProgeoModalViewSet):
         if split_enabled() and account and self._location_id(request) is None:
             # The overview spans every visible location - their alarms are
             # spread over the project databases: collect them per database.
-            data = []
-            for db_name, location_ids in self._locations_by_db(request, account).items():
-                try:
-                    # Serialized inside: lazy relations must not reopen the connection after release.
-                    data.extend(self.get_serializer(self.get_queryset(db_name=db_name).filter(
-                        measurement__device__location_id__in=location_ids
-                    ), many=True).data)
-                finally:
-                    release_connection(db_name)
+            groups = self._locations_by_db(request, account)
+
+            def alarms_of(db_name):
+                # Serialized here: lazy relations use this database's connection before it closes.
+                return self.get_serializer(self.get_queryset(db_name=db_name).filter(
+                    measurement__device__location_id__in=groups[db_name]
+                ), many=True).data
+
+            data = [alarm for chunk in map_databases(alarms_of, groups) for alarm in chunk]
             # Like order_by("-triggered_at", "-id") - Postgres puts NULL first when descending.
             data.sort(key=lambda alarm: (alarm.get("triggered_at") is None, alarm.get("triggered_at") or "",
                                          alarm.get("id") or 0), reverse=True)
@@ -126,12 +126,9 @@ class AlarmViewSet(ProgeoModalViewSet):
 
         if split_enabled():
             # The locations' alarms are spread over the project databases.
-            rows = []
-            for db_name, ids in self._locations_by_db(request, account, location_ids).items():
-                try:
-                    rows.extend(summary_rows(db_name, ids))
-                finally:
-                    release_connection(db_name)
+            groups = self._locations_by_db(request, account, location_ids)
+            rows = [row for chunk in map_databases(lambda db_name: summary_rows(db_name, groups[db_name]), groups)
+                    for row in chunk]
         else:
             rows = summary_rows(account.db_name, location_ids)
 

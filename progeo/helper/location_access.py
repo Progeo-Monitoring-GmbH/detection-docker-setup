@@ -73,8 +73,8 @@ def _split_single_access_location_ids(user_id, account) -> set[int]:
 
     from progeo.helper.project_dbs import (
         existing_project_aliases,
+        map_databases,
         register_project_db,
-        release_connection,
     )
 
     key = _single_access_cache_key(user_id)
@@ -85,17 +85,20 @@ def _split_single_access_location_ids(user_id, account) -> set[int]:
     if account.pk in cached:
         return set(cached[account.pk])
 
-    ids = set()
-    for alias in [DEFAULT_DB_ALIAS, *existing_project_aliases()]:
+    def access_ids(alias):
         database = alias if alias == DEFAULT_DB_ALIAS else register_project_db(alias)
-        try:
-            ids.update(
-                ProgeoAccess.objects.using(database)
-                .filter(user_id=user_id, location__account=account)
-                .values_list("location_id", flat=True)
-            )
-        finally:
-            release_connection(database)
+        return list(
+            ProgeoAccess.objects.using(database)
+            .filter(user_id=user_id, location__account=account)
+            .values_list("location_id", flat=True)
+        )
+
+    # One query per database - in parallel (map_databases), cached below.
+    ids = {
+        location_id
+        for chunk in map_databases(access_ids, [DEFAULT_DB_ALIAS, *existing_project_aliases()])
+        for location_id in chunk
+    }
     try:
         cache.set(key, {**cached, account.pk: sorted(ids)}, SINGLE_ACCESS_CACHE_SECONDS)
     except Exception:  # noqa: BLE001, S110 - cache unavailable: computed again next time

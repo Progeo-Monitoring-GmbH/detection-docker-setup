@@ -15,6 +15,7 @@ import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
 import { showRequestError } from '../components/ui/Snackbar.jsx';
 import AlarmTimeline, {
+  alarmKey,
   alarmStartTime,
   formatDuration,
   isAlarmActive,
@@ -198,7 +199,7 @@ const LocationAlarmDetail = ({
             <AlarmTimeline
               alarms={alarms}
               now={now}
-              selectedAlarmId={selectedAlarm?.id}
+              selectedAlarmKey={selectedAlarm ? alarmKey(selectedAlarm) : null}
               onSelectAlarm={() => {}}
             />
           )}

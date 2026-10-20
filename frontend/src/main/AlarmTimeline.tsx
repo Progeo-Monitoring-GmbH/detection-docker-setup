@@ -5,6 +5,7 @@ import AlarmTooltip from './AlarmTooltip';
 import RainTooltip from './RainTooltip';
 import {
   alarmHeatColor,
+  alarmKey,
   alarmPeakValue,
   alarmRainSpans,
   alarmStartTime,
@@ -17,6 +18,7 @@ import './AlarmTimeline.css';
 
 export {
   alarmHeatColor,
+  alarmKey,
   alarmPeakValue,
   alarmRainSpans,
   alarmStartTime,
@@ -33,7 +35,8 @@ type AlarmTimelineProps = {
   alarms: TimelineAlarm[];
   /** Current wall-clock time in ms — active alarms extend to this value. */
   now: number;
-  selectedAlarmId?: number | null;
+  /** alarmKey() of the selected alarm (ids repeat across project databases). */
+  selectedAlarmKey?: string | null;
   onSelectAlarm?: (alarm: TimelineAlarm) => void;
 };
 
@@ -105,7 +108,7 @@ type RainTooltipState = {
 const AlarmTimeline = ({
   alarms,
   now,
-  selectedAlarmId = null,
+  selectedAlarmKey = null,
   onSelectAlarm,
 }: AlarmTimelineProps) => {
   const [sortBy, setSortBy] = useState<'label' | 'duration' | 'max_value'>(
@@ -667,7 +670,7 @@ const AlarmTimeline = ({
                     )
                     .map(({ span, rain, index }) => (
                       <div
-                        key={`rain-${span.alarm.id}-${index}`}
+                        key={`rain-${alarmKey(span.alarm)}-${index}`}
                         className="alarm-timeline-rain"
                         style={{
                           left: `${toLeft(rain.start)}%`,
@@ -690,7 +693,7 @@ const AlarmTimeline = ({
                     .slice()
                     .sort((a, b) => a.start - b.start)
                     .map((span) => {
-                      const isSelected = span.alarm.id === selectedAlarmId;
+                      const isSelected = alarmKey(span.alarm) === selectedAlarmKey;
                       const isActive = isAlarmActive(span.alarm);
                       const heatColor = alarmHeatColor(span.alarm);
                       const barWidthPercent = toWidth(span.end - span.start);
@@ -698,7 +701,7 @@ const AlarmTimeline = ({
                       const showLabel = barWidthPx >= 90;
                       return (
                         <div
-                          key={span.alarm.id}
+                          key={alarmKey(span.alarm)}
                           className={[
                             'alarm-timeline-bar',
                             isActive ? 'is-active' : 'is-normalized',
