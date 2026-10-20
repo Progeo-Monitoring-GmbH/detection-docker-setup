@@ -1,7 +1,8 @@
 server {
     listen 443 ssl;
     listen [::]:443 ssl;
-    server_name ${DNS_BACK_NAMES};
+    # DNS_BACK_NAMES without the names of the frontend block (fix_host_file.sh).
+    server_name ${DNS_BACK_SERVER_NAMES};
     resolver 127.0.0.11 ipv6=off valid=30s;
 
     ssl_certificate ${CERT_PATH}/${CERT_FILE};
@@ -75,7 +76,8 @@ server {
     listen 443 ssl;
     listen [::]:443 ssl;
 
-    server_name ${DNS_FRONT_NAMES} localhost;
+    # DNS_FRONT_NAMES + localhost, each once (fix_host_file.sh).
+    server_name ${DNS_FRONT_SERVER_NAMES};
     resolver 127.0.0.11 ipv6=off valid=30s;
 
     ssl_certificate ${CERT_PATH}/${CERT_FILE};

@@ -33,8 +33,33 @@ fi
 
 export CERT_MODE CERT_PATH CERT_FILE CERT_KEY ENABLE_SSL
 
+# ######################################################################
+# server_name lists of the two 443 blocks. nginx keeps a name listed twice on
+# one port only in the FIRST block ("conflicting server name ... ignored") -
+# the api block - so a host in both lists never reached the frontend. A name
+# in both goes to the frontend block (it proxies the backend paths too), each
+# name once, "localhost" always on the frontend.
+
+unique_names() {
+  echo "$*" | awk '{ for (i = 1; i <= NF; i++) if (!seen[$i]++) out = out (out == "" ? "" : " ") $i; print out }'
+}
+
+DNS_FRONT_SERVER_NAMES="$(unique_names ${DNS_FRONT_NAMES:-} localhost)"
+back_names=""
+for name in ${DNS_BACK_NAMES:-}; do
+  case " ${DNS_FRONT_SERVER_NAMES} " in
+    *" ${name} "*) echo "server name ${name} is in DNS_BACK_NAMES and DNS_FRONT_NAMES - served by the frontend block" ;;
+    *) back_names="${back_names} ${name}" ;;
+  esac
+done
+DNS_BACK_SERVER_NAMES="$(unique_names ${back_names})"
+# server_name needs a value; ".invalid" never matches a request.
+DNS_BACK_SERVER_NAMES="${DNS_BACK_SERVER_NAMES:-api.invalid}"
+export DNS_FRONT_SERVER_NAMES DNS_BACK_SERVER_NAMES
+echo "server names: api block '${DNS_BACK_SERVER_NAMES}', frontend block '${DNS_FRONT_SERVER_NAMES}'"
+
 if [ -f /etc/nginx/conf.d/progeo.conf.template ]; then
-  envsubst '\$DNS_BACK_NAMES \$DNS_FRONT_NAMES \$CERT_FILE \$CERT_KEY \$CERT_PATH' < /etc/nginx/conf.d/progeo.conf.template > /etc/nginx/conf.d/progeo.conf
+  envsubst '\$DNS_BACK_SERVER_NAMES \$DNS_FRONT_SERVER_NAMES \$CERT_FILE \$CERT_KEY \$CERT_PATH' < /etc/nginx/conf.d/progeo.conf.template > /etc/nginx/conf.d/progeo.conf
   rm /etc/nginx/conf.d/progeo.conf.template
 fi
 
