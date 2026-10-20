@@ -9,7 +9,7 @@ from django.utils import timezone
 
 from progeo.helper.legacy_files import LEGACY_FILE_DIR, load_legacy_file
 from progeo.helper.project_db_copy import _legacy_device_id, legacy_file_rows
-from progeo.helper.project_dbs import register_project_db, release_connection
+from progeo.helper.project_dbs import register_project_db, release_project_connections
 from progeo.management.commands._base import BaseCommand
 from progeo.v1.legacy.executor import ingest_db
 from progeo.v1.models import ProgeoMeasurement
@@ -137,14 +137,18 @@ class Command(BaseCommand):
                     ProgeoMeasurement.objects.using(database).bulk_create(rows, batch_size=1000)
                 if rows:
                     total += len(rows)
+                    # No device "<project>" yet: all rows count as new - check that the project
+                    # doesn't keep its legacy data under another device before --apply.
+                    created = "" if _existing_device_id(project, database) else " - legacy device is created"
                     self.stdout.write(f"  {project:>6} -> {database}: {len(rows)} new "
-                                      f"({min(r.last_fetched for r in rows)} .. {max(r.last_fetched for r in rows)})")
+                                      f"({min(r.last_fetched for r in rows)} .. {max(r.last_fetched for r in rows)})"
+                                      f"{created}")
             except Exception as exc:  # noqa: BLE001 - one broken file must not stop the others
                 failed.append(project)
                 self.stdout.write(self.style.ERROR(f"  {project:>6}: {exc!r}"))
             finally:
-                if database:
-                    release_connection(database)
+                # The device search may have opened several databases - ~1000 projects, never all at once.
+                release_project_connections()
 
         verb = "Inserted" if options["apply"] else "Would insert"
         self.stdout.write(self.style.SUCCESS(f"{verb} {total} transmissions."))

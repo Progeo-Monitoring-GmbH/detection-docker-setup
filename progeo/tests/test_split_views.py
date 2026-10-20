@@ -405,3 +405,21 @@ def test_ingestion_reuses_the_projects_location_of_another_account(world, split)
     ]
     device = ProgeoDevice.objects.using(measure._state.db).get(pk=measure.device_id)
     assert device.location_id == location.pk
+
+
+@WITH_PROJECT_DBS
+@LOCMEM_CACHE
+def test_locate_device_closes_every_database_it_searched(world, monkeypatch):
+    """Regression: the search over every project database kept each
+    connection open - "too many clients" in catch_up_legacy_files."""
+    from progeo.helper import project_dbs as dbs
+
+    released = []
+    monkeypatch.setattr(dbs, "release_connection", released.append)
+
+    assert dbs.locate_device(f.unique("nowhere")) is None
+    assert set(dbs.existing_project_aliases()) <= set(released)
+
+    released.clear()
+    assert dbs.locate_device(world["device"].raw_hash) == ALIAS
+    assert ALIAS in released

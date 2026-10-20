@@ -160,6 +160,13 @@ def release_connection(alias):
         connection.close()
 
 
+def release_project_connections():
+    """release_connection() for every open connection but "default" - for
+    long loops (commands) that touch several databases per step."""
+    for connection in connections.all(initialized_only=True):
+        release_connection(connection.alias)
+
+
 def map_databases(work, databases, workers=None):
     """[work(database) for database in databases] for views spanning many
     project databases - spread over up to PROJECT_DB_WORKERS threads (each
@@ -508,13 +515,22 @@ def locate_device(raw_hash):
         cached = cache.get(key)
     except Exception:  # noqa: BLE001 - cache unavailable, search instead
         cached = None
-    if cached and ProgeoDevice.objects.using(register_project_db(cached)).filter(raw_hash=raw_hash).exists():
-        return cached
+    if cached:
+        try:
+            if ProgeoDevice.objects.using(register_project_db(cached)).filter(raw_hash=raw_hash).exists():
+                return cached
+        finally:
+            release_connection(cached)
 
     aliases = existing_project_aliases()
     aliases.sort(key=lambda a: project_key_from_alias(a) != UNKNOWN_PROJECT)
     for alias in aliases:
-        if ProgeoDevice.objects.using(register_project_db(alias)).filter(raw_hash=raw_hash).exists():
+        try:
+            found = ProgeoDevice.objects.using(register_project_db(alias)).filter(raw_hash=raw_hash).exists()
+        finally:
+            # Up to ~1000 databases per search - one open connection each exceeds max_connections.
+            release_connection(alias)
+        if found:
             try:
                 cache.set(key, alias, _DEVICE_DB_CACHE_TIMEOUT)
             except Exception:  # noqa: BLE001, S110 - cache unavailable, the next lookup searches again
