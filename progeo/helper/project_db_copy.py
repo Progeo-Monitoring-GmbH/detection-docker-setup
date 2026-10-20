@@ -318,6 +318,446 @@ def align_sequences(alias, models, source=DEFAULT_DB_ALIAS):
             )
 
 
+# ---------------------------------------------------------------------------- measurements
+
+def renumbered_models():
+    """Copied with new ids (copy_measurements), not by transfer_rows."""
+    from progeo.v1.models import ProgeoAlarm, ProgeoMeasurement
+
+    return [ProgeoMeasurement, ProgeoAlarm]
+
+
+# A source row's last_fetched - the partition key, so never NULL in the
+# project database (old rows without it take the device time).
+FETCHED_SQL = sql.SQL("COALESCE(last_fetched, last_updated, now())")
+
+
+def legacy_pairs_sql(prefix=""):
+    """SQL (jsonb array or NULL) for the pair values of an old row: its
+    samples cut to the declared m_points pairs (end_index) like script.php
+    (array_slice(.., m_headerlines, m_points * 2)) - the controllers' trailing
+    artifact ("0, 95") goes - and to an even length. NULL for rows that are
+    no pair data (IMEI, LoRaWAN: no m_points) or already have the lists."""
+    p = sql.SQL(prefix)
+    # Nested CASE: Postgres guarantees CASE order, not AND order - the jsonb
+    # cast must only ever see text that looks like an array.
+    return sql.SQL(
+        "CASE WHEN {p}eigenpotenzial IS NULL AND {p}end_index > 0 AND {p}samples ~ '^\\[.*\\]$' THEN "
+        " (SELECT COALESCE(jsonb_agg(e ORDER BY o), '[]'::jsonb) "
+        "  FROM jsonb_array_elements({p}samples::jsonb) WITH ORDINALITY t(e, o) "
+        "  WHERE o <= LEAST(2 * {p}end_index, jsonb_array_length({p}samples::jsonb) / 2 * 2)) "
+        "END"
+    ).format(p=p)
+
+
+def _potential_sql(column, odd):
+    """eigenpotenzial (odd positions) / wirkpotenzial (even) of a copied row:
+    the stored list, else taken from the pairs of the lateral `p.pairs`."""
+    return sql.SQL(
+        "COALESCE({column}, (SELECT array_agg(round((e #>> '{{}}')::numeric)::integer ORDER BY o) "
+        # %% - the query passes through mogrify, where a single % is a placeholder.
+        "FROM jsonb_array_elements(p.pairs) WITH ORDINALITY t(e, o) WHERE o %% 2 = {rest}))"
+    ).format(column=sql.Identifier(column), rest=sql.Literal(1 if odd else 0))
+
+
+def sample_anomalies(project, source=DEFAULT_DB_ALIAS):
+    """Rows of a project whose samples don't fit the declared m_points beyond
+    the known artifact: {"surplus": n (more than 2 extra values - cut anyway),
+    "incomplete": n (fewer values than declared - kept)}."""
+    from progeo.v1.legacy.executor import KNOWN_SURPLUS_VALUES
+    from progeo.v1.models import ProgeoMeasurement
+
+    where, params = project_filters(project, source)[ProgeoMeasurement]
+    query = sql.SQL(
+        "SELECT count(*) FILTER (WHERE n - 2 * end_index > %s), count(*) FILTER (WHERE n < 2 * end_index) "
+        "FROM (SELECT end_index, CASE WHEN samples ~ '^\\[.*\\]$' THEN jsonb_array_length(samples::jsonb) END n "
+        "      FROM {table} WHERE ({where}) AND eigenpotenzial IS NULL AND end_index > 0) s"
+    ).format(table=_table(ProgeoMeasurement), where=where)
+    with connections[source].cursor() as cursor:
+        raw = _raw(cursor)
+        raw.execute(query, [KNOWN_SURPLUS_VALUES, *params])
+        surplus, incomplete = raw.fetchone()
+    return {"surplus": surplus, "incomplete": incomplete}
+
+
+def measurement_years(project, source=DEFAULT_DB_ALIAS):
+    """Calendar years (partition time zone) of a project's measurements."""
+    from progeo.helper.project_db_partitions import PARTITION_TIME_ZONE
+    from progeo.v1.models import ProgeoMeasurement
+
+    where, params = project_filters(project, source)[ProgeoMeasurement]
+    query = sql.SQL(
+        "SELECT DISTINCT extract(year FROM ({fetched}) AT TIME ZONE %s)::int FROM {table} WHERE ({where})"
+    ).format(fetched=FETCHED_SQL, table=_table(ProgeoMeasurement), where=where)
+    with connections[source].cursor() as cursor:
+        raw = _raw(cursor)
+        raw.execute(query, [PARTITION_TIME_ZONE, *params])
+        return sorted(row[0] for row in raw.fetchall())
+
+
+def _copy_out(query, params, source, buffer):
+    with connections[source].cursor() as cursor:
+        raw = _raw(cursor)
+        text = raw.mogrify(query.as_string(raw), params).decode("utf-8")
+        raw.copy_expert(f"COPY ({text}) TO STDOUT WITH (FORMAT binary)", buffer)
+    buffer.seek(0)
+
+
+# old measurement id (default) -> new id (project database), kept in every
+# project database: delta copies continue from it, and old measurement ids
+# (links, exports) can be translated.
+ID_MAP_TABLE = "progeo_split_idmap"
+
+
+def _ensure_id_map(raw):
+    raw.execute(
+        sql.SQL("CREATE TABLE IF NOT EXISTS {} (old_id integer PRIMARY KEY, new_id integer NOT NULL)").format(
+            sql.Identifier(ID_MAP_TABLE)
+        )
+    )
+
+
+def copied_high_water(target):
+    """Highest source measurement id already copied into `target`, or None
+    when nothing was copied yet."""
+    with connections[target].cursor() as cursor:
+        raw = _raw(cursor)
+        raw.execute("SELECT to_regclass(%s) IS NOT NULL", [ID_MAP_TABLE])
+        if not raw.fetchone()[0]:
+            return None
+        raw.execute(sql.SQL("SELECT max(old_id) FROM {}").format(sql.Identifier(ID_MAP_TABLE)))
+        return raw.fetchone()[0]
+
+
+def new_measurement_id(target, old_id):
+    """The id a default-database measurement got in its project database."""
+    with connections[target].cursor() as cursor:
+        raw = _raw(cursor)
+        raw.execute(sql.SQL("SELECT new_id FROM {} WHERE old_id = %s").format(sql.Identifier(ID_MAP_TABLE)), [old_id])
+        row = raw.fetchone()
+    return row[0] if row else None
+
+
+def _merge_file_rows(raw, file_rows, m_table, m_columns, m_cols, target):
+    """Build temp table _u: the rows copied from default (_m) merged with the
+    legacy file's rows - a file row replaces the legacy row of the same
+    device and device time (last_updated = m_date; and takes its old id, so
+    alarms follow); default rows without a file counterpart (other device
+    types, newer data) stay. Rows of a file without device time can't be
+    matched and are added as they are."""
+    from psycopg2.extras import execute_values
+
+    from progeo.v1.models import ProgeoMeasurement
+
+    fields = {field.column: field for field in ProgeoMeasurement._meta.concrete_fields}
+    connection = connections[target]
+    values = [
+        [fields[column].get_db_prep_save(getattr(instance, fields[column].attname), connection) for column in m_columns]
+        for instance in file_rows
+    ]
+    raw.execute(
+        sql.SQL("CREATE TEMP TABLE _f ON COMMIT DROP AS SELECT {cols} FROM {table} WITH NO DATA").format(
+            cols=m_cols, table=m_table
+        )
+    )
+    execute_values(
+        raw,
+        sql.SQL("INSERT INTO _f ({cols}) VALUES %s").format(cols=m_cols).as_string(raw),
+        values,
+        page_size=1000,
+    )
+    prefixed = sql.SQL(", ").join(sql.SQL("f.{}").format(sql.Identifier(column)) for column in m_columns)
+    raw.execute(
+        sql.SQL(
+            "CREATE TEMP TABLE _u ON COMMIT DROP AS "
+            "SELECT * FROM _m m WHERE NOT (m.end_index > 0 AND EXISTS ("
+            "  SELECT 1 FROM _f f WHERE f.device_id = m.device_id AND f.last_updated = m.last_updated)) "
+            "UNION ALL "
+            "SELECT (SELECT min(m.old_id) FROM _m m WHERE m.end_index > 0 "
+            "        AND m.device_id = f.device_id AND m.last_updated = f.last_updated), {prefixed} "
+            "FROM _f f"
+        ).format(prefixed=prefixed)
+    )
+
+
+def copy_measurements(project, target, source=DEFAULT_DB_ALIAS, delta=False, file_rows=None):
+    """Copy the project's measurements and alarms into `target`, atomically.
+
+    Full (default): replace them - measurements renumbered 1..n in
+    last_fetched order, so max(id) == count and -pk is newest.
+    delta=True (activate_project_database, repeated runs): only measurements above the
+    highest id copied so far, appended after the current maximum (late
+    rows don't re-sort the existing ones); falls back to full when nothing
+    was copied yet. Measurements changed or deleted in the source after
+    their copy are not followed - a full run (or the verify counts) catches
+    that.
+
+    Both: last_fetched is never NULL (FETCHED_SQL); pair data moves from
+    samples into eigenpotenzial / wirkpotenzial, cut to the declared points
+    (legacy_pairs_sql) - samples stays only for non-pair data (IMEI); the
+    old -> new ids go into ID_MAP_TABLE; every alarm of the project is
+    inserted or updated (status changes!) with its remapped measurement_id,
+    alarms gone from the source are removed. Alarms keep their ids.
+
+    file_rows (full copies only): unsaved rows of the project's legacy file
+    (legacy_file_rows), merged in by _merge_file_rows.
+
+    Re-running is refused by the command once PROJECT_DB_SPLIT is on.
+    Returns (measurements copied, alarms written)."""
+    from progeo.v1.models import ProgeoAlarm, ProgeoMeasurement
+
+    high_water = copied_high_water(target) if delta else None
+    delta = delta and high_water is not None
+
+    filters = project_filters(project, source)
+    m_where, m_params = filters[ProgeoMeasurement]
+    a_where, a_params = filters[ProgeoAlarm]
+    if delta:
+        m_where = sql.SQL("({}) AND id > %s").format(m_where)
+        m_params = [*m_params, high_water]
+
+    m_columns = [f.column for f in ProgeoMeasurement._meta.concrete_fields if f.column != "id"]
+    m_select = []
+    for column in m_columns:
+        if column == "last_fetched":
+            m_select.append(FETCHED_SQL)
+        elif column == "samples":
+            # Pair data moves into the two lists - not kept twice.
+            m_select.append(sql.SQL("CASE WHEN p.pairs IS NULL THEN samples END"))
+        elif column == "eigenpotenzial":
+            m_select.append(_potential_sql(column, odd=True))
+        elif column == "wirkpotenzial":
+            m_select.append(_potential_sql(column, odd=False))
+        else:
+            m_select.append(sql.Identifier(column))
+    m_cols = sql.SQL(", ").join(map(sql.Identifier, m_columns))
+    # The filter's columns are unqualified - the lateral only adds `pairs`.
+    m_query = sql.SQL(
+        "SELECT id, {select} "
+        "FROM {table} CROSS JOIN LATERAL (SELECT {pairs} AS pairs) p WHERE ({where})"
+    ).format(
+        select=sql.SQL(", ").join(m_select),
+        table=_table(ProgeoMeasurement), pairs=legacy_pairs_sql(), where=m_where,
+    )
+
+    a_columns = [f.column for f in ProgeoAlarm._meta.concrete_fields]
+    a_cols = sql.SQL(", ").join(map(sql.Identifier, a_columns))
+    a_query = sql.SQL("SELECT {cols} FROM {table} WHERE ({where})").format(
+        cols=a_cols, table=_table(ProgeoAlarm), where=a_where
+    )
+    a_insert = sql.SQL(", ").join(
+        sql.SQL("map.new_id") if column == "measurement_id" else sql.SQL("a.{}").format(sql.Identifier(column))
+        for column in a_columns
+    )
+    a_update = sql.SQL(", ").join(
+        sql.SQL("{c} = EXCLUDED.{c}").format(c=sql.Identifier(column)) for column in a_columns if column != "id"
+    )
+
+    m_table, a_table, id_map = _table(ProgeoMeasurement), _table(ProgeoAlarm), sql.Identifier(ID_MAP_TABLE)
+    with SpooledTemporaryFile(max_size=SPOOL_MAX_BYTES) as m_buffer, \
+            SpooledTemporaryFile(max_size=SPOOL_MAX_BYTES) as a_buffer:
+        _copy_out(m_query, m_params, source, m_buffer)
+        _copy_out(a_query, a_params, source, a_buffer)
+
+        with transaction.atomic(using=target), connections[target].cursor() as cursor:
+            raw = _raw(cursor)
+            _ensure_id_map(raw)
+            if not delta:
+                # DELETE, not TRUNCATE: TRUNCATE refuses while deferred FK checks
+                # of the same transaction are pending; the sequences are set below.
+                raw.execute(sql.SQL("DELETE FROM {}").format(a_table))
+                raw.execute(sql.SQL("DELETE FROM {}").format(m_table))
+                raw.execute(sql.SQL("DELETE FROM {}").format(id_map))
+            raw.execute(sql.SQL("SELECT COALESCE(max(id), 0) FROM {}").format(m_table))
+            offset = raw.fetchone()[0]
+
+            raw.execute(
+                sql.SQL(
+                    "CREATE TEMP TABLE _m ON COMMIT DROP AS SELECT id AS old_id, {cols} FROM {table} WITH NO DATA"
+                ).format(cols=m_cols, table=m_table)
+            )
+            raw.copy_expert(sql.SQL("COPY _m FROM STDIN WITH (FORMAT binary)").as_string(raw), m_buffer)
+
+            rows = "_m"
+            if file_rows and not delta:
+                _merge_file_rows(raw, file_rows, m_table, m_columns, m_cols, target)
+                rows = "_u"
+            # Numbered in last_fetched order after the current maximum.
+            raw.execute(
+                sql.SQL(
+                    "CREATE TEMP TABLE _n ON COMMIT DROP AS "
+                    "SELECT (row_number() OVER (ORDER BY last_fetched, old_id NULLS LAST))::integer + %s AS new_id, * "
+                    "FROM {rows}"
+                ).format(rows=sql.Identifier(rows)),
+                [offset],
+            )
+            raw.execute(
+                sql.SQL("INSERT INTO {table} (id, {cols}) SELECT new_id, {cols} FROM _n").format(
+                    table=m_table, cols=m_cols
+                )
+            )
+            measurements = raw.rowcount
+            raw.execute(
+                sql.SQL("INSERT INTO {} (old_id, new_id) SELECT old_id, new_id FROM _n WHERE old_id IS NOT NULL").format(
+                    id_map
+                )
+            )
+
+            raw.execute(
+                sql.SQL("CREATE TEMP TABLE _a ON COMMIT DROP AS SELECT {cols} FROM {table} WITH NO DATA").format(
+                    cols=a_cols, table=a_table
+                )
+            )
+            raw.copy_expert(sql.SQL("COPY _a FROM STDIN WITH (FORMAT binary)").as_string(raw), a_buffer)
+            raw.execute(sql.SQL("DELETE FROM {} WHERE id NOT IN (SELECT id FROM _a)").format(a_table))
+            raw.execute(
+                sql.SQL(
+                    "INSERT INTO {table} ({cols}) SELECT {insert} FROM _a a "
+                    "JOIN {id_map} map ON map.old_id = a.measurement_id "
+                    "ON CONFLICT (id) DO UPDATE SET {update}"
+                ).format(table=a_table, cols=a_cols, insert=a_insert, id_map=id_map, update=a_update)
+            )
+            alarms = raw.rowcount
+
+            # New measurements continue after the copied ones; alarms keep
+            # their old ids and continue above the highest.
+            for table in (m_table, a_table):
+                raw.execute(
+                    sql.SQL(
+                        "SELECT setval(pg_get_serial_sequence(%s, 'id'), (SELECT COALESCE(max(id), 0) + 1 FROM {}), false)"
+                    ).format(table),
+                    [table.strings[0]],
+                )
+            raw.execute("DROP TABLE IF EXISTS _m, _a, _n, _f, _u")
+    return measurements, alarms
+
+
+def _legacy_device_id(project, alias, source):
+    """The project's legacy controller device (raw_hash = project id, as the
+    ingestion files it) - copied from default, or created in the project
+    database (never in default) when the project only exists in its file."""
+    from progeo.v1.models import ProgeoDevice, ProgeoLocation
+
+    raw_hash = str(project)
+    for alias_or_source in (alias, source):  # the project db first: created on an earlier run
+        device = ProgeoDevice.objects.using(alias_or_source).filter(raw_hash=raw_hash).values_list("pk", flat=True).first()
+        if device is not None:
+            return device
+    location = ProgeoLocation.objects.using(source).filter(project_id=project).order_by("pk").first()
+    if location is None:
+        return None
+    created = ProgeoDevice.objects.using(alias).create(
+        raw_hash=raw_hash, location_id=location.pk, project_id=project, type=ProgeoDevice.DeviceType.LEGACY
+    )
+    return created.pk
+
+
+def legacy_file_rows(legacy_file, device_id):
+    """Unsaved ProgeoMeasurement rows of a parsed legacy file - built exactly
+    like the ingestion builds them (legacy_measurement_fields), one per
+    receive time and device time."""
+    from progeo.v1.legacy.executor import _legacy_measurement_datetime, legacy_measurement_fields
+    from progeo.v1.models import ProgeoMeasurement
+
+    rows, seen = [], set()
+    for received, measurement in legacy_file.rows:
+        device_time = _legacy_measurement_datetime(measurement)
+        if (received, device_time) in seen:
+            continue  # the same transmission logged twice
+        seen.add((received, device_time))
+        rows.append(ProgeoMeasurement(
+            device_id=device_id,
+            last_fetched=received,
+            last_updated=device_time,
+            **legacy_measurement_fields(measurement),
+        ))
+    return rows
+
+
+def sync_project(project, *, upsert=False, delta=False, chunk_size=DEFAULT_CHUNK_SIZE, progress=None,
+                 source=DEFAULT_DB_ALIAS, legacy_files=False, download=True):
+    """Bring one project's database up to date from `source`: create (from
+    the template) / migrate / partition it, mirror the shared rows, copy the
+    other project rows by id (upsert=True also updates changed ones), the
+    measurements and alarms (copy_measurements, delta=True only new
+    measurements) and align the sequences. `progress(alias)` may return a
+    callback(model, copied, written).
+
+    legacy_files=True (full copies only): the project's gprs<project>.txt
+    (helper/legacy_files.py) is the preferred source of its legacy
+    measurements, merged with default; a missing or invalid file falls back
+    to default alone.
+
+    Returns {"alias", "created", "years", "copied": {model name: n},
+    "anomalies", "source": description of where the measurements came from}."""
+    from progeo.helper.legacy_files import load_legacy_file
+    from progeo.helper.project_db_partitions import PARTITION_TIME_ZONE
+    from progeo.helper.project_dbs import (
+        UNKNOWN_PROJECT,
+        ensure_project_db,
+        existing_project_aliases,
+        project_alias,
+        project_key,
+        register_project_db,
+    )
+    from progeo.v1.models import ProgeoAlarm, ProgeoMeasurement
+
+    legacy_file, source_note = None, "default"
+    # The file only feeds a full copy - a delta run (or the first one, which
+    # is a full copy) only adds what default received since.
+    alias_name = project_alias(project)
+    first_copy = (
+        not delta
+        or alias_name not in existing_project_aliases(refresh=True)
+        or copied_high_water(register_project_db(alias_name)) is None
+    )
+    if legacy_files and first_copy and project_key(project) != UNKNOWN_PROJECT:
+        legacy_file, note = load_legacy_file(project, download=download)
+        source_note = f"file + default ({note})" if legacy_file else f"default (file: {note})"
+
+    years = set(measurement_years(project, source))
+    if legacy_file:
+        from zoneinfo import ZoneInfo
+
+        from django.utils import timezone
+
+        zone = ZoneInfo(PARTITION_TIME_ZONE)
+        for received, _ in legacy_file.rows:
+            years.add((timezone.make_aware(received, zone) if timezone.is_naive(received) else received).year)
+    alias, created = ensure_project_db(project, migrate=True, years=sorted(years))
+    callback = progress(alias) if progress else None
+
+    renumbered = renumbered_models()
+    filters = project_filters(project, source)
+    copied = {}
+    for model in project_models():
+        if model in renumbered:
+            continue
+        where, params = filters[model]
+        copied[model.__name__], _ = transfer_chunked(
+            model, where, params, alias, upsert=upsert, chunk_size=chunk_size, source=source, progress=callback
+        )
+    # Before anything is created in the project database (legacy device).
+    align_sequences(alias, [model for model in project_models() if model not in renumbered], source=source)
+
+    file_rows = None
+    if legacy_file:
+        device_id = _legacy_device_id(project, alias, source)
+        if device_id is None:
+            source_note = "default (file has no location to belong to)"
+        else:
+            file_rows = legacy_file_rows(legacy_file, device_id)
+
+    anomalies = sample_anomalies(project, source)
+    copied[ProgeoMeasurement.__name__], copied[ProgeoAlarm.__name__] = copy_measurements(
+        project, alias, source=source, delta=delta, file_rows=file_rows
+    )
+    return {
+        "alias": alias, "created": created, "years": sorted(years), "copied": copied,
+        "anomalies": anomalies, "source": source_note,
+    }
+
+
 # ---------------------------------------------------------------------------- checks
 
 def find_conflicts(source=DEFAULT_DB_ALIAS):
@@ -385,14 +825,43 @@ def _source_ids_into_target(model, where, params, alias, tmp, source=DEFAULT_DB_
             )
 
 
+def _verify_by_count(model, where, params, alias, source):
+    pk = sql.Identifier(model._meta.pk.column)
+    with connections[source].cursor() as cursor:
+        raw = _raw(cursor)
+        raw.execute(
+            sql.SQL("SELECT count(*), max({pk}) FROM {table} WHERE ({where})").format(
+                pk=pk, table=_table(model), where=where
+            ),
+            params,
+        )
+        total, max_id = raw.fetchone()
+    with connections[alias].cursor() as cursor:
+        raw = _raw(cursor)
+        raw.execute(sql.SQL("SELECT count(*) FROM {}").format(_table(model)))
+        copied = raw.fetchone()[0]
+    return {
+        "source": total,
+        "missing": max(0, total - copied),
+        "target_only": max(0, copied - total),
+        "max_id": max_id,
+    }
+
+
 def verify_project(project_id, alias, source=DEFAULT_DB_ALIAS):
     """Compare a project's PROJECT_MODELS rows in "default" with `alias`.
     {model: {"source": n, "missing": rows not in target, "target_only": rows
-    only in target, "max_id": highest verified source pk}}."""
+    only in target, "max_id": highest verified source pk}}.
+
+    Renumbered models (measurements, alarms - see copy_measurements) can't
+    be matched by id; they are compared by count."""
     filters = project_filters(project_id, source)
     result = {}
     for model in project_models():
         where, params = filters[model]
+        if model in renumbered_models():
+            result[model] = _verify_by_count(model, where, params, alias, source)
+            continue
         tmp = f"_verify_{model._meta.db_table}"
         pk = sql.Identifier(model._meta.pk.column)
         with transaction.atomic(using=alias):

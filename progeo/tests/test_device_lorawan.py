@@ -141,6 +141,33 @@ def test_catch_lorawan_data_reads_dev_eui_from_chirpstack_device_info(api_client
 
 
 @pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_catch_lorawan_data_stores_battery(api_client):
+    uplink = {"object": {**LORAWAN_UPLINK["object"], "messages": [
+        *LORAWAN_UPLINK["object"]["messages"],
+        {"type": "upload_battery", "battery": 100.0},
+        {"type": "upload_version", "hardwareVersion": "1.0", "softwareVersion": "1.1"},
+    ]}}
+
+    response = api_client.post(f"/v1/device/lorawan/7003/?token={_make_token()}", uplink, format="json")
+
+    assert response.status_code == 200, response.content
+    assert response.json().get("battery") == 100.0
+    stored = ProgeoMeasurement.objects.using("default").get(pk=response.json()["measurement_id"])
+    assert (stored.battery, stored.temperature, stored.humidity) == (100.0, 22.65, 52.06)
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_catch_lorawan_data_accepts_battery_only_uplink(api_client):
+    uplink = {"object": {"valid": True, "err": 0, "messages": [{"type": "upload_battery", "battery": 87}]}}
+
+    response = api_client.post(f"/v1/device/lorawan/7004/?token={_make_token()}", uplink, format="json")
+
+    assert response.status_code == 200, response.content
+    stored = ProgeoMeasurement.objects.using("default").get(pk=response.json()["measurement_id"])
+    assert (stored.battery, stored.temperature, stored.humidity) == (87.0, None, None)
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
 def test_catch_lorawan_data_rejects_unknown_token(api_client):
     before_count = ProgeoMeasurement.objects.using("default").count()
 

@@ -34,6 +34,8 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    # ArrayField (ProgeoMeasurement.eigenpotenzial / wirkpotenzial).
+    "django.contrib.postgres",
 
     "rest_framework",
     "rest_framework.authtoken",
@@ -164,6 +166,14 @@ DATABASES = {
     **dyn_dbs
 }
 
+# Own database of the public demo (demo_account command), see progeo/settings.py.
+DEMO_DATABASE = "demo"
+DATABASES[DEMO_DATABASE] = {
+    **DATABASES["unit_tests"],
+    "NAME": "unit_tests_demo",
+    "TEST": {"NAME": "unit_tests_demo"},
+}
+
 # Force all default ORM operations during pytest to hit the unit test database.
 # This keeps read/write activity isolated from the real default database.
 DATABASES["default"] = {
@@ -174,10 +184,12 @@ DATABASES["default"] = {
 # Own prefix, so test project databases never show up as real projects on a
 # shared Postgres server (see progeo/helper/project_dbs.py).
 PROJECT_DB_PREFIX = "unit_tests_project_"
+PROJECT_DB_TEMPLATE = "unit_tests_project_template"
 PROJECT_DB_SPLIT = False
 PROJECT_DB_STRICT = False
 
 DATABASE_ROUTERS = [
+    "progeo.router.DemoRouter",
     "progeo.router.ProjectRouter",
     "progeo.router.DjangoRouter",
     "progeo.router.AccountRouter",
@@ -297,8 +309,8 @@ save_check_dir(EXPORT_DIR)
 if os.getenv("SECURE_PROXY_SSL_HEADER"):
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
-if os.getenv("SECURE_REDIRECT_EXEMPT"):
-    SECURE_REDIRECT_EXEMPT = []
+# Same as progeo/settings.py: the legacy GPRS controllers speak plain http.
+SECURE_REDIRECT_EXEMPT = [r"^gprs_\d+\.php$"]
 
 SECURE_REFERRER_POLICY = os.getenv("SECURE_REFERRER_POLICY")
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

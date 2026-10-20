@@ -140,12 +140,7 @@ def register_project_db(alias):
 
     # connections.settings is the very dict object of settings.DATABASES,
     # so every `for db in DATABASES` loop sees the new alias as well.
-    databases = connections.settings
-    if alias not in databases:
-        config = copy.deepcopy(databases[DEFAULT_DB_ALIAS])
-        config["NAME"] = alias
-        config.setdefault("TEST", {})["NAME"] = None
-        databases[alias] = config
+    _register_database(alias)
 
     connectors = getattr(settings, "DBBACKUP_CONNECTORS", None)
     if isinstance(connectors, dict) and alias not in connectors and DEFAULT_DB_ALIAS in connectors:
@@ -172,9 +167,35 @@ def existing_project_aliases(refresh=False):
 
 
 def register_all_project_dbs():
-    """Register every existing project database; returns their aliases.
-    Call before looping over DATABASES (migrate, backup, swap, sync)."""
+    """Register every existing project database (and the demo database, if
+    it exists); returns the project aliases. Call before looping over
+    DATABASES (migrate, backup, swap, sync)."""
+    register_demo_db()
     return [register_project_db(alias) for alias in existing_project_aliases(refresh=True)]
+
+
+def demo_alias():
+    return getattr(settings, "DEMO_DATABASE", "demo")
+
+
+def register_demo_db(create=False):
+    """Register the demo database (settings.DEMO_DATABASE) if it exists -
+    create=True creates and migrates it first. Returns the alias, or None
+    when it doesn't exist (and create is False). Settings may already list
+    it under another physical name (test settings)."""
+    alias = demo_alias()
+    configured = alias in connections.settings
+    name = connections.settings[alias]["NAME"] if configured else alias
+    if not database_exists(name):
+        if not create:
+            return None
+        create_database(name)
+        dlog(f"created database {name}", tag="[DEMO_DB]")
+    if not configured:
+        _register_database(alias)
+    if create:
+        migrate_if_needed(alias)
+    return alias
 
 
 _bootstrapped = {"done": False}
@@ -198,13 +219,23 @@ def bootstrap_project_dbs(**kwargs):
 
 
 def project_keys_in_use(source=DEFAULT_DB_ALIAS):
-    """Every project key a location refers to, plus UNKNOWN_PROJECT (home of
-    locations without project_id, devices without location and new devices
-    that are not assigned yet)."""
-    from progeo.v1.models import ProgeoLocation
+    """The projects that get their own database: every project with a
+    device, plus UNKNOWN_PROJECT (locations without project_id, devices
+    without location, new unassigned devices).
+
+    A project without devices (finished or not started, ~500 on the old
+    system) has no measurements to separate, and an empty database costs
+    ~10 MB. It stays in "default" - its location lives there anyway, and so
+    do its few plans, measure points and access rules (project_db_for routes
+    there). Its database is created with its first device
+    (activate_project_database, project_db_signals)."""
+    from django.db.models import Exists, OuterRef
+
+    from progeo.v1.models import ProgeoDevice, ProgeoLocation
 
     ids = (
         ProgeoLocation.objects.using(source).exclude(project_id__isnull=True)
+        .filter(Exists(ProgeoDevice.objects.using(source).filter(location=OuterRef("pk"))))
         .order_by("project_id").values_list("project_id", flat=True).distinct()
     )
     return [*ids, UNKNOWN_PROJECT]
@@ -218,37 +249,119 @@ def database_exists(name):
         return cursor.fetchone() is not None
 
 
-def create_database(name):
-    """CREATE DATABASE (not allowed inside a transaction, hence autocommit)."""
+def create_database(name, template=None):
+    """CREATE DATABASE (not allowed inside a transaction, hence autocommit),
+    optionally as a copy of `template`."""
     connection = connections[DEFAULT_DB_ALIAS]
     old_autocommit = connection.get_autocommit()
     connection.set_autocommit(True)
+    statement = sql.SQL("CREATE DATABASE {} ENCODING 'UTF8'").format(sql.Identifier(name))
+    if template:
+        statement = sql.SQL("CREATE DATABASE {} TEMPLATE {}").format(sql.Identifier(name), sql.Identifier(template))
     try:
         with connection.cursor() as cursor:
-            cursor.execute(sql.SQL("CREATE DATABASE {} ENCODING 'UTF8'").format(sql.Identifier(name)))
+            cursor.execute(statement)
     finally:
         connection.set_autocommit(old_autocommit)
     _existing_cache["at"] = 0.0
 
 
-def ensure_project_db(project_id, migrate=False, mirror=True):
-    """Create (if missing), register, migrate and fill the mirrors of a
-    project database. Returns (alias, created). A new database is always
-    migrated; pass migrate=True to migrate an existing one as well."""
+def template_alias():
+    """Database every project database is cloned from: migrated and
+    partitioned once, so a new project costs a file copy (~10 MB) instead of
+    a full `migrate` - with ~1000 projects that's minutes instead of hours."""
+    return getattr(settings, "PROJECT_DB_TEMPLATE", "progeo_project_template")
+
+
+def _register_database(alias):
+    databases = connections.settings
+    if alias not in databases:
+        config = copy.deepcopy(databases[DEFAULT_DB_ALIAS])
+        config["NAME"] = alias
+        config.setdefault("TEST", {})["NAME"] = None
+        databases[alias] = config
+    return alias
+
+
+_applied_cache = {}
+
+
+def pending_migrations(alias):
+    """Migrations of the code that `alias` hasn't applied - one query against
+    django_migrations instead of a full `migrate` run per database."""
+    from django.db.migrations.loader import MigrationLoader
+
+    if "graph_nodes" not in _applied_cache:
+        loader = MigrationLoader(None, ignore_no_migrations=True)
+        _applied_cache["graph_nodes"] = set(loader.graph.nodes)
+    with connections[alias].cursor() as cursor:
+        cursor.execute(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'django_migrations')"
+        )
+        if not cursor.fetchone()[0]:
+            return set(_applied_cache["graph_nodes"])
+        cursor.execute("SELECT app, name FROM django_migrations")
+        applied = set(cursor.fetchall())
+    return _applied_cache["graph_nodes"] - applied
+
+
+def migrate_if_needed(alias):
+    """Run `migrate` on `alias` only when it lags behind; True if it ran."""
     from django.core.management import call_command
 
+    if not pending_migrations(alias):
+        return False
+    call_command("migrate", database=alias, interactive=False, verbosity=0)
+    return True
+
+
+def prepare_template():
+    """Create/migrate/partition the template database (idempotent)."""
+    from progeo.helper.project_db_partitions import ensure_upcoming_partitions
+
+    alias = _register_database(template_alias())
+    if not database_exists(alias):
+        create_database(alias)
+    migrate_if_needed(alias)
+    ensure_upcoming_partitions(alias)
+    # CREATE DATABASE ... TEMPLATE refuses while anyone is connected to it.
+    connections[alias].close()
+    return alias
+
+
+def ensure_project_db(project_id, migrate=False, mirror=True, years=()):
+    """Create (if missing, cloned from the template), register, partition
+    and fill the mirrors of a project database. Returns (alias, created).
+    migrate=True also brings an existing database up to date. `years` get
+    their measurement partition (the current and next year always do)."""
+    from django.db.utils import ProgrammingError
+
     from progeo.helper.project_db_copy import mirror_shared
+    from progeo.helper.project_db_partitions import (
+        ensure_upcoming_partitions,
+        partition_measurements,
+    )
 
     alias = project_alias(project_id)
     created = not database_exists(alias)
     if created:
-        create_database(alias)
-        dlog(f"created database {alias}", tag="[PROJECT_DB]")
+        template = prepare_template()
+        try:
+            create_database(alias, template=template)
+            dlog(f"created database {alias} from {template}", tag="[PROJECT_DB]")
+        except ProgrammingError as exc:  # created concurrently (celery task vs. prepare_databases)
+            if not database_exists(alias):
+                raise
+            created = False
+            dlog(f"{alias} appeared concurrently: {exc}", tag="[PROJECT_DB]")
 
     register_project_db(alias)
 
-    if created or migrate:
-        call_command("migrate", database=alias, interactive=False, verbosity=0)
+    if migrate and not created:
+        migrate_if_needed(alias)
+
+    partition_measurements(alias, years=years)
+    ensure_upcoming_partitions(alias)
 
     if mirror:
         mirror_shared(alias, project_key(project_id))
@@ -281,7 +394,9 @@ def current_project_db():
 
 
 def project_db_for(project):
-    """Alias holding the project rows of a location / project id / alias.
+    """Alias holding the project rows of a location / project id / alias -
+    "default" while the project has no database yet (no device so far, see
+    project_keys_in_use). An explicit alias is taken as it is.
 
     Only locations are accepted as objects: ProgeoDevice.project_id and
     ProgeoMeasurement.project_id are reported by the hardware and may differ
@@ -291,12 +406,19 @@ def project_db_for(project):
     if project == DEFAULT_DB_ALIAS:
         return DEFAULT_DB_ALIAS
     if isinstance(project, ProgeoLocation):
-        return register_project_db(project_alias(project.project_id))
+        return _existing_or_default(project_alias(project.project_id))
     if isinstance(project, str) and is_project_alias(project) and not project.isdigit():
         return register_project_db(project)
     if project is None or isinstance(project, (int, str)):
-        return register_project_db(project_alias(project))
+        return _existing_or_default(project_alias(project))
     raise TypeError(f"Cannot resolve a project database from {type(project).__name__}")
+
+
+def _existing_or_default(alias):
+    """`alias` if that database exists (list cached 60s), else "default"."""
+    if alias in existing_project_aliases():
+        return register_project_db(alias)
+    return DEFAULT_DB_ALIAS
 
 
 # ---------------------------------------------------------------------------- devices

@@ -27,7 +27,7 @@ from progeo.v1.creator import create_progeo_measurement_safe
 from progeo.v1.legacy.executor import (
     SafeLuaUploadParser,
     fetch_and_import_legacy_project,
-    parse_legacy_data_measurement,
+    ingest_legacy_query,
     parse_sample_timestamp,
     save_measurement_from_legacy_data,
 )
@@ -196,14 +196,9 @@ class DeviceViewSet(ProgeoModalViewSet):
     def catch_legacy_data_query(self, request, *args, **kwargs):
         data = request.data.get("Y")
         try:
-            measurement = parse_legacy_data_measurement(data)
+            measurement = ingest_legacy_query(data)
         except (TypeError, ValueError) as exc:
             return RequestFailed({"reason": f"Invalid legacy data: {exc}"})
-        
-        save_measurement_from_legacy_data(
-            measurement=measurement,
-            project_id=measurement.project_id,
-        )
 
         return RequestSuccess({"data": request.data, "measurement": asdict(measurement)})
 
@@ -383,7 +378,8 @@ class DeviceViewSet(ProgeoModalViewSet):
 
         project_id and the LimitedToken come from the URL, the decoded uplink
         from request.data["object"]. Its messages are mapped onto measurement
-        fields by measurementId (see LORAWAN_MEASUREMENT_FIELDS).
+        fields by measurementId (see LORAWAN_MEASUREMENT_FIELDS), battery
+        messages onto ProgeoMeasurement.battery.
         """
 
         #ilog("DeviceViewSet: catch_lorawan_data called | project_id:", project_id, "| request.data:", request.data, tag="[LORAWAN]")
@@ -398,9 +394,21 @@ class DeviceViewSet(ProgeoModalViewSet):
         for message in uplink.get("messages") or []:
             if not isinstance(message, dict):
                 continue
+            # SenseCAP reports the battery level as its own message type
+            # ({"type": "upload_battery", "battery": 100.0}), not by measurementId.
+            if "battery" in message:
+                field, raw_value = "battery", message.get("battery")
+            elif "measurementId" in message:
+                try:
+                    field = LORAWAN_MEASUREMENT_FIELDS.get(int(message.get("measurementId")))
+                except (TypeError, ValueError):
+                    field = None
+                raw_value = message.get("measurementValue")
+            else:
+                # Device info messages (version, interval, sensor id, ...) carry no measurement.
+                continue
             try:
-                field = LORAWAN_MEASUREMENT_FIELDS.get(int(message.get("measurementId")))
-                value = float(message.get("measurementValue"))
+                value = float(raw_value)
             except (TypeError, ValueError):
                 elog(f"Invalid LoRaWAN message: {message}", tag="[LORAWAN]")
                 continue

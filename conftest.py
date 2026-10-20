@@ -4,6 +4,7 @@ import sys
 import time
 
 import pytest
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.core.management import call_command
@@ -61,11 +62,14 @@ def _ensure_permissions(db_alias):
 # OVERWRITE DEFAULT FIXTURE SO DB WILL STAY INTACT: the unit_tests database is
 # never created, dropped or restored by the suite. Isolation comes from
 # pytest-django's per-test transaction rollback (the `db` fixture), so tests
-# can't leak rows into each other or regress the schema. Run
-# `manage.py migrate --database=unit_tests` after adding migrations.
+# can't leak rows into each other or regress the schema. Rebuild it from
+# scratch with `manage.py recreate_test_db --settings=progeo.tests.settings`
+# (also after adding migrations); the baseline rows are seeded below.
 @pytest.fixture(scope="session")
 def django_db_setup(django_db_blocker):
     from django.db import connections
+
+    from progeo.tests.seed import seed_baseline
 
     # The test settings point both "default" and "unit_tests" at the same
     # physical database. Separate connections would mean separate
@@ -73,9 +77,30 @@ def django_db_setup(django_db_blocker):
     # invisible to the other (FK violations, router errors). Share one.
     connections["unit_tests"] = connections["default"]
     with django_db_blocker.unblock():
+        seed_baseline("default")
         _reset_sequences("unit_tests")
         _ensure_permissions("default")
     yield
+
+
+def ensure_migrated_database(alias):
+    """Create (if missing) and migrate an extra test database such as the
+    demo or a project database. Call from a session fixture inside
+    django_db_blocker.unblock(); tests then list `alias` in their django_db
+    marker so it is rolled back like the others."""
+    from progeo.helper.project_dbs import create_database, database_exists
+
+    name = settings.DATABASES[alias]["NAME"]
+    if not database_exists(name):
+        create_database(name)
+    call_command("migrate", database=alias, interactive=False, verbosity=0)
+
+
+@pytest.fixture(scope="session")
+def demo_db(django_db_setup, django_db_blocker):
+    with django_db_blocker.unblock():
+        ensure_migrated_database(settings.DEMO_DATABASE)
+    return settings.DEMO_DATABASE
 
 
 # Both aliases share one connection (see django_db_setup), so every test must
@@ -114,8 +139,13 @@ def setup_args():
 
 
 @pytest.fixture(scope="class")
-def reset_db(django_db_keepdb):
-    call_command("dbrestore", "--noinput", "--skip-checks", "--traceback", "--database=unit_tests")
+def reset_db(django_db_keepdb, django_db_blocker):
+    # No dbrestore here: restoring an older unit_tests dump silently rolled
+    # the schema back behind the migrations. The baseline is seeded instead.
+    from progeo.tests.seed import seed_baseline
+
+    with django_db_blocker.unblock():
+        seed_baseline("default")
     cache.clear()
 
 

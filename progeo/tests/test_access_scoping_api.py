@@ -6,11 +6,13 @@ staff -> everything. Covers the location list/detail endpoints and the data
 hanging off a location (devices, alarms, measurements).
 """
 import pytest
+from django.db import connections
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from rest_framework import serializers
 
 from progeo.tests import factories as f
-from progeo.v1.models import ProgeoMeasurement
+from progeo.v1.models import ProgeoLageplan, ProgeoMeasurement
 
 READ_PERMS = ("module_locations_enabled", "module_measurements_enabled", "module_devices_enabled")
 
@@ -202,3 +204,36 @@ def test_location_details_skip_lageplans(api_client, world):
     row = slim.json()[0]
     assert "lageplans" not in row
     assert "measurement_count" in row
+
+
+def test_location_details_query_count_does_not_grow_with_locations(api_client, world):
+    """Regression (Sentry N+1): child_location_ids and lageplans used to cost
+    queries per location."""
+    user = f.make_user(perms=READ_PERMS)
+    world["account"].users.add(user)
+    api_client.force_authenticate(user=user)
+
+    def queries_for(locations):
+        url = f"/v1/location/details/?ids={','.join(str(location.id) for location in locations)}"
+        with CaptureQueriesContext(connections[f.DB]) as captured:
+            response = api_client.get(url)
+        assert response.status_code == 200, response.content
+        return len(captured), {row["id"]: row for row in response.json()}
+
+    def with_plans_and_child(location):
+        ProgeoLageplan.objects.using(f.DB).create(location=location, name="old", is_active=False)
+        ProgeoLageplan.objects.using(f.DB).create(location=location, name="active", is_active=True)
+        f.make_location(world["account"], parent_location=location)
+        return location
+
+    queries_for([with_plans_and_child(world["granted"])])  # warm up per-request caches (permissions, accounts)
+    single, _ = queries_for([world["granted"]])
+    many_locations = [world["granted"], with_plans_and_child(world["other"]),
+                      with_plans_and_child(f.make_location(world["account"]))]
+    many, rows = queries_for(many_locations)
+
+    assert many == single
+    for location in many_locations:
+        row = rows[location.id]
+        assert row["child_location_ids"] == list(location.child_locations.using(f.DB).values_list("id", flat=True))
+        assert [plan["name"] for plan in row["lageplans"]] == ["active", "old"]

@@ -7,6 +7,7 @@ from enum import Enum
 import auto_prefetch
 from django.conf import settings
 from django.contrib.auth.models import User
+from django.contrib.postgres.fields import ArrayField
 from django.db import connections, models
 from django.utils import timezone
 from jsonfield import JSONField
@@ -343,6 +344,13 @@ class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
     # depends on this yet.
     pe_geschaltet = models.BooleanField(default=False, blank=True)
 
+    # Statistics of the project's own database (all locations of a project
+    # share it, so they carry the same values) - refreshed daily by
+    # refresh_project_db_stats (helper/project_db_stats.py).
+    db_size_bytes = models.BigIntegerField(null=True, blank=True)
+    db_measurement_count = models.IntegerField(null=True, blank=True)
+    db_stats_at = models.DateTimeField(null=True, blank=True)
+
     # Parent-location support: allows location hierarchy
     parent_location = models.ForeignKey(
         'self',
@@ -509,17 +517,28 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
     device = models.ForeignKey(ProgeoDevice, on_delete=models.CASCADE)
     project_id = models.IntegerField(null=True, blank=True)
     is_watching = models.BooleanField(default=False)
-    voltage = models.FloatField(null=True, blank=True)
     humidity = models.FloatField(null=True, blank=True)
     temperature = models.FloatField(null=True, blank=True)
-    current = models.FloatField(null=True, blank=True)
+    # Battery level in percent (LoRaWAN "upload_battery" messages).
+    battery = models.FloatField(null=True, blank=True)
     resistance_idc = models.FloatField(null=True, blank=True)
     resistance_vdc = models.FloatField(null=True, blank=True)
+    # The two values a controller sends per sensor, one list each (index =
+    # sensor_order - 1). They replace `samples` for pair-based data; the
+    # sample pairs (alarm values) are derived: |wirk - eigen| (get_pairs).
+    eigenpotenzial = ArrayField(models.IntegerField(), null=True, blank=True)
+    wirkpotenzial = ArrayField(models.IntegerField(), null=True, blank=True)
+    # Outdated: the interleaved pairs [eigen, wirk, eigen, wirk, ...] of old
+    # rows and non-pair data (IMEI resistances). Dropped once every database
+    # has been migrated to eigenpotenzial / wirkpotenzial.
     samples = JSONField(null=True, blank=True)
-    start_index = models.IntegerField(null=True, blank=True)
+    # The declared m_points of legacy rows - the split cuts their samples to
+    # it (project_db_copy.legacy_pairs_sql). Goes together with `samples`.
     end_index = models.IntegerField(null=True, blank=True)
-    points = models.IntegerField(null=True, blank=True)
     raw_data = JSONField(blank=True)
+    # last_fetched (receive time) is the measurement time and the partition
+    # key of the yearly partitions in the project databases; last_updated is
+    # the device's own clock (m_date), kept to deduplicate imports.
 
     @staticmethod
     def _coerce_numeric_samples(raw_samples):
@@ -574,6 +593,17 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
             values.append(int(number) if number.is_integer() else number)
         return values
 
+    @staticmethod
+    def without_samples(raw_data):
+        """raw_data minus the samples a device payload carried - they are
+        stored once, in eigenpotenzial / wirkpotenzial (set_potentials)."""
+        if not isinstance(raw_data, dict):
+            return raw_data
+        cleaned = {key: value for key, value in raw_data.items() if key != "samples"}
+        if isinstance(cleaned.get("measure"), dict):
+            cleaned["measure"] = {key: value for key, value in cleaned["measure"].items() if key != "samples"}
+        return cleaned
+
     def save(self, *args, **kwargs):
         if self.samples is not None:
             self.samples = self.normalize_samples(self.samples)
@@ -613,8 +643,34 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
             result.append(abs(samples[i + 1] - samples[i]))
         return result
 
+    def set_potentials(self, values):
+        """Store interleaved pair values [eigen, wirk, eigen, wirk, ...] (already
+        cut to the declared points) as eigenpotenzial / wirkpotenzial - and not
+        in the outdated samples column. An unpaired last value is dropped."""
+        values = self._coerce_numeric_samples(values)
+        paired = values[: len(values) - len(values) % 2]
+        self.eigenpotenzial = paired[0::2]
+        self.wirkpotenzial = paired[1::2]
+        self.samples = None
+
+    def get_potentials(self):
+        """Per sensor: "eigenpotenzial", "wirkpotenzial" (the stored lists, or
+        split from the old samples column) and "pairs" = |wirk - eigen| (the
+        alarm values, get_pairs)."""
+        values = self.get_sample_values()
+        paired = values[: len(values) - len(values) % 2]
+        return {
+            "eigenpotenzial": paired[0::2],
+            "wirkpotenzial": paired[1::2],
+            "pairs": self.get_pairs(values),
+        }
+
     def get_sample_values(self):
-        # Prefer denormalized samples column for faster reads.
+        """The interleaved pair values [eigen, wirk, ...]: from eigenpotenzial /
+        wirkpotenzial, for old rows from the outdated samples column."""
+        if self.eigenpotenzial is not None and self.wirkpotenzial is not None:
+            return [value for pair in zip(self.eigenpotenzial, self.wirkpotenzial, strict=False) for value in pair]
+
         samples = self._coerce_numeric_samples(self.samples)
         if samples:
             return samples
@@ -631,9 +687,9 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
     def __str__(self):
         _id = f"[{self.pk}] "
         _device = f"Device {self.device.mac}" if self.device else "Unknown Device"
-        _samples = self.samples
+        _samples = self.samples if self.eigenpotenzial is None else f"E{self.eigenpotenzial} W{self.wirkpotenzial}"
 
-        return f"{_id} 📊 {_device} - {self.project_id} | {self.last_fetched}: {_samples} ({self.points} Points)"
+        return f"{_id} 📊 {_device} - {self.project_id} | {self.last_fetched}: {_samples}"
 
 
 class ProgeoMeasurePoint(ProgeoModel, auto_prefetch.Model):
@@ -690,7 +746,13 @@ class ProgeoAlarm(ProgeoModel, auto_prefetch.Model):
     # normalized is still the same (flapping) episode, not a new event.
     EPISODE_GAP = datetime.timedelta(hours=1)
 
-    measurement = models.ForeignKey(ProgeoMeasurement, on_delete=models.CASCADE, related_name='alarms')
+    # No database constraint: in the project databases ProgeoMeasurement is
+    # partitioned by year (helper/project_db_partitions.py), and Postgres can
+    # only reference a partitioned table by a key that includes the
+    # partition column. Django still cascades the delete.
+    measurement = models.ForeignKey(
+        ProgeoMeasurement, on_delete=models.CASCADE, related_name='alarms', db_constraint=False
+    )
 
     triggered_at = models.DateTimeField(null=True, blank=True)
     threshold = models.FloatField(null=True, blank=True)

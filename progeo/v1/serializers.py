@@ -110,6 +110,26 @@ class DeviceSerializer(ProgeoBaseSerializer):
 
 
 
+LAGEPLAN_ORDER = ("-is_active", "-id")
+
+
+def _is_prefetched(obj, relation):
+    return relation in getattr(obj, "_prefetched_objects_cache", {})
+
+
+def location_prefetches(db_name, lageplans=True):
+    """Prefetches for serializing many locations with LocationSerializer -
+    otherwise child_location_ids and lageplans cost queries per location."""
+    prefetches = [
+        Prefetch("child_locations", queryset=ProgeoLocation.objects.using(db_name).only("id", "parent_location_id").order_by("id")),
+    ]
+    if lageplans:
+        prefetches.append(
+            Prefetch("lageplans", queryset=ProgeoLageplan.objects.using(db_name).order_by(*LAGEPLAN_ORDER))
+        )
+    return prefetches
+
+
 class ProgeoLocationMinSerializer(ProgeoBaseSerializer):
     clazz = serializers.SerializerMethodField("get_clazz_name")
     id = serializers.IntegerField(read_only=True)
@@ -157,9 +177,12 @@ class LocationSerializer(ProgeoBaseSerializer):
         try:
             # Active and newest first - the plan /v1/location/update/ stores
             # the alignment on, so every view shows that one by default.
-            data = ProgeoLageplanSerializer(
-                obj.lageplans.order_by("-is_active", "-id"), many=True
-            ).data
+            # Batch callers prefetch them in that order (location_prefetches).
+            if _is_prefetched(obj, "lageplans"):
+                lageplans = obj.lageplans.all()
+            else:
+                lageplans = obj.lageplans.order_by(*LAGEPLAN_ORDER)
+            data = ProgeoLageplanSerializer(lageplans, many=True).data
             return data if data else None
         except Exception:
             return None
@@ -167,9 +190,11 @@ class LocationSerializer(ProgeoBaseSerializer):
     @staticmethod
     def get_child_location_ids(obj):
         """Returns IDs of child locations in the hierarchy."""
-        if obj.child_locations.exists():
-            return list(obj.child_locations.values_list('id', flat=True))
-        return None
+        if _is_prefetched(obj, "child_locations"):
+            ids = [child.id for child in obj.child_locations.all()]
+        else:
+            ids = list(obj.child_locations.values_list("id", flat=True))
+        return ids or None
 
     @staticmethod
     def get_has_device(obj):

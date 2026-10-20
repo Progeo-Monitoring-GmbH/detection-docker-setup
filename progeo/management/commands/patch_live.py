@@ -100,7 +100,6 @@ class Command(BaseCommand):
                     sample = data["resistance_rows"][0]
                     m.resistance_idc = sample.get("r_idc_ohm", MAX_JSON_SAFE_RESISTANCE_OHM)
                     m.resistance_vdc = sample.get("r_vdc_ohm", MAX_JSON_SAFE_RESISTANCE_OHM)
-                    m.voltage = sample.get("vdc_intput", -1)
 
                 m.save()
 

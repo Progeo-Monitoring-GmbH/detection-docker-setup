@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Spinner } from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
@@ -8,17 +8,20 @@ import { showErrorBar, showRequestError, showSuccessBar } from '../components/ui
 import PillButton from '../components/ui/kit/PillButton';
 import DeviceRenameModal from '../components/modal/DeviceRenameModal';
 import ClimateChart, {
+  type ClimateMetric,
   type ClimateResponse,
 } from '../components/device/ClimateChart';
 import PanelCard from '../components/ui/kit/PanelCard';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
-
-type ClimateRange = '24h' | '7d' | '30d';
-const CLIMATE_RANGE_DAYS: Record<ClimateRange, number> = {
-  '24h': 1,
-  '7d': 7,
-  '30d': 30,
-};
+import {
+  availableTimeRanges,
+  bucketLabel,
+  effectiveTimeRange,
+  TIME_RANGE_DAYS,
+  timeRangeLabelKey,
+  type TimeRange,
+} from './timeRanges';
+import useMeasurementRange from './useMeasurementRange';
 
 type LocationClimatePanelsProps = {
   locationId: number;
@@ -28,7 +31,7 @@ type LocationClimatePanelsProps = {
 
 /**
  * LoRaWAN objects (ProgeoLocation.PROJECT_TYPE_CHOICES.LORAWAN): no samples,
- * so no heatmap - instead humidity and temperature per device, from
+ * so no heatmap - instead humidity, temperature and battery per device, from
  * GET /v1/location/<pk>/climate/.
  */
 const LocationClimatePanels = ({ locationId, demo = false }: LocationClimatePanelsProps) => {
@@ -36,25 +39,43 @@ const LocationClimatePanels = ({ locationId, demo = false }: LocationClimatePane
   const { enqueueSnackbar } = useSnackbar();
   const { t } = useTranslation();
 
-  const [range, setRange] = useState<ClimateRange>('7d');
+  // Long ranges only once the data reaches that far back; an unavailable
+  // selection falls back to the longest offered range.
+  const measurementRange = useMeasurementRange(locationId, demo);
+  const availableRanges = useMemo(
+    () => availableTimeRanges(measurementRange),
+    [measurementRange],
+  );
+  const [selectedRange, setSelectedRange] = useState<TimeRange>('7d');
+  const range = effectiveTimeRange(selectedRange, availableRanges);
   const [climate, setClimate] = useState<ClimateResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
   const [hoveredDeviceId, setHoveredDeviceId] = useState<number | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const [renameOpen, setRenameOpen] = useState(false);
+  // Only the latest request may land - a slow (long-range, aggregated)
+  // response must not overwrite the range picked after it.
+  const latestRequest = useRef(0);
 
   const loadClimate = useCallback(() => {
+    const request = ++latestRequest.current;
     setLoading(true);
     setDenied(false);
     void axiosConfig.perform_get(
       auth,
-      `${demo ? '/v1/demo' : '/v1/location'}/${locationId}/climate/?days=${CLIMATE_RANGE_DAYS[range]}`,
+      `${demo ? '/v1/demo' : '/v1/location'}/${locationId}/climate/?days=${TIME_RANGE_DAYS[range]}`,
       (response) => {
+        if (request !== latestRequest.current) {
+          return;
+        }
         setClimate((response?.data || null) as ClimateResponse | null);
         setLoading(false);
       },
       (error) => {
+        if (request !== latestRequest.current) {
+          return;
+        }
         if (error?.response?.status === 403) {
           setDenied(true);
         } else {
@@ -70,6 +91,9 @@ const LocationClimatePanels = ({ locationId, demo = false }: LocationClimatePane
   }, [loadClimate]);
 
   const devices = climate?.devices ?? [];
+  // Long ranges come back averaged per bucket (null/absent for raw data).
+  const bucketSeconds = climate?.bucket_seconds ?? null;
+  const bucket = bucketLabel(bucketSeconds);
 
   const isSuperuser =
     !demo && Boolean((auth?.user as { is_superuser?: boolean } | null)?.is_superuser);
@@ -160,7 +184,7 @@ const LocationClimatePanels = ({ locationId, demo = false }: LocationClimatePane
     reader.readAsText(files[0]);
   };
 
-  const body = (metric: 'humidity' | 'temperature', axisTitle: string, unit: string) =>
+  const body = (metric: ClimateMetric, axisTitle: string, unit: string) =>
     denied ? (
       <div style={{ color: '#8B8383', fontSize: 13 }}>
         {t('status_no_measurement_access')}
@@ -178,6 +202,7 @@ const LocationClimatePanels = ({ locationId, demo = false }: LocationClimatePane
         emptyLabel={t('climate_empty')}
         hoveredDeviceId={hoveredDeviceId}
         onHoverDevice={setHoveredDeviceId}
+        bucketSeconds={bucketSeconds}
       />
     );
 
@@ -185,14 +210,18 @@ const LocationClimatePanels = ({ locationId, demo = false }: LocationClimatePane
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div style={{ padding: '2px 2px 0', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <SegmentedControl
-          options={[
-            { value: '24h', label: t('status_range_24h') },
-            { value: '7d', label: t('status_range_7d') },
-            { value: '30d', label: t('status_range_30d') },
-          ]}
+          options={availableRanges.map((value) => ({
+            value,
+            label: t(timeRangeLabelKey(value)),
+          }))}
           value={range}
-          onChange={(value) => setRange(value as ClimateRange)}
+          onChange={(value) => setSelectedRange(value as TimeRange)}
         />
+        {bucket && (
+          <span style={{ color: '#8B8383', fontSize: 12 }}>
+            {t(bucket.key, { count: bucket.count })}
+          </span>
+        )}
         {isSuperuser && (
           <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
             <PillButton
@@ -237,6 +266,9 @@ const LocationClimatePanels = ({ locationId, demo = false }: LocationClimatePane
       </PanelCard>
       <PanelCard title={t('climate_temperature_title')}>
         {body('temperature', t('climate_temperature_axis'), '°C')}
+      </PanelCard>
+      <PanelCard title={t('climate_battery_title')}>
+        {body('battery', t('climate_battery_axis'), '%')}
       </PanelCard>
       {isSuperuser && (
         <DeviceRenameModal

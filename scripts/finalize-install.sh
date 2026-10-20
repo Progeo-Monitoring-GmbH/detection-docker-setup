@@ -50,9 +50,46 @@ main() {
     compose=(docker-compose)
   fi
 
-  log_info "Building and starting containers in ${project_root}..."
-  (cd "${project_root}" && "${compose[@]}" build && "${compose[@]}" up -d)
+  log_info "Building containers in ${project_root}..."
+  (cd "${project_root}" && "${compose[@]}" build)
+
+  import_legacy_backup "${project_root}"
+
+  log_info "Starting containers..."
+  (cd "${project_root}" && "${compose[@]}" up -d)
   log_success "Containers started"
+}
+
+# A large default-*.psql[.gz] in media/backup is the old server's database:
+# restore it and split it into the per-project databases BEFORE the backend
+# starts, so no ingestion runs against a half-imported database
+# (progeo/management/commands/import_legacy_backup.py). Runs only once - the
+# command leaves a marker next to the backup and refuses a non-empty default.
+import_legacy_backup() {
+  local project_root="$1"
+
+  log_info "Starting the database to check for a legacy backup..."
+  (cd "${project_root}" && "${compose[@]}" up -d progeo-database progeo-redis)
+
+  # Up to 30s: the very first start runs initdb, which can exceed 10s.
+  local tries=0
+  until (cd "${project_root}" && "${compose[@]}" exec -T progeo-database pg_isready -q); do
+    tries=$((tries + 1))
+    if (( tries > 15 )); then
+      fatal "Error: the database did not become ready."
+    fi
+    sleep 2
+  done
+
+  local manage=("${compose[@]}" run --rm --no-deps progeo-backend python manage.py)
+  if ! (cd "${project_root}" && "${manage[@]}" import_legacy_backup --check); then
+    log_info "No legacy backup to import."
+    return
+  fi
+
+  log_info "Importing the legacy backup - this takes a while (restore + split into project databases)..."
+  (cd "${project_root}" && "${manage[@]}" import_legacy_backup --noinput)
+  log_success "Legacy backup imported"
 }
 
 main "$@"

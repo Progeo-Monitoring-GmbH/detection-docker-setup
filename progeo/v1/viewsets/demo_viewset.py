@@ -133,6 +133,12 @@ class DemoViewSet(viewsets.ViewSet):
             return _forbidden()
         return self._delegate(LocationViewSet, "get_climate_data", request, pk=pk)
 
+    @action(detail=True, methods=["GET"], url_path="measurement-range")
+    def measurement_range(self, request, pk=None, *args, **kwargs):
+        if not self._allowed(request):
+            return _forbidden()
+        return self._delegate(LocationViewSet, "measurement_range", request, pk=pk)
+
     @action(detail=False, methods=["GET"], url_path="alarm-clusters")
     def alarm_clusters(self, request, *args, **kwargs):
         if not self._allowed(request):

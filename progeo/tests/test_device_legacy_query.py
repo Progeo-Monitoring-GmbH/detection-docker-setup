@@ -3,6 +3,7 @@ from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.utils import timezone
 
+from progeo.tests.factories import unique
 from progeo.v1.creator import create_progeo_alarm_safe
 from progeo.v1.legacy.executor import (
     DataMeasurement,
@@ -13,7 +14,6 @@ from progeo.v1.legacy.executor import (
     save_measurement_from_legacy_data,
 )
 from progeo.v1.legacy.helper_resistance import calc_resistances
-from progeo.tests.factories import unique
 from progeo.v1.models import ProgeoDevice, ProgeoMeasurement
 
 LEGACY_SAMPLE_Y = (
@@ -125,11 +125,12 @@ def test_save_measurement_from_legacy_data_with_datameasurement():
     assert saved.project_id == 5709
     assert saved.device.raw_hash == "5709"
     assert saved.device.project_id == 5709
-    assert isinstance(saved.samples, list)
-    assert saved.samples[:3] == [32, 59, 32]
-    assert saved.start_index == 1
+    # Stored as the two lists, not in the outdated samples column.
+    assert saved.samples is None
+    assert saved.eigenpotenzial[:2] == [32, 32]
+    assert saved.wirkpotenzial[:2] == [59, 68]
+    assert saved.get_sample_values()[:3] == [32, 59, 32]
     assert saved.end_index == 118
-    assert saved.points == 117
     assert saved.raw_data.get("filetype") == 1000
     assert saved.raw_data.get("m_i") == measurement.m_i
     assert saved.raw_data.get("m_u") == measurement.m_u
@@ -219,8 +220,8 @@ def test_catch_legacy_data_query_parses_and_saves(api_client):
     assert stored is not None
     assert stored.device.raw_hash == "5709"
     assert stored.project_id == 5709
-    assert isinstance(stored.samples, list)
-    assert len(stored.samples) > 0
+    assert stored.eigenpotenzial
+    assert len(stored.eigenpotenzial) == len(stored.wirkpotenzial)
 
 
 @pytest.mark.django_db(databases=["unit_tests", "default"])

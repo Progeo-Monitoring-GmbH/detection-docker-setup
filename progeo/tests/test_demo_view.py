@@ -1,14 +1,22 @@
-"""Public demo view: /v1/demo/ with a LimitedToken login of the "demo" user."""
+"""Public demo view: /v1/demo/ with a LimitedToken login of the "demo" user.
+
+The demo data lives in its own database (settings.DEMO_DATABASE, a real
+separate database "unit_tests_demo" here), listed in the django_db marker so
+it is rolled back like the others."""
 import pytest
+from django.conf import settings
 from django.core.management import call_command
 
+from conftest import TEST_DATABASES
 from progeo.helper.demo import DEMO_TOKEN_PURPOSE
 from progeo.v1.models import LimitedToken, ProgeoLocation
 
+pytestmark = pytest.mark.django_db(databases=[*TEST_DATABASES, settings.DEMO_DATABASE])
+
 
 @pytest.fixture
-def demo(api_client):
-    call_command("demo_account", "--skip-checks", "--database=unit_tests")
+def demo(api_client, demo_db):
+    call_command("demo_account", "--skip-checks")
     token = LimitedToken.objects.using("default").get(purpose=DEMO_TOKEN_PURPOSE)
     return token
 
@@ -22,15 +30,28 @@ def _login(api_client, token):
 
 def test_command_creates_one_location_per_device_type(demo):
     types = set(
-        ProgeoLocation.objects.using("default")
+        ProgeoLocation.objects.using(settings.DEMO_DATABASE)
         .filter(account=demo.account)
         .values_list("project_type", flat=True)
     )
     assert types == {1, 3, 6}
 
 
+def test_demo_rows_stay_out_of_default(demo):
+    assert not ProgeoLocation.objects.using("default").filter(account=demo.account).exists()
+
+
+def test_related_lookups_of_demo_rows_stay_in_the_demo_database(demo):
+    location = ProgeoLocation.objects.using(settings.DEMO_DATABASE).filter(account=demo.account).first()
+
+    # Without DemoRouter these follow AccountRouter to "default" and come back empty.
+    assert location.lageplans.exists()
+    assert location.progeodevice_set.exists()
+    assert location.account.pk == demo.account.pk
+
+
 def test_command_reset_keeps_the_token(demo):
-    call_command("demo_account", "--skip-checks", "--database=unit_tests")
+    call_command("demo_account", "--skip-checks")
     assert LimitedToken.objects.using("default").get(purpose=DEMO_TOKEN_PURPOSE).raw_hash == demo.raw_hash
 
 
@@ -87,9 +108,10 @@ def test_demo_user_only_gets_demo_media(api_client, demo):
 
 def test_measurement_maintenance_is_superuser_only(api_client, demo):
     from django.contrib.auth.models import User
+
     from progeo.v1.models import ProgeoMeasurement
 
-    location = ProgeoLocation.objects.using("default").filter(account=demo.account, project_type=6).first()
+    location = ProgeoLocation.objects.using(settings.DEMO_DATABASE).filter(account=demo.account, project_type=6).first()
     base = f"/v1/location/{location.pk}/measurements"
 
     _login(api_client, demo)
@@ -116,9 +138,10 @@ def test_measurement_maintenance_is_superuser_only(api_client, demo):
 
 def test_device_rename_sends_only_changes(api_client, demo):
     from django.contrib.auth.models import User
+
     from progeo.v1.models import ProgeoDevice
 
-    location = ProgeoLocation.objects.using("default").filter(account=demo.account, project_type=6).first()
+    location = ProgeoLocation.objects.using(settings.DEMO_DATABASE).filter(account=demo.account, project_type=6).first()
     url = f"/v1/location/{location.pk}/devices/names/"
 
     _login(api_client, demo)

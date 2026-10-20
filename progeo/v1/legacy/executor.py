@@ -16,7 +16,7 @@ from rest_framework.parsers import BaseParser
 
 from progeo.consumer import GRP_NAME
 from progeo.helper.alarm_evaluation import evaluate_measurement_instantly
-from progeo.helper.basics import ilog
+from progeo.helper.basics import elog, ilog, wlog
 from progeo.v1.legacy.helper_resistance import MAX_JSON_SAFE_RESISTANCE_OHM
 from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurement
 from progeo.v1.viewsets.setup_viewset import _get_controller_account
@@ -50,6 +50,8 @@ class DataMeasurement:
     mac345: int
 
     samples: list[int]
+    # The controller's length check: True/False, None when nothing to check.
+    length_check: bool | None = None
 
     def get_relevant_info(self):
         m_i = _to_12bit(self.m_i)
@@ -74,6 +76,7 @@ class DataMeasurement:
             "filetype": self.m_filetype,
             "status": self.status,
             "samples": self.samples,
+            "length_check": self.length_check,
             "start_index": self.start,
             "end_index": self.m_points,
             "points": self.m_points - self.start,
@@ -165,6 +168,39 @@ def _legacy_measurement_datetime(measurement):
         return datetime.fromtimestamp(m_date)
     except (OverflowError, OSError, ValueError):
         return None
+
+def legacy_measurement_fields(measurement):
+    """ProgeoMeasurement fields of a parsed legacy measurement, without
+    device and timestamps - shared by the ingestion and the migration's
+    import of the gprs<project>.txt files (helper/legacy_files.py)."""
+    data = measurement.get_relevant_info()
+    potentials = ProgeoMeasurement()
+    potentials.set_potentials(data.get("samples"))
+    return {
+        "project_id": data.get("project_id"),
+        "humidity": data.get("m_hum"),
+        "temperature": data.get("m_temp"),
+        "end_index": data.get("end_index"),
+        "eigenpotenzial": potentials.eigenpotenzial,
+        "wirkpotenzial": potentials.wirkpotenzial,
+        "samples": None,
+        "raw_data": {
+            "status": data.get("status"),
+            "error": data.get("error", 0),
+            "alert": data.get("alert", 0),
+            "filetype": data.get("filetype"),
+            "length_check": data.get("length_check"),
+            # Persist raw 12-bit fields for audit/debug and exact downstream reuse. REMOVE LATER
+            "m_i": data.get("m_i_raw"),
+            "m_u": data.get("m_u_raw"),
+            "m_aux": data.get("m_aux_raw"),
+            "m_temp": data.get("m_temp_raw"),
+            "m_hum": data.get("m_hum_raw"),
+            "m_pres": data.get("m_pres_raw"),
+            "voltage_raw": data.get("voltage_raw"),
+        },
+    }
+
 
 def get_device_type(measurement, device_id) -> ProgeoDevice.DeviceType:
     if is_imei(device_id):
@@ -328,32 +364,8 @@ def save_measurement_from_legacy_data(measurement, project_id, raw_hash=None, nu
     )
 
     if isinstance(measurement, DataMeasurement):
-        data = measurement.get_relevant_info()
         measure = ProgeoMeasurement.objects.using(db_name).create(
-            project_id=data.get("project_id"),
-            voltage=data.get("voltage"),
-            humidity=data.get("m_hum"),
-            temperature=data.get("m_temp"),
-            current=data.get("m_i"),
-            samples=data.get("samples"),
-            start_index=data.get("start_index"),
-            end_index=data.get("end_index"),
-            points=data.get("points"),
-            device_id=device_id,
-            raw_data={
-                "status": data.get("status"),
-                "error": data.get("error", 0),
-                "alert": data.get("alert", 0),
-                "filetype": data.get("filetype"),
-                # Persist raw 12-bit fields for audit/debug and exact downstream reuse. REMOVE LATER
-                "m_i": data.get("m_i_raw"),
-                "m_u": data.get("m_u_raw"),
-                "m_aux": data.get("m_aux_raw"),
-                "m_temp": data.get("m_temp_raw"),
-                "m_hum": data.get("m_hum_raw"),
-                "m_pres": data.get("m_pres_raw"),
-                "voltage_raw": data.get("voltage_raw"),
-            },
+            device_id=device_id, **legacy_measurement_fields(measurement)
         )
         # Stamp the measurement with its own datetime (m_date epoch) so imports
         # can be deduplicated by project_id + datetime.
@@ -374,6 +386,7 @@ def save_measurement_from_legacy_data(measurement, project_id, raw_hash=None, nu
             project_id=data.get("project_id"),
             temperature=data.get("temperature"),
             humidity=data.get("humidity"),
+            battery=data.get("battery"),
             samples=samples,
             raw_data=data,
         )
@@ -386,7 +399,6 @@ def save_measurement_from_legacy_data(measurement, project_id, raw_hash=None, nu
                 measure.last_updated = parsed_timestamp
             measure.resistance_idc = sample.get("r_idc_ohm", MAX_JSON_SAFE_RESISTANCE_OHM)
             measure.resistance_vdc = sample.get("r_vdc_ohm", MAX_JSON_SAFE_RESISTANCE_OHM)
-            measure.voltage = sample.get("vdc_intput", -1)
 
     else:
         raise ValueError("Measurement must be a DataMeasurement instance or a dict | measurement:", measurement)
@@ -475,12 +487,76 @@ def _broadcast_legacy_location(project_id: int):
     async_to_sync(channel_layer.group_send)(GRP_NAME, payload)
 
 
-def parse_legacy_data_measurement(data, broadcast=True):
+# The controllers append up to two values after the declared pairs; script.php
+# cuts them off. The last one is a length check (see length_check), the
+# 4-point controllers put a 0 before it ("0, 95"). More is not that artifact.
+KNOWN_SURPLUS_VALUES = 2
+
+
+def _legacy_tokens(data):
+    """The payload's values as sent (text), for the length check."""
+    if isinstance(data, str):
+        items = data.strip().rstrip(";").split(",")
+    elif isinstance(data, list):
+        items = []
+        for item in data:
+            items.extend(item.split(",") if isinstance(item, str) else [item])
+    else:
+        return []
+    return [str(item).strip() for item in items]
+
+
+def length_check(tokens):
+    """The controllers end a transmission with its own length: the last value
+    is the number of characters of the string before it - verified on all
+    393,715 lines of the legacy gprs<project>.txt files. The 4-point
+    controllers put a 0 in between, so the length may also exclude that.
+    True if it matches, False if not (truncated or garbled transmission),
+    None without a value to check."""
+    if len(tokens) < 2:
+        return None
+    try:
+        expected = int(tokens[-1])
+    except ValueError:
+        return False
+    return any(len(",".join(tokens[:-cut])) == expected for cut in (1, 2))
+
+
+def cut_to_points(values, m_points):
+    """The pair values [eigen, wirk, ...] of the declared `m_points` sensors,
+    like script.php's array_slice(.., m_headerlines, m_points * 2).
+    Returns (values, issue): issue is None for the expected shape or the
+    known trailing artifact, else a description that has to be looked at -
+    more surplus values than the artifact (also cut), or fewer values than
+    declared (kept, e.g. a measurement sent in chunks)."""
+    if m_points <= 0:
+        return values, None
+    expected = 2 * m_points
+    surplus = len(values) - expected
+    if surplus > KNOWN_SURPLUS_VALUES:
+        return values[:expected], f"{surplus} values after the {m_points} declared points (cut)"
+    if surplus < 0:
+        return values, f"{-surplus} values missing for the {m_points} declared points"
+    return values[:expected], None
+
+
+def parse_legacy_data_measurement(data, broadcast=True, log=True):
     values = _normalize_legacy_payload_to_int_list(data)
     if len(values) < 25:
         raise ValueError("Legacy data requires at least 25 indexed values")
 
-    samples = values[25:]
+    headerlines = values[2] if 25 <= values[2] <= len(values) else 25
+    pair_values = values[headerlines:]
+    samples, issue = cut_to_points(pair_values, values[4])
+    if issue and log:
+        wlog(f"project {values[0]}: {issue}", tag="[LEGACY]")
+    # Values after the pairs (or an unpaired last value of a chunk) end in
+    # the length check; they are dropped either way.
+    checked = None
+    if len(pair_values) > len(samples) or len(pair_values) % 2:
+        checked = length_check(_legacy_tokens(data))
+        if checked is False and log:
+            wlog(f"project {values[0]}: length check failed - transmission may be truncated", tag="[LEGACY]")
     measurement = DataMeasurement(
         project_id=values[0],
         m_headerlines=values[2],
@@ -507,10 +583,27 @@ def parse_legacy_data_measurement(data, broadcast=True):
         bbyte=values[23],
         mac345=values[24],
         samples=samples,
+        length_check=checked,
     )
 
     if broadcast:
         _broadcast_legacy_location(measurement.project_id)
+    return measurement
+
+
+def ingest_legacy_query(data):
+    """Parse one legacy controller payload (the "Y" CSV: project id first, at
+    least 25 values) and store it as a measurement. Shared by
+    POST /v1/device/sample/query/ and the controllers' GET /gprs_<project>.php
+    (see legacy/gprs.py). The measurement is stored before the live
+    broadcast, so a broken channel layer (Redis) never loses data.
+    Raises ValueError/TypeError for unusable payloads."""
+    measurement = parse_legacy_data_measurement(data, broadcast=False)
+    save_measurement_from_legacy_data(measurement=measurement, project_id=measurement.project_id)
+    try:
+        _broadcast_legacy_location(measurement.project_id)
+    except Exception as exc:  # noqa: BLE001 - the measurement is stored, only the live update is lost
+        elog(f"legacy broadcast for project {measurement.project_id} failed: {exc!r}", tag="[LEGACY]")
     return measurement
 
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Spinner } from 'react-bootstrap';
 import { ChevronDown, ChevronRight, CheckLg } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
@@ -32,6 +32,14 @@ import SeverityBadge, {
 import type { LocationDetail } from './locationTypes';
 import { getProjectTypeLabel, isLorawanProject } from './projectType';
 import LocationClimatePanels from './LocationClimatePanels';
+import {
+  availableTimeRanges,
+  effectiveTimeRange,
+  TIME_RANGE_DAYS,
+  timeRangeLabelKey,
+  type TimeRange,
+} from './timeRanges';
+import useMeasurementRange from './useMeasurementRange';
 
 type LocationStatusViewProps = {
   location: LocationDetail | null;
@@ -81,16 +89,10 @@ const SEVERITY_ORDER: Record<Severity, number> = {
   kritisch: 2,
 };
 
-// Zeitreihe range toggle ("Letzte 24 h" / "Letzte 7 Tage" / "Letzte 30
-// Tage" in the mockup): a client-side window over the already-loaded
-// ALARM_WINDOW_DAYS history - no extra request, since 30 days always fits
-// inside what's already fetched.
-type ZeitreiheRange = '24h' | '7d' | '30d';
-const ZEITREIHE_RANGE_DAYS: Record<ZeitreiheRange, number> = {
-  '24h': 1,
-  '7d': 7,
-  '30d': 30,
-};
+// Zeitreihe range toggle ("Letzte 24 h" ... "Letzte 3 Jahre", see
+// timeRanges.ts): a client-side window over the alarm history. Ranges up to
+// ALARM_WINDOW_DAYS fit inside the already-loaded clusters - no extra
+// request; longer ones fetch the clusters once more with days=<range days>.
 
 const LocationStatusView = ({
   location,
@@ -115,11 +117,41 @@ const LocationStatusView = ({
   const [requestingMeasurement, setRequestingMeasurement] = useState(false);
   const [statusView, setStatusView] = useState<'roof' | 'zeitreihe'>('roof');
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
-  const [zeitreiheRange, setZeitreiheRange] = useState<ZeitreiheRange>('7d');
+  const [selectedZeitreiheRange, setSelectedZeitreiheRange] =
+    useState<TimeRange>('7d');
+  // Clusters of the long Zeitreihe ranges, per `${demo}:${location}:${days}`.
+  const [longClusters, setLongClusters] = useState<
+    Record<string, VerdachtsstelleCluster[]>
+  >({});
+  const [longClustersFailed, setLongClustersFailed] = useState<
+    Record<string, true>
+  >({});
+  const longClustersRequested = useRef(new Set<string>());
 
   // LoRaWAN objects have no samples (no heatmap, no Verdachtsstellen) - they
   // show humidity/temperature charts instead, see LocationClimatePanels.
   const isLorawan = isLorawanProject(location?.project_type);
+
+  // Long ranges only once the data reaches that far back - fetched when the
+  // Zeitreihe is first opened (LoRaWAN: LocationClimatePanels does its own).
+  const measurementRange = useMeasurementRange(
+    locationId,
+    demo,
+    !isLorawan && statusView === 'zeitreihe',
+  );
+  const zeitreiheRanges = useMemo(
+    () => availableTimeRanges(measurementRange),
+    [measurementRange],
+  );
+  const zeitreiheRange = effectiveTimeRange(
+    selectedZeitreiheRange,
+    zeitreiheRanges,
+  );
+  const zeitreiheDays = TIME_RANGE_DAYS[zeitreiheRange];
+  const longClustersKey =
+    zeitreiheDays > ALARM_WINDOW_DAYS
+      ? `${demo ? 'demo' : 'location'}:${locationId}:${zeitreiheDays}`
+      : null;
 
   const requestMeasurement = () => {
     setRequestingMeasurement(true);
@@ -204,6 +236,67 @@ const LocationStatusView = ({
     loadHeatmap();
     loadClusters();
   }, [isLorawan, loadHeatmap, loadClusters]);
+
+  // Zeitreihe ranges beyond ALARM_WINDOW_DAYS: the same clusters, once per
+  // location and range (kept for switching back and forth).
+  const loadLongClusters = useCallback(
+    (key: string, days: number) => {
+      if (longClustersRequested.current.has(key)) {
+        return;
+      }
+      longClustersRequested.current.add(key);
+      setLongClustersFailed((prev) => {
+        if (!prev[key]) {
+          return prev;
+        }
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      void axiosConfig.perform_get(
+        auth,
+        demo
+          ? `/v1/demo/alarm-clusters/?location=${locationId}&days=${days}`
+          : `/v1/alarm/clusters/?location=${locationId}&days=${days}`,
+        (response) => {
+          setLongClusters((prev) => ({
+            ...prev,
+            [key]: (response?.data?.clusters || []) as VerdachtsstelleCluster[],
+          }));
+        },
+        (error) => {
+          // Allow a retry the next time the range is selected.
+          longClustersRequested.current.delete(key);
+          setLongClustersFailed((prev) => ({ ...prev, [key]: true }));
+          if (error?.response?.status !== 403) {
+            showRequestError(
+              enqueueSnackbar,
+              'Could not load suspected leaks',
+              error,
+            );
+          }
+        },
+      );
+    },
+    [auth, demo, enqueueSnackbar, locationId],
+  );
+
+  useEffect(() => {
+    if (isLorawan || !longClustersKey) {
+      return;
+    }
+    loadLongClusters(longClustersKey, zeitreiheDays);
+  }, [isLorawan, loadLongClusters, longClustersKey, zeitreiheDays]);
+
+  const longClustersLoading =
+    longClustersKey != null &&
+    !longClusters[longClustersKey] &&
+    !longClustersFailed[longClustersKey];
+  const zeitreiheClusters = useMemo(
+    () =>
+      longClustersKey ? (longClusters[longClustersKey] ?? []) : clusters,
+    [clusters, longClusters, longClustersKey],
+  );
 
   const openClusters = useMemo(
     () => clusters.filter((cluster) => cluster.state !== 'geloest'),
@@ -293,9 +386,8 @@ const LocationStatusView = ({
   // Every Verdachtsstelle with readings in the range - resolved ones too,
   // it's a history chart.
   const zeitreiheSeries = useMemo(() => {
-    const cutoff =
-      Date.now() - ZEITREIHE_RANGE_DAYS[zeitreiheRange] * 24 * 60 * 60 * 1000;
-    return clusters.map((cluster) => {
+    const cutoff = Date.now() - zeitreiheDays * 24 * 60 * 60 * 1000;
+    return zeitreiheClusters.map((cluster) => {
       return {
         id: cluster.id,
         label: sensorLabel(cluster.sensor_id),
@@ -308,7 +400,13 @@ const LocationStatusView = ({
         ),
       };
     });
-  }, [clusters, measurePointOf, sensorLabel, thresholdValue, zeitreiheRange]);
+  }, [
+    measurePointOf,
+    sensorLabel,
+    thresholdValue,
+    zeitreiheClusters,
+    zeitreiheDays,
+  ]);
 
   // Plain sensor table: built from ProgeoMeasurePoint when placed (name +
   // its own threshold override), otherwise straight from the heatmap's raw
@@ -544,37 +642,45 @@ const LocationStatusView = ({
             />
             {statusView === 'zeitreihe' && (
               <SegmentedControl
-                options={[
-                  { value: '24h', label: t('status_range_24h') },
-                  { value: '7d', label: t('status_range_7d') },
-                  { value: '30d', label: t('status_range_30d') },
-                ]}
+                options={zeitreiheRanges.map((value) => ({
+                  value,
+                  label: t(timeRangeLabelKey(value)),
+                }))}
                 value={zeitreiheRange}
-                onChange={(value) => setZeitreiheRange(value as ZeitreiheRange)}
+                onChange={(value) =>
+                  setSelectedZeitreiheRange(value as TimeRange)
+                }
               />
             )}
           </div>
 
           {statusView === 'zeitreihe' ? (
             <PanelCard title={t('status_zeitreihe_title')}>
-              <ThresholdTrendChart
-                series={zeitreiheSeries}
-                hiddenSeries={hiddenSeries}
-                onToggleSeries={(id) =>
-                  setHiddenSeries((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(id)) {
-                      next.delete(id);
-                    } else {
-                      next.add(id);
-                    }
-                    return next;
-                  })
-                }
-                emptyLabel={t('status_zeitreihe_empty')}
-                meanOfLabel={(count) => t('status_zeitreihe_mean_of', { count })}
-                thresholdLabel={t('status_zeitreihe_threshold_legend')}
-              />
+              {longClustersLoading ? (
+                <div className="d-flex justify-content-center py-5 text-muted">
+                  <Spinner animation="border" className="me-2" />{' '}
+                  {t('ui_loading')}
+                </div>
+              ) : (
+                <ThresholdTrendChart
+                  series={zeitreiheSeries}
+                  hiddenSeries={hiddenSeries}
+                  onToggleSeries={(id) =>
+                    setHiddenSeries((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(id)) {
+                        next.delete(id);
+                      } else {
+                        next.add(id);
+                      }
+                      return next;
+                    })
+                  }
+                  emptyLabel={t('status_zeitreihe_empty')}
+                  meanOfLabel={(count) => t('status_zeitreihe_mean_of', { count })}
+                  thresholdLabel={t('status_zeitreihe_threshold_legend')}
+                />
+              )}
             </PanelCard>
           ) : (
             <div

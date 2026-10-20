@@ -23,6 +23,8 @@ STATUS_ACKNOWLEDGED = ProgeoAlarm.Status.QUITTIERT
 
 # Default window for the alarm list; keep the payload bounded.
 DEFAULT_ALARM_DAYS = 14
+# Longest history the location views offer (3 years, see frontend timeRanges.ts).
+MAX_HISTORY_DAYS = 1096
 
 
 class AlarmViewSet(ProgeoModalViewSet):
@@ -136,7 +138,8 @@ class AlarmViewSet(ProgeoModalViewSet):
             days = int(request.query_params.get("days", DEFAULT_ALARM_DAYS))
         except (TypeError, ValueError):
             days = DEFAULT_ALARM_DAYS
-        days = max(1, min(days, 365))
+        # Up to 3 years: the Zeitreihe's longest range (one location only).
+        days = max(1, min(days, MAX_HISTORY_DAYS))
         cutoff = timezone.now() - timedelta(days=days)
 
         if not account:

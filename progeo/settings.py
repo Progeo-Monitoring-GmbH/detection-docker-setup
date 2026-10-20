@@ -23,6 +23,12 @@ DEBUG = parse_boolean(os.getenv("DEBUG"))
 _raw_allowed_hosts = parse_split_str(os.getenv("DJANGO_ALLOWED_HOSTS", ""), ",")
 ALLOWED_HOSTS = [host.strip() for host in _raw_allowed_hosts if host.strip()]
 
+# Hosts the legacy GPRS controllers send to (GET /gprs_<project>.php, see
+# progeo/v1/legacy/gprs.py). Their firmware is fixed, so they are always allowed.
+LEGACY_GPRS_HOSTS = parse_split_str(os.getenv("LEGACY_GPRS_HOSTS", "data-progeo.net,www.data-progeo.net"), ",")
+if ALLOWED_HOSTS and "*" not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS += [host.strip() for host in LEGACY_GPRS_HOSTS if host.strip()]
+
 # ########################################################################
 # Server role / feature flags (see django.env.template)
 #
@@ -63,6 +69,8 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    # ArrayField (ProgeoMeasurement.eigenpotenzial / wirkpotenzial).
+    "django.contrib.postgres",
 
     "rest_framework",
     "rest_framework.authtoken",
@@ -215,6 +223,16 @@ DATABASES = {
     **dyn_dbs
 }
 
+# Own database of the public demo (demo_account command, /v1/demo/): the demo
+# account, its locations and generated data live there completely, so demo
+# rows never show up between customer data. Same server and credentials as
+# "default". Not listed in DATABASES on purpose: like the project databases
+# it is registered only once it exists (helper/project_dbs.py:
+# register_demo_db), so commands looping over DATABASES don't fail on a
+# system where it was never created. prepare_databases, adv_migrate and
+# demo_account create and migrate it.
+DEMO_DATABASE = os.getenv("DEMO_DATABASE", "demo")
+
 # Per-project databases (progeo/helper/project_dbs.py): one database per
 # project, named "<PROJECT_DB_PREFIX><project_id>" or "<PROJECT_DB_PREFIX>unknown"
 # (locations without project_id). The prefix is empty by default.
@@ -227,6 +245,7 @@ PROJECT_DB_STRICT = parse_boolean(os.getenv("PROJECT_DB_STRICT", "False"))
 
 DATABASE_ROUTERS = [
     #"progeo.router.DjangoRouter",
+    "progeo.router.DemoRouter",
     "progeo.router.ProjectRouter",
     "progeo.router.AccountRouter",
 ]
@@ -368,8 +387,9 @@ DBBACKUP_CONNECTORS = {
 if os.getenv("SECURE_PROXY_SSL_HEADER"):
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
-if os.getenv("SECURE_REDIRECT_EXEMPT"):
-    SECURE_REDIRECT_EXEMPT = []
+# The legacy GPRS controllers speak plain HTTP and follow no redirects, so
+# their endpoint must never be redirected to https (SECURE_SSL_REDIRECT).
+SECURE_REDIRECT_EXEMPT = [r"^gprs_\d+\.php$"]
 
 SECURE_REFERRER_POLICY = os.getenv("SECURE_REFERRER_POLICY")
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

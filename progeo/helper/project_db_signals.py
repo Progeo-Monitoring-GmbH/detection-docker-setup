@@ -24,7 +24,7 @@ from progeo.helper.project_dbs import (
     project_key,
     split_enabled,
 )
-from progeo.v1.models import Account, ProgeoLocation, UserProfile
+from progeo.v1.models import Account, ProgeoDevice, ProgeoLocation, UserProfile
 
 # Web processes (daphne, runserver) register the project databases on their
 # first request; celery does it in progeo/celery.py.
@@ -184,14 +184,36 @@ def _mirror_location(sender, instance, created, raw, using, **kwargs):
             tag="[PROJECT_DB]",
         )
 
-    project_id = instance.project_id
-    if project_alias(project_id) not in existing_project_aliases():
-        # CREATE DATABASE + migrate takes too long for a request - the task
-        # creates it and mirrors this location into it.
-        from progeo.tasks import ensure_project_database
-
-        transaction.on_commit(lambda: ensure_project_database.delay(project_id), using=DEFAULT_DB_ALIAS)
+    # A project without a database (no device yet) simply stays in default -
+    # the mirror below skips databases that don't exist.
     _mirror_row(ProgeoLocation, instance.pk, _location_aliases(instance.pk))
+
+
+# Seconds until the second activation pass: other processes keep routing the
+# project to default until their list of databases refreshes (60s cache).
+ACTIVATION_CATCH_UP_SECONDS = 120
+
+
+@receiver(post_save, sender=ProgeoDevice)
+def _activate_project_on_first_device(sender, instance, raw, using, **kwargs):
+    """A device written to default belongs to a project without database
+    (project_db_for routed it there): its first device - create the
+    database and move the project's rows (activate_project_database). Done
+    twice: right away and once every process sees the new database."""
+    if not _active(using, raw) or not instance.location_id:
+        return
+    project_id = ProgeoLocation.objects.using(using).filter(pk=instance.location_id).values_list(
+        "project_id", flat=True
+    ).first()
+    if project_id is None or project_alias(project_id) in existing_project_aliases():
+        return
+    from progeo.tasks import activate_project_database
+
+    def queue():
+        activate_project_database.delay(project_id)
+        activate_project_database.apply_async((project_id,), countdown=ACTIVATION_CATCH_UP_SECONDS)
+
+    transaction.on_commit(queue, using=DEFAULT_DB_ALIAS)
 
 
 @receiver(post_delete, sender=ProgeoLocation)

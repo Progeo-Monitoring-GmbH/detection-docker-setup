@@ -83,10 +83,12 @@ const LegendSwatch = ({ color, dash, width = 2.5 }: { color: string; dash?: stri
   </svg>
 );
 
-const formatTime = (time: number) =>
+// The year only once the plotted span crosses a year (long ranges).
+const formatTime = (time: number, withYear = false) =>
   new Date(time).toLocaleString(undefined, {
     day: '2-digit',
     month: '2-digit',
+    ...(withYear ? { year: 'numeric' as const } : {}),
     hour: '2-digit',
     minute: '2-digit',
   });
@@ -184,6 +186,7 @@ const ThresholdTrendChart = ({
   const minTime = Math.min(...allTimes);
   const maxTime = Math.max(...allTimes);
   const maxRatio = Math.max(...allRatios, 1) * 1.15;
+  const withYear = new Date(minTime).getFullYear() !== new Date(maxTime).getFullYear();
 
   const toX = (time: number) =>
     maxTime === minTime ? (X0 + X1) / 2 : X0 + ((time - minTime) / (maxTime - minTime)) * (X1 - X0);
@@ -259,10 +262,10 @@ const ThresholdTrendChart = ({
           <line x1={X0} x2={X1} y1={thresholdY} y2={thresholdY} stroke={THRESHOLD_COLOR} strokeWidth={1.3} strokeDasharray={THRESHOLD_DASH} opacity={0.75} />
 
           <text x={X0} y={VB_H - 2} textAnchor="start" fontSize={9} fill="#8B8383">
-            {formatTime(minTime)}
+            {formatTime(minTime, withYear)}
           </text>
           <text x={X1} y={VB_H - 2} textAnchor="end" fontSize={9} fill="#8B8383">
-            {formatTime(maxTime)}
+            {formatTime(maxTime, withYear)}
           </text>
 
           {displaySeries.map((entry) => (
@@ -321,7 +324,7 @@ const ThresholdTrendChart = ({
               {hover.label}
             </div>
             <div>
-              {formatTime(hover.time)}
+              {formatTime(hover.time, withYear)}
               {hover.count > 1 && <span style={{ opacity: 0.7 }}> ({meanOfLabel(hover.count)})</span>}
             </div>
             <div>{formatRatio(hover.ratio)}</div>

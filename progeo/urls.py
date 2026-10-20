@@ -24,6 +24,7 @@ from rest_framework_simplejwt.views import (
 
 from progeo import settings, views
 from progeo.routers import CustomRouter
+from progeo.v1.legacy.gprs import gprs_php
 from progeo.v1.viewsets.base_viewsets import (
     AuthenticatedMediaView,
     ProgeoTokenObtainPairView,
@@ -70,6 +71,10 @@ urlpatterns = [
     re_path(r"^media/(?P<path>.*)$", AuthenticatedMediaView.as_view(), name="authenticated-media"),
     re_path(r"^static/(?P<path>.*)$", serve, {"document_root": settings.STATIC_ROOT}),
     re_path(r"^favicon.ico", empty_favicon),
+
+    # Legacy GPRS controllers: the old PHP endpoint of data-progeo.net (see
+    # progeo/v1/legacy/gprs.py; nginx passes it through on plain http).
+    re_path(r"^gprs_(?P<project>\d+)\.php$", gprs_php, name="legacy_gprs"),
     re_path(r"^__debug__/", include("debug_toolbar.urls")),
 
     ###re_path(r"^silk/", include("silk.urls", namespace="silk")),

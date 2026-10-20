@@ -161,6 +161,27 @@ def check_class_module(model, module):
     return getattr(model, "__module__", "").startswith(module)
 
 
+class DemoRouter:
+    """Rows loaded from the demo database (settings.DEMO_DATABASE) keep their
+    related lookups there - location.lageplans, measurement.device,
+    location.account, ... AccountRouter would send them to "default", where
+    the demo rows don't exist."""
+
+    @staticmethod
+    def _route(hints):
+        from django.conf import settings
+
+        instance_db = getattr(getattr(hints.get("instance"), "_state", None), "db", None)
+        demo_db = getattr(settings, "DEMO_DATABASE", None)
+        return instance_db if demo_db and instance_db == demo_db else None
+
+    def db_for_read(self, model, **hints):
+        return self._route(hints)
+
+    def db_for_write(self, model, **hints):
+        return self._route(hints)
+
+
 class ProjectRouter:
     """Routes the per-project models (helper/project_dbs.py: project_models)
     to the project database of the current `use_project_db(...)` block, or

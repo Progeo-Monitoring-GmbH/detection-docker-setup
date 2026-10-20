@@ -1,10 +1,12 @@
+import zlib
+
 from celery import shared_task
 
 
 @shared_task
 def ping():
     import datetime
-    return f"pong {datetime.datetime.now(datetime.timezone.utc)}"
+    return f"pong {datetime.datetime.now(datetime.UTC)}"
 
 
 @shared_task
@@ -174,8 +176,9 @@ def request_device_measurement(device_id: int):
     )
 
     measurement.project_id = (measure_payload.get("project_id") if isinstance(measure_payload, dict) else None) or device.project_id
-    measurement.samples = samples
-    measurement.points = int(len(samples) / 2)
+    measurement.set_potentials(samples)
+    if samples:
+        measurement.raw_data = ProgeoMeasurement.without_samples(measurement.raw_data)
     measurement.save()
     evaluate_measurement_instantly(measurement, measurement._state.db or "default")
 
@@ -433,14 +436,72 @@ def collect_host_storage_info():
 
 
 @shared_task
-def ensure_project_database(project_id: int | None = None):
-    """Create, migrate and mirror the database of a project (None: "unknown").
-    Queued when a location is saved with a project that has no database yet
-    (helper/project_db_signals.py)."""
-    from progeo.helper.project_dbs import ensure_project_db
+def refresh_project_db_stats():
+    """Size and measurement count of every project database onto its
+    locations (helper/project_db_stats.py)."""
+    from progeo.helper.project_db_stats import refresh_project_db_stats as refresh
 
-    alias, created = ensure_project_db(project_id)
-    return {"alias": alias, "created": created}
+    return {alias: {"size": stats["size"], "count": stats["count"]} for alias, stats in refresh().items()}
+
+
+@shared_task
+def ensure_measurement_partitions():
+    """Measurement partitions of the current and next year in the template
+    and every project database (helper/project_db_partitions.py) - so the
+    new year's partition exists long before New Year's Eve."""
+    from django.db import connections
+
+    from progeo.helper.basics import elog
+    from progeo.helper.project_db_partitions import ensure_upcoming_partitions
+    from progeo.helper.project_dbs import prepare_template, register_all_project_dbs
+
+    prepare_template()
+    done, failed = [], []
+    for alias in register_all_project_dbs():
+        try:
+            ensure_upcoming_partitions(alias)
+            done.append(alias)
+        except Exception as exc:  # noqa: BLE001 - keep going, report below
+            elog(f"partitions of {alias} failed: {exc!r}", tag="[PROJECT_DB]")
+            failed.append(alias)
+        finally:
+            connections[alias].close()
+    return {"done": len(done), "failed": failed}
+
+
+@shared_task
+def activate_project_database(project_id: int | None = None):
+    """Give a project its own database on its first device (projects without
+    devices live in default, see project_dbs.project_keys_in_use): create it,
+    move the project's rows from default (copy, verify, then delete them
+    there). Queued twice by the device signal (helper/project_db_signals.py);
+    the second run catches rows other processes still wrote to default.
+    One run per project at a time (advisory lock)."""
+    from django.db import DEFAULT_DB_ALIAS, connections
+
+    from progeo.helper.project_db_copy import purge_project, sync_project, verify_project
+    from progeo.helper.project_dbs import project_alias, split_enabled
+
+    if not split_enabled():
+        return {"skipped": "PROJECT_DB_SPLIT is off - default is still the source of truth"}
+    # crc32, not hash(): Python randomizes str hashes per process, the lock
+    # must be the same number in every worker.
+    lock_key = zlib.crc32(f"activate_project_database:{project_alias(project_id)}".encode()) % (2 ** 31)
+    with connections[DEFAULT_DB_ALIAS].cursor() as cursor:
+        cursor.execute("SELECT pg_try_advisory_lock(%s)", [lock_key])
+        if not cursor.fetchone()[0]:
+            return {"skipped": "another activation of this project is running"}
+    try:
+        result = sync_project(project_id, upsert=True, delta=True)
+        verified = verify_project(project_id, result["alias"])
+        missing = {model.__name__: info["missing"] for model, info in verified.items() if info["missing"]}
+        if missing:
+            return {"alias": result["alias"], "ok": False, "missing": missing}
+        deleted = purge_project(project_id, verified)
+        return {"alias": result["alias"], "ok": True, "moved": {m.__name__: n for m, n in deleted.items()}}
+    finally:
+        with connections[DEFAULT_DB_ALIAS].cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_unlock(%s)", [lock_key])
 
 
 @shared_task
@@ -462,15 +523,20 @@ def swap_databases_new_year(db: str | None = None, year: int | None = None):
 
     from progeo.helper.basics import elog, ilog
     from progeo.helper.db_swap import archive_single_db, pg_env
-    from progeo.helper.project_dbs import register_all_project_dbs
-    from progeo.settings import DATABASES
+    from progeo.helper.project_dbs import is_project_alias, template_alias
+    from progeo.settings import DATABASES, DEMO_DATABASE
 
     env = pg_env()
     if year is None:
         year = timezone.now().year
 
-    register_all_project_dbs()
-    db_names = [db] if db else list(DATABASES.keys())
+    # The demo database only holds generated data (demo_account) - nothing to
+    # archive; project databases keep their years as partitions instead
+    # (helper/project_db_partitions.py, ensure_measurement_partitions).
+    db_names = [db] if db else [
+        name for name in DATABASES
+        if name not in (DEMO_DATABASE, template_alias()) and not is_project_alias(name)
+    ]
     results = {}
 
     for db_name in db_names:

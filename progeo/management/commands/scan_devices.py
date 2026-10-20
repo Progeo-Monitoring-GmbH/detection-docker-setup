@@ -171,8 +171,9 @@ class Command(BaseCommand):
 
             dlog(f"Stored measurement for {device.raw_hash} ({status})")
             measurement.project_id = found["payload"].get("project_id")
-            measurement.samples = samples
-            measurement.points = int(len(samples) / 2)
+            measurement.set_potentials(samples)
+            if samples:
+                measurement.raw_data = ProgeoMeasurement.without_samples(measurement.raw_data)
             measurement.save()
             evaluate_measurement_instantly(measurement, account.db_name)
 

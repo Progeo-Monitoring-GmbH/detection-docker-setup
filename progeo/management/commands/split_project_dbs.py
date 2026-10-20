@@ -5,15 +5,13 @@ from psycopg2 import sql
 from progeo.helper.basics import ilog
 from progeo.helper.project_db_copy import (
     DEFAULT_CHUNK_SIZE,
-    align_sequences,
     find_conflicts,
     project_filters,
     purge_project,
-    transfer_chunked,
+    sync_project,
     verify_project,
 )
 from progeo.helper.project_dbs import (
-    ensure_project_db,
     project_alias,
     project_key,
     project_keys_in_use,
@@ -35,10 +33,14 @@ class Command(BaseCommand):
         "and are mirrored into each project database. See "
         "progeo/helper/project_dbs.py.\n\n"
         "Phases (run in this order):\n"
-        "  1. copy    (default) create/migrate the project databases, mirror the\n"
-        "             shared rows, copy the project rows. Resumable: only rows\n"
-        "             newer than the target's highest id are copied, --upsert\n"
-        "             re-copies everything and updates changed rows.\n"
+        "  1. copy    (default) create the project databases (cloned from the\n"
+        "             template, measurements partitioned by year), mirror the\n"
+        "             shared rows, copy the project rows. Measurements are\n"
+        "             renumbered 1..n per project (alarms remapped), their\n"
+        "             samples moved into eigenpotenzial / wirkpotenzial (cut to\n"
+        "             m_points like script.php, anomalies reported), and\n"
+        "             replaced on every run. Other rows: only rows newer than the target's\n"
+        "             highest id, --upsert re-copies and updates them.\n"
         "  2. --verify  compare every project's rows in default and its database.\n"
         "  3. --purge   delete the verified rows from default (needs\n"
         "             PROJECT_DB_SPLIT=True, i.e. the app already uses the\n"
@@ -69,6 +71,9 @@ class Command(BaseCommand):
         parser.add_argument("--force", action="store_true",
                             help="Copy although PROJECT_DB_SPLIT is on / purge although it is off.")
         parser.add_argument("--noinput", action="store_true", help="Do not ask before purging.")
+        parser.add_argument("--no-legacy-files", action="store_true",
+                            help="Don't use the projects' gprs<project>.txt files (helper/legacy_files.py), "
+                                 "copy the measurements from default only.")
 
     def handle(self, *args, **options):
         projects = options["projects"] or project_keys_in_use()
@@ -100,19 +105,25 @@ class Command(BaseCommand):
 
         failed = []
         for index, project_id in enumerate(projects, 1):
-            alias, created = ensure_project_db(project_id, migrate=True)
-            self.stdout.write(f"[{index}/{len(projects)}] {alias} ({'created' if created else 'exists'}), mirrors synced")
+            # Measurements are renumbered from 1 and replaced per project on every run.
+            result = sync_project(
+                project_id, upsert=options["upsert"], delta=False, chunk_size=options["chunk_size"],
+                progress=self._progress, legacy_files=not options["no_legacy_files"],
+            )
+            self.stdout.write(
+                f"[{index}/{len(projects)}] {result['alias']} ({'created' if result['created'] else 'exists'}), "
+                f"years {result['years'] or '-'}, measurements from {result['source']}"
+            )
+            for name, copied in result["copied"].items():
+                self.stdout.write(f"    {name:<20} copied={copied}")
+            anomalies = result["anomalies"]
+            if any(anomalies.values()):
+                self.stdout.write(self.style.WARNING(
+                    f"    ! samples not matching the declared points: {anomalies['surplus']} with more than "
+                    f"the known trailing artifact (cut), {anomalies['incomplete']} with values missing (kept)"
+                ))
 
-            filters = project_filters(project_id)
-            for model in project_models():
-                where, params = filters[model]
-                copied, written = transfer_chunked(
-                    model, where, params, alias,
-                    upsert=options["upsert"], chunk_size=options["chunk_size"], progress=self._progress(alias),
-                )
-                self.stdout.write(f"    {model.__name__:<20} copied={copied} written={written}")
-
-            align_sequences(alias, project_models())
+            alias = result["alias"]
             if not self._print_verification(project_id, alias):
                 failed.append(alias)
 

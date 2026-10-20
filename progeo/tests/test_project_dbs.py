@@ -1,35 +1,40 @@
 """Per-project databases (helper/project_dbs.py, helper/project_db_copy.py).
 
 The copy tests use two real extra databases on the test server,
-"unit_tests_project_990001" and "unit_tests_project_unknown": created and
-migrated once, then every test runs inside a rolled-back transaction on
-them (they are listed in the django_db marker).
+"unit_tests_project_990001" and "unit_tests_project_unknown": created once
+from the template like in production (measurements partitioned by year),
+then every test runs inside a rolled-back transaction on them (they are
+listed in the django_db marker).
 """
 import datetime
+from zoneinfo import ZoneInfo
 
 import pytest
-from django.core.management import call_command
 from django.db import DEFAULT_DB_ALIAS, connections
 from django.test import override_settings
 from django.utils import timezone
 
 from conftest import TEST_DATABASES
 from progeo.helper.project_db_copy import (
-    align_sequences,
     check_purge_safe,
+    copied_high_water,
+    copy_measurements,
     mirror_shared,
+    new_measurement_id,
     project_filters,
     purge_project,
+    renumbered_models,
     transfer_chunked,
     verify_project,
 )
+from progeo.helper.project_db_partitions import ensure_year_partition, partition_years
+from progeo.helper.project_db_stats import refresh_project_db_stats
 from progeo.helper.project_dbs import (
     UNKNOWN_PROJECT,
     backup_project_key,
-    create_database,
     current_project_db,
-    database_exists,
     database_of_backup,
+    ensure_project_db,
     is_project_alias,
     locate_device,
     mirrored_models,
@@ -68,12 +73,12 @@ LOCMEM_CACHE = override_settings(CACHES={"default": {"BACKEND": "django.core.cac
 
 @pytest.fixture(scope="session")
 def project_dbs(django_db_setup, django_db_blocker):
+    """The two project databases, created like in production: cloned from
+    the template (or converted, if left over from an older run) and
+    partitioned by year."""
     with django_db_blocker.unblock():
-        for alias in (ALIAS, UNKNOWN):
-            if not database_exists(alias):
-                create_database(alias)
-            register_project_db(alias)
-            call_command("migrate", database=alias, interactive=False, verbosity=0)
+        for project in (PROJECT, None):
+            ensure_project_db(project, migrate=True, mirror=False, years=(2025, 2026))
 
 
 # ---------------------------------------------------------------------------- aliases / routing
@@ -120,6 +125,7 @@ def test_register_copies_default_connection_with_own_name():
         connections.settings.pop(alias, None)
 
 
+@pytest.mark.usefixtures("project_dbs")
 def test_project_db_for_locations_ids_and_unknown():
     assert project_db_for(DEFAULT_DB_ALIAS) == DEFAULT_DB_ALIAS
     assert project_db_for(PROJECT) == ALIAS
@@ -127,11 +133,15 @@ def test_project_db_for_locations_ids_and_unknown():
     assert project_db_for(None) == UNKNOWN
     assert project_db_for(ProgeoLocation(project_id=PROJECT)) == ALIAS
     assert project_db_for(ProgeoLocation(project_id=None)) == UNKNOWN
+    # A project without its own database (no device yet) stays in default.
+    assert project_db_for(990009) == DEFAULT_DB_ALIAS
+    assert project_db_for(ProgeoLocation(project_id=990009)) == DEFAULT_DB_ALIAS
     # The hardware-reported project_id of a device is not its location's project.
     with pytest.raises(TypeError):
         project_db_for(ProgeoDevice(project_id=PROJECT))
 
 
+@pytest.mark.usefixtures("project_dbs")
 def test_use_project_db_nests_and_resets():
     assert current_project_db() is None
     with use_project_db(PROJECT):
@@ -142,6 +152,7 @@ def test_use_project_db_nests_and_resets():
     assert current_project_db() is None
 
 
+@pytest.mark.usefixtures("project_dbs")
 def test_router_is_inactive_until_split_is_enabled():
     router = ProjectRouter()
     with use_project_db(PROJECT):
@@ -203,6 +214,24 @@ def test_filters_have_one_param_per_placeholder(project_dbs):
 
 # ---------------------------------------------------------------------------- copy / verify / purge
 
+BERLIN = ZoneInfo("Europe/Berlin")
+
+
+def _at(year, month=6, day=1, hour=12):
+    return datetime.datetime(year, month, day, hour, tzinfo=BERLIN)
+
+
+def _measurement(device, pairs, measured, **fields):
+    """A measurement as the old default database holds it: interleaved
+    samples with the declared points (end_index), received (and measured by
+    the device) at `measured`, no potential lists yet."""
+    fields.setdefault("end_index", len(pairs))
+    measurement = f.make_measurement(device, pairs=pairs, **fields)
+    ProgeoMeasurement.objects.using(f.DB).filter(pk=measurement.pk).update(last_updated=measured, last_fetched=measured)
+    measurement.refresh_from_db(using=f.DB)
+    return measurement
+
+
 def _scenario():
     account = f.make_account()
     user = f.make_user(accounts=[account])
@@ -227,7 +256,12 @@ def _scenario():
     system_mail = EMail.objects.using(f.DB).create(raw_hash=f.unique("mail"), sent_to="a@b.c", message="m", files="")
     sms = SMS.objects.using(f.DB).create(location=location, sent_to="+49", message="m")
 
-    measurements = [f.make_measurement(device, pairs=[10 * i, 20 * i]) for i in range(1, 4)]
+    # Stored newest-first on purpose: the copy numbers them by measurement time.
+    measurements = [
+        _measurement(device, [30, 60], _at(2026, 3)),
+        _measurement(device, [20, 40], _at(2025, 12, 31, 23)),
+        _measurement(device, [10, 20], _at(2025, 2)),
+    ]
     alarms = [f.make_alarm(device, value=150 + i, evaluated_by_id=user.id) for i in range(2)]
     f.make_measurement(other_device, pairs=[1])
     f.make_alarm(other_device)
@@ -243,12 +277,17 @@ def _scenario():
 
 
 def _copy(project=PROJECT, upsert=False):
+    """What split_project_dbs does per project (without creating the db)."""
     alias = project_alias(project)
+    mirror_shared(alias, project)
     filters = project_filters(project)
     copied = {}
     for model in project_models():
+        if model in renumbered_models():
+            continue
         where, params = filters[model]
         copied[model], _ = transfer_chunked(model, where, params, alias, upsert=upsert, chunk_size=2)
+    copied[ProgeoMeasurement], copied[ProgeoAlarm] = copy_measurements(project, alias)
     return copied
 
 
@@ -256,7 +295,6 @@ def _copy(project=PROJECT, upsert=False):
 def test_copy_moves_everything_hanging_off_the_projects_locations(project_dbs):
     s = _scenario()
 
-    mirror_shared(ALIAS, PROJECT)
     _copy()
 
     # Mirrors: the project's location and its parent (other project) - the
@@ -265,17 +303,9 @@ def test_copy_moves_everything_hanging_off_the_projects_locations(project_dbs):
     assert ProgeoLocation.objects.using(ALIAS).filter(pk=s["parent"].pk).exists()
     assert ProgeoLocation.objects.using(f.DB).filter(pk=s["location"].pk).exists()
 
-    # Project rows, byte-exact.
+    # Project rows keep their ids and are byte-exact.
     assert ProgeoDevice.objects.using(ALIAS).get(pk=s["device"].pk).created == s["created"]
     assert not ProgeoDevice.objects.using(ALIAS).filter(pk__in=[s["other_device"].pk, s["orphan_device"].pk]).exists()
-    source = ProgeoMeasurement.objects.using(f.DB).filter(device=s["device"]).order_by("pk")
-    target = ProgeoMeasurement.objects.using(ALIAS).order_by("pk")
-    assert list(target.values_list("pk", "samples", "last_fetched")) == list(
-        source.values_list("pk", "samples", "last_fetched")
-    )
-    assert set(ProgeoAlarm.objects.using(ALIAS).values_list("pk", "evaluated_by_id")) == {
-        (a.pk, s["user"].pk) for a in s["alarms"]
-    }
     assert ProgeoMeasurePoint.objects.using(ALIAS).filter(pk=s["point"].pk, lageplan=s["lageplan"].pk).exists()
     assert list(EMail.objects.using(ALIAS).values_list("pk", flat=True)) == [s["email"].pk]
     assert list(SMS.objects.using(ALIAS).values_list("pk", flat=True)) == [s["sms"].pk]
@@ -286,10 +316,79 @@ def test_copy_moves_everything_hanging_off_the_projects_locations(project_dbs):
 
 
 @WITH_PROJECT_DBS
+def test_measurements_are_renumbered_from_1_in_last_fetched_order(project_dbs):
+    s = _scenario()
+
+    _copy()
+
+    target = list(
+        ProgeoMeasurement.objects.using(ALIAS).order_by("pk").values_list("pk", "wirkpotenzial", "last_fetched")
+    )
+    assert [pk for pk, _, _ in target] == [1, 2, 3, 4, 5]  # max(pk) == count
+    # Oldest first; the alarms' measurements were received "now".
+    assert [wirk for _, wirk, _ in target[:3]] == [[10, 20], [20, 40], [30, 60]]
+    assert [measured for _, _, measured in target[:3]] == [_at(2025, 2), _at(2025, 12, 31, 23), _at(2026, 3)]
+
+    # Alarms keep their ids and point at the renumbered copy of their measurement.
+    for alarm in s["alarms"]:
+        copied = ProgeoAlarm.objects.using(ALIAS).get(pk=alarm.pk)
+        assert copied.evaluated_by_id == s["user"].pk
+        copied_measurement = ProgeoMeasurement.objects.using(ALIAS).get(pk=copied.measurement_id)
+        assert copied_measurement.get_sample_values() == alarm.measurement.get_sample_values()
+
+    # New rows continue the numbering.
+    created = ProgeoMeasurement.objects.using(ALIAS).create(device_id=s["device"].pk, raw_data={})
+    assert created.pk == 6
+
+
+@WITH_PROJECT_DBS
+def test_measurements_land_in_their_years_partition(project_dbs):
+    _scenario()
+
+    _copy()
+
+    with connections[ALIAS].cursor() as cursor:
+        cursor.execute(f"SELECT count(*) FROM {ProgeoMeasurement._meta.db_table}_y2025")
+        in_2025 = cursor.fetchone()[0]
+    # 31.12.2025 23:00 Berlin is still 2025, although it is 22:00 UTC.
+    assert in_2025 == 2
+    assert {2025, 2026} <= set(partition_years(ALIAS))
+
+
+@WITH_PROJECT_DBS
+def test_a_missing_years_partition_takes_its_rows_out_of_the_default_partition(project_dbs):
+    s = _scenario()
+    _copy()
+    table = ProgeoMeasurement._meta.db_table
+    ProgeoMeasurement(device_id=s["device"].pk, raw_data={}, last_fetched=_at(2019)).save(using=ALIAS, last_fetched=False)
+
+    with connections[ALIAS].cursor() as cursor:
+        cursor.execute(f"SELECT count(*) FROM {table}_default")
+        assert cursor.fetchone()[0] == 1
+        ensure_year_partition(ALIAS, 2019)
+        cursor.execute(f"SELECT (SELECT count(*) FROM {table}_default), (SELECT count(*) FROM {table}_y2019)")
+        assert cursor.fetchone() == (0, 1)
+
+
+@WITH_PROJECT_DBS
+def test_copy_moves_pairs_into_the_potential_lists_cut_to_m_points(project_dbs):
+    s = _scenario()
+    # 4 points declared, 5 pairs sent: the trailing (0, 97) is no sensor.
+    trailing = _measurement(s["device"], [10, 20, 30, 40, 97], _at(2026, 4), end_index=4)
+
+    _copy()
+
+    rows = ProgeoMeasurement.objects.using(ALIAS).values_list("eigenpotenzial", "wirkpotenzial", "samples", "last_fetched")
+    # Rows without declared points (the alarms' factory measurements) are no pair data and keep samples.
+    by_wirk = {tuple(wirk): (eigen, samples, fetched) for eigen, wirk, samples, fetched in rows if wirk is not None}
+    assert by_wirk[(10, 20, 30, 40)] == ([0, 0, 0, 0], None, _at(2026, 4))  # (0, 97) gone, samples not kept
+    assert ProgeoMeasurement.objects.using(f.DB).get(pk=trailing.pk).samples[-1] == 97  # source untouched
+
+
+@WITH_PROJECT_DBS
 def test_unknown_takes_locations_without_project_and_devices_without_location(project_dbs):
     s = _scenario()
 
-    mirror_shared(UNKNOWN, UNKNOWN_PROJECT)
     _copy(UNKNOWN_PROJECT)
 
     devices = set(ProgeoDevice.objects.using(UNKNOWN).values_list("pk", flat=True))
@@ -301,23 +400,59 @@ def test_unknown_takes_locations_without_project_and_devices_without_location(pr
 
 
 @WITH_PROJECT_DBS
-def test_rerun_appends_new_rows_and_upsert_updates_changed_ones(project_dbs):
+def test_rerun_replaces_measurements_and_alarms_with_the_current_state(project_dbs):
     s = _scenario()
-    mirror_shared(ALIAS, PROJECT)
     _copy()
 
-    assert _copy()[ProgeoMeasurement] == 0  # nothing new
-
-    new = f.make_measurement(s["device"], pairs=[99])
+    _measurement(s["device"], [99, 99], _at(2024, 1))
     alarm = s["alarms"][0]
     ProgeoAlarm.objects.using(f.DB).filter(pk=alarm.pk).update(status=ProgeoAlarm.Status.QUITTIERT)
 
-    assert _copy()[ProgeoMeasurement] == 1
-    assert ProgeoMeasurement.objects.using(ALIAS).filter(pk=new.pk).exists()
-    assert ProgeoAlarm.objects.using(ALIAS).get(pk=alarm.pk).status == ProgeoAlarm.Status.NEU
+    copied = _copy()
 
-    _copy(upsert=True)
+    assert copied[ProgeoMeasurement] == 6
+    # The late-arriving 2024 measurement is the oldest now: it gets id 1.
+    assert ProgeoMeasurement.objects.using(ALIAS).get(pk=1).wirkpotenzial == [99, 99]
     assert ProgeoAlarm.objects.using(ALIAS).get(pk=alarm.pk).status == ProgeoAlarm.Status.QUITTIERT
+
+
+@WITH_PROJECT_DBS
+def test_delta_copy_appends_new_measurements_and_follows_alarm_changes(project_dbs):
+    s = _scenario()
+    _copy()
+    high_water = copied_high_water(ALIAS)
+    assert high_water == max(
+        ProgeoMeasurement.objects.using(f.DB).filter(device=s["device"]).values_list("pk", flat=True)
+    )
+
+    # Meanwhile in default: a new measurement, an acknowledged and a deleted alarm.
+    new = _measurement(s["device"], [7, 8], _at(2026, 9))
+    acknowledged, deleted = s["alarms"]
+    ProgeoAlarm.objects.using(f.DB).filter(pk=acknowledged.pk).update(status=ProgeoAlarm.Status.QUITTIERT)
+    ProgeoAlarm.objects.using(f.DB).filter(pk=deleted.pk).delete()
+
+    measurements, _ = copy_measurements(PROJECT, ALIAS, delta=True)
+
+    assert measurements == 1
+    assert new_measurement_id(ALIAS, new.pk) == 6  # appended after ids 1..5
+    assert ProgeoMeasurement.objects.using(ALIAS).get(pk=6).wirkpotenzial == [7, 8]
+    assert ProgeoAlarm.objects.using(ALIAS).get(pk=acknowledged.pk).status == ProgeoAlarm.Status.QUITTIERT
+    assert not ProgeoAlarm.objects.using(ALIAS).filter(pk=deleted.pk).exists()
+
+    # Nothing new: a second delta run copies nothing.
+    assert copy_measurements(PROJECT, ALIAS, delta=True)[0] == 0
+
+
+@WITH_PROJECT_DBS
+def test_delta_copy_falls_back_to_a_full_copy_the_first_time(project_dbs):
+    _scenario()
+    mirror_shared(ALIAS, PROJECT)  # alarms reference the mirrored users
+    assert copied_high_water(ALIAS) is None
+
+    measurements, _ = copy_measurements(PROJECT, ALIAS, delta=True)
+
+    assert measurements == 5
+    assert sorted(ProgeoMeasurement.objects.using(ALIAS).values_list("pk", flat=True)) == [1, 2, 3, 4, 5]
 
 
 @WITH_PROJECT_DBS
@@ -351,22 +486,9 @@ def test_verify_reports_missing_rows_and_purge_deletes_only_verified_project_row
 
 
 @WITH_PROJECT_DBS
-def test_new_rows_in_the_project_db_get_ids_above_default(project_dbs):
-    s = _scenario()
-    mirror_shared(ALIAS, PROJECT)
-    _copy()
-    align_sequences(ALIAS, project_models())
-
-    highest_default = ProgeoMeasurement.objects.using(f.DB).order_by("-pk").values_list("pk", flat=True).first()
-    created = ProgeoMeasurement.objects.using(ALIAS).create(device_id=s["device"].pk, raw_data={})
-    assert created.pk > highest_default
-
-
-@WITH_PROJECT_DBS
 @override_settings(PROJECT_DB_SPLIT=True)
 def test_router_reads_project_rows_inside_use_project_db(project_dbs):
     s = _scenario()
-    mirror_shared(ALIAS, PROJECT)
     _copy()
     purge_project(PROJECT, verify_project(PROJECT, ALIAS))
 
@@ -380,12 +502,27 @@ def test_router_reads_project_rows_inside_use_project_db(project_dbs):
 @LOCMEM_CACHE
 def test_locate_device_finds_the_database_of_a_raw_hash(project_dbs):
     s = _scenario()
-    mirror_shared(ALIAS, PROJECT)
     _copy()
 
     assert locate_device(s["device"].raw_hash) == ALIAS
     assert locate_device(s["device"].raw_hash) == ALIAS  # cached
     assert locate_device("no-such-device") is None
+
+
+@WITH_PROJECT_DBS
+def test_stats_land_on_every_location_of_the_project(project_dbs):
+    s = _scenario()
+    _copy()
+
+    results = refresh_project_db_stats()
+
+    assert results[ALIAS]["count"] == 5
+    assert results[ALIAS]["max_id"] == 5
+    location = ProgeoLocation.objects.using(f.DB).get(pk=s["location"].pk)
+    assert location.db_measurement_count == 5
+    assert location.db_size_bytes > 0
+    assert location.db_stats_at is not None
+    assert ProgeoLocation.objects.using(f.DB).get(pk=s["no_project"].pk).db_measurement_count == results[UNKNOWN]["count"]
 
 
 # ---------------------------------------------------------------------------- backup api

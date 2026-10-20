@@ -1,5 +1,5 @@
-"""LoRaWAN climate data: GET /v1/location/<pk>/climate/ - humidity and
-temperature per device instead of the samples-based heatmap."""
+"""LoRaWAN climate data: GET /v1/location/<pk>/climate/ - humidity,
+temperature and battery per device instead of the samples-based heatmap."""
 from datetime import timedelta
 
 import pytest
@@ -50,11 +50,23 @@ def test_climate_returns_one_chronological_series_per_device(api_client, lorawan
 
 
 def test_climate_days_widens_the_window(api_client, lorawan_location):
-    response = api_client.get(f"/v1/location/{lorawan_location.id}/climate/?days=60")
+    # 31 days: the longest range that still returns every measurement.
+    response = api_client.get(f"/v1/location/{lorawan_location.id}/climate/?days=31")
 
     assert response.status_code == 200, response.content
     sensor_a = response.json()["devices"][0]
     assert sensor_a["humidity"] == [10.0, 50.0, 55.0]
+
+
+def test_climate_includes_battery_aligned_with_the_other_series(api_client, lorawan_location):
+    sensor = lorawan_location.progeodevice_set.using(f.DB).get(mac="a-sensor")
+    # Battery uplinks can arrive without humidity/temperature.
+    f.make_measurement(sensor, battery=97.0, fetched_at=timezone.now() - timedelta(minutes=30))
+
+    sensor_a = api_client.get(f"/v1/location/{lorawan_location.id}/climate/").json()["devices"][0]
+
+    assert sensor_a["battery"] == [None, None, 97.0]
+    assert sensor_a["humidity"] == [50.0, 55.0, None]
 
 
 def test_climate_rejects_invalid_days(api_client, lorawan_location):

@@ -12,19 +12,25 @@ export type ClimateDeviceSeries = {
   timestamps: number[];
   humidity: Array<number | null>;
   temperature: Array<number | null>;
+  /** Battery level in percent. */
+  battery: Array<number | null>;
 };
 
 export type ClimateResponse = {
   days: number;
+  /** Long ranges (days > 31) are averaged into buckets of this many seconds -
+   * one value per bucket, timestamps = bucket start. null/absent: raw data. */
+  bucket_seconds?: number | null;
   devices: ClimateDeviceSeries[];
 };
 
-export type ClimateMetric = 'humidity' | 'temperature';
+export type ClimateMetric = 'humidity' | 'temperature' | 'battery';
 
-// Temperature reads warm, humidity cool. The shades vary in hue as well as
-// lightness so neighbouring devices stay apart. A device keeps its index in
-// both charts, so it is the n-th red and the n-th blue. Lines are always
-// solid; beyond the fixed shades more are generated (see deviceColor).
+// Temperature reads warm, humidity cool, battery green. The shades vary in
+// hue as well as lightness so neighbouring devices stay apart. A device
+// keeps its index in every chart, so it is the n-th red, blue and green.
+// Lines are always solid; beyond the fixed shades more are generated (see
+// deviceColor).
 const METRIC_COLORS: Record<ClimateMetric, string[]> = {
   temperature: [
     '#C62828', '#EF6C00', '#AD1457', '#D9605A', '#7B1F12', '#E8913A',
@@ -34,11 +40,23 @@ const METRIC_COLORS: Record<ClimateMetric, string[]> = {
     '#1565C0', '#00838F', '#5E35B1', '#4A9BE0', '#0D2F6B', '#2BA3B5',
     '#2E7D32', '#3949AB', '#0277BD', '#26A69A', '#6A1B9A', '#00ACC1',
   ],
+  battery: [
+    '#2E7D32', '#9E9D24', '#00695C', '#66BB6A', '#33691E', '#AFB42B',
+    '#558B2F', '#004D40', '#7CB342', '#827717', '#43A047', '#1B5E20',
+  ],
 };
-// Hue ranges of the generated shades: warm (reds/oranges) and cool (blues/greens).
+// Hue ranges of the generated shades: warm (reds/oranges), cool
+// (blues/cyans) and greens.
 const GENERATED_HUES: Record<ClimateMetric, [number, number]> = {
   temperature: [-20, 50],
   humidity: [160, 270],
+  battery: [60, 150],
+};
+// Battery levels are whole percents; the climate values keep two decimals.
+const VALUE_FORMAT: Record<ClimateMetric, string> = {
+  temperature: '.2f',
+  humidity: '.2f',
+  battery: '.0f',
 };
 
 const deviceColor = (metric: ClimateMetric, index: number): string => {
@@ -83,10 +101,12 @@ type ClimateChartProps = {
   /** Device whose line is highlighted (shared between the charts). */
   hoveredDeviceId?: number | null;
   onHoverDevice?: (deviceId: number | null) => void;
+  /** Bucket size of averaged data (ClimateResponse.bucket_seconds). */
+  bucketSeconds?: number | null;
 };
 
 /**
- * Time series of one climate metric (humidity or temperature), one line per
+ * Time series of one climate metric (humidity, temperature or battery), one line per
  * device of the location - a LoRaWAN object has several sensors.
  */
 const ClimateChart = ({
@@ -98,7 +118,13 @@ const ClimateChart = ({
   height = 340,
   hoveredDeviceId = null,
   onHoverDevice,
+  bucketSeconds = null,
 }: ClimateChartProps) => {
+  // Averaged data: smaller markers (many evenly spaced points), the value
+  // marked as a mean, and no time of day once a bucket spans a whole day.
+  const averaged = bucketSeconds != null && bucketSeconds > 0;
+  const hoverTime =
+    averaged && bucketSeconds * 1000 >= DAY_MS ? '%d.%m.%Y' : '%d.%m.%Y, %H:%M';
   const baseTraces = useMemo(
     () =>
       devices
@@ -121,15 +147,15 @@ const ClimateChart = ({
               color,
               width: 2,
             },
-            marker: { size: 6, color },
+            marker: { size: averaged ? 3 : 6, color },
             hoverlabel: { bordercolor: color },
             hovertemplate:
               `<span style="color:${color}">●</span> <b>${escapeHtml(device.label)}</b><br>` +
-              `<span style="font-size:16px"><b>%{y:.2f}</b></span> ${unit}<br>` +
-              `<span style="color:${MUTED_TEXT}">%{x|%d.%m.%Y, %H:%M}</span><extra></extra>`,
+              `<span style="font-size:16px"><b>${averaged ? 'Ø ' : ''}%{y:${VALUE_FORMAT[metric]}}</b></span> ${unit}<br>` +
+              `<span style="color:${MUTED_TEXT}">%{x|${hoverTime}}</span><extra></extra>`,
           };
         }),
-    [devices, metric, unit],
+    [averaged, devices, hoverTime, metric, unit],
   );
 
   // The hover highlight is applied straight to the plot (Plotly.restyle) and
@@ -243,9 +269,12 @@ const ClimateChart = ({
           ticks: 'outside',
           tickcolor: plotTheme.warmGray2,
           ticklen: 4,
+          // Month/year ticks for the long ranges (up to 3 years).
           tickformatstops: [
             { dtickrange: [null, DAY_MS], value: '%H:%M<br>%d.%m.' },
-            { dtickrange: [DAY_MS, null], value: '%d.%m.' },
+            { dtickrange: [DAY_MS, 14 * DAY_MS], value: '%d.%m.' },
+            { dtickrange: ['M1', 'M6'], value: '%m.%Y' },
+            { dtickrange: ['M12', null], value: '%Y' },
           ],
           // Vertical guide through the hovered point.
           showspikes: true,
@@ -258,7 +287,7 @@ const ClimateChart = ({
         yaxis: {
           title: { text: axisTitle, standoff: 12 },
           automargin: true,
-          tickformat: '.2f',
+          tickformat: VALUE_FORMAT[metric],
           showgrid: true,
           gridcolor: plotTheme.warmGray1,
           zeroline: false,

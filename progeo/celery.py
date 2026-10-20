@@ -56,6 +56,16 @@ celery_instance.conf.beat_schedule = {
         # midnight (00:30), once all of the previous day has been evaluated.
         "schedule": crontab(hour=0, minute=30),
     },
+    "refresh-project-db-stats-daily": {
+        "task": "progeo.tasks.refresh_project_db_stats",
+        # Size + measurement count of every project database onto its locations.
+        "schedule": crontab(hour=3, minute=15),
+    },
+    "ensure-measurement-partitions-monthly": {
+        "task": "progeo.tasks.ensure_measurement_partitions",
+        # Current + next year's measurement partition in every project database.
+        "schedule": crontab(day_of_month=1, hour=2, minute=30),
+    },
     "swap-databases-new-year": {
         "task": "progeo.tasks.swap_databases_new_year",
         # New Year's Eve, 23:50: archive every database as "<name>_<year>" and

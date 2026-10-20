@@ -2,7 +2,7 @@
 from django.core.management import call_command
 
 from progeo.helper.basics import dlog, elog
-from progeo.helper.project_dbs import register_all_project_dbs
+from progeo.helper.project_dbs import register_all_project_dbs, register_demo_db
 from progeo.management.commands._base import BaseCommand
 from progeo.settings import DATABASES
 
@@ -16,6 +16,7 @@ class Command(BaseCommand):
     )
 
     def handle(self, *args, **options):
+        register_demo_db(create=True)
         register_all_project_dbs()
         for db in list(DATABASES):
             try:

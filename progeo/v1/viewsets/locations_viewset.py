@@ -5,15 +5,17 @@ import posixpath
 import tempfile
 import time
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from celery.result import AsyncResult
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.core.files.storage import FileSystemStorage
 from django.core.validators import validate_email
 from django.db import transaction
-from django.db.models import Count, IntegerField, Max, OuterRef, Q, Subquery
-from django.db.models.functions import Coalesce
+from django.db.models import Avg, Count, F, IntegerField, Max, Min, OuterRef, Q, Subquery
+from django.db.models.functions import Coalesce, TruncDay
 from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
@@ -34,6 +36,7 @@ from progeo.helper.location_access import (
     location_q,
     resolve_request_accounts,
 )
+from progeo.helper.project_db_partitions import PARTITION_TIME_ZONE
 from progeo.settings import UPLOAD_DIR
 from progeo.tasks import render_heatmap_video
 from progeo.v1.creator import save_lageplan_upload
@@ -57,7 +60,9 @@ from progeo.v1.serializers import (
     ProgeoLocationMinSerializer,
     ProgeoMeasurementSerializer,
     ProgeoMeasurePointSerializer,
+    location_prefetches,
 )
+from progeo.v1.viewsets.alarm_viewset import MAX_HISTORY_DAYS
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.v1.viewsets.setup_viewset import _get_controller_account
 
@@ -102,6 +107,31 @@ PDF_SENSORS_PER_TABLE = 14
 # Upper bound for the browser-captured frames ZIP of the heatmap video export
 # (matches nginx's client_max_body_size).
 HEATMAP_VIDEO_MAX_UPLOAD_BYTES = 100 * 1024 * 1024
+
+# When a measurement was taken: its receive time - a plain column, so the
+# yearly partitions are pruned and the index is used.
+MEASURED_TIME = F("last_fetched")
+# Climate ranges up to this many days return every measurement, longer ones daily averages.
+CLIMATE_RAW_DAYS = 31
+
+
+def _rounded(value, digits=2):
+    return round(value, digits) if value is not None else None
+
+
+def measurement_range_of(location, account, user):
+    """{"first", "last", "count"} of a location's measurements (measurement time)."""
+    stats = (
+        ProgeoMeasurement.for_account(account, using=account.db_name, user=user)
+        .filter(device__location=location)
+        .annotate(measured=MEASURED_TIME)
+        .aggregate(first=Min("measured"), last=Max("measured"), count=Count("id"))
+    )
+    return {
+        "first": stats["first"].isoformat() if stats["first"] else None,
+        "last": stats["last"].isoformat() if stats["last"] else None,
+        "count": stats["count"],
+    }
 
 
 class LocationViewSet(ProgeoModalViewSet):
@@ -198,6 +228,7 @@ class LocationViewSet(ProgeoModalViewSet):
             "1", "true", "yes", "on"
         }
         queryset = self.get_queryset().filter(id__in=ids)
+        queryset = queryset.prefetch_related(*location_prefetches(queryset.db, lageplans=not skip_lageplans))
         data = LocationSerializer(queryset, many=True, context={"skip_lageplans": skip_lageplans}).data
         return Response(data=data)
 
@@ -542,7 +573,10 @@ class LocationViewSet(ProgeoModalViewSet):
         """All measurements of the location in the format of /v1/data/export/."""
         import json
 
-        from progeo.v1.viewsets.data_transfer_viewset import _concrete_fields, _serialize_instance
+        from progeo.v1.viewsets.data_transfer_viewset import (
+            _concrete_fields,
+            _serialize_instance,
+        )
 
         location, account, error = self._superuser_location(request, pk)
         if error:
@@ -567,7 +601,10 @@ class LocationViewSet(ProgeoModalViewSet):
         """Import a measurement export (same format and update-or-create logic
         as /v1/data/import/). Only ProgeoMeasurement rows of this location's
         devices are accepted."""
-        from progeo.v1.viewsets.data_transfer_viewset import _concrete_fields, _row_to_kwargs
+        from progeo.v1.viewsets.data_transfer_viewset import (
+            _concrete_fields,
+            _row_to_kwargs,
+        )
 
         location, account, error = self._superuser_location(request, pk)
         if error:
@@ -1451,15 +1488,15 @@ class LocationViewSet(ProgeoModalViewSet):
     @require_module_permissions("module_locations_enabled", "module_measurements_enabled")
     @action(detail=True, url_path="climate", methods=["GET"])
     def get_climate_data(self, request, pk=None, *args, **kwargs):
-        """Humidity/temperature series per device - the LoRaWAN counterpart
-        of `heatmap`. LoRaWAN measurements carry no samples, only
-        ProgeoMeasurement.humidity/temperature, and a location has several
+        """Humidity/temperature/battery series per device - the LoRaWAN
+        counterpart of `heatmap`. LoRaWAN measurements carry no samples, only
+        ProgeoMeasurement.humidity/temperature/battery, and a location has several
         devices, so every device gets its own series (oldest first)."""
         try:
             days = int(request.query_params.get("days", 7))
         except (TypeError, ValueError):
             return RequestFailed({"reason": "days must be an integer"})
-        days = max(1, min(days, 366))
+        days = max(1, min(days, MAX_HISTORY_DAYS))
 
         location, account = self._find_location(request, pk=pk)
         if not location:
@@ -1469,34 +1506,81 @@ class LocationViewSet(ProgeoModalViewSet):
         since = timezone.now() - timedelta(days=days)
         queryset = (
             ProgeoMeasurement.for_account(account, using=db_name, user=request.user)
-            .filter(device__location=location, last_fetched__gte=since)
-            .filter(Q(humidity__isnull=False) | Q(temperature__isnull=False))
-            .select_related("device")
-            .order_by("last_fetched", "id")
+            .annotate(measured=MEASURED_TIME)
+            .filter(device__location=location, measured__gte=since)
+            .filter(Q(humidity__isnull=False) | Q(temperature__isnull=False) | Q(battery__isnull=False))
         )
+        labels = {
+            device.pk: device
+            for device in ProgeoDevice.objects.using(db_name).filter(location=location)
+        }
 
         devices = {}
-        for measurement in queryset:
-            device = measurement.device
-            entry = devices.get(device.pk)
-            if entry is None:
-                entry = devices[device.pk] = {
-                    "id": device.pk,
-                    "label": device.display_name,
-                    "type": device.type,
+
+        def entry_of(device_id):
+            if device_id not in devices:
+                device = labels.get(device_id)
+                devices[device_id] = {
+                    "id": device_id,
+                    "label": device.display_name if device else str(device_id),
+                    "type": device.type if device else None,
                     "timestamps": [],
                     "humidity": [],
                     "temperature": [],
+                    "battery": [],
                 }
-            entry["timestamps"].append(measurement.last_fetched.timestamp())
-            entry["humidity"].append(measurement.humidity)
-            entry["temperature"].append(measurement.temperature)
+            return devices[device_id]
+
+        bucket_seconds = None
+        if days > CLIMATE_RAW_DAYS:
+            # Long ranges: one average per device and day (empty days are left
+            # out) - 3 years stay ~1100 points per device instead of ~26000.
+            bucket_seconds = 24 * 3600
+            rows = (
+                # tzinfo only with USE_TZ (Django refuses it otherwise); without,
+                # the connection already works in local time (settings.TIME_ZONE).
+                queryset.annotate(
+                    bucket=TruncDay("measured", tzinfo=ZoneInfo(PARTITION_TIME_ZONE) if settings.USE_TZ else None)
+                )
+                .values("device_id", "bucket")
+                .annotate(
+                    humidity_avg=Avg("humidity"), temperature_avg=Avg("temperature"), battery_avg=Avg("battery")
+                )
+                .order_by("bucket")
+            )
+            for row in rows:
+                entry = entry_of(row["device_id"])
+                entry["timestamps"].append(row["bucket"].timestamp())
+                entry["humidity"].append(_rounded(row["humidity_avg"]))
+                entry["temperature"].append(_rounded(row["temperature_avg"]))
+                entry["battery"].append(_rounded(row["battery_avg"]))
+        else:
+            rows = queryset.order_by("measured", "id").values_list(
+                "device_id", "measured", "humidity", "temperature", "battery"
+            )
+            for device_id, measured, humidity, temperature, battery in rows:
+                entry = entry_of(device_id)
+                entry["timestamps"].append(measured.timestamp())
+                entry["humidity"].append(humidity)
+                entry["temperature"].append(temperature)
+                entry["battery"].append(battery)
 
         return RequestSuccess({
             "location": LocationSerializer(location).data,
             "days": days,
+            "bucket_seconds": bucket_seconds,
             "devices": sorted(devices.values(), key=lambda entry: entry["label"]),
         })
+
+    @require_module_permissions("module_locations_enabled", "module_measurements_enabled")
+    @action(detail=True, url_path="measurement-range", methods=["GET"])
+    def measurement_range(self, request, pk=None, *args, **kwargs):
+        """Oldest/newest measurement time and the count of a location - the
+        frontend only offers time ranges the data actually covers."""
+        location, account = self._find_location(request, pk=pk)
+        if not location:
+            return RequestFailed({"reason": "Location not found"})
+        return RequestSuccess(measurement_range_of(location, account, request.user))
 
     # ------------------------------------------------------------------
     # Testleackage, CSV/PDF export, Verwaltung, Anlegen

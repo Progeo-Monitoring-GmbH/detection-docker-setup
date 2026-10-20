@@ -18,8 +18,9 @@ from progeo.helper.demo import (
     DEMO_TOKEN_PURPOSE,
     DEMO_USERNAME,
 )
+from progeo.helper.project_dbs import demo_alias, is_project_alias, register_demo_db
 from progeo.management.commands._base import BaseCommand
-from progeo.settings import UPLOAD_DIR
+from progeo.settings import DEMO_DATABASE, UPLOAD_DIR
 from progeo.v1.models import (
     Account,
     LimitedToken,
@@ -31,7 +32,7 @@ from progeo.v1.models import (
     ProgeoMeasurePoint,
 )
 
-DEFAULT_DB = "unit_tests"
+DEFAULT_DB = DEMO_DATABASE
 TOKEN_LIFETIME = datetime.timedelta(days=3650)
 
 MEASUREMENT_COUNT = 48  # hourly, ending now
@@ -110,7 +111,7 @@ class Command(BaseCommand):
         "a 'demo' user (only the module_demo_enabled permission), a LimitedToken for the demo "
         "link and one demo location per device type (smartex, DFH, LoRaWAN) with devices, "
         "generated measurements/alarms and a Lageplan image. The locations live in a separate "
-        "database (default: unit_tests), so the demo never touches real customer data.\n"
+        "database (default: settings.DEMO_DATABASE, 'demo'), so the demo never touches real customer data.\n"
         "Re-running resets the demo locations and shifts the timestamps to 'now'; account, user "
         "and token stay, so existing demo links keep working.\n\n"
         "Examples:\n"
@@ -144,8 +145,10 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         db = options["database"]
-        if db == "default":
-            raise CommandError("The demo data must not live in the 'default' database.")
+        if db == "default" or is_project_alias(db):
+            raise CommandError(f"The demo data must not live in '{db}' (default or a project database).")
+        if db == demo_alias():
+            register_demo_db(create=True)  # created + migrated on the first run
         if db not in connections.databases:
             raise CommandError(f"Unknown database '{db}'. Configured: {', '.join(connections.databases)}")
 
@@ -342,19 +345,16 @@ class Command(BaseCommand):
         measurements = []
         for step in range(MEASUREMENT_COUNT):
             fetched = now - datetime.timedelta(hours=MEASUREMENT_COUNT - 1 - step)
-            samples = []
-            for value in self._sensor_values(step, rng, count, hotspot):
-                samples.extend([BASE_LEVEL, BASE_LEVEL + value])
+            values = self._sensor_values(step, rng, count, hotspot)
             measurements.append(
                 ProgeoMeasurement(
                     device=device,
                     project_id=device.project_id,
-                    voltage=round(rng.uniform(11.8, 12.2), 2),
                     temperature=round(rng.uniform(14, 22), 1),
                     humidity=round(rng.uniform(40, 65), 1),
-                    samples=samples,
-                    points=len(samples) // 2,
-                    raw_data={"measure": {"samples": samples}},
+                    eigenpotenzial=[BASE_LEVEL] * len(values),
+                    wirkpotenzial=[BASE_LEVEL + value for value in values],
+                    raw_data={},
                     last_fetched=fetched,
                     last_updated=fetched,
                 )
@@ -363,7 +363,7 @@ class Command(BaseCommand):
         return ProgeoMeasurement.objects.using(db).bulk_create(measurements)
 
     def _create_climate_data(self, location, db, spec, rng):
-        """LoRaWAN sensors only report humidity/temperature (no samples)."""
+        """LoRaWAN sensors only report humidity/temperature/battery (no samples)."""
         now = timezone.now()
         steps = CLIMATE_DAYS * 24 // CLIMATE_STEP_HOURS
         measurements = []
@@ -385,7 +385,7 @@ class Command(BaseCommand):
                         project_id=location.project_id,
                         temperature=round(18 + number - 3 * daily + rng.uniform(-0.5, 0.5), 1),
                         humidity=round(min(humidity, 95), 1),
-                        voltage=round(rng.uniform(3.5, 3.7), 2),
+                        battery=round(100 - 2 * number - 10 * step / steps, 1),  # slowly draining
                         raw_data={},
                         last_fetched=fetched,
                         last_updated=fetched,
