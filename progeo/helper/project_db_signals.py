@@ -22,6 +22,7 @@ from progeo.helper.project_dbs import (
     existing_project_aliases,
     project_alias,
     project_key,
+    release_connection,
     split_enabled,
 )
 from progeo.v1.models import Account, ProgeoDevice, ProgeoLocation, UserProfile
@@ -61,6 +62,8 @@ def _mirror_row(model, pk, aliases, replace_where=None):
                     transfer_rows(model, where, [pk], alias, upsert=True)
             except Exception as exc:  # noqa: BLE001 - the next sync_default / split run repairs the mirror
                 elog(f"mirror {model.__name__}#{pk} -> {alias} failed: {exc!r}", tag="[PROJECT_DB]")
+            finally:
+                release_connection(alias)
 
     transaction.on_commit(run, using=DEFAULT_DB_ALIAS)
 
@@ -72,6 +75,8 @@ def _delete_row(model, pk, aliases):
                 model.objects.using(alias).filter(pk=pk).delete()
             except Exception as exc:  # noqa: BLE001 - must not break the default write
                 elog(f"delete mirror {model.__name__}#{pk} in {alias} failed: {exc!r}", tag="[PROJECT_DB]")
+            finally:
+                release_connection(alias)
 
     transaction.on_commit(run, using=DEFAULT_DB_ALIAS)
 
@@ -121,6 +126,8 @@ def _mirror_account_users(sender, instance, action, using, pk_set=None, **kwargs
                     transfer_rows(through, where, [accounts], alias, upsert=True)
             except Exception as exc:  # noqa: BLE001 - must not break the default write
                 elog(f"mirror Account.users -> {alias} failed: {exc!r}", tag="[PROJECT_DB]")
+            finally:
+                release_connection(alias)
 
     transaction.on_commit(run, using=DEFAULT_DB_ALIAS)
 

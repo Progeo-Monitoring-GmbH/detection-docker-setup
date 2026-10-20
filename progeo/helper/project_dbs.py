@@ -149,6 +149,17 @@ def register_project_db(alias):
     return alias
 
 
+def release_connection(alias):
+    """Close the connection of a project database after use: with ~1000 of
+    them, one open connection each exceeds Postgres' max_connections. Kept
+    while a transaction is open on it (e.g. the request is working there)."""
+    if alias == DEFAULT_DB_ALIAS or alias not in connections.settings:
+        return
+    connection = connections[alias]
+    if not connection.in_atomic_block:
+        connection.close()
+
+
 def registered_project_aliases():
     return sorted((a for a in connections.settings if is_project_alias(a)), key=_alias_sort_key)
 
