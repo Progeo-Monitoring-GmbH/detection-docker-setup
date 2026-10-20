@@ -10,6 +10,7 @@ from rest_framework.authentication import SessionAuthentication, TokenAuthentica
 from rest_framework.decorators import action
 from rest_framework.exceptions import ParseError
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.authentication import LimitedTokenAuthentication
@@ -18,8 +19,15 @@ from progeo.helper.alarm_evaluation import evaluate_measurement_instantly
 from progeo.helper.basics import RequestFailed, RequestSuccess, elog, ilog
 from progeo.helper.controller_wifi import parse_lua_wifi, request_controller_wifi_update
 from progeo.helper.creator import create_MfS_log
-from progeo.helper.location_access import location_q, resolve_request_account
+from progeo.helper.location_access import (
+    location_id_db,
+    location_q,
+    request_location_id,
+    resolve_request_account,
+    visible_locations_by_db,
+)
 from progeo.helper.measurement_utils import flatten_numeric_values
+from progeo.helper.project_dbs import release_connection, split_enabled
 from progeo.management.commands.patch_live import fetch_device_locations
 from progeo.tasks import download_device_config as download_device_config_task
 from progeo.tasks import upload_device_config as upload_device_config_task
@@ -57,7 +65,20 @@ class DeviceViewSet(ProgeoModalViewSet):
 
     @require_module_permissions("module_devices_enabled")
     def list(self, request, *args, **kwargs):
-        return super().list(request, *args, no_cache=True, **kwargs)
+        account = self._resolve_request_account(request)
+        if not (split_enabled() and account and request_location_id(request) is None):
+            return super().list(request, *args, no_cache=True, **kwargs)
+        # Split: the devices of the visible locations are spread over the project databases.
+        data = []
+        for db_name, location_ids in visible_locations_by_db(request.user, account).items():
+            try:
+                # Serialized inside: lazy relations must not reopen the connection after release.
+                data.extend(self.get_serializer(
+                    ProgeoDevice.objects.using(db_name).filter(location_id__in=location_ids), many=True
+                ).data)
+            finally:
+                release_connection(db_name)
+        return Response(data=data)
 
     @require_module_permissions("module_devices_enabled")
     def retrieve(self, request, pk=None, *args, **kwargs):
@@ -85,7 +106,8 @@ class DeviceViewSet(ProgeoModalViewSet):
 
         if not account:
             return ProgeoDevice.objects.none()
-        return ProgeoDevice.objects.using(account.db_name).filter(
+        # ?location= names the database (device ids are only unique per database with the split on).
+        return ProgeoDevice.objects.using(location_id_db(account, request_location_id(self.request))).filter(
             location_q(self.request.user, account, "location__")
         )
     
@@ -468,14 +490,30 @@ class DeviceViewSet(ProgeoModalViewSet):
             except (TypeError, ValueError):
                 return RequestFailed({"reason": "since_hours must be an integer"})
 
-        queryset = ProgeoMeasurement.for_account(account, using=db_name, user=request.user).select_related("device").filter(resistance_idc__isnull=False, last_updated__isnull=False).order_by("device__raw_hash", "last_updated", "id")
-        if since:
-            queryset = queryset.filter(last_updated__gte=since)
+        def imei_measurements(database, location_ids=None):
+            queryset = ProgeoMeasurement.for_account(account, using=database, user=request.user).select_related("device").filter(resistance_idc__isnull=False, last_updated__isnull=False).order_by("device__raw_hash", "last_updated", "id")
+            if location_ids is not None:
+                queryset = queryset.filter(device__location_id__in=location_ids)
+            if since:
+                queryset = queryset.filter(last_updated__gte=since)
+            return list(queryset)
+
+        if split_enabled() and account:
+            # The IMEI devices of the visible locations are spread over the project databases.
+            measurements = []
+            for database, location_ids in visible_locations_by_db(request.user, account).items():
+                try:
+                    measurements.extend(imei_measurements(database, location_ids))
+                finally:
+                    release_connection(database)
+            measurements.sort(key=lambda m: ((m.device.raw_hash or ""), m.last_updated, m.id))
+        else:
+            measurements = imei_measurements(db_name)
 
         imei_regex = re.compile(r"^\d{15}$")
         grouped = {}
 
-        for measurement in queryset:
+        for measurement in measurements:
             raw_hash = (measurement.device.raw_hash or "").strip()
             if not imei_regex.match(raw_hash):
                 continue
@@ -528,7 +566,7 @@ class DeviceViewSet(ProgeoModalViewSet):
     @action(detail=True, url_path="config/download", methods=["GET"])
     def download_config(self, request, pk=None, *args, **kwargs):
         account = getattr(request, "account", None) or _get_controller_account()
-        db_name = account.db_name if account else "default"
+        db_name = location_id_db(account, request_location_id(request)) if account else "default"
         device = ProgeoDevice.objects.using(db_name).filter(pk=pk, location__account=account).first()
         if not device:
             return RequestFailed({"reason": "Device not found"})
@@ -562,7 +600,7 @@ class DeviceViewSet(ProgeoModalViewSet):
     @action(detail=True, url_path="config/upload", methods=["POST"], parser_classes=[SafeLuaUploadParser])
     def upload_config(self, request, pk=None, *args, **kwargs):
         account = getattr(request, "account", None) or _get_controller_account()
-        db_name = account.db_name if account else "default"
+        db_name = location_id_db(account, request_location_id(request)) if account else "default"
         device = ProgeoDevice.objects.using(db_name).filter(pk=pk, location__account=account).first()
         if not device:
             return RequestFailed({"reason": "Device not found"})
@@ -694,7 +732,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         #    return RequestFailed({"reason": "No account configured"})
 
         #db_name = account.db_name or "default"
-        db_name = account.db_name if account else "default"
+        db_name = location_id_db(account, request_location_id(request)) if account else "default"
         device = ProgeoDevice.objects.using(db_name).filter(pk=pk, location__account=account).first()
         if not device:
             return RequestFailed({"reason": "Device not found"})
@@ -742,7 +780,8 @@ class DeviceViewSet(ProgeoModalViewSet):
         account = self._resolve_request_account(request)
         if not account:
             return RequestFailed({"reason": "Device not found"})
-        db_name = account.db_name
+        # ?location= names the database (device ids are only unique per database with the split on).
+        db_name = location_id_db(account, request_location_id(request))
 
         try:
             limit = int(request.query_params.get("limit", 250))
@@ -803,7 +842,7 @@ class DeviceViewSet(ProgeoModalViewSet):
     @action(detail=True, url_path="delete", methods=["POST"])
     def delete_device(self, request, pk=None, *args, **kwargs):
         account = getattr(request, "account", None) or _get_controller_account()
-        db_name = account.db_name if account else "default"
+        db_name = location_id_db(account, request_location_id(request)) if account else "default"
         try:
             device = ProgeoDevice.objects.using(db_name).get(id=int(pk), location__account=account)
         except (ValueError, ProgeoDevice.DoesNotExist):

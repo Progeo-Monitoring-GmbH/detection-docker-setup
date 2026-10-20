@@ -517,7 +517,8 @@ const LocationStatusView = ({
           new Promise<void>((resolve) => {
             void axiosConfig.perform_post(
               auth,
-              `/v1/alarm/${alarmId}/acknowledge/`,
+              // ?location=: alarm ids are only unique within one project database.
+              `/v1/alarm/${alarmId}/acknowledge/?location=${locationId}`,
               {},
               () => resolve(),
               (error) => {

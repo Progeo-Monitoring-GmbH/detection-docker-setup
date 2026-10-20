@@ -295,13 +295,16 @@ const AlarmsOverview = () => {
       setAcknowledgingId(alarm.id);
       void axiosConfig.perform_post(
         auth,
-        `/v1/alarm/${alarm.id}/acknowledge/`,
+        // ?location=: alarm ids are only unique within one project database.
+        `/v1/alarm/${alarm.id}/acknowledge/${alarm.location?.id ? `?location=${alarm.location.id}` : ''}`,
         {},
         (response) => {
           const updated = (response?.data?.alarms || null) as AlarmRow | null;
           if (updated) {
             setRows((prev) =>
-              prev.map((row) => (row.id === updated.id ? updated : row)),
+              prev.map((row) =>
+                row.id === updated.id && row.location?.id === updated.location?.id ? updated : row,
+              ),
             );
           }
           showSuccessBar(enqueueSnackbar, `Alarm #${alarm.id} acknowledged.`);

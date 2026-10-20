@@ -11,9 +11,12 @@ Two ways to get access to a location:
 Staff/superusers see everything. A user with neither kind of access sees
 nothing - there is deliberately no fallback to the request's default account.
 """
-from django.db import connections
+from django.db import DEFAULT_DB_ALIAS, connections
 from django.db.models import Q
+from django.db.models.signals import post_delete, post_save
+from django.dispatch import receiver
 
+from progeo.helper.project_dbs import split_enabled
 from progeo.v1.models import Account, ProgeoAccess
 
 
@@ -45,11 +48,122 @@ def single_access_location_ids(user, account) -> set[int]:
     # Accounts can reference databases this deployment doesn't configure.
     if account.db_name not in connections.databases:
         return set()
+    if split_enabled() and account.db_name == DEFAULT_DB_ALIAS:
+        return _split_single_access_location_ids(user.pk, account)
     return set(
         ProgeoAccess.objects.using(account.db_name)
         .filter(user_id=user.pk, location__account=account)
         .values_list("location_id", flat=True)
     )
+
+
+# With PROJECT_DB_SPLIT the access rows live in the project databases (and
+# "default" for projects without one): a user's rows mean one query per
+# database, so they are cached per user and dropped on every ProgeoAccess
+# save/delete (signals below), wherever it happens (views, admin, shell).
+SINGLE_ACCESS_CACHE_SECONDS = 300
+
+
+def _single_access_cache_key(user_id):
+    return f"progeo:single-access:{user_id}"
+
+
+def _split_single_access_location_ids(user_id, account) -> set[int]:
+    from django.core.cache import cache
+
+    from progeo.helper.project_dbs import (
+        existing_project_aliases,
+        register_project_db,
+        release_connection,
+    )
+
+    key = _single_access_cache_key(user_id)
+    try:
+        cached = cache.get(key) or {}
+    except Exception:  # noqa: BLE001 - cache unavailable: compute it
+        cached = {}
+    if account.pk in cached:
+        return set(cached[account.pk])
+
+    ids = set()
+    for alias in [DEFAULT_DB_ALIAS, *existing_project_aliases()]:
+        database = alias if alias == DEFAULT_DB_ALIAS else register_project_db(alias)
+        try:
+            ids.update(
+                ProgeoAccess.objects.using(database)
+                .filter(user_id=user_id, location__account=account)
+                .values_list("location_id", flat=True)
+            )
+        finally:
+            release_connection(database)
+    try:
+        cache.set(key, {**cached, account.pk: sorted(ids)}, SINGLE_ACCESS_CACHE_SECONDS)
+    except Exception:  # noqa: BLE001, S110 - cache unavailable: computed again next time
+        pass
+    return ids
+
+
+def request_location_id(request):
+    """?location=<pk> (or "location" in the body) - with the split on it names
+    the database of endpoints addressed by an alarm/device id: those ids are
+    only unique within one database. None if missing or not an integer."""
+    from rest_framework.request import Empty
+
+    raw = request.query_params.get("location") if hasattr(request, "query_params") else None
+    # The body only if DRF parsed it already: parsing here would consume the
+    # stream, and views reading request.body (config upload) would fail.
+    parsed = getattr(request, "_full_data", Empty)
+    if raw in (None, "") and parsed is not Empty and hasattr(parsed, "get"):
+        raw = parsed.get("location")
+    try:
+        return int(raw) if raw not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def location_id_db(account, location_id):
+    """Database of the project rows of location `location_id` (location_db);
+    the account's database without a location or while the split is off."""
+    from progeo.helper.project_dbs import location_db
+    from progeo.v1.models import ProgeoLocation
+
+    if location_id is None or not split_enabled():
+        return account.db_name
+    location = ProgeoLocation.objects.using(account.db_name).filter(pk=location_id).first()
+    return location_db(location, account) if location else account.db_name
+
+
+def visible_locations_by_db(user, account, location_ids=None):
+    """{database: [location ids]} of the locations `user` sees in `account`
+    (only `location_ids`, if given) - for views spanning many locations,
+    whose project rows live in different databases with the split on."""
+    from progeo.helper.project_dbs import locations_by_db
+    from progeo.v1.models import ProgeoLocation
+
+    locations = ProgeoLocation.objects.using(account.db_name).filter(location_q(user, account))
+    if location_ids:
+        locations = locations.filter(pk__in=location_ids)
+    return {
+        db_name: [location.pk for location in group]
+        for db_name, group in locations_by_db(locations.only("id", "project_id"), account).items()
+    }
+
+
+def forget_single_access(user_id):
+    """Drop the cached access rows of a user (after a ProgeoAccess change)."""
+    from django.core.cache import cache
+
+    try:
+        cache.delete(_single_access_cache_key(user_id))
+    except Exception:  # noqa: BLE001, S110 - cache unavailable: nothing cached either
+        pass
+
+
+@receiver(post_save, sender=ProgeoAccess)
+@receiver(post_delete, sender=ProgeoAccess)
+def _forget_changed_access(sender, instance, **kwargs):
+    if instance.user_id:
+        forget_single_access(instance.user_id)
 
 
 def user_accounts(user) -> list[Account]:

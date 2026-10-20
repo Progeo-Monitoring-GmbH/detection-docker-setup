@@ -186,7 +186,9 @@ ASGI_APPLICATION = "progeo.routing.application"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        # Before the apps' templates: progeo comes after django.contrib.admin in
+        # INSTALLED_APPS, so its admin/base_site.html (database dropdown) would lose.
+        "DIRS": [BASE_DIR / "progeo" / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [

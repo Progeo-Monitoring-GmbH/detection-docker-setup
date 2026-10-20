@@ -1,62 +1,78 @@
-from django.contrib import admin
-from django.contrib.auth.models import User
-from django.contrib.sessions.models import Session
-from django.http import HttpResponse
-from django.utils import timezone
+from django.db import DEFAULT_DB_ALIAS, connections
 
 from progeo.decorator import calc_runtime
 from progeo.helper.basics import dlog
 from progeo.settings import DEBUG
-from progeo.v1.admin import MultiDBModelAdmin
 from progeo.v1.models import Account
+
+ADMIN_DB_SESSION_KEY = "admin_db"
+# Query parameters that pick the admin's database: ?db=<alias> (the header
+# dropdown, progeo/templates/admin/base_site.html); using_db / using_account
+# are the older names.
+ADMIN_DB_PARAMS = ("db", "using_db", "using_account")
+
+
+def admin_databases():
+    """Databases the admin can switch to: "default", the configured ones and
+    every existing project database - not the project template (CREATE
+    DATABASE ... TEMPLATE refuses while anyone is connected to it)."""
+    from progeo.helper.project_dbs import (
+        existing_project_aliases,
+        is_project_alias,
+        template_alias,
+    )
+
+    configured = [alias for alias in connections.settings if alias != template_alias() and not is_project_alias(alias)]
+    return [DEFAULT_DB_ALIAS, *(alias for alias in configured if alias != DEFAULT_DB_ALIAS), *existing_project_aliases()]
 
 
 class AdminGetParamMiddleware:
-    using_db = "default"
+    """The database the Django admin works on, per request (request.using_db):
+    chosen with ?db=<alias>, remembered in the session so it survives the
+    admin's own links, "default" otherwise. Nothing is kept on the
+    middleware or the ModelAdmins - they are shared by every request."""
 
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
         if request.path.startswith("/aadmin/"):
-
-            using_account = request.GET.get("using_account")
-            user = None
-
-            _session_key = request.session.session_key
-
-            try:
-                session = Session.objects.get(session_key=_session_key, expire_date__gt=timezone.now())
-                _user_id = session.get_decoded().get("_auth_user_id")
-                user = User.objects.get(pk=_user_id)
-            except Session.DoesNotExist:
-                pass
-
-            dlog(f"user={user}, using_account={using_account}, session={_session_key}", active=DEBUG)
-
-            if using_account:
-                _filter = {"pk": using_account}
-            else:
-                _filter = {"db_name": request.GET.get("using_db", self.using_db)}
-
-            accounts = Account.objects.filter(users=user, **_filter)
-            if len(accounts):
-                using_db = accounts[0].db_name
-                if using_db == "db_name":
-                    return HttpResponse("Account has default db_name!", status=403)
-            else:
-                using_db = "default"
-
-            if using_db and using_db != "default":
-                self.using_db = using_db
-                admin.site.site_header = f'Admin | Database="{self.using_db}"'
-                MultiDBModelAdmin.handle_register_custom(using_db)
-
-            dlog(f"AdminGetParamMiddleware using_db={self.using_db}", tag="[MIDDLE]")
-
-            request.using_db = self.using_db
-
+            request.using_db = self._admin_db(request)
+            dlog(f"AdminGetParamMiddleware using_db={request.using_db}", tag="[MIDDLE]", active=DEBUG)
         return self.get_response(request)
+
+    @staticmethod
+    def _admin_db(request):
+        from progeo.helper.project_dbs import is_project_alias, register_project_db
+
+        user = getattr(request, "user", None)
+        if not (user and user.is_authenticated and (user.is_staff or user.is_superuser)):
+            return DEFAULT_DB_ALIAS
+
+        chosen = None
+        if any(param in request.GET for param in ADMIN_DB_PARAMS):
+            chosen = request.GET.get("db") or request.GET.get("using_db")
+            if not chosen and request.GET.get("using_account"):
+                account = Account.objects.using(DEFAULT_DB_ALIAS).filter(pk=request.GET.get("using_account")).first()
+                chosen = account.db_name if account else None
+            # The admin's change lists treat unknown parameters as filters (and refuse them).
+            cleaned = request.GET.copy()
+            for param in ADMIN_DB_PARAMS:
+                cleaned.pop(param, None)
+            request.GET = cleaned
+            request.META["QUERY_STRING"] = cleaned.urlencode()
+
+        allowed = admin_databases()
+        if chosen is not None:
+            alias = chosen if chosen in allowed else DEFAULT_DB_ALIAS
+            request.session[ADMIN_DB_SESSION_KEY] = alias
+        else:
+            alias = request.session.get(ADMIN_DB_SESSION_KEY, DEFAULT_DB_ALIAS)
+            if alias not in allowed:  # e.g. a project database dropped since
+                alias = DEFAULT_DB_ALIAS
+        if is_project_alias(alias):
+            register_project_db(alias)
+        return alias
 
 
 class AccountMiddleware:

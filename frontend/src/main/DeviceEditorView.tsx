@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router';
+import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { Button, Card, Container, Form } from 'react-bootstrap';
 import {
   ArrowLeft,
@@ -34,6 +34,10 @@ const clamp = (value: number, min: number, max: number) =>
 
 const DeviceEditorView = () => {
   const { id } = useParams();
+  // ?location= (from the device card): device ids are only unique within one project database.
+  const [searchParams] = useSearchParams();
+  const locationParam = searchParams.get('location');
+  const locationQuery = locationParam ? `&location=${encodeURIComponent(locationParam)}` : '';
   const navigate = useNavigate();
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
@@ -138,7 +142,7 @@ const DeviceEditorView = () => {
 
     void axiosConfig.perform_get(
       auth,
-      `/v1/status/measure_points/?device_id=${encodeURIComponent(id)}`,
+      `/v1/status/measure_points/?device_id=${encodeURIComponent(id)}${locationQuery}`,
       (response) => {
         const data = response?.data || {};
         const incoming = Array.isArray(data.points) ? data.points : [];
@@ -357,7 +361,7 @@ const DeviceEditorView = () => {
 
     void axiosConfig.perform_post(
       auth,
-      '/v1/status/measure_points/',
+      `/v1/status/measure_points/${locationParam ? `?location=${encodeURIComponent(locationParam)}` : ''}`,
       payload,
       (response) => {
         const data = response?.data || {};

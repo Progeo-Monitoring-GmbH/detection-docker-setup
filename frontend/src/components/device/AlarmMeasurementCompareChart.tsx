@@ -73,6 +73,10 @@ const AlarmMeasurementCompareChart = ({
       to: toLocalIso(endMs + ALARM_WINDOW_MS),
       limit: '2000',
     });
+    // location: device ids are only unique within one project database.
+    if (alarm.location?.id) {
+      params.set('location', String(alarm.location.id));
+    }
 
     void axiosConfig.perform_get(
       auth,

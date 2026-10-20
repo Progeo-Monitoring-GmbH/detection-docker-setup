@@ -425,6 +425,28 @@ def project_db_for(project):
     raise TypeError(f"Cannot resolve a project database from {type(project).__name__}")
 
 
+def location_db(location, account=None):
+    """Database holding a location's project rows (lageplans, devices,
+    measure points, access, mails, SMS, measurements, alarms) for the views:
+    its project database once PROJECT_DB_SPLIT is on ("default" while the
+    project has none yet), before that the account's database - so the views
+    behave exactly as before until the switch. Accounts with their own
+    database (not "default") keep it: only "default" was split."""
+    account_db = account.db_name if account is not None else DEFAULT_DB_ALIAS
+    if location is not None and split_enabled() and account_db == DEFAULT_DB_ALIAS:
+        return project_db_for(location)
+    return account_db
+
+
+def locations_by_db(locations, account=None):
+    """{database: [locations]} (location_db) - one query per database
+    instead of one per location when many locations are shown at once."""
+    groups = {}
+    for location in locations:
+        groups.setdefault(location_db(location, account), []).append(location)
+    return groups
+
+
 def _existing_or_default(alias):
     """`alias` if that database exists (list cached 60s), else "default"."""
     if alias in existing_project_aliases():

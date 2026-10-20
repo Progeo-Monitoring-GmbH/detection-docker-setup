@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router';
+import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { Button, Card, Container, Spinner } from 'react-bootstrap';
 import { ArrowLeft } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
@@ -19,6 +19,10 @@ type DeviceSummary = {
 
 const MeasurementDetailView = () => {
   const { id } = useParams();
+  // ?location= (from the device card): device ids are only unique within one project database.
+  const [searchParams] = useSearchParams();
+  const locationParam = searchParams.get('location');
+  const locationQuery = locationParam ? `&location=${encodeURIComponent(locationParam)}` : '';
   const navigate = useNavigate();
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
@@ -34,7 +38,7 @@ const MeasurementDetailView = () => {
     setLoading(true);
         void axiosConfig.perform_get(
       auth,
-      `/v1/device/${id}/measurements/?${measurementsQuery(year)}`,
+      `/v1/device/${id}/measurements/?${measurementsQuery(year)}${locationQuery}`,
       (response) => {
         const payload = response?.data || {};
         const nextDevice = (payload.device || null) as DeviceSummary | null;

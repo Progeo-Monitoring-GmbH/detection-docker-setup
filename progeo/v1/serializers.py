@@ -130,6 +130,54 @@ def location_prefetches(db_name, lageplans=True):
     return prefetches
 
 
+def prepare_locations(locations, account=None, lageplans=True, stats=True):
+    """Locations ready for LocationSerializer when their project rows live in
+    different databases (PROJECT_DB_SPLIT): child locations from the
+    locations' own database, lageplans and the measurement stats
+    (measurement_count, last_measurement_at - with the split off,
+    get_queryset annotates them in SQL instead) from each project database,
+    one query each per database. Returns the locations as a list."""
+    from django.db.models import Count, Max
+
+    from progeo.helper.project_dbs import locations_by_db, release_connection
+
+    locations = list(locations)
+    if not locations:
+        return locations
+    shared_db = locations[0]._state.db or "default"
+    prefetch_related_objects(locations, Prefetch(
+        "child_locations",
+        queryset=ProgeoLocation.objects.using(shared_db).only("id", "parent_location_id").order_by("id"),
+    ))
+    for db_name, group in locations_by_db(locations, account).items():
+        try:
+            if lageplans:
+                prefetch_related_objects(group, Prefetch(
+                    "lageplans", queryset=ProgeoLageplan.objects.using(db_name).order_by(*LAGEPLAN_ORDER)
+                ))
+            if stats:
+                rows = {
+                    row["device__location_id"]: row
+                    for row in ProgeoMeasurement.objects.using(db_name)
+                    .filter(device__location_id__in=[location.pk for location in group])
+                    .order_by().values("device__location_id")
+                    .annotate(count=Count("*"), newest=Max("pk"))
+                }
+                newest = dict(
+                    ProgeoMeasurement.objects.using(db_name)
+                    .filter(pk__in=[row["newest"] for row in rows.values()])
+                    .values_list("pk", "last_fetched")
+                )
+                for location in group:
+                    row = rows.get(location.pk)
+                    location.measurement_count = row["count"] if row else 0
+                    location.last_measurement_at = newest.get(row["newest"]) if row else None
+        finally:
+            # Up to ~1000 project databases per list - never keep them all open.
+            release_connection(db_name)
+    return locations
+
+
 class ProgeoLocationMinSerializer(ProgeoBaseSerializer):
     clazz = serializers.SerializerMethodField("get_clazz_name")
     id = serializers.IntegerField(read_only=True)

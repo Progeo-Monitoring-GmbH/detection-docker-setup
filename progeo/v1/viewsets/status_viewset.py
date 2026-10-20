@@ -16,8 +16,15 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from progeo.decorator import calc_runtime, require_module_permissions
 from progeo.helper.basics import RequestFailed, RequestSuccess, save_check_dir
 from progeo.helper.docker_helper import start_cad_factory
-from progeo.helper.location_access import location_q, resolve_request_accounts
+from progeo.helper.location_access import (
+    location_id_db,
+    location_q,
+    request_location_id,
+    resolve_request_accounts,
+    visible_locations_by_db,
+)
 from progeo.helper.pdf_cropper import process_pdf_to_png_and_extract_crosses
+from progeo.helper.project_dbs import location_db, release_connection, split_enabled
 from progeo.settings import SETUP_DIR, UPLOAD_DIR
 from progeo.tasks import collect_host_storage_info
 from progeo.tasks import identify_device as identify_device_task
@@ -77,7 +84,7 @@ def _measure_point_location(request, params):
         location, account = LocationViewSet._find_location(request, project_id=location_id)
         if not location:
             return None, None, RequestFailed({"reason": f"Location not found for id {location_id}"})
-        return location, account.db_name, None
+        return location, location_db(location, account), None
 
     try:
         device_id = int(device_id_raw)
@@ -85,15 +92,17 @@ def _measure_point_location(request, params):
         return None, None, RequestFailed({"reason": "device_id must be an integer"})
     user = getattr(request, "user", None)
     for account in _request_accounts(request):
+        # ?location= names the database (device ids are only unique per database with the split on).
+        db_name = location_id_db(account, request_location_id(request))
         device = (
-            ProgeoDevice.objects.using(account.db_name)
+            ProgeoDevice.objects.using(db_name)
             .filter(location_q(user, account, "location__"))
             .filter(pk=device_id)
             .select_related("location")
             .first()
         )
         if device and device.location:
-            return device.location, account.db_name, None
+            return device.location, db_name, None
     return None, None, RequestFailed({"reason": f"No location found for device {device_id}"})
 
 
@@ -243,16 +252,28 @@ class StatusViewSet(ProgeoModalViewSet):
             except (TypeError, ValueError):
                 return RequestFailed({"reason": "since_hours must be an integer"})
 
-        serialized = []
-        for account in _request_accounts(request):
+        def account_measurements(account, db_name, location_ids=None):
             queryset = (
-                ProgeoMeasurement.for_account(account, using=account.db_name, user=request.user)
+                ProgeoMeasurement.for_account(account, using=db_name, user=request.user)
                 .select_related("device")
                 .order_by("-id")
             )
+            if location_ids is not None:
+                queryset = queryset.filter(device__location_id__in=location_ids)
             if since:
                 queryset = queryset.filter(last_fetched__gte=since)
-            serialized.extend(ProgeoMeasurementSerializer(queryset, many=True).data)
+            return ProgeoMeasurementSerializer(queryset, many=True).data
+
+        serialized = []
+        for account in _request_accounts(request):
+            if split_enabled():
+                for db_name, location_ids in visible_locations_by_db(request.user, account).items():
+                    try:
+                        serialized.extend(account_measurements(account, db_name, location_ids))
+                    finally:
+                        release_connection(db_name)
+            else:
+                serialized.extend(account_measurements(account, account.db_name))
 
         grouped = {}
         for item in serialized:
@@ -309,11 +330,13 @@ class StatusViewSet(ProgeoModalViewSet):
 
         measurement = None
         for account in _request_accounts(request):
+            # ?location= names the database (measurement ids are only unique per database with the split on).
+            candidate_db = location_id_db(account, request_location_id(request))
             measurement = ProgeoMeasurement.get_for_account(
-                account, measurement_id, using=account.db_name, user=request.user
+                account, measurement_id, using=candidate_db, user=request.user
             )
             if measurement:
-                db_name = account.db_name
+                db_name = candidate_db
                 break
         if not measurement:
             return RequestFailed({"reason": "Measurement not found"})
@@ -430,6 +453,7 @@ class StatusViewSet(ProgeoModalViewSet):
         location = ProgeoLocation.objects.using(db_name).filter(project_id=location_id, account=account).first()
         if not location:
             return RequestFailed({"reason": "Location not found"})
+        db_name = location_db(location, account)
 
         json_path = request.FILES.get("files0")
         data = json.load(json_path)
@@ -460,6 +484,7 @@ class StatusViewSet(ProgeoModalViewSet):
         location = ProgeoLocation.objects.using(db_name).filter(project_id=location_id, account=account).first()
         if not location:
             return RequestFailed({"reason": "Location not found"})
+        db_name = location_db(location, account)
 
         upload = next(iter(request.FILES.values()), None)
         if not upload:
@@ -493,6 +518,7 @@ class StatusViewSet(ProgeoModalViewSet):
         location = ProgeoLocation.objects.using(db_name).filter(project_id=location_id, account=account).first()
         if not location:
             return RequestFailed({"reason": "Location not found"})
+        db_name = location_db(location, account)
 
         upload = next(iter(request.FILES.values()), None)
         points = None
@@ -578,6 +604,7 @@ class StatusViewSet(ProgeoModalViewSet):
                 ny=point.get("ny"),
                 grid_x=point.get("gx", 0),
                 grid_y=point.get("gy", 0),
+                db=db_name,
             )
 
             bulk_points.append(point)
@@ -785,6 +812,20 @@ class StatusViewSet(ProgeoModalViewSet):
         if not account:
             return RequestFailed({"reason": "No account configured"})
         
+        if split_enabled():
+            # The account's devices are spread over the project databases.
+            data = []
+            # No user filter, like the query below: every device of the account.
+            for project_db, location_ids in visible_locations_by_db(None, account).items():
+                try:
+                    devices = ProgeoDevice.objects.using(project_db).select_related("location").filter(
+                        location__account=account, location_id__in=location_ids
+                    ).order_by("id")
+                    data.extend(DeviceSerializer(devices, many=True).data)
+                finally:
+                    release_connection(project_db)
+            data.sort(key=lambda device: device.get("id") or 0)
+            return RequestSuccess({"devices": data})
         devices = ProgeoDevice.objects.using(db_name).select_related("location").filter(location__account=account).order_by("id")
         data = DeviceSerializer(devices, many=True).data
         return RequestSuccess({"devices": data})

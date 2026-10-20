@@ -12,7 +12,14 @@ from progeo.decorator import require_module_permissions
 from progeo.helper.basics import RequestFailed, RequestSuccess
 from progeo.helper.cacher import cache_save_and_return, search_cache
 from progeo.helper.creator import create_MfS_log
-from progeo.helper.location_access import location_q, resolve_request_account
+from progeo.helper.location_access import (
+    location_id_db,
+    location_q,
+    request_location_id,
+    resolve_request_account,
+    visible_locations_by_db,
+)
+from progeo.helper.project_dbs import release_connection, split_enabled
 from progeo.v1.models import ProgeoAlarm
 from progeo.v1.serializers import ProgeoAlarmSerializer
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
@@ -36,13 +43,37 @@ class AlarmViewSet(ProgeoModalViewSet):
     def _resolve_request_account(request):
         return resolve_request_account(request, fallback_account=_get_controller_account())
 
+    # ?location= names the database (alarm ids are only unique per database with the split on).
+    _location_id = staticmethod(request_location_id)
+    _db_for = staticmethod(location_id_db)
+
+    @staticmethod
+    def _locations_by_db(request, account, location_ids=None):
+        return visible_locations_by_db(request.user, account, location_ids)
+
     @require_module_permissions("module_measurements_enabled")
     def list(self, request, *args, **kwargs):
         cache_key, _cache = search_cache(request)
         if not kwargs.get("no_cache", False) and _cache:
             return _cache
-        alarms = self.get_queryset()
-        data = self.get_serializer(alarms, many=True).data
+        account = self._resolve_request_account(request)
+        if split_enabled() and account and self._location_id(request) is None:
+            # The overview spans every visible location - their alarms are
+            # spread over the project databases: collect them per database.
+            data = []
+            for db_name, location_ids in self._locations_by_db(request, account).items():
+                try:
+                    # Serialized inside: lazy relations must not reopen the connection after release.
+                    data.extend(self.get_serializer(self.get_queryset(db_name=db_name).filter(
+                        measurement__device__location_id__in=location_ids
+                    ), many=True).data)
+                finally:
+                    release_connection(db_name)
+            # Like order_by("-triggered_at", "-id") - Postgres puts NULL first when descending.
+            data.sort(key=lambda alarm: (alarm.get("triggered_at") is None, alarm.get("triggered_at") or "",
+                                         alarm.get("id") or 0), reverse=True)
+            return cache_save_and_return(cache_key, {"alarms": data})
+        data = self.get_serializer(self.get_queryset(), many=True).data
         return cache_save_and_return(cache_key, {"alarms": data})
 
     @require_module_permissions("module_measurements_enabled")
@@ -72,25 +103,37 @@ class AlarmViewSet(ProgeoModalViewSet):
         days = max(1, min(days, 365))
         cutoff = timezone.now() - timedelta(days=days)
 
-        rows = (
-            ProgeoAlarm.objects.using(account.db_name)
-            .filter(location_q(request.user, account, "measurement__device__location__"))
-            .filter(
-                # Still-active alarms count regardless of age - otherwise an
-                # alarm that's never been acknowledged silently drops out of
-                # the summary (and the row's yellow marker) once it's older
-                # than the window, even though it's still unresolved.
-                Q(normalized_at__isnull=True)
-                | Q(triggered_at__gte=cutoff)
-                | Q(triggered_at__isnull=True, last_fetched__gte=cutoff)
+        def summary_rows(db_name, ids):
+            rows = (
+                ProgeoAlarm.objects.using(db_name)
+                .filter(location_q(request.user, account, "measurement__device__location__"))
+                .filter(
+                    # Still-active alarms count regardless of age - otherwise an
+                    # alarm that's never been acknowledged silently drops out of
+                    # the summary (and the row's yellow marker) once it's older
+                    # than the window, even though it's still unresolved.
+                    Q(normalized_at__isnull=True)
+                    | Q(triggered_at__gte=cutoff)
+                    | Q(triggered_at__isnull=True, last_fetched__gte=cutoff)
+                )
             )
-        )
-        if location_ids:
-            rows = rows.filter(measurement__device__location_id__in=location_ids)
-        rows = rows.values("measurement__device__location_id").annotate(
-            count=Count("id"),
-            active=Count("id", filter=Q(normalized_at__isnull=True)),
-        )
+            if ids:
+                rows = rows.filter(measurement__device__location_id__in=ids)
+            return list(rows.values("measurement__device__location_id").annotate(
+                count=Count("id"),
+                active=Count("id", filter=Q(normalized_at__isnull=True)),
+            ))
+
+        if split_enabled():
+            # The locations' alarms are spread over the project databases.
+            rows = []
+            for db_name, ids in self._locations_by_db(request, account, location_ids).items():
+                try:
+                    rows.extend(summary_rows(db_name, ids))
+                finally:
+                    release_connection(db_name)
+        else:
+            rows = summary_rows(account.db_name, location_ids)
 
         locations = {}
         for row in rows:
@@ -144,7 +187,7 @@ class AlarmViewSet(ProgeoModalViewSet):
 
         if not account:
             return RequestSuccess({"clusters": [], "top_sensors": []})
-        db = account.db_name
+        db = self._db_for(account, location_id)
         alarms = list(
             ProgeoAlarm.objects.using(db)
             .filter(location_q(request.user, account, "measurement__device__location__"))
@@ -418,7 +461,9 @@ class AlarmViewSet(ProgeoModalViewSet):
         account = self._resolve_request_account(request)
         if not account:
             return RequestFailed({"reason": "Alarm not found"})
-        db_name = account.db_name
+        # With the split on, ?location= (or "location" in the body) names the
+        # database - alarm ids are only unique within one database.
+        db_name = self._db_for(account, self._location_id(request))
         # Bypass the list window (last N days) so any alarm owned by the
         # account can be acknowledged, not just recently triggered ones.
         alarm = (
@@ -448,7 +493,10 @@ class AlarmViewSet(ProgeoModalViewSet):
         serializer = ProgeoAlarmSerializer(alarm)
         return RequestSuccess(serializer.data)
 
-    def get_queryset(self):
+    def get_queryset(self, db_name=None):
+        """Alarms in the window - in `db_name`, else in the database of
+        ?location= (retrieve: alarm ids are only unique per database with the
+        split on), else the account's."""
         account = self._resolve_request_account(self.request)
         if not account:
             return ProgeoAlarm.objects.none()
@@ -499,7 +547,7 @@ class AlarmViewSet(ProgeoModalViewSet):
             )
 
         queryset = (
-            ProgeoAlarm.objects.using(account.db_name)
+            ProgeoAlarm.objects.using(db_name or self._db_for(account, location_id))
             .filter(location_q(self.request.user, account, "measurement__device__location__"))
             .filter(alarm_filter)
             .select_related("measurement__device__location")

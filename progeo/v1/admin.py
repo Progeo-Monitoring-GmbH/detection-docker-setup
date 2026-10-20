@@ -35,8 +35,14 @@ models = [ContentType, Permission, Account, Session, OutstandingToken, Blacklist
 
 
 class MultiDBModelAdmin(admin.ModelAdmin):
+    """ModelAdmin on the database of the request (request.using_db, set by
+    progeo.middlewares.AdminGetParamMiddleware from the header dropdown).
+    Never stored on the instance: one ModelAdmin serves every request."""
     empty_value_display = "-empty-"
-    using_db = "default"
+
+    @staticmethod
+    def _db(request):
+        return getattr(request, "using_db", None) or "default"
 
     def __init__(self, model, admin_site):
         # self.handle_register_django(models)
@@ -79,33 +85,35 @@ class MultiDBModelAdmin(admin.ModelAdmin):
             #         wlog("CUSTOM", _model, admin.site.is_registered(_model), tag="[ADMIN]")
 
     def save_model(self, request, obj, form, change):
-        okaylog(f"save_model | db={self.using_db} | obj={obj}, change={change}", tag="[MultiDB]")
-        obj.save(using=self.using_db)
+        okaylog(f"save_model | db={self._db(request)} | obj={obj}, change={change}", tag="[MultiDB]")
+        obj.save(using=self._db(request))
 
     def delete_model(self, request, obj):
-        okaylog(f"delete_model | db={self.using_db} | obj={obj}", tag="[MultiDB]")
-        obj.delete(using=self.using_db)
+        okaylog(f"delete_model | db={self._db(request)} | obj={obj}", tag="[MultiDB]")
+        obj.delete(using=self._db(request))
+
+    def delete_queryset(self, request, queryset):
+        queryset.using(self._db(request)).delete()
 
     def get_queryset(self, request):
-        if hasattr(request, "using_db"):
-            self.using_db = request.using_db
+        db_name = self._db(request)
         try:
-            qs = self.model.objects.using(self.using_db).all()
-            okaylog(f"get_queryset | db={self.using_db}, model={self.model}, qs={qs}", tag="[MultiDB]")
+            qs = self.model.objects.using(db_name).all()
+            okaylog(f"get_queryset | db={db_name}, model={self.model}", tag="[MultiDB]")
             return qs
         except Exception as e:
-            elog(f"get_queryset | db={self.using_db}, model={self.model}", e, tag="[MultiDB-Error]")
-            return {}
+            elog(f"get_queryset | db={db_name}, model={self.model}", e, tag="[MultiDB-Error]")
+            return self.model.objects.none()
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
-        okaylog(f"formfield_for_foreignkey | db={self.using_db} | db_field={db_field}, kwargs={kwargs}",
+        okaylog(f"formfield_for_foreignkey | db={self._db(request)} | db_field={db_field}, kwargs={kwargs}",
                 tag="[MultiDB]")
-        return super().formfield_for_foreignkey(db_field, request, using=self.using_db, **kwargs)
+        return super().formfield_for_foreignkey(db_field, request, using=self._db(request), **kwargs)
 
     def formfield_for_manytomany(self, db_field, request, **kwargs):
-        okaylog(f"formfield_for_manytomany | db={self.using_db} | db_field={db_field}, kwargs={kwargs}",
+        okaylog(f"formfield_for_manytomany | db={self._db(request)} | db_field={db_field}, kwargs={kwargs}",
                 tag="[MultiDB]")
-        return super().formfield_for_manytomany(db_field, request, using=self.using_db, **kwargs)
+        return super().formfield_for_manytomany(db_field, request, using=self._db(request), **kwargs)
 
 # ==============================================================================================
 

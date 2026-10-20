@@ -1,0 +1,46 @@
+{% extends "admin/base.html" %}
+{% load progeo_admin %}
+{% comment %}
+Django's admin/base_site.html plus the database dropdown: picking a database
+reloads the page with ?db=<alias>; progeo.middlewares.AdminGetParamMiddleware
+remembers it in the session, so the admin's own links stay on it.
+{% endcomment %}
+
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block branding %}
+<div id="site-name"><a href="{% url 'admin:index' %}">{{ site_header|default:_('Django administration') }}</a></div>
+{% if user.is_anonymous %}
+  {% include "admin/color_theme_toggle.html" %}
+{% elif user.is_staff or user.is_superuser %}
+  {% admin_database_choices as choices %}
+  <form id="progeo-db-switch" method="get" action="" style="display:inline-flex;align-items:center;gap:.5em;margin-left:1.5em;">
+    <label for="progeo-db-select" style="color:var(--header-color);">Datenbank:</label>
+    <select id="progeo-db-select" name="db" style="max-width:22em;">
+      <optgroup label="Datenbanken">
+        {% for alias, label in choices.databases %}
+          <option value="{{ alias }}"{% if alias == choices.current %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </optgroup>
+      {% if choices.projects %}
+        <optgroup label="Projekte ({{ choices.projects|length }})">
+          {% for alias, label in choices.projects %}
+            <option value="{{ alias }}"{% if alias == choices.current %} selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </optgroup>
+      {% endif %}
+    </select>
+  </form>
+  <script>
+    // Switch the database on change. On an object's page go up to its list:
+    // the same id is a different row (or none) in another database.
+    document.getElementById("progeo-db-select").addEventListener("change", function () {
+      var parts = window.location.pathname.split("/").filter(Boolean);  // ["aadmin", app, model, ...]
+      var path = parts.length > 3 ? "/" + parts.slice(0, 3).join("/") + "/" : window.location.pathname;
+      window.location.href = path + "?db=" + encodeURIComponent(this.value);
+    });
+  </script>
+{% endif %}
+{% endblock %}
+
+{% block nav-global %}{% endblock %}

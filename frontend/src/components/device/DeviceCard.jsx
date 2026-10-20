@@ -100,7 +100,7 @@ const DeviceCard = ({
             <Button
               variant="outline-info"
               size="sm"
-              onClick={() => navigate(`/device/${device.id}/editor/`)}
+              onClick={() => navigate(`/device/${device.id}/editor/${device.location ? `?location=${device.location}` : ''}`)}
               title="Open sensor editor"
             >
               <Image className="me-1" />
@@ -111,7 +111,7 @@ const DeviceCard = ({
           <Button
             variant="outline-primary"
             size="sm"
-            onClick={() => navigate(`/device/${device.id}/detail`)}
+            onClick={() => navigate(`/device/${device.id}/detail${device.location ? `?location=${device.location}` : ''}`)}
             title="Open measurement detail"
           >
             Details

@@ -149,7 +149,11 @@ const DeviceListView = () => {
     setLoading(true);
     void axiosConfig.perform_post(
       auth,
-      `/v1/device/${deleteTargetId}/delete/`,
+      // ?location=: device ids are only unique within one project database.
+      `/v1/device/${deleteTargetId}/delete/${(() => {
+        const location = (devices as any[]).find((d) => d.device.id === deleteTargetId)?.device?.location;
+        return location ? `?location=${location}` : '';
+      })()}`,
       () => {
         showSuccessBar(enqueueSnackbar, 'Device deleted successfully');
         setDevices((prev) =>

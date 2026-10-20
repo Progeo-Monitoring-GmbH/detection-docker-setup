@@ -233,7 +233,8 @@ const DeviceConfigPanel = ({
       axiosConfig.updateToken();
       const response = await axiosConfig.holder.get(
         `/v1/device/${device.id}/config/download/`,
-        { params: { path: CONFIG_PATH } },
+        // location: device ids are only unique within one project database.
+        { params: { path: CONFIG_PATH, location: locationId } },
       );
       setForm((previous) =>
         parseConfigContent(response?.data?.content || '', previous),
@@ -267,7 +268,8 @@ const DeviceConfigPanel = ({
     try {
       setSaving(true);
       axiosConfig.updateToken();
-      await axiosConfig.holder.post(`/v1/device/${device.id}/config/upload/`, {
+      // ?location=: device ids are only unique within one project database.
+      await axiosConfig.holder.post(`/v1/device/${device.id}/config/upload/?location=${locationId}`, {
         path: CONFIG_PATH,
         content: toLuaConfig(config),
       });

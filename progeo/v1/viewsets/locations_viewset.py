@@ -14,7 +14,17 @@ from django.core.exceptions import ValidationError
 from django.core.files.storage import FileSystemStorage
 from django.core.validators import validate_email
 from django.db import transaction
-from django.db.models import Avg, Count, F, IntegerField, Max, Min, OuterRef, Q, Subquery
+from django.db.models import (
+    Avg,
+    Count,
+    F,
+    IntegerField,
+    Max,
+    Min,
+    OuterRef,
+    Q,
+    Subquery,
+)
 from django.db.models.functions import Coalesce, TruncDay
 from django.http import HttpResponse
 from django.utils import timezone
@@ -31,12 +41,14 @@ from progeo.decorator import (
 )
 from progeo.helper import heatmap_video, plan_meters
 from progeo.helper.basics import RequestFailed, RequestSuccess, save_check_dir
+from progeo.helper.cacher import cache_save_and_return, search_cache
 from progeo.helper.location_access import (
     configured_accounts,
     location_q,
     resolve_request_accounts,
 )
 from progeo.helper.project_db_partitions import PARTITION_TIME_ZONE
+from progeo.helper.project_dbs import location_db, split_enabled
 from progeo.settings import UPLOAD_DIR
 from progeo.tasks import render_heatmap_video
 from progeo.v1.creator import save_lageplan_upload
@@ -61,6 +73,7 @@ from progeo.v1.serializers import (
     ProgeoMeasurementSerializer,
     ProgeoMeasurePointSerializer,
     location_prefetches,
+    prepare_locations,
 )
 from progeo.v1.viewsets.alarm_viewset import MAX_HISTORY_DAYS
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
@@ -122,7 +135,7 @@ def _rounded(value, digits=2):
 def measurement_range_of(location, account, user):
     """{"first", "last", "count"} of a location's measurements (measurement time)."""
     stats = (
-        ProgeoMeasurement.for_account(account, using=account.db_name, user=user)
+        ProgeoMeasurement.for_account(account, using=location_db(location, account), user=user)
         .filter(device__location=location)
         .annotate(measured=MEASURED_TIME)
         .aggregate(first=Min("measured"), last=Max("measured"), count=Count("id"))
@@ -132,6 +145,15 @@ def measurement_range_of(location, account, user):
         "last": stats["last"].isoformat() if stats["last"] else None,
         "count": stats["count"],
     }
+
+
+def _location_data(location, account):
+    """LocationSerializer data of one location. With the split on, its
+    lageplans come from the location's project database - the serializer
+    would load them through the router, i.e. from "default"."""
+    if split_enabled():
+        location = prepare_locations([location], account, stats=False)[0]
+    return LocationSerializer(location).data
 
 
 class LocationViewSet(ProgeoModalViewSet):
@@ -180,7 +202,15 @@ class LocationViewSet(ProgeoModalViewSet):
 
     @require_module_permissions("module_locations_enabled")
     def list(self, request, *args, **kwargs):
-        return super().list(request, *args, no_cache=False, **kwargs)
+        if not split_enabled():
+            return super().list(request, *args, no_cache=False, **kwargs)
+        # Split: measurement stats and lageplans per project database
+        # (prepare_locations) - one SQL statement can't span databases.
+        cache_key, _cache = search_cache(request)
+        if _cache:
+            return _cache
+        locations = prepare_locations(self.filter_queryset(self.get_queryset()), self._primary_account(request))
+        return cache_save_and_return(cache_key, LocationSerializer(locations, many=True).data)
     
     @require_module_permissions("module_locations_enabled")
     @action(detail=False, url_path="project-types", methods=["GET"])
@@ -228,13 +258,22 @@ class LocationViewSet(ProgeoModalViewSet):
             "1", "true", "yes", "on"
         }
         queryset = self.get_queryset().filter(id__in=ids)
-        queryset = queryset.prefetch_related(*location_prefetches(queryset.db, lageplans=not skip_lageplans))
+        if split_enabled():
+            queryset = prepare_locations(queryset, self._primary_account(request), lageplans=not skip_lageplans)
+        else:
+            queryset = queryset.prefetch_related(*location_prefetches(queryset.db, lageplans=not skip_lageplans))
         data = LocationSerializer(queryset, many=True, context={"skip_lageplans": skip_lageplans}).data
         return Response(data=data)
 
     @require_module_permissions("module_locations_enabled")
     def retrieve(self, request, pk=None, *args, **kwargs):
-        return super().retrieve(request, *args, pk=pk, **kwargs)
+        if not split_enabled():
+            return super().retrieve(request, *args, pk=pk, **kwargs)
+        cache_key, _cache = search_cache(request)
+        if _cache:
+            return _cache
+        location = prepare_locations([self.get_object()], self._primary_account(request))[0]
+        return cache_save_and_return(cache_key, LocationSerializer(location).data)
 
     @require_module_permissions("module_notifications_enabled")
     @action(detail=True, url_path="access", methods=["GET", "POST"])
@@ -264,7 +303,7 @@ class LocationViewSet(ProgeoModalViewSet):
         location, account = self._find_location(request, pk=pk)
         if not location:
             return RequestFailed({"reason": "Location not found"})
-        db_name = account.db_name
+        db_name = location_db(location, account)
 
         if request.method == "GET":
             rows = (
@@ -440,7 +479,7 @@ class LocationViewSet(ProgeoModalViewSet):
             return False
         if account.users.filter(pk=user_id).exists():
             return True
-        if ProgeoAccess.objects.using(account.db_name).filter(location=location, user_id=user_id).exists():
+        if ProgeoAccess.objects.using(location_db(location, account)).filter(location=location, user_id=user_id).exists():
             return True
         # ProGeo staff (Objektleitung, Einstellungen tab) - assignable by staff only.
         if _is_staff_admin(request.user) and User.objects.filter(pk=user_id, is_staff=True).exists():
@@ -490,7 +529,7 @@ class LocationViewSet(ProgeoModalViewSet):
         location, account = self._find_location(request, pk=pk)
         if not location:
             return RequestFailed({"reason": "Location not found"})
-        db_name = account.db_name
+        db_name = location_db(location, account)
         try:
             access_id = int(request.data.get("id"))
         except (TypeError, ValueError):
@@ -517,7 +556,7 @@ class LocationViewSet(ProgeoModalViewSet):
         location, account, error = self._superuser_location(request, pk)
         if error:
             return error
-        db_name = account.db_name
+        db_name = location_db(location, account)
         queryset = ProgeoDevice.objects.using(db_name).filter(location=location).order_by("hardware", "id")
 
         if request.method == "GET":
@@ -562,9 +601,9 @@ class LocationViewSet(ProgeoModalViewSet):
         location, account, error = self._superuser_location(request, pk)
         if error:
             return error
-        with transaction.atomic(using=account.db_name):
+        with transaction.atomic(using=location_db(location, account)):
             deleted, _ = (
-                ProgeoMeasurement.objects.using(account.db_name).filter(device__location=location).delete()
+                ProgeoMeasurement.objects.using(location_db(location, account)).filter(device__location=location).delete()
             )
         return RequestSuccess({"deleted": deleted})
 
@@ -584,7 +623,7 @@ class LocationViewSet(ProgeoModalViewSet):
         fields = _concrete_fields(ProgeoMeasurement)
         rows = [
             _serialize_instance("ProgeoMeasurement", fields, measurement)
-            for measurement in ProgeoMeasurement.objects.using(account.db_name)
+            for measurement in ProgeoMeasurement.objects.using(location_db(location, account))
             .filter(device__location=location)
             .order_by("pk")
             .iterator()
@@ -614,7 +653,7 @@ class LocationViewSet(ProgeoModalViewSet):
         if not isinstance(rows, list):
             return RequestFailed({"reason": 'Expected {"data": [...]} as returned by the export'})
 
-        db_name = account.db_name
+        db_name = location_db(location, account)
         device_ids = set(
             ProgeoDevice.objects.using(db_name).filter(location=location).values_list("pk", flat=True)
         )
@@ -672,7 +711,7 @@ class LocationViewSet(ProgeoModalViewSet):
         # Single-access users of this location aren't account members.
         if not user:
             location, location_account = self._find_location(request, pk=pk)
-            if location and ProgeoAccess.objects.using(location_account.db_name).filter(
+            if location and ProgeoAccess.objects.using(location_db(location, location_account)).filter(
                 location=location, user_id=user_id
             ).exists():
                 account = location_account
@@ -728,7 +767,7 @@ class LocationViewSet(ProgeoModalViewSet):
         location, account = self._find_location(request, pk=pk)
         if not location:
             return RequestFailed({"reason": "Location not found"})
-        db_name = account.db_name
+        db_name = location_db(location, account)
         points_qs = ProgeoMeasurePoint.objects.using(db_name).filter(location=location)
 
         if request.method == "GET":
@@ -840,7 +879,7 @@ class LocationViewSet(ProgeoModalViewSet):
         location, account = self._find_location(request, pk=pk)
         if not location:
             return RequestFailed({"reason": "Location not found"})
-        devices = ProgeoDevice.objects.using(account.db_name).filter(location=location).order_by("id")
+        devices = ProgeoDevice.objects.using(location_db(location, account)).filter(location=location).order_by("id")
         return RequestSuccess({"devices": DeviceSerializer(devices, many=True).data})
 
     @require_module_permissions("module_notifications_enabled")
@@ -860,7 +899,7 @@ class LocationViewSet(ProgeoModalViewSet):
         location, account = self._find_location(request, pk=pk)
         if not location:
             return RequestFailed({"reason": "Location not found"})
-        db_name = account.db_name
+        db_name = location_db(location, account)
 
         try:
             days = int(request.query_params.get("days", 30))
@@ -1129,7 +1168,7 @@ class LocationViewSet(ProgeoModalViewSet):
         location, account = self._find_location(request, project_id=location_id)
         if not location:
             return RequestFailed({"reason": "Location not found"})
-        db_name = account.db_name
+        db_name = location_db(location, account)
 
         try:
             offset_x = int(request.data.get("offset_x"))
@@ -1193,7 +1232,7 @@ class LocationViewSet(ProgeoModalViewSet):
         location, account = self._find_location(request, project_id=location_id)
         if not location:
             return RequestFailed({"reason": "Location not found"})
-        db_name = account.db_name
+        db_name = location_db(location, account)
 
         values = {}
         try:
@@ -1239,6 +1278,12 @@ class LocationViewSet(ProgeoModalViewSet):
         account = self._primary_account(self.request)
         if not account:
             return ProgeoLocation.objects.none()
+        if split_enabled():
+            # The measurements live in the project databases - list, details
+            # and retrieve add the counts per database (prepare_locations).
+            return ProgeoLocation.objects.using(account.db_name).filter(
+                location_q(self.request.user, account)
+            ).order_by("id")
 
         # Annotate measurement availability so the frontend can color rows:
         # green = has measurements, gray = no measurements at all.
@@ -1300,7 +1345,7 @@ class LocationViewSet(ProgeoModalViewSet):
         location, account = self._find_location(request, pk=pk)
         if not location:
             return RequestFailed({"reason": "Location not found"})
-        db_name = account.db_name
+        db_name = location_db(location, account)
 
         queryset = ProgeoMeasurement.for_account(account, using=db_name, user=request.user).filter(device__location=location)
         if year:
@@ -1311,7 +1356,7 @@ class LocationViewSet(ProgeoModalViewSet):
         serialized = ProgeoMeasurementSerializer(queryset, many=True).data
         return RequestSuccess(
             {
-                "location": LocationSerializer(location).data,
+                "location": _location_data(location, account),
                 "measurements": serialized,
                 "count": len(serialized),
             }
@@ -1335,7 +1380,7 @@ class LocationViewSet(ProgeoModalViewSet):
         if not location:
             return RequestFailed({"reason": "Location not found"})
 
-        devices = ProgeoDevice.objects.using(account.db_name).filter(location=location)
+        devices = ProgeoDevice.objects.using(location_db(location, account)).filter(location=location)
         reachable = [device for device in devices if device.device_ip]
         if not reachable:
             return RequestFailed({"reason": "No device with a known IP address for this location"})
@@ -1410,7 +1455,7 @@ class LocationViewSet(ProgeoModalViewSet):
         location, account = self._find_location(request, pk=pk)
         if not location:
             return RequestFailed({"reason": "Location not found"})
-        db_name = account.db_name
+        db_name = location_db(location, account)
 
         points = ProgeoMeasurePoint.objects.using(db_name).filter(location=location)
         queryset = ProgeoMeasurement.for_account(account, using=db_name, user=request.user).filter(device__location=location)
@@ -1429,7 +1474,7 @@ class LocationViewSet(ProgeoModalViewSet):
 
         # Meter positions are measured on the active Lageplan (the one every
         # view shows by default); None while it isn't calibrated.
-        plan = location.lageplans.order_by("-is_active", "-id").first()
+        plan = ProgeoLageplan.objects.using(db_name).filter(location=location).order_by("-is_active", "-id").first()
         plan_size = plan_meters.image_size(plan) if plan_meters.is_calibrated(plan) else None
 
         for point in points:
@@ -1476,7 +1521,7 @@ class LocationViewSet(ProgeoModalViewSet):
 
 
         return RequestSuccess({
-            "location": LocationSerializer(location).data,
+            "location": _location_data(location, account),
             "limit": limit,
             "from": time_from.isoformat() if time_from else None,
             "to": time_to.isoformat() if time_to else None,
@@ -1501,7 +1546,7 @@ class LocationViewSet(ProgeoModalViewSet):
         location, account = self._find_location(request, pk=pk)
         if not location:
             return RequestFailed({"reason": "Location not found"})
-        db_name = account.db_name
+        db_name = location_db(location, account)
 
         since = timezone.now() - timedelta(days=days)
         queryset = (
@@ -1566,7 +1611,7 @@ class LocationViewSet(ProgeoModalViewSet):
                 entry["battery"].append(battery)
 
         return RequestSuccess({
-            "location": LocationSerializer(location).data,
+            "location": _location_data(location, account),
             "days": days,
             "bucket_seconds": bucket_seconds,
             "devices": sorted(devices.values(), key=lambda entry: entry["label"]),
@@ -1638,7 +1683,7 @@ class LocationViewSet(ProgeoModalViewSet):
         location, account = self._find_location(request, pk=pk)
         if not location:
             return RequestFailed({"reason": "Location not found"})
-        db_name = account.db_name
+        db_name = location_db(location, account)
         recipients = self._notification_recipients(location, db_name)
 
         if request.method == "GET":
@@ -1732,7 +1777,7 @@ class LocationViewSet(ProgeoModalViewSet):
         location, account = self._find_location(request, pk=pk)
         if not location:
             return RequestFailed({"reason": "Location not found"})
-        db_name = account.db_name
+        db_name = location_db(location, account)
         try:
             points, timestamps, series = self._measurement_series(location, account, db_name, request)
         except (TypeError, ValueError):
@@ -1828,7 +1873,7 @@ class LocationViewSet(ProgeoModalViewSet):
         location, account = self._find_location(request, pk=pk)
         if not location:
             return RequestFailed({"reason": "Location not found"})
-        db_name = account.db_name
+        db_name = location_db(location, account)
         try:
             points, timestamps, series = self._measurement_series(location, account, db_name, request)
         except (TypeError, ValueError):
@@ -2013,7 +2058,7 @@ class LocationViewSet(ProgeoModalViewSet):
         )
 
         lageplan_ids = [
-            save_lageplan_upload(location, uploaded, uploaded.name, db=db_name).id
+            save_lageplan_upload(location, uploaded, uploaded.name, db=location_db(location, account)).id
             for uploaded in request.FILES.getlist("visualization_files")
         ]
         coordinate_files = [
@@ -2022,7 +2067,7 @@ class LocationViewSet(ProgeoModalViewSet):
         ]
 
         return RequestSuccess({
-            "location": LocationSerializer(location).data,
+            "location": _location_data(location, account),
             "lageplan_ids": lageplan_ids,
             "coordinate_files": coordinate_files,
         })
