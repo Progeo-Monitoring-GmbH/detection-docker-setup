@@ -81,6 +81,27 @@ if not settings.PROGEO_CONFIG_EVALUATE_INSTANTLY:
         # Previously the "67 * * * *" cron entry (docker/backend/cronjobs/hourly.sh).
         "schedule": crontab(minute="*/67"),
     }
+
+
+def _without_disabled_tasks(schedule, disabled):
+    """`schedule` without the entries named in CELERY_DISABLED_TASKS (schedule
+    name, task name or "all")."""
+    disabled = set(disabled)
+    kept = {
+        name: entry for name, entry in schedule.items()
+        if not ({"all", name, entry["task"].rsplit(".", 1)[-1]} & disabled)
+    }
+    if len(kept) < len(schedule):
+        dlog(f"CELERY_DISABLED_TASKS: not scheduled: {sorted(set(schedule) - set(kept))}")
+    known = {"all", *schedule, *(entry["task"].rsplit(".", 1)[-1] for entry in schedule.values())}
+    if disabled - known:
+        dlog(f"CELERY_DISABLED_TASKS: unknown names ignored: {sorted(disabled - known)}")
+    return kept
+
+
+celery_instance.conf.beat_schedule = _without_disabled_tasks(
+    celery_instance.conf.beat_schedule, settings.CELERY_DISABLED_TASKS
+)
 celery_instance.autodiscover_tasks(lambda: settings.INSTALLED_APPS)
 
 # List to store running tasks

@@ -50,6 +50,10 @@ PROGEO_CONFIG_ENABLE_MEASUREMENTS = parse_boolean(os.getenv("PROGEO_CONFIG_ENABL
 # Evaluate every measurement for alarms as soon as it is stored instead of the
 # hourly evaluate_measurements beat task (meant for low-traffic servers).
 PROGEO_CONFIG_EVALUATE_INSTANTLY = parse_boolean(os.getenv("PROGEO_CONFIG_EVALUATE_INSTANTLY"))
+# Periodic celery tasks celery beat must not start (progeo/celery.py), comma
+# separated: schedule names ("check-existing-alarms-quarter-hourly"), task
+# names ("check_existing_alarms") or "all" - e.g. while split_project_dbs runs.
+CELERY_DISABLED_TASKS = [name.strip() for name in os.getenv("CELERY_DISABLED_TASKS", "").split(",") if name.strip()]
 
 # Airtable (pyairtable) integration - see django.env.template. The API key is
 # a placeholder until a real personal access token is configured.

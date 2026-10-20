@@ -775,9 +775,15 @@ def test_periodic_tasks_leave_project_databases_alone_until_the_split_is_on(sett
         settings.PROJECT_DB_SPLIT = False
         assert project_alias(990004) not in _task_databases()
         assert DEFAULT_DB_ALIAS in _task_databases()
+        assert DEFAULT_DB_ALIAS in _task_databases(measurements=True)
         settings.PROJECT_DB_SPLIT = True
         assert project_alias(990004) in _task_databases()
         assert template_alias() not in _task_databases()
         assert _task_databases("unit_tests") == ["unit_tests"]
+        # Split on: measurements arrive in the project databases, default only
+        # keeps the copies until --purge.
+        assert DEFAULT_DB_ALIAS not in _task_databases(measurements=True)
+        assert project_alias(990004) in _task_databases(measurements=True)
+        assert DEFAULT_DB_ALIAS in _task_databases()
     finally:
         connections.settings.pop(project_alias(990004), None)

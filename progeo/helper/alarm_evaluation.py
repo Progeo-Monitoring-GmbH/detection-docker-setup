@@ -66,11 +66,17 @@ def evaluate_measurements_db(db: str, start, end, project_id: int | None = None)
             Q(project_id=project_id) | Q(device__project_id=project_id)
         ).distinct()
 
+    # Devices with a still-active alarm, read once: a measurement below the
+    # threshold only has something to normalize for those (instead of one
+    # alarm query per measurement).
+    alarmed_devices = _devices_with_active_alarms(db)
+
     triggered = 0
     location_ids = 0
     location_id = None
-    dlog(f"Found Measurements: {measurements.count()}")
+    found = 0
     for measurement in measurements:
+        found += 1
         location = _resolve_location(measurement, db)
         if location is None:
             continue
@@ -79,10 +85,20 @@ def evaluate_measurements_db(db: str, start, end, project_id: int | None = None)
             location_ids += 1
         location_id = location.project_id
 
-        if _evaluate_measurement(measurement, location, db, weather_helper):
+        if _evaluate_measurement(measurement, location, db, weather_helper, alarmed_devices):
             triggered += 1
 
+    dlog(f"Found Measurements: {found}")
     return location_ids, triggered
+
+
+def _devices_with_active_alarms(db: str) -> set:
+    from progeo.v1.models import ProgeoAlarm
+
+    return set(
+        ProgeoAlarm.objects.using(db).filter(normalized_at__isnull=True)
+        .values_list("measurement__device_id", flat=True).distinct()
+    )
 
 
 def evaluate_measurement_instantly(measurement, db: str = "default") -> bool:
@@ -141,9 +157,11 @@ def _resolve_location(measurement, db: str):
     return location
 
 
-def _evaluate_measurement(measurement, location, db: str, weather_helper) -> bool:
+def _evaluate_measurement(measurement, location, db: str, weather_helper, alarmed_devices=None) -> bool:
     """Raise/prolong an alarm for an over-threshold measurement, else normalize active alarms.
 
+    `alarmed_devices` (a batch run's set of device ids with an active alarm,
+    kept up to date here) skips the alarm lookup for devices without one.
     Returns True if the measurement triggered (or prolonged) an alarm.
     """
     from progeo.helper.basics import dlog
@@ -155,6 +173,10 @@ def _evaluate_measurement(measurement, location, db: str, weather_helper) -> boo
     # over-threshold sensor as a (sensor_id, max_value) pair.
     over_threshold = measurement.evaluate_all(threshold)
     if not over_threshold:
+        if alarmed_devices is not None:
+            if measurement.device_id not in alarmed_devices:
+                return False
+            alarmed_devices.discard(measurement.device_id)  # normalized below
         active_alarms = (
             ProgeoAlarm.objects.using(db)
             .filter(measurement__device=measurement.device, normalized_at__isnull=True)
@@ -196,4 +218,6 @@ def _evaluate_measurement(measurement, location, db: str, weather_helper) -> boo
         triggered_at=measurement.last_fetched,
         db=db,
     )
+    if alarmed_devices is not None:
+        alarmed_devices.add(measurement.device_id)
     return True

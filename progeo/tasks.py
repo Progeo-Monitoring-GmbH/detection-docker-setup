@@ -258,13 +258,18 @@ def evaluate_measurement(measurement_id: int, account_id: int | None = None):
     }
 
 
-def _task_databases(db=None):
+def _task_databases(db=None, measurements=False):
     """Databases the per-database tasks below run on: `db`, else every
     configured one. Project databases only once PROJECT_DB_SPLIT is on -
     before that they are copies under construction (split_project_dbs), and
     evaluating them would raise every alarm a second time. The template is
-    never one."""
-    from django.db import connections
+    never one.
+
+    measurements=True (alarm evaluation/checks): with the split on, the
+    measurements arrive in the project databases - "default" only keeps the
+    copied rows until `split_project_dbs --purge`, and scanning its huge
+    unindexed measurement table would evaluate them a second time."""
+    from django.db import DEFAULT_DB_ALIAS, connections
 
     from progeo.helper.project_dbs import (
         is_project_alias,
@@ -278,7 +283,9 @@ def _task_databases(db=None):
     # connections.settings: the active DATABASES incl. the registered project databases.
     return [
         name for name in connections.settings
-        if name != template_alias() and (split or not is_project_alias(name))
+        if name != template_alias()
+        and (split or not is_project_alias(name))
+        and not (split and measurements and name == DEFAULT_DB_ALIAS)
     ]
 
 
@@ -330,7 +337,7 @@ def evaluate_measurements(db: str | None = None, lookback_hours: int = 1, days: 
         start = now - datetime.timedelta(hours=lookback_hours)
         end = now
 
-    db_names = _task_databases(db)
+    db_names = _task_databases(db, measurements=True)
 
     total_locations = 0
     total_triggered = 0
@@ -381,7 +388,7 @@ def check_existing_alarms(db: str | None = None, silence_hours: int = 24):
     from progeo.helper.basics import elog, ilog
     from progeo.helper.project_dbs import release_connection
 
-    db_names = _task_databases(db)
+    db_names = _task_databases(db, measurements=True)
 
     total_checked = 0
     total_normalized = 0
