@@ -9,6 +9,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.helper.basics import RequestFailed, RequestSuccess, elog
+from progeo.helper.project_dbs import release_connection
 from progeo.settings import DATABASES
 from progeo.v1.models import (
     SMS,
@@ -143,6 +144,10 @@ class DataTransferViewSet(viewsets.ViewSet):
                     rows.extend(_serialize_instance(model_name, fields, instance) for instance in instances)
                 except Exception as exc:
                     elog(f"[data_transfer] export model={model_name} db={db_name} failed: {exc}")
+                finally:
+                    # DATABASES includes every registered project database - one open
+                    # connection each would exceed max_connections within this request.
+                    release_connection(db_name)
 
         payload = json.dumps({"models": requested, "count": len(rows), "data": rows}, indent=2, default=str)
         response = HttpResponse(payload, content_type="application/json")
