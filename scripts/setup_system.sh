@@ -198,16 +198,17 @@ configure_non_root_docker() {
 }
 
 # The backend image creates its progeo user with these ids, so files it writes into the
-# bind-mounted media/ and logs/ belong to the host's progeo user. Kept if already numeric.
+# bind-mounted media/ and logs/ belong to the host's progeo user, and it joins the host's
+# docker group (owner of /var/run/docker.sock). Kept if already numeric.
 ensure_docker_ids() {
   local env_file="$1"
   local key value
-  for key in DOCKER_UID DOCKER_GID; do
-    if [[ "${key}" == "DOCKER_UID" ]]; then
-      value="$(id -u "${PROGEO_USER}")"
-    else
-      value="$(id -g "${PROGEO_USER}")"
-    fi
+  for key in DOCKER_UID DOCKER_GID DOCKER_SOCKET_GID; do
+    case "${key}" in
+      DOCKER_UID) value="$(id -u "${PROGEO_USER}")" ;;
+      DOCKER_GID) value="$(id -g "${PROGEO_USER}")" ;;
+      DOCKER_SOCKET_GID) value="$(getent group docker | cut -d: -f3)" ;;
+    esac
 
     if grep -qE "^${key}=\"?[0-9]+\"?\s*$" "${env_file}"; then
       log_info "${key} already set in ${env_file}, keeping it"

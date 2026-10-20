@@ -36,10 +36,14 @@ RUN apk add proj proj-dev
 ENV PROJECT_ROOT=/home/progeo/detection-docker-setup
 ENV VENV_ROOT=/opt/venv
 
+# DOCKER_SOCKET_GID is the host's docker group; it may already exist here under another
+# name (e.g. 999 = ping) or equal DOCKER_GID, so join whichever group owns that gid.
+# -H: the parent /home/progeo does not exist yet, WORKDIR below creates the folder.
 RUN addgroup -g ${DOCKER_GID} -S progeo \
-    && adduser -S -u ${DOCKER_UID} -G progeo -h ${PROJECT_ROOT} progeo \
-    && if ! grep -qE '^docker:' /etc/group; then addgroup -g ${DOCKER_SOCKET_GID} -S docker; fi \
-    && addgroup progeo docker
+    && adduser -S -H -u ${DOCKER_UID} -G progeo -h ${PROJECT_ROOT} progeo \
+    && socket_group="$(getent group ${DOCKER_SOCKET_GID} | cut -d: -f1)" \
+    && if [ -z "${socket_group}" ]; then addgroup -g ${DOCKER_SOCKET_GID} -S docker && socket_group=docker; fi \
+    && addgroup progeo "${socket_group}"
 
 WORKDIR ${PROJECT_ROOT}
 
