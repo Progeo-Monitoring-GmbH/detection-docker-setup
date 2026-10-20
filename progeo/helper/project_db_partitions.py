@@ -126,9 +126,14 @@ def ensure_year_partition(alias, year):
 
 def ensure_upcoming_partitions(alias, today=None):
     """Partitions for the current and the next year (yearly maintenance)."""
+    from datetime import date
+
+    from django.conf import settings
     from django.utils import timezone
 
-    year = (today or timezone.localdate()).year
+    # localdate() refuses the naive now() of USE_TZ=False (production); then the
+    # process runs in TIME_ZONE already, so date.today() is the same local date.
+    year = (today or (timezone.localdate() if settings.USE_TZ else date.today())).year
     partition_measurements(alias, years=(year, year + 1))
 
 

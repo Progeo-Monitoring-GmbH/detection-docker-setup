@@ -15,6 +15,7 @@ from django.test import override_settings
 from django.utils import timezone
 
 from conftest import TEST_DATABASES
+from progeo.helper import project_db_partitions as partitions
 from progeo.helper.project_db_copy import (
     check_purge_safe,
     copied_high_water,
@@ -47,6 +48,7 @@ from progeo.helper.project_dbs import (
 )
 from progeo.router import ProjectRouter
 from progeo.tests import factories as f
+from progeo.v1.helper import parse_split_str
 from progeo.v1.models import (
     SMS,
     Account,
@@ -111,6 +113,23 @@ def test_backup_names_map_to_their_database():
     assert backup_project_key("default-0d5cc9f86533-2026-10-02-015302.psql.gz") is None
     assert backup_project_key(f"{ALIAS}-host-2026-10-02-015302.psql") == PROJECT
     assert backup_project_key(f"{UNKNOWN}-host-2026-10-02-015302.psql") == UNKNOWN_PROJECT
+
+
+def test_database_list_ignores_empty_entries():
+    """Regression: "a;;b" / "a;b;" registered a database named "" (prepare_databases failed)."""
+    assert parse_split_str("main_db;;dev_null;", ";") == ["main_db", "dev_null"]
+    assert parse_split_str(" main_db ; dev_null", ";") == ["main_db", "dev_null"]
+    assert parse_split_str(";", ";") == []
+
+
+@override_settings(USE_TZ=False)
+def test_upcoming_partitions_work_with_naive_datetimes(monkeypatch):
+    """Regression: production runs USE_TZ=False, where timezone.localdate() raises."""
+    calls = []
+    monkeypatch.setattr(partitions, "partition_measurements", lambda alias, years: calls.append((alias, years)))
+    partitions.ensure_upcoming_partitions("some_project_db")
+    year = datetime.date.today().year
+    assert calls == [("some_project_db", (year, year + 1))]
 
 
 def test_register_copies_default_connection_with_own_name():

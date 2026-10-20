@@ -65,6 +65,8 @@ main() {
 # starts, so no ingestion runs against a half-imported database
 # (progeo/management/commands/import_legacy_backup.py). Runs only once - the
 # command leaves a marker next to the backup and refuses a non-empty default.
+# A default restored by hand is migrated (adv_migrate) and split instead,
+# as long as no project database exists yet (import_legacy_backup --restored).
 import_legacy_backup() {
   local project_root="$1"
 
@@ -82,6 +84,16 @@ import_legacy_backup() {
   done
 
   local manage=("${compose[@]}" run --rm --no-deps progeo-backend python manage.py)
+
+  # The old database was restored into default by hand: migrate and split it.
+  # Probe only - its "nothing to do" reasons are expected, so they stay quiet.
+  if (cd "${project_root}" && "${manage[@]}" import_legacy_backup --restored --check 2>/dev/null); then
+    log_info "Migrating the restored database and splitting it into project databases - this takes a while..."
+    (cd "${project_root}" && "${manage[@]}" import_legacy_backup --restored --noinput)
+    log_success "Restored database migrated and split"
+    return
+  fi
+
   if ! (cd "${project_root}" && "${manage[@]}" import_legacy_backup --check); then
     log_info "No legacy backup to import."
     return

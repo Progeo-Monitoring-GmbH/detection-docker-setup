@@ -232,9 +232,8 @@ def parse_split_str(value: str, split_char) -> list:
     if not value:
         elog("Invalid Value for function 'parse_split_str'!")
         return []
-    if split_char in value:
-        return value.split(split_char)
-    return [value]
+    # Empty pieces ("a;b;", "a;;b") would become e.g. a database named "".
+    return [part.strip() for part in value.split(split_char) if part.strip()]
 
 
 def extract_float(text):
