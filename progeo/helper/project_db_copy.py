@@ -12,6 +12,7 @@ from tempfile import SpooledTemporaryFile
 from django.db import DEFAULT_DB_ALIAS, connections, transaction
 from psycopg2 import sql
 
+from progeo.helper.basics import ilog
 from progeo.helper.project_dbs import (
     UNKNOWN_PROJECT,
     mirrored_models,
@@ -714,8 +715,10 @@ def sync_project(project, *, upsert=False, delta=False, chunk_size=DEFAULT_CHUNK
     if legacy_files and first_copy and project_key(project) != UNKNOWN_PROJECT:
         legacy_file, note = load_legacy_file(project, download=download)
         source_note = f"file + default ({note})" if legacy_file else f"default (file: {note})"
+        ilog(f"{alias_name}: legacy file {note}", tag="[SPLIT]")
 
     years = set(measurement_years(project, source))
+    ilog(f"{alias_name}: measurement years {sorted(years)}", tag="[SPLIT]")
     if legacy_file:
         from zoneinfo import ZoneInfo
 
@@ -725,6 +728,7 @@ def sync_project(project, *, upsert=False, delta=False, chunk_size=DEFAULT_CHUNK
         for received, _ in legacy_file.rows:
             years.add((timezone.make_aware(received, zone) if timezone.is_naive(received) else received).year)
     alias, created = ensure_project_db(project, migrate=True, years=sorted(years))
+    ilog(f"{alias}: database ready ({'created' if created else 'exists'})", tag="[SPLIT]")
     callback = progress(alias) if progress else None
 
     renumbered = renumbered_models()
@@ -749,9 +753,11 @@ def sync_project(project, *, upsert=False, delta=False, chunk_size=DEFAULT_CHUNK
             file_rows = legacy_file_rows(legacy_file, device_id)
 
     anomalies = sample_anomalies(project, source)
+    ilog(f"{alias}: sample anomalies checked", tag="[SPLIT]")
     copied[ProgeoMeasurement.__name__], copied[ProgeoAlarm.__name__] = copy_measurements(
         project, alias, source=source, delta=delta, file_rows=file_rows
     )
+    ilog(f"{alias}: measurements copied", tag="[SPLIT]")
     return {
         "alias": alias, "created": created, "years": sorted(years), "copied": copied,
         "anomalies": anomalies, "source": source_note,
