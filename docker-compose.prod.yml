@@ -103,6 +103,8 @@ services:
       MEDIA_X_ACCEL: /protected-media
       # Periodic celery tasks beat must not start, e.g. "all" during the migration.
       CELERY_DISABLED_TASKS: ${CELERY_DISABLED_TASKS:-}
+      # Cron jobs that must not run (docker/backend/start-supervisord.sh), e.g. "all".
+      CRON_DISABLED_JOBS: ${CRON_DISABLED_JOBS:-}
       # Error tracking (progeo/sentry.py); disabled while SENTRY_DSN is empty.
       SENTRY_DSN: ${SENTRY_DSN:-}
       SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}

@@ -41,6 +41,39 @@ fix_docker_socket_permissions() {
 
 fix_docker_socket_permissions
 
+# CRON_DISABLED_JOBS (comma separated): cron jobs that must not run, by script
+# name - half-hour, measure, daily, weekly - or "all", e.g. while
+# split_project_dbs runs. Applied here, before crond starts: the jobs are
+# commented out of the crontab, rebuilt from the image's original on every
+# start, so an emptied variable brings them back with the next restart.
+apply_cron_disabled_jobs() {
+  local crontab_file="/etc/crontabs/root"
+  local original="${crontab_file}.orig"
+  local marker="# disabled by CRON_DISABLED_JOBS: "
+
+  [ -f "$crontab_file" ] || return 0
+  [ -f "$original" ] || cp -p "$crontab_file" "$original"
+  cp -p "$original" "$crontab_file"
+
+  local job
+  for job in $(echo "${CRON_DISABLED_JOBS:-}" | tr ',' ' '); do
+    case "$job" in
+      all)
+        sed -i "/^[^#].*cronjobs\//s/^/${marker}/" "$crontab_file" ;;
+      half-hour|measure|daily|weekly)
+        sed -i "/^[^#].*cronjobs\/${job}\.sh/s/^/${marker}/" "$crontab_file" ;;
+      *)
+        echo "CRON_DISABLED_JOBS: unknown job '${job}' ignored (half-hour, measure, daily, weekly, all)" ;;
+    esac
+  done
+  if grep -q "^${marker}" "$crontab_file"; then
+    echo "CRON_DISABLED_JOBS: not scheduled:"
+    grep "^${marker}" "$crontab_file" | sed "s/^${marker}/  /"
+  fi
+}
+
+apply_cron_disabled_jobs
+
 # Keep the previous run's logs as <name>.log.prev so a crash/restart doesn't wipe the evidence.
 # (.log.1, .log.2, ... are taken by supervisord's own size rotation; errors.jsonl rotates itself.)
 for log_file in /var/log/progeo/*.log; do
