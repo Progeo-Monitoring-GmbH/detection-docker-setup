@@ -109,6 +109,9 @@ class Command(BaseCommand):
             except DatabaseError as e:
                 elog(f"Mirror sync to '{alias}' failed and was rolled back: {e!r}")
                 failed.append(alias)
+            finally:
+                # ~1000 project databases: an open connection each exceeds Postgres' max_connections.
+                connections[alias].close()
 
         dlog("DONE!", DJANGO_DATABASES)
         if failed:

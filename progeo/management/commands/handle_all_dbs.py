@@ -1,6 +1,7 @@
 ﻿import os
 
 from django.core.management import call_command
+from django.db import DEFAULT_DB_ALIAS, connections
 
 from progeo.helper.basics import dlog, elog, ilog
 from progeo.helper.project_dbs import register_all_project_dbs
@@ -62,6 +63,10 @@ class Command(BaseCommand):
                 except Exception as exc:
                     elog(f"Error running command: {exc}, retrying without compress/uncompress")
                     call_command(*_cmds[:-1])
+                finally:
+                    # ~1000 project databases: an open connection each exceeds Postgres' max_connections.
+                    if db != DEFAULT_DB_ALIAS:
+                        connections[db].close()
 
         elif cmd in ["dbclean"]:
             _files = os.listdir(BACKUP_DIR)

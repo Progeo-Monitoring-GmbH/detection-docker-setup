@@ -1,5 +1,6 @@
 ﻿from dbbackup.db.exceptions import CommandConnectorError
 from django.core.management import call_command
+from django.db import DEFAULT_DB_ALIAS, connections
 
 from progeo.helper.basics import dlog, elog
 from progeo.helper.project_dbs import register_all_project_dbs, register_demo_db
@@ -24,5 +25,9 @@ class Command(BaseCommand):
                 call_command("migrate", f"--database={db}")
             except CommandConnectorError:
                 elog(f"Migration failed for db={db}")
+            finally:
+                # ~1000 project databases: an open connection each exceeds Postgres' max_connections.
+                if db != DEFAULT_DB_ALIAS:
+                    connections[db].close()
 
         dlog("DONE!", tag="[MIGRATE]")
