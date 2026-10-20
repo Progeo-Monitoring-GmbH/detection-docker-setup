@@ -759,3 +759,25 @@ def test_split_of_single_projects_neither_reads_nor_moves_the_checkpoint(monkeyp
 
     assert copied == [3]  # 2 is complete (verify), not skipped by the checkpoint
     assert checkpoint.read_text() == "SPLIT_LAST_PROJECT_ID=2\n"
+
+
+# ---------------------------------------------------------------------------- periodic tasks
+
+def test_periodic_tasks_leave_project_databases_alone_until_the_split_is_on(settings):
+    """Regression: evaluate_measurements / check_existing_alarms ran on every
+    registered project database (one connection each, never closed) while
+    they were still being copied - "too many clients" every 15 minutes."""
+    from progeo.helper.project_dbs import template_alias
+    from progeo.tasks import _task_databases
+
+    register_project_db(project_alias(990004))
+    try:
+        settings.PROJECT_DB_SPLIT = False
+        assert project_alias(990004) not in _task_databases()
+        assert DEFAULT_DB_ALIAS in _task_databases()
+        settings.PROJECT_DB_SPLIT = True
+        assert project_alias(990004) in _task_databases()
+        assert template_alias() not in _task_databases()
+        assert _task_databases("unit_tests") == ["unit_tests"]
+    finally:
+        connections.settings.pop(project_alias(990004), None)

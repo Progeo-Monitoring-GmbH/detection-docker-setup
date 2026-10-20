@@ -258,6 +258,30 @@ def evaluate_measurement(measurement_id: int, account_id: int | None = None):
     }
 
 
+def _task_databases(db=None):
+    """Databases the per-database tasks below run on: `db`, else every
+    configured one. Project databases only once PROJECT_DB_SPLIT is on -
+    before that they are copies under construction (split_project_dbs), and
+    evaluating them would raise every alarm a second time. The template is
+    never one."""
+    from django.db import connections
+
+    from progeo.helper.project_dbs import (
+        is_project_alias,
+        split_enabled,
+        template_alias,
+    )
+
+    if db:
+        return [db]
+    split = split_enabled()
+    # connections.settings: the active DATABASES incl. the registered project databases.
+    return [
+        name for name in connections.settings
+        if name != template_alias() and (split or not is_project_alias(name))
+    ]
+
+
 @shared_task
 def evaluate_measurements(db: str | None = None, lookback_hours: int = 1, days: int | None = None,
                           start_date=None, end_date=None, project_id: int | None = None):
@@ -289,7 +313,7 @@ def evaluate_measurements(db: str | None = None, lookback_hours: int = 1, days: 
         parse_date_bound,
     )
     from progeo.helper.basics import elog, ilog
-    from progeo.settings import DATABASES
+    from progeo.helper.project_dbs import release_connection
     now = timezone.now()
 
     if days is not None:
@@ -306,7 +330,7 @@ def evaluate_measurements(db: str | None = None, lookback_hours: int = 1, days: 
         start = now - datetime.timedelta(hours=lookback_hours)
         end = now
 
-    db_names = [db] if db else list(DATABASES.keys())
+    db_names = _task_databases(db)
 
     total_locations = 0
     total_triggered = 0
@@ -317,6 +341,9 @@ def evaluate_measurements(db: str | None = None, lookback_hours: int = 1, days: 
         except Exception as exc:
             elog(f"[evaluate_measurements] db={db_name} failed: {exc}")
             continue
+        finally:
+            # ~1000 project databases: an open connection each exceeds max_connections.
+            release_connection(db_name)
 
         total_locations += locations
         total_triggered += triggered
@@ -352,10 +379,9 @@ def check_existing_alarms(db: str | None = None, silence_hours: int = 24):
     """
     from progeo.helper.alarm_check import check_existing_alarms_db
     from progeo.helper.basics import elog, ilog
-    from progeo.settings import DATABASES
+    from progeo.helper.project_dbs import release_connection
 
-
-    db_names = [db] if db else list(DATABASES.keys())
+    db_names = _task_databases(db)
 
     total_checked = 0
     total_normalized = 0
@@ -366,6 +392,9 @@ def check_existing_alarms(db: str | None = None, silence_hours: int = 24):
         except Exception as exc:
             elog(f"[check_existing_alarms] db={db_name} failed: {exc}")
             continue
+        finally:
+            # ~1000 project databases: an open connection each exceeds max_connections.
+            release_connection(db_name)
 
         total_checked += checked
         total_normalized += normalized
@@ -402,15 +431,15 @@ def generate_daily_alarm_report(db: str | None = None, report_date=None):
     from django.utils import timezone
 
     from progeo.helper.basics import elog, ilog
+    from progeo.helper.project_dbs import release_connection
     from progeo.helper.report_utils import generate_daily_report_db
-    from progeo.settings import DATABASES
 
     if report_date is None:
         report_date = (timezone.now() - datetime.timedelta(days=1)).date()
     elif not hasattr(report_date, "year"):
         report_date = datetime.date.fromisoformat(str(report_date))
 
-    db_names = [db] if db else list(DATABASES.keys())
+    db_names = _task_databases(db)
     total_reports = 0
 
     for db_name in db_names:
@@ -419,6 +448,9 @@ def generate_daily_alarm_report(db: str | None = None, report_date=None):
         except Exception as exc:
             elog(f"[generate_daily_alarm_report] db={db_name} failed: {exc}")
             continue
+        finally:
+            # ~1000 project databases: an open connection each exceeds max_connections.
+            release_connection(db_name)
         total_reports += 1 if generated else 0
         ilog(f"[generate_daily_alarm_report] db={db_name} report={report_date} generated={bool(generated)}")
 
