@@ -644,3 +644,68 @@ def test_projects_endpoint_lists_default_and_project_databases(staff_client, bac
     assert by_database[ALIAS]["project"] == PROJECT
     assert "Halle Nord" in by_database[ALIAS]["name"]
     assert by_database[UNKNOWN]["project"] == UNKNOWN_PROJECT
+
+
+# ---------------------------------------------------------------------------- split_project_dbs resume
+
+def _split_command(monkeypatch, sync, existing=(), missing_in=()):
+    """split_project_dbs with the database work faked: `sync(project)` stands
+    in for sync_project, verify reports rows missing for `missing_in`."""
+    from io import StringIO
+
+    from progeo.management.commands import split_project_dbs as split
+
+    monkeypatch.setattr(split, "split_enabled", lambda: False)
+    monkeypatch.setattr(split, "find_conflicts", dict)
+    monkeypatch.setattr(split, "existing_project_aliases", lambda refresh=False: list(existing))
+    monkeypatch.setattr(split, "sync_project", lambda project, **kwargs: sync(project))
+    monkeypatch.setattr(split, "verify_project", lambda project, alias: {
+        ProgeoDevice: {"source": 1, "missing": int(project in missing_in), "target_only": 0, "max_id": 1},
+    })
+    monkeypatch.setattr(split.time, "sleep", lambda seconds: None)
+    command = split.Command(stdout=StringIO())
+    monkeypatch.setattr(command, "_report_connections", lambda: None)
+    options = {"upsert": False, "recopy": False, "chunk_size": 10, "no_legacy_files": True, "force": False}
+    return command, options
+
+
+def _synced(project):
+    return {"alias": project_alias(project), "created": True, "years": [], "copied": {}, "anomalies": {},
+            "source": "default"}
+
+
+@override_settings(PROJECT_DB_PREFIX="")
+def test_split_skips_complete_projects_and_broken_ones_do_not_stop_the_run(monkeypatch):
+    from django.core.management.base import CommandError
+    from django.db import OperationalError
+
+    attempts = {}
+
+    def sync(project):
+        attempts[project] = attempts.get(project, 0) + 1
+        if project == 2 and attempts[project] == 1:
+            raise OperationalError("FATAL:  sorry, too many clients already")
+        if project == 3:
+            raise RuntimeError("broken project")
+        return _synced(project)
+
+    command, options = _split_command(monkeypatch, sync, existing=["1"])
+    with pytest.raises(CommandError, match=r"failed: \['3'\]"):
+        command._copy([1, 2, 3, 4], options)
+
+    assert 1 not in attempts  # complete database: not copied again
+    assert attempts == {2: 2, 3: 1, 4: 1}  # 2 retried after "too many clients", 4 still ran after 3 broke
+    output = command.stdout.getvalue()
+    assert "[1/4] 1 already complete - skipped" in output
+    assert "[3/4] 3 failed, skipped for now" in output
+
+
+@override_settings(PROJECT_DB_PREFIX="")
+def test_split_copies_an_existing_but_incomplete_project_again(monkeypatch):
+    copied = []
+    command, options = _split_command(
+        monkeypatch, lambda project: copied.append(project) or _synced(project), existing=["1"], missing_in=[1],
+    )
+    with pytest.raises(Exception, match=r"rows missing after copy in \['1'\]"):
+        command._copy([1], options)
+    assert copied == [1]

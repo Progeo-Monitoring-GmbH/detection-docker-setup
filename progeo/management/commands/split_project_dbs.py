@@ -1,5 +1,7 @@
+import time
+
 from django.core.management.base import CommandError
-from django.db import DEFAULT_DB_ALIAS, connections
+from django.db import DEFAULT_DB_ALIAS, DatabaseError, OperationalError, connections
 from psycopg2 import sql
 
 from progeo.helper.basics import ilog
@@ -22,6 +24,15 @@ from progeo.helper.project_dbs import (
 )
 from progeo.management.commands._base import BaseCommand
 
+# "too many clients": other processes hold the connections - wait for them.
+CONNECTION_RETRIES = 3
+CONNECTION_RETRY_SECONDS = 30
+
+
+def _close(alias):
+    """Close `alias` - also after a failure before it was registered."""
+    if alias in connections.settings:
+        connections[alias].close()
 
 class Command(BaseCommand):
     help = (
@@ -115,46 +126,100 @@ class Command(BaseCommand):
         skip_complete = not options["upsert"] and not options["recopy"]
         existing = set(existing_project_aliases(refresh=True)) if skip_complete else set()
 
-        failed = []
+        incomplete, errors = [], {}
         skipped = 0
         for index, project_id in enumerate(projects, 1):
             alias = project_alias(project_id)
-            if alias in existing and self._is_complete(project_id, alias):
-                skipped += 1
-                self.stdout.write(f"[{index}/{len(projects)}] {alias} already complete - skipped")
-                continue
-
-            # Measurements are renumbered from 1 and replaced per project on every copy.
-            result = sync_project(
-                project_id, upsert=options["upsert"], delta=False, chunk_size=options["chunk_size"],
-                progress=self._progress, legacy_files=not options["no_legacy_files"],
-            )
-            self.stdout.write(
-                f"[{index}/{len(projects)}] {result['alias']} ({'created' if result['created'] else 'exists'}), "
-                f"years {result['years'] or '-'}, measurements from {result['source']}"
-            )
-            for name, copied in result["copied"].items():
-                self.stdout.write(f"    {name:<20} copied={copied}")
-            anomalies = result["anomalies"]
-            if any(anomalies.values()):
-                self.stdout.write(self.style.WARNING(
-                    f"    ! samples not matching the declared points: {anomalies['surplus']} with more than "
-                    f"the known trailing artifact (cut), {anomalies['incomplete']} with values missing (kept)"
-                ))
-
-            alias = result["alias"]
+            prefix = f"[{index}/{len(projects)}] {alias}"
             try:
-                if not self._print_verification(project_id, alias):
-                    failed.append(alias)
+                outcome = self._with_retry(prefix, alias, self._copy_one, prefix, project_id, alias, existing, options)
+            except Exception as exc:  # noqa: BLE001 - one broken project must not stop the other ~1000
+                errors[alias] = repr(exc)
+                self.stdout.write(self.style.ERROR(f"{prefix} failed, skipped for now: {exc!r}"))
+                continue
             finally:
                 # ~1000 projects: an open connection each exceeds Postgres' max_connections (100).
-                connections[alias].close()
+                _close(alias)
+            if outcome == "skipped":
+                skipped += 1
+            elif outcome == "incomplete":
+                incomplete.append(alias)
 
-        if failed:
-            raise CommandError(f"Rows missing after copy in: {failed} - run again (writers still active?)")
-        self.stdout.write(self.style.SUCCESS(
-            f"Copied {len(projects) - skipped} projects, {skipped} were already complete."
-        ))
+        copied = len(projects) - skipped - len(incomplete) - len(errors)
+        summary = f"Copied {copied} projects, {skipped} were already complete"
+        if incomplete or errors:
+            for alias, error in errors.items():
+                self.stdout.write(self.style.ERROR(f"  {alias}: {error}"))
+            raise CommandError(
+                f"{summary}; rows missing after copy in {incomplete}, failed: {list(errors)} - "
+                "run again, the complete projects are skipped."
+            )
+        self.stdout.write(self.style.SUCCESS(f"{summary}."))
+
+    def _copy_one(self, prefix, project_id, alias, existing, options):
+        """Copy and verify one project: "skipped", "copied" or "incomplete"."""
+        if alias in existing and self._is_complete(project_id, alias):
+            self.stdout.write(f"{prefix} already complete - skipped")
+            return "skipped"
+
+        # Measurements are renumbered from 1 and replaced per project on every copy.
+        result = sync_project(
+            project_id, upsert=options["upsert"], delta=False, chunk_size=options["chunk_size"],
+            progress=self._progress, legacy_files=not options["no_legacy_files"],
+        )
+        self.stdout.write(
+            f"{prefix} ({'created' if result['created'] else 'exists'}), "
+            f"years {result['years'] or '-'}, measurements from {result['source']}"
+        )
+        for name, copied in result["copied"].items():
+            self.stdout.write(f"    {name:<20} copied={copied}")
+        anomalies = result["anomalies"]
+        if any(anomalies.values()):
+            self.stdout.write(self.style.WARNING(
+                f"    ! samples not matching the declared points: {anomalies['surplus']} with more than "
+                f"the known trailing artifact (cut), {anomalies['incomplete']} with values missing (kept)"
+            ))
+        return "copied" if self._print_verification(project_id, result["alias"]) else "incomplete"
+
+    def _with_retry(self, prefix, alias, run, *args):
+        """Run `run(*args)`; while Postgres has no connection slot left, report
+        who holds them and try again after a pause (other clients may let go)."""
+        for attempt in range(1, CONNECTION_RETRIES + 1):
+            try:
+                return run(*args)
+            except OperationalError as exc:
+                if "too many clients" not in str(exc) or attempt == CONNECTION_RETRIES:
+                    raise
+                self.stdout.write(self.style.WARNING(
+                    f"{prefix}: Postgres has no free connection (attempt {attempt}/{CONNECTION_RETRIES}), "
+                    f"retrying in {CONNECTION_RETRY_SECONDS}s"
+                ))
+                self._report_connections()
+                _close(alias)
+                time.sleep(CONNECTION_RETRY_SECONDS)
+        return None
+
+    def _report_connections(self):
+        """Who holds the connections - "default" keeps working when the server
+        is full, Postgres reserves slots for superusers."""
+        try:
+            with connections[DEFAULT_DB_ALIAS].cursor() as cursor:
+                cursor.execute("SHOW max_connections")
+                limit = cursor.fetchone()[0]
+                cursor.execute(
+                    "SELECT client_addr::text, application_name, state, count(*), count(DISTINCT datname) "
+                    "FROM pg_stat_activity WHERE backend_type = 'client backend' "
+                    "GROUP BY 1, 2, 3 ORDER BY 4 DESC LIMIT 10"
+                )
+                rows = cursor.fetchall()
+                cursor.execute("SELECT inet_client_addr()::text, pg_backend_pid()")
+                own_addr, own_pid = cursor.fetchone()
+        except DatabaseError as exc:
+            self.stdout.write(self.style.WARNING(f"    (could not read pg_stat_activity: {exc!r})"))
+            return
+        self.stdout.write(f"    connections by client (max_connections={limit}, this process: {own_addr}, pid {own_pid}):")
+        for addr, app, state, count, databases in rows:
+            self.stdout.write(f"    {count:>5} from {addr or 'local'} {app or '-'} ({state}), {databases} databases")
 
     @staticmethod
     def _is_complete(project_id, alias):
