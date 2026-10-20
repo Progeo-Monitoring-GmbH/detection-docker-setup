@@ -12,6 +12,7 @@ from progeo.helper.project_db_copy import (
     verify_project,
 )
 from progeo.helper.project_dbs import (
+    existing_project_aliases,
     project_alias,
     project_key,
     project_keys_in_use,
@@ -39,8 +40,11 @@ class Command(BaseCommand):
         "             renumbered 1..n per project (alarms remapped), their\n"
         "             samples moved into eigenpotenzial / wirkpotenzial (cut to\n"
         "             m_points like script.php, anomalies reported), and\n"
-        "             replaced on every run. Other rows: only rows newer than the target's\n"
+        "             replaced on every copy. Other rows: only rows newer than the target's\n"
         "             highest id, --upsert re-copies and updates them.\n"
+        "             Projects whose database already holds all their rows\n"
+        "             are skipped, so a crashed run resumes where it stopped\n"
+        "             (--recopy / --upsert copy every project again).\n"
         "  2. --verify  compare every project's rows in default and its database.\n"
         "  3. --purge   delete the verified rows from default (needs\n"
         "             PROJECT_DB_SPLIT=True, i.e. the app already uses the\n"
@@ -49,6 +53,7 @@ class Command(BaseCommand):
         "  python manage.py split_project_dbs --dry-run\n"
         "  python manage.py split_project_dbs\n"
         "  python manage.py split_project_dbs --project 4711 --project unknown\n"
+        "  python manage.py split_project_dbs --recopy          # also the complete ones\n"
         "  python manage.py split_project_dbs --upsert          # final run, writers stopped\n"
         "  python manage.py split_project_dbs --verify\n"
         "  python manage.py split_project_dbs --purge"
@@ -62,6 +67,8 @@ class Command(BaseCommand):
                             help="Only report what would move and the rows that stay in default.")
         parser.add_argument("--upsert", action="store_true",
                             help="Re-copy all rows and update the ones that already exist (slow, complete).")
+        parser.add_argument("--recopy", action="store_true",
+                            help="Copy every project again, also the ones whose database is already complete.")
         parser.add_argument("--verify", action="store_true", help="Only compare default and the project databases.")
         parser.add_argument("--purge", action="store_true",
                             help="Delete the verified project rows from default.")
@@ -103,9 +110,21 @@ class Command(BaseCommand):
             )
         self._report_conflicts()
 
+        # Resume: a project whose database already holds all its rows is done
+        # (copy_measurements is atomic, the other models fail verify until complete).
+        skip_complete = not options["upsert"] and not options["recopy"]
+        existing = set(existing_project_aliases(refresh=True)) if skip_complete else set()
+
         failed = []
+        skipped = 0
         for index, project_id in enumerate(projects, 1):
-            # Measurements are renumbered from 1 and replaced per project on every run.
+            alias = project_alias(project_id)
+            if alias in existing and self._is_complete(project_id, alias):
+                skipped += 1
+                self.stdout.write(f"[{index}/{len(projects)}] {alias} already complete - skipped")
+                continue
+
+            # Measurements are renumbered from 1 and replaced per project on every copy.
             result = sync_project(
                 project_id, upsert=options["upsert"], delta=False, chunk_size=options["chunk_size"],
                 progress=self._progress, legacy_files=not options["no_legacy_files"],
@@ -133,7 +152,17 @@ class Command(BaseCommand):
 
         if failed:
             raise CommandError(f"Rows missing after copy in: {failed} - run again (writers still active?)")
-        self.stdout.write(self.style.SUCCESS(f"Copied {len(projects)} projects."))
+        self.stdout.write(self.style.SUCCESS(
+            f"Copied {len(projects) - skipped} projects, {skipped} were already complete."
+        ))
+
+    @staticmethod
+    def _is_complete(project_id, alias):
+        try:
+            verified = verify_project(project_id, register_project_db(alias))
+        finally:
+            connections[alias].close()
+        return not any(info["missing"] for info in verified.values())
 
     def _verify_all(self, projects):
         failed = []
