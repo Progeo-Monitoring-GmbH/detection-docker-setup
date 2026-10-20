@@ -189,6 +189,37 @@ def test_location_details_reports_measurement_count_and_last_measurement(api_cli
     assert other["measurement_count"] == other_count
 
 
+def test_table_endpoints_cover_every_account_of_the_user(api_client, world):
+    """Regression: /min lists the locations of every account of the user, but
+    details and the alarm summary only answered for one of them - the rows of
+    the other accounts stayed without stats and alarm state."""
+    second = f.make_account()
+    second_location = f.make_location(second, name="Second")
+    f.make_alarm(f.make_device(second_location), triggered_ago=f.minutes(10))
+    foreign = f.make_location(f.make_account(), name="Foreign")  # not the user's
+    f.make_alarm(f.make_device(foreign), triggered_ago=f.minutes(10))
+
+    user = f.make_user(perms=READ_PERMS)
+    world["account"].users.add(user)
+    single = f.make_location(f.make_account(), name="Single")  # a third account, single access
+    f.make_access(single, user)
+    second.users.add(user)
+    api_client.force_authenticate(user=user)
+
+    expected = {world["granted"].id, second_location.id, single.id}
+    asked = expected | {foreign.id}
+    assert _location_ids(api_client, asked) == expected
+
+    ids = ",".join(str(location_id) for location_id in sorted(asked))
+    details = api_client.get(f"/v1/location/details/?ids={ids}&skip_lageplans=1")
+    assert details.status_code == 200, details.content
+    assert _ids(details.json()) == expected
+
+    summary = api_client.get(f"/v1/alarm/location_summary/?ids={ids}")
+    assert summary.status_code == 200, summary.content
+    assert set(summary.json()["locations"]) == {str(world["granted"].id), str(second_location.id)}
+
+
 def test_location_details_skip_lageplans(api_client, world):
     user = f.make_user(perms=READ_PERMS)
     world["account"].users.add(user)

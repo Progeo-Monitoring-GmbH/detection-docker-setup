@@ -43,6 +43,7 @@ from progeo.helper.location_access import (
     configured_accounts,
     location_q,
     resolve_request_accounts,
+    visible_location_filters,
 )
 from progeo.helper.project_db_partitions import PARTITION_TIME_ZONE
 from progeo.helper.project_dbs import location_db, split_enabled
@@ -242,7 +243,8 @@ class LocationViewSet(ProgeoModalViewSet):
     def details(self, request, *args, **kwargs):
         """Batch-load the full location fields (device/measurement counts,
         last measurement) for a set of ids, e.g. the rows currently visible
-        on the paginated locations table after the fast `min` load.
+        on the paginated locations table after the fast `min` load - from
+        every account of the user, like `min` lists them.
         `skip_lageplans=1` leaves out the lageplans (not needed for tables)."""
         ids_param = request.query_params.get("ids", "")
         try:
@@ -255,12 +257,18 @@ class LocationViewSet(ProgeoModalViewSet):
         skip_lageplans = (request.query_params.get("skip_lageplans") or "").strip().lower() in {
             "1", "true", "yes", "on"
         }
-        queryset = self.get_queryset().filter(id__in=ids)
-        if split_enabled():
-            queryset = prepare_locations(queryset, self._primary_account(request), lageplans=not skip_lageplans)
-        else:
-            queryset = queryset.prefetch_related(*location_prefetches(queryset.db, lageplans=not skip_lageplans))
-        data = LocationSerializer(queryset, many=True, context={"skip_lageplans": skip_lageplans}).data
+        locations = []
+        accounts = self._resolve_request_accounts(request)
+        for db_name, (account, visible) in visible_location_filters(request.user, accounts).items():
+            queryset = ProgeoLocation.objects.using(db_name).filter(visible, id__in=ids).order_by("id")
+            if split_enabled():
+                locations.extend(prepare_locations(queryset, account, lageplans=not skip_lageplans))
+            else:
+                locations.extend(
+                    with_measurement_stats(queryset)
+                    .prefetch_related(*location_prefetches(db_name, lageplans=not skip_lageplans))
+                )
+        data = LocationSerializer(locations, many=True, context={"skip_lageplans": skip_lageplans}).data
         return Response(data=data)
 
     @require_module_permissions("module_locations_enabled")

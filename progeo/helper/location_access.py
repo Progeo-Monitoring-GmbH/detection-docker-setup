@@ -136,20 +136,42 @@ def location_id_db(account, location_id):
     return location_db(location, account) if location else account.db_name
 
 
+def visible_location_filters(user, accounts) -> dict:
+    """{database: (account, Q)}: the filter selecting the locations `user`
+    sees in any of `accounts` (resolve_request_accounts), one per database -
+    accounts can share one ("default"). The account is the first of that
+    database, for location_db()."""
+    filters = {}
+    for account in accounts:
+        visible = location_q(user, account)
+        if account.db_name in filters:
+            first, previous = filters[account.db_name]
+            filters[account.db_name] = (first, previous | visible)
+        else:
+            filters[account.db_name] = (account, visible)
+    return filters
+
+
 def visible_locations_by_db(user, account, location_ids=None):
     """{database: [location ids]} of the locations `user` sees in `account`
     (only `location_ids`, if given) - for views spanning many locations,
     whose project rows live in different databases with the split on."""
+    return accessible_locations_by_db(user, [account], location_ids)
+
+
+def accessible_locations_by_db(user, accounts, location_ids=None):
+    """visible_locations_by_db over several accounts (resolve_request_accounts)."""
     from progeo.helper.project_dbs import locations_by_db
     from progeo.v1.models import ProgeoLocation
 
-    locations = ProgeoLocation.objects.using(account.db_name).filter(location_q(user, account))
-    if location_ids:
-        locations = locations.filter(pk__in=location_ids)
-    return {
-        db_name: [location.pk for location in group]
-        for db_name, group in locations_by_db(locations.only("id", "project_id"), account).items()
-    }
+    groups = {}
+    for db_name, (account, visible) in visible_location_filters(user, accounts).items():
+        locations = ProgeoLocation.objects.using(db_name).filter(visible)
+        if location_ids:
+            locations = locations.filter(pk__in=location_ids)
+        for rows_db, group in locations_by_db(locations.only("id", "project_id"), account).items():
+            groups.setdefault(rows_db, []).extend(location.pk for location in group)
+    return groups
 
 
 def forget_single_access(user_id):

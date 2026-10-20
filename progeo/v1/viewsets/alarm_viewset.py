@@ -13,10 +13,12 @@ from progeo.helper.basics import RequestFailed, RequestSuccess
 from progeo.helper.cacher import cache_save_and_return, search_cache
 from progeo.helper.creator import create_MfS_log
 from progeo.helper.location_access import (
+    accessible_locations_by_db,
     location_id_db,
     location_q,
     request_location_id,
     resolve_request_account,
+    resolve_request_accounts,
     visible_locations_by_db,
 )
 from progeo.helper.project_dbs import map_databases, split_enabled
@@ -84,10 +86,11 @@ class AlarmViewSet(ProgeoModalViewSet):
         the locations overview can color rows without loading every alarm.
         Optional `ids` (comma-separated) scopes the summary to those
         location ids, e.g. the rows currently visible on a paginated table.
+        Covers every account of the user, like /v1/location/min/ lists them.
         Returns {"locations": {<location_id>: {"count": n, "active": m}}}.
         """
-        account = self._resolve_request_account(request)
-        if not account:
+        accounts = resolve_request_accounts(request, fallback_account=_get_controller_account())
+        if not accounts:
             return RequestSuccess({"locations": {}})
 
         ids_param = request.query_params.get("ids", "")
@@ -103,10 +106,15 @@ class AlarmViewSet(ProgeoModalViewSet):
         days = max(1, min(days, 365))
         cutoff = timezone.now() - timedelta(days=days)
 
-        def summary_rows(db_name, visible):
+        # {database: visible location ids} - with the split on, the locations'
+        # alarms are spread over the project databases. Only their ids per
+        # database: location_q there would cost a membership query each.
+        groups = accessible_locations_by_db(request.user, accounts, location_ids)
+
+        def summary_rows(db_name):
             rows = (
                 ProgeoAlarm.objects.using(db_name)
-                .filter(visible)
+                .filter(measurement__device__location_id__in=groups[db_name])
                 .filter(
                     # Still-active alarms count regardless of age - otherwise an
                     # alarm that's never been acknowledged silently drops out of
@@ -122,25 +130,7 @@ class AlarmViewSet(ProgeoModalViewSet):
                 active=Count("id", filter=Q(normalized_at__isnull=True)),
             ))
 
-        if split_enabled():
-            # The locations' alarms are spread over the project databases.
-            # The groups hold only visible locations already: per database
-            # just their ids - location_q again would cost a membership
-            # query per database.
-            groups = self._locations_by_db(request, account, location_ids)
-            rows = [
-                row
-                for chunk in map_databases(
-                    lambda db_name: summary_rows(db_name, Q(measurement__device__location_id__in=groups[db_name])),
-                    groups,
-                )
-                for row in chunk
-            ]
-        else:
-            visible = location_q(request.user, account, "measurement__device__location__")
-            if location_ids:
-                visible &= Q(measurement__device__location_id__in=location_ids)
-            rows = summary_rows(account.db_name, visible)
+        rows = [row for chunk in map_databases(summary_rows, groups) for row in chunk]
 
         locations = {}
         for row in rows:
