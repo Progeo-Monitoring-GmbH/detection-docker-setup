@@ -8,6 +8,8 @@ rows there exactly like they did in "default" (location -> devices ->
 measurements -> alarms).
 """
 
+import threading
+
 from django.contrib.auth.models import User
 from django.core.signals import request_started
 from django.db import DEFAULT_DB_ALIAS, connections, transaction
@@ -20,6 +22,8 @@ from progeo.helper.project_db_copy import transfer_rows
 from progeo.helper.project_dbs import (
     bootstrap_project_dbs,
     existing_project_aliases,
+    map_databases,
+    mirrored_models,
     project_alias,
     project_key,
     register_project_db,
@@ -45,31 +49,107 @@ def _existing(aliases):
     return sorted(register_project_db(alias) for alias in set(aliases) if alias in existing)
 
 
-def _mirror_row(model, pk, aliases, replace_where=None):
-    """Upsert one row into `aliases` after commit. `replace_where` (column,
-    value) first deletes rows that would clash on a unique column."""
-    def run():
-        where = sql.SQL("{} = %s").format(sql.Identifier(model._meta.pk.column))
-        for alias in _existing(aliases):
+_local = threading.local()
+
+
+class _MirrorBatch:
+    """The mirrored rows one "default" transaction touched, copied after its
+    commit in one pass: one connection per project database for all of them,
+    spread over map_databases' threads. Row by row, a command saving a few
+    dozen users/memberships (demo_account) opened ~1000 connections per row
+    - tens of thousands in a row."""
+
+    def __init__(self):
+        self.rows = {}  # model -> {pk: set of aliases, or None = every project database}
+        self.accounts = set()  # accounts whose Account.users rows are replaced
+
+    def add(self, model, pk, aliases=None):
+        rows = self.rows.setdefault(model, {})
+        if aliases is None or (pk in rows and rows[pk] is None):
+            rows[pk] = None
+        else:
+            rows[pk] = rows.get(pk, set()) | set(aliases)
+
+    def _targets(self):
+        """{alias: {model: [pks]}} - aliases registered (see _existing)."""
+        every = _existing(existing_project_aliases())
+        targets = {alias: {} for alias in every} if self.accounts else {}
+        for model, rows in self.rows.items():
+            for pk, aliases in rows.items():
+                for alias in every if aliases is None else _existing(aliases):
+                    targets.setdefault(alias, {}).setdefault(model, []).append(pk)
+        return targets
+
+    def flush(self):
+        through = Account.users.through
+        targets = self._targets()
+        # Profiles are unique per user: rows of the same user under another
+        # pk would clash. Read from "default" after the commit, so profiles
+        # that are gone (deleted, rolled back) neither delete nor copy anything.
+        profiles = dict(
+            UserProfile.objects.using(DEFAULT_DB_ALIAS)
+            .filter(pk__in=list(self.rows.get(UserProfile, ())))
+            .values_list("pk", "user_id")
+        )
+
+        def mirror(alias):
+            rows = targets[alias]
             try:
                 with transaction.atomic(using=alias):
-                    if replace_where:
-                        column, value = replace_where
-                        with connections[alias].cursor() as cursor:
-                            cursor.cursor.execute(
-                                sql.SQL("DELETE FROM {} WHERE {} = %s AND {} <> %s").format(
-                                    sql.Identifier(model._meta.db_table), sql.Identifier(column),
-                                    sql.Identifier(model._meta.pk.column),
-                                ),
-                                [value, pk],
-                            )
-                    transfer_rows(model, where, [pk], alias, upsert=True)
+                    for model in mirrored_models():  # parents first
+                        if model is through:
+                            if self.accounts:
+                                accounts = sorted(self.accounts)
+                                through.objects.using(alias).filter(account_id__in=accounts).delete()
+                                transfer_rows(through, sql.SQL("account_id = ANY(%s)"), [accounts], alias, upsert=True)
+                            continue
+                        pks = sorted(rows.get(model, ()))
+                        if not pks:
+                            continue
+                        if model is UserProfile:
+                            _drop_clashing_profiles(alias, {pk: profiles[pk] for pk in pks if pk in profiles})
+                        where = sql.SQL("{} = ANY(%s)").format(sql.Identifier(model._meta.pk.column))
+                        transfer_rows(model, where, [pks], alias, upsert=True)
             except Exception as exc:  # noqa: BLE001 - the next sync_default / split run repairs the mirror
-                elog(f"mirror {model.__name__}#{pk} -> {alias} failed: {exc!r}", tag="[PROJECT_DB]")
-            finally:
-                release_connection(alias)
+                touched = ", ".join(f"{model.__name__}{sorted(pks)}" for model, pks in rows.items())
+                if self.accounts:
+                    touched = ", ".join(filter(None, [touched, f"Account.users{sorted(self.accounts)}"]))
+                elog(f"mirror {touched} -> {alias} failed: {exc!r}", tag="[PROJECT_DB]")
 
-    transaction.on_commit(run, using=DEFAULT_DB_ALIAS)
+        map_databases(mirror, sorted(targets))
+
+
+def _drop_clashing_profiles(alias, profiles):
+    """Delete the profiles of `profiles`' users ({pk: user_id}) that have another pk in `alias`."""
+    if not profiles:
+        return
+    with connections[alias].cursor() as cursor:
+        cursor.cursor.execute(
+            sql.SQL("DELETE FROM {} WHERE user_id = ANY(%s) AND NOT {} = ANY(%s)").format(
+                sql.Identifier(UserProfile._meta.db_table), sql.Identifier(UserProfile._meta.pk.column)
+            ),
+            [sorted(set(profiles.values())), sorted(profiles)],
+        )
+
+
+def _queue(add):
+    """add(batch) for the batch of the open "default" transaction. A new
+    batch when the last one's flush already ran or went with a rollback;
+    its flush is scheduled after the rows are in, because outside a
+    transaction on_commit runs it at once (every save its own batch)."""
+    batch = getattr(_local, "batch", None)
+    pending = connections[DEFAULT_DB_ALIAS].run_on_commit
+    fresh = batch is None or not any(batch.flush in callback for callback in pending)
+    if fresh:
+        batch = _local.batch = _MirrorBatch()
+    add(batch)
+    if fresh:
+        transaction.on_commit(batch.flush, using=DEFAULT_DB_ALIAS)
+
+
+def _mirror_row(model, pk, aliases=None):
+    """Upsert one row into `aliases` (None: every project database) after commit."""
+    _queue(lambda batch: batch.add(model, pk, aliases))
 
 
 def _delete_row(model, pk, aliases):
@@ -92,26 +172,25 @@ def _mirror_user(sender, instance, raw, using, update_fields=None, **kwargs):
     # Every login saves last_login - not worth a write into every project database.
     if not _active(using, raw) or (update_fields and set(update_fields) <= {"last_login"}):
         return
-    _mirror_row(User, instance.pk, existing_project_aliases())
+    _mirror_row(User, instance.pk)
 
 
 @receiver(post_save, sender=UserProfile)
 def _mirror_user_profile(sender, instance, raw, using, **kwargs):
     if _active(using, raw):
-        _mirror_row(UserProfile, instance.pk, existing_project_aliases(), replace_where=("user_id", instance.user_id))
+        _mirror_row(UserProfile, instance.pk)
 
 
 @receiver(post_save, sender=Account)
 def _mirror_account(sender, instance, raw, using, **kwargs):
     if _active(using, raw):
-        _mirror_row(Account, instance.pk, existing_project_aliases())
+        _mirror_row(Account, instance.pk)
 
 
 @receiver(m2m_changed, sender=Account.users.through)
 def _mirror_account_users(sender, instance, action, using, pk_set=None, **kwargs):
     if not _active(using) or action not in ("post_add", "post_remove", "post_clear"):
         return
-    through = Account.users.through
     # Replace the mirrored rows of the touched accounts: account.users.* ->
     # that account, user.accounts.* -> the accounts in pk_set (clear: all).
     if isinstance(instance, Account):
@@ -120,20 +199,7 @@ def _mirror_account_users(sender, instance, action, using, pk_set=None, **kwargs
         accounts = list(pk_set)
     else:
         accounts = list(Account.objects.using(using).values_list("pk", flat=True))
-
-    def run():
-        for alias in _existing(existing_project_aliases()):
-            try:
-                with transaction.atomic(using=alias):
-                    through.objects.using(alias).filter(account_id__in=accounts).delete()
-                    where = sql.SQL("account_id = ANY(%s)")
-                    transfer_rows(through, where, [accounts], alias, upsert=True)
-            except Exception as exc:  # noqa: BLE001 - must not break the default write
-                elog(f"mirror Account.users -> {alias} failed: {exc!r}", tag="[PROJECT_DB]")
-            finally:
-                release_connection(alias)
-
-    transaction.on_commit(run, using=DEFAULT_DB_ALIAS)
+    _queue(lambda batch: batch.accounts.update(accounts))
 
 
 @receiver(post_delete, sender=User)

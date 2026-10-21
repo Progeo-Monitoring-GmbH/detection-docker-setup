@@ -10,6 +10,7 @@ import datetime
 from zoneinfo import ZoneInfo
 
 import pytest
+from django.contrib.auth.models import User
 from django.db import DEFAULT_DB_ALIAS, connections
 from django.test import override_settings
 from django.utils import timezone
@@ -530,6 +531,65 @@ def test_router_reads_project_rows_inside_use_project_db(project_dbs):
     with use_project_db(s["location"]):
         assert ProgeoMeasurement.objects.filter(device=s["device"]).count() == 5
         assert ProgeoDevice.objects.filter(location=s["location"]).count() == 1
+
+
+@pytest.fixture
+def mirror_into_project_dbs(monkeypatch):
+    """The mirror signals on, aimed at the two test project databases - in
+    this thread: their threads wouldn't see the test transaction's rows."""
+    from progeo.helper import project_db_signals
+
+    monkeypatch.setattr(project_db_signals, "existing_project_aliases", lambda: [ALIAS, UNKNOWN])
+    monkeypatch.setattr(project_db_signals, "map_databases", lambda work, aliases: [work(a) for a in aliases])
+    with override_settings(PROJECT_DB_SPLIT=True):
+        yield
+
+
+@WITH_PROJECT_DBS
+@pytest.mark.usefixtures("project_dbs", "mirror_into_project_dbs")
+def test_one_transaction_is_mirrored_in_one_pass(django_capture_on_commit_callbacks, monkeypatch):
+    """Regression: demo_account hung on the server - every user, profile and
+    membership change of its transaction was copied on its own, each into
+    ~1000 project databases."""
+    from django.db import transaction
+
+    monkeypatch.delenv("TESTS_ACTIVE", raising=False)  # memberships are written to "default", as on the server
+
+    with django_capture_on_commit_callbacks(execute=True) as callbacks:
+        with transaction.atomic(using=DEFAULT_DB_ALIAS):
+            account = Account.objects.using(DEFAULT_DB_ALIAS).create(raw_hash="mirror-batch", name="Batch")
+            users = [
+                User.objects.using(DEFAULT_DB_ALIAS).create(username=f"mirror-batch-{n}") for n in range(3)
+            ]
+            for user in users:
+                UserProfile.objects.using(DEFAULT_DB_ALIAS).create(user_id=user.pk, mobile=f"+49{user.pk}")
+                account.users.add(user)
+            account.users.remove(users[0])
+
+    assert len(callbacks) == 1
+    for alias in (ALIAS, UNKNOWN):
+        assert Account.objects.using(alias).filter(pk=account.pk).exists()
+        assert UserProfile.objects.using(alias).filter(user__in=users).count() == 3
+        assert set(Account.users.through.objects.using(alias).filter(account=account).values_list(
+            "user_id", flat=True
+        )) == {users[1].pk, users[2].pk}
+
+
+@WITH_PROJECT_DBS
+@pytest.mark.usefixtures("project_dbs", "mirror_into_project_dbs")
+def test_a_rolled_back_savepoint_does_not_swallow_later_mirrors(django_capture_on_commit_callbacks):
+    from django.db import transaction
+
+    with django_capture_on_commit_callbacks(execute=True) as callbacks:
+        with transaction.atomic(using=DEFAULT_DB_ALIAS):
+            with pytest.raises(RuntimeError), transaction.atomic(using=DEFAULT_DB_ALIAS):
+                User.objects.using(DEFAULT_DB_ALIAS).create(username="mirror-rolled-back")
+                raise RuntimeError
+            kept = User.objects.using(DEFAULT_DB_ALIAS).create(username="mirror-kept")
+
+    assert len(callbacks) == 1
+    assert User.objects.using(ALIAS).filter(pk=kept.pk).exists()
+    assert not User.objects.using(ALIAS).filter(username="mirror-rolled-back").exists()
 
 
 @WITH_PROJECT_DBS

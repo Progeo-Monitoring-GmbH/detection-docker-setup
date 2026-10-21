@@ -35,6 +35,19 @@ def _remove_created_plans():
                 pass
 
 
+@pytest.fixture(autouse=True)
+def _fresh_throttles():
+    """The login/export throttles count per IP in the shared cache - all
+    test clients are 127.0.0.1, so the module's logins would add up."""
+    from rest_framework.throttling import SimpleRateThrottle
+
+    keys = [SimpleRateThrottle.cache_format % {"scope": scope, "ident": "127.0.0.1"}
+            for scope in ("demo_login", "demo_export")]
+    SimpleRateThrottle.cache.delete_many(keys)
+    yield
+    SimpleRateThrottle.cache.delete_many(keys)
+
+
 # A short history keeps the tests fast; the leaks of smartex (9 days ago) and
 # smartex® is (20 days ago) lie within it.
 HISTORY = ("--days", "30")
@@ -400,10 +413,10 @@ def test_links_lists_every_demo_link_with_its_usage(demo):
     call_command("demo_account", "--skip-checks", "--rotate-token", *HISTORY)
     out = StringIO()
     call_command("demo_account", "--skip-checks", "--links", stdout=out)
-    lines = out.getvalue().splitlines()
-    assert len(lines) == 2
-    assert "active" in lines[0] and "disabled" in lines[1]
-    assert demo.raw_hash in lines[1]
+    links = [line for line in out.getvalue().splitlines() if not line.startswith(" ")]  # each with a usage line
+    assert len(links) == 2
+    assert "active" in links[0] and "disabled" in links[1]
+    assert demo.raw_hash in links[1]
 
 
 def test_new_link_adds_a_second_active_link(api_client, demo):
