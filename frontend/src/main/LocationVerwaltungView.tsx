@@ -270,7 +270,7 @@ const LocationVerwaltungView = () => {
                   </div>
                   {filtered.map((row) => (
                     <div
-                      key={row.id}
+                      key={`${row.account_id}-${row.id}`}
                       style={{
                         display: 'grid',
                         gridTemplateColumns: '70px 1fr 100px 130px 110px 130px',

@@ -46,7 +46,7 @@ from progeo.helper.location_access import (
     visible_location_filters,
 )
 from progeo.helper.project_db_partitions import PARTITION_TIME_ZONE
-from progeo.helper.project_dbs import location_db, split_enabled
+from progeo.helper.project_dbs import location_db, map_databases, split_enabled
 from progeo.settings import UPLOAD_DIR
 from progeo.tasks import render_heatmap_video
 from progeo.v1.creator import save_lageplan_upload
@@ -2082,24 +2082,33 @@ class LocationViewSet(ProgeoModalViewSet):
         if not _is_staff_admin(getattr(request, "user", None)):
             return RequestFailed({"reason": "Staff access required"})
 
-        rows = []
+        listed = []
+        # Alarms live in each location's project database (location_db), not
+        # the account's: pair every location pk with its database, so ids are
+        # only looked up where they belong - one query per database.
+        ids_by_db = {}
         for account in sorted(configured_accounts(), key=lambda account: account.name or ""):
-            locations = list(ProgeoLocation.objects.using(account.db_name).filter(account=account))
-            if not locations:
-                continue
-            worst_by_location = self._worst_open_severity(
-                account.db_name, [location.id for location in locations]
-            )
-            for location in locations:
-                rows.append({
-                    "id": location.id,
-                    "account_id": account.id,
-                    "nr": location.project_id,
-                    "name": location.name,
-                    "city": location.city,
-                    "owner": account.name,
-                    "status": worst_by_location.get(location.id) or "ok",
-                })
+            for location in ProgeoLocation.objects.using(account.db_name).filter(account=account):
+                db_name = location_db(location, account)
+                ids_by_db.setdefault(db_name, set()).add(location.id)
+                listed.append((db_name, location, account))
+
+        databases = list(ids_by_db)
+        worst_by_db = dict(zip(databases, map_databases(
+            lambda db_name: self._worst_open_severity(db_name, sorted(ids_by_db[db_name])), databases
+        )))
+
+        rows = []
+        for db_name, location, account in listed:
+            rows.append({
+                "id": location.id,
+                "account_id": account.id,
+                "nr": location.project_id,
+                "name": location.name,
+                "city": location.city,
+                "owner": account.name,
+                "status": worst_by_db[db_name].get(location.id) or "ok",
+            })
 
         kpis = {"ok": 0, "beobachten": 0, "alarm": 0, "kritisch": 0}
         for row in rows:
