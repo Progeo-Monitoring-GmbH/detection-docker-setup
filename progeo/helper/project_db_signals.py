@@ -22,6 +22,7 @@ from progeo.helper.project_dbs import (
     existing_project_aliases,
     project_alias,
     project_key,
+    register_project_db,
     release_connection,
     split_enabled,
 )
@@ -37,8 +38,11 @@ def _active(using, raw=False):
 
 
 def _existing(aliases):
+    """The `aliases` whose database exists - registered, because only web
+    and celery processes register them up front (bootstrap_project_dbs):
+    in a management command or shell the alias would be unknown."""
     existing = set(existing_project_aliases())
-    return sorted(alias for alias in set(aliases) if alias in existing)
+    return sorted(register_project_db(alias) for alias in set(aliases) if alias in existing)
 
 
 def _mirror_row(model, pk, aliases, replace_where=None):

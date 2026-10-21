@@ -144,6 +144,21 @@ def test_register_copies_default_connection_with_own_name():
         connections.settings.pop(alias, None)
 
 
+def test_mirror_targets_are_registered_outside_web_processes(monkeypatch):
+    """Regression: `manage.py demo_account` on the server failed with
+    ConnectionDoesNotExist - commands never register the project databases."""
+    from progeo.helper import project_db_signals
+
+    alias = project_alias(990004)
+    connections.settings.pop(alias, None)
+    monkeypatch.setattr(project_db_signals, "existing_project_aliases", lambda: [alias])
+    try:
+        assert project_db_signals._existing([alias, project_alias(990005)]) == [alias]
+        assert alias in connections.settings
+    finally:
+        connections.settings.pop(alias, None)
+
+
 @pytest.mark.usefixtures("project_dbs")
 def test_project_db_for_locations_ids_and_unknown():
     assert project_db_for(DEFAULT_DB_ALIAS) == DEFAULT_DB_ALIAS
