@@ -196,3 +196,70 @@ def test_heatmap_video_result_reports_task_state(client_with_perms, monkeypatch,
     body = client_with_perms.get("/v1/location/heatmap_video_result/", {"task_id": "task-123"}).json()
 
     assert body == {"task_id": "task-123", "state": state, "success": True, **expected}
+
+
+# -- reuse ------------------------------------------------------------------
+
+
+def _queue(monkeypatch):
+    queued = []
+    monkeypatch.setattr(locations_viewset.render_heatmap_video, "delay",
+                        lambda *args: queued.append(args) or _FakeTask())
+    return queued
+
+
+def _post(client, data, framerate="2"):
+    return client.post(
+        "/v1/location/heatmap_video/", {"frames": _upload(data), "framerate": framerate}, format="multipart",
+    ).json()
+
+
+def test_the_same_frames_rendered_before_come_back_without_a_render(client_with_perms, jobs_dir, monkeypatch):
+    queued = _queue(monkeypatch)
+    data = _frames_zip({"frames/frame_0001.png": _png(4, 4, 1)})
+    _post(client_with_perms, data)
+    [(job_id, _framerate)] = queued
+    # The render finished: frames gone, result there.
+    directory = heatmap_video.job_dir(job_id)
+    os.remove(os.path.join(directory, heatmap_video.FRAMES_ZIP_NAME))
+    with open(os.path.join(directory, heatmap_video.RESULT_ZIP_NAME), "wb") as fh:
+        fh.write(b"zip")
+
+    body = _post(client_with_perms, data)
+
+    assert body["url"] == f"media/export/heatmap_videos/{job_id}/sensor-heatmap.zip"
+    assert body["task_id"] is None
+    assert len(queued) == 1
+    # Another frame rate is another video.
+    _post(client_with_perms, data, framerate="5")
+    assert len(queued) == 2
+
+
+def test_the_same_frames_still_rendering_wait_for_that_render(client_with_perms, jobs_dir, monkeypatch):
+    queued = _queue(monkeypatch)
+    monkeypatch.setattr(locations_viewset, "AsyncResult", lambda task_id: _FakeResult("STARTED"))
+    data = _frames_zip({"frames/frame_0001.png": _png(4, 4, 1)})
+
+    first, second = _post(client_with_perms, data), _post(client_with_perms, data)
+
+    assert first["task_id"] == second["task_id"] == "task-123"
+    assert len(queued) == 1
+
+
+def test_a_failed_render_is_started_again(client_with_perms, jobs_dir, monkeypatch):
+    queued = _queue(monkeypatch)
+    monkeypatch.setattr(locations_viewset, "AsyncResult", lambda task_id: _FakeResult("FAILURE"))
+    data = _frames_zip({"frames/frame_0001.png": _png(4, 4, 1)})
+
+    _post(client_with_perms, data)
+    _post(client_with_perms, data)
+
+    assert len(queued) == 2
+
+
+def test_result_media_paths(jobs_dir):
+    job_id = "a" * 32
+    assert heatmap_video.is_result_media_path(f"export/heatmap_videos/{job_id}/sensor-heatmap.zip")
+    assert not heatmap_video.is_result_media_path(f"export/heatmap_videos/{job_id}/frames.zip")
+    assert not heatmap_video.is_result_media_path("export/heatmap_videos/not-a-job/sensor-heatmap.zip")
+    assert not heatmap_video.is_result_media_path("backup/sensor-heatmap.zip")

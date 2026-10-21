@@ -19,7 +19,9 @@ import LageplanZoneOverlay from '../components/device/LageplanZoneOverlay';
 import SensorListTable, {
   type SensorListRow,
 } from '../components/device/SensorListTable';
-import ThresholdTrendChart from '../components/device/ThresholdTrendChart';
+import ThresholdTrendChart, {
+  type ThresholdTrendSeries,
+} from '../components/device/ThresholdTrendChart';
 import { plotTheme } from '../styles/plotTheme';
 import PanelCard from '../components/ui/kit/PanelCard';
 import KpiStrip from '../components/ui/kit/KpiStrip';
@@ -40,6 +42,7 @@ import {
   type TimeRange,
 } from './timeRanges';
 import useMeasurementRange from './useMeasurementRange';
+import { isDemoUser } from './demo';
 
 type LocationStatusViewProps = {
   location: LocationDetail | null;
@@ -83,16 +86,23 @@ type VerdachtsstelleCluster = {
 
 const HEATMAP_LIMIT = 200;
 const ALARM_WINDOW_DAYS = 90;
+// Measurements per Zeitreihe range, spread evenly over it (30 days hourly).
+const ZEITREIHE_LIMIT = 720;
 const SEVERITY_ORDER: Record<Severity, number> = {
   beobachten: 0,
   alarm: 1,
   kritisch: 2,
 };
 
-// Zeitreihe range toggle ("Letzte 24 h" ... "Letzte 3 Jahre", see
-// timeRanges.ts): a client-side window over the alarm history. Ranges up to
-// ALARM_WINDOW_DAYS fit inside the already-loaded clusters - no extra
-// request; longer ones fetch the clusters once more with days=<range days>.
+// Zeitreihe ("Letzte 24 h" ... "Letzte 3 Jahre", see timeRanges.ts): the
+// measured value of every sensor over the range (heatmap ?days=, spread over
+// it), loaded once per range when the Zeitreihe is shown. Sensors with a
+// Verdachtsstelle are highlighted, the others drawn as muted lines.
+
+type ZeitreiheData = {
+  timestamps: Array<number | null>;
+  data: Record<string, Array<number | null>>;
+};
 
 const LocationStatusView = ({
   location,
@@ -102,6 +112,9 @@ const LocationStatusView = ({
   const auth = useAuth();
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
+  // The demo user sees the regular portal, but no actions with real side
+  // effects (a measurement request reaches the devices).
+  const readOnlyDemo = demo || isDemoUser(auth.user);
   const { t } = useTranslation();
 
   const [heatmap, setHeatmap] = useState<SensorHeatmapResponse | null>(null);
@@ -119,14 +132,12 @@ const LocationStatusView = ({
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
   const [selectedZeitreiheRange, setSelectedZeitreiheRange] =
     useState<TimeRange>('7d');
-  // Clusters of the long Zeitreihe ranges, per `${demo}:${location}:${days}`.
-  const [longClusters, setLongClusters] = useState<
-    Record<string, VerdachtsstelleCluster[]>
-  >({});
-  const [longClustersFailed, setLongClustersFailed] = useState<
-    Record<string, true>
-  >({});
-  const longClustersRequested = useRef(new Set<string>());
+  // Measured series of the Zeitreihe, per range (days).
+  const [zeitreihe, setZeitreihe] = useState<Record<number, ZeitreiheData>>({});
+  const [zeitreiheFailed, setZeitreiheFailed] = useState<Record<number, true>>(
+    {},
+  );
+  const zeitreiheRequested = useRef(new Set<number>());
 
   // LoRaWAN objects have no samples (no heatmap, no Verdachtsstellen) - they
   // show humidity/temperature charts instead, see LocationClimatePanels.
@@ -148,10 +159,6 @@ const LocationStatusView = ({
     zeitreiheRanges,
   );
   const zeitreiheDays = TIME_RANGE_DAYS[zeitreiheRange];
-  const longClustersKey =
-    zeitreiheDays > ALARM_WINDOW_DAYS
-      ? `${demo ? 'demo' : 'location'}:${locationId}:${zeitreiheDays}`
-      : null;
 
   const requestMeasurement = () => {
     setRequestingMeasurement(true);
@@ -237,43 +244,39 @@ const LocationStatusView = ({
     loadClusters();
   }, [isLorawan, loadHeatmap, loadClusters]);
 
-  // Zeitreihe ranges beyond ALARM_WINDOW_DAYS: the same clusters, once per
-  // location and range (kept for switching back and forth).
-  const loadLongClusters = useCallback(
-    (key: string, days: number) => {
-      if (longClustersRequested.current.has(key)) {
+  // Once per range (kept for switching back and forth).
+  const loadZeitreihe = useCallback(
+    (days: number) => {
+      if (zeitreiheRequested.current.has(days)) {
         return;
       }
-      longClustersRequested.current.add(key);
-      setLongClustersFailed((prev) => {
-        if (!prev[key]) {
+      zeitreiheRequested.current.add(days);
+      setZeitreiheFailed((prev) => {
+        if (!prev[days]) {
           return prev;
         }
         const next = { ...prev };
-        delete next[key];
+        delete next[days];
         return next;
       });
       void axiosConfig.perform_get(
         auth,
-        demo
-          ? `/v1/demo/alarm-clusters/?location=${locationId}&days=${days}`
-          : `/v1/alarm/clusters/?location=${locationId}&days=${days}`,
+        `${demo ? '/v1/demo' : '/v1/location'}/${locationId}/heatmap/?days=${days}&limit=${ZEITREIHE_LIMIT}`,
         (response) => {
-          setLongClusters((prev) => ({
+          setZeitreihe((prev) => ({
             ...prev,
-            [key]: (response?.data?.clusters || []) as VerdachtsstelleCluster[],
+            [days]: {
+              timestamps: response?.data?.timestamps || [],
+              data: response?.data?.data || {},
+            },
           }));
         },
         (error) => {
           // Allow a retry the next time the range is selected.
-          longClustersRequested.current.delete(key);
-          setLongClustersFailed((prev) => ({ ...prev, [key]: true }));
+          zeitreiheRequested.current.delete(days);
+          setZeitreiheFailed((prev) => ({ ...prev, [days]: true }));
           if (error?.response?.status !== 403) {
-            showRequestError(
-              enqueueSnackbar,
-              'Could not load suspected leaks',
-              error,
-            );
+            showRequestError(enqueueSnackbar, 'Could not load measurements', error);
           }
         },
       );
@@ -282,21 +285,14 @@ const LocationStatusView = ({
   );
 
   useEffect(() => {
-    if (isLorawan || !longClustersKey) {
+    if (isLorawan || statusView !== 'zeitreihe') {
       return;
     }
-    loadLongClusters(longClustersKey, zeitreiheDays);
-  }, [isLorawan, loadLongClusters, longClustersKey, zeitreiheDays]);
+    loadZeitreihe(zeitreiheDays);
+  }, [isLorawan, loadZeitreihe, statusView, zeitreiheDays]);
 
-  const longClustersLoading =
-    longClustersKey != null &&
-    !longClusters[longClustersKey] &&
-    !longClustersFailed[longClustersKey];
-  const zeitreiheClusters = useMemo(
-    () =>
-      longClustersKey ? (longClusters[longClustersKey] ?? []) : clusters,
-    [clusters, longClusters, longClustersKey],
-  );
+  const zeitreiheLoading =
+    !zeitreihe[zeitreiheDays] && !zeitreiheFailed[zeitreiheDays];
 
   const openClusters = useMemo(
     () => clusters.filter((cluster) => cluster.state !== 'geloest'),
@@ -355,6 +351,10 @@ const LocationStatusView = ({
         name: point.name ?? null,
         value: point.last_value ?? null,
         threshold: point.threshold ?? thresholdValue,
+        meters:
+          point.x_m != null && point.y_m != null
+            ? ([point.x_m, point.y_m] as [number, number])
+            : null,
       })),
     [sensorPoints, thresholdValue],
   );
@@ -383,28 +383,43 @@ const LocationStatusView = ({
     [measurePointOf, t],
   );
 
-  // Every Verdachtsstelle with readings in the range - resolved ones too,
-  // it's a history chart.
-  const zeitreiheSeries = useMemo(() => {
-    const cutoff = Date.now() - zeitreiheDays * 24 * 60 * 60 * 1000;
-    return zeitreiheClusters.map((cluster) => {
-      return {
-        id: cluster.id,
-        label: sensorLabel(cluster.sensor_id),
-        threshold:
-          measurePointOf(cluster.sensor_id)?.threshold ?? thresholdValue,
-        points: cluster.alarms.filter(
-          (alarm) =>
-            alarm.triggered_at &&
-            new Date(alarm.triggered_at).getTime() >= cutoff,
-        ),
-      };
-    });
+  // Every sensor's measured values in the range; the sensors with a
+  // Verdachtsstelle (resolved ones too) first and in colour, the others
+  // muted - unless there is none, then all of them in colour.
+  const zeitreiheSeries = useMemo((): ThresholdTrendSeries[] => {
+    const loaded = zeitreihe[zeitreiheDays];
+    if (!loaded) {
+      return [];
+    }
+    const suspected = new Set(clusters.map((cluster) => cluster.sensor_id));
+    const series = Object.keys(loaded.data)
+      .map(Number)
+      .sort((a, b) => a - b)
+      .map((sensorId) => ({
+        id: `sensor-${sensorId}`,
+        label: sensorLabel(sensorId),
+        threshold: measurePointOf(sensorId)?.threshold ?? thresholdValue,
+        muted: suspected.size > 0 && !suspected.has(sensorId),
+        points: (loaded.data[sensorId] || []).map((value, index) => {
+          const timestamp = loaded.timestamps[index];
+          return {
+            id: `${sensorId}:${index}`,
+            triggered_at:
+              timestamp != null ? new Date(timestamp * 1000).toISOString() : null,
+            value,
+          };
+        }),
+      }));
+    return [
+      ...series.filter((entry) => !entry.muted),
+      ...series.filter((entry) => entry.muted),
+    ];
   }, [
+    clusters,
     measurePointOf,
     sensorLabel,
     thresholdValue,
-    zeitreiheClusters,
+    zeitreihe,
     zeitreiheDays,
   ]);
 
@@ -584,7 +599,7 @@ const LocationStatusView = ({
             </div>
           )}
         </div>
-        {!isLorawan && !demo && (
+        {!isLorawan && !readOnlyDemo && (
           <button
             type="button"
             onClick={requestMeasurement}
@@ -657,7 +672,7 @@ const LocationStatusView = ({
 
           {statusView === 'zeitreihe' ? (
             <PanelCard title={t('status_zeitreihe_title')}>
-              {longClustersLoading ? (
+              {zeitreiheLoading ? (
                 <div className="d-flex justify-content-center py-5 text-muted">
                   <Spinner animation="border" className="me-2" />{' '}
                   {t('ui_loading')}
@@ -680,6 +695,9 @@ const LocationStatusView = ({
                   emptyLabel={t('status_zeitreihe_empty')}
                   meanOfLabel={(count) => t('status_zeitreihe_mean_of', { count })}
                   thresholdLabel={t('status_zeitreihe_threshold_legend')}
+                  mutedLabel={(count) =>
+                    t('status_zeitreihe_other_sensors', { count })
+                  }
                 />
               )}
             </PanelCard>

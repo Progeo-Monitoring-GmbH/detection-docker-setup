@@ -45,6 +45,13 @@ def single_access_location_ids(user, account) -> set[int]:
     """Location ids of `account` the user was granted individually."""
     if not user or not account or not getattr(user, "pk", None):
         return set()
+    from progeo.helper.demo import is_demo_user
+
+    if is_demo_user(user):
+        # Only ever a member of the demo account, never granted single
+        # locations - and the lookup would query every project database
+        # (split on) for the one user all demo visitors share.
+        return set()
     # Accounts can reference databases this deployment doesn't configure.
     if account.db_name not in connections.databases:
         return set()
@@ -237,13 +244,6 @@ def user_accounts(user) -> list[Account]:
     if not user or not getattr(user, "pk", None):
         return []
     accounts = list(user.accounts.order_by("id"))
-    from progeo.helper.demo import is_demo_user
-
-    if is_demo_user(user):
-        # Only ever a member of the demo account. Looking for single-access
-        # rows elsewhere would query every project database (split on) - for
-        # the one user all demo visitors share, every few minutes.
-        return accounts
     member_ids = {account.pk for account in accounts}
     for account in configured_accounts():
         if account.pk not in member_ids and single_access_location_ids(user, account):

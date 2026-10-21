@@ -134,9 +134,16 @@ class DemoReadOnlyMiddleware:
     effects (request a measurement, test notifications, PDF report mails).
     The SPA authenticates with a JWT, which DRF only resolves inside the view,
     so the token is checked here as well. The response carries
-    "demo_read_only", so the frontend shows a hint instead of a login page."""
+    "demo_read_only", so the frontend shows a hint instead of a login page.
+
+    Every demo request is also logged ("[DEMO]") with its duration and the
+    queries per database of this thread - the demo must only touch "default"
+    and the demo database; a slow one (> SLOW_MS) is logged as a warning.
+    Fan-outs over the project databases run in worker threads (map_databases)
+    and show up as time without queries here."""
 
     SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
+    SLOW_MS = 1000
     # Session handling stays possible - also opening a demo link again while
     # the browser still sends the JWT of an earlier demo visit.
     ALLOWED_PATHS = ("/api/token/", "/v1/demo/login/")
@@ -146,16 +153,70 @@ class DemoReadOnlyMiddleware:
 
     def __call__(self, request):
         if request.method not in self.SAFE_METHODS and not request.path.startswith(self.ALLOWED_PATHS):
-            from progeo.helper.demo import is_demo_user
+            from progeo.helper.demo import DEMO_EXPORT_PATHS, is_demo_user
 
-            if is_demo_user(self._user(request)):
+            if request.path not in DEMO_EXPORT_PATHS and is_demo_user(self._user(request)):
                 from django.http import JsonResponse
 
                 return JsonResponse(
                     {"success": False, "reason": "Demo: changes are not saved", "demo_read_only": True},
                     status=403,
                 )
+        if self._is_demo_token(request):
+            return self._timed(request)
         return self.get_response(request)
+
+    @staticmethod
+    def _is_demo_token(request):
+        """The signed `is_demo` claim of the JWT - no database access, so
+        every other request pays nothing for the demo log."""
+        header = request.META.get("HTTP_AUTHORIZATION", "")
+        if not header.startswith("Bearer "):
+            return False
+        from rest_framework_simplejwt.exceptions import TokenError
+        from rest_framework_simplejwt.tokens import AccessToken
+
+        try:
+            return bool(AccessToken(header[len("Bearer "):]).get("is_demo"))
+        except TokenError:
+            return False
+
+    def _timed(self, request):
+        import time
+        from contextlib import ExitStack
+
+        from progeo.helper.basics import ilog, wlog
+        from progeo.helper.project_dbs import demo_alias
+
+        stats = {}
+
+        def counting(alias):
+            def wrapper(execute, sql, params, many, context):
+                started = time.perf_counter()
+                try:
+                    return execute(sql, params, many, context)
+                finally:
+                    count, seconds = stats.get(alias, (0, 0.0))
+                    stats[alias] = (count + 1, seconds + time.perf_counter() - started)
+            return wrapper
+
+        started = time.perf_counter()
+        with ExitStack() as stack:
+            for alias in dict.fromkeys((DEFAULT_DB_ALIAS, demo_alias())):
+                if alias in connections.settings:
+                    stack.enter_context(connections[alias].execute_wrapper(counting(alias)))
+            response = self.get_response(request)
+        elapsed_ms = (time.perf_counter() - started) * 1000
+
+        queries = ", ".join(
+            f"{alias}={count} ({seconds * 1000:.0f} ms)" for alias, (count, seconds) in stats.items()
+        ) or "none"
+        message = (
+            f"{request.method} {request.get_full_path()} -> {response.status_code} "
+            f"in {elapsed_ms:.0f} ms | queries: {queries}"
+        )
+        (wlog if elapsed_ms > self.SLOW_MS else ilog)(message, tag="[DEMO]")
+        return response
 
     @staticmethod
     def _user(request):

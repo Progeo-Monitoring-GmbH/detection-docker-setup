@@ -11,7 +11,8 @@ import { setDemoToken } from './demo';
  * JWT of the read-only "demo" user and opens the portal (DemoView), or
  * `?forward=` - an expired demo session comes back here (loginPathFor).
  * Public route; the token is never kept in the history, only in
- * localStorage for that re-login.
+ * localStorage for that re-login. The backend counts every opening of the
+ * link - such a re-login is sent as `renewal` and doesn't count.
  */
 const DemoLogin = () => {
   const { token } = useParams();
@@ -26,15 +27,15 @@ const DemoLogin = () => {
       setInvalid(true);
       return;
     }
+    const forward = searchParams.get('forward') || '';
     void axiosConfig.perform_post(
       undefined,
       '/v1/demo/login/',
-      { token },
+      { token, renewal: Boolean(forward) },
       (response) => {
         auth.loginWithTokens(response.data.access, response.data.refresh);
         setDemoToken(token);
         // Only paths inside the app - never an absolute or protocol-relative URL.
-        const forward = searchParams.get('forward') || '';
         const internal = forward.startsWith('/') && !forward.startsWith('//');
         navigate(internal ? forward : '/demo/', { replace: true });
       },

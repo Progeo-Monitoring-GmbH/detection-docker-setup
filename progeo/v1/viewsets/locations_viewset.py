@@ -39,7 +39,7 @@ from progeo.decorator import (
 from progeo.helper import heatmap_video, plan_meters
 from progeo.helper.basics import RequestFailed, RequestSuccess, save_check_dir
 from progeo.helper.cacher import cache_save_and_return, search_cache
-from progeo.helper.demo import is_demo_user
+from progeo.helper.demo import demo_export_throttle, is_demo_user
 from progeo.helper.location_access import (
     configured_accounts,
     location_q,
@@ -1404,11 +1404,14 @@ class LocationViewSet(ProgeoModalViewSet):
         })
 
     @require_module_permissions("module_locations_enabled", "module_measurements_enabled")
-    @action(detail=False, url_path="heatmap_video", methods=["POST"])
+    @action(detail=False, url_path="heatmap_video", methods=["POST"], throttle_classes=[demo_export_throttle()])
     def start_heatmap_video(self, request, *args, **kwargs):
         """Heatmap video export: takes the browser-captured frames ("frames",
         a ZIP of frames/frame_NNNN.png) and renders them into an MP4 in a
-        celery task. Poll heatmap_video_result with the returned task_id."""
+        celery task. Poll heatmap_video_result with the returned task_id.
+        The same frames rendered before come back as `url` right away (no
+        task); the same frames still rendering return that task's id.
+        Allowed for the demo user too (DEMO_EXPORT_PATHS)."""
         frames = request.FILES.get("frames")
         if not frames:
             return RequestFailed({"reason": "Missing file: frames"})
@@ -1419,9 +1422,18 @@ class LocationViewSet(ProgeoModalViewSet):
         except (TypeError, ValueError):
             return RequestFailed({"reason": "framerate must be an integer"})
 
-        job_id = heatmap_video.create_job(frames)
-        task = render_heatmap_video.delay(job_id, framerate)
-        return RequestSuccess({"task_id": task.id})
+        job_id = heatmap_video.content_job_id(frames, framerate)
+        finished = heatmap_video.finished_result(job_id)
+        if finished:
+            return RequestSuccess({"task_id": None, "url": posixpath.join("media", finished)})
+        task_id = heatmap_video.running_task(job_id)
+        if task_id and AsyncResult(task_id).state == "FAILURE":
+            task_id = None  # render it again
+        if not task_id:
+            heatmap_video.create_job(frames, job_id=job_id)
+            task_id = render_heatmap_video.delay(job_id, framerate).id
+            heatmap_video.remember_task(job_id, task_id)
+        return RequestSuccess({"task_id": task_id})
 
     @require_module_permissions("module_locations_enabled", "module_measurements_enabled")
     @action(detail=False, url_path="heatmap_video_result", methods=["GET"])

@@ -7,6 +7,7 @@ Every other endpoint therefore still answers 403 to that JWT; the GET actions
 below are the only way in, and they only load data (the demo account lives in
 its own database, see the demo_account command).
 """
+from django.db.models import F
 from django.utils import timezone
 from rest_framework import viewsets
 from rest_framework.decorators import action
@@ -41,6 +42,17 @@ class DemoLoginThrottle(SimpleRateThrottle):
 
 def _forbidden():
     return Response({"success": False, "reason": "Demo permission required"}, status=403)
+
+
+def _count_opening(token):
+    """Usage of a demo link: every opening counts in check_counter (atomic,
+    concurrent clicks don't get lost), the time of the latest in raw_data.
+    A renewal - an expired demo session logging in again by itself - is no
+    opening and isn't counted."""
+    LimitedToken.objects.using("default").filter(pk=token.pk).update(
+        check_counter=F("check_counter") + 1,
+        raw_data={**(token.raw_data or {}), "last_opened_at": timezone.now().isoformat()},
+    )
 
 
 class DemoViewSet(viewsets.ViewSet):
@@ -96,6 +108,8 @@ class DemoViewSet(viewsets.ViewSet):
         ):
             return RequestFailed({"reason": "Invalid demo link"})
 
+        if not request.data.get("renewal"):
+            _count_opening(token)
         refresh = ProgeoTokenObtainPairSerializer.get_token(user)
         return RequestSuccess({"refresh": str(refresh), "access": str(refresh.access_token)})
 

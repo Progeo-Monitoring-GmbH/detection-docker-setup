@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, Form, Modal } from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
+import { useTranslation } from 'react-i18next';
 
-import { useAuth } from '../../../hooks/CoreAuthProvider';
 import axiosConfig from '../../axiosConfig';
 import { showRequestError, showSuccessBar } from '../ui/Snackbar.jsx';
 
@@ -84,8 +84,8 @@ const LocationEditModal = ({
   onHide,
   onSaved,
 }: LocationEditModalProps) => {
-  const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
+  const { t } = useTranslation();
   const [form, setForm] = useState<EditLocationForm>(EMPTY_EDIT_FORM);
   const [saving, setSaving] = useState(false);
 
@@ -137,7 +137,8 @@ const LocationEditModal = ({
       manager: form.manager.trim() || null,
       telefon: form.telefon.trim() || null,
       mail: form.mail.trim() || null,
-      project_id: parseOptionalInt(form.project_id),
+      // project_id is read-only: it names the location's project database
+      // (the backend ignores it on updates as well).
       latitude: parseOptionalFloat(form.latitude),
       longitude: parseOptionalFloat(form.longitude),
       alarm_threshold: parseOptionalInt(form.alarm_threshold),
@@ -151,10 +152,10 @@ const LocationEditModal = ({
         const updated = (response?.data || {}) as LocationEditRow;
         onSaved(updated);
         setSaving(false);
-        showSuccessBar(enqueueSnackbar, 'Location updated successfully');
+        showSuccessBar(enqueueSnackbar, t('location_edit_saved'));
       })
       .catch((error) => {
-        showRequestError(enqueueSnackbar, 'Could not update location', error);
+        showRequestError(enqueueSnackbar, t('location_edit_error'), error);
         setSaving(false);
       });
   };
@@ -169,12 +170,12 @@ const LocationEditModal = ({
   return (
     <Modal show={show} onHide={handleClose} centered size="lg">
       <Modal.Header closeButton>
-        <Modal.Title>Edit Location</Modal.Title>
+        <Modal.Title>{t('location_edit_title')}</Modal.Title>
       </Modal.Header>
       <Modal.Body>
         <div className="row g-3">
           <div className="col-md-6">
-            <Form.Label>Name</Form.Label>
+            <Form.Label>{t('objekt_field_project_name')}</Form.Label>
             <Form.Control
               value={form.name}
               onChange={(event) =>
@@ -183,7 +184,7 @@ const LocationEditModal = ({
             />
           </div>
           <div className="col-md-3">
-            <Form.Label>PLZ</Form.Label>
+            <Form.Label>{t('objekt_field_plz')}</Form.Label>
             <Form.Control
               value={form.plz}
               onChange={(event) =>
@@ -192,16 +193,16 @@ const LocationEditModal = ({
             />
           </div>
           <div className="col-md-3">
-            <Form.Label>Project ID</Form.Label>
+            <Form.Label>{t('objekt_field_project_nr')}</Form.Label>
             <Form.Control
               value={form.project_id}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, project_id: event.target.value }))
-              }
+              readOnly
+              disabled
+              title={t('location_edit_project_nr_hint')}
             />
           </div>
           <div className="col-md-8">
-            <Form.Label>Address</Form.Label>
+            <Form.Label>{t('objekt_field_street')}</Form.Label>
             <Form.Control
               value={form.address}
               onChange={(event) =>
@@ -210,7 +211,7 @@ const LocationEditModal = ({
             />
           </div>
           <div className="col-md-4">
-            <Form.Label>City</Form.Label>
+            <Form.Label>{t('objekt_field_city')}</Form.Label>
             <Form.Control
               value={form.city}
               onChange={(event) =>
@@ -219,7 +220,7 @@ const LocationEditModal = ({
             />
           </div>
           <div className="col-md-4">
-            <Form.Label>Manager</Form.Label>
+            <Form.Label>{t('objekt_field_manager')}</Form.Label>
             <Form.Control
               value={form.manager}
               onChange={(event) =>
@@ -228,7 +229,7 @@ const LocationEditModal = ({
             />
           </div>
           <div className="col-md-4">
-            <Form.Label>Telefon</Form.Label>
+            <Form.Label>{t('objekt_field_phone')}</Form.Label>
             <Form.Control
               value={form.telefon}
               onChange={(event) =>
@@ -237,7 +238,7 @@ const LocationEditModal = ({
             />
           </div>
           <div className="col-md-4">
-            <Form.Label>Mail</Form.Label>
+            <Form.Label>{t('objekt_field_email')}</Form.Label>
             <Form.Control
               type="email"
               value={form.mail}
@@ -247,7 +248,7 @@ const LocationEditModal = ({
             />
           </div>
           <div className="col-md-4">
-            <Form.Label>Latitude</Form.Label>
+            <Form.Label>{t('location_edit_latitude')}</Form.Label>
             <Form.Control
               value={form.latitude}
               onChange={(event) =>
@@ -256,7 +257,7 @@ const LocationEditModal = ({
             />
           </div>
           <div className="col-md-4">
-            <Form.Label>Longitude</Form.Label>
+            <Form.Label>{t('location_edit_longitude')}</Form.Label>
             <Form.Control
               value={form.longitude}
               onChange={(event) =>
@@ -265,7 +266,7 @@ const LocationEditModal = ({
             />
           </div>
           <div className="col-md-4">
-            <Form.Label>Alarm Threshold</Form.Label>
+            <Form.Label>{t('objekt_field_alarm_threshold')}</Form.Label>
             <Form.Control
               value={form.alarm_threshold}
               onChange={(event) =>
@@ -280,10 +281,10 @@ const LocationEditModal = ({
       </Modal.Body>
       <Modal.Footer>
         <Button variant="secondary" onClick={handleClose} disabled={saving}>
-          Cancel
+          {t('location_edit_cancel')}
         </Button>
         <Button variant="primary" onClick={handleSave} disabled={saving}>
-          {saving ? 'Saving...' : 'Save'}
+          {saving ? t('location_edit_saving') : t('location_edit_save')}
         </Button>
       </Modal.Footer>
     </Modal>

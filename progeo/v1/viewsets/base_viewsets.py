@@ -19,6 +19,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.views import TokenObtainPairView
 
+from progeo.helper import heatmap_video
 from progeo.helper.basics import RequestFailed, RequestSuccess
 from progeo.helper.creator import create_MfS_log
 from progeo.helper.demo import DEMO_LAGEPLAN_PREFIX, is_demo_user
@@ -84,8 +85,11 @@ class AuthenticatedMediaView(View):
             # Backups are restricted to superusers.
             return JsonResponse({"code": 403, "reason": "Just no!"}, status=403)
 
-        # Demo users may only fetch the demo Lageplan images.
-        if is_demo_user(user) and not path.startswith(DEMO_LAGEPLAN_PREFIX):
+        # Demo users may only fetch the demo Lageplan images and the heatmap
+        # videos they exported.
+        if is_demo_user(user) and not (
+            path.startswith(DEMO_LAGEPLAN_PREFIX) or heatmap_video.is_result_media_path(path)
+        ):
             return JsonResponse({"code": 403, "reason": "Just no!"}, status=403)
 
         full_path = self._resolve_media_path(path)

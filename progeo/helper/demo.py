@@ -33,6 +33,11 @@ DEMO_LAGEPLAN_PREFIX_REL = "lageplan/demo_"
 DEMO_LAGEPLAN_PREFIX = os.path.relpath(UPLOAD_DIR, MEDIA_ROOT).replace(os.sep, "/") + "/" + DEMO_LAGEPLAN_PREFIX_REL
 
 
+# Writes the demo user may make after all: exports, which change no data.
+# They cost CPU, though - DemoExportThrottle limits them.
+DEMO_EXPORT_PATHS = ("/v1/location/heatmap_video/",)
+
+
 def is_demo_user(user) -> bool:
     """The read-only demo user: holds the demo permission and is neither
     staff nor superuser (those keep every right, even with the permission)."""
@@ -42,3 +47,23 @@ def is_demo_user(user) -> bool:
         and not (user.is_staff or user.is_superuser)
         and user.has_perm(f"progeo.{DEMO_PERMISSION}")
     )
+
+
+def demo_export_throttle():
+    """DRF throttle of the exports in DEMO_EXPORT_PATHS: per client IP and
+    only for the demo user (anyone with a demo link can trigger them)."""
+    from rest_framework.throttling import SimpleRateThrottle
+
+    class DemoExportThrottle(SimpleRateThrottle):
+        scope = "demo_export"
+        rate = "10/hour"
+
+        def allow_request(self, request, view):
+            if not is_demo_user(request.user):
+                return True
+            return super().allow_request(request, view)
+
+        def get_cache_key(self, request, view):
+            return self.cache_format % {"scope": self.scope, "ident": self.get_ident(request)}
+
+    return DemoExportThrottle

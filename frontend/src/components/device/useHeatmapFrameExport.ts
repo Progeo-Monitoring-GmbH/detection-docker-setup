@@ -19,12 +19,12 @@ export type VideoExportStage =
   'capturing' | 'uploading' | 'rendering' | 'downloading';
 
 const MAX_FRAMES = 120;
-const FRAME_SLEEP_MS = 25;
-const VIDEO_FRAMERATE = 2;
+const FRAME_SLEEP_MS = 5;
+const VIDEO_FRAMERATE = 4;
 const RESULT_POLL_MS = 1500;
 const RESULT_TIMEOUT_MS = 10 * 60 * 1000;
 // A task still PENDING after this long was never picked up by a worker.
-const PENDING_TIMEOUT_MS = 2 * 60 * 1000;
+const PENDING_TIMEOUT_MS = 30 * 1000;
 
 const requestErrorMessage = (error: unknown, fallback: string) => {
   const response = (error as { response?: { data?: { reason?: string } } })
@@ -97,18 +97,22 @@ export const useHeatmapFrameExport = ({
     resolve?.();
   }, []);
 
-  /** Uploads the frames ZIP and returns the render task's id. */
+  /** Uploads the frames ZIP; returns the render task's id - or, when the
+   * same frames were rendered before, the result's media URL right away. */
   const startRendering = useCallback(
     (upload: FormData) =>
-      new Promise<string>((resolve, reject) => {
+      new Promise<{ taskId?: string; url?: string }>((resolve, reject) => {
         void axiosConfig.perform_post(
           auth,
           '/v1/location/heatmap_video/',
           upload,
           (response) => {
             const taskId = response?.data?.task_id;
-            if (taskId) {
-              resolve(String(taskId));
+            const url = response?.data?.url;
+            if (url) {
+              resolve({ url: String(url) });
+            } else if (taskId) {
+              resolve({ taskId: String(taskId) });
             } else {
               reject(new Error(t('heatmap_video_error_not_started')));
             }
@@ -317,10 +321,10 @@ export const useHeatmapFrameExport = ({
       const upload = new FormData();
       upload.append('frames', buildStoredZip(frameFiles), 'frames.zip');
       upload.append('framerate', String(VIDEO_FRAMERATE));
-      const taskId = await startRendering(upload);
+      const started = await startRendering(upload);
 
       setVideoStage('rendering');
-      const resultUrl = await waitForResult(taskId);
+      const resultUrl = started.url ?? (await waitForResult(started.taskId as string));
 
       // Kept so the toolbar can offer the result again in case the
       // browser blocked the automatic download.

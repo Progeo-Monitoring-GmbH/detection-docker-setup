@@ -24,12 +24,14 @@ from progeo.settings import DEMO_DATABASE, UPLOAD_DIR
 from progeo.v1.models import (
     Account,
     LimitedToken,
+    ProgeoAccess,
     ProgeoAlarm,
     ProgeoDevice,
     ProgeoLageplan,
     ProgeoLocation,
     ProgeoMeasurement,
     ProgeoMeasurePoint,
+    UserProfile,
 )
 
 DEFAULT_DB = DEMO_DATABASE
@@ -40,7 +42,7 @@ BASE_LEVEL = 500  # eigenpotenzial; wirkpotenzial = eigen + sensor value
 # Over-threshold measurements closer than this belong to one alarm (the demo
 # noise must not split a moisture event into several alarms).
 ALARM_MERGE_GAP = datetime.timedelta(hours=6)
-LORAWAN_PACKET_LOSS = 0.015  # share of hourly LoRaWAN uplinks that never arrive
+LORAWAN_INTERVAL_MIN = 20  # uplink interval of the LoRaWAN climate sensors
 
 PLAN_SIZE = (1600, 1200)
 TYPES = ProgeoLocation.PROJECT_TYPE_CHOICES
@@ -53,14 +55,15 @@ ROOF_FILL = "#ffffff"
 ZONE_FILL = "#f3f6f9"
 
 
-def _grid(x_from, y_from, x_to, y_to, columns, rows, name=None):
+def _grid(x_from, y_from, x_to, y_to, columns, rows, name=None, snake=False):
     """Sensors evenly spread over a rectangle of the plan (pixels), row by
-    row: [(name, px, py, grid_x, grid_y)]."""
+    row: [(name, px, py, grid_x, grid_y)]. `snake` runs every second row
+    backwards - one continuous cable run, as a DFH zone is drawn."""
     width, height = x_to - x_from, y_to - y_from
     return [
         (name, x_from + width * (col + 0.5) / columns, y_from + height * (row + 0.5) / rows, col, row)
         for row in range(rows)
-        for col in range(columns)
+        for col in (reversed(range(columns)) if snake and row % 2 else range(columns))
     ]
 
 
@@ -88,22 +91,50 @@ LORAWAN_ROOMS = {  # sensor label: centre of the room (pixels)
     "Bad": (925, 620),
 }
 
-# Moisture events of the pair-based demo locations. `sensor` is the centre
-# (sensor_order), the neighbours pick up part of it (Gaussian over `spread`
-# pixels). Times count back from now; `fall_h` None = still rising/active.
-SMARTEX_EPISODES = [
-    {"sensor": 7, "start_days_ago": 68, "rise_h": 10, "hold_h": 20, "fall_h": 36, "peak": 190, "spread": 120,
-     "status": ProgeoAlarm.Status.GELOEST, "rain": {"before_h": 6, "duration": 9, "amount": 23.4}},
-    {"sensor": 19, "start_days_ago": 31, "rise_h": 4, "hold_h": 6, "fall_h": 10, "peak": 135, "spread": 90,
-     "status": ProgeoAlarm.Status.QUITTIERT},
-    {"sensor": 13, "start_days_ago": 3, "rise_h": 60, "hold_h": 0, "fall_h": None, "peak": 290, "spread": 120,
-     "status": ProgeoAlarm.Status.NEU},
-]
-DFH_EPISODES = [
-    {"sensor": 11, "start_days_ago": 45, "rise_h": 8, "hold_h": 12, "fall_h": 30, "peak": 150, "spread": 110,
-     "status": ProgeoAlarm.Status.GELOEST, "rain": {"before_h": 4, "duration": 6, "amount": 17.8}},
-    {"sensor": 8, "start_days_ago": 2, "rise_h": 30, "hold_h": 0, "fall_h": None, "peak": 175, "spread": 110,
-     "status": ProgeoAlarm.Status.NEU},
+# The one leak of each pair-based demo location, as multiples of the alarm
+# threshold: `sensor` (sensor_order) shoots up within `rise_h` to `peak`, then
+# sinks (exponentially, `decay_h`) towards `settle` and stays there. Every
+# other sensor stays below DRY_MAX. Times count back from now.
+# smartex: dry for days, sharp spike, declining - the alarm is over (the 7-day
+# view shows all of it). DFH: started 3 days ago and still over the threshold
+# - an open alarm.
+DRY_MAX = 0.25
+SMARTEX_LEAK = {"sensor": 13, "start_days_ago": 5, "rise_h": 2, "peak": 3.68, "settle": 0.75, "decay_h": 36,
+                "status": ProgeoAlarm.Status.QUITTIERT, "rain": {"before_h": 5, "duration": 8, "amount": 21.6}}
+DFH_LEAK = {"sensor": 8, "start_days_ago": 3, "rise_h": 3, "peak": 1.9, "settle": 1.45, "decay_h": 30,
+            "status": ProgeoAlarm.Status.NEU, "rain": {"before_h": 3, "duration": 5, "amount": 14.2}}
+
+# LoRaWAN climate sensors: share of uplinks lost on the radio link, battery
+# percent used up over 90 days, calibration offset (degrees C, % RH).
+LORAWAN_SENSORS = {
+    "Keller": {"loss": 0.06, "drain": 9, "offset": (0.2, 1.5)},  # underground: weakest link
+    "Wohnzimmer": {"loss": 0.01, "drain": 11, "offset": (-0.1, -0.8)},
+    "Dachboden": {"loss": 0.02, "drain": 24, "offset": (0.3, 0.4)},  # heat drains the battery
+    "Bad": {"loss": 0.025, "drain": 13, "offset": (0.0, 2.1)},
+}
+
+# People of the demo (usernames start with DEMO_PEOPLE_PREFIX; no password, no
+# permissions - nobody can log in as them). "member": account members, they
+# see every demo location, `rule` their notification rule there. "single:<kind>":
+# access to that one location only. "partner": members of the demo partner
+# account the demo user belongs to as well - the users the Rechte tab offers
+# when granting access.
+DEMO_PEOPLE_PREFIX = "demo."
+DEMO_PARTNER_HASH = "demo-partner-account"
+DEMO_PARTNER_NAME = "Demo Partner"
+_ALARM = ProgeoAccess.NotifiTypes.ALARM
+_ALARM_TIMEOUT = ProgeoAccess.NotifiTypes.ALARM | ProgeoAccess.NotifiTypes.TIMEOUT
+DEMO_PEOPLE = [
+    ("erika.mustermann", "Erika", "Mustermann", "+49 151 23456781", "member",
+     ProgeoAccess.NotifiTrans.EMAIL_AND_SMS, _ALARM_TIMEOUT),
+    ("max.mustermann", "Max", "Mustermann", "+49 151 23456782", "member", ProgeoAccess.NotifiTrans.EMAIL, _ALARM),
+    ("jonas.weber", "Jonas", "Weber", "+49 160 9876541", "single:smartex", ProgeoAccess.NotifiTrans.SMS, _ALARM),
+    ("sabine.krueger", "Sabine", "Krüger", "+49 160 9876542", "single:dfh", ProgeoAccess.NotifiTrans.EMAIL, _ALARM),
+    ("lukas.hoffmann", "Lukas", "Hoffmann", None, "single:lorawan", ProgeoAccess.NotifiTrans.EMAIL, _ALARM),
+    ("laura.fischer", "Laura", "Fischer", "+49 171 5550101", "partner", None, None),
+    ("paul.wagner", "Paul", "Wagner", None, "partner", None, None),
+    ("mia.becker", "Mia", "Becker", "+49 171 5550103", "partner", None, None),
+    ("felix.schulz", "Felix", "Schulz", None, "partner", None, None),
 ]
 
 # Every demo location is rebuilt on each run; `kind` also names the plan file.
@@ -117,7 +148,7 @@ LOCATIONS = [
         "city": "Musterstadt",
         "coordinates": (52.5306, 13.3846),
         "points": _grid(*SMARTEX_ROOF, 5, 5),
-        "episodes": SMARTEX_EPISODES,
+        "leak": SMARTEX_LEAK,
     },
     {
         "kind": "dfh",
@@ -128,9 +159,10 @@ LOCATIONS = [
         "city": "Beispieldorf",
         "coordinates": (52.4559, 13.2905),
         "points": [
-            point for name, (rect, columns, rows) in DFH_ZONES.items() for point in _grid(*rect, columns, rows, name)
+            point for name, (rect, columns, rows) in DFH_ZONES.items()
+            for point in _grid(*rect, columns, rows, name, snake=True)
         ],
-        "episodes": DFH_EPISODES,
+        "leak": DFH_LEAK,
     },
     {
         "kind": "lorawan",
@@ -150,14 +182,19 @@ class Command(BaseCommand):
         "Create (or reset) the demo account used by the public demo: an Account with a 'demo' user "
         "(read-only portal permissions, see helper/demo.py), a LimitedToken for the demo link and one "
         "demo location per device type (smartex: 25 sensors, DFH: 14 sensors in 3 roof zones, LoRaWAN: "
-        "4 climate sensors), each with a drawn Lageplan, measure points on it, hourly measurements of "
-        "the last 3 months and the alarms they raise. The locations live in a separate database "
+        "4 climate sensors), each with a drawn Lageplan, measure points on it, measurements of the "
+        "last 3 months and the alarms they raise, plus a few demo people (colleagues, single-access "
+        "users, partners to grant access to). The locations live in a separate database "
         "(default: settings.DEMO_DATABASE, 'demo'), so the demo never touches real customer data.\n"
         "Re-running resets the demo locations and shifts the timestamps to 'now'; account, user "
-        "and token stay, so existing demo links keep working.\n\n"
+        "and the active demo link stay, so links handed out keep working.\n"
+        "Demo links are never deleted: a replaced (--rotate-token) or retired (--delete) link is "
+        "only disabled, so the usage of every link handed out stays countable (--links).\n\n"
         "Examples:\n"
         "  python manage.py demo_account\n"
+        "  python manage.py demo_account --new-link --label 'Messe Hannover'\n"
         "  python manage.py demo_account --rotate-token\n"
+        "  python manage.py demo_account --links\n"
         "  python manage.py demo_account --delete"
     )
 
@@ -170,12 +207,31 @@ class Command(BaseCommand):
         parser.add_argument(
             "--delete",
             action="store_true",
-            help="Remove everything (locations, plans, token, user and account) without recreating it.",
+            help="Remove the demo locations and plans and disable every demo link and the demo user. "
+            "Account, user and links are kept for the usage history.",
         )
-        parser.add_argument(
+        links = parser.add_mutually_exclusive_group()
+        links.add_argument(
+            "--new-link",
+            action="store_true",
+            help="Only hand out an additional demo link (e.g. one per recipient); the active ones "
+            "keep working. The demo data is not touched.",
+        )
+        links.add_argument(
             "--rotate-token",
             action="store_true",
-            help="Replace the demo token, which invalidates every demo link handed out so far.",
+            help="Only hand out a new demo link and disable every active one (kept for their "
+            "usage history). The demo data is not touched.",
+        )
+        parser.add_argument(
+            "--label",
+            default="",
+            help="Name of the link handed out with --new-link/--rotate-token, e.g. who got it (see --links).",
+        )
+        parser.add_argument(
+            "--links",
+            action="store_true",
+            help="Only list every demo link with its status and how often it was opened.",
         )
         parser.add_argument(
             "--days",
@@ -191,6 +247,14 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        if options["links"]:
+            self._print_links()
+            return
+        if options["new_link"] or options["rotate_token"]:
+            self._hand_out_link(rotate=options["rotate_token"], label=options["label"].strip())
+            return
+        if options["label"]:
+            raise CommandError("--label only goes with --new-link or --rotate-token.")
         db = options["database"]
         if db == "default" or is_project_alias(db):
             raise CommandError(f"The demo data must not live in '{db}' (default or a project database).")
@@ -207,45 +271,71 @@ class Command(BaseCommand):
                 self._remove_locations(account, db)
 
             if options["delete"]:
-                self._remove_account(account, db)
-                self.stdout.write(self.style.SUCCESS(f"Demo account removed from '{db}'."))
+                self._retire_account(account)
+                self.stdout.write(self.style.SUCCESS(
+                    f"Demo removed from '{db}': locations deleted, demo links and user disabled "
+                    "(kept for the usage history, see --links)."
+                ))
                 return
 
             account = self._ensure_account(account, db)
             user = self._ensure_user(account)
-            token = self._ensure_token(account, user, options["rotate_token"])
+            tokens = self._ensure_tokens(account, user)
 
             rng = random.Random(options["seed"])
             now = timezone.now().replace(minute=0, second=0, microsecond=0)
             hours = options["days"] * 24
             created = [self._create_location(account, db, spec, rng, now, hours) for spec in LOCATIONS]
+            self._ensure_people(account, user, db, dict(zip((spec["kind"] for spec in LOCATIONS), created)))
 
         summary = ", ".join(f"{spec['kind']}={location.pk}" for spec, location in zip(LOCATIONS, created))
         self.stdout.write(
             self.style.SUCCESS(f"Demo account ready: db={db}, account_id={account.pk}, locations: {summary}")
         )
-        self.stdout.write(f"Demo link: /demo/login/{token.raw_hash}")
+        for token in tokens:
+            self.stdout.write(_link_line(token))
 
     # ------------------------------------------------------------------ cleanup
 
     def _remove_locations(self, account, db):
         """Delete the demo locations; the cascade takes devices, measurements,
-        points, alarms and plan rows along. Plan files are removed as well."""
+        points, alarms and plan rows along. Their plan files are removed as
+        well - only theirs: other databases' demo plans (e.g. the tests' and
+        the dev server's) share the upload folder."""
+        files = [
+            name
+            for name in ProgeoLageplan.objects.using(db)
+            .filter(location__account_id=account.pk)
+            .values_list("lageplan", flat=True)
+            if name and name.startswith(DEMO_LAGEPLAN_PREFIX_REL)
+        ]
         ProgeoLocation.objects.using(db).filter(account_id=account.pk).delete()
-        plan_dir = os.path.join(UPLOAD_DIR, os.path.dirname(DEMO_LAGEPLAN_PREFIX_REL))
-        if os.path.isdir(plan_dir):
-            prefix = os.path.basename(DEMO_LAGEPLAN_PREFIX_REL)
-            for name in os.listdir(plan_dir):
-                if name.startswith(prefix):
-                    os.remove(os.path.join(plan_dir, name))
+        for name in files:
+            path = os.path.join(UPLOAD_DIR, name)
+            try:
+                if os.path.isfile(path):
+                    os.remove(path)
+            except OSError as error:  # e.g. held open by a running server (Windows)
+                self.stderr.write(f"Could not remove the old plan {path}: {error}")
 
-    def _remove_account(self, account, db):
+    def _retire_account(self, account):
+        """--delete: no demo link may work anymore, but none is deleted - the
+        links cascade with their account and user, so both stay (the user
+        inactive). The next run without --delete hands out a new link."""
         if account is None:
             return
-        # The token cascades with the account; the user is only ever the demo user.
-        User.objects.using("default").filter(username=DEMO_USERNAME, accounts=account).delete()
-        Account.objects.using(db).filter(pk=account.pk, raw_hash=DEMO_ACCOUNT_HASH).delete()
-        Account.objects.using("default").filter(pk=account.pk).delete()
+        _disable_links(LimitedToken.objects.using("default").filter(account=account, purpose=DEMO_TOKEN_PURPOSE))
+        User.objects.using("default").filter(username=DEMO_USERNAME, accounts=account).update(is_active=False)
+        User.objects.using("default").filter(username__startswith=DEMO_PEOPLE_PREFIX).update(is_active=False)
+
+    def _print_links(self):
+        """Every demo link ever handed out, newest first, with its usage."""
+        tokens = LimitedToken.objects.using("default").filter(purpose=DEMO_TOKEN_PURPOSE).order_by("-created")
+        if not tokens:
+            self.stdout.write("No demo links yet.")
+            return
+        for token in tokens:
+            self.stdout.write(_link_line(token))
 
     # ------------------------------------------------------------------- access
 
@@ -307,26 +397,89 @@ class Command(BaseCommand):
         account.users.add(user)
         return user
 
-    def _ensure_token(self, account, user, rotate):
-        tokens = LimitedToken.objects.using("default").filter(account=account, purpose=DEMO_TOKEN_PURPOSE)
-        if rotate:
-            tokens.delete()
-        token = tokens.first()
-        valid_until = timezone.now() + TOKEN_LIFETIME
-        if token is None:
-            return LimitedToken.objects.using("default").create(
-                raw_hash=secrets.token_urlsafe(32),
-                raw_data={},
-                user_id=user.pk,
-                account_id=account.pk,
-                purpose=DEMO_TOKEN_PURPOSE,
-                valid_until=valid_until,
+    def _ensure_people(self, account, demo_user, db, locations):
+        """DEMO_PEOPLE: users in "default" (where logins and memberships
+        live), mirrored into the demo database - its ProgeoAccess rows
+        reference them there - plus their access/notification rules, which
+        went with the old locations."""
+        partner, _ = Account.objects.using("default").get_or_create(
+            raw_hash=DEMO_PARTNER_HASH, defaults={"name": DEMO_PARTNER_NAME, "db_name": db}
+        )
+        if partner.db_name != db:
+            partner.db_name = db
+            partner.save(using="default")
+        partner.users.add(demo_user)
+
+        rules = []
+        for name, first, last, mobile, role, transport, notify in DEMO_PEOPLE:
+            username = f"{DEMO_PEOPLE_PREFIX}{name}"
+            person, _ = User.objects.using("default").get_or_create(username=username)
+            person.first_name, person.last_name = first, last
+            person.email = f"{name}@example.com"
+            person.is_staff = person.is_superuser = False
+            person.is_active = True
+            person.set_unusable_password()
+            person.save(using="default")
+            person.user_permissions.clear()
+            if mobile:
+                UserProfile.objects.using("default").update_or_create(user_id=person.pk, defaults={"mobile": mobile})
+            else:
+                UserProfile.objects.using("default").filter(user_id=person.pk).delete()
+
+            account.users.remove(person)
+            partner.users.remove(person)
+            if role == "member":
+                account.users.add(person)
+                targets = list(locations.values())
+            elif role == "partner":
+                partner.users.add(person)
+                targets = []
+            else:
+                targets = [locations[role.split(":", 1)[1]]]
+
+            if not _same_database(db):
+                User.objects.using(db).update_or_create(
+                    pk=person.pk,
+                    defaults={"username": username, "email": person.email, "first_name": first,
+                              "last_name": last, "password": person.password, "is_active": True},
+                )
+            rules.extend(
+                ProgeoAccess(location=location, user_id=person.pk, transport=transport, type=notify)
+                for location in targets
             )
-        token.user_id = user.pk
-        token.disabled = False
-        token.valid_until = valid_until
-        token.save(using="default")
-        return token
+        ProgeoAccess.objects.using(db).bulk_create(rules)
+
+    def _ensure_tokens(self, account, user):
+        """Every active demo link stays valid (several can be handed out, see
+        --new-link); the first run creates one. Disabled links are never
+        enabled again. Returns the active links, newest first."""
+        active = LimitedToken.objects.using("default").filter(
+            account=account, purpose=DEMO_TOKEN_PURPOSE, disabled=False
+        )
+        if not active.exists():
+            _create_link(account, user)
+        active.update(user_id=user.pk, valid_until=timezone.now() + TOKEN_LIFETIME)
+        return list(active.order_by("-created", "-pk"))
+
+    def _hand_out_link(self, rotate, label):
+        """--new-link / --rotate-token: a new demo link for the existing demo,
+        without touching its data (visitors may be looking at it)."""
+        account = Account.objects.using("default").filter(raw_hash=DEMO_ACCOUNT_HASH).first()
+        user = User.objects.using("default").filter(
+            username=DEMO_USERNAME, accounts=account, is_active=True
+        ).first() if account else None
+        if user is None:
+            raise CommandError("There is no demo (or it was removed) - run 'manage.py demo_account' first.")
+        with transaction.atomic(using="default"):
+            active = LimitedToken.objects.using("default").filter(
+                account=account, purpose=DEMO_TOKEN_PURPOSE, disabled=False
+            )
+            disabled = _disable_links(active) if rotate else 0
+            token = _create_link(account, user, label)
+        if disabled:
+            self.stdout.write(f"{disabled} earlier demo link(s) disabled (kept, see --links).")
+        self.stdout.write(self.style.SUCCESS("New demo link:"))
+        self.stdout.write(_link_line(token))
 
     # --------------------------------------------------------------- locations
 
@@ -358,7 +511,7 @@ class Command(BaseCommand):
                 if point.sensor_order <= len(newest):
                     point.last_value = newest[point.sensor_order - 1]
             ProgeoMeasurePoint.objects.using(db).bulk_update(points, ["last_value"])
-            self._create_alarms(measurements, location, db, spec["episodes"], now)
+            self._create_alarms(measurements, location, db, spec["leak"])
         return location
 
     def _create_device(self, location, db, raw_hash, label, device_type=ProgeoDevice.DeviceType.SMARTBOX):
@@ -396,35 +549,38 @@ class Command(BaseCommand):
     # ------------------------------------------------------- pair measurements
 
     def _create_measurements(self, device, db, spec, rng, now, hours):
-        """Hourly pair measurements: a dry roof (individual base level, noise,
-        a small daily swing) plus the moisture events of spec["episodes"]."""
+        """Hourly pair measurements: a dry roof - every sensor with its own
+        base level, a small daily swing and noise, always below DRY_MAX of the
+        threshold - except the leak of spec["leak"] (_leak_level)."""
         points = spec["points"]
-        episodes = spec["episodes"]
-        base = [rng.uniform(12, 32) for _ in points]
+        leak = spec["leak"]
+        threshold = device.location.alarm_threshold
+        dry_max = DRY_MAX * threshold - 1
+        base = [rng.uniform(0.06, 0.15) * threshold for _ in points]
         eigen = [BASE_LEVEL + rng.randint(-25, 25) for _ in points]
-        gains = [[_spread_gain(points, episode, index) for index in range(len(points))] for episode in episodes]
 
         measurements = []
         for hours_ago in range(hours - 1, -1, -1):
             fetched = now - datetime.timedelta(hours=hours_ago) + datetime.timedelta(seconds=rng.randint(0, 90))
             daily = math.sin(2 * math.pi * (fetched.hour - 9) / 24)
             season = hours_ago / max(hours - 1, 1)  # 1 = oldest (summer), 0 = now
-            levels = [_episode_level(episode, hours_ago) for episode in episodes]
-            wet = sum(_rain_wetness(episode, hours_ago) for episode in episodes)
+            leak_level = _leak_level(leak, hours_ago)
+            wet = leak_level is not None and leak_level > 1  # damp air while the leak is over threshold
 
             values = []
             for index in range(len(points)):
-                value = base[index] + 4 * daily + 6 * wet + rng.gauss(0, 3)
-                value += sum(episode["peak"] * level * gain[index]
-                             for episode, level, gain in zip(episodes, levels, gains))
-                values.append(max(0, round(value)))
+                value = base[index] + 0.02 * threshold * daily + rng.gauss(0, 0.012 * threshold)
+                value = min(max(value, 0), dry_max)
+                if index == leak["sensor"] - 1 and leak_level is not None:
+                    value = max(value, leak_level * threshold * (1 + rng.gauss(0, 0.01)))
+                values.append(round(value))
 
             measurements.append(
                 ProgeoMeasurement(
                     device=device,
                     project_id=device.project_id,
                     temperature=round(13 + 9 * season + 4 * daily + rng.uniform(-0.4, 0.4), 1),
-                    humidity=round(min(98, 62 - 10 * season - 8 * daily + 15 * wet + rng.uniform(-2, 2)), 1),
+                    humidity=round(min(98, 62 - 10 * season - 8 * daily + 6 * wet + rng.uniform(-2, 2)), 1),
                     eigenpotenzial=eigen,
                     wirkpotenzial=[level + value for level, value in zip(eigen, values)],
                     raw_data={},
@@ -436,9 +592,9 @@ class Command(BaseCommand):
         # created oldest first, so the pk order stays chronological.
         return ProgeoMeasurement.objects.using(db).bulk_create(measurements, batch_size=2000)
 
-    def _create_alarms(self, measurements, location, db, episodes, now):
-        """One alarm per moisture event, derived from the generated values the
-        way the alarm evaluation does it: over-threshold measurements of the
+    def _create_alarms(self, measurements, location, db, leak):
+        """The alarm of the leak, derived from the generated values the way
+        the alarm evaluation does it: over-threshold measurements of the
         device form an episode, the first one below normalizes it."""
         threshold = location.alarm_threshold
         found = []
@@ -468,13 +624,12 @@ class Command(BaseCommand):
         for event in found:
             first, last = event["measurements"][0], event["measurements"][-1]
             sensor_id, peak = max(event["peaks"].items(), key=lambda item: item[1])
-            episode = _episode_at(episodes, first.last_fetched, last.last_fetched, now) or {}
-            status = episode.get("status", ProgeoAlarm.Status.NEU)
+            status = leak["status"]
             if event["normalized_at"] is None and status == ProgeoAlarm.Status.GELOEST:
                 status = ProgeoAlarm.Status.NEU  # still active, can't be resolved
             elif event["normalized_at"] is not None and status == ProgeoAlarm.Status.NEU:
                 status = ProgeoAlarm.Status.GELOEST  # normalized, never acknowledged
-            rain = episode.get("rain")
+            rain = leak.get("rain")
             ProgeoAlarm.objects.using(db).create(
                 measurement=last,
                 triggered_at=first.last_fetched,
@@ -504,10 +659,11 @@ class Command(BaseCommand):
     # ------------------------------------------------------------ climate data
 
     def _create_climate_data(self, location, db, spec, rng, now, hours):
-        """LoRaWAN sensors only report humidity/temperature/battery (no
-        samples): late summer into autumn, a cellar getting damp over the last
-        three weeks, showers in the bathroom, and the odd lost uplink."""
-        measurements = []
+        """LoRaWAN climate sensors as they really report: an uplink every
+        LORAWAN_INTERVAL_MIN minutes (own phase, some jitter), lost packets
+        and two gateway outages, sensor noise, calibration offsets, 0.1
+        resolution and a slowly draining battery. The rooms follow the
+        weather (_Weather) with their own inertia, see _Room."""
         devices = []
         for number, (label, *_position) in enumerate(spec["points"], start=1):
             device = self._create_device(
@@ -515,30 +671,43 @@ class Command(BaseCommand):
             )
             device.hardware = f"{location.project_id}_S{number}"
             device.save(using=db)
-            devices.append((device, label, rng.uniform(0, 3)))
+            sensor = LORAWAN_SENSORS[label]
+            devices.append((device, _Room(label, rng), sensor, rng.uniform(0, LORAWAN_INTERVAL_MIN)))
 
-        for hours_ago in range(hours - 1, -1, -1):
-            hour_start = now - datetime.timedelta(hours=hours_ago)
-            season = hours_ago / max(hours - 1, 1)  # 1 = oldest (summer), 0 = now
-            daily = math.sin(2 * math.pi * (hour_start.hour - 9) / 24)
-            for device, label, drift in devices:
-                if rng.random() < LORAWAN_PACKET_LOSS:
+        start = now - datetime.timedelta(hours=hours)
+        weather = _Weather(start, hours, rng)
+        outages = [
+            (start + datetime.timedelta(hours=rng.uniform(0, hours - 12)), datetime.timedelta(hours=rng.uniform(2, 8)))
+            for _ in range(2)
+        ]
+        step = datetime.timedelta(minutes=LORAWAN_INTERVAL_MIN)
+        steps = hours * 60 // LORAWAN_INTERVAL_MIN
+        measurements = []
+        for index in range(steps):
+            at = start + index * step
+            conditions = weather.at(at)
+            for device, room, sensor, phase in devices:
+                temperature, humidity = room.step(at, conditions, LORAWAN_INTERVAL_MIN / 60)
+                fetched = at + datetime.timedelta(minutes=phase, seconds=rng.gauss(0, 25))
+                if rng.random() < sensor["loss"] or any(begin <= fetched < begin + length for begin, length in outages):
                     continue
-                temperature, humidity = _room_climate(label, season, daily, hour_start.hour, hours_ago)
-                drain = {"Dachboden": 27}.get(label, 12)  # heat drains the attic sensor's battery faster
-                fetched = hour_start + datetime.timedelta(minutes=device.pk % 50, seconds=rng.randint(0, 59))
+                temperature += sensor["offset"][0] + rng.gauss(0, 0.08)
+                humidity += sensor["offset"][1] + rng.gauss(0, 0.6)
+                used = sensor["drain"] * (index / steps) ** 1.15
+                cold = 0.15 * max(0.0, 12 - temperature)  # the cell's voltage sags in the cold
                 measurements.append(
                     ProgeoMeasurement(
                         device=device,
                         project_id=location.project_id,
-                        temperature=round(temperature + rng.uniform(-0.3, 0.3), 1),
-                        humidity=round(min(99, max(5, humidity + rng.uniform(-1.2, 1.2))), 1),
-                        battery=round(100 - drift - drain * (1 - season), 1),
+                        temperature=round(temperature, 1),
+                        humidity=round(min(99.9, max(5.0, humidity)), 1),
+                        battery=float(min(100, max(0, round(100 - used - cold + rng.gauss(0, 0.4))))),
                         raw_data={},
                         last_fetched=fetched,
                         last_updated=fetched,
                     )
                 )
+        measurements.sort(key=lambda measurement: measurement.last_fetched)  # pk order = time order
         ProgeoMeasurement.objects.using(db).bulk_create(measurements, batch_size=2000)
 
     # ---------------------------------------------------------------- lageplan
@@ -584,66 +753,166 @@ def _smooth(fraction):
     return fraction * fraction * (3 - 2 * fraction)
 
 
-def _episode_level(episode, hours_ago):
-    """0..1: how far the moisture event has developed `hours_ago` hours before now."""
-    elapsed = episode["start_days_ago"] * 24 - hours_ago
+def _create_link(account, user, label=""):
+    return LimitedToken.objects.using("default").create(
+        raw_hash=secrets.token_urlsafe(32),
+        raw_data={"label": label} if label else {},
+        user_id=user.pk,
+        account_id=account.pk,
+        purpose=DEMO_TOKEN_PURPOSE,
+        valid_until=timezone.now() + TOKEN_LIFETIME,
+    )
+
+
+def _disable_links(tokens):
+    """Disable demo links, noting when - the rows stay for their usage.
+    Returns how many were disabled."""
+    disabled_at = timezone.now().isoformat()
+    count = 0
+    for token in tokens.filter(disabled=False):
+        token.disabled = True
+        token.raw_data = {**(token.raw_data or {}), "disabled_at": disabled_at}
+        token.save(using="default", update_fields=["disabled", "raw_data"])
+        count += 1
+    return count
+
+
+def _link_line(token):
+    """One demo link with its label, status and usage (--links and the summaries)."""
+    data = token.raw_data or {}
+    status = "active" if not token.disabled else f"disabled {data.get('disabled_at', '')[:16]}".strip()
+    label = data.get("label") or "-"
+    last = (data.get("last_opened_at") or "never")[:16]
+    return (
+        f"{token.created:%Y-%m-%d %H:%M}  {label[:24]:<24}  {status:<27}  opened {token.check_counter:>5}x  "
+        f"last {last:<16}  /demo/login/{token.raw_hash}"
+    )
+
+
+def _leak_level(leak, hours_ago):
+    """The leak sensor's value as a multiple of the threshold `hours_ago`
+    hours before now: a quick rise to the peak, then an exponential decline
+    to `settle`. None before the leak started."""
+    elapsed = leak["start_days_ago"] * 24 - hours_ago
     if elapsed < 0:
-        return 0.0
-    rise, hold, fall = episode["rise_h"], episode["hold_h"], episode["fall_h"]
-    if elapsed < rise:
-        return _smooth(elapsed / rise)
-    if fall is None or elapsed < rise + hold:
-        return 1.0
-    return 1.0 - _smooth((elapsed - rise - hold) / fall)
-
-
-def _rain_wetness(episode, hours_ago):
-    """0..1: the whole roof is a bit wetter for a day after the episode's rain."""
-    rain = episode.get("rain")
-    if not rain:
-        return 0.0
-    since_rain = (episode["start_days_ago"] * 24 + rain["before_h"]) - hours_ago
-    if since_rain < 0 or since_rain > 30:
-        return 0.0
-    return min(1.0, since_rain / 3) * (1 - since_rain / 30)
-
-
-def _spread_gain(points, episode, index):
-    """Share of the event's peak that reaches sensor `index` (Gaussian over the plan distance)."""
-    _name, cx, cy, *_ = points[episode["sensor"] - 1]
-    _name, px, py, *_ = points[index]
-    distance = math.hypot(px - cx, py - cy)
-    return math.exp(-(distance**2) / (2 * episode["spread"] ** 2))
-
-
-def _episode_at(episodes, start, end, now):
-    """The configured episode that began around [start, end] (within a week)."""
-
-    def distance(episode):
-        began = now - datetime.timedelta(days=episode["start_days_ago"])
-        if start - datetime.timedelta(hours=12) <= began <= end:
-            return 0
-        return abs((began - start).total_seconds())
-
-    best = min(episodes, key=distance, default=None)
-    if best is None or distance(best) > 7 * 24 * 3600:
         return None
-    return best
+    if elapsed < leak["rise_h"]:
+        return leak["peak"] * _smooth(elapsed / leak["rise_h"])
+    decayed = math.exp(-(elapsed - leak["rise_h"]) / leak["decay_h"])
+    return leak["settle"] + (leak["peak"] - leak["settle"]) * decayed
 
 
-def _room_climate(label, season, daily, hour, hours_ago):
-    """(temperature, humidity) of a room; season 1 = late summer, 0 = now."""
-    if label == "Keller":
-        damp = _smooth(1 - hours_ago / (21 * 24)) * 18  # rising over the last three weeks
-        return 13.5 + 3.5 * season + 0.3 * daily, 62 + 3 * season + damp
-    if label == "Wohnzimmer":
-        return 21 + 2.5 * season + 1.2 * daily, 47 + 8 * season - 2 * daily
-    if label == "Dachboden":
-        temperature = 12 + 16 * season + 5 * daily
-        return temperature, 72 - 0.9 * temperature
-    # Bad: showers in the morning and the evening.
-    shower = max(0, 1 - abs(hour - 7) / 2) + max(0, 1 - abs(hour - 21) / 2)
-    return 21.5 + 1 * season + 0.6 * daily + 1.5 * shower, 58 + 4 * season + 28 * shower
+def _saturation(temperature):
+    """Saturation vapour pressure (hPa, Magnus formula)."""
+    return 6.112 * math.exp(17.62 * temperature / (243.12 + temperature))
+
+
+def _relative_humidity(temperature, dew_point):
+    return 100 * _saturation(min(dew_point, temperature)) / _saturation(temperature)
+
+
+class _Weather:
+    """Outside conditions of the demo period: the seasonal mean of the real
+    calendar dates plus multi-day warm/cold spells and cloudy/sunny days
+    (smooth random walks, one value per day, interpolated)."""
+
+    def __init__(self, start, hours, rng):
+        self.start = start
+        days = hours // 24 + 3
+        self.anomaly, self.cloud = [rng.gauss(0, 2)], [rng.random()]
+        for _ in range(days):
+            self.anomaly.append(0.75 * self.anomaly[-1] + rng.gauss(0, 1.8))
+            self.cloud.append(min(1.0, max(0.0, 0.55 * self.cloud[-1] + 0.45 * rng.random() + rng.gauss(0, 0.1))))
+
+    def _daily(self, series, day):
+        index = int(day)
+        return series[index] + (series[index + 1] - series[index]) * (day - index)
+
+    def at(self, at):
+        day = (at - self.start).total_seconds() / 86400
+        # With USE_TZ off (production settings) the times are naive and
+        # already local; localtime() only takes aware ones.
+        local = timezone.localtime(at) if timezone.is_aware(at) else at
+        hour = local.hour + local.minute / 60
+        seasonal = 10 + 9 * math.cos(2 * math.pi * (local.timetuple().tm_yday - 200) / 365)
+        mean = seasonal + self._daily(self.anomaly, day)
+        cloud = self._daily(self.cloud, day)
+        swing = (3 + 5 * (1 - cloud)) * math.sin(2 * math.pi * (hour - 9) / 24)
+        return {
+            "mean": mean,
+            "temperature": mean + swing,
+            "dew_point": mean - 1.5 - 5 * (1 - cloud),
+            "sun": (1 - cloud) * max(0.0, math.sin(math.pi * (hour - 7) / 12)),
+            "hour": hour,
+            "day": int(day),
+        }
+
+
+class _Room:
+    """Temperature and dew point of one room, following the weather with the
+    room's own inertia (first-order lag) and its own events: heating with a
+    night setback once it gets cold, airing, showers, sun on the attic, a
+    cellar getting damp over the last three weeks."""
+
+    def __init__(self, label, rng):
+        self.label, self.rng = label, rng
+        self.temperature = None
+        self.dew_point = None
+        self.events = {}  # day -> [(start hour, kind)]
+
+    def _events_of(self, day):
+        if day not in self.events:
+            rng, events = self.rng, []
+            if self.label in ("Wohnzimmer", "Bad") and rng.random() < 0.8:
+                events.append((rng.uniform(7, 9.5), "airing"))
+            if self.label == "Wohnzimmer" and rng.random() < 0.5:
+                events.append((rng.uniform(17, 21), "airing"))
+            if self.label == "Bad":
+                if rng.random() < 0.85:
+                    events.append((rng.uniform(6.3, 7.8), "shower"))
+                if rng.random() < 0.35:
+                    events.append((rng.uniform(19, 22.5), "shower"))
+            self.events[day] = events
+        return self.events[day]
+
+    def _active(self, conditions, kind, minutes):
+        hour = conditions["hour"]
+        return any(
+            event == kind and start <= hour < start + minutes / 60
+            for start, event in self._events_of(conditions["day"])
+        )
+
+    def step(self, at, conditions, hours):
+        outside, dew_outside = conditions["temperature"], conditions["dew_point"]
+        heating = conditions["mean"] < 14
+        hour = conditions["hour"]
+        if self.label == "Keller":
+            target, tau = 0.25 * conditions["mean"] + 0.75 * 12.5, 72
+            # Damp over the last three weeks: the dew point creeps up.
+            weeks = (timezone.now() - at).total_seconds() / (7 * 86400)
+            dew_target, dew_tau = 0.3 * dew_outside + 0.7 * 7 + 3 * _smooth(1 - weeks / 3), 24
+        elif self.label == "Dachboden":
+            target, tau = outside + 2.5 + 15 * conditions["sun"], 2.5  # the roof keeps some warmth at night
+            dew_target, dew_tau = dew_outside - 1, 3
+        else:
+            setpoint = (21.5 if 6 <= hour < 22 else 18.5) + (1 if self.label == "Bad" else 0)
+            free = 0.35 * conditions["mean"] + 15 + 2.5 * conditions["sun"]
+            target = max(setpoint, free) if heating else min(free, 27)
+            tau = 1.5 if heating and (self.temperature or 0) < setpoint else 9
+            dew_target = dew_outside + 2 + (2 if self.label == "Wohnzimmer" and 18 <= hour < 20 else 0)
+            dew_tau = 1.5
+            if self._active(conditions, "airing", 25):
+                target, tau = outside, 0.6
+                dew_target, dew_tau = dew_outside, 0.3
+            if self._active(conditions, "shower", 25):
+                target, tau = (self.temperature or target) + 2.5, 0.5
+                dew_target, dew_tau = (self.temperature or target) + 1, 0.15
+        if self.temperature is None:
+            self.temperature, self.dew_point = target, dew_target
+        self.temperature += (target - self.temperature) * min(1.0, hours / tau)
+        self.dew_point += (dew_target - self.dew_point) * min(1.0, hours / dew_tau)
+        self.dew_point = min(self.dew_point, self.temperature)
+        return self.temperature, _relative_humidity(self.temperature, self.dew_point)
 
 
 class _Plan:

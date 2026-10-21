@@ -15,7 +15,13 @@ export type ThresholdTrendSeries = {
    * sensors with different thresholds stay comparable on one shared scale. */
   threshold: number | null;
   points: ThresholdTrendPoint[];
+  /** Background series (e.g. sensors without a Verdachtsstelle): a thin
+   * grey line behind the others, sharing one legend toggle (MUTED_GROUP). */
+  muted?: boolean;
 };
+
+/** hiddenSeries/onToggleSeries id of all muted series together. */
+export const MUTED_GROUP = '__muted__';
 
 type ThresholdTrendChartProps = {
   series: ThresholdTrendSeries[];
@@ -25,6 +31,8 @@ type ThresholdTrendChartProps = {
   meanOfLabel: (count: number) => string;
   /** Legend text for the dotted 1x threshold line. */
   thresholdLabel: string;
+  /** Legend text of the muted series' shared toggle. */
+  mutedLabel?: (count: number) => string;
 };
 
 // Series hues deliberately avoid red/orange/green: those already mean
@@ -35,6 +43,7 @@ type ThresholdTrendChartProps = {
 // generating new colours.
 const COLORS = ['#2a78d6', '#eda100', '#1a9bb5', '#4a3aa7', '#e87ba4'];
 const REPEAT_DASH = '6 4';
+const MUTED_COLOR = '#AEB7C1';
 
 const THRESHOLD_COLOR = 'var(--progeo-orange)';
 const THRESHOLD_DASH = '2 4';
@@ -141,17 +150,22 @@ const ThresholdTrendChart = ({
   emptyLabel,
   meanOfLabel,
   thresholdLabel,
+  mutedLabel = (count) => `+${count}`,
 }: ThresholdTrendChartProps) => {
   const [hover, setHover] = useState<HoverInfo | null>(null);
 
+  // Colours go to the highlighted series only, in their order.
+  let colorIndex = 0;
   const ratioSeries = series
-    .map((entry, index) => {
+    .map((entry) => {
       const threshold = entry.threshold && entry.threshold > 0 ? entry.threshold : 1;
+      const index = entry.muted ? -1 : colorIndex++;
       return {
         id: entry.id,
         label: entry.label,
-        color: COLORS[index % COLORS.length],
-        dash: index >= COLORS.length ? REPEAT_DASH : undefined,
+        muted: Boolean(entry.muted),
+        color: entry.muted ? MUTED_COLOR : COLORS[index % COLORS.length],
+        dash: !entry.muted && index >= COLORS.length ? REPEAT_DASH : undefined,
         points: entry.points
           .filter((point) => point.triggered_at && point.value != null)
           .map((point) => ({
@@ -179,7 +193,15 @@ const ThresholdTrendChart = ({
     );
   }
 
-  const visibleSeries = ratioSeries.filter((entry) => !hiddenSeries.has(entry.id));
+  const isHidden = (entry: { id: string; muted: boolean }) =>
+    hiddenSeries.has(entry.id) || (entry.muted && hiddenSeries.has(MUTED_GROUP));
+  // Muted first, so the highlighted lines are drawn on top of them.
+  const visibleSeries = ratioSeries
+    .filter((entry) => !isHidden(entry))
+    .sort((a, b) => Number(b.muted) - Number(a.muted));
+  const highlighted = ratioSeries.filter((entry) => !entry.muted);
+  const mutedCount = ratioSeries.length - highlighted.length;
+  const mutedHidden = hiddenSeries.has(MUTED_GROUP);
 
   const allTimes = ratioSeries.flatMap((entry) => entry.points.map((point) => point.time));
   const allRatios = ratioSeries.flatMap((entry) => entry.points.map((point) => point.ratio));
@@ -191,7 +213,6 @@ const ThresholdTrendChart = ({
   const toX = (time: number) =>
     maxTime === minTime ? (X0 + X1) / 2 : X0 + ((time - minTime) / (maxTime - minTime)) * (X1 - X0);
   const toY = (ratio: number) => Y1 - (ratio / maxRatio) * (Y1 - Y0);
-  const toTime = (x: number) => minTime + ((x - X0) / (X1 - X0)) * (maxTime - minTime);
 
   const minGapTime = (maxTime - minTime) / TARGET_SLOTS;
   const displaySeries = visibleSeries.map((entry) => ({
@@ -208,17 +229,19 @@ const ThresholdTrendChart = ({
       return;
     }
     const vbx = ((event.clientX - rect.left) / rect.width) * VB_W;
+    const vby = ((event.clientY - rect.top) / rect.height) * VB_H;
     if (vbx < X0 || vbx > X1) {
       setHover(null);
       return;
     }
-    const cursorTime = toTime(vbx);
 
+    // Nearest point to the cursor on screen - series measured at the same
+    // times differ only in height.
     let best: HoverInfo | null = null;
     let bestDistance = Infinity;
     displaySeries.forEach((entry) => {
       entry.display.forEach((point) => {
-        const distance = Math.abs(point.time - cursorTime);
+        const distance = Math.hypot(toX(point.time) - vbx, toY(point.ratio) - vby);
         if (distance < bestDistance) {
           bestDistance = distance;
           best = {
@@ -275,10 +298,10 @@ const ThresholdTrendChart = ({
                 fill="none"
                 stroke={entry.color}
                 strokeDasharray={entry.dash}
-                strokeWidth={1.8}
+                strokeWidth={entry.muted ? 1.1 : 1.8}
                 strokeLinejoin="round"
               />
-              {entry.display.map((point) => (
+              {!entry.muted && entry.display.map((point) => (
                 <circle
                   key={point.key}
                   cx={toX(point.time)}
@@ -333,7 +356,7 @@ const ThresholdTrendChart = ({
       </div>
 
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-        {ratioSeries.map((entry) => (
+        {highlighted.map((entry) => (
           <button
             key={entry.id}
             type="button"
@@ -359,6 +382,28 @@ const ThresholdTrendChart = ({
             {entry.label}
           </button>
         ))}
+        {mutedCount > 0 && (
+          <button
+            type="button"
+            onClick={() => onToggleSeries(MUTED_GROUP)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: 0,
+              fontFamily: 'inherit',
+              fontSize: 12.5,
+              fontWeight: 400,
+              color: mutedHidden ? '#B8B0B0' : '#6E6868',
+            }}
+          >
+            <LegendSwatch color={mutedHidden ? '#D6D0D0' : MUTED_COLOR} width={1.5} />
+            {mutedLabel(mutedCount)}
+          </button>
+        )}
         <span
           style={{
             display: 'inline-flex',

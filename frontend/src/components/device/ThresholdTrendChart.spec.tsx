@@ -2,7 +2,7 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import ThresholdTrendChart, { type ThresholdTrendSeries } from './ThresholdTrendChart';
+import ThresholdTrendChart, { MUTED_GROUP, type ThresholdTrendSeries } from './ThresholdTrendChart';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -281,5 +281,51 @@ describe('ThresholdTrendChart hover tooltip', () => {
       plotSvg().dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }));
     });
     expect(container.textContent).not.toContain('2.50x');
+  });
+});
+
+describe('ThresholdTrendChart muted series', () => {
+  const muted = (series: ThresholdTrendSeries) => ({ ...series, muted: true });
+
+  it('draws muted series grey, behind the others, without taking a colour', () => {
+    renderChart([muted(makeSeries('m', [[0, 10], [MIN, 12]])), makeSeries('a', [[0, 300], [MIN, 200]])]);
+    const strokes = polylines().map((line) => line.getAttribute('stroke'));
+    expect(strokes).toEqual(['#AEB7C1', COLORS[0]]);
+  });
+
+  it('shares one legend toggle for all muted series', () => {
+    const { onToggleSeries } = renderChart([
+      makeSeries('a', [[0, 300]]),
+      muted(makeSeries('m1', [[0, 10]])),
+      muted(makeSeries('m2', [[0, 12]])),
+    ]);
+    expect(legendButtons().map((button) => button.textContent)).toEqual(['Sensor a', '+2']);
+    act(() => legendButtons()[1].click());
+    expect(onToggleSeries).toHaveBeenCalledWith(MUTED_GROUP);
+  });
+
+  it('hides every muted series with the group toggle', () => {
+    renderChart(
+      [makeSeries('a', [[0, 300]]), muted(makeSeries('m1', [[0, 10]])), muted(makeSeries('m2', [[0, 12]]))],
+      { hiddenSeries: new Set([MUTED_GROUP]) },
+    );
+    expect(polylines()).toHaveLength(1);
+  });
+
+  it('hovers the series nearest to the cursor in height, not the first one', () => {
+    renderChart([
+      muted(makeSeries('low', [[0, 10], [90 * MIN, 10]])),
+      makeSeries('high', [[0, 300], [90 * MIN, 300]]),
+    ]);
+    const svg = plotSvg();
+    vi.spyOn(svg, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 1000, height: 180 } as DOMRect);
+    act(() => {
+      svg.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 980, clientY: 20 }));
+    });
+    expect(container.textContent).toContain('Sensor high');
+    act(() => {
+      svg.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 980, clientY: 145 }));
+    });
+    expect(container.textContent).toContain('Sensor low');
   });
 });

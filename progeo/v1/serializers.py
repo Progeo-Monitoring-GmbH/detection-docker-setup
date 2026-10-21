@@ -255,6 +255,12 @@ class LocationSerializer(ProgeoBaseSerializer):
         if self.context.get("skip_lageplans"):
             self.fields.pop("lageplans", None)
 
+    def update(self, instance, validated_data):
+        # The project id is set when the location is created and names its
+        # project database - an edit must never move the location elsewhere.
+        validated_data.pop("project_id", None)
+        return super().update(instance, validated_data)
+
     @staticmethod
     def get_clazz_name(_):
         return "ProgeoLocation"

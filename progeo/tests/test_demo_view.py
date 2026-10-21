@@ -14,9 +14,30 @@ from progeo.v1.models import LimitedToken, ProgeoLocation
 pytestmark = pytest.mark.django_db(databases=[*TEST_DATABASES, settings.DEMO_DATABASE])
 
 
-# A short history keeps the tests fast; the two still-active moisture events
-# of smartex and DFH lie within it.
-HISTORY = ("--days", "5")
+@pytest.fixture(autouse=True)
+def _remove_created_plans():
+    """The command stores its plan images in the shared upload folder (the
+    dev server's demo plans live there too): remove only the ones a test
+    created - their database rows are rolled back anyway."""
+    import os
+
+    from progeo.helper.demo import DEMO_LAGEPLAN_PREFIX_REL
+    from progeo.settings import UPLOAD_DIR
+
+    plan_dir = os.path.join(UPLOAD_DIR, os.path.dirname(DEMO_LAGEPLAN_PREFIX_REL))
+    before = set(os.listdir(plan_dir)) if os.path.isdir(plan_dir) else set()
+    yield
+    if os.path.isdir(plan_dir):
+        for name in set(os.listdir(plan_dir)) - before:
+            try:
+                os.remove(os.path.join(plan_dir, name))
+            except OSError:
+                pass
+
+
+# A short history keeps the tests fast; the leaks of smartex (9 days ago) and
+# DFH (20 days ago) lie within it.
+HISTORY = ("--days", "30")
 
 
 @pytest.fixture
@@ -115,6 +136,7 @@ def test_demo_user_cannot_change_anything(api_client, demo):
     db = settings.DEMO_DATABASE
     location = ProgeoLocation.objects.using(db).filter(account=demo.account, project_type=1).first()
     alarm = ProgeoAlarm.objects.using(db).filter(measurement__device__location=location).first()
+    status = alarm.status
 
     writes = [
         api_client.patch(f"/v1/location/{location.pk}/", {"name": "hacked"}, format="json"),
@@ -131,7 +153,7 @@ def test_demo_user_cannot_change_anything(api_client, demo):
     location.refresh_from_db(using=db)
     assert location.name == "Demo Flachdach (smartex)"
     alarm.refresh_from_db(using=db)
-    assert alarm.status == ProgeoAlarm.Status.NEU
+    assert alarm.status == status
 
 
 def test_demo_user_does_not_see_staff_contacts(api_client, demo):
@@ -177,22 +199,50 @@ def test_command_builds_points_history_and_alarms(api_client, demo_db):
         span = times.last().last_fetched - times.first().last_fetched
         assert span.days >= 89
 
-    smartex = ProgeoAlarm.objects.using(db).filter(measurement__device__location=locations[1])
-    assert {alarm.status for alarm in smartex} == {
-        ProgeoAlarm.Status.GELOEST, ProgeoAlarm.Status.QUITTIERT, ProgeoAlarm.Status.NEU
-    }
-    active = smartex.get(normalized_at__isnull=True)
-    assert active.sensor_id == 13 and active.severity == ProgeoAlarm.Severity.KRITISCH
-    assert ProgeoAlarm.objects.using(db).filter(
-        measurement__device__location=locations[3], normalized_at__isnull=True
-    ).count() == 1
+    # One leak each, every other sensor below 25 % of the threshold.
+    # smartex: dry, then a sharp spike to 368 %, declining - the alarm is over.
+    # DFH: up to 190 % three days ago and still over the threshold - an open alarm.
+    cases = (
+        (1, 13, (3.6, 3.76), (0.75, 0.95), ProgeoAlarm.Status.QUITTIERT, True, ProgeoAlarm.Severity.KRITISCH),
+        (3, 8, (1.85, 1.95), (1.4, 1.6), ProgeoAlarm.Status.NEU, False, ProgeoAlarm.Severity.ALARM),
+    )
+    for project_type, leak_sensor, peak, last, status, over, severity in cases:
+        location = locations[project_type]
+        threshold = location.alarm_threshold
+        series = [
+            m.get_pairs()
+            for m in ProgeoMeasurement.objects.using(db).filter(device__location=location).order_by("pk")
+        ]
+        leak = [pairs[leak_sensor - 1] for pairs in series]
+        assert leak[0] < 0.25 * threshold  # dry before the leak
+        assert peak[0] * threshold <= max(leak) <= peak[1] * threshold
+        assert last[0] * threshold <= leak[-1] <= last[1] * threshold
+        assert all(value < 0.25 * threshold for pairs in series for index, value in enumerate(pairs)
+                   if index != leak_sensor - 1)
+
+        alarm = ProgeoAlarm.objects.using(db).get(measurement__device__location=location)
+        assert alarm.sensor_id == leak_sensor and alarm.status == status
+        assert (alarm.normalized_at is not None) == over
+        assert alarm.severity == severity
+
+    # LoRaWAN: uplinks every 20 minutes, some of them lost.
+    lorawan = ProgeoMeasurement.objects.using(db).filter(device__location=locations[6])
+    per_sensor = lorawan.count() / 4
+    assert 0.9 * 90 * 72 < per_sensor < 90 * 72
+    humidity = list(lorawan.values_list("humidity", flat=True))
+    assert min(humidity) >= 5 and max(humidity) < 100
 
 
 def test_demo_user_only_gets_demo_media(api_client, demo):
     _login(api_client, demo)
     plan = api_client.get("/v1/demo/").json()["locations"][0]["lageplans"][0]
 
-    assert api_client.get("/" + plan["url"] if not plan["url"].startswith("/") else plan["url"]).status_code == 200
+    image = api_client.get("/" + plan["url"] if not plan["url"].startswith("/") else plan["url"])
+    assert image.status_code == 200
+    # Reading it to the end closes the served file (the test client's wrapper
+    # does it without closing the test's database connection) - Windows can't
+    # delete the plan while it's open.
+    assert b"".join(image.streaming_content)[1:4] == b"PNG"
     assert api_client.get("/media/backup/x.zip").status_code == 403
     assert api_client.get("/media/uploads/lageplan/other.png").status_code == 403
     # The prefix checks see the normalized path.
@@ -267,15 +317,194 @@ def test_demo_link_works_while_an_old_demo_session_is_sent(api_client, demo):
     assert again.status_code == 200, again.content
 
 
-def test_demo_accounts_never_search_other_accounts(demo, monkeypatch):
-    """Single-access lookups query every project database with the split on."""
+def test_demo_access_never_searches_the_project_databases(demo, monkeypatch, settings):
+    """Single-access lookups query every project database with the split on -
+    also for the request's account (pk=1, AccountMiddleware) in the views."""
     from django.contrib.auth.models import User
 
     from progeo.helper import location_access
+    from progeo.v1.models import Account
 
     def fail(*args, **kwargs):
         raise AssertionError("single-access lookup for the demo user")
 
-    monkeypatch.setattr(location_access, "single_access_location_ids", fail)
+    settings.PROJECT_DB_SPLIT = True
+    monkeypatch.setattr(location_access, "_split_single_access_by_account", fail)
     user = User.objects.using("default").get(username="demo")
-    assert [account.pk for account in location_access.user_accounts(user)] == [demo.account_id]
+    request_account = Account.objects.using("default").get(pk=1)
+
+    # The demo account and the partner account (DEMO_PEOPLE) - nothing else.
+    partner = Account.objects.using("default").get(raw_hash="demo-partner-account")
+    assert [account.pk for account in location_access.user_accounts(user)] == [demo.account_id, partner.pk]
+    assert location_access.single_access_location_ids(user, request_account) == set()
+    assert location_access.location_q(user, request_account) is not None
+
+
+def test_openings_of_the_demo_link_are_counted(api_client, demo):
+    before = demo.check_counter
+    _login(api_client, demo)
+    _login(api_client, demo)
+    # An expired session logging in again by itself is no opening.
+    renewal = api_client.post("/v1/demo/login/", {"token": demo.raw_hash, "renewal": True}, format="json")
+    assert renewal.status_code == 200
+    api_client.post("/v1/demo/login/", {"token": "unknown"}, format="json")
+
+    demo.refresh_from_db(using="default")
+    assert demo.check_counter == before + 2
+    assert demo.raw_data["last_opened_at"]
+
+
+def test_rotating_keeps_the_old_link_disabled_with_its_usage(api_client, demo):
+    _login(api_client, demo)
+    call_command("demo_account", "--skip-checks", "--rotate-token", *HISTORY)
+
+    links = LimitedToken.objects.using("default").filter(purpose=DEMO_TOKEN_PURPOSE).order_by("created", "pk")
+    old, new = list(links)
+    assert old.pk == demo.pk and old.disabled and old.check_counter == demo.check_counter + 1
+    assert old.raw_data["disabled_at"]
+    assert not new.disabled and new.raw_hash != old.raw_hash
+
+    api_client.credentials()
+    assert api_client.post("/v1/demo/login/", {"token": old.raw_hash}, format="json").status_code == 400
+    _login(api_client, new)
+
+    # A plain re-run keeps the new link and never enables the old one again.
+    call_command("demo_account", "--skip-checks", *HISTORY)
+    old.refresh_from_db(using="default")
+    assert old.disabled
+    assert LimitedToken.objects.using("default").filter(purpose=DEMO_TOKEN_PURPOSE, disabled=False).get() == new
+
+
+def test_delete_disables_the_links_but_keeps_them(api_client, demo):
+    from django.contrib.auth.models import User
+
+    _login(api_client, demo)
+    call_command("demo_account", "--skip-checks", "--delete")
+
+    demo.refresh_from_db(using="default")
+    assert demo.disabled and demo.check_counter >= 1
+    assert not User.objects.using("default").get(username="demo").is_active
+    assert not ProgeoLocation.objects.using(settings.DEMO_DATABASE).filter(account=demo.account).exists()
+    api_client.credentials()
+    assert api_client.post("/v1/demo/login/", {"token": demo.raw_hash}, format="json").status_code == 400
+
+    # Setting the demo up again hands out a new link; the old one stays disabled.
+    call_command("demo_account", "--skip-checks", *HISTORY)
+    new = LimitedToken.objects.using("default").get(purpose=DEMO_TOKEN_PURPOSE, disabled=False)
+    assert new.pk != demo.pk
+    _login(api_client, new)
+
+
+def test_links_lists_every_demo_link_with_its_usage(demo):
+    from io import StringIO
+
+    call_command("demo_account", "--skip-checks", "--rotate-token", *HISTORY)
+    out = StringIO()
+    call_command("demo_account", "--skip-checks", "--links", stdout=out)
+    lines = out.getvalue().splitlines()
+    assert len(lines) == 2
+    assert "active" in lines[0] and "disabled" in lines[1]
+    assert demo.raw_hash in lines[1]
+
+
+def test_new_link_adds_a_second_active_link(api_client, demo):
+    from io import StringIO
+
+    from django.core.management.base import CommandError
+
+    out = StringIO()
+    call_command("demo_account", "--skip-checks", "--new-link", "--label", "Messe Hannover", stdout=out)
+    links = LimitedToken.objects.using("default").filter(purpose=DEMO_TOKEN_PURPOSE, disabled=False)
+    assert links.count() == 2
+    second = links.exclude(pk=demo.pk).get()
+    assert second.raw_data["label"] == "Messe Hannover"
+    assert second.raw_hash in out.getvalue()
+
+    # Both work and count separately.
+    _login(api_client, demo)
+    api_client.credentials()
+    _login(api_client, second)
+    second.refresh_from_db(using="default")
+    assert second.check_counter == 1
+
+    # A plain re-run keeps every active link.
+    call_command("demo_account", "--skip-checks", *HISTORY)
+    assert LimitedToken.objects.using("default").filter(purpose=DEMO_TOKEN_PURPOSE, disabled=False).count() == 2
+
+    with pytest.raises(CommandError):
+        call_command("demo_account", "--skip-checks", "--label", "x")
+
+
+def test_demo_people_give_the_rechte_tab_something_to_show(api_client, demo):
+    from django.contrib.auth.models import User
+
+    _login(api_client, demo)
+    smartex = ProgeoLocation.objects.using(settings.DEMO_DATABASE).get(account=demo.account, project_type=1)
+    access = api_client.get(f"/v1/location/{smartex.pk}/access/").json()
+
+    by_access = {}
+    for member in access["members"]:
+        by_access.setdefault(member["access"], set()).add(member["username"])
+    assert {"demo.erika.mustermann", "demo.max.mustermann"} <= by_access["account"]
+    assert by_access["single"] == {"demo.jonas.weber"}  # only smartex
+    assert "staff" not in by_access
+    # Users of the partner account can be granted access.
+    assert {candidate["username"] for candidate in access["candidates"]} == {
+        "demo.laura.fischer", "demo.paul.wagner", "demo.mia.becker", "demo.felix.schulz"
+    }
+
+    # Nobody can log in as them.
+    people = User.objects.using("default").filter(username__startswith="demo.")
+    assert people.count() == 9
+    assert not any(person.has_usable_password() or person.is_staff for person in people)
+
+
+@pytest.mark.parametrize("use_tz", [True, False])
+def test_weather_works_with_and_without_time_zones(demo_db, settings, use_tz):
+    """The production settings run with USE_TZ = False (naive datetimes),
+    the tests with True - the climate generation must take both."""
+    import datetime
+    import random
+
+    from django.utils import timezone
+
+    from progeo.management.commands.demo_account import _Room, _Weather
+
+    settings.USE_TZ = use_tz
+    now = timezone.now().replace(minute=0, second=0, microsecond=0)
+    start = now - datetime.timedelta(hours=48)
+    weather = _Weather(start, 48, random.Random(1))
+    room = _Room("Keller", random.Random(1))
+    conditions = weather.at(start + datetime.timedelta(hours=30))
+    temperature, humidity = room.step(start, conditions, 1 / 3)
+    assert 0 <= conditions["hour"] < 24
+    assert 5 < temperature < 25 and 0 < humidity <= 100
+
+
+def test_demo_user_may_export_the_heatmap_video(api_client, demo, monkeypatch, tmp_path):
+    import os
+
+    from progeo.helper import heatmap_video
+    from progeo.tests.test_heatmap_video import _FakeTask, _frames_zip, _png, _upload
+    from progeo.v1.viewsets import locations_viewset
+
+    jobs = heatmap_video.JOBS_DIR
+    monkeypatch.setattr(heatmap_video, "JOBS_DIR", str(tmp_path / "heatmap_videos"))
+    monkeypatch.setattr(locations_viewset.render_heatmap_video, "delay", lambda *args: _FakeTask())
+    _login(api_client, demo)
+
+    response = api_client.post(
+        "/v1/location/heatmap_video/",
+        {"frames": _upload(_frames_zip({"frames/frame_0001.png": _png(4, 4, 1)}))},
+        format="multipart",
+    )
+    assert response.status_code == 200, response.content
+    assert response.json()["task_id"] == "task-123"
+
+    # The result ZIP may be downloaded (missing here: 404), other export files not.
+    monkeypatch.setattr(heatmap_video, "JOBS_DIR", jobs)
+    prefix = os.path.relpath(jobs, heatmap_video.MEDIA_ROOT).replace(os.sep, "/")
+    job = "b" * 32
+    assert api_client.get(f"/media/{prefix}/{job}/sensor-heatmap.zip").status_code == 404
+    assert api_client.get(f"/media/{prefix}/{job}/frames.zip").status_code == 403
+    assert api_client.get(f"/media/{prefix}/other.zip").status_code == 403

@@ -450,22 +450,6 @@ const LocationsOverview = () => {
               Delete
             </Button>
           )}
-          <Button
-            size="sm"
-            variant="outline-warning"
-            style={{
-              display: !alarmSummary[String(row.id)]?.count
-                ? 'none'
-                : 'inline-block',
-            }}
-            title="View location alarms"
-            onClick={(event) => {
-              event.stopPropagation();
-              navigate(`/location/${row.id}/alarms`);
-            }}
-          >
-            Alarms
-          </Button>
         </div>
       ),
     },

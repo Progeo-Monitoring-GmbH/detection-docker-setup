@@ -555,14 +555,16 @@ const SensorHeatmap2D = ({
     cursor: [number, number];
   } | null>(null);
 
-  /** Pixel position (relative to the plot wrapper) of plot coordinates. */
+  /** Pixel position (relative to the plot wrapper) of plot coordinates.
+   * Each axis starts at its own `_offset`: with the plan's aspect ratio kept
+   * (scaleanchor), plotly shrinks and centres the shorter axis inside the
+   * plot area, so the margin (`_size.l` / `_size.t`) is not its start. */
   const plotToPixel = (x: number, y: number): [number, number] | null => {
     const gd = plotWrapRef.current?.querySelector('.js-plotly-plot') as
       | (HTMLElement & {
           _fullLayout?: {
-            _size: { l: number; t: number };
-            xaxis: { l2p: (value: number) => number };
-            yaxis: { l2p: (value: number) => number };
+            xaxis: { _offset: number; l2p: (value: number) => number };
+            yaxis: { _offset: number; l2p: (value: number) => number };
           };
         })
       | null;
@@ -571,8 +573,8 @@ const SensorHeatmap2D = ({
       return null;
     }
     return [
-      fullLayout._size.l + fullLayout.xaxis.l2p(x),
-      fullLayout._size.t + fullLayout.yaxis.l2p(y),
+      fullLayout.xaxis._offset + fullLayout.xaxis.l2p(x),
+      fullLayout.yaxis._offset + fullLayout.yaxis.l2p(y),
     ];
   };
 

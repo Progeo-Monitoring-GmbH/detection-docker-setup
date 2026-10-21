@@ -163,3 +163,24 @@ def test_controller_account_requires_configuration(settings, monkeypatch):
     settings.DJANGO_DATABASES = []
     with pytest.raises(Exception, match="DJANGO_DATABASES is empty"):
         _get_controller_account()
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_editing_a_location_never_changes_its_project_id(api_client):
+    """The project id names the location's project database - the edit
+    modal shows it read-only and the update ignores it."""
+    from progeo.tests import factories as f
+
+    account = f.make_account()
+    location = f.make_location(account, project_id=4711, name="Halle")
+    user = f.make_user(perms=("module_locations_enabled", "module_locations_edit"), accounts=[account])
+    api_client.force_authenticate(user)
+
+    response = api_client.patch(
+        f"/v1/location/{location.pk}/", {"name": "Halle Nord", "project_id": 9999}, format="json"
+    )
+
+    assert response.status_code == 200, response.content
+    location.refresh_from_db(using="default")
+    assert location.name == "Halle Nord"
+    assert location.project_id == 4711
