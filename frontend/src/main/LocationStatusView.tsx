@@ -118,6 +118,8 @@ const LocationStatusView = ({
   const { t } = useTranslation();
 
   const [heatmap, setHeatmap] = useState<SensorHeatmapResponse | null>(null);
+  // Timestamp the heatmap slider shows - the sensor table follows it.
+  const [heatmapIndex, setHeatmapIndex] = useState<number | null>(null);
   const [heatmapLoading, setHeatmapLoading] = useState(true);
   const [heatmapDenied, setHeatmapDenied] = useState(false);
 
@@ -427,39 +429,59 @@ const LocationStatusView = ({
   // its own threshold override), otherwise straight from the heatmap's raw
   // per-index series (a Lageplan with no measure points yet still has
   // devices reporting - #index is the best label available).
-  const sensorRows = useMemo<SensorListRow[]>(() => {
-    const latestOf = (series: Array<number | null> | undefined) => {
-      if (!Array.isArray(series)) {
-        return null;
-      }
-      for (let index = series.length - 1; index >= 0; index -= 1) {
-        const value = series[index];
-        if (value != null && Number.isFinite(Number(value))) {
-          return Number(value);
+  // Per sensor once per loaded heatmap: the newest and the highest value -
+  // moving the slider then only looks values up, nothing is fetched again.
+  const sensorStats = useMemo(() => {
+    const stats = new Map<string, { latest: number | null; max: number | null }>();
+    Object.entries(heatmap?.data ?? {}).forEach(([key, series]) => {
+      let latest: number | null = null;
+      let max: number | null = null;
+      (Array.isArray(series) ? series : []).forEach((raw) => {
+        const value = raw == null ? NaN : Number(raw);
+        if (Number.isFinite(value)) {
+          latest = value;
+          max = max == null || value > max ? value : max;
         }
+      });
+      stats.set(key, { latest, max });
+    });
+    return stats;
+  }, [heatmap]);
+
+  const sensorRows = useMemo<SensorListRow[]>(() => {
+    // The slider's timestamp (smartex heatmap), else the newest value.
+    const valueOf = (key: string, fallback: number | null) => {
+      if (heatmapIndex != null) {
+        const raw = heatmap?.data?.[key]?.[heatmapIndex];
+        const value = raw == null ? NaN : Number(raw);
+        return Number.isFinite(value) ? value : null;
       }
-      return null;
+      return fallback ?? sensorStats.get(key)?.latest ?? null;
     };
 
     if (hasMeasurePoints) {
-      return sensorPoints.map((point) => ({
-        key: String(point.pos),
-        label: point.name || `#${point.pos}`,
-        value: point.last_value ?? latestOf(heatmap?.data?.[String(point.pos)]),
-        threshold: point.threshold ?? thresholdValue,
-      }));
+      return sensorPoints.map((point) => {
+        const key = String(point.pos);
+        return {
+          key,
+          label: point.name || `#${point.pos}`,
+          value: valueOf(key, point.last_value ?? null),
+          max: sensorStats.get(key)?.max ?? null,
+          threshold: point.threshold ?? thresholdValue,
+        };
+      });
     }
 
-    const data = heatmap?.data ?? {};
-    return Object.keys(data)
+    return [...sensorStats.keys()]
       .sort((a, b) => Number(a) - Number(b))
       .map((key) => ({
         key,
         label: `#${key}`,
-        value: latestOf(data[key]),
+        value: valueOf(key, null),
+        max: sensorStats.get(key)?.max ?? null,
         threshold: thresholdValue,
       }));
-  }, [hasMeasurePoints, sensorPoints, heatmap, thresholdValue]);
+  }, [hasMeasurePoints, sensorPoints, heatmap, heatmapIndex, sensorStats, thresholdValue]);
 
   const objektStatusValue = !worstSeverity
     ? t('status_kpi_ok')
@@ -742,6 +764,7 @@ const LocationStatusView = ({
                           response={heatmap}
                           height={480}
                           hideChrome
+                          onTimestampChange={setHeatmapIndex}
                         />
                       </div>
 

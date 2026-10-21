@@ -1,18 +1,12 @@
 import asyncio
 import os
 import sys
-import time
 
 import pytest
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.core.management import call_command
-
-try:
-    from playwright.sync_api import Locator
-except ModuleNotFoundError:
-    Locator = None
 from rest_framework.test import APIClient
 
 from progeo.helper.basics import elog, ilog
@@ -177,44 +171,6 @@ def admin_user(django_user_model):
 def admin_client(client, admin_user):
     client.force_login(admin_user)   # no password hashing/login flow needed
     return client
-
-
-# Fixture to add delay automatically if 'dev' mark is present
-@pytest.fixture(scope="function", autouse=True)
-def wrap_playwright_actions(request):
-    if Locator is None:
-        yield
-        return
-
-    # Get the helper function for adding delay
-    delay_if_dev = add_delay_if_dev(request)
-
-    original_click = Locator.click
-    original_fill = Locator.fill
-
-    # Apply the delay wrapper to these actions
-    Locator.click = delay_if_dev(original_click)
-    Locator.fill = delay_if_dev(original_fill)
-
-    # Yield to allow the test to run
-    yield
-
-    # Restore the original methods after the test is done
-    Locator.click = original_click
-    Locator.fill = original_fill
-
-
-def add_delay_if_dev(request):
-    # Check if the 'dev' marker is present
-    if 'dev' in request.keywords:
-        def delayed_action(action_func):
-            def wrapper(*args, **kwargs):
-                result = action_func(*args, **kwargs)
-                time.sleep(1)  # Add 1000ms delay after the action
-                return result
-            return wrapper
-        return delayed_action
-    return lambda x: x  # Return identity function if no 'dev' marker
 
 
 def pytest_sessionfinish(session, exitstatus):

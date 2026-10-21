@@ -1,11 +1,38 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Card, Form, Spinner } from 'react-bootstrap';
-import { Film } from 'react-bootstrap-icons';
-import Plot from 'react-plotly.js';
+import { Button, ButtonGroup, Card, Form, Spinner } from 'react-bootstrap';
+import { ArrowCounterclockwise, Film, ZoomIn, ZoomOut } from 'react-bootstrap-icons';
 import { plotTheme } from '../../styles/plotTheme';
 import { formatTimestamp } from './heatmapFrames';
 import { buildWeightedGrid, type WeightedPoint } from './heatmapGrid';
+import {
+  containsPoint,
+  fitView,
+  heatAt,
+  heatColorTable,
+  heatPixels,
+  heatRect,
+  MAX_ZOOM,
+  MIN_ZOOM,
+  nearestPoint,
+  panBy,
+  plotToWorld,
+  toScreen,
+  toWorld,
+  type View,
+  WORLD_FALLBACK,
+  type WorldRect,
+  type WorldSize,
+  zoomAt,
+} from './heatmapCanvas';
 import {
   formatMeters,
   isCalibrated,
@@ -13,7 +40,7 @@ import {
   pointMeters,
 } from './planMeters';
 import SensorTooltip from './SensorTooltip';
-import {
+import type {
   SensorHeatmapLocation,
   SensorHeatmapResponse,
 } from './SensorHeatmap3D';
@@ -32,6 +59,8 @@ type SensorHeatmap2DProps = {
   alignment?: SensorHeatmapLocation | null;
   /** Skip the component's own Card chrome so it can sit inside another panel wrapper. */
   hideChrome?: boolean;
+  /** Called with the timestamp index the slider shows (also while exporting). */
+  onTimestampChange?: (index: number) => void;
 };
 
 type ImageSize = {
@@ -45,6 +74,14 @@ type HoveredSensor = {
   value: number;
   cursorX: number;
   cursorY: number;
+};
+
+/** What the cursor points at outside a sensor: meters + heat, and the
+ * reference point's guides (screen pixels). */
+type CursorInfo = {
+  meters: [number, number] | null;
+  heat: number | null;
+  cursor: [number, number];
 };
 
 const clamp = (value: number, min: number, max: number) =>
@@ -98,25 +135,67 @@ const HEAT_FULL_MULTIPLIER = 3;
  */
 const HEAT_BORDER_SIGMAS = 3;
 
+/** Opacity of the heat field over the plan. */
+const HEAT_OPACITY = 0.7;
+/** Space kept free on the right of the initial view for the colour scale. */
+const COLORBAR_SPACE = 58;
+/** Hover radius around a sensor marker (screen pixels). */
+const SENSOR_HIT_RADIUS = 11;
+const ZOOM_STEP = 1.4;
+const MARKER_RADIUS = 4.5;
+/** Marker of a sensor reading above its threshold. */
+const OVER_THRESHOLD_COLOR = '#dc2626';
+
+type Chart = {
+  world: WorldSize;
+  grid: Float64Array[];
+  xAxis: number[];
+  yAxis: number[];
+  heatRect: WorldRect;
+  /** The initial view: sensors, their heat border and the reference point. */
+  bounds: WorldRect;
+  sensors: Array<{
+    pos: number;
+    wx: number;
+    wy: number;
+    nx: number | null;
+    ny: number | null;
+    value: number;
+    /** The sensor's own threshold, else the location's; null without one. */
+    threshold: number | null;
+  }>;
+  reference: [number, number] | null;
+};
+
+/**
+ * Sensor heatmap on the Lageplan as a canvas: the plan image in the
+ * background, the Gaussian heat field (buildWeightedGrid) on top, sensor
+ * markers, the reference point and a colour scale. Zoom with the mouse wheel
+ * (around the cursor) or the buttons, drag to move, pinch on touch devices,
+ * double-click to reset. Hovering a sensor shows its tooltip, anywhere else
+ * on the plan the position in meters (with the dotted guides from the
+ * reference point) and the heat there. The video export draws its frames
+ * from the same scene (renderFrame).
+ */
 const SensorHeatmap2D = ({
   response,
   height = 800,
   resolution = 180,
   alignment = null,
   hideChrome = false,
+  onTimestampChange,
 }: SensorHeatmap2DProps) => {
   const { t } = useTranslation();
   const [timestampIndex, setTimestampIndex] = useState(0);
   const [sigma, setSigma] = useState<'auto' | number>('auto');
   const [imageSize, setImageSize] = useState<ImageSize | null>(null);
-  // The lageplan as a data URL, see the loading effect below.
-  const [lageplanSrc, setLageplanSrc] = useState<string | null>(null);
-  const [hoveredSensor, setHoveredSensor] = useState<HoveredSensor | null>(
-    null,
-  );
+  // The loaded lageplan, see the loading effect below.
+  const [lageplanImage, setLageplanImage] = useState<HTMLImageElement | null>(null);
+  const [hoveredSensor, setHoveredSensor] = useState<HoveredSensor | null>(null);
+  const [cursorInfo, setCursorInfo] = useState<CursorInfo | null>(null);
 
-  const plotRef = useRef<HTMLDivElement | null>(null);
-  const plotWrapRef = useRef<HTMLDivElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
 
   const timestamps = useMemo(
     () => (Array.isArray(response?.timestamps) ? response.timestamps : []),
@@ -128,6 +207,10 @@ const SensorHeatmap2D = ({
       Math.max(0, Math.min(current, Math.max(timestamps.length - 1, 0))),
     );
   }, [timestamps.length]);
+
+  useEffect(() => {
+    onTimestampChange?.(timestampIndex);
+  }, [onTimestampChange, timestampIndex]);
 
   /** Alignment from the view (with_sliders mode) takes precedence over the list. */
   const baseLocation = useMemo(
@@ -184,11 +267,9 @@ const SensorHeatmap2D = ({
   authRef.current = auth;
 
   // Load the lageplan once per plan - with the Authorization header (media
-  // is authenticated) - and hand plotly a data URL. Given the backend URL,
-  // plotly would fetch it itself without that header, and again for every
-  // Plotly.toImage of the video export.
+  // is authenticated) - and keep the decoded image for drawing.
   useEffect(() => {
-    setLageplanSrc(null);
+    setLageplanImage(null);
     setImageSize(null);
     if (!lageplanUrl) {
       return undefined;
@@ -204,7 +285,6 @@ const SensorHeatmap2D = ({
           if (cancelled || typeof reader.result !== 'string') {
             return;
           }
-          const dataUrl = reader.result;
           const image = new Image();
           image.onload = () => {
             if (!cancelled) {
@@ -212,10 +292,10 @@ const SensorHeatmap2D = ({
                 width: image.naturalWidth,
                 height: image.naturalHeight,
               });
-              setLageplanSrc(dataUrl);
+              setLageplanImage(image);
             }
           };
-          image.src = dataUrl;
+          image.src = reader.result;
         };
         reader.readAsDataURL(response.data as Blob);
       },
@@ -244,8 +324,8 @@ const SensorHeatmap2D = ({
       .map((point) => ({
         pos: point.pos,
         // Raw normalized position, for the position in meters.
-        nx: Number(point.x),
-        ny: Number(point.y),
+        nx: Number(point.x) as number | null,
+        ny: Number(point.y) as number | null,
         x: Number(point.x),
         // ny = 0 is the top of the plan (as in the alignment wizard); a
         // vertically flipped plan uses ny as-is.
@@ -253,6 +333,9 @@ const SensorHeatmap2D = ({
         series: Array.isArray(data[String(point.pos)])
           ? data[String(point.pos)]
           : [],
+        threshold: point.threshold != null && Number.isFinite(Number(point.threshold))
+          ? Number(point.threshold)
+          : null,
       }))
       .filter((entry) => Number.isFinite(entry.x) && Number.isFinite(entry.y));
 
@@ -273,6 +356,7 @@ const SensorHeatmap2D = ({
       x: (index % columns) / Math.max(columns - 1, 1),
       y: 1 - Math.floor(index / columns) / Math.max(rows - 1, 1),
       series: data[key] || [],
+      threshold: null as number | null,
     }));
   }, [response, location]);
 
@@ -298,7 +382,7 @@ const SensorHeatmap2D = ({
     });
   }, [sensors, timestamps.length, timestampIndex]);
 
-  const chart = useMemo(() => {
+  const chart = useMemo<Chart | null>(() => {
     if (!timestamps.length || !sensors.length) {
       return null;
     }
@@ -316,11 +400,10 @@ const SensorHeatmap2D = ({
         : null;
 
     // Lageplan alignment: the alignment wizard maps normalized coordinates to
-    // canvas pixels via  pixel = offset + coord * drawnImageSize * scale. The plot
-    // uses a normalized-to-image space where the image always spans
-    // [0, 1] x [0, 1] and the sensor coordinates are scaled up by
-    // scale_x/scale_y (plus the offsets) so the points land exactly where the
-    // wizard placed them on the plan.
+    // canvas pixels via  pixel = offset + coord * drawnImageSize * scale. The
+    // plot space spans the image as [0, 1] x [0, 1]; the sensor coordinates
+    // are scaled by scale_x/scale_y (plus the offsets) so the points land
+    // exactly where the wizard placed them on the plan.
     const rawScaleX = Number(location?.scale_x ?? 1);
     const rawScaleY = Number(location?.scale_y ?? 1);
     const rawOffsetX = Number(location?.offset_x ?? 0);
@@ -334,7 +417,7 @@ const SensorHeatmap2D = ({
     // where the plan is drawn at alignmentBaseScale - so they are normalized
     // by the image size at that scale. They only apply once the image has
     // actually loaded, and degrade gracefully before that.
-    const sizeKnown = Boolean(lageplanSrc && imageSize);
+    const sizeKnown = Boolean(lageplanImage && imageSize);
     const imgWidth = imageSize?.width ?? 1;
     const imgHeight = imageSize?.height ?? 1;
     const wizardScale = sizeKnown ? alignmentBaseScale(imgWidth, imgHeight) : 1;
@@ -348,10 +431,15 @@ const SensorHeatmap2D = ({
     const toPlotY = (yUser: number) =>
       yUser * scaleY + (1 - scaleY) - offsetNormY;
 
-    // The heat field is computed in normalized space (isotropic kernels);
-    // the raster is then stretched onto the scaled plot domain via the trace
-    // axes, so heat extends exactly as far as the scaled sensor positions.
-    const { axis, grid, max } = buildWeightedGrid(
+    // World = pixels of the plan image (without one: a stand-in square).
+    const world: WorldSize = sizeKnown
+      ? { width: imgWidth, height: imgHeight }
+      : { width: WORLD_FALLBACK, height: WORLD_FALLBACK };
+
+    // The heat field is computed in normalized space (isotropic kernels) and
+    // stretched onto the scaled plot domain, so heat extends exactly as far
+    // as the scaled sensor positions.
+    const { axis, grid } = buildWeightedGrid(
       weightedPoints,
       resolution,
       usedSigma,
@@ -360,102 +448,50 @@ const SensorHeatmap2D = ({
     );
     const xAxis = axis.map((value) => toPlotX(value));
     const yAxis = axis.map((value) => toPlotY(value));
+    const field = heatRect(xAxis, yAxis, world);
 
-    // The view is cropped to the sensor points and their heat border (plus a
-    // small margin) - the rest of the lageplan is mostly empty paper.
-    const margin = 0.02;
-    const plotXs = sensors.map((sensor) => toPlotX(sensor.x));
-    const plotYs = sensors.map((sensor) => toPlotY(sensor.y));
-    const heatXs = [xAxis[0], xAxis[xAxis.length - 1]];
-    const heatYs = [yAxis[0], yAxis[yAxis.length - 1]];
-
-    // Reference point of the positions in meters (image pixels -> plot: x
-    // is the fraction of the width, y runs up from the image's bottom edge).
-    // It is kept inside the view.
-    const referencePlot: [number, number] | null =
-      sizeKnown && isCalibrated(location)
-        ? [
-            (location?.reference_x as number) / imgWidth,
-            1 - (location?.reference_y as number) / imgHeight,
-          ]
-        : null;
-    const refXs = referencePlot ? [referencePlot[0]] : [];
-    const refYs = referencePlot ? [referencePlot[1]] : [];
-
-    const xMin = Math.min(...plotXs, ...heatXs, ...refXs) - margin;
-    const xMax = Math.max(...plotXs, ...heatXs, ...refXs) + margin;
-    const yMin = Math.min(...plotYs, ...heatYs, ...refYs) - margin;
-    const yMax = Math.max(...plotYs, ...heatYs, ...refYs) + margin;
-
-    // Values shown in the sensor tooltip, aligned with the scatter points.
-    const sensorValues = sensors.map((sensor, index) => {
-      const point = weightedPoints[index];
-      return [sensor.pos, sensor.x, sensor.y, point ? point.weight : 0];
+    const locationThreshold = Number.isFinite(rawThreshold) && rawThreshold > 0 ? rawThreshold : null;
+    const placed = sensors.map((sensor, index) => {
+      const [wx, wy] = plotToWorld(toPlotX(sensor.x), toPlotY(sensor.y), world);
+      return {
+        pos: sensor.pos,
+        wx,
+        wy,
+        nx: sensor.nx,
+        ny: sensor.ny,
+        value: weightedPoints[index]?.weight ?? 0,
+        threshold: sensor.threshold ?? locationThreshold,
+      };
     });
 
+    // Reference point of the positions in meters (image pixels).
+    const reference: [number, number] | null =
+      sizeKnown && isCalibrated(location)
+        ? [location?.reference_x as number, location?.reference_y as number]
+        : null;
+
+    // The initial view is cropped to the sensors, their heat border and the
+    // reference point (plus a small margin) - the rest of the plan is mostly
+    // empty paper.
+    const xs = [field.left, field.right, ...placed.map((s) => s.wx), ...(reference ? [reference[0]] : [])];
+    const ys = [field.top, field.bottom, ...placed.map((s) => s.wy), ...(reference ? [reference[1]] : [])];
+    const margin = 0.02 * Math.max(world.width, world.height);
+    const bounds: WorldRect = {
+      left: Math.min(...xs) - margin,
+      right: Math.max(...xs) + margin,
+      top: Math.min(...ys) - margin,
+      bottom: Math.max(...ys) + margin,
+    };
+
     return {
+      world,
+      grid,
       xAxis,
       yAxis,
-      grid,
-      max,
-      xRange: [xMin, xMax],
-      yRange: [yMin, yMax],
-      // Display the lageplan at its true aspect ratio.
-      scaleRatio: sizeKnown && imgWidth > 0 ? imgHeight / imgWidth : 1,
-      image: lageplanSrc
-        ? {
-            source: lageplanSrc,
-            xref: 'x',
-            yref: 'y',
-            x: 0,
-            y: 1,
-            sizex: 1,
-            sizey: 1,
-            xanchor: 'left',
-            yanchor: 'top',
-            sizing: 'stretch',
-            layer: 'below',
-            opacity: 1,
-          }
-        : null,
-      sensorValues,
-      referencePlot,
-      referenceTrace: referencePlot
-        ? {
-            type: 'scatter',
-            mode: 'markers',
-            x: [referencePlot[0]],
-            y: [referencePlot[1]],
-            marker: {
-              symbol: 'circle-cross-open',
-              size: 16,
-              color: plotTheme.green,
-              line: { width: 1.5 },
-            },
-            hoverinfo: 'skip',
-            showlegend: false,
-            name: 'Reference point',
-          }
-        : null,
-      sensorScatter: {
-        type: 'scatter',
-        mode: 'markers+text',
-        x: plotXs,
-        y: plotYs,
-        text: sensors.map((sensor) => String(sensor.pos)),
-        textposition: 'top center',
-        textfont: { color: '#ffffff', size: 10 },
-        marker: {
-          color: plotTheme.brandBlue,
-          size: 9,
-          line: { color: '#ffffff', width: 1 },
-        },
-        hovertemplate: 'Sensor %{text}<extra></extra>',
-        hoverinfo: 'none',
-        name: 'Sensors',
-        showlegend: false,
-        customdata: sensorValues,
-      },
+      heatRect: field,
+      bounds,
+      sensors: placed,
+      reference,
     };
   }, [
     sensors,
@@ -464,9 +500,331 @@ const SensorHeatmap2D = ({
     sigma,
     resolution,
     location,
-    lageplanSrc,
+    lageplanImage,
     imageSize,
   ]);
+
+  // The heat field as an image (one pixel per grid cell), smoothed when drawn.
+  const colorTable = useMemo(() => heatColorTable(), []);
+  const heatCanvas = useMemo(() => {
+    if (!chart || typeof document === 'undefined') {
+      return null;
+    }
+    const size = chart.grid.length;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    if (!ctx || !size) {
+      return null;
+    }
+    const image = ctx.createImageData(size, size);
+    image.data.set(heatPixels(chart.grid, colorTable));
+    ctx.putImageData(image, 0, 0);
+    return canvas;
+  }, [chart, colorTable]);
+
+  // ---------------------------------------------------------------- viewport
+
+  const [wrapSize, setWrapSize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) {
+      return undefined;
+    }
+    const measure = () => {
+      setWrapSize({ width: wrap.clientWidth, height: wrap.clientHeight });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(wrap);
+    return () => observer.disconnect();
+  }, [chart != null]);
+
+  // Fit the canvas height to the content: the view keeps the plan's aspect
+  // ratio, so a fixed height would leave empty bands above/below a wide
+  // plan. `height` is the upper bound.
+  const canvasHeight = useMemo(() => {
+    if (!chart || wrapSize.width <= 0) {
+      return height;
+    }
+    const spanX = chart.bounds.right - chart.bounds.left;
+    const spanY = chart.bounds.bottom - chart.bounds.top;
+    const usable = wrapSize.width - COLORBAR_SPACE;
+    if (spanX <= 0 || spanY <= 0 || usable <= 0) {
+      return height;
+    }
+    return Math.round(clamp((usable * spanY) / spanX, 160, height));
+  }, [chart, wrapSize.width, height]);
+
+  const canvasWidth = wrapSize.width;
+  const fitted = useMemo(
+    () =>
+      chart && canvasWidth > 0
+        ? fitView(chart.bounds, canvasWidth, canvasHeight, COLORBAR_SPACE)
+        : null,
+    [chart?.bounds.left, chart?.bounds.top, chart?.bounds.right, chart?.bounds.bottom, canvasWidth, canvasHeight],
+  );
+
+  // The user's zoom/pan; null = the fitted view. A new plan, other sensors or
+  // a resize while fitted start from the fitted view again.
+  const [userView, setUserView] = useState<View | null>(null);
+  const boundsKey = chart
+    ? `${chart.bounds.left}:${chart.bounds.top}:${chart.bounds.right}:${chart.bounds.bottom}`
+    : '';
+  useEffect(() => {
+    setUserView(null);
+  }, [boundsKey]);
+
+  const view = userView ?? fitted;
+  const minScale = (fitted?.scale ?? 1) * MIN_ZOOM;
+  const maxScale = (fitted?.scale ?? 1) * MAX_ZOOM;
+
+  const zoomBy = useCallback(
+    (factor: number, sx?: number, sy?: number) => {
+      if (!view) {
+        return;
+      }
+      setUserView(
+        zoomAt(view, factor, sx ?? canvasWidth / 2, sy ?? canvasHeight / 2, minScale, maxScale),
+      );
+    },
+    [view, canvasWidth, canvasHeight, minScale, maxScale],
+  );
+
+  // ---------------------------------------------------------------- drawing
+
+  const threshold = Number.isFinite(Number(location?.alarm_threshold))
+    ? Number(location?.alarm_threshold)
+    : null;
+
+  /** Draws the whole scene for `drawView` onto ctx (css pixels x dpr). */
+  const drawScene = useCallback(
+    (
+      ctx: CanvasRenderingContext2D,
+      width: number,
+      height: number,
+      dpr: number,
+      drawView: View,
+      overlay: { hovered: number | null; cursor: [number, number] | null },
+      background: string | null,
+    ) => {
+      if (!chart) {
+        return;
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      if (background) {
+        ctx.fillStyle = background;
+        ctx.fillRect(0, 0, width, height);
+      } else {
+        ctx.clearRect(0, 0, width, height);
+      }
+
+      // World layer: plan + heat field, zoomed and moved.
+      ctx.save();
+      ctx.setTransform(
+        dpr * drawView.scale,
+        0,
+        0,
+        dpr * drawView.scale,
+        dpr * drawView.tx,
+        dpr * drawView.ty,
+      );
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      if (lageplanImage) {
+        ctx.drawImage(lageplanImage, 0, 0, chart.world.width, chart.world.height);
+      }
+      if (heatCanvas) {
+        const field = chart.heatRect;
+        ctx.globalAlpha = HEAT_OPACITY;
+        ctx.drawImage(heatCanvas, field.left, field.top, field.right - field.left, field.bottom - field.top);
+        ctx.globalAlpha = 1;
+      }
+      ctx.restore();
+
+      // Screen layer: markers keep their size at any zoom.
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const reference = chart.reference ? toScreen(drawView, chart.reference[0], chart.reference[1]) : null;
+
+      if (reference && overlay.cursor) {
+        const [cx, cy] = overlay.cursor;
+        ctx.save();
+        ctx.strokeStyle = plotTheme.green;
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+        ctx.setLineDash([2, 4]);
+        ctx.beginPath();
+        ctx.moveTo(reference[0], reference[1]);
+        ctx.lineTo(cx, reference[1]);
+        ctx.lineTo(cx, cy);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      if (reference) {
+        ctx.save();
+        ctx.strokeStyle = plotTheme.green;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(reference[0], reference[1], 8, 0, Math.PI * 2);
+        ctx.moveTo(reference[0] - 8, reference[1]);
+        ctx.lineTo(reference[0] + 8, reference[1]);
+        ctx.moveTo(reference[0], reference[1] - 8);
+        ctx.lineTo(reference[0], reference[1] + 8);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      ctx.save();
+      ctx.font = '600 10px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      chart.sensors.forEach((sensor, index) => {
+        const [sx, sy] = toScreen(drawView, sensor.wx, sensor.wy);
+        if (sx < -20 || sy < -20 || sx > width + 20 || sy > height + 20) {
+          return;
+        }
+        if (overlay.hovered === index) {
+          ctx.beginPath();
+          ctx.arc(sx, sy, MARKER_RADIUS + 4, 0, Math.PI * 2);
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+        const over = sensor.threshold != null && sensor.value > sensor.threshold;
+        ctx.beginPath();
+        ctx.arc(sx, sy, over ? MARKER_RADIUS + 1 : MARKER_RADIUS, 0, Math.PI * 2);
+        ctx.fillStyle = over ? OVER_THRESHOLD_COLOR : plotTheme.brandBlue;
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        // Readable on the plan and on the heat: white with a dark outline.
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(9, 75, 129, 0.85)';
+        ctx.strokeText(String(sensor.pos), sx, sy - MARKER_RADIUS - 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(String(sensor.pos), sx, sy - MARKER_RADIUS - 2);
+      });
+      ctx.restore();
+
+      // Colour scale on the right (part of every frame of the video export).
+      const barTop = 22;
+      const barBottom = Math.max(barTop + 40, Math.min(height - 12, barTop + 220));
+      const barX = width - 44;
+      ctx.save();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.82)';
+      ctx.fillRect(barX - 6, barTop - 16, 50, barBottom - barTop + 26);
+      const gradient = ctx.createLinearGradient(0, barBottom, 0, barTop);
+      for (let index = 0; index <= 10; index += 1) {
+        const color = Math.round((index / 10) * 255) * 3;
+        gradient.addColorStop(
+          index / 10,
+          `rgb(${colorTable[color]}, ${colorTable[color + 1]}, ${colorTable[color + 2]})`,
+        );
+      }
+      ctx.fillStyle = gradient;
+      ctx.fillRect(barX, barTop, 10, barBottom - barTop);
+      ctx.fillStyle = plotTheme.brandBlue;
+      ctx.font = '600 10px system-ui, sans-serif';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(t('heatmap_heat'), barX - 2, barTop - 5);
+      ctx.font = '10px system-ui, sans-serif';
+      ctx.textBaseline = 'middle';
+      for (let tick = 0; tick <= 5; tick += 1) {
+        const value = tick / 5;
+        const y = barBottom - value * (barBottom - barTop);
+        ctx.fillRect(barX + 10, y - 0.5, 3, 1);
+        ctx.fillText(value.toFixed(1), barX + 15, y);
+      }
+      ctx.restore();
+    },
+    [chart, lageplanImage, heatCanvas, colorTable, t],
+  );
+
+  const hoveredIndex = hoveredSensor
+    ? (chart?.sensors.findIndex((sensor) => sensor.pos === hoveredSensor.pos) ?? -1)
+    : -1;
+
+  // Redraw on every change; the export waits for the new timestamp's frame.
+  const afterDrawRef = useRef<(() => void) | null>(null);
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !chart || !view || canvasWidth <= 0) {
+      return;
+    }
+    const dpr = window.devicePixelRatio || 1;
+    const backingWidth = Math.round(canvasWidth * dpr);
+    const backingHeight = Math.round(canvasHeight * dpr);
+    if (canvas.width !== backingWidth || canvas.height !== backingHeight) {
+      canvas.width = backingWidth;
+      canvas.height = backingHeight;
+    }
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      return;
+    }
+    drawScene(
+      ctx,
+      canvasWidth,
+      canvasHeight,
+      dpr,
+      view,
+      {
+        hovered: hoveredIndex >= 0 ? hoveredIndex : null,
+        // The guides only lead to a position in meters.
+        cursor: cursorInfo?.meters ? cursorInfo.cursor : null,
+      },
+      null,
+    );
+  }, [drawScene, chart, view, canvasWidth, canvasHeight, hoveredIndex, cursorInfo]);
+
+  useEffect(() => {
+    afterDrawRef.current?.();
+  }, [chart]);
+
+  // ---------------------------------------------------------------- export
+
+  /** One video frame: the current view, scaled to width x height. */
+  const renderFrame = useCallback(
+    (width: number, height: number) => {
+      if (!chart || !view || canvasWidth <= 0) {
+        return null;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        return null;
+      }
+      const factor = Math.min(width / canvasWidth, height / canvasHeight);
+      const frameView: View = {
+        scale: view.scale * factor,
+        tx: view.tx * factor + (width - canvasWidth * factor) / 2,
+        ty: view.ty * factor + (height - canvasHeight * factor) / 2,
+      };
+      drawScene(ctx, width, height, 1, frameView, { hovered: null, cursor: null }, '#ffffff');
+      return canvas;
+    },
+    [chart, view, canvasWidth, canvasHeight, drawScene],
+  );
+
+  // The export loop keeps the function it started with: it must still draw
+  // the timestamp the slider shows now, so it goes through a ref.
+  const renderFrameRef = useRef(renderFrame);
+  renderFrameRef.current = renderFrame;
+  const captureFrame = useCallback(
+    (width: number, height: number) => renderFrameRef.current(width, height),
+    [],
+  );
+
+  const frameSize = useCallback(
+    () => (canvasWidth > 0 ? { width: canvasWidth, height: canvasHeight } : null),
+    [canvasWidth, canvasHeight],
+  );
 
   const {
     videoExporting,
@@ -478,170 +836,150 @@ const SensorHeatmap2D = ({
     handleAfterPlot,
     exportFrames,
   } = useHeatmapFrameExport({
-    plotRef,
+    captureFrame,
+    frameSize,
     chartReady: chart != null,
     timestamps,
     timestampIndex,
     setTimestampIndex,
   });
+  afterDrawRef.current = handleAfterPlot;
 
-  const [wrapSize, setWrapSize] = useState({ width: 0, height: 0 });
+  // ---------------------------------------------------------------- input
 
-  // Measure the wrapper once the plot is mounted so the tooltip can clamp
-  // itself to the plot area.
-  useEffect(() => {
-    const wrap = plotWrapRef.current;
-    if (!wrap) {
-      return;
-    }
-    const measure = () => {
-      setWrapSize({ width: wrap.clientWidth, height: wrap.clientHeight });
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(wrap);
-    return () => observer.disconnect();
-  }, [chart != null]);
+  // Active pointers (mouse, pen, fingers) for dragging and pinching.
+  const pointers = useRef(new Map<number, [number, number]>());
+  const dragged = useRef(false);
 
-  // Show the pretty sensor tooltip when hovering a marker: anchor it near the
-  // hovered point (pixel bbox from plotly) inside the plot wrapper.
-  const handlePlotHover = (event: {
-    points?: Array<{
-      customdata?: Array<number | string>;
-      bbox?: { x0: number; y0: number; x1: number; y1: number };
-    }>;
-  }) => {
-    // The heatmap cell under the cursor also reports a hover point; pick the
-    // sensor marker one, identified by its 4-part customdata.
-    const point = (event.points || []).find(
-      (candidate) =>
-        Array.isArray(candidate.customdata) && candidate.customdata.length >= 4,
-    );
-    const meta = point?.customdata;
-    if (!point || !meta) {
-      return;
-    }
-    const [pos, , , value] = meta as number[];
-    const sensor = sensors.find((candidate) => candidate.pos === pos);
-    const meters =
-      sensor?.nx != null && sensor.ny != null
-        ? pointMeters(sensor.nx, sensor.ny, location, imageSize)
-        : null;
-
-    const wrap = plotWrapRef.current;
-    const wrapRect = wrap?.getBoundingClientRect();
-    const bbox = point.bbox;
-    const cursorX = bbox
-      ? bbox.x0 + (bbox.x1 - bbox.x0) / 2
-      : wrapRect
-        ? wrapRect.width / 2
-        : 0;
-    const cursorY = bbox
-      ? bbox.y0 + (bbox.y1 - bbox.y0) / 2
-      : wrapRect
-        ? wrapRect.height / 2
-        : 0;
-
-    setHoveredSensor({ pos, meters, value, cursorX, cursorY });
+  const localPoint = (event: { clientX: number; clientY: number }): [number, number] => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    return rect ? [event.clientX - rect.left, event.clientY - rect.top] : [0, 0];
   };
 
-  // Meter position of the point under the cursor (a heat cell or a sensor
-  // marker) plus the two dotted dimension lines from the reference point:
-  // horizontal for x, vertical for y. Plot x is the fraction of the image
-  // width; plot y runs up from the image's bottom edge (image spans 0..1).
-  const [cursorInfo, setCursorInfo] = useState<{
-    meters: [number, number];
-    reference: [number, number];
-    cursor: [number, number];
-  } | null>(null);
-
-  /** Pixel position (relative to the plot wrapper) of plot coordinates.
-   * Each axis starts at its own `_offset`: with the plan's aspect ratio kept
-   * (scaleanchor), plotly shrinks and centres the shorter axis inside the
-   * plot area, so the margin (`_size.l` / `_size.t`) is not its start. */
-  const plotToPixel = (x: number, y: number): [number, number] | null => {
-    const gd = plotWrapRef.current?.querySelector('.js-plotly-plot') as
-      | (HTMLElement & {
-          _fullLayout?: {
-            xaxis: { _offset: number; l2p: (value: number) => number };
-            yaxis: { _offset: number; l2p: (value: number) => number };
-          };
-        })
-      | null;
-    const fullLayout = gd?._fullLayout;
-    if (!fullLayout) {
-      return null;
+  const updateHover = (sx: number, sy: number) => {
+    if (!chart || !view) {
+      return;
     }
-    return [
-      fullLayout.xaxis._offset + fullLayout.xaxis.l2p(x),
-      fullLayout.yaxis._offset + fullLayout.yaxis.l2p(y),
-    ];
-  };
-
-  const handleCursorHover = (event: {
-    points?: Array<{ x?: unknown; y?: unknown }>;
-  }) => {
-    const point = (event.points || []).find(
-      (candidate) =>
-        typeof candidate.x === 'number' && typeof candidate.y === 'number',
-    );
-    const referencePlot = chart?.referencePlot;
-    if (!point || !imageSize || !referencePlot) {
+    const screenPoints = chart.sensors.map((sensor) => toScreen(view, sensor.wx, sensor.wy));
+    const index = nearestPoint(screenPoints, sx, sy, SENSOR_HIT_RADIUS);
+    if (index != null) {
+      const sensor = chart.sensors[index];
+      setHoveredSensor({
+        pos: sensor.pos,
+        meters:
+          sensor.nx != null && sensor.ny != null
+            ? pointMeters(sensor.nx, sensor.ny, location, imageSize)
+            : null,
+        value: sensor.value,
+        cursorX: screenPoints[index][0],
+        cursorY: screenPoints[index][1],
+      });
       setCursorInfo(null);
       return;
     }
-    const x = point.x as number;
-    const y = point.y as number;
-    const meters = pixelToMeters(
-      x * imageSize.width,
-      (1 - y) * imageSize.height,
-      location,
-    );
-    const cursor = plotToPixel(x, y);
-    const reference = plotToPixel(referencePlot[0], referencePlot[1]);
+    setHoveredSensor(null);
+    const [wx, wy] = toWorld(view, sx, sy);
+    const insidePlan = wx >= 0 && wy >= 0 && wx <= chart.world.width && wy <= chart.world.height;
+    const heat = heatAt(chart.grid, chart.xAxis, chart.yAxis, wx, wy, chart.world);
+    const meters = chart.reference && insidePlan ? pixelToMeters(wx, wy, location) : null;
     setCursorInfo(
-      meters && cursor && reference ? { meters, reference, cursor } : null,
+      meters || heat != null
+        ? { meters, heat, cursor: [sx, sy] }
+        : null,
     );
   };
 
-  const handlePlotUnhover = () => {
+  const clearHover = () => {
     setHoveredSensor(null);
     setCursorInfo(null);
   };
 
+  const handlePointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    pointers.current.set(event.pointerId, localPoint(event));
+    dragged.current = false;
+  };
+
+  const handlePointerMove = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    const point = localPoint(event);
+    const previous = pointers.current.get(event.pointerId);
+    if (!previous) {
+      updateHover(point[0], point[1]);
+      return;
+    }
+    if (!view) {
+      return;
+    }
+    if (pointers.current.size >= 2) {
+      // Pinch: zoom by the change of the finger distance, around their middle.
+      const [other] = [...pointers.current.entries()].filter(([id]) => id !== event.pointerId);
+      const [, otherPoint] = other;
+      const before = Math.hypot(previous[0] - otherPoint[0], previous[1] - otherPoint[1]);
+      const after = Math.hypot(point[0] - otherPoint[0], point[1] - otherPoint[1]);
+      pointers.current.set(event.pointerId, point);
+      if (before > 0) {
+        zoomBy(after / before, (point[0] + otherPoint[0]) / 2, (point[1] + otherPoint[1]) / 2);
+      }
+      dragged.current = true;
+      return;
+    }
+    const dx = point[0] - previous[0];
+    const dy = point[1] - previous[1];
+    if (!dragged.current && Math.hypot(dx, dy) < 3) {
+      return;
+    }
+    dragged.current = true;
+    pointers.current.set(event.pointerId, point);
+    clearHover();
+    setUserView(panBy(view, dx, dy));
+  };
+
+  const handlePointerUp = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    pointers.current.delete(event.pointerId);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  // The wheel zooms around the cursor - but only over the drawn plan (without
+  // a plan: the heat field); everywhere else it scrolls the page as usual -
+  // the heat field reaches far beyond the plan and would catch it. While
+  // zooming it must not scroll the page (React's wheel listener is passive,
+  // hence addEventListener).
+  const zoomByRef = useRef(zoomBy);
+  zoomByRef.current = zoomBy;
+  const overDrawnRef = useRef<(sx: number, sy: number) => boolean>(() => false);
+  overDrawnRef.current = (sx, sy) => {
+    if (!chart || !view) {
+      return false;
+    }
+    const drawn = lageplanImage
+      ? { left: 0, top: 0, right: chart.world.width, bottom: chart.world.height }
+      : chart.heatRect;
+    const [wx, wy] = toWorld(view, sx, sy);
+    return containsPoint(drawn, wx, wy);
+  };
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      return undefined;
+    }
+    const onWheel = (event: WheelEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      const sx = event.clientX - rect.left;
+      const sy = event.clientY - rect.top;
+      if (!overDrawnRef.current(sx, sy)) {
+        return; // the page scrolls
+      }
+      event.preventDefault();
+      const delta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
+      zoomByRef.current(Math.exp(-delta * 0.0015), sx, sy);
+    };
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', onWheel);
+  }, [chart != null]);
+
   const planSelectValue = plans ? Math.min(planIndex, plans.length - 1) : 0;
-
-  const plotMargin = { l: 4, r: 16, t: 4, b: 4 };
-
-  // Fit the plot height to the content: the axes keep the plan's aspect
-  // ratio, so a fixed height would leave empty bands above/below a wide
-  // plan. `height` is the upper bound.
-  const plotHeight = useMemo(() => {
-    if (!chart || wrapSize.width <= 0) {
-      return height;
-    }
-    const xSpan = chart.xRange[1] - chart.xRange[0];
-    const ySpan = chart.yRange[1] - chart.yRange[0];
-    // Rough width of plotly's (compact) colorbar incl. its labels.
-    const colorbarWidth = 50;
-    const plotWidth =
-      wrapSize.width - plotMargin.l - plotMargin.r - colorbarWidth;
-    if (xSpan <= 0 || ySpan <= 0 || plotWidth <= 0) {
-      return height;
-    }
-    const contentHeight = (plotWidth * ySpan * chart.scaleRatio) / xSpan;
-    return Math.round(
-      clamp(contentHeight + plotMargin.t + plotMargin.b, 160, height),
-    );
-  }, [
-    chart,
-    wrapSize.width,
-    height,
-    plotMargin.l,
-    plotMargin.r,
-    plotMargin.t,
-    plotMargin.b,
-  ]);
 
   const body = (
     <>
@@ -778,9 +1116,7 @@ const SensorHeatmap2D = ({
       )}
 
       {!chart ? (
-        <div className="text-muted py-5 text-center">
-          No sensor measurements available.
-        </div>
+        <div className="text-muted py-5 text-center">{t('heatmap_no_data')}</div>
       ) : (
         <>
           {videoError && (
@@ -788,126 +1124,66 @@ const SensorHeatmap2D = ({
           )}
 
           <div
-            ref={plotWrapRef}
+            ref={wrapRef}
             className="heatmap2d-plot-wrap"
-            style={{ position: 'relative' }}
+            style={{ position: 'relative', height: canvasHeight }}
           >
-            <Plot
-              ref={plotRef}
-              data={[
-                {
-                  type: 'heatmap',
-                  x: chart.xAxis,
-                  y: chart.yAxis,
-                  z: chart.grid.map((row) => Array.from(row)),
-                  zmin: 0,
-                  zmax: 1,
-                  colorscale: [
-                    [0, plotTheme.brandBlue],
-                    [0.35, plotTheme.contrastCyan],
-                    [0.65, plotTheme.contrastYellow],
-                    [1, plotTheme.brandOrange],
-                  ],
-                  opacity: 0.7,
-                  colorbar: {
-                    title: { text: 'Heat', font: { size: 11 } },
-                    thickness: 10,
-                    xpad: 4,
-                    tickfont: { size: 10 },
-                    nticks: 6,
-                  },
-                  hovertemplate: 'Heat: %{z:.3f}<extra></extra>',
-                },
-                chart.sensorScatter,
-                ...(chart.referenceTrace ? [chart.referenceTrace] : []),
-              ]}
-              layout={{
-                height: plotHeight,
-                autosize: true,
-                margin: plotMargin,
-                paper_bgcolor: 'transparent',
-                plot_bgcolor: 'transparent',
-                images: chart.image ? [chart.image] : [],
-                // The axes only position the plan - no ticks, labels or grid.
-                xaxis: {
-                  range: chart.xRange,
-                  constrain: 'domain',
-                  visible: false,
-                },
-                yaxis: {
-                  range: chart.yRange,
-                  scaleanchor: 'x',
-                  scaleratio: chart.scaleRatio,
-                  visible: false,
-                },
-                font: { family: 'inherit', color: plotTheme.brandBlue },
+            <canvas
+              ref={canvasRef}
+              role="img"
+              aria-label={t('heatmap_canvas_hint')}
+              style={{
+                display: 'block',
+                width: '100%',
+                height: canvasHeight,
+                touchAction: 'none',
+                cursor: hoveredSensor ? 'pointer' : pointers.current.size ? 'grabbing' : 'grab',
               }}
-              config={{
-                responsive: true,
-                displaylogo: false,
-                modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerUp}
+              onPointerLeave={(event) => {
+                if (!pointers.current.has(event.pointerId)) {
+                  clearHover();
+                }
               }}
-              style={{ width: '100%' }}
-              useResizeHandler
-              onAfterPlot={handleAfterPlot}
-              onHover={(event) => {
-                handleCursorHover(event);
-                handlePlotHover(event);
-              }}
-              onUnhover={handlePlotUnhover}
+              onDoubleClick={() => setUserView(null)}
             />
+
+            <ButtonGroup
+              size="sm"
+              vertical
+              style={{ position: 'absolute', left: 8, top: 8, boxShadow: '0 2px 8px rgba(11, 54, 89, .18)' }}
+            >
+              <Button variant="light" onClick={() => zoomBy(ZOOM_STEP)} title={t('heatmap_zoom_in')} aria-label={t('heatmap_zoom_in')}>
+                <ZoomIn />
+              </Button>
+              <Button variant="light" onClick={() => zoomBy(1 / ZOOM_STEP)} title={t('heatmap_zoom_out')} aria-label={t('heatmap_zoom_out')}>
+                <ZoomOut />
+              </Button>
+              <Button
+                variant="light"
+                onClick={() => setUserView(null)}
+                disabled={userView == null}
+                title={`${t('heatmap_zoom_reset')} (${t('heatmap_canvas_hint')})`}
+                aria-label={t('heatmap_zoom_reset')}
+              >
+                <ArrowCounterclockwise />
+              </Button>
+            </ButtonGroup>
 
             {hoveredSensor && (
               <SensorTooltip
                 sensorPos={hoveredSensor.pos}
                 meters={hoveredSensor.meters}
                 value={hoveredSensor.value}
-                threshold={
-                  Number.isFinite(Number(location?.alarm_threshold))
-                    ? Number(location?.alarm_threshold)
-                    : null
-                }
+                threshold={chart?.sensors.find((sensor) => sensor.pos === hoveredSensor.pos)?.threshold ?? threshold}
                 cursorX={hoveredSensor.cursorX}
                 cursorY={hoveredSensor.cursorY}
                 containerWidth={wrapSize.width}
-                containerHeight={wrapSize.height}
+                containerHeight={canvasHeight}
               />
-            )}
-
-            {cursorInfo && (
-              <svg
-                aria-hidden
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  width: '100%',
-                  height: '100%',
-                  pointerEvents: 'none',
-                  overflow: 'visible',
-                }}
-              >
-                <g
-                  stroke={plotTheme.green}
-                  strokeWidth={2}
-                  strokeDasharray="2 4"
-                  strokeLinecap="round"
-                >
-                  {/* x: along the reference point's row */}
-                  <line
-                    x1={cursorInfo.reference[0]}
-                    y1={cursorInfo.reference[1]}
-                    x2={cursorInfo.cursor[0]}
-                    y2={cursorInfo.reference[1]}
-                  />
-                  {/* y: up/down to the cursor */}
-                  <line
-                    x1={cursorInfo.cursor[0]}
-                    y1={cursorInfo.reference[1]}
-                    x2={cursorInfo.cursor[0]}
-                    y2={cursorInfo.cursor[1]}
-                  />
-                </g>
-              </svg>
             )}
 
             {cursorInfo && (
@@ -924,7 +1200,12 @@ const SensorHeatmap2D = ({
                   pointerEvents: 'none',
                 }}
               >
-                {formatMeters(cursorInfo.meters)}
+                {[
+                  cursorInfo.meters ? formatMeters(cursorInfo.meters) : null,
+                  cursorInfo.heat != null ? `${t('heatmap_heat')} ${cursorInfo.heat.toFixed(2)}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
               </div>
             )}
           </div>

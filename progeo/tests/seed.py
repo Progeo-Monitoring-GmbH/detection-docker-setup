@@ -3,7 +3,7 @@ database works without restoring a dump (`manage.py recreate_test_db`):
 
 - Account pk=1 (db_name "default"): AccountMiddleware binds every request to it.
 - A superuser as the first user, and the "unit_tests" account/user
-  (progeo/tests/helper.py, playwright tests).
+  (api_client_with_credentials in conftest.py).
 - The controller account named by CONTROLLER_DEFAULT_ACCOUNT, which legacy
   ingestion files new devices under.
 - The progeo content types (see seed_content_types).

@@ -1,5 +1,4 @@
 import { useCallback, useRef, useState } from 'react';
-import Plotly from 'plotly.js/dist/plotly';
 import { useTranslation } from 'react-i18next';
 
 import { useAuth } from '../../../hooks/CoreAuthProvider';
@@ -10,7 +9,6 @@ import {
   canvasToPngBlob,
   downloadBlob,
   drawFrameLabel,
-  loadImageFromDataUrl,
   sleep,
 } from './heatmapFrames';
 
@@ -33,8 +31,11 @@ const requestErrorMessage = (error: unknown, fallback: string) => {
 };
 
 type UseHeatmapFrameExportOptions = {
-  /** The plot div that react-plotly.js mounts; used for Plotly.toImage. */
-  plotRef: React.RefObject<HTMLDivElement | null>;
+  /** Draws the current heatmap (timestamp, zoom) into a new canvas of the
+   * given size - one video frame. */
+  captureFrame: (width: number, height: number) => HTMLCanvasElement | null;
+  /** Size of the heatmap on screen; the frames keep its aspect ratio. */
+  frameSize: () => { width: number; height: number } | null;
   /** Whether a chart is currently rendered (false -> export is disabled). */
   chartReady: boolean;
   timestamps: number[];
@@ -51,7 +52,7 @@ type HeatmapFrameExport = {
   videoResultUrl: string | null;
   downloadVideoResult: () => Promise<void>;
   videoError: string | null;
-  /** Call after the Plot's onAfterPlot fires so frame redraws can be awaited. */
+  /** Call once the heatmap has drawn a new timestamp, so frame redraws can be awaited. */
   handleAfterPlot: () => void;
   exportFrames: () => Promise<void>;
 };
@@ -60,12 +61,14 @@ type HeatmapFrameExport = {
  * Captures the heatmap animation over all timestamps as PNG frames and has
  * the backend render them into an MP4 (celery task running ffmpeg, see
  * progeo/helper/heatmap_video.py), then downloads the ZIP with the frames and
- * the video - users don't need ffmpeg themselves. Frames are captured from
- * the plot itself via Plotly.toImage, drawn onto a canvas with a white
- * background and the frame's timestamp label, and stored as lossless PNGs.
+ * the video - users don't need ffmpeg themselves. Frames are drawn by the
+ * heatmap itself (captureFrame, the current zoom included) onto a canvas with
+ * a white background and the frame's timestamp label, and stored as
+ * lossless PNGs.
  */
 export const useHeatmapFrameExport = ({
-  plotRef,
+  captureFrame,
+  frameSize,
   chartReady,
   timestamps,
   timestampIndex,
@@ -219,8 +222,8 @@ export const useHeatmapFrameExport = ({
   }, [videoResultUrl, saveResult, t]);
 
   const exportFrames = useCallback(async () => {
-    const gd = plotRef.current;
-    if (!gd || !chartReady || timestamps.length < 2 || videoExporting) {
+    const size = frameSize();
+    if (!size || !chartReady || timestamps.length < 2 || videoExporting) {
       return;
     }
 
@@ -240,8 +243,8 @@ export const useHeatmapFrameExport = ({
       frameIndices.push(timestamps.length - 1);
     }
 
-    const width = Math.min(Math.max(gd.clientWidth || 960, 320), 1280);
-    const height = Math.min(Math.max(gd.clientHeight || 540, 240), 720);
+    const width = Math.min(Math.max(Math.round(size.width) || 960, 320), 1280);
+    const height = Math.min(Math.max(Math.round(size.height) || 540, 240), 720);
 
     try {
       // The animation walks the timestamp slider; the previous position is
@@ -255,7 +258,6 @@ export const useHeatmapFrameExport = ({
       }
 
       const frameBlobs: Blob[] = [];
-      const frameImage = new Image();
       let previousIndex = initialIndex;
 
       for (let frame = 0; frame < frameIndices.length; frame += 1) {
@@ -266,23 +268,16 @@ export const useHeatmapFrameExport = ({
           previousIndex = frameIndex;
         }
 
-        const dataUrl = await Plotly.toImage(gd, {
-          format: 'png',
-          width,
-          height,
-          scale: 1,
-        });
-        await loadImageFromDataUrl(
-          frameImage,
-          dataUrl,
-          t('heatmap_video_error_decode'),
-        );
+        const frameCanvas = captureFrame(width, height);
+        if (!frameCanvas) {
+          throw new Error(t('heatmap_video_error_canvas'));
+        }
 
-        // The plot paper is transparent, so paint a background first to keep
-        // the frames from rendering black on dark video players.
+        // Paint a background first to keep the frames from rendering black
+        // on dark video players.
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, width, height);
-        ctx.drawImage(frameImage, 0, 0, width, height);
+        ctx.drawImage(frameCanvas, 0, 0, width, height);
         drawFrameLabel(
           ctx,
           width,
@@ -341,7 +336,8 @@ export const useHeatmapFrameExport = ({
       setVideoStage(null);
     }
   }, [
-    plotRef,
+    captureFrame,
+    frameSize,
     chartReady,
     timestamps,
     timestampIndex,
