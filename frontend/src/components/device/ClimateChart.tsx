@@ -14,6 +14,8 @@ export type ClimateDeviceSeries = {
   temperature: Array<number | null>;
   /** Battery level in percent. */
   battery: Array<number | null>;
+  /** Battery voltage in V (IMEI devices). */
+  battery_v: Array<number | null>;
 };
 
 export type ClimateResponse = {
@@ -24,13 +26,17 @@ export type ClimateResponse = {
   devices: ClimateDeviceSeries[];
 };
 
-export type ClimateMetric = 'humidity' | 'temperature' | 'battery';
+export type ClimateMetric = 'humidity' | 'temperature' | 'battery' | 'battery_v';
 
 // Temperature reads warm, humidity cool, battery green. The shades vary in
 // hue as well as lightness so neighbouring devices stay apart. A device
 // keeps its index in every chart, so it is the n-th red, blue and green.
 // Lines are always solid; beyond the fixed shades more are generated (see
 // deviceColor).
+const BATTERY_COLORS = [
+  '#2E7D32', '#9E9D24', '#00695C', '#66BB6A', '#33691E', '#AFB42B',
+  '#558B2F', '#004D40', '#7CB342', '#827717', '#43A047', '#1B5E20',
+];
 const METRIC_COLORS: Record<ClimateMetric, string[]> = {
   temperature: [
     '#C62828', '#EF6C00', '#AD1457', '#D9605A', '#7B1F12', '#E8913A',
@@ -40,10 +46,8 @@ const METRIC_COLORS: Record<ClimateMetric, string[]> = {
     '#1565C0', '#00838F', '#5E35B1', '#4A9BE0', '#0D2F6B', '#2BA3B5',
     '#2E7D32', '#3949AB', '#0277BD', '#26A69A', '#6A1B9A', '#00ACC1',
   ],
-  battery: [
-    '#2E7D32', '#9E9D24', '#00695C', '#66BB6A', '#33691E', '#AFB42B',
-    '#558B2F', '#004D40', '#7CB342', '#827717', '#43A047', '#1B5E20',
-  ],
+  battery: BATTERY_COLORS,
+  battery_v: BATTERY_COLORS,
 };
 // Hue ranges of the generated shades: warm (reds/oranges), cool
 // (blues/cyans) and greens.
@@ -51,12 +55,15 @@ const GENERATED_HUES: Record<ClimateMetric, [number, number]> = {
   temperature: [-20, 50],
   humidity: [160, 270],
   battery: [60, 150],
+  battery_v: [60, 150],
 };
-// Battery levels are whole percents; the climate values keep two decimals.
+// Battery levels are whole percents, voltages mV-exact; the climate values
+// keep two decimals.
 const VALUE_FORMAT: Record<ClimateMetric, string> = {
   temperature: '.2f',
   humidity: '.2f',
   battery: '.0f',
+  battery_v: '.3f',
 };
 
 const deviceColor = (metric: ClimateMetric, index: number): string => {
@@ -106,7 +113,7 @@ type ClimateChartProps = {
 };
 
 /**
- * Time series of one climate metric (humidity, temperature or battery), one line per
+ * Time series of one climate metric (humidity, temperature, battery or battery voltage), one line per
  * device of the location - a LoRaWAN object has several sensors.
  */
 const ClimateChart = ({

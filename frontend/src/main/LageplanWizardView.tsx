@@ -19,7 +19,7 @@ import { useAuth } from '../../hooks/CoreAuthProvider';
 import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
 import { getBackendUrl } from '../backendUrl';
-import type { SensorHeatmapLageplanData } from '../components/device/SensorHeatmap3D';
+import type { SensorHeatmapLageplanData } from '../components/device/sensorHeatmapTypes';
 
 type WizardStep = 1 | 2 | 3 | 4;
 

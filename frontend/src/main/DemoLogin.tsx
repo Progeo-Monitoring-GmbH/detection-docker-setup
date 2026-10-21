@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Spinner } from 'react-bootstrap';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
+import { jwtDecode } from 'jwt-decode';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
 import { setDemoToken } from './demo';
@@ -19,7 +20,7 @@ const DemoLogin = () => {
   const auth = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [invalid, setInvalid] = useState(false);
 
   useEffect(() => {
@@ -28,10 +29,20 @@ const DemoLogin = () => {
       return;
     }
     const forward = searchParams.get('forward') || '';
+    // A renewal continues the visit of the expired session (its JWT is
+    // still stored) instead of counting a new one.
+    let session: string | undefined;
+    if (forward) {
+      try {
+        session = jwtDecode<{ demo_session?: string }>(localStorage.getItem('authToken') || '').demo_session;
+      } catch {
+        session = undefined;
+      }
+    }
     void axiosConfig.perform_post(
       undefined,
       '/v1/demo/login/',
-      { token, renewal: Boolean(forward) },
+      { token, renewal: Boolean(forward), session, language: (i18n.language || '').slice(0, 2) },
       (response) => {
         auth.loginWithTokens(response.data.access, response.data.refresh);
         setDemoToken(token);

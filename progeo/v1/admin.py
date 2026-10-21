@@ -15,6 +15,7 @@ from progeo.v1.models import (
     SMS,
     Account,
     AlarmDailyReport,
+    DemoSession,
     EMail,
     LimitedToken,
     MfSLog,
@@ -121,6 +122,22 @@ class MultiDBModelAdmin(admin.ModelAdmin):
 class LimitedTokenAdmin(MultiDBModelAdmin):
     raw_id_fields = ["user", "account"]
     list_display = ("disabled", "id", "raw_hash", "valid_until", "check_counter", "raw_data", "purpose")
+
+class DemoSessionAdmin(admin.ModelAdmin):
+    """Demo visits (read-only, see DemoSession)."""
+
+    list_display = (
+        "started_at", "token", "active_seconds", "requests", "logins", "last_seen_at", "language", "pages",
+    )
+    list_filter = ("token",)
+    readonly_fields = [field.name for field in DemoSession._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
 
 class MfSLogAdmin(MultiDBModelAdmin):
     
@@ -271,6 +288,7 @@ class UserModulePermissionsAdmin(admin.ModelAdmin):
 
 register_models = [
     {"model": LimitedToken, "admin": LimitedTokenAdmin, "custom": True},
+    {"model": DemoSession, "admin": DemoSessionAdmin, "custom": True},
     {"model": MfSLog, "admin": MfSLogAdmin, "custom": True},
     {"model": ProgeoAlarm, "admin": AlarmDailyReportAdmin, "custom": True},
     {"model": AlarmDailyReport, "admin": ProgeoAlarmReportAdmin, "custom": True},

@@ -32,8 +32,8 @@ type ConsentContextValue = {
 const ConsentContext = createContext<ConsentContextValue | null>(null);
 
 /**
- * Holds the user's privacy decision. Optional features (currently only the
- * external map tiles) must check `allows(...)` before contacting third parties.
+ * Holds the user's privacy decision. Optional features (the external map
+ * tiles, the demo's usage statistics) must check `allows(...)` first.
  */
 export const ConsentProvider = ({ children }: { children: ReactNode }) => {
   const [consent, setConsent] = useState<ConsentRecord | null>(() =>
@@ -64,8 +64,8 @@ export const ConsentProvider = ({ children }: { children: ReactNode }) => {
       consent,
       allows: (category) => consent?.categories[category] === true,
       save,
-      acceptAll: () => save({ externalMaps: true }),
-      rejectAll: () => save({ externalMaps: false }),
+      acceptAll: () => save({ externalMaps: true, statistics: true }),
+      rejectAll: () => save({ externalMaps: false, statistics: false }),
       settingsOpen,
       openSettings: () => setSettingsOpen(true),
       closeSettings: () => setSettingsOpen(false),

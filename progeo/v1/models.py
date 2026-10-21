@@ -298,12 +298,17 @@ class Account(ProgeoModel, auto_prefetch.Model):
 class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
     class PROJECT_TYPE_CHOICES(models.IntegerChoices):
         UNKNOWN = 0, "Unknown"
-        SMARTEX = 1, "smartex"
+        SMARTEX_DM = 1, "smartex® dm"  # formerly "smartex"
         GEOLOGGER = 2, "geologger"
-        DFH = 3, "DFH"
+        SMARTEX_IS = 3, "smartex® is"  # formerly "DFH"
         DEVELOPMENT = 4, "Development"
         VERSUCH = 5, "Versuchsprojekte"
         LORAWAN = 6, "LoRaWan"
+        SMARTEX_MX_PEEL = 7, "smartex® mx-PEEL"
+        SMARTEX_MX_VA = 8, "smartex® mx-va"
+        SMARTEX_MX_AL = 9, "smartex® mx-al"
+        SMARTEX_IO = 10, "smartex® io"
+        SMARTEX_VT = 11, "smartex® vt"
         SONSTIGE = 99, "Sonstige"
 
     account = models.ForeignKey(Account, on_delete=models.CASCADE, null=True, blank=True)
@@ -522,7 +527,9 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
     # Battery level in percent (LoRaWAN "upload_battery" messages).
     battery = models.FloatField(null=True, blank=True)
     resistance_idc = models.FloatField(null=True, blank=True)
-    resistance_vdc = models.FloatField(null=True, blank=True)
+    # Battery voltage in V (IMEI/Dragino payload "battery"). Replaces the
+    # former resistance_vdc - that resistance is the IMEI sample (samples[0]).
+    battery_v = models.FloatField(null=True, blank=True)
     # The two values a controller sends per sensor, one list each (index =
     # sensor_order - 1). They replace `samples` for pair-based data; the
     # sample pairs (alarm values) are derived: |wirk - eigen| (get_pairs).
@@ -1108,6 +1115,35 @@ class LimitedToken(ProgeoPolyModel, PolymorphicModel):
     def __str__(self):
         _id = f"[{self.pk}] " if DEBUG else ""
         return f"{_id} 🔑 [{self.account.get_short()}] valid={self.is_valid(False)}, check_counter={self.check_counter}, key={self.raw_hash}"
+
+
+class DemoSession(models.Model):
+    """One visit of the public demo, from the demo-link login on (see
+    helper/demo.py). Its key travels in the visitor's JWT (claim
+    "demo_session") - nothing else identifies the visitor: no IP address,
+    no user agent. `requests`/`last_seen_at` come from every demo request
+    (DemoReadOnlyMiddleware), `active_seconds` from the browser's heartbeat,
+    which only runs while the tab is visible and the visitor active."""
+
+    token = models.ForeignKey(LimitedToken, on_delete=models.CASCADE, related_name="demo_sessions")
+    session_key = models.CharField(max_length=32, unique=True)
+    started_at = models.DateTimeField(default=timezone.now)
+    last_seen_at = models.DateTimeField(default=timezone.now)
+    last_heartbeat_at = models.DateTimeField(null=True, blank=True)
+    active_seconds = models.IntegerField(default=0)
+    requests = models.IntegerField(default=0)
+    # The demo-link login and every renewal of the expired session.
+    logins = models.IntegerField(default=1)
+    # Page views per portal section, e.g. {"status": 3, "analyse": 1}.
+    pages = models.JSONField(default=dict, blank=True)
+    last_page = models.CharField(max_length=255, blank=True, default="")
+    language = models.CharField(max_length=8, blank=True, default="")
+
+    class Meta:
+        ordering = ["-started_at"]
+
+    def __str__(self):
+        return f"Demo session {self.session_key[:8]} ({self.active_seconds}s active, {self.requests} requests)"
 
 
 # ==============================================================================================

@@ -17,10 +17,12 @@ describe('getProjectTypeLabel', () => {
 
   it('returns brand names literally without translating', () => {
     const spy = vi.fn(t);
-    expect(getProjectTypeLabel(spy, 1)).toBe('smartex');
+    expect(getProjectTypeLabel(spy, 1)).toBe('smartex® dm');
     expect(getProjectTypeLabel(spy, 2)).toBe('geologger');
-    expect(getProjectTypeLabel(spy, 3)).toBe('DFH');
+    expect(getProjectTypeLabel(spy, 3)).toBe('smartex® is');
     expect(getProjectTypeLabel(spy, 6)).toBe('LoRaWan');
+    expect(getProjectTypeLabel(spy, 7)).toBe('smartex® mx-PEEL');
+    expect(getProjectTypeLabel(spy, 11)).toBe('smartex® vt');
     expect(spy).not.toHaveBeenCalled();
   });
 
@@ -42,7 +44,7 @@ describe('getProjectTypeLabel', () => {
   });
 
   it('prefers a known label over a given fallback', () => {
-    expect(getProjectTypeLabel(t, 1, 'other')).toBe('smartex');
+    expect(getProjectTypeLabel(t, 1, 'other')).toBe('smartex® dm');
     expect(getProjectTypeLabel(t, 4, 'other')).toBe('t(objekt_project_type_development)');
   });
 });
@@ -50,7 +52,7 @@ describe('getProjectTypeLabel', () => {
 describe('isLorawanProject', () => {
   it('is true only for the LoRaWan project type', () => {
     expect(isLorawanProject(6)).toBe(true);
-    [0, 1, 2, 3, 4, 5, 99, null, undefined].forEach((value) =>
+    [0, 1, 2, 3, 4, 5, 7, 11, 99, null, undefined].forEach((value) =>
       expect(isLorawanProject(value)).toBe(false),
     );
   });

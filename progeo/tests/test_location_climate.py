@@ -69,6 +69,18 @@ def test_climate_includes_battery_aligned_with_the_other_series(api_client, lora
     assert sensor_a["humidity"] == [50.0, 55.0, None]
 
 
+def test_climate_includes_imei_battery_voltage(api_client):
+    account = f.make_account()
+    location = f.make_location(account, project_id=4345)
+    device = f.make_device(location, raw_hash=f.unique("8606310790"), type=ProgeoDevice.DeviceType.IMEI)
+    f.make_measurement(device, battery_v=3.651, fetched_at=timezone.now() - timedelta(hours=1))
+    api_client.force_authenticate(user=f.make_user(perms=PERMS, accounts=[account]))
+
+    devices = api_client.get(f"/v1/location/{location.id}/climate/").json()["devices"]
+
+    assert [(d["battery_v"], d["humidity"], d["battery"]) for d in devices] == [([3.651], [None], [None])]
+
+
 def test_climate_rejects_invalid_days(api_client, lorawan_location):
     response = api_client.get(f"/v1/location/{lorawan_location.id}/climate/?days=abc")
 

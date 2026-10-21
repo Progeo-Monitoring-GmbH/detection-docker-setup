@@ -36,7 +36,7 @@ def _remove_created_plans():
 
 
 # A short history keeps the tests fast; the leaks of smartex (9 days ago) and
-# DFH (20 days ago) lie within it.
+# smartex® is (20 days ago) lie within it.
 HISTORY = ("--days", "30")
 
 
@@ -101,9 +101,9 @@ def test_demo_user_loads_the_demo_data(api_client, demo):
     assert len(heatmap.json()["sensor_points"]) == 25
     assert heatmap.json()["location"]["lageplans"]
 
-    dfh = api_client.get(f"/v1/demo/{by_type[3]}/heatmap/").json()
-    assert {p["name"] for p in dfh["sensor_points"]} == {"Hauptdach", "Anbau", "Garage"}
-    assert len(dfh["sensor_points"]) == 14
+    smartex_is = api_client.get(f"/v1/demo/{by_type[3]}/heatmap/").json()
+    assert {p["name"] for p in smartex_is["sensor_points"]} == {"Hauptdach", "Anbau", "Garage"}
+    assert len(smartex_is["sensor_points"]) == 14
 
     climate = api_client.get(f"/v1/demo/{by_type[6]}/climate/")
     assert climate.status_code == 200, climate.content
@@ -150,7 +150,7 @@ def test_demo_user_cannot_change_anything(api_client, demo):
         assert response.json()["demo_read_only"] is True
 
     location.refresh_from_db(using=db)
-    assert location.name == "Demo Flachdach (smartex)"
+    assert location.name == "Demo Flachdach (smartex® dm)"
     alarm.refresh_from_db(using=db)
     assert alarm.status == status
 
@@ -199,8 +199,8 @@ def test_command_builds_points_history_and_alarms(api_client, demo_db):
         assert span.days >= 89
 
     # One leak each, every other sensor below 25 % of the threshold.
-    # smartex: dry, then a sharp spike to 368 %, declining - the alarm is over.
-    # DFH: up to 190 % three days ago and still over the threshold - an open alarm.
+    # smartex® dm: dry, then a sharp spike to 368 %, declining - the alarm is over.
+    # smartex® is: up to 190 % three days ago and still over the threshold - an open alarm.
     cases = (
         (1, 13, (3.6, 3.76), (0.75, 0.95), ProgeoAlarm.Status.QUITTIERT, True, ProgeoAlarm.Severity.KRITISCH),
         (3, 8, (1.85, 1.95), (1.4, 1.6), ProgeoAlarm.Status.NEU, False, ProgeoAlarm.Severity.ALARM),
@@ -507,3 +507,96 @@ def test_demo_user_may_export_the_heatmap_video(api_client, demo, monkeypatch, t
     assert api_client.get(f"/media/{prefix}/{job}/sensor-heatmap.zip").status_code == 404
     assert api_client.get(f"/media/{prefix}/{job}/frames.zip").status_code == 403
     assert api_client.get(f"/media/{prefix}/other.zip").status_code == 403
+
+
+# -- demo sessions (DemoSession) ----------------------------------------------
+
+
+def _session(token):
+    from progeo.v1.models import DemoSession
+
+    return DemoSession.objects.using("default").filter(token=token).order_by("-started_at").first()
+
+
+def test_a_demo_login_starts_a_session_that_counts_requests(api_client, demo):
+    from rest_framework_simplejwt.tokens import AccessToken
+
+    login = _login(api_client, demo)
+    session = _session(demo)
+    assert session is not None and session.requests == 0
+    assert AccessToken(login.json()["access"])["demo_session"] == session.session_key
+
+    api_client.get("/v1/demo/")
+    api_client.get("/v1/user/profile/")
+    session.refresh_from_db(using="default")
+    assert session.requests == 2
+
+
+def test_the_heartbeat_counts_active_time_and_page_views(api_client, demo):
+    import datetime
+
+    from django.utils import timezone
+
+    _login(api_client, demo)
+    session = _session(demo)
+
+    def beat(page, seconds_since_last=None):
+        if seconds_since_last is not None:
+            session.refresh_from_db(using="default")
+            session.last_heartbeat_at = timezone.now() - datetime.timedelta(seconds=seconds_since_last)
+            session.save(using="default")
+        response = api_client.post("/v1/demo/heartbeat/", {"page": page}, format="json")
+        assert response.status_code == 200, response.content
+        session.refresh_from_db(using="default")
+
+    beat("/location/40/status")
+    assert session.active_seconds == 0 and session.pages == {"status": 1}
+    beat("/location/40/status", seconds_since_last=30)  # active: counts, same page
+    assert session.active_seconds == 30 and session.pages == {"status": 1}
+    beat("/location/40/analyse", seconds_since_last=300)  # idle gap: doesn't count
+    assert session.active_seconds == 30 and session.pages == {"status": 1, "analyse": 1}
+
+
+def test_a_renewal_continues_the_session(api_client, demo):
+    first = _login(api_client, demo)
+    from rest_framework_simplejwt.tokens import AccessToken
+
+    key = AccessToken(first.json()["access"])["demo_session"]
+    api_client.credentials()
+    renewed = api_client.post(
+        "/v1/demo/login/", {"token": demo.raw_hash, "renewal": True, "session": key}, format="json"
+    )
+    assert AccessToken(renewed.json()["access"])["demo_session"] == key
+    assert _session(demo).logins == 2
+
+    # A new visit (no renewal) is a new session.
+    fresh = api_client.post("/v1/demo/login/", {"token": demo.raw_hash}, format="json")
+    assert AccessToken(fresh.json()["access"])["demo_session"] != key
+
+
+def test_only_demo_sessions_send_heartbeats(api_client, demo):
+    from django.contrib.auth.models import User
+
+    staff = User.objects.using("default").create(username="hb_staff", is_staff=True)
+    api_client.force_authenticate(staff)
+    response = api_client.post("/v1/demo/heartbeat/", {"page": "/"}, format="json")
+    assert response.status_code == 403
+
+
+def test_page_sections():
+    from progeo.helper.demo import page_section
+
+    assert page_section("/location/40/status") == "status"
+    assert page_section("/location/overview/") == "overview"
+    assert page_section("/demo/") == "demo"
+    assert page_section("") == "start"
+
+
+def test_links_show_the_visits(api_client, demo):
+    from io import StringIO
+
+    _login(api_client, demo)
+    api_client.post("/v1/demo/heartbeat/", {"page": "/location/40/status"}, format="json")
+    out = StringIO()
+    call_command("demo_account", "--skip-checks", "--links", stdout=out)
+    assert "1 visits" in out.getvalue() and "status 1x" in out.getvalue()

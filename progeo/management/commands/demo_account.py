@@ -58,7 +58,7 @@ ZONE_FILL = "#f3f6f9"
 def _grid(x_from, y_from, x_to, y_to, columns, rows, name=None, snake=False):
     """Sensors evenly spread over a rectangle of the plan (pixels), row by
     row: [(name, px, py, grid_x, grid_y)]. `snake` runs every second row
-    backwards - one continuous cable run, as a DFH zone is drawn."""
+    backwards - one continuous cable run, as a smartex® is zone is drawn."""
     width, height = x_to - x_from, y_to - y_from
     return [
         (name, x_from + width * (col + 0.5) / columns, y_from + height * (row + 0.5) / rows, col, row)
@@ -74,12 +74,12 @@ def _grid(x_from, y_from, x_to, y_to, columns, rows, name=None, snake=False):
 SMARTEX_ROOF = (160, 130, 1340, 850)  # 59 m x 36 m
 SMARTEX_METERS = 59.0
 
-DFH_ZONES = {  # name: rectangle; Hauptdach 3x2, Anbau and Garage 2x2 sensors
+IS_ZONES = {  # name: rectangle; Hauptdach 3x2, Anbau and Garage 2x2 sensors
     "Hauptdach": ((180, 150, 920, 560), 3, 2),
     "Anbau": ((180, 620, 640, 930), 2, 2),
     "Garage": ((1000, 330, 1400, 700), 2, 2),
 }
-DFH_METERS_PER_PIXEL = 0.025
+IS_METERS_PER_PIXEL = 0.025
 
 LORAWAN_BUILDING = (200, 460, 1100, 960)  # EG + KG, the roof sits on top
 LORAWAN_GROUND_Y = 760
@@ -95,13 +95,13 @@ LORAWAN_ROOMS = {  # sensor label: centre of the room (pixels)
 # threshold: `sensor` (sensor_order) shoots up within `rise_h` to `peak`, then
 # sinks (exponentially, `decay_h`) towards `settle` and stays there. Every
 # other sensor stays below DRY_MAX. Times count back from now.
-# smartex: dry for days, sharp spike, declining - the alarm is over (the 7-day
-# view shows all of it). DFH: started 3 days ago and still over the threshold
+# smartex® dm: dry for days, sharp spike, declining - the alarm is over (the 7-day
+# view shows all of it). smartex® is: started 3 days ago and still over the threshold
 # - an open alarm.
 DRY_MAX = 0.25
 SMARTEX_LEAK = {"sensor": 13, "start_days_ago": 5, "rise_h": 2, "peak": 3.68, "settle": 0.75, "decay_h": 36,
                 "status": ProgeoAlarm.Status.QUITTIERT, "rain": {"before_h": 5, "duration": 8, "amount": 21.6}}
-DFH_LEAK = {"sensor": 8, "start_days_ago": 3, "rise_h": 3, "peak": 1.9, "settle": 1.45, "decay_h": 30,
+IS_LEAK = {"sensor": 8, "start_days_ago": 3, "rise_h": 3, "peak": 1.9, "settle": 1.45, "decay_h": 30,
             "status": ProgeoAlarm.Status.NEU, "rain": {"before_h": 3, "duration": 5, "amount": 14.2}}
 
 # LoRaWAN climate sensors: share of uplinks lost on the radio link, battery
@@ -128,8 +128,8 @@ DEMO_PEOPLE = [
     ("erika.mustermann", "Erika", "Mustermann", "+49 151 23456781", "member",
      ProgeoAccess.NotifiTrans.EMAIL_AND_SMS, _ALARM_TIMEOUT),
     ("max.mustermann", "Max", "Mustermann", "+49 151 23456782", "member", ProgeoAccess.NotifiTrans.EMAIL, _ALARM),
-    ("jonas.weber", "Jonas", "Weber", "+49 160 9876541", "single:smartex", ProgeoAccess.NotifiTrans.SMS, _ALARM),
-    ("sabine.krueger", "Sabine", "Krüger", "+49 160 9876542", "single:dfh", ProgeoAccess.NotifiTrans.EMAIL, _ALARM),
+    ("jonas.weber", "Jonas", "Weber", "+49 160 9876541", "single:smartex_dm", ProgeoAccess.NotifiTrans.SMS, _ALARM),
+    ("sabine.krueger", "Sabine", "Krüger", "+49 160 9876542", "single:smartex_is", ProgeoAccess.NotifiTrans.EMAIL, _ALARM),
     ("lukas.hoffmann", "Lukas", "Hoffmann", None, "single:lorawan", ProgeoAccess.NotifiTrans.EMAIL, _ALARM),
     ("laura.fischer", "Laura", "Fischer", "+49 171 5550101", "partner", None, None),
     ("paul.wagner", "Paul", "Wagner", None, "partner", None, None),
@@ -140,9 +140,9 @@ DEMO_PEOPLE = [
 # Every demo location is rebuilt on each run; `kind` also names the plan file.
 LOCATIONS = [
     {
-        "kind": "smartex",
-        "name": "Demo Flachdach (smartex)",
-        "project_type": TYPES.SMARTEX,
+        "kind": "smartex_dm",
+        "name": "Demo Flachdach (smartex® dm)",
+        "project_type": TYPES.SMARTEX_DM,
         "project_id": 9001,
         "address": "Musterstrasse 1",
         "city": "Musterstadt",
@@ -151,18 +151,18 @@ LOCATIONS = [
         "leak": SMARTEX_LEAK,
     },
     {
-        "kind": "dfh",
-        "name": "Demo Dachsanierung (DFH)",
-        "project_type": TYPES.DFH,
+        "kind": "smartex_is",
+        "name": "Demo Dachsanierung (smartex® is)",
+        "project_type": TYPES.SMARTEX_IS,
         "project_id": 9002,
         "address": "Dorfweg 12",
         "city": "Beispieldorf",
         "coordinates": (52.4559, 13.2905),
         "points": [
-            point for name, (rect, columns, rows) in DFH_ZONES.items()
+            point for name, (rect, columns, rows) in IS_ZONES.items()
             for point in _grid(*rect, columns, rows, name, snake=True)
         ],
-        "leak": DFH_LEAK,
+        "leak": IS_LEAK,
     },
     {
         "kind": "lorawan",
@@ -181,7 +181,7 @@ class Command(BaseCommand):
     help = (
         "Create (or reset) the demo account used by the public demo: an Account with a 'demo' user "
         "(read-only portal permissions, see helper/demo.py), a LimitedToken for the demo link and one "
-        "demo location per device type (smartex: 25 sensors, DFH: 14 sensors in 3 roof zones, LoRaWAN: "
+        "demo location per device type (smartex® dm: 25 sensors, smartex® is: 14 sensors in 3 roof zones, LoRaWAN: "
         "4 climate sensors), each with a drawn Lageplan, measure points on it, measurements of the "
         "last 3 months and the alarms they raise, plus a few demo people (colleagues, single-access "
         "users, partners to grant access to). The locations live in a separate database "
@@ -294,6 +294,7 @@ class Command(BaseCommand):
         )
         for token in tokens:
             self.stdout.write(_link_line(token))
+            self.stdout.write(_usage_line(token))
 
     # ------------------------------------------------------------------ cleanup
 
@@ -336,6 +337,7 @@ class Command(BaseCommand):
             return
         for token in tokens:
             self.stdout.write(_link_line(token))
+            self.stdout.write(_usage_line(token))
 
     # ------------------------------------------------------------------- access
 
@@ -720,7 +722,7 @@ class Command(BaseCommand):
 
         from django.core.files.base import ContentFile
 
-        drawing = {"smartex": _draw_smartex, "dfh": _draw_dfh, "lorawan": _draw_lorawan}[spec["kind"]]
+        drawing = {"smartex_dm": _draw_smartex, "smartex_is": _draw_smartex_is, "lorawan": _draw_lorawan}[spec["kind"]]
         plan = _Plan()
         reference, meters_per_pixel = drawing(plan)
         plan.title_block(spec["name"], f"{spec['address']}, 12345 {spec['city']}")
@@ -786,6 +788,35 @@ def _link_line(token):
     return (
         f"{token.created:%Y-%m-%d %H:%M}  {label[:24]:<24}  {status:<27}  opened {token.check_counter:>5}x  "
         f"last {last:<16}  /demo/login/{token.raw_hash}"
+    )
+
+
+def _duration(seconds):
+    hours, rest = divmod(int(seconds), 3600)
+    return f"{hours}:{rest // 60:02d}:{rest % 60:02d}" if hours else f"{rest // 60}:{rest % 60:02d}"
+
+
+def _usage_line(token):
+    """The visits of a demo link (DemoSession): how many, active time in total
+    and per visit (median), the last one and the most visited sections."""
+    from progeo.v1.models import DemoSession
+
+    sessions = list(DemoSession.objects.using("default").filter(token=token).order_by("-last_seen_at"))
+    if not sessions:
+        return "    no visits yet"
+    active = sorted(session.active_seconds for session in sessions)
+    middle = len(active) // 2
+    median = active[middle] if len(active) % 2 else (active[middle - 1] + active[middle]) / 2
+    sections = {}
+    for session in sessions:
+        for section, views in (session.pages or {}).items():
+            sections[section] = sections.get(section, 0) + views
+    top = ", ".join(f"{name} {views}x" for name, views in sorted(sections.items(), key=lambda item: -item[1])[:4])
+    last = sessions[0].last_seen_at
+    last = timezone.localtime(last) if timezone.is_aware(last) else last
+    return (
+        f"    {len(sessions)} visits  active {_duration(sum(active))} in total, median {_duration(median)}"
+        f"  last visit {last:%Y-%m-%d %H:%M}" + (f"  pages: {top}" if top else "")
     )
 
 
@@ -1027,22 +1058,22 @@ def _draw_smartex(plan):
     return (x1, y2), meters_per_pixel
 
 
-def _draw_dfh(plan):
-    """A house with annex and garage, the three roof zones of the DFH sensors."""
+def _draw_smartex_is(plan):
+    """A house with annex and garage, the three roof zones of the smartex® is sensors."""
     draw = plan.draw
     plan.dashed_rectangle((60, 70, PLAN_SIZE[0] - 60, 990))  # property line
     plan.text(620, 1020, "Dorfweg", size=20, fill=INK_SOFT, center=True)
-    for name, ((x1, y1, x2, y2), _columns, _rows) in DFH_ZONES.items():
+    for name, ((x1, y1, x2, y2), _columns, _rows) in IS_ZONES.items():
         draw.rectangle([x1, y1, x2, y2], outline=INK, width=4, fill=ROOF_FILL)
         draw.rectangle([x1 + 10, y1 + 10, x2 - 10, y2 - 10], outline=LINE_SOFT, width=1)
         plan.text(x1 + 18, y1 + 18, name, size=20)
     # Driveway to the garage.
     plan.hatch((1080, 700, 1320, 990), fill=ZONE_FILL, spacing=22)
     draw.rectangle([1080, 700, 1320, 990], outline=LINE_SOFT, width=1)
-    x1, y1, x2, _y2 = DFH_ZONES["Hauptdach"][0]
-    plan.dimension((x1, y1 - 40), (x2, y1 - 40), _meters(x2 - x1, DFH_METERS_PER_PIXEL))
+    x1, y1, x2, _y2 = IS_ZONES["Hauptdach"][0]
+    plan.dimension((x1, y1 - 40), (x2, y1 - 40), _meters(x2 - x1, IS_METERS_PER_PIXEL))
     plan.north_arrow(1480, 140)
-    return (DFH_ZONES["Anbau"][0][0], DFH_ZONES["Anbau"][0][3]), DFH_METERS_PER_PIXEL
+    return (IS_ZONES["Anbau"][0][0], IS_ZONES["Anbau"][0][3]), IS_METERS_PER_PIXEL
 
 
 def _draw_lorawan(plan):

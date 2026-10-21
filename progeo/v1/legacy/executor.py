@@ -523,6 +523,7 @@ def _store_legacy_measurement(measurement, project_id, raw_hash, numbered_sensor
                 temperature=data.get("temperature"),
                 humidity=data.get("humidity"),
                 battery=data.get("battery"),
+                battery_v=data.get("battery_v"),
                 samples=samples,
                 raw_data=data,
             )
@@ -534,7 +535,6 @@ def _store_legacy_measurement(measurement, project_id, raw_hash, numbered_sensor
                 if parsed_timestamp is not None:
                     measure.last_updated = parsed_timestamp
                 measure.resistance_idc = sample.get("r_idc_ohm", MAX_JSON_SAFE_RESISTANCE_OHM)
-                measure.resistance_vdc = sample.get("r_vdc_ohm", MAX_JSON_SAFE_RESISTANCE_OHM)
 
         else:
             raise ValueError("Measurement must be a DataMeasurement instance or a dict | measurement:", measurement)

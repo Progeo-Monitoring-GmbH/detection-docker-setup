@@ -188,6 +188,23 @@ i18n
           heatmap_canvas_hint: 'Mouse wheel: zoom · drag: move · double-click: reset',
           heatmap_heat: 'Heat',
           heatmap_no_data: 'No sensor measurements available.',
+          heatmap_window_label: 'Time range',
+          heatmap_window_from: 'start',
+          heatmap_window_to: 'end',
+          heatmap_step_label: 'Step',
+          heatmap_step_hint: 'highest value per step',
+          heatmap_frames_one: '{{count}} frame',
+          heatmap_frames_other: '{{count}} frames',
+          heatmap_too_many_frames: 'Too many frames for this time range - choose a larger step or a shorter range',
+          heatmap_step_30m: '30 min',
+          heatmap_step_1h: '1 h',
+          heatmap_step_2h: '2 h',
+          heatmap_step_4h: '4 h',
+          heatmap_step_6h: '6 h',
+          heatmap_step_1d: '1 day',
+          heatmap_step_2d: '2 days',
+          heatmap_step_7d: '7 days',
+          heatmap_step_14d: '14 days',
           heatmap_video_error_not_started:
             'The server did not start the video rendering.',
           heatmap_video_error_upload: 'Uploading the frames failed.',
@@ -264,6 +281,8 @@ i18n
           climate_temperature_axis: 'Temperature (°C)',
           climate_battery_title: 'Battery',
           climate_battery_axis: 'Battery (%)',
+          climate_battery_v_title: 'Battery voltage',
+          climate_battery_v_axis: 'Battery voltage (V)',
           climate_empty: 'No readings in this period.',
           status_legend_title: 'Effective potential',
           status_verdachtsstellen_title: 'Suspected leaks',
@@ -549,7 +568,7 @@ i18n
             'This privacy policy is currently available in German only. The German version is legally binding.',
           consent_title: 'Privacy settings',
           consent_intro:
-            'We only use technically necessary cookies and browser storage to sign you in and to run this application securely. With your consent, maps additionally load map tiles from external providers. You can change your choice at any time via the info menu (i) in the top bar.',
+            'We only use technically necessary cookies and browser storage to sign you in and to run this application securely. With your consent, maps additionally load map tiles from external providers, and the public demo measures how long it is actively used. You can change your choice at any time via the info menu (i) in the top bar.',
           consent_privacy_policy: 'Privacy policy',
           consent_reject: 'Necessary only',
           consent_accept_all: 'Accept all',
@@ -561,6 +580,9 @@ i18n
           consent_necessary_desc:
             'Sign-in token, CSRF protection, session cache, language preference and this privacy choice. Required for the application to work; cannot be disabled.',
           consent_maps_title: 'External map services',
+          consent_stats_title: 'Usage statistics (demo)',
+          consent_stats_desc:
+            'Only in the public demo: measures how long and which areas of the demo are actively used (a short activity message every 30 seconds while you use it). No cookies, no IP address, nothing passed on to third parties.',
           consent_maps_desc:
             'Loads map tiles from OpenStreetMap and Esri ArcGIS Online. Your IP address and the requested map area are transmitted to these providers, possibly to servers outside the EU.',
           consent_maps_blocked:
@@ -818,6 +840,23 @@ i18n
           heatmap_canvas_hint: 'Mausrad: zoomen · Ziehen: verschieben · Doppelklick: zurücksetzen',
           heatmap_heat: 'Heat',
           heatmap_no_data: 'Keine Sensor-Messwerte vorhanden.',
+          heatmap_window_label: 'Zeitraum',
+          heatmap_window_from: 'Beginn',
+          heatmap_window_to: 'Ende',
+          heatmap_step_label: 'Schrittweite',
+          heatmap_step_hint: 'je Schritt der höchste Wert',
+          heatmap_frames_one: '{{count}} Frame',
+          heatmap_frames_other: '{{count}} Frames',
+          heatmap_too_many_frames: 'Zu viele Frames für diesen Zeitraum – größere Schrittweite oder kürzeren Zeitraum wählen',
+          heatmap_step_30m: '30 min',
+          heatmap_step_1h: '1 h',
+          heatmap_step_2h: '2 h',
+          heatmap_step_4h: '4 h',
+          heatmap_step_6h: '6 h',
+          heatmap_step_1d: '1 Tag',
+          heatmap_step_2d: '2 Tage',
+          heatmap_step_7d: '7 Tage',
+          heatmap_step_14d: '14 Tage',
           heatmap_video_error_not_started:
             'Der Server hat die Videoerstellung nicht gestartet.',
           heatmap_video_error_upload: 'Hochladen der Frames fehlgeschlagen.',
@@ -899,6 +938,8 @@ i18n
           climate_temperature_axis: 'Temperatur (°C)',
           climate_battery_title: 'Batterie',
           climate_battery_axis: 'Batterie (%)',
+          climate_battery_v_title: 'Batteriespannung',
+          climate_battery_v_axis: 'Batteriespannung (V)',
           climate_empty: 'Keine Messwerte in diesem Zeitraum.',
           status_legend_title: 'Wirkpotenzial',
           status_verdachtsstellen_title: 'Verdachtsstellen',
@@ -1192,7 +1233,7 @@ i18n
             'Diese Datenschutzerklärung ist derzeit nur auf Deutsch verfügbar.',
           consent_title: 'Datenschutz-Einstellungen',
           consent_intro:
-            'Wir verwenden nur technisch notwendige Cookies und Browser-Speicher, um Sie anzumelden und diese Anwendung sicher zu betreiben. Mit Ihrer Einwilligung laden Karten zusätzlich Kartenkacheln von externen Anbietern. Ihre Auswahl können Sie jederzeit über das Info-Menü (i) in der Kopfleiste ändern.',
+            'Wir verwenden nur technisch notwendige Cookies und Browser-Speicher, um Sie anzumelden und diese Anwendung sicher zu betreiben. Mit Ihrer Einwilligung laden Karten zusätzlich Kartenkacheln von externen Anbietern, und die öffentliche Demo misst, wie lange sie aktiv genutzt wird. Ihre Auswahl können Sie jederzeit über das Info-Menü (i) in der Kopfleiste ändern.',
           consent_privacy_policy: 'Datenschutzerklärung',
           consent_reject: 'Nur notwendige',
           consent_accept_all: 'Alle akzeptieren',
@@ -1204,6 +1245,9 @@ i18n
           consent_necessary_desc:
             'Anmelde-Token, CSRF-Schutz, Sitzungs-Cache, Spracheinstellung und diese Datenschutz-Auswahl. Für den Betrieb der Anwendung erforderlich; kann nicht deaktiviert werden.',
           consent_maps_title: 'Externe Kartendienste',
+          consent_stats_title: 'Nutzungsstatistik (Demo)',
+          consent_stats_desc:
+            'Nur in der öffentlichen Demo: misst, wie lange und welche Bereiche der Demo aktiv genutzt werden (eine kurze Aktivitätsmeldung alle 30 Sekunden, solange Sie sie bedienen). Ohne Cookies, ohne IP-Adresse, keine Weitergabe an Dritte.',
           consent_maps_desc:
             'Lädt Kartenkacheln von OpenStreetMap und Esri ArcGIS Online. Dabei werden Ihre IP-Adresse und der angefragte Kartenausschnitt an diese Anbieter übermittelt, ggf. auch an Server außerhalb der EU.',
           consent_maps_blocked:

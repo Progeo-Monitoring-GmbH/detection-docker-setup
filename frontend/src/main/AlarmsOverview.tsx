@@ -15,7 +15,7 @@ import axiosConfig from '../axiosConfig';
 import { showErrorBar, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import { FilterComponent } from '../components/ui/FilterComponent.jsx';
 import SensorHeatmap2D from '../components/device/SensorHeatmap2D.tsx';
-import { type SensorHeatmapResponse } from '../components/device/SensorHeatmap3D.tsx';
+import { type SensorHeatmapResponse } from '../components/device/sensorHeatmapTypes';
 import AlarmMeasurementCompareChart from '../components/device/AlarmMeasurementCompareChart.tsx';
 import AlarmTimeline, {
   alarmKey,

@@ -8,7 +8,7 @@ import axiosConfig from '../axiosConfig';
 import { downloadResponse, openResponseInNewTab } from '../helper';
 import { showRequestError } from '../components/ui/Snackbar.jsx';
 import SensorHeatmap2D from '../components/device/SensorHeatmap2D.tsx';
-import { type SensorHeatmapResponse } from '../components/device/SensorHeatmap3D.tsx';
+import { type SensorHeatmapResponse } from '../components/device/sensorHeatmapTypes';
 import MeasurementSamplesCompareChart, {
   type MeasurementCompareRow,
 } from '../components/device/MeasurementSamplesCompareChart.tsx';

@@ -40,10 +40,7 @@ import {
   pointMeters,
 } from './planMeters';
 import SensorTooltip from './SensorTooltip';
-import type {
-  SensorHeatmapLocation,
-  SensorHeatmapResponse,
-} from './SensorHeatmap3D';
+import type { SensorHeatmapLocation, SensorHeatmapResponse } from './sensorHeatmapTypes';
 import { useHeatmapFrameExport } from './useHeatmapFrameExport';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import axiosConfig from '../../axiosConfig';
@@ -1066,7 +1063,7 @@ const SensorHeatmap2D = ({
           </div>
 
           <div className="d-flex flex-wrap align-items-center gap-3 mt-1">
-            <div className="flex-grow-1" style={{ minWidth: 200 }}>
+            <div className="flex-grow-1 pb-2" style={{ minWidth: 200 }}>
               <label
                 htmlFor="heatmap2d-timestamp"
                 className="form-label small text-muted mb-0"

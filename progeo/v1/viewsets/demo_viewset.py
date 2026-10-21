@@ -17,7 +17,15 @@ from rest_framework.throttling import SimpleRateThrottle
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.helper.basics import RequestFailed, RequestSuccess
-from progeo.helper.demo import DEMO_PERMISSION, DEMO_TOKEN_PURPOSE, DEMO_USERNAME
+from progeo.helper.demo import (
+    DEMO_PERMISSION,
+    DEMO_SESSION_CLAIM,
+    DEMO_TOKEN_PURPOSE,
+    DEMO_USERNAME,
+    demo_heartbeat_throttle,
+    record_demo_heartbeat,
+    start_demo_session,
+)
 from progeo.helper.location_access import location_q, user_accounts
 from progeo.v1.models import LimitedToken, ProgeoLocation
 from progeo.v1.serializers import LocationSerializer, ProgeoTokenObtainPairSerializer
@@ -108,10 +116,32 @@ class DemoViewSet(viewsets.ViewSet):
         ):
             return RequestFailed({"reason": "Invalid demo link"})
 
-        if not request.data.get("renewal"):
+        renewal = bool(request.data.get("renewal"))
+        if not renewal:
             _count_opening(token)
+        # The visit (DemoSession) travels in the JWT; a renewal of an expired
+        # session continues it.
+        language = request.data.get("language") or request.headers.get("Accept-Language", "")[:2]
+        session_key = start_demo_session(
+            token, request.data.get("session") if renewal else None, str(language)
+        )
         refresh = ProgeoTokenObtainPairSerializer.get_token(user)
+        refresh[DEMO_SESSION_CLAIM] = session_key
         return RequestSuccess({"refresh": str(refresh), "access": str(refresh.access_token)})
+
+    @action(detail=False, methods=["POST"], url_path="heartbeat", throttle_classes=[demo_heartbeat_throttle()])
+    def heartbeat(self, request, *args, **kwargs):
+        """Activity of the demo session (DemoSession): the browser sends it
+        while the visitor is active, {"page": <frontend route>}."""
+        if not self._allowed(request):
+            return _forbidden()
+        claims = request.auth
+        session_key = claims.get(DEMO_SESSION_CLAIM) if hasattr(claims, "get") else None
+        page = request.data.get("page") if hasattr(request.data, "get") else ""
+        session = record_demo_heartbeat(session_key, page if isinstance(page, str) else "")
+        if session is None:
+            return RequestFailed({"reason": "No demo session"})
+        return RequestSuccess({"active_seconds": session.active_seconds})
 
     def list(self, request, *args, **kwargs):
         """The demo locations, newest type order as stored."""

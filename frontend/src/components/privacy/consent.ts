@@ -7,7 +7,7 @@ export const CONSENT_STORAGE_KEY = 'progeo_consent';
 
 // Bump whenever the categories or their description change materially - every
 // stored decision with an older version is discarded and the banner asks again.
-export const CONSENT_VERSION = 1;
+export const CONSENT_VERSION = 2; // 2: + statistics
 
 // Re-ask after 12 months, as recommended by most EU data protection authorities.
 export const CONSENT_MAX_AGE_MS = 365 * 24 * 60 * 60 * 1000;
@@ -19,6 +19,8 @@ const LEGACY_CONSENT_COOKIE = 'progeo_cookie_consent';
 export type ConsentCategories = {
   necessary: true;
   externalMaps: boolean;
+  /** Usage statistics of the public demo: its activity heartbeat (useDemoHeartbeat). */
+  statistics: boolean;
 };
 
 export type OptionalConsentCategory = Exclude<
@@ -49,7 +51,10 @@ const isValidRecord = (value: unknown, now: number): value is ConsentRecord => {
   if (!Number.isFinite(decidedAt) || now - decidedAt > CONSENT_MAX_AGE_MS) {
     return false;
   }
-  return typeof record.categories?.externalMaps === 'boolean';
+  return (
+    typeof record.categories?.externalMaps === 'boolean' &&
+    typeof record.categories?.statistics === 'boolean'
+  );
 };
 
 /** The stored decision, or null when the user has not (validly) decided yet. */
@@ -73,7 +78,11 @@ export const writeConsent = (
   const record: ConsentRecord = {
     version: CONSENT_VERSION,
     decidedAt: now.toISOString(),
-    categories: { necessary: true, externalMaps: choices.externalMaps },
+    categories: {
+      necessary: true,
+      externalMaps: choices.externalMaps,
+      statistics: choices.statistics,
+    },
   };
   try {
     localStorage.setItem(CONSENT_STORAGE_KEY, JSON.stringify(record));

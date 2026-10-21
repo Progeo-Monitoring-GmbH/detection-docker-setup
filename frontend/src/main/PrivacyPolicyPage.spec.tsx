@@ -42,7 +42,7 @@ const renderPage = () => {
 
 describe('PrivacyPolicyPage', () => {
   it('links every table-of-contents entry to a section', () => {
-    writeConsent({ externalMaps: false });
+    writeConsent({ externalMaps: false, statistics: false });
     renderPage();
 
     const tocLinks = Array.from(
@@ -56,7 +56,7 @@ describe('PrivacyPolicyPage', () => {
   });
 
   it('lists every storage key the app actually uses', () => {
-    writeConsent({ externalMaps: false });
+    writeConsent({ externalMaps: false, statistics: false });
     renderPage();
 
     const text = container.textContent ?? '';
@@ -70,7 +70,7 @@ describe('PrivacyPolicyPage', () => {
   });
 
   it('opens the privacy settings from the page', () => {
-    writeConsent({ externalMaps: false });
+    writeConsent({ externalMaps: false, statistics: false });
     renderPage();
     expect(container.querySelector('[role="dialog"]')).toBeNull();
 

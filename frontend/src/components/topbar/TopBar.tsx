@@ -8,6 +8,7 @@ import { UserProfileModal } from '../../main/UserProfile.tsx';
 import { PRIVACY_POLICY_URL } from '../privacy/consent';
 import { useConsent } from '../privacy/ConsentProvider';
 import { isDemoUser } from '../../main/demo';
+import useDemoHeartbeat from '../../main/useDemoHeartbeat';
 
 const LANGUAGES: { code: 'de' | 'en'; label: string }[] = [
   { code: 'de', label: 'DE' },
@@ -18,6 +19,10 @@ const TopBar = () => {
   const auth = useAuth();
   const { t, i18n } = useTranslation();
   const { openSettings } = useConsent();
+
+  // The top bar is on every portal page - it carries the demo's activity
+  // heartbeat (a no-op for everyone else).
+  useDemoHeartbeat();
 
   const [username, setUsername] = useState('');
   const [infoOpen, setInfoOpen] = useState(false);

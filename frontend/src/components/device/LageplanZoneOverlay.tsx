@@ -38,9 +38,9 @@ type Hover = {
 } & ({ kind: 'point'; point: LageplanZonePoint } | { kind: 'zone'; group: ZoneGroup });
 
 /**
- * DFH-specific Lageplan visualization (Status tab): instead of the
+ * smartex® is-specific Lageplan visualization (Status tab): instead of the
  * continuous Gaussian heat field SensorHeatmap2D draws for smartex/other
- * project types, DFH locations combine every ProgeoMeasurePoint sharing the
+ * project types, smartex® is locations combine every ProgeoMeasurePoint sharing the
  * same `name` (a roof zone, e.g. "Hauptdach") into one connecting line drawn
  * over the Lageplan image - a zone is one physical run of sensors, not a
  * point cloud. Hovering a sensor shows its values, hovering a line the zone's.

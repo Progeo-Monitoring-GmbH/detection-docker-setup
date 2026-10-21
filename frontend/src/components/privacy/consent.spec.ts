@@ -19,18 +19,18 @@ describe('consent storage', () => {
 
   it('round-trips a decision', () => {
     const now = new Date('2026-10-01T12:00:00Z');
-    writeConsent({ externalMaps: true }, now);
+    writeConsent({ externalMaps: true, statistics: false }, now);
 
     expect(readConsent(now.getTime())).toEqual({
       version: CONSENT_VERSION,
       decidedAt: now.toISOString(),
-      categories: { necessary: true, externalMaps: true },
+      categories: { necessary: true, externalMaps: true, statistics: false },
     });
   });
 
   it('expires a decision older than the max age', () => {
     const decidedAt = new Date('2025-01-01T00:00:00Z');
-    writeConsent({ externalMaps: false }, decidedAt);
+    writeConsent({ externalMaps: false, statistics: false }, decidedAt);
 
     expect(
       readConsent(decidedAt.getTime() + CONSENT_MAX_AGE_MS - 1),
@@ -46,7 +46,7 @@ describe('consent storage', () => {
       JSON.stringify({
         version: CONSENT_VERSION - 1,
         decidedAt: new Date().toISOString(),
-        categories: { necessary: true, externalMaps: true },
+        categories: { necessary: true, externalMaps: true, statistics: false },
       }),
     );
 

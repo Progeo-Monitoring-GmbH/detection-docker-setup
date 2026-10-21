@@ -53,7 +53,8 @@ const MapConsentNotice = ({ placement = 'center' }: MapConsentNoticeProps) => {
       >
         <button
           type="button"
-          onClick={() => save({ externalMaps: true })}
+          // Only the maps - the statistics choice stays as it was.
+          onClick={() => save({ externalMaps: true, statistics: allows('statistics') })}
           style={{
             height: 32,
             padding: '0 14px',

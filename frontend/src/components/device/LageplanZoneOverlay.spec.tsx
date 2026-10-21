@@ -68,7 +68,7 @@ describe('LageplanZoneOverlay alignment', () => {
     vi.spyOn(axiosConfig, 'perform_get').mockImplementation(async (_auth, _url, onSuccess) => {
       onSuccess({ data: new Blob(['png'], { type: 'image/png' }) });
     });
-    render('media/uploads/lageplan/demo_dfh.png');
+    render('media/uploads/lageplan/demo_smartex_is.png');
     await vi.waitFor(() => expect(container.querySelector('img')).not.toBeNull());
 
     const image = container.querySelector('img')!;

@@ -325,8 +325,16 @@ class DeviceViewSet(ProgeoModalViewSet):
         if project_id is not None and isinstance(project_id, str) and project_id.strip() == "":
             project_id = None
 
+        battery_v = None
         if isinstance(raw_values, dict):
             device_id = raw_values.get("IMEI") if raw_values.get("IMEI") else (str(project_id) if project_id is not None else "legacy-field-unknown")
+            # Battery voltage in V, e.g. 'battery': 3.651.
+            try:
+                battery_v = float(raw_values.get("battery"))
+            except (TypeError, ValueError):
+                battery_v = None
+            if battery_v is not None and not math.isfinite(battery_v):
+                battery_v = None
         else:
             device_id = str(project_id) if project_id is not None else "legacy-field-unknown"
 
@@ -335,6 +343,7 @@ class DeviceViewSet(ProgeoModalViewSet):
             "raw": raw_values,
             "resistance_rows": resistance_rows,
             "samples": samples,
+            "battery_v": battery_v,
         }
 
         save_measurement_from_legacy_data(
@@ -348,6 +357,7 @@ class DeviceViewSet(ProgeoModalViewSet):
             "device_id": device_id,
             "sample": samples,
             "resistance_rows": resistance_rows,
+            "battery_v": battery_v,
             "count": len(samples),
         })
 
@@ -524,9 +534,10 @@ class DeviceViewSet(ProgeoModalViewSet):
                 continue
 
             try:
-                resistance_vdc = float(measurement.resistance_vdc)
+                # The VDC resistance is the IMEI sample (no column of its own).
+                resistance_vdc = float(measurement.samples[0])
                 resistance_idc = float(measurement.resistance_idc)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, IndexError, KeyError):
                 continue
 
             last_updated = measurement.last_updated
@@ -555,6 +566,7 @@ class DeviceViewSet(ProgeoModalViewSet):
                 "last_updated": last_updated.isoformat(),
                 "resistance_idc": resistance_idc,
                 "resistance_vdc": resistance_vdc,
+                "battery_v": measurement.battery_v,
             })
 
         devices = sorted(grouped.values(), key=lambda row: row.get("imei") or "")

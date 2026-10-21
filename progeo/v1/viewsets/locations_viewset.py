@@ -155,6 +155,56 @@ def _window_days(request):
     return max(1, min(int(raw), MAX_HISTORY_DAYS))
 
 
+# Heatmap in steps (?step=<seconds>): at most this many frames per request.
+HEATMAP_MAX_FRAMES = 2000
+HEATMAP_MIN_STEP_SECONDS = 60
+
+
+def _db_datetime(value):
+    """`value` as the database compares it: aware with USE_TZ, else naive
+    local time (the browser sends UTC, the production settings run without
+    time zones)."""
+    if value is None:
+        return None
+    if settings.USE_TZ:
+        return value if timezone.is_aware(value) else timezone.make_aware(value)
+    return timezone.make_naive(value) if timezone.is_aware(value) else value
+
+
+def _step_frames(queryset, time_from, time_to, step):
+    """The measurements of [time_from, time_to] grouped into frames of `step`
+    seconds (counted from time_from): per frame - at its start time - and
+    sensor the highest value, so a short spike can't fall between two frames.
+    Frames without measurements are left out. Returns (timestamps,
+    {sensor: values aligned with timestamps}, number of measurements)."""
+    frames = {}
+    total = 0
+    rows = queryset.filter(last_fetched__gte=time_from, last_fetched__lte=time_to).only(
+        "id", "last_fetched", "eigenpotenzial", "wirkpotenzial", "samples", "end_index"
+    )
+    for measurement in rows.iterator(chunk_size=2000):
+        total += 1
+        index = int((measurement.last_fetched - time_from).total_seconds() // step)
+        frame = frames.get(index)
+        pairs = measurement.get_pairs()
+        if frame is None:
+            frames[index] = list(pairs)
+            continue
+        for sensor, value in enumerate(pairs):
+            if sensor >= len(frame):
+                frame.append(value)
+            elif value > frame[sensor]:
+                frame[sensor] = value
+    order = sorted(frames)
+    sensors = max((len(frames[index]) for index in order), default=0)
+    timestamps = [(time_from + timedelta(seconds=index * step)).timestamp() for index in order]
+    data = {
+        sensor + 1: [frames[index][sensor] if sensor < len(frames[index]) else None for index in order]
+        for sensor in range(sensors)
+    }
+    return timestamps, data, total
+
+
 def _spread_over_window(queryset, limit):
     """(at most `limit` measurements of `queryset`, oldest first, total count
     in it). A time window can hold far more measurements than a chart shows:
@@ -1481,6 +1531,31 @@ class LocationViewSet(ProgeoModalViewSet):
         if days:
             time_from, time_to = timezone.now() - timedelta(days=days), None
 
+        # Or ?step=<seconds> (with from/to or days): every measurement of the
+        # window, grouped into frames of that length (see _step_frames).
+        step = request.query_params.get("step")
+        if step not in (None, ""):
+            try:
+                step = int(step)
+            except (TypeError, ValueError):
+                return RequestFailed({"reason": "step must be an integer (seconds)"})
+            if step < HEATMAP_MIN_STEP_SECONDS:
+                return RequestFailed({"reason": f"step must be at least {HEATMAP_MIN_STEP_SECONDS} seconds"})
+            if not time_from:
+                return RequestFailed({"reason": "step needs from (or days)"})
+            time_from = _db_datetime(time_from)
+            time_to = _db_datetime(time_to) or _db_datetime(timezone.now())
+            if time_to <= time_from:
+                return RequestFailed({"reason": "to must be after from"})
+            frames = math.ceil((time_to - time_from).total_seconds() / step)
+            if frames > HEATMAP_MAX_FRAMES:
+                return RequestFailed({
+                    "reason": f"{frames} frames - at most {HEATMAP_MAX_FRAMES}, choose a larger step",
+                    "max_frames": HEATMAP_MAX_FRAMES,
+                })
+        else:
+            step = None
+
         location, account = self._find_location(request, pk=pk)
         if not location:
             return RequestFailed({"reason": "Location not found"})
@@ -1488,11 +1563,17 @@ class LocationViewSet(ProgeoModalViewSet):
 
         points = ProgeoMeasurePoint.objects.using(db_name).filter(location=location)
         queryset = ProgeoMeasurement.for_account(account, using=db_name, user=request.user).filter(device__location=location)
-        if time_from:
+        stepped = None
+        if step:
+            stepped = _step_frames(queryset, time_from, time_to, step)
+            queryset = []
+        elif time_from:
             queryset = queryset.filter(last_fetched__gte=time_from)
-        if time_to:
+        if time_to and not step:
             queryset = queryset.filter(last_fetched__lte=time_to)
-        if days:
+        if step:
+            total = stepped[2]
+        elif days:
             queryset, total = _spread_over_window(queryset, limit)
         else:
             # Newest `limit` measurements (pk order is chronological), then
@@ -1553,12 +1634,17 @@ class LocationViewSet(ProgeoModalViewSet):
             '''
 
 
+        if stepped:
+            timestamps, _map = stepped[0], stepped[1]
+
         return RequestSuccess({
             "location": _location_data(location, account),
             "limit": limit,
             "from": time_from.isoformat() if time_from else None,
             "to": time_to.isoformat() if time_to else None,
             "days": days,
+            # Seconds per frame (?step=); None: one frame per measurement.
+            "step": step,
             # Measurements in the window, of which len(timestamps) are frames.
             "total": total,
             "data": _map,
@@ -1572,7 +1658,8 @@ class LocationViewSet(ProgeoModalViewSet):
         """Humidity/temperature/battery series per device - the LoRaWAN
         counterpart of `heatmap`. LoRaWAN measurements carry no samples, only
         ProgeoMeasurement.humidity/temperature/battery, and a location has several
-        devices, so every device gets its own series (oldest first)."""
+        devices, so every device gets its own series (oldest first). Also the
+        battery voltage (battery_v) of IMEI devices, shown below their Zeitreihe."""
         try:
             days = int(request.query_params.get("days", 7))
         except (TypeError, ValueError):
@@ -1589,7 +1676,10 @@ class LocationViewSet(ProgeoModalViewSet):
             ProgeoMeasurement.for_account(account, using=db_name, user=request.user)
             .annotate(measured=MEASURED_TIME)
             .filter(device__location=location, measured__gte=since)
-            .filter(Q(humidity__isnull=False) | Q(temperature__isnull=False) | Q(battery__isnull=False))
+            .filter(
+                Q(humidity__isnull=False) | Q(temperature__isnull=False) | Q(battery__isnull=False)
+                | Q(battery_v__isnull=False)
+            )
         )
         labels = {
             device.pk: device
@@ -1609,6 +1699,7 @@ class LocationViewSet(ProgeoModalViewSet):
                     "humidity": [],
                     "temperature": [],
                     "battery": [],
+                    "battery_v": [],
                 }
             return devices[device_id]
 
@@ -1625,7 +1716,8 @@ class LocationViewSet(ProgeoModalViewSet):
                 )
                 .values("device_id", "bucket")
                 .annotate(
-                    humidity_avg=Avg("humidity"), temperature_avg=Avg("temperature"), battery_avg=Avg("battery")
+                    humidity_avg=Avg("humidity"), temperature_avg=Avg("temperature"), battery_avg=Avg("battery"),
+                    battery_v_avg=Avg("battery_v"),
                 )
                 .order_by("bucket")
             )
@@ -1635,16 +1727,18 @@ class LocationViewSet(ProgeoModalViewSet):
                 entry["humidity"].append(_rounded(row["humidity_avg"]))
                 entry["temperature"].append(_rounded(row["temperature_avg"]))
                 entry["battery"].append(_rounded(row["battery_avg"]))
+                entry["battery_v"].append(_rounded(row["battery_v_avg"], 3))
         else:
             rows = queryset.order_by("measured", "id").values_list(
-                "device_id", "measured", "humidity", "temperature", "battery"
+                "device_id", "measured", "humidity", "temperature", "battery", "battery_v"
             )
-            for device_id, measured, humidity, temperature, battery in rows:
+            for device_id, measured, humidity, temperature, battery, battery_v in rows:
                 entry = entry_of(device_id)
                 entry["timestamps"].append(measured.timestamp())
                 entry["humidity"].append(humidity)
                 entry["temperature"].append(temperature)
                 entry["battery"].append(battery)
+                entry["battery_v"].append(battery_v)
 
         return RequestSuccess({
             "location": _location_data(location, account),

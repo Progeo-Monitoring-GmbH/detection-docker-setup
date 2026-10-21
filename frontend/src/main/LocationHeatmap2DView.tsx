@@ -6,7 +6,7 @@ import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig.tsx';
 import SensorHeatmap2D from '../components/device/SensorHeatmap2D.tsx';
-import { type SensorHeatmapLocation } from '../components/device/SensorHeatmap3D.tsx';
+import { type SensorHeatmapLocation } from '../components/device/sensorHeatmapTypes';
 import { showErrorBar, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import { HeatmapViewHeader, useLocationHeatmap } from './locationHeatmapShared';
 

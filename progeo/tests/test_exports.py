@@ -128,3 +128,62 @@ def test_heatmap_series_are_keyed_by_one_based_sensor(api_client, location_with_
 
     assert response.status_code == 200, response.content
     assert sorted(response.json()["data"]) == ["1", "2", "3"]
+
+
+# -- heatmap in steps (?step=) ----------------------------------------------
+
+
+@pytest.fixture
+def stepped_location(api_client):
+    """Measurements at minutes 5, 25, 70 and 200 after `start`."""
+    account = f.make_account()
+    location = f.make_location(account, project_id=4343)
+    device = f.make_device(location)
+    start = timezone.now().replace(microsecond=0) - timedelta(days=1)
+    for minutes, pairs in ((5, [10, 50]), (25, [40, 20]), (70, [15, 15]), (200, [99, 1])):
+        f.make_measurement(device, pairs=pairs, fetched_at=start + timedelta(minutes=minutes))
+    user = f.make_user(perms=PERMS, accounts=[account])
+    api_client.force_authenticate(user)
+    return location, start
+
+
+def _stepped(api_client, location, start, minutes, step, **extra):
+    params = {
+        "from": start.isoformat(),
+        "to": (start + timedelta(minutes=minutes)).isoformat(),
+        "step": step,
+        **extra,
+    }
+    return api_client.get(f"/v1/location/{location.id}/heatmap/", params)
+
+
+def test_steps_keep_each_sensors_highest_value_per_frame(api_client, stepped_location):
+    location, start = stepped_location
+    body = _stepped(api_client, location, start, 240, 3600).json()
+
+    # Hour 0: minutes 5 + 25 -> per sensor the max; hour 1: minute 70;
+    # hour 2: empty (left out); hour 3: minute 200.
+    assert body["step"] == 3600 and body["total"] == 4
+    assert body["data"] == {"1": [40, 15, 99], "2": [50, 15, 1]}
+    expected = [start + timedelta(hours=hours) for hours in (0, 1, 3)]
+    assert body["timestamps"] == [moment.timestamp() for moment in expected]
+
+
+def test_steps_need_a_window_and_a_sane_frame_count(api_client, stepped_location):
+    location, start = stepped_location
+    no_window = api_client.get(f"/v1/location/{location.id}/heatmap/", {"step": 3600}).json()
+    assert no_window["success"] is False
+
+    too_small = _stepped(api_client, location, start, 240, 10).json()
+    assert "at least" in too_small["reason"]
+
+    # 1 year in 1 minute steps: far more than HEATMAP_MAX_FRAMES.
+    too_many = _stepped(api_client, location, start, 365 * 24 * 60, 60).json()
+    assert too_many["success"] is False and too_many["max_frames"] == 2000
+
+
+def test_steps_with_days_count_from_now(api_client, stepped_location):
+    location, _start = stepped_location
+    body = api_client.get(f"/v1/location/{location.id}/heatmap/", {"days": 2, "step": 86400}).json()
+    assert body["total"] == 4
+    assert sum(1 for value in body["data"]["1"] if value is not None) == len(body["timestamps"])

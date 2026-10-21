@@ -5,7 +5,7 @@ import { useSnackbar } from 'notistack';
 import { useNavigate } from 'react-router';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig.tsx';
-import type { SensorHeatmapResponse } from '../components/device/SensorHeatmap3D.tsx';
+import type { SensorHeatmapResponse } from '../components/device/sensorHeatmapTypes';
 import { showRequestError } from '../components/ui/Snackbar.jsx';
 
 /** Debounce for the measurement-count slider before refetching. */

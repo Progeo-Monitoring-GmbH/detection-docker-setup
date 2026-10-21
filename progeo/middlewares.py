@@ -153,33 +153,45 @@ class DemoReadOnlyMiddleware:
 
     def __call__(self, request):
         if request.method not in self.SAFE_METHODS and not request.path.startswith(self.ALLOWED_PATHS):
-            from progeo.helper.demo import DEMO_EXPORT_PATHS, is_demo_user
+            from progeo.helper.demo import DEMO_WRITE_PATHS, is_demo_user
 
-            if request.path not in DEMO_EXPORT_PATHS and is_demo_user(self._user(request)):
+            if request.path not in DEMO_WRITE_PATHS and is_demo_user(self._user(request)):
                 from django.http import JsonResponse
 
                 return JsonResponse(
                     {"success": False, "reason": "Demo: changes are not saved", "demo_read_only": True},
                     status=403,
                 )
-        if self._is_demo_token(request):
-            return self._timed(request)
+        claims = self._demo_claims(request)
+        if claims is not None:
+            from progeo.helper.demo import (
+                DEMO_HEARTBEAT_PATH,
+                DEMO_SESSION_CLAIM,
+                record_demo_request,
+            )
+
+            response = self._timed(request)
+            if request.path != DEMO_HEARTBEAT_PATH:  # the heartbeat records itself
+                record_demo_request(claims.get(DEMO_SESSION_CLAIM))
+            return response
         return self.get_response(request)
 
     @staticmethod
-    def _is_demo_token(request):
-        """The signed `is_demo` claim of the JWT - no database access, so
-        every other request pays nothing for the demo log."""
+    def _demo_claims(request):
+        """The JWT's claims if it carries the signed `is_demo` claim, else
+        None - no database access, so every other request pays nothing for
+        the demo log and session."""
         header = request.META.get("HTTP_AUTHORIZATION", "")
         if not header.startswith("Bearer "):
-            return False
+            return None
         from rest_framework_simplejwt.exceptions import TokenError
         from rest_framework_simplejwt.tokens import AccessToken
 
         try:
-            return bool(AccessToken(header[len("Bearer "):]).get("is_demo"))
+            token = AccessToken(header[len("Bearer "):])
         except TokenError:
-            return False
+            return None
+        return token if token.get("is_demo") else None
 
     def _timed(self, request):
         import time

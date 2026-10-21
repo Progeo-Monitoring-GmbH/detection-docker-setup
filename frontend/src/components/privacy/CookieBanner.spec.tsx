@@ -107,8 +107,39 @@ describe('CookieBanner', () => {
     expect(readConsent()?.categories.externalMaps).toBe(true);
   });
 
+  it('opts in to the demo statistics only when chosen', () => {
+    renderBanner();
+    clickButton('consent_customize');
+
+    const [, statsSwitch] = Array.from(
+      container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
+    );
+    expect(statsSwitch.checked).toBe(false);
+    act(() => statsSwitch.click());
+    clickButton('consent_save');
+
+    expect(readConsent()?.categories).toEqual({ necessary: true, externalMaps: false, statistics: true });
+  });
+
+  it('includes the demo statistics in "accept all" and "necessary only"', () => {
+    renderBanner();
+    clickButton('consent_accept_all');
+    expect(readConsent()?.categories.statistics).toBe(true);
+
+    act(() => (container.querySelector('[data-testid="open-settings"]') as HTMLButtonElement).click());
+    clickButton('consent_reject');
+    expect(readConsent()?.categories.statistics).toBe(false);
+  });
+
+  it('keeps the statistics choice when maps are granted from the map notice', () => {
+    writeConsent({ externalMaps: false, statistics: true });
+    renderBanner();
+    clickButton('consent_maps_enable');
+    expect(readConsent()?.categories).toEqual({ necessary: true, externalMaps: true, statistics: true });
+  });
+
   it('lets a returning user reopen the settings and revoke consent', () => {
-    writeConsent({ externalMaps: true });
+    writeConsent({ externalMaps: true, statistics: false });
     renderBanner();
     expect(dialog()).toBeNull();
 
@@ -128,7 +159,7 @@ describe('CookieBanner', () => {
   });
 
   it('closes reopened settings on Escape without changing the decision', () => {
-    writeConsent({ externalMaps: true });
+    writeConsent({ externalMaps: true, statistics: false });
     renderBanner();
     act(() =>
       container

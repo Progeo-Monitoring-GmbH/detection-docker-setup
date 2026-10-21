@@ -13,8 +13,17 @@ import {
   showSuccessBar,
 } from '../components/ui/Snackbar.jsx';
 import SensorHeatmap2D from '../components/device/SensorHeatmap2D';
+import HeatmapRangeControls from '../components/device/HeatmapRangeControls';
+import {
+  alignDown,
+  alignUp,
+  defaultWindow,
+  heatmapQuery,
+  type HeatmapWindow,
+  WINDOW_GRID_MS,
+} from '../components/device/heatmapSteps';
 import { formatMeters } from '../components/device/planMeters';
-import type { SensorHeatmapResponse } from '../components/device/SensorHeatmap3D';
+import type { SensorHeatmapResponse } from '../components/device/sensorHeatmapTypes';
 import LageplanZoneOverlay from '../components/device/LageplanZoneOverlay';
 import SensorListTable, {
   type SensorListRow,
@@ -34,6 +43,7 @@ import SeverityBadge, {
 import type { LocationDetail } from './locationTypes';
 import { getProjectTypeLabel, isLorawanProject } from './projectType';
 import LocationClimatePanels from './LocationClimatePanels';
+import LocationBatteryVoltagePanel from './LocationBatteryVoltagePanel';
 import {
   availableTimeRanges,
   effectiveTimeRange,
@@ -84,7 +94,6 @@ type VerdachtsstelleCluster = {
   }[];
 };
 
-const HEATMAP_LIMIT = 200;
 const ALARM_WINDOW_DAYS = 90;
 // Measurements per Zeitreihe range, spread evenly over it (30 days hourly).
 const ZEITREIHE_LIMIT = 720;
@@ -122,6 +131,14 @@ const LocationStatusView = ({
   const [heatmapIndex, setHeatmapIndex] = useState<number | null>(null);
   const [heatmapLoading, setHeatmapLoading] = useState(true);
   const [heatmapDenied, setHeatmapDenied] = useState(false);
+  // Time window + step of the heatmap (HeatmapRangeControls). Until the user
+  // picks one, it follows the newest measurement (the last 7 days, hourly).
+  const [heatmapWindow, setHeatmapWindow] = useState<HeatmapWindow>(() => defaultWindow(Date.now()));
+  const windowTouched = useRef(false);
+  // Responses per window/step: switching back is instant, nothing refetched.
+  const heatmapCache = useRef(new Map<string, SensorHeatmapResponse>());
+  const heatmapRequest = useRef(0);
+  const [heatmapRefreshing, setHeatmapRefreshing] = useState(false);
 
   const [clusters, setClusters] = useState<VerdachtsstelleCluster[]>([]);
   const [clustersLoading, setClustersLoading] = useState(true);
@@ -147,11 +164,7 @@ const LocationStatusView = ({
 
   // Long ranges only once the data reaches that far back - fetched when the
   // Zeitreihe is first opened (LoRaWAN: LocationClimatePanels does its own).
-  const measurementRange = useMeasurementRange(
-    locationId,
-    demo,
-    !isLorawan && statusView === 'zeitreihe',
-  );
+  const measurementRange = useMeasurementRange(locationId, demo, !isLorawan);
   const zeitreiheRanges = useMemo(
     () => availableTimeRanges(measurementRange),
     [measurementRange],
@@ -188,26 +201,51 @@ const LocationStatusView = ({
     );
   };
 
-  const loadHeatmap = useCallback(() => {
-    setHeatmapLoading(true);
-    setHeatmapDenied(false);
-    void axiosConfig.perform_get(
-      auth,
-      `${demo ? '/v1/demo' : '/v1/location'}/${locationId}/heatmap/?limit=${HEATMAP_LIMIT}`,
-      (response) => {
-        setHeatmap((response?.data || null) as SensorHeatmapResponse | null);
+  // One request per window/step; the shown heatmap stays while the next one
+  // loads, and only the newest request may replace it.
+  const loadHeatmap = useCallback(
+    (window: HeatmapWindow) => {
+      const query = heatmapQuery(window);
+      const cached = heatmapCache.current.get(query);
+      const request = ++heatmapRequest.current;
+      if (cached) {
+        setHeatmap(cached);
         setHeatmapLoading(false);
-      },
-      (error) => {
-        if (error?.response?.status === 403) {
-          setHeatmapDenied(true);
-        } else {
-          showRequestError(enqueueSnackbar, 'Could not load heatmap', error);
-        }
-        setHeatmapLoading(false);
-      },
-    );
-  }, [auth, demo, enqueueSnackbar, locationId]);
+        setHeatmapRefreshing(false);
+        return;
+      }
+      setHeatmapRefreshing(true);
+      setHeatmapDenied(false);
+      void axiosConfig.perform_get(
+        auth,
+        `${demo ? '/v1/demo' : '/v1/location'}/${locationId}/heatmap/?${query}`,
+        (response) => {
+          const data = (response?.data || null) as SensorHeatmapResponse | null;
+          if (data) {
+            heatmapCache.current.set(query, data);
+          }
+          if (request === heatmapRequest.current) {
+            setHeatmap(data);
+            setHeatmapLoading(false);
+            setHeatmapRefreshing(false);
+          }
+        },
+        (error) => {
+          if (request !== heatmapRequest.current) {
+            return;
+          }
+          if (error?.response?.status === 403) {
+            setHeatmapDenied(true);
+          } else {
+            showRequestError(enqueueSnackbar, 'Could not load heatmap', error);
+          }
+          setHeatmapLoading(false);
+          setHeatmapRefreshing(false);
+        },
+      );
+    },
+    [auth, demo, enqueueSnackbar, locationId],
+  );
 
   const loadClusters = useCallback(() => {
     setClustersLoading(true);
@@ -242,9 +280,40 @@ const LocationStatusView = ({
     if (isLorawan) {
       return;
     }
-    loadHeatmap();
     loadClusters();
-  }, [isLorawan, loadHeatmap, loadClusters]);
+  }, [isLorawan, loadClusters]);
+
+  useEffect(() => {
+    if (isLorawan) {
+      return;
+    }
+    loadHeatmap(heatmapWindow);
+  }, [isLorawan, loadHeatmap, heatmapWindow]);
+
+  // The default window ends at the newest measurement - for a location
+  // whose data stopped a while ago "the last 7 days" would be empty.
+  const newestMeasurement = measurementRange?.last ? Date.parse(measurementRange.last) : null;
+  useEffect(() => {
+    if (windowTouched.current || newestMeasurement == null || !Number.isFinite(newestMeasurement)) {
+      return;
+    }
+    const fitting = defaultWindow(newestMeasurement);
+    setHeatmapWindow((current) =>
+      current.to === fitting.to && current.from === fitting.from ? current : fitting,
+    );
+  }, [newestMeasurement]);
+
+  // The slider spans the location's measurements (and the shown window).
+  const oldestMeasurement = measurementRange?.first ? Date.parse(measurementRange.first) : null;
+  const windowBounds = useMemo(() => {
+    const first = oldestMeasurement != null && Number.isFinite(oldestMeasurement)
+      ? alignDown(oldestMeasurement, WINDOW_GRID_MS)
+      : heatmapWindow.from;
+    const last = newestMeasurement != null && Number.isFinite(newestMeasurement)
+      ? alignUp(newestMeasurement, WINDOW_GRID_MS)
+      : heatmapWindow.to;
+    return { min: Math.min(first, heatmapWindow.from), max: Math.max(last, heatmapWindow.to) };
+  }, [oldestMeasurement, newestMeasurement, heatmapWindow]);
 
   // Once per range (kept for switching back and forth).
   const loadZeitreihe = useCallback(
@@ -327,8 +396,8 @@ const LocationStatusView = ({
   // ProgeoLocation.PROJECT_TYPE_CHOICES (progeo/v1/models.py) - a fixed
   // Django IntegerChoices enum, safe to hardcode client-side (see
   // projectType.ts for the same convention used elsewhere).
-  const isDfh = location?.project_type === 3;
-  const isSmartex = location?.project_type === 1;
+  const isSmartexIs = location?.project_type === 3;
+  const isSmartexDm = location?.project_type === 1;
 
   const activeLageplan = useMemo(() => {
     const plans = heatmap?.location?.lageplans;
@@ -342,7 +411,7 @@ const LocationStatusView = ({
   const sensorPoints = useMemo(() => heatmap?.sensor_points ?? [], [heatmap]);
   const hasMeasurePoints = sensorPoints.length > 0;
 
-  // Only used for the DFH zone overlay - sensor_points already carry the
+  // Only used for the smartex® is zone overlay - sensor_points already carry the
   // same normalized x/y the heatmap markers use.
   const zonePoints = useMemo(
     () =>
@@ -693,6 +762,7 @@ const LocationStatusView = ({
           </div>
 
           {statusView === 'zeitreihe' ? (
+            <>
             <PanelCard title={t('status_zeitreihe_title')}>
               {zeitreiheLoading ? (
                 <div className="d-flex justify-content-center py-5 text-muted">
@@ -723,6 +793,12 @@ const LocationStatusView = ({
                 />
               )}
             </PanelCard>
+            <LocationBatteryVoltagePanel
+              locationId={locationId}
+              days={zeitreiheDays}
+              demo={demo}
+            />
+            </>
           ) : (
             <div
               style={{
@@ -744,7 +820,7 @@ const LocationStatusView = ({
                     </div>
                   ) : !hasMeasurePoints ? (
                     <SensorListTable rows={sensorRows} />
-                  ) : isDfh ? (
+                  ) : isSmartexIs ? (
                     <LageplanZoneOverlay
                       imageUrl={activeLageplan?.url ?? null}
                       points={zonePoints}
@@ -760,6 +836,16 @@ const LocationStatusView = ({
                           overflow: 'hidden',
                         }}
                       >
+                        <HeatmapRangeControls
+                          min={windowBounds.min}
+                          max={windowBounds.max}
+                          value={heatmapWindow}
+                          loading={heatmapRefreshing}
+                          onChange={(next) => {
+                            windowTouched.current = true;
+                            setHeatmapWindow(next);
+                          }}
+                        />
                         <SensorHeatmap2D
                           response={heatmap}
                           height={480}
@@ -768,7 +854,7 @@ const LocationStatusView = ({
                         />
                       </div>
 
-                      {isSmartex && (
+                      {isSmartexDm && (
                         <div style={{ marginTop: 14 }}>
                           <SensorListTable rows={sensorRows} />
                         </div>

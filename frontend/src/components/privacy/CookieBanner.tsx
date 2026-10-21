@@ -64,11 +64,13 @@ const CookieBanner = () => {
 
   const [showDetails, setShowDetails] = useState(false);
   const [mapsChoice, setMapsChoice] = useState(false);
+  const [statsChoice, setStatsChoice] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
   const returnFocusRef = useRef<Element | null>(null);
   const titleId = useId();
   const descId = useId();
   const mapsSwitchId = useId();
+  const statsSwitchId = useId();
 
   // Each time the banner opens: mirror the stored choice, move focus into the
   // dialog so screen readers announce it, and hand focus back when it closes.
@@ -78,6 +80,7 @@ const CookieBanner = () => {
     }
     setShowDetails(settingsOpen);
     setMapsChoice(consent?.categories.externalMaps ?? false);
+    setStatsChoice(consent?.categories.statistics ?? false);
     returnFocusRef.current = document.activeElement;
     dialogRef.current?.focus();
     return () => {
@@ -192,6 +195,20 @@ const CookieBanner = () => {
                 {t('consent_maps_desc')}
               </p>
             </li>
+            <li style={categoryStyle}>
+              <Form.Check
+                type="switch"
+                id={statsSwitchId}
+                checked={statsChoice}
+                onChange={(event) => setStatsChoice(event.target.checked)}
+                label={<strong>{t('consent_stats_title')}</strong>}
+                aria-describedby={`${statsSwitchId}-desc`}
+                style={{ marginBottom: 0 }}
+              />
+              <p id={`${statsSwitchId}-desc`} style={categoryDescStyle}>
+                {t('consent_stats_desc')}
+              </p>
+            </li>
           </ul>
         )}
       </div>
@@ -206,7 +223,7 @@ const CookieBanner = () => {
         {showDetails ? (
           <button
             type="button"
-            onClick={() => save({ externalMaps: mapsChoice })}
+            onClick={() => save({ externalMaps: mapsChoice, statistics: statsChoice })}
             style={secondaryButtonStyle}
           >
             {t('consent_save')}
