@@ -125,3 +125,49 @@ class AccountMiddleware:
         account = Account.objects.using(db_name).get(pk=1)
         request.account = account
         return self.get_response(request)
+
+
+class DemoReadOnlyMiddleware:
+    """The public demo user (helper/demo.py) may look at everything the portal
+    shows it, but never change anything: every non-GET request of that user
+    is refused here, before any view runs - including the ones with side
+    effects (request a measurement, test notifications, PDF report mails).
+    The SPA authenticates with a JWT, which DRF only resolves inside the view,
+    so the token is checked here as well. The response carries
+    "demo_read_only", so the frontend shows a hint instead of a login page."""
+
+    SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
+    # Session handling stays possible - also opening a demo link again while
+    # the browser still sends the JWT of an earlier demo visit.
+    ALLOWED_PATHS = ("/api/token/", "/v1/demo/login/")
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if request.method not in self.SAFE_METHODS and not request.path.startswith(self.ALLOWED_PATHS):
+            from progeo.helper.demo import is_demo_user
+
+            if is_demo_user(self._user(request)):
+                from django.http import JsonResponse
+
+                return JsonResponse(
+                    {"success": False, "reason": "Demo: changes are not saved", "demo_read_only": True},
+                    status=403,
+                )
+        return self.get_response(request)
+
+    @staticmethod
+    def _user(request):
+        user = getattr(request, "user", None)
+        if user is not None and user.is_authenticated:
+            return user
+        from rest_framework.exceptions import AuthenticationFailed
+        from rest_framework_simplejwt.authentication import JWTAuthentication
+        from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+
+        try:
+            result = JWTAuthentication().authenticate(request)
+        except (AuthenticationFailed, InvalidToken, TokenError):
+            return None
+        return result[0] if result else None

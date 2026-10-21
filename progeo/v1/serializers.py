@@ -16,6 +16,7 @@ from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
+from progeo.helper.demo import is_demo_user
 from progeo.helper.project_dbs import backup_project_key, database_of_backup
 from progeo.v1.helper import pretty_sizeof
 from progeo.v1.models import (
@@ -690,7 +691,9 @@ class ProgeoTokenObtainPairSerializer(TokenObtainPairSerializer):
             token["username"] = user.username
             token["is_staff"] = user.is_staff
             token["is_superuser"] = user.is_superuser
-            token["is_demo"] = user.username in ["demo", "unit_tests"]
+            # The read-only demo user - the frontend keeps it on the demo link
+            # instead of the login page and shows the demo badge.
+            token["is_demo"] = is_demo_user(user)
 
             return token
         return {}

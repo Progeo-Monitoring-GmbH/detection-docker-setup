@@ -7,6 +7,7 @@ import axiosConfig from '../../axiosConfig';
 import { UserProfileModal } from '../../main/UserProfile.tsx';
 import { PRIVACY_POLICY_URL } from '../privacy/consent';
 import { useConsent } from '../privacy/ConsentProvider';
+import { isDemoUser } from '../../main/demo';
 
 const LANGUAGES: { code: 'de' | 'en'; label: string }[] = [
   { code: 'de', label: 'DE' },
@@ -49,6 +50,7 @@ const TopBar = () => {
   }, []);
 
   const initials = username.slice(0, 2).toUpperCase() || '?';
+  const demo = isDemoUser(auth.user);
   const currentLang =
     (i18n.language || 'de').slice(0, 2).toLowerCase() === 'en' ? 'en' : 'de';
 
@@ -82,6 +84,24 @@ const TopBar = () => {
         justifyContent: 'flex-end',
       }}
     >
+      {demo && (
+        <span
+          title={t('demo_subtitle')}
+          style={{
+            height: 28,
+            padding: '0 12px',
+            borderRadius: 'var(--progeo-radius-pill)',
+            background: 'var(--progeo-orange)',
+            color: '#fff',
+            fontSize: 12,
+            fontWeight: 600,
+            display: 'flex',
+            alignItems: 'center',
+          }}
+        >
+          {t('demo_badge')}
+        </span>
+      )}
       <div style={{ position: 'relative' }}>
         <button
           type="button"

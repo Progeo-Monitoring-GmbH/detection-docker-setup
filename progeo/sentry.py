@@ -37,7 +37,8 @@ def init_sentry(*, server_role: str) -> bool:
         return False
 
     # sentry-sdk probes the installed eventlet, which warns on import - noise in every process start.
-    warnings.filterwarnings("ignore", message="Eventlet is deprecated")
+    # The message starts with a newline, and `message` only matches at its start.
+    warnings.filterwarnings("ignore", message=r"\s*Eventlet is deprecated")
 
     import sentry_sdk
     from sentry_sdk.integrations.celery import CeleryIntegration

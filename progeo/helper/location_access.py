@@ -49,7 +49,7 @@ def single_access_location_ids(user, account) -> set[int]:
     if account.db_name not in connections.databases:
         return set()
     if split_enabled() and account.db_name == DEFAULT_DB_ALIAS:
-        return _split_single_access_location_ids(user.pk, account)
+        return set(_split_single_access_by_account(user.pk).get(account.pk, ()))
     return set(
         ProgeoAccess.objects.using(account.db_name)
         .filter(user_id=user.pk, location__account=account)
@@ -59,51 +59,89 @@ def single_access_location_ids(user, account) -> set[int]:
 
 # With PROJECT_DB_SPLIT the access rows live in the project databases (and
 # "default" for projects without one): a user's rows mean one query per
-# database, so they are cached per user and dropped on every ProgeoAccess
-# save/delete (signals below), wherever it happens (views, admin, shell).
+# database (~1000), so they are read for all accounts in one pass, cached per
+# user and dropped on every ProgeoAccess save/delete (signals below), wherever
+# it happens (views, admin, shell). Requests that miss the cache at the same
+# time wait for one pass (lock in the cache) instead of each running its own.
 SINGLE_ACCESS_CACHE_SECONDS = 300
+# Longest a pass may hold the lock; waiters give up waiting after it as well.
+SINGLE_ACCESS_LOCK_SECONDS = 120
+SINGLE_ACCESS_POLL_SECONDS = 0.2
 
 
 def _single_access_cache_key(user_id):
-    return f"progeo:single-access:{user_id}"
+    # v2: {account pk: [location ids]} of every account (v1 held single accounts).
+    return f"progeo:single-access:v2:{user_id}"
 
 
-def _split_single_access_location_ids(user_id, account) -> set[int]:
+def _split_single_access_by_account(user_id) -> dict[int, list[int]]:
+    """{account pk: [location ids]} of the user's single-access rows in
+    "default" and every project database (split on)."""
+    import time
+
     from django.core.cache import cache
 
+    key = _single_access_cache_key(user_id)
+    lock_key = f"{key}:lock"
+    waited_until = time.monotonic() + SINGLE_ACCESS_LOCK_SECONDS
+    locked = False
+    while True:
+        try:
+            cached = cache.get(key)
+            if cached is not None:
+                return cached
+            locked = cache.add(lock_key, True, SINGLE_ACCESS_LOCK_SECONDS)
+        except Exception:  # noqa: BLE001 - cache unavailable: compute it
+            break
+        if locked or time.monotonic() > waited_until:
+            break
+        time.sleep(SINGLE_ACCESS_POLL_SECONDS)  # another request is reading them
+
+    try:
+        generation = _cache_call(cache.get, _single_access_generation_key(user_id))
+        by_account = _read_single_access_by_account(user_id)
+        # An access change during the pass (forget_single_access) makes its result stale.
+        if _cache_call(cache.get, _single_access_generation_key(user_id)) == generation:
+            _cache_call(cache.set, key, by_account, SINGLE_ACCESS_CACHE_SECONDS)
+        return by_account
+    finally:
+        if locked:
+            _cache_call(cache.delete, lock_key)
+
+
+def _read_single_access_by_account(user_id) -> dict[int, list[int]]:
     from progeo.helper.project_dbs import (
         existing_project_aliases,
         map_databases,
         register_project_db,
     )
 
-    key = _single_access_cache_key(user_id)
-    try:
-        cached = cache.get(key) or {}
-    except Exception:  # noqa: BLE001 - cache unavailable: compute it
-        cached = {}
-    if account.pk in cached:
-        return set(cached[account.pk])
-
-    def access_ids(alias):
+    def access_rows(alias):
         database = alias if alias == DEFAULT_DB_ALIAS else register_project_db(alias)
         return list(
             ProgeoAccess.objects.using(database)
-            .filter(user_id=user_id, location__account=account)
-            .values_list("location_id", flat=True)
+            .filter(user_id=user_id, location__account__isnull=False)
+            .values_list("location__account_id", "location_id")
         )
 
-    # One query per database - in parallel (map_databases), cached below.
-    ids = {
-        location_id
-        for chunk in map_databases(access_ids, [DEFAULT_DB_ALIAS, *existing_project_aliases()])
-        for location_id in chunk
-    }
+    # One query per database - in parallel (map_databases).
+    by_account = {}
+    for chunk in map_databases(access_rows, [DEFAULT_DB_ALIAS, *existing_project_aliases()]):
+        for account_id, location_id in chunk:
+            by_account.setdefault(account_id, set()).add(location_id)
+    return {account_id: sorted(ids) for account_id, ids in by_account.items()}
+
+
+def _single_access_generation_key(user_id):
+    return f"{_single_access_cache_key(user_id)}:generation"
+
+
+def _cache_call(method, *args):
+    """A cache call that treats an unavailable cache as a miss."""
     try:
-        cache.set(key, {**cached, account.pk: sorted(ids)}, SINGLE_ACCESS_CACHE_SECONDS)
-    except Exception:  # noqa: BLE001, S110 - cache unavailable: computed again next time
-        pass
-    return ids
+        return method(*args)
+    except Exception:  # noqa: BLE001 - cache unavailable: nothing cached
+        return None
 
 
 def request_location_id(request):
@@ -175,13 +213,15 @@ def accessible_locations_by_db(user, accounts, location_ids=None):
 
 
 def forget_single_access(user_id):
-    """Drop the cached access rows of a user (after a ProgeoAccess change)."""
+    """Drop the cached access rows of a user (after a ProgeoAccess change).
+    The new generation keeps a pass that is still running from caching the
+    rows it read before the change; it only has to outlive such a pass."""
+    import uuid
+
     from django.core.cache import cache
 
-    try:
-        cache.delete(_single_access_cache_key(user_id))
-    except Exception:  # noqa: BLE001, S110 - cache unavailable: nothing cached either
-        pass
+    _cache_call(cache.set, _single_access_generation_key(user_id), uuid.uuid4().hex, 2 * SINGLE_ACCESS_LOCK_SECONDS)
+    _cache_call(cache.delete, _single_access_cache_key(user_id))
 
 
 @receiver(post_save, sender=ProgeoAccess)
@@ -197,6 +237,13 @@ def user_accounts(user) -> list[Account]:
     if not user or not getattr(user, "pk", None):
         return []
     accounts = list(user.accounts.order_by("id"))
+    from progeo.helper.demo import is_demo_user
+
+    if is_demo_user(user):
+        # Only ever a member of the demo account. Looking for single-access
+        # rows elsewhere would query every project database (split on) - for
+        # the one user all demo visitors share, every few minutes.
+        return accounts
     member_ids = {account.pk for account in accounts}
     for account in configured_accounts():
         if account.pk not in member_ids and single_access_location_ids(user, account):

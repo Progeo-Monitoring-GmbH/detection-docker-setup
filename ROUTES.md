@@ -9,9 +9,9 @@ segments such as `:id` and `:account` are path parameters.
 | Route | Purpose |
 | --- | --- |
 | `/login` | Sign-in page. Supports a `forward` query parameter so the user can be returned to the page they originally requested. |
-| `/demo/login/:token` | Demo entry link. Exchanges the demo LimitedToken for a JWT of the read-only `demo` user (only the `module_demo_enabled` permission) and redirects to `/demo/`. Print the link with `python manage.py demo_account`. |
-| `/demo/` | Redirects to the first demo location. |
-| `/demo/location/:id` | Read-only demo of the status view (like `/location/:id/status`) for the smartex, DFH and LoRaWAN demo locations, served by `/v1/demo/...` from the `unit_tests` database. |
+| `/demo/login/:token` | Demo entry link. Exchanges the demo LimitedToken for a JWT of the read-only `demo` user and redirects to `/demo/` (or `?forward=`, used when an expired demo session logs in again). Print the link with `python manage.py demo_account`. |
+| `/demo/` | Opens the first demo location in the regular portal (`/location/:id/status`). The demo user sees the normal layout (sidebar, top bar with a Demo badge, profile, language) for the demo account's smartex, DFH and LoRaWAN locations; every write is refused by `DemoReadOnlyMiddleware`. |
+| `/demo/location/:id` | Older demo links: redirects to `/location/:id/status`. |
 | `/datenschutz` | Public privacy policy page. |
 | `/privacy` | Legacy/alternate privacy URL; redirects to `/datenschutz`. |
 | `/setup/:account/controller/qrcodes/` | Controller QR-code print sheet for the specified account. Rendered outside the application sidebar layouts. |

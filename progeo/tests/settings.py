@@ -68,6 +68,7 @@ MIDDLEWARE = [
     # "silk.middleware.SilkyMiddleware",
     "progeo.middlewares.AdminGetParamMiddleware",
     "progeo.middlewares.AccountMiddleware",
+    "progeo.middlewares.DemoReadOnlyMiddleware",
 ]
 
 

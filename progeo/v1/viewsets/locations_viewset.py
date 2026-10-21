@@ -39,6 +39,7 @@ from progeo.decorator import (
 from progeo.helper import heatmap_video, plan_meters
 from progeo.helper.basics import RequestFailed, RequestSuccess, save_check_dir
 from progeo.helper.cacher import cache_save_and_return, search_cache
+from progeo.helper.demo import is_demo_user
 from progeo.helper.location_access import (
     configured_accounts,
     location_q,
@@ -349,11 +350,13 @@ class LocationViewSet(ProgeoModalViewSet):
                         "email": user.email,
                         "mobile": profile.mobile if profile is not None else None,
                     })
+            # The public demo user must not learn who ProGeo's staff are.
+            include_staff = not is_demo_user(request.user)
             staff_users = [
                 {"id": user.id, "username": user.username, "email": user.email}
                 for user in User.objects.filter(is_staff=True).order_by("username")
-            ]
-            members = self._access_members(location, account, rows)
+            ] if include_staff else []
+            members = self._access_members(location, account, rows, include_staff=include_staff)
             return RequestSuccess({
                 "access": ProgeoAccessSerializer(rows, many=True).data,
                 "users": users,
@@ -460,7 +463,7 @@ class LocationViewSet(ProgeoModalViewSet):
         }
 
     @classmethod
-    def _access_members(cls, location, account, rules):
+    def _access_members(cls, location, account, rules, include_staff=True):
         """Everyone with access to `location`: account members (multi-access)
         first, then single-access ProgeoAccess users, then ProGeo staff (who
         see every location). A member can also have a rule - then `single` is
@@ -488,7 +491,7 @@ class LocationViewSet(ProgeoModalViewSet):
                 "rule": ProgeoAccessSerializer(rules_by_user[user.id]).data,
             })
         staff = User.objects.filter(Q(is_staff=True) | Q(is_superuser=True), is_active=True).order_by("username")
-        for user in staff:
+        for user in staff if include_staff else []:
             rule = rules_by_user.get(user.id)
             members.append({
                 **cls._user_contact(user),

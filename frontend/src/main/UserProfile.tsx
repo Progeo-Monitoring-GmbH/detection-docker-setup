@@ -10,6 +10,7 @@ import axiosConfig from '../axiosConfig';
 import { errorReason, showErrorBar, showInfoBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import PillButton from '../components/ui/kit/PillButton';
 import LabeledInput from '../components/ui/kit/LabeledInput';
+import { isDemoReadOnlyError } from './demo';
 
 type UserProfileResponse = {
   username: string;
@@ -214,7 +215,15 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
         setSaving(false);
         onHide();
       },
-      (error) => {
+      async (error) => {
+        if (isDemoReadOnlyError(error)) {
+          // The demo keeps nothing, but the language switch works in the browser.
+          await i18n.changeLanguage(language);
+          showInfoBar(enqueueSnackbar, t('demo_read_only'));
+          setSaving(false);
+          onHide();
+          return;
+        }
         const reason = errorReason(error);
         showErrorBar(enqueueSnackbar, `${t('profile_settings_error')}: ${reason}`);
         setSaving(false);

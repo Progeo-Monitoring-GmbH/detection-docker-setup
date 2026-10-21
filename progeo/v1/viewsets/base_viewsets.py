@@ -1,5 +1,6 @@
 import mimetypes
 import os
+import posixpath
 from urllib.parse import quote
 
 from django.contrib.auth import login
@@ -20,7 +21,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 
 from progeo.helper.basics import RequestFailed, RequestSuccess
 from progeo.helper.creator import create_MfS_log
-from progeo.helper.demo import DEMO_LAGEPLAN_PREFIX, DEMO_PERMISSION
+from progeo.helper.demo import DEMO_LAGEPLAN_PREFIX, is_demo_user
 from progeo.settings import MEDIA_ROOT, MEDIA_X_ACCEL
 from progeo.v1.models import MODULE_PERMISSION_CODES
 from progeo.v1.serializers import ProgeoTokenObtainPairSerializer
@@ -67,25 +68,24 @@ class AuthenticatedMediaView(View):
                 return result[0]
         return None
 
-    @staticmethod
-    def _is_demo_only(user):
-        """Demo users may only fetch the demo Lageplan images."""
-        return (
-            not (user.is_staff or user.is_superuser)
-            and user.has_perm(f"progeo.{DEMO_PERMISSION}")
-        )
-
     def get(self, request, path):
         user = self._authenticated_user(request)
         if user is None:
             # Return a 403 Forbidden response if the user is not authenticated
             return JsonResponse({"code": 403, "reason": "Just no!"}, status=403)
 
+        # The prefix checks below must see the path that is actually served:
+        # "uploads/lageplan/demo_/../../backup/x" would pass them raw.
+        path = posixpath.normpath(path.replace("\\", "/")).lstrip("/")
+        if path.startswith("..") or path == ".":
+            return JsonResponse({"code": 404, "reason": "File not found"}, status=404)
+
         if path.startswith("backup") and not user.is_superuser:
             # Backups are restricted to superusers.
             return JsonResponse({"code": 403, "reason": "Just no!"}, status=403)
 
-        if self._is_demo_only(user) and not path.startswith(DEMO_LAGEPLAN_PREFIX):
+        # Demo users may only fetch the demo Lageplan images.
+        if is_demo_user(user) and not path.startswith(DEMO_LAGEPLAN_PREFIX):
             return JsonResponse({"code": 403, "reason": "Just no!"}, status=403)
 
         full_path = self._resolve_media_path(path)

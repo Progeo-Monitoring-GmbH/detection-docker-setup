@@ -17,7 +17,7 @@ type GuardedPortalPageProps = {
  * per-tab gating (now enforced per-route instead).
  */
 const GuardedPortalPage = ({ item, children }: GuardedPortalPageProps) => {
-  const { hasPermission, isLoading } = usePermissions();
+  const { hasPermission, isAdmin: isSuperuser, isLoading } = usePermissions();
   const { t } = useTranslation();
 
   if (isLoading) {
@@ -30,7 +30,11 @@ const GuardedPortalPage = ({ item, children }: GuardedPortalPageProps) => {
     );
   }
 
-  if (!hasPermission(item.permission)) {
+  // "Einstellungen" is superuser-only, as in LocationSidebar.
+  const allowed =
+    item.key === 'einstell' ? isSuperuser : hasPermission(item.permission);
+
+  if (!allowed) {
     return (
       <Container fluid className="py-3">
         <Card className="border-0 shadow-sm">

@@ -38,8 +38,6 @@ from progeo.v1.viewsets.staff_admin_viewset import (
     StaffUserPasswordView,
 )
 
-admin.site.site_header = "Admin | Database='default'"
-
 
 def empty_favicon(request):
     return HttpResponse(status=204)

@@ -11,6 +11,7 @@ import {
 import { useLocation, useNavigate } from 'react-router';
 import { getBackendBaseUrl } from '../src/backendUrl';
 import { showErrorBar } from '../src/components/ui/Snackbar.jsx';
+import { isDemoUser, setDemoToken } from '../src/main/demo';
 
 type User = JwtPayload;
 const intervalMin = 30;
@@ -126,17 +127,22 @@ const CoreAuthProvider = ({ children }) => {
           error,
         );
       } finally {
+        const wasDemo = isDemoUser(user);
         setToken('');
         setRefreshToken('');
         localStorage.removeItem('authToken');
-        if (forward) {
+        if (wasDemo) {
+          // Leaving the demo: no way (and no reason) to come back to it via the login form.
+          setDemoToken(null);
+          navigate('/login');
+        } else if (forward) {
           navigate(`/login?forward=${encodeURIComponent(forward)}`);
         } else {
           navigate(`/login?forward=${encodeURIComponent(getCurrentUrl())}`);
         }
       }
     },
-    [navigate],
+    [navigate, user],
   );
 
   const loginAction = useCallback(

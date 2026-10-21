@@ -546,3 +546,75 @@ def test_locate_device_closes_every_database_it_searched(world, monkeypatch):
     released.clear()
     assert dbs.locate_device(world["device"].raw_hash) == ALIAS
     assert ALIAS in released
+
+
+@WITH_PROJECT_DBS
+@LOCMEM_CACHE
+def test_single_access_of_every_account_is_read_in_one_pass(world, monkeypatch):
+    from progeo.helper import location_access
+    from progeo.helper import project_dbs as helpers
+
+    user = _mirrored_user()
+    ProgeoAccess.objects.using(ALIAS).create(location_id=world["location"].pk, user_id=user.pk)
+    other = f.make_account()
+    other_location = f.make_location(other, name="Ohne Projektdatenbank")
+    f.make_access(other_location, user)  # in "default"
+    forget_single_access(user.pk)
+
+    passes = []
+    original = helpers.map_databases
+    monkeypatch.setattr(helpers, "map_databases", lambda *args, **kw: passes.append(1) or original(*args, **kw))
+    with SPLIT:
+        accounts = location_access.user_accounts(user)
+        assert location_access.single_access_location_ids(user, other) == {other_location.pk}
+
+    assert {account.pk for account in accounts} == {world["account"].pk, other.pk}
+    assert len(passes) == 1  # not one pass over every database per account
+
+
+@WITH_PROJECT_DBS
+@LOCMEM_CACHE
+def test_a_concurrent_miss_waits_for_the_running_pass(world, monkeypatch):
+    import time
+
+    from django.core.cache import cache
+
+    from progeo.helper import location_access
+
+    user = _mirrored_user()
+    key = location_access._single_access_cache_key(user.pk)
+    cache.add(f"{key}:lock", True, 60)  # another request is reading the rows
+
+    def other_request_finishes(_seconds):
+        cache.set(key, {world["account"].pk: [world["location"].pk]}, 60)
+
+    def no_second_pass(_user_id):
+        raise AssertionError("a second pass over the databases")
+
+    monkeypatch.setattr(time, "sleep", other_request_finishes)
+    monkeypatch.setattr(location_access, "_read_single_access_by_account", no_second_pass)
+    with SPLIT:
+        assert location_access.single_access_location_ids(user, world["account"]) == {world["location"].pk}
+
+
+@WITH_PROJECT_DBS
+@LOCMEM_CACHE
+def test_a_pass_overtaken_by_an_access_change_is_not_cached(world, monkeypatch):
+    from django.core.cache import cache
+
+    from progeo.helper import location_access
+
+    user = _mirrored_user()
+    read = location_access._read_single_access_by_account
+
+    def read_then_change(user_id):
+        rows = read(user_id)
+        forget_single_access(user_id)  # e.g. access granted while the pass ran
+        return rows
+
+    monkeypatch.setattr(location_access, "_read_single_access_by_account", read_then_change)
+    with SPLIT:
+        location_access.single_access_location_ids(user, world["account"])
+
+    assert cache.get(location_access._single_access_cache_key(user.pk)) is None
+    assert cache.get(f"{location_access._single_access_cache_key(user.pk)}:lock") is None

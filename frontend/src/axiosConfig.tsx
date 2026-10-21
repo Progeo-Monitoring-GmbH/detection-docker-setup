@@ -1,8 +1,11 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import Cookies from 'js-cookie';
+import { enqueueSnackbar } from 'notistack';
 import { AuthContextType } from '../hooks/CoreAuthProvider';
 import { getBackendBaseUrl } from './backendUrl';
 import { defaultErrorCallback } from './helper.jsx';
+import i18n from './i18n.jsx';
+import { isDemoReadOnlyError, isDemoUser, loginPathFor } from './main/demo';
 
 const normalizeBackendUrl = (rawUrl?: string) => {
   if (!rawUrl) return rawUrl;
@@ -46,7 +49,12 @@ export default class axiosConfig {
     return axiosConfig.getInstance.axiosHolder;
   }
 
-  /** Runs a request; on 401/403 the user is sent to the login page. */
+  /**
+   * Runs a request; on 401/403 the user is sent to the login page (demo
+   * users: their demo link). A write refused because of the read-only demo
+   * is no auth problem - the caller's error handling runs (errorReason()
+   * explains it), callers without one get a hint here.
+   */
   private static async handle(
     auth: AuthContextType | undefined,
     request: Promise<AxiosResponse>,
@@ -57,8 +65,18 @@ export default class axiosConfig {
       (response) => callBackSuccess(response),
       (error) => {
         callBackError(error);
-        if ([401, 403].includes(error?.response?.status) && auth) {
-          auth.navigate(`/login?forward=${auth.location}`);
+        if (isDemoReadOnlyError(error)) {
+          if (callBackError === defaultErrorCallback) {
+            enqueueSnackbar(i18n.t('demo_read_only'), { variant: 'info' });
+          }
+          return;
+        }
+        // Demo users only log in again (via their link) on an expired session -
+        // a 403 is a page the demo doesn't offer, and the link wouldn't help.
+        const status = error?.response?.status;
+        const relogin = status === 401 || (status === 403 && !isDemoUser(auth?.user));
+        if (relogin && auth) {
+          auth.navigate(loginPathFor(auth.user, auth.location));
         }
       },
     );

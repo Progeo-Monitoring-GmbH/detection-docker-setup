@@ -106,6 +106,7 @@ MIDDLEWARE = [
     # "silk.middleware.SilkyMiddleware",
     "progeo.middlewares.AdminGetParamMiddleware",
     "progeo.middlewares.AccountMiddleware",
+    "progeo.middlewares.DemoReadOnlyMiddleware",
 ]
 
 DEBUG_TOOLBAR_CONFIG = {
