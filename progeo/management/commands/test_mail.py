@@ -1,10 +1,10 @@
 import os
 import re
 import socket
+from datetime import datetime
 
 from django.conf import settings
 from django.core.management.base import CommandError
-from django.utils import timezone
 
 from progeo.helper import emailhelper, interface_config
 from progeo.management.commands._base import BaseCommand
@@ -37,7 +37,7 @@ def _template_names():
 
 def _sample_context(template_name):
     raw = (emailhelper.EMAIL_TEMPLATE_DIR / template_name).read_text(encoding="utf-8")
-    context = {"timestamp": timezone.localtime().strftime("%d.%m.%Y %H:%M")}
+    context = {"timestamp": datetime.now().strftime("%d.%m.%Y %H:%M")}
     for key in _PLACEHOLDER_RE.findall(raw):
         context.setdefault(key, SAMPLE_CONTEXT.get(key, f"[{key}]"))
     return context
@@ -87,7 +87,7 @@ class Command(BaseCommand):
             body = (
                 "Dies ist eine Testnachricht des Mess-Servers.\n\n"
                 f"Host: {socket.gethostname()}\n"
-                f"Zeitpunkt: {timezone.localtime().strftime('%d.%m.%Y %H:%M:%S')}\n"
+                f"Zeitpunkt: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}\n"
                 f"Absender: {interface_config.get_smtp_config().get('sender')}\n"
             )
             failures += self._send("plain test mail", recipients, subject, body, dry_run)
