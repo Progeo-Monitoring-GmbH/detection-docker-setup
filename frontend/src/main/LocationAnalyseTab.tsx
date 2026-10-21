@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router';
 import { Card, Spinner } from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
@@ -15,13 +15,21 @@ import MeasurementSamplesCompareChart, {
 import type { PortalOutletContext } from './LocationPortalLayout';
 import LocationClimatePanels from './LocationClimatePanels';
 import { isLorawanProject } from './projectType';
+import SegmentedControl from '../components/ui/kit/SegmentedControl';
+import {
+  SHORT_TIME_RANGES,
+  TIME_RANGE_DAYS,
+  timeRangeLabelKey,
+  type TimeRange,
+} from './timeRanges';
 
-const HEATMAP_LIMIT = 300;
+/** Most measurements per period - spread evenly over it by the backend (?days=). */
+const MAX_MEASUREMENTS = 300;
 
 /**
- * Analyse route: the location heatmap plus the recent measurements of all
- * its devices. Reuses the existing heatmap + measurement endpoints and
- * components.
+ * Analyse route: the location heatmap plus the measurements of all its
+ * devices over the selected period (last 24 h / 7 / 30 days). Reuses the
+ * existing heatmap + measurement endpoints and components.
  */
 const LocationAnalyseTab = () => {
   const { location, locationId } = useOutletContext<PortalOutletContext>();
@@ -32,9 +40,15 @@ const LocationAnalyseTab = () => {
   const { enqueueSnackbar } = useSnackbar();
   const { t } = useTranslation();
 
+  const [range, setRange] = useState<TimeRange>('7d');
   const [heatmap, setHeatmap] = useState<SensorHeatmapResponse | null>(null);
   const [measurements, setMeasurements] = useState<MeasurementCompareRow[]>([]);
+  // Measurements in the period, of which `measurements` are shown.
+  const [measurementTotal, setMeasurementTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  // Only the newest request may set the data - switching periods quickly
+  // must not let a slower, older response win.
+  const requestId = useRef(0);
   const [exportMsg, setExportMsg] = useState<string | null>(null);
   const [exportingPdf, setExportingPdf] = useState(false);
 
@@ -56,17 +70,24 @@ const LocationAnalyseTab = () => {
       return;
     }
     setLoading(true);
+    const current = ++requestId.current;
+    const isCurrent = () => current === requestId.current;
+    const query = `days=${TIME_RANGE_DAYS[range]}&limit=${MAX_MEASUREMENTS}`;
 
     const loadHeatmap = (done: () => void) => {
       void axiosConfig.perform_get(
         auth,
-        `/v1/location/${locationId}/heatmap/?limit=${HEATMAP_LIMIT}`,
+        `/v1/location/${locationId}/heatmap/?${query}`,
         (response) => {
-          setHeatmap((response?.data || null) as SensorHeatmapResponse | null);
+          if (isCurrent()) {
+            setHeatmap((response?.data || null) as SensorHeatmapResponse | null);
+          }
           done();
         },
         (error) => {
-          showRequestError(enqueueSnackbar, 'Could not load heatmap', error);
+          if (isCurrent()) {
+            showRequestError(enqueueSnackbar, 'Could not load heatmap', error);
+          }
           done();
         },
       );
@@ -75,15 +96,20 @@ const LocationAnalyseTab = () => {
     const loadMeasurements = (done: () => void) => {
       void axiosConfig.perform_get(
         auth,
-        `/v1/location/${locationId}/measurements/?limit=${HEATMAP_LIMIT}`,
+        `/v1/location/${locationId}/measurements/?${query}`,
         (response) => {
-          setMeasurements(
-            (response?.data?.measurements || []) as MeasurementCompareRow[],
-          );
+          if (isCurrent()) {
+            const rows = (response?.data?.measurements ||
+              []) as MeasurementCompareRow[];
+            setMeasurements(rows);
+            setMeasurementTotal(Number(response?.data?.total ?? rows.length));
+          }
           done();
         },
         (error) => {
-          showRequestError(enqueueSnackbar, 'Could not load measurements', error);
+          if (isCurrent()) {
+            showRequestError(enqueueSnackbar, 'Could not load measurements', error);
+          }
           done();
         },
       );
@@ -92,13 +118,13 @@ const LocationAnalyseTab = () => {
     let pending = 2;
     const done = () => {
       pending -= 1;
-      if (pending === 0) {
+      if (pending === 0 && isCurrent()) {
         setLoading(false);
       }
     };
     loadHeatmap(done);
     loadMeasurements(done);
-  }, [auth, enqueueSnackbar, isLorawan, locationId]);
+  }, [auth, enqueueSnackbar, isLorawan, locationId, range]);
 
   useEffect(() => {
     loadAll();
@@ -130,6 +156,20 @@ const LocationAnalyseTab = () => {
         <LocationClimatePanels locationId={locationId} />
       ) : (
         <>
+          <div className="d-flex flex-wrap align-items-center gap-3">
+            <SegmentedControl
+              options={SHORT_TIME_RANGES.map((value) => ({
+                value,
+                label: t(timeRangeLabelKey(value)),
+              }))}
+              value={range}
+              onChange={(value) => setRange(value as TimeRange)}
+            />
+            {loading && (heatmap || measurements.length > 0) && (
+              <Spinner size="sm" animation="border" className="text-muted" />
+            )}
+          </div>
+
           <Card className="border-0 shadow-sm p-2">
             <Card.Body>
               <h5 className="mb-2">Heatmap</h5>
@@ -145,14 +185,22 @@ const LocationAnalyseTab = () => {
 
           <Card className="border-0 shadow-sm p-2">
             <Card.Body>
-              <h5 className="mb-2">Measurements (last {HEATMAP_LIMIT})</h5>
+              <h5 className="mb-1">{t('analyse_measurements_title')}</h5>
+              {measurementTotal > measurements.length && (
+                <div className="text-muted small mb-2">
+                  {t('analyse_spread', {
+                    count: measurements.length,
+                    total: measurementTotal,
+                  })}
+                </div>
+              )}
               {loading && measurements.length === 0 ? (
                 <div className="d-flex align-items-center gap-2 text-muted py-4">
                   <Spinner size="sm" animation="border" /> Loading measurements...
                 </div>
               ) : measurements.length === 0 ? (
                 <div className="text-muted py-4 text-center">
-                  No measurements found for this location yet.
+                  {t('analyse_no_measurements')}
                 </div>
               ) : (
                 <MeasurementSamplesCompareChart rows={measurements} />

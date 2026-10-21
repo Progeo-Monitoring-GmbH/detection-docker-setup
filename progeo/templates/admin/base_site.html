@@ -4,6 +4,9 @@
 Django's admin/base_site.html plus the database dropdown: picking a database
 reloads the page with ?db=<alias>; progeo.middlewares.AdminGetParamMiddleware
 remembers it in the session, so the admin's own links stay on it.
+The <select> is the list of choices (and the fallback without JavaScript);
+the script below replaces it with a typeahead that filters it by project id,
+name, street, PLZ and town (data-search) and only accepts its entries.
 {% endcomment %}
 
 {% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
@@ -14,31 +17,199 @@ remembers it in the session, so the admin's own links stay on it.
   {% include "admin/color_theme_toggle.html" %}
 {% elif user.is_staff or user.is_superuser %}
   {% admin_database_choices as choices %}
-  <form id="progeo-db-switch" method="get" action="" style="display:inline-flex;align-items:center;gap:.5em;margin-left:1.5em;">
+  <form id="progeo-db-switch" method="get" action="" style="display:inline-flex;align-items:center;gap:.5em;margin-left:1.5em;position:relative;">
     <label for="progeo-db-select" style="color:var(--header-color);">Datenbank:</label>
     <select id="progeo-db-select" name="db" style="max-width:22em;">
       <optgroup label="Datenbanken">
         {% for alias, label in choices.databases %}
-          <option value="{{ alias }}"{% if alias == choices.current %} selected{% endif %}>{{ label }}</option>
+          <option value="{{ alias }}" data-search="{{ label }}"{% if alias == choices.current %} selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </optgroup>
       {% if choices.projects %}
         <optgroup label="Projekte ({{ choices.projects|length }})">
-          {% for alias, label in choices.projects %}
-            <option value="{{ alias }}"{% if alias == choices.current %} selected{% endif %}>{{ label }}</option>
+          {% for project in choices.projects %}
+            <option value="{{ project.alias }}" data-detail="{{ project.detail }}" data-search="{{ project.search }}"{% if project.alias == choices.current %} selected{% endif %}>{{ project.label }}</option>
           {% endfor %}
         </optgroup>
       {% endif %}
     </select>
   </form>
+  <style>
+    #progeo-db-input { width: 22em; padding: 4px 8px; }
+    #progeo-db-list {
+      position: absolute; top: 100%; right: 0; z-index: 1000; margin: 4px 0 0; padding: 0;
+      width: 34em; max-width: 90vw; max-height: 60vh; overflow-y: auto; list-style: none;
+      background: var(--body-bg); color: var(--body-fg);
+      border: 1px solid var(--border-color); border-radius: 4px; box-shadow: 0 4px 12px rgba(0, 0, 0, .2);
+    }
+    #progeo-db-list li { margin: 0; padding: 6px 10px; cursor: pointer; border-bottom: 1px solid var(--hairline-color); }
+    #progeo-db-list li[aria-selected="true"] { background: var(--selected-row); }
+    #progeo-db-list li.progeo-db-current { font-weight: bold; }
+    #progeo-db-list .progeo-db-detail { display: block; font-size: .85em; color: var(--body-quiet-color); }
+    #progeo-db-list li.progeo-db-note { cursor: default; color: var(--body-quiet-color); font-style: italic; }
+  </style>
   <script>
-    // Switch the database on change. On an object's page go up to its list:
-    // the same id is a different row (or none) in another database.
-    document.getElementById("progeo-db-select").addEventListener("change", function () {
-      var parts = window.location.pathname.split("/").filter(Boolean);  // ["aadmin", app, model, ...]
-      var path = parts.length > 3 ? "/" + parts.slice(0, 3).join("/") + "/" : window.location.pathname;
-      window.location.href = path + "?db=" + encodeURIComponent(this.value);
-    });
+    (function () {
+      var select = document.getElementById("progeo-db-select");
+      var MAX_SHOWN = 50;
+
+      // Switch the database. On an object's page go up to its list: the same
+      // id is a different row (or none) in another database.
+      function switchTo(alias) {
+        var parts = window.location.pathname.split("/").filter(Boolean);  // ["aadmin", app, model, ...]
+        var path = parts.length > 3 ? "/" + parts.slice(0, 3).join("/") + "/" : window.location.pathname;
+        window.location.href = path + "?db=" + encodeURIComponent(alias);
+      }
+      select.addEventListener("change", function () { switchTo(select.value); });
+
+      // Case- and accent-insensitive: "munchen" finds "München".
+      function normalize(text) {
+        return (text || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+      }
+
+      var items = Array.prototype.map.call(select.options, function (option) {
+        return {
+          alias: option.value,
+          label: option.textContent.trim(),
+          detail: option.getAttribute("data-detail") || "",
+          search: normalize(option.getAttribute("data-search") || option.textContent),
+        };
+      });
+      var current = items.filter(function (item) { return item.alias === select.value; })[0];
+
+      var input = document.createElement("input");
+      input.id = "progeo-db-input";
+      input.type = "text";
+      input.autocomplete = "off";
+      input.spellcheck = false;
+      input.placeholder = "Projekt-Nr., Name, Straße, PLZ, Ort …";
+      input.value = current ? current.label : "";
+      input.setAttribute("role", "combobox");
+      input.setAttribute("aria-autocomplete", "list");
+      input.setAttribute("aria-expanded", "false");
+      input.setAttribute("aria-controls", "progeo-db-list");
+
+      var list = document.createElement("ul");
+      list.id = "progeo-db-list";
+      list.setAttribute("role", "listbox");
+      list.hidden = true;
+
+      select.style.display = "none";
+      select.parentNode.insertBefore(input, select);
+      select.parentNode.appendChild(list);
+      document.querySelector('label[for="progeo-db-select"]').htmlFor = "progeo-db-input";
+
+      var matches = [];
+      var active = -1;
+
+      // Every word of the query must occur somewhere; project numbers that
+      // start with the query come first ("40" -> Projekt 4091 before 1405).
+      function filter(query) {
+        var words = normalize(query).split(/\s+/).filter(Boolean);
+        if (!words.length) {
+          return items.slice();
+        }
+        var found = items.filter(function (item) {
+          return words.every(function (word) { return item.search.indexOf(word) !== -1; });
+        });
+        var prefix = "projekt " + words[0];
+        return found.filter(function (item) { return item.search.indexOf(prefix) === 0; })
+          .concat(found.filter(function (item) { return item.search.indexOf(prefix) !== 0; }));
+      }
+
+      function render() {
+        list.textContent = "";
+        matches.slice(0, MAX_SHOWN).forEach(function (item, index) {
+          var li = document.createElement("li");
+          li.id = "progeo-db-option-" + index;
+          li.setAttribute("role", "option");
+          li.setAttribute("aria-selected", index === active ? "true" : "false");
+          if (current && item.alias === current.alias) {
+            li.className = "progeo-db-current";
+          }
+          li.appendChild(document.createTextNode(item.label));
+          if (item.detail) {
+            var detail = document.createElement("span");
+            detail.className = "progeo-db-detail";
+            detail.textContent = item.detail;
+            li.appendChild(detail);
+          }
+          // mousedown, not click: runs before the input's blur closes the list.
+          li.addEventListener("mousedown", function (event) {
+            event.preventDefault();
+            choose(item);
+          });
+          list.appendChild(li);
+        });
+        var note = !matches.length ? "Keine Treffer"
+          : matches.length > MAX_SHOWN ? (matches.length - MAX_SHOWN) + " weitere – Suche verfeinern" : "";
+        if (note) {
+          var li = document.createElement("li");
+          li.className = "progeo-db-note";
+          li.textContent = note;
+          list.appendChild(li);
+        }
+        list.hidden = false;
+        input.setAttribute("aria-expanded", "true");
+        if (active >= 0) {
+          input.setAttribute("aria-activedescendant", "progeo-db-option-" + active);
+          document.getElementById("progeo-db-option-" + active).scrollIntoView({ block: "nearest" });
+        } else {
+          input.removeAttribute("aria-activedescendant");
+        }
+      }
+
+      function open(query) {
+        matches = filter(query);
+        active = matches.length ? 0 : -1;
+        render();
+      }
+
+      // Only entries of the list are accepted: anything else restores the current one.
+      function close() {
+        list.hidden = true;
+        input.setAttribute("aria-expanded", "false");
+        input.removeAttribute("aria-activedescendant");
+        input.value = current ? current.label : "";
+      }
+
+      function choose(item) {
+        input.value = item.label;
+        list.hidden = true;
+        if (!current || item.alias !== current.alias) {
+          switchTo(item.alias);
+        } else {
+          close();
+        }
+      }
+
+      input.addEventListener("focus", function () {
+        input.select();
+        open("");
+      });
+      input.addEventListener("input", function () { open(input.value); });
+      input.addEventListener("blur", close);
+      input.addEventListener("keydown", function (event) {
+        var shown = Math.min(matches.length, MAX_SHOWN);
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          if (list.hidden) {
+            open(input.value);
+          } else if (shown) {
+            active = (active + (event.key === "ArrowDown" ? 1 : shown - 1)) % shown;
+            render();
+          }
+        } else if (event.key === "Enter") {
+          event.preventDefault();  // never submit the form with free text
+          if (!list.hidden && active >= 0) {
+            choose(matches[active]);
+          }
+        } else if (event.key === "Escape") {
+          close();
+          input.blur();
+        }
+      });
+    })();
   </script>
 {% endif %}
 {% endblock %}

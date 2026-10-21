@@ -327,6 +327,10 @@ i18n
           analyse_export_csv_done: 'CSV export created — download started.',
           analyse_export_pdf_done:
             'PDF report created and sent to the recipients of this object.',
+          analyse_measurements_title: 'Measurements',
+          analyse_spread:
+            '{{count}} of {{total}} measurements, evenly spread over the period',
+          analyse_no_measurements: 'No measurements in this period.',
           nav_benach: 'Notifications',
           nav_rechte: 'Permissions',
           nav_einstell: 'Settings',
@@ -945,6 +949,10 @@ i18n
           analyse_export_csv_done: 'CSV-Export erstellt — Download gestartet.',
           analyse_export_pdf_done:
             'PDF-Report erstellt und an die Empfänger dieses Objekts versendet.',
+          analyse_measurements_title: 'Messungen',
+          analyse_spread:
+            '{{count}} von {{total}} Messungen, gleichmäßig über den Zeitraum verteilt',
+          analyse_no_measurements: 'Keine Messungen in diesem Zeitraum.',
           nav_benach: 'Benachrichtigungen',
           nav_rechte: 'Berechtigungen',
           nav_einstell: 'Einstellungen',

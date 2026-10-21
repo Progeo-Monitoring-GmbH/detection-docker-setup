@@ -146,6 +146,27 @@ def measurement_range_of(location, account, user):
     }
 
 
+def _window_days(request):
+    """?days=N (the Analyse tab's "last 24 h / 7 / 30 days"), clamped to
+    1..MAX_HISTORY_DAYS; None without it. ValueError if not an integer."""
+    raw = request.query_params.get("days")
+    if raw in (None, ""):
+        return None
+    return max(1, min(int(raw), MAX_HISTORY_DAYS))
+
+
+def _spread_over_window(queryset, limit):
+    """(at most `limit` measurements of `queryset`, oldest first, total count
+    in it). A time window can hold far more measurements than a chart shows:
+    instead of only the newest `limit`, they are spread evenly over the whole
+    window - the oldest and the newest always included."""
+    ids = list(queryset.order_by("pk").values_list("pk", flat=True))
+    total = len(ids)
+    if total > limit:
+        ids = [ids[-1]] if limit == 1 else [ids[round(i * (total - 1) / (limit - 1))] for i in range(limit)]
+    return list(queryset.filter(pk__in=ids).order_by("pk")), total
+
+
 def _location_data(location, account):
     """LocationSerializer data of one location. With the split on, its
     lageplans come from the location's project database - the serializer
@@ -1313,6 +1334,10 @@ class LocationViewSet(ProgeoModalViewSet):
                 year = int(year_raw)
             except (TypeError, ValueError):
                 return RequestFailed({"reason": "year must be an integer"})
+        try:
+            days = _window_days(request)
+        except ValueError:
+            return RequestFailed({"reason": "days must be an integer"})
 
         location, account = self._find_location(request, pk=pk)
         if not location:
@@ -1320,8 +1345,16 @@ class LocationViewSet(ProgeoModalViewSet):
         db_name = location_db(location, account)
 
         queryset = ProgeoMeasurement.for_account(account, using=db_name, user=request.user).filter(device__location=location)
+        total = None
         if year:
             queryset = queryset.select_related("device").filter(last_fetched__year=year).order_by("-id")
+        elif days:
+            # The last `days` days, at most `limit` measurements spread over them - newest first.
+            queryset, total = _spread_over_window(
+                queryset.select_related("device").filter(last_fetched__gte=timezone.now() - timedelta(days=days)),
+                limit,
+            )
+            queryset.reverse()
         else:
             queryset = queryset.select_related("device").order_by("-id")[:limit]
 
@@ -1331,6 +1364,8 @@ class LocationViewSet(ProgeoModalViewSet):
                 "location": _location_data(location, account),
                 "measurements": serialized,
                 "count": len(serialized),
+                # Measurements in the window (?days=), of which `count` are shown.
+                "total": total if total is not None else len(serialized),
             }
         )
     
@@ -1424,6 +1459,13 @@ class LocationViewSet(ProgeoModalViewSet):
                 time_to = datetime.fromisoformat(time_to)
         except (TypeError, ValueError):
             return RequestFailed({"reason": "from/to must be ISO-8601 timestamps"})
+        # Or ?days=N: the last N days, spread over them (see _spread_over_window).
+        try:
+            days = _window_days(request)
+        except ValueError:
+            return RequestFailed({"reason": "days must be an integer"})
+        if days:
+            time_from, time_to = timezone.now() - timedelta(days=days), None
 
         location, account = self._find_location(request, pk=pk)
         if not location:
@@ -1436,10 +1478,14 @@ class LocationViewSet(ProgeoModalViewSet):
             queryset = queryset.filter(last_fetched__gte=time_from)
         if time_to:
             queryset = queryset.filter(last_fetched__lte=time_to)
-        # Newest `limit` measurements (pk order is chronological), then
-        # reversed so the frames (slider and video export) run oldest -> newest.
-        queryset = list(queryset.order_by("-pk")[:limit])
-        queryset.reverse()
+        if days:
+            queryset, total = _spread_over_window(queryset, limit)
+        else:
+            # Newest `limit` measurements (pk order is chronological), then
+            # reversed so the frames (slider and video export) run oldest -> newest.
+            queryset = list(queryset.order_by("-pk")[:limit])
+            queryset.reverse()
+            total = len(queryset)
 
         timestamps = []
         sensor_points = []
@@ -1498,6 +1544,9 @@ class LocationViewSet(ProgeoModalViewSet):
             "limit": limit,
             "from": time_from.isoformat() if time_from else None,
             "to": time_to.isoformat() if time_to else None,
+            "days": days,
+            # Measurements in the window, of which len(timestamps) are frames.
+            "total": total,
             "data": _map,
             "timestamps": timestamps,
             "sensor_points": sensor_points

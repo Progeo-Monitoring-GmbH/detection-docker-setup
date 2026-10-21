@@ -220,6 +220,32 @@ def test_table_endpoints_cover_every_account_of_the_user(api_client, world):
     assert set(summary.json()["locations"]) == {str(world["granted"].id), str(second_location.id)}
 
 
+def test_measurements_and_heatmap_of_the_last_days_are_spread_over_them(api_client, world):
+    """The Analyse tab's periods (?days=): only measurements of the period,
+    at most `limit` of them spread evenly from its oldest to its newest."""
+    user = f.make_user(perms=READ_PERMS)
+    world["account"].users.add(user)
+    api_client.force_authenticate(user=user)
+    location = f.make_location(world["account"])
+    device = f.make_device(location)
+    f.make_measurement(device, fetched_at=timezone.now() - f.minutes(3 * 24 * 60))  # outside the last day
+    # Oldest first: measurement ids are chronological.
+    in_day = [f.make_measurement(device, fetched_at=timezone.now() - f.minutes(60 * (20 - 2 * i))) for i in range(10)]
+
+    body = api_client.get(f"/v1/location/{location.id}/measurements/?days=1&limit=4").json()
+    assert body["total"] == 10
+    assert [row["id"] for row in body["measurements"]] == [in_day[i].id for i in (9, 6, 3, 0)]  # newest first
+
+    heatmap = api_client.get(f"/v1/location/{location.id}/heatmap/?days=1&limit=4").json()
+    assert heatmap["total"] == 10
+    assert heatmap["timestamps"] == [in_day[i].last_fetched.timestamp() for i in (0, 3, 6, 9)]  # oldest first
+
+    assert api_client.get(f"/v1/location/{location.id}/measurements/?days=7&limit=50").json()["total"] == 11
+    assert api_client.get(f"/v1/location/{location.id}/measurements/?days=x").json()["reason"] == (
+        "days must be an integer"
+    )
+
+
 def test_location_details_skip_lageplans(api_client, world):
     user = f.make_user(perms=READ_PERMS)
     world["account"].users.add(user)

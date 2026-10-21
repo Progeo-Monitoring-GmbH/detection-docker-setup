@@ -11,6 +11,7 @@ from progeo.tests import factories as f
 from progeo.tests.test_project_dbs import (  # noqa: F401 - project_dbs is the session fixture
     ALIAS,
     LOCMEM_CACHE,
+    PROJECT,
     UNKNOWN,
     WITH_PROJECT_DBS,
     project_dbs,
@@ -96,3 +97,18 @@ def test_the_header_offers_every_project_database(admin_client):
     assert 'id="progeo-db-select"' in page
     assert f'<option value="{ALIAS}"' in page
     assert "Projekt 990001" in page
+
+
+@WITH_PROJECT_DBS
+@LOCMEM_CACHE
+def test_project_entries_carry_name_street_plz_and_town_for_the_typeahead(admin_client):
+    account = f.make_account()
+    f.make_location(account, project_id=PROJECT, name="Halle Nord", address="Hafenstraße 5", plz="20457", city="Hamburg")
+    f.make_location(account, project_id=PROJECT, name="Halle Süd")
+
+    page = _get(admin_client, "/aadmin/").content.decode()
+
+    detail = "Halle Nord, Hafenstraße 5, 20457 Hamburg | Halle Süd"
+    assert f'data-detail="{detail}"' in page
+    assert f'data-search="Projekt {PROJECT} Halle Nord, Hafenstraße 5, 20457 Hamburg Halle Süd"' in page
+    assert 'id="progeo-db-input"' not in page  # built by the script - the <select> stays the fallback
