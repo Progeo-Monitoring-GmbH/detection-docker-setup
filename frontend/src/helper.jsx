@@ -189,23 +189,34 @@ export async function openResponseInNewTab(auth, url) {
   );
 }
 
-export async function openPostResponseInNewTab(url, data, auth) {
-  await axiosConfig.perform_post(
+/** Downloads a GET response as a file named `filename` (instead of
+ * opening it, which shows e.g. a PDF in the browser's viewer). Resolves
+ * with whether it worked. */
+export async function downloadResponse(auth, url, filename) {
+  let ok = false;
+  await axiosConfig.perform_get(
     auth,
     url,
-    data,
     (response) => {
       const blob = new Blob([response.data], {
         type: response.headers['content-type'],
       });
-      const url = window.URL.createObjectURL(blob);
-      window.open(url, '_blank');
+      const href = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = href;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => window.URL.revokeObjectURL(href), 1000);
+      ok = true;
     },
     defaultErrorCallback,
     {
       responseType: 'blob',
     },
   );
+  return ok;
 }
 
 export const getCachedData = (_key, _default = []) => {

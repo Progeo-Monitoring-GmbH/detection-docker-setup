@@ -335,8 +335,7 @@ i18n
           analyse_export_csv: 'CSV export',
           analyse_export_pdf: 'PDF report',
           analyse_export_csv_done: 'CSV export created — download started.',
-          analyse_export_pdf_done:
-            'PDF report created and sent to the recipients of this object.',
+          analyse_export_pdf_done: 'PDF report created — download started.',
           analyse_measurements_title: 'Measurements',
           analyse_spread:
             '{{count}} of {{total}} measurements, evenly spread over the period',
@@ -967,8 +966,7 @@ i18n
           analyse_export_csv: 'CSV-Export',
           analyse_export_pdf: 'PDF-Report',
           analyse_export_csv_done: 'CSV-Export erstellt — Download gestartet.',
-          analyse_export_pdf_done:
-            'PDF-Report erstellt und an die Empfänger dieses Objekts versendet.',
+          analyse_export_pdf_done: 'PDF-Report erstellt — Download gestartet.',
           analyse_measurements_title: 'Messungen',
           analyse_spread:
             '{{count}} von {{total}} Messungen, gleichmäßig über den Zeitraum verteilt',

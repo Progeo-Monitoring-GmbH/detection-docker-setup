@@ -89,7 +89,7 @@ def test_csv_rejects_invalid_range(api_client, location_with_data):
     assert response.json() == {"reason": "from/to must be ISO-8601 timestamps", "success": False}
 
 
-def test_pdf_report_is_built_and_mailed_to_recipients(api_client, location_with_data, monkeypatch):
+def test_pdf_report_is_a_download_and_mails_nobody(api_client, location_with_data, monkeypatch):
     sent = []
     monkeypatch.setattr(
         "progeo.helper.emailhelper.send_template_mail",
@@ -98,12 +98,13 @@ def test_pdf_report_is_built_and_mailed_to_recipients(api_client, location_with_
     recipient = f.make_user(email="report@example.com")
     f.make_access(location_with_data, recipient)
 
-    response = api_client.post(f"/v1/location/{location_with_data.id}/export_pdf/")
+    response = api_client.get(f"/v1/location/{location_with_data.id}/export_pdf/")
 
     assert response.status_code == 200
     assert response["Content-Type"] == "application/pdf"
+    assert response["Content-Disposition"].startswith("attachment;")
     assert response.content.startswith(b"%PDF-")
-    assert [(emails, template) for emails, template, _ in sent] == [(["report@example.com"], "pdf_report.txt")]
+    assert sent == []
 
 
 def test_pdf_splits_many_sensors_into_column_groups():

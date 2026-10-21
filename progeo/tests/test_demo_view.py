@@ -142,7 +142,6 @@ def test_demo_user_cannot_change_anything(api_client, demo):
         api_client.patch(f"/v1/location/{location.pk}/", {"name": "hacked"}, format="json"),
         api_client.post(f"/v1/alarm/{alarm.pk}/acknowledge/?location={location.pk}", {}, format="json"),
         api_client.post(f"/v1/location/{location.pk}/request-measurement/", {}, format="json"),
-        api_client.post(f"/v1/location/{location.pk}/export_pdf/", {}, format="json"),
         api_client.post("/v1/user/settings/", {"email": "x@example.com"}, format="json"),
         api_client.delete(f"/v1/location/{location.pk}/"),
     ]

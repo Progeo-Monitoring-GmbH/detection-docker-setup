@@ -5,7 +5,7 @@ import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
-import { openPostResponseInNewTab, openResponseInNewTab } from '../helper';
+import { downloadResponse, openResponseInNewTab } from '../helper';
 import { showRequestError } from '../components/ui/Snackbar.jsx';
 import SensorHeatmap2D from '../components/device/SensorHeatmap2D.tsx';
 import { type SensorHeatmapResponse } from '../components/device/SensorHeatmap3D.tsx';
@@ -59,9 +59,15 @@ const LocationAnalyseTab = () => {
 
   const exportPdf = () => {
     setExportingPdf(true);
-    void openPostResponseInNewTab(`/v1/location/${locationId}/export_pdf/`, {}, auth).then(() => {
+    void downloadResponse(
+      auth,
+      `/v1/location/${locationId}/export_pdf/`,
+      `${location?.project_id ?? locationId}-report.pdf`,
+    ).then((ok) => {
       setExportingPdf(false);
-      setExportMsg(t('analyse_export_pdf_done'));
+      if (ok) {
+        setExportMsg(t('analyse_export_pdf_done'));
+      }
     });
   };
 

@@ -2,7 +2,6 @@ import csv
 import math
 import os
 import posixpath
-import tempfile
 import time
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -1901,12 +1900,10 @@ class LocationViewSet(ProgeoModalViewSet):
         return buffer.getvalue()
 
     @require_module_permissions("module_locations_enabled", "module_measurements_enabled")
-    @action(detail=True, url_path="export_pdf", methods=["POST"])
+    @action(detail=True, url_path="export_pdf", methods=["GET"])
     def export_pdf(self, request, pk=None, *args, **kwargs):
-        """PDF-Report (Analyse): builds the report, emails it to every real
-        recipient of the object (send_template_mail's `files=` attaches it
-        and logs the EMail row for free) and also returns the same PDF bytes
-        so the requesting browser gets the download too."""
+        """PDF-Report (Analyse): a download of the measurement table, like
+        export_csv (optional ?from=&to=, ISO-8601) - nothing is mailed."""
         location, account = self._find_location(request, pk=pk)
         if not location:
             return RequestFailed({"reason": "Location not found"})
@@ -1917,32 +1914,6 @@ class LocationViewSet(ProgeoModalViewSet):
             return RequestFailed({"reason": "from/to must be ISO-8601 timestamps"})
 
         pdf_bytes = self._build_measurement_pdf(location, points, timestamps, series)
-
-        from progeo.helper.emailhelper import send_template_mail
-
-        recipients = self._notification_recipients(location, db_name)
-        emails = [recipient["mail"] for recipient in recipients if recipient["mail"]]
-        if emails:
-            tmp_path = None
-            try:
-                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp_file:
-                    tmp_file.write(pdf_bytes)
-                    tmp_path = tmp_file.name
-                context = {
-                    "project_nr": location.project_id,
-                    "project_name": location.name,
-                    "range_from": timestamps[0].strftime("%d.%m.%Y") if timestamps else "-",
-                    "range_to": timestamps[-1].strftime("%d.%m.%Y") if timestamps else "-",
-                    "triggered_by": getattr(request.user, "username", "system"),
-                    "timestamp": timezone.now().strftime("%d.%m.%Y %H:%M"),
-                }
-                send_template_mail(
-                    emails, "pdf_report.txt", context, location=location, db=db_name, files=[tmp_path],
-                )
-            finally:
-                if tmp_path:
-                    os.unlink(tmp_path)
-
         response = HttpResponse(pdf_bytes, content_type="application/pdf")
         response["Content-Disposition"] = (
             f'attachment; filename="{location.project_id or location.id}-report.pdf"'
