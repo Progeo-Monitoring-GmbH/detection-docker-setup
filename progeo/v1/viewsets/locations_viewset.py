@@ -156,7 +156,10 @@ def _window_days(request):
 
 
 # Heatmap in steps (?step=<seconds>): at most this many frames per request.
-HEATMAP_MAX_FRAMES = 2000
+# The Status tab loads a location's whole history once in its finest step
+# that stays below (30 min for 1 year), then groups it in the browser; frames
+# without measurements aren't sent, so the payload follows the measurements.
+HEATMAP_MAX_FRAMES = 20000
 HEATMAP_MIN_STEP_SECONDS = 60
 
 
@@ -1586,13 +1589,23 @@ class LocationViewSet(ProgeoModalViewSet):
         sensor_points = []
         _map = {}
 
-        # Meter positions are measured on the active Lageplan (the one every
-        # view shows by default); None while it isn't calibrated.
-        plan = ProgeoLageplan.objects.using(db_name).filter(location=location).order_by("-is_active", "-id").first()
-        plan_size = plan_meters.image_size(plan) if plan_meters.is_calibrated(plan) else None
+        # Meter positions are measured on the point's own Lageplan (a location
+        # may have several views, e.g. floors), else on the active one (the
+        # one every view shows by default); None while it isn't calibrated.
+        plans = list(ProgeoLageplan.objects.using(db_name).filter(location=location).order_by("-is_active", "-id"))
+        plans_by_id = {plan.pk: plan for plan in plans}
+        plan_sizes = {}
+
+        def _meters_of(point):
+            plan = plans_by_id.get(point.lageplan_id) or (plans[0] if plans else None)
+            if plan is None or not plan_meters.is_calibrated(plan):
+                return None
+            if plan.pk not in plan_sizes:
+                plan_sizes[plan.pk] = plan_meters.image_size(plan)
+            return plan_meters.point_meters(point.nx, point.ny, plan, plan_sizes[plan.pk])
 
         for point in points:
-            meters = plan_meters.point_meters(point.nx, point.ny, plan, plan_size)
+            meters = _meters_of(point)
             sensor_points.append({
                 "pos": point.sensor_order,
                 # Raw normalized coordinates - the Lageplan's own alignment
@@ -1602,6 +1615,11 @@ class LocationViewSet(ProgeoModalViewSet):
                 "x_m": round(meters[0], 2) if meters else None,
                 "y_m": round(meters[1], 2) if meters else None,
                 "name": point.name,
+                # The view (Lageplan) the point sits on, and its grid cell -
+                # the smartex® dm lines join the sensors of one grid row.
+                "lageplan": point.lageplan_id,
+                "grid_x": point.grid_x,
+                "grid_y": point.grid_y,
                 "last_value": point.last_value,
                 "threshold": point.threshold,
             })

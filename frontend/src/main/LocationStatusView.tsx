@@ -13,14 +13,14 @@ import {
   showSuccessBar,
 } from '../components/ui/Snackbar.jsx';
 import SensorHeatmap2D from '../components/device/SensorHeatmap2D';
-import HeatmapRangeControls from '../components/device/HeatmapRangeControls';
+import FrameSlider, { type AlarmSpan } from '../components/device/FrameSlider';
+import { framesOf, seriesOf } from '../components/device/heatmapData';
 import {
-  alignDown,
-  alignUp,
-  defaultWindow,
+  defaultStepForRange,
   heatmapQuery,
   type HeatmapWindow,
-  WINDOW_GRID_MS,
+  historyWindow,
+  stepsForRange,
 } from '../components/device/heatmapSteps';
 import { formatMeters } from '../components/device/planMeters';
 import type { SensorHeatmapResponse } from '../components/device/sensorHeatmapTypes';
@@ -31,17 +31,21 @@ import SensorListTable, {
 import ThresholdTrendChart, {
   type ThresholdTrendSeries,
 } from '../components/device/ThresholdTrendChart';
-import { plotTheme } from '../styles/plotTheme';
 import PanelCard from '../components/ui/kit/PanelCard';
 import KpiStrip from '../components/ui/kit/KpiStrip';
-import LegendGradientBar from '../components/ui/kit/LegendGradientBar';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
+import PillSelect from '../components/ui/kit/PillSelect';
 import StateBadge, { type AlarmState } from '../components/ui/kit/StateBadge';
 import SeverityBadge, {
   type Severity,
 } from '../components/ui/kit/SeverityBadge';
 import type { LocationDetail } from './locationTypes';
-import { getProjectTypeLabel, isLorawanProject } from './projectType';
+import {
+  getProjectTypeLabel,
+  isLorawanProject,
+  planVisualization,
+  showsSensorTable,
+} from './projectType';
 import LocationClimatePanels from './LocationClimatePanels';
 import LocationBatteryVoltagePanel from './LocationBatteryVoltagePanel';
 import {
@@ -51,7 +55,7 @@ import {
   timeRangeLabelKey,
   type TimeRange,
 } from './timeRanges';
-import useMeasurementRange from './useMeasurementRange';
+import { useMeasurementRangeState } from './useMeasurementRange';
 import { isDemoUser } from './demo';
 
 type LocationStatusViewProps = {
@@ -95,8 +99,12 @@ type VerdachtsstelleCluster = {
 };
 
 const ALARM_WINDOW_DAYS = 90;
-// Measurements per Zeitreihe range, spread evenly over it (30 days hourly).
+// Points per Zeitreihe range at most (30 days hourly), each the highest
+// value of its part of the range.
 const ZEITREIHE_LIMIT = 720;
+// History loaded without a known measurement range (none, or it failed).
+const FALLBACK_HISTORY_DAYS = 90;
+const DAY_MS = 24 * 60 * 60 * 1000;
 const SEVERITY_ORDER: Record<Severity, number> = {
   beobachten: 0,
   alarm: 1,
@@ -104,13 +112,18 @@ const SEVERITY_ORDER: Record<Severity, number> = {
 };
 
 // Zeitreihe ("Letzte 24 h" ... "Letzte 3 Jahre", see timeRanges.ts): the
-// measured value of every sensor over the range (heatmap ?days=, spread over
-// it), loaded once per range when the Zeitreihe is shown. Sensors with a
-// Verdachtsstelle are highlighted, the others drawn as muted lines.
+// measured value of every sensor over the range, cut out of the loaded
+// history like the heatmap's frames. Sensors with a Verdachtsstelle are
+// highlighted, the others drawn as muted lines.
 
-type ZeitreiheData = {
-  timestamps: Array<number | null>;
-  data: Record<string, Array<number | null>>;
+/** A sensor's value in a frame of the heatmap; null without one. */
+const frameValue = (heatmap: SensorHeatmapResponse | null, index: number | null, pos: number) => {
+  if (!heatmap || index == null) {
+    return null;
+  }
+  const raw = heatmap.data?.[String(pos)]?.[index];
+  const value = raw == null ? Number.NaN : Number(raw);
+  return Number.isFinite(value) ? value : null;
 };
 
 const LocationStatusView = ({
@@ -126,19 +139,17 @@ const LocationStatusView = ({
   const readOnlyDemo = demo || isDemoUser(auth.user);
   const { t } = useTranslation();
 
-  const [heatmap, setHeatmap] = useState<SensorHeatmapResponse | null>(null);
-  // Timestamp the heatmap slider shows - the sensor table follows it.
+  // The location's whole history in a fine base step (historyWindow),
+  // loaded once: every window and step of the plan, and the Zeitreihe, are
+  // cut out of it in the browser (heatmapData.ts) - nothing is refetched.
+  const [history, setHistory] = useState<SensorHeatmapResponse | null>(null);
+  const historyRequested = useRef<string | null>(null);
+  // Frame the plan shows (its slider) - the sensor table follows it.
   const [heatmapIndex, setHeatmapIndex] = useState<number | null>(null);
   const [heatmapLoading, setHeatmapLoading] = useState(true);
   const [heatmapDenied, setHeatmapDenied] = useState(false);
-  // Time window + step of the heatmap (HeatmapRangeControls). Until the user
-  // picks one, it follows the newest measurement (the last 7 days, hourly).
-  const [heatmapWindow, setHeatmapWindow] = useState<HeatmapWindow>(() => defaultWindow(Date.now()));
-  const windowTouched = useRef(false);
-  // Responses per window/step: switching back is instant, nothing refetched.
-  const heatmapCache = useRef(new Map<string, SensorHeatmapResponse>());
-  const heatmapRequest = useRef(0);
-  const [heatmapRefreshing, setHeatmapRefreshing] = useState(false);
+  // Step of the plan's frames, picked in its dropdown; null: the range's default.
+  const [pickedStep, setPickedStep] = useState<number | null>(null);
 
   const [clusters, setClusters] = useState<VerdachtsstelleCluster[]>([]);
   const [clustersLoading, setClustersLoading] = useState(true);
@@ -149,31 +160,30 @@ const LocationStatusView = ({
   const [requestingMeasurement, setRequestingMeasurement] = useState(false);
   const [statusView, setStatusView] = useState<'roof' | 'zeitreihe'>('roof');
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
-  const [selectedZeitreiheRange, setSelectedZeitreiheRange] =
+  // The range of both views - the plan's frames and the Zeitreihe.
+  const [selectedRange, setSelectedRange] =
     useState<TimeRange>('7d');
-  // Measured series of the Zeitreihe, per range (days).
-  const [zeitreihe, setZeitreihe] = useState<Record<number, ZeitreiheData>>({});
-  const [zeitreiheFailed, setZeitreiheFailed] = useState<Record<number, true>>(
-    {},
-  );
-  const zeitreiheRequested = useRef(new Set<number>());
 
   // LoRaWAN objects have no samples (no heatmap, no Verdachtsstellen) - they
   // show humidity/temperature charts instead, see LocationClimatePanels.
   const isLorawan = isLorawanProject(location?.project_type);
 
-  // Long ranges only once the data reaches that far back - fetched when the
-  // Zeitreihe is first opened (LoRaWAN: LocationClimatePanels does its own).
-  const measurementRange = useMeasurementRange(locationId, demo, !isLorawan);
-  const zeitreiheRanges = useMemo(
+  // The history to load, and the long Zeitreihe ranges once the data
+  // reaches that far back (LoRaWAN: LocationClimatePanels does its own).
+  const { range: measurementRange, failed: measurementRangeFailed } = useMeasurementRangeState(
+    locationId,
+    demo,
+    !isLorawan,
+  );
+  const rangeOptions = useMemo(
     () => availableTimeRanges(measurementRange),
     [measurementRange],
   );
-  const zeitreiheRange = effectiveTimeRange(
-    selectedZeitreiheRange,
-    zeitreiheRanges,
+  const range = effectiveTimeRange(
+    selectedRange,
+    rangeOptions,
   );
-  const zeitreiheDays = TIME_RANGE_DAYS[zeitreiheRange];
+  const rangeDays = TIME_RANGE_DAYS[range];
 
   const requestMeasurement = () => {
     setRequestingMeasurement(true);
@@ -201,57 +211,89 @@ const LocationStatusView = ({
     );
   };
 
-  // One request per window/step; the shown heatmap stays while the next one
-  // loads, and only the newest request may replace it.
-  const loadHeatmap = useCallback(
-    (window: HeatmapWindow) => {
-      const query = heatmapQuery(window);
-      const cached = heatmapCache.current.get(query);
-      const request = ++heatmapRequest.current;
-      if (cached) {
-        setHeatmap(cached);
-        setHeatmapLoading(false);
-        setHeatmapRefreshing(false);
-        return;
-      }
-      setHeatmapRefreshing(true);
-      setHeatmapDenied(false);
-      void axiosConfig.perform_get(
-        auth,
-        `${demo ? '/v1/demo' : '/v1/location'}/${locationId}/heatmap/?${query}`,
-        (response) => {
-          const data = (response?.data || null) as SensorHeatmapResponse | null;
-          if (data) {
-            heatmapCache.current.set(query, data);
-          }
-          if (request === heatmapRequest.current) {
-            setHeatmap(data);
-            setHeatmapLoading(false);
-            setHeatmapRefreshing(false);
-          }
-        },
-        (error) => {
-          if (request !== heatmapRequest.current) {
-            return;
-          }
-          if (error?.response?.status === 403) {
-            setHeatmapDenied(true);
-          } else {
-            showRequestError(enqueueSnackbar, 'Could not load heatmap', error);
-          }
-          setHeatmapLoading(false);
-          setHeatmapRefreshing(false);
-        },
-      );
-    },
-    [auth, demo, enqueueSnackbar, locationId],
-  );
+  // Every measurement of the location in its base step; without a range
+  // (no measurements yet, or it failed) the last FALLBACK_HISTORY_DAYS - the
+  // response still brings the plans and measure points.
+  const historySpec = useMemo(() => {
+    if (isLorawan) {
+      return null;
+    }
+    const first = measurementRange?.first ? Date.parse(measurementRange.first) : Number.NaN;
+    const last = measurementRange?.last ? Date.parse(measurementRange.last) : Number.NaN;
+    if (Number.isFinite(first) && Number.isFinite(last)) {
+      return historyWindow(first, last);
+    }
+    if (measurementRange || measurementRangeFailed) {
+      const now = Date.now();
+      return historyWindow(now - FALLBACK_HISTORY_DAYS * DAY_MS, now);
+    }
+    return null; // the range is still loading
+  }, [isLorawan, measurementRange, measurementRangeFailed]);
 
+  useEffect(() => {
+    setHistory(null);
+    setHeatmapLoading(true);
+    setHeatmapIndex(null);
+  }, [locationId]);
+
+  useEffect(() => {
+    if (!historySpec) {
+      return;
+    }
+    const url = `${demo ? '/v1/demo' : '/v1/location'}/${locationId}/heatmap/?${heatmapQuery(historySpec)}`;
+    if (historyRequested.current === url) {
+      return;
+    }
+    historyRequested.current = url;
+    setHeatmapDenied(false);
+    void axiosConfig.perform_get(
+      auth,
+      url,
+      (response) => {
+        if (historyRequested.current !== url) {
+          return;
+        }
+        setHistory((response?.data || null) as SensorHeatmapResponse | null);
+        setHeatmapLoading(false);
+      },
+      (error) => {
+        if (historyRequested.current !== url) {
+          return;
+        }
+        if (error?.response?.status === 403) {
+          setHeatmapDenied(true);
+        } else {
+          showRequestError(enqueueSnackbar, 'Could not load heatmap', error);
+        }
+        setHeatmapLoading(false);
+      },
+    );
+  }, [auth, demo, enqueueSnackbar, historySpec, locationId]);
+
+  // The step of the loaded history: the plan's steps must be multiples.
+  const baseStep = history?.step ?? historySpec?.step ?? null;
+  const stepOptions = useMemo(() => stepsForRange(rangeDays, baseStep), [rangeDays, baseStep]);
+  const heatmapStep =
+    pickedStep != null && stepOptions.some((step) => step.seconds === pickedStep)
+      ? pickedStep
+      : defaultStepForRange(rangeDays, baseStep);
+
+  // The range's frames (the last N days) - cut out of the history, no request.
+  const heatmapWindow = useMemo<HeatmapWindow>(() => {
+    const now = Date.now();
+    return { from: now - rangeDays * DAY_MS, to: now, step: heatmapStep };
+    // `history` too: a reload of the page's data moves "now" along.
+  }, [history, rangeDays, heatmapStep]);
+  const heatmap = useMemo(() => framesOf(history, heatmapWindow), [history, heatmapWindow]);
+
+  // Once per location (`auth` changes with the path, no reason to ask again).
+  const authRef = useRef(auth);
+  authRef.current = auth;
   const loadClusters = useCallback(() => {
     setClustersLoading(true);
     setClustersDenied(false);
     void axiosConfig.perform_get(
-      auth,
+      authRef.current,
       demo
         ? `/v1/demo/alarm-clusters/?location=${locationId}&days=${ALARM_WINDOW_DAYS}`
         : `/v1/alarm/clusters/?location=${locationId}&days=${ALARM_WINDOW_DAYS}`,
@@ -274,7 +316,7 @@ const LocationStatusView = ({
         setClustersLoading(false);
       },
     );
-  }, [auth, demo, enqueueSnackbar, locationId]);
+  }, [demo, enqueueSnackbar, locationId]);
 
   useEffect(() => {
     if (isLorawan) {
@@ -283,87 +325,16 @@ const LocationStatusView = ({
     loadClusters();
   }, [isLorawan, loadClusters]);
 
-  useEffect(() => {
-    if (isLorawan) {
-      return;
+  // The Zeitreihe range (the last N days), from the history as well.
+  const zeitreihe = useMemo(() => {
+    if (!history) {
+      return null;
     }
-    loadHeatmap(heatmapWindow);
-  }, [isLorawan, loadHeatmap, heatmapWindow]);
+    const now = Date.now();
+    return seriesOf(history, now - rangeDays * DAY_MS, now, ZEITREIHE_LIMIT, baseStep ?? 30 * 60);
+  }, [baseStep, history, rangeDays]);
 
-  // The default window ends at the newest measurement - for a location
-  // whose data stopped a while ago "the last 7 days" would be empty.
-  const newestMeasurement = measurementRange?.last ? Date.parse(measurementRange.last) : null;
-  useEffect(() => {
-    if (windowTouched.current || newestMeasurement == null || !Number.isFinite(newestMeasurement)) {
-      return;
-    }
-    const fitting = defaultWindow(newestMeasurement);
-    setHeatmapWindow((current) =>
-      current.to === fitting.to && current.from === fitting.from ? current : fitting,
-    );
-  }, [newestMeasurement]);
-
-  // The slider spans the location's measurements (and the shown window).
-  const oldestMeasurement = measurementRange?.first ? Date.parse(measurementRange.first) : null;
-  const windowBounds = useMemo(() => {
-    const first = oldestMeasurement != null && Number.isFinite(oldestMeasurement)
-      ? alignDown(oldestMeasurement, WINDOW_GRID_MS)
-      : heatmapWindow.from;
-    const last = newestMeasurement != null && Number.isFinite(newestMeasurement)
-      ? alignUp(newestMeasurement, WINDOW_GRID_MS)
-      : heatmapWindow.to;
-    return { min: Math.min(first, heatmapWindow.from), max: Math.max(last, heatmapWindow.to) };
-  }, [oldestMeasurement, newestMeasurement, heatmapWindow]);
-
-  // Once per range (kept for switching back and forth).
-  const loadZeitreihe = useCallback(
-    (days: number) => {
-      if (zeitreiheRequested.current.has(days)) {
-        return;
-      }
-      zeitreiheRequested.current.add(days);
-      setZeitreiheFailed((prev) => {
-        if (!prev[days]) {
-          return prev;
-        }
-        const next = { ...prev };
-        delete next[days];
-        return next;
-      });
-      void axiosConfig.perform_get(
-        auth,
-        `${demo ? '/v1/demo' : '/v1/location'}/${locationId}/heatmap/?days=${days}&limit=${ZEITREIHE_LIMIT}`,
-        (response) => {
-          setZeitreihe((prev) => ({
-            ...prev,
-            [days]: {
-              timestamps: response?.data?.timestamps || [],
-              data: response?.data?.data || {},
-            },
-          }));
-        },
-        (error) => {
-          // Allow a retry the next time the range is selected.
-          zeitreiheRequested.current.delete(days);
-          setZeitreiheFailed((prev) => ({ ...prev, [days]: true }));
-          if (error?.response?.status !== 403) {
-            showRequestError(enqueueSnackbar, 'Could not load measurements', error);
-          }
-        },
-      );
-    },
-    [auth, demo, enqueueSnackbar, locationId],
-  );
-
-  useEffect(() => {
-    if (isLorawan || statusView !== 'zeitreihe') {
-      return;
-    }
-    loadZeitreihe(zeitreiheDays);
-  }, [isLorawan, loadZeitreihe, statusView, zeitreiheDays]);
-
-  const zeitreiheLoading =
-    !zeitreihe[zeitreiheDays] && !zeitreiheFailed[zeitreiheDays];
+  const zeitreiheLoading = heatmapLoading;
 
   const openClusters = useMemo(
     () => clusters.filter((cluster) => cluster.state !== 'geloest'),
@@ -390,45 +361,132 @@ const LocationStatusView = ({
     }, null);
   }, [clusters]);
 
-  const isOnline = (heatmap?.timestamps?.length ?? 0) > 0;
+  const isOnline = (history?.timestamps?.length ?? 0) > 0;
   const thresholdValue = location?.alarm_threshold ?? null;
 
-  // ProgeoLocation.PROJECT_TYPE_CHOICES (progeo/v1/models.py) - a fixed
-  // Django IntegerChoices enum, safe to hardcode client-side (see
-  // projectType.ts for the same convention used elsewhere).
-  const isSmartexIs = location?.project_type === 3;
-  const isSmartexDm = location?.project_type === 1;
+  // Per product (ProgeoLocation.project_type, see projectType.ts): heatmap,
+  // lines, segments or points on the plan, and whether the sensor table
+  // with the sensors' names goes below it.
+  const visualization = planVisualization(location?.project_type);
+  const withSensorTable = showsSensorTable(location?.project_type);
 
-  const activeLageplan = useMemo(() => {
-    const plans = heatmap?.location?.lageplans;
+  // The views of the location (floors, buildings, ...): its active
+  // Lageplans - inactive ones are older versions. Without an active one, the
+  // newest.
+  const planViews = useMemo(() => {
+    const plans = history?.location?.lageplans;
     if (!Array.isArray(plans) || plans.length === 0) {
-      return null;
+      return [];
     }
-    return plans.find((plan) => plan.is_active) ?? plans[0];
-  }, [heatmap]);
+    const active = plans.filter((plan) => plan.is_active);
+    return active.length > 0 ? active : [plans[0]];
+  }, [history]);
+  const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
+  const activeLageplan =
+    planViews.find((plan) => plan.id === selectedPlanId) ?? planViews[0] ?? null;
   const hasLageplan = Boolean(activeLageplan);
 
-  const sensorPoints = useMemo(() => heatmap?.sensor_points ?? [], [heatmap]);
+  const sensorPoints = useMemo(() => history?.sensor_points ?? [], [history]);
   const hasMeasurePoints = sensorPoints.length > 0;
 
-  // Only used for the smartex® is zone overlay - sensor_points already carry the
-  // same normalized x/y the heatmap markers use.
-  const zonePoints = useMemo(
-    () =>
-      sensorPoints.map((point) => ({
+  // The sensors of the shown view; points without a Lageplan of the views
+  // (none set, or an old version) stay on the first view.
+  const viewPoints = useMemo(() => {
+    if (planViews.length < 2 || !activeLageplan) {
+      return sensorPoints;
+    }
+    const viewIds = new Set(planViews.map((plan) => plan.id));
+    const onFirstView = activeLageplan.id === planViews[0].id;
+    return sensorPoints.filter((point) =>
+      point.lageplan != null && viewIds.has(point.lageplan)
+        ? point.lageplan === activeLageplan.id
+        : onFirstView,
+    );
+  }, [activeLageplan, planViews, sensorPoints]);
+
+  // The heatmap of the shown view only: its plan and its sensors.
+  const viewHeatmap = useMemo(() => {
+    if (!heatmap || planViews.length < 2 || !activeLageplan) {
+      return heatmap;
+    }
+    return {
+      ...heatmap,
+      location: { ...heatmap.location, lageplans: [activeLageplan] },
+      sensor_points: viewPoints,
+    };
+  }, [activeLageplan, heatmap, planViews.length, viewPoints]);
+
+  // The plan overlays show the frame of their slider - the newest one
+  // whenever the window changes (the heatmap's own slider starts oldest).
+  const frameTotal = heatmap?.timestamps.length ?? 0;
+  useEffect(() => {
+    if (visualization !== 'heatmap') {
+      setHeatmapIndex(frameTotal > 0 ? frameTotal - 1 : null);
+    }
+  }, [visualization, heatmap, frameTotal]);
+
+  // smartex® dm: the sensors of one grid row are one line (a sensor run) -
+  // drawn joined, listed as one table row and judged by their strongest
+  // reading. Named after their common measure point name, else numbered.
+  const sensorLines = useMemo(() => {
+    if (visualization !== 'lines') {
+      return [];
+    }
+    const rows = new Map<number, typeof viewPoints>();
+    const singles: typeof viewPoints = [];
+    viewPoints.forEach((point) => {
+      if (point.grid_y == null) {
+        singles.push(point);
+      } else {
+        rows.set(point.grid_y, [...(rows.get(point.grid_y) ?? []), point]);
+      }
+    });
+    const named = (points: typeof viewPoints) => {
+      const names = new Set(points.map((point) => point.name || ''));
+      return names.size === 1 ? [...names][0] || null : null;
+    };
+    return [
+      ...[...rows.entries()]
+        .sort(([a], [b]) => a - b)
+        .map(([row, points]) => ({
+          key: `row-${row}`,
+          label: named(points) ?? t('status_line_label', { line: row + 1 }),
+          points: [...points].sort((a, b) => a.pos - b.pos),
+        })),
+      ...singles.map((point) => ({
+        key: `single-${point.pos}`,
+        label: point.name || `#${point.pos}`,
+        points: [point],
+      })),
+    ];
+  }, [t, viewPoints, visualization]);
+
+  // LageplanZoneOverlay (every product but the heatmap ones) - sensor_points
+  // already carry the same normalized x/y the heatmap markers use. Lines
+  // join the sensors of one grid row; segments group by the zone name.
+  const zonePoints = useMemo(() => {
+    const lineOf = new Map(
+      sensorLines.flatMap((line) => line.points.map((point) => [point.pos, line] as const)),
+    );
+    return viewPoints.map((point) => ({
         pos: point.pos,
         x: point.x,
         y: point.y,
         name: point.name ?? null,
-        value: point.last_value ?? null,
+        ...(visualization === 'lines'
+          ? {
+              group: point.grid_y != null ? `row-${point.grid_y}` : null,
+              groupLabel: lineOf.get(point.pos)?.label ?? null,
+            }
+          : {}),
+        value: frameValue(heatmap, heatmapIndex, point.pos) ?? point.last_value ?? null,
         threshold: point.threshold ?? thresholdValue,
         meters:
           point.x_m != null && point.y_m != null
             ? ([point.x_m, point.y_m] as [number, number])
             : null,
-      })),
-    [sensorPoints, thresholdValue],
-  );
+      }));
+  }, [viewPoints, sensorLines, thresholdValue, visualization, heatmap, heatmapIndex]);
 
   // The placed ProgeoMeasurePoint of a sensor, if any: its name and own
   // threshold override win over the generic label/object default.
@@ -458,7 +516,7 @@ const LocationStatusView = ({
   // Verdachtsstelle (resolved ones too) first and in colour, the others
   // muted - unless there is none, then all of them in colour.
   const zeitreiheSeries = useMemo((): ThresholdTrendSeries[] => {
-    const loaded = zeitreihe[zeitreiheDays];
+    const loaded = zeitreihe;
     if (!loaded) {
       return [];
     }
@@ -491,7 +549,6 @@ const LocationStatusView = ({
     sensorLabel,
     thresholdValue,
     zeitreihe,
-    zeitreiheDays,
   ]);
 
   // Plain sensor table: built from ProgeoMeasurePoint when placed (name +
@@ -528,8 +585,31 @@ const LocationStatusView = ({
       return fallback ?? sensorStats.get(key)?.latest ?? null;
     };
 
+    const highest = (values: Array<number | null | undefined>) =>
+      values.reduce<number | null>(
+        (best, value) => (value != null && (best == null || value > best) ? value : best),
+        null,
+      );
+
+    // smartex® dm: one row per line, its strongest reading.
+    if (hasMeasurePoints && sensorLines.length > 0) {
+      return sensorLines.map((line) => ({
+        key: line.key,
+        label: line.label,
+        value: highest(line.points.map((point) => valueOf(String(point.pos), point.last_value ?? null))),
+        max: highest(line.points.map((point) => sensorStats.get(String(point.pos))?.max)),
+        // The strictest threshold of its sensors.
+        threshold:
+          line.points.reduce<number | null>(
+            (lowest, point) =>
+              point.threshold != null && (lowest == null || point.threshold < lowest) ? point.threshold : lowest,
+            null,
+          ) ?? thresholdValue,
+      }));
+    }
+
     if (hasMeasurePoints) {
-      return sensorPoints.map((point) => {
+      return viewPoints.map((point) => {
         const key = String(point.pos);
         return {
           key,
@@ -550,7 +630,31 @@ const LocationStatusView = ({
         max: sensorStats.get(key)?.max ?? null,
         threshold: thresholdValue,
       }));
-  }, [hasMeasurePoints, sensorPoints, heatmap, heatmapIndex, sensorStats, thresholdValue]);
+  }, [hasMeasurePoints, sensorLines, viewPoints, heatmap, heatmapIndex, sensorStats, thresholdValue]);
+
+  // The Verdachtsstellen' latest alarm periods (until now while active),
+  // marked on the plan's frame slider.
+  const alarmSpans = useMemo<AlarmSpan[]>(() => {
+    const now = Date.now();
+    const format = (ms: number) =>
+      new Date(ms).toLocaleString(undefined, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    return clusters.flatMap((cluster) => {
+      const from = cluster.since ? Date.parse(cluster.since) : Number.NaN;
+      if (!Number.isFinite(from)) {
+        return [];
+      }
+      const end = cluster.resolved_at ? Date.parse(cluster.resolved_at) : Number.NaN;
+      const to = Number.isFinite(end) ? end : now;
+      return [{
+        key: cluster.id,
+        from,
+        to,
+        label: Number.isFinite(end)
+          ? t('status_alarm_span', { sensor: sensorLabel(cluster.sensor_id), from: format(from), to: format(to) })
+          : t('status_alarm_span_active', { sensor: sensorLabel(cluster.sensor_id), from: format(from) }),
+      }];
+    });
+  }, [clusters, sensorLabel, t]);
 
   const objektStatusValue = !worstSeverity
     ? t('status_kpi_ok')
@@ -747,16 +851,27 @@ const LocationStatusView = ({
               value={statusView}
               onChange={(value) => setStatusView(value as 'roof' | 'zeitreihe')}
             />
-            {statusView === 'zeitreihe' && (
-              <SegmentedControl
-                options={zeitreiheRanges.map((value) => ({
-                  value,
-                  label: t(timeRangeLabelKey(value)),
+            <SegmentedControl
+              options={rangeOptions.map((value) => ({
+                value,
+                label: t(timeRangeLabelKey(value)),
+              }))}
+              value={range}
+              onChange={(value) => {
+                setSelectedRange(value as TimeRange);
+                setPickedStep(null);
+              }}
+            />
+            {statusView === 'roof' && stepOptions.length > 1 && (
+              <PillSelect
+                label={t('heatmap_step_label')}
+                title={t('heatmap_step_hint')}
+                options={stepOptions.map((step) => ({
+                  value: String(step.seconds),
+                  label: t(`heatmap_step_${step.key}`),
                 }))}
-                value={zeitreiheRange}
-                onChange={(value) =>
-                  setSelectedZeitreiheRange(value as TimeRange)
-                }
+                value={String(heatmapStep)}
+                onChange={(value) => setPickedStep(Number(value))}
               />
             )}
           </div>
@@ -795,7 +910,7 @@ const LocationStatusView = ({
             </PanelCard>
             <LocationBatteryVoltagePanel
               locationId={locationId}
-              days={zeitreiheDays}
+              days={rangeDays}
               demo={demo}
             />
             </>
@@ -809,7 +924,21 @@ const LocationStatusView = ({
               }}
             >
               <div style={{ flex: '1 1 560px', minWidth: 0 }}>
-                <PanelCard title={t('status_dachansicht_title')}>
+                <PanelCard
+                  title={t('status_dachansicht_title')}
+                  actions={
+                    planViews.length > 1 ? (
+                      <SegmentedControl
+                        options={planViews.map((plan, index) => ({
+                          value: String(plan.id),
+                          label: plan.name || t('status_plan_view', { index: index + 1 }),
+                        }))}
+                        value={String(activeLageplan?.id)}
+                        onChange={(value) => setSelectedPlanId(Number(value))}
+                      />
+                    ) : undefined
+                  }
+                >
                   {heatmapDenied ? (
                     <div style={{ color: '#8B8383', fontSize: 13 }}>
                       {t('status_no_measurement_access')}
@@ -820,12 +949,32 @@ const LocationStatusView = ({
                     </div>
                   ) : !hasMeasurePoints ? (
                     <SensorListTable rows={sensorRows} />
-                  ) : isSmartexIs ? (
-                    <LageplanZoneOverlay
-                      imageUrl={activeLageplan?.url ?? null}
-                      points={zonePoints}
-                      height={480}
-                    />
+                  ) : visualization !== 'heatmap' ? (
+                    <>
+                      {heatmap && heatmap.timestamps.length > 0 && heatmapIndex != null && (
+                        <div className="px-2 py-2">
+                          <FrameSlider
+                            id="plan-frame"
+                            timestamps={heatmap.timestamps}
+                            index={Math.min(heatmapIndex, heatmap.timestamps.length - 1)}
+                            onChange={setHeatmapIndex}
+                            alarms={alarmSpans}
+                          />
+                        </div>
+                      )}
+                      <LageplanZoneOverlay
+                        imageUrl={activeLageplan?.url ?? null}
+                        points={zonePoints}
+                        height={480}
+                        mode={visualization}
+                      />
+
+                      {withSensorTable && (
+                        <div style={{ marginTop: 14 }}>
+                          <SensorListTable rows={sensorRows} />
+                        </div>
+                      )}
+                    </>
                   ) : (
                     <>
                       <div
@@ -836,25 +985,16 @@ const LocationStatusView = ({
                           overflow: 'hidden',
                         }}
                       >
-                        <HeatmapRangeControls
-                          min={windowBounds.min}
-                          max={windowBounds.max}
-                          value={heatmapWindow}
-                          loading={heatmapRefreshing}
-                          onChange={(next) => {
-                            windowTouched.current = true;
-                            setHeatmapWindow(next);
-                          }}
-                        />
                         <SensorHeatmap2D
-                          response={heatmap}
+                          response={viewHeatmap}
                           height={480}
                           hideChrome
                           onTimestampChange={setHeatmapIndex}
+                          alarms={alarmSpans}
                         />
                       </div>
 
-                      {isSmartexDm && (
+                      {withSensorTable && (
                         <div style={{ marginTop: 14 }}>
                           <SensorListTable rows={sensorRows} />
                         </div>

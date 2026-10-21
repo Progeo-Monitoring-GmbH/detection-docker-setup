@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   getProjectTypeLabel,
   isLorawanProject,
+  planVisualization,
   PROJECT_TYPE_BRAND_LABELS,
   PROJECT_TYPE_LABEL_KEYS,
+  showsSensorTable,
 } from './projectType';
 
 const t = (key: string) => `t(${key})`;
@@ -54,6 +56,28 @@ describe('isLorawanProject', () => {
     expect(isLorawanProject(6)).toBe(true);
     [0, 1, 2, 3, 4, 5, 7, 11, 99, null, undefined].forEach((value) =>
       expect(isLorawanProject(value)).toBe(false),
+    );
+  });
+});
+
+describe('planVisualization', () => {
+  it('draws each smartex® product its own way on the plan', () => {
+    expect(planVisualization(7)).toBe('heatmap'); // mx-PEEL
+    [3, 8, 9].forEach((value) => expect(planVisualization(value)).toBe('segments')); // is, mx-va, mx-al
+    expect(planVisualization(1)).toBe('lines'); // dm
+    [10, 11].forEach((value) => expect(planVisualization(value)).toBe('points')); // io, vt
+  });
+
+  it('falls back to the heatmap for every other type', () => {
+    [0, 2, 4, 5, 99, 42, null, undefined].forEach((value) =>
+      expect(planVisualization(value)).toBe('heatmap'),
+    );
+  });
+
+  it('lists the sensors below the plan for dm, io and vt only', () => {
+    [1, 10, 11].forEach((value) => expect(showsSensorTable(value)).toBe(true));
+    [0, 2, 3, 6, 7, 8, 9, 99, null, undefined].forEach((value) =>
+      expect(showsSensorTable(value)).toBe(false),
     );
   });
 });

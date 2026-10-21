@@ -1,0 +1,92 @@
+/* The frame slider: a darker, thicker track than Bootstrap's, the played
+   part (up to the thumb's centre, which travels 0.5 rem inside the input)
+   filled in brand blue, and a blue thumb with a white rim. */
+.frame-slider__input {
+  --fill: calc(0.5rem + (100% - 1rem) * var(--fill-ratio, 0));
+  --track: linear-gradient(
+    to right,
+    var(--progeo-blue) var(--fill),
+    var(--progeo-warm-gray-3) var(--fill)
+  );
+}
+
+.frame-slider__input::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--track);
+}
+
+.frame-slider__input::-moz-range-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--track);
+}
+
+.frame-slider__input::-webkit-slider-thumb {
+  width: 1rem;
+  height: 1rem;
+  margin-top: -5px;
+  background: var(--progeo-blue);
+  border: 2px solid var(--progeo-white);
+  box-shadow: 0 1px 4px rgba(11, 54, 89, 0.45);
+}
+
+.frame-slider__input::-moz-range-thumb {
+  width: 1rem;
+  height: 1rem;
+  background: var(--progeo-blue);
+  border: 2px solid var(--progeo-white);
+  box-shadow: 0 1px 4px rgba(11, 54, 89, 0.45);
+}
+
+/* Separate rules: a browser drops a whole rule with another engine's pseudo-element. */
+.frame-slider__input:disabled::-webkit-slider-thumb {
+  background: var(--progeo-warm-gray-4);
+}
+
+.frame-slider__input:disabled::-moz-range-thumb {
+  background: var(--progeo-warm-gray-4);
+}
+
+/* Alarm periods on the frame slider: translucent red over the track (the
+   slider stays usable through it) and a clickable strip right below. Both
+   inset by half a thumb (0.5 rem), where the thumb's centre travels. */
+.frame-slider__alarms {
+  position: absolute;
+  inset: 0 0.5rem;
+  pointer-events: none;
+}
+
+.frame-slider__alarm {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(220, 38, 38, 0.2);
+  border-left: 1px solid rgba(220, 38, 38, 0.55);
+  border-right: 1px solid rgba(220, 38, 38, 0.55);
+  border-radius: 2px;
+}
+
+.frame-slider__alarm-strip {
+  position: relative;
+  height: 6px;
+  margin: -3px 0.5rem 2px;
+}
+
+.frame-slider__alarm-jump {
+  position: absolute;
+  top: 0;
+  height: 6px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: rgba(220, 38, 38, 0.65);
+  cursor: pointer;
+}
+
+.frame-slider__alarm-jump:hover,
+.frame-slider__alarm-jump:focus-visible {
+  background: #dc2626;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.3);
+}

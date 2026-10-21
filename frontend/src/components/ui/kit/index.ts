@@ -2,6 +2,8 @@ export { default as PanelCard } from './PanelCard';
 export { default as PillButton } from './PillButton';
 export { default as SegmentedControl } from './SegmentedControl';
 export type { SegmentedOption } from './SegmentedControl';
+export { default as PillSelect } from './PillSelect';
+export type { PillSelectOption } from './PillSelect';
 export { default as StatTile } from './StatTile';
 export type { StatTileProps } from './StatTile';
 export { default as KpiStrip } from './KpiStrip';

@@ -1,7 +1,9 @@
 /**
- * Time window and step of the heatmap (GET .../heatmap/?from=&to=&step=,
- * see LocationViewSet._step_frames): each frame holds every sensor's highest
- * value within one step. Kept free of React so it can be tested.
+ * Time window and step of the plan (heatmap and overlays): each frame holds
+ * every sensor's highest value within one step. The location's whole
+ * history is loaded once in a fine base step (GET .../heatmap/?from=&to=&step=,
+ * see LocationViewSet._step_frames) and every range/step is cut out of it in
+ * the browser (heatmapData.ts). Kept free of React so it can be tested.
  */
 
 export type HeatmapStep = { key: string; seconds: number };
@@ -18,12 +20,17 @@ export const HEATMAP_STEPS: readonly HeatmapStep[] = [
   { key: '14d', seconds: 14 * 24 * 60 * 60 },
 ];
 
-/** The backend's HEATMAP_MAX_FRAMES. */
+/** Frames one range shows at most (slider, video export). */
 export const HEATMAP_MAX_FRAMES = 2000;
-/** Resolution of the window slider. */
-export const WINDOW_GRID_MS = 30 * 60 * 1000;
-export const DEFAULT_WINDOW_DAYS = 7;
-export const DEFAULT_STEP_SECONDS = 60 * 60;
+/** Frames of a range's default step at most - enough to follow a leak,
+ * few enough to step through. */
+const DEFAULT_MAX_FRAMES = 200;
+/** Frames of the one full-history request at most (the backend's
+ * HEATMAP_MAX_FRAMES) - its base step is the finest that stays below. */
+const BASE_MAX_FRAMES = 20000;
+/** Possible base steps: each divides every coarser step of HEATMAP_STEPS
+ * (a 4 h base would not add up to 6 h frames). */
+const BASE_STEPS = [30 * 60, 60 * 60, 2 * 60 * 60, 24 * 60 * 60];
 
 export type HeatmapWindow = { from: number; to: number; step: number };
 
@@ -47,20 +54,48 @@ export const alignUp = (ms: number, stepMs: number) => {
 export const frameCount = (from: number, to: number, stepSeconds: number) =>
   Math.max(0, Math.ceil((to - from) / (stepSeconds * 1000)));
 
-/** The last DEFAULT_WINDOW_DAYS before `newest` (the newest measurement, or
- * now) in hourly steps. */
-export const defaultWindow = (newest: number): HeatmapWindow => {
-  const to = alignUp(newest, WINDOW_GRID_MS);
-  return {
-    from: alignDown(to - DEFAULT_WINDOW_DAYS * DAY_MS, DEFAULT_STEP_SECONDS * 1000),
-    to,
-    step: DEFAULT_STEP_SECONDS,
-  };
+/** The base step for a history from `first` to `last` (ms). */
+export const baseStepFor = (first: number, last: number) =>
+  BASE_STEPS.find((step) => frameCount(alignDown(first, step * 1000), last, step) <= BASE_MAX_FRAMES) ??
+  BASE_STEPS[BASE_STEPS.length - 1];
+
+/** The window of the full-history request: every measurement, in base steps. */
+export const historyWindow = (first: number, last: number): HeatmapWindow => {
+  const step = baseStepFor(first, last);
+  const stepMs = step * 1000;
+  const from = alignDown(first, stepMs);
+  return { from, to: Math.max(alignUp(last, stepMs), from + stepMs), step };
+};
+
+/** Steps the loaded history can be grouped into: multiples of its base step. */
+export const stepFits = (stepSeconds: number, baseStep: number | null | undefined) =>
+  !baseStep || (stepSeconds >= baseStep && stepSeconds % baseStep === 0);
+
+/** The steps offered for a range of `days`: groupable from the history,
+ * shorter than the range, at most HEATMAP_MAX_FRAMES frames. */
+export const stepsForRange = (days: number, baseStep: number | null | undefined) =>
+  HEATMAP_STEPS.filter(
+    (step) =>
+      stepFits(step.seconds, baseStep) &&
+      step.seconds < days * 86400 &&
+      frameCount(0, days * DAY_MS, step.seconds) <= HEATMAP_MAX_FRAMES,
+  );
+
+/** A range's step until the user picks one: the finest offered step with at
+ * most DEFAULT_MAX_FRAMES frames (24 h: 30 min, 7 days: 1 h, 30 days: 4 h,
+ * 1 year: 2 days, 3 years: 7 days). */
+export const defaultStepForRange = (days: number, baseStep: number | null | undefined) => {
+  const steps = stepsForRange(days, baseStep);
+  return (
+    steps.find((step) => frameCount(0, days * DAY_MS, step.seconds) <= DEFAULT_MAX_FRAMES) ??
+    steps[steps.length - 1] ??
+    HEATMAP_STEPS[HEATMAP_STEPS.length - 1]
+  ).seconds;
 };
 
 /** The window's frames start on a step boundary (local time), so frames of a
  * day step are whole days. */
-export const alignedFrom = (window: HeatmapWindow) => alignDown(window.from, window.step * 1000);
+const alignedFrom = (window: HeatmapWindow) => alignDown(window.from, window.step * 1000);
 
 export const heatmapQuery = (window: HeatmapWindow) =>
   `from=${encodeURIComponent(new Date(alignedFrom(window)).toISOString())}` +

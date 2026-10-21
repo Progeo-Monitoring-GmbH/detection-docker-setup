@@ -94,6 +94,24 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(data, ensure_ascii=False, default=str)
 
 
+SHARED_FILE_MODE = 0o666
+
+
+def open_shared(path, encoding="utf-8", errors=None):
+    """Open `path` for appending; a file created here is readable and
+    writable for every user. The web server and celery run as progeo, cron
+    jobs and `docker exec ... manage.py` as root: a log file a root process
+    created (after a rotation, say) got the umask's 0644 and locked the
+    others out - "[Errno 13] Permission denied: '.../errors.jsonl'"."""
+    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, SHARED_FILE_MODE)
+    try:
+        if os.fstat(fd).st_mode & 0o777 != SHARED_FILE_MODE:
+            os.fchmod(fd, SHARED_FILE_MODE)  # the umask cut it down; works for its owner (or root)
+    except (AttributeError, OSError):
+        pass  # someone else's file (they make it shared), or no fchmod (Windows)
+    return os.fdopen(fd, "a", encoding=encoding, errors=errors)
+
+
 class SharedRotatingFileHandler(WatchedFileHandler):
     """Size-rotated log file that several processes write to (daphne, celery workers, cron commands).
 
@@ -109,13 +127,21 @@ class SharedRotatingFileHandler(WatchedFileHandler):
         self.max_bytes = max_bytes
         self.backup_count = backup_count
 
+    def _open(self):
+        return open_shared(self.baseFilename, encoding=self.encoding, errors=self.errors)
+
     def emit(self, record):
         try:
             if self._too_big():
                 self._rotate()
         except OSError:
             pass  # never lose the record because rotation failed
-        super().emit(record)
+        try:
+            super().emit(record)
+        except OSError:
+            # FileHandler opens the file outside its own error handling: an
+            # unwritable log file must not break the request or task that logged.
+            self.handleError(record)
 
     def _too_big(self) -> bool:
         try:
@@ -124,7 +150,7 @@ class SharedRotatingFileHandler(WatchedFileHandler):
             return False
 
     def _rotate(self):
-        with open(f"{self.baseFilename}.lock", "a") as lock:
+        with open_shared(f"{self.baseFilename}.lock") as lock:
             if fcntl:
                 fcntl.flock(lock, fcntl.LOCK_EX)
             if not self._too_big():

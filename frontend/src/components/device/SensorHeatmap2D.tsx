@@ -11,7 +11,7 @@ import { useTranslation } from 'react-i18next';
 import { Button, ButtonGroup, Card, Form, Spinner } from 'react-bootstrap';
 import { ArrowCounterclockwise, Film, ZoomIn, ZoomOut } from 'react-bootstrap-icons';
 import { plotTheme } from '../../styles/plotTheme';
-import { formatTimestamp } from './heatmapFrames';
+import FrameSlider, { type AlarmSpan } from './FrameSlider';
 import { buildWeightedGrid, type WeightedPoint } from './heatmapGrid';
 import {
   containsPoint,
@@ -58,6 +58,8 @@ type SensorHeatmap2DProps = {
   hideChrome?: boolean;
   /** Called with the timestamp index the slider shows (also while exporting). */
   onTimestampChange?: (index: number) => void;
+  /** Alarm periods, marked on the timestamp slider. */
+  alarms?: AlarmSpan[];
 };
 
 type ImageSize = {
@@ -181,6 +183,7 @@ const SensorHeatmap2D = ({
   alignment = null,
   hideChrome = false,
   onTimestampChange,
+  alarms,
 }: SensorHeatmap2DProps) => {
   const { t } = useTranslation();
   const [timestampIndex, setTimestampIndex] = useState(0);
@@ -1063,27 +1066,14 @@ const SensorHeatmap2D = ({
           </div>
 
           <div className="d-flex flex-wrap align-items-center gap-3 mt-1">
-            <div className="flex-grow-1 pb-2" style={{ minWidth: 200 }}>
-              <label
-                htmlFor="heatmap2d-timestamp"
-                className="form-label small text-muted mb-0"
-              >
-                {timestamps.length
-                  ? `${timestampIndex + 1}/${timestamps.length}: ${formatTimestamp(timestamps[timestampIndex])}`
-                  : 'Timestamp'}
-              </label>
-              <input
+            <div className="flex-grow-1 pb-1" style={{ minWidth: 200 }}>
+              <FrameSlider
                 id="heatmap2d-timestamp"
-                type="range"
-                className="form-range d-block"
-                min={0}
-                max={Math.max(timestamps.length - 1, 0)}
-                step={1}
-                value={timestampIndex}
-                onChange={(event) =>
-                  setTimestampIndex(Number(event.target.value))
-                }
+                timestamps={timestamps}
+                index={timestampIndex}
+                onChange={setTimestampIndex}
                 disabled={videoExporting}
+                alarms={alarms}
               />
             </div>
 

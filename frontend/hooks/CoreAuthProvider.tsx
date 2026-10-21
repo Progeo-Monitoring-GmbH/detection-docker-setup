@@ -7,6 +7,7 @@ import {
   useState,
   useEffect,
   useCallback,
+  useMemo,
 } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { getBackendBaseUrl } from '../src/backendUrl';
@@ -175,22 +176,25 @@ const CoreAuthProvider = ({ children }) => {
     setRefreshToken(refresh);
   }, []);
 
-  return (
-    <AuthContext.Provider
-      value={{
-        token,
-        user,
-        refreshApi: () => refreshApi(refreshToken),
-        loginAction,
-        loginWithTokens,
-        logoutAction,
-        navigate: (to, options) => navigate(to, options),
-        location: getCurrentUrl(),
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
+  // One object per real change (token, user, path): views load their data in
+  // effects that depend on `auth` - a new object on every render of the
+  // provider made them request it again.
+  const pathname = location.pathname;
+  const value = useMemo(
+    () => ({
+      token,
+      user,
+      refreshApi: () => refreshApi(refreshToken),
+      loginAction,
+      loginWithTokens,
+      logoutAction,
+      navigate: (to, options) => navigate(to, options),
+      location: pathname,
+    }),
+    [token, user, refreshToken, loginAction, loginWithTokens, logoutAction, navigate, pathname],
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
 export default CoreAuthProvider;

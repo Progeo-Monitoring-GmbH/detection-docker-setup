@@ -57,6 +57,11 @@ export type SensorHeatmapPoint = {
   x_m?: number | null;
   y_m?: number | null;
   name?: string | null;
+  /** Id of the Lageplan (view) the point sits on; null: not assigned. */
+  lageplan?: number | null;
+  /** Column/row of the sensor grid (ProgeoMeasurePoint.grid_x/grid_y). */
+  grid_x?: number | null;
+  grid_y?: number | null;
   last_value?: number | null;
   threshold?: number | null;
 };
@@ -67,6 +72,8 @@ export type SensorHeatmapResponse = {
   from?: string | null;
   to?: string | null;
   days?: number | null;
+  /** Seconds per frame (?step=); null/absent: one frame per measurement. */
+  step?: number | null;
   /** Measurements in the window, of which `timestamps` are the frames. */
   total?: number;
   /** Per sensor (1-based, = sensor_points[].pos) one value per timestamp. */

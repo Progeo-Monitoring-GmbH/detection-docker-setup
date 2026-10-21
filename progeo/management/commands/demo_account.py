@@ -81,6 +81,71 @@ IS_ZONES = {  # name: rectangle; Hauptdach 3x2, Anbau and Garage 2x2 sensors
 }
 IS_METERS_PER_PIXEL = 0.025
 
+# smartex® dm: the 5 rows of sensors are 5 lines (sensor runs, grid_y), each
+# one entry of the sensor table under the name its sensors share. The leak
+# (sensor 13) lies on the middle one.
+DM_LINES = ["Attika Nord", "Lichtkuppeln", "Dachmitte", "RLT-Gerät", "Attika Süd"]
+
+PEEL_ROOF = (180, 150, 1460, 900)  # 66 m x 38,7 m, 8x4 sensors
+PEEL_METERS = 66.0
+
+VA_LEVELS = {  # view (parking level): its fields - name: rectangle, columns, rows
+    "UG -1": {
+        "Feld A": ((160, 180, 760, 560), 3, 2),
+        "Feld B": ((840, 180, 1440, 560), 3, 2),
+        "Rampe": ((160, 640, 520, 940), 1, 3),
+        "Feld C": ((600, 640, 1440, 940), 4, 2),
+    },
+    "UG -2": {
+        "Feld D": ((160, 180, 760, 560), 3, 2),
+        "Feld E": ((840, 180, 1440, 560), 3, 2),
+        "Feld F": ((160, 640, 1440, 940), 6, 2),
+    },
+}
+VA_METERS_PER_PIXEL = 0.05
+
+AL_ROOF = (180, 190, 1460, 910)  # 60 m; the bays between the axes 1-5 are the zones
+AL_AXES = 5
+AL_METERS = 60.0
+AL_ZONES = {
+    f"Achse {index + 1}-{index + 2}": (
+        (AL_ROOF[0] + index * (AL_ROOF[2] - AL_ROOF[0]) / (AL_AXES - 1), AL_ROOF[1],
+         AL_ROOF[0] + (index + 1) * (AL_ROOF[2] - AL_ROOF[0]) / (AL_AXES - 1), AL_ROOF[3]),
+        2, 3,
+    )
+    for index in range(AL_AXES - 1)
+}
+
+IO_FLOORS = {  # view (floor): its rooms (name: rectangle) and sensors (name or None, x, y)
+    "EG": (
+        {"Empfang": (160, 160, 560, 520), "Büro 1": (560, 160, 960, 520), "Büro 2": (960, 160, 1440, 520),
+         "Flur": (160, 520, 1440, 620), "Teeküche": (160, 620, 560, 920), "WC": (560, 620, 800, 920),
+         "Technik": (800, 620, 1440, 920)},
+        [("Empfang", 360, 360), ("Büro 1", 760, 360), ("Büro 2", 1200, 360), (None, 600, 570), (None, 1100, 570),
+         ("Teeküche Spüle", 300, 740), ("Teeküche Geschirrspüler", 300, 860), ("WC", 680, 770),
+         ("Heizung", 1000, 720), ("Hausanschluss Wasser", 1250, 840)],
+    ),
+    "OG": (
+        {"Besprechung": (160, 160, 760, 520), "Büro 3": (760, 160, 1100, 520), "Büro 4": (1100, 160, 1440, 520),
+         "Flur": (160, 520, 1440, 620), "Bad": (160, 620, 520, 920), "Archiv": (520, 620, 1100, 920),
+         "Dachterrasse": (1100, 620, 1440, 920)},
+        [("Besprechung", 460, 360), ("Büro 3", 930, 360), ("Büro 4", 1270, 360), (None, 800, 570),
+         ("Bad Dusche", 260, 720), ("Bad WC", 260, 850), ("Archiv", 810, 770),
+         ("Terrassentür", 1170, 700), ("Dachterrasse Ablauf", 1300, 850)],
+    ),
+}
+IO_METERS_PER_PIXEL = 0.02
+
+VT_HOUSES = {"Haus A": (160, 220, 700, 760), "Haus B": (900, 220, 1440, 760)}
+VT_SENSORS = [  # balconies on the south side, roof terraces, the walkway between the houses
+    ("Haus A Balkon West", 250, 815), ("Haus A Balkon Mitte", 430, 815), ("Haus A Balkon Ost", 610, 815),
+    ("Haus A Dachterrasse", 430, 400), (None, 250, 620),
+    ("Haus B Balkon West", 990, 815), ("Haus B Balkon Mitte", 1170, 815), ("Haus B Balkon Ost", 1350, 815),
+    ("Haus B Dachterrasse", 1170, 400), (None, 1350, 620),
+    ("Laubengang", 800, 490),
+]
+VT_METERS_PER_PIXEL = 0.03
+
 LORAWAN_BUILDING = (200, 460, 1100, 960)  # EG + KG, the roof sits on top
 LORAWAN_GROUND_Y = 760
 LORAWAN_METERS = 12.0
@@ -97,12 +162,23 @@ LORAWAN_ROOMS = {  # sensor label: centre of the room (pixels)
 # other sensor stays below DRY_MAX. Times count back from now.
 # smartex® dm: dry for days, sharp spike, declining - the alarm is over (the 7-day
 # view shows all of it). smartex® is: started 3 days ago and still over the threshold
-# - an open alarm.
+# - an open alarm. The others vary the state (open, acknowledged, resolved);
+# `sensor` may also be a sensor's name.
 DRY_MAX = 0.25
 SMARTEX_LEAK = {"sensor": 13, "start_days_ago": 5, "rise_h": 2, "peak": 3.68, "settle": 0.75, "decay_h": 36,
                 "status": ProgeoAlarm.Status.QUITTIERT, "rain": {"before_h": 5, "duration": 8, "amount": 21.6}}
 IS_LEAK = {"sensor": 8, "start_days_ago": 3, "rise_h": 3, "peak": 1.9, "settle": 1.45, "decay_h": 30,
             "status": ProgeoAlarm.Status.NEU, "rain": {"before_h": 3, "duration": 5, "amount": 14.2}}
+PEEL_LEAK = {"sensor": 19, "start_days_ago": 2, "rise_h": 4, "peak": 2.3, "settle": 1.7, "decay_h": 24,
+             "status": ProgeoAlarm.Status.NEU, "rain": {"before_h": 2, "duration": 6, "amount": 17.8}}
+VA_LEAK = {"sensor": 42, "start_days_ago": 1, "rise_h": 6, "peak": 2.8, "settle": 2.0, "decay_h": 20,  # UG -2, Feld F
+           "status": ProgeoAlarm.Status.NEU}
+AL_LEAK = {"sensor": 9, "start_days_ago": 12, "rise_h": 2, "peak": 1.7, "settle": 0.55, "decay_h": 18,
+           "status": ProgeoAlarm.Status.QUITTIERT, "rain": {"before_h": 4, "duration": 10, "amount": 26.3}}
+IO_LEAK = {"sensor": "Bad Dusche", "start_days_ago": 1, "rise_h": 1, "peak": 1.35, "settle": 1.2, "decay_h": 12,
+           "status": ProgeoAlarm.Status.NEU}
+VT_LEAK = {"sensor": "Haus B Balkon Mitte", "start_days_ago": 7, "rise_h": 3, "peak": 2.1, "settle": 0.5,
+           "decay_h": 30, "status": ProgeoAlarm.Status.GELOEST, "rain": {"before_h": 6, "duration": 12, "amount": 31.0}}
 
 # LoRaWAN climate sensors: share of uplinks lost on the radio link, battery
 # percent used up over 90 days, calibration offset (degrees C, % RH).
@@ -137,8 +213,33 @@ DEMO_PEOPLE = [
     ("felix.schulz", "Felix", "Schulz", None, "partner", None, None),
 ]
 
-# Every demo location is rebuilt on each run; `kind` also names the plan file.
-LOCATIONS = [
+def _zone_points(zones):
+    """The sensors of named zones (name: rectangle, columns, rows), each zone
+    one cable run."""
+    return [point for name, (rect, columns, rows) in zones.items() for point in _grid(*rect, columns, rows, name, snake=True)]
+
+
+def _named_points(sensors, view=0):
+    """Single sensors (name or None, x, y); grid_x counts them, grid_y is the view."""
+    return [(name, x, y, index, view) for index, (name, x, y) in enumerate(sensors)]
+
+
+def _location(spec):
+    """One device per location: `points` are the sensors of every view
+    (`plans`), numbered on from view to view. A leak's sensor given by
+    name becomes its sensor_order."""
+    spec["points"] = [point for plan in spec["plans"] for point in plan["points"]]
+    leak = spec.get("leak")
+    if leak and isinstance(leak["sensor"], str):
+        names = [name for name, *_position in spec["points"]]
+        spec["leak"] = {**leak, "sensor": names.index(leak["sensor"]) + 1}
+    return spec
+
+
+# Every demo location is rebuilt on each run; `kind` (plus a view's `suffix`)
+# names the plan files. `plans` are the views of a location - several for
+# floors or parking levels - each drawn by `draw` with its sensors.
+LOCATIONS = [_location(spec) for spec in (
     {
         "kind": "smartex_dm",
         "name": "Demo Flachdach (smartex® dm)",
@@ -147,7 +248,10 @@ LOCATIONS = [
         "address": "Musterstrasse 1",
         "city": "Musterstadt",
         "coordinates": (52.5306, 13.3846),
-        "points": _grid(*SMARTEX_ROOF, 5, 5),
+        "plans": [{"draw": lambda plan: _draw_smartex(plan), "points": [
+            (DM_LINES[grid_y], px, py, grid_x, grid_y)
+            for _name, px, py, grid_x, grid_y in _grid(*SMARTEX_ROOF, 5, 5)
+        ]}],
         "leak": SMARTEX_LEAK,
     },
     {
@@ -158,10 +262,7 @@ LOCATIONS = [
         "address": "Dorfweg 12",
         "city": "Beispieldorf",
         "coordinates": (52.4559, 13.2905),
-        "points": [
-            point for name, (rect, columns, rows) in IS_ZONES.items()
-            for point in _grid(*rect, columns, rows, name, snake=True)
-        ],
+        "plans": [{"draw": lambda plan: _draw_smartex_is(plan), "points": _zone_points(IS_ZONES)}],
         "leak": IS_LEAK,
     },
     {
@@ -172,17 +273,83 @@ LOCATIONS = [
         "address": "Sensorallee 3",
         "city": "Funkstadt",
         "coordinates": (52.5163, 13.4542),
-        "points": [(label, x, y, index, 0) for index, (label, (x, y)) in enumerate(LORAWAN_ROOMS.items())],
+        "plans": [{"draw": lambda plan: _draw_lorawan(plan), "points": [
+            (label, x, y, index, 0) for index, (label, (x, y)) in enumerate(LORAWAN_ROOMS.items())
+        ]}],
     },
-]
-
+    {
+        "kind": "smartex_mx_peel",
+        "name": "Demo Logistikhalle (smartex® mx-PEEL)",
+        "project_type": TYPES.SMARTEX_MX_PEEL,
+        "project_id": 9004,
+        "address": "Hallenweg 4",
+        "city": "Lagerstadt",
+        "coordinates": (52.5452, 13.3611),
+        "plans": [{"draw": lambda plan: _draw_mx_peel(plan), "points": _grid(*PEEL_ROOF, 8, 4)}],
+        "leak": PEEL_LEAK,
+    },
+    {
+        "kind": "smartex_mx_va",
+        "name": "Demo Tiefgarage (smartex® mx-va)",
+        "project_type": TYPES.SMARTEX_MX_VA,
+        "project_id": 9005,
+        "address": "Parkstrasse 5",
+        "city": "Parkhausen",
+        "coordinates": (52.5003, 13.4198),
+        "plans": [
+            {"suffix": f"ug{index + 1}", "name": level, "draw": lambda plan, level=level: _draw_mx_va(plan, level),
+             "points": _zone_points(zones)}
+            for index, (level, zones) in enumerate(VA_LEVELS.items())
+        ],
+        "leak": VA_LEAK,
+    },
+    {
+        "kind": "smartex_mx_al",
+        "name": "Demo Hallendach (smartex® mx-al)",
+        "project_type": TYPES.SMARTEX_MX_AL,
+        "project_id": 9006,
+        "address": "Werkstrasse 6",
+        "city": "Hallenburg",
+        "coordinates": (52.4811, 13.3302),
+        "plans": [{"draw": lambda plan: _draw_mx_al(plan), "points": _zone_points(AL_ZONES)}],
+        "leak": AL_LEAK,
+    },
+    {
+        "kind": "smartex_io",
+        "name": "Demo Bürogebäude (smartex® io)",
+        "project_type": TYPES.SMARTEX_IO,
+        "project_id": 9007,
+        "address": "Kontorweg 7",
+        "city": "Bürostadt",
+        "coordinates": (52.5204, 13.4049),
+        "plans": [
+            {"suffix": floor.lower(), "name": floor, "draw": lambda plan, floor=floor: _draw_io(plan, floor),
+             "points": _named_points(sensors, view)}
+            for view, (floor, (_rooms, sensors)) in enumerate(IO_FLOORS.items())
+        ],
+        "leak": IO_LEAK,
+    },
+    {
+        "kind": "smartex_vt",
+        "name": "Demo Wohnanlage (smartex® vt)",
+        "project_type": TYPES.SMARTEX_VT,
+        "project_id": 9008,
+        "address": "Gartenring 8",
+        "city": "Wohnfeld",
+        "coordinates": (52.4702, 13.4403),
+        "plans": [{"draw": lambda plan: _draw_vt(plan), "points": _named_points(VT_SENSORS)}],
+        "leak": VT_LEAK,
+    },
+)]
 
 class Command(BaseCommand):
     help = (
         "Create (or reset) the demo account used by the public demo: an Account with a 'demo' user "
         "(read-only portal permissions, see helper/demo.py), a LimitedToken for the demo link and one "
-        "demo location per device type (smartex® dm: 25 sensors, smartex® is: 14 sensors in 3 roof zones, LoRaWAN: "
-        "4 climate sensors), each with a drawn Lageplan, measure points on it, measurements of the "
+        "demo location per device type (smartex® dm: 25 sensors, smartex® is: 14 sensors in 3 roof zones, "
+        "LoRaWAN: 4 climate sensors, smartex® mx-PEEL: 32 sensors, mx-va: 47 sensors in 7 fields on two "
+        "parking levels, mx-al: 24 sensors in 4 bays, io: 19 named sensors on two floors, vt: 11 sensors), "
+        "each with drawn Lageplans (one per view), measure points on them, measurements of the "
         "last 3 months and the alarms they raise, plus a few demo people (colleagues, single-access "
         "users, partners to grant access to). The locations live in a separate database "
         "(default: settings.DEMO_DATABASE, 'demo'), so the demo never touches real customer data.\n"
@@ -501,8 +668,11 @@ class Command(BaseCommand):
             project_id=spec["project_id"],
             project_type=spec["project_type"],
         )
-        plan = self._create_lageplan(location, db, spec)
-        points = self._create_points(location, plan, db, spec["points"])
+        points = [
+            point
+            for plan, plan_spec, first in self._create_lageplans(location, db, spec)
+            for point in self._create_points(location, plan, db, plan_spec["points"], first)
+        ]
         if spec["project_type"] == TYPES.LORAWAN:
             self._create_climate_data(location, db, spec, rng, now, hours)
         else:
@@ -529,7 +699,8 @@ class Command(BaseCommand):
             data_interval=3600,
         )
 
-    def _create_points(self, location, plan, db, points):
+    def _create_points(self, location, plan, db, points, first=1):
+        """The sensors of one view; `first` is the sensor_order of its first one."""
         width, height = PLAN_SIZE
         return ProgeoMeasurePoint.objects.using(db).bulk_create(
             ProgeoMeasurePoint(
@@ -545,7 +716,7 @@ class Command(BaseCommand):
                 grid_y=grid_y,
                 threshold=location.alarm_threshold,
             )
-            for order, (name, px, py, grid_x, grid_y) in enumerate(points, start=1)
+            for order, (name, px, py, grid_x, grid_y) in enumerate(points, start=first)
         )
 
     # ------------------------------------------------------- pair measurements
@@ -714,7 +885,22 @@ class Command(BaseCommand):
 
     # ---------------------------------------------------------------- lageplan
 
-    def _create_lageplan(self, location, db, spec):
+    def _create_lageplans(self, location, db, spec):
+        """One plan per view, all active. Created last view first: the portal
+        lists the plans newest first (LAGEPLAN_ORDER), so the first view
+        comes first. Returns [(plan, view spec, first sensor_order)] in view
+        order."""
+        firsts, order = [], 1
+        for plan_spec in spec["plans"]:
+            firsts.append(order)
+            order += len(plan_spec["points"])
+        created = [
+            (self._create_lageplan(location, db, spec, plan_spec, first), plan_spec, first)
+            for plan_spec, first in reversed(list(zip(spec["plans"], firsts)))
+        ]
+        return created[::-1]
+
+    def _create_lageplan(self, location, db, spec, plan_spec, first):
         """A generated site plan, stored like an upload but under the demo_
         prefix the media view allows demo users to fetch. It is calibrated
         (reference point + meters per pixel), so positions show in meters."""
@@ -722,24 +908,26 @@ class Command(BaseCommand):
 
         from django.core.files.base import ContentFile
 
-        drawing = {"smartex_dm": _draw_smartex, "smartex_is": _draw_smartex_is, "lorawan": _draw_lorawan}[spec["kind"]]
         plan = _Plan()
-        reference, meters_per_pixel = drawing(plan)
-        plan.title_block(spec["name"], f"{spec['address']}, 12345 {spec['city']}")
-        for order, (_name, px, py, _gx, _gy) in enumerate(spec["points"], start=1):
+        reference, meters_per_pixel = plan_spec["draw"](plan)
+        address = f"{spec['address']}, 12345 {spec['city']}"
+        view = plan_spec.get("name")
+        plan.title_block(_ascii(spec["name"]), _ascii(f"{view} - {address}" if view else address))
+        for order, (_name, px, py, _gx, _gy) in enumerate(plan_spec["points"], start=first):
             plan.sensor_mark(px, py, f"{'S' if spec['kind'] == 'lorawan' else 'MP '}{order}")
 
         buffer = BytesIO()
         plan.image.save(buffer, format="PNG", optimize=True)
 
         os.makedirs(os.path.join(UPLOAD_DIR, os.path.dirname(DEMO_LAGEPLAN_PREFIX_REL)), exist_ok=True)
+        file_name = f"{spec['kind']}_{plan_spec['suffix']}.png" if plan_spec.get("suffix") else f"{spec['kind']}.png"
         stored = FileSystemStorage(location=UPLOAD_DIR).save(
-            f"{DEMO_LAGEPLAN_PREFIX_REL}{spec['kind']}.png", ContentFile(buffer.getvalue(), name=f"{spec['kind']}.png")
+            f"{DEMO_LAGEPLAN_PREFIX_REL}{file_name}", ContentFile(buffer.getvalue(), name=file_name)
         )
         return ProgeoLageplan.objects.using(db).create(
             location=location,
             lageplan=stored,
-            name=f"{spec['name']} (Demo)",
+            name=view or f"{spec['name']} (Demo)",
             is_active=True,
             reference_x=reference[0],
             reference_y=reference[1],
@@ -1033,6 +1221,19 @@ def _meters(pixels, meters_per_pixel):
     return f"{pixels * meters_per_pixel:.2f} m".replace(".", ",")
 
 
+def _ascii(text):
+    """Pillow's built-in font has no umlauts (see _Plan)."""
+    for char, plain in (("ä", "ae"), ("ö", "oe"), ("ü", "ue"), ("Ä", "Ae"), ("Ö", "Oe"), ("Ü", "Ue"), ("ß", "ss"),
+                        ("®", "")):
+        text = text.replace(char, plain)
+    return text
+
+
+def _drain(plan, cx, cy):
+    plan.draw.ellipse([cx - 10, cy - 10, cx + 10, cy + 10], outline=INK, width=2)
+    plan.draw.ellipse([cx - 3, cy - 3, cx + 3, cy + 3], fill=INK)
+
+
 def _draw_smartex(plan):
     """Flat roof of a hall: parapet, skylights, roof drains, an HVAC unit."""
     x1, y1, x2, y2 = SMARTEX_ROOF
@@ -1047,8 +1248,7 @@ def _draw_smartex(plan):
     draw.rectangle([336, 670, 456, 742], outline=INK, width=2, fill=ZONE_FILL)
     plan.text(396, 706, "RLT", size=16, center=True)
     for cx, cy in ((396, 418), (868, 418), (632, 562), (1104, 706)):  # Gullys
-        draw.ellipse([cx - 10, cy - 10, cx + 10, cy + 10], outline=INK, width=2)
-        draw.ellipse([cx - 3, cy - 3, cx + 3, cy + 3], fill=INK)
+        _drain(plan, cx, cy)
     plan.text(1104, 736, "Gefaelle 2 %", size=14, fill=INK_SOFT, center=True)
     plan.text(x1 + 4, y1 - 46, "Halle A - Flachdach, Kunststoffbahn", size=20)
     meters_per_pixel = SMARTEX_METERS / (x2 - x1)
@@ -1074,6 +1274,114 @@ def _draw_smartex_is(plan):
     plan.dimension((x1, y1 - 40), (x2, y1 - 40), _meters(x2 - x1, IS_METERS_PER_PIXEL))
     plan.north_arrow(1480, 140)
     return (IS_ZONES["Anbau"][0][0], IS_ZONES["Anbau"][0][3]), IS_METERS_PER_PIXEL
+
+
+def _draw_mx_peel(plan):
+    """Flat roof of a logistics hall: parapet, a skylight band, roof drains,
+    the loading docks along the south side."""
+    x1, y1, x2, y2 = PEEL_ROOF
+    draw = plan.draw
+    draw.rectangle([x1 - 12, y1 - 12, x2 + 12, y2 + 12], outline=INK, width=4, fill=ROOF_FILL)  # Attika
+    draw.rectangle([x1, y1, x2, y2], outline=LINE_SOFT, width=2)
+    # Skylight band and drains sit between the sensor rows (y 244/431/619/806)
+    # and columns (x 260/420/.../1380).
+    plan.hatch((300, 505, 1340, 545), fill=ZONE_FILL)
+    draw.rectangle([300, 505, 1340, 545], outline=INK, width=2)
+    for cx, cy in ((340, 337), (820, 337), (1300, 337), (500, 712), (980, 712)):  # Gullys
+        _drain(plan, cx, cy)
+    for index in range(6):  # Verladetore
+        dx = 300 + index * 180
+        draw.rectangle([dx, y2 + 12, dx + 110, y2 + 50], outline=INK_SOFT, width=2)
+    plan.text(x1 + 4, y1 - 46, "Logistikhalle - Flachdach, PVC-Bahn, Lichtband", size=20)
+    meters_per_pixel = PEEL_METERS / (x2 - x1)
+    plan.dimension((x1, y2 + 90), (x2, y2 + 90), _meters(x2 - x1, meters_per_pixel))
+    plan.dimension((x1 - 60, y1), (x1 - 60, y2), _meters(y2 - y1, meters_per_pixel), vertical=True)
+    plan.north_arrow(1520, 76)
+    return (x1, y2), meters_per_pixel
+
+
+def _draw_mx_va(plan, level):
+    """One parking level of an underground car park: outer walls, the fields
+    of the sealing (the zones) with their parking stalls, columns and the ramp."""
+    draw = plan.draw
+    draw.rectangle([120, 140, 1480, 980], outline=INK, width=5, fill=ROOF_FILL)
+    for name, ((x1, y1, x2, y2), _columns, _rows) in VA_LEVELS[level].items():
+        if name == "Rampe":
+            plan.hatch((x1, y1, x2, y2), fill=ZONE_FILL, spacing=22)
+        else:
+            for x in range(x1 + 60, x2, 60):  # stalls along both long sides
+                draw.line([x, y1, x, y1 + 80], fill=LINE_SOFT, width=2)
+                draw.line([x, y2 - 80, x, y2], fill=LINE_SOFT, width=2)
+        draw.rectangle([x1, y1, x2, y2], outline=INK_SOFT, width=2)
+        plan.text(x1 + 14, y1 + 12, name, size=18)
+    for cx, cy in ((800, 220), (800, 370), (800, 520), (300, 600), (560, 600), (1040, 600), (1300, 600)):
+        draw.rectangle([cx - 9, cy - 9, cx + 9, cy + 9], fill=INK)  # Stuetzen
+    plan.text(800, 600, "Fahrgasse", size=15, fill=INK_SOFT, center=True)
+    plan.text(140, 92, f"Tiefgarage {level} - Abdichtung, Felder A-F", size=20)
+    plan.dimension((120, 1012), (1480, 1012), _meters(1360, VA_METERS_PER_PIXEL))
+    plan.north_arrow(1520, 76)
+    return (120, 980), VA_METERS_PER_PIXEL
+
+
+def _draw_mx_al(plan):
+    """Mono-pitch hall roof of aluminium trapezoidal sheet: the ribs of the
+    sheet and the axes 1-5 - the bays between them are the zones."""
+    x1, y1, x2, y2 = AL_ROOF
+    draw = plan.draw
+    draw.rectangle([x1 - 12, y1 - 12, x2 + 12, y2 + 12], outline=INK, width=4, fill=ROOF_FILL)
+    for x in range(x1 + 20, x2, 40):  # ribs along the slope
+        draw.line([x, y1, x, y2], fill=LINE_SOFT, width=1)
+    plan.text(x2 + 30, (y1 + y2) / 2, "Gefaelle", size=14, fill=INK_SOFT)
+    bay = (x2 - x1) / (AL_AXES - 1)
+    for index in range(AL_AXES):
+        ax = x1 + index * bay
+        for y in range(y1 - 50, y2 + 40, 36):  # axis, dashed
+            draw.line([ax, y, ax, y + 20], fill=INK_SOFT, width=2)
+        draw.ellipse([ax - 20, y1 - 100, ax + 20, y1 - 60], outline=INK, width=2, fill=PAPER)
+        plan.text(ax, y1 - 80, str(index + 1), size=18, center=True)
+    plan.text(x1 + 4, 40, "Hallendach - Aluminium-Trapezblech", size=20)
+    meters_per_pixel = AL_METERS / (x2 - x1)
+    plan.dimension((x1, y2 + 60), (x2, y2 + 60), _meters(x2 - x1, meters_per_pixel))
+    plan.dimension((x1 - 60, y1), (x1 - 60, y2), _meters(y2 - y1, meters_per_pixel), vertical=True)
+    plan.north_arrow(1520, 76)
+    return (x1, y2), meters_per_pixel
+
+
+def _draw_io(plan, floor):
+    """One floor of an office building: its rooms and the staircase."""
+    draw = plan.draw
+    rooms, _sensors = IO_FLOORS[floor]
+    draw.rectangle([150, 150, 1450, 930], outline=INK, width=6, fill=ROOF_FILL)
+    for name, (x1, y1, x2, y2) in rooms.items():
+        draw.rectangle([x1, y1, x2, y2], outline=INK, width=3)
+        plan.text(x1 + 14, y1 + 12, _ascii(name), size=18)
+    for step in range(8):  # Treppe at the end of the corridor
+        draw.line([1340 + step * 12, 528, 1340 + step * 12, 612], fill=INK_SOFT, width=2)
+    plan.text(160, 92, f"Buerogebaeude - {floor}", size=20)
+    plan.dimension((150, 990), (1450, 990), _meters(1300, IO_METERS_PER_PIXEL))
+    plan.north_arrow(1520, 76)
+    return (150, 930), IO_METERS_PER_PIXEL
+
+
+def _draw_vt(plan):
+    """Two apartment houses seen from above: roof terraces, the balconies on
+    the south side and the walkway between the houses."""
+    draw = plan.draw
+    for name, (x1, y1, x2, y2) in VT_HOUSES.items():
+        draw.rectangle([x1, y1, x2, y2], outline=INK, width=4, fill=ROOF_FILL)
+        plan.text(x1 + 16, y1 + 14, name, size=20)
+        middle = (x1 + x2) / 2
+        plan.hatch((middle - 150, 320, middle + 150, 480), fill=ZONE_FILL, spacing=20)  # Dachterrasse
+        draw.rectangle([middle - 150, 320, middle + 150, 480], outline=INK_SOFT, width=2)
+        for bx in (x1 + 90, middle, x2 - 90):  # Balkone
+            draw.rectangle([bx - 70, y2, bx + 70, y2 + 110], outline=INK, width=3, fill=ZONE_FILL)
+    draw.rectangle([700, 450, 900, 530], outline=INK_SOFT, width=2)  # Laubengang
+    plan.text(800, 560, "Laubengang", size=14, fill=INK_SOFT, center=True)
+    plan.text(160, 150, "Wohnanlage - Draufsicht", size=20)
+    plan.text(800, 940, "Gartenseite (Sued)", size=16, fill=INK_SOFT, center=True)
+    plan.dimension((160, 1000), (1440, 1000), _meters(1280, VT_METERS_PER_PIXEL))
+    plan.north_arrow(1520, 76)
+    return (160, 870), VT_METERS_PER_PIXEL
 
 
 def _draw_lorawan(plan):

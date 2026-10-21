@@ -1,0 +1,265 @@
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
+import { Button } from 'react-bootstrap';
+import { PauseFill, PlayFill } from 'react-bootstrap-icons';
+import { useTranslation } from 'react-i18next';
+import { formatTimestamp } from './heatmapFrames';
+import TimeAxis from './TimeAxis';
+import './FrameSlider.css';
+
+type FrameSliderProps = {
+  id: string;
+  /** Unix seconds of the frames, oldest first. */
+  timestamps: number[];
+  index: number;
+  onChange: (index: number) => void;
+  disabled?: boolean;
+  /** Alarm periods, marked on the slider - a click on one jumps to its start. */
+  alarms?: AlarmSpan[];
+};
+
+/** An alarm's period (ms); `to` is now while it is still active. */
+export type AlarmSpan = { key: string; from: number; to: number; label: string };
+
+/** Where an alarm sits on a slider over `timestamps` ({left, right}, 0..1),
+ * cut to the frames; null when it lies outside of them. */
+export const alarmPosition = (timestamps: number[], span: AlarmSpan) => {
+  const count = timestamps.length;
+  if (count < 2) {
+    return null;
+  }
+  const first = timestamps[0] * 1000;
+  const last = timestamps[count - 1] * 1000;
+  if (span.to < first || span.from > last) {
+    return null;
+  }
+  const at = (ms: number) => framePosition(timestamps, Math.min(Math.max(ms, first), last));
+  return { left: at(span.from), right: at(span.to) };
+};
+
+/** The frame that holds `ms`: the last one starting at or before it, if it
+ * still covers it (one step: the frames' smallest spacing) - after a gap
+ * without data the next one. */
+export const frameAt = (timestamps: number[], ms: number) => {
+  const seconds = ms / 1000;
+  const next = timestamps.findIndex((start) => start >= seconds);
+  if (next === 0) {
+    return 0;
+  }
+  const previous = (next < 0 ? timestamps.length : next) - 1;
+  if (previous < 0) {
+    return 0;
+  }
+  const step = timestamps.reduce(
+    (smallest, start, index) => (index > 0 ? Math.min(smallest, start - timestamps[index - 1]) : smallest),
+    Number.POSITIVE_INFINITY,
+  );
+  return seconds - timestamps[previous] < step || next < 0 ? previous : next;
+};
+
+/** Narrowest mark (px): an alarm within one frame stays visible. */
+const MIN_ALARM_WIDTH = 4;
+
+/** Time per frame while the animation runs. */
+export const ANIMATION_FRAME_MS = 200;
+
+/**
+ * Where a moment sits on a slider over the frames `timestamps` (0..1): frames
+ * without data are left out, so the positions are not evenly spaced in time
+ * - a mark between two frames is placed between their positions.
+ */
+export const framePosition = (timestamps: number[], ms: number) => {
+  const count = timestamps.length;
+  if (count < 2) {
+    return 0;
+  }
+  const seconds = ms / 1000;
+  if (seconds <= timestamps[0]) {
+    return seconds === timestamps[0] ? 0 : Number.NaN;
+  }
+  if (seconds >= timestamps[count - 1]) {
+    return seconds === timestamps[count - 1] ? 1 : Number.NaN;
+  }
+  let low = 0;
+  let high = count - 1;
+  while (high - low > 1) {
+    const middle = (low + high) >> 1;
+    if (timestamps[middle] <= seconds) {
+      low = middle;
+    } else {
+      high = middle;
+    }
+  }
+  const part = (seconds - timestamps[low]) / (timestamps[high] - timestamps[low]);
+  return (low + part) / (count - 1);
+};
+
+/** Keys typed into these go to them, not to the animation. */
+const typesText = (target: EventTarget | null) => {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  if (target.isContentEditable || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) {
+    return true;
+  }
+  return target instanceof HTMLInputElement && target.type !== 'range' && target.type !== 'checkbox';
+};
+
+/**
+ * The frame of the heatmap / plan: "3/168: date" above a slider over the
+ * frames, calendar marks below it. "Start Animation" (or the space bar)
+ * steps through the frames - from the start again when it is at the end -
+ * and stops at the last one.
+ */
+const FrameSlider = ({ id, timestamps, index, onChange, disabled = false, alarms = [] }: FrameSliderProps) => {
+  const { t } = useTranslation();
+  const count = timestamps.length;
+  const position = useCallback((ms: number) => framePosition(timestamps, ms), [timestamps]);
+  const [playing, setPlaying] = useState(false);
+  const playingRef = useRef(playing);
+  playingRef.current = playing;
+  const indexRef = useRef(index);
+  indexRef.current = index;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  const canPlay = count > 1 && !disabled;
+
+  const toggle = useCallback(() => {
+    if (playingRef.current) {
+      setPlaying(false);
+      return;
+    }
+    if (indexRef.current >= count - 1) {
+      onChangeRef.current(0); // at the end: play from the start
+    }
+    setPlaying(true);
+  }, [count]);
+
+  useEffect(() => {
+    if (!playing) {
+      return undefined;
+    }
+    const timer = window.setInterval(() => {
+      const next = indexRef.current + 1;
+      if (next >= count) {
+        setPlaying(false);
+        return;
+      }
+      indexRef.current = next; // the next tick may come before the re-render
+      onChangeRef.current(next);
+      if (next === count - 1) {
+        setPlaying(false);
+      }
+    }, ANIMATION_FRAME_MS);
+    return () => window.clearInterval(timer);
+  }, [playing, count]);
+
+  // Stops with the export (disabled) or when there's nothing to play.
+  useEffect(() => {
+    if (!canPlay) {
+      setPlaying(false);
+    }
+  }, [canPlay]);
+
+  // Space bar: start/stop - unless the user is typing, or a button other
+  // than this one has the focus (space presses it).
+  useEffect(() => {
+    if (!canPlay) {
+      return undefined;
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.code !== 'Space' && event.key !== ' ') {
+        return;
+      }
+      if (event.repeat || event.ctrlKey || event.altKey || event.metaKey || typesText(event.target)) {
+        return;
+      }
+      if (event.target instanceof HTMLButtonElement || event.target instanceof HTMLAnchorElement) {
+        return; // its own click (this button: toggles via onClick)
+      }
+      event.preventDefault(); // no page scroll
+      toggle();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [canPlay, toggle]);
+
+  const label = playing ? t('heatmap_animation_stop') : t('heatmap_animation_start');
+  const marks = alarms
+    .map((alarm) => ({ alarm, at: alarmPosition(timestamps, alarm) }))
+    .filter((mark): mark is { alarm: AlarmSpan; at: { left: number; right: number } } => mark.at != null);
+  const markStyle = (at: { left: number; right: number }) => ({
+    left: `${at.left * 100}%`,
+    width: `max(${(at.right - at.left) * 100}%, ${MIN_ALARM_WIDTH}px)`,
+  });
+
+  return (
+    <div className="pb-2 pt-3" style={{ minWidth: 200 }}>
+      <div className="d-flex align-items-center gap-2">
+        <Button
+          size="sm"
+          variant={playing ? 'primary' : 'outline-primary'}
+          onClick={toggle}
+          disabled={!canPlay}
+          aria-pressed={playing}
+          title={`${label} (${t('heatmap_animation_key')})`}
+          className="d-inline-flex align-items-center gap-1 py-0"
+          style={{ borderRadius: 'var(--progeo-radius-pill)', paddingInline: 12, fontSize: 12.5, fontWeight: 500 }}
+        >
+          {playing ? <PauseFill /> : <PlayFill />}
+          {label}
+        </Button>
+        <label htmlFor={id} className="form-label small text-muted mb-0">
+          {count ? `${index + 1}/${count}: ${formatTimestamp(timestamps[index])}` : 'Timestamp'}
+        </label>
+      </div>
+      <div style={{ position: 'relative' }}>
+        <input
+          id={id}
+          type="range"
+          className="form-range d-block frame-slider__input"
+          min={0}
+          max={Math.max(count - 1, 0)}
+          step={1}
+          value={index}
+          // The played part of the track (FrameSlider.css).
+          style={{ '--fill-ratio': count > 1 ? index / (count - 1) : 0 } as CSSProperties}
+          onChange={(event) => onChange(Number(event.target.value))}
+          disabled={disabled}
+        />
+        {marks.length > 0 && (
+          // Over the track, in the thumb's travel (1 rem inside the input);
+          // the slider stays usable through it.
+          <div className="frame-slider__alarms" aria-hidden="true">
+            {marks.map(({ alarm, at }) => (
+              <span key={alarm.key} className="frame-slider__alarm" style={markStyle(at)} />
+            ))}
+          </div>
+        )}
+      </div>
+      {marks.length > 0 && (
+        <div className="frame-slider__alarm-strip">
+          {marks.map(({ alarm, at }) => (
+            <button
+              key={alarm.key}
+              type="button"
+              className="frame-slider__alarm-jump"
+              style={markStyle(at)}
+              title={alarm.label}
+              aria-label={alarm.label}
+              onClick={() => onChange(frameAt(timestamps, alarm.from))}
+            />
+          ))}
+        </div>
+      )}
+      {count > 1 && (
+        // The thumb's centre travels half a thumb (1 rem) inside the input.
+        <div style={{ margin: '-4px 0.5rem 0' }}>
+          <TimeAxis from={timestamps[0] * 1000} to={timestamps[count - 1] * 1000} position={position} />
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default FrameSlider;

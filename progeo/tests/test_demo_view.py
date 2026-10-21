@@ -48,8 +48,8 @@ def _fresh_throttles():
     SimpleRateThrottle.cache.delete_many(keys)
 
 
-# A short history keeps the tests fast; the leaks of smartex (9 days ago) and
-# smartex® is (20 days ago) lie within it.
+# A short history keeps the tests fast; every demo leak (at most 12 days ago)
+# lies within it.
 HISTORY = ("--days", "30")
 
 
@@ -73,7 +73,7 @@ def test_command_creates_one_location_per_device_type(demo):
         .filter(account=demo.account)
         .values_list("project_type", flat=True)
     )
-    assert types == {1, 3, 6}
+    assert types == {1, 3, 6, 7, 8, 9, 10, 11}
 
 
 def test_demo_rows_stay_out_of_default(demo):
@@ -106,7 +106,7 @@ def test_demo_user_loads_the_demo_data(api_client, demo):
     _login(api_client, demo)
 
     locations = api_client.get("/v1/demo/").json()["locations"]
-    assert {loc["project_type"] for loc in locations} == {1, 3, 6}
+    assert {loc["project_type"] for loc in locations} == {1, 3, 6, 7, 8, 9, 10, 11}
     by_type = {loc["project_type"]: loc["id"] for loc in locations}
 
     heatmap = api_client.get(f"/v1/demo/{by_type[1]}/heatmap/")
@@ -117,6 +117,21 @@ def test_demo_user_loads_the_demo_data(api_client, demo):
     smartex_is = api_client.get(f"/v1/demo/{by_type[3]}/heatmap/").json()
     assert {p["name"] for p in smartex_is["sensor_points"]} == {"Hauptdach", "Anbau", "Garage"}
     assert len(smartex_is["sensor_points"]) == 14
+
+    # smartex® io: two floors (views), the sensors on their own floor, named
+    # (optionally - the corridor sensors aren't).
+    smartex_io = api_client.get(f"/v1/demo/{by_type[10]}/heatmap/").json()
+    plans = smartex_io["location"]["lageplans"]
+    assert [plan["name"] for plan in plans] == ["EG", "OG"]  # the first view first
+    per_view = {plan["id"]: [p for p in smartex_io["sensor_points"] if p["lageplan"] == plan["id"]] for plan in plans}
+    assert [len(points) for points in per_view.values()] == [10, 9]
+    assert "Bad Dusche" in {p["name"] for p in per_view[plans[1]["id"]]}
+    assert None in {p["name"] for p in smartex_io["sensor_points"]}
+    assert all(p["x_m"] is not None for p in smartex_io["sensor_points"])
+
+    # smartex® dm: the lines join the sensors of one grid row.
+    rows = {p["grid_y"] for p in heatmap.json()["sensor_points"]}
+    assert rows == {0, 1, 2, 3, 4}
 
     climate = api_client.get(f"/v1/demo/{by_type[6]}/climate/")
     assert climate.status_code == 200, climate.content
@@ -181,6 +196,30 @@ def test_demo_user_does_not_see_staff_contacts(api_client, demo):
     assert "staff@progeo.example" not in str(access)
 
 
+def test_smartex_dm_has_five_named_lines_of_five_sensors(demo):
+    """The Status tab draws and lists one line per grid row (grid_y): the
+    demo plan shows 5 rows of sensors, so the table has 5 entries."""
+    from progeo.v1.models import ProgeoMeasurePoint
+
+    location = ProgeoLocation.objects.using(settings.DEMO_DATABASE).get(account=demo.account, project_type=1)
+    lines = {}
+    for point in ProgeoMeasurePoint.objects.using(settings.DEMO_DATABASE).filter(location=location):
+        lines.setdefault(point.grid_y, []).append(point)
+
+    assert sorted(lines) == [0, 1, 2, 3, 4]
+    assert all(len(points) == 5 for points in lines.values())
+    # One name per line, shared by its sensors.
+    assert [{point.name for point in lines[row]} for row in sorted(lines)] == [
+        {"Attika Nord"}, {"Lichtkuppeln"}, {"Dachmitte"}, {"RLT-Gerät"}, {"Attika Süd"},
+    ]
+    # Each line runs left to right on one height of the plan.
+    for points in lines.values():
+        assert len({round(point.ny, 4) for point in points}) == 1
+        assert sorted(point.grid_x for point in points) == [0, 1, 2, 3, 4]
+    # The leak (sensor 13) lies on the middle line.
+    assert next(point for point in lines[2] if point.sensor_order == 13)
+
+
 def test_command_builds_points_history_and_alarms(api_client, demo_db):
     from progeo.v1.models import (
         ProgeoAlarm,
@@ -199,13 +238,16 @@ def test_command_builds_points_history_and_alarms(api_client, demo_db):
         project_type: ProgeoMeasurePoint.objects.using(db).filter(location=loc).count()
         for project_type, loc in locations.items()
     }
-    assert point_counts == {1: 25, 3: 14, 6: 4}
+    assert point_counts == {1: 25, 3: 14, 6: 4, 7: 32, 8: 47, 9: 24, 10: 19, 11: 11}
 
     for loc in locations.values():
-        plan = ProgeoLageplan.objects.using(db).get(location=loc)
-        assert plan.meters_per_pixel and plan.lageplan
+        plans = list(ProgeoLageplan.objects.using(db).filter(location=loc))
+        # Several views (all active) for the parking levels and the floors.
+        assert len(plans) == (2 if loc.project_type in (8, 10) else 1)
+        assert all(plan.meters_per_pixel and plan.lageplan and plan.is_active for plan in plans)
         points = ProgeoMeasurePoint.objects.using(db).filter(location=loc)
-        assert all(0 < p.nx < 1 and 0 < p.ny < 1 and p.lageplan_id == plan.pk for p in points)
+        assert all(0 < p.nx < 1 and 0 < p.ny < 1 and p.lageplan_id in {plan.pk for plan in plans} for p in points)
+        assert sorted(p.sensor_order for p in points) == list(range(1, points.count() + 1))
 
         times = ProgeoMeasurement.objects.using(db).filter(device__location=loc).order_by("last_fetched")
         span = times.last().last_fetched - times.first().last_fetched
@@ -236,6 +278,17 @@ def test_command_builds_points_history_and_alarms(api_client, demo_db):
         assert alarm.sensor_id == leak_sensor and alarm.status == status
         assert (alarm.normalized_at is not None) == over
         assert alarm.severity == severity
+
+    # The other products: one alarm each, on the leak's sensor and in its state.
+    from progeo.management.commands.demo_account import LOCATIONS
+
+    for spec in LOCATIONS:
+        if spec["project_type"] in (1, 3, 6):
+            continue
+        leak = spec["leak"]
+        alarm = ProgeoAlarm.objects.using(db).get(measurement__device__location=locations[spec["project_type"]])
+        assert alarm.sensor_id == leak["sensor"] and alarm.status == leak["status"]
+        assert (alarm.normalized_at is not None) == (leak["settle"] < 1)
 
     # LoRaWAN: uplinks every 20 minutes, some of them lost.
     lorawan = ProgeoMeasurement.objects.using(db).filter(device__location=locations[6])

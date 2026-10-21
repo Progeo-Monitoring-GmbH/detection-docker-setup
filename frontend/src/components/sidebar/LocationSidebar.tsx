@@ -1,4 +1,4 @@
-import { type CSSProperties, useEffect, useState } from 'react';
+import { type CSSProperties, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useLocation as useRouterLocation } from 'react-router';
 import {
@@ -65,13 +65,18 @@ const LocationSidebar = ({
 
   const [openClusterCount, setOpenClusterCount] = useState<number | null>(null);
 
+  // Once per location: hasPermission is a new function on every render, and
+  // `auth` changes with the path - neither is a reason to ask again.
+  const canSeeMeasurements = hasPermission('module_measurements_enabled');
+  const authRef = useRef(auth);
+  authRef.current = auth;
   useEffect(() => {
-    if (!locationId || !hasPermission('module_measurements_enabled')) {
+    if (!locationId || !canSeeMeasurements) {
       setOpenClusterCount(null);
       return;
     }
     void axiosConfig.perform_get(
-      auth,
+      authRef.current,
       `/v1/alarm/clusters/?location=${locationId}&days=90`,
       (response) => {
         const clusters = (response?.data?.clusters || []) as {
@@ -83,7 +88,7 @@ const LocationSidebar = ({
       },
       () => setOpenClusterCount(null),
     );
-  }, [auth, hasPermission, locationId]);
+  }, [canSeeMeasurements, locationId]);
 
   // "Einstellungen" is superuser-only, regardless of module permissions.
   const visibleItems = PORTAL_NAV_ITEMS.filter((item) =>

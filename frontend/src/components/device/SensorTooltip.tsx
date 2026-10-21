@@ -5,6 +5,8 @@ import { formatMeters } from './planMeters';
 type SensorTooltipProps = {
   /** 1-based sensor position on the lageplan. */
   sensorPos: number;
+  /** Optional name of the sensor (ProgeoMeasurePoint.name), shown in the title. */
+  name?: string | null;
   /** Position in meters on the lageplan; null when it isn't calibrated. */
   meters: [number, number] | null;
   /** Current weight/value of the sensor (depends on the aggregation mode). */
@@ -21,11 +23,11 @@ type SensorTooltipProps = {
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
 
-const SensorTooltip = ({ sensorPos, meters, value, threshold, ...rest }: SensorTooltipProps) => (
+const SensorTooltip = ({ sensorPos, name, meters, value, threshold, ...rest }: SensorTooltipProps) => (
   <CursorTooltip
     width={200}
     dotColor={alarmHeatColor({ threshold, max_value: value, max_values: [] })}
-    title={`Sensor #${sensorPos}`}
+    title={name ? `${name} (#${sensorPos})` : `Sensor #${sensorPos}`}
     {...rest}
   >
     <TooltipRow label="Value">{Number.isFinite(value) ? round2(value) : '-'}</TooltipRow>

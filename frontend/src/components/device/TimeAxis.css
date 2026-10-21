@@ -1,0 +1,51 @@
+.time-axis {
+  position: relative;
+  height: 22px;
+  font-size: 11px;
+  color: #5f5858;
+  user-select: none;
+}
+
+/* A short mark from the top, the label below it. */
+.time-axis__tick {
+  position: absolute;
+  top: 0;
+  width: 0;
+  height: 100%;
+}
+
+.time-axis__tick::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -0.5px;
+  width: 1px;
+  height: 6px;
+  background: currentColor;
+  opacity: 0.75;
+}
+
+.time-axis__tick.is-major::before {
+  height: 9px;
+  opacity: 1;
+}
+
+.time-axis__label {
+  position: absolute;
+  top: 7px;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+.time-axis__tick.is-major .time-axis__label {
+  font-weight: 600;
+  color: var(--progeo-blue, #094b81);
+}
+
+.time-axis__tick--start .time-axis__label {
+  transform: none;
+}
+
+.time-axis__tick--end .time-axis__label {
+  transform: translateX(-100%);
+}

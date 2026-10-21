@@ -30,6 +30,33 @@ export const PROJECT_TYPE_LORAWAN = 6;
 export const isLorawanProject = (value: number | null | undefined): boolean =>
   value === PROJECT_TYPE_LORAWAN;
 
+/**
+ * How the Status tab draws a product's sensors on the Lageplan: the
+ * Gaussian heat field (SensorHeatmap2D) or one of LageplanZoneOverlay's
+ * modes - lines (one run of sensors per grid row), segments (one filled
+ * area per named zone) or points.
+ */
+export type PlanVisualization = 'heatmap' | 'lines' | 'segments' | 'points';
+
+const PLAN_VISUALIZATIONS: Record<number, PlanVisualization> = {
+  1: 'lines', // smartex® dm
+  3: 'segments', // smartex® is
+  7: 'heatmap', // smartex® mx-PEEL
+  8: 'segments', // smartex® mx-va
+  9: 'segments', // smartex® mx-al
+  10: 'points', // smartex® io
+  11: 'points', // smartex® vt
+};
+
+export const planVisualization = (value: number | null | undefined): PlanVisualization =>
+  (value != null && PLAN_VISUALIZATIONS[value]) || 'heatmap';
+
+// Products listing every sensor (with its optional name) below the plan.
+const SENSOR_TABLE_TYPES = new Set([1, 10, 11]);
+
+export const showsSensorTable = (value: number | null | undefined): boolean =>
+  value != null && SENSOR_TABLE_TYPES.has(value);
+
 export const getProjectTypeLabel = (
   t: (key: string) => string,
   value: number | null | undefined,

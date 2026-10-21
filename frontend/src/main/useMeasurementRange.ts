@@ -5,14 +5,15 @@ import type { MeasurementRange } from './timeRanges';
 
 /**
  * Oldest/newest measurement of a location (GET .../measurement-range/),
- * fetched once per location. null while loading, on failure (quietly - the
- * views then just offer the short ranges) or while `enabled` is false.
+ * fetched once per location. `range` is null while loading, on failure
+ * (`failed`, quietly - the views then just offer the short ranges) or while
+ * `enabled` is false.
  */
-const useMeasurementRange = (
+export const useMeasurementRangeState = (
   locationId: number,
   demo: boolean,
   enabled = true,
-): MeasurementRange | null => {
+): { range: MeasurementRange | null; failed: boolean } => {
   const auth = useAuth();
   const key = `${demo ? 'demo' : 'location'}:${locationId}`;
   const [result, setResult] = useState<{
@@ -20,6 +21,7 @@ const useMeasurementRange = (
     range: MeasurementRange;
   } | null>(null);
   const requestedKey = useRef<string | null>(null);
+  const [failedKey, setFailedKey] = useState<string | null>(null);
 
   useEffect(() => {
     if (!enabled || requestedKey.current === key) {
@@ -43,11 +45,15 @@ const useMeasurementRange = (
       () => {
         // No snackbar: without the range the views simply keep the short
         // ranges.
+        setFailedKey(key);
       },
     );
   }, [auth, demo, enabled, key, locationId]);
 
-  return result?.key === key ? result.range : null;
+  return { range: result?.key === key ? result.range : null, failed: failedKey === key };
 };
+
+const useMeasurementRange = (locationId: number, demo: boolean, enabled = true): MeasurementRange | null =>
+  useMeasurementRangeState(locationId, demo, enabled).range;
 
 export default useMeasurementRange;

@@ -179,7 +179,7 @@ def test_steps_need_a_window_and_a_sane_frame_count(api_client, stepped_location
 
     # 1 year in 1 minute steps: far more than HEATMAP_MAX_FRAMES.
     too_many = _stepped(api_client, location, start, 365 * 24 * 60, 60).json()
-    assert too_many["success"] is False and too_many["max_frames"] == 2000
+    assert too_many["success"] is False and too_many["max_frames"] == 20000
 
 
 def test_steps_with_days_count_from_now(api_client, stepped_location):
