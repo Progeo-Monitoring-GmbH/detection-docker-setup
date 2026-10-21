@@ -95,7 +95,7 @@ def test_pdf_report_is_a_download_and_mails_nobody(api_client, location_with_dat
         "progeo.helper.emailhelper.send_template_mail",
         lambda emails, template, context, **kwargs: sent.append((emails, template, kwargs)) or True,
     )
-    recipient = f.make_user(email="report@example.com")
+    recipient = f.make_user(email="report@progeo.com")
     f.make_access(location_with_data, recipient)
 
     response = api_client.get(f"/v1/location/{location_with_data.id}/export_pdf/")

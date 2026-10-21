@@ -405,7 +405,7 @@ def test_disconnect_mail_only_on_the_transition_since_the_day_before(world, monk
     monkeypatch.setattr(emailhelper, "send_template_mail",
                         lambda recipients, template, context, location=None, db=None: sent.append(db) or True)
     location = world["location"]
-    ProgeoLocation.objects.using(f.DB).filter(pk=location.pk).update(mail="halle@example.com")
+    ProgeoLocation.objects.using(f.DB).filter(pk=location.pk).update(mail="halle@progeo.com")
     key = str(location.pk)
     day_before = REPORT_DAY - datetime.timedelta(days=1)
 

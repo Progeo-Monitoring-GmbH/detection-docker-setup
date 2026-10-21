@@ -17,6 +17,7 @@ from progeo.helper.demo import (
     DEMO_TOKEN_PURPOSE,
     DEMO_USER_PERMISSIONS,
     DEMO_USERNAME,
+    demo_email,
 )
 from progeo.helper.project_dbs import demo_alias, is_project_alias, register_demo_db
 from progeo.management.commands._base import BaseCommand
@@ -547,7 +548,7 @@ class Command(BaseCommand):
         user.is_active = True
         user.first_name = "Demo"
         user.last_name = "Benutzer"
-        user.email = "demo@example.com"
+        user.email = demo_email(user.username)
         user.set_unusable_password()
         user.save(using="default")
 
@@ -584,7 +585,7 @@ class Command(BaseCommand):
             username = f"{DEMO_PEOPLE_PREFIX}{name}"
             person, _ = User.objects.using("default").get_or_create(username=username)
             person.first_name, person.last_name = first, last
-            person.email = f"{name}@example.com"
+            person.email = demo_email(username)
             person.is_staff = person.is_superuser = False
             person.is_active = True
             person.set_unusable_password()

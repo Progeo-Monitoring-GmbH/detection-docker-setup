@@ -161,7 +161,7 @@ def api_client_with_credentials(api_client):
 def admin_user(django_user_model):
     return django_user_model.objects.create_user(
         username="admin",
-        email="admin@example.com",
+        email="admin@progeo.com",
         password="DoesntMatter",
         is_staff=True,
         is_superuser=True,

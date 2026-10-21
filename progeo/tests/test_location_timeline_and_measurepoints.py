@@ -48,7 +48,7 @@ def test_email_serializer_fields():
     email = EMail.objects.using("default").create(
         location=location,
         raw_hash="email-serializer-test",
-        sent_to="a@example.com,b@example.com",
+        sent_to="a@progeo.com,b@progeo.com",
         subject="Monatsbericht",
         message="body",
         files="",
@@ -57,7 +57,7 @@ def test_email_serializer_fields():
 
     data = EMailSerializer(email).data
     assert data["subject"] == "Monatsbericht"
-    assert data["sent_to"] == "a@example.com,b@example.com"
+    assert data["sent_to"] == "a@progeo.com,b@progeo.com"
     assert data["sent"] is True
     assert data["error"] is None
 
@@ -74,7 +74,7 @@ def test_build_timeline_events_merges_and_sorts_emails_and_alarms():
     email = EMail.objects.using("default").create(
         location=location,
         raw_hash="timeline-email",
-        sent_to="a@example.com",
+        sent_to="a@progeo.com",
         subject="Alarm",
         message="body",
         files="",

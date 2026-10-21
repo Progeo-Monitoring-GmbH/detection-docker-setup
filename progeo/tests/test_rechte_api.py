@@ -184,7 +184,7 @@ def _assign_by_email(api_client, location, email):
 
 def test_objektleitung_by_email_creates_a_passwordless_customer_account(api_client, setup):
     _account, location, _admin = setup
-    email = f"{f.unique('objektleitung')}@example.com"
+    email = f"{f.unique('objektleitung')}@progeo.com"
     api_client.force_authenticate(user=f.make_user(staff=True))
 
     response = _assign_by_email(api_client, location, email.upper())
@@ -200,7 +200,7 @@ def test_objektleitung_by_email_creates_a_passwordless_customer_account(api_clie
 
 def test_objektleitung_by_email_reuses_the_existing_account(api_client, setup):
     _account, location, _admin = setup
-    existing = f.make_user(email=f"{f.unique('known')}@example.com")
+    existing = f.make_user(email=f"{f.unique('known')}@progeo.com")
     api_client.force_authenticate(user=f.make_user(staff=True))
 
     response = _assign_by_email(api_client, location, existing.email.upper())
@@ -212,7 +212,7 @@ def test_objektleitung_by_email_reuses_the_existing_account(api_client, setup):
 
 def test_objektleitung_by_email_is_staff_only(api_client, setup):
     _account, location, admin = setup
-    email = f"{f.unique('nope')}@example.com"
+    email = f"{f.unique('nope')}@progeo.com"
     api_client.force_authenticate(user=admin)
 
     response = _assign_by_email(api_client, location, email)

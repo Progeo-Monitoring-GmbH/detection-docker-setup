@@ -287,7 +287,7 @@ def test_create_object_creates_location_with_cleaned_fields(staff_client, upload
     body = staff_client.post(
         "/v1/location/create_object/",
         {"account_id": str(account.id), "name": "  Neubau  ", "nr": "4711", "project_type": "2",
-         "city": "  Mainz ", "plz": "   ", "mail": "bau@example.com"},
+         "city": "  Mainz ", "plz": "   ", "mail": "bau@progeo.com"},
         format="json",
     ).json()
 
@@ -295,7 +295,7 @@ def test_create_object_creates_location_with_cleaned_fields(staff_client, upload
     location = ProgeoLocation.objects.using(f.DB).get(pk=body["location"]["id"])
     assert location.account_id == account.id
     assert (location.name, location.project_id, location.project_type) == ("Neubau", 4711, 2)
-    assert (location.city, location.plz, location.mail) == ("Mainz", None, "bau@example.com")
+    assert (location.city, location.plz, location.mail) == ("Mainz", None, "bau@progeo.com")
     assert body["lageplan_ids"] == [] and body["coordinate_files"] == []
 
 
@@ -365,15 +365,15 @@ def test_create_object_stores_uploads_in_upload_dir(staff_client, upload_dir):
 @pytest.fixture
 def notification_world():
     location = f.make_location(f.make_account(), name="Halle 3", project_id=920001)
-    mailer = f.make_user(email="mail@example.com", first_name="Mia", last_name="Mail")
+    mailer = f.make_user(email="mail@progeo.com", first_name="Mia", last_name="Mail")
     f.make_access(location, mailer, transport=ProgeoAccess.NotifiTrans.EMAIL)
-    texter = f.make_user(email="texter@example.com")
+    texter = f.make_user(email="texter@progeo.com")
     UserProfile.objects.using(f.DB).create(user_id=texter.id, mobile="+491700000001")
     f.make_access(location, texter, transport=ProgeoAccess.NotifiTrans.SMS)
-    both = f.make_user(email="both@example.com")
+    both = f.make_user(email="both@progeo.com")
     UserProfile.objects.using(f.DB).create(user_id=both.id, mobile="+491700000002")
     f.make_access(location, both, transport=ProgeoAccess.NotifiTrans.EMAIL_AND_SMS)
-    no_mobile = f.make_user(email="nomobile@example.com")
+    no_mobile = f.make_user(email="nomobile@progeo.com")
     f.make_access(location, no_mobile, transport=ProgeoAccess.NotifiTrans.SMS)  # no profile -> dropped
     return location
 
@@ -413,7 +413,7 @@ def test_test_notification_preview_lists_reachable_recipients(staff_client, noti
     assert set(by_kanal) == {"E-Mail", "SMS", "E-Mail + SMS"}
     assert by_kanal["E-Mail"]["name"] == "Mia Mail"
     assert by_kanal["SMS"] == {**by_kanal["SMS"], "mail": None, "mobile": "+491700000001"}
-    assert by_kanal["E-Mail + SMS"]["mail"] == "both@example.com"
+    assert by_kanal["E-Mail + SMS"]["mail"] == "both@progeo.com"
     assert channels == {"mail": [], "sms": []}  # preview never sends
 
 
@@ -426,7 +426,7 @@ def test_test_notification_sends_per_channel_and_reports_errors(staff_client, no
     assert results["E-Mail + SMS"]["email_ok"] is True
     assert results["E-Mail + SMS"]["sms_ok"] is False
     assert "missing password" in results["E-Mail + SMS"]["sms_error"]
-    assert sorted(mail[0][0] for mail in channels["mail"]) == ["both@example.com", "mail@example.com"]
+    assert sorted(mail[0][0] for mail in channels["mail"]) == ["both@progeo.com", "mail@progeo.com"]
     _sent_to, template, context, location_id = channels["mail"][0]
     assert template == "test_leakage.txt"
     assert (context["project_nr"], context["project_name"], location_id) == (920001, "Halle 3", notification_world.id)

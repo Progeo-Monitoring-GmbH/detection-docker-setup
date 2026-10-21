@@ -8,6 +8,14 @@ from progeo.settings import MEDIA_ROOT, UPLOAD_DIR
 DEMO_ACCOUNT_HASH = "demo-account"
 DEMO_ACCOUNT_NAME = "Demo"
 DEMO_USERNAME = "demo"
+# Demo users' mail addresses: always in a domain we control - an
+# example.com / invented address could reach someone else's mailbox.
+DEMO_MAIL_DOMAIN = "progeo.com"
+
+
+def demo_email(username):
+    """The address of a demo user (its username, e.g. demo.erika.mustermann@progeo.com)."""
+    return f"{username}@{DEMO_MAIL_DOMAIN}"
 DEMO_TOKEN_PURPOSE = "demo"
 DEMO_PERMISSION = "module_demo_enabled"
 # The demo user sees the portal like a staff member does (DEFAULT_STAFF_PERMISSIONS),

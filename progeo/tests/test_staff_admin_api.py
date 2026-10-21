@@ -100,7 +100,7 @@ def test_create_generates_a_password_and_grants_only_own_permissions(api_client,
 
     body = api_client.post(
         BASE,
-        {"username": f"  {name} ", "email": "new@example.com",
+        {"username": f"  {name} ", "email": "new@progeo.com",
          "permissions": ["module_locations_enabled", "module_backup_enabled"]},
         format="json",
     ).json()
@@ -177,36 +177,36 @@ def test_update_email_and_flags(api_client, staff):
     target = f.make_user()
 
     body = api_client.post(
-        f"{BASE}{target.pk}/update/", {"email": " x@example.com ", "is_staff": True, "is_active": False}, format="json"
+        f"{BASE}{target.pk}/update/", {"email": " x@progeo.com ", "is_staff": True, "is_active": False}, format="json"
     ).json()
 
     assert body["success"] is True
     target = _user(target.pk)
-    assert (target.email, target.is_staff, target.is_active) == ("x@example.com", True, False)
+    assert (target.email, target.is_staff, target.is_active) == ("x@progeo.com", True, False)
 
 
 @pytest.mark.parametrize("method", ["put", "patch"])
 def test_update_accepts_put_and_patch(api_client, staff, method):
     target = f.make_user()
 
-    getattr(api_client, method)(f"{BASE}{target.pk}/update/", {"email": "p@example.com"}, format="json")
+    getattr(api_client, method)(f"{BASE}{target.pk}/update/", {"email": "p@progeo.com"}, format="json")
 
-    assert _user(target.pk).email == "p@example.com"
+    assert _user(target.pk).email == "p@progeo.com"
 
 
 @pytest.mark.parametrize("email", ["nope", "a@", "@b.de"])
 def test_update_rejects_invalid_email(api_client, staff, email):
-    target = f.make_user(email="keep@example.com")
+    target = f.make_user(email="keep@progeo.com")
 
     response = api_client.post(f"{BASE}{target.pk}/update/", {"email": email}, format="json")
 
     assert response.status_code == 400
-    assert _user(target.pk).email == "keep@example.com"
+    assert _user(target.pk).email == "keep@progeo.com"
 
 
 @pytest.mark.parametrize("email", ["", "   ", None])
 def test_update_with_empty_email_clears_it(api_client, staff, email):
-    target = f.make_user(email="old@example.com")
+    target = f.make_user(email="old@progeo.com")
 
     body = api_client.post(f"{BASE}{target.pk}/update/", {"email": email}, format="json").json()
 
@@ -236,7 +236,7 @@ def test_update_replaces_permissions_with_grantable_ones(api_client, staff):
 def test_update_without_permissions_key_keeps_them(api_client, staff):
     target = f.make_user(perms=("module_backup_enabled",))
 
-    api_client.post(f"{BASE}{target.pk}/update/", {"email": "k@example.com"}, format="json")
+    api_client.post(f"{BASE}{target.pk}/update/", {"email": "k@progeo.com"}, format="json")
 
     assert _codes(target) == {"module_backup_enabled"}
 

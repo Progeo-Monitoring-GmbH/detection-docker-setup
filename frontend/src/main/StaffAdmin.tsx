@@ -176,7 +176,7 @@ const UserFormModal = ({
               type="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              placeholder="user@example.com"
+              placeholder="vorname.nachname@progeo.com"
             />
           </Form.Group>
           {isNew && (

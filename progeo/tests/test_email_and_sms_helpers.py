@@ -14,7 +14,7 @@ from progeo.helper import emailhelper, esendex, interface_config
 from progeo.tests import factories as f
 from progeo.v1.models import SMS, EMail, SystemConfig
 
-SMTP = {"sender": "noreply@example.com", "reply_to": "reply@example.com", "server": "smtp.example.com",
+SMTP = {"sender": "noreply@progeo.com", "reply_to": "reply@progeo.com", "server": "smtp.progeo.com",
         "port": 2525, "username": "mailer", "password": "pw"}
 
 
@@ -124,18 +124,18 @@ def test_send_mail_delivers_and_logs_a_sent_row(smtp):
     location = f.make_location(f.make_account())
     subject = f.unique("subject")
 
-    result = emailhelper.send_mail(["a@example.com", "b@example.com"], subject, "Hallo", [], location=location)
+    result = emailhelper.send_mail(["a@progeo.com", "b@progeo.com"], subject, "Hallo", [], location=location)
 
     assert isinstance(result, str) and result
     [mail] = smtp.sent
-    assert mail["server"] == ("smtp.example.com", 2525)
-    assert mail["from"] == "noreply@example.com"
-    assert mail["to"] == ["a@example.com", "b@example.com"]
+    assert mail["server"] == ("smtp.progeo.com", 2525)
+    assert mail["from"] == "noreply@progeo.com"
+    assert mail["to"] == ["a@progeo.com", "b@progeo.com"]
     assert mail["credentials"] == ("mailer", "pw")
-    assert "reply-to: reply@example.com" in mail["message"]
+    assert "reply-to: reply@progeo.com" in mail["message"]
     [row] = _rows(subject)
     assert (row.sent, row.error, row.location_id) == (True, None, location.id)
-    assert row.sent_to == "a@example.com, b@example.com"
+    assert row.sent_to == "a@progeo.com, b@progeo.com"
 
 
 def test_send_mail_attaches_files(smtp, tmp_path):
@@ -143,7 +143,7 @@ def test_send_mail_attaches_files(smtp, tmp_path):
     attachment.write_bytes(b"%PDF-1.4 test")
     subject = f.unique("attach")
 
-    emailhelper.send_mail(["a@example.com"], subject, "Anbei", [str(attachment)])
+    emailhelper.send_mail(["a@progeo.com"], subject, "Anbei", [str(attachment)])
 
     message = smtp.sent[0]["message"]
     assert "filename=report.pdf" in message
@@ -155,7 +155,7 @@ def test_send_mail_failure_stores_the_error(smtp):
     smtp.error = OSError("Connection refused")
     subject = f.unique("fail")
 
-    assert emailhelper.send_mail(["a@example.com"], subject, "x", []) is None
+    assert emailhelper.send_mail(["a@progeo.com"], subject, "x", []) is None
 
     [row] = _rows(subject)
     assert (row.sent, row.error) == (False, "Connection refused")
@@ -165,7 +165,7 @@ def test_send_mail_without_smtp_config_logs_skip(settings):
     settings.PROGEO_CONFIG_ENABLE_MAILING = True
     subject = f.unique("noconfig")
 
-    assert emailhelper.send_mail(["a@example.com"], subject, "x", []) is None
+    assert emailhelper.send_mail(["a@progeo.com"], subject, "x", []) is None
 
     [row] = _rows(subject)
     assert (row.sent, row.error) == (False, "SMTP not configured")
@@ -176,7 +176,7 @@ def test_send_mail_with_mailing_disabled_does_nothing(settings):
     SystemConfig.objects.using(f.DB).create(key="smtp", value=dict(SMTP))
     subject = f.unique("disabled")
 
-    assert emailhelper.send_mail(["a@example.com"], subject, "x", []) is None
+    assert emailhelper.send_mail(["a@progeo.com"], subject, "x", []) is None
     assert _rows(subject) == []
 
 
@@ -188,10 +188,10 @@ def test_send_mail_without_recipients_sends_nothing(smtp):
 def test_successful_retry_is_logged_as_sent(smtp):
     subject = f.unique("retry")
     smtp.error = OSError("temporary failure")
-    emailhelper.send_mail(["a@example.com"], subject, "same body", [])
+    emailhelper.send_mail(["a@progeo.com"], subject, "same body", [])
     smtp.error = None
 
-    emailhelper.send_mail(["a@example.com"], subject, "same body", [])
+    emailhelper.send_mail(["a@progeo.com"], subject, "same body", [])
 
     rows = _rows(subject)
     assert len(rows) == 1
@@ -204,7 +204,7 @@ def test_send_template_mail_renders_and_links_location(smtp):
     location = f.make_location(f.make_account())
     context = {"project_nr": 77, "project_name": f.unique("Objekt"), "triggered_by": "x", "timestamp": "now"}
 
-    assert emailhelper.send_template_mail(["a@example.com"], "test_leakage.txt", context, location=location)
+    assert emailhelper.send_template_mail(["a@progeo.com"], "test_leakage.txt", context, location=location)
 
     row = EMail.objects.using(f.DB).get(location=location)
     assert row.subject == f"Testleackage — Objekt 77 · {context['project_name']}"
@@ -214,14 +214,14 @@ def test_send_template_mail_renders_and_links_location(smtp):
 def test_send_template_mail_subject_override(smtp):
     subject = f.unique("override")
 
-    emailhelper.send_template_mail(["a@example.com"], "alarm.txt", {"device_hash": "d"}, subject_override=subject)
+    emailhelper.send_template_mail(["a@progeo.com"], "alarm.txt", {"device_hash": "d"}, subject_override=subject)
 
     assert len(_rows(subject)) == 1
     assert f"Subject: {subject}" in smtp.sent[0]["message"]
 
 
 def test_send_template_mail_missing_template_returns_false(smtp):
-    assert emailhelper.send_template_mail(["a@example.com"], "nope.txt", {}) is False
+    assert emailhelper.send_template_mail(["a@progeo.com"], "nope.txt", {}) is False
     assert smtp.sent == []
 
 
@@ -231,12 +231,12 @@ def test_send_alarm_email_without_any_recipient(smtp):
 
 
 def test_send_alarm_email_falls_back_to_superuser_mail(smtp, monkeypatch):
-    monkeypatch.setenv("DJANGO_SUPERUSER_EMAIL", "admin@example.com")
+    monkeypatch.setenv("DJANGO_SUPERUSER_EMAIL", "admin@progeo.com")
     device = f.unique("dev")
 
     assert emailhelper.send_alarm_email(device, 100, 200, [150, 200])
 
-    assert smtp.sent[0]["to"] == ["admin@example.com"]
+    assert smtp.sent[0]["to"] == ["admin@progeo.com"]
     row = EMail.objects.using(f.DB).get(subject=f"Alarm für Gerät {device}")
     assert "150, 200" in row.message
 
@@ -245,9 +245,9 @@ def test_send_info_mail_needs_superuser_mail(smtp, monkeypatch):
     emailhelper.send_info_mail("Info", "x")
     assert smtp.sent == []
 
-    monkeypatch.setenv("DJANGO_SUPERUSER_EMAIL", "admin@example.com")
+    monkeypatch.setenv("DJANGO_SUPERUSER_EMAIL", "admin@progeo.com")
     emailhelper.send_info_mail("Info", "x")
-    assert smtp.sent[0]["to"] == ["admin@example.com"]
+    assert smtp.sent[0]["to"] == ["admin@progeo.com"]
 
 
 # -- esendex.send_sms --------------------------------------------------------

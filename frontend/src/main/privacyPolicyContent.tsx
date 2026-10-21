@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { COMPANY } from './company';
 
 /*
  * Wording of the privacy policy (German, legally binding version).
@@ -12,11 +13,12 @@ import type { ReactNode } from 'react';
 export const PRIVACY_POLICY_LAST_UPDATED = 'Oktober 2026';
 
 export const CONTROLLER = {
-  name: 'ProGeo Monitoring Systeme und Services GmbH & Co. KG',
-  street: 'Hauptstraße 2',
+  name: COMPANY.name,
+  street: COMPANY.street,
   city: '14979 Großbeeren',
   country: 'Deutschland',
-  phone: '+49 33701 22-0',
+  phone: COMPANY.phone,
+  // The privacy contact - not the general one of COMPANY.
   email: 'progeo@progeo.com',
 };
 

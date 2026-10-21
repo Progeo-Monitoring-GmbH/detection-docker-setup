@@ -129,13 +129,13 @@ def test_smtp_post_saves_and_masks_password(api_client):
 
     response = api_client.post(
         "/v1/interface/smtp/",
-        {"server": "smtp.example.com", "port": 465, "sender": "a@example.com", "password": "s3cret"},
+        {"server": "smtp.progeo.com", "port": 465, "sender": "a@progeo.com", "password": "s3cret"},
         format="json",
     )
 
     assert response.status_code == 200, response.content
     assert response.json()["config"]["password"] == MASK
-    assert response.json()["config"]["server"] == "smtp.example.com"
+    assert response.json()["config"]["server"] == "smtp.progeo.com"
     assert _stored("smtp")["password"] == "s3cret"
     assert _stored("smtp")["port"] == 465
     # GET masks it too.

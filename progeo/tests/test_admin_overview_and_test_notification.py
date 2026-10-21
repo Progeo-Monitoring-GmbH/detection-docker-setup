@@ -78,8 +78,8 @@ def test_admin_overview_lists_locations_across_every_account():
 @pytest.mark.django_db(databases=["unit_tests", "default"])
 def test_notification_recipients_resolves_active_channels_only():
     location = ProgeoLocation.objects.using("default").create(alarm_threshold=100)
-    email_user = User.objects.using("default").create(username="recipient-email", email="mail@example.com")
-    silent_user = User.objects.using("default").create(username="recipient-silent", email="silent@example.com")
+    email_user = User.objects.using("default").create(username="recipient-email", email="mail@progeo.com")
+    silent_user = User.objects.using("default").create(username="recipient-silent", email="silent@progeo.com")
 
     ProgeoAccess.objects.using("default").create(
         location=location, user_id=email_user.id, transport=ProgeoAccess.NotifiTrans.EMAIL,
@@ -91,7 +91,7 @@ def test_notification_recipients_resolves_active_channels_only():
     recipients = LocationViewSet._notification_recipients(location, "default")
 
     assert len(recipients) == 1
-    assert recipients[0]["mail"] == "mail@example.com"
+    assert recipients[0]["mail"] == "mail@progeo.com"
     assert recipients[0]["kanal"] == "E-Mail"
 
 

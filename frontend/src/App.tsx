@@ -1,6 +1,6 @@
 import React from 'react';
 import { Col, Container, Row } from 'react-bootstrap';
-import { BrowserRouter } from 'react-router';
+import { BrowserRouter, useLocation } from 'react-router';
 import { SnackbarProvider } from 'notistack';
 import CoreAuthProvider from '../hooks/CoreAuthProvider';
 import { ModalProvider } from './components/modal/coreModalContext';
@@ -33,6 +33,28 @@ function GatedMain() {
   );
 }
 
+// Pages drawn over the whole window, without the portal's frame (its
+// 750 px minimum width would make them scroll sideways on a phone).
+const FULL_PAGE_PATHS = new Set(['/login']);
+
+function PortalFrame({ children }: { children: React.ReactNode }) {
+  const { pathname } = useLocation();
+  if (FULL_PAGE_PATHS.has(pathname.replace(/\/+$/, '') || '/')) {
+    return <>{children}</>;
+  }
+  return (
+    <Container fluid={true} style={{ minWidth: '750px', margin: '0' }}>
+      <Row>
+        <Col md={1} style={{ padding: '0' }}></Col>
+        <Col md={10} style={{ padding: '0' }}>
+          {children}
+        </Col>
+        <Col md={1} style={{ padding: '0' }}></Col>
+      </Row>
+    </Container>
+  );
+}
+
 function App() {
   return (
     <SnackbarProvider
@@ -42,20 +64,14 @@ function App() {
     >
       <ConsentProvider>
         <ModalProvider>
-          <Container fluid={true} style={{ minWidth: '750px', margin: '0' }}>
-            <Row>
-              <Col md={1} style={{ padding: '0' }}></Col>
-              <Col md={10} style={{ padding: '0' }}>
-                <BrowserRouter>
-                  <CoreAuthProvider>
-                    <GatedMain />
-                    <CookieBanner />
-                  </CoreAuthProvider>
-                </BrowserRouter>
-              </Col>
-              <Col md={1} style={{ padding: '0' }}></Col>
-            </Row>
-          </Container>
+          <BrowserRouter>
+            <CoreAuthProvider>
+              <PortalFrame>
+                <GatedMain />
+                <CookieBanner />
+              </PortalFrame>
+            </CoreAuthProvider>
+          </BrowserRouter>
         </ModalProvider>
       </ConsentProvider>
     </SnackbarProvider>

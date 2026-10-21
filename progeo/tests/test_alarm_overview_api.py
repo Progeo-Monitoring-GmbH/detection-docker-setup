@@ -232,7 +232,7 @@ def test_clusters_window_drops_old_resolved_alarms(api_client, world):
 
 def _email(location, ago, subject="Mail", sent=True, error=None):
     mail = EMail.objects.using(f.DB).create(
-        location=location, raw_hash=f.unique("mail"), sent_to="a@example.com", subject=subject,
+        location=location, raw_hash=f.unique("mail"), sent_to="a@progeo.com", subject=subject,
         message="body", files="", sent=sent, error=error,
     )
     EMail.objects.using(f.DB).filter(pk=mail.pk).update(created=timezone.now() - ago)

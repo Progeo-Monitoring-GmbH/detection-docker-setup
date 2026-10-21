@@ -170,7 +170,7 @@ def test_demo_user_cannot_change_anything(api_client, demo):
         api_client.patch(f"/v1/location/{location.pk}/", {"name": "hacked"}, format="json"),
         api_client.post(f"/v1/alarm/{alarm.pk}/acknowledge/?location={location.pk}", {}, format="json"),
         api_client.post(f"/v1/location/{location.pk}/request-measurement/", {}, format="json"),
-        api_client.post("/v1/user/settings/", {"email": "x@example.com"}, format="json"),
+        api_client.post("/v1/user/settings/", {"email": "x@progeo.com"}, format="json"),
         api_client.delete(f"/v1/location/{location.pk}/"),
     ]
     for response in writes:
@@ -194,6 +194,24 @@ def test_demo_user_does_not_see_staff_contacts(api_client, demo):
     assert access["staff_users"] == []
     assert all(member["access"] != "staff" for member in access["members"])
     assert "staff@progeo.example" not in str(access)
+
+
+def test_demo_users_only_get_addresses_in_our_own_domain(demo):
+    """Never example.com or invented domains: a demo address must not reach
+    anyone else's mailbox."""
+    from django.contrib.auth.models import User
+
+    from progeo.helper.demo import DEMO_MAIL_DOMAIN
+
+    users = User.objects.using("default").filter(username__startswith="demo")
+    assert users.count() >= 2
+    for user in users:
+        assert user.email == f"{user.username}@{DEMO_MAIL_DOMAIN}", user.username
+    assert DEMO_MAIL_DOMAIN == "progeo.com"
+    # The copies in the demo database too.
+    assert not User.objects.using(settings.DEMO_DATABASE).exclude(email__endswith="@progeo.com").filter(
+        username__startswith="demo"
+    ).exists()
 
 
 def test_smartex_dm_has_five_named_lines_of_five_sensors(demo):

@@ -11,7 +11,7 @@ def profile_user(django_user_model):
         raise AssertionError("Expected at least one user in test database")
 
     user.username = "profile_user"
-    user.email = "profile@example.com"
+    user.email = "profile@progeo.com"
     user.set_password("OldPass123!")
     user.save(update_fields=["username", "email", "password"])
     return user
@@ -45,18 +45,18 @@ def test_profile_returns_user_data(profile_client, profile_user):
 def test_settings_updates_email_and_language(profile_client, profile_user):
     response = profile_client.post(
         "/v1/user/settings/",
-        {"email": "new-mail@example.com", "language": "en"},
+        {"email": "new-mail@progeo.com", "language": "en"},
         content_type="application/json",
     )
 
     assert response.status_code == 200
     payload = response.json()
     assert payload.get("success") is True
-    assert payload.get("email") == "new-mail@example.com"
+    assert payload.get("email") == "new-mail@progeo.com"
     assert payload.get("language") == "en"
 
     profile_user.refresh_from_db()
-    assert profile_user.email == "new-mail@example.com"
+    assert profile_user.email == "new-mail@progeo.com"
     assert profile_client.session.get(LANGUAGE_SESSION_KEY) == "en"
 
 
@@ -74,7 +74,7 @@ def test_settings_rejects_missing_email(profile_client, profile_user):
     assert payload.get("reason") == "email is required"
 
     profile_user.refresh_from_db()
-    assert profile_user.email == "profile@example.com"
+    assert profile_user.email == "profile@progeo.com"
 
 
 @pytest.mark.django_db(databases=["unit_tests", "default"])
@@ -91,7 +91,7 @@ def test_settings_rejects_invalid_email(profile_client, profile_user):
     assert payload.get("reason") == "invalid email address"
 
     profile_user.refresh_from_db()
-    assert profile_user.email == "profile@example.com"
+    assert profile_user.email == "profile@progeo.com"
 
 
 @pytest.mark.django_db(databases=["unit_tests", "default"])
