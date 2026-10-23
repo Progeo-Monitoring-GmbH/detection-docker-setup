@@ -1,4 +1,4 @@
-FROM python:3.13.7-alpine3.21 AS python
+FROM progeomonitoring/detection-docker-setup:backend-base-py3.13.7-alpine3.21 AS python
 
 ARG PROTOCOL
 ARG FRONTEND_PORT
@@ -9,56 +9,14 @@ ARG DOCKER_UID=1000
 ARG DOCKER_GID=1000
 ARG DOCKER_SOCKET_GID=998
 
-RUN apk update && apk add --no-cache  \
-                      ffmpeg \
-                      nano \
-                      iputils-ping \
-                      lsb-release \
-                      gnupg \
-                      wget \
-                      curl \
-                      ca-certificates
-
-RUN apk update && apk add git \
-                      supervisor \
-                      dcron \
-                      rsync \
-                      iputils-ping \
-                      libpq-dev \
-                      gcc
-
-RUN apk add python3-dev musl-dev linux-headers make automake g++ bash postgresql-client
-RUN apk add geos \
-            geos-dev \
-            build-base
-RUN apk add proj proj-dev
-
-ENV PROJECT_ROOT=/home/progeo/detection-docker-setup
-ENV VENV_ROOT=/opt/venv
-
 # DOCKER_SOCKET_GID is the host's docker group; it may already exist here under another
 # name (e.g. 999 = ping) or equal DOCKER_GID, so join whichever group owns that gid.
-# -H: the parent /home/progeo does not exist yet, WORKDIR below creates the folder.
+# -H: the home folder (PROJECT_ROOT) is already created by WORKDIR in the base image.
 RUN addgroup -g ${DOCKER_GID} -S progeo \
     && adduser -S -H -u ${DOCKER_UID} -G progeo -h ${PROJECT_ROOT} progeo \
     && socket_group="$(getent group ${DOCKER_SOCKET_GID} | cut -d: -f1)" \
     && if [ -z "${socket_group}" ]; then addgroup -g ${DOCKER_SOCKET_GID} -S docker && socket_group=docker; fi \
     && addgroup progeo "${socket_group}"
-
-WORKDIR ${PROJECT_ROOT}
-
-RUN wget https://raw.githubusercontent.com/vishnubob/wait-for-it/master/wait-for-it.sh -O wait-for-it.sh
-
-RUN python3 -m venv $VENV_ROOT
-RUN python3 -m ensurepip --upgrade
-RUN pip install -U setuptools pip
-
-ENV PATH="$VENV_ROOT/bin:$PATH"
-RUN . $VENV_ROOT/bin/activate
-
-#Temp hotfix see https://github.com/pypa/setuptools/issues/4519
-RUN pip install -U certifi setuptools pip
-RUN pip install opencv-python-headless==4.12.0.88 --use-feature=fast-deps
 
 COPY ./requirements.txt ./requirements.txt
 RUN pip install -r requirements.txt --use-feature=fast-deps
