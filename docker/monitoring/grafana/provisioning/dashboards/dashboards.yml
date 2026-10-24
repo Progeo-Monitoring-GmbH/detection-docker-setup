@@ -1,0 +1,12 @@
+apiVersion: 1
+
+providers:
+  - name: progeo
+    folder: Progeo
+    type: file
+    # Changes in the UI can't be saved over these; edit the JSON in
+    # docker/monitoring/grafana/dashboards/ (Grafana re-reads it every 30s).
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana-dashboards

@@ -26,6 +26,8 @@ Optional: `| sudo BRANCH=<branch> bash` to use another branch. Re-running the in
 - `progeo-frontend` (Frontend)
 - `progeo-nginx` (reverse proxy, ports `80` and `443`)
 
+The optional profile `monitoring` adds Prometheus, Grafana, Alertmanager, Flower and exporters (see [docker/monitoring/README.md](docker/monitoring/README.md)).
+
 ## 1) Prepare environment files
 
 Required files in project root:

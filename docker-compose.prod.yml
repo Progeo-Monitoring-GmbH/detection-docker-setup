@@ -111,6 +111,8 @@ services:
       SENTRY_RELEASE: ${IMAGE_VERSION:-latest}
       SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.0}
       SENTRY_SERVER_NAME: ${SENTRY_SERVER_NAME:-}
+      # Bearer token of GET /metrics (progeo/metrics.py); empty = endpoint off.
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
     group_add:
       - '${DOCKER_SOCKET_GID:-1001}'
     cap_add:
@@ -191,10 +193,204 @@ services:
     networks:
       default_net:
 
+  # ---------------------------------------------------------------------------
+  # Monitoring (docker/monitoring/README.md) - only built + started with the
+  # compose profile "monitoring", e.g. COMPOSE_PROFILES=monitoring in .env.
+  # The UIs listen on MONITORING_BIND only (127.0.0.1 = reach them via SSH tunnel).
+  # ---------------------------------------------------------------------------
+  progeo-prometheus:
+    image: prom/prometheus:v3.13.4
+    container_name: progeo-prometheus
+    restart: unless-stopped
+    profiles: ['monitoring']
+    entrypoint: ['/bin/sh', '/etc/prometheus/entrypoint.sh']
+    command: ['--web.enable-lifecycle']
+    environment:
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      FLOWER_USER: ${FLOWER_USER:-flower}
+      FLOWER_PASSWORD: ${FLOWER_PASSWORD:-}
+      NODE_EXPORTER_TARGET: ${MONITORING_GATEWAY:-172.31.250.1}:9100
+      PROMETHEUS_RETENTION_TIME: ${PROMETHEUS_RETENTION_TIME:-30d}
+      PROMETHEUS_RETENTION_SIZE: ${PROMETHEUS_RETENTION_SIZE:-5GB}
+    ports:
+      - '${MONITORING_BIND:-127.0.0.1}:${PROMETHEUS_UI_PORT:-9090}:9090'
+    volumes:
+      - ./docker/monitoring/prometheus/entrypoint.sh:/etc/prometheus/entrypoint.sh:ro
+      - ./docker/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./docker/monitoring/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus_data:/prometheus
+    networks:
+      monitoring_net:
+      # Scrapes progeo-backend:8383/metrics directly.
+      default_net:
+
+  progeo-alertmanager:
+    image: prom/alertmanager:v0.34.1
+    container_name: progeo-alertmanager
+    restart: unless-stopped
+    profiles: ['monitoring']
+    entrypoint: ['/bin/sh', '/etc/alertmanager/entrypoint.sh']
+    # Single instance: no cluster port.
+    command: ['--cluster.listen-address=']
+    environment:
+      ALERT_EMAIL: ${ALERT_EMAIL:-}
+      ALERT_SERVER_NAME: ${ALERT_SERVER_NAME:-}
+      ALERT_SMTP_HOST: ${ALERT_SMTP_HOST:-}
+      ALERT_SMTP_FROM: ${ALERT_SMTP_FROM:-}
+      ALERT_SMTP_USER: ${ALERT_SMTP_USER:-}
+      ALERT_SMTP_PASSWORD: ${ALERT_SMTP_PASSWORD:-}
+    volumes:
+      - ./docker/monitoring/alertmanager/entrypoint.sh:/etc/alertmanager/entrypoint.sh:ro
+      - alertmanager_data:/alertmanager
+    networks:
+      monitoring_net:
+
+  progeo-grafana:
+    image: grafana/grafana-oss:12.4.3
+    container_name: progeo-grafana
+    restart: unless-stopped
+    profiles: ['monitoring']
+    depends_on:
+      - progeo-prometheus
+    environment:
+      # Applied on the very first start only (then stored in grafana_data).
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_AUTH_ANONYMOUS_ENABLED: 'false'
+      # Offline-capable: no calls home.
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+      GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: 'false'
+      GF_NEWS_NEWS_FEED_ENABLED: 'false'
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana-dashboards/django-api.json
+    ports:
+      - '${MONITORING_BIND:-127.0.0.1}:${GRAFANA_UI_PORT:-3000}:3000'
+    volumes:
+      - ./docker/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./docker/monitoring/grafana/dashboards:/var/lib/grafana-dashboards:ro
+      - grafana_data:/var/lib/grafana
+    networks:
+      monitoring_net:
+
+  # Celery tasks + workers from the worker events (celery worker -E); same
+  # broker as progeo/celery.py. REDIS_PASSWORD must be URL-safe here, otherwise
+  # set FLOWER_BROKER_URL with the percent-encoded password.
+  progeo-flower:
+    image: mher/flower:2.1.0
+    container_name: progeo-flower
+    restart: unless-stopped
+    profiles: ['monitoring']
+    command: ['celery', 'flower']
+    environment:
+      CELERY_BROKER_URL: ${FLOWER_BROKER_URL:-redis://:${REDIS_PASSWORD}@${REDIS_HOST}:${REDIS_PORT}/0}
+      FLOWER_PORT: 5555
+      FLOWER_BASIC_AUTH: ${FLOWER_USER:-flower}:${FLOWER_PASSWORD:-}
+      TZ: 'Europe/Berlin'
+    ports:
+      - '${MONITORING_BIND:-127.0.0.1}:${FLOWER_UI_PORT:-5555}:5555'
+    depends_on:
+      - progeo-redis
+    networks:
+      monitoring_net:
+      redis_net:
+
+  # Logs in as the read-only role from scripts/setup_monitoring_db_user.sh.
+  progeo-postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.20.1
+    container_name: progeo-postgres-exporter
+    restart: unless-stopped
+    profiles: ['monitoring']
+    # Top 100 statements by total time, with their normalized text ($1, $2 - no values).
+    command:
+      - --collector.stat_statements
+      - --collector.stat_statements.include_query
+      - --collector.stat_statements.query_length=200
+      - --collector.long_running_transactions
+    environment:
+      DATA_SOURCE_URI: ${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable
+      DATA_SOURCE_USER: ${POSTGRES_MONITOR_USER:-progeo_monitor}
+      DATA_SOURCE_PASS: ${POSTGRES_MONITOR_PASSWORD:-}
+    depends_on:
+      - progeo-database
+    networks:
+      monitoring_net:
+      database_net:
+
+  progeo-redis-exporter:
+    image: oliver006/redis_exporter:v1.93.0
+    container_name: progeo-redis-exporter
+    restart: unless-stopped
+    profiles: ['monitoring']
+    environment:
+      REDIS_ADDR: redis://${REDIS_HOST}:${REDIS_PORT}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      # Length of the celery queue (list "celery" in db 0) = task backlog.
+      REDIS_EXPORTER_CHECK_SINGLE_KEYS: db0=celery
+    depends_on:
+      - progeo-redis
+    networks:
+      monitoring_net:
+      redis_net:
+
+  # CPU, memory and restarts per container.
+  progeo-cadvisor:
+    image: ghcr.io/google/cadvisor:0.60.6
+    container_name: progeo-cadvisor
+    restart: unless-stopped
+    profiles: ['monitoring']
+    privileged: true
+    devices:
+      - /dev/kmsg
+    command:
+      - --housekeeping_interval=30s
+      - --docker_only=true
+      - --store_container_labels=false
+      # Keeps it light on small devices.
+      - --disable_metrics=percpu,sched,tcp,udp,advtcp,hugetlb,referenced_memory,cpu_topology,resctrl,process
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks:
+      monitoring_net:
+
+  # Host CPU, memory, disk and network. Runs in the host network namespace (for
+  # the real network interfaces) and listens on the monitoring_net gateway only,
+  # so it is reachable from the host and progeo-prometheus but not from outside.
+  progeo-node-exporter:
+    image: prom/node-exporter:v1.12.1
+    container_name: progeo-node-exporter
+    restart: unless-stopped
+    profiles: ['monitoring']
+    network_mode: host
+    pid: host
+    command:
+      - --path.rootfs=/host
+      - --web.listen-address=${MONITORING_GATEWAY:-172.31.250.1}:9100
+    volumes:
+      - /:/host:ro,rslave
+    depends_on:
+      - progeo-prometheus
+
 networks:
   default_net:
   database_net:
   redis_net:
+  # Fixed subnet: progeo-node-exporter listens on its gateway (MONITORING_GATEWAY),
+  # the bridge gets a fixed name for host firewall rules (docker/monitoring/README.md).
+  monitoring_net:
+    driver_opts:
+      com.docker.network.bridge.name: br-progeo-mon
+    ipam:
+      config:
+        - subnet: ${MONITORING_SUBNET:-172.31.250.0/24}
+          gateway: ${MONITORING_GATEWAY:-172.31.250.1}
 
 volumes:
   postgres_data:
+  prometheus_data:
+  alertmanager_data:
+  grafana_data:

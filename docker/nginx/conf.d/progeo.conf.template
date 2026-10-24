@@ -18,6 +18,11 @@ server {
     # First, before the other locations: drops .env/.git/... scanner requests.
     include /etc/nginx/snippets/block_scanners.conf;
 
+    # Prometheus scrapes the backend directly (docker network); never public.
+    location = /metrics {
+        return 404;
+    }
+
     location / {
         set $backend_upstream progeo-backend:8383;
         proxy_pass http://$backend_upstream;

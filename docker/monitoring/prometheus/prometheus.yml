@@ -1,0 +1,61 @@
+# Template - entrypoint.sh fills in the __PLACEHOLDERS__ and writes the
+# secrets the jobs below read from /prometheus/secrets.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['progeo-alertmanager:9093']
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: alertmanager
+    static_configs:
+      - targets: ['progeo-alertmanager:9093']
+
+  # Daphne/Django (progeo/metrics.py), straight over default_net - nginx blocks /metrics.
+  - job_name: django
+    metrics_path: /metrics
+    authorization:
+      credentials_file: /prometheus/secrets/metrics_token
+    static_configs:
+      - targets: ['progeo-backend:8383']
+
+  # Celery tasks and workers (from the worker events, celery worker -E).
+  - job_name: flower
+    basic_auth:
+      username: '__FLOWER_USER__'
+      password_file: /prometheus/secrets/flower_password
+    static_configs:
+      - targets: ['progeo-flower:5555']
+
+  # Size and connections of every database - ~1000 project databases make a
+  # scrape take a few seconds, so less often and with a longer timeout.
+  - job_name: postgres
+    scrape_interval: 60s
+    scrape_timeout: 45s
+    static_configs:
+      - targets: ['progeo-postgres-exporter:9187']
+
+  # Redis itself and the celery queue length (REDIS_EXPORTER_CHECK_SINGLE_KEYS).
+  - job_name: redis
+    static_configs:
+      - targets: ['progeo-redis-exporter:9121']
+
+  - job_name: cadvisor
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['progeo-cadvisor:8080']
+
+  # Host network namespace; listens only on the monitoring_net gateway.
+  - job_name: node
+    static_configs:
+      - targets: ['__NODE_EXPORTER_TARGET__']

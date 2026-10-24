@@ -54,6 +54,8 @@ PROGEO_CONFIG_EVALUATE_INSTANTLY = parse_boolean(os.getenv("PROGEO_CONFIG_EVALUA
 # separated: schedule names ("check-existing-alarms-quarter-hourly"), task
 # names ("check_existing_alarms") or "all" - e.g. while split_project_dbs runs.
 CELERY_DISABLED_TASKS = [name.strip() for name in os.getenv("CELERY_DISABLED_TASKS", "").split(",") if name.strip()]
+# Bearer token Prometheus scrapes /metrics with (progeo/metrics.py); empty = /metrics answers 404.
+METRICS_TOKEN = (os.getenv("METRICS_TOKEN") or "").strip()
 
 # ########################################################################
 # Outbound mail / SMS safety (see django.env.template, helper/outbound.py)
@@ -144,6 +146,9 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # First: the measured duration covers every other middleware, and it
+    # answers /metrics before SecurityMiddleware and the host check.
+    "progeo.metrics.MetricsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",

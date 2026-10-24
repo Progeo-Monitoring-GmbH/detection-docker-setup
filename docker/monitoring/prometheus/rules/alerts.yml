@@ -1,0 +1,138 @@
+# Evaluated by progeo-prometheus, sent by progeo-alertmanager (mail to ALERT_EMAIL).
+# Check after editing:  docker exec progeo-prometheus promtool check rules /etc/prometheus/rules/alerts.yml
+#                       curl -X POST http://127.0.0.1:9090/-/reload  (or restart progeo-prometheus)
+groups:
+  - name: availability
+    rules:
+      - alert: ScrapeTargetDown
+        expr: up == 0
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: '{{ $labels.job }} ({{ $labels.instance }}) is not reachable'
+          description: 'Prometheus could not scrape {{ $labels.job }} for 3 minutes - the service or its exporter is down.'
+
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'PostgreSQL is not reachable for the exporter'
+
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Redis (celery broker, channel layer, cache) is not reachable'
+
+      - alert: ContainerRestarting
+        expr: changes(container_start_time_seconds{name=~"progeo-.+"}[15m]) >= 2
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.name }} restarted {{ $value }} times within 15 minutes'
+
+  - name: django
+    rules:
+      - alert: DjangoHigh5xxRate
+        expr: |
+          sum(rate(progeo_http_requests_total{status=~"5.."}[5m]))
+            / sum(rate(progeo_http_requests_total[5m])) > 0.05
+          and sum(rate(progeo_http_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: '{{ $value | humanizePercentage }} of the API requests fail with 5xx'
+          description: 'Details in logs/backend/errors.jsonl and the "Django API" dashboard.'
+
+      - alert: DjangoHighLatency
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(progeo_http_request_duration_seconds_bucket[5m]))) > 2
+          and sum(rate(progeo_http_request_duration_seconds_count[5m])) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: '95% of the API requests take up to {{ $value | humanizeDuration }}'
+
+  - name: postgres
+    rules:
+      - alert: PostgresConnectionsNearLimit
+        expr: sum(pg_stat_database_numbackends) / max(pg_settings_max_connections) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $value | humanizePercentage }} of max_connections in use (POSTGRES_MAX_CONNECTIONS)'
+
+      - alert: PostgresDeadlocks
+        expr: sum by (datname) (increase(pg_stat_database_deadlocks[10m])) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Deadlocks in database {{ $labels.datname }}'
+
+  - name: celery
+    rules:
+      - alert: CeleryTaskFailures
+        # Flower creates the counter on a task's first failure, which increase()
+        # does not see - the "unless ... offset" part catches those new series.
+        expr: |
+          sum by (task) (increase(flower_events_total{type="task-failed"}[15m])) > 0
+          or (
+            sum by (task) (flower_events_total{type="task-failed"})
+            unless sum by (task) (flower_events_total{type="task-failed"} offset 15m)
+          )
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Celery task {{ $labels.task }} failed {{ $value | humanize }} times within 15 minutes'
+
+      - alert: CeleryNoWorkerOnline
+        expr: (sum(flower_worker_online) or vector(0)) == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'No celery worker is online - periodic tasks and mails are not processed'
+
+      - alert: CeleryQueueBacklog
+        expr: sum(redis_key_size{key="celery"}) > 100
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $value }} celery tasks are waiting in the queue'
+
+  - name: resources
+    rules:
+      - alert: HostDiskAlmostFull
+        expr: |
+          node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs"}
+            / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs"} < 0.10
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Only {{ $value | humanizePercentage }} free on {{ $labels.mountpoint }}'
+
+      - alert: HostMemoryLow
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Only {{ $value | humanizePercentage }} of the memory is available'
+
+      - alert: HostCpuSaturated
+        expr: 1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) > 0.9
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'CPU {{ $value | humanizePercentage }} busy for 15 minutes'
