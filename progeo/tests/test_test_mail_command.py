@@ -46,6 +46,7 @@ def smtp(monkeypatch, settings):
     for name in interface_config._SMTP_ENV.values():
         monkeypatch.delenv(name, raising=False)
     settings.PROGEO_CONFIG_ENABLE_MAILING = True
+    settings.MAIL_TEST_MODE = False
     SystemConfig.objects.using(f.DB).filter(key="smtp").delete()
     SystemConfig.objects.using(f.DB).create(key="smtp", value=dict(SMTP))
     FakeSMTP.sent = []
@@ -69,7 +70,7 @@ def test_sends_plain_test_mail_to_default_recipient(capsys):
 def test_templates_sends_every_template_with_sample_data():
     call_command("test_mail", "--templates", "--to", "a@progeo.com")
 
-    assert len(FakeSMTP.sent) == 1 + len(list(emailhelper.EMAIL_TEMPLATE_DIR.glob("*.txt")))
+    assert len(FakeSMTP.sent) == 1 + len(emailhelper.template_names())
     for mail in FakeSMTP.sent:
         assert mail["to"] == ["a@progeo.com"]
     assert all(s.startswith("[TEST] ") for s in _subjects())
@@ -77,7 +78,7 @@ def test_templates_sends_every_template_with_sample_data():
 
 
 def test_single_template_skips_plain_mail():
-    call_command("test_mail", "--template", "alarm.txt")
+    call_command("test_mail", "--template", "alarm")
 
     assert _subjects() == ["[TEST] Alarm für Gerät a1b2c3d4e5"]
 

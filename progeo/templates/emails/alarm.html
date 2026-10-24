@@ -1,0 +1,11 @@
+{% extends "emails/base.html" %}
+{# Legacy device alarm (emailhelper.send_alarm_email). Project alarms use alarm_notification.html. #}
+{% block subject %}Alarm für Gerät {{ device_hash }}{% endblock %}
+{% block preheader %}Schwellwert {{ threshold }} überschritten{% endblock %}
+{% block content %}
+<h1 style="margin:0 0 12px; font-size:20px;">Alarm für Gerät {{ device_hash }}</h1>
+<p style="margin:0 0 12px;">Gerät {{ device_hash }} hat den konfigurierten Schwellwert überschritten.</p>
+<p style="margin:0;">Schwellwert: {{ threshold }}<br>
+Maximalwert: {{ max_value }}<br>
+Überschreitende Werte: {{ exceeding_values }}</p>
+{% endblock %}

@@ -1,0 +1,7 @@
+{% extends "emails/base.html" %}
+{% block subject %}Ihre Zugangsanfrage für das ProGeo-Portal{% endblock %}
+{% block content %}
+<p style="margin:0 0 12px;">Hallo {{ first_name }},</p>
+<p style="margin:0 0 12px;">vielen Dank für Ihr Interesse am ProGeo-Portal. Leider können wir Ihnen derzeit keinen Zugang einrichten.</p>
+<p style="margin:0;">Bei Fragen erreichen Sie uns unter {{ company.phone }} oder per E-Mail an <a href="mailto:{{ company.email }}" style="color:#0b3659;">{{ company.email }}</a>.</p>
+{% endblock %}

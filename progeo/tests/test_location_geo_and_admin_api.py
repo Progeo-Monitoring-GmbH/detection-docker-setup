@@ -386,7 +386,7 @@ def channels(monkeypatch):
         sent["mail"].append((sent_to, template_name, context, location.pk))
         return "hash"
 
-    def _sms(to, body, cfg=None, sender=None):
+    def _sms(to, body, cfg=None, sender=None, **kwargs):
         sent["sms"].append((to, body))
         if to.endswith("2"):
             raise esendex.EsendexError("Esendex is not configured: missing password.")
@@ -428,7 +428,7 @@ def test_test_notification_sends_per_channel_and_reports_errors(staff_client, no
     assert "missing password" in results["E-Mail + SMS"]["sms_error"]
     assert sorted(mail[0][0] for mail in channels["mail"]) == ["both@progeo.com", "mail@progeo.com"]
     _sent_to, template, context, location_id = channels["mail"][0]
-    assert template == "test_leakage.txt"
+    assert template == "test_leakage"
     assert (context["project_nr"], context["project_name"], location_id) == (920001, "Halle 3", notification_world.id)
     assert all("Objekt 920001 Halle 3" in sms[1] for sms in channels["sms"])
 

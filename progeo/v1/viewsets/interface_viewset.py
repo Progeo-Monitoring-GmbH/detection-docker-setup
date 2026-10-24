@@ -181,7 +181,10 @@ class InterfaceViewSet(ViewSet):
         sender = str(values.get("from") or "").strip() or None
         steps = [f"Sending SMS to {to} via Esendex ..."]
         try:
-            result = send_sms(to, body, cfg=cfg, sender=sender)
+            result = send_sms(to, body, cfg=cfg, sender=sender, category="test")
+            if result.get("dry_run"):
+                steps.append("SMS_DRY_RUN is on: logged only, nothing was sent to Esendex.")
+                return RequestSuccess({"test": {"ok": True, "steps": steps, "error": None, "dry_run": True}})
             steps.append(
                 "Delivered"
                 + (f" (batch {result.get('batch_id')})" if result.get("batch_id") else "")

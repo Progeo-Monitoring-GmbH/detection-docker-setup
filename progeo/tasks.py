@@ -532,7 +532,11 @@ def activate_project_database(project_id: int | None = None):
     One run per project at a time (advisory lock)."""
     from django.db import DEFAULT_DB_ALIAS, connections
 
-    from progeo.helper.project_db_copy import purge_project, sync_project, verify_project
+    from progeo.helper.project_db_copy import (
+        purge_project,
+        sync_project,
+        verify_project,
+    )
     from progeo.helper.project_dbs import project_alias, split_enabled
 
     if not split_enabled():
@@ -566,3 +570,60 @@ def render_heatmap_video(job_id: str, framerate: int = 2):
     from progeo.helper.heatmap_video import render_job
 
     return {"path": render_job(job_id, framerate=framerate)}
+
+
+@shared_task
+def send_alarm_notification(alarm_id: int, location_id: int, db_name: str = "default"):
+    """Mail/SMS the subscribers of a new alarm (helper/notifications.py) -
+    queued by queue_alarm_notification for instantly evaluated uploads."""
+    from progeo.helper.notifications import notify_alarm
+    from progeo.v1.models import ProgeoAlarm, ProgeoLocation
+
+    alarm = ProgeoAlarm.objects.using(db_name).filter(pk=alarm_id).first()
+    location = ProgeoLocation.objects.using(db_name).filter(pk=location_id).first()
+    if alarm is None or location is None:
+        return {"skipped": "missing"}
+    return notify_alarm(alarm, location, db_name)
+
+
+@shared_task
+def send_template_mail_task(sent_to: list, template_name: str, context: dict | None = None,
+                            category: str = "system"):
+    """emailhelper.send_template_mail in the background (outbound.dispatch).
+    Never for mails with secrets - task arguments end up in the result backend."""
+    from progeo.helper.emailhelper import send_template_mail
+
+    return bool(send_template_mail(sent_to, template_name, context, category=category))
+
+
+@shared_task
+def send_login_link_task(user_id: int, purpose: str = "login"):
+    """Create a one-time login link for the user and mail it - the token is
+    made here, inside the worker, so it never passes the broker."""
+    from progeo.helper.login_links import send_login_link
+
+    return send_login_link(user_id, purpose)
+
+
+@shared_task
+def send_access_verification_task(access_request_id: int):
+    """Double opt-in mail of an access request (token made inside the worker)."""
+    from progeo.helper.access_requests import send_verification
+
+    return send_verification(access_request_id)
+
+
+@shared_task
+def process_bounces():
+    """Read the bounce mailbox and suppress dead addresses (helper/bounces.py)."""
+    from progeo.helper.bounces import process_bounce_mailbox
+
+    return process_bounce_mailbox()
+
+
+@shared_task
+def cleanup_access_requests():
+    """Delete unconfirmed / long rejected access requests (helper/access_requests.py)."""
+    from progeo.helper.access_requests import cleanup_access_requests as cleanup
+
+    return cleanup()

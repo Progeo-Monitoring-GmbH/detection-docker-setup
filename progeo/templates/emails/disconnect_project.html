@@ -1,0 +1,17 @@
+{% extends "emails/base.html" %}
+{# A project stopped sending data (helper/report_utils.py, daily report). #}
+{% block subject %}Projekt '{{ project_name }}' - Störung des Monitoringsystems - Vorgang {{ case_id }}{% endblock %}
+{% block preheader %}Seit {{ last_measurement_at }} werden keine Daten übertragen{% endblock %}
+{% block content %}
+<p style="margin:0 0 12px;">Sehr geehrte Damen und Herren,</p>
+<p style="margin:0 0 12px;">Ihr Flachdachmonitoring überträgt seit dem <strong>{{ last_measurement_at }}</strong> keine Daten auf unseren Server. Bis zur Wiederaufnahme der Datenübertragung erfolgt keine Leckageüberwachung Ihrer Abdichtungsflächen.</p>
+<p style="margin:0 0 12px;">Wenn Sie für den Betrieb des Systems in Ihrem Objekt verantwortlich sind, helfen Sie bitte dabei, die Störungsursache möglichst schnell zu beseitigen. Zur Ermittlung der Störungsursache gehen Sie bitte wie folgt vor:</p>
+<ul style="margin:0 0 12px; padding-left:20px;">
+  <li>Prüfen Sie, ob Ihr Internetzugang aktiv ist, und stellen Sie die Betriebsbereitschaft gegebenenfalls wieder her.</li>
+  <li>Erteilen Sie erforderliche Freigaben, falls sich Ihre Netzwerkkonfiguration geändert hat. Fragen Sie hierzu Ihren Netzwerkadministrator.</li>
+  <li>Prüfen Sie, ob Ihre Auswerteeinheit bzw. Monitoring-Box mit Spannung versorgt wird und regelmäßig Messungen durchführt. Falls nicht, führen Sie einen Reset durch und beachten Sie die Systemdokumentation.</li>
+</ul>
+<p style="margin:0 0 12px;">Falls Sie weitere Hilfe benötigen, wenden Sie sich bitte telefonisch an uns unter {{ company.phone }}. Sie erreichen uns werktäglich von 09:00 bis 16:30 Uhr. Bei Rückfragen nennen Sie bitte stets die Vorgangsnummer <strong>{{ case_id }}</strong>.</p>
+<p style="margin:0 0 12px;">Diese Nachricht wird erneut versendet, sofern die Störung zwischenzeitlich nicht beseitigt wurde.</p>
+<p style="margin:0;">Mit freundlichen Grüßen<br>Ihr ProGeo-Team</p>
+{% endblock %}

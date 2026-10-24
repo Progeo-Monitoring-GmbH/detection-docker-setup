@@ -163,11 +163,49 @@ class StaffUserListView(APIView):
             requested_codes = set(data.get("permissions", [])) | _DEFAULT_USER_PERMISSION_CODES
             denied_codes = _apply_permissions(user, requested_codes, grantable)
 
+        invite_sent = bool(data.get("send_invite")) and _queue_invite(user) is None
         return RequestSuccess({
             "user": _user_payload(user, grantable),
             "generated_password": password if generated else None,
             "denied_permissions": denied_codes,
+            "invite_sent": invite_sent,
         })
+
+
+def _queue_invite(user):
+    """Mail `user` a one-time login link (helper/login_links.py) in the
+    background; returns why not (no mail, inactive, staff) or None."""
+    from progeo.helper import outbound
+    from progeo.helper.login_links import eligible
+    from progeo.tasks import send_login_link_task
+
+    reason = eligible(user)
+    if reason is None:
+        outbound.dispatch(send_login_link_task, user.pk, "invite")
+    return reason
+
+
+class StaffUserInviteView(APIView):
+    """Send a user the invite mail with a one-time login link (72h)."""
+
+    permission_classes = [IsAuthenticated]
+
+    _REASONS = {
+        "inactive": "Der Benutzer ist deaktiviert.",
+        "no_email": "Der Benutzer hat keine E-Mail-Adresse.",
+        "staff": "Mitarbeiter und Administratoren erhalten keine Anmeldelinks.",
+    }
+
+    def post(self, request, pk=None, *args, **kwargs):
+        if not _is_staff_admin(request.user):
+            return RequestFailed({"reason": "Staff access required"})
+        user = User.objects.using(_USER_DB).filter(pk=pk).first()
+        if not user:
+            return RequestFailed({"reason": "Unknown user"})
+        reason = _queue_invite(user)
+        if reason:
+            return RequestFailed({"reason": self._REASONS.get(reason, reason)})
+        return RequestSuccess({"user_id": user.pk})
 
 
 class StaffUserDetailView(APIView):

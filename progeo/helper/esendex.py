@@ -31,6 +31,7 @@ import os
 
 import requests
 
+from progeo.helper import outbound
 from progeo.helper.basics import elog, ilog
 from progeo.helper.interface_config import get_esendex_config
 
@@ -42,6 +43,10 @@ DEFAULT_TEST_BODY = "Progeo: SMS-Verbindung funktioniert."
 
 class EsendexError(Exception):
     """Raised when an Esendex request cannot be made or is rejected."""
+
+
+class SmsBlocked(EsendexError):
+    """Not handed to Esendex: rate limit or circuit breaker (helper/outbound.py)."""
 
 
 def _effective_cfg(cfg: dict | None = None) -> dict:
@@ -97,8 +102,14 @@ def _log_sms(to: str, body: str, sender: str | None, location, db: str, sent: bo
 
 
 def send_sms(to: str, body: str, cfg: dict | None = None, sender: str | None = None,
-             location=None, db: str = "default") -> dict:
+             location=None, db: str = "default", category: str = "system") -> dict:
     """Send one SMS through Esendex and log the attempt as an SMS row.
+
+    The outbound guard runs first (helper/outbound.py): per-recipient and
+    global limits / the circuit breaker raise SmsBlocked, and with
+    settings.SMS_DRY_RUN the SMS is only logged, never sent. The text is made
+    GSM-7 friendly and cut to OUTBOUND_LIMITS["sms_max_segments"] - SMS cost
+    real money per segment, details belong in the mail.
 
     Args:
         to: recipient phone number in international format, e.g. "+4915112345678".
@@ -108,22 +119,53 @@ def send_sms(to: str, body: str, cfg: dict | None = None, sender: str | None = N
         sender: optional sender id override for this single message.
         location: optional location (project) the SMS belongs to.
         db: database the SMS row is stored in (the location's account db).
+        category: kind of message for the outbound log (alarm, test, ...).
 
     Returns e.g. ``{"success": True, "to": ..., "batch_id": "...",
-    "message_ids": ["..."], "from": "..."}``.
+    "message_ids": ["..."], "from": "..."}`` - plus ``"dry_run": True`` when
+    nothing was sent because of SMS_DRY_RUN.
 
     Raises:
         EsendexError: missing config, network failure or an API error response
             (the response body is included so it can be shown in the UI).
+        SmsBlocked: a limit or the circuit breaker stopped the SMS.
     """
+    from progeo.v1.models import OutboundMessage
+
+    status = OutboundMessage.Status
+    channel = OutboundMessage.Channel.SMS
+    body = outbound.sms_text(body)
+    recipient = outbound.normalize_phone(to) or str(to).strip()
     effective_sender = sender or _effective_cfg(cfg).get("from") or None
+
+    _allowed, rejected = outbound.check(channel, [recipient])
+    if recipient in rejected:
+        reject_status, error = rejected[recipient]
+        elog(f"SMS to {to} not sent: {error}", tag="[ESENDEX]")
+        outbound.log(channel, reject_status, recipient, category=category, subject=body,
+                     location=location, error=error)
+        _log_sms(to, body, effective_sender, location, db, sent=False, error=error)
+        raise SmsBlocked(error)
+
+    if outbound.sms_dry_run():
+        ilog(f"SMS_DRY_RUN: SMS to {to} logged, not sent", tag="[ESENDEX]")
+        outbound.log(channel, status.DRY_RUN, recipient, category=category, subject=body, location=location)
+        _log_sms(to, body, effective_sender, location, db, sent=False,
+                 error="Testmodus (SMS_DRY_RUN): nicht an Esendex übergeben")
+        return {"success": True, "dry_run": True, "to": str(to).strip(), "from": effective_sender,
+                "batch_id": None, "message_ids": []}
+
     try:
         result = _dispatch(to, body, cfg=cfg, sender=sender)
     except EsendexError as exc:
         elog(f"SMS to {to} failed: {exc}", tag="[ESENDEX]")
+        outbound.log(channel, status.FAILED, recipient, actual_recipient=recipient, category=category,
+                     subject=body, location=location, error=str(exc))
         _log_sms(to, body, effective_sender, location, db, sent=False, error=str(exc))
         raise
     ilog(f"SMS sent to {result['to']} (batch {result.get('batch_id')})", tag="[ESENDEX]")
+    outbound.log(channel, status.SENT, recipient, actual_recipient=recipient, category=category,
+                 subject=body, message_id=result.get("batch_id") or "", location=location)
     _log_sms(to, body, result.get("from"), location, db, sent=True, batch_id=result.get("batch_id"))
     return result
 

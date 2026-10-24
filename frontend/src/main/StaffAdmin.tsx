@@ -10,6 +10,7 @@ import {
 } from 'react-bootstrap';
 import {
   ArrowRepeat,
+  Envelope,
   Key,
   PencilSquare,
   PersonPlus,
@@ -30,6 +31,8 @@ import {
   showRequestError,
   showSuccessBar,
 } from '../components/ui/Snackbar.jsx';
+import StaffAccessRequests from './StaffAccessRequests';
+import StaffMessaging from './StaffMessaging';
 
 type PermissionDef = {
   code: string;
@@ -111,6 +114,7 @@ const UserFormModal = ({
   const [password, setPassword] = useState('');
   const [isStaff, setIsStaff] = useState(false);
   const [isActive, setIsActive] = useState(true);
+  const [sendInvite, setSendInvite] = useState(false);
   const [selectedPerms, setSelectedPerms] = useState<string[]>([]);
 
   useEffect(() => {
@@ -122,10 +126,13 @@ const UserFormModal = ({
     setPassword('');
     setIsStaff(Boolean(user?.is_staff));
     setIsActive(user ? Boolean(user.is_active) : true);
+    setSendInvite(false);
     setSelectedPerms(
       user
         ? rowPermissions(user)
-        : DEFAULT_NEW_USER_PERMISSIONS.filter((code) => grantableCodes.includes(code)),
+        : DEFAULT_NEW_USER_PERMISSIONS.filter((code) =>
+            grantableCodes.includes(code),
+          ),
     );
   }, [show, user, grantableCodes]);
 
@@ -149,6 +156,7 @@ const UserFormModal = ({
       if (password) {
         payload.password = password;
       }
+      payload.send_invite = sendInvite;
     }
     onSave(payload);
   };
@@ -206,6 +214,17 @@ const UserFormModal = ({
               checked={isActive}
               onChange={(event) => setIsActive(event.target.checked)}
             />
+            {isNew && (
+              <Form.Check
+                type="switch"
+                id="invite-switch"
+                label={t('staff_field_send_invite')}
+                title={t('staff_field_send_invite_hint')}
+                checked={sendInvite}
+                disabled={!email}
+                onChange={(event) => setSendInvite(event.target.checked)}
+              />
+            )}
           </div>
 
           <Form.Label className="d-block">
@@ -369,6 +388,9 @@ const StaffAdmin = () => {
               t('staff_denied_permissions', { codes: denied.join(', ') }),
             );
           }
+          if (result?.data?.invite_sent) {
+            showInfoBar(enqueueSnackbar, t('staff_invite_sent'));
+          }
           if (generated) {
             setPasswordResult({
               username: (result?.data?.user?.username as string) || '',
@@ -412,6 +434,33 @@ const StaffAdmin = () => {
       },
       (error) => {
         showRequestError(enqueueSnackbar, t('staff_password_error'), error);
+        setBusyId(null);
+      },
+    );
+  };
+
+  const handleInvite = (user: StaffUser) => {
+    if (
+      !window.confirm(
+        t('staff_invite_confirm', {
+          username: user.username,
+          email: user.email,
+        }),
+      )
+    ) {
+      return;
+    }
+    setBusyId(user.id);
+    void axiosConfig.perform_post(
+      auth,
+      `/api/auth-support/staff/users/${user.id}/invite/`,
+      {},
+      () => {
+        showSuccessBar(enqueueSnackbar, t('staff_invite_sent'));
+        setBusyId(null);
+      },
+      (error) => {
+        showRequestError(enqueueSnackbar, t('staff_invite_error'), error);
         setBusyId(null);
       },
     );
@@ -516,7 +565,7 @@ const StaffAdmin = () => {
       },
       {
         name: t('staff_col_actions'),
-        width: '180px',
+        width: '220px',
         cell: (row) => (
           <span className="d-flex gap-1">
             <Button
@@ -536,6 +585,19 @@ const StaffAdmin = () => {
               onClick={() => handleGeneratePassword(row)}
             >
               <Key size={14} />
+            </Button>
+            <Button
+              size="sm"
+              variant="outline-secondary"
+              title={
+                row.email
+                  ? t('staff_send_invite')
+                  : t('staff_send_invite_no_email')
+              }
+              disabled={busyId === row.id || !row.email || !row.is_active}
+              onClick={() => handleInvite(row)}
+            >
+              <Envelope size={14} />
             </Button>
             <Button
               size="sm"
@@ -616,6 +678,10 @@ const StaffAdmin = () => {
           />
         </Card.Body>
       </Card>
+
+      <StaffAccessRequests onChanged={fetchUsers} />
+
+      <StaffMessaging />
 
       <UserFormModal
         show={showCreate}

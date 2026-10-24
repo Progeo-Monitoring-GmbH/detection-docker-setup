@@ -24,6 +24,39 @@ ALLOWED_HOSTS = [os.getenv("DJANGO_ALLOWED_HOSTS")]
 PRETTY_DATE_FORMAT = "%d.%m.%Y, %H:%M"
 DATETIME_FORMAT = PRETTY_DATE_FORMAT
 
+# Outbound mail / SMS (see progeo/settings.py) - tests always start in the
+# safe modes; tests of the real send path switch them off explicitly.
+MAIL_TEST_MODE = True
+MAIL_TEST_RECIPIENT = "test-mails@progeo.com"
+SMS_DRY_RUN = True
+MAIL_ENVELOPE_FROM = ""
+OUTBOUND_LIMITS = {
+    "mail_max_recipients": 5,
+    "mail_per_recipient_hour": 20,
+    "mail_per_recipient_day": 100,
+    "mail_global_hour": 100,
+    "sms_per_recipient_hour": 3,
+    "sms_per_recipient_day": 10,
+    "sms_global_hour": 20,
+    "sms_global_day": 50,
+    "sms_max_segments": 1,
+}
+OUTBOUND_ASYNC = False
+ALARM_NOTIFY_COOLDOWN_MINUTES = 60
+ALARM_NOTIFY_MAX_AGE_HOURS = 6
+MAGIC_LINK_LOGIN_MINUTES = 15
+MAGIC_LINK_INVITE_HOURS = 72
+ACCESS_REQUEST_VERIFY_HOURS = 48
+MAGIC_LINK_ALLOW_STAFF = False
+ACCESS_REQUEST_NOTIFY = "kontakt@progeo.com"
+BOUNCE_IMAP_HOST = ""
+BOUNCE_IMAP_PORT = 993
+BOUNCE_IMAP_USER = ""
+BOUNCE_IMAP_PASSWORD = ""
+BOUNCE_IMAP_FOLDER = "INBOX"
+BOUNCE_IMAP_PROCESSED_FOLDER = "progeo-bounces"
+PROGEO_CONFIG_ENABLE_MAILING = False
+
 # Application definition
 INSTALLED_APPS = [
     "daphne",
@@ -69,6 +102,7 @@ MIDDLEWARE = [
     "progeo.middlewares.AdminGetParamMiddleware",
     "progeo.middlewares.AccountMiddleware",
     "progeo.middlewares.DemoReadOnlyMiddleware",
+    "progeo.middlewares.PendingAccessMiddleware",
 ]
 
 

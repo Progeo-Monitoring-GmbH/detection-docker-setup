@@ -139,7 +139,12 @@ class ProgeoTokenObtainPairView(TokenObtainPairView):
         # username or email, case-insensitively - don't re-look it up by the
         # raw (possibly differently-cased/email) "username" field.
         user = serializer.user
-        login(request, user)
+        # No session for a pending access request: SessionAuthentication
+        # would bypass PendingAccessMiddleware, which checks the JWT.
+        from progeo.helper.access_requests import is_pending_user
+
+        if not is_pending_user(user):
+            login(request, user)
 
         create_MfS_log(request)
 

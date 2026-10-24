@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import ModelBackend
+from django.core.exceptions import PermissionDenied
 from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 from rest_framework import exceptions
@@ -32,8 +33,25 @@ class CaseInsensitiveUsernameOrEmailBackend(ModelBackend):
             return None
 
         if user.check_password(password) and self.user_can_authenticate(user):
+            if not self._pending_allowed(request, user):
+                # PermissionDenied ends the backend chain - returning None
+                # would let the plain ModelBackend log the user in after all.
+                raise PermissionDenied("Account pending review")
             return user
         return None
+
+    # A user whose access request is still pending may only log in to the
+    # JWT endpoint (it shows the "being checked" panel) - never per Basic auth
+    # or DRF token, which PendingAccessMiddleware can't see.
+    PENDING_LOGIN_PATHS = ("/api/token/",)
+
+    @classmethod
+    def _pending_allowed(cls, request, user):
+        from progeo.helper.access_requests import is_pending_user
+
+        if not is_pending_user(user):
+            return True
+        return getattr(request, "path", "") in cls.PENDING_LOGIN_PATHS
 
 
 class LimitedTokenAuthentication(BaseAuthentication):

@@ -244,3 +244,50 @@ class DemoReadOnlyMiddleware:
         except (AuthenticationFailed, InvalidToken, TokenError):
             return None
         return result[0] if result else None
+
+
+class PendingAccessMiddleware:
+    """A user whose access request waits for staff review (helper/
+    access_requests.py) sees nothing but the "being checked" panel: every
+    request with such a JWT is refused here, except session handling and the
+    own request's status. The JWT carries the signed `is_pending` claim, so
+    other requests pay no database access; a claim that is outdated because
+    the request was approved meanwhile is re-checked and let through.
+    Pending users get no session and no Basic/DRF-token login (see
+    CaseInsensitiveUsernameOrEmailBackend), so the JWT is the only way in."""
+
+    ALLOWED_PATHS = ("/api/token/", "/api/auth-support/access-requests/", "/api/auth-support/login-link/",
+                     "/auth/logout/")
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if not request.path.startswith(self.ALLOWED_PATHS):
+            user_id = self._pending_claim(request)
+            if user_id is not None:
+                from progeo.helper.access_requests import is_pending_user
+
+                if is_pending_user(user_id):
+                    from django.http import JsonResponse
+
+                    return JsonResponse(
+                        {"success": False, "reason": "Account pending review", "pending_review": True},
+                        status=403,
+                    )
+        return self.get_response(request)
+
+    @staticmethod
+    def _pending_claim(request):
+        """The user id of a valid JWT with `is_pending`, else None."""
+        header = request.META.get("HTTP_AUTHORIZATION", "")
+        if not header.startswith("Bearer "):
+            return None
+        from rest_framework_simplejwt.exceptions import TokenError
+        from rest_framework_simplejwt.tokens import AccessToken
+
+        try:
+            token = AccessToken(header[len("Bearer "):])
+        except TokenError:
+            return None
+        return token.get("user_id") if token.get("is_pending") else None

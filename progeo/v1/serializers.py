@@ -700,6 +700,11 @@ class ProgeoTokenObtainPairSerializer(TokenObtainPairSerializer):
             # The read-only demo user - the frontend keeps it on the demo link
             # instead of the login page and shows the demo badge.
             token["is_demo"] = is_demo_user(user)
+            # Access requested, not reviewed yet - the frontend shows only the
+            # "being checked" panel, PendingAccessMiddleware refuses the rest.
+            from progeo.helper.access_requests import is_pending_user
+
+            token["is_pending"] = is_pending_user(user)
 
             return token
         return {}

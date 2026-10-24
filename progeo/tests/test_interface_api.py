@@ -464,7 +464,7 @@ def test_sms_test_sends_with_merged_config(api_client, monkeypatch):
     )
     calls = []
 
-    def _send(to, body, cfg=None, sender=None):
+    def _send(to, body, cfg=None, sender=None, **kwargs):
         calls.append((to, body, cfg, sender))
         return {"batch_id": "B-1"}
 

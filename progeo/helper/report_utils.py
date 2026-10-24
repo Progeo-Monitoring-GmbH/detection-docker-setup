@@ -173,38 +173,52 @@ def email_disconnected_projects(db: str, report_date, projects, previous_report,
         location = ProgeoLocation.objects.using(db).filter(pk=location_id).first()
         if location is None:
             continue
-        recipient = location.mail
-        if not recipient:
+        rows_db = location_rows_db(location, db)
+        # The location's contact plus every user subscribed to TIMEOUT
+        # notifications (ProgeoAccess) - one mail each.
+        from progeo.helper.notifications import timeout_recipients
+
+        recipients = list(dict.fromkeys(
+            address.strip().lower() for address in [location.mail, *timeout_recipients(location, rows_db)] if address
+        ))
+        if not recipients:
             ilog(
                 f"[generate_daily_alarm_report] No contact mail for disconnected "
                 f"location {location_id}, skipping mail"
             )
             continue
 
+        report_day = report_date.strftime("%Y%m%d") if hasattr(report_date, "strftime") else str(report_date).replace("-", "")
         context = {
             "project_name": payload.get("name") or f"Location {location_id}",
             "location_id": location_id,
             "report_date": report_date,
+            "case_id": f"{location.project_id or location_id}-{report_day}",
             "last_measurement_at": payload.get("last_measurement_at") or "unbekannt",
             "device_count": payload.get("device_count"),
         }
-        try:
-            result = send_template_mail(
-                [recipient],
-                "disconnect_project.txt",
-                context,
-                location=location,
-                # The EMail row belongs with the location's project rows (timeline).
-                db=location_rows_db(location, db),
-            )
-            if result:
-                projects[str(location_id)]["emailed_disconnect"] = True
-                emailed.append(location_id)
-                ilog(f"[generate_daily_alarm_report] Disconnect mail sent to {recipient} for location {location_id}")
-            else:
-                elog(f"[generate_daily_alarm_report] Disconnect mail not sent for location {location_id}")
-        except Exception as exc:
-            elog(f"[generate_daily_alarm_report] Failed to send disconnect mail for location {location_id}: {exc}")
+        sent_any = False
+        for recipient in recipients:
+            try:
+                result = send_template_mail(
+                    [recipient],
+                    "disconnect_project",
+                    context,
+                    location=location,
+                    # The EMail row belongs with the location's project rows (timeline).
+                    db=rows_db,
+                    category="timeout",
+                )
+                if result:
+                    sent_any = True
+                    ilog(f"[generate_daily_alarm_report] Disconnect mail sent to {recipient} for location {location_id}")
+                else:
+                    elog(f"[generate_daily_alarm_report] Disconnect mail to {recipient} not sent for location {location_id}")
+            except Exception as exc:
+                elog(f"[generate_daily_alarm_report] Failed to send disconnect mail for location {location_id}: {exc}")
+        if sent_any:
+            projects[str(location_id)]["emailed_disconnect"] = True
+            emailed.append(location_id)
 
     return emailed
 

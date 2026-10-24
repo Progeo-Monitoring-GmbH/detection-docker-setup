@@ -19,7 +19,10 @@ SMTP = {"sender": "noreply@progeo.com", "reply_to": "reply@progeo.com", "server"
 
 
 @pytest.fixture(autouse=True)
-def isolated_config(monkeypatch):
+def isolated_config(monkeypatch, settings):
+    # The real send path - the safe modes are tested in test_outbound.py.
+    settings.MAIL_TEST_MODE = False
+    settings.SMS_DRY_RUN = False
     for name in [*interface_config._SMTP_ENV.values(), *interface_config._ESENDEX_ENV.values()]:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.delenv("DJANGO_SUPERUSER_EMAIL", raising=False)
@@ -82,18 +85,19 @@ def test_render_splits_subject_and_substitutes_placeholders():
     assert "Subject:" not in body
 
 
-def test_render_keeps_unknown_placeholders_and_blanks_none():
+def test_render_blanks_missing_and_none_values():
     subject, body = emailhelper.render_email_template("alarm.txt", {"device_hash": None})
 
-    assert subject == "Alarm für Gerät"
-    assert "{threshold}" in body
+    assert subject == "Alarm für Gerät None"
+    assert "Schwellwert:" in body
+    assert "{" not in body
 
 
 def test_render_missing_template_returns_empty_strings():
     assert emailhelper.render_email_template("does_not_exist.txt", {}) == ("", "")
 
 
-@pytest.mark.parametrize("template", ["alarm.txt", "disconnect_project.txt", "pdf_report.txt", "test_leakage.txt"])
+@pytest.mark.parametrize("template", emailhelper.template_names())
 def test_every_shipped_template_has_a_subject(template):
     subject, body = emailhelper.render_email_template(template, {})
 

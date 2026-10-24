@@ -1,0 +1,16 @@
+{% extends "emails/base.html" %}
+{# New alarm of a project (helper/notifications.py: notify_alarm) to every ProgeoAccess user with the ALARM type and the e-mail channel. #}
+{% block subject %}Alarm — Objekt {{ project_nr }} · {{ project_name }}{% endblock %}
+{% block preheader %}Messwert {{ max_value }} über dem Schwellwert {{ threshold }}{% endblock %}
+{% block content %}
+<h1 style="margin:0 0 12px; font-size:20px;">Alarm im Objekt {{ project_nr }}</h1>
+<p style="margin:0 0 12px;">Im Objekt <strong>{{ project_nr }} — {{ project_name }}</strong> wurde der Alarm-Schwellwert überschritten. Bitte prüfen Sie die Messwerte im Portal.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 8px; font-size:14px;">
+  <tr><td style="padding:2px 16px 2px 0; color:#6E6868;">Ausgelöst</td><td style="padding:2px 0;">{{ triggered_at }}</td></tr>
+  <tr><td style="padding:2px 16px 2px 0; color:#6E6868;">Höchster Messwert</td><td style="padding:2px 0;">{{ max_value }}</td></tr>
+  <tr><td style="padding:2px 16px 2px 0; color:#6E6868;">Schwellwert</td><td style="padding:2px 0;">{{ threshold }}</td></tr>
+  {% if sensors %}<tr><td style="padding:2px 16px 2px 0; color:#6E6868;">Sensoren</td><td style="padding:2px 0;">{{ sensors }}</td></tr>{% endif %}
+</table>
+{% include "emails/_button.html" with url=portal_link label="Im Portal ansehen" %}
+<p style="margin:0; font-size:12px; color:#6E6868;">Weitere Alarme dieses Objekts werden frühestens nach {{ cooldown_minutes }} Minuten erneut gemeldet.</p>
+{% endblock %}

@@ -1,0 +1,11 @@
+{% extends "emails/base.html" %}
+{# Double opt-in of an access request (helper/access_requests.py). `action_url` is secret. #}
+{% block subject %}Bitte bestätigen Sie Ihre E-Mail-Adresse{% endblock %}
+{% block preheader %}Ein Schritt noch zu Ihrem ProGeo-Zugang{% endblock %}
+{% block content %}
+<h1 style="margin:0 0 12px; font-size:20px;">E-Mail-Adresse bestätigen</h1>
+<p style="margin:0 0 12px;">Hallo {{ first_name }},</p>
+<p style="margin:0 0 4px;">vielen Dank für Ihre Anfrage nach einem Zugang zum ProGeo-Portal. Bitte bestätigen Sie Ihre E-Mail-Adresse und legen Sie Ihr Passwort fest. Der Link ist {{ valid_hours }} Stunden gültig.</p>
+{% include "emails/_button.html" with url=action_url label="E-Mail-Adresse bestätigen" %}
+<p style="margin:0; font-size:12px; color:#6E6868;">Danach prüfen wir Ihre Anfrage und schalten Ihren Zugang frei. Sie haben keinen Zugang angefragt? Dann ignorieren Sie diese E-Mail einfach - Ihre Daten werden automatisch gelöscht.</p>
+{% endblock %}

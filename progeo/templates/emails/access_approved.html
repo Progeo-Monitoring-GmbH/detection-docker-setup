@@ -1,0 +1,8 @@
+{% extends "emails/base.html" %}
+{% block subject %}Ihr Zugang zum ProGeo-Portal wurde freigegeben{% endblock %}
+{% block content %}
+<h1 style="margin:0 0 12px; font-size:20px;">Zugang freigegeben</h1>
+<p style="margin:0 0 12px;">Hallo {{ first_name }},</p>
+<p style="margin:0 0 4px;">Ihr Zugang zum ProGeo-Portal wurde freigegeben. Bitte melden Sie sich neu an - sobald Ihnen Objekte zugeordnet sind, sehen Sie diese im Portal.</p>
+{% include "emails/_button.html" with url=login_url label="Zur Anmeldung" %}
+{% endblock %}

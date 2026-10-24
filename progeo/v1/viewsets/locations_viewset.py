@@ -1784,38 +1784,11 @@ class LocationViewSet(ProgeoModalViewSet):
         """Real ProgeoAccess-based recipients of a location, resolved to
         {user_id, name, mail, mobile, kanal} rows - shared by Testleackage
         and the PDF-Report email. `mail`/`mobile` are only populated when
-        that channel is actually active for the row (unpack_transport()'s
-        bitmask, not the buggy/unused check_has_email/check_has_mobile)."""
-        rows = (
-            ProgeoAccess.objects.using(db_name)
-            .filter(location=location)
-            .select_related("user", "user__profile")
-        )
-        recipients = []
-        for rule in rows:
-            if not rule.user:
-                continue
-            transport = rule.unpack_transport()
-            has_email = bool(transport.get("EMAIL") or transport.get("EMAIL_AND_SMS"))
-            has_sms = bool(transport.get("SMS") or transport.get("EMAIL_AND_SMS"))
-            if not has_email and not has_sms:
-                continue
-            profile = getattr(rule.user, "profile", None)
-            mobile = profile.mobile if profile is not None else None
-            has_sms = has_sms and bool(mobile)
-            if not has_email and not has_sms:
-                continue
-            kanal = " + ".join(
-                label for label, ok in (("E-Mail", has_email), ("SMS", has_sms)) if ok
-            )
-            recipients.append({
-                "user_id": rule.user_id,
-                "name": rule.user.get_full_name() or rule.user.username,
-                "mail": rule.user.email if has_email and rule.user.email else None,
-                "mobile": mobile if has_sms else None,
-                "kanal": kanal or "—",
-            })
-        return recipients
+        that channel is actually active for the row - see
+        helper/notifications.py, which the alarm notifications share."""
+        from progeo.helper.notifications import notification_recipients
+
+        return notification_recipients(location, db_name)
 
     @action(detail=True, url_path="test_notification", methods=["GET", "POST"])
     def test_notification(self, request, pk=None, *args, **kwargs):
@@ -1853,8 +1826,8 @@ class LocationViewSet(ProgeoModalViewSet):
             result = {"name": recipient["name"], "kanal": recipient["kanal"]}
             if recipient["mail"]:
                 sent = send_template_mail(
-                    [recipient["mail"]], "test_leakage.txt", context,
-                    location=location, db=db_name,
+                    [recipient["mail"]], "test_leakage", context,
+                    location=location, db=db_name, category="test",
                 )
                 result["email_ok"] = bool(sent)
             if recipient["mobile"]:
@@ -1864,6 +1837,7 @@ class LocationViewSet(ProgeoModalViewSet):
                         f"ProGeo Testleackage - Objekt {location.project_id or ''} {location.name or ''}",
                         location=location,
                         db=db_name,
+                        category="test",
                     )
                     result["sms_ok"] = True
                 except EsendexError as exc:

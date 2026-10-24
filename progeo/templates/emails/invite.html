@@ -1,0 +1,11 @@
+{% extends "emails/base.html" %}
+{# Staff invited a user (StaffUserInviteView / create user with send_invite). `action_url` is secret. #}
+{% block subject %}Ihr Zugang zum ProGeo-Portal{% endblock %}
+{% block preheader %}Ihr persönlicher Anmeldelink, {{ valid_hours }} Stunden gültig{% endblock %}
+{% block content %}
+<h1 style="margin:0 0 12px; font-size:20px;">Willkommen im ProGeo-Portal</h1>
+<p style="margin:0 0 12px;">{% if first_name %}Hallo {{ first_name }},{% else %}Guten Tag,{% endif %}</p>
+<p style="margin:0 0 4px;">für Sie wurde ein Zugang zum ProGeo-Monitoring-Portal eingerichtet (Benutzername: <strong>{{ username }}</strong>). Mit dem folgenden Link melden Sie sich einmalig an; der Link ist {{ valid_hours }} Stunden gültig.</p>
+{% include "emails/_button.html" with url=action_url label="Zum Portal" %}
+<p style="margin:0; font-size:12px; color:#6E6868;">Später können Sie sich jederzeit über „Anmeldelink per E-Mail erhalten" auf der Anmeldeseite einen neuen Link schicken lassen.</p>
+{% endblock %}

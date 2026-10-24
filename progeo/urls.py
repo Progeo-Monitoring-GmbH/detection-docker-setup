@@ -30,10 +30,24 @@ from progeo.v1.viewsets.base_viewsets import (
     ProgeoTokenObtainPairView,
     UserModulePermissionView,
 )
+from progeo.v1.viewsets.access_viewset import (
+    AccessRequestCreateView,
+    AccessRequestMeView,
+    AccessRequestVerifyCheckView,
+    AccessRequestVerifyView,
+    LoginLinkExchangeView,
+    LoginLinkRequestView,
+    StaffAccessRequestListView,
+    StaffAccessRequestReviewView,
+    StaffBreakerResetView,
+    StaffMessagingView,
+    StaffSuppressionDeleteView,
+)
 from progeo.v1.viewsets.docker_viewset import DockerViewSet
 from progeo.v1.viewsets.staff_admin_viewset import (
     StaffUserDeleteView,
     StaffUserDetailView,
+    StaffUserInviteView,
     StaffUserListView,
     StaffUserPasswordView,
 )
@@ -60,6 +74,20 @@ urlpatterns = [
     re_path(r"^api/auth-support/staff/users/(?P<pk>\d+)/update/$", StaffUserDetailView.as_view(), name="staff_user_update"),
     re_path(r"^api/auth-support/staff/users/(?P<pk>\d+)/password/$", StaffUserPasswordView.as_view(), name="staff_user_password"),
     re_path(r"^api/auth-support/staff/users/(?P<pk>\d+)/delete/$", StaffUserDeleteView.as_view(), name="staff_user_delete"),
+    re_path(r"^api/auth-support/staff/users/(?P<pk>\d+)/invite/$", StaffUserInviteView.as_view(), name="staff_user_invite"),
+    # Access requests, one-time login links, outbound overview (v1/viewsets/access_viewset.py).
+    re_path(r"^api/auth-support/access-requests/$", AccessRequestCreateView.as_view(), name="access_request_create"),
+    re_path(r"^api/auth-support/access-requests/verify/check/$", AccessRequestVerifyCheckView.as_view(), name="access_request_verify_check"),
+    re_path(r"^api/auth-support/access-requests/verify/$", AccessRequestVerifyView.as_view(), name="access_request_verify"),
+    re_path(r"^api/auth-support/access-requests/me/$", AccessRequestMeView.as_view(), name="access_request_me"),
+    re_path(r"^api/auth-support/login-link/$", LoginLinkRequestView.as_view(), name="login_link_request"),
+    re_path(r"^api/auth-support/login-link/exchange/$", LoginLinkExchangeView.as_view(), name="login_link_exchange"),
+    re_path(r"^api/auth-support/staff/access-requests/$", StaffAccessRequestListView.as_view(), name="staff_access_requests"),
+    re_path(r"^api/auth-support/staff/access-requests/(?P<pk>\d+)/approve/$", StaffAccessRequestReviewView.as_view(decision="approve"), name="staff_access_request_approve"),
+    re_path(r"^api/auth-support/staff/access-requests/(?P<pk>\d+)/reject/$", StaffAccessRequestReviewView.as_view(decision="reject"), name="staff_access_request_reject"),
+    re_path(r"^api/auth-support/staff/messaging/$", StaffMessagingView.as_view(), name="staff_messaging"),
+    re_path(r"^api/auth-support/staff/messaging/breaker/reset/$", StaffBreakerResetView.as_view(), name="staff_messaging_breaker_reset"),
+    re_path(r"^api/auth-support/staff/messaging/suppressions/(?P<pk>\d+)/delete/$", StaffSuppressionDeleteView.as_view(), name="staff_messaging_suppression_delete"),
     re_path(r"^api/", include(base_router.urls)),
 
     re_path(r"^auth/login/", views.extended_obtain_auth_token_view, name="auth_login"),

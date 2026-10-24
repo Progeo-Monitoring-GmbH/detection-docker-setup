@@ -1070,6 +1070,137 @@ class SMS(ProgeoModel, auto_prefetch.Model):
         return f"{_id} {status} 📱 {self.created.strftime('%d.%m.%y %H:%M')} => {self.sent_to}, Length={len(self.message)}"
 
 
+class OutboundMessage(models.Model):
+    """Central log of every outbound mail/SMS, one row per original recipient
+    (helper/outbound.py). Lives in "default" only - unlike EMail/SMS, which
+    sit in the project databases and are de-duplicated by content - so the
+    rate limiter can count from it and bounces can be matched by Message-ID."""
+
+    class Channel(models.TextChoices):
+        MAIL = "mail", "E-Mail"
+        SMS = "sms", "SMS"
+
+    class Status(models.TextChoices):
+        SENT = "sent", "Versendet"
+        # MAIL_TEST_MODE: delivered to MAIL_TEST_RECIPIENT instead.
+        REDIRECTED = "redirected", "Umgeleitet (Testmodus)"
+        # SMS_DRY_RUN: logged, never handed to Esendex.
+        DRY_RUN = "dry_run", "Nicht versendet (Testmodus)"
+        RATE_LIMITED = "rate_limited", "Limit erreicht"
+        SUPPRESSED = "suppressed", "Adresse gesperrt (Bounce)"
+        # Circuit breaker tripped / too many recipients in one call.
+        BLOCKED = "blocked", "Blockiert"
+        FAILED = "failed", "Fehlgeschlagen"
+        BOUNCED = "bounced", "Unzustellbar"
+
+    # Statuses that count against the limits: everything that was (or in the
+    # test modes would have been) handed to the gateway.
+    COUNTED_STATUSES = (Status.SENT, Status.REDIRECTED, Status.DRY_RUN, Status.FAILED, Status.BOUNCED)
+
+    channel = models.CharField(max_length=8, choices=Channel.choices)
+    status = models.CharField(max_length=16, choices=Status.choices)
+    created = models.DateTimeField(default=timezone.now)
+    # Normalized original recipient (lowercase mail / phone number).
+    recipient = models.CharField(max_length=255)
+    # Where it really went (MAIL_TEST_RECIPIENT in test mode).
+    actual_recipient = models.CharField(max_length=255, blank=True, default="")
+    # alarm, timeout, test, login_link, invite, access_request, system, ...
+    category = models.CharField(max_length=32, blank=True, default="system")
+    subject = models.CharField(max_length=255, blank=True, default="")
+    message_id = models.CharField(max_length=255, blank=True, default="", db_index=True)
+    # Location ids are global (ProgeoLocation is mirrored), no FK across databases.
+    location_id = models.IntegerField(null=True, blank=True)
+    error = models.TextField(null=True, blank=True)
+    bounced_at = models.DateTimeField(null=True, blank=True)
+    bounce_reason = models.TextField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created"]
+        indexes = [
+            models.Index(fields=["channel", "recipient", "created"], name="progeo_outb_channel_1f0c4e_idx"),
+            models.Index(fields=["channel", "created"], name="progeo_outb_channel_8a2d17_idx"),
+            models.Index(fields=["category", "location_id", "created"], name="progeo_outb_categor_5b9e30_idx"),
+        ]
+
+    def __str__(self):
+        return f"{'📧' if self.channel == self.Channel.MAIL else '📱'} {self.status} {self.created:%d.%m.%y %H:%M} => {self.recipient}"
+
+
+class EmailSuppression(models.Model):
+    """Address that bounced (hard, or soft too often): nothing is sent there
+    any more until staff remove the row (helper/bounces.py)."""
+
+    address = models.CharField(max_length=255, unique=True)
+    reason = models.TextField(blank=True, default="")
+    # Soft bounces in a row; SOFT_LIMIT of them suppress the address.
+    soft_bounces = models.IntegerField(default=0)
+    hard = models.BooleanField(default=False)
+    active = models.BooleanField(default=False)
+    created = models.DateTimeField(default=timezone.now)
+    last_bounce_at = models.DateTimeField(null=True, blank=True)
+
+    SOFT_LIMIT = 3
+
+    def __str__(self):
+        return f"🚫 {self.address} ({'active' if self.active else 'watching'})"
+
+
+class LoginLink(models.Model):
+    """One-time login link (magic link) of a user. Only the SHA-256 of the
+    token is stored - the token itself exists only in the mail. Deliberately
+    not a LimitedToken: those double as API tokens (LimitedTokenAuthentication)."""
+
+    class Purpose(models.TextChoices):
+        LOGIN = "login", "Anmeldelink"
+        INVITE = "invite", "Einladung"
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="login_links")
+    purpose = models.CharField(max_length=16, choices=Purpose.choices)
+    token_hash = models.CharField(max_length=64, unique=True)
+    created = models.DateTimeField(default=timezone.now)
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"🔗 {self.purpose} {self.user_id} (used={bool(self.used_at)})"
+
+
+class AccessRequest(models.Model):
+    """Someone asked for a portal account (public form). The user exists only
+    once the mail address is confirmed, and until staff approve the request it
+    sees nothing but the "being checked" panel (PendingAccessMiddleware)."""
+
+    class Status(models.TextChoices):
+        UNVERIFIED = "unverified", "E-Mail nicht bestätigt"
+        PENDING = "pending", "In Prüfung"
+        APPROVED = "approved", "Freigegeben"
+        REJECTED = "rejected", "Abgelehnt"
+
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.UNVERIFIED, db_index=True)
+    first_name = models.CharField(max_length=100)
+    last_name = models.CharField(max_length=100)
+    company = models.CharField(max_length=200, blank=True, default="")
+    email = models.CharField(max_length=255, db_index=True)
+    phone = models.CharField(max_length=50, blank=True, default="")
+    project = models.CharField(max_length=200, blank=True, default="")
+    message = models.TextField(blank=True, default="")
+    privacy_accepted_at = models.DateTimeField()
+    created = models.DateTimeField(default=timezone.now)
+    verify_token_hash = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    verify_expires_at = models.DateTimeField(null=True, blank=True)
+    verified_at = models.DateTimeField(null=True, blank=True)
+    user = models.OneToOneField(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="access_request")
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    reviewed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    review_note = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-created"]
+
+    def __str__(self):
+        return f"🙋 {self.email} ({self.status})"
+
+
 # ==============================================================================================
 
 

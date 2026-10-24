@@ -13,6 +13,14 @@ const RedirectToStatus = () => {
 const AppLayout = React.lazy(() => import('./main/AppLayout.tsx'));
 const LoginForm = React.lazy(() => import('./components/auth/LoginForm'));
 const DemoLogin = React.lazy(() => import('./main/DemoLogin.tsx'));
+const MagicLinkRequest = React.lazy(
+  () => import('./main/MagicLinkRequest.tsx'),
+);
+const MagicLinkLogin = React.lazy(() => import('./main/MagicLinkLogin.tsx'));
+const RequestAccess = React.lazy(() => import('./main/RequestAccess.tsx'));
+const VerifyAccess = React.lazy(() => import('./main/VerifyAccess.tsx'));
+const PendingReview = React.lazy(() => import('./main/PendingReview.tsx'));
+const PendingGate = React.lazy(() => import('./main/PendingGate.tsx'));
 const DemoView = React.lazy(() => import('./main/DemoView.tsx'));
 const PrivacyPolicyPage = React.lazy(
   () => import('./main/PrivacyPolicyPage.tsx'),
@@ -113,6 +121,13 @@ const CoreRoutes = () => {
   return (
     <Routes>
       <Route path={`/login`} element={<LoginForm />} />
+      {/* One-time login link from a mail; redeemed on click, not on load. */}
+      <Route path="/login/link" element={<MagicLinkRequest />} />
+      <Route path="/login/link/:token" element={<MagicLinkLogin />} />
+      {/* Access request: form -> mail confirmation -> staff review. */}
+      <Route path="/zugang/beantragen" element={<RequestAccess />} />
+      <Route path="/zugang/bestaetigen/:token" element={<VerifyAccess />} />
+      <Route path="/zugang/pruefung" element={<PendingReview />} />
       {/* Public demo: the link token logs in the read-only "demo" user. */}
       <Route path="/demo/login/:token" element={<DemoLogin />} />
       <Route path="/demo/" element={<DemoView />} />
@@ -126,83 +141,92 @@ const CoreRoutes = () => {
         element={<ControllerQrCodePrintView />}
       />
 
-      {/* Object/location monitoring portal - its own mockup-driven sidebar. */}
-      <Route element={<LocationPortalLayout />}>
-        <Route path="/location/overview/" element={<LocationsOverview />} />
-        {PORTAL_NAV_ITEMS.map((item) => (
+      {/* Users awaiting the review of their access request see only /zugang/pruefung. */}
+      <Route element={<PendingGate />}>
+        {/* Object/location monitoring portal - its own mockup-driven sidebar. */}
+        <Route element={<LocationPortalLayout />}>
+          <Route path="/location/overview/" element={<LocationsOverview />} />
+          {PORTAL_NAV_ITEMS.map((item) => (
+            <Route
+              key={item.key}
+              path={`/location/:id/${item.segment}`}
+              element={
+                <GuardedPortalPage item={item}>
+                  {React.createElement(PORTAL_NAV_COMPONENTS[item.key])}
+                </GuardedPortalPage>
+              }
+            />
+          ))}
+          <Route path="/location/:id/detail/" element={<RedirectToStatus />} />
+        </Route>
+
+        {/* Everything else - the general-purpose sidebar (ported 1:1 from the
+          retired Navbar.jsx's item list). */}
+        <Route element={<AppLayout />}>
+          <Route path="/dev" element={<DevView />} />
           <Route
-            key={item.key}
-            path={`/location/:id/${item.segment}`}
+            path="/ws-debug"
             element={
-              <GuardedPortalPage item={item}>
-                {React.createElement(PORTAL_NAV_COMPONENTS[item.key])}
-              </GuardedPortalPage>
+              <WebSocketProvider url="/ws/commands/list">
+                <WsDebugView />
+              </WebSocketProvider>
             }
           />
-        ))}
-        <Route path="/location/:id/detail/" element={<RedirectToStatus />} />
-      </Route>
-
-      {/* Everything else - the general-purpose sidebar (ported 1:1 from the
-          retired Navbar.jsx's item list). */}
-      <Route element={<AppLayout />}>
-        <Route path="/dev" element={<DevView />} />
-        <Route
-          path="/ws-debug"
-          element={
-            <WebSocketProvider url="/ws/commands/list">
-              <WsDebugView />
-            </WebSocketProvider>
-          }
-        />
-        <Route
-          path="/device/overview"
-          element={
-            <WebSocketProvider url="/ws/commands/list">
-              <DeviceListView />
-            </WebSocketProvider>
-          }
-        />
-        <Route path="/alarms/" element={<AlarmsOverview />} />
-        <Route path="/alarms/report/" element={<AlarmReportView />} />
-        <Route
-          path="/location/:id/heatplot"
-          element={<LocationHeatplotView />}
-        />
-        <Route
-          path="/locations/:id/heatplot"
-          element={<LocationHeatplotView />}
-        />
-        <Route
-          path="/location/:id/heatmap2d"
-          element={<LocationHeatmap2DView />}
-        />
-        <Route path="/location/:id/alarms" element={<LocationAlarmDetail />} />
-        {/* Retired: device config moved to /location/:id/einstellungen. */}
-        <Route
-          path="/device/:id/update/"
-          element={<DeviceSettingsRedirect />}
-        />
-        <Route path="/device/:id/editor/" element={<DeviceEditorView />} />
-        <Route path="/device/:id/detail" element={<MeasurementDetailView />} />
-        <Route path="/docker/" element={<DockerStatusView />} />
-        <Route
-          path="/admin/panel/"
-          element={
-            <WebSocketProvider url="/ws/logs/stream/">
-              <AdminPanel />
-            </WebSocketProvider>
-          }
-        />
-        <Route path="/staff/" element={<StaffAdmin />} />
-        <Route path="/backup/:account/overview/" element={<BackupView />} />
-        <Route path="/factory/" element={<FactoryVisualizerView />} />
-        <Route path="/lageplan/wizard/" element={<LageplanWizardView />} />
-        <Route path="/legacy/import/" element={<LegacyImportView />} />
-        <Route path="/map/" element={<LocationsMapView />} />
-        <Route path="/verwaltung/" element={<LocationVerwaltungView />} />
-        <Route path="/anlegen/" element={<LocationAnlegenView />} />
-        <Route path="*" element={<LandingPage />} />
+          <Route
+            path="/device/overview"
+            element={
+              <WebSocketProvider url="/ws/commands/list">
+                <DeviceListView />
+              </WebSocketProvider>
+            }
+          />
+          <Route path="/alarms/" element={<AlarmsOverview />} />
+          <Route path="/alarms/report/" element={<AlarmReportView />} />
+          <Route
+            path="/location/:id/heatplot"
+            element={<LocationHeatplotView />}
+          />
+          <Route
+            path="/locations/:id/heatplot"
+            element={<LocationHeatplotView />}
+          />
+          <Route
+            path="/location/:id/heatmap2d"
+            element={<LocationHeatmap2DView />}
+          />
+          <Route
+            path="/location/:id/alarms"
+            element={<LocationAlarmDetail />}
+          />
+          {/* Retired: device config moved to /location/:id/einstellungen. */}
+          <Route
+            path="/device/:id/update/"
+            element={<DeviceSettingsRedirect />}
+          />
+          <Route path="/device/:id/editor/" element={<DeviceEditorView />} />
+          <Route
+            path="/device/:id/detail"
+            element={<MeasurementDetailView />}
+          />
+          <Route path="/docker/" element={<DockerStatusView />} />
+          <Route
+            path="/admin/panel/"
+            element={
+              <WebSocketProvider url="/ws/logs/stream/">
+                <AdminPanel />
+              </WebSocketProvider>
+            }
+          />
+          <Route path="/staff/" element={<StaffAdmin />} />
+          <Route path="/backup/:account/overview/" element={<BackupView />} />
+          <Route path="/factory/" element={<FactoryVisualizerView />} />
+          <Route path="/lageplan/wizard/" element={<LageplanWizardView />} />
+          <Route path="/legacy/import/" element={<LegacyImportView />} />
+          <Route path="/map/" element={<LocationsMapView />} />
+          <Route path="/verwaltung/" element={<LocationVerwaltungView />} />
+          <Route path="/anlegen/" element={<LocationAnlegenView />} />
+          <Route path="*" element={<LandingPage />} />
+        </Route>
       </Route>
     </Routes>
   );

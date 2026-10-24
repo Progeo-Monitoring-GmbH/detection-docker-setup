@@ -66,6 +66,17 @@ celery_instance.conf.beat_schedule = {
         # Current + next year's measurement partition in every project database.
         "schedule": crontab(day_of_month=1, hour=2, minute=30),
     },
+    "process-bounces-ten-minutely": {
+        "task": "progeo.tasks.process_bounces",
+        # Reads the bounce mailbox (BOUNCE_IMAP_*) and suppresses dead
+        # addresses; does nothing while mailing or the mailbox is not set up.
+        "schedule": crontab(minute="*/10"),
+    },
+    "cleanup-access-requests-daily": {
+        "task": "progeo.tasks.cleanup_access_requests",
+        # Unconfirmed access requests expire, rejected ones are deleted (GDPR).
+        "schedule": crontab(hour=4, minute=10),
+    },
 }
 if not settings.PROGEO_CONFIG_EVALUATE_INSTANTLY:
     # With PROGEO_CONFIG_EVALUATE_INSTANTLY every measurement is evaluated when

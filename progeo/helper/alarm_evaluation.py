@@ -209,7 +209,7 @@ def _evaluate_measurement(measurement, location, db: str, weather_helper, alarme
         for idx, value in over_threshold
     ]
     peak_idx, peak_value = max(over_threshold, key=lambda pair: pair[1])
-    create_progeo_alarm_safe(
+    alarm, created = create_progeo_alarm_safe(
         measurement=measurement,
         sensor_id=peak_idx + 1,  # 1-based sensor index, matches sensor_order
         max_value=float(peak_value),
@@ -218,6 +218,11 @@ def _evaluate_measurement(measurement, location, db: str, weather_helper, alarme
         triggered_at=measurement.last_fetched,
         db=db,
     )
+    if created:
+        # Only a new alarm notifies - prolonging/merging an episode does not.
+        from progeo.helper.notifications import queue_alarm_notification
+
+        queue_alarm_notification(alarm, location, db)
     if alarmed_devices is not None:
         alarmed_devices.add(measurement.device_id)
     return True

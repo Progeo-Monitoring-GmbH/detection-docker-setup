@@ -1,0 +1,9 @@
+{# Pill button of the login page; `url` and `label` from the include. The fallback link is for clients that hide buttons - the plain-text part already shows the URL next to the label, so it skips the html-only block. #}
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0 8px;">
+  <tr>
+    <td style="background:#0b3659; border-radius:999px;">
+      <a href="{{ url }}" style="display:inline-block; padding:12px 28px; font-size:14px; font-weight:bold; color:#ffffff; text-decoration:none;">{{ label }}</a>
+    </td>
+  </tr>
+</table>
+<!--progeo-html-only--><p style="margin:0 0 16px; font-size:12px; color:#6E6868;">Falls der Button nicht funktioniert, öffnen Sie diesen Link: <a href="{{ url }}" style="color:#0b3659; word-break:break-all;">{{ url }}</a></p><!--/progeo-html-only-->

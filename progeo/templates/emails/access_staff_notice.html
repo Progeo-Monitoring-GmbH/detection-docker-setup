@@ -1,0 +1,16 @@
+{% extends "emails/base.html" %}
+{# To ACCESS_REQUEST_NOTIFY once a request's mail address is confirmed. #}
+{% block subject %}Neue Zugangsanfrage: {{ request.first_name }} {{ request.last_name }}{% if request.company %} ({{ request.company }}){% endif %}{% endblock %}
+{% block content %}
+<h1 style="margin:0 0 12px; font-size:20px;">Neue Zugangsanfrage</h1>
+<p style="margin:0 0 12px;">Eine neue Zugangsanfrage wartet auf Prüfung. Der Zugang sieht bis zur Freigabe nur einen Hinweis, dass er geprüft wird.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 8px; font-size:14px;">
+  <tr><td style="padding:2px 16px 2px 0; color:#6E6868;">Name</td><td style="padding:2px 0;">{{ request.first_name }} {{ request.last_name }}</td></tr>
+  <tr><td style="padding:2px 16px 2px 0; color:#6E6868;">Firma</td><td style="padding:2px 0;">{{ request.company|default:"-" }}</td></tr>
+  <tr><td style="padding:2px 16px 2px 0; color:#6E6868;">E-Mail</td><td style="padding:2px 0;">{{ request.email }}</td></tr>
+  <tr><td style="padding:2px 16px 2px 0; color:#6E6868;">Telefon</td><td style="padding:2px 0;">{{ request.phone|default:"-" }}</td></tr>
+  <tr><td style="padding:2px 16px 2px 0; color:#6E6868;">Projekt/Objekt</td><td style="padding:2px 0;">{{ request.project|default:"-" }}</td></tr>
+</table>
+{% if request.message %}<p style="margin:0 0 12px;"><em>{{ request.message|linebreaksbr }}</em></p>{% endif %}
+{% include "emails/_button.html" with url=review_url label="Anfrage prüfen" %}
+{% endblock %}

@@ -1,0 +1,11 @@
+{% extends "emails/base.html" %}
+{# One-time login link (helper/login_links.py). `action_url` is secret: the logged copy shows a placeholder. #}
+{% block subject %}Ihr Anmeldelink für das ProGeo-Portal{% endblock %}
+{% block preheader %}Einmal gültig, {{ valid_minutes }} Minuten lang{% endblock %}
+{% block content %}
+<h1 style="margin:0 0 12px; font-size:20px;">Anmelden ohne Passwort</h1>
+<p style="margin:0 0 12px;">{% if first_name %}Hallo {{ first_name }},{% else %}Guten Tag,{% endif %}</p>
+<p style="margin:0 0 4px;">mit dem folgenden Link melden Sie sich einmalig im ProGeo-Portal an. Er ist {{ valid_minutes }} Minuten gültig.</p>
+{% include "emails/_button.html" with url=action_url label="Jetzt anmelden" %}
+<p style="margin:0; font-size:12px; color:#6E6868;">Sie haben keinen Anmeldelink angefordert? Dann können Sie diese E-Mail ignorieren - ohne den Link ist keine Anmeldung möglich.</p>
+{% endblock %}

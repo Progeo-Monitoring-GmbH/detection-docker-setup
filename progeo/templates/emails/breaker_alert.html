@@ -1,0 +1,10 @@
+{% extends "emails/base.html" %}
+{# helper/outbound.py: trip_breaker - the only mail that bypasses the limits. #}
+{% block subject %}Notbremse: E-Mail- und SMS-Versand gestoppt{% endblock %}
+{% block content %}
+<h1 style="margin:0 0 12px; font-size:20px;">Versand gestoppt</h1>
+<p style="margin:0 0 12px;">Der Server hat den gesamten E-Mail- und SMS-Versand gestoppt:</p>
+<p style="margin:0 0 12px;"><strong>{{ reason }}</strong></p>
+<p style="margin:0 0 4px;">Bis zur Freigabe werden keine Nachrichten versendet - auch keine Alarme. Bitte prüfen Sie den Versandverlauf und setzen Sie die Notbremse in der Benutzerverwaltung zurück.</p>
+{% include "emails/_button.html" with url=staff_url label="Versand prüfen" %}
+{% endblock %}

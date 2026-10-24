@@ -55,6 +55,56 @@ PROGEO_CONFIG_EVALUATE_INSTANTLY = parse_boolean(os.getenv("PROGEO_CONFIG_EVALUA
 # names ("check_existing_alarms") or "all" - e.g. while split_project_dbs runs.
 CELERY_DISABLED_TASKS = [name.strip() for name in os.getenv("CELERY_DISABLED_TASKS", "").split(",") if name.strip()]
 
+# ########################################################################
+# Outbound mail / SMS safety (see django.env.template, helper/outbound.py)
+#
+# Safe by default: unless the env explicitly says MAIL_TEST_MODE=0 every mail
+# goes to MAIL_TEST_RECIPIENT, and unless SMS_DRY_RUN=0 SMS are only logged.
+# ########################################################################
+MAIL_TEST_MODE = parse_boolean(os.getenv("MAIL_TEST_MODE", "1"))
+MAIL_TEST_RECIPIENT = (os.getenv("MAIL_TEST_RECIPIENT") or "test-mails@progeo.com").strip()
+SMS_DRY_RUN = parse_boolean(os.getenv("SMS_DRY_RUN", "1"))
+# Envelope sender (Return-Path) - bounces land in this mailbox. Empty = the
+# SMTP login (MAIL_USER) when it is an address, else the From address.
+MAIL_ENVELOPE_FROM = (os.getenv("MAIL_ENVELOPE_FROM") or "").strip()
+# Hard limits - we never mass send. Hitting a global limit trips the
+# circuit breaker: all sending stops until staff reset it.
+OUTBOUND_LIMITS = {
+    "mail_max_recipients": parse_int(os.getenv("MAIL_MAX_RECIPIENTS"), 5),
+    "mail_per_recipient_hour": parse_int(os.getenv("MAIL_LIMIT_PER_RECIPIENT_HOUR"), 20),
+    "mail_per_recipient_day": parse_int(os.getenv("MAIL_LIMIT_PER_RECIPIENT_DAY"), 100),
+    "mail_global_hour": parse_int(os.getenv("MAIL_LIMIT_GLOBAL_HOUR"), 100),
+    "sms_per_recipient_hour": parse_int(os.getenv("SMS_LIMIT_PER_RECIPIENT_HOUR"), 3),
+    "sms_per_recipient_day": parse_int(os.getenv("SMS_LIMIT_PER_RECIPIENT_DAY"), 10),
+    "sms_global_hour": parse_int(os.getenv("SMS_LIMIT_GLOBAL_HOUR"), 20),
+    "sms_global_day": parse_int(os.getenv("SMS_LIMIT_GLOBAL_DAY"), 50),
+    # Longer SMS are cut to this many segments (160 GSM-7 chars each).
+    "sms_max_segments": parse_int(os.getenv("SMS_MAX_SEGMENTS"), 1),
+}
+# Mails triggered by requests (alarms of instantly evaluated uploads, access
+# requests, login links) are handed to celery so the request never waits on
+# SMTP; inside celery tasks they are sent right away.
+OUTBOUND_ASYNC = parse_boolean(os.getenv("OUTBOUND_ASYNC", "1"))
+# Alarm notifications: one per location and channel within the cooldown;
+# alarms older than MAX_AGE (backfills, re-evaluations) notify nobody.
+ALARM_NOTIFY_COOLDOWN_MINUTES = parse_int(os.getenv("ALARM_NOTIFY_COOLDOWN_MINUTES"), 60)
+ALARM_NOTIFY_MAX_AGE_HOURS = parse_int(os.getenv("ALARM_NOTIFY_MAX_AGE_HOURS"), 6)
+# One-time links (helper/login_links.py).
+MAGIC_LINK_LOGIN_MINUTES = parse_int(os.getenv("MAGIC_LINK_LOGIN_MINUTES"), 15)
+MAGIC_LINK_INVITE_HOURS = parse_int(os.getenv("MAGIC_LINK_INVITE_HOURS"), 72)
+ACCESS_REQUEST_VERIFY_HOURS = parse_int(os.getenv("ACCESS_REQUEST_VERIFY_HOURS"), 48)
+# Login links for staff/superusers: off - a mailbox must not be an admin login.
+MAGIC_LINK_ALLOW_STAFF = parse_boolean(os.getenv("MAGIC_LINK_ALLOW_STAFF", "0"))
+# Who is told about new access requests; empty = DJANGO_SUPERUSER_EMAIL.
+ACCESS_REQUEST_NOTIFY = (os.getenv("ACCESS_REQUEST_NOTIFY") or os.getenv("DJANGO_SUPERUSER_EMAIL") or "").strip()
+# Bounce mailbox (helper/bounces.py); user/password default to the SMTP login.
+BOUNCE_IMAP_HOST = (os.getenv("BOUNCE_IMAP_HOST") or "").strip()
+BOUNCE_IMAP_PORT = parse_int(os.getenv("BOUNCE_IMAP_PORT"), 993)
+BOUNCE_IMAP_USER = (os.getenv("BOUNCE_IMAP_USER") or "").strip()
+BOUNCE_IMAP_PASSWORD = os.getenv("BOUNCE_IMAP_PASSWORD") or ""
+BOUNCE_IMAP_FOLDER = (os.getenv("BOUNCE_IMAP_FOLDER") or "INBOX").strip()
+BOUNCE_IMAP_PROCESSED_FOLDER = (os.getenv("BOUNCE_IMAP_PROCESSED_FOLDER") or "progeo-bounces").strip()
+
 # Airtable (pyairtable) integration - see django.env.template. The API key is
 # a placeholder until a real personal access token is configured.
 AIRTABLE_API_KEY = (os.getenv("AIRTABLE_API_KEY") or "").strip()
@@ -107,6 +157,7 @@ MIDDLEWARE = [
     "progeo.middlewares.AdminGetParamMiddleware",
     "progeo.middlewares.AccountMiddleware",
     "progeo.middlewares.DemoReadOnlyMiddleware",
+    "progeo.middlewares.PendingAccessMiddleware",
 ]
 
 DEBUG_TOOLBAR_CONFIG = {
