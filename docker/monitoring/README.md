@@ -26,7 +26,7 @@ The backend exposes its own metrics at `/metrics` ([progeo/metrics.py](../../pro
 1. In `.env`, fill in the "Monitoring" block (see `.env.template`):
    - Add `monitoring` to `COMPOSE_PROFILES`.
    - Generate every secret with `openssl rand -hex 24`.
-2. Rebuild the backend. It needs `prometheus-client` and `METRICS_TOKEN`, and `.env` is baked into the image.
+2. Rebuild the backend for `prometheus-client`. It reads `METRICS_TOKEN` from `.env` when the container starts.
 3. Restart nginx so it blocks `/metrics`:
    ```bash
    docker compose build progeo-backend progeo-nginx && docker compose up -d
@@ -80,8 +80,9 @@ docker exec progeo-prometheus wget -qO- --header 'Content-Type: application/json
 ## Notes
 
 - **Retention:** `PROMETHEUS_RETENTION_TIME` (30d) and `PROMETHEUS_RETENTION_SIZE` (5GB), whichever limit is hit first.
-- **~1000 project databases:** the postgres job is scraped every 60s with a 45s timeout, because sizes and stats of every database take a few seconds.
+- **~1000 project databases:** the postgres job is scraped every 60s with a 45s timeout, because the stats of every database take a few seconds.
   - Its dashboard panels use a minimum interval of 2m.
+  - Database sizes come from a second exporter (`progeo-postgres-sizes-exporter`, job `postgres-sizes`), scraped only every 15 minutes: `pg_database_size()` of every database costs the server about 3s of work.
 - **Dashboards** are generated JSON in [grafana/dashboards](grafana/dashboards). Grafana re-reads them every 30s.
   - Changes made in the UI can't be saved over them. Use "Save as" for your own copy, or edit the JSON.
 - **Celery queue backlog** is the length of the redis list `celery` in db 0.

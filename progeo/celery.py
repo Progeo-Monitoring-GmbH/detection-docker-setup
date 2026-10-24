@@ -47,14 +47,16 @@ celery_instance.conf.beat_schedule = {
     "check-existing-alarms-quarter-hourly": {
         "task": "progeo.tasks.check_existing_alarms",
         # Normalizes alarms whose device stopped exceeding the threshold, so
-        # is_active stays truthful between the hourly evaluate runs.
-        "schedule": crontab(minute="*/15"),
+        # is_active stays truthful between the hourly evaluate runs. Off the
+        # full hour and away from evaluate-measurements (:9), so the two
+        # tasks that walk every project database never run at once.
+        "schedule": crontab(minute="9,18,27,36,45,54"),
     },
     "generate-daily-alarm-report-daily": {
         "task": "progeo.tasks.generate_daily_alarm_report",
         # Bundles yesterday's alarms into an AlarmDailyReport shortly after
-        # midnight (00:30), once all of the previous day has been evaluated.
-        "schedule": crontab(hour=0, minute=30),
+        # midnight (00:37), once all of the previous day has been evaluated.
+        "schedule": crontab(hour=0, minute=37),
     },
     "refresh-project-db-stats-daily": {
         "task": "progeo.tasks.refresh_project_db_stats",
@@ -70,7 +72,7 @@ celery_instance.conf.beat_schedule = {
         "task": "progeo.tasks.process_bounces",
         # Reads the bounce mailbox (BOUNCE_IMAP_*) and suppresses dead
         # addresses; does nothing while mailing or the mailbox is not set up.
-        "schedule": crontab(minute="*/10"),
+        "schedule": crontab(minute="2-59/10"),
     },
     "cleanup-access-requests-daily": {
         "task": "progeo.tasks.cleanup_access_requests",
@@ -83,8 +85,9 @@ if not settings.PROGEO_CONFIG_EVALUATE_INSTANTLY:
     # it is stored (evaluate_measurement_instantly), so the batch run is skipped.
     celery_instance.conf.beat_schedule["evaluate-measurements-hourly"] = {
         "task": "progeo.tasks.evaluate_measurements",
-        # Previously the "67 * * * *" cron entry (docker/backend/cronjobs/hourly.sh).
-        "schedule": crontab(minute="*/67"),
+        # Hourly at :10 - between the check-existing-alarms runs (:05, :20).
+        # (It used to say minute="*/67", which only ever matches minute 0.)
+        "schedule": crontab(minute=10),
     }
 
 

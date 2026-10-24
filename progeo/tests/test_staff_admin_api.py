@@ -87,6 +87,53 @@ def test_list_is_sorted_by_username(api_client, staff):
     assert usernames == sorted(usernames)
 
 
+def _list_queries(api_client):
+    from django.db import connections
+    from django.test.utils import CaptureQueriesContext
+
+    with CaptureQueriesContext(connections[f.DB]) as queries:
+        assert api_client.get(BASE).status_code == 200
+    return len(queries)
+
+
+def test_list_queries_do_not_grow_with_the_number_of_users(api_client, staff):
+    f.make_user(perms=("module_backup_enabled",))
+    _list_queries(api_client)  # warm-up: the first request fills the staff user's and content type caches
+    before = _list_queries(api_client)
+
+    for _ in range(5):
+        f.make_user(perms=("module_locations_enabled", "module_backup_enabled"))
+
+    assert _list_queries(api_client) == before
+
+
+def test_list_permissions_match_has_perm(api_client, staff):
+    from django.contrib.auth.models import Group, Permission
+
+    from progeo.v1.models import MODULE_PERMISSION_CODES
+
+    group = Group.objects.using(f.DB).create(name=f.unique("group"))
+    group.permissions.add(
+        Permission.objects.using(f.DB).get(content_type__app_label="progeo", codename="module_docker_enabled")
+    )
+    via_group = f.make_user()
+    via_group.groups.add(group)
+    users = [
+        via_group,
+        f.make_user(perms=("module_backup_enabled",)),
+        f.make_user(perms=("module_backup_enabled",), is_active=False),
+        f.make_user(is_superuser=True),
+        f.make_user(is_superuser=True, is_active=False),
+    ]
+
+    rows = {row["id"]: row["permissions"] for row in api_client.get(BASE).json()["users"]}
+
+    for user in users:
+        fresh = _user(user.pk)
+        assert rows[user.pk] == {code: fresh.has_perm(f"progeo.{code}") for code in MODULE_PERMISSION_CODES}, user
+    assert rows[via_group.pk]["module_docker_enabled"] is True
+
+
 def test_superuser_may_grant_every_code(api_client, superuser):
     from progeo.v1.models import MODULE_PERMISSION_CODES
 

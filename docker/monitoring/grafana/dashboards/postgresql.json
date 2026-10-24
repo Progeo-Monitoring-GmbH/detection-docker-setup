@@ -202,11 +202,11 @@
     {
       "type": "stat",
       "title": "All databases",
-      "description": "",
+      "description": "Scraped every 15 minutes (job postgres-sizes).",
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(pg_database_size_bytes)",
+          "expr": "sum(last_over_time(pg_database_size_bytes[30m]))",
           "instant": true,
           "datasource": {
             "type": "prometheus",
@@ -1063,7 +1063,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(10, pg_database_size_bytes)",
+          "expr": "topk(10, last_over_time(pg_database_size_bytes[30m]))",
           "legendFormat": "{{datname}}",
           "datasource": {
             "type": "prometheus",

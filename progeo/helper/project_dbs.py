@@ -160,6 +160,36 @@ def release_connection(alias):
         connection.close()
 
 
+def database_write_counters(aliases):
+    """{alias: rows inserted + updated + deleted since the last statistics
+    reset} of the given databases - one query on "default", since
+    pg_stat_database covers the whole server. Lets periodic tasks skip the
+    databases nothing was written to without connecting to each of them.
+    Backends publish their counts when they go idle, so a write shows up
+    here about a second after its commit."""
+    names = {connections.settings[alias]["NAME"]: alias for alias in aliases}
+    with connections[DEFAULT_DB_ALIAS].cursor() as cursor:
+        cursor.execute(
+            "SELECT datname, tup_inserted + tup_updated + tup_deleted FROM pg_stat_database WHERE datname = ANY(%s)",
+            [list(names)],
+        )
+        return {names[name]: count for name, count in cursor.fetchall()}
+
+
+def table_write_signature(models, alias=DEFAULT_DB_ALIAS):
+    """{table: [rows inserted + updated + deleted, file node]} of the models'
+    tables in `alias` - changes with every write to them; the file node also
+    with TRUNCATE, which the counters don't see."""
+    tables = [model._meta.db_table for model in models]
+    with connections[alias].cursor() as cursor:
+        cursor.execute(
+            "SELECT relname, n_tup_ins + n_tup_upd + n_tup_del, pg_relation_filenode(relid)"
+            " FROM pg_stat_user_tables WHERE relname = ANY(%s)",
+            [tables],
+        )
+        return {name: [count, node] for name, count, node in cursor.fetchall()}
+
+
 def release_project_connections():
     """release_connection() for every open connection but "default" - for
     long loops (commands) that touch several databases per step."""

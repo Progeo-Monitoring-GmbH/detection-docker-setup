@@ -35,6 +35,8 @@ Required files in project root:
 - `.env` (from `.env.template`)
 - `django.env` (from `django.env.template`)
 
+Neither file goes into an image (the images are public on Docker Hub). The backend mounts both read-only and reads them when the container starts. After changing them, `docker compose up -d --force-recreate progeo-backend` is enough; no rebuild is needed.
+
 You can prepare system packages and env files with the setup script:
 
 ```bash

@@ -42,12 +42,17 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         register_all_project_dbs()
-        missing = self._missing_project_dbs()
 
         if options["check"]:
-            return self._report(missing)
+            return self._report(self._missing_project_dbs())
 
         failed = []
+        # "default" before everything else: the other databases' migrate
+        # writes content types and permissions there, and the project list
+        # below is read from its locations - a fresh database (new postgres
+        # volume) has none of these tables yet.
+        migrated = int(self._migrate(DEFAULT_DB_ALIAS, failed))
+
         try:
             register_demo_db(create=True)  # not in DATABASES until it exists
         except Exception as exc:  # noqa: BLE001 - collected, the command fails below
@@ -66,23 +71,9 @@ class Command(BaseCommand):
                     elog(f"creating {name} failed: {exc!r}", tag="[PREPARE_DBS]")
                     failed.append(db)
 
-        # "default" first: the project list below is read from its locations.
-        # migrate_if_needed: one query per database decides whether `migrate`
-        # has to run at all - with ~1000 project databases a full `migrate`
-        # each would keep the server down for most of an hour on every start.
-        migrated = 0
-        for db in [DEFAULT_DB_ALIAS, *(db for db in list(DATABASES) if db != DEFAULT_DB_ALIAS)]:
-            try:
-                if migrate_if_needed(db):
-                    migrated += 1
-                    ilog(f"migrated {db}", tag="[PREPARE_DBS]")
-            except Exception as exc:  # noqa: BLE001 - collected, the command fails below
-                elog(f"migrate failed for {db}: {exc!r}", tag="[PREPARE_DBS]")
-                failed.append(db)
-            finally:
-                # Project databases are many - don't keep a connection to each.
-                if db != DEFAULT_DB_ALIAS:
-                    connections[db].close()
+        for db in list(DATABASES):
+            if db != DEFAULT_DB_ALIAS:
+                migrated += self._migrate(db, failed)
 
         ilog(f"{migrated} of {len(DATABASES)} databases needed migrations", tag="[PREPARE_DBS]")
 
@@ -93,8 +84,11 @@ class Command(BaseCommand):
             elog(f"preparing {template_alias()} failed: {exc!r}", tag="[PREPARE_DBS]")
             failed.append(template_alias())
 
+        # Only now: the projects are read from the locations in "default",
+        # which a fresh database (new postgres volume) has only after its migrate above.
+        missing = self._missing_project_dbs()
         if split_enabled():
-            for project in self._missing_project_dbs():
+            for project in missing:
                 try:
                     alias, _ = ensure_project_db(project, mirror=False)  # sync_default mirrors later
                     ilog(f"created {alias}", tag="[PREPARE_DBS]")
@@ -111,7 +105,32 @@ class Command(BaseCommand):
         ))
 
     @staticmethod
+    def _migrate(db, failed):
+        """True if `db` needed (and got) migrations; a failure goes to `failed`.
+        migrate_if_needed: one query per database decides whether `migrate`
+        has to run at all - with ~1000 project databases a full `migrate`
+        each would keep the server down for most of an hour on every start."""
+        try:
+            if migrate_if_needed(db):
+                ilog(f"migrated {db}", tag="[PREPARE_DBS]")
+                return True
+        except Exception as exc:  # noqa: BLE001 - collected, the command fails below
+            elog(f"migrate failed for {db}: {exc!r}", tag="[PREPARE_DBS]")
+            failed.append(db)
+        finally:
+            # Project databases are many - don't keep a connection to each.
+            if db != DEFAULT_DB_ALIAS:
+                connections[db].close()
+        return False
+
+    @staticmethod
     def _missing_project_dbs():
+        from progeo.v1.models import ProgeoLocation
+
+        # "default" not migrated yet (only possible with --check or a failed
+        # migrate): no locations, so no project needs a database.
+        if ProgeoLocation._meta.db_table not in connections[DEFAULT_DB_ALIAS].introspection.table_names():
+            return []
         existing = set(existing_project_aliases(refresh=True))
         return [project for project in project_keys_in_use() if project_alias(project) not in existing]
 

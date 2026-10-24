@@ -1,5 +1,7 @@
 import secrets
 import string
+from collections import defaultdict
+from itertools import chain
 
 from django.contrib.auth.models import Permission, User
 from django.core.exceptions import ValidationError
@@ -52,10 +54,35 @@ def _grantable_codes(user):
     return {code for code in MODULE_PERMISSION_CODES if user.has_perm(f"progeo.{code}")}
 
 
-def _user_payload(user, grantable):
+def _module_codes_by_user():
+    """{user id: module codes granted directly or via a group} of every user, in
+    two queries - user.has_perm() loads each user's permissions separately."""
+    module_perms = Permission.objects.using(_USER_DB).filter(
+        content_type__app_label="progeo", codename__in=MODULE_PERMISSION_CODES
+    )
+    direct = User.user_permissions.through.objects.using(_USER_DB).filter(
+        permission__in=module_perms
+    ).values_list("user_id", "permission__codename")
+    via_groups = User.groups.through.objects.using(_USER_DB).filter(
+        group__permissions__in=module_perms
+    ).values_list("user_id", "group__permissions__codename")
+
+    codes_by_user = defaultdict(set)
+    for user_id, code in chain(direct, via_groups):
+        codes_by_user[user_id].add(code)
+    return codes_by_user
+
+
+def _user_payload(user, grantable, granted_codes=None):
+    """`granted_codes`: the user's entry of _module_codes_by_user() for lists;
+    None asks user.has_perm() (single users)."""
     values = {}
     for code in MODULE_PERMISSION_CODES:
-        values[code] = user.has_perm(f"progeo.{code}")
+        if granted_codes is None:
+            values[code] = user.has_perm(f"progeo.{code}")
+        else:
+            # Same rules as ModelBackend: inactive users have no permissions, active superusers all.
+            values[code] = user.is_active and (user.is_superuser or code in granted_codes)
     return {
         "id": user.pk,
         "username": user.username,
@@ -115,8 +142,9 @@ class StaffUserListView(APIView):
 
         grantable = _grantable_codes(request.user)
         users = list(User.objects.using(_USER_DB).order_by("username"))
+        codes_by_user = _module_codes_by_user()
         return RequestSuccess({
-            "users": [_user_payload(user, grantable) for user in users],
+            "users": [_user_payload(user, grantable, codes_by_user.get(user.pk, set())) for user in users],
             "grantable_codes": sorted(grantable),
             "all_permission_defs": [
                 {"code": code, "label": label}
@@ -160,8 +188,11 @@ class StaffUserListView(APIView):
                 is_superuser=is_superuser,
                 is_active=bool(data.get("is_active", True)),
             )
-            requested_codes = set(data.get("permissions", [])) | _DEFAULT_USER_PERMISSION_CODES
-            denied_codes = _apply_permissions(user, requested_codes, grantable)
+            requested_codes = set(data.get("permissions", []))
+            denied_codes = _apply_permissions(user, requested_codes | _DEFAULT_USER_PERMISSION_CODES, grantable)
+            # Only what the admin selected counts as denied - defaults they may
+            # not grant themselves are left out silently.
+            denied_codes = [code for code in denied_codes if code in requested_codes]
 
         invite_sent = bool(data.get("send_invite")) and _queue_invite(user) is None
         return RequestSuccess({

@@ -78,8 +78,24 @@ services:
       - ./logs/backend:/var/log/progeo:rw
       - /var/run/docker.sock:/var/run/docker.sock:rw
       - /var/lib/misc:/var/lib/misc:rw
+      # The host's .env + django.env, never baked into the (public) image:
+      # start-supervisord.sh builds django.env from them on every start.
+      # create_host_path: false - a missing file fails instead of becoming a directory.
+      - type: bind
+        source: ./.env
+        target: /etc/progeo/.env
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./django.env
+        target: /etc/progeo/django.env
+        read_only: true
+        bind:
+          create_host_path: false
     environment:
       PROTOCOL: ${PROTOCOL}
+      FRONTEND_PORT: ${FRONTEND_PORT}
       FULL_BACKEND_URL: ${BACKEND_URL}
       FRONTEND_URL: ${FRONTEND_URL}
       DJANGO_DATABASES: ${DJANGO_DATABASES}
@@ -286,6 +302,8 @@ services:
       CELERY_BROKER_URL: ${FLOWER_BROKER_URL:-redis://:${REDIS_PASSWORD}@${REDIS_HOST}:${REDIS_PORT}/0}
       FLOWER_PORT: 5555
       FLOWER_BASIC_AUTH: ${FLOWER_USER:-flower}:${FLOWER_PASSWORD:-}
+      # Default buckets end at 10s - longer runs all landed in +Inf ("10 s" in Grafana).
+      FLOWER_TASK_RUNTIME_METRIC_BUCKETS: '0.1,0.5,1,2.5,5,10,20,30,60,120,300,600,1800,3600'
       TZ: 'Europe/Berlin'
     ports:
       - '${MONITORING_BIND:-127.0.0.1}:${FLOWER_UI_PORT:-5555}:5555'
@@ -307,6 +325,42 @@ services:
       - --collector.stat_statements.include_query
       - --collector.stat_statements.query_length=200
       - --collector.long_running_transactions
+      # Database sizes come from progeo-postgres-sizes-exporter: pg_database_size()
+      # of ~1000 databases on every 60s scrape cost the server ~3s of work a minute.
+      - --no-collector.database
+    environment:
+      DATA_SOURCE_URI: ${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable
+      DATA_SOURCE_USER: ${POSTGRES_MONITOR_USER:-progeo_monitor}
+      DATA_SOURCE_PASS: ${POSTGRES_MONITOR_PASSWORD:-}
+    depends_on:
+      - progeo-database
+    networks:
+      monitoring_net:
+      database_net:
+
+  # Only the database sizes, scraped every 15 minutes (prometheus.yml, job
+  # "postgres-sizes") - same read-only role as progeo-postgres-exporter.
+  progeo-postgres-sizes-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.20.1
+    container_name: progeo-postgres-sizes-exporter
+    restart: unless-stopped
+    profiles: ['monitoring']
+    command:
+      - --disable-default-metrics
+      - --no-collector.locks
+      - --no-collector.replication
+      - --no-collector.replication_slots
+      - --no-collector.roles
+      - --no-collector.settings
+      - --no-collector.stat_activity
+      - --no-collector.stat_archiver
+      - --no-collector.stat_bgwriter
+      - --no-collector.stat_database
+      - --no-collector.stat_progress_vacuum
+      - --no-collector.stat_replication
+      - --no-collector.stat_user_tables
+      - --no-collector.statio_user_tables
+      - --no-collector.wal
     environment:
       DATA_SOURCE_URI: ${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable
       DATA_SOURCE_USER: ${POSTGRES_MONITOR_USER:-progeo_monitor}

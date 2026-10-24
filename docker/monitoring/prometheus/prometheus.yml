@@ -37,13 +37,21 @@ scrape_configs:
     static_configs:
       - targets: ['progeo-flower:5555']
 
-  # Size and connections of every database - ~1000 project databases make a
-  # scrape take a few seconds, so less often and with a longer timeout.
+  # Connections, transactions, locks, statements of every database - ~1000
+  # project databases make a scrape take a few seconds, so less often.
   - job_name: postgres
     scrape_interval: 60s
     scrape_timeout: 45s
     static_configs:
       - targets: ['progeo-postgres-exporter:9187']
+
+  # pg_database_size() of every database costs ~3s of server work, and sizes
+  # change slowly - dashboards read them with last_over_time(...[30m]).
+  - job_name: postgres-sizes
+    scrape_interval: 15m
+    scrape_timeout: 2m
+    static_configs:
+      - targets: ['progeo-postgres-sizes-exporter:9187']
 
   # Redis itself and the celery queue length (REDIS_EXPORTER_CHECK_SINGLE_KEYS).
   - job_name: redis

@@ -41,6 +41,34 @@ fix_docker_socket_permissions() {
 
 fix_docker_socket_permissions
 
+# Django, celery and the cron jobs (which get no container environment) read
+# their settings from ${PROJECT_ROOT}/django.env. The file is not part of the
+# image - the images are public on Docker Hub - but built here on every start
+# from the host's .env and django.env, mounted read-only to /etc/progeo
+# (docker-compose.yml). .env comes first: for a key in both, its value wins.
+build_django_env() {
+  local target="${PROJECT_ROOT:-/home/progeo/detection-docker-setup}/django.env"
+  local source
+  for source in /etc/progeo/.env /etc/progeo/django.env; do
+    if [ ! -f "$source" ]; then
+      echo "Missing ${source}: mount the host's .env and django.env (see docker-compose.yml)" >&2
+      exit 1
+    fi
+  done
+
+  (
+    umask 077
+    { cat /etc/progeo/.env; echo; cat /etc/progeo/django.env; } \
+      | sed -e "s|@PROTOCOL|${PROTOCOL:-}|g" \
+            -e "s|@FRONTEND_PORT|${FRONTEND_PORT:-}|g" \
+            -e "s|@BACKEND_PORT|${PORT:-}|g" \
+      > "$target"
+  )
+  chown progeo:progeo "$target"
+}
+
+build_django_env
+
 # CRON_DISABLED_JOBS (comma separated): cron jobs that must not run, by script
 # name - half-hour, measure, daily, weekly - or "all", e.g. while
 # split_project_dbs runs. Applied here, before crond starts: the jobs are

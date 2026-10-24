@@ -1,7 +1,5 @@
 FROM progeomonitoring/detection-docker-setup:backend-base-py3.13.7-alpine3.21 AS python
 
-ARG PROTOCOL
-ARG FRONTEND_PORT
 ARG BACKEND_PORT
 ARG DB_HOST
 ARG DB_PORT
@@ -24,13 +22,8 @@ RUN pip install -r requirements.txt --use-feature=fast-deps
 COPY ./docker/backend/ .
 COPY ./progeo ./progeo
 COPY ./manage.py ./manage.py
-COPY ./.env ./django.env /tmp/
-RUN cat /tmp/.env /tmp/django.env > ./django.env \
-    && rm -rf /tmp/*
-
-RUN sed -i -r "s|@PROTOCOL|$PROTOCOL|g" ./django.env
-RUN sed -i -r "s|@FRONTEND_PORT|$FRONTEND_PORT|g" ./django.env
-RUN sed -i -r "s|@BACKEND_PORT|$BACKEND_PORT|g" ./django.env
+# No .env / django.env in here - the images are public on Docker Hub. The
+# container builds django.env at start from the host's files (start-supervisord.sh).
 
 RUN sed -i -e 's/\r$//' ./*.sh
 RUN chmod +x ./*.sh

@@ -10,6 +10,12 @@ seafile
 
 docker-compose.yml
 
+# Secrets: never in the build context, the images are public. The backend
+# reads them at runtime (docker/backend/start-supervisord.sh).
+.env
+django.env
+django.env.*
+
 ./progeo/__pycache__
 
 ./frontend/build

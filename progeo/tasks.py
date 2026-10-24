@@ -301,6 +301,40 @@ def _task_databases(db=None, measurements=False):
     ]
 
 
+_WRITES_CACHE_KEY = "periodic-task-db-writes:{}"
+_ACTIVE_ALARMS_CACHE_KEY = "check-existing-alarms:dbs-with-active-alarms"
+
+
+def _databases_with_writes(task, db_names, keep=()):
+    """(databases to visit, their write counters): the part of `db_names`
+    written to since `task`'s last run, plus `keep`. With ~1000 project
+    databases, connecting to each one costs a scheduled run most of its time,
+    while only a few of them received anything. A database unknown to the
+    last run (new, or the cache was lost) is visited."""
+    from django.core.cache import cache
+
+    from progeo.helper.project_dbs import database_write_counters
+
+    before = cache.get(_WRITES_CACHE_KEY.format(task)) or {}
+    counters = database_write_counters(db_names)
+    keep = set(keep)
+    visit = [
+        name for name in db_names
+        if name in keep or name not in before or before[name] != counters.get(name)
+    ]
+    return visit, counters
+
+
+def _remember_writes(task, counters, failed=()):
+    """Store the counters read at the start of the run - writes during the run
+    count as new for the next one. Failed databases are left out, so the next
+    run visits them again."""
+    from django.core.cache import cache
+
+    failed = set(failed)
+    cache.set(_WRITES_CACHE_KEY.format(task), {name: n for name, n in counters.items() if name not in failed}, None)
+
+
 @shared_task
 def evaluate_measurements(db: str | None = None, lookback_hours: int = 1, days: int | None = None,
                           start_date=None, end_date=None, project_id: int | None = None):
@@ -350,15 +384,22 @@ def evaluate_measurements(db: str | None = None, lookback_hours: int = 1, days: 
         end = now
 
     db_names = _task_databases(db, measurements=True)
+    # The scheduled run (last hour, every database) only needs the databases
+    # that got measurements since the previous one; backfills visit all.
+    scheduled = db is None and lookback_hours == 1 and days is None and start_date is None \
+        and end_date is None and project_id is None
+    visit, counters = _databases_with_writes("evaluate_measurements", db_names) if scheduled else (db_names, None)
 
     total_locations = 0
     total_triggered = 0
+    failed = []
 
-    for db_name in db_names:
+    for db_name in visit:
         try:
             locations, triggered = evaluate_measurements_db(db_name, start, end, project_id=project_id)
         except Exception as exc:
             elog(f"[evaluate_measurements] db={db_name} failed: {exc}")
+            failed.append(db_name)
             continue
         finally:
             # ~1000 project databases: an open connection each exceeds max_connections.
@@ -368,9 +409,13 @@ def evaluate_measurements(db: str | None = None, lookback_hours: int = 1, days: 
         total_triggered += triggered
         ilog(f"[evaluate_measurements] db={db_name} locations={locations} alarms_triggered={triggered}")
 
-    ilog(f"[evaluate_measurements] total locations={total_locations} alarms_triggered={total_triggered}")
+    if counters is not None:
+        _remember_writes("evaluate_measurements", counters, failed)
+    ilog(f"[evaluate_measurements] visited {len(visit)} of {len(db_names)} databases, "
+         f"total locations={total_locations} alarms_triggered={total_triggered}")
     return {
-        "databases": db_names,
+        "databases": visit,
+        "skipped_unchanged": len(db_names) - len(visit),
         "window_start": start.isoformat() if start else None,
         "window_end": end.isoformat() if end else None,
         "project_id": project_id,
@@ -396,32 +441,53 @@ def check_existing_alarms(db: str | None = None, silence_hours: int = 24):
       - latest measurement is below the threshold       -> normalize (is_active=false)
       - device has no newer data within `silence_hours` -> normalize as silent
     """
+    from django.core.cache import cache
+
     from progeo.helper.alarm_check import check_existing_alarms_db
     from progeo.helper.basics import elog, ilog
     from progeo.helper.project_dbs import release_connection
 
     db_names = _task_databases(db, measurements=True)
+    # New alarms or measurements mean a write; but an alarm can also end
+    # without one (its device fell silent), so the databases that still had
+    # active alarms last time are always visited again.
+    scheduled = db is None and silence_hours == 24
+    if scheduled:
+        still_active = cache.get(_ACTIVE_ALARMS_CACHE_KEY) or ()
+        visit, counters = _databases_with_writes("check_existing_alarms", db_names, keep=still_active)
+    else:
+        visit, counters = db_names, None
 
     total_checked = 0
     total_normalized = 0
+    failed = []
+    with_active_alarms = []
 
-    for db_name in db_names:
+    for db_name in visit:
         try:
             checked, normalized = check_existing_alarms_db(db_name, silence_hours=silence_hours)
         except Exception as exc:
             elog(f"[check_existing_alarms] db={db_name} failed: {exc}")
+            failed.append(db_name)
             continue
         finally:
             # ~1000 project databases: an open connection each exceeds max_connections.
             release_connection(db_name)
 
+        if checked > normalized:
+            with_active_alarms.append(db_name)
         total_checked += checked
         total_normalized += normalized
         ilog(f"[check_existing_alarms] db={db_name} checked={checked} normalized={normalized}")
 
-    ilog(f"[check_existing_alarms] total checked={total_checked} normalized={total_normalized}")
+    if counters is not None:
+        _remember_writes("check_existing_alarms", counters, failed)
+        cache.set(_ACTIVE_ALARMS_CACHE_KEY, with_active_alarms, None)
+    ilog(f"[check_existing_alarms] visited {len(visit)} of {len(db_names)} databases, "
+         f"total checked={total_checked} normalized={total_normalized}")
     return {
-        "databases": db_names,
+        "databases": visit,
+        "skipped_unchanged": len(db_names) - len(visit),
         "checked": total_checked,
         "normalized": total_normalized,
     }
