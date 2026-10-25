@@ -674,6 +674,37 @@ def test_backup_list_rejects_unknown_project_values(staff_client, backups):
 
 
 @LOCMEM_CACHE
+def test_backup_list_filters_by_day(staff_client, backups):
+    rows, _ = backups
+
+    day = staff_client.get("/v1/1/backup/", {"page_size": 1000, "date": "2026-01-02"}).json()["elements"]
+    invalid = staff_client.get("/v1/1/backup/", {"date": "02.01.2026"})
+
+    assert [row["id"] for row in day] == [rows[ALIAS].pk]
+    assert invalid.status_code == 400
+
+
+@LOCMEM_CACHE
+def test_backup_list_keeps_only_the_latest_per_database(staff_client, backups, tmp_path):
+    rows, _ = backups
+    account = Account.objects.using(f.DB).get(pk=1)
+    older = f"{ALIAS}-host-2026-01-01-120000.psql.gz"
+    (tmp_path / older).write_bytes(b"dump")
+    older = Backup.objects.using(f.DB).create(name=older, account=account)
+
+    latest = staff_client.get("/v1/1/backup/", {"page_size": 1000, "latest": 1}).json()["elements"]
+    of_project = staff_client.get("/v1/1/backup/", {"page_size": 1000, "latest": 1, "project": PROJECT}).json()["elements"]
+    of_day = staff_client.get("/v1/1/backup/", {"page_size": 1000, "latest": 1, "date": "2026-01-01"}).json()["elements"]
+
+    ids = {row["id"] for row in latest}
+    assert {rows[ALIAS].pk, rows[UNKNOWN].pk} <= ids
+    assert older.pk not in ids
+    assert [row["id"] for row in of_project] == [rows[ALIAS].pk]
+    assert {row["id"] for row in of_day} >= {older.pk}
+    assert rows[ALIAS].pk not in {row["id"] for row in of_day}
+
+
+@LOCMEM_CACHE
 def test_delete_all_only_deletes_the_filtered_project(staff_client, backups):
     rows, _ = backups
 

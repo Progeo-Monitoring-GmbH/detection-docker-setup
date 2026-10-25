@@ -17,6 +17,7 @@ import {
   backupListQuery,
   createBackupBody,
   filterValueOf,
+  parseDateFilter,
   parseProjectFilter,
   projectLabel,
   projectOfFilter,
@@ -104,6 +105,14 @@ const smallActionButtonStyle = (disabled: boolean) => ({
   opacity: disabled ? 0.6 : 1,
 });
 
+const filterLabelStyle = {
+  fontSize: 11,
+  letterSpacing: '.06em',
+  textTransform: 'uppercase' as const,
+  color: '#8B8383',
+  fontWeight: 500,
+};
+
 const BackupView = () => {
   const auth = useAuth();
   const { account } = useParams();
@@ -121,37 +130,66 @@ const BackupView = () => {
   const [clearSelectionToggle, setClearSelectionToggle] = useState(false);
   const [projects, setProjects] = useState<BackupProjectOption[]>([]);
 
-  // The project filter lives in the URL (?project=4711), so a filtered view
-  // can be linked. The backend filters - list, reload and deleteAll all
-  // carry it, so "delete all" never reaches beyond the shown backups.
+  // The filters live in the URL (?project=4711&date=2026-10-24&latest=1), so
+  // a filtered view can be linked. The backend filters - list, reload and
+  // deleteAll all carry them, so "delete all" never reaches beyond the shown
+  // backups.
   const [searchParams, setSearchParams] = useSearchParams();
   const projectFilter = parseProjectFilter(searchParams.get('project'));
-  const listQuery = backupListQuery(projectFilter);
+  const dateFilter = parseDateFilter(searchParams.get('date'));
+  const latestOnly = searchParams.get('latest') === '1';
+  const listQuery = backupListQuery({ project: projectFilter, date: dateFilter, latest: latestOnly });
+  const hasFilter = Boolean(projectFilter || dateFilter || latestOnly);
+
+  // Typed text of the project field - applied on Enter/blur or when it
+  // matches a project, so half-typed ids don't trigger requests.
+  const [projectInput, setProjectInput] = useState<string>(projectFilter);
+  useEffect(() => setProjectInput(projectFilter), [projectFilter]);
 
   const hasSelection = selectedRows.length > 0;
   const isBulkBusy = busyAction === 'delete-all' || busyAction === 'delete-selected';
+  const isDownloading = busyAction === 'download-many';
 
   const selectedProject = useMemo(
     () => projects.find((option) => filterValueOf(option.project) === projectFilter),
     [projects, projectFilter],
   );
 
-  const changeProjectFilter = (value: string) => {
-    const next = parseProjectFilter(value);
+  const changeFilters = (changes: Record<string, string | null>) => {
     setSearchParams(
       (prev) => {
         const params = new URLSearchParams(prev);
-        if (next) {
-          params.set('project', next);
-        } else {
-          params.delete('project');
-        }
+        Object.entries(changes).forEach(([key, value]) => {
+          if (value) {
+            params.set(key, value);
+          } else {
+            params.delete(key);
+          }
+        });
         return params;
       },
       { replace: true },
     );
     setSelectedRows([]);
     setClearSelectionToggle((prev) => !prev);
+  };
+
+  const applyProjectInput = (value: string) => {
+    const next = parseProjectFilter(value.trim());
+    // Unparseable text (e.g. a half-typed name) keeps the current filter.
+    if (next !== projectFilter && (next || !value.trim())) {
+      changeFilters({ project: next });
+    } else {
+      setProjectInput(projectFilter);
+    }
+  };
+
+  const onProjectInputChange = (value: string) => {
+    setProjectInput(value);
+    // Picked from the suggestions (or typed out in full) - apply right away.
+    if (projects.some((option) => filterValueOf(option.project) === value)) {
+      changeFilters({ project: value });
+    }
   };
 
   const applyResponse = (response: { data?: { elements?: BackupRow[] } }) => {
@@ -298,29 +336,54 @@ const BackupView = () => {
 
   // Fetches a short-lived signed link, then lets the browser download the
   // file natively - dumps can be several GB, too big to buffer as a blob.
+  const startDownload = (backup: BackupRow) =>
+    new Promise<void>((resolve) => {
+      void axiosConfig.perform_get(
+        auth,
+        `/v1/${account}/backup/${backup.id}/download/`,
+        (response) => {
+          const token = response?.data?.token as string | undefined;
+          if (token) {
+            const link = document.createElement('a');
+            link.href = axiosConfig.holder.getUri({
+              url: `/v1/${account}/backup/download/file/`,
+              params: { token },
+            });
+            link.download = backup.name;
+            link.click();
+          }
+          resolve();
+        },
+        (error) => {
+          const reason = errorReason(error);
+          showErrorBar(
+            enqueueSnackbar,
+            t('backup_download_error', { reason: `${backup.name}: ${reason}` }),
+          );
+          resolve();
+        },
+      );
+    });
+
   const downloadBackup = (backup: BackupRow) => {
     setBusyAction(`download-${backup.id}`);
-    void axiosConfig.perform_get(
-      auth,
-      `/v1/${account}/backup/${backup.id}/download/`,
-      (response) => {
-        const token = response?.data?.token as string | undefined;
-        if (token) {
-          const link = document.createElement('a');
-          link.href = axiosConfig.holder.getUri({
-            url: `/v1/${account}/backup/download/file/`,
-            params: { token },
-          });
-          link.download = backup.name;
-          link.click();
-        }
-        setBusyAction(null);
-      },
-      (error) => {
-        showErrorBar(enqueueSnackbar, t('backup_download_error', { reason: errorReason(error) }));
-        setBusyAction(null);
-      },
-    );
+    void startDownload(backup).then(() => setBusyAction(null));
+  };
+
+  // Downloads the selected backups, else every shown one (e.g. all of a day,
+  // or the latest per project). One after another with a pause - browsers
+  // drop downloads started in the same instant (and may ask once to allow
+  // multiple downloads). Each gets a fresh token, so they never expire.
+  const downloadBackups = async () => {
+    const targets = hasSelection ? selectedRows : backups;
+    setBusyAction('download-many');
+    for (const [index, backup] of targets.entries()) {
+      if (index > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+      await startDownload(backup);
+    }
+    setBusyAction(null);
   };
 
   const columns: TableColumn<BackupRow>[] = [
@@ -474,36 +537,80 @@ const BackupView = () => {
             marginBottom: 12,
           }}
         >
-          <label
-            htmlFor="backup-project-filter"
-            style={{
-              fontSize: 11,
-              letterSpacing: '.06em',
-              textTransform: 'uppercase',
-              color: '#8B8383',
-              fontWeight: 500,
-            }}
-          >
+          <label htmlFor="backup-project-filter" style={filterLabelStyle}>
             {t('backup_filter_project')}
           </label>
-          <select
+          {/* Type a project id (or pick from the suggestions, which also
+              match location names) instead of scrolling a long dropdown. */}
+          <input
             id="backup-project-filter"
-            className="form-select form-select-sm"
-            style={{ width: 'auto', minWidth: 220, maxWidth: '100%' }}
-            value={projectFilter}
-            onChange={(event) => changeProjectFilter(event.target.value)}
-          >
-            <option value="">{t('backup_project_all')}</option>
+            className="form-control form-control-sm"
+            style={{ width: 220, maxWidth: '100%' }}
+            list="backup-project-options"
+            placeholder={t('backup_project_all')}
+            title={projectFilterLabel ?? undefined}
+            value={projectInput}
+            onChange={(event) => onProjectInputChange(event.target.value)}
+            onBlur={(event) => applyProjectInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                applyProjectInput(event.currentTarget.value);
+              }
+            }}
+          />
+          <datalist id="backup-project-options">
             {projects.map((option) => (
               <option key={option.database} value={filterValueOf(option.project)}>
                 {projectLabel(t, option.project, option.name, option.database)}
               </option>
             ))}
-            {/* A filter from the URL whose database is gone still shows. */}
-            {projectFilter && !selectedProject && (
-              <option value={projectFilter}>{projectFilter}</option>
-            )}
-          </select>
+          </datalist>
+          <label htmlFor="backup-date-filter" style={{ ...filterLabelStyle, marginLeft: 8 }}>
+            {t('backup_filter_date')}
+          </label>
+          <input
+            id="backup-date-filter"
+            type="date"
+            className="form-control form-control-sm"
+            style={{ width: 'auto' }}
+            value={dateFilter}
+            onChange={(event) => changeFilters({ date: parseDateFilter(event.target.value) })}
+          />
+          <label
+            style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 8, fontSize: 13 }}
+          >
+            <input
+              type="checkbox"
+              className="form-check-input"
+              style={{ margin: 0 }}
+              checked={latestOnly}
+              onChange={(event) => changeFilters({ latest: event.target.checked ? '1' : null })}
+            />
+            {t('backup_filter_latest')}
+          </label>
+          {hasFilter && (
+            <button
+              type="button"
+              onClick={() => changeFilters({ project: null, date: null, latest: null })}
+              style={smallActionButtonStyle(false)}
+            >
+              {t('backup_filter_clear')}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => void downloadBackups()}
+            disabled={isDownloading || backups.length === 0}
+            style={{
+              ...buttonStyle('primary', isDownloading || backups.length === 0),
+              height: 30,
+              marginLeft: 'auto',
+            }}
+          >
+            {hasSelection
+              ? t('backup_download_selected', { count: selectedRows.length })
+              : t('backup_download_shown', { count: backups.length })}
+          </button>
         </div>
         <DataTable
           columns={columns}
@@ -512,8 +619,8 @@ const BackupView = () => {
           progressPending={loading}
           highlightOnHover
           dense
-          // Row selection only feeds "delete selected".
-          selectableRows={canDelete}
+          // Row selection feeds "download selected" and "delete selected".
+          selectableRows
           onSelectedRowsChange={({ selectedRows: rows }) => setSelectedRows(rows)}
           clearSelectedRows={clearSelectionToggle}
           noDataComponent={

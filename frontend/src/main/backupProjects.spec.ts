@@ -3,6 +3,7 @@ import {
   backupListQuery,
   createBackupBody,
   filterValueOf,
+  parseDateFilter,
   parseProjectFilter,
   projectLabel,
   projectOfFilter,
@@ -33,9 +34,21 @@ describe('backup project filter', () => {
   });
 
   it('adds the filter to every list query', () => {
-    expect(backupListQuery('')).toBe('page_size=1000');
-    expect(backupListQuery('4711')).toBe('page_size=1000&project=4711');
-    expect(backupListQuery('unknown')).toBe('page_size=1000&project=unknown');
+    expect(backupListQuery({ project: '' })).toBe('page_size=1000');
+    expect(backupListQuery({ project: '4711' })).toBe('page_size=1000&project=4711');
+    expect(backupListQuery({ project: 'unknown' })).toBe('page_size=1000&project=unknown');
+    expect(backupListQuery({ project: '', date: '2026-10-24' })).toBe(
+      'page_size=1000&date=2026-10-24',
+    );
+    expect(backupListQuery({ project: '4711', latest: true })).toBe(
+      'page_size=1000&project=4711&latest=1',
+    );
+  });
+
+  it('only accepts ISO days from the URL', () => {
+    expect(parseDateFilter('2026-10-24')).toBe('2026-10-24');
+    expect(parseDateFilter('24.10.2026')).toBe('');
+    expect(parseDateFilter(null)).toBe('');
   });
 
   it('backs up the selected project database, else default', () => {

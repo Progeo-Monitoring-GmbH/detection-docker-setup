@@ -1,3 +1,4 @@
+import datetime
 import os.path
 
 from django.core import signing
@@ -56,6 +57,38 @@ def _requested_database(value):
         raise ValidationError({"project": f"Unknown project: {value}"}) from None
 
 
+def _requested_date(value):
+    """Day for the "date" filter (YYYY-MM-DD); None when not given, 400 for
+    anything else - like "project", a typo must never widen deleteAll."""
+    if value in (None, ""):
+        return None
+    try:
+        return datetime.date.fromisoformat(value)
+    except ValueError:
+        raise ValidationError({"date": f"Invalid date: {value}"}) from None
+
+
+def _picked_backup_ids(backups, day=None, latest=False):
+    """Ids of the backups created on `day` (any day if None) - with `latest`
+    only the newest of those per database."""
+    newest = {}
+    picked = []
+    for backup in backups:
+        created_at = backup.get_created_at()
+        if created_at is not None:
+            created_at = created_at.replace(tzinfo=None)  # mtime/name are naive, last_updated is not
+        if day and (created_at is None or created_at.date() != day):
+            continue
+        if not latest:
+            picked.append(backup.pk)
+            continue
+        key = (created_at or datetime.datetime.min, backup.pk)
+        database = database_of_backup(backup.name)
+        if database not in newest or key > newest[database]:
+            newest[database] = key
+    return picked if not latest else [pk for _, pk in newest.values()]
+
+
 def _known_database(db):
     """Register a project database (it must exist); False for databases
     this server does not have."""
@@ -100,6 +133,13 @@ class BackupViewSet(ProgeoModalViewSet):
         database = _requested_database(self.request.query_params.get("project"))
         if database:
             queryset = queryset.filter(name__startswith=f"{database}-")
+        # ?date=YYYY-MM-DD and ?latest=1 (newest backup per database) - the
+        # backup time lives in the filename, so these are picked in Python
+        # but stay a queryset for get_object() and deleteAll.
+        day = _requested_date(self.request.query_params.get("date"))
+        latest = self.request.query_params.get("latest") in ("1", "true")
+        if day or latest:
+            queryset = queryset.filter(pk__in=_picked_backup_ids(queryset, day, latest))
         return queryset
 
     def get_serializer_context(self):

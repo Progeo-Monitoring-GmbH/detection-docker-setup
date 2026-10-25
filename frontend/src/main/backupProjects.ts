@@ -2,7 +2,8 @@
 // ProgeoLocation.project_id, "unknown" for locations without one) - see
 // progeo/helper/project_dbs.py. The backend tags every backup with its
 // `project` (project id, "unknown", or null for non-project databases) and
-// filters the list with ?project=<project_id|unknown|default>.
+// filters the list with ?project=<project_id|unknown|default>, ?date=<day>
+// and ?latest=1.
 
 export type BackupProject = number | 'unknown' | null;
 
@@ -39,12 +40,32 @@ export const projectOfFilter = (filter: BackupProjectFilter): BackupProject => {
   return Number(filter);
 };
 
+// Day filter (?date=YYYY-MM-DD) - '' = every day.
+export const parseDateFilter = (value: string | null): string =>
+  value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : '';
+
+export type BackupListFilter = {
+  project: BackupProjectFilter;
+  date?: string;
+  // Only the newest backup per database (of the filtered day/project).
+  latest?: boolean;
+};
+
 // Query string for list/reload/deleteAll - deleteAll must only ever see the
 // filtered backups, so every request carries the same filter.
-export const backupListQuery = (filter: BackupProjectFilter, pageSize = 1000) => {
+export const backupListQuery = (
+  { project, date = '', latest = false }: BackupListFilter,
+  pageSize = 1000,
+) => {
   const params = new URLSearchParams({ page_size: `${pageSize}` });
-  if (filter) {
-    params.set('project', filter);
+  if (project) {
+    params.set('project', project);
+  }
+  if (date) {
+    params.set('date', date);
+  }
+  if (latest) {
+    params.set('latest', '1');
   }
   return params.toString();
 };
