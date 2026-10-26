@@ -174,6 +174,21 @@ def test_without_dumps_of_tonight_nothing_is_sent(dirs):
     assert json.loads(status.read_text())["last_run_ok"] is False
 
 
+@REMOTE_SETTINGS
+def test_without_a_fresh_default_dump_nothing_is_sent(dirs):
+    backup_dir, server, status = dirs
+    _dump(backup_dir, "default-srv-2026-10-24-235301.psql.gz")  # tonight's dump of default failed
+    _dump(backup_dir, "project_1-srv-2026-10-26-235402.psql.gz")
+
+    def never():
+        raise AssertionError("must not connect")
+
+    with pytest.raises(bt.TransferError, match="No dump of 'default'"):
+        bt.transfer_backups(str(backup_dir), NOW, never, str(status))
+    assert json.loads(status.read_text())["last_run_ok"] is False
+    assert not (server / REMOTE).exists()
+
+
 def test_host_key_from_a_keyscan_line():
     import paramiko
 

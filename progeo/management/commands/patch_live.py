@@ -6,11 +6,18 @@ from urllib.request import urlopen
 from progeo.helper.basics import dlog, elog, ilog
 from progeo.helper.legacy.geo import GeoHelper
 from progeo.management.commands._base import BaseCommand
-from progeo.settings import SETUP_DIR
+from progeo.settings import SETUP_DIR, UPLOAD_DIR
 from progeo.v1.creator import save_lageplan_upload
 from progeo.v1.legacy.executor import fetch_legacy_data, parse_sample_timestamp
 from progeo.v1.legacy.helper_resistance import MAX_JSON_SAFE_RESISTANCE_OHM
-from progeo.v1.models import Account, ProgeoDevice, ProgeoLocation, ProgeoMeasurement
+from progeo.v1.models import (
+    Account,
+    ProgeoDevice,
+    ProgeoLageplan,
+    ProgeoLocation,
+    ProgeoMeasurement,
+    ProgeoMeasurePoint,
+)
 
 
 def _parse_int(value, default=0):
@@ -55,6 +62,114 @@ def fetch_device_locations():
             dlog(f"Assigned location {location} to device {device.raw_hash}")
 
 
+def _lageplan_digest(lageplan):
+    """sha256 of a Lageplan's file, None if it can't be read."""
+    import hashlib
+
+    from django.core.files.storage import FileSystemStorage
+
+    if not lageplan.lageplan:
+        return None
+    try:
+        with FileSystemStorage(location=UPLOAD_DIR).open(lageplan.lageplan.name, "rb") as file:
+            return hashlib.sha256(file.read()).hexdigest()
+    except OSError:
+        return None
+
+
+def _is_lageplan_copy(lageplan, kept, project_id):
+    """`lageplan` shows the same plan as one of `kept`: both are the
+    data-progeo.net download fetch_lageplan stored as "<project_id>.png", or
+    the files are identical."""
+    fetched = f"{project_id}.png"
+    if lageplan.name == fetched and any(other.name == fetched for other in kept):
+        return True
+    digest = _lageplan_digest(lageplan)
+    return digest is not None and digest in {_lageplan_digest(other) for other in kept}
+
+
+def drop_duplicate_locations(apply=False):
+    """The unnamed duplicate locations ("📐 Location None ✓" in the admin).
+    merge_duplicate_locations skips a project as a conflict when both of its
+    locations have a Lageplan - and fetch_lageplan gave every duplicate a copy
+    of its project's plan. Deletes those copies (not one with measure points
+    on it), in the project database and default, then merges the duplicates
+    into the named location. Read only unless `apply`."""
+    from django.core.management import call_command
+    from django.core.management.base import CommandError
+    from django.db import DEFAULT_DB_ALIAS
+    from django.db.models import Count
+
+    from progeo.helper.project_dbs import (
+        existing_project_aliases,
+        project_alias,
+        register_project_db,
+        release_connection,
+    )
+    from progeo.management.commands.merge_duplicate_locations import (
+        Command as MergeCommand,
+    )
+
+    duplicates = (
+        ProgeoLocation.objects.using(DEFAULT_DB_ALIAS).exclude(project_id__isnull=True)
+        .values("project_id").annotate(n=Count("id")).filter(n__gt=1).order_by("project_id")
+    )
+    project_ids = [row["project_id"] for row in duplicates]
+    existing = set(existing_project_aliases(refresh=True))
+    planner = MergeCommand()
+    ilog(f"{len(project_ids)} projects with duplicate locations{'' if apply else ' (dry run, use --apply)'}")
+
+    mergeable, by_hand = [], []
+    for project_id in project_ids:
+        alias = project_alias(project_id)
+        databases = ([register_project_db(alias)] if alias in existing else []) + [DEFAULT_DB_ALIAS]
+        try:
+            plan = planner._plan(project_id, databases)
+            if ProgeoMeasurePoint.__name__ in plan["conflict"]:
+                by_hand.append(project_id)
+                continue
+            keeper, others = plan["keeper"], [location.pk for location in plan["others"]]
+            copies = {}
+            if plan["conflict"]:
+                for database in databases:
+                    kept = list(ProgeoLageplan.objects.using(database).filter(location_id=keeper.pk))
+                    copies[database] = [
+                        lageplan.pk
+                        for lageplan in ProgeoLageplan.objects.using(database).filter(location_id__in=others)
+                        if _is_lageplan_copy(lageplan, kept, project_id)
+                        and not ProgeoMeasurePoint.objects.using(database).filter(lageplan_id=lageplan.pk).exists()
+                    ]
+                # Every Lageplan of the duplicates must be a copy, else the merge still refuses.
+                remaining = max(
+                    ProgeoLageplan.objects.using(database).filter(location_id__in=others)
+                    .exclude(pk__in=copies[database]).count()
+                    for database in databases
+                )
+                if remaining:
+                    by_hand.append(project_id)
+                    continue
+            ilog(f"project {project_id}: keep #{keeper.pk} {keeper.name!r}, drop locations {others} "
+                 f"and their copied lageplans {sorted({pk for pks in copies.values() for pk in pks})}")
+            if apply:
+                for database, pks in copies.items():
+                    # The files stay: the kept Lageplan may share them.
+                    ProgeoLageplan.objects.using(database).filter(pk__in=pks).delete()
+            mergeable.append(project_id)
+        finally:
+            for database in databases:
+                release_connection(database)
+
+    if by_hand:
+        elog(f"{len(by_hand)} projects left alone (their duplicate has its own Lageplan or measure points - "
+             f"merge by hand): {by_hand}")
+    if apply and mergeable:
+        try:
+            call_command("merge_duplicate_locations", projects=mergeable, apply=True)
+        except CommandError as exc:
+            elog(f"merge_duplicate_locations: {exc}")
+    ilog(f"{len(mergeable)} projects {'merged' if apply else 'to merge'}")
+
+
 class Command(BaseCommand):
     help = (
         'Patches for live data. Selects the patch to run with -p/--patch.\n\n'
@@ -63,19 +178,24 @@ class Command(BaseCommand):
         '  fetch_projects            import projects from data-progeo.net into locations\n'
         '  fetch_legacy_data         fetch legacy measurement data (dry run)\n'
         '  fetch_device_locations    assign locations to devices without one\n'
-        '  fetch_lageplan            download lageplan images for locations without one\n\n'
+        '  fetch_lageplan            download lageplan images for locations without one\n'
+        '  drop_duplicate_locations  remove the unnamed duplicate locations and their copied\n'
+        '                            lageplans ("Location None") - read only unless --apply\n\n'
         'Examples:\n'
         '  python manage.py patch_live --patch fetch_projects\n'
         '  python manage.py patch_live --patch fix_dragino_usage\n'
         '  python manage.py patch_live --patch fetch_legacy_data\n'
         '  python manage.py patch_live --patch fetch_device_locations\n'
-        '  python manage.py patch_live --patch fetch_lageplan'
+        '  python manage.py patch_live --patch fetch_lageplan\n'
+        '  python manage.py patch_live --patch drop_duplicate_locations [--apply]'
     )
 
     def add_arguments(self, parser):
         parser.add_argument("-p", "--patch",
                             help="Select a patch to run",
                             default=None)
+        parser.add_argument("--apply", action="store_true",
+                            help="drop_duplicate_locations: change the data (default: only report)")
 
 
 
@@ -231,8 +351,14 @@ class Command(BaseCommand):
         if patch == "fetch_device_locations":
             fetch_device_locations()
 
+        if patch == "drop_duplicate_locations":
+            drop_duplicate_locations(apply=options["apply"])
+
         if patch == "fetch_lageplan":
-            locations = ProgeoLocation.objects.filter(lageplans__isnull=True).all()
+            # Not for a project that has a Lageplan on another location already:
+            # that gave every unnamed duplicate a copy (drop_duplicate_locations).
+            planned = ProgeoLageplan.objects.exclude(location__project_id__isnull=True).values("location__project_id")
+            locations = ProgeoLocation.objects.filter(lageplans__isnull=True).exclude(project_id__in=planned).all()
             for location in locations:
                 url = f"http://data-progeo.net/DB/upload/{location.project_id}/system/{location.project_id}.png"
                 try:

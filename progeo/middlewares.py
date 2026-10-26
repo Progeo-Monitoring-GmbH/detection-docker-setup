@@ -1,4 +1,5 @@
 from django.db import DEFAULT_DB_ALIAS, connections
+from django.utils.functional import SimpleLazyObject
 
 from progeo.decorator import calc_runtime
 from progeo.helper.basics import dlog
@@ -76,29 +77,12 @@ class AdminGetParamMiddleware:
 
 
 class AccountMiddleware:
-    using_db = "default"
+    """Binds every request to the default account (request.account). It is
+    loaded lazily, on first access: requests that never read it - bot scans
+    answered with a 404, static files - cost no database access."""
 
     def __init__(self, get_response):
         self.get_response = get_response
-
-    def process_view(self, request, view_func, view_args, view_kwargs):
-        if hasattr(request, "account"):
-            self.using_db = request.account.db_name
-            print("process_view_pre_1", request.account, request.user, self.using_db)
-            # print("process_view_pre_2", request.__dict__)
-
-    def process_template_response(self, request, response):
-        if hasattr(request, "account"):
-            if request.user not in request.account.users.all():
-                if request.get_full_path() != "/v1/0/account/":
-                    pass
-                    #elog("ERROR", request.user, request.account.users.all())
-                    # return HttpResponse("Nice try...", status=406)
-
-            print("process_template_response", request.account, request.user, self.using_db)
-            # print("process_template_response", request.__dict__)
-
-        return response
 
     @calc_runtime
     def __call__(self, request):
@@ -122,8 +106,7 @@ class AccountMiddleware:
             setattr(request, "account", account)
         '''
         db_name = "default" #TODO
-        account = Account.objects.using(db_name).get(pk=1)
-        request.account = account
+        request.account = SimpleLazyObject(lambda: Account.objects.using(db_name).get(pk=1))
         return self.get_response(request)
 
 

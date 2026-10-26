@@ -31,6 +31,7 @@ import time
 from dataclasses import dataclass, field
 
 from django.conf import settings
+from django.db import DEFAULT_DB_ALIAS
 
 from progeo.helper.project_dbs import database_of_backup
 
@@ -263,6 +264,11 @@ def transfer_backups(backup_dir=None, now=None, connector=connect, status_file=N
         dumps, result.stale = latest_dumps(backup_dir, now - datetime.timedelta(hours=RECENT_HOURS))
         if not dumps:
             raise TransferError(f"No dumps of the last {RECENT_HOURS}h in {backup_dir}")
+        if DEFAULT_DB_ALIAS not in dumps:
+            # Users, accounts, locations: the project dumps can't be used without
+            # it - and sending such bundles would prune the last complete ones.
+            raise TransferError(f"No dump of '{DEFAULT_DB_ALIAS}' of the last {RECENT_HOURS}h in {backup_dir} "
+                                f"- nothing sent, the bundle could not be restored")
         result.files = [os.path.basename(path) for path in dumps.values()]
         remote_dir = settings.BACKUP_REMOTE_PATH.rstrip("/") or "."
         client, sftp = connector()

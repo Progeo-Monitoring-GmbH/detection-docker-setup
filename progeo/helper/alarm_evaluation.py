@@ -66,10 +66,14 @@ def evaluate_measurements_db(db: str, start, end, project_id: int | None = None)
             Q(project_id=project_id) | Q(device__project_id=project_id)
         ).distinct()
 
-    # Devices with a still-active alarm, read once: a measurement below the
-    # threshold only has something to normalize for those (instead of one
-    # alarm query per measurement).
-    alarmed_devices = _devices_with_active_alarms(db)
+    # The alarms this pass can prolong, read once (instead of one alarm query
+    # per over-threshold measurement). Devices with a still-active alarm: a
+    # measurement below the threshold only has something to normalize for those.
+    alarms = _AlarmBatch(db, start)
+    alarmed_devices = alarms.active_devices()
+    # Per device: each measurement row carries its own device instance, so a
+    # location attached by _resolve_location would be looked up again per row.
+    locations = {}
 
     triggered = 0
     location_ids = 0
@@ -77,28 +81,84 @@ def evaluate_measurements_db(db: str, start, end, project_id: int | None = None)
     found = 0
     for measurement in measurements:
         found += 1
-        location = _resolve_location(measurement, db)
+        if measurement.device_id not in locations:
+            locations[measurement.device_id] = _resolve_location(measurement, db)
+        location = locations[measurement.device_id]
         if location is None:
             continue
 
         if location_id != location.project_id:
             location_ids += 1
+            alarms.flush()
         location_id = location.project_id
 
-        if _evaluate_measurement(measurement, location, db, weather_helper, alarmed_devices):
+        if _evaluate_measurement(measurement, location, db, weather_helper, alarmed_devices, alarms):
             triggered += 1
+    alarms.flush()
 
     dlog(f"Found Measurements: {found}")
     return location_ids, triggered
 
 
-def _devices_with_active_alarms(db: str) -> set:
-    from progeo.v1.models import ProgeoAlarm
+class _AlarmBatch:
+    """The alarms of one evaluation pass, read in one query: every still-active
+    alarm and every one normalized since `start` - the only ones
+    find_overlapping_alarms can match for a measurement of the window.
+    Prolonged alarms are written in one bulk update per location (flush)."""
 
-    return set(
-        ProgeoAlarm.objects.using(db).filter(normalized_at__isnull=True)
-        .values_list("measurement__device_id", flat=True).distinct()
-    )
+    def __init__(self, db: str, start):
+        from collections import defaultdict
+
+        self.db = db
+        self.start = start
+        self.by_device = defaultdict(list)
+        for alarm in self._query():
+            self.by_device[alarm.measurement.device_id].append(alarm)
+        self.dirty = {}
+
+    def _query(self, device_id=None):
+        from django.db.models import Q
+
+        from progeo.v1.models import ProgeoAlarm
+
+        alarms = (
+            ProgeoAlarm.objects.using(self.db).select_related("measurement")
+            .filter(Q(normalized_at__isnull=True) | Q(normalized_at__gte=self.start))
+        )
+        if device_id is not None:
+            alarms = alarms.filter(measurement__device_id=device_id)
+        return alarms
+
+    def active_devices(self) -> set:
+        return {
+            device_id for device_id, alarms in self.by_device.items()
+            if any(alarm.normalized_at is None for alarm in alarms)
+        }
+
+    def overlapping(self, device_id, triggered_at) -> list:
+        from progeo.v1.creator import overlapping_in
+
+        return overlapping_in(self.by_device.get(device_id, ()), triggered_at)
+
+    def created(self, device_id, alarm):
+        self.by_device[device_id].append(alarm)
+
+    def prolonged(self, alarm):
+        self.dirty[alarm.pk] = alarm
+
+    def flush(self):
+        from progeo.v1.creator import PROLONG_FIELDS
+        from progeo.v1.models import ProgeoAlarm
+
+        if self.dirty:
+            ProgeoAlarm.objects.using(self.db).bulk_update(list(self.dirty.values()), PROLONG_FIELDS)
+            self.dirty = {}
+
+    def reload(self, device_id):
+        """Read the device's alarms again after the database changed them
+        (normalized, merged)."""
+        self.flush()
+        self.by_device[device_id] = list(self._query(device_id))
 
 
 def evaluate_measurement_instantly(measurement, db: str = "default") -> bool:
@@ -157,11 +217,14 @@ def _resolve_location(measurement, db: str):
     return location
 
 
-def _evaluate_measurement(measurement, location, db: str, weather_helper, alarmed_devices=None) -> bool:
+def _evaluate_measurement(measurement, location, db: str, weather_helper, alarmed_devices=None,
+                          alarms: _AlarmBatch | None = None) -> bool:
     """Raise/prolong an alarm for an over-threshold measurement, else normalize active alarms.
 
     `alarmed_devices` (a batch run's set of device ids with an active alarm,
     kept up to date here) skips the alarm lookup for devices without one.
+    `alarms` (a batch run's alarms) replaces the overlapping-alarm lookup and
+    defers saving a prolonged alarm to alarms.flush().
     Returns True if the measurement triggered (or prolonged) an alarm.
     """
     from progeo.helper.basics import dlog
@@ -177,6 +240,8 @@ def _evaluate_measurement(measurement, location, db: str, weather_helper, alarme
             if measurement.device_id not in alarmed_devices:
                 return False
             alarmed_devices.discard(measurement.device_id)  # normalized below
+        if alarms is not None:
+            alarms.flush()  # the weather check below reads the alarm as stored
         active_alarms = (
             ProgeoAlarm.objects.using(db)
             .filter(measurement__device=measurement.device, normalized_at__isnull=True)
@@ -200,6 +265,8 @@ def _evaluate_measurement(measurement, location, db: str, weather_helper, alarme
             )
             alarm.normalized_at = measurement.last_fetched
             alarm.fetch_weather(weather_helper)
+            if alarms is not None:
+                alarms.reload(measurement.device_id)
             dlog(f"ALARM NORMALIZED: location={location.project_id} at={measurement.last_fetched}")
         return False
 
@@ -209,6 +276,7 @@ def _evaluate_measurement(measurement, location, db: str, weather_helper, alarme
         for idx, value in over_threshold
     ]
     peak_idx, peak_value = max(over_threshold, key=lambda pair: pair[1])
+    overlapping = None if alarms is None else alarms.overlapping(measurement.device_id, measurement.last_fetched)
     alarm, created = create_progeo_alarm_safe(
         measurement=measurement,
         sensor_id=peak_idx + 1,  # 1-based sensor index, matches sensor_order
@@ -217,7 +285,16 @@ def _evaluate_measurement(measurement, location, db: str, weather_helper, alarme
         threshold=threshold,
         triggered_at=measurement.last_fetched,
         db=db,
+        overlapping=overlapping,
+        save=alarms is None,
     )
+    if alarms is not None and alarm is not None:
+        if created:
+            alarms.created(measurement.device_id, alarm)
+        elif overlapping:
+            alarms.prolonged(alarm)
+            if len(overlapping) > 1:  # merged: the others were deleted
+                alarms.reload(measurement.device_id)
     if created:
         # Only a new alarm notifies - prolonging/merging an episode does not.
         from progeo.helper.notifications import queue_alarm_notification

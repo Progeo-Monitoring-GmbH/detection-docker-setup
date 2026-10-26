@@ -88,3 +88,59 @@ def test_both_locations_configured_is_a_conflict_and_left_alone(duplicates):
 
     assert ProgeoLocation.objects.using(f.DB).filter(project_id=PROJECT).count() == 2
     assert ProgeoDevice.objects.using(f.DB).get(pk=duplicates["device"].pk).location_id == duplicates["unknown"].pk
+
+
+# -- patch_live --patch drop_duplicate_locations ----------------------------------
+
+@pytest.fixture
+def fetched_copies(project_dbs):  # noqa: F811 - the imported session fixture
+    """Both locations hold the plan fetch_lageplan downloaded ("<project>.png")
+    - a conflict for merge_duplicate_locations on its own."""
+    real = f.make_location(f.make_account(), project_id=PROJECT, name="Wohnhaus Witschel")
+    unknown = f.make_location(f.make_account(), project_id=PROJECT, name=None)
+    ProgeoLageplan.objects.using(f.DB).create(location=real, name=f"{PROJECT}.png")
+    copy = ProgeoLageplan.objects.using(f.DB).create(location=unknown, name=f"{PROJECT}.png")
+    device = f.make_device(unknown)
+    _copy(PROJECT)
+    return {"real": real, "unknown": unknown, "copy": copy, "device": device}
+
+
+def _patch(*args):
+    call_command("patch_live", "--patch", "drop_duplicate_locations", *args, stdout=StringIO())
+
+
+@WITH_PROJECT_DBS
+@LOCMEM_CACHE
+def test_drop_duplicate_locations_is_read_only_without_apply(fetched_copies):
+    _patch()
+
+    for db in (f.DB, ALIAS):
+        assert ProgeoLocation.objects.using(db).filter(project_id=PROJECT).count() == 2
+        assert ProgeoLageplan.objects.using(db).filter(pk=fetched_copies["copy"].pk).exists()
+
+
+@WITH_PROJECT_DBS
+@LOCMEM_CACHE
+def test_drop_duplicate_locations_removes_the_copy_and_merges(fetched_copies):
+    real = fetched_copies["real"]
+
+    _patch("--apply")
+
+    for db in (f.DB, ALIAS):
+        assert list(ProgeoLocation.objects.using(db).filter(project_id=PROJECT).values_list("pk", flat=True)) == [real.pk]
+        assert list(ProgeoLageplan.objects.using(db).filter(location__project_id=PROJECT).values_list(
+            "location_id", flat=True)) == [real.pk]
+        assert ProgeoDevice.objects.using(db).get(pk=fetched_copies["device"].pk).location_id == real.pk
+
+
+@WITH_PROJECT_DBS
+@LOCMEM_CACHE
+def test_drop_duplicate_locations_leaves_a_different_plan_alone(fetched_copies):
+    ProgeoLageplan.objects.using(f.DB).filter(pk=fetched_copies["copy"].pk).update(name="Obergeschoss")
+    ProgeoLageplan.objects.using(ALIAS).filter(pk=fetched_copies["copy"].pk).update(name="Obergeschoss")
+
+    _patch("--apply")
+
+    for db in (f.DB, ALIAS):
+        assert ProgeoLocation.objects.using(db).filter(project_id=PROJECT).count() == 2
+        assert ProgeoLageplan.objects.using(db).filter(pk=fetched_copies["copy"].pk).exists()

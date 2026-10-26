@@ -177,6 +177,20 @@ def find_overlapping_alarms(device, triggered_at, db: str):
 	)
 
 
+def overlapping_in(alarms, triggered_at) -> list:
+	"""find_overlapping_alarms on one device's alarms already read (a batch
+	run): same filter and order, no query."""
+	if triggered_at is None:
+		return []
+	found = [alarm for alarm in alarms if alarm.normalized_at is None or alarm.normalized_at >= triggered_at]
+	# Postgres sorts NULL last in ascending order.
+	return sorted(found, key=lambda alarm: (alarm.triggered_at is None, alarm.triggered_at or triggered_at, alarm.pk))
+
+
+# The fields create_progeo_alarm_safe changes when it prolongs an alarm.
+PROLONG_FIELDS = ["still_active_at", "max_values", "sensor_max_values", "triggered_at"]
+
+
 def merge_alarm_into(target: ProgeoAlarm, source: ProgeoAlarm, db: str) -> ProgeoAlarm:
 	"""
 	Merge `source` into `target` (union of windows, max_values and max_value) and delete
@@ -266,7 +280,11 @@ def create_progeo_alarm_safe(measurement: ProgeoMeasurement, sensor_id: int | No
 							  threshold: float | None = None, max_value: float | None = None, triggered_at=None, status: int = 0,
 							  evaluated_by: User | None = None, normalized_at=None,
 							  sensor_max_values: list | None = None,
-							  db: str | None = "default") -> tuple[ProgeoAlarm | None, bool]:
+							  db: str | None = "default", overlapping: list | None = None,
+							  save: bool = True) -> tuple[ProgeoAlarm | None, bool]:
+	"""`overlapping`: the result of find_overlapping_alarms if the caller
+	already has it (batch runs). `save=False` leaves a prolonged alarm
+	unsaved (PROLONG_FIELDS), for the caller to write in bulk."""
 	if measurement is None:
 		return None, False
 
@@ -296,7 +314,7 @@ def create_progeo_alarm_safe(measurement: ProgeoMeasurement, sensor_id: int | No
 		# duplicate: this includes still-active alarms AND recently normalized alarms
 		# (re-evaluation of an older measurement after check_existing_alarms
 		# normalized the alarm must not spawn a second, overlapping alarm).
-		existing_alarms = find_overlapping_alarms(device, triggered_at, db_name)
+		existing_alarms = find_overlapping_alarms(device, triggered_at, db_name) if overlapping is None else overlapping
 		if len(existing_alarms) > 0:
 			# `last_updated` is not set for every measurement; fall back to
 			# `last_fetched` so the still-active alarm is always prolonged to a real time.
@@ -325,7 +343,8 @@ def create_progeo_alarm_safe(measurement: ProgeoMeasurement, sensor_id: int | No
 				# earlier when an older measurement of the same episode is re-evaluated.
 				target.triggered_at = triggered_at
 				update_fields.append("triggered_at")
-			target.save(using=db_name, update_fields=update_fields)
+			if save:
+				target.save(using=db_name, update_fields=update_fields)
 			okaylog(f"Existing alarm {target.pk} for device {device.id} prolonged/merged. (found={len(existing_alarms)})", tag="[CREATOR]")
 			return target, False
 

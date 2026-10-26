@@ -157,6 +157,33 @@ def test_re_evaluating_the_same_window_is_idempotent(window, site):
     assert len(alarm.max_values) == 2
 
 
+def _queries_to_evaluate(window, measurements):
+    """Queries of one pass over `measurements` over-threshold readings of a
+    fresh device, plus one calm reading that normalizes the alarm."""
+    from django.db import connections
+    from django.test.utils import CaptureQueriesContext
+
+    location = f.make_location(f.make_account(), alarm_threshold=100, project_id=940001)
+    device = f.make_device(location)
+    for minute in range(measurements):
+        f.make_measurement(device, pairs=[150 + minute], fetched_at=window[1](minute))
+    f.make_measurement(device, pairs=[20], fetched_at=window[1](measurements))
+    with CaptureQueriesContext(connections[f.DB]) as queries:
+        assert _evaluate(window) == (1, measurements)
+    [alarm] = _alarms(device)
+    assert len(alarm.max_values) == measurements
+    assert alarm.still_active_at == window[1](measurements - 1)
+    return len(queries)
+
+
+def test_prolonging_an_alarm_costs_no_query_per_measurement(window):
+    start = datetime.datetime(2037, 1, 1, tzinfo=datetime.timezone.utc) + datetime.timedelta(days=next(_windows))
+    other_window = (start, lambda minutes: start + datetime.timedelta(minutes=minutes),
+                    start + datetime.timedelta(hours=23))
+
+    assert _queries_to_evaluate(window, 2) == _queries_to_evaluate(other_window, 12)
+
+
 # -- evaluate_measurements_db: normalizing --------------------------------------
 
 def test_drop_below_threshold_normalizes_and_checks_weather_once(window, site, fake_weather):
