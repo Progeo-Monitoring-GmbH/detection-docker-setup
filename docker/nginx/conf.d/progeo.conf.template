@@ -134,6 +134,84 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
+    # Monitoring UIs (docker/monitoring/README.md), only for a Django superuser:
+    # log in on /aadmin/ (or the portal) first. Without the monitoring profile
+    # the containers don't resolve and these answer 502.
+    location = /_monitoring_auth {
+        internal;
+        set $backend_upstream progeo-backend:8383;
+        proxy_pass http://$backend_upstream/auth/monitoring/;
+        # The subrequest has the client's method - a POST would hit Django's CSRF check.
+        proxy_method GET;
+        proxy_pass_request_body off;
+        proxy_set_header Content-Length "";
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location @monitoring_login {
+        return 302 /aadmin/login/?next=$request_uri;
+    }
+
+    # Grafana serves from /grafana/ itself (GF_SERVER_SERVE_FROM_SUB_PATH) and
+    # logs the user in from X-WEBAUTH-USER - but only from this container's
+    # address on monitoring_net (GF_AUTH_PROXY_WHITELIST = MONITORING_NGINX_IP).
+    # proxy_set_header replaces a header of that name sent by the client.
+    location /grafana/ {
+        include /etc/nginx/snippets/monitoring_auth.conf;
+        set $grafana_upstream progeo-grafana:3000;
+        proxy_pass http://$grafana_upstream;
+        proxy_set_header X-WEBAUTH-USER $monitoring_user;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Grafana Live (dashboard updates over a WebSocket).
+    location /grafana/api/live/ {
+        include /etc/nginx/snippets/monitoring_auth.conf;
+        set $grafana_upstream progeo-grafana:3000;
+        proxy_pass http://$grafana_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_read_timeout 1h;
+        proxy_set_header X-WEBAUTH-USER $monitoring_user;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Prometheus has no login of its own. It serves from / (--web.route-prefix,
+    # so Grafana and the scrape config keep their URLs) and builds its links
+    # with /prometheus/ (--web.external-url) - the prefix is stripped here.
+    location /prometheus/ {
+        include /etc/nginx/snippets/monitoring_auth.conf;
+        set $prometheus_upstream progeo-prometheus:9090;
+        rewrite ^/prometheus(/.*)$ $1 break;
+        proxy_pass http://$prometheus_upstream;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Flower serves from /flower/ itself (FLOWER_URL_PREFIX) and still asks
+    # for its own basic auth (FLOWER_USER / FLOWER_PASSWORD).
+    location /flower/ {
+        include /etc/nginx/snippets/monitoring_auth.conf;
+        set $flower_upstream progeo-flower:5555;
+        proxy_pass http://$flower_upstream;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     # See the api server block: X-Accel-Redirect target for large media.
     location /protected-media/ {
         internal;

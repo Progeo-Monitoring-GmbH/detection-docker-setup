@@ -98,6 +98,7 @@ urlpatterns = [
 
     re_path(r"^auth/login/", views.extended_obtain_auth_token_view, name="auth_login"),
     re_path(r"^auth/logout/", views.logout_view, name="auth_login"),
+    re_path(r"^auth/monitoring/$", views.monitoring_auth_view, name="monitoring_auth"),
 
     re_path(r"^media/(?P<path>.*)$", AuthenticatedMediaView.as_view(), name="authenticated-media"),
     re_path(r"^static/(?P<path>.*)$", serve, {"document_root": settings.STATIC_ROOT}),

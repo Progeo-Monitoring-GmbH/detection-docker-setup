@@ -207,6 +207,10 @@ services:
         aliases:
           - dashboard.progeo.app
           - api.progeo.app
+      # Proxies /grafana/ and /flower/ (progeo.conf.template). Fixed address:
+      # Grafana trusts the auth proxy header from this address only.
+      monitoring_net:
+        ipv4_address: ${MONITORING_NGINX_IP:-172.31.250.250}
 
   # Optional helper: only built + started when COMPOSE_PROFILES=cad_factory
   # is set (see .env). With the profile inactive the image is not built and
@@ -226,7 +230,8 @@ services:
   # ---------------------------------------------------------------------------
   # Monitoring (docker/monitoring/README.md) - only built + started with the
   # compose profile "monitoring", e.g. COMPOSE_PROFILES=monitoring in .env.
-  # The UIs listen on MONITORING_BIND only (127.0.0.1 = reach them via SSH tunnel).
+  # The UIs are proxied by nginx on /grafana/, /prometheus/ and /flower/ (Django
+  # superusers only) and listen on MONITORING_BIND (127.0.0.1 = SSH tunnel).
   # ---------------------------------------------------------------------------
   progeo-prometheus:
     image: prom/prometheus:v3.13.4
@@ -234,7 +239,12 @@ services:
     restart: unless-stopped
     profiles: ['monitoring']
     entrypoint: ['/bin/sh', '/etc/prometheus/entrypoint.sh']
-    command: ['--web.enable-lifecycle']
+    # nginx serves the UI on /prometheus/ and strips the prefix: links use it,
+    # the routes don't (Grafana and the scrape config keep their URLs).
+    command:
+      - --web.enable-lifecycle
+      - --web.external-url=${MONITORING_URL:-http://localhost}/prometheus/
+      - --web.route-prefix=/
     environment:
       METRICS_TOKEN: ${METRICS_TOKEN:-}
       FLOWER_USER: ${FLOWER_USER:-flower}
@@ -294,6 +304,18 @@ services:
       GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: 'false'
       GF_NEWS_NEWS_FEED_ENABLED: 'false'
       GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana-dashboards/django-api.json
+      # Behind nginx on /grafana/: nginx lets only Django superusers through and
+      # sends their user name, Grafana logs them in with it (auth proxy, new
+      # users become org admins). The header counts only from nginx's address -
+      # over the SSH tunnel (localhost:3000/grafana/) it is the normal login.
+      GF_SERVER_ROOT_URL: ${MONITORING_URL:-http://localhost}/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: 'true'
+      GF_AUTH_PROXY_ENABLED: 'true'
+      GF_AUTH_PROXY_HEADER_NAME: X-WEBAUTH-USER
+      GF_AUTH_PROXY_HEADER_PROPERTY: username
+      GF_AUTH_PROXY_AUTO_SIGN_UP: 'true'
+      GF_AUTH_PROXY_WHITELIST: ${MONITORING_NGINX_IP:-172.31.250.250}
+      GF_USERS_AUTO_ASSIGN_ORG_ROLE: Admin
     ports:
       - '${MONITORING_BIND:-127.0.0.1}:${GRAFANA_UI_PORT:-3000}:3000'
     volumes:
@@ -315,6 +337,8 @@ services:
     environment:
       CELERY_BROKER_URL: ${FLOWER_BROKER_URL:-redis://:${REDIS_PASSWORD}@${REDIS_HOST}:${REDIS_PORT}/0}
       FLOWER_PORT: 5555
+      # nginx proxies /flower/ unchanged (Prometheus scrapes /flower/metrics).
+      FLOWER_URL_PREFIX: flower
       FLOWER_BASIC_AUTH: ${FLOWER_USER:-flower}:${FLOWER_PASSWORD:-}
       # Default buckets end at 10s - longer runs all landed in +Inf ("10 s" in Grafana).
       FLOWER_TASK_RUNTIME_METRIC_BUCKETS: '0.1,0.5,1,2.5,5,10,20,30,60,120,300,600,1800,3600'

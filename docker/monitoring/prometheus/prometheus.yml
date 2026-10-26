@@ -31,6 +31,8 @@ scrape_configs:
 
   # Celery tasks and workers (from the worker events, celery worker -E).
   - job_name: flower
+    # FLOWER_URL_PREFIX: Flower serves everything below /flower/.
+    metrics_path: /flower/metrics
     basic_auth:
       username: '__FLOWER_USER__'
       password_file: /prometheus/secrets/flower_password
