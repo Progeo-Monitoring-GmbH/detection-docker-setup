@@ -434,6 +434,16 @@ MEDIA_URL = "/media/"
 MEDIA_X_ACCEL = os.getenv("MEDIA_X_ACCEL", "").strip()
 
 BACKUP_DIR = os.path.join(MEDIA_ROOT, os.getenv("BACKUP_DIR", "backup"))
+# Daily copy of the dumps to a backup server over SFTP (helper/backup_transfer.py,
+# run by the cron job daily.sh right after the dumps). Empty host = off.
+BACKUP_REMOTE_HOST = os.getenv("BACKUP_REMOTE_HOST", "").strip()
+BACKUP_REMOTE_PORT = int(os.getenv("BACKUP_REMOTE_PORT", "") or 22)
+BACKUP_REMOTE_USER = os.getenv("BACKUP_REMOTE_USER", "").strip()
+BACKUP_REMOTE_PASSWORD = os.getenv("BACKUP_REMOTE_PASSWORD", "")
+BACKUP_REMOTE_KEY_FILE = os.getenv("BACKUP_REMOTE_KEY_FILE", "").strip() or "/etc/progeo/backup/id_ed25519"
+BACKUP_REMOTE_HOST_KEY = os.getenv("BACKUP_REMOTE_HOST_KEY", "").strip()
+BACKUP_REMOTE_PATH = os.getenv("BACKUP_REMOTE_PATH", "").strip() or "progeo-backups"
+BACKUP_REMOTE_KEEP = int(os.getenv("BACKUP_REMOTE_KEEP", "") or 14)
 SETUP_DIR = os.path.join(MEDIA_ROOT, os.getenv("SETUP_DIR", "setup"))
 UPLOAD_DIR = os.path.join(MEDIA_ROOT, os.getenv("UPLOAD_DIR", "uploads"))
 UPLOAD_REL_DIR = os.path.join(MEDIA_URL, os.getenv("UPLOAD_DIR", "uploads"))[1:]

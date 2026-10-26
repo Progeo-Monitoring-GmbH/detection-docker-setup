@@ -81,6 +81,9 @@ services:
       - ./logs/backend:/var/log/progeo:rw
       - /var/run/docker.sock:/var/run/docker.sock:rw
       - /var/lib/misc:/var/lib/misc:rw
+      # SSH key for the daily backup transfer (BACKUP_REMOTE_KEY_FILE, default
+      # /etc/progeo/backup/id_ed25519) - outside media/, which the API serves.
+      - ./secrets/backup:/etc/progeo/backup:ro
       # The host's .env + django.env, never baked into the (public) image:
       # start-supervisord.sh builds django.env from them on every start.
       # create_host_path: false - a missing file fails instead of becoming a directory.

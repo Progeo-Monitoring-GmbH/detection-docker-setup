@@ -98,6 +98,48 @@ bash scripts/build_progeo-cad_factory_resilient.sh status
 bash scripts/build_progeo-cad_factory_resilient.sh logs
 ```
 
+## Backups
+
+Every night at 23:53, the cron job `daily` ([docker/backend/cronjobs/daily.sh](docker/backend/cronjobs/daily.sh)) dumps every database into `media/backup`.
+Right after that, `manage.py transfer_backups` sends the newest dump of each database to a backup server over SFTP:
+
+- All dumps go as **one** tar file, `<BACKUP_REMOTE_PATH>/progeo-<YYYY-MM-DD-HHMMSS>.tar`, together with a `.sha256` file.
+  - The file is streamed straight to the server, so it needs no extra local disk space.
+  - It is uploaded as `.part` and renamed once complete, so a bundle with its final name is always whole.
+- Only dumps from the last 20 hours are sent. A database whose dump failed that night is reported, not sent with an older dump.
+- The server keeps the newest `BACKUP_REMOTE_KEEP` bundles (default 14). Older ones are deleted.
+- Each run writes its result to `logs/backend/backup_transfer.json`. With the monitoring profile, the alerts `BackupTransferFailed`, `BackupTransferStale` (no success for 30h) and `BackupTransferIncomplete` fire from it.
+
+### Setup
+
+1. Create the SSH key on the host. `secrets/` is git-ignored and mounted read-only into the backend:
+   ```bash
+   mkdir -p secrets/backup
+   ssh-keygen -t ed25519 -N "" -C "progeo-backup" -f secrets/backup/id_ed25519
+   ```
+2. Add `secrets/backup/id_ed25519.pub` to `~/.ssh/authorized_keys` of the user on the backup server.
+   - Ideally that user is SFTP-only.
+3. Get the server's host key. Only this key is accepted, so a changed or spoofed server is refused:
+   ```bash
+   ssh-keyscan -p 22 -t ed25519 <backup-host>
+   ```
+4. In `.env`, fill in `BACKUP_REMOTE_HOST`, `BACKUP_REMOTE_USER`, `BACKUP_REMOTE_HOST_KEY` (the line from step 3) and `BACKUP_REMOTE_PATH`.
+   - Use `BACKUP_REMOTE_PASSWORD` only if the server has no key login.
+5. Rebuild and restart the backend (it needs `paramiko`), then test:
+   ```bash
+   docker compose build progeo-backend && docker compose up -d progeo-backend
+   docker exec progeo-backend python manage.py transfer_backups --dry-run   # what would be sent
+   docker exec progeo-backend python manage.py transfer_backups             # send now
+   ```
+
+### Restore from the backup server
+
+```bash
+sha256sum -c progeo-2026-10-26-235301.tar.sha256
+tar -xf progeo-2026-10-26-235301.tar -C media/backup
+docker exec progeo-backend python manage.py handle_all_dbs --command=dbrestore
+```
+
 ## Notes
 
 - Most service ports are controlled via `.env` variables.

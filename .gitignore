@@ -49,3 +49,6 @@ png_output/
 *.inspect.json
 .claude/settings.json
 .claude/
+
+# SSH key of the backup transfer (docker-compose: /etc/progeo/backup)
+secrets/

@@ -12,11 +12,13 @@ from django.conf import settings
 from django.http import HttpResponse
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
+    REGISTRY,
     Counter,
     Gauge,
     Histogram,
     generate_latest,
 )
+from prometheus_client.core import GaugeMetricFamily
 
 HTTP_REQUESTS = Counter(
     "progeo_http_requests", "HTTP requests by view, method and status code", ["view", "method", "status"]
@@ -32,6 +34,37 @@ WEBSOCKET_CONNECTIONS = Gauge("progeo_websocket_connections", "Open websocket co
 WEBSOCKET_OPENED = Counter("progeo_websocket_connections_opened", "Websocket connections opened by route", ["route"])
 
 METRICS_PATH = "/metrics"
+
+
+class BackupTransferCollector:
+    """Last run of the daily backup transfer (helper/backup_transfer.py). It
+    runs in the cron job, not in this process, so its status file is read at
+    scrape time. Nothing is exported while the transfer is off or never ran."""
+
+    @staticmethod
+    def describe():
+        return []  # keeps REGISTRY.register() from calling collect() at import
+
+    def collect(self):
+        from progeo.helper.backup_transfer import is_enabled, read_status
+
+        status = read_status() if is_enabled() else {}
+        if not status:
+            return
+        for name, documentation, value in (
+            ("last_run_timestamp_seconds", "When the last transfer ended", status.get("last_run", 0)),
+            ("last_run_ok", "1 if the last transfer succeeded", 1 if status.get("last_run_ok") else 0),
+            ("last_success_timestamp_seconds", "When the last successful transfer ended",
+             status.get("last_success", 0)),
+            ("last_success_bytes", "Size of the last bundle sent", status.get("bytes", 0)),
+            ("last_success_files", "Dumps in the last bundle sent", status.get("files", 0)),
+            ("last_success_stale_databases", "Databases without a fresh dump in the last bundle",
+             len(status.get("stale") or [])),
+        ):
+            yield GaugeMetricFamily(f"progeo_backup_transfer_{name}", documentation, value=value)
+
+
+REGISTRY.register(BackupTransferCollector())
 
 
 def _view_label(request):

@@ -136,3 +136,32 @@ groups:
           severity: warning
         annotations:
           summary: 'CPU {{ $value | humanizePercentage }} busy for 15 minutes'
+
+  # Daily copy of the dumps to the backup server (progeo/helper/backup_transfer.py,
+  # cron job daily.sh). Only exported while BACKUP_REMOTE_HOST is set.
+  - name: backups
+    rules:
+      - alert: BackupTransferFailed
+        expr: progeo_backup_transfer_last_run_ok == 0
+        labels:
+          severity: critical
+        annotations:
+          summary: 'The last backup transfer to the backup server failed'
+          description: 'Reason in logs/backend/backup_transfer.json and daily.log; test with: docker exec progeo-backend python manage.py transfer_backups'
+
+      # Daily at ~23:53 plus the time the dumps take - 30h leaves room for a slow night.
+      - alert: BackupTransferStale
+        expr: time() - progeo_backup_transfer_last_success_timestamp_seconds > 30 * 3600
+        labels:
+          severity: critical
+        annotations:
+          summary: 'No successful backup transfer for {{ $value | humanizeDuration }}'
+          description: 'Is the cron job "daily" running (CRON_DISABLED_JOBS, logs/backend/daily.log)?'
+
+      - alert: BackupTransferIncomplete
+        expr: progeo_backup_transfer_last_success_stale_databases > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $value }} databases had no fresh dump in the last backup bundle'
+          description: 'Their dbbackup failed - see the summary of handle_all_dbs in logs/backend/daily.log.'
