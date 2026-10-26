@@ -8,11 +8,12 @@ from uuid import uuid4
 from celery.result import AsyncResult
 from django.db import transaction
 from django.utils import timezone
-from rest_framework.authentication import SessionAuthentication, TokenAuthentication
+from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
+from progeo.authentication import ExpiringTokenAuthentication
 from progeo.decorator import calc_runtime, require_module_permissions
 from progeo.helper.basics import RequestFailed, RequestSuccess, save_check_dir
 from progeo.helper.docker_helper import start_cad_factory
@@ -143,7 +144,7 @@ def get_connected_devices(*args, **kwargs) -> dict:
 
 class StatusViewSet(ProgeoModalViewSet):
     serializer_class = DeviceSerializer
-    authentication_classes = [JWTAuthentication, TokenAuthentication, SessionAuthentication]
+    authentication_classes = [JWTAuthentication, ExpiringTokenAuthentication, SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     @staticmethod

@@ -3,11 +3,12 @@ import json
 
 from django.http import HttpResponse
 from rest_framework import viewsets
-from rest_framework.authentication import SessionAuthentication, TokenAuthentication
+from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
+from progeo.authentication import ExpiringTokenAuthentication
 from progeo.helper.basics import RequestFailed, RequestSuccess, elog
 from progeo.helper.project_dbs import release_connection
 from progeo.settings import DATABASES
@@ -99,7 +100,7 @@ class DataTransferViewSet(viewsets.ViewSet):
     of models). Not tied to module permissions - gated on is_staff/
     is_superuser like the other staff-admin endpoints."""
 
-    authentication_classes = [JWTAuthentication, TokenAuthentication, SessionAuthentication]
+    authentication_classes = [JWTAuthentication, ExpiringTokenAuthentication, SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     @action(detail=False, url_path="export", methods=["GET"])

@@ -3,11 +3,12 @@ from datetime import datetime, timedelta
 
 from django.db.models import Count, Q
 from django.utils import timezone
-from rest_framework.authentication import SessionAuthentication, TokenAuthentication
+from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
+from progeo.authentication import ExpiringTokenAuthentication
 from progeo.decorator import require_module_permissions
 from progeo.helper.basics import RequestFailed, RequestSuccess
 from progeo.helper.cacher import cache_save_and_return, search_cache
@@ -38,7 +39,7 @@ MAX_HISTORY_DAYS = 1096
 
 class AlarmViewSet(ProgeoModalViewSet):
     serializer_class = ProgeoAlarmSerializer
-    authentication_classes = [JWTAuthentication, TokenAuthentication, SessionAuthentication]
+    authentication_classes = [JWTAuthentication, ExpiringTokenAuthentication, SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     @staticmethod

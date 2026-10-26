@@ -24,12 +24,13 @@ from django.db.models import (
 from django.db.models.functions import TruncDay
 from django.http import HttpResponse
 from django.utils import timezone
-from rest_framework.authentication import SessionAuthentication, TokenAuthentication
+from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
+from progeo.authentication import ExpiringTokenAuthentication
 from progeo.decorator import (
     has_module_permissions,
     permission_denied_response,
@@ -233,7 +234,7 @@ def _location_data(location, account):
 
 class LocationViewSet(ProgeoModalViewSet):
     serializer_class = LocationSerializer
-    authentication_classes = [JWTAuthentication, TokenAuthentication, SessionAuthentication]
+    authentication_classes = [JWTAuthentication, ExpiringTokenAuthentication, SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     @staticmethod

@@ -15,7 +15,6 @@ from django.core.management import call_command
 from django.utils import timezone
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.token_blacklist.models import (
-    BlacklistedToken,
     OutstandingToken,
 )
 from rest_framework_simplejwt.tokens import AccessToken
@@ -23,7 +22,6 @@ from rest_framework_simplejwt.tokens import AccessToken
 from progeo.authentication import LimitedTokenAuthentication
 from progeo.helper import access_requests, login_throttle, two_factor
 from progeo.helper.demo import DEMO_TOKEN_PURPOSE
-from progeo.helper.tokens import refresh_jti
 from progeo.helper.user_provisioning import parse_project_ids, provision_user
 from progeo.tests import factories as f
 from progeo.tests.mailfakes import FakeSMTP, body_of, fake_smtp  # noqa: F401
@@ -387,23 +385,22 @@ def test_failed_logins_lock_basic_auth_too(client, settings):
     assert basic(PASSWORD).status_code in (401, 403)
 
 
-def test_password_change_logs_out_other_devices(client):
+def test_password_change_logs_out_every_device_and_renews_this_one(client):
     user = _user()
     other = _login(APIClient(), user).data
     this = _login(client, user).data
-    other_jti, this_jti = refresh_jti(user, other["refresh"]), refresh_jti(user, this["refresh"])
     _bearer(client, this["access"])
 
     response = client.post("/v1/user/password/change/", {
-        "current_password": PASSWORD, "new_password": NEW_PASSWORD, "refresh": this["refresh"],
+        "current_password": PASSWORD, "new_password": NEW_PASSWORD,
     }, format="json")
 
     assert response.status_code == 200, response.content
-    blacklisted = set(BlacklistedToken.objects.using(f.DB).filter(token__user=user)
-                      .values_list("token__jti", flat=True))
-    assert other_jti in blacklisted
-    assert this_jti and this_jti not in blacklisted
-    assert APIClient().post("/api/token/refresh/", {"refresh": other["refresh"]}, format="json").status_code == 401
+    for old in (other, this):
+        assert APIClient().post("/api/token/refresh/", {"refresh": old["refresh"]}, format="json").status_code == 401
+    # The fresh pair of this device works.
+    assert APIClient().post("/api/token/refresh/", {"refresh": response.data["refresh"]},
+                            format="json").status_code == 200
 
 
 # -- step 3: 2FA -----------------------------------------------------------------
@@ -748,3 +745,55 @@ def test_request_form_company_is_optional(client):
             "privacy_accepted": True, "website": ""}
 
     assert client.post("/api/auth-support/access-requests/", form, format="json").data == {"success": True}
+
+
+# -- open issues: docker, DRF tokens, encrypted 2FA keys, error codes ------------
+
+def test_docker_is_staff_only(client):
+    client.force_authenticate(user=f.make_user(perms=("module_docker_enabled",)))
+
+    assert client.get("/api/docker/status/").status_code == 403
+    assert client.post("/api/docker/restart/", {"name": "progeo-backend"}, format="json").status_code == 403
+
+
+def test_drf_tokens_expire_and_login_issues_a_new_one(client, settings):
+    from rest_framework.authtoken.models import Token
+
+    settings.DRF_TOKEN_MAX_AGE_DAYS = 30
+    user = _user(staff=True)
+    old = client.post("/auth/login/", {"username": user.username, "password": PASSWORD}).data["token"]
+    Token.objects.using(f.DB).filter(key=old).update(created=timezone.now() - timedelta(days=31))
+
+    response = APIClient().get("/api/auth-support/staff/users/", HTTP_AUTHORIZATION=f"Token {old}")
+    assert response.status_code == 401
+    assert not Token.objects.using(f.DB).filter(key=old).exists()
+
+    new = client.post("/auth/login/", {"username": user.username, "password": PASSWORD}).data["token"]
+    assert new != old
+    assert APIClient().get("/api/auth-support/staff/users/", HTTP_AUTHORIZATION=f"Token {new}").status_code == 200
+
+
+def test_two_factor_keys_are_stored_encrypted(settings):
+    user = _user()
+    secret, _codes = _enable_2fa(user)
+    stored = TwoFactorDevice.objects.using(f.DB).get(user_id=user.pk).secret
+
+    assert stored.startswith("fernet:") and secret not in stored
+    assert two_factor.verify(user, _code(secret))
+    # Another key can't read it: the device fails closed, no crash.
+    settings.TWO_FACTOR_ENCRYPTION_KEY = "another-key"
+    assert not two_factor.verify(user, _code(secret, 1))
+
+
+def test_profile_failures_carry_a_code(client):
+    user = _user()
+    _bearer(client, _login(client, user).data["access"])
+
+    response = client.post("/v1/user/password/change/", {"current_password": "falsch", "new_password": NEW_PASSWORD},
+                           format="json")
+    assert response.data["code"] == "wrong_password"
+    response = client.post("/v1/user/password/change/", {"current_password": PASSWORD,
+                                                          "new_password": f"{user.username}Aa1!"}, format="json")
+    assert response.data["code"] == "password_invalid"
+    assert "password_too_similar" in response.data["password_codes"]
+    assert client.post("/v1/user/2fa/disable/", {"code": "123456"}, format="json").data["code"] == "invalid_code"

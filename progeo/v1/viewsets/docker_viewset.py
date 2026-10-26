@@ -1,6 +1,6 @@
 from docker.errors import DockerException, NotFound
 from rest_framework import viewsets
-from rest_framework.authentication import SessionAuthentication, TokenAuthentication
+from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 import docker
+from progeo.authentication import ExpiringTokenAuthentication
 from progeo.decorator import require_module_permissions
 from progeo.helper.basics import RequestFailed, RequestSuccess
 from progeo.helper.docker_helper import get_docker_status, is_container_running
@@ -15,8 +16,19 @@ from progeo.helper.docker_helper import get_docker_status, is_container_running
 
 class DockerViewSet(viewsets.ViewSet):
 
-    authentication_classes = [JWTAuthentication, TokenAuthentication, SessionAuthentication]
+    authentication_classes = [JWTAuthentication, ExpiringTokenAuthentication, SessionAuthentication]
     permission_classes = [IsAuthenticated]
+
+    def initial(self, request, *args, **kwargs):
+        # Restarting/removing the host's containers and reading their logs is
+        # never a customer's business, whatever module permission they hold.
+        super().initial(request, *args, **kwargs)
+        from rest_framework.exceptions import PermissionDenied
+
+        from progeo.helper.location_access import is_staff_admin
+
+        if not is_staff_admin(request.user):
+            raise PermissionDenied("Staff access required")
 
     @staticmethod
     def _get_client_or_error():

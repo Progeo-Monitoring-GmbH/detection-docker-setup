@@ -4,6 +4,7 @@ import {
   needsTwoFactorSetup,
   otpReason,
   recoveryCodesText,
+  serverErrorText,
 } from './twoFactor';
 
 const failed = (status: number, data: unknown) => ({ response: { status, data } });
@@ -52,5 +53,27 @@ describe('recoveryCodesText', () => {
     expect(recoveryCodesText('Codes', ['abcde-fghjk', 'klmno-pqrst'])).toBe(
       'Codes\n\nabcde-fghjk\nklmno-pqrst\n',
     );
+  });
+});
+
+describe('serverErrorText', () => {
+  const t = (key: string) => `t:${key}`;
+
+  it('translates by code, with the password rules spelled out', () => {
+    expect(serverErrorText(t, failed(400, { code: 'invalid_code', reason: 'Invalid code' }), 'x')).toBe(
+      't:login_otp_invalid',
+    );
+    expect(
+      serverErrorText(
+        t,
+        failed(400, { code: 'password_invalid', password_codes: ['password_too_short', 'password_too_common'] }),
+        'x',
+      ),
+    ).toBe('t:password_rule_too_short t:password_rule_too_common');
+  });
+
+  it('falls back to the reason, then the fallback', () => {
+    expect(serverErrorText(t, failed(400, { code: 'other', reason: 'Nope' }), 'x')).toBe('Nope');
+    expect(serverErrorText(t, new Error('network'), 'fallback')).toBe('fallback');
   });
 });

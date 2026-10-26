@@ -4,25 +4,11 @@ from progeo.helper.basics import ilog
 DB = "default"
 
 
-def refresh_jti(user, raw_refresh) -> str | None:
-    """The jti of `raw_refresh` if it is a valid refresh token of `user`."""
-    from rest_framework_simplejwt.exceptions import TokenError
-    from rest_framework_simplejwt.tokens import RefreshToken
-
-    if not raw_refresh:
-        return None
-    try:
-        token = RefreshToken(str(raw_refresh))
-    except TokenError:
-        return None
-    return token.get("jti") if str(token.get("user_id")) == str(getattr(user, "pk", user)) else None
-
-
-def revoke_user_tokens(user, keep_jti: str | None = None) -> int:
-    """Blacklist every outstanding JWT refresh token of `user` (except the
-    one with `keep_jti` - the device that made the change) and delete its DRF
-    token, so other devices are logged out at the latest when their access
-    token expires (SIMPLE_JWT ACCESS_TOKEN_LIFETIME). Django sessions end by
+def revoke_user_tokens(user) -> int:
+    """Blacklist every outstanding JWT refresh token of `user` and delete its
+    DRF token, so every device is logged out at the latest when its access
+    token expires (SIMPLE_JWT ACCESS_TOKEN_LIFETIME) - the one that made the
+    change gets a fresh pair (user_profile_viewset._logout_elsewhere). Django sessions end by
     themselves on a password change (session auth hash). Returns how many
     refresh tokens were blacklisted."""
     from rest_framework.authtoken.models import Token
@@ -35,8 +21,6 @@ def revoke_user_tokens(user, keep_jti: str | None = None) -> int:
     if not user_id:
         return 0
     outstanding = OutstandingToken.objects.using(DB).filter(user_id=user_id).exclude(blacklistedtoken__isnull=False)
-    if keep_jti:
-        outstanding = outstanding.exclude(jti=keep_jti)
     tokens = list(outstanding)
     BlacklistedToken.objects.using(DB).bulk_create(
         [BlacklistedToken(token=token) for token in tokens], ignore_conflicts=True,

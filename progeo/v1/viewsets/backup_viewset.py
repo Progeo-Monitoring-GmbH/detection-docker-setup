@@ -5,12 +5,13 @@ from django.core import signing
 from django.core.management import call_command
 from django.db import DEFAULT_DB_ALIAS, connections
 from django.http import FileResponse
-from rest_framework.authentication import SessionAuthentication, TokenAuthentication
+from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
+from progeo.authentication import ExpiringTokenAuthentication
 from progeo.decorator import calc_runtime, require_module_permissions
 from progeo.helper.basics import RequestFailed, RequestSuccess, delete_file
 from progeo.helper.creator import create_MfS_log
@@ -115,7 +116,7 @@ class BackupViewSet(ProgeoModalViewSet):
     pagination_class = StandardResultsSetPagination
     serializer_class = BackupSerializer
     permission_classes = [IsAuthenticated]
-    authentication_classes = [JWTAuthentication, TokenAuthentication, SessionAuthentication]
+    authentication_classes = [JWTAuthentication, ExpiringTokenAuthentication, SessionAuthentication]
 
     # Backups are dumps of whole databases - every customer's data - so they
     # are staff-only, whatever module permissions a customer holds. The file

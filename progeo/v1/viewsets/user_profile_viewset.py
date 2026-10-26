@@ -3,15 +3,27 @@ from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.utils import translation
 from rest_framework import viewsets
-from rest_framework.authentication import SessionAuthentication, TokenAuthentication
+from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
+from progeo.authentication import ExpiringTokenAuthentication
 from progeo.helper import login_throttle, two_factor
 from progeo.helper.basics import RequestFailed, RequestSuccess
 
 LANGUAGE_SESSION_KEY = "django_language"
+
+
+def _failed(code, reason, **extra):
+    """A failure with a machine-readable `code` - the frontend translates it;
+    `reason` stays English for other clients."""
+    return RequestFailed({"reason": reason, "code": code, **extra})
+
+
+def _password_invalid(exc):
+    """validate_password failed: the validators' codes (password_too_short, ...)."""
+    return _failed("password_invalid", " ".join(exc.messages), password_codes=[error.code for error in exc.error_list])
 
 
 def _token_pair(user) -> dict:
@@ -22,22 +34,22 @@ def _token_pair(user) -> dict:
     return {"refresh": str(refresh), "access": str(refresh.access_token)}
 
 
-def _logout_elsewhere(request, user):
-    """After a password change: every other login of `user` ends - its
-    refresh tokens are blacklisted - except this device (the refresh token
-    the frontend sends along, and this session)."""
+def _logout_elsewhere(request, user) -> dict:
+    """After a password or 2FA change: every login of `user` ends - all its
+    refresh tokens are blacklisted - and this device gets a fresh token pair
+    (returned; the frontend swaps it in) and keeps its session."""
     from django.contrib.auth import update_session_auth_hash
 
-    from progeo.helper.tokens import refresh_jti, revoke_user_tokens
+    from progeo.helper.tokens import revoke_user_tokens
 
-    data = request.data if isinstance(request.data, dict) else {}
-    revoke_user_tokens(user, keep_jti=refresh_jti(user, data.get("refresh")))
+    revoke_user_tokens(user)
     if hasattr(request, "session"):
         update_session_auth_hash(request._request, user)
+    return _token_pair(user)
 
 
 class UserProfileViewSet(viewsets.ViewSet):
-    authentication_classes = [JWTAuthentication, TokenAuthentication, SessionAuthentication]
+    authentication_classes = [JWTAuthentication, ExpiringTokenAuthentication, SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     @staticmethod
@@ -138,26 +150,25 @@ class UserProfileViewSet(viewsets.ViewSet):
         new_password = data.get("new_password")
 
         if not current_password or not new_password:
-            return RequestFailed({"reason": "current_password and new_password are required"})
+            return _failed("missing_fields", "current_password and new_password are required")
 
         if not user.check_password(current_password):
-            return RequestFailed({"reason": "Current password is incorrect"})
+            return _failed("wrong_password", "Current password is incorrect")
 
         if not self._is_minimally_strong_password(new_password):
-            return RequestFailed({
-                "reason": "Password must be at least 8 characters long and include at least three character sets (lowercase, uppercase, digits, special characters)",
-            })
+            return _failed(
+                "weak_password",
+                "Password must be at least 8 characters long and include at least three character sets (lowercase, uppercase, digits, special characters)",
+            )
 
         try:
             validate_password(new_password, user=user)
         except ValidationError as exc:
-            return RequestFailed({"reason": " ".join(exc.messages)})
+            return _password_invalid(exc)
 
         user.set_password(new_password)
         user.save(update_fields=["password"])
-        _logout_elsewhere(request, user)
-
-        return RequestSuccess({"message": "Password updated"})
+        return RequestSuccess({"message": "Password updated", **_logout_elsewhere(request, user)})
 
     # ------------------------------------------------------------------ 2FA
     # helper/two_factor.py. Codes that are wrong count as failed logins
@@ -192,11 +203,11 @@ class UserProfileViewSet(viewsets.ViewSet):
             login_throttle.is_locked(user.username, request) or not user.check_password(data.get("password") or "")
         ):
             login_throttle.record_failure(user.username, request)
-            return RequestFailed({"reason": "Current password is incorrect"})
+            return _failed("wrong_password", "Current password is incorrect")
         try:
             setup = two_factor.start_setup(user)
         except ValueError:
-            return RequestFailed({"reason": "Two-factor authentication is already enabled"})
+            return _failed("already_enabled", "Two-factor authentication is already enabled")
         return RequestSuccess(setup)
 
     @action(detail=False, url_path="2fa/confirm", methods=["POST"])
@@ -208,28 +219,26 @@ class UserProfileViewSet(viewsets.ViewSet):
         data = request.data if isinstance(request.data, dict) else {}
         codes = two_factor.confirm_setup(user, data.get("code"))
         if codes is None:
-            return RequestFailed({"reason": "Invalid code"})
-        _logout_elsewhere(request, user)
-        return RequestSuccess({"recovery_codes": codes, **_token_pair(user)})
+            return _failed("invalid_code", "Invalid code")
+        return RequestSuccess({"recovery_codes": codes, **_logout_elsewhere(request, user)})
 
     @action(detail=False, url_path="2fa/disable", methods=["POST"])
     def two_factor_disable(self, request, *args, **kwargs):
         user = request.user
         data = request.data if isinstance(request.data, dict) else {}
         if _staff_must_keep(user):
-            return RequestFailed({"reason": "Two-factor authentication is mandatory for staff"})
+            return _failed("mandatory_for_staff", "Two-factor authentication is mandatory for staff")
         if not self._code_ok(request, user, data.get("code")):
-            return RequestFailed({"reason": "Invalid code"})
+            return _failed("invalid_code", "Invalid code")
         two_factor.disable(user)
-        _logout_elsewhere(request, user)
-        return RequestSuccess({"enabled": False, **_token_pair(user)})
+        return RequestSuccess({"enabled": False, **_logout_elsewhere(request, user)})
 
     @action(detail=False, url_path="2fa/recovery-codes", methods=["POST"])
     def two_factor_recovery_codes(self, request, *args, **kwargs):
         user = request.user
         data = request.data if isinstance(request.data, dict) else {}
         if not self._code_ok(request, user, data.get("code"), allow_recovery=False):
-            return RequestFailed({"reason": "Invalid code"})
+            return _failed("invalid_code", "Invalid code")
         return RequestSuccess({"recovery_codes": two_factor.regenerate_recovery_codes(user)})
 
     @action(detail=False, url_path="password/set", methods=["POST"])
@@ -239,22 +248,22 @@ class UserProfileViewSet(viewsets.ViewSet):
         user = request.user
         data = request.data if isinstance(request.data, dict) else {}
         if not two_factor.is_enabled(user):
-            return RequestFailed({"reason": "Two-factor authentication required"})
+            return _failed("two_factor_required", "Two-factor authentication required")
         new_password = data.get("new_password") or ""
         if not self._is_minimally_strong_password(new_password):
-            return RequestFailed({
-                "reason": "Password must be at least 8 characters long and include at least three character sets (lowercase, uppercase, digits, special characters)",
-            })
+            return _failed(
+                "weak_password",
+                "Password must be at least 8 characters long and include at least three character sets (lowercase, uppercase, digits, special characters)",
+            )
         try:
             validate_password(new_password, user=user)
         except ValidationError as exc:
-            return RequestFailed({"reason": " ".join(exc.messages)})
+            return _password_invalid(exc)
         if not self._code_ok(request, user, data.get("code")):
-            return RequestFailed({"reason": "Invalid code"})
+            return _failed("invalid_code", "Invalid code")
         user.set_password(new_password)
         user.save(update_fields=["password"])
-        _logout_elsewhere(request, user)
-        return RequestSuccess({"message": "Password updated"})
+        return RequestSuccess({"message": "Password updated", **_logout_elsewhere(request, user)})
 
 
 def _staff_must_keep(user) -> bool:

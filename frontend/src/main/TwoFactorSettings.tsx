@@ -13,7 +13,7 @@ import {
 } from '../components/ui/Snackbar.jsx';
 import LabeledInput from '../components/ui/kit/LabeledInput';
 import PillButton from '../components/ui/kit/PillButton';
-import { recoveryCodesText } from './twoFactor';
+import { recoveryCodesText, serverErrorText } from './twoFactor';
 
 type TwoFactorStatus = {
   enabled: boolean;
@@ -51,13 +51,6 @@ const errorStyle: React.CSSProperties = {
   fontSize: 12.5,
   color: '#b42318',
   margin: 0,
-};
-
-// The backend's reasons are English - the ones a user can cause get a translation.
-const KNOWN_REASONS: Record<string, string> = {
-  'Invalid code': 'login_otp_invalid',
-  'Current password is incorrect': 'tfa_password_wrong',
-  'Two-factor authentication is mandatory for staff': 'tfa_required_hint',
 };
 
 /**
@@ -153,8 +146,7 @@ const TwoFactorSettings = ({
   }, [auth.token]);
 
   const fail = (err) => {
-    const reason = String(errorReason(err) || '');
-    setError(KNOWN_REASONS[reason] ? t(KNOWN_REASONS[reason]) : reason || t('tfa_error'));
+    setError(serverErrorText(t, err, String(errorReason(err) || '') || t('tfa_error')));
     setBusy(false);
   };
 

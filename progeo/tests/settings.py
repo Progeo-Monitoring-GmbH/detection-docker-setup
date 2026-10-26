@@ -54,7 +54,9 @@ PASSWORD_RESET_MINUTES = 30
 # lower them with override_settings.
 LOGIN_MAX_FAILURES_PER_NAME = 1000
 LOGIN_MAX_FAILURES_PER_IP = 100000
+DRF_TOKEN_MAX_AGE_DAYS = 30
 TWO_FACTOR_ISSUER = "ProGeo"
+TWO_FACTOR_ENCRYPTION_KEY = ""
 TWO_FACTOR_REQUIRED_FOR_STAFF = False
 BOUNCE_IMAP_HOST = ""
 BOUNCE_IMAP_PORT = 993
@@ -126,7 +128,8 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.IsAuthenticated",
     ],
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.TokenAuthentication",
+        # DRF tokens (/auth/login/) expire after DRF_TOKEN_MAX_AGE_DAYS.
+        "progeo.authentication.ExpiringTokenAuthentication",
         "rest_framework.authentication.BasicAuthentication",
         "rest_framework_simplejwt.authentication.JWTAuthentication",
         # Not progeo.authentication.LimitedTokenAuthentication (see progeo/settings.py).

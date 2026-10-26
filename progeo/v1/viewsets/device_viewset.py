@@ -6,14 +6,17 @@ from datetime import datetime, timedelta
 
 from celery.exceptions import TimeoutError
 from django.utils import timezone
-from rest_framework.authentication import SessionAuthentication, TokenAuthentication
+from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action
 from rest_framework.exceptions import ParseError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
-from progeo.authentication import LimitedTokenAuthentication
+from progeo.authentication import (
+    ExpiringTokenAuthentication,
+    LimitedTokenAuthentication,
+)
 from progeo.decorator import calc_runtime, require_module_permissions
 from progeo.helper.alarm_evaluation import evaluate_measurement_instantly
 from progeo.helper.basics import RequestFailed, RequestSuccess, elog, ilog
@@ -59,7 +62,7 @@ LORAWAN_MEASUREMENT_FIELDS = {
 
 class DeviceViewSet(ProgeoModalViewSet):
     serializer_class = DeviceSerializer
-    authentication_classes = [JWTAuthentication, TokenAuthentication, SessionAuthentication]
+    authentication_classes = [JWTAuthentication, ExpiringTokenAuthentication, SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     @staticmethod
@@ -158,7 +161,7 @@ class DeviceViewSet(ProgeoModalViewSet):
     @calc_runtime
     @require_module_permissions("module_devices_enabled")
     @action(detail=False, url_path="forward/measurement",
-            authentication_classes=[JWTAuthentication, TokenAuthentication, LimitedTokenAuthentication, SessionAuthentication],
+            authentication_classes=[JWTAuthentication, ExpiringTokenAuthentication, LimitedTokenAuthentication, SessionAuthentication],
             methods=["POST"])
     def forward_measurement(self, request, pk=None, *args, **kwargs):
         """Store a measurement forwarded from a node server as a NEW row.

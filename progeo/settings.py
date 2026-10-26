@@ -103,10 +103,15 @@ PASSWORD_RESET_MINUTES = parse_int(os.getenv("PASSWORD_RESET_MINUTES"), 30)
 # 15 minutes (helper/login_throttle.py).
 LOGIN_MAX_FAILURES_PER_NAME = parse_int(os.getenv("LOGIN_MAX_FAILURES_PER_NAME"), 10)
 LOGIN_MAX_FAILURES_PER_IP = parse_int(os.getenv("LOGIN_MAX_FAILURES_PER_IP"), 50)
+# DRF tokens of /auth/login/ (ExpiringTokenAuthentication); 0 = no expiry.
+DRF_TOKEN_MAX_AGE_DAYS = parse_int(os.getenv("DRF_TOKEN_MAX_AGE_DAYS"), 30)
 # Two-factor authentication (helper/two_factor.py): the name authenticator
 # apps show, and whether staff/superusers must set it up before they can use
 # the portal (TwoFactorRequiredMiddleware) - switch on once staff know.
 TWO_FACTOR_ISSUER = os.getenv("TWO_FACTOR_ISSUER", "ProGeo")
+# Encrypts the stored 2FA keys; empty = derived from SECRET_KEY. Set it once and
+# keep it - changing it (or SECRET_KEY without it) invalidates every 2FA device.
+TWO_FACTOR_ENCRYPTION_KEY = os.getenv("TWO_FACTOR_ENCRYPTION_KEY", "")
 TWO_FACTOR_REQUIRED_FOR_STAFF = parse_boolean(os.getenv("TWO_FACTOR_REQUIRED_FOR_STAFF", "0"))
 # Who is told about new access requests; empty = DJANGO_SUPERUSER_EMAIL.
 ACCESS_REQUEST_NOTIFY = (os.getenv("ACCESS_REQUEST_NOTIFY") or os.getenv("DJANGO_SUPERUSER_EMAIL") or "").strip()
@@ -204,7 +209,8 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.IsAuthenticated",
     ],
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.TokenAuthentication",
+        # DRF tokens (/auth/login/) expire after DRF_TOKEN_MAX_AGE_DAYS.
+        "progeo.authentication.ExpiringTokenAuthentication",
         "rest_framework.authentication.BasicAuthentication",
         "rest_framework_simplejwt.authentication.JWTAuthentication",
         # Not progeo.authentication.LimitedTokenAuthentication: those tokens

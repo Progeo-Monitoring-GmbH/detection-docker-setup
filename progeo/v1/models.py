@@ -1171,10 +1171,12 @@ class TwoFactorDevice(models.Model):
     (helper/two_factor.py). It counts once `confirmed_at` is set - the user
     typed a valid code after scanning it. `recovery_codes` holds the SHA-256
     hashes of the unused one-time recovery codes; `last_step` is the time step
-    of the last accepted code, so no code is accepted twice."""
+    of the last accepted code, so no code is accepted twice. `secret` is
+    stored encrypted (helper/two_factor.py)."""
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="two_factor")
-    secret = models.CharField(max_length=64)
+    # Encrypted ("fernet:..."), see helper/two_factor.py.
+    secret = models.CharField(max_length=255)
     confirmed_at = models.DateTimeField(null=True, blank=True)
     last_step = models.BigIntegerField(default=0)
     recovery_codes = models.JSONField(default=list, blank=True)

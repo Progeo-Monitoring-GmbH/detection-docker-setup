@@ -9,12 +9,13 @@ Permissions (all AND-combined, staff/superuser bypass):
   Modbus view .............. + module_interface_modbus_enabled (edit: modbus_edit)
   SMS   view  .............. + module_interface_sms_enabled    (edit: sms_edit)
 """
-from rest_framework.authentication import SessionAuthentication, TokenAuthentication
+from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.viewsets import ViewSet
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
+from progeo.authentication import ExpiringTokenAuthentication
 from progeo.decorator import (
     has_module_permissions,
     permission_denied_response,
@@ -32,6 +33,25 @@ from progeo.helper.interface_config import (
 
 PASSWORD_MASK = "********"
 
+
+def _overrides(values, fields) -> dict:
+    """The submitted (unsaved) form values among `fields`."""
+    return {field: values[field] for field in fields if values.get(field) not in (None, "")}
+
+
+def _changes(cfg, overrides, fields) -> bool:
+    return any(field in overrides and str(overrides[field]) != str(cfg.get(field) or "") for field in fields)
+
+
+def _target_override_denied(request, cfg, overrides, fields, edit_code):
+    """A connection test against another host/port than the saved one needs
+    the section's edit permission (whoever may save a host may test it) -
+    else view-only users could make the server connect anywhere (internal
+    network). Returns the 403 response, or None."""
+    if _changes(cfg, overrides, fields) and not has_module_permissions(request.user, edit_code):
+        return permission_denied_response([edit_code])
+    return None
+
 MODULE_INTERFACE = "module_interface_enabled"
 MODULE_SMTP_ENABLED = "module_interface_smtp_enabled"
 MODULE_SMTP_EDIT = "module_interface_smtp_edit"
@@ -44,7 +64,7 @@ MODULE_SMS_EDIT = "module_interface_sms_edit"
 class InterfaceViewSet(ViewSet):
     """Runtime SMTP / Modbus / SMS configuration (see helper/interface_config.py)."""
 
-    authentication_classes = [JWTAuthentication, TokenAuthentication, SessionAuthentication]
+    authentication_classes = [JWTAuthentication, ExpiringTokenAuthentication, SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     # ------------------------------------------------------------------ #
@@ -82,13 +102,18 @@ class InterfaceViewSet(ViewSet):
 
         cfg = dict(get_smtp_config())
         values = request.data if isinstance(request.data, dict) else {}
-        for field in ("sender", "reply_to", "server", "port", "username"):
-            if values.get(field) not in (None, ""):
-                cfg[field] = values[field]
-        # An empty / masked password means "keep the stored one".
+        overrides = _overrides(values, ("sender", "reply_to", "server", "port", "username"))
+        denied = _target_override_denied(request, cfg, overrides, ("server", "port"), MODULE_SMTP_EDIT)
+        if denied:
+            return denied
+        # An empty / masked password means "keep the stored one" - but only
+        # for the stored server and login: never hand it to another host.
         password = values.get("password")
         if password not in (None, "", PASSWORD_MASK):
             cfg["password"] = password
+        elif _changes(cfg, overrides, ("server", "username")):
+            cfg["password"] = ""
+        cfg.update(overrides)
         return RequestSuccess({"test": test_smtp_connection(cfg)})
 
     # ------------------------------------------------------------------ #
@@ -117,9 +142,11 @@ class InterfaceViewSet(ViewSet):
 
         cfg = dict(get_modbus_config())
         values = request.data if isinstance(request.data, dict) else {}
-        for field in ("host", "port", "unit_id", "timeout", "start_address"):
-            if values.get(field) not in (None, ""):
-                cfg[field] = values[field]
+        overrides = _overrides(values, ("host", "port", "unit_id", "timeout", "start_address"))
+        denied = _target_override_denied(request, cfg, overrides, ("host", "port"), MODULE_MODBUS_EDIT)
+        if denied:
+            return denied
+        cfg.update(overrides)
         return RequestSuccess({"test": test_modbus_connection(cfg)})
 
     # ------------------------------------------------------------------ #

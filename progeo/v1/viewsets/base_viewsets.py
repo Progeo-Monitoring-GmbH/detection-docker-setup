@@ -9,7 +9,6 @@ from django.http import HttpResponse, JsonResponse
 from django.views import View
 from django.views.static import serve as serve_media
 from rest_framework import status
-from rest_framework.authentication import TokenAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
@@ -19,6 +18,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.views import TokenObtainPairView
 
+from progeo.authentication import ExpiringTokenAuthentication
 from progeo.helper import heatmap_video
 from progeo.helper.basics import RequestFailed, RequestSuccess
 from progeo.helper.creator import create_MfS_log
@@ -60,7 +60,7 @@ class AuthenticatedMediaView(View):
         SPA authenticates via JWT/Token, not the session cookie."""
         if request.user.is_authenticated:
             return request.user
-        for authenticator in (JWTAuthentication(), TokenAuthentication()):
+        for authenticator in (JWTAuthentication(), ExpiringTokenAuthentication()):
             try:
                 result = authenticator.authenticate(request)
             except (AuthenticationFailed, InvalidToken, TokenError):

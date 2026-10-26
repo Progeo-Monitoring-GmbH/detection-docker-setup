@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import ModelBackend
 from django.core.exceptions import PermissionDenied
@@ -5,7 +7,11 @@ from django.db.models import Q
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from rest_framework import exceptions
-from rest_framework.authentication import BaseAuthentication, get_authorization_header
+from rest_framework.authentication import (
+    BaseAuthentication,
+    TokenAuthentication,
+    get_authorization_header,
+)
 
 from progeo.v1.models import LimitedToken
 
@@ -158,3 +164,24 @@ class LimitedTokenAuthentication(BaseAuthentication):
 
     def authenticate_header(self, request):
         return self.keyword
+
+
+class ExpiringTokenAuthentication(TokenAuthentication):
+    """DRF's token login (/auth/login/), but a token is only valid for
+    DRF_TOKEN_MAX_AGE_DAYS after it was issued - an expired one is deleted,
+    /auth/login/ then issues a new one. Password changes delete it anyway
+    (helper/tokens.py)."""
+
+    def authenticate_credentials(self, key):
+        user, token = super().authenticate_credentials(key)
+        if is_expired_drf_token(token):
+            token.delete()
+            raise exceptions.AuthenticationFailed(_("Token expired."))
+        return user, token
+
+
+def is_expired_drf_token(token) -> bool:
+    from django.conf import settings
+
+    max_age_days = getattr(settings, "DRF_TOKEN_MAX_AGE_DAYS", 30)
+    return bool(max_age_days) and token.created <= timezone.now() - timedelta(days=max_age_days)

@@ -98,8 +98,10 @@ def get_esendex_config() -> dict[str, Any]:
 
 def set_smtp_config(values: dict) -> dict[str, Any]:
     """Persist the SMTP config. ``password`` may be a mask (empty or
-    '********') to keep the previously stored password unchanged."""
-    return _save("smtp", values, DEFAULT_SMTP, "password")
+    '********') to keep the previously stored password unchanged - as long
+    as server and username stay: the stored password never follows a login
+    to another server."""
+    return _save("smtp", values, DEFAULT_SMTP, "password", bound_fields=("server", "username"))
 
 
 def set_modbus_config(values: dict) -> dict[str, Any]:
@@ -112,17 +114,23 @@ def set_esendex_config(values: dict) -> dict[str, Any]:
     return _save("esendex", values, DEFAULT_ESENDEX, "password")
 
 
-def _save(key: str, values: dict, default: dict, secret_field: str | None) -> dict[str, Any]:
+def _save(key: str, values: dict, default: dict, secret_field: str | None,
+          bound_fields: tuple = ()) -> dict[str, Any]:
+    """`bound_fields`: a masked secret is only kept while these stay as stored."""
     from progeo.v1.models import SystemConfig
 
     current = _stored(key) or {}
+    moved = any(
+        values.get(field) is not None and str(values.get(field)) != str(current.get(field, "") or "")
+        for field in bound_fields
+    )
     merged = dict(default)
     for field in default:
         value = values.get(field)
         if value is None:
             continue
         if secret_field is not None and field == secret_field and str(value).strip() in ("", "********"):
-            value = current.get(field, "")
+            value = "" if moved else current.get(field, "")
         merged[field] = value
     _row, _ = SystemConfig.objects.update_or_create(key=key, defaults={"value": merged})
     return merged

@@ -17,6 +17,9 @@ MASK = "********"
 SMTP_VIEW = ("module_interface_enabled", "module_interface_smtp_enabled")
 MODBUS_VIEW = ("module_interface_enabled", "module_interface_modbus_enabled")
 SMS_VIEW = ("module_interface_enabled", "module_interface_sms_enabled")
+# Testing another host/port than the saved one needs the edit permission.
+SMTP_TEST = (*SMTP_VIEW, "module_interface_smtp_edit")
+MODBUS_TEST = (*MODBUS_VIEW, "module_interface_modbus_edit")
 
 ENV_NAMES = [
     *interface_config._SMTP_ENV.values(),
@@ -144,13 +147,29 @@ def test_smtp_post_saves_and_masks_password(api_client):
 
 @pytest.mark.parametrize("submitted", [MASK, "", "   "])
 def test_smtp_masked_or_empty_password_keeps_the_stored_one(api_client, submitted):
-    SystemConfig.objects.using(f.DB).create(key="smtp", value={**interface_config.DEFAULT_SMTP, "password": "keep-me"})
+    SystemConfig.objects.using(f.DB).create(
+        key="smtp", value={**interface_config.DEFAULT_SMTP, "server": "mail.example", "password": "keep-me"}
+    )
     _login(api_client, *SMTP_VIEW, "module_interface_smtp_edit")
 
-    api_client.post("/v1/interface/smtp/", {"server": "new.example", "password": submitted}, format="json")
+    api_client.post("/v1/interface/smtp/", {"server": "mail.example", "port": 465, "password": submitted},
+                    format="json")
 
     assert _stored("smtp")["password"] == "keep-me"
-    assert _stored("smtp")["server"] == "new.example"
+    assert _stored("smtp")["port"] == 465
+
+
+@pytest.mark.parametrize("field, value", [("server", "new.example"), ("username", "someone-else")])
+def test_smtp_stored_password_never_follows_a_new_server_or_login(api_client, field, value):
+    SystemConfig.objects.using(f.DB).create(
+        key="smtp", value={**interface_config.DEFAULT_SMTP, "server": "mail.example", "password": "keep-me"}
+    )
+    _login(api_client, *SMTP_VIEW, "module_interface_smtp_edit")
+
+    api_client.post("/v1/interface/smtp/", {field: value, "password": MASK}, format="json")
+
+    assert _stored("smtp")["password"] == ""
+    assert _stored("smtp")[field] == value
 
 
 def test_smtp_post_without_password_reports_empty_mask(api_client):
@@ -236,25 +255,47 @@ def test_smtp_test_uses_submitted_values_and_never_sends(api_client, fake_smtp):
     SystemConfig.objects.using(f.DB).create(
         key="smtp", value={**interface_config.DEFAULT_SMTP, "server": "stored.example", "password": "stored-pw"}
     )
-    _login(api_client, *SMTP_VIEW)
+    _login(api_client, *SMTP_TEST)
 
     test = api_client.post(
         "/v1/interface/smtp/test/",
-        {"server": "form.example", "port": "2525", "username": "bob", "password": MASK},
+        {"server": "form.example", "port": "2525", "username": "bob", "password": "form-pw"},
         format="json",
     ).json()["test"]
 
     assert test["ok"] is True, test
     smtp = fake_smtp.instances[0]
     assert (smtp.server, smtp.port) == ("form.example", 2525)
-    # Masked password -> the stored one is used for the login.
-    assert ("login", "bob", "stored-pw") in smtp.calls
+    assert ("login", "bob", "form-pw") in smtp.calls
     assert "sendmail" not in smtp.calls
     assert test["steps"][-1] == "Login as 'bob' OK"
 
 
+def test_smtp_test_masked_password_only_for_the_stored_server(api_client, fake_smtp):
+    SystemConfig.objects.using(f.DB).create(key="smtp", value={
+        **interface_config.DEFAULT_SMTP, "server": "stored.example", "username": "bob", "password": "stored-pw",
+    })
+    _login(api_client, *SMTP_TEST)
+
+    api_client.post("/v1/interface/smtp/test/", {"password": MASK}, format="json")
+    api_client.post("/v1/interface/smtp/test/", {"server": "evil.example", "password": MASK}, format="json")
+
+    stored, moved = fake_smtp.instances
+    assert ("login", "bob", "stored-pw") in stored.calls
+    assert moved.server == "evil.example"
+    assert not any(isinstance(call, tuple) and "stored-pw" in call for call in moved.calls)
+
+
+def test_smtp_and_modbus_test_of_another_host_needs_the_edit_permission(api_client, fake_smtp):
+    _login(api_client, *SMTP_VIEW, *MODBUS_VIEW)
+
+    assert api_client.post("/v1/interface/smtp/test/", {"server": "10.0.0.1"}, format="json").status_code == 403
+    assert api_client.post("/v1/interface/modbus/test/", {"host": "10.0.0.1"}, format="json").status_code == 403
+    assert fake_smtp.instances == []
+
+
 def test_smtp_test_without_username_skips_login(api_client, fake_smtp):
-    _login(api_client, *SMTP_VIEW)
+    _login(api_client, *SMTP_TEST)
 
     test = api_client.post("/v1/interface/smtp/test/", {"server": "s.example"}, format="json").json()["test"]
 
@@ -269,7 +310,7 @@ def test_smtp_test_without_username_skips_login(api_client, fake_smtp):
 )
 def test_smtp_test_reports_the_failing_step(api_client, fake_smtp, fail_on, steps_done, error_part):
     fake_smtp.fail_on = fail_on
-    _login(api_client, *SMTP_VIEW)
+    _login(api_client, *SMTP_TEST)
 
     test = api_client.post(
         "/v1/interface/smtp/test/", {"server": "s.example", "username": "u", "password": "p"}, format="json"
@@ -282,7 +323,7 @@ def test_smtp_test_reports_the_failing_step(api_client, fake_smtp, fail_on, step
 
 def test_smtp_test_closes_the_connection_after_a_failure(api_client, fake_smtp):
     fake_smtp.fail_on = "login"
-    _login(api_client, *SMTP_VIEW)
+    _login(api_client, *SMTP_TEST)
 
     api_client.post("/v1/interface/smtp/test/", {"server": "s", "username": "u", "password": "p"}, format="json")
 
@@ -369,7 +410,7 @@ def test_modbus_test_merges_form_values_and_reads_one_register(api_client, fake_
     SystemConfig.objects.using(f.DB).create(
         key="modbus", value={**interface_config.DEFAULT_MODBUS, "host": "stored-host", "unit_id": 3}
     )
-    _login(api_client, *MODBUS_VIEW)
+    _login(api_client, *MODBUS_TEST)
 
     test = api_client.post(
         "/v1/interface/modbus/test/", {"port": "1502", "start_address": "10"}, format="json"
@@ -385,7 +426,7 @@ def test_modbus_test_merges_form_values_and_reads_one_register(api_client, fake_
 def test_modbus_test_reports_connect_failure(api_client, fake_modbus):
     client_cls, reads, _response = fake_modbus
     client_cls.connect_ok = False
-    _login(api_client, *MODBUS_VIEW)
+    _login(api_client, *MODBUS_TEST)
 
     test = api_client.post("/v1/interface/modbus/test/", {"host": "1.2.3.4"}, format="json").json()["test"]
 
@@ -397,7 +438,7 @@ def test_modbus_test_reports_connect_failure(api_client, fake_modbus):
 def test_modbus_test_reports_register_error(api_client, fake_modbus):
     _client_cls, _reads, response = fake_modbus
     response["value"] = FakeRegisterResponse(error=True)
-    _login(api_client, *MODBUS_VIEW)
+    _login(api_client, *MODBUS_TEST)
 
     test = api_client.post("/v1/interface/modbus/test/", {"host": "1.2.3.4"}, format="json").json()["test"]
 

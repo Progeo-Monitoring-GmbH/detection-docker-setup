@@ -6,6 +6,7 @@ from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from progeo.authentication import is_expired_drf_token
 from progeo.helper.basics import dlog
 from progeo.helper.two_factor import check_login_code, is_required
 from progeo.v1.serializers import TwoFactorRequired
@@ -26,6 +27,10 @@ class ExtendedObtainAuthToken(ObtainAuthToken):
             raise TwoFactorRequired(error)
         # login(request, user)   # TODO fix later
         token, _created = Token.objects.get_or_create(user=user)
+        if is_expired_drf_token(token):
+            # Expired (ExpiringTokenAuthentication): a new key, not the old one again.
+            token.delete()
+            token = Token.objects.create(user=user)
         return Response({'token': token.key})
 
 

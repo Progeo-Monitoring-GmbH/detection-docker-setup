@@ -33,6 +33,41 @@ RECOVERY_CODE_COUNT = 10
 _RECOVERY_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"  # no 0/o, 1/l/i
 
 
+# The TOTP key is stored encrypted (Fernet), with a key derived from
+# TWO_FACTOR_ENCRYPTION_KEY - or SECRET_KEY without it. Changing that key
+# makes every stored 2FA device unusable (users set it up again; staff can
+# reset it), so set TWO_FACTOR_ENCRYPTION_KEY once and keep it.
+_ENCRYPTED_PREFIX = "fernet:"
+
+
+def _fernet():
+    from cryptography.fernet import Fernet
+
+    secret = getattr(settings, "TWO_FACTOR_ENCRYPTION_KEY", "") or settings.SECRET_KEY
+    key = base64.urlsafe_b64encode(hashlib.sha256(f"progeo-2fa:{secret}".encode()).digest())
+    return Fernet(key)
+
+
+def _encrypt_secret(secret: str) -> str:
+    return _ENCRYPTED_PREFIX + _fernet().encrypt(secret.encode()).decode()
+
+
+def _secret(device) -> str | None:
+    """The device's base32 TOTP key; None if it can't be decrypted (key changed)."""
+    from cryptography.fernet import InvalidToken
+
+    stored = device.secret or ""
+    if not stored.startswith(_ENCRYPTED_PREFIX):
+        return stored  # stored before encryption
+    try:
+        return _fernet().decrypt(stored[len(_ENCRYPTED_PREFIX):].encode()).decode()
+    except InvalidToken:
+        from progeo.helper.basics import elog
+
+        elog(f"[2fa] Key of user {device.user_id} can't be decrypted - TWO_FACTOR_ENCRYPTION_KEY/SECRET_KEY changed?")
+        return None
+
+
 def _device(user, confirmed=True):
     from progeo.v1.models import TwoFactorDevice
 
@@ -75,8 +110,10 @@ def _current_step(now=None) -> int:
     return int((now if now is not None else time.time()) // STEP_SECONDS)
 
 
-def _matching_step(secret: str, code: str, now=None):
+def _matching_step(secret: str | None, code: str, now=None):
     """The time step `code` belongs to (within the drift), else None."""
+    if not secret:
+        return None
     current = _current_step(now)
     for step in range(current - DRIFT_STEPS, current + DRIFT_STEPS + 1):
         if hmac.compare_digest(_totp(secret, step), code):
@@ -118,7 +155,7 @@ def start_setup(user) -> dict:
         raise ValueError("already_enabled")
     secret = base64.b32encode(secrets.token_bytes(20)).decode().rstrip("=")
     TwoFactorDevice.objects.using(DB).filter(user_id=user.pk, confirmed_at__isnull=True).delete()
-    TwoFactorDevice.objects.using(DB).create(user_id=user.pk, secret=secret)
+    TwoFactorDevice.objects.using(DB).create(user_id=user.pk, secret=_encrypt_secret(secret))
     uri = provisioning_uri(user, secret)
     return {"secret": secret, "otpauth_uri": uri, "qr_code": _qr_data_uri(uri)}
 
@@ -141,7 +178,7 @@ def confirm_setup(user, code) -> list[str] | None:
         )
         if device is None:
             return None
-        step = _matching_step(device.secret, _normalize_code(code))
+        step = _matching_step(_secret(device), _normalize_code(code))
         if step is None:
             return None
         codes = _new_recovery_codes()
@@ -195,7 +232,7 @@ def verify(user, code, allow_recovery: bool = True) -> bool:
         if device is None:
             return False
         if normalized.isdigit() and len(normalized) == DIGITS:
-            step = _matching_step(device.secret, normalized)
+            step = _matching_step(_secret(device), normalized)
             if step is None or step <= device.last_step:
                 return False
             device.last_step = step

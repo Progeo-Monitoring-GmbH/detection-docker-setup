@@ -12,6 +12,7 @@ import PillButton from '../components/ui/kit/PillButton';
 import LabeledInput from '../components/ui/kit/LabeledInput';
 import { isDemoReadOnlyError, isDemoUser } from './demo';
 import TwoFactorSettings from './TwoFactorSettings';
+import { serverErrorText } from './twoFactor';
 
 type UserProfileResponse = {
   username: string;
@@ -282,21 +283,24 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
     }
 
     setIsSavingPassword(true);
-    // `refresh`: every other login of the user ends, this device stays logged in.
+    // Every login of the user ends - this device gets a fresh token pair back.
     void axiosConfig.perform_post(
       auth,
       passwordMode === 'set' ? '/v1/user/password/set/' : '/v1/user/password/change/',
       passwordMode === 'set'
-        ? { code: proof, new_password: newPassword, refresh: auth.refreshToken }
-        : { current_password: proof, new_password: newPassword, refresh: auth.refreshToken },
-      () => {
+        ? { code: proof, new_password: newPassword }
+        : { current_password: proof, new_password: newPassword },
+      (response) => {
+        if (response?.data?.access && response?.data?.refresh) {
+          auth.loginWithTokens(response.data.access, response.data.refresh);
+        }
         showSuccessBar(enqueueSnackbar, t('profile_password_saved'));
         resetPasswordForm();
         setHasUsablePassword(true);
         setIsSavingPassword(false);
       },
       (error) => {
-        const reason = errorReason(error);
+        const reason = serverErrorText(t, error, String(errorReason(error) || ''));
         showErrorBar(enqueueSnackbar, `${t('profile_password_error')}: ${reason}`);
         setIsSavingPassword(false);
       },

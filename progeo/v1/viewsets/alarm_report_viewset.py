@@ -1,10 +1,11 @@
 import datetime
 
-from rest_framework.authentication import SessionAuthentication, TokenAuthentication
+from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
+from progeo.authentication import ExpiringTokenAuthentication
 from progeo.decorator import require_module_permissions
 from progeo.helper.basics import RequestFailed, RequestSuccess
 from progeo.helper.location_access import is_account_member, is_staff_admin
@@ -20,7 +21,7 @@ DEFAULT_REPORT_LIMIT = 60
 
 class AlarmReportViewSet(ProgeoModalViewSet):
     serializer_class = AlarmDailyReportSerializer
-    authentication_classes = [JWTAuthentication, TokenAuthentication, SessionAuthentication]
+    authentication_classes = [JWTAuthentication, ExpiringTokenAuthentication, SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     @staticmethod
