@@ -1148,7 +1148,7 @@ class EmailSuppression(models.Model):
 class LoginLink(models.Model):
     """One-time login link (magic link) of a user. Only the SHA-256 of the
     token is stored - the token itself exists only in the mail. Deliberately
-    not a LimitedToken: those double as API tokens (LimitedTokenAuthentication)."""
+    not a LimitedToken: those are transfer tokens (TransferTokenAuthentication)."""
 
     class Purpose(models.TextChoices):
         LOGIN = "login", "Anmeldelink"

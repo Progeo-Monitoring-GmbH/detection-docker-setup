@@ -11,7 +11,6 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from tablib import Dataset
 
-from progeo.authentication import LimitedTokenAuthentication
 from progeo.decorator import calc_runtime
 from progeo.helper.cacher import (
     cache_save,
@@ -100,10 +99,6 @@ class ProgeoModalViewSet(viewsets.ModelViewSet):
                 cache_save(f"{cache_key}{obj.get('id')}/", obj)
 
         return cache_save_and_return(cache_key, serializer.data)
-
-    @action(detail=True, url_path="anon", authentication_classes=[LimitedTokenAuthentication], methods=["GET"])
-    def get_details_anon(self, request, *args, **kwargs):
-        return self.retrieve(request, *args, no_cache=True, **kwargs)
 
     @action(detail=False, url_path="csv", methods=["POST"])
     def get_as_csv(self, request, *args, **kwargs):

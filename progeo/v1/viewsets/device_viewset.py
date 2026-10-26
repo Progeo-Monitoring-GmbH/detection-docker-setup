@@ -15,9 +15,16 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.authentication import (
     ExpiringTokenAuthentication,
-    LimitedTokenAuthentication,
+    IsTransferRequest,
+    TransferPrincipal,
+    TransferTokenAuthentication,
 )
-from progeo.decorator import calc_runtime, require_module_permissions
+from progeo.decorator import (
+    calc_runtime,
+    has_module_permissions,
+    permission_denied_response,
+    require_module_permissions,
+)
 from progeo.helper.alarm_evaluation import evaluate_measurement_instantly
 from progeo.helper.basics import RequestFailed, RequestSuccess, elog, ilog
 from progeo.helper.controller_wifi import parse_lua_wifi, request_controller_wifi_update
@@ -151,17 +158,17 @@ class DeviceViewSet(ProgeoModalViewSet):
 
     @staticmethod
     def _may_forward_to(user, device, db_name):
-        """Forwarding nodes (scan_devices) send with a staff/service user; a
-        customer token may only add measurements to devices it sees."""
-        if is_staff_admin(user):
+        """Forwarding nodes (scan_devices) send with a transfer token (or a
+        staff user); a customer may only add measurements to devices it sees."""
+        if isinstance(user, TransferPrincipal) or is_staff_admin(user):
             return True
         location = ProgeoLocation.objects.using(db_name).filter(pk=device.location_id).first()
         return can_see_location(user, location)
 
     @calc_runtime
-    @require_module_permissions("module_devices_enabled")
     @action(detail=False, url_path="forward/measurement",
-            authentication_classes=[JWTAuthentication, ExpiringTokenAuthentication, LimitedTokenAuthentication, SessionAuthentication],
+            authentication_classes=[JWTAuthentication, ExpiringTokenAuthentication, TransferTokenAuthentication,
+                                    SessionAuthentication],
             methods=["POST"])
     def forward_measurement(self, request, pk=None, *args, **kwargs):
         """Store a measurement forwarded from a node server as a NEW row.
@@ -172,6 +179,11 @@ class DeviceViewSet(ProgeoModalViewSet):
         saved as a fresh entry on this server; the node's original id is kept
         in ``raw_data["forwarded_from"]["id"]`` so originals stay traceable.
         """
+        # A forwarding node sends with a transfer token; people need the device module.
+        if not isinstance(request.user, TransferPrincipal) and not has_module_permissions(
+            request.user, "module_devices_enabled"
+        ):
+            return permission_denied_response(["module_devices_enabled"])
         account = getattr(request, "account", None) or _get_controller_account()
         db_name = account.db_name if account else "default"
 
@@ -258,13 +270,13 @@ class DeviceViewSet(ProgeoModalViewSet):
             return None
 
 
-    @action(detail=False, url_path="sample/debug", authentication_classes=[LimitedTokenAuthentication], methods=["POST"])
+    @action(detail=False, url_path="sample/debug", authentication_classes=[TransferTokenAuthentication], permission_classes=[IsTransferRequest], methods=["POST"])
     def catch_legacy_data_debug(self, request, *args, **kwargs):
         ilog("DeviceViewSet: catch_legacy_data_debug called | request.data:", request.data, tag="[DEBUG]")
         return RequestSuccess({"data": request.data})
     
 
-    @action(detail=False, url_path="sample/query", authentication_classes=[LimitedTokenAuthentication], methods=["POST"])
+    @action(detail=False, url_path="sample/query", authentication_classes=[TransferTokenAuthentication], permission_classes=[IsTransferRequest], methods=["POST"])
     def catch_legacy_data_query(self, request, *args, **kwargs):
         data = request.data.get("Y")
         try:
@@ -304,7 +316,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         fetch_device_locations()
         return RequestSuccess({"report": report})
 
-    @action(detail=False, url_path="sample/imei", authentication_classes=[LimitedTokenAuthentication], methods=["POST"])
+    @action(detail=False, url_path="sample/imei", authentication_classes=[TransferTokenAuthentication], permission_classes=[IsTransferRequest], methods=["POST"])
     def catch_legacy_imei_data(self, request, *args, **kwargs):
 
         # Accept telemetry body where sample values are nested under payload.value.
@@ -408,7 +420,7 @@ class DeviceViewSet(ProgeoModalViewSet):
             "count": len(samples),
         })
 
-    @action(detail=False, url_path="sample/catch", authentication_classes=[LimitedTokenAuthentication], methods=["POST"])
+    @action(detail=False, url_path="sample/catch", authentication_classes=[TransferTokenAuthentication], permission_classes=[IsTransferRequest], methods=["POST"])
     def catch_legacy_data(self, request, *args, **kwargs):
         last_battery = None
         device_id = None
@@ -456,7 +468,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         return RequestSuccess()
 
     @action(detail=False, url_path=r"lorawan/(?P<project_id>\d+)",
-            authentication_classes=[LimitedTokenAuthentication], methods=["POST"])
+            authentication_classes=[TransferTokenAuthentication], permission_classes=[IsTransferRequest], methods=["POST"])
     def catch_lorawan_data(self, request, project_id=None, token=None, *args, **kwargs):
         """Store a LoRaWAN uplink forwarded by the network server.
 

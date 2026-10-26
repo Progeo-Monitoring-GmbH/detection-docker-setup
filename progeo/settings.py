@@ -213,8 +213,8 @@ REST_FRAMEWORK = {
         "progeo.authentication.ExpiringTokenAuthentication",
         "rest_framework.authentication.BasicAuthentication",
         "rest_framework_simplejwt.authentication.JWTAuthentication",
-        # Not progeo.authentication.LimitedTokenAuthentication: those tokens
-        # (devices, ?token= in URLs) only work where a view lists it.
+        # Not progeo.authentication.TransferTokenAuthentication: device tokens
+        # (?token= in URLs) only count on the ingest actions that list it.
         # Last: header-based auth (JWT/Token) must win. The SPA is same-origin, so
         # the browser also sends the sessionid cookie set at login; if the session
         # matched first, DRF would enforce CSRF and reject the POST (403).

@@ -19,7 +19,6 @@ from rest_framework_simplejwt.token_blacklist.models import (
 )
 from rest_framework_simplejwt.tokens import AccessToken
 
-from progeo.authentication import LimitedTokenAuthentication
 from progeo.helper import access_requests, login_throttle, two_factor
 from progeo.helper.demo import DEMO_TOKEN_PURPOSE
 from progeo.helper.user_provisioning import parse_project_ids, provision_user
@@ -296,42 +295,81 @@ def test_media_only_serves_customers_their_lageplaene(client, tmp_path, monkeypa
     assert client.get("/media/uploads/lageplan/foreign.png").status_code == 200
 
 
-def test_limited_tokens_honour_revocation_expiry_and_purpose():
-    account = f.make_account()
-    user = f.make_user()
-    auth = LimitedTokenAuthentication()
+def _transfer_token(**fields):
+    """A LimitedToken in the database TransferTokenAuthentication reads (account 1's)."""
+    from progeo.v1.models import Account
 
-    class _Request:
-        account = None
-
-    def token(**fields):
-        # *_id: the routers check instance relations.
-        if "user" in fields:
-            fields["user_id"] = fields.pop("user").pk
-        return LimitedToken.objects.using(f.DB).create(raw_hash=f.unique("tok"), raw_data={}, account_id=account.pk,
-                                                       **fields)
-
-    from rest_framework.exceptions import AuthenticationFailed
-
-    future = timezone.now() + timedelta(days=1)
-    assert auth.authenticate_credentials(_Request(), token(user=user, valid_until=future).raw_hash)[0] == user
-    for bad in (
-        token(user=user, valid_until=future, disabled=True),
-        token(user=user, valid_until=timezone.now() - timedelta(seconds=1)),
-        token(user=user, valid_until=future, purpose=DEMO_TOKEN_PURPOSE),
-    ):
-        with pytest.raises(AuthenticationFailed):
-            auth.authenticate_credentials(_Request(), bad.raw_hash)
-    # Device tokens without a user: no 500, expiry not enforced.
-    assert auth.authenticate_credentials(_Request(), token(valid_until=timezone.now()).raw_hash)[0] is None
+    account = Account.objects.using(f.DB).get(pk=1)
+    if "user" in fields:
+        fields["user_id"] = fields.pop("user").pk  # *_id: the routers check instance relations
+    return LimitedToken.objects.using(account.db_name).create(
+        raw_hash=f.unique("tok"), raw_data={}, account_id=account.pk, **fields,
+    )
 
 
-def test_limited_tokens_are_no_default_api_login(client):
-    user = f.make_user(staff=True)
-    tok = LimitedToken.objects.using(f.DB).create(raw_hash=f.unique("tok"), raw_data={}, account_id=f.make_account().pk,
-                                                  user_id=user.pk, valid_until=timezone.now() + timedelta(days=1))
+def test_legacy_query_with_token_keeps_working(client):
+    from progeo.tests.test_device_legacy_query import LEGACY_SAMPLE_Y
 
-    assert client.get(f"/api/auth-support/staff/users/?token={tok.raw_hash}").status_code in (401, 403)
+    # Legacy tokens name a user and carry a long passed valid_until (never maintained).
+    token = _transfer_token(user=f.make_user(), valid_until=timezone.now() - timedelta(days=400))
+
+    response = client.post(f"/v1/device/sample/query/?token={token.raw_hash}", {"Y": LEGACY_SAMPLE_Y})
+
+    assert response.status_code == 200, response.content
+    used_before = token.last_fetched
+    token.refresh_from_db()
+    assert token.check_counter == 1 and token.last_fetched > used_before
+
+
+def test_transfer_tokens_have_no_authority_anywhere_else(client):
+    staff = f.make_user(staff=True)
+    token = _transfer_token(user=staff, valid_until=timezone.now() + timedelta(days=1))
+
+    assert client.post(f"/v1/device/sample/debug/?token={token.raw_hash}", {"x": 1}, format="json").status_code == 200
+    for url in ("/api/auth-support/staff/users/", "/v1/location/", "/v1/device/", "/v1/user/profile/",
+                "/v1/1/backup/", "/v1/status/devices/"):
+        assert client.get(f"{url}?token={token.raw_hash}").status_code in (401, 403), url
+        response = client.get(url, HTTP_AUTHORIZATION=f"Token {token.raw_hash}")
+        assert response.status_code in (401, 403), url
+    # Not even as the token's (staff) user on the ingest views' own viewset.
+    assert client.get(f"/v1/device/legacy/fetch/?token={token.raw_hash}").status_code in (401, 403, 405)
+
+
+@pytest.mark.parametrize("fields", [
+    {"disabled": True},
+    {"purpose": DEMO_TOKEN_PURPOSE, "valid_until": timezone.now() + timedelta(days=1)},
+    {"purpose": "transfer", "valid_until": timezone.now() - timedelta(seconds=1)},
+])
+def test_transfer_endpoints_refuse_revoked_demo_and_expired_tokens(client, fields):
+    token = _transfer_token(**fields)
+
+    response = client.post(f"/v1/device/sample/debug/?token={token.raw_hash}", {"x": 1}, format="json")
+
+    assert response.status_code in (401, 403)
+
+
+def test_transfer_endpoints_refuse_users_without_a_token(client):
+    client.force_authenticate(user=f.make_user(perms=("module_devices_enabled", "module_devices_edit")))
+
+    assert client.post("/v1/device/sample/debug/", {"x": 1}, format="json").status_code == 403
+
+
+def test_transfer_tokens_command(capsys):
+    out = StringIO()
+    call_command("transfer_tokens", "--create", "--label", "Logger 4711", "--device", "8636630", stdout=out)
+    token = LimitedToken.objects.using(f.DB).get(raw_hash=out.getvalue().split(": ")[1].split()[0])
+    assert token.purpose == "transfer" and token.user_id is None
+    assert token.raw_data == {"label": "Logger 4711", "device": "8636630"}
+
+    APIClient().post(f"/v1/device/sample/debug/?token={token.raw_hash}", {"x": 1}, format="json")
+    out = StringIO()
+    call_command("transfer_tokens", "--list", stdout=out)
+    line = next(line for line in out.getvalue().splitlines() if line.strip().startswith(str(token.pk)))
+    assert "Logger 4711 / 8636630" in line and " 1 " in line and "active" in line
+
+    call_command("transfer_tokens", "--disable", str(token.pk), stdout=StringIO())
+    assert APIClient().post(f"/v1/device/sample/debug/?token={token.raw_hash}", {"x": 1},
+                            format="json").status_code in (401, 403)
 
 
 def test_websockets_need_staff():
