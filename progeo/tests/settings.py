@@ -49,6 +49,13 @@ MAGIC_LINK_INVITE_HOURS = 72
 ACCESS_REQUEST_VERIFY_HOURS = 48
 MAGIC_LINK_ALLOW_STAFF = False
 ACCESS_REQUEST_NOTIFY = "kontakt@progeo.com"
+PASSWORD_RESET_MINUTES = 30
+# High: the suite shares one cache and one client IP - tests of the lockout
+# lower them with override_settings.
+LOGIN_MAX_FAILURES_PER_NAME = 1000
+LOGIN_MAX_FAILURES_PER_IP = 100000
+TWO_FACTOR_ISSUER = "ProGeo"
+TWO_FACTOR_REQUIRED_FOR_STAFF = False
 BOUNCE_IMAP_HOST = ""
 BOUNCE_IMAP_PORT = 993
 BOUNCE_IMAP_USER = ""
@@ -103,6 +110,7 @@ MIDDLEWARE = [
     "progeo.middlewares.AccountMiddleware",
     "progeo.middlewares.DemoReadOnlyMiddleware",
     "progeo.middlewares.PendingAccessMiddleware",
+    "progeo.middlewares.TwoFactorRequiredMiddleware",
 ]
 
 
@@ -121,7 +129,7 @@ REST_FRAMEWORK = {
         "rest_framework.authentication.TokenAuthentication",
         "rest_framework.authentication.BasicAuthentication",
         "rest_framework_simplejwt.authentication.JWTAuthentication",
-        "progeo.authentication.LimitedTokenAuthentication",
+        # Not progeo.authentication.LimitedTokenAuthentication (see progeo/settings.py).
         # Last: header-based auth (JWT/Token) must win. The SPA is same-origin, so
         # the browser also sends the sessionid cookie set at login; if the session
         # matched first, DRF would enforce CSRF and reject the POST (403).

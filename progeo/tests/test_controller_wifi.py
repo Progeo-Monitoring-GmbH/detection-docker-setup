@@ -97,7 +97,8 @@ def test_parse_lua_wifi():
 
 def test_qrcode_route_uses_the_override(api_client):
     controller_wifi.request_controller_wifi_update("New-Net", "new-password")
-    api_client.force_authenticate(user=f.make_user())
+    # The Wi-Fi password is for whoever sets up devices.
+    api_client.force_authenticate(user=f.make_user(perms=("module_devices_enabled", "module_devices_edit")))
 
     body = api_client.get("/v1/1/setup/controller/qrcodes/").json()
 

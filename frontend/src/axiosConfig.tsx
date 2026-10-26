@@ -6,6 +6,7 @@ import { getBackendBaseUrl } from './backendUrl';
 import { defaultErrorCallback } from './helper.jsx';
 import i18n from './i18n.jsx';
 import { isDemoReadOnlyError, isDemoUser, loginPathFor } from './main/demo';
+import { isTwoFactorSetupError, TWO_FACTOR_SETUP_PATH } from './main/twoFactor';
 
 const normalizeBackendUrl = (rawUrl?: string) => {
   if (!rawUrl) return rawUrl;
@@ -51,7 +52,8 @@ export default class axiosConfig {
 
   /**
    * Runs a request; on 401/403 the user is sent to the login page (demo
-   * users: their demo link). A write refused because of the read-only demo
+   * users: their demo link) - a 403 because 2FA has to be set up first goes
+   * to that setup instead. A write refused because of the read-only demo
    * is no auth problem - the caller's error handling runs (errorReason()
    * explains it), callers without one get a hint here.
    */
@@ -69,6 +71,11 @@ export default class axiosConfig {
           if (callBackError === defaultErrorCallback) {
             enqueueSnackbar(i18n.t('demo_read_only'), { variant: 'info' });
           }
+          return;
+        }
+        if (isTwoFactorSetupError(error)) {
+          // Logged in fine, but nothing is reachable before 2FA is set up.
+          auth?.navigate(TWO_FACTOR_SETUP_PATH);
           return;
         }
         // Demo users only log in again (via their link) on an expired session -

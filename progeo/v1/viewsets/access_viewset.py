@@ -5,7 +5,10 @@ Public (no login, throttled per IP):
   POST access-requests/verify/check/    is the confirmation token valid?
   POST access-requests/verify/          token + password -> pending user + JWT
   POST login-link/                      mail a login link (answer never tells)
-  POST login-link/exchange/             token -> JWT (single use)
+  POST login-link/exchange/             token (+ otp with 2FA) -> JWT (single use)
+  POST password-reset/                  mail a reset link (2FA users; answer never tells)
+  POST password-reset/check/            is the reset token valid?
+  POST password-reset/confirm/          token + otp + password -> new password + JWT
 Authenticated:
   GET  access-requests/me/              status of the own request (pending panel)
 Staff:
@@ -24,7 +27,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.throttling import SimpleRateThrottle
 from rest_framework.views import APIView
 
-from progeo.helper import access_requests, login_links, outbound
+from progeo.helper import access_requests, login_links, outbound, password_reset
 from progeo.helper.basics import RequestFailed, RequestSuccess, elog
 from progeo.v1.models import AccessRequest, EmailSuppression, OutboundMessage
 from progeo.v1.serializers import ProgeoTokenObtainPairSerializer
@@ -61,6 +64,11 @@ class TokenCheckThrottle(_IpThrottle):
 class LoginLinkThrottle(_IpThrottle):
     scope = "login_link"
     rate = "10/hour"
+
+
+class PasswordResetThrottle(_IpThrottle):
+    scope = "password_reset"
+    rate = "5/hour"
 
 
 def _token_pair(user) -> dict:
@@ -132,10 +140,55 @@ class LoginLinkExchangeView(APIView):
     throttle_classes = [TokenCheckThrottle]
 
     def post(self, request, *args, **kwargs):
-        result = login_links.redeem(str(_data(request).get("token") or ""))
+        data = _data(request)
+        try:
+            result = login_links.redeem(str(data.get("token") or ""), otp=data.get("otp"), request=request)
+        except login_links.SecondFactorRequired as exc:
+            # Ask for the code - the link stays valid meanwhile.
+            return RequestFailed({"reason": exc.reason, "otp_required": True})
         if result is None:
             return RequestFailed({"reason": "invalid_token"})
         user, _purpose = result
+        user.last_login = timezone.now()
+        user.save(using=DB, update_fields=["last_login"])
+        return RequestSuccess({**_token_pair(user), "forward": "/"})
+
+
+class PasswordResetRequestView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [PasswordResetThrottle]
+
+    def post(self, request, *args, **kwargs):
+        password_reset.request_reset(str(_data(request).get("email") or ""))
+        # Same answer whether or not the address belongs to a user (or has 2FA).
+        return RequestSuccess()
+
+
+class PasswordResetCheckView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [TokenCheckThrottle]
+
+    def post(self, request, *args, **kwargs):
+        link = password_reset.find_link(str(_data(request).get("token") or ""))
+        if link is None:
+            return RequestFailed({"reason": "invalid_token"})
+        return RequestSuccess({"username": link.user.username, "first_name": link.user.first_name})
+
+
+class PasswordResetConfirmView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [TokenCheckThrottle]
+
+    def post(self, request, *args, **kwargs):
+        data = _data(request)
+        user, error = password_reset.confirm(
+            str(data.get("token") or ""), data.get("otp"), str(data.get("password") or ""), request,
+        )
+        if error:
+            return RequestFailed(error)
         user.last_login = timezone.now()
         user.save(using=DB, update_fields=["last_login"])
         return RequestSuccess({**_token_pair(user), "forward": "/"})
@@ -147,11 +200,15 @@ class AccessRequestMeView(APIView):
     def get(self, request, *args, **kwargs):
         access_request = AccessRequest.objects.using(DB).filter(user_id=request.user.pk).first()
         if access_request is None:
-            return RequestSuccess({"status": None, "email": request.user.email, "created": None})
+            return RequestSuccess({"status": None, "email": request.user.email, "created": None, "demo_url": None})
         return RequestSuccess({
             "status": access_request.status,
             "email": access_request.email,
             "created": _time(access_request.created),
+            # While waiting: the public, read-only demo (a separate demo user -
+            # the requester's own account stays locked until approval).
+            "demo_url": access_requests.pending_demo_url()
+            if access_request.status == AccessRequest.Status.PENDING else None,
         })
 
 
@@ -190,11 +247,29 @@ class StaffAccessRequestReviewView(_StaffView):
             return RequestFailed({"reason": "Unbekannte Anfrage"})
         if access_request.status != AccessRequest.Status.PENDING:
             return RequestFailed({"reason": "Nur Anfragen in Prüfung können entschieden werden"})
-        note = _data(request).get("note") or ""
+        data = _data(request)
+        note = data.get("note") or ""
         if self.decision == "approve":
-            access_requests.approve(access_request, request.user, note)
-        else:
-            access_requests.reject(access_request, request.user, note)
+            from progeo.helper.user_provisioning import (
+                find_project_locations,
+                parse_project_ids,
+            )
+
+            try:
+                project_ids = parse_project_ids(data.get("project_ids"))
+            except ValueError as exc:
+                return RequestFailed({"reason": str(exc)})
+            unknown = [pid for pid, rows in find_project_locations(project_ids).items() if not rows]
+            if unknown:
+                # Most likely a typo - nothing is approved until the numbers are right.
+                return RequestFailed({"reason": f"Unbekannte Projektnummer(n): {', '.join(map(str, unknown))}",
+                                      "unknown_projects": unknown})
+            access_requests.approve(access_request, request.user, note, project_ids=project_ids)
+            return RequestSuccess({
+                "request": access_requests.serialize(access_request),
+                "projects": access_request.granted_projects,
+            })
+        access_requests.reject(access_request, request.user, note)
         return RequestSuccess({"request": access_requests.serialize(access_request)})
 
 

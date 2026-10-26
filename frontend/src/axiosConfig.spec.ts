@@ -72,6 +72,21 @@ describe('perform_get', () => {
     expect(auth.navigate).toHaveBeenCalledWith('/login?forward=/location/5/status');
   });
 
+  it('sends a user who has to set up 2FA to that setup instead of the login', async () => {
+    const error = Object.assign(new Error('Request failed with status code 403'), {
+      response: { status: 403, data: { success: false, two_factor_setup_required: true } },
+    });
+    vi.spyOn(axiosConfig.holder, 'get').mockRejectedValue(error);
+    const onError = vi.fn();
+    const auth = makeAuth('/location/5/status');
+
+    await axiosConfig.perform_get(auth, '/v1/thing/', vi.fn(), onError);
+
+    expect(onError).toHaveBeenCalledWith(error);
+    expect(auth.navigate).toHaveBeenCalledTimes(1);
+    expect(auth.navigate).toHaveBeenCalledWith('/konto/zwei-faktor');
+  });
+
   it('does not throw on 401 when no auth context is given', async () => {
     vi.spyOn(axiosConfig.holder, 'get').mockRejectedValue(httpError(401));
     const onError = vi.fn();

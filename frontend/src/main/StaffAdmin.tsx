@@ -15,6 +15,7 @@ import {
   PencilSquare,
   PersonPlus,
   ShieldLock,
+  ShieldX,
   Trash,
 } from 'react-bootstrap-icons';
 import DataTable from 'react-data-table-component';
@@ -48,6 +49,7 @@ type StaffUser = {
   is_active: boolean;
   date_joined?: string | null;
   last_login?: string | null;
+  two_factor_enabled?: boolean;
   permissions: Record<string, boolean>;
   grantable: Record<string, boolean>;
 };
@@ -264,13 +266,18 @@ const UserFormModal = ({
       </Modal.Body>
       <Modal.Footer>
         {!isNew && onGeneratePassword && user && (
-          <Button
-            variant="outline-warning"
-            onClick={() => onGeneratePassword(user)}
-          >
-            <Key className="me-1" />
-            {t('staff_generate_password')}
-          </Button>
+          <>
+            <small className="text-muted me-auto" style={{ maxWidth: 320 }}>
+              {t('staff_password_invite_hint')}
+            </small>
+            <Button
+              variant="outline-warning"
+              onClick={() => onGeneratePassword(user)}
+            >
+              <Key className="me-1" />
+              {t('staff_generate_password')}
+            </Button>
+          </>
         )}
         <Button variant="secondary" onClick={onHide}>
           {t('staff_cancel')}
@@ -313,6 +320,7 @@ const PasswordResultModal = ({
           value={password}
           onFocus={(event) => event.target.select()}
         />
+        <Form.Text muted>{t('staff_password_invite_hint')}</Form.Text>
       </Modal.Body>
       <Modal.Footer>
         <Button variant="primary" onClick={onHide}>
@@ -466,6 +474,39 @@ const StaffAdmin = () => {
     );
   };
 
+  // Lost phone: the user sets up 2FA again; all their logins end.
+  const handleResetTwoFactor = (user: StaffUser) => {
+    if (
+      !window.confirm(
+        t('staff_reset_two_factor_confirm', { username: user.username }),
+      )
+    ) {
+      return;
+    }
+    setBusyId(user.id);
+    void axiosConfig.perform_post(
+      auth,
+      `/api/auth-support/staff/users/${user.id}/update/`,
+      { reset_two_factor: true },
+      () => {
+        showSuccessBar(
+          enqueueSnackbar,
+          t('staff_reset_two_factor_done', { username: user.username }),
+        );
+        setBusyId(null);
+        fetchUsers();
+      },
+      (error) => {
+        showRequestError(
+          enqueueSnackbar,
+          t('staff_reset_two_factor_error'),
+          error,
+        );
+        setBusyId(null);
+      },
+    );
+  };
+
   const handleDelete = (user: StaffUser) => {
     if (
       !window.confirm(t('staff_delete_confirm', { username: user.username }))
@@ -537,6 +578,16 @@ const StaffAdmin = () => {
         width: '90px',
       },
       {
+        name: t('staff_col_two_factor'),
+        cell: (row) =>
+          row.two_factor_enabled ? (
+            <Badge bg="success">{t('staff_badge_two_factor')}</Badge>
+          ) : (
+            <span className="text-muted small">-</span>
+          ),
+        width: '70px',
+      },
+      {
         name: t('staff_col_permissions'),
         cell: (row) => {
           const enabled = rowPermissions(row);
@@ -565,7 +616,7 @@ const StaffAdmin = () => {
       },
       {
         name: t('staff_col_actions'),
-        width: '220px',
+        width: '260px',
         cell: (row) => (
           <span className="d-flex gap-1">
             <Button
@@ -580,7 +631,7 @@ const StaffAdmin = () => {
             <Button
               size="sm"
               variant="outline-warning"
-              title={t('staff_generate_new_password')}
+              title={`${t('staff_generate_new_password')} - ${t('staff_password_invite_hint')}`}
               disabled={busyId === row.id}
               onClick={() => handleGeneratePassword(row)}
             >
@@ -599,6 +650,17 @@ const StaffAdmin = () => {
             >
               <Envelope size={14} />
             </Button>
+            {row.two_factor_enabled && (
+              <Button
+                size="sm"
+                variant="outline-secondary"
+                title={t('staff_reset_two_factor')}
+                disabled={busyId === row.id}
+                onClick={() => handleResetTwoFactor(row)}
+              >
+                <ShieldX size={14} />
+              </Button>
+            )}
             <Button
               size="sm"
               variant="outline-danger"

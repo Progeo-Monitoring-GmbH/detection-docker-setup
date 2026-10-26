@@ -663,12 +663,21 @@ def send_template_mail_task(sent_to: list, template_name: str, context: dict | N
 
 
 @shared_task
-def send_login_link_task(user_id: int, purpose: str = "login"):
+def send_login_link_task(user_id: int, purpose: str = "login", template: str | None = None):
     """Create a one-time login link for the user and mail it - the token is
     made here, inside the worker, so it never passes the broker."""
     from progeo.helper.login_links import send_login_link
 
-    return send_login_link(user_id, purpose)
+    return send_login_link(user_id, purpose, template)
+
+
+@shared_task
+def send_password_reset_task(user_id: int):
+    """Mail a password reset link (token made inside the worker) - or, for a
+    user without 2FA, how to get in instead (helper/password_reset.py)."""
+    from progeo.helper.password_reset import send_reset
+
+    return send_reset(user_id)
 
 
 @shared_task

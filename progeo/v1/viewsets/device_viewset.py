@@ -20,6 +20,8 @@ from progeo.helper.basics import RequestFailed, RequestSuccess, elog, ilog
 from progeo.helper.controller_wifi import parse_lua_wifi, request_controller_wifi_update
 from progeo.helper.creator import create_MfS_log
 from progeo.helper.location_access import (
+    can_see_location,
+    is_staff_admin,
     location_id_db,
     location_q,
     request_location_id,
@@ -85,6 +87,29 @@ class DeviceViewSet(ProgeoModalViewSet):
     def retrieve(self, request, pk=None, *args, **kwargs):
         return super().retrieve(request, *args, pk=pk, **kwargs)
 
+    customer_actions = ("create", "update", "partial_update", "destroy")
+
+    def perform_create(self, serializer):
+        self._check_location(serializer)
+        super().perform_create(serializer)
+
+    def perform_update(self, serializer):
+        self._check_location(serializer)
+        super().perform_update(serializer)
+
+    def _check_location(self, serializer):
+        """fields="__all__" accepts any location id: a customer's devices
+        may only be created in / moved to locations they see."""
+        from rest_framework.exceptions import PermissionDenied
+
+        if is_staff_admin(self.request.user):
+            return
+        data = serializer.validated_data
+        if (serializer.instance is None or "location" in data) and not can_see_location(
+            self.request.user, data.get("location")
+        ):
+            raise PermissionDenied("Location not accessible")
+
     @require_module_permissions("module_devices_enabled", "module_devices_edit")
     def create(self, request, *args, **kwargs):
         return super().create(request, *args, **kwargs)
@@ -101,6 +126,14 @@ class DeviceViewSet(ProgeoModalViewSet):
     def destroy(self, request, *args, **kwargs):
         return super().destroy(request, *args, **kwargs)
 
+    def _visible_device(self, pk):
+        """Device `pk` if the user sees it (get_queryset - ?location= names
+        the database with the split on), else None."""
+        try:
+            return self.get_queryset().filter(pk=int(pk)).first()
+        except (TypeError, ValueError):
+            return None
+
     def get_queryset(self):
         account = self._resolve_request_account(self.request)
         ilog("DeviceViewSet: get_queryset called | account:", account)
@@ -112,6 +145,15 @@ class DeviceViewSet(ProgeoModalViewSet):
             location_q(self.request.user, account, "location__")
         )
     
+
+    @staticmethod
+    def _may_forward_to(user, device, db_name):
+        """Forwarding nodes (scan_devices) send with a staff/service user; a
+        customer token may only add measurements to devices it sees."""
+        if is_staff_admin(user):
+            return True
+        location = ProgeoLocation.objects.using(db_name).filter(pk=device.location_id).first()
+        return can_see_location(user, location)
 
     @calc_runtime
     @require_module_permissions("module_devices_enabled")
@@ -141,7 +183,7 @@ class DeviceViewSet(ProgeoModalViewSet):
             # The device's own database - pks are only unique per database with the split on.
             db_name = ingest_db(data.get("project_id"), data.get("device_hash"), account)
         device = self._resolve_forwarded_device(data, db_name)
-        if device is None:
+        if device is None or not self._may_forward_to(request.user, device, db_name):
             return RequestFailed({"reason": "Device not found on this server"})
 
         measurement = ProgeoMeasurement(
@@ -236,6 +278,8 @@ class DeviceViewSet(ProgeoModalViewSet):
         import the measurements. Entries are only created when no measurement
         exists for the same project_id + datetime (no duplicates).
         """
+        if not is_staff_admin(request.user):
+            return RequestFailed({"reason": "Staff access required"})
 
         project_id = request.data.get("project_id")
         try:
@@ -582,9 +626,7 @@ class DeviceViewSet(ProgeoModalViewSet):
     @require_module_permissions("module_devices_enabled")
     @action(detail=True, url_path="config/download", methods=["GET"])
     def download_config(self, request, pk=None, *args, **kwargs):
-        account = getattr(request, "account", None) or _get_controller_account()
-        db_name = location_id_db(account, request_location_id(request)) if account else "default"
-        device = ProgeoDevice.objects.using(db_name).filter(pk=pk, location__account=account).first()
+        device = self._visible_device(pk)
         if not device:
             return RequestFailed({"reason": "Device not found"})
 
@@ -616,9 +658,7 @@ class DeviceViewSet(ProgeoModalViewSet):
     @require_module_permissions("module_devices_enabled", "module_devices_edit")
     @action(detail=True, url_path="config/upload", methods=["POST"], parser_classes=[SafeLuaUploadParser])
     def upload_config(self, request, pk=None, *args, **kwargs):
-        account = getattr(request, "account", None) or _get_controller_account()
-        db_name = location_id_db(account, request_location_id(request)) if account else "default"
-        device = ProgeoDevice.objects.using(db_name).filter(pk=pk, location__account=account).first()
+        device = self._visible_device(pk)
         if not device:
             return RequestFailed({"reason": "Device not found"})
 
@@ -728,7 +768,8 @@ class DeviceViewSet(ProgeoModalViewSet):
         })
 
     @calc_runtime
-    @require_module_permissions("module_measurements_enabled")
+    # Stores a measurement and may mail an alarm - a write, not a read.
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
     @action(detail=True, url_path="evaluate", methods=["POST"])
     def evaluate_measurement(self, request, pk=None, *args, **kwargs):
 
@@ -745,15 +786,10 @@ class DeviceViewSet(ProgeoModalViewSet):
         if rows is None:
             return RequestFailed({"reason": "No rows provided"})
 
-        account = getattr(request, "account", None) or _get_controller_account()
-        #if not account:
-        #    return RequestFailed({"reason": "No account configured"})
-
-        #db_name = account.db_name or "default"
-        db_name = location_id_db(account, request_location_id(request)) if account else "default"
-        device = ProgeoDevice.objects.using(db_name).filter(pk=pk, location__account=account).first()
+        device = self._visible_device(pk)
         if not device:
             return RequestFailed({"reason": "Device not found"})
+        db_name = device._state.db
 
         values = flatten_numeric_values(rows)
         if not values:
@@ -859,15 +895,9 @@ class DeviceViewSet(ProgeoModalViewSet):
     @require_module_permissions("module_devices_enabled", "module_devices_delete")
     @action(detail=True, url_path="delete", methods=["POST"])
     def delete_device(self, request, pk=None, *args, **kwargs):
-        account = getattr(request, "account", None) or _get_controller_account()
-        db_name = location_id_db(account, request_location_id(request)) if account else "default"
-        try:
-            device = ProgeoDevice.objects.using(db_name).get(id=int(pk), location__account=account)
-        except (ValueError, ProgeoDevice.DoesNotExist):
-            device = None
-
+        device = self._visible_device(pk)
         if not device:
             return RequestFailed({"reason": "Device not found"})
-        device.delete(using=db_name)
+        device.delete(using=device._state.db)
         create_MfS_log(request)
         return RequestSuccess({"deleted": True})

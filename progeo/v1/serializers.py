@@ -13,8 +13,11 @@ from django.db.models import (
 )
 from django.db.models.functions import Coalesce
 from django.utils import timezone
-from rest_framework import serializers
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework import exceptions, serializers
+from rest_framework_simplejwt.serializers import (
+    TokenObtainPairSerializer,
+    TokenObtainSerializer,
+)
 
 from progeo.helper.demo import is_demo_user
 from progeo.helper.project_dbs import backup_project_key, database_of_backup
@@ -680,6 +683,14 @@ class MfSLogSerializer(ProgeoBaseSerializer):
         exclude = ["user", "account", "created"]
 
 
+class TwoFactorRequired(exceptions.AuthenticationFailed):
+    """The password was right, the 2FA code is missing ("otp_required") or
+    wrong ("otp_invalid") - the login form asks for it."""
+
+    def __init__(self, reason):
+        super().__init__({"detail": "Two-factor code required", "reason": reason, "otp_required": True})
+
+
 class ProgeoTokenObtainPairSerializer(TokenObtainPairSerializer):
 
     def update(self, instance, validated_data):
@@ -687,6 +698,27 @@ class ProgeoTokenObtainPairSerializer(TokenObtainPairSerializer):
 
     def create(self, validated_data):
         pass
+
+    def validate(self, attrs):
+        # TokenObtainPairSerializer.validate with the 2FA step between the
+        # password check and the tokens: no token exists before the code is right.
+        from progeo.helper.two_factor import check_login_code
+
+        data = TokenObtainSerializer.validate(self, attrs)
+        request = self.context.get("request")
+        otp = request.data.get("otp") if request is not None and hasattr(request.data, "get") else None
+        error = check_login_code(self.user, otp, request)
+        if error:
+            raise TwoFactorRequired(error)
+        refresh = self.get_token(self.user)
+        data["refresh"] = str(refresh)
+        data["access"] = str(refresh.access_token)
+        from django.contrib.auth.models import update_last_login
+        from rest_framework_simplejwt.settings import api_settings
+
+        if api_settings.UPDATE_LAST_LOGIN:
+            update_last_login(None, self.user)
+        return data
 
     @classmethod
     def get_token(cls, user):
@@ -705,6 +737,11 @@ class ProgeoTokenObtainPairSerializer(TokenObtainPairSerializer):
             from progeo.helper.access_requests import is_pending_user
 
             token["is_pending"] = is_pending_user(user)
+            # Staff that still have to set up 2FA (TWO_FACTOR_REQUIRED_FOR_STAFF)
+            # see only that - TwoFactorRequiredMiddleware refuses the rest.
+            from progeo.helper.two_factor import is_required
+
+            token["two_factor_setup_required"] = is_required(user)
 
             return token
         return {}

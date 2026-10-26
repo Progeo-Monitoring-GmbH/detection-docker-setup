@@ -3,10 +3,10 @@ import csv
 import io
 import ipaddress
 import os
+import re
 import subprocess
 
 import qrcode
-
 from django.contrib.auth.models import User
 from django.http import HttpResponse
 from rest_framework import viewsets
@@ -26,7 +26,9 @@ from progeo.helper.cacher import search_clear_cache
 from progeo.helper.controller_wifi import get_controller_wifi
 from progeo.helper.creator import create_MfS_log
 from progeo.helper.emails import send_info_mail
-from progeo.security import save_clean_path
+from progeo.helper.location_access import is_staff_admin
+from progeo.helper.tokens import revoke_user_tokens
+from progeo.security import safe_join
 from progeo.settings import UPLOAD_DIR
 from progeo.tasks import ping
 from progeo.v1.helper import generate_hash
@@ -171,6 +173,9 @@ class SetupViewSet(viewsets.ViewSet):
     @require_module_permissions("module_admin_enabled")
     @action(detail=False, url_path="change_pw", methods=["POST"])
     def change_user_password(self, request, *args, **kwargs):
+        # Same rules as StaffUserPasswordView: staff only, superusers only by superusers.
+        if not is_staff_admin(request.user):
+            return RequestFailed({"reason": "Staff access required"})
         _user = request.data.get("user")
         if not _user:
             return RequestFailed({"reason": "No user"})
@@ -178,14 +183,19 @@ class SetupViewSet(viewsets.ViewSet):
             user = User.objects.get(username=_user)
         except User.DoesNotExist:
             return RequestFailed({"reason": "User not found"})
+        if user.is_superuser and not request.user.is_superuser:
+            return RequestFailed({"reason": "Only superusers may reset superuser passwords"})
 
         new_password = generate_hash(12)
         user.set_password(new_password)
         user.save()
+        revoke_user_tokens(user)
 
         data = {"pw": new_password}
         return RequestSuccess(data)
 
+    # The controller WiFi password - for whoever sets up devices.
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
     @action(detail=False, url_path="controller/qrcodes", methods=["GET"])
     def get_controller_qrcodes(self, request, *args, **kwargs):
         ssid, password = get_controller_wifi()
@@ -201,9 +211,12 @@ class SetupViewSet(viewsets.ViewSet):
 
     @action(detail=False, url_path="upload/delete", methods=["POST"])
     def delete_file(self, request, *args, **kwargs):
-        _path = request.data.get("path", "")
+        _path = str(request.data.get("path") or "")
         if _path.startswith("tmp"):  # TODO hardcoded
-            _full_path = save_clean_path(os.path.join(UPLOAD_DIR, _path))
+            # Only files inside UPLOAD_DIR/tmp - "tmp/../.." must not reach anything else.
+            _full_path = safe_join(os.path.join(UPLOAD_DIR, "tmp"), _path[len("tmp"):].lstrip("/\\"))
+            if _full_path is None or not os.path.isfile(_full_path):
+                return RequestFailed({"reason": "Invalid path"})
             delete_file(_full_path, acknowledge=True)
         create_MfS_log(request)
 
@@ -213,15 +226,19 @@ class SetupViewSet(viewsets.ViewSet):
     def generate_csv(self, request, *args, **kwargs):
         header = request.data.get("header")
         lines = request.data.get("lines")
-        filename = request.data.get("filename")
+        filename = os.path.basename(str(request.data.get("filename") or ""))
+        if not re.fullmatch(r"[\w.\- ]{1,100}\.csv", filename) or not isinstance(header, list) or not isinstance(lines, list):
+            return RequestFailed({"reason": "Invalid filename, header or lines"})
         _account_id = str(request.account.pk)
         _dir = save_check_dir(os.path.join(UPLOAD_DIR, _account_id, "tmp"))  # TODO hardcoded
-        _path = os.path.join(_dir, filename)
+        _path = safe_join(_dir, filename)
+        if _path is None:
+            return RequestFailed({"reason": "Invalid filename"})
         with open(_path, "w", newline="", encoding="utf-8") as csv_file:
             wr = csv.writer(csv_file, delimiter=";", quoting=csv.QUOTE_ALL)
             wr.writerow(header)
             for line in lines:
-                row = line.replace("'", "").replace("\n", "").split(";")
+                row = str(line).replace("'", "").replace("\n", "").split(";")
                 wr.writerow(row)
 
         with open(_path, encoding="utf-8") as csv_file:
@@ -239,11 +256,16 @@ class AccountViewSet(ProgeoModalViewSet):
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, no_cache=True, **kwargs)
 
+    # Writes (rename, member list, db_name, delete) are staff-only - see
+    # ProgeoModalViewSet.STAFF_ONLY_ACTIONS; members only read their accounts.
     def get_queryset(self):
-        return Account.objects.filter(users=self.request.user)  # TODO
+        return Account.objects.filter(users=self.request.user)
 
     @calc_runtime
     @action(detail=False, url_path="templates", methods=["GET"])
     def get_available_templates(self, request, *args, **kwargs):
+        # request.account is the default account for everyone (AccountMiddleware).
+        if not is_staff_admin(request.user):
+            return RequestFailed({"reason": "Staff access required"})
         templates, _ = request.account.get_templates()
         return RequestSuccess({"templates": FileSerializer(templates, many=True).data})

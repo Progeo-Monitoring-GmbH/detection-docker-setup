@@ -7,9 +7,11 @@
      without any module permission or project), the request is PENDING and
      staff are told. Until approval the user sees only the "being checked"
      panel; PendingAccessMiddleware refuses everything else on the backend.
-  3. approve / reject (staff): approval grants the default permissions -
-     projects are assigned as usual (Rechte tab); rejection deactivates the
-     user. Both mail the requester.
+  3. approve / reject (staff): approval grants the default permissions and
+     the projects staff enter (single access, helper/user_provisioning.py -
+     later ones as usual in the Rechte tab); rejection deactivates the user.
+     Both mail the requester. Until then the user may look at the public
+     demo (AccessRequestMeView's demo_url).
   4. cleanup_access_requests (daily): unconfirmed requests expire, rejected
      ones are deleted after REJECTED_RETENTION (GDPR).
 """
@@ -204,8 +206,10 @@ def verify(token: str, password: str):
     return user, None
 
 
-def approve(request, staff_user, note: str = ""):
-    """Grant the default permissions and tell the requester."""
+def approve(request, staff_user, note: str = "", project_ids=()):
+    """Grant the default permissions and access to `project_ids` (helper/
+    user_provisioning.py), and tell the requester. Returns the request; the
+    grant result is on `request.granted_projects`."""
     from progeo.helper.emailhelper import portal_url
     from progeo.tasks import send_template_mail_task
     from progeo.v1.models import AccessRequest
@@ -219,10 +223,15 @@ def approve(request, staff_user, note: str = ""):
     request.reviewed_by_id = getattr(staff_user, "pk", None)
     request.review_note = str(note or "").strip()
     request.save(using=DB)
+    request.granted_projects = None
     if request.user is not None:
+        from progeo.helper.user_provisioning import grant_project_access
+
         # The defaults every new user gets - independent of the reviewer's own rights.
         defaults = set(_DEFAULT_USER_PERMISSION_CODES)
         _apply_permissions(request.user, defaults, defaults)
+        if project_ids:
+            request.granted_projects = grant_project_access(request.user, project_ids)
         outbound.dispatch(
             send_template_mail_task, [request.user.email or request.email], "access_approved",
             {"first_name": request.first_name, "login_url": portal_url("/login")}, "access_request",
@@ -250,6 +259,29 @@ def reject(request, staff_user, note: str = ""):
     )
     ilog(f"[access_requests] Request {request.pk} rejected by {staff_user}")
     return request
+
+
+# Label of the demo link offered to pending requesters - created with
+# `manage.py demo_account --new-link --label Zugangsanfrage`. Without an
+# active link of that label the pending panel shows no demo.
+PENDING_DEMO_LINK_LABEL = "Zugangsanfrage"
+
+
+def pending_demo_url() -> str | None:
+    """/demo/login/<token> (frontend path) of the newest active demo link
+    labelled PENDING_DEMO_LINK_LABEL, else None."""
+    from progeo.helper.demo import DEMO_TOKEN_PURPOSE
+    from progeo.v1.models import LimitedToken
+
+    now = timezone.now()
+    tokens = LimitedToken.objects.using(DB).filter(
+        purpose=DEMO_TOKEN_PURPOSE, disabled=False, valid_until__gt=now,
+    ).order_by("-created")
+    for token in tokens[:50]:
+        data = token.raw_data if isinstance(token.raw_data, dict) else {}
+        if data.get("label") == PENDING_DEMO_LINK_LABEL:
+            return f"/demo/login/{token.raw_hash}"
+    return None
 
 
 def cleanup_access_requests() -> dict:

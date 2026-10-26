@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Navigate } from 'react-router';
+import { Navigate, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
@@ -14,12 +14,15 @@ const POLL_MS = 60 * 1000;
  * The only page of a user whose access request still waits for the staff's
  * review (JWT claim `is_pending`, see PendingGate). Polls the request's
  * status; once approved, the user logs in again - the new token no longer
- * carries the claim.
+ * carries the claim. Meanwhile it offers the public, read-only demo
+ * (`demo_url`) - opening it logs in the shared demo user instead.
  */
 const PendingReview = () => {
   const auth = useAuth();
+  const navigate = useNavigate();
   const { t } = useTranslation();
   const [status, setStatus] = useState<ReviewStatus>('pending');
+  const [demoUrl, setDemoUrl] = useState<string | null>(null);
 
   const loggedIn = Boolean(auth.token);
 
@@ -27,7 +30,12 @@ const PendingReview = () => {
     void axiosConfig.perform_get(
       auth,
       '/api/auth-support/access-requests/me/',
-      (response) => setStatus((response.data.status ?? null) as ReviewStatus),
+      (response) => {
+        setStatus((response.data.status ?? null) as ReviewStatus);
+        const url = String(response.data.demo_url || '');
+        // Only paths inside the app - never an absolute or protocol-relative URL.
+        setDemoUrl(url.startsWith('/') && !url.startsWith('//') ? url : null);
+      },
       () => undefined,
     );
     // Polling only needs the session, not every change of the auth object.
@@ -88,6 +96,18 @@ const PendingReview = () => {
     <AuthPage title={t('pending_title')}>
       <p style={MUTED_TEXT}>{t('pending_text')}</p>
       <p style={MUTED_TEXT}>{t('pending_text_mail')}</p>
+      {demoUrl && (
+        <>
+          <p style={MUTED_TEXT}>{t('pending_demo_hint')}</p>
+          <button
+            type="button"
+            style={{ ...buttonStyle(), width: '100%', marginTop: 0, marginBottom: 12 }}
+            onClick={() => navigate(demoUrl)}
+          >
+            {t('pending_demo')}
+          </button>
+        </>
+      )}
       <button
         type="button"
         style={{ ...buttonStyle(false, true), width: '100%' }}

@@ -17,6 +17,8 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
 import {
+  errorReason,
+  showInfoBar,
   showRequestError,
   showSuccessBar,
 } from '../components/ui/Snackbar.jsx';
@@ -59,10 +61,19 @@ const STATUS_ORDER: Record<AccessRequestStatus, number> = {
 
 type Decision = { request: AccessRequest; action: 'approve' | 'reject' };
 
+/** What an approval with project numbers granted (helper/location_access.py). */
+type GrantedProjects = {
+  granted: number[];
+  existing: number[];
+  missing: number[];
+};
+
 /**
  * "Zugangsanfragen" in the staff admin: confirmed requests wait here for a
- * decision. Approving unlocks the account (it still sees no project until
- * one is shared with it), rejecting deactivates it; both mail the requester.
+ * decision. Approving unlocks the account and grants access to the given
+ * project numbers (without any it sees no project until one is shared with
+ * it), rejecting deactivates it; both mail the requester. Unknown project
+ * numbers refuse the approval - most likely a typo, the dialog stays open.
  */
 const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
   const { t } = useTranslation();
@@ -73,6 +84,8 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
   const [loading, setLoading] = useState(true);
   const [decision, setDecision] = useState<Decision | null>(null);
   const [note, setNote] = useState('');
+  const [projectIds, setProjectIds] = useState('');
+  const [decisionError, setDecisionError] = useState('');
   const [busy, setBusy] = useState(false);
 
   // `loading` is set by whoever asks for other data (filter switch, refresh).
@@ -113,7 +126,27 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
 
   const openDecision = (request: AccessRequest, action: Decision['action']) => {
     setNote('');
+    setProjectIds('');
+    setDecisionError('');
     setDecision({ request, action });
+  };
+
+  const showGrantedProjects = (projects: GrantedProjects | null | undefined) => {
+    if (!projects) {
+      return;
+    }
+    const parts = [
+      ['staff_requests_projects_granted', projects.granted],
+      ['staff_requests_projects_existing', projects.existing],
+      ['staff_requests_projects_missing', projects.missing],
+    ] as const;
+    const text = parts
+      .filter(([, ids]) => ids?.length)
+      .map(([key, ids]) => t(key, { ids: ids.join(', ') }))
+      .join(' · ');
+    if (text) {
+      showInfoBar(enqueueSnackbar, text);
+    }
   };
 
   const submitDecision = () => {
@@ -121,28 +154,37 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
       return;
     }
     setBusy(true);
+    setDecisionError('');
     void axiosConfig.perform_post(
       auth,
       `/api/auth-support/staff/access-requests/${decision.request.id}/${decision.action}/`,
-      { note },
-      () => {
+      decision.action === 'approve'
+        ? { note, project_ids: projectIds }
+        : { note },
+      (result) => {
         showSuccessBar(
           enqueueSnackbar,
           decision.action === 'approve'
             ? t('staff_requests_approved')
             : t('staff_requests_rejected'),
         );
+        showGrantedProjects(result?.data?.projects as GrantedProjects | null);
         setBusy(false);
         setDecision(null);
         fetchRequests();
         onChanged?.();
       },
       (error) => {
-        showRequestError(
-          enqueueSnackbar,
-          t('staff_requests_decision_error'),
-          error,
-        );
+        if (error?.response?.data?.unknown_projects) {
+          // Shown in the dialog, which stays open for the correction.
+          setDecisionError(errorReason(error));
+        } else {
+          showRequestError(
+            enqueueSnackbar,
+            t('staff_requests_decision_error'),
+            error,
+          );
+        }
         setBusy(false);
       },
     );
@@ -331,6 +373,30 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
               },
             )}
           </p>
+          {decision?.action === 'approve' && (
+            <Form.Group className="mb-3">
+              <Form.Label>{t('staff_requests_projects')}</Form.Label>
+              <Form.Control
+                value={projectIds}
+                placeholder={decision.request.project || '4711, 4712'}
+                isInvalid={Boolean(decisionError)}
+                onChange={(event) => {
+                  setProjectIds(event.target.value);
+                  setDecisionError('');
+                }}
+              />
+              <Form.Control.Feedback type="invalid">
+                {decisionError}
+              </Form.Control.Feedback>
+              <Form.Text muted>
+                {decision.request.project
+                  ? t('staff_requests_projects_stated', {
+                      project: decision.request.project,
+                    })
+                  : t('staff_requests_projects_hint')}
+              </Form.Text>
+            </Form.Group>
+          )}
           <Form.Group>
             <Form.Label>{t('staff_requests_note')}</Form.Label>
             <Form.Control

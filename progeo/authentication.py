@@ -2,6 +2,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import ModelBackend
 from django.core.exceptions import PermissionDenied
 from django.db.models import Q
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from rest_framework import exceptions
 from rest_framework.authentication import BaseAuthentication, get_authorization_header
@@ -19,6 +20,12 @@ class CaseInsensitiveUsernameOrEmailBackend(ModelBackend):
         if username is None or password is None:
             return None
 
+        from progeo.helper import login_throttle
+
+        if login_throttle.is_locked(username, request):
+            # PermissionDenied ends the backend chain (see below).
+            raise PermissionDenied("Too many failed logins")
+
         user = (
             UserModel.objects.filter(
                 Q(username__iexact=username) | Q(email__iexact=username)
@@ -30,6 +37,7 @@ class CaseInsensitiveUsernameOrEmailBackend(ModelBackend):
             # Run the default password hasher to mitigate user enumeration
             # via timing attacks (same behavior as ModelBackend).
             UserModel().set_password(password)
+            login_throttle.record_failure(username, request)
             return None
 
         if user.check_password(password) and self.user_can_authenticate(user):
@@ -37,13 +45,30 @@ class CaseInsensitiveUsernameOrEmailBackend(ModelBackend):
                 # PermissionDenied ends the backend chain - returning None
                 # would let the plain ModelBackend log the user in after all.
                 raise PermissionDenied("Account pending review")
+            if not self._two_factor_allowed(request, user):
+                raise PermissionDenied("Two-factor code required")
+            login_throttle.clear_failures(username)
             return user
+        login_throttle.record_failure(username, request)
         return None
 
     # A user whose access request is still pending may only log in to the
     # JWT endpoint (it shows the "being checked" panel) - never per Basic auth
     # or DRF token, which PendingAccessMiddleware can't see.
     PENDING_LOGIN_PATHS = ("/api/token/",)
+
+    # A user with 2FA logs in by password only where the code is checked as
+    # well (ProgeoTokenObtainPairSerializer, ExtendedObtainAuthToken, the
+    # admin login form) - never per Basic auth, which has no place for it.
+    TWO_FACTOR_LOGIN_PATHS = ("/api/token/", "/auth/login/", "/aadmin/login/")
+
+    @classmethod
+    def _two_factor_allowed(cls, request, user):
+        from progeo.helper.two_factor import is_enabled
+
+        if not is_enabled(user):
+            return True
+        return getattr(request, "path", "") in cls.TWO_FACTOR_LOGIN_PATHS
 
     @classmethod
     def _pending_allowed(cls, request, user):
@@ -113,8 +138,21 @@ class LimitedTokenAuthentication(BaseAuthentication):
         except model.DoesNotExist:
             raise exceptions.AuthenticationFailed(_("Invalid token."))
 
-        if not token.user.is_active:
-            raise exceptions.AuthenticationFailed(_("User inactive or deleted."))
+        if token.disabled:
+            raise exceptions.AuthenticationFailed(_("Token revoked."))
+        from progeo.helper.demo import DEMO_TOKEN_PURPOSE
+
+        if token.purpose == DEMO_TOKEN_PURPOSE:
+            # A demo link is swapped for a JWT at /v1/demo/login/ - never an API login.
+            raise exceptions.AuthenticationFailed(_("Invalid token."))
+        if token.user is not None:
+            if not token.user.is_active:
+                raise exceptions.AuthenticationFailed(_("User inactive or deleted."))
+            # A token that logs in as a user expires (no valid_until: it doesn't).
+            # Device tokens without a user keep working - their valid_until was
+            # never maintained (create_limited_token_safe sets "now").
+            if token.valid_until and token.valid_until <= timezone.now():
+                raise exceptions.AuthenticationFailed(_("Token expired."))
 
         return (token.user, token)
 

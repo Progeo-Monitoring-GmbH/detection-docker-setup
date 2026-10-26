@@ -23,7 +23,7 @@ from progeo.helper import heatmap_video
 from progeo.helper.basics import RequestFailed, RequestSuccess
 from progeo.helper.creator import create_MfS_log
 from progeo.helper.demo import DEMO_LAGEPLAN_PREFIX, is_demo_user
-from progeo.settings import MEDIA_ROOT, MEDIA_X_ACCEL
+from progeo.settings import MEDIA_ROOT, MEDIA_X_ACCEL, UPLOAD_DIR
 from progeo.v1.models import MODULE_PERMISSION_CODES
 from progeo.v1.serializers import ProgeoTokenObtainPairSerializer
 
@@ -92,6 +92,17 @@ class AuthenticatedMediaView(View):
         ):
             return JsonResponse({"code": 403, "reason": "Just no!"}, status=403)
 
+        # Customers fetch only what the portal shows them: the Lagepläne of
+        # the locations they see and the heatmap videos they exported - no
+        # other customer's plans, exports, setup or import files.
+        if (
+            not is_demo_user(user)
+            and not (user.is_staff or user.is_superuser)
+            and not heatmap_video.is_result_media_path(path)
+            and not self._visible_lageplan(user, path)
+        ):
+            return JsonResponse({"code": 403, "reason": "Just no!"}, status=403)
+
         full_path = self._resolve_media_path(path)
         if full_path is None or not os.path.isfile(full_path):
             return JsonResponse({"code": 404, "reason": "File not found"}, status=404)
@@ -112,6 +123,40 @@ class AuthenticatedMediaView(View):
 
         # Fallback: stream through Django (dev / non-nginx deployments).
         return serve_media(request, path, document_root=MEDIA_ROOT)
+
+    UPLOAD_PREFIX = os.path.relpath(UPLOAD_DIR, MEDIA_ROOT).replace(os.sep, "/") + "/"
+    VISIBLE_LAGEPLAN_CACHE_SECONDS = 300
+
+    @classmethod
+    def _visible_lageplan(cls, user, path):
+        """Whether `path` (normalized, relative to MEDIA_ROOT) is the file of
+        a ProgeoLageplan of a location `user` sees. Cached per user and path:
+        a plan view loads its images again and again."""
+        if not path.startswith(cls.UPLOAD_PREFIX):
+            return False
+        from django.core.cache import cache
+
+        from progeo.helper.location_access import user_accounts, visible_locations_by_db
+        from progeo.v1.models import ProgeoLageplan
+
+        name = path[len(cls.UPLOAD_PREFIX):]
+        key = f"progeo:media-lageplan:{user.pk}:{name}"
+        try:
+            cached = cache.get(key)
+        except Exception:  # noqa: BLE001 - cache unavailable: check it
+            cached = None
+        if cached is not None:
+            return cached
+        visible = any(
+            ProgeoLageplan.objects.using(db_name).filter(location_id__in=location_ids, lageplan=name).exists()
+            for account in user_accounts(user)
+            for db_name, location_ids in visible_locations_by_db(user, account).items()
+        )
+        try:
+            cache.set(key, visible, cls.VISIBLE_LAGEPLAN_CACHE_SECONDS)
+        except Exception:  # noqa: BLE001 - cache unavailable: checked again next time
+            return visible
+        return visible
 
     @staticmethod
     def _resolve_media_path(path):

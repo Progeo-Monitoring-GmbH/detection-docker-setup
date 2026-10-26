@@ -1153,6 +1153,7 @@ class LoginLink(models.Model):
     class Purpose(models.TextChoices):
         LOGIN = "login", "Anmeldelink"
         INVITE = "invite", "Einladung"
+        RESET = "reset", "Passwort zurücksetzen"
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="login_links")
     purpose = models.CharField(max_length=16, choices=Purpose.choices)
@@ -1163,6 +1164,24 @@ class LoginLink(models.Model):
 
     def __str__(self):
         return f"🔗 {self.purpose} {self.user_id} (used={bool(self.used_at)})"
+
+
+class TwoFactorDevice(models.Model):
+    """The second factor of a user: a TOTP key for an authenticator app
+    (helper/two_factor.py). It counts once `confirmed_at` is set - the user
+    typed a valid code after scanning it. `recovery_codes` holds the SHA-256
+    hashes of the unused one-time recovery codes; `last_step` is the time step
+    of the last accepted code, so no code is accepted twice."""
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="two_factor")
+    secret = models.CharField(max_length=64)
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    last_step = models.BigIntegerField(default=0)
+    recovery_codes = models.JSONField(default=list, blank=True)
+    created = models.DateTimeField(default=timezone.now)
+
+    def __str__(self):
+        return f"🔐 {self.user_id} (confirmed={bool(self.confirmed_at)})"
 
 
 class AccessRequest(models.Model):

@@ -49,7 +49,6 @@ const TEXT_FIELDS: {
   {
     name: 'company',
     label: 'access_company',
-    required: true,
     autoComplete: 'organization',
   },
   {

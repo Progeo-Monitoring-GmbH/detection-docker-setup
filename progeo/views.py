@@ -5,6 +5,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from progeo.helper.basics import dlog
+from progeo.helper.two_factor import check_login_code
+from progeo.v1.serializers import TwoFactorRequired
 
 
 class ExtendedObtainAuthToken(ObtainAuthToken):
@@ -13,6 +15,10 @@ class ExtendedObtainAuthToken(ObtainAuthToken):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data['user']
+        # Same 2FA step as /api/token/ (ProgeoTokenObtainPairSerializer).
+        error = check_login_code(user, request.data.get("otp"), request)
+        if error:
+            raise TwoFactorRequired(error)
         # login(request, user)   # TODO fix later
         token, _created = Token.objects.get_or_create(user=user)
         return Response({'token': token.key})

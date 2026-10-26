@@ -97,6 +97,17 @@ MAGIC_LINK_INVITE_HOURS = parse_int(os.getenv("MAGIC_LINK_INVITE_HOURS"), 72)
 ACCESS_REQUEST_VERIFY_HOURS = parse_int(os.getenv("ACCESS_REQUEST_VERIFY_HOURS"), 48)
 # Login links for staff/superusers: off - a mailbox must not be an admin login.
 MAGIC_LINK_ALLOW_STAFF = parse_boolean(os.getenv("MAGIC_LINK_ALLOW_STAFF", "0"))
+# Password reset links (helper/password_reset.py) - only for users with 2FA.
+PASSWORD_RESET_MINUTES = parse_int(os.getenv("PASSWORD_RESET_MINUTES"), 30)
+# Failed password/2FA checks before a login name / client IP is locked for
+# 15 minutes (helper/login_throttle.py).
+LOGIN_MAX_FAILURES_PER_NAME = parse_int(os.getenv("LOGIN_MAX_FAILURES_PER_NAME"), 10)
+LOGIN_MAX_FAILURES_PER_IP = parse_int(os.getenv("LOGIN_MAX_FAILURES_PER_IP"), 50)
+# Two-factor authentication (helper/two_factor.py): the name authenticator
+# apps show, and whether staff/superusers must set it up before they can use
+# the portal (TwoFactorRequiredMiddleware) - switch on once staff know.
+TWO_FACTOR_ISSUER = os.getenv("TWO_FACTOR_ISSUER", "ProGeo")
+TWO_FACTOR_REQUIRED_FOR_STAFF = parse_boolean(os.getenv("TWO_FACTOR_REQUIRED_FOR_STAFF", "0"))
 # Who is told about new access requests; empty = DJANGO_SUPERUSER_EMAIL.
 ACCESS_REQUEST_NOTIFY = (os.getenv("ACCESS_REQUEST_NOTIFY") or os.getenv("DJANGO_SUPERUSER_EMAIL") or "").strip()
 # Bounce mailbox (helper/bounces.py); user/password default to the SMTP login.
@@ -163,6 +174,7 @@ MIDDLEWARE = [
     "progeo.middlewares.AccountMiddleware",
     "progeo.middlewares.DemoReadOnlyMiddleware",
     "progeo.middlewares.PendingAccessMiddleware",
+    "progeo.middlewares.TwoFactorRequiredMiddleware",
 ]
 
 DEBUG_TOOLBAR_CONFIG = {
@@ -195,7 +207,8 @@ REST_FRAMEWORK = {
         "rest_framework.authentication.TokenAuthentication",
         "rest_framework.authentication.BasicAuthentication",
         "rest_framework_simplejwt.authentication.JWTAuthentication",
-        "progeo.authentication.LimitedTokenAuthentication",
+        # Not progeo.authentication.LimitedTokenAuthentication: those tokens
+        # (devices, ?token= in URLs) only work where a view lists it.
         # Last: header-based auth (JWT/Token) must win. The SPA is same-origin, so
         # the browser also sends the sessionid cookie set at login; if the session
         # matched first, DRF would enforce CSRF and reject the POST (403).

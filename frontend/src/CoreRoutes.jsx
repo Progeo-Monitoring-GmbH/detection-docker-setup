@@ -17,6 +17,15 @@ const MagicLinkRequest = React.lazy(
   () => import('./main/MagicLinkRequest.tsx'),
 );
 const MagicLinkLogin = React.lazy(() => import('./main/MagicLinkLogin.tsx'));
+const PasswordResetRequest = React.lazy(
+  () => import('./main/PasswordResetRequest.tsx'),
+);
+const PasswordResetConfirm = React.lazy(
+  () => import('./main/PasswordResetConfirm.tsx'),
+);
+const TwoFactorSetupRequired = React.lazy(
+  () => import('./main/TwoFactorSetupRequired.tsx'),
+);
 const RequestAccess = React.lazy(() => import('./main/RequestAccess.tsx'));
 const VerifyAccess = React.lazy(() => import('./main/VerifyAccess.tsx'));
 const PendingReview = React.lazy(() => import('./main/PendingReview.tsx'));
@@ -124,6 +133,11 @@ const CoreRoutes = () => {
       {/* One-time login link from a mail; redeemed on click, not on load. */}
       <Route path="/login/link" element={<MagicLinkRequest />} />
       <Route path="/login/link/:token" element={<MagicLinkLogin />} />
+      {/* Password reset by mail link + 2FA code; set on click, not on load. */}
+      <Route path="/passwort-vergessen" element={<PasswordResetRequest />} />
+      <Route path="/passwort/neu/:token" element={<PasswordResetConfirm />} />
+      {/* Staff who have to set up 2FA first see only this (PendingGate). */}
+      <Route path="/konto/zwei-faktor" element={<TwoFactorSetupRequired />} />
       {/* Access request: form -> mail confirmation -> staff review. */}
       <Route path="/zugang/beantragen" element={<RequestAccess />} />
       <Route path="/zugang/bestaetigen/:token" element={<VerifyAccess />} />

@@ -1,0 +1,13 @@
+{% extends "emails/base.html" %}
+{# Users imported from the old platform (import_users --invite). `action_url` is secret. #}
+{% block subject %}Das ProGeo-Portal ist umgezogen - Ihr neuer Zugang{% endblock %}
+{% block preheader %}Ihr persönlicher Anmeldelink, {{ valid_hours }} Stunden gültig{% endblock %}
+{% block content %}
+<h1 style="margin:0 0 12px; font-size:20px;">Das ProGeo-Portal ist umgezogen</h1>
+<p style="margin:0 0 12px;">{% if first_name %}Hallo {{ first_name }},{% else %}Guten Tag,{% endif %}</p>
+<p style="margin:0 0 12px;">das ProGeo-Monitoring-Portal läuft ab sofort auf einer neuen Plattform. Ihre Objekte haben wir für Sie übernommen - Sie sehen dort dieselben Projekte wie bisher.</p>
+<p style="margin:0 0 4px;">Ihr Zugang ist bereits eingerichtet (Benutzername: <strong>{{ username }}</strong>). Ihr bisheriges Passwort gilt nicht mehr: Mit dem folgenden Link melden Sie sich einmalig an; der Link ist {{ valid_hours }} Stunden gültig.</p>
+{% include "emails/_button.html" with url=action_url label="Zum neuen Portal" %}
+<p style="margin:0 0 12px;">Nach der Anmeldung empfehlen wir, unter „Profil" die Zwei-Faktor-Anmeldung einzurichten und ein Passwort festzulegen. Bis dahin können Sie sich auf der Anmeldeseite jederzeit über „Anmeldelink per E-Mail erhalten" einen neuen Link schicken lassen.</p>
+<p style="margin:0; font-size:12px; color:#6E6868;">Fragen zum Umzug? Antworten Sie einfach auf diese E-Mail oder wenden Sie sich an den ProGeo-Support.</p>
+{% endblock %}

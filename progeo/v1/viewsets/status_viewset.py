@@ -17,6 +17,7 @@ from progeo.decorator import calc_runtime, require_module_permissions
 from progeo.helper.basics import RequestFailed, RequestSuccess, save_check_dir
 from progeo.helper.docker_helper import start_cad_factory
 from progeo.helper.location_access import (
+    is_staff_admin,
     location_id_db,
     location_q,
     request_location_id,
@@ -445,22 +446,12 @@ class StatusViewSet(ProgeoModalViewSet):
     @require_module_permissions("module_devices_enabled", "module_devices_edit")
     @action(detail=False, url_path="measure_points/from_json", methods=["POST"])
     def upload_measure_points_from_json(self, request, *args, **kwargs):
-        account = getattr(request, "account", None) or _get_controller_account()
-        db_name = account.db_name if account else "default"
-
-        location_id_raw = request.query_params.get("location_id") or request.data.get("location_id")
-        if not location_id_raw:
-            return RequestFailed({"reason": "Missing parameter: location_id"})
-
-        try:
-            location_id = int(location_id_raw)
-        except (TypeError, ValueError):
-            return RequestFailed({"reason": "location_id must be an integer"})
-
-        location = ProgeoLocation.objects.using(db_name).filter(project_id=location_id, account=account).first()
-        if not location:
-            return RequestFailed({"reason": "Location not found"})
-        db_name = location_db(location, account)
+        # By project id, within the user's access.
+        location, db_name, error = _measure_point_location(
+            request, {"location_id": request.query_params.get("location_id") or request.data.get("location_id")}
+        )
+        if error:
+            return error
 
         json_path = request.FILES.get("files0")
         data = json.load(json_path)
@@ -476,22 +467,12 @@ class StatusViewSet(ProgeoModalViewSet):
     @require_module_permissions("module_devices_enabled", "module_devices_edit")
     @action(detail=False, url_path="measure_points/upload_png", methods=["POST"])
     def upload_measure_points_from_png(self, request, *args, **kwargs):
-        account = getattr(request, "account", None) or _get_controller_account()
-        db_name = account.db_name if account else "default"
-
-        location_id_raw = request.query_params.get("location_id") or request.data.get("location_id")
-        if not location_id_raw:
-            return RequestFailed({"reason": "Missing parameter: location_id"})
-
-        try:
-            location_id = int(location_id_raw)
-        except (TypeError, ValueError):
-            return RequestFailed({"reason": "location_id must be an integer"})
-
-        location = ProgeoLocation.objects.using(db_name).filter(project_id=location_id, account=account).first()
-        if not location:
-            return RequestFailed({"reason": "Location not found"})
-        db_name = location_db(location, account)
+        # By project id, within the user's access.
+        location, db_name, error = _measure_point_location(
+            request, {"location_id": request.query_params.get("location_id") or request.data.get("location_id")}
+        )
+        if error:
+            return error
 
         upload = next(iter(request.FILES.values()), None)
         if not upload:
@@ -510,22 +491,12 @@ class StatusViewSet(ProgeoModalViewSet):
     @require_module_permissions("module_devices_enabled", "module_devices_edit")
     @action(detail=False, url_path="measure_points/upload_cad", methods=["POST"])
     def upload_measure_points_from_cad(self, request, *args, **kwargs):
-        account = getattr(request, "account", None) or _get_controller_account()
-        db_name = account.db_name if account else "default"
-
-        location_id_raw = request.query_params.get("location_id") or request.data.get("location_id")
-        if not location_id_raw:
-            return RequestFailed({"reason": "Missing parameter: location_id"})
-
-        try:
-            location_id = int(location_id_raw)
-        except (TypeError, ValueError):
-            return RequestFailed({"reason": "location_id must be an integer"})
-
-        location = ProgeoLocation.objects.using(db_name).filter(project_id=location_id, account=account).first()
-        if not location:
-            return RequestFailed({"reason": "Location not found"})
-        db_name = location_db(location, account)
+        # By project id, within the user's access.
+        location, db_name, error = _measure_point_location(
+            request, {"location_id": request.query_params.get("location_id") or request.data.get("location_id")}
+        )
+        if error:
+            return error
 
         upload = next(iter(request.FILES.values()), None)
         points = None
@@ -724,6 +695,9 @@ class StatusViewSet(ProgeoModalViewSet):
     @require_module_permissions("module_devices_enabled")
     @action(detail=False, url_path="list_connected", methods=["GET"])
     def list_connected(self, request, *args, **kwargs):
+        # Controller network tooling - creates locations/devices of the controller account.
+        if not is_staff_admin(request.user):
+            return RequestFailed({"reason": "Staff access required"})
         account = _get_controller_account()
         if not account:
             return RequestFailed({"reason": "No account configured"})
@@ -771,6 +745,8 @@ class StatusViewSet(ProgeoModalViewSet):
     @require_module_permissions("module_devices_enabled")
     @action(detail=False, url_path="identify_device", methods=["GET"])
     def identify_device(self, request, *args, **kwargs):
+        if not is_staff_admin(request.user):
+            return RequestFailed({"reason": "Staff access required"})
         ip = (request.query_params.get("ip") or "").strip()
         if not ip:
             return RequestFailed({"reason": "Missing query parameter: ip"})
@@ -794,6 +770,8 @@ class StatusViewSet(ProgeoModalViewSet):
     @require_module_permissions("module_devices_enabled")
     @action(detail=False, url_path="identify_device_result", methods=["GET"])
     def identify_device_result(self, request, *args, **kwargs):
+        if not is_staff_admin(request.user):
+            return RequestFailed({"reason": "Staff access required"})
         task_id = (request.query_params.get("task_id") or "").strip()
         if not task_id:
             return RequestFailed({"reason": "Missing query parameter: task_id"})
@@ -821,25 +799,26 @@ class StatusViewSet(ProgeoModalViewSet):
     @action(detail=False, url_path="devices", methods=["GET"])
     def list_device_status(self, request, *args, **kwargs):
         db_name = "default"
-        account = getattr(request, "account", None)
-        if not account:
-            return RequestFailed({"reason": "No account configured"})
-        
-        if split_enabled():
-            # The account's devices are spread over the project databases.
-            # No user filter, like the query below: every device of the account.
-            groups = visible_locations_by_db(None, account)
+        user = request.user
+        data = []
+        # Staff: the request's account; everyone else: the devices of their visible locations.
+        for account in _request_accounts(request):
+            if split_enabled():
+                # The account's devices are spread over the project databases.
+                groups = visible_locations_by_db(user, account)
 
-            def devices_of(project_db):
-                return DeviceSerializer(ProgeoDevice.objects.using(project_db).select_related("location").filter(
-                    location__account=account, location_id__in=groups[project_db]
-                ).order_by("id"), many=True).data
+                def devices_of(project_db, account=account, groups=groups):
+                    return DeviceSerializer(ProgeoDevice.objects.using(project_db).select_related("location").filter(
+                        location__account=account, location_id__in=groups[project_db]
+                    ).order_by("id"), many=True).data
 
-            data = [device for chunk in map_databases(devices_of, groups) for device in chunk]
-            data.sort(key=lambda device: device.get("id") or 0)
-            return RequestSuccess({"devices": data})
-        devices = ProgeoDevice.objects.using(db_name).select_related("location").filter(location__account=account).order_by("id")
-        data = DeviceSerializer(devices, many=True).data
+                data.extend(device for chunk in map_databases(devices_of, groups) for device in chunk)
+                continue
+            devices = ProgeoDevice.objects.using(account.db_name or db_name).select_related("location").filter(
+                location_q(user, account, "location__")
+            ).order_by("id")
+            data.extend(DeviceSerializer(devices, many=True).data)
+        data.sort(key=lambda device: device.get("id") or 0)
         return RequestSuccess({"devices": data})
 
     @calc_runtime
@@ -847,6 +826,9 @@ class StatusViewSet(ProgeoModalViewSet):
     @action(detail=False, url_path="devices/detailed", methods=["GET"])
     # TODO extremly slow...
     def list_device_status_detailed(self, request, *args, **kwargs):
+        # Every device of every database, pinged one by one - staff only.
+        if not is_staff_admin(request.user):
+            return RequestFailed({"reason": "Staff access required"})
 
         db_name = "default"
         success, connected_devices = get_connected_devices()

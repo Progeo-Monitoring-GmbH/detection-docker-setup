@@ -77,7 +77,7 @@ celery_instance.conf.beat_schedule = {
     "cleanup-access-requests-daily": {
         "task": "progeo.tasks.cleanup_access_requests",
         # Unconfirmed access requests expire, rejected ones are deleted (GDPR).
-        "schedule": crontab(hour=4, minute=10),
+        "schedule": crontab(hour=4, minute=12),
     },
 }
 if not settings.PROGEO_CONFIG_EVALUATE_INSTANTLY:

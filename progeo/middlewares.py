@@ -256,8 +256,9 @@ class PendingAccessMiddleware:
     Pending users get no session and no Basic/DRF-token login (see
     CaseInsensitiveUsernameOrEmailBackend), so the JWT is the only way in."""
 
+    # /v1/demo/login/: the panel offers the public demo (a separate demo user).
     ALLOWED_PATHS = ("/api/token/", "/api/auth-support/access-requests/", "/api/auth-support/login-link/",
-                     "/auth/logout/")
+                     "/auth/logout/", "/v1/demo/login/")
 
     def __init__(self, get_response):
         self.get_response = get_response
@@ -280,6 +281,11 @@ class PendingAccessMiddleware:
     @staticmethod
     def _pending_claim(request):
         """The user id of a valid JWT with `is_pending`, else None."""
+        return PendingAccessMiddleware._claim(request, "is_pending")
+
+    @staticmethod
+    def _claim(request, claim):
+        """The user id of a valid JWT whose `claim` is set, else None."""
         header = request.META.get("HTTP_AUTHORIZATION", "")
         if not header.startswith("Bearer "):
             return None
@@ -290,4 +296,36 @@ class PendingAccessMiddleware:
             token = AccessToken(header[len("Bearer "):])
         except TokenError:
             return None
-        return token.get("user_id") if token.get("is_pending") else None
+        return token.get("user_id") if token.get(claim) else None
+
+
+class TwoFactorRequiredMiddleware:
+    """With TWO_FACTOR_REQUIRED_FOR_STAFF, a staff member/superuser without
+    2FA may only set it up: every request with a JWT carrying the signed
+    `two_factor_setup_required` claim is refused, except session handling
+    and the profile (/v1/user/ - where 2FA is set up). Like
+    PendingAccessMiddleware, the claim spares other requests a database
+    access and an outdated one (2FA set up meanwhile) is re-checked. The
+    Django admin login refuses them itself (progeo/admin_login.py)."""
+
+    ALLOWED_PATHS = ("/api/token/", "/v1/user/", "/auth/logout/")
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if not request.path.startswith(self.ALLOWED_PATHS):
+            user_id = PendingAccessMiddleware._claim(request, "two_factor_setup_required")
+            if user_id is not None:
+                from django.contrib.auth.models import User
+
+                from progeo.helper.two_factor import is_required
+
+                if is_required(User.objects.using(DEFAULT_DB_ALIAS).filter(pk=user_id).first()):
+                    from django.http import JsonResponse
+
+                    return JsonResponse(
+                        {"success": False, "reason": "Two-factor setup required", "two_factor_setup_required": True},
+                        status=403,
+                    )
+        return self.get_response(request)

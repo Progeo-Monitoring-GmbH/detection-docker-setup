@@ -274,6 +274,19 @@ def resolve_request_account(request, fallback_account=None):
     return accounts[0] if accounts else None
 
 
+def can_see_location(user, location) -> bool:
+    """Whether `user` sees `location` (a ProgeoLocation instance, e.g. a
+    foreign key a serializer resolved from request data)."""
+    if is_staff_admin(user):
+        return True
+    if location is None or not location.account_id or not getattr(user, "pk", None):
+        return False
+    account = Account.objects.using(DEFAULT_DB_ALIAS).filter(pk=location.account_id).first()
+    if account is None:
+        return False
+    return is_account_member(user, account) or location.pk in single_access_location_ids(user, account)
+
+
 def location_q(user, account, prefix: str = "") -> Q:
     """Filter for rows visible to `user` within `account`. `prefix` is the
     lookup path to the location, e.g. "device__location__" for measurements."""

@@ -11,7 +11,12 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
 from progeo.helper.basics import RequestFailed, RequestSuccess
-from progeo.v1.models import DEFAULT_USER_PERMISSIONS, MODULE_PERMISSION_CODES, MODULE_PERMISSION_DEFINITIONS
+from progeo.helper.tokens import revoke_user_tokens
+from progeo.v1.models import (
+    DEFAULT_USER_PERMISSIONS,
+    MODULE_PERMISSION_CODES,
+    MODULE_PERMISSION_DEFINITIONS,
+)
 
 # Users / permissions always live on the default database.
 _USER_DB = "default"
@@ -73,9 +78,20 @@ def _module_codes_by_user():
     return codes_by_user
 
 
-def _user_payload(user, grantable, granted_codes=None):
+def _two_factor_user_ids():
+    """Ids of all users with a confirmed second factor (one query, for lists)."""
+    from progeo.v1.models import TwoFactorDevice
+
+    return set(
+        TwoFactorDevice.objects.using(_USER_DB).filter(confirmed_at__isnull=False).values_list("user_id", flat=True)
+    )
+
+
+def _user_payload(user, grantable, granted_codes=None, two_factor_ids=None):
     """`granted_codes`: the user's entry of _module_codes_by_user() for lists;
-    None asks user.has_perm() (single users)."""
+    None asks user.has_perm() (single users). `two_factor_ids`: see
+    _two_factor_user_ids() (lists); None looks the user up."""
+    from progeo.helper.two_factor import is_enabled
     values = {}
     for code in MODULE_PERMISSION_CODES:
         if granted_codes is None:
@@ -92,6 +108,7 @@ def _user_payload(user, grantable, granted_codes=None):
         "is_active": user.is_active,
         "date_joined": user.date_joined.isoformat() if user.date_joined else None,
         "last_login": user.last_login.isoformat() if user.last_login else None,
+        "two_factor_enabled": user.pk in two_factor_ids if two_factor_ids is not None else is_enabled(user),
         "permissions": values,
         "grantable": {code: values[code] for code in grantable},
     }
@@ -143,8 +160,12 @@ class StaffUserListView(APIView):
         grantable = _grantable_codes(request.user)
         users = list(User.objects.using(_USER_DB).order_by("username"))
         codes_by_user = _module_codes_by_user()
+        two_factor_ids = _two_factor_user_ids()
         return RequestSuccess({
-            "users": [_user_payload(user, grantable, codes_by_user.get(user.pk, set())) for user in users],
+            "users": [
+                _user_payload(user, grantable, codes_by_user.get(user.pk, set()), two_factor_ids)
+                for user in users
+            ],
             "grantable_codes": sorted(grantable),
             "all_permission_defs": [
                 {"code": code, "label": label}
@@ -301,12 +322,23 @@ class StaffUserDetailView(APIView):
             user.is_active = bool(data.get("is_active", True))
             update_fields.append("is_active")
 
+        # Lost authenticator: remove the second factor (the user sets it up
+        # again) and end the user's logins. A superuser's only by superusers.
+        if data.get("reset_two_factor") and user.is_superuser and not request.user.is_superuser:
+            return RequestFailed({"reason": "Only superusers may modify superusers"})
+
         # Permissions (only codes the admin has on their own account).
         if "permissions" in data:
             denied_codes = _apply_permissions(user, data.get("permissions", []), grantable)
 
         if update_fields:
             user.save(using=_USER_DB, update_fields=update_fields)
+
+        if data.get("reset_two_factor"):
+            from progeo.helper.two_factor import disable
+
+            if disable(user):
+                revoke_user_tokens(user)
 
         return RequestSuccess({
             "user": _user_payload(user, grantable),
@@ -338,6 +370,7 @@ class StaffUserPasswordView(APIView):
         new_password = _generate_password()
         user.set_password(new_password)
         user.save(using=_USER_DB, update_fields=["password"])
+        revoke_user_tokens(user)
         return RequestSuccess({"user_id": user.pk, "username": user.username, "new_password": new_password})
 
 

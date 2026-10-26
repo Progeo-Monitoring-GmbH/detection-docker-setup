@@ -1,13 +1,28 @@
 import asyncio
 import json
 
+from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
-from django.contrib.auth.models import AnonymousUser
 
 from progeo.v1.log_files_helper import read_log_file, summarize_log_files
 
 GRP_NAME = "command-group"
 LOG_STREAM_GROUP = "log-stream-group"
+
+
+def _is_staff_admin(user) -> bool:
+    return bool(
+        user is not None and getattr(user, "is_authenticated", False)
+        and (getattr(user, "is_staff", False) or getattr(user, "is_superuser", False))
+    )
+
+
+@database_sync_to_async
+def _may_read_logs(user) -> bool:
+    """Same rule as the HTTP log endpoints (status_viewset admin/log_files)."""
+    from progeo.decorator import has_module_permissions
+
+    return has_module_permissions(user, "module_admin_enabled")
 
 
 # ==============================================================================================
@@ -21,6 +36,12 @@ class CommandConsumer(AsyncWebsocketConsumer):
 
     async def connect(self):
         self.kwargs = self.scope["url_route"]["kwargs"]
+        # The group carries device commands and the legacy location events
+        # (names, addresses, contacts) of every customer, and relays what any
+        # client sends to all others - ProGeo staff only (session login).
+        if not _is_staff_admin(self.scope.get("user")):
+            await self.close(code=4403)
+            return
 
         await self.channel_layer.group_add(
             self.group_name,
@@ -73,9 +94,8 @@ class LogStreamConsumer(AsyncWebsocketConsumer):
         """Accept websocket connection and check authentication."""
         self.user = self.scope.get("user")
         
-        # Check if user is authenticated
-        if isinstance(self.user, AnonymousUser):
-            await self.close(code=403)
+        if self.user is None or not getattr(self.user, "is_authenticated", False) or not await _may_read_logs(self.user):
+            await self.close(code=4403)
             return
 
         await self.channel_layer.group_add(

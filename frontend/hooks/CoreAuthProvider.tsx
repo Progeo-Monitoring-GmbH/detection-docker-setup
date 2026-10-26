@@ -13,6 +13,7 @@ import { useLocation, useNavigate } from 'react-router';
 import { getBackendBaseUrl } from '../src/backendUrl';
 import { showErrorBar } from '../src/components/ui/Snackbar.jsx';
 import { isDemoUser, setDemoToken } from '../src/main/demo';
+import { otpReason, OtpReason } from '../src/main/twoFactor';
 
 type User = JwtPayload;
 const intervalMin = 30;
@@ -20,7 +21,12 @@ const intervalMin = 30;
 interface AuthCredentials {
   username: string;
   password: string;
+  /** The 2FA code (or a recovery code) - only for users with 2FA. */
+  otp?: string;
 }
+
+/** How a login ended: an OtpReason asks the form for the 2FA code. */
+export type LoginOutcome = 'ok' | 'failed' | OtpReason;
 
 interface AuthRefresh {
   isSuccess: boolean;
@@ -31,10 +37,18 @@ interface AuthRefresh {
 
 export interface AuthContextType {
   token: string;
+  /** Sent along with password/2FA changes - this device stays logged in. */
+  refreshToken: string;
   user: User | null;
   refreshApi: (refreshToken: string) => Promise<AuthRefresh>;
-  loginAction: (data: AuthCredentials, forward?: string) => Promise<void>;
-  /** Adopt tokens issued elsewhere (the demo link) as the current session. */
+  loginAction: (
+    data: AuthCredentials,
+    forward?: string,
+  ) => Promise<LoginOutcome>;
+  /**
+   * Adopt tokens issued elsewhere (demo/login link, password reset, a 2FA
+   * change) as the current session.
+   */
   loginWithTokens: (access: string, refresh: string) => void;
   logoutAction: (forward?: string) => void;
   navigate: (to: string, options?) => void;
@@ -67,9 +81,10 @@ const refreshApi = async (refreshToken) => {
 
 const defaultAuthContextValue: AuthContextType = {
   token: '',
+  refreshToken: '',
   user: null,
   refreshApi: (t) => refreshApi(t),
-  loginAction: async () => {},
+  loginAction: async () => 'failed',
   loginWithTokens: () => {},
   logoutAction: () => {},
   navigate: () => {},
@@ -147,7 +162,7 @@ const CoreAuthProvider = ({ children }) => {
   );
 
   const loginAction = useCallback(
-    async (data: AuthCredentials, forward?: string) => {
+    async (data: AuthCredentials, forward?: string): Promise<LoginOutcome> => {
       try {
         const response = await axios.post(`${API_URL}/api/token/`, data);
         const newToken = response.data.access;
@@ -160,11 +175,18 @@ const CoreAuthProvider = ({ children }) => {
         } else {
           navigate('/');
         }
+        return 'ok';
       } catch (error) {
+        // Password right, 2FA code missing/wrong: the form asks for it.
+        const otp = otpReason(error);
+        if (otp) {
+          return otp;
+        }
         console.error('Login failed!', error);
         showErrorBar(enqueueSnackbar, 'Login failed!');
 
         await logoutAction(forward);
+        return 'failed';
       }
     },
     [navigate, logoutAction], // depends on logoutAction as it is defined below
@@ -183,6 +205,7 @@ const CoreAuthProvider = ({ children }) => {
   const value = useMemo(
     () => ({
       token,
+      refreshToken,
       user,
       refreshApi: () => refreshApi(refreshToken),
       loginAction,

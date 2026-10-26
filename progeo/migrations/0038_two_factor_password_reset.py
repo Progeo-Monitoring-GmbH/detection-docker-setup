@@ -1,0 +1,34 @@
+# Hand-written (2FA devices, password reset links)
+
+import django.db.models.deletion
+import django.utils.timezone
+from django.conf import settings
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('progeo', '0037_outbound_messaging_access_requests'),
+        migrations.swappable_dependency(settings.AUTH_USER_MODEL),
+    ]
+
+    operations = [
+        migrations.AlterField(
+            model_name='loginlink',
+            name='purpose',
+            field=models.CharField(choices=[('login', 'Anmeldelink'), ('invite', 'Einladung'), ('reset', 'Passwort zurücksetzen')], max_length=16),
+        ),
+        migrations.CreateModel(
+            name='TwoFactorDevice',
+            fields=[
+                ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('secret', models.CharField(max_length=64)),
+                ('confirmed_at', models.DateTimeField(blank=True, null=True)),
+                ('last_step', models.BigIntegerField(default=0)),
+                ('recovery_codes', models.JSONField(blank=True, default=list)),
+                ('created', models.DateTimeField(default=django.utils.timezone.now)),
+                ('user', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='two_factor', to=settings.AUTH_USER_MODEL)),
+            ],
+        ),
+    ]

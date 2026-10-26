@@ -6,6 +6,7 @@ from django.views.decorators.vary import vary_on_cookie
 from rest_framework import viewsets
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from tablib import Dataset
@@ -22,6 +23,25 @@ from progeo.helper.cacher import (
 
 class ProgeoModalViewSet(viewsets.ModelViewSet):
     authentication_classes = [JWTAuthentication, SessionAuthentication]
+
+    # The inherited ModelViewSet writes and the table exports are staff-only:
+    # serializers with fields="__all__" accept any foreign key, and nothing
+    # checks a module permission. A subclass lists in customer_actions the
+    # ones it guards itself (module permission, scoped queryset, checked
+    # foreign keys).
+    STAFF_ONLY_ACTIONS = ("create", "update", "partial_update", "destroy", "get_as_csv", "get_as_ods")
+    customer_actions = ()
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        from progeo.helper.location_access import is_staff_admin
+
+        if (
+            self.action in self.STAFF_ONLY_ACTIONS
+            and self.action not in self.customer_actions
+            and not is_staff_admin(request.user)
+        ):
+            raise PermissionDenied("Staff access required")
 
     def get_queryset_ids(self, qs=None):
         if qs:

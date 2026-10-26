@@ -55,10 +55,12 @@ def create_link(user, purpose: str) -> str | None:
     from progeo.v1.models import LoginLink
 
     now = timezone.now()
-    validity = (
-        timedelta(hours=settings.MAGIC_LINK_INVITE_HOURS) if purpose == LoginLink.Purpose.INVITE
-        else timedelta(minutes=settings.MAGIC_LINK_LOGIN_MINUTES)
-    )
+    if purpose == LoginLink.Purpose.INVITE:
+        validity = timedelta(hours=settings.MAGIC_LINK_INVITE_HOURS)
+    elif purpose == LoginLink.Purpose.RESET:
+        validity = timedelta(minutes=settings.PASSWORD_RESET_MINUTES)
+    else:
+        validity = timedelta(minutes=settings.MAGIC_LINK_LOGIN_MINUTES)
     with transaction.atomic(using=DB):
         unused = LoginLink.objects.using(DB).select_for_update().filter(
             user_id=user.pk, purpose=purpose, used_at__isnull=True,
@@ -74,8 +76,16 @@ def create_link(user, purpose: str) -> str | None:
     return token
 
 
-def send_login_link(user_id: int, purpose: str = "login") -> bool:
-    """Create a link and mail it to the user (runs in the worker)."""
+# Mail templates a link may go out with instead of the purpose's own.
+LINK_TEMPLATES = {
+    # Users imported from the old platform (import_users command).
+    "invite_migration": "invite",
+}
+
+
+def send_login_link(user_id: int, purpose: str = "login", template: str | None = None) -> bool:
+    """Create a link and mail it to the user (runs in the worker).
+    `template`: one of LINK_TEMPLATES for that purpose, else the default."""
     from progeo.helper.emailhelper import portal_url, send_template_mail
     from progeo.v1.models import LoginLink
 
@@ -96,8 +106,9 @@ def send_login_link(user_id: int, purpose: str = "login") -> bool:
         "valid_minutes": settings.MAGIC_LINK_LOGIN_MINUTES,
         "valid_hours": settings.MAGIC_LINK_INVITE_HOURS,
     }
+    name = template if template and LINK_TEMPLATES.get(template) == purpose else ("invite" if invite else "login_link")
     return bool(send_template_mail(
-        [user.email], "invite" if invite else "login_link", context,
+        [user.email], name, context,
         category="invite" if invite else "login_link",
         secret_context={"action_url": portal_url(f"/login/link/{token}")},
     ))
@@ -121,21 +132,38 @@ def request_login_link(email: str) -> None:
     outbound.dispatch(send_login_link_task, users[0].pk, "login")
 
 
-def redeem(token: str):
-    """(user, purpose) for a valid unused token - marking it used - else None."""
+class SecondFactorRequired(Exception):
+    """The link is valid, but its user has 2FA and the code is missing
+    ("otp_required") or wrong ("otp_invalid"). The link stays unused."""
+
+    def __init__(self, reason):
+        super().__init__(reason)
+        self.reason = reason
+
+
+def redeem(token: str, otp=None, request=None, purposes=None):
+    """(user, purpose) for a valid unused token - marking it used - else
+    None. A user with 2FA needs a valid `otp` as well (else
+    SecondFactorRequired). `purposes`: the link kinds accepted here (default:
+    login and invite links - a password reset link doesn't log in)."""
+    from progeo.helper.two_factor import check_login_code
     from progeo.v1.models import LoginLink
 
     if not token:
         return None
+    purposes = purposes or (LoginLink.Purpose.LOGIN, LoginLink.Purpose.INVITE)
     with transaction.atomic(using=DB):
         link = (
             LoginLink.objects.using(DB).select_for_update().select_related("user")
-            .filter(token_hash=hash_token(token)).first()
+            .filter(token_hash=hash_token(token), purpose__in=purposes).first()
         )
         if link is None or link.used_at is not None or link.expires_at <= timezone.now():
             return None
         if eligible(link.user) is not None:
             return None
+        error = check_login_code(link.user, otp, request)
+        if error:
+            raise SecondFactorRequired(error)
         link.used_at = timezone.now()
         link.save(using=DB, update_fields=["used_at"])
     ilog(f"[login_links] {link.purpose} link of user {link.user_id} redeemed")

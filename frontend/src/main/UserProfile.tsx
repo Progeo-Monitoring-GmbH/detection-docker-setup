@@ -10,7 +10,8 @@ import axiosConfig from '../axiosConfig';
 import { errorReason, showErrorBar, showInfoBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import PillButton from '../components/ui/kit/PillButton';
 import LabeledInput from '../components/ui/kit/LabeledInput';
-import { isDemoReadOnlyError } from './demo';
+import { isDemoReadOnlyError, isDemoUser } from './demo';
+import TwoFactorSettings from './TwoFactorSettings';
 
 type UserProfileResponse = {
   username: string;
@@ -19,7 +20,16 @@ type UserProfileResponse = {
   email: string;
   mobile?: string | null;
   language: string;
+  two_factor_enabled?: boolean;
+  /** False for users invited per link - they never chose a password. */
+  has_usable_password?: boolean;
 };
+
+/**
+ * 'change': with the current password. 'set': with a 2FA code instead -
+ * for users without a password (invited per link) or who forgot it.
+ */
+type PasswordMode = 'change' | 'set';
 
 const isValidEmail = (input: string): boolean => {
   const value = input.trim();
@@ -120,6 +130,9 @@ const sectionLabelStyle: React.CSSProperties = {
  *   drawer doesn't list it - it's real, working, persisted server-side
  *   (unlike the header's quick, session-local DE/EN toggle), and dropping
  *   it would regress existing functionality just to match the mockup.
+ * - "Zwei-Faktor-Anmeldung" (TwoFactorSettings) isn't in the mockup - it's
+ *   the place to set up 2FA, and a password can be set with a 2FA code
+ *   instead of the current one (users invited per link never had one).
  * - "Zugriff auf weiteres Projekt anfragen" and "Konto löschen" have no
  *   backend support (no request-access flow, no self-service account
  *   deactivation exists anywhere) - both show guidance to contact ProGeo
@@ -134,7 +147,9 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [isSavingPassword, setIsSavingPassword] = React.useState(false);
-  const [passwordOpen, setPasswordOpen] = React.useState(false);
+  const [passwordMode, setPasswordMode] = React.useState<PasswordMode | null>(null);
+  const [twoFactorEnabled, setTwoFactorEnabled] = React.useState(false);
+  const [hasUsablePassword, setHasUsablePassword] = React.useState(true);
 
   const [firstName, setFirstName] = React.useState('');
   const [lastName, setLastName] = React.useState('');
@@ -143,15 +158,18 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
   const [language, setLanguage] = React.useState('de');
 
   const [currentPassword, setCurrentPassword] = React.useState('');
+  const [passwordCode, setPasswordCode] = React.useState('');
   const [newPassword, setNewPassword] = React.useState('');
   const [newPasswordConfirm, setNewPasswordConfirm] = React.useState('');
 
   const canEditEmail = hasPermission('module_profile_mail_edit');
+  // The demo user keeps nothing - no 2FA or password of its own.
+  const isDemo = isDemoUser(auth.user);
   const isEmailInputValid = isValidEmail(email);
 
   const passwordStrength = evaluatePasswordStrength(newPassword);
   const isPasswordInputValid =
-    Boolean(currentPassword) &&
+    Boolean(passwordMode === 'set' ? passwordCode.trim() : currentPassword) &&
     Boolean(newPassword) &&
     Boolean(newPasswordConfirm) &&
     newPassword === newPasswordConfirm &&
@@ -177,6 +195,8 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
         setEmail(data.email || '');
         setMobile(data.mobile || '');
         setLanguage(data.language || 'de');
+        setTwoFactorEnabled(Boolean(data.two_factor_enabled));
+        setHasUsablePassword(data.has_usable_password !== false);
         setLoading(false);
       },
       (error) => {
@@ -188,16 +208,31 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth, enqueueSnackbar]);
 
+  const resetPasswordForm = () => {
+    setPasswordMode(null);
+    setCurrentPassword('');
+    setPasswordCode('');
+    setNewPassword('');
+    setNewPasswordConfirm('');
+  };
+
+  // Only on opening: a 2FA change swaps the tokens (new auth object) - a
+  // reload then would replace the drawer's content and lose the recovery
+  // codes that are shown only once.
   React.useEffect(() => {
     if (!show) {
       return;
     }
-    setPasswordOpen(false);
-    setCurrentPassword('');
-    setNewPassword('');
-    setNewPasswordConfirm('');
+    resetPasswordForm();
     loadProfile();
-  }, [show, loadProfile]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [show]);
+
+  const togglePasswordMode = (mode: PasswordMode) => {
+    const next = passwordMode === mode ? null : mode;
+    resetPasswordForm();
+    setPasswordMode(next);
+  };
 
   const save = () => {
     if (!isEmailInputValid) {
@@ -232,7 +267,8 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
   };
 
   const changePassword = () => {
-    if (!currentPassword || !newPassword || !newPasswordConfirm) {
+    const proof = passwordMode === 'set' ? passwordCode.trim() : currentPassword;
+    if (!proof || !newPassword || !newPasswordConfirm) {
       showErrorBar(enqueueSnackbar, t('profile_password_missing'));
       return;
     }
@@ -246,16 +282,17 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
     }
 
     setIsSavingPassword(true);
+    // `refresh`: every other login of the user ends, this device stays logged in.
     void axiosConfig.perform_post(
       auth,
-      '/v1/user/password/change/',
-      { current_password: currentPassword, new_password: newPassword },
+      passwordMode === 'set' ? '/v1/user/password/set/' : '/v1/user/password/change/',
+      passwordMode === 'set'
+        ? { code: proof, new_password: newPassword, refresh: auth.refreshToken }
+        : { current_password: proof, new_password: newPassword, refresh: auth.refreshToken },
       () => {
         showSuccessBar(enqueueSnackbar, t('profile_password_saved'));
-        setCurrentPassword('');
-        setNewPassword('');
-        setNewPasswordConfirm('');
-        setPasswordOpen(false);
+        resetPasswordForm();
+        setHasUsablePassword(true);
         setIsSavingPassword(false);
       },
       (error) => {
@@ -376,17 +413,49 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
                   label={t('profile_request_access')}
                   onClick={() => showInfoBar(enqueueSnackbar, t('profile_request_access_info'))}
                 />
-                <PillButton label={t('profile_change_password')} onClick={() => setPasswordOpen((open) => !open)} />
-              </div>
-
-              {passwordOpen && (
-                <div style={{ marginTop: 14, background: 'var(--progeo-surface)', borderRadius: 14, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <LabeledInput
-                    label={t('profile_current_password')}
-                    value={currentPassword}
-                    onChange={setCurrentPassword}
-                    type="password"
+                {hasUsablePassword ? (
+                  <PillButton label={t('profile_change_password')} onClick={() => togglePasswordMode('change')} />
+                ) : (
+                  <PillButton
+                    label={t('profile_set_password')}
+                    onClick={() => togglePasswordMode('set')}
+                    disabled={!twoFactorEnabled}
                   />
+                )}
+              </div>
+              {!hasUsablePassword && (
+                <div style={{ fontSize: 12.5, color: '#8B8383', marginTop: 8 }}>
+                  {twoFactorEnabled ? t('profile_set_password_hint') : t('profile_set_password_needs_2fa')}
+                </div>
+              )}
+
+              {passwordMode && (
+                <div style={{ marginTop: 14, background: 'var(--progeo-surface)', borderRadius: 14, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {passwordMode === 'change' ? (
+                    <LabeledInput
+                      label={t('profile_current_password')}
+                      value={currentPassword}
+                      onChange={setCurrentPassword}
+                      type="password"
+                    />
+                  ) : (
+                    <LabeledInput
+                      label={t('tfa_code')}
+                      value={passwordCode}
+                      onChange={setPasswordCode}
+                      autoComplete="one-time-code"
+                    />
+                  )}
+                  {passwordMode === 'change' && twoFactorEnabled && (
+                    <button
+                      type="button"
+                      className="btn btn-link p-0 text-start"
+                      style={{ fontSize: 12.5 }}
+                      onClick={() => togglePasswordMode('set')}
+                    >
+                      {t('profile_forgot_password_2fa')}
+                    </button>
+                  )}
                   <LabeledInput
                     label={t('profile_new_password')}
                     value={newPassword}
@@ -428,6 +497,13 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
                 </div>
               )}
             </section>
+
+            {!isDemo && (
+              <section>
+                <div style={sectionLabelStyle}>{t('tfa_title')}</div>
+                <TwoFactorSettings onEnabledChange={setTwoFactorEnabled} />
+              </section>
+            )}
 
             <section>
               <div style={{ fontSize: 13.5, fontWeight: 500, marginBottom: 4 }}>{t('profile_delete_account')}</div>

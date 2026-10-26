@@ -7,13 +7,14 @@ from django.db import DEFAULT_DB_ALIAS, connections
 from django.http import FileResponse
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.decorator import calc_runtime, require_module_permissions
 from progeo.helper.basics import RequestFailed, RequestSuccess, delete_file
 from progeo.helper.creator import create_MfS_log
+from progeo.helper.location_access import is_staff_admin
 from progeo.helper.project_dbs import (
     UNKNOWN_PROJECT,
     database_of_backup,
@@ -115,6 +116,14 @@ class BackupViewSet(ProgeoModalViewSet):
     serializer_class = BackupSerializer
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication, TokenAuthentication, SessionAuthentication]
+
+    # Backups are dumps of whole databases - every customer's data - so they
+    # are staff-only, whatever module permissions a customer holds. The file
+    # link (download/file) is authorized by its signature instead.
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        if self.action != "download_backup_file" and not is_staff_admin(request.user):
+            raise PermissionDenied("Staff access required")
 
     @require_module_permissions("module_backup_enabled")
     def list(self, request, *args, **kwargs):

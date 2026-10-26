@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.contrib.admin.models import LogEntry
 
+from progeo.admin_login import AdminTwoFactorAuthenticationForm
 from progeo.v1.admin import MultiDBModelAdmin, models
 from progeo.v1.models import Backup
 
@@ -18,3 +19,7 @@ admin.site.register(Backup)
 
 
 admin.site.register(LogEntry)
+
+
+# Admin login with the 2FA code (progeo/admin_login.py).
+admin.site.login_form = AdminTwoFactorAuthenticationForm

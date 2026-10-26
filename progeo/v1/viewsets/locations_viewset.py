@@ -40,7 +40,9 @@ from progeo.helper.basics import RequestFailed, RequestSuccess, save_check_dir
 from progeo.helper.cacher import cache_save_and_return, search_cache
 from progeo.helper.demo import demo_export_throttle, is_demo_user
 from progeo.helper.location_access import (
+    can_see_location,
     configured_accounts,
+    is_account_member,
     location_q,
     resolve_request_accounts,
     visible_location_filters,
@@ -386,14 +388,27 @@ class LocationViewSet(ProgeoModalViewSet):
         db_name = location_db(location, account)
 
         if request.method == "GET":
-            rows = (
+            viewer = request.user
+            is_staff = _is_staff_admin(viewer)
+            # Who manages the access of this location sees everyone's contact
+            # data; everyone else only their own rule and the assigned
+            # Objektleitung - not the other customers' mail/mobile/last login.
+            manages = has_module_permissions(viewer, "module_notifications_edit") or has_module_permissions(
+                viewer, "module_notifications_add"
+            )
+            rows = list(
                 ProgeoAccess.objects.using(db_name)
                 .filter(location=location)
                 .select_related("user")
                 .order_by("id")
             )
+            if not manages:
+                rows = [
+                    rule for rule in rows
+                    if rule.user_id == viewer.pk or rule.objektleitung or (rule.user is not None and rule.user.is_staff)
+                ]
             users = []
-            if account:
+            if account and manages:
                 for user in account.users.all().order_by("username"):
                     profile = getattr(user, "profile", None)
                     users.append({
@@ -402,21 +417,31 @@ class LocationViewSet(ProgeoModalViewSet):
                         "email": user.email,
                         "mobile": profile.mobile if profile is not None else None,
                     })
-            # The public demo user must not learn who ProGeo's staff are.
-            include_staff = not is_demo_user(request.user)
+            # The staff list (Objektleitung picker) is for staff only - and
+            # the public demo user must not learn who ProGeo's staff are.
+            include_staff = not is_demo_user(viewer)
             staff_users = [
                 {"id": user.id, "username": user.username, "email": user.email}
                 for user in User.objects.filter(is_staff=True).order_by("username")
-            ] if include_staff else []
+            ] if is_staff else []
             members = self._access_members(location, account, rows, include_staff=include_staff)
+            if not is_staff:
+                # Staff without a rule here are no contact of this location.
+                members = [member for member in members if member["access"] != "staff" or member["rule"]]
+            if not manages:
+                members = [
+                    member for member in members
+                    if member["user_id"] == viewer.pk or member["access"] == "staff"
+                    or (member["rule"] or {}).get("objektleitung")
+                ]
             return RequestSuccess({
                 "access": ProgeoAccessSerializer(rows, many=True).data,
                 "users": users,
                 "staff_users": staff_users,
                 "members": members,
-                "candidates": self._access_candidates(request, {member["user_id"] for member in members}),
-                "can_grant_account": _is_staff_admin(request.user)
-                or account.users.filter(pk=request.user.pk).exists(),
+                "candidates": self._access_candidates(request, {member["user_id"] for member in members})
+                if manages else [],
+                "can_grant_account": is_staff or account.users.filter(pk=viewer.pk).exists(),
             })
 
         # Mutations need the dedicated edit/add permissions (creating a rule
@@ -430,6 +455,9 @@ class LocationViewSet(ProgeoModalViewSet):
         user_id = request.data.get("user_id")
         email = (request.data.get("email") or "").strip()
         objektleitung = request.data.get("objektleitung")
+        if objektleitung is not None and not _is_staff_admin(request.user):
+            # Assigning the Objektleitung is ProGeo's job (Einstellungen tab).
+            return permission_denied_response(["staff"])
         if email and not access_id and user_id is None:
             user, error = self._objektleitung_user(request, email)
             if error:
@@ -781,9 +809,14 @@ class LocationViewSet(ProgeoModalViewSet):
         except (TypeError, ValueError):
             return RequestFailed({"reason": "user_id required"})
 
+        is_staff = _is_staff_admin(request.user)
         account = None
         user = None
         for candidate_account in self._resolve_request_accounts(request):
+            # Customers manage the users of accounts they belong to - not of
+            # accounts where they only see single locations.
+            if not is_staff and not is_account_member(request.user, candidate_account):
+                continue
             found_user = candidate_account.users.filter(pk=user_id).first()
             if found_user:
                 account = candidate_account
@@ -793,9 +826,13 @@ class LocationViewSet(ProgeoModalViewSet):
         # Single-access users of this location aren't account members.
         if not user:
             location, location_account = self._find_location(request, pk=pk)
-            if location and ProgeoAccess.objects.using(location_db(location, location_account)).filter(
-                location=location, user_id=user_id
-            ).exists():
+            if (
+                location
+                and (is_staff or is_account_member(request.user, location_account))
+                and ProgeoAccess.objects.using(location_db(location, location_account)).filter(
+                    location=location, user_id=user_id
+                ).exists()
+            ):
                 account = location_account
                 user = User.objects.filter(pk=user_id).first()
 
@@ -805,7 +842,18 @@ class LocationViewSet(ProgeoModalViewSet):
 
         email = request.data.get("email")
         if email is not None and str(email).strip():
-            user.email = str(email).strip()
+            email = str(email).strip()
+            # Login links (and password resets) go to this address: changing
+            # someone else's would take over their login.
+            if not is_staff and user.pk != request.user.pk:
+                return permission_denied_response(["staff"])
+            if (user.is_staff or user.is_superuser) and not request.user.is_superuser and user.pk != request.user.pk:
+                return permission_denied_response(["superuser"])
+            try:
+                validate_email(email)
+            except ValidationError:
+                return RequestFailed({"reason": "invalid email address"})
+            user.email = email
             user.save(using=db_name)
 
         mobile = request.data.get("mobile")
@@ -1227,6 +1275,39 @@ class LocationViewSet(ProgeoModalViewSet):
             "skipped_count": len(skipped),
             "total": len(payload),
         })
+
+    def perform_create(self, serializer):
+        self._check_references(serializer)
+        super().perform_create(serializer)
+
+    def perform_update(self, serializer):
+        self._check_references(serializer)
+        super().perform_update(serializer)
+
+    def _check_references(self, serializer):
+        """fields="__all__" accepts any account / parent location id: a
+        customer may only create locations in an account they belong to,
+        never move one to another account, and only nest it under a location
+        they see."""
+        from rest_framework.exceptions import PermissionDenied
+
+        user = self.request.user
+        if _is_staff_admin(user):
+            return
+        data = serializer.validated_data
+        instance = serializer.instance
+        if instance is None or "account" in data:
+            account = data.get("account")
+            if account is None or not is_account_member(user, account):
+                raise PermissionDenied("Account not accessible")
+            if instance is not None and account.pk != instance.account_id:
+                raise PermissionDenied("Locations can't be moved to another account")
+        parent = data.get("parent_location")
+        if parent is not None and not can_see_location(user, parent):
+            raise PermissionDenied("Parent location not accessible")
+
+    # destroy stays staff-only (ProgeoModalViewSet.STAFF_ONLY_ACTIONS).
+    customer_actions = ("create", "update", "partial_update")
 
     @require_module_permissions("module_locations_enabled", "module_locations_edit")
     def create(self, request, *args, **kwargs):

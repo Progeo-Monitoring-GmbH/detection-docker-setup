@@ -36,15 +36,44 @@ def test_members_list_account_single_and_staff(api_client, setup):
     single = f.make_user(username=f.unique("single"))
     rule = f.make_access(location, single)
     staff = f.make_user(username=f.unique("staff"), staff=True)
+    objektleitung = f.make_user(username=f.unique("ol"), staff=True)
+    f.make_access(location, objektleitung)
     api_client.force_authenticate(user=admin)
 
-    members = _members_by_name(_access(api_client, location))
+    body = _access(api_client, location)
+    members = _members_by_name(body)
 
     assert members[admin.username]["access"] == "account"
     assert members[admin.username]["rule"] is None
     assert members[single.username]["access"] == "single"
     assert members[single.username]["rule"]["id"] == rule.id
-    assert members[staff.username]["access"] == "staff"
+    # Customers see the staff assigned to the location, not all of ProGeo's staff.
+    assert members[objektleitung.username]["access"] == "staff"
+    assert staff.username not in members
+    assert body["staff_users"] == []
+
+    api_client.force_authenticate(user=f.make_user(staff=True))
+    staff_view = _access(api_client, location)
+    assert _members_by_name(staff_view)[staff.username]["access"] == "staff"
+    assert staff.username in {user["username"] for user in staff_view["staff_users"]}
+
+
+def test_access_without_manage_rights_shows_only_own_rule_and_objektleitung(api_client, setup):
+    account, location, _admin = setup
+    viewer = f.make_user(perms=("module_notifications_enabled",), accounts=[account])
+    own_rule = f.make_access(location, viewer)
+    colleague = f.make_user(accounts=[account])
+    f.make_access(location, colleague)
+    objektleitung = f.make_user(staff=True)
+    ol_rule = f.make_access(location, objektleitung)
+    api_client.force_authenticate(user=viewer)
+
+    body = _access(api_client, location)
+
+    assert {rule["id"] for rule in body["access"]} == {own_rule.id, ol_rule.id}
+    assert set(_members_by_name(body)) == {viewer.username, objektleitung.username}
+    assert body["users"] == []
+    assert body["candidates"] == []
 
 
 def test_account_member_with_rule_stays_account_access(api_client, setup):
