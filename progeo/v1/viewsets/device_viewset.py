@@ -270,6 +270,62 @@ class DeviceViewSet(ProgeoModalViewSet):
             return None
 
 
+    @action(detail=True, url_path="sample", authentication_classes=[TransferTokenAuthentication], permission_classes=[IsTransferRequest], methods=["POST"])
+    def catch_live_data(self, request, pk, *args, **kwargs):
+        """Store a live sample of a controller (event "sample").
+
+        samples is the CSV of the interleaved pairs [eigen, wirk, ...], two
+        values per sensor (cut to `sensors` pairs). The device is identified
+        by device_hash (default: the project_id); chip_id / ip are kept on
+        the device, event / heap / mac / ... in raw_data. pk is the project_id
+        (only there to filter the logs).
+        """
+        #ilog("DeviceViewSet: catch_live_data called | request.data:", request.data, "pk=", pk, tag="[DEBUG]")
+        payload = request.data
+
+        try:
+            project_id = int(payload.get("project_id") or pk)
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "project_id must be an integer"})
+
+        values = ProgeoMeasurement.normalize_samples(payload.get("samples"))
+        try:
+            sensors = int(payload.get("sensors"))
+        except (TypeError, ValueError):
+            sensors = None
+        if sensors:
+            values = values[: 2 * sensors]
+        if len(values) < 2:
+            return RequestFailed({"reason": "No samples provided"})
+
+        raw_hash = str(payload.get("device_hash") or project_id).strip()
+        measure = save_measurement_from_legacy_data(
+            measurement={
+                "project_id": project_id,
+                "potentials": values,
+                **{key: payload.get(key) for key in ("event", "sensors", "chip_id", "heap", "ip", "mac")},
+            },
+            project_id=project_id,
+            raw_hash=raw_hash,
+            device_type=ProgeoDevice.DeviceType.SMARTBOX,
+        )
+
+        # device.mac is the custom name shown in the frontend - the MAC stays in raw_data.
+        device_info = {"chip_id": payload.get("chip_id"), "device_ip": payload.get("ip")}
+        device_info = {field: str(value) for field, value in device_info.items() if value not in (None, "")}
+        if device_info:
+            # Only written when something changed (exclude: all fields already equal).
+            ProgeoDevice.objects.using(measure._state.db).filter(pk=measure.device_id).exclude(
+                **device_info
+            ).update(**device_info)
+
+        return RequestSuccess({
+            "project_id": project_id,
+            "device_hash": raw_hash,
+            "measurement_id": measure.pk,
+            "count": len(values) // 2,
+        })
+
     @action(detail=False, url_path="sample/debug", authentication_classes=[TransferTokenAuthentication], permission_classes=[IsTransferRequest], methods=["POST"])
     def catch_legacy_data_debug(self, request, *args, **kwargs):
         ilog("DeviceViewSet: catch_legacy_data_debug called | request.data:", request.data, tag="[DEBUG]")

@@ -392,3 +392,40 @@ def test_get_device_id_does_not_cache_uncommitted_devices():
 
     # Still inside the test transaction (rolled back afterwards) - nothing cached.
     assert cache.get(_device_cache_key("default", raw_hash=raw_hash)) is None
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_catch_live_data_stores_potentials_and_device_info(api_client):
+    user = User.objects.using("default").order_by("id").first()
+    assert user is not None
+    api_client.force_authenticate(user=user)
+
+    device_hash = unique("live")
+    payload = {
+        "event": "sample", "sensors": 2, "samples": "10,15,20,40,99,99",
+        "chip_id": 3467113, "heap": 17824, "ip": "192.168.43.79", "mac": "2c:f4:32:34:e7:69",
+        "device_hash": device_hash, "project_id": "1312",
+    }
+
+    response = api_client.post("/v1/device/1312/sample/", payload, format="json")
+
+    assert response.status_code == 200, response.content
+    body = response.json()
+    assert body.get("count") == 2
+
+    saved = ProgeoMeasurement.objects.using("default").get(pk=body["measurement_id"])
+    assert saved.project_id == 1312
+    # Cut to `sensors` pairs.
+    assert saved.eigenpotenzial == [10, 20]
+    assert saved.wirkpotenzial == [15, 40]
+    assert saved.samples is None
+    assert saved.raw_data["heap"] == 17824
+    assert saved.raw_data["mac"] == "2c:f4:32:34:e7:69"
+
+    device = saved.device
+    assert device.raw_hash == device_hash
+    assert device.chip_id == "3467113"
+    assert device.device_ip == "192.168.43.79"
+    assert device.type == ProgeoDevice.DeviceType.SMARTBOX
+    # device.mac is the custom name - not overwritten by the MAC.
+    assert device.mac is None

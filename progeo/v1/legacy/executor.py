@@ -516,6 +516,9 @@ def _store_legacy_measurement(measurement, project_id, raw_hash, numbered_sensor
                 data["last_battery_percentage"] = last_battery_percentage
         
             samples = data.pop("samples", [])
+            # Interleaved pairs [eigen, wirk, ...] - stored as eigenpotenzial /
+            # wirkpotenzial instead of the outdated samples column.
+            potentials = data.pop("potentials", None)
 
             measure = ProgeoMeasurement.objects.using(db_name).create(
                 device_id=device_id,
@@ -527,6 +530,8 @@ def _store_legacy_measurement(measurement, project_id, raw_hash, numbered_sensor
                 samples=samples,
                 raw_data=data,
             )
+            if potentials is not None:
+                measure.set_potentials(potentials)
             resistance_rows = data.get("resistance_rows") or []
             if resistance_rows:
                 sample = resistance_rows[0]
