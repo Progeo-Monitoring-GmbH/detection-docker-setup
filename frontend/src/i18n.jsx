@@ -355,6 +355,10 @@ i18n
           objekt_project_type_sonstige: 'Other',
           objekt_standort_title: 'Location',
           objekt_standort_placeholder: 'Map view — no coordinates available',
+          objekt_geocode: 'Fetch GPS position from address',
+          objekt_geocode_done: 'GPS position set.',
+          objekt_geocode_error: 'Could not fetch the GPS position: {{reason}}',
+          objekt_geocode_save_first: 'Save the address first.',
           objekt_fact_devices: 'Measuring units',
           objekt_fact_last_measurement: 'Last measurement',
           objekt_save: 'Save changes',
@@ -1229,6 +1233,11 @@ i18n
           objekt_standort_title: 'Standort',
           objekt_standort_placeholder:
             'Kartenansicht — keine Koordinaten verfügbar',
+          objekt_geocode: 'GPS-Position aus Adresse ermitteln',
+          objekt_geocode_done: 'GPS-Position gesetzt.',
+          objekt_geocode_error:
+            'GPS-Position konnte nicht ermittelt werden: {{reason}}',
+          objekt_geocode_save_first: 'Bitte zuerst die Adresse speichern.',
           objekt_fact_devices: 'Messeinheiten',
           objekt_fact_last_measurement: 'Letzte Messung',
           objekt_save: 'Änderungen speichern',

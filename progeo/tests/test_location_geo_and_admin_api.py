@@ -542,3 +542,37 @@ def test_update_alignment_without_lageplan(api_client, geo_world):
 
     assert response.status_code == 400
     assert response.json()["reason"] == "No Lageplan uploaded for this location"
+
+
+# -- geocode -----------------------------------------------------------------
+
+def test_geocode_fills_missing_coordinates_from_the_address(api_client, geo_world, monkeypatch):
+    _account, _first, second, _foreign, member = geo_world
+    calls = []
+    monkeypatch.setattr(
+        locations_viewset.GeoHelper, "fetch_lat_lon",
+        lambda self, *args: calls.append(args) or (48.4, 9.99),
+    )
+    api_client.force_authenticate(user=member)
+
+    body = api_client.post(f"/v1/location/{second.pk}/geocode/").json()
+
+    assert body["latitude"] == 48.4 and body["longitude"] == 9.99
+    assert calls == [(None, "", "", "Ulm")]
+    reloaded = _reload(second)
+    assert (reloaded.latitude, reloaded.longitude) == (48.4, 9.99)
+
+
+def test_geocode_keeps_existing_coordinates_and_reports_misses(api_client, geo_world, monkeypatch):
+    _account, first, second, foreign, member = geo_world
+    monkeypatch.setattr(locations_viewset.GeoHelper, "fetch_lat_lon", lambda self, *args: (None, None))
+    api_client.force_authenticate(user=member)
+
+    assert api_client.post(f"/v1/location/{first.pk}/geocode/").json()["reason"] == (
+        "The location already has coordinates"
+    )
+    assert api_client.post(f"/v1/location/{second.pk}/geocode/").json()["reason"] == (
+        "No position found for the address"
+    )
+    assert api_client.post(f"/v1/location/{foreign.pk}/geocode/").json()["reason"] == "Location not found"
+    assert _reload(second).latitude is None

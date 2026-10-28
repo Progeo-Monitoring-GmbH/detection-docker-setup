@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 import { Outlet, useParams } from 'react-router';
 import { Spinner } from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
@@ -12,6 +12,7 @@ import type { LocationDetail } from './locationTypes';
 export type PortalOutletContext = {
   location: LocationDetail | null;
   locationId: number;
+  setLocation: Dispatch<SetStateAction<LocationDetail | null>>;
 };
 
 /**
@@ -82,7 +83,7 @@ const LocationPortalLayout = () => {
             <Spinner animation="border" className="me-2" />
           </div>
         ) : (
-          <Outlet context={{ location, locationId } satisfies PortalOutletContext} />
+          <Outlet context={{ location, locationId, setLocation } satisfies PortalOutletContext} />
         )}
       </div>
     </div>

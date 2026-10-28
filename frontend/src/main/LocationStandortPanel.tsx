@@ -24,6 +24,11 @@ const TILE_URL =
 
 type LocationStandortPanelProps = {
   location: LocationDetail | null;
+  /** Shows a "fetch GPS position" button while no coordinates are set. */
+  onGeocode?: () => void;
+  geocoding?: boolean;
+  /** Disables that button, with this as the hint. */
+  geocodeBlockedReason?: string;
 };
 
 const hasCoordinates = (
@@ -35,7 +40,12 @@ const hasCoordinates = (
   Number.isFinite(location.longitude);
 
 /** The mockup's "Standort" side panel: a single-marker map, or a placeholder when no coordinates are set. */
-const LocationStandortPanel = ({ location }: LocationStandortPanelProps) => {
+const LocationStandortPanel = ({
+  location,
+  onGeocode,
+  geocoding = false,
+  geocodeBlockedReason,
+}: LocationStandortPanelProps) => {
   const { t } = useTranslation();
   const { allows } = useConsent();
 
@@ -98,6 +108,33 @@ const LocationStandortPanel = ({ location }: LocationStandortPanelProps) => {
               <div style={{ marginTop: 6 }}>
                 {t('objekt_standort_placeholder')}
               </div>
+              {onGeocode && (
+                <button
+                  type="button"
+                  onClick={onGeocode}
+                  disabled={geocoding || Boolean(geocodeBlockedReason)}
+                  title={geocodeBlockedReason}
+                  style={{
+                    marginTop: 12,
+                    height: 34,
+                    padding: '0 14px',
+                    border: '1px solid #EB633B',
+                    borderRadius: 10,
+                    background: 'transparent',
+                    color: '#EB633B',
+                    fontFamily: 'inherit',
+                    fontSize: 12.5,
+                    fontWeight: 500,
+                    cursor: geocoding || geocodeBlockedReason ? 'default' : 'pointer',
+                    opacity: geocodeBlockedReason ? 0.55 : 1,
+                  }}
+                >
+                  {geocoding ? t('ui_loading') : t('objekt_geocode')}
+                </button>
+              )}
+              {onGeocode && geocodeBlockedReason && (
+                <div style={{ marginTop: 6 }}>{geocodeBlockedReason}</div>
+              )}
             </div>
           </div>
         )}

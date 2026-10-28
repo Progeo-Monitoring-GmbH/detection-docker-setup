@@ -699,7 +699,7 @@ def parse_legacy_data_measurement(data, broadcast=True, log=True):
     if len(pair_values) > len(samples) or len(pair_values) % 2:
         checked = length_check(_legacy_tokens(data))
         if checked is False and log:
-            wlog(f"project {values[0]}: length check failed - transmission may be truncated", tag="[LEGACY]")
+            wlog(f"project {values[0]}: length check failed - transmission may be truncated |\n pair_values={pair_values}, \nsamples={samples}", tag="[LEGACY]")
     measurement = DataMeasurement(
         project_id=values[0],
         m_headerlines=values[2],

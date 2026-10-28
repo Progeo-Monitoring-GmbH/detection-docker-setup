@@ -51,7 +51,7 @@ const toForm = (location: LocationDetail | null): FormState => ({
  * intentionally omitted rather than fabricated.
  */
 const LocationObjektTab = () => {
-  const { location, locationId } = useOutletContext<PortalOutletContext>();
+  const { location, locationId, setLocation } = useOutletContext<PortalOutletContext>();
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
   const { t } = useTranslation();
@@ -59,6 +59,7 @@ const LocationObjektTab = () => {
 
   const [form, setForm] = useState<FormState>(() => toForm(location));
   const [saving, setSaving] = useState(false);
+  const [geocoding, setGeocoding] = useState(false);
   const [projectTypeOptions, setProjectTypeOptions] = useState<ProjectTypeOption[]>([]);
 
   useEffect(() => {
@@ -110,6 +111,31 @@ const LocationObjektTab = () => {
       (error) => {
         showErrorBar(enqueueSnackbar, t('objekt_save_error', { reason: errorReason(error) }));
         setSaving(false);
+      },
+    );
+  };
+
+  // The backend geocodes the saved address - unsaved edits have to be saved first.
+  const savedAddress = toForm(location);
+  const addressDirty = (['address', 'plz', 'city', 'country'] as const).some(
+    (field) => form[field] !== savedAddress[field],
+  );
+
+  const geocode = () => {
+    setGeocoding(true);
+    void axiosConfig.perform_post(
+      auth,
+      `/v1/location/${locationId}/geocode/`,
+      {},
+      (response) => {
+        const { latitude, longitude } = response?.data || {};
+        setLocation((prev) => (prev ? { ...prev, latitude, longitude } : prev));
+        showSuccessBar(enqueueSnackbar, t('objekt_geocode_done'));
+        setGeocoding(false);
+      },
+      (error) => {
+        showErrorBar(enqueueSnackbar, t('objekt_geocode_error', { reason: errorReason(error) }));
+        setGeocoding(false);
       },
     );
   };
@@ -331,7 +357,12 @@ const LocationObjektTab = () => {
       </div>
 
       <div style={{ flex: '1 1 300px', minWidth: 0, maxWidth: 360 }}>
-        <LocationStandortPanel location={location} />
+        <LocationStandortPanel
+          location={location}
+          onGeocode={canEditContact ? geocode : undefined}
+          geocoding={geocoding}
+          geocodeBlockedReason={addressDirty ? t('objekt_geocode_save_first') : undefined}
+        />
       </div>
     </div>
   );

@@ -37,9 +37,10 @@ from progeo.decorator import (
     require_module_permissions,
 )
 from progeo.helper import heatmap_video, plan_meters
-from progeo.helper.basics import RequestFailed, RequestSuccess, save_check_dir
+from progeo.helper.basics import RequestFailed, RequestSuccess, dlog, save_check_dir
 from progeo.helper.cacher import cache_save_and_return, search_cache
 from progeo.helper.demo import demo_export_throttle, is_demo_user
+from progeo.helper.legacy.geo import GeoHelper
 from progeo.helper.location_access import (
     can_see_location,
     configured_accounts,
@@ -1276,6 +1277,30 @@ class LocationViewSet(ProgeoModalViewSet):
             "skipped_count": len(skipped),
             "total": len(payload),
         })
+
+    @require_module_permissions("module_locations_enabled", "module_locations_edit")
+    @action(detail=True, url_path="geocode", methods=["POST"])
+    def geocode(self, request, pk=None, *args, **kwargs):
+        """Look up latitude/longitude of the location's saved address
+        (Nominatim, helper/legacy/geo.py) and store them. Existing
+        coordinates are kept - this only fills in missing ones."""
+        location, account = self._find_location(request, pk=pk)
+        if not location:
+            return RequestFailed({"reason": "Location not found"})
+        if location.latitude is not None and location.longitude is not None:
+            return RequestFailed({"reason": "The location already has coordinates"})
+        if not (location.address or location.plz or location.city):
+            return RequestFailed({"reason": "The location has no address"})
+
+        latitude, longitude = GeoHelper(logger=dlog).fetch_lat_lon(
+            location.project_id, location.address or "", location.plz or "", location.city or ""
+        )
+        if latitude is None or longitude is None:
+            return RequestFailed({"reason": "No position found for the address"})
+        location.latitude = latitude
+        location.longitude = longitude
+        location.save(using=account.db_name, update_fields=["latitude", "longitude"])
+        return RequestSuccess({"latitude": latitude, "longitude": longitude})
 
     def perform_create(self, serializer):
         self._check_references(serializer)
