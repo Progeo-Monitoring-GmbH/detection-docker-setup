@@ -144,14 +144,19 @@ class Command(BaseCommand):
                 if not project_id:
                     continue
 
+                status = fields.get("Status")
+                if status != "Messeinheit und Inbetriebnahme":
+                    continue
+
                 address = fields.get("Baustellenadresse")
                 parts = is_broken_address(address)["parts"] if address else {}
 
+                
                 writer.writerow({
                     "project_id": project_id,
                     "name": fields.get("Objektname"),
                     "project_type": fields.get("Projekttyp"),
-                    "status": fields.get("Status"),
+                    "status": status,
                     "portalstatus": fields.get("Portalstatus"),
                     "street": parts.get("street"),
                     "plz": parts.get("postal_code"),

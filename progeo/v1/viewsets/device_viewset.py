@@ -25,13 +25,16 @@ from progeo.decorator import (
     permission_denied_response,
     require_module_permissions,
 )
+from progeo.helper import airtable_locations
 from progeo.helper import device_provisioning as provisioning
+from progeo.helper.airtable import AirtableHelper
 from progeo.helper.alarm_evaluation import evaluate_measurement_instantly
 from progeo.helper.basics import RequestFailed, RequestSuccess, elog, ilog
 from progeo.helper.controller_wifi import parse_lua_wifi, request_controller_wifi_update
 from progeo.helper.creator import create_MfS_log
 from progeo.helper.location_access import (
     can_see_location,
+    configured_accounts,
     is_staff_admin,
     location_id_db,
     location_q,
@@ -1074,4 +1077,59 @@ class DeviceViewSet(ProgeoModalViewSet):
             "device": device_data,
             "token_id": token.pk,
             "config": provisioning.render_config(plan),
+        })
+
+    # ------------------------------------------------------------------ Airtable sync (helper/airtable_locations.py)
+    # Staff-only: both look at (and write) the locations of every account.
+
+    @require_module_permissions("module_devices_provision")
+    @action(detail=False, url_path="provision/airtable/sync", methods=["POST"])
+    def provision_airtable_sync(self, request, *args, **kwargs):
+        """Fetch the Airtable projects in "Messeinheit und Inbetriebnahme",
+        merge-update their existing locations and return the projects
+        without one (`signed` goes to provision/airtable/import)."""
+        if not is_staff_admin(request.user):
+            return RequestFailed({"reason": "Staff access required"})
+        try:
+            rows = airtable_locations.fetch_rows(AirtableHelper())
+        except airtable_locations.AirtableSyncError as exc:
+            return RequestFailed({"reason": str(exc)})
+        result = airtable_locations.sync(rows)
+        ilog(f"Airtable sync: {len(rows)} project(s), {len(result['available'])} available, "
+             f"{len(result['updated'])} location(s) updated", tag="[PROVISION]")
+        return RequestSuccess({
+            **result,
+            "signed": airtable_locations.sign_rows(result["available"]),
+            "accounts": [{"id": account.pk, "name": account.name}
+                         for account in sorted(configured_accounts(), key=lambda account: account.name or "")],
+        })
+
+    @require_module_permissions("module_devices_provision")
+    @action(detail=False, url_path="provision/airtable/import", methods=["POST"])
+    def provision_airtable_import(self, request, *args, **kwargs):
+        """Create a location under `account` for each of `project_ids` (of
+        the signed sync result)."""
+        if not is_staff_admin(request.user):
+            return RequestFailed({"reason": "Staff access required"})
+        try:
+            rows = airtable_locations.unsign_rows(request.data.get("signed"))
+        except airtable_locations.AirtableSyncError as exc:
+            return RequestFailed({"reason": str(exc)})
+        try:
+            account_id = int(request.data.get("account"))
+        except (TypeError, ValueError):
+            account_id = None
+        account = next((account for account in configured_accounts() if account.pk == account_id), None)
+        if account is None:
+            return RequestFailed({"reason": "Account not found"})
+        project_ids = {str(project_id) for project_id in request.data.get("project_ids") or []}
+        rows = [row for row in rows if str(row["project_id"]) in project_ids]
+        if not rows:
+            return RequestFailed({"reason": "No projects selected"})
+        created, skipped = airtable_locations.create_locations(rows, account)
+        ilog(f"Airtable import: {len(created)} location(s) under account {account.pk}", tag="[PROVISION]")
+        return RequestSuccess({
+            "created": [{"id": location.pk, "project_id": location.project_id, "name": location.name}
+                        for location in created],
+            "skipped": skipped,
         })

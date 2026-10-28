@@ -8,12 +8,15 @@ import {
   Form,
   Row,
   Spinner,
+  Table,
 } from 'react-bootstrap';
 import {
+  ArrowRepeat,
   CheckCircle,
   Clipboard,
   Download,
   FileEarmarkCode,
+  PlusCircle,
 } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider';
@@ -60,6 +63,24 @@ type ProvisionPreview = {
   };
 };
 
+type AirtableProject = {
+  project_id: number;
+  name: string | null;
+  airtable_type: string;
+  project_type_label: string;
+  product_sheets: string[];
+  airtable_url: string | null;
+  raw_address: string;
+};
+
+type AirtableSync = {
+  available: AirtableProject[];
+  updated: { id: number; project_id: number; name: string; fields: string[] }[];
+  unchanged: number;
+  signed: string;
+  accounts: { id: number; name: string }[];
+};
+
 const EMPTY_SETTINGS: ProvisionSettings = {
   sensors: '32',
   interval_sec: '180',
@@ -75,6 +96,10 @@ const EMPTY_SETTINGS: ProvisionSettings = {
  * settings, generate the config (device_hash + transfer token are created
  * by the backend) and confirm - the device is then filed under the location
  * and can send its samples.
+ *
+ * Staff can sync with Airtable: the projects in "Messeinheit und
+ * Inbetriebnahme" without a location are listed to be created, the existing
+ * locations are merge-updated (helper/airtable_locations.py).
  */
 const DeviceProvisionView = () => {
   const auth = useAuth();
@@ -87,8 +112,16 @@ const DeviceProvisionView = () => {
   const [preview, setPreview] = useState<ProvisionPreview | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [airtable, setAirtable] = useState<AirtableSync | null>(null);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [importAccount, setImportAccount] = useState('');
+  const [syncing, setSyncing] = useState(false);
 
-  useEffect(() => {
+  const user = auth?.user as
+    { is_staff?: boolean; is_superuser?: boolean } | null | undefined;
+  const isStaff = Boolean(user?.is_staff || user?.is_superuser);
+
+  const loadLocations = () => {
     void axiosConfig.perform_get(
       auth,
       '/v1/device/provision/locations/',
@@ -109,6 +142,10 @@ const DeviceProvisionView = () => {
       (error) =>
         showRequestError(enqueueSnackbar, 'Could not load locations', error),
     );
+  };
+
+  useEffect(() => {
+    loadLocations();
     // Once - auth changes with the path.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -181,6 +218,104 @@ const DeviceProvisionView = () => {
     );
   };
 
+  const syncAirtable = () => {
+    setSyncing(true);
+    void axiosConfig.perform_post(
+      auth,
+      '/v1/device/provision/airtable/sync/',
+      {},
+      (response) => {
+        const data = (response?.data || null) as AirtableSync | null;
+        setAirtable(data);
+        setSelected(new Set());
+        setSyncing(false);
+        if (data?.updated.length) {
+          // Names may have changed.
+          loadLocations();
+        }
+      },
+      (error) => {
+        showRequestError(
+          enqueueSnackbar,
+          'Could not sync with Airtable',
+          error,
+        );
+        setSyncing(false);
+      },
+    );
+  };
+
+  const toggleProject = (projectId: number) => {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(projectId)) {
+        next.delete(projectId);
+      } else {
+        next.add(projectId);
+      }
+      return next;
+    });
+  };
+
+  const toggleAllProjects = () => {
+    if (!airtable) {
+      return;
+    }
+    setSelected(
+      selected.size === airtable.available.length
+        ? new Set()
+        : new Set(airtable.available.map((project) => project.project_id)),
+    );
+  };
+
+  const importProjects = () => {
+    if (!airtable || !selected.size) {
+      return;
+    }
+    if (!importAccount) {
+      showErrorBar(enqueueSnackbar, 'Please select an account first.');
+      return;
+    }
+    setSyncing(true);
+    void axiosConfig.perform_post(
+      auth,
+      '/v1/device/provision/airtable/import/',
+      {
+        signed: airtable.signed,
+        account: Number(importAccount),
+        project_ids: Array.from(selected),
+      },
+      (response) => {
+        const created = (response?.data?.created || []) as {
+          project_id: number;
+        }[];
+        const skipped = (response?.data?.skipped || []) as number[];
+        const done = new Set([
+          ...created.map((location) => location.project_id),
+          ...skipped,
+        ]);
+        setAirtable({
+          ...airtable,
+          available: airtable.available.filter(
+            (project) => !done.has(project.project_id),
+          ),
+        });
+        setSelected(new Set());
+        setSyncing(false);
+        showSuccessBar(
+          enqueueSnackbar,
+          `${created.length} location(s) created` +
+            (skipped.length ? `, ${skipped.length} existed already.` : '.'),
+        );
+        loadLocations();
+      },
+      (error) => {
+        showRequestError(enqueueSnackbar, 'Could not create locations', error);
+        setSyncing(false);
+      },
+    );
+  };
+
   const copyConfig = () => {
     if (!preview) {
       return;
@@ -228,14 +363,179 @@ const DeviceProvisionView = () => {
 
   return (
     <Container fluid className="py-4">
-      <div className="mb-3">
-        <h2 className="mb-0">Provision device</h2>
-        <small className="text-muted">
-          Generates the config of a new smartex mx controller (device hash and
-          transfer token included). On confirm the device is created under the
-          selected location and can send its data.
-        </small>
+      <div className="mb-3 d-flex flex-wrap justify-content-between align-items-start gap-2">
+        <div>
+          <h2 className="mb-0">Provision device</h2>
+          <small className="text-muted">
+            Generates the config of a new smartex mx controller (device hash and
+            transfer token included). On confirm the device is created under the
+            selected location and can send its data.
+          </small>
+        </div>
+        {isStaff && (
+          <Button
+            variant="outline-primary"
+            onClick={syncAirtable}
+            disabled={syncing}
+          >
+            {syncing && !airtable ? (
+              <Spinner size="sm" animation="border" className="me-2" />
+            ) : (
+              <ArrowRepeat className="me-2" />
+            )}
+            Sync with Airtable
+          </Button>
+        )}
       </div>
+
+      {airtable && (
+        <Card className="border-0 shadow-sm mb-3 p-3">
+          <Card.Body>
+            <div className="d-flex justify-content-between align-items-start mb-2">
+              <h5 className="mb-0">
+                Airtable projects in &quot;Messeinheit und Inbetriebnahme&quot;
+              </h5>
+              <Button
+                variant="link"
+                size="sm"
+                className="p-0"
+                onClick={() => setAirtable(null)}
+              >
+                Close
+              </Button>
+            </div>
+            <small className="text-muted d-block mb-3">
+              {airtable.updated.length} existing location(s) updated,{' '}
+              {airtable.unchanged} already up to date.{' '}
+              {airtable.available.length} project(s) without a location.
+            </small>
+
+            {airtable.updated.length > 0 && (
+              <Alert variant="info" className="small">
+                Updated:{' '}
+                {airtable.updated
+                  .map(
+                    (location) =>
+                      `${location.project_id} (${location.fields.join(', ')})`,
+                  )
+                  .join('; ')}
+              </Alert>
+            )}
+
+            {airtable.available.length === 0 ? (
+              <Alert variant="success" className="mb-0">
+                <CheckCircle className="me-2" />
+                Every project has a location.
+              </Alert>
+            ) : (
+              <>
+                <Table responsive hover size="sm" className="align-middle">
+                  <thead>
+                    <tr>
+                      <th>
+                        <Form.Check
+                          aria-label="Select all"
+                          checked={selected.size === airtable.available.length}
+                          onChange={toggleAllProjects}
+                        />
+                      </th>
+                      <th>Project ID</th>
+                      <th>Name</th>
+                      <th>Type</th>
+                      <th>Address</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {airtable.available.map((project) => (
+                      <tr
+                        key={project.project_id}
+                        onClick={() => toggleProject(project.project_id)}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <td>
+                          <Form.Check
+                            aria-label={`Select ${project.project_id}`}
+                            checked={selected.has(project.project_id)}
+                            onChange={() => toggleProject(project.project_id)}
+                            onClick={(event) => event.stopPropagation()}
+                          />
+                        </td>
+                        <td>
+                          <code>{project.project_id}</code>
+                        </td>
+                        <td>{project.name || '-'}</td>
+                        <td>
+                          {project.project_type_label}
+                          {project.product_sheets.length > 0 && (
+                            <small className="d-block text-muted">
+                              {project.product_sheets.join(', ')}
+                            </small>
+                          )}
+                        </td>
+                        <td
+                          className="small text-muted"
+                          style={{ whiteSpace: 'pre-line' }}
+                        >
+                          {project.raw_address || '-'}
+                        </td>
+                        <td>
+                          {project.airtable_url && (
+                            <a
+                              href={project.airtable_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              Airtable
+                            </a>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+                <Row className="g-2 align-items-end">
+                  <Col md={4}>
+                    <Form.Label className="text-muted small mb-1">
+                      Account of the new locations
+                    </Form.Label>
+                    <Form.Select
+                      value={importAccount}
+                      onChange={(event) => setImportAccount(event.target.value)}
+                    >
+                      <option value="">Select account…</option>
+                      {airtable.accounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.name}
+                        </option>
+                      ))}
+                    </Form.Select>
+                  </Col>
+                  <Col md="auto">
+                    <Button
+                      variant="primary"
+                      onClick={importProjects}
+                      disabled={syncing || !selected.size || !importAccount}
+                    >
+                      {syncing ? (
+                        <Spinner
+                          size="sm"
+                          animation="border"
+                          className="me-2"
+                        />
+                      ) : (
+                        <PlusCircle className="me-2" />
+                      )}
+                      Create {selected.size || ''} location(s)
+                    </Button>
+                  </Col>
+                </Row>
+              </>
+            )}
+          </Card.Body>
+        </Card>
+      )}
 
       <Card className="border-0 shadow-sm mb-3 p-3">
         <Card.Body>
