@@ -211,6 +211,21 @@ def test_router_follows_instance_and_strict_mode_raises():
         router.db_for_read(ProgeoMeasurement)
 
 
+@override_settings(PROJECT_DB_SPLIT=False)
+def test_router_follows_a_project_instance_even_with_the_split_off():
+    """The admin reads ?db=<project> rows with .using(); their relations
+    (measurement.device, alarm.measurement) must not be looked up in default."""
+    router = ProjectRouter()
+    measurement, alarm = ProgeoMeasurement(), ProgeoAlarm()
+    measurement._state.db = alarm._state.db = ALIAS
+    assert router.db_for_read(ProgeoDevice, instance=measurement) == ALIAS
+    assert router.db_for_read(ProgeoMeasurement, instance=alarm) == ALIAS
+    # Rows of default and shared models stay with the other routers.
+    measurement._state.db = "default"
+    assert router.db_for_read(ProgeoDevice, instance=measurement) is None
+    assert router.db_for_read(ProgeoLocation, instance=alarm) is None
+
+
 # ---------------------------------------------------------------------------- model invariants
 
 def test_location_stays_in_default_and_everything_hanging_off_it_moves():

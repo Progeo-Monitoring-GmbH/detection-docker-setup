@@ -14,6 +14,7 @@ import {
   Layers,
   Map,
   People,
+  PlusSquare,
   Terminal,
 } from 'react-bootstrap-icons';
 import { useAuth } from '../../../hooks/CoreAuthProvider.tsx';
@@ -140,6 +141,14 @@ const LocationSidebar = ({
       icon: Hdd,
       to: '/device/overview',
       visible: isSuperuser,
+    },
+    {
+      key: 'device-provision',
+      label: t('sidebar_device_provision'),
+      icon: PlusSquare,
+      to: '/device/provision/',
+      // Staff always (like the backend's require_module_permissions), users with the permission.
+      visible: isStaffUser || hasPermission('module_devices_provision'),
     },
     {
       key: 'alarms',

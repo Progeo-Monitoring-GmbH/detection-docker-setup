@@ -35,6 +35,7 @@ MODULE_PERMISSION_DEFINITIONS = (
     ("module_devices_enabled", "Can access devices module"),
     ("module_devices_edit", "Can edit devices module"),
     ("module_devices_delete", "Can delete devices module"),
+    ("module_devices_provision", "Can provision new devices"),
     ("module_measurements_enabled", "Can access measurements module"),
     ("module_imei_enabled", "Can access IMEI module"),
     ("module_backup_enabled", "Can access backup module"),

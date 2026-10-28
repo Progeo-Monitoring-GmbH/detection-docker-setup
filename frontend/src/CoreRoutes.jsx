@@ -119,6 +119,9 @@ const LocationsMapView = React.lazy(
 const LegacyImportView = React.lazy(
   () => import('./main/LegacyImportView.tsx'),
 );
+const DeviceProvisionView = React.lazy(
+  () => import('./main/DeviceProvisionView.tsx'),
+);
 const LocationVerwaltungView = React.lazy(
   () => import('./main/LocationVerwaltungView.tsx'),
 );
@@ -218,6 +221,7 @@ const CoreRoutes = () => {
             element={<DeviceSettingsRedirect />}
           />
           <Route path="/device/:id/editor/" element={<DeviceEditorView />} />
+          <Route path="/device/provision/" element={<DeviceProvisionView />} />
           <Route
             path="/device/:id/detail"
             element={<MeasurementDetailView />}

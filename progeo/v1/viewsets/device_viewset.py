@@ -25,6 +25,7 @@ from progeo.decorator import (
     permission_denied_response,
     require_module_permissions,
 )
+from progeo.helper import device_provisioning as provisioning
 from progeo.helper.alarm_evaluation import evaluate_measurement_instantly
 from progeo.helper.basics import RequestFailed, RequestSuccess, elog, ilog
 from progeo.helper.controller_wifi import parse_lua_wifi, request_controller_wifi_update
@@ -36,6 +37,8 @@ from progeo.helper.location_access import (
     location_q,
     request_location_id,
     resolve_request_account,
+    resolve_request_accounts,
+    visible_location_filters,
     visible_locations_by_db,
 )
 from progeo.helper.measurement_utils import flatten_numeric_values
@@ -56,7 +59,7 @@ from progeo.v1.legacy.helper_resistance import calc_resistances
 from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurement
 from progeo.v1.serializers import DeviceSerializer, ProgeoMeasurementSerializer
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
-from progeo.v1.viewsets.setup_viewset import _get_controller_account
+from progeo.v1.viewsets.setup_viewset import _get_controller_account, build_wifi_payload, qr_code_data_uri
 
 # ######################################################################################################################
 
@@ -972,3 +975,103 @@ class DeviceViewSet(ProgeoModalViewSet):
         device.delete(using=device._state.db)
         create_MfS_log(request)
         return RequestSuccess({"deleted": True})
+
+    # ------------------------------------------------------------------ provisioning (helper/device_provisioning.py)
+
+    @staticmethod
+    def _provision_locations(request, location_id=None):
+        """[(location, database)] of the locations with a project_id the user
+        sees (only `location_id`, if given)."""
+        rows = []
+        for db_name, (account, visible) in visible_location_filters(
+            request.user, resolve_request_accounts(request)
+        ).items():
+            locations = ProgeoLocation.objects.using(db_name).filter(visible, project_id__isnull=False)
+            if location_id is not None:
+                locations = locations.filter(pk=location_id)
+            rows.extend((location, location_db(location, account)) for location in locations.order_by("project_id"))
+        return rows
+
+    def _provision_location(self, request, location_id):
+        try:
+            location_id = int(location_id)
+        except (TypeError, ValueError):
+            raise provisioning.ProvisionError("location must be an integer") from None
+        rows = self._provision_locations(request, location_id)
+        if not rows:
+            raise provisioning.ProvisionError("Location not found or without project_id")
+        return rows[0]
+
+    @require_module_permissions("module_devices_provision")
+    @action(detail=False, url_path="provision/locations", methods=["GET"])
+    def provision_locations(self, request, *args, **kwargs):
+        """The locations a new controller can be filed under, with the defaults of the form."""
+        return RequestSuccess({
+            "locations": [
+                {"id": location.pk, "project_id": location.project_id, "name": location.name,
+                 "project_type": location.get_project_type_display()}
+                for location, _ in self._provision_locations(request)
+            ],
+            "defaults": {
+                "sensors": provisioning.DEFAULT_SENSORS,
+                "interval_sec": provisioning.DEFAULT_INTERVAL_SEC,
+                "pulldown_resistance": ProgeoDevice.Resistance.DEFAULT_100K,
+                "protective_earth": 0,
+            },
+            "pulldown_resistances": [
+                {"value": value, "label": label} for value, label in ProgeoDevice.Resistance.choices
+            ],
+        })
+
+    @require_module_permissions("module_devices_provision")
+    @action(detail=False, url_path="provision/preview", methods=["POST"])
+    def provision_preview(self, request, *args, **kwargs):
+        """Generate device_hash, token and config - nothing is saved. `signed`
+        goes back to provision/confirm unchanged."""
+        db_name = None
+        try:
+            location, db_name = self._provision_location(request, request.data.get("location"))
+            plan = provisioning.build_plan(location, db_name, provisioning.parse_settings(request.data))
+        except provisioning.ProvisionError as exc:
+            return RequestFailed({"reason": str(exc)})
+        finally:
+            release_connection(db_name)
+        # QR codes for the setup portal: join its network, then open the controller.
+        portal_wifi = build_wifi_payload(provisioning.PORTAL["ssid"], provisioning.PORTAL["pwd"])
+        return RequestSuccess({
+            **plan,
+            "config": provisioning.render_config(plan),
+            "signed": provisioning.sign_plan(plan),
+            "portal": {
+                "wifi": {"ssid": provisioning.PORTAL["ssid"], "payload": portal_wifi, "image": qr_code_data_uri(portal_wifi)},
+                "frontend": {
+                    "url": provisioning.PORTAL_URL,
+                    "payload": provisioning.PORTAL_URL,
+                    "image": qr_code_data_uri(provisioning.PORTAL_URL),
+                },
+            },
+        })
+
+    @require_module_permissions("module_devices_provision")
+    @action(detail=False, url_path="provision/confirm", methods=["POST"])
+    def provision_confirm(self, request, *args, **kwargs):
+        """Create the device of a preview, filed under its location, and its
+        transfer token - the controller can send its samples from now on."""
+        db_name = None
+        try:
+            plan = provisioning.unsign_plan(request.data.get("signed"))
+            # Checked again: the user may have lost access since the preview.
+            location, db_name = self._provision_location(request, plan["location"])
+            device, token = provisioning.create_device(plan, location, db_name, request.account, request.user)
+            device_data = DeviceSerializer(device).data
+        except provisioning.ProvisionError as exc:
+            return RequestFailed({"reason": str(exc)})
+        finally:
+            release_connection(db_name)
+        create_MfS_log(request)
+        ilog(f"Provisioned device {device.raw_hash} (location {location.pk}, token {token.pk})", tag="[PROVISION]")
+        return RequestSuccess({
+            "device": device_data,
+            "token_id": token.pk,
+            "config": provisioning.render_config(plan),
+        })

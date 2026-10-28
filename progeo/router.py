@@ -185,8 +185,9 @@ class DemoRouter:
 class ProjectRouter:
     """Routes the per-project models (helper/project_dbs.py: project_models)
     to the project database of the current `use_project_db(...)` block, or
-    to the database an instance was loaded from. Inactive (returns None,
-    i.e. AccountRouter decides) while PROJECT_DB_SPLIT is off.
+    to the database an instance was loaded from. While PROJECT_DB_SPLIT is
+    off it only does the latter (a row read from a project database, e.g.
+    in the admin); everything else returns None, i.e. AccountRouter decides.
 
     Explicit `.using(db)` calls bypass routers - those call sites have to
     pick the project database themselves (project_db_for)."""
@@ -200,17 +201,24 @@ class ProjectRouter:
             strict_enabled,
         )
 
-        if not split_enabled() or not is_project_model(model):
+        if not is_project_model(model):
             return None
 
-        alias = current_project_db()
+        split = split_enabled()
+        alias = current_project_db() if split else None
         if alias:
             return alias
 
+        # A row loaded from a project database finds its relations there even
+        # with the split off (e.g. a wrong PROJECT_DB_SPLIT): "default" doesn't
+        # hold them - the admin's ?db=<project> pages crashed with DoesNotExist.
         instance = hints.get("instance")
         instance_db = getattr(getattr(instance, "_state", None), "db", None)
         if is_project_alias(instance_db):
             return instance_db
+
+        if not split:
+            return None
 
         if strict_enabled():
             raise RuntimeError(
