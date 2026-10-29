@@ -3,10 +3,11 @@ import time
 
 from django.core.management import call_command
 
+from progeo.helper.backup_transfer import clean_old_dumps
 from progeo.helper.basics import dlog, elog, ilog
 from progeo.helper.project_dbs import register_all_project_dbs, release_connection
 from progeo.management.commands._base import BaseCommand
-from progeo.settings import BACKUP_DIR, DATABASES
+from progeo.settings import BACKUP_DIR, DATABASES, DBBACKUP_CLEANUP_KEEP
 from progeo.v1.helper import convert_backup_date_to_timestamp
 
 
@@ -64,7 +65,8 @@ class Command(BaseCommand):
 
                 _cmds = [cmd, "--noinput", "--skip-checks", "--traceback", f"--database={db}"]
                 if cmd == "dbbackup":
-                    _cmds += ["--clean", "--compress"]
+                    # No --clean: it matches files by substring (see clean_old_dumps).
+                    _cmds += ["--compress"]
                 elif cmd == "dbrestore":
                     _cmds += ["--uncompress"]
 
@@ -83,6 +85,8 @@ class Command(BaseCommand):
                     durations[db] = time.monotonic() - db_started
                     # ~1000 project databases: an open connection each exceeds Postgres' max_connections.
                     release_connection(db)
+                if cmd == "dbbackup" and db not in failed:
+                    clean_old_dumps(BACKUP_DIR, db, DBBACKUP_CLEANUP_KEEP)
             self._report(cmd, files_before, durations, failed, time.monotonic() - started)
 
         elif cmd in ["dbclean"]:
@@ -127,7 +131,7 @@ class Command(BaseCommand):
             lines += [
                 (f"new files: {len(new_files)}, {sum(new_files.values()) / 1024 / 1024:.1f} MB "
                  f"(largest: {', '.join(f'{name} {size / 1024 / 1024:.1f} MB' for name, size in largest) or '-'})"),
-                (f"removed by --clean: {removed}; {BACKUP_DIR} now holds {len(files_after)} files, "
+                (f"removed by cleanup: {removed}; {BACKUP_DIR} now holds {len(files_after)} files, "
                  f"{sum(files_after.values()) / 1024 / 1024 / 1024:.2f} GB"),
             ]
         if failed:

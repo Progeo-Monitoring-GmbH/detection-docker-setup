@@ -216,3 +216,20 @@ def test_metrics_export_the_last_run_only_while_the_transfer_is_on(tmp_path):
     assert "progeo_backup_transfer_last_run_ok 0.0" in exported
     assert "progeo_backup_transfer_last_success_timestamp_seconds 100.0" in exported
     assert "progeo_backup_transfer_last_success_stale_databases 1.0" in exported
+
+
+def test_clean_old_dumps_matches_the_database_prefix_only(tmp_path):
+    # dbbackup's --clean matched by substring: project "2026" took every dump of the year.
+    for day in range(20, 28):
+        (tmp_path / f"2026-host-2026-10-{day}-015300.psql.gz").write_bytes(b"p")
+    (tmp_path / "default-host-2026-10-27-015300.psql.gz").write_bytes(b"d")
+    (tmp_path / "12026-host-2026-10-27-015300.psql.gz").write_bytes(b"o")
+
+    removed = bt.clean_old_dumps(str(tmp_path), "2026", keep=3)
+
+    assert sorted(removed) == [f"2026-host-2026-10-{day}-015300.psql.gz" for day in range(20, 25)]
+    assert sorted(os.listdir(tmp_path)) == [
+        "12026-host-2026-10-27-015300.psql.gz",
+        *[f"2026-host-2026-10-{day}-015300.psql.gz" for day in range(25, 28)],
+        "default-host-2026-10-27-015300.psql.gz",
+    ]

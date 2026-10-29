@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Wartungsarbeiten | ProGeo</title>
+  <link rel="icon" href="/__maintenance/favicon.ico">
+  <noscript><meta http-equiv="refresh" content="30"></noscript>
+  <style>
+    /* ProGeo corporate tokens (frontend/scss/style.scss) */
+    @font-face {
+      font-family: 'Plus Jakarta Sans';
+      font-style: normal;
+      font-weight: 300 700;
+      font-display: swap;
+      src: url(/__maintenance/plus-jakarta-sans.woff2) format('woff2');
+    }
+    :root {
+      --primary: #0b3659;
+      --accent: #eb633b;
+      --bg: #eeebeb;
+      --card: #ffffff;
+      --border: #dcd7d8;
+      --muted: #6b7f90;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      display: flex;
+      flex-direction: column;
+      background: var(--bg);
+      color: var(--primary);
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+      font-weight: 500;
+      line-height: 1.55;
+    }
+    main {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 32px 16px;
+    }
+    .card {
+      width: 100%;
+      max-width: 560px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-top: 6px solid var(--accent);
+      border-radius: 8px;
+      box-shadow: 0 12px 32px rgba(11, 54, 89, 0.08);
+      padding: 40px 36px 32px;
+      text-align: center;
+    }
+    .logo { width: 200px; max-width: 70%; height: auto; margin-bottom: 32px; }
+    h1 { margin: 0 0 12px; font-size: 1.75rem; font-weight: 700; letter-spacing: -0.01em; }
+    p { margin: 0 0 12px; }
+    .en { color: var(--muted); font-size: 0.9rem; font-weight: 300; }
+    .progress {
+      position: relative;
+      height: 4px;
+      margin: 28px 0 16px;
+      overflow: hidden;
+      background: var(--bg);
+      border-radius: 2px;
+    }
+    .progress::after {
+      content: '';
+      position: absolute;
+      top: 0; left: -40%;
+      width: 40%; height: 100%;
+      background: var(--accent);
+      border-radius: 2px;
+      animation: slide 1.6s ease-in-out infinite;
+    }
+    @keyframes slide { to { left: 100%; } }
+    @media (prefers-reduced-motion: reduce) {
+      .progress::after { animation: none; left: 0; width: 100%; opacity: 0.4; }
+    }
+    .status { color: var(--muted); font-size: 0.85rem; margin: 0; }
+    footer {
+      background: var(--primary);
+      color: #fff;
+      padding: 15px 16px;
+      font-size: 0.85rem;
+      text-align: center;
+    }
+    footer a { color: #fff; }
+    @media (max-width: 480px) {
+      .card { padding: 32px 20px 24px; }
+      h1 { font-size: 1.4rem; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="card" role="status" aria-live="polite">
+      <img class="logo" src="/__maintenance/progeo-logo.png" alt="ProGeo">
+      <h1>Wartungsarbeiten</h1>
+      <p>Das System wird gerade gestartet oder aktualisiert und ist in wenigen Minuten wieder f&uuml;r Sie da.</p>
+      <p class="en">We are currently performing maintenance. The system will be back in a few minutes.</p>
+      <div class="progress" aria-hidden="true"></div>
+      <p class="status" id="status">Die Seite l&auml;dt automatisch neu, sobald das System wieder erreichbar ist.</p>
+    </div>
+  </main>
+  <footer>&copy; ProGeo &middot; <a href="https://www.progeo.com">www.progeo.com</a></footer>
+  <script>
+    // nginx answers 503 with this page while the backend/frontend container is
+    // not reachable; reload as soon as the original URL answers differently.
+    (function () {
+      var status = document.getElementById('status');
+      var attempt = 0;
+      function check() {
+        attempt += 1;
+        fetch(window.location.href, { cache: 'no-store', credentials: 'same-origin' })
+          .then(function (response) {
+            if (response.status !== 503) {
+              window.location.replace(window.location.href);
+            } else {
+              schedule();
+            }
+          })
+          .catch(schedule);
+      }
+      function schedule() {
+        status.textContent = 'Die Seite lädt automatisch neu, sobald das System wieder erreichbar ist. (Prüfung ' + attempt + ')';
+        setTimeout(check, 5000);
+      }
+      setTimeout(check, 5000);
+    })();
+  </script>
+</body>
+</html>

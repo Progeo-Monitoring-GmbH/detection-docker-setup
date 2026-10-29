@@ -45,7 +45,7 @@ i18n
           backup_download_error: 'Could not download backup: {{reason}}',
           backup_reloaded: 'Backups reloaded.',
           backup_reload_error: 'Could not reload backups: {{reason}}',
-          backup_created: 'Backup created.',
+          backup_created: 'Backup started - it appears in the list in a few minutes (Reload Backups).',
           backup_create_error: 'Could not create backup: {{reason}}',
           backup_deleted: 'Backup deleted.',
           backup_delete_error: 'Could not delete backup: {{reason}}',
@@ -911,7 +911,7 @@ i18n
           backup_reloaded: 'Backups neu geladen.',
           backup_reload_error:
             'Backups konnten nicht neu geladen werden: {{reason}}',
-          backup_created: 'Backup erstellt.',
+          backup_created: 'Backup gestartet - es erscheint in wenigen Minuten in der Liste (Backups neuladen).',
           backup_create_error:
             'Backup konnte nicht erstellt werden: {{reason}}',
           backup_deleted: 'Backup gelöscht.',

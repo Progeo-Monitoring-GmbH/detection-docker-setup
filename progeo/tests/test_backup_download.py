@@ -94,3 +94,15 @@ def test_missing_file_is_reported(api_client, backup_file):
     os.remove(backup_dir / backup.name)
 
     assert _file(api_client, _token(backup)).json()["reason"] == "Backup file not found"
+
+
+def test_create_queues_a_backup_of_default_only(api_client, monkeypatch):
+    # Without --database dbbackup dumps every registered database - in the request (504).
+    queued = []
+    monkeypatch.setattr(backup_viewset.create_database_backup, "delay", lambda *args: queued.append(args))
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    response = api_client.post("/v1/1/backup/create/?project=default", {}, format="json")
+
+    assert response.status_code == 200
+    assert [args[0] for args in queued] == ["default"]

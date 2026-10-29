@@ -29,6 +29,11 @@ COPY ./docker/nginx/generate_mkcert.sh /docker-entrypoint.d/40-generate_mkcert.s
 COPY ./docker/nginx/fix_host_file.sh /docker-entrypoint.d/50-fix_hosts.sh
 COPY ./docker/nginx/enable_local_cert.sh /docker-entrypoint.d/60-enable_local_cert.sh
 COPY ./docker/nginx/robots.txt /var/www/html/robots.txt
+# "Wartungsarbeiten" page (snippets/maintenance.conf), logo/font/favicon from the frontend.
+COPY ./docker/nginx/maintenance /usr/share/nginx/maintenance/__maintenance
+COPY ./frontend/public/assets/progeo-logo.png /usr/share/nginx/maintenance/__maintenance/progeo-logo.png
+COPY ./frontend/public/favicon.ico /usr/share/nginx/maintenance/__maintenance/favicon.ico
+COPY ./frontend/src/assets/fonts/plus-jakarta-sans/LDIoaomQNQcsA88c7O9yZ4KMCoOg4Ko20yw.woff2 /usr/share/nginx/maintenance/__maintenance/plus-jakarta-sans.woff2
 COPY ./docker/nginx/ssl/.mkcert /etc/nginx/ssl/.mkcert
 
 RUN sed -i -e 's/\r$//' /docker-entrypoint.d/*.sh

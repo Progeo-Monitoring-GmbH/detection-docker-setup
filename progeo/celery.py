@@ -79,6 +79,13 @@ celery_instance.conf.beat_schedule = {
         # Unconfirmed access requests expire, rejected ones are deleted (GDPR).
         "schedule": crontab(hour=4, minute=12),
     },
+    "refresh-demo-account-every-3-days": {
+        "task": "progeo.tasks.refresh_demo_account",
+        # The demo's measurements end at the time of the last run - regenerate
+        # them before they look stale. Days 1, 4, ..., 28, 31: at most 3 days
+        # apart (a month's end only makes one gap shorter).
+        "schedule": crontab(day_of_month="*/3", hour=4, minute=40),
+    },
 }
 if not settings.PROGEO_CONFIG_EVALUATE_INSTANTLY:
     # With PROGEO_CONFIG_EVALUATE_INSTANTLY every measurement is evaluated when

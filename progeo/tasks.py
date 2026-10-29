@@ -627,6 +627,35 @@ def activate_project_database(project_id: int | None = None):
             cursor.execute("SELECT pg_advisory_unlock(%s)", [lock_key])
 
 
+@shared_task
+def create_database_backup(database: str, account_db: str, account_id: int, user_id: int | None = None):
+    """The "Create backup" button: dumps one database (minutes for "default" -
+    far longer than the proxy waits for a request) and lists the new file as a
+    Backup of the account."""
+    import os
+
+    from django.core.management import call_command
+
+    from progeo.helper.project_dbs import is_project_alias, register_project_db, release_connection
+    from progeo.settings import BACKUP_DIR
+    from progeo.v1.models import Backup
+
+    if is_project_alias(database):
+        register_project_db(database)
+    before = set(os.listdir(BACKUP_DIR)) if os.path.isdir(BACKUP_DIR) else set()
+    try:
+        call_command("dbbackup", "--noinput", "--compress", f"--database={database}")
+    finally:
+        release_connection(database)
+    created = sorted(set(os.listdir(BACKUP_DIR)) - before)
+    for name in created:
+        backup, new = Backup.objects.using(account_db).get_or_create(name=name, account_id=account_id)
+        if new and user_id:
+            backup.user_id = user_id  # by id - see the database router
+            backup.save()
+    return {"database": database, "files": created}
+
+
 # track_started: the result endpoint reports STARTED while ffmpeg runs, so the
 # frontend can tell a busy render from a task no worker has picked up.
 @shared_task(track_started=True)
@@ -702,3 +731,17 @@ def cleanup_access_requests():
     from progeo.helper.access_requests import cleanup_access_requests as cleanup
 
     return cleanup()
+
+
+@shared_task
+def refresh_demo_account():
+    """`manage.py demo_account`: regenerates the demo locations with
+    measurements up to now, so the public demo never looks stale. Account,
+    user and the handed-out demo links stay."""
+    from io import StringIO
+
+    from django.core.management import call_command
+
+    out = StringIO()
+    call_command("demo_account", stdout=out)
+    return out.getvalue()

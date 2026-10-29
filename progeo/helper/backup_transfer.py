@@ -103,6 +103,23 @@ def latest_dumps(backup_dir, since):
     return dict(sorted(recent.items())), sorted(set(newest) - set(recent))
 
 
+def clean_old_dumps(backup_dir, database, keep):
+    """Delete all but the `keep` newest dumps of `database`; returns the removed
+    names. Replaces dbbackup's --clean, which picks a database's files by
+    substring - project "2026" matched every dump of the year (default's too)
+    and deleted all but the 10 newest."""
+    if not os.path.isdir(backup_dir):
+        return []
+    dumps = [entry for entry in os.scandir(backup_dir)
+             if entry.is_file() and entry.name.endswith(DUMP_SUFFIXES) and database_of_backup(entry.name) == database]
+    dumps.sort(key=lambda entry: (dump_created_at(entry), entry.name), reverse=True)
+    removed = []
+    for entry in dumps[keep:]:
+        os.remove(entry.path)
+        removed.append(entry.name)
+    return removed
+
+
 # ---------------------------------------------------------------------------- connection
 
 def parse_host_key(value):

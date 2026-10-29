@@ -18,6 +18,9 @@ server {
     # First, before the other locations: drops .env/.git/... scanner requests.
     include /etc/nginx/snippets/block_scanners.conf;
 
+    # "Wartungsarbeiten" page while the backend is not reachable (still booting).
+    include /etc/nginx/snippets/maintenance.conf;
+
     # Prometheus scrapes the backend directly (docker network); never public.
     location = /metrics {
         return 404;
@@ -97,6 +100,9 @@ server {
 
     # First, before the backend regex location below: drops scanner requests.
     include /etc/nginx/snippets/block_scanners.conf;
+
+    # "Wartungsarbeiten" page while the frontend or backend is not reachable.
+    include /etc/nginx/snippets/maintenance.conf;
 
     location / {
         set $frontend_upstream progeo-frontend:80;

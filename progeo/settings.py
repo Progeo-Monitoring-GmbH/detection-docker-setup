@@ -475,6 +475,9 @@ STORAGES = {
     },
 }
 
+# Dumps kept per database (handle_all_dbs / backup_transfer.clean_old_dumps).
+DBBACKUP_CLEANUP_KEEP = int(os.getenv("DBBACKUP_CLEANUP_KEEP", "") or 10)
+
 DBBACKUP_CONNECTORS = {
     "default": {
         "USER": os.getenv("POSTGRES_USER"),

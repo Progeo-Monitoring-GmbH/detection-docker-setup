@@ -27,6 +27,7 @@ from progeo.helper.project_dbs import (
     register_project_db,
 )
 from progeo.settings import BACKUP_DIR
+from progeo.tasks import create_database_backup
 from progeo.v1.models import Backup, ProgeoLocation
 from progeo.v1.serializers import BackupSerializer
 from progeo.v1.viewsets.base_viewsets import StandardResultsSetPagination
@@ -262,15 +263,13 @@ class BackupViewSet(ProgeoModalViewSet):
     @action(detail=False, url_path="create", methods=["POST"])
     def create_backup(self, request, *args, **kwargs):
         # Body {"project": <project_id|unknown>} backs up that project's
-        # database instead of "default".
-        database = _requested_database((request.data or {}).get("project"))
-        if database and database != DEFAULT_DB_ALIAS:
-            if not _known_database(database):
-                return RequestFailed({"reason": f"Database {database} does not exist"})
-            call_command("dbbackup", f"--database={database}")
-        else:
-            call_command("dbbackup")
-        self.parse_backups(request, *args, **kwargs)
+        # database instead of "default". Always with --database: without it
+        # dbbackup dumps every registered database (~1000 project databases).
+        database = _requested_database((request.data or {}).get("project")) or DEFAULT_DB_ALIAS
+        if database != DEFAULT_DB_ALIAS and not _known_database(database):
+            return RequestFailed({"reason": f"Database {database} does not exist"})
+        # In the worker: a dump of "default" takes minutes, nginx gives up after 60s (504).
+        create_database_backup.delay(database, request.account.db_name, request.account.pk, request.user.pk)
         create_MfS_log(request)
 
         return self.list(request)
