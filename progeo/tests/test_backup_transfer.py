@@ -1,11 +1,15 @@
 """Daily backup transfer (progeo/helper/backup_transfer.py): tonight's newest
-dump per database as one tar on the backup server, checksum next to it,
-retention, and the status file the BackupTransfer* alerts read. The SFTP
-server is a directory here (FakeSFTP)."""
+dump per database as one OpenPGP-encrypted tar on the backup server, checksum
+next to it, retention, and the status file the BackupTransfer* alerts read.
+The SFTP server is a directory here (FakeSFTP); gpg is the real one, with a
+key pair made for this module."""
 import datetime
 import hashlib
+import io
 import json
 import os
+import shutil
+import subprocess
 import tarfile
 
 import pytest
@@ -68,9 +72,50 @@ class FakeSFTP:
         self.closed = True
 
 
+class FullSFTP(FakeSFTP):
+    """The server's disk runs full during the upload."""
+
+    def open(self, path, mode="r", bufsize=-1):
+        file = super().open(path, mode, bufsize)
+
+        def write(data):
+            raise OSError("No space left on device")
+
+        file.write = write
+        return file
+
+
 class FakeClient:
     def close(self):
         pass
+
+
+@pytest.fixture(scope="module")
+def gpg_key(tmp_path_factory):
+    """(gpg command of a home holding the private key, public key file, fingerprint)."""
+    if not shutil.which("gpg"):
+        pytest.skip("gpg is not installed")
+    home = tmp_path_factory.mktemp("gpg")
+    gpg = ["gpg", "--batch", "--homedir", str(home), "--pinentry-mode", "loopback", "--passphrase", ""]
+    made = subprocess.run([*gpg, "--quick-generate-key", "Progeo Backup Test <backup-test@progeo.com>",
+                           "future-default", "default", "never"], check=False, capture_output=True, timeout=60)
+    if made.returncode and b"agent" in made.stderr:
+        # Git for Windows' gpg can't start a gpg-agent for a temp home; the backend image can
+        pytest.skip(f"gpg can't make test keys here: {made.stderr.decode(errors='replace').strip()}")
+    made.check_returncode()
+    public = home / "backup-public-key.asc"
+    public.write_bytes(subprocess.run([*gpg, "--armor", "--export"], check=True, capture_output=True).stdout)
+    listing = subprocess.run([*gpg, "--with-colons", "--list-keys"], check=True, capture_output=True).stdout
+    yield gpg, public, bt.parse_keys(listing.decode())[0][0]
+    if shutil.which("gpgconf"):
+        subprocess.run(["gpgconf", "--homedir", str(home), "--kill", "all"], check=False, capture_output=True, timeout=10)
+
+
+def _decrypt(gpg_key, path):
+    """(plain bytes, gpg's log) - as the admin restores it with the private key."""
+    gpg, _public, _fingerprint = gpg_key
+    done = subprocess.run([*gpg, "--verbose", "--decrypt", str(path)], check=True, capture_output=True, timeout=30)
+    return done.stdout, done.stderr.decode(errors="replace")
 
 
 @pytest.fixture
@@ -85,16 +130,21 @@ def _dump(backup_dir, name, content=None):
     (backup_dir / name).write_bytes(content or name.encode() * 100)
 
 
-def _run(dirs):
+def _run(dirs, gpg_key, sftp_class=FakeSFTP):
     backup_dir, server, status = dirs
-    sftp = FakeSFTP(str(server))
-    result = bt.transfer_backups(str(backup_dir), NOW, lambda: (FakeClient(), sftp), str(status))
-    assert sftp.closed
-    return result
+    sftp = sftp_class(str(server))
+    try:
+        return bt.transfer_backups(str(backup_dir), NOW, lambda: (FakeClient(), sftp), str(status), str(gpg_key[1]))
+    finally:
+        assert sftp.closed
+
+
+def _never():
+    raise AssertionError("must not connect")
 
 
 @REMOTE_SETTINGS
-def test_sends_the_newest_dump_per_database_of_tonight_as_one_tar(dirs):
+def test_sends_the_newest_dump_per_database_of_tonight_as_one_encrypted_tar(dirs, gpg_key):
     backup_dir, server, status = dirs
     _dump(backup_dir, "default-srv-2026-10-25-235301.psql.gz")
     _dump(backup_dir, "default-srv-2026-10-26-235301.psql.gz")
@@ -102,11 +152,14 @@ def test_sends_the_newest_dump_per_database_of_tonight_as_one_tar(dirs):
     _dump(backup_dir, "project_12-srv-2026-10-24-235300.psql.gz")  # its dump failed since
     _dump(backup_dir, "default-srv-2026-10-26-235301.metadata")
 
-    result = _run(dirs)
+    result = _run(dirs, gpg_key)
 
-    bundle = server / REMOTE / "progeo-2026-10-27-013000.tar"
+    bundle = server / REMOTE / "progeo-2026-10-27-013000.tar.gpg"
     assert result.bundle == bundle.name
-    with tarfile.open(bundle) as tar:
+    assert b"project_1-srv" not in bundle.read_bytes()  # neither tar headers nor dumps in plain
+    plain, log = _decrypt(gpg_key, bundle)
+    assert "AES256" in log
+    with tarfile.open(fileobj=io.BytesIO(plain)) as tar:
         assert sorted(tar.getnames()) == ["default-srv-2026-10-26-235301.psql.gz",
                                           "project_1-srv-2026-10-26-235402.psql.gz"]
         assert tar.extractfile("project_1-srv-2026-10-26-235402.psql.gz").read() == \
@@ -115,37 +168,40 @@ def test_sends_the_newest_dump_per_database_of_tonight_as_one_tar(dirs):
     assert (server / REMOTE / f"{bundle.name}.sha256").read_text() == f"{digest}  {bundle.name}\n"
     assert result.sha256 == digest and result.bytes == bundle.stat().st_size
     assert result.stale == ["project_12"]
+    assert result.recipients == [f"{gpg_key[2]} Progeo Backup Test <backup-test@progeo.com>"]
     assert not list((server / REMOTE).glob("*.part"))
 
     saved = json.loads(status.read_text())
     assert saved["last_run_ok"] is True and saved["files"] == 2 and saved["stale"] == ["project_12"]
     assert saved["last_success"] == saved["last_run"]
+    assert saved["recipients"] == result.recipients
 
 
 @override_settings(BACKUP_REMOTE_HOST="backup.progeo.com", BACKUP_REMOTE_PATH=REMOTE, BACKUP_REMOTE_KEEP=2)
-def test_keeps_the_newest_bundles_and_drops_leftovers_of_broken_runs(dirs):
+def test_keeps_the_newest_bundles_and_drops_leftovers_of_broken_runs(dirs, gpg_key):
     backup_dir, server, _status = dirs
     _dump(backup_dir, "default-srv-2026-10-26-235301.psql.gz")
     remote = server / REMOTE
     remote.mkdir(parents=True)
-    for day in (23, 24, 25):
-        (remote / f"progeo-2026-10-{day}-013000.tar").write_bytes(b"old")
-        (remote / f"progeo-2026-10-{day}-013000.tar.sha256").write_text("x")
-    (remote / "progeo-2026-10-26-013000.tar.part").write_bytes(b"broken")
+    for name in ("progeo-2026-10-23-013000.tar", "progeo-2026-10-24-013000.tar",  # unencrypted, of before
+                 "progeo-2026-10-25-013000.tar.gpg"):
+        (remote / name).write_bytes(b"old")
+        (remote / f"{name}.sha256").write_text("x")
+    (remote / "progeo-2026-10-26-013000.tar.gpg.part").write_bytes(b"broken")
     (remote / "notes.txt").write_text("not ours")
 
-    result = _run(dirs)
+    result = _run(dirs, gpg_key)
 
     assert sorted(os.listdir(remote)) == [
         "notes.txt",
-        "progeo-2026-10-25-013000.tar", "progeo-2026-10-25-013000.tar.sha256",
-        "progeo-2026-10-27-013000.tar", "progeo-2026-10-27-013000.tar.sha256",
+        "progeo-2026-10-25-013000.tar.gpg", "progeo-2026-10-25-013000.tar.gpg.sha256",
+        "progeo-2026-10-27-013000.tar.gpg", "progeo-2026-10-27-013000.tar.gpg.sha256",
     ]
-    assert "progeo-2026-10-26-013000.tar.part" in result.removed
+    assert "progeo-2026-10-26-013000.tar.gpg.part" in result.removed
 
 
 @REMOTE_SETTINGS
-def test_a_failure_is_recorded_and_keeps_the_last_success(dirs):
+def test_a_failure_is_recorded_and_keeps_the_last_success(dirs, gpg_key):
     backup_dir, _server, status = dirs
     _dump(backup_dir, "default-srv-2026-10-26-235301.psql.gz")
     status.write_text(json.dumps({"last_success": 123.0, "last_run_ok": True}))
@@ -154,7 +210,7 @@ def test_a_failure_is_recorded_and_keeps_the_last_success(dirs):
         raise bt.TransferError("Connecting to backup.progeo.com:22 failed: timed out")
 
     with pytest.raises(bt.TransferError, match="timed out"):
-        bt.transfer_backups(str(backup_dir), NOW, refused, str(status))
+        bt.transfer_backups(str(backup_dir), NOW, refused, str(status), str(gpg_key[1]))
 
     saved = json.loads(status.read_text())
     assert saved["last_run_ok"] is False and saved["last_success"] == 123.0
@@ -162,15 +218,23 @@ def test_a_failure_is_recorded_and_keeps_the_last_success(dirs):
 
 
 @REMOTE_SETTINGS
+def test_a_broken_upload_stops_gpg_and_is_reported(dirs, gpg_key):
+    backup_dir, server, status = dirs
+    _dump(backup_dir, "default-srv-2026-10-26-235301.psql.gz", os.urandom(4 * 1024 * 1024))
+
+    with pytest.raises(bt.TransferError, match="No space left"):
+        _run(dirs, gpg_key, FullSFTP)
+    assert json.loads(status.read_text())["last_run_ok"] is False
+    assert not list((server / REMOTE).glob("*.tar.gpg"))  # only the ".part", pruned next time
+
+
+@REMOTE_SETTINGS
 def test_without_dumps_of_tonight_nothing_is_sent(dirs):
     backup_dir, _server, status = dirs
     _dump(backup_dir, "default-srv-2026-10-24-235301.psql.gz")
 
-    def never():
-        raise AssertionError("must not connect")
-
     with pytest.raises(bt.TransferError, match="No dumps"):
-        bt.transfer_backups(str(backup_dir), NOW, never, str(status))
+        bt.transfer_backups(str(backup_dir), NOW, _never, str(status))
     assert json.loads(status.read_text())["last_run_ok"] is False
 
 
@@ -180,13 +244,42 @@ def test_without_a_fresh_default_dump_nothing_is_sent(dirs):
     _dump(backup_dir, "default-srv-2026-10-24-235301.psql.gz")  # tonight's dump of default failed
     _dump(backup_dir, "project_1-srv-2026-10-26-235402.psql.gz")
 
-    def never():
-        raise AssertionError("must not connect")
-
     with pytest.raises(bt.TransferError, match="No dump of 'default'"):
-        bt.transfer_backups(str(backup_dir), NOW, never, str(status))
+        bt.transfer_backups(str(backup_dir), NOW, _never, str(status))
     assert json.loads(status.read_text())["last_run_ok"] is False
     assert not (server / REMOTE).exists()
+
+
+@REMOTE_SETTINGS
+def test_without_the_public_key_nothing_is_sent(dirs):
+    backup_dir, _server, status = dirs
+    _dump(backup_dir, "default-srv-2026-10-26-235301.psql.gz")
+
+    with pytest.raises(bt.TransferError, match="is missing - nothing is sent unencrypted"):
+        bt.transfer_backups(str(backup_dir), NOW, _never, str(status), str(backup_dir / "no-key.asc"))
+    assert json.loads(status.read_text())["last_run_ok"] is False
+
+
+def test_a_private_key_file_is_refused(gpg_key, tmp_path):
+    gpg, _public, _fingerprint = gpg_key
+    private = tmp_path / "private.asc"
+    private.write_bytes(subprocess.run([*gpg, "--armor", "--export-secret-keys"],
+                                       check=True, capture_output=True, timeout=30).stdout)
+
+    with pytest.raises(bt.TransferError, match="PRIVATE key"), bt.gpg_keyring(str(private)):
+        pass
+
+
+def test_a_key_that_cannot_encrypt_is_refused(gpg_key, tmp_path):
+    gpg, _public, _fingerprint = gpg_key
+    subprocess.run([*gpg, "--quick-generate-key", "Sign Only <sign-only@progeo.com>", "ed25519", "sign", "never"],
+                   check=True, capture_output=True, timeout=60)
+    sign_only = tmp_path / "sign-only.asc"
+    sign_only.write_bytes(subprocess.run([*gpg, "--armor", "--export", "sign-only@progeo.com"],
+                                         check=True, capture_output=True, timeout=30).stdout)
+
+    with pytest.raises(bt.TransferError, match="can encrypt"), bt.gpg_keyring(str(sign_only)):
+        pass
 
 
 def test_host_key_from_a_keyscan_line():

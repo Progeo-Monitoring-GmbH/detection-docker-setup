@@ -449,6 +449,10 @@ BACKUP_REMOTE_KEY_FILE = os.getenv("BACKUP_REMOTE_KEY_FILE", "").strip() or "/et
 BACKUP_REMOTE_HOST_KEY = os.getenv("BACKUP_REMOTE_HOST_KEY", "").strip()
 BACKUP_REMOTE_PATH = os.getenv("BACKUP_REMOTE_PATH", "").strip() or "progeo-backups"
 BACKUP_REMOTE_KEEP = int(os.getenv("BACKUP_REMOTE_KEEP", "") or 14)
+# OpenPGP public key(s) every bundle is encrypted for - required, nothing is sent
+# unencrypted. The private key never belongs on this host.
+BACKUP_REMOTE_GPG_KEY_FILE = (os.getenv("BACKUP_REMOTE_GPG_KEY_FILE", "").strip()
+                              or "/etc/progeo/backup/backup-public-key.asc")
 SETUP_DIR = os.path.join(MEDIA_ROOT, os.getenv("SETUP_DIR", "setup"))
 UPLOAD_DIR = os.path.join(MEDIA_ROOT, os.getenv("UPLOAD_DIR", "uploads"))
 UPLOAD_REL_DIR = os.path.join(MEDIA_URL, os.getenv("UPLOAD_DIR", "uploads"))[1:]

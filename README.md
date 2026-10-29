@@ -103,8 +103,10 @@ bash scripts/build_progeo-cad_factory_resilient.sh logs
 Every night at 23:53, the cron job `daily` ([docker/backend/cronjobs/daily.sh](docker/backend/cronjobs/daily.sh)) dumps every database into `media/backup`.
 Right after that, `manage.py transfer_backups` sends the newest dump of each database to a backup server over SFTP:
 
-- All dumps go as **one** tar file, `<BACKUP_REMOTE_PATH>/progeo-<YYYY-MM-DD-HHMMSS>.tar`, together with a `.sha256` file.
-  - The file is streamed straight to the server, so it needs no extra local disk space.
+- All dumps go as **one** tar file, `<BACKUP_REMOTE_PATH>/progeo-<YYYY-MM-DD-HHMMSS>.tar.gpg`, together with a `.sha256` file.
+  - The tar is **OpenPGP-encrypted** (gpg, AES-256) for the public key(s) in `secrets/backup/backup-public-key.asc` before it leaves the host. Only the matching private key can open it. That key lives neither on this host nor on the backup server.
+  - Without a usable public key, nothing is sent. Backups are never transferred unencrypted.
+  - The file is streamed through gpg straight to the server, so it needs no extra local disk space. Nothing unencrypted is written along the way.
   - It is uploaded as `.part` and renamed once complete, so a bundle with its final name is always whole.
 - Only dumps from the last 20 hours are sent. A database whose dump failed that night is reported, not sent with an older dump.
 - The server keeps the newest `BACKUP_REMOTE_KEEP` bundles (default 14). Older ones are deleted.
@@ -123,22 +125,42 @@ Right after that, `manage.py transfer_backups` sends the newest dump of each dat
    ```bash
    ssh-keyscan -p 22 -t ed25519 <backup-host>
    ```
-4. In `.env`, fill in `BACKUP_REMOTE_HOST`, `BACKUP_REMOTE_USER`, `BACKUP_REMOTE_HOST_KEY` (the line from step 3) and `BACKUP_REMOTE_PATH`.
+4. Create the encryption key pair on an **admin machine**, not on this host and not on the backup server:
+   ```bash
+   gpg --quick-generate-key "Progeo Backup <backup@progeo.com>" ed25519 cert never   # asks for a passphrase
+   gpg --quick-add-key <fingerprint> cv25519 encr never                              # fingerprint from the line above
+   gpg --armor --export backup@progeo.com > backup-public-key.asc
+   gpg --armor --export-secret-keys backup@progeo.com > backup-private-key.asc
+   ```
+   - Copy **only** `backup-public-key.asc` to `secrets/backup/` on this host. A private key there is refused.
+   - Store `backup-private-key.asc` and its passphrase offline, in two separate places (e.g. password manager and safe). **Without it, no backup can be restored.**
+   - Several admins: put all their public keys into the one `.asc` file (`gpg --armor --export <fpr1> <fpr2>`). Any one of them can then decrypt.
+5. In `.env`, fill in `BACKUP_REMOTE_HOST`, `BACKUP_REMOTE_USER`, `BACKUP_REMOTE_HOST_KEY` (the line from step 3) and `BACKUP_REMOTE_PATH`.
    - Use `BACKUP_REMOTE_PASSWORD` only if the server has no key login.
-5. Rebuild and restart the backend (it needs `paramiko`), then test:
+6. Rebuild and restart the backend (it needs `paramiko` and `gpg`), then test:
    ```bash
    docker compose build progeo-backend && docker compose up -d progeo-backend
-   docker exec progeo-backend python manage.py transfer_backups --dry-run   # what would be sent
+   docker exec progeo-backend python manage.py transfer_backups --dry-run   # what would be sent, for which key
    docker exec progeo-backend python manage.py transfer_backups             # send now
    ```
+7. Do a test restore once (see below), so you know the private key and passphrase work.
 
 ### Restore from the backup server
 
+On the admin machine with the private key (`gpg --import backup-private-key.asc` once):
+
 ```bash
-sha256sum -c progeo-2026-10-26-235301.tar.sha256
-tar -xf progeo-2026-10-26-235301.tar -C media/backup
+sha256sum -c progeo-2026-10-26-235301.tar.gpg.sha256
+gpg --decrypt progeo-2026-10-26-235301.tar.gpg | tar -x -C restore/
+```
+
+Then copy the dumps from `restore/` into `media/backup` on the host and restore them:
+
+```bash
 docker exec progeo-backend python manage.py handle_all_dbs --command=dbrestore
 ```
+
+Bundles from before the encryption are plain `progeo-*.tar` files. Unpack those with `tar -xf`. They are deleted as they age out of `BACKUP_REMOTE_KEEP`.
 
 ## Notes
 

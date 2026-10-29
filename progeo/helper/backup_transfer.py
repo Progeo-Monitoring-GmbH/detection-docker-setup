@@ -2,11 +2,15 @@
 
 The cron job daily.sh runs `manage.py transfer_backups` right after
 `handle_all_dbs --command=dbbackup`. The newest dump of every database from
-that run goes into ONE tar file, streamed straight onto the server - no local
-copy, the dumps are gzipped already:
+that run goes into ONE tar file, OpenPGP-encrypted by gpg on the way and
+streamed straight onto the server - no local copy, the dumps are gzipped already:
 
-    <BACKUP_REMOTE_PATH>/progeo-<YYYY-MM-DD-HHMMSS>.tar         dumps "<db>-<server>-<datetime>.psql.gz"
-    <BACKUP_REMOTE_PATH>/progeo-<YYYY-MM-DD-HHMMSS>.tar.sha256  "sha256sum -c" format
+    <BACKUP_REMOTE_PATH>/progeo-<YYYY-MM-DD-HHMMSS>.tar.gpg         tar of "<db>-<server>-<datetime>.psql.gz"
+    <BACKUP_REMOTE_PATH>/progeo-<YYYY-MM-DD-HHMMSS>.tar.gpg.sha256  "sha256sum -c" format, of the .gpg
+
+The bundle is encrypted (AES-256) for every public key in
+BACKUP_REMOTE_GPG_KEY_FILE; only the private key - kept off this host and off
+the backup server - can open it. Without a usable key nothing is sent.
 
 It is uploaded as ".part" and renamed once complete, so a bundle with its
 final name is always whole. The newest BACKUP_REMOTE_KEEP bundles stay on the
@@ -26,8 +30,13 @@ import json
 import os
 import posixpath
 import re
+import shutil
+import subprocess
 import tarfile
+import tempfile
+import threading
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 from django.conf import settings
@@ -37,7 +46,9 @@ from progeo.helper.project_dbs import database_of_backup
 
 DUMP_SUFFIXES = (".psql", ".psql.gz")
 BUNDLE_PREFIX = "progeo-"
-BUNDLE_RE = re.compile(r"^progeo-\d{4}-\d{2}-\d{2}-\d{6}\.tar$")
+BUNDLE_SUFFIX = ".tar.gpg"
+# ".tar": unencrypted bundles of before the encryption, pruned as they age out
+BUNDLE_RE = re.compile(r"^progeo-\d{4}-\d{2}-\d{2}-\d{6}\.tar(\.gpg)?$")
 PART_SUFFIX = ".part"
 CHECKSUM_SUFFIX = ".sha256"
 # Dumps of tonight's run only: the run starts at 23:53, yesterday's dumps are
@@ -60,6 +71,7 @@ class TransferResult:
     files: list = field(default_factory=list)
     bytes: int = 0
     sha256: str = ""
+    recipients: list = field(default_factory=list)
     stale: list = field(default_factory=list)
     removed: list = field(default_factory=list)
     seconds: float = 0.0
@@ -171,6 +183,110 @@ def connect():
         raise TransferError(f"Connecting to {host}:{port} failed: {exc}") from exc
 
 
+# ---------------------------------------------------------------------------- encryption
+
+def _gpg(home, *args):
+    executable = shutil.which("gpg")
+    if not executable:
+        raise TransferError("gpg is not installed - nothing is sent unencrypted")
+    # --no-autostart: public keys only, no gpg-agent / keyboxd for the throwaway home
+    return [executable, "--batch", "--no-tty", "--quiet", "--no-autostart", "--homedir", home, *args]
+
+
+def _run_gpg(home, *args):
+    try:
+        done = subprocess.run(_gpg(home, *args), check=False, capture_output=True, timeout=_TIMEOUT)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise TransferError(f"gpg failed: {exc}") from exc
+    if done.returncode:
+        raise TransferError(f"gpg {args[0]} failed: {done.stderr.decode(errors='replace').strip()}")
+    return done.stdout.decode(errors="replace")
+
+
+def parse_keys(listing):
+    """[(fingerprint, user id, usable for encryption)] from gpg --with-colons
+    output; "sec" in it means a private key."""
+    keys = []
+    for line in listing.splitlines():
+        fields = line.split(":")
+        if fields[0] in ("pub", "sec"):
+            # Uppercase "E": the key as a whole can encrypt - not expired, revoked or sign-only
+            usable = fields[0] == "pub" and "E" in fields[11] and fields[1] not in ("e", "r", "d", "i")
+            keys.append([fields[0], "", "", usable])
+        elif keys and fields[0] == "fpr" and not keys[-1][1]:
+            keys[-1][1] = fields[9]
+        elif keys and fields[0] == "uid" and not keys[-1][2]:
+            keys[-1][2] = fields[9]
+    if any(kind == "sec" for kind, *_ in keys):
+        raise TransferError("BACKUP_REMOTE_GPG_KEY_FILE holds a PRIVATE key - export only the public key "
+                            "(gpg --armor --export), the private key must not be on this host")
+    return [(fingerprint, uid, usable) for _kind, fingerprint, uid, usable in keys]
+
+
+@contextmanager
+def gpg_keyring(key_file=None):
+    """A throwaway GnuPG home holding only the public key(s) of key_file;
+    yields (home, [(fingerprint, user id)] of the keys the bundle is encrypted for)."""
+    key_file = key_file or settings.BACKUP_REMOTE_GPG_KEY_FILE
+    if not os.path.isfile(key_file):
+        raise TransferError(f"The public key BACKUP_REMOTE_GPG_KEY_FILE={key_file} is missing - nothing is sent unencrypted")
+    home = tempfile.mkdtemp(prefix="progeo-gpg-")
+    try:
+        # An existing common.conf keeps gpg >= 2.4.1 from switching a new home to keyboxd
+        open(os.path.join(home, "common.conf"), "w").close()
+        keys = parse_keys(_run_gpg(home, "--show-keys", "--with-colons", key_file))
+        usable = [(fingerprint, uid) for fingerprint, uid, ok in keys if ok]
+        if not usable:
+            raise TransferError(f"No key in {key_file} can encrypt (expired, revoked or no encryption subkey?)")
+        _run_gpg(home, "--import", key_file)
+        yield home, usable
+    finally:
+        shutil.rmtree(home, ignore_errors=True)
+
+
+def encrypt_tar(home, recipients, dumps, target):
+    """Pipes the tar of `dumps` through gpg, encrypted for `recipients`
+    ([(fingerprint, user id)]), into target.write - nothing on disk."""
+    command = _gpg(home, "--trust-model", "always", "--cipher-algo", "AES256", "--compress-algo", "none",
+                   *[arg for fingerprint, _uid in recipients for arg in ("--recipient", fingerprint)],
+                   "--output", "-", "--encrypt")
+    failure = []
+    with tempfile.TemporaryFile() as stderr:  # a file: a full stderr pipe could block gpg
+        process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr)
+
+        def feed():
+            try:
+                with tarfile.open(fileobj=process.stdin, mode="w|", bufsize=_CHUNK) as tar:
+                    for path in dumps.values():
+                        tar.add(path, arcname=os.path.basename(path), recursive=False)
+            except Exception as exc:  # noqa: BLE001 - re-raised below, in the caller's thread
+                failure.append(exc)
+            finally:
+                try:
+                    process.stdin.close()
+                except OSError:
+                    pass
+
+        feeder = threading.Thread(target=feed, name="backup-tar", daemon=True)
+        feeder.start()
+        try:
+            for chunk in iter(lambda: process.stdout.read(_CHUNK), b""):
+                target.write(chunk)
+        except BaseException:
+            process.kill()  # unblocks the feeder
+            raise
+        finally:
+            feeder.join()
+            process.stdout.close()
+            returncode = process.wait()
+        if returncode:
+            stderr.seek(0)
+            raise TransferError(f"gpg --encrypt failed (exit {returncode}): {stderr.read().decode(errors='replace').strip()}")
+    if failure:
+        # gpg got a truncated tar and encrypted it happily - the ".part" stays and is pruned
+        raise TransferError(f"Packing the dumps failed: {failure[0]}") from failure[0]
+
+
 # ---------------------------------------------------------------------------- upload
 
 class _HashingWriter:
@@ -205,17 +321,15 @@ def _rename(sftp, source, target):
         sftp.rename(source, target)
 
 
-def upload_bundle(sftp, remote_dir, bundle, dumps):
-    """Streams `dumps` ({database: path}) as tar to remote_dir/bundle via
-    ".part", writes the ".sha256" next to it. Returns (bytes, sha256)."""
+def upload_bundle(sftp, remote_dir, bundle, dumps, gpg_home, recipients):
+    """Streams `dumps` ({database: path}) as encrypted tar to remote_dir/bundle
+    via ".part", writes the ".sha256" next to it. Returns (bytes, sha256)."""
     final = posixpath.join(remote_dir, bundle)
     part = final + PART_SUFFIX
     with sftp.open(part, "wb", bufsize=_CHUNK) as remote:
         remote.set_pipelined(True)
         writer = _HashingWriter(remote)
-        with tarfile.open(fileobj=writer, mode="w|", bufsize=_CHUNK) as tar:
-            for path in dumps.values():
-                tar.add(path, arcname=os.path.basename(path), recursive=False)
+        encrypt_tar(gpg_home, recipients, dumps, writer)
     remote_size = sftp.stat(part).st_size
     if remote_size != writer.size:
         raise TransferError(f"{part} has {remote_size} bytes on the server, {writer.size} were sent")
@@ -260,7 +374,8 @@ def _write_status(path, ok, result=None, error=""):
     if ok:
         status.update({
             "last_success": now, "bundle": result.bundle, "files": len(result.files),
-            "bytes": result.bytes, "sha256": result.sha256, "stale": result.stale,
+            "bytes": result.bytes, "sha256": result.sha256, "recipients": result.recipients,
+            "stale": result.stale,
         })
     tmp = f"{path}.tmp"
     with open(tmp, "w", encoding="utf-8") as handle:
@@ -268,15 +383,15 @@ def _write_status(path, ok, result=None, error=""):
     os.replace(tmp, path)
 
 
-def transfer_backups(backup_dir=None, now=None, connector=connect, status_file=None):
-    """Bundles tonight's dumps onto the backup server; raises TransferError
-    (after recording it in the status file) when nothing or not all of it
-    got there."""
+def transfer_backups(backup_dir=None, now=None, connector=connect, status_file=None, key_file=None):
+    """Bundles tonight's dumps encrypted onto the backup server; raises
+    TransferError (after recording it in the status file) when nothing or not
+    all of it got there."""
     backup_dir = backup_dir or settings.BACKUP_DIR
     now = now or datetime.datetime.now()
     status_file = status_file or status_path()
     started = time.monotonic()
-    result = TransferResult(bundle=f"{BUNDLE_PREFIX}{now:%Y-%m-%d-%H%M%S}.tar")
+    result = TransferResult(bundle=f"{BUNDLE_PREFIX}{now:%Y-%m-%d-%H%M%S}{BUNDLE_SUFFIX}")
     try:
         dumps, result.stale = latest_dumps(backup_dir, now - datetime.timedelta(hours=RECENT_HOURS))
         if not dumps:
@@ -288,14 +403,17 @@ def transfer_backups(backup_dir=None, now=None, connector=connect, status_file=N
                                 f"- nothing sent, the bundle could not be restored")
         result.files = [os.path.basename(path) for path in dumps.values()]
         remote_dir = settings.BACKUP_REMOTE_PATH.rstrip("/") or "."
-        client, sftp = connector()
-        try:
-            _makedirs(sftp, remote_dir)
-            result.bytes, result.sha256 = upload_bundle(sftp, remote_dir, result.bundle, dumps)
-            result.removed = prune(sftp, remote_dir, settings.BACKUP_REMOTE_KEEP, result.bundle)
-        finally:
-            sftp.close()
-            client.close()
+        with gpg_keyring(key_file) as (gpg_home, recipients):  # before connecting: no key, no transfer
+            result.recipients = [f"{fingerprint} {uid}" for fingerprint, uid in recipients]
+            client, sftp = connector()
+            try:
+                _makedirs(sftp, remote_dir)
+                result.bytes, result.sha256 = upload_bundle(sftp, remote_dir, result.bundle, dumps,
+                                                            gpg_home, recipients)
+                result.removed = prune(sftp, remote_dir, settings.BACKUP_REMOTE_KEEP, result.bundle)
+            finally:
+                sftp.close()
+                client.close()
     except Exception as exc:
         _write_status(status_file, False, error=str(exc))
         if isinstance(exc, TransferError):
