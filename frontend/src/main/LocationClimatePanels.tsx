@@ -29,6 +29,10 @@ type LocationClimatePanelsProps = {
   demo?: boolean;
   /** The battery chart - LocationStatusView shows it to staff only. */
   showBattery?: boolean;
+  /** The device highlighted in every chart - pass both to share it (e.g.
+   * with the climate heatmap); without, the panels keep their own. */
+  hoveredDeviceId?: number | null;
+  onHoverDevice?: (deviceId: number | null) => void;
 };
 
 /**
@@ -40,6 +44,8 @@ const LocationClimatePanels = ({
   locationId,
   demo = false,
   showBattery = true,
+  hoveredDeviceId: controlledHoveredDevice,
+  onHoverDevice,
 }: LocationClimatePanelsProps) => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
@@ -57,7 +63,9 @@ const LocationClimatePanels = ({
   const [climate, setClimate] = useState<ClimateResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
-  const [hoveredDeviceId, setHoveredDeviceId] = useState<number | null>(null);
+  const [ownHoveredDevice, setOwnHoveredDevice] = useState<number | null>(null);
+  const hoveredDeviceId = onHoverDevice ? (controlledHoveredDevice ?? null) : ownHoveredDevice;
+  const setHoveredDeviceId = onHoverDevice ?? setOwnHoveredDevice;
   // Reference time of the comparison tooltips (a clicked point) - shared by
   // every chart, so humidity and temperature compare against the same moment.
   const [referenceTime, setReferenceTime] = useState<number | null>(null);

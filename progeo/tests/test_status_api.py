@@ -369,6 +369,50 @@ def test_measure_points_post_stores_devices_and_keeps_their_names(api_client, wo
     ]
 
 
+def test_measure_points_post_stores_the_lageplan_or_keeps_the_previous(api_client, world):
+    from progeo.v1.models import ProgeoLageplan
+
+    location, (first, second) = world[0], world[2]
+    ground = ProgeoLageplan.objects.using(f.DB).create(location=location, name="EG")
+    upper = ProgeoLageplan.objects.using(f.DB).create(location=location, name="OG")
+    f.make_measure_point(location, 1, device=second, lageplan=upper)
+    api_client.force_authenticate(user=world[5])
+
+    body = api_client.post(
+        "/v1/status/measure_points/",
+        {"location_id": location.project_id,
+         "points": [{"x": 0.1, "y": 0.2, "device_id": first.id, "lageplan_id": ground.id},
+                    {"x": 0.3, "y": 0.4, "device_id": second.id}]},
+        format="json",
+    ).json()
+
+    assert [(p["device"], p["lageplan"]) for p in body["points"]] == [(first.id, ground.id), (second.id, upper.id)]
+
+
+@pytest.mark.parametrize("lageplan, reason", [
+    ("x", "points[0] has an invalid lageplan_id"),
+    ("foreign", "is not at this location"),
+])
+def test_measure_points_post_validates_lageplans(api_client, world, lageplan, reason):
+    from progeo.v1.models import ProgeoLageplan
+
+    location = world[0]
+    existing = f.make_measure_point(location, 1)
+    if lageplan == "foreign":
+        lageplan = ProgeoLageplan.objects.using(f.DB).create(location=world[1]).id
+    api_client.force_authenticate(user=world[5])
+
+    response = api_client.post(
+        "/v1/status/measure_points/",
+        {"location_id": location.project_id, "points": [{"x": 0.1, "y": 0.1, "lageplan_id": lageplan}]},
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert reason in response.json()["reason"]
+    assert list(ProgeoMeasurePoint.objects.using(f.DB).filter(location=location)) == [existing]
+
+
 @pytest.mark.parametrize("device, reason", [
     ("x", "points[0] has an invalid device_id"),
     ("foreign", "is not at this location"),

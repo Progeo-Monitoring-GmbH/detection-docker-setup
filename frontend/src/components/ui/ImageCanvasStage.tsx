@@ -99,6 +99,25 @@ export type SensorPlacement = {
 };
 
 const SENSOR_RADIUS = 9;
+
+const MUTED = '#8B8383';
+/** The control blocks under the canvas (alignment, scale). */
+const SUB_PANEL: React.CSSProperties = {
+  background: 'var(--progeo-surface)',
+  borderRadius: 13,
+  padding: 16,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 12,
+};
+const PILL_BUTTON: React.CSSProperties = {
+  borderRadius: 'var(--progeo-radius-pill)',
+  height: 32,
+  padding: '0 14px',
+  fontSize: 12.5,
+  fontWeight: 500,
+};
+const FIELD: React.CSSProperties = { borderRadius: 10, height: 32 };
 /** Mouse travel (px) up to which a press on the plan still counts as a click. */
 const CLICK_TOLERANCE = 4;
 
@@ -115,6 +134,8 @@ export type PlanScaleValues = {
 type ImageCanvasStageProps = {
   imageUrl?: string;
   locationId?: number;
+  /** The Lageplan shown - the flip toggle stores onto it (else the active one). */
+  lageplanId?: number;
   sourceMeta?: {
     offset_x?: number;
     offset_y?: number;
@@ -150,6 +171,7 @@ const ImageCanvasStage = ({
   measurePoints = [],
   withSliders = false,
   locationId,
+  lageplanId,
   onSaveSliders,
   onSaveScale,
   placement,
@@ -639,171 +661,240 @@ const ImageCanvasStage = ({
     };
   };
 
+  const storeAlignment = (flipY: boolean) => {
+    const values = {
+      offsetX: pointOffsetX,
+      offsetY: pointOffsetY,
+      scaleX: pointScaleX,
+      scaleY: pointScaleY,
+      flipY,
+    };
+    if (onSaveSliders) {
+      onSaveSliders(values);
+      return;
+    }
+    void axiosConfig.perform_post(
+      auth,
+      '/v1/location/update/',
+      {
+        location_id: locationId,
+        lageplan_id: lageplanId,
+        offset_x: values.offsetX,
+        offset_y: values.offsetY,
+        scale_x: values.scaleX,
+        scale_y: values.scaleY,
+        flip_y: values.flipY,
+      },
+      () => {},
+      () => {},
+    );
+  };
+
+  const sliders: Array<{
+    id: string;
+    label: string;
+    value: number;
+    display: string;
+    min: number;
+    max: number;
+    step: number;
+    onChange: (value: number) => void;
+  }> = [
+    {
+      id: 'point-offset-x',
+      label: 'Offset X',
+      value: pointOffsetX,
+      display: String(pointOffsetX),
+      min: -250,
+      max: 250,
+      step: 1,
+      onChange: setPointOffsetX,
+    },
+    {
+      id: 'point-offset-y',
+      label: 'Offset Y',
+      value: pointOffsetY,
+      display: String(pointOffsetY),
+      min: -250,
+      max: 250,
+      step: 1,
+      onChange: setPointOffsetY,
+    },
+    {
+      id: 'point-scale-x',
+      label: 'Scale X',
+      value: pointScaleX,
+      display: pointScaleX.toFixed(2),
+      min: 0.1,
+      max: 5,
+      step: 0.01,
+      onChange: setPointScaleX,
+    },
+    {
+      id: 'point-scale-y',
+      label: 'Scale Y',
+      value: pointScaleY,
+      display: pointScaleY.toFixed(2),
+      min: 0.1,
+      max: 5,
+      step: 0.01,
+      onChange: setPointScaleY,
+    },
+  ];
+
   return (
-    <div className="d-flex flex-column gap-2">
-      <div className="d-flex justify-content-between align-items-center">
-        <strong>{title}</strong>
-        {fileName && <small className="text-muted">{fileName}</small>}
+    <div className="d-flex flex-column gap-3">
+      <div className="d-flex justify-content-between align-items-baseline gap-2 flex-wrap">
+        <span style={{ fontSize: 14, fontWeight: 500 }}>{title}</span>
+        {fileName && (
+          <span style={{ fontSize: 12, color: MUTED }}>{fileName}</span>
+        )}
       </div>
 
-      <canvas
-        ref={canvasRef}
-        width={CANVAS_WIDTH}
-        height={CANVAS_HEIGHT}
-        onWheel={handleWheel}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleSensorMouseMove}
-        onClick={handleClick}
-        style={{
-          width: '100%',
-          height: 'auto',
-          border: '1px solid #dfe3e8',
-          borderRadius: 8,
-          background: '#f5f6f8',
-          cursor:
-            tool !== 'pan' || placement?.activeDeviceId != null
-              ? 'crosshair'
-              : dragRef.current
-                ? 'grabbing'
-                : 'grab',
-        }}
-      />
+      <div className="d-flex flex-column gap-2">
+        <canvas
+          ref={canvasRef}
+          width={CANVAS_WIDTH}
+          height={CANVAS_HEIGHT}
+          onWheel={handleWheel}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleSensorMouseMove}
+          onClick={handleClick}
+          style={{
+            display: 'block',
+            width: '100%',
+            height: 'auto',
+            borderRadius: 13,
+            background: 'var(--progeo-surface)',
+            boxShadow: 'inset 0 0 0 1px rgba(11, 54, 89, 0.08)',
+            cursor:
+              tool !== 'pan' || placement?.activeDeviceId != null
+                ? 'crosshair'
+                : dragRef.current
+                  ? 'grabbing'
+                  : 'grab',
+          }}
+        />
+
+        <div
+          className="d-flex justify-content-between align-items-center gap-2 flex-wrap"
+          style={{ fontSize: 12, color: MUTED, padding: '0 2px' }}
+        >
+          <span>Zoom {zoom.toFixed(2)}×</span>
+          <span>
+            {placement
+              ? placement.activeDeviceId != null
+                ? `Click on the plan to place ${placement.activeLabel ?? 'the selected sensor'} · drag points to move them`
+                : 'Select a sensor in step 3 · drag points to move them'
+              : 'Drag to pan · scroll to zoom'}
+          </span>
+        </div>
+      </div>
 
       {imageError && (
-        <div className="alert alert-danger mb-0 py-2 small">{imageError}</div>
+        <div
+          style={{
+            background: '#FBE9E3',
+            color: '#C44D26',
+            borderRadius: 12,
+            padding: '10px 14px',
+            fontSize: 12.5,
+          }}
+        >
+          {imageError}
+        </div>
       )}
 
-      <div className="d-flex justify-content-between align-items-center text-muted small">
-        <span>Zoom: {zoom.toFixed(2)}x</span>
-        <span>
-          {placement
-            ? placement.activeDeviceId != null
-              ? `Click on the plan to place ${placement.activeLabel ?? 'the selected sensor'} · drag points to move them`
-              : 'Select a sensor in step 2 · drag points to move them'
-            : 'Drag to pan'}
-        </span>
-      </div>
-
       {withSliders && (
-        <div className="row g-2">
-          <div className="col-12">
-            <button
-              type="button"
-              className={`btn ${isVerticallyFlipped ? 'btn-secondary' : 'btn-outline-secondary'}`}
-              onClick={async () => {
-                setIsVerticallyFlipped((current) => !current);
-                await axiosConfig.perform_post(
-                  auth,
-                  '/v1/location/update/',
-                  {
-                    location_id: locationId,
-                    offset_x: pointOffsetX,
-                    offset_y: pointOffsetY,
-                    scale_x: pointScaleX,
-                    scale_y: pointScaleY,
-                    flip_y: !isVerticallyFlipped,
-                  },
-                  () => {},
-                  (saveError) => {},
-                );
-              }}
-            >
-              Vertical Flip
-            </button>
-          </div>
-          <div className="col-md-6">
-            <label className="form-label mb-0" htmlFor="point-offset-x">
-              offsetX: {pointOffsetX}
-            </label>
-            <input
-              id="point-offset-x"
-              className="form-range"
-              type="range"
-              min="-250"
-              max="250"
-              step="1"
-              value={pointOffsetX}
-              onChange={(event) => setPointOffsetX(Number(event.target.value))}
-            />
-          </div>
-          <div className="col-md-6">
-            <label className="form-label mb-0" htmlFor="point-offset-y">
-              offsetY: {pointOffsetY}
-            </label>
-            <input
-              id="point-offset-y"
-              className="form-range"
-              type="range"
-              min="-250"
-              max="250"
-              step="1"
-              value={pointOffsetY}
-              onChange={(event) => setPointOffsetY(Number(event.target.value))}
-            />
-          </div>
-          <div className="col-md-6">
-            <label className="form-label mb-0" htmlFor="point-scale-x">
-              scaleX: {pointScaleX.toFixed(2)}
-            </label>
-            <input
-              id="point-scale-x"
-              className="form-range"
-              type="range"
-              min="0.1"
-              max="5"
-              step="0.01"
-              value={pointScaleX}
-              onChange={(event) => setPointScaleX(Number(event.target.value))}
-            />
-          </div>
-          <div className="col-md-6">
-            <label className="form-label mb-0" htmlFor="point-scale-y">
-              scaleY: {pointScaleY.toFixed(2)}
-            </label>
-            <input
-              id="point-scale-y"
-              className="form-range"
-              type="range"
-              min="0.1"
-              max="5"
-              step="0.01"
-              value={pointScaleY}
-              onChange={(event) => setPointScaleY(Number(event.target.value))}
-            />
-          </div>
-          {onSaveSliders && (
-            <div className="col-12">
+        <div style={SUB_PANEL}>
+          <div className="d-flex align-items-center gap-2 flex-wrap">
+            <div>
+              <div style={{ fontSize: 13.5, fontWeight: 500 }}>Alignment</div>
+              <div style={{ fontSize: 12, color: MUTED }}>
+                Moves and scales the measure points onto the plan.
+              </div>
+            </div>
+            <div className="ms-auto d-flex gap-2">
               <button
                 type="button"
-                className="btn btn-primary"
-                onClick={() =>
-                  onSaveSliders({
-                    offsetX: pointOffsetX,
-                    offsetY: pointOffsetY,
-                    scaleX: pointScaleX,
-                    scaleY: pointScaleY,
-                    flipY: isVerticallyFlipped,
-                  })
-                }
+                className={`btn btn-sm ${isVerticallyFlipped ? 'btn-secondary' : 'btn-outline-secondary'}`}
+                style={PILL_BUTTON}
+                aria-pressed={isVerticallyFlipped}
+                onClick={() => {
+                  setIsVerticallyFlipped((current) => !current);
+                  storeAlignment(!isVerticallyFlipped);
+                }}
               >
-                Store alignment
+                Vertical flip
               </button>
+              {onSaveSliders && (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-primary"
+                  style={PILL_BUTTON}
+                  onClick={() => storeAlignment(isVerticallyFlipped)}
+                >
+                  Store alignment
+                </button>
+              )}
             </div>
-          )}
+          </div>
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+              gap: '10px 24px',
+            }}
+          >
+            {sliders.map((slider) => (
+              <div key={slider.id}>
+                <label
+                  htmlFor={slider.id}
+                  className="d-flex justify-content-between mb-0"
+                  style={{ fontSize: 12, color: MUTED }}
+                >
+                  <span>{slider.label}</span>
+                  <span
+                    className="font-monospace"
+                    style={{ color: 'var(--progeo-blue)' }}
+                  >
+                    {slider.display}
+                  </span>
+                </label>
+                <input
+                  id={slider.id}
+                  className="form-range"
+                  type="range"
+                  min={slider.min}
+                  max={slider.max}
+                  step={slider.step}
+                  value={slider.value}
+                  onChange={(event) =>
+                    slider.onChange(Number(event.target.value))
+                  }
+                />
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
       {withSliders && onSaveScale && (
-        <div className="border-top pt-2 d-flex flex-column gap-2">
-          <strong className="small">
-            Scale (positions in meters: x to the right, y up from the reference
-            point)
-          </strong>
+        <div style={SUB_PANEL}>
+          <div>
+            <div style={{ fontSize: 13.5, fontWeight: 500 }}>Scale</div>
+            <div style={{ fontSize: 12, color: MUTED }}>
+              Positions in meters: x to the right, y up from the reference
+              point.
+            </div>
+          </div>
 
           <div className="d-flex flex-wrap align-items-center gap-2">
             <button
               type="button"
               className={`btn btn-sm ${tool === 'reference' ? 'btn-primary' : 'btn-outline-primary'}`}
+              style={PILL_BUTTON}
               onClick={() =>
                 setTool((current) =>
                   current === 'reference' ? 'pan' : 'reference',
@@ -812,7 +903,7 @@ const ImageCanvasStage = ({
             >
               Reference point
             </button>
-            <span className="small text-muted">
+            <span style={{ fontSize: 12, color: MUTED }}>
               {tool === 'reference'
                 ? 'Click the reference point on the plan.'
                 : referencePoint
@@ -824,7 +915,8 @@ const ImageCanvasStage = ({
           <div className="d-flex flex-wrap align-items-center gap-2">
             <button
               type="button"
-              className={`btn btn-sm ${tool === 'calibrate' ? 'btn-warning' : 'btn-outline-warning'}`}
+              className={`btn btn-sm ${tool === 'calibrate' ? 'btn-primary' : 'btn-outline-primary'}`}
+              style={PILL_BUTTON}
               onClick={() => {
                 setTool((current) =>
                   current === 'calibrate' ? 'pan' : 'calibrate',
@@ -835,20 +927,20 @@ const ImageCanvasStage = ({
               Calibrate
             </button>
             {tool === 'calibrate' && calibrationPixels == null && (
-              <span className="small text-muted">
+              <span style={{ fontSize: 12, color: MUTED }}>
                 Click two points with a known distance (
                 {calibrationPoints.length}/2).
               </span>
             )}
             {calibrationPixels != null && (
               <>
-                <span className="small text-muted">
+                <span style={{ fontSize: 12, color: MUTED }}>
                   {calibrationPixels.toFixed(1)} px =
                 </span>
                 <input
                   type="number"
                   className="form-control form-control-sm"
-                  style={{ width: 110 }}
+                  style={{ ...FIELD, width: 110 }}
                   min="0"
                   step="0.01"
                   placeholder="meters"
@@ -856,20 +948,24 @@ const ImageCanvasStage = ({
                   value={calibrationMeters}
                   onChange={(event) => setCalibrationMeters(event.target.value)}
                 />
-                <span className="small text-muted">m</span>
+                <span style={{ fontSize: 12, color: MUTED }}>m</span>
               </>
             )}
           </div>
 
           <div className="d-flex flex-wrap align-items-center gap-2">
-            <label className="small mb-0" htmlFor="meters-per-pixel">
+            <label
+              className="mb-0"
+              htmlFor="meters-per-pixel"
+              style={{ fontSize: 12, color: MUTED }}
+            >
               Meters per pixel
             </label>
             <input
               id="meters-per-pixel"
               type="number"
               className="form-control form-control-sm"
-              style={{ width: 160 }}
+              style={{ ...FIELD, width: 160 }}
               min="0"
               step="any"
               value={metersPerPixel}
@@ -877,7 +973,8 @@ const ImageCanvasStage = ({
             />
             <button
               type="button"
-              className="btn btn-sm btn-primary"
+              className="btn btn-sm btn-primary ms-auto"
+              style={PILL_BUTTON}
               disabled={!referencePoint && !validMetersPerPixel}
               onClick={() => {
                 const values: PlanScaleValues = {};

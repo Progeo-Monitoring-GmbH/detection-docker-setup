@@ -96,21 +96,25 @@ const RedDropbox = ({
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    padding: '20px',
-    marginTop: '5px',
-    borderWidth: 2,
-    borderTopLeftRadius: 8,
-    borderTopRightRadius: 8,
-    borderColor: '#eeeeee',
+    justifyContent: 'center',
+    minHeight: 84,
+    padding: '18px 16px',
+    borderWidth: 1.5,
+    borderRadius: 13,
+    borderColor: 'var(--progeo-warm-gray-3)',
     borderStyle: 'dashed',
-    backgroundColor: '#fafafa',
-    color: '#bdbdbd',
+    backgroundColor: 'var(--progeo-surface)',
+    color: '#8B8383',
+    fontSize: 13,
+    fontWeight: 500,
+    textAlign: 'center',
+    cursor: 'pointer',
     outline: 'none',
     transition: 'border .24s ease-in-out',
   };
 
   const focusedStyle = {
-    borderColor: '#2196f3',
+    borderColor: 'var(--progeo-blue)',
   };
 
   const acceptStyle = {
@@ -296,35 +300,35 @@ const RedDropbox = ({
         <Col>
           <div {...getRootProps({ style })}>
             <input {...getInputProps()} />
-            <p>{hint}</p>
+            <span>{hint}</span>
           </div>
-          <LinearProgress
-            style={{
-              height: 10,
-              borderBottomLeftRadius: 8,
-              borderBottomRightRadius: 8,
-              marginBottom: 20,
-            }}
-            variant="determinate"
-            value={progress}
-            color={'success'}
-          />
+          {/* Only while a file is on its way - no empty bar under the box. */}
+          {progress > 0 && (
+            <LinearProgress
+              style={{ height: 6, borderRadius: 3, marginTop: 6 }}
+              variant="determinate"
+              value={progress}
+              color={'success'}
+            />
+          )}
         </Col>
       </Row>
-      <Row>
-        <Col className={'mt-3'}>
-          {error && <div className="text-danger">{error}</div>}
-          {withPreview &&
-            previews.length > 0 &&
-            previews.map((preview: IPreview, i) => (
-              <Thumbnail
-                src={preview.src}
-                width={'250px'}
-                alt={`preview-${i}`}
-              />
-            ))}
-        </Col>
-      </Row>
+      {(error || (withPreview && previews.length > 0)) && (
+        <Row>
+          <Col className={'mt-2'}>
+            {error && <div className="text-danger small">{error}</div>}
+            {withPreview &&
+              previews.length > 0 &&
+              previews.map((preview: IPreview, i) => (
+                <Thumbnail
+                  src={preview.src}
+                  width={'250px'}
+                  alt={`preview-${i}`}
+                />
+              ))}
+          </Col>
+        </Row>
+      )}
     </Form.Group>
   );
 };

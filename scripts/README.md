@@ -12,6 +12,7 @@ or Raspberry Pi OS.
 | --- | --- |
 | `install.sh` | One-line installer: clones the repo into the current (empty) directory and runs `setup_system.sh`. It does not start the containers; it prints the `finalize-install.sh` command to run after editing `.env` / `django.env`. **root** |
 | `finalize-install.sh` | Second installation step: builds and starts all containers once `.env` / `django.env` have been edited. **root** |
+| `deploy.sh` | Deploys the checked-out code with minimal downtime. It builds the images and runs the migrations and syncs with the new image while the old containers keep serving, then recreates the changed containers, waits for the backend and follows its log. If the migrations fail, nothing is restarted. Output is also written to `logs/deploy.log`. Migrations must stay compatible with the old code. |
 | `setup_system.sh` | Installs Docker, Docker Compose and Git, adds the sudo user to the `docker` group, enables UFW (ports 22/80/443), and creates `.env` / `django.env` from their templates. Every `~` in those files is replaced with a random character. **root** |
 | `install_git_docker_windows.bat` | Windows Server equivalent: enables WSL2, installs Git and Docker Desktop, and clones the repo. Run as Administrator; a reboot is needed afterwards. |
 | `setup_buildx.sh` | Purges Docker completely and reinstalls it with the Buildx and Compose plugins, then rebuilds all images. **Deletes all containers, images and volumes.** It offers a database backup first. **root** |
@@ -25,6 +26,10 @@ curl -fsSL .../scripts/install.sh | sudo BRANCH=dev bash
 
 # After editing .env / django.env: build and start the containers
 sudo bash scripts/finalize-install.sh
+
+# Live server: deploy the checked-out code (replaces build + up -d + tail)
+bash scripts/deploy.sh
+bash scripts/deploy.sh --no-follow   # without following the backend log
 
 # Already cloned: only prepare the system
 sudo bash scripts/setup_system.sh

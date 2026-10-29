@@ -1,74 +1,37 @@
-import React from 'react';
-import axiosConfig from '../axiosConfig.tsx';
-import { Card, Col, Row, Button, ListGroup, Spinner } from 'react-bootstrap';
-import { showErrorBar, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Form, Spinner } from 'react-bootstrap';
+import { ArrowClockwise, Download, FileEarmarkZip, PauseFill, PlayFill, Search } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
-import {
-  WebsocketContext,
-  ReadyState,
-} from '../components/ws/websocketContext.jsx';
+import axiosConfig from '../axiosConfig.tsx';
+import { showErrorBar, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import PanelCard from '../components/ui/kit/PanelCard';
+import PillButton from '../components/ui/kit/PillButton';
+import PillSelect from '../components/ui/kit/PillSelect';
+import useLogStream, { type LogStreamStatus } from './admin/useLogStream';
 
-type StorageInfo = {
+type DiskInfo = {
+  filesystem?: string;
+  mount?: string;
   path?: string;
+  total_bytes?: number;
+  used_bytes?: number;
+  available_bytes?: number;
+  used_percent?: string;
+  directory_size_bytes?: number;
+};
+
+/** storage_info.json (tasks.collect_host_storage_info). */
+type StorageInfo = {
   generated_at?: string;
-  host?: {
-    hostname?: string;
-    kernel?: string;
-  };
-  storage?: {
-    root?: {
-      filesystem?: string;
-      mount?: string;
-      total_bytes?: number;
-      used_bytes?: number;
-      available_bytes?: number;
-      used_percent?: string;
-    };
-    media?: {
-      path?: string;
-      filesystem?: string;
-      mount?: string;
-      total_bytes?: number;
-      used_bytes?: number;
-      available_bytes?: number;
-      used_percent?: string;
-      directory_size_bytes?: number;
-    };
-    logs?: {
-      path?: string;
-      directory_size_bytes?: number;
-    };
-  };
+  host?: { hostname?: string; kernel?: string };
+  storage?: { root?: DiskInfo; media?: DiskInfo; logs?: DiskInfo };
 };
 
-type LogFileItem = {
-  file: string;
-  path: string;
-  size_bytes: number;
-  modified_at: string;
-};
-
-type AdminPanelProps = {
-  auth: any;
-  enqueueSnackbar: any;
-  sendMessage: (message: string) => void;
-  wsMessage: any;
-  readyState: number;
-};
-
-type AdminPanelState = {
-  loadingStorage: boolean;
-  loadingLogs: boolean;
-  loadingLogContent: boolean;
-  storageInfo: StorageInfo | null;
-  storagePath: string;
-  logFiles: LogFileItem[];
-  selectedLogFile: string;
-  selectedLogContent: string;
-  selectedLogMeta: LogFileItem | null;
-  logUpdatedPulse: boolean;
-};
+const LAGEPLAN_PERIODS = ['1', '3', '7', '14', '30'];
+const LOG_LINES = ['200', '500', '1000', '2000'];
+const MUTED = '#8B8383';
 
 const bytesToReadable = (value?: number) => {
   if (!Number.isFinite(value as number) || (value as number) < 0) {
@@ -84,420 +47,516 @@ const bytesToReadable = (value?: number) => {
   return `${val.toFixed(val >= 10 ? 1 : 2)} ${units[idx]}`;
 };
 
-class AdminPanel extends React.PureComponent<AdminPanelProps, AdminPanelState> {
-  private pulseTimer: ReturnType<typeof setTimeout> | null = null;
-  private logContentRef = React.createRef<HTMLPreElement>();
-
-  constructor(props: AdminPanelProps) {
-    super(props);
-    this.state = {
-      loadingStorage: true,
-      loadingLogs: true,
-      loadingLogContent: false,
-      storageInfo: null,
-      storagePath: '',
-      logFiles: [],
-      selectedLogFile: '',
-      selectedLogContent: '',
-      selectedLogMeta: null,
-      logUpdatedPulse: false,
-    };
+const formatTime = (value?: string | Date | null) => {
+  if (!value) {
+    return '-';
   }
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime())
+    ? String(value)
+    : date.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'medium' });
+};
 
-  componentDidMount() {
-    this.loadStorageInfo(false);
-    if (this.props.readyState === ReadyState.OPEN) {
-      this.requestLogFileList();
-    }
+/** "attachment; filename="x.tar"" -> x.tar */
+const attachmentName = (header?: string | null) => header?.match(/filename="?([^";]+)"?/)?.[1] ?? null;
+
+const saveBlob = (blob: Blob, filename: string) => {
+  const href = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = href;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(href), 1000);
+};
+
+// ------------------------------------------------------------------- storage
+
+const UsageBar = ({ percent }: { percent: number | null }) => {
+  const value = percent == null ? 0 : Math.max(0, Math.min(100, percent));
+  const color = value >= 90 ? '#C44D26' : value >= 75 ? '#D99A1E' : 'var(--progeo-blue)';
+  return (
+    <div style={{ height: 6, borderRadius: 3, background: 'var(--progeo-track)', overflow: 'hidden' }}>
+      <div style={{ width: `${value}%`, height: '100%', background: color, transition: 'width .4s ease' }} />
+    </div>
+  );
+};
+
+const StorageTile = ({
+  label,
+  value,
+  percent,
+  lines,
+}: {
+  label: string;
+  value: string;
+  percent: number | null;
+  lines: Array<string | null>;
+}) => (
+  <div
+    style={{
+      background: 'var(--progeo-surface)',
+      borderRadius: 14,
+      padding: '14px 16px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 8,
+      minWidth: 0,
+    }}
+  >
+    <div style={{ fontSize: 13, color: '#6E6868' }}>{label}</div>
+    <div style={{ fontSize: 24, fontWeight: 500, color: 'var(--progeo-blue)', letterSpacing: '-0.02em' }}>
+      {value}
+    </div>
+    {percent != null && <UsageBar percent={percent} />}
+    {lines.filter(Boolean).map((line) => (
+      <div key={line} style={{ fontSize: 12, color: MUTED, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {line}
+      </div>
+    ))}
+  </div>
+);
+
+const usedPercent = (disk?: DiskInfo) => {
+  const fromText = Number.parseFloat(String(disk?.used_percent ?? ''));
+  if (Number.isFinite(fromText)) {
+    return fromText;
   }
+  return disk?.total_bytes && disk.used_bytes != null ? (disk.used_bytes / disk.total_bytes) * 100 : null;
+};
 
-  componentDidUpdate(prevProps: AdminPanelProps, prevState: AdminPanelState) {
-    if (
-      prevProps.readyState !== this.props.readyState &&
-      this.props.readyState === ReadyState.OPEN
-    ) {
-      this.requestLogFileList();
-    }
-
-    if (this.props.wsMessage && prevProps.wsMessage !== this.props.wsMessage) {
-      this.handleWebSocketMessage(this.props.wsMessage);
-    }
-
-    if (
-      prevProps.readyState !== this.props.readyState &&
-      this.props.readyState !== ReadyState.OPEN &&
-      this.state.logFiles.length === 0
-    ) {
-      this.loadLogFiles();
-    }
-
-    const focusedLogChanged =
-      prevState.selectedLogFile !== this.state.selectedLogFile;
-    const finishedLoadingFocusedLog =
-      prevState.loadingLogContent && !this.state.loadingLogContent;
-
-    if (
-      (focusedLogChanged || finishedLoadingFocusedLog) &&
-      this.state.selectedLogFile
-    ) {
-      this.scrollLogToBottom();
-    }
-  }
-
-  componentWillUnmount() {
-    if (this.pulseTimer) {
-      clearTimeout(this.pulseTimer);
-      this.pulseTimer = null;
-    }
-
-    if (this.props.readyState === ReadyState.OPEN) {
-      this.props.sendMessage(JSON.stringify({ action: 'stop_stream' }));
-    }
-  }
-
-  triggerLogUpdatedPulse = () => {
-    if (this.pulseTimer) {
-      clearTimeout(this.pulseTimer);
-      this.pulseTimer = null;
-    }
-
-    this.setState({ logUpdatedPulse: true });
-    this.pulseTimer = setTimeout(() => {
-      this.setState({ logUpdatedPulse: false });
-      this.pulseTimer = null;
-    }, 1200);
-  };
-
-  scrollLogToBottom = () => {
-    window.requestAnimationFrame(() => {
-      const el = this.logContentRef.current;
-      if (!el) {
-        return;
-      }
-      el.scrollTop = el.scrollHeight;
-    });
-  };
-
-  handleWebSocketMessage = (data: any) => {
-    const type = data.type || '';
-
-    if (type === 'file_list') {
-      const files = (data.files || []) as LogFileItem[];
-      this.setState({ loadingLogs: false, logFiles: files });
-      if (files.length > 0 && !this.state.selectedLogFile) {
-        this.streamLogFile(files[0].file);
-      }
-    } else if (type === 'log_content') {
-      const previousContent = this.state.selectedLogContent;
-      const incomingContent = data.content || '';
-      const selectedChanged = this.state.selectedLogFile !== (data.file || '');
-      const contentChanged = incomingContent !== previousContent;
-
-      this.setState({
-        loadingLogContent: false,
-        selectedLogContent: incomingContent,
-        selectedLogFile: data.file || '',
-      });
-
-      const selected = this.state.logFiles.find(
-        (item) => item.file === data.file,
-      );
-      const selectedMeta = {
-        file: data.file || selected?.file || '',
-        path: data.path || selected?.path || '',
-        size_bytes: Number(data.size_bytes ?? selected?.size_bytes ?? 0),
-        modified_at: data.modified_at || selected?.modified_at || '',
-      } as LogFileItem;
-
-      this.setState((prevState) => ({
-        selectedLogMeta: selectedMeta,
-        logFiles: prevState.logFiles.map((item) =>
-          item.file === selectedMeta.file ? selectedMeta : item,
-        ),
-      }));
-
-      if (!selectedChanged && contentChanged) {
-        this.triggerLogUpdatedPulse();
-      }
-    } else if (type === 'error') {
-      showErrorBar(
-        this.props.enqueueSnackbar,
-        `Log streaming error: ${data.message}`,
-      );
-    }
-  };
-
-  requestLogFileList = () => {
-    if (this.props.readyState === ReadyState.OPEN) {
-      this.setState({ loadingLogs: true });
-      this.props.sendMessage(JSON.stringify({ action: 'list_files' }));
-    }
-  };
-
-  streamLogFile = (file: string) => {
-    if (this.props.readyState === ReadyState.OPEN) {
-      this.setState({ loadingLogContent: true, selectedLogFile: file });
-      this.props.sendMessage(
-        JSON.stringify({ action: 'stream_file', file, lines: 500 }),
-      );
-    } else {
-      // Fallback to HTTP if websocket not connected
-      this.loadLogFile(file);
-    }
-  };
-
-  loadStorageInfo = (refresh: boolean) => {
-    this.setState({ loadingStorage: true });
-    const suffix = refresh ? '?refresh=true' : '';
-    void axiosConfig.perform_get(
-      this.props.auth,
-      `/v1/status/admin/storage_info/${suffix}`,
-      (response) => {
-        const data = response?.data || {};
-        const storagePath = data.path || data.storage_info?.path || '';
-        this.setState({
-          loadingStorage: false,
-          storageInfo: (data.storage_info || {}) as StorageInfo,
-          storagePath,
-        });
-        if (refresh && data.refresh_task_id) {
-          showSuccessBar(
-            this.props.enqueueSnackbar,
-            `Storage refresh task queued (${data.refresh_task_id}).`,
-          );
-        }
-      },
-      (error) => {
-        this.setState({ loadingStorage: false });
-        showRequestError(this.props.enqueueSnackbar, 'Could not load storage info', error);
-      },
-    );
-  };
-
-  loadLogFiles = () => {
-    this.setState({ loadingLogs: true });
-    void axiosConfig.perform_get(
-      this.props.auth,
-      '/v1/status/admin/log_files/',
-      (response) => {
-        const files = (response?.data?.files || []) as LogFileItem[];
-        this.setState({ loadingLogs: false, logFiles: files });
-        if (files.length > 0) {
-          this.loadLogFile(files[0].file);
-        }
-      },
-      (error) => {
-        this.setState({ loadingLogs: false });
-        showRequestError(this.props.enqueueSnackbar, 'Could not load log file list', error);
-      },
-    );
-  };
-
-  loadLogFile = (file: string) => {
-    this.setState({ loadingLogContent: true, selectedLogFile: file });
-    void axiosConfig.perform_get(
-      this.props.auth,
-      `/v1/status/admin/log_files/?file=${encodeURIComponent(file)}&lines=500`,
-      (response) => {
-        const data = response?.data || {};
-        const selected =
-          this.state.logFiles.find((item) => item.file === file) || null;
-        this.setState({
-          loadingLogContent: false,
-          selectedLogContent: data.content || '',
-          selectedLogMeta: selected,
-        });
-      },
-      (error) => {
-        this.setState({ loadingLogContent: false });
-        showRequestError(this.props.enqueueSnackbar, 'Could not read log file', error);
-      },
-    );
-  };
-
-  renderStorageCard() {
-    const storage = this.state.storageInfo?.storage || {};
-    const root = storage.root || {};
-    const media = storage.media || {};
-    const logs = storage.logs || {};
-
-    return (
-      <Card className="mb-3 border-0 shadow-sm px-4 py-3">
-        <Card.Body>
-          <div className="d-flex justify-content-between align-items-center mb-3">
-            <h4 className="mb-0">Host Storage</h4>
-            <Button
-              variant="outline-primary"
-              size="sm"
-              onClick={() => this.loadStorageInfo(true)}
-              disabled={this.state.loadingStorage}
-            >
-              Refresh via Celery
-            </Button>
-          </div>
-
-          {this.state.loadingStorage ? (
-            <Spinner animation="border" size="sm" />
-          ) : (
-            <>
-              <p className="text-muted mb-2">
-                <b>Generated:</b> {this.state.storageInfo?.generated_at || '-'}
-                {' | '}
-                <b>Host:</b> {this.state.storageInfo?.host?.hostname || '-'}
-                {' | '}
-                <b>Kernel:</b> {this.state.storageInfo?.host?.kernel || '-'}
-              </p>
-
-              <Row>
-                <Col md={4}>
-                  <Card className="h-100">
-                    <Card.Body>
-                      <h6 style={{ fontWeight: 'bold' }}>Root Filesystem</h6>
-                      <div>Total: {bytesToReadable(root.total_bytes)}</div>
-                      <div>Used: {bytesToReadable(root.used_bytes)}</div>
-                      <div>
-                        Available: {bytesToReadable(root.available_bytes)}
-                      </div>
-                      <div>Usage: {root.used_percent || '-'}</div>
-                    </Card.Body>
-                  </Card>
-                </Col>
-                <Col md={4}>
-                  <Card className="h-100">
-                    <Card.Body>
-                      <h6 style={{ fontWeight: 'bold' }}>Media</h6>
-                      <div>Path: {media.path || '-'}</div>
-                      <div>Total: {bytesToReadable(media.total_bytes)}</div>
-                      <div>Used: {bytesToReadable(media.used_bytes)}</div>
-                      <div>
-                        Dir Size: {bytesToReadable(media.directory_size_bytes)}
-                      </div>
-                    </Card.Body>
-                  </Card>
-                </Col>
-                <Col md={4}>
-                  <Card className="h-100">
-                    <Card.Body>
-                      <h6 style={{ fontWeight: 'bold' }}>Logs</h6>
-                      <div>Path: {logs.path || '-'}</div>
-                      <div>
-                        Dir Size: {bytesToReadable(logs.directory_size_bytes)}
-                      </div>
-                    </Card.Body>
-                  </Card>
-                </Col>
-              </Row>
-            </>
-          )}
-        </Card.Body>
-      </Card>
-    );
-  }
-
-  renderLogsCard() {
-    return (
-      <Card className="border-0 shadow-sm px-4 py-3">
-        <Card.Body>
-          <div className="d-flex justify-content-between align-items-center mb-3">
-            <h4 className="mb-0">Log Files</h4>
-            <div className="d-flex align-items-center gap-2">
-              <small className="text-muted">
-                {this.props.readyState === ReadyState.OPEN
-                  ? '🟢 Live streaming active'
-                  : '🔴 Streaming offline'}
-              </small>
-              <small
-                style={{
-                  opacity: this.state.logUpdatedPulse ? 1 : 0,
-                  transition: 'opacity 1.2s ease-out',
-                  color: '#198754',
-                  fontWeight: 600,
-                }}
-              >
-                Updated
-              </small>
-            </div>
-          </div>
-          <Row>
-            <Col md={4}>
-              {this.state.loadingLogs ? (
-                <Spinner animation="border" size="sm" />
-              ) : (
-                <ListGroup style={{ maxHeight: '520px' }}>
-                  {this.state.logFiles.map((file) => (
-                    <ListGroup.Item
-                      action
-                      key={file.file}
-                      active={file.file === this.state.selectedLogFile}
-                      onClick={() => this.streamLogFile(file.file)}
-                    >
-                      <div>{file.file}</div>
-                      <small className="text-muted">
-                        {bytesToReadable(file.size_bytes)}
-                      </small>
-                    </ListGroup.Item>
-                  ))}
-                </ListGroup>
-              )}
-            </Col>
-            <Col md={8}>
-              <div className="mb-2 text-muted">
-                {this.state.selectedLogMeta?.path ||
-                  this.state.selectedLogFile ||
-                  'No file selected'}
-              </div>
-              <pre
-                ref={this.logContentRef}
-                style={{
-                  background: '#101419',
-                  color: '#d9e2ec',
-                  borderRadius: '8px',
-                  padding: '12px',
-                  minHeight: '520px',
-                  maxHeight: '520px',
-                  overflow: 'auto',
-                  fontSize: '0.82rem',
-                }}
-              >
-                {this.state.loadingLogContent
-                  ? 'Loading log file...'
-                  : this.state.selectedLogContent || 'No log content.'}
-              </pre>
-            </Col>
-          </Row>
-        </Card.Body>
-      </Card>
-    );
-  }
-
-  render() {
-    return (
-      <>
-        <h2 className="mb-3">Admin Panel</h2>
-        {this.renderStorageCard()}
-        {this.renderLogsCard()}
-      </>
-    );
-  }
-}
-
-const AdminPanelView = () => {
+const StorageSection = () => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
-  const wsContext = React.useContext(WebsocketContext) as any;
+  const { t } = useTranslation();
+  const [info, setInfo] = useState<StorageInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(
+    (refresh: boolean) => {
+      setLoading(true);
+      void axiosConfig.perform_get(
+        auth,
+        `/v1/status/admin/storage_info/${refresh ? '?refresh=true' : ''}`,
+        (response) => {
+          const data = response?.data || {};
+          setInfo((data.storage_info || {}) as StorageInfo);
+          setLoading(false);
+          if (refresh && data.refresh_task_id) {
+            showSuccessBar(enqueueSnackbar, t('admin_storage_queued'));
+          }
+        },
+        (error) => {
+          setLoading(false);
+          showRequestError(enqueueSnackbar, 'Could not load storage info', error);
+        },
+      );
+    },
+    [auth, enqueueSnackbar, t],
+  );
+
+  useEffect(() => {
+    load(false);
+  }, [load]);
+
+  const storage = info?.storage || {};
+  const root = storage.root || {};
+  const media = storage.media || {};
+  const logs = storage.logs || {};
+  const rootPercent = usedPercent(root);
+  const mediaPercent = usedPercent(media);
 
   return (
-    <AdminPanel
-      auth={auth}
-      enqueueSnackbar={enqueueSnackbar}
-      sendMessage={wsContext?.sendMessage || (() => {})}
-      wsMessage={wsContext?.wsMessage}
-      readyState={
-        typeof wsContext?.readyState === 'number'
-          ? wsContext.readyState
-          : ReadyState.UNINSTANTIATED
+    <PanelCard
+      title={t('admin_storage_title')}
+      actions={
+        <>
+          <span style={{ fontSize: 12, color: MUTED }}>
+            {[info?.host?.hostname, info?.host?.kernel, info?.generated_at && t('admin_storage_generated', { time: formatTime(info.generated_at) })]
+              .filter(Boolean)
+              .join(' · ')}
+          </span>
+          <PillButton
+            variant="ghost"
+            label={t('admin_refresh')}
+            icon={loading ? <Spinner size="sm" animation="border" /> : <ArrowClockwise />}
+            disabled={loading}
+            onClick={() => load(true)}
+          />
+        </>
       }
-    />
+    >
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+        <StorageTile
+          label={t('admin_storage_root')}
+          value={rootPercent != null ? `${rootPercent.toFixed(0)} %` : '-'}
+          percent={rootPercent}
+          lines={[
+            t('admin_storage_used', { used: bytesToReadable(root.used_bytes), total: bytesToReadable(root.total_bytes) }),
+            t('admin_storage_free', { free: bytesToReadable(root.available_bytes) }),
+          ]}
+        />
+        <StorageTile
+          label={t('admin_storage_media')}
+          value={bytesToReadable(media.directory_size_bytes)}
+          percent={mediaPercent}
+          lines={[
+            media.total_bytes
+              ? t('admin_storage_used', { used: bytesToReadable(media.used_bytes), total: bytesToReadable(media.total_bytes) })
+              : null,
+            media.path ?? null,
+          ]}
+        />
+        <StorageTile
+          label={t('admin_storage_logs')}
+          value={bytesToReadable(logs.directory_size_bytes)}
+          percent={null}
+          lines={[logs.path ?? null]}
+        />
+      </div>
+    </PanelCard>
+  );
+};
+
+// ---------------------------------------------------------- Lageplan export
+
+const LageplanExportSection = () => {
+  const auth = useAuth();
+  const { enqueueSnackbar } = useSnackbar();
+  const { t } = useTranslation();
+  const [days, setDays] = useState('7');
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<ReactNode>(null);
+
+  const exportLageplans = () => {
+    setBusy(true);
+    setResult(null);
+    void axiosConfig.perform_get(
+      auth,
+      `/v1/status/admin/lageplan_export/?days=${days}`,
+      (response) => {
+        const headers = response?.headers || {};
+        const usedDays = Number(headers['x-lageplan-days'] ?? days);
+        const count = Number(headers['x-lageplan-count'] ?? 0);
+        saveBlob(
+          new Blob([response.data], { type: 'application/x-tar' }),
+          attachmentName(headers['content-disposition']) ?? `lageplans_${usedDays}d.tar`,
+        );
+        setResult(
+          <>
+            {t('admin_lageplan_done', { count, days: usedDays })}
+            {usedDays !== Number(days) && (
+              <span style={{ color: '#9A7208' }}> {t('admin_lageplan_widened', { days: usedDays })}</span>
+            )}
+          </>,
+        );
+        setBusy(false);
+      },
+      (error) => {
+        setBusy(false);
+        if (error?.response?.status === 404) {
+          showErrorBar(enqueueSnackbar, t('admin_lageplan_none'));
+        } else {
+          showRequestError(enqueueSnackbar, 'Could not export Lageplans', error);
+        }
+      },
+      { responseType: 'blob' },
+    );
+  };
+
+  return (
+    <PanelCard title={t('admin_lageplan_title')}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <PillSelect
+          label={t('admin_lageplan_period')}
+          options={LAGEPLAN_PERIODS.map((value) => ({
+            value,
+            label: t('admin_days', { count: Number(value) }),
+          }))}
+          value={days}
+          onChange={setDays}
+        />
+        <button
+          type="button"
+          className="btn btn-primary btn-sm d-inline-flex align-items-center gap-2"
+          style={{ borderRadius: 'var(--progeo-radius-pill)', height: 32, padding: '0 16px' }}
+          disabled={busy}
+          onClick={exportLageplans}
+        >
+          {busy ? <Spinner size="sm" animation="border" /> : <FileEarmarkZip />}
+          {t('admin_lageplan_download')}
+        </button>
+        {result && <span style={{ fontSize: 12.5, color: '#3F7A1C' }}>{result}</span>}
+      </div>
+      <div style={{ fontSize: 12, color: MUTED, marginTop: 10 }}>{t('admin_lageplan_hint')}</div>
+    </PanelCard>
+  );
+};
+
+// ---------------------------------------------------------------------- logs
+
+const STATUS_STYLE: Record<LogStreamStatus, { color: string; bg: string; key: string }> = {
+  live: { color: '#3F7A1C', bg: '#EBF4E3', key: 'admin_logs_status_live' },
+  connecting: { color: '#6E6868', bg: '#EFECEC', key: 'admin_logs_status_connecting' },
+  reconnecting: { color: '#9A7208', bg: '#FBF3DE', key: 'admin_logs_status_reconnecting' },
+  denied: { color: '#C44D26', bg: '#FBE9E3', key: 'admin_logs_status_denied' },
+};
+
+const StatusPill = ({ status }: { status: LogStreamStatus }) => {
+  const { t } = useTranslation();
+  const style = STATUS_STYLE[status];
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        fontSize: 11.5,
+        fontWeight: 600,
+        color: style.color,
+        background: style.bg,
+        borderRadius: 'var(--progeo-radius-pill)',
+        padding: '3px 10px',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <span
+        style={{
+          width: 7,
+          height: 7,
+          borderRadius: '50%',
+          background: style.color,
+          animation: status === 'live' ? 'admin-pulse 2s ease-in-out infinite' : undefined,
+        }}
+      />
+      {t(style.key)}
+    </span>
+  );
+};
+
+const LogsSection = () => {
+  const auth = useAuth();
+  const { t } = useTranslation();
+  const [lines, setLines] = useState('500');
+  const { status, files, selected, select, refreshFiles, content, meta, updatedAt, error } = useLogStream(
+    auth,
+    Number(lines),
+  );
+  const [fileFilter, setFileFilter] = useState('');
+  const [lineFilter, setLineFilter] = useState('');
+  const [paused, setPaused] = useState<string | null>(null);
+  const [follow, setFollow] = useState(true);
+  const [wrap, setWrap] = useState(false);
+  const viewerRef = useRef<HTMLPreElement>(null);
+
+  const shownFiles = useMemo(() => {
+    const needle = fileFilter.trim().toLowerCase();
+    return (files ?? []).filter((item) => !needle || item.file.toLowerCase().includes(needle));
+  }, [files, fileFilter]);
+
+  const text = paused ?? content ?? '';
+  const filtered = useMemo(() => {
+    const needle = lineFilter.trim().toLowerCase();
+    if (!needle) {
+      return { text, matches: null as number | null };
+    }
+    const kept = text.split('\n').filter((line) => line.toLowerCase().includes(needle));
+    return { text: kept.join('\n'), matches: kept.length };
+  }, [text, lineFilter]);
+
+  // Follow the end while it is in view; scrolling up stops following.
+  useLayoutEffect(() => {
+    const viewer = viewerRef.current;
+    if (viewer && follow) {
+      viewer.scrollTop = viewer.scrollHeight;
+    }
+  }, [filtered.text, follow]);
+
+  const onScroll = () => {
+    const viewer = viewerRef.current;
+    if (viewer) {
+      setFollow(viewer.scrollHeight - viewer.scrollTop - viewer.clientHeight < 24);
+    }
+  };
+
+  const choose = (file: string) => {
+    setPaused(null);
+    setFollow(true);
+    select(file);
+  };
+
+  return (
+    <PanelCard
+      title={t('admin_logs_title')}
+      actions={
+        <>
+          <StatusPill status={status} />
+          <PillButton variant="ghost" label={t('admin_refresh')} icon={<ArrowClockwise />} onClick={refreshFiles} />
+        </>
+      }
+    >
+      <style>
+        {'@keyframes admin-pulse { 0%, 100% { opacity: 1 } 50% { opacity: .35 } }' +
+          '@media (max-width: 860px) { .admin-logs-grid { grid-template-columns: minmax(0, 1fr) !important } }'}
+      </style>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 280px) minmax(0, 1fr)', gap: 14 }} className="admin-logs-grid">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
+          <div style={{ position: 'relative' }}>
+            <Search style={{ position: 'absolute', left: 10, top: 9, color: MUTED }} size={13} />
+            <Form.Control
+              size="sm"
+              placeholder={t('admin_logs_filter_files')}
+              value={fileFilter}
+              onChange={(event) => setFileFilter(event.target.value)}
+              style={{ paddingLeft: 30, borderRadius: 'var(--progeo-radius-pill)' }}
+            />
+          </div>
+          <div style={{ maxHeight: 560, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {files === null ? (
+              <div className="text-muted small py-3 text-center">
+                <Spinner size="sm" animation="border" />
+              </div>
+            ) : shownFiles.length === 0 ? (
+              <div className="text-muted small py-3">{t('admin_logs_no_files')}</div>
+            ) : (
+              shownFiles.map((item) => {
+                const active = item.file === selected;
+                return (
+                  <button
+                    key={item.file}
+                    type="button"
+                    onClick={() => choose(item.file)}
+                    title={item.path}
+                    style={{
+                      textAlign: 'left',
+                      border: 'none',
+                      borderRadius: 10,
+                      padding: '7px 10px',
+                      background: active ? 'var(--progeo-surface)' : 'transparent',
+                      boxShadow: active ? 'var(--progeo-shadow-chrome)' : 'none',
+                      color: active ? 'var(--progeo-blue)' : '#3A3535',
+                      fontFamily: 'inherit',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <div style={{ fontSize: 12.5, fontWeight: active ? 600 : 500, wordBreak: 'break-all' }}>
+                      {item.file}
+                    </div>
+                    <div style={{ fontSize: 11, color: MUTED }}>
+                      {bytesToReadable(item.size_bytes)} · {formatTime(item.modified_at)}
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ position: 'relative', flex: '1 1 200px' }}>
+              <Search style={{ position: 'absolute', left: 10, top: 9, color: MUTED }} size={13} />
+              <Form.Control
+                size="sm"
+                placeholder={t('admin_logs_filter_lines')}
+                value={lineFilter}
+                onChange={(event) => setLineFilter(event.target.value)}
+                style={{ paddingLeft: 30, borderRadius: 'var(--progeo-radius-pill)' }}
+              />
+            </div>
+            <PillSelect
+              label={t('admin_logs_lines')}
+              options={LOG_LINES.map((value) => ({ value, label: value }))}
+              value={lines}
+              onChange={setLines}
+            />
+            <Form.Check
+              type="switch"
+              id="admin-logs-follow"
+              className="small mb-0"
+              label={t('admin_logs_follow')}
+              checked={follow}
+              onChange={(event) => setFollow(event.target.checked)}
+            />
+            <Form.Check
+              type="switch"
+              id="admin-logs-wrap"
+              className="small mb-0"
+              label={t('admin_logs_wrap')}
+              checked={wrap}
+              onChange={(event) => setWrap(event.target.checked)}
+            />
+            <PillButton
+              variant="ghost"
+              label={paused != null ? t('admin_logs_resume') : t('admin_logs_pause')}
+              icon={paused != null ? <PlayFill /> : <PauseFill />}
+              disabled={content == null}
+              onClick={() => setPaused((current) => (current != null ? null : (content ?? '')))}
+            />
+            <PillButton
+              variant="ghost"
+              label={t('admin_logs_download')}
+              icon={<Download />}
+              disabled={!text}
+              onClick={() =>
+                saveBlob(new Blob([text], { type: 'text/plain' }), (selected.split('/').pop() || 'log') + '.txt')
+              }
+            />
+          </div>
+
+          <div style={{ display: 'flex', gap: 12, fontSize: 11.5, color: MUTED, flexWrap: 'wrap' }}>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+              {meta?.path || selected || '-'}
+            </span>
+            {meta && <span>{bytesToReadable(meta.size_bytes)}</span>}
+            {updatedAt && <span>{t('admin_logs_updated', { time: formatTime(updatedAt) })}</span>}
+            {filtered.matches != null && <span>{t('admin_logs_matches', { count: filtered.matches })}</span>}
+            {paused != null && <span style={{ color: '#9A7208', fontWeight: 600 }}>{t('admin_logs_paused')}</span>}
+          </div>
+          {error && <div style={{ fontSize: 12, color: '#C44D26' }}>{error}</div>}
+
+          <pre
+            ref={viewerRef}
+            onScroll={onScroll}
+            style={{
+              background: '#101419',
+              color: '#d9e2ec',
+              borderRadius: 12,
+              padding: '12px 14px',
+              height: 560,
+              margin: 0,
+              overflow: 'auto',
+              fontSize: 12,
+              lineHeight: 1.5,
+              whiteSpace: wrap ? 'pre-wrap' : 'pre',
+              wordBreak: wrap ? 'break-all' : 'normal',
+            }}
+          >
+            {content == null && selected ? t('ui_loading') : filtered.text || t('admin_logs_empty')}
+          </pre>
+          {!follow && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <PillButton variant="ghost" label={t('admin_logs_jump_end')} onClick={() => setFollow(true)} />
+            </div>
+          )}
+        </div>
+      </div>
+    </PanelCard>
+  );
+};
+
+/** Admin Panel (/admin/panel/, module_admin_enabled): host storage, the
+ * Lageplan export and the live log viewer. */
+const AdminPanelView = () => {
+  const { t } = useTranslation();
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, paddingBottom: 24 }}>
+      <h2 className="mb-0">{t('admin_title')}</h2>
+      <StorageSection />
+      <LageplanExportSection />
+      <LogsSection />
+    </div>
   );
 };
 

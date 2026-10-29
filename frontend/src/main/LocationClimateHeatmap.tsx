@@ -36,7 +36,19 @@ const METRIC_LABEL_KEYS: Record<ClimateMetric, string> = {
  * sensors"), interpolated between them - one frame per hour (24 h, 7 days)
  * or per 4 hours (30 days).
  */
-const LocationClimateHeatmap = ({ locationId }: { locationId: number | string }) => {
+type LocationClimateHeatmapProps = {
+  locationId: number | string;
+  /** Device hovered in the climate charts - its marker is highlighted. */
+  hoveredDeviceId?: number | null;
+  /** Called with the device of the hovered marker (null when left). */
+  onHoverDevice?: (deviceId: number | null) => void;
+};
+
+const LocationClimateHeatmap = ({
+  locationId,
+  hoveredDeviceId = null,
+  onHoverDevice,
+}: LocationClimateHeatmapProps) => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
   const { t } = useTranslation();
@@ -71,8 +83,8 @@ const LocationClimateHeatmap = ({ locationId }: { locationId: number | string })
   const hasPoints = Boolean(response?.sensor_points?.length);
 
   return (
-    <Card className="border-0 shadow-sm p-2">
-      <Card.Body className="d-flex flex-column gap-3">
+    <Card className="border-0 shadow-sm">
+      <Card.Body className="d-flex flex-column gap-2 p-2 p-md-3">
         <div className="d-flex flex-wrap align-items-center gap-3">
           <h5 className="mb-0 me-auto">{t('climate_heatmap_title')}</h5>
           {loading && response && (
@@ -120,7 +132,10 @@ const LocationClimateHeatmap = ({ locationId }: { locationId: number | string })
             <SensorHeatmap2D
               response={response}
               hideChrome
+              fitPlan
               field={{ unit: response?.unit ?? '', decimals: 1 }}
+              highlightedDevice={hoveredDeviceId}
+              onHoverDevice={onHoverDevice}
             />
             {response?.step != null && (
               <div className="small text-muted">

@@ -41,6 +41,7 @@ const TokenTransit = React.lazy(() => import('./main/TokenTransit'));
 const BackupView = React.lazy(() => import('./main/BackupView'));
 const TokenLogin = React.lazy(() => import('./main/TokenLogin'));
 const ChangeLogs = React.lazy(() => import('./main/ChangeLogs'));
+const DeveloperView = React.lazy(() => import('./main/DeveloperView.tsx'));
 const DevView = React.lazy(() => import('./main/DevView'));
 const WsDebugView = React.lazy(() => import('./main/WsDebugView'));
 const DockerStatusView = React.lazy(() => import('./main/DockerStatusView'));
@@ -180,14 +181,37 @@ const CoreRoutes = () => {
         {/* Everything else - the general-purpose sidebar (ported 1:1 from the
           retired Navbar.jsx's item list). */}
         <Route element={<AppLayout />}>
-          <Route path="/dev" element={<DevView />} />
+          {/* Developer tools (sidebar: Tools > Developer), one tab each. */}
+          <Route path="/developer" element={<DeveloperView />}>
+            <Route index element={<Navigate to="docker/" replace />} />
+            <Route path="docker/" element={<DockerStatusView />} />
+            <Route path="legacy-import/" element={<LegacyImportView />} />
+            <Route
+              path="ws-debug/"
+              element={
+                <WebSocketProvider url="/ws/commands/list">
+                  <WsDebugView />
+                </WebSocketProvider>
+              }
+            />
+            <Route path="dev/" element={<DevView />} />
+          </Route>
+          {/* Their former standalone paths. */}
+          <Route
+            path="/docker/"
+            element={<Navigate to="/developer/docker/" replace />}
+          />
+          <Route
+            path="/legacy/import/"
+            element={<Navigate to="/developer/legacy-import/" replace />}
+          />
           <Route
             path="/ws-debug"
-            element={
-              <WebSocketProvider url="/ws/commands/list">
-                <WsDebugView />
-              </WebSocketProvider>
-            }
+            element={<Navigate to="/developer/ws-debug/" replace />}
+          />
+          <Route
+            path="/dev"
+            element={<Navigate to="/developer/dev/" replace />}
           />
           <Route
             path="/device/overview"
@@ -226,20 +250,12 @@ const CoreRoutes = () => {
             path="/device/:id/detail"
             element={<MeasurementDetailView />}
           />
-          <Route path="/docker/" element={<DockerStatusView />} />
-          <Route
-            path="/admin/panel/"
-            element={
-              <WebSocketProvider url="/ws/logs/stream/">
-                <AdminPanel />
-              </WebSocketProvider>
-            }
-          />
+          {/* The panel opens its own log-stream socket (admin/useLogStream). */}
+          <Route path="/admin/panel/" element={<AdminPanel />} />
           <Route path="/staff/" element={<StaffAdmin />} />
           <Route path="/backup/:account/overview/" element={<BackupView />} />
           <Route path="/factory/" element={<FactoryVisualizerView />} />
           <Route path="/lageplan/wizard/" element={<LageplanWizardView />} />
-          <Route path="/legacy/import/" element={<LegacyImportView />} />
           <Route path="/map/" element={<LocationsMapView />} />
           <Route path="/verwaltung/" element={<LocationVerwaltungView />} />
           <Route path="/anlegen/" element={<LocationAnlegenView />} />

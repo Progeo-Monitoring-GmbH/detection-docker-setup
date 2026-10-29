@@ -69,6 +69,15 @@ build_django_env() {
 
 build_django_env
 
+# "prepare" (scripts/deploy.sh): only the database steps of run-server.sh -
+# migrations, sync_default, ... - in a one-off container of the new image,
+# while the old backend keeps serving. No crond, supervisord or log rotation:
+# the logs belong to the running backend.
+if [ "${1:-}" = "prepare" ]; then
+  cd "${PROJECT_ROOT:-/home/progeo/detection-docker-setup}"
+  exec su progeo -s /bin/bash -c "bash run-server.sh --prepare-only"
+fi
+
 # CRON_DISABLED_JOBS (comma separated): cron jobs that must not run, by script
 # name - half-hour, measure, daily, weekly - or "all", e.g. while
 # split_project_dbs runs. Applied here, before crond starts: the jobs are

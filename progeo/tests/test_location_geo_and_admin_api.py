@@ -513,6 +513,41 @@ def test_update_alignment_saves_onto_the_active_lageplan(api_client, geo_world):
     assert inactive.offset_x is None
 
 
+def test_update_alignment_saves_onto_the_picked_lageplan(api_client, geo_world):
+    location = geo_world[1]
+    picked = _lageplan(location, name="alt", is_active=False)
+    active = _lageplan(location, name="aktuell", is_active=True)
+    api_client.force_authenticate(user=geo_world[4])
+
+    response = api_client.post(
+        "/v1/location/update/", {"location_id": 910001, **ALIGNMENT, "lageplan_id": picked.pk}, format="json"
+    )
+
+    assert response.json()["lageplan_id"] == picked.pk
+    picked.refresh_from_db(using=f.DB)
+    active.refresh_from_db(using=f.DB)
+    assert (picked.offset_x, picked.scale_y) == (10, 0.5)
+    assert active.offset_x is None
+
+
+@pytest.mark.parametrize("lageplan_id, reason", [
+    ("x", "Invalid lageplan_id"),
+    ("foreign", "Lageplan not found for this location"),
+])
+def test_update_alignment_rejects_other_lageplans(api_client, geo_world, lageplan_id, reason):
+    _lageplan(geo_world[1])
+    if lageplan_id == "foreign":
+        lageplan_id = _lageplan(f.make_location(f.make_account(), project_id=910099)).pk
+    api_client.force_authenticate(user=geo_world[4])
+
+    response = api_client.post(
+        "/v1/location/update/", {"location_id": 910001, **ALIGNMENT, "lageplan_id": lageplan_id}, format="json"
+    )
+
+    assert response.status_code == 400
+    assert response.json()["reason"] == reason
+
+
 @pytest.mark.parametrize("flag, expected", [("false", False), ("0", False), ("true", True), (False, False)])
 def test_update_alignment_parses_flip_flags(api_client, geo_world, flag, expected):
     lageplan = _lageplan(geo_world[1])

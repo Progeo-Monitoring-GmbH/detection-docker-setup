@@ -97,6 +97,25 @@ def _as_bool(value) -> bool:
     return bool(value)
 
 
+def _target_lageplan(db_name, location, lageplan_id):
+    """(lageplan, error) for edits of one of the location's Lageplans: the
+    one with `lageplan_id` (the wizard's pick), else the active one (same
+    choice as the status view)."""
+    lageplans = ProgeoLageplan.objects.using(db_name).filter(location=location)
+    if lageplan_id not in (None, ""):
+        try:
+            lageplan = lageplans.filter(pk=int(lageplan_id)).first()
+        except (TypeError, ValueError):
+            return None, RequestFailed({"reason": "Invalid lageplan_id"})
+        if not lageplan:
+            return None, RequestFailed({"reason": "Lageplan not found for this location"})
+        return lageplan, None
+    lageplan = lageplans.order_by("-is_active", "-id").first()
+    if not lageplan:
+        return None, RequestFailed({"reason": "No Lageplan uploaded for this location"})
+    return lageplan, None
+
+
 def _is_staff_admin(user) -> bool:
     return bool(getattr(user, "is_staff", False) or getattr(user, "is_superuser", False))
 
@@ -1419,11 +1438,10 @@ class LocationViewSet(ProgeoModalViewSet):
             return RequestFailed({"reason": "Scales must be between 0.1 and 5.0"})
 
         # The alignment belongs to the Lageplan image, not the location: the
-        # active one (same choice as the status view), else the first.
-        lageplans = ProgeoLageplan.objects.using(db_name).filter(location=location).order_by("-id")
-        lageplan = lageplans.filter(is_active=True).first() or lageplans.first()
-        if not lageplan:
-            return RequestFailed({"reason": "No Lageplan uploaded for this location"})
+        # one picked in the wizard (lageplan_id), else the active one.
+        lageplan, error = _target_lageplan(db_name, location, request.data.get("lageplan_id"))
+        if error:
+            return error
 
         lageplan.offset_x = offset_x
         lageplan.offset_y = offset_y
@@ -1454,10 +1472,11 @@ class LocationViewSet(ProgeoModalViewSet):
     @require_module_permissions("module_locations_enabled", "module_locations_edit")
     @action(detail=False, url_path="update_scale", methods=["POST"])
     def update_scale(self, request, *args, **kwargs):
-        """Metric scale of the location's active Lageplan (see
-        helper/plan_meters.py): reference_x/reference_y (image pixels) and
-        meters_per_pixel. Only the fields sent are changed, so the reference
-        point and the calibration can be set separately."""
+        """Metric scale of one of the location's Lageplans - `lageplan_id`,
+        else the active one (see helper/plan_meters.py): reference_x/
+        reference_y (image pixels) and meters_per_pixel. Only the fields sent
+        are changed, so the reference point and the calibration can be set
+        separately."""
         location_id = request.data.get("location_id")
         if not location_id:
             return RequestFailed({"reason": "Missing parameter: location_id"})
@@ -1484,9 +1503,9 @@ class LocationViewSet(ProgeoModalViewSet):
         if "meters_per_pixel" in values and values["meters_per_pixel"] <= 0:
             return RequestFailed({"reason": "meters_per_pixel must be positive"})
 
-        lageplan = ProgeoLageplan.objects.using(db_name).filter(location=location).order_by("-is_active", "-id").first()
-        if not lageplan:
-            return RequestFailed({"reason": "No Lageplan uploaded for this location"})
+        lageplan, error = _target_lageplan(db_name, location, request.data.get("lageplan_id"))
+        if error:
+            return error
 
         for field, value in values.items():
             setattr(lageplan, field, value)
@@ -1939,6 +1958,16 @@ class LocationViewSet(ProgeoModalViewSet):
             [point.device_id for point in points],
         )
 
+        sensor_points = _sensor_points_data(
+            points, location, db_name,
+            names={point.pk: devices[point.device_id].display_name for point in points},
+        )
+        for entry, point in zip(sensor_points, points):
+            # The device and its name in the climate charts (`climate`): the
+            # plan labels its markers alike and highlights the hovered line's.
+            entry["device"] = point.device_id
+            entry["label"] = devices[point.device_id].display_name
+
         return RequestSuccess({
             "location": _location_data(location, account),
             "days": days,
@@ -1948,10 +1977,7 @@ class LocationViewSet(ProgeoModalViewSet):
             "total": len(timestamps),
             "data": {str(point.sensor_order): series[point.device_id] for point in points},
             "timestamps": timestamps,
-            "sensor_points": _sensor_points_data(
-                points, location, db_name,
-                names={point.pk: devices[point.device_id].display_name for point in points},
-            ),
+            "sensor_points": sensor_points,
         })
 
     @require_module_permissions("module_locations_enabled", "module_measurements_enabled")

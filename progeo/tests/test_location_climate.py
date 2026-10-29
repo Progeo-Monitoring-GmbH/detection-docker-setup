@@ -107,6 +107,10 @@ def test_climate_heatmap_has_a_series_per_placed_device(api_client, lorawan_loca
     assert (body["metric"], body["unit"], body["step"]) == ("humidity", "%", 3600)
     assert len(body["timestamps"]) == 24
     assert [(p["pos"], p["name"], p["x"]) for p in body["sensor_points"]] == [(1, "b-sensor", 0.2), (2, "Nord", 0.6)]
+    # Labelled and linked like the device's line in the climate charts.
+    assert [(p["device"], p["label"]) for p in body["sensor_points"]] == [
+        (sensor_b.pk, "b-sensor"), (sensor_a.pk, "a-sensor"),
+    ]
     assert set(body["data"]) == {"1", "2"}
     # Hourly frames ending now: the readings of 2 h and 1 h ago, the last one
     # carried forward into the current hour; nothing before them.

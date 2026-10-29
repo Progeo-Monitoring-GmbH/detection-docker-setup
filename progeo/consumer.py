@@ -1,13 +1,29 @@
 import asyncio
 import json
+import os
+import time
+from datetime import datetime
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
 
-from progeo.v1.log_files_helper import read_log_file, summarize_log_files
+from progeo.v1.log_files_helper import (
+    allowed_log_files,
+    read_appended,
+    read_log_file,
+    summarize_log_files,
+)
 
 GRP_NAME = "command-group"
-LOG_STREAM_GROUP = "log-stream-group"
+
+LOG_STREAM_MAX_LINES = 2000
+LOG_STREAM_POLL_SECONDS = 1
+# Docker logs are read through the Docker API - more costly than a stat().
+LOG_STREAM_DOCKER_POLL_SECONDS = 3
+# More appended at once than this: the tail is sent instead.
+LOG_STREAM_MAX_APPEND = 512 * 1024
+# Below nginx's default proxy_read_timeout (60 s) of the /ws/ location.
+LOG_STREAM_HEARTBEAT_SECONDS = 20
 
 
 def _is_staff_admin(user) -> bool:
@@ -81,136 +97,121 @@ class CommandConsumer(AsyncWebsocketConsumer):
 # ==============================================================================================
 
 class LogStreamConsumer(AsyncWebsocketConsumer):
-    """Websocket consumer for streaming log file content with live updates."""
+    """Streams one log file to the Admin Panel (module_admin_enabled).
+
+    Client -> server: {"action": "list_files"}, {"action": "stream_file",
+    "file": key, "lines": n}, {"action": "stop_stream"}, {"action": "ping"}.
+    Server -> client: "file_list"; "log_content" (the last `lines` lines - on
+    start, and again whenever the file was truncated/rotated or grew too much
+    at once); "log_append" (only what was written since); "heartbeat" while
+    nothing changes, so proxies don't close the idle socket; "error" (once per
+    distinct problem, the stream keeps polling).
+    """
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.group_name = LOG_STREAM_GROUP
         self.user = None
-        self.selected_file = None
         self.stream_task = None
 
     async def connect(self):
-        """Accept websocket connection and check authentication."""
         self.user = self.scope.get("user")
-        
+
         if self.user is None or not getattr(self.user, "is_authenticated", False) or not await _may_read_logs(self.user):
             await self.close(code=4403)
             return
-
-        await self.channel_layer.group_add(
-            self.group_name,
-            self.channel_name
-        )
         await self.accept()
 
     async def disconnect(self, close_code):
-        """Stop streaming and cleanup."""
-        await self.channel_layer.group_discard(
-            self.group_name,
-            self.channel_name
-        )
-        if self.stream_task:
-            self.stream_task.cancel()
+        self._cancel_stream()
 
-    async def receive(self, text_data):
-        """Handle incoming websocket messages."""
+    async def receive(self, text_data=None, bytes_data=None):
         try:
-            data = json.loads(text_data)
-            action = data.get("action", "").strip()
-
-            if action == "list_files":
-                await self.send_file_list()
-            elif action == "stream_file":
-                file_key = data.get("file", "").strip()
-                lines = int(data.get("lines", 500))
-                lines = max(1, min(lines, 2000))
-                await self.start_stream(file_key, lines)
-            elif action == "stop_stream":
-                await self.stop_stream()
+            data = json.loads(text_data or "")
         except json.JSONDecodeError:
-            await self.send_error("Invalid JSON")
-        except Exception as exc:
-            await self.send_error(f"Error: {exc}")
+            await self.send_json({"type": "error", "message": "Invalid JSON"})
+            return
+        action = str(data.get("action") or "").strip()
 
-    async def send_file_list(self):
-        """Send list of all available log files."""
-        try:
-            loop = asyncio.get_event_loop()
-            summary = await loop.run_in_executor(None, summarize_log_files)
-
-            await self.send(text_data=json.dumps({
-                "type": "file_list",
-                "files": summary,
-            }))
-        except Exception as exc:
-            await self.send_error(f"Failed to list files: {exc}")
-
-    async def start_stream(self, file_key: str, lines: int):
-        """Start streaming a specific log file with periodic updates."""
-        try:
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(None, read_log_file, file_key, lines)
-            if not result:
-                await self.send_error("Unknown or disallowed log file | start_stream")
+        if action == "list_files":
+            try:
+                files = await asyncio.to_thread(summarize_log_files)
+            except Exception as exc:  # noqa: BLE001 - reported to the client
+                await self.send_json({"type": "error", "message": f"Failed to list files: {exc}"})
                 return
+            await self.send_json({"type": "file_list", "files": files})
+        elif action == "stream_file":
+            try:
+                lines = max(1, min(int(data.get("lines", 500)), LOG_STREAM_MAX_LINES))
+            except (TypeError, ValueError):
+                lines = 500
+            self._cancel_stream()
+            self.stream_task = asyncio.create_task(self._stream(str(data.get("file") or "").strip(), lines))
+        elif action == "stop_stream":
+            self._cancel_stream()
+            await self.send_json({"type": "stream_stopped"})
+        elif action == "ping":
+            await self.send_json({"type": "pong"})
 
-            self.selected_file = (file_key, lines)
+    async def send_json(self, payload):
+        await self.send(text_data=json.dumps(payload))
 
-            # Send initial content
-            await self.send_log_content(file_key, lines)
-
-            # Stop any existing stream task
-            if self.stream_task:
-                self.stream_task.cancel()
-
-            # Start periodic refresh task (every 5 seconds)
-            self.stream_task = asyncio.create_task(
-                self.periodic_stream_update(file_key, lines)
-            )
-        except Exception as exc:
-            await self.send_error(f"Failed to start stream: {exc}")
-
-    async def periodic_stream_update(self, file_key: str, lines: int):
-        """Periodically update log file content every second."""
-        try:
-            while True:
-                await asyncio.sleep(1)
-                await self.send_log_content(file_key, lines)
-        except asyncio.CancelledError:
-            pass
-        except Exception as exc:
-            await self.send_error(f"Stream update error: {exc}")
-
-    async def stop_stream(self):
-        """Stop streaming the current file."""
+    def _cancel_stream(self):
         if self.stream_task:
             self.stream_task.cancel()
             self.stream_task = None
-        self.selected_file = None
-        await self.send(text_data=json.dumps({
-            "type": "stream_stopped"
-        }))
 
-    async def send_log_content(self, file_key: str, lines: int):
-        """Read and send current log file content."""
+    async def _stream(self, file_key, lines):
+        """Polls the file every LOG_STREAM_POLL_SECONDS and sends what changed."""
+        path = (await asyncio.to_thread(allowed_log_files)).get(file_key)
+        if not path:
+            await self.send_json({"type": "error", "message": f"Unknown or disallowed log file: {file_key}"})
+            return
+        docker = path.startswith("docker://")
+        offset = None  # file: bytes sent so far; docker: the last content
+        last_error = None
+        idle_since = time.monotonic()
         try:
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(None, read_log_file, file_key, lines)
-            if not result:
-                raise Exception("Unknown or disallowed log file | send_log_content")
-            
-            await self.send(text_data=json.dumps({
-                "type": "log_content",
-                **result,
-            }))
-        except Exception as exc:
-            await self.send_error(f"Failed to read log: {exc}")
-
-    async def send_error(self, message: str):
-        """Send error message to client."""
-        await self.send(text_data=json.dumps({
-            "type": "error",
-            "message": message,
-        }))
-
+            while True:
+                try:
+                    if docker:
+                        result = await asyncio.to_thread(read_log_file, file_key, lines)
+                        if result and result["content"] != offset:
+                            offset = result["content"]
+                            await self.send_json({"type": "log_content", **result})
+                            idle_since = time.monotonic()
+                    else:
+                        size = (await asyncio.to_thread(os.stat, path)).st_size
+                        appended = None
+                        if offset is not None and size > offset:
+                            appended = await asyncio.to_thread(read_appended, path, offset, LOG_STREAM_MAX_APPEND)
+                        if offset is None or size < offset or (size > offset and appended is None):
+                            result = await asyncio.to_thread(read_log_file, file_key, lines)
+                            if not result:
+                                raise FileNotFoundError(file_key)
+                            offset = result["size_bytes"]
+                            await self.send_json({"type": "log_content", **result})
+                            idle_since = time.monotonic()
+                        elif appended is not None:
+                            offset = size
+                            await self.send_json({
+                                "type": "log_append",
+                                "file": file_key,
+                                "content": appended,
+                                "size_bytes": size,
+                                "modified_at": datetime.now().isoformat(),
+                            })
+                            idle_since = time.monotonic()
+                    last_error = None
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:  # noqa: BLE001 - reported, the stream keeps polling
+                    message = f"Failed to read {file_key}: {exc}"
+                    if message != last_error:
+                        last_error = message
+                        await self.send_json({"type": "error", "message": message})
+                if time.monotonic() - idle_since >= LOG_STREAM_HEARTBEAT_SECONDS:
+                    await self.send_json({"type": "heartbeat"})
+                    idle_since = time.monotonic()
+                await asyncio.sleep(LOG_STREAM_DOCKER_POLL_SECONDS if docker else LOG_STREAM_POLL_SECONDS)
+        except asyncio.CancelledError:
+            pass

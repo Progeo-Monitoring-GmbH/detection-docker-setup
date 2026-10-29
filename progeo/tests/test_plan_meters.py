@@ -94,6 +94,21 @@ def test_update_scale_stores_the_sent_fields_only(api_client, plan_world):
     assert body["reference_x"] == 100
 
 
+def test_update_scale_stores_onto_the_picked_lageplan(api_client, plan_world):
+    account, location, active = plan_world
+    picked = ProgeoLageplan.objects.using(f.DB).create(location=location, is_active=False)
+    api_client.force_authenticate(user=f.make_user(perms=EDIT, accounts=[account]))
+
+    body = api_client.post("/v1/location/update_scale/", {
+        "location_id": location.project_id, "lageplan_id": picked.pk, "meters_per_pixel": 0.02,
+    }, format="json").json()
+
+    assert body["lageplan_id"] == picked.pk
+    picked.refresh_from_db(using=f.DB)
+    active.refresh_from_db(using=f.DB)
+    assert (picked.meters_per_pixel, active.meters_per_pixel) == (0.02, None)
+
+
 @pytest.mark.parametrize("payload, reason", [
     ({}, "Nothing to update"),
     ({"meters_per_pixel": 0}, "meters_per_pixel must be positive"),

@@ -6,6 +6,8 @@ from docker.errors import DockerException, NotFound
 import docker
 from progeo.settings import BASE_DIR
 
+_TAIL_BLOCK = 64 * 1024
+
 
 def allowed_log_roots() -> dict[str, str]:
     return {
@@ -76,9 +78,32 @@ def tail_file(path: str, lines: int) -> str:
         content, _, _ = _tail_docker_logs(container_name, lines)
         return content
 
-    with open(path, "r", encoding="utf-8", errors="replace") as file_handle:
-        data = file_handle.readlines()
-    return "".join(data[-lines:])
+    # Read backwards in blocks until `lines` lines are in - logs grow to
+    # hundreds of MB, and the stream tails them every second.
+    with open(path, "rb") as file_handle:
+        file_handle.seek(0, os.SEEK_END)
+        position = file_handle.tell()
+        data = b""
+        while position > 0 and data.count(b"\n") <= lines:
+            step = min(_TAIL_BLOCK, position)
+            position -= step
+            file_handle.seek(position)
+            data = file_handle.read(step) + data
+    text = data.decode("utf-8", errors="replace")
+    return "".join(text.splitlines(keepends=True)[-lines:])
+
+
+def read_appended(path: str, offset: int, max_bytes: int) -> str | None:
+    """What was written to `path` after byte `offset` (up to its current end),
+    None if that is more than `max_bytes` - the caller re-sends the tail."""
+    with open(path, "rb") as file_handle:
+        file_handle.seek(0, os.SEEK_END)
+        end = file_handle.tell()
+        if end - offset > max_bytes:
+            return None
+        file_handle.seek(offset)
+        data = file_handle.read(end - offset)
+    return data.decode("utf-8", errors="replace")
 
 
 def summarize_log_files() -> list[dict]:

@@ -2,11 +2,13 @@ import ipaddress
 import json
 import os
 import posixpath
+import tempfile
 from datetime import timedelta
 from uuid import uuid4
 
 from celery.result import AsyncResult
 from django.db import transaction
+from django.http import FileResponse, JsonResponse
 from django.utils import timezone
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action
@@ -17,6 +19,11 @@ from progeo.authentication import ExpiringTokenAuthentication
 from progeo.decorator import calc_runtime, require_module_permissions
 from progeo.helper.basics import RequestFailed, RequestSuccess, save_check_dir
 from progeo.helper.docker_helper import start_cad_factory
+from progeo.helper.lageplan_export import (
+    archive_name,
+    recent_lageplans,
+    write_lageplan_tar,
+)
 from progeo.helper.location_access import (
     is_staff_admin,
     location_id_db,
@@ -48,12 +55,14 @@ from progeo.v1.log_files_helper import (
 )
 from progeo.v1.models import (
     ProgeoDevice,
+    ProgeoLageplan,
     ProgeoLocation,
     ProgeoMeasurement,
     ProgeoMeasurePoint,
 )
 from progeo.v1.serializers import (
     DeviceSerializer,
+    ProgeoLageplanSerializer,
     ProgeoMeasurementSerializer,
     ProgeoMeasurePointSerializer,
 )
@@ -247,6 +256,36 @@ class StatusViewSet(ProgeoModalViewSet):
         summary = summarize_log_files()
 
         return RequestSuccess({"files": summary})
+
+    @calc_runtime
+    @require_module_permissions("module_admin_enabled")
+    @action(detail=False, url_path="admin/lageplan_export", methods=["GET"])
+    def admin_lageplan_export(self, request, *args, **kwargs):
+        """The Lageplans created in the last ?days= as one tar download (see
+        helper/lageplan_export.py) - widened until it holds at least one; the
+        window used and the count come in X-Lageplan-Days/-Count."""
+        try:
+            days = int(request.query_params.get("days", 7))
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "days must be an integer"})
+        if days < 1:
+            return RequestFailed({"reason": "days must be at least 1"})
+
+        files, used_days = recent_lageplans(days)
+        if not files:
+            return JsonResponse({"success": False, "reason": "No Lageplan files found."}, status=404)
+
+        archive = tempfile.TemporaryFile()  # noqa: SIM115 - FileResponse closes it
+        write_lageplan_tar(files, archive)
+        archive.seek(0)
+        response = FileResponse(
+            archive, as_attachment=True, filename=archive_name(used_days), content_type="application/x-tar",
+        )
+        response["X-Lageplan-Days"] = str(used_days)
+        response["X-Lageplan-Count"] = str(len(files))
+        # Readable by the frontend's fetch also across origins (dev server).
+        response["Access-Control-Expose-Headers"] = "Content-Disposition, X-Lageplan-Days, X-Lageplan-Count"
+        return response
 
     @calc_runtime
     @require_module_permissions("module_measurements_enabled")
@@ -486,6 +525,8 @@ class StatusViewSet(ProgeoModalViewSet):
             "files0": lageplan.lageplan.name,
             "lageplan_id": lageplan.pk,
             "lageplan_url": posixpath.join("media", "uploads", lageplan.lageplan.name),
+            # The new plan as listed by measure_points ?with_lageplan=1.
+            "lageplan": ProgeoLageplanSerializer(lageplan).data,
         })
 
     @calc_runtime
@@ -608,8 +649,9 @@ class StatusViewSet(ProgeoModalViewSet):
         (`location_id`) or by one of its devices (`device_id`, used by the
         device editor). Only locations the user has access to are found.
         GET ?with_devices=1 also lists the location's devices; POST replaces
-        all points, each {x, y} (0..1) with an optional device_id of this
-        location (sensors placed by hand in the Lageplan wizard)."""
+        all points, each {x, y} (0..1) with an optional device_id and
+        lageplan_id of this location (sensors placed by hand in the Lageplan
+        wizard)."""
         params = request.query_params if request.method == "GET" else request.data
         location, db_name, error = _measure_point_location(request, params)
         if error:
@@ -623,8 +665,6 @@ class StatusViewSet(ProgeoModalViewSet):
                 "1", "true", "yes", "on"
             }
             if with_lageplan:
-                from progeo.v1.serializers import ProgeoLageplanSerializer
-                
                 lageplans_qs = location.lageplans.order_by("-is_active", "-id")
                 if lageplans_qs.exists():
                     lageplans_serialized = ProgeoLageplanSerializer(lageplans_qs, many=True).data
@@ -667,6 +707,7 @@ class StatusViewSet(ProgeoModalViewSet):
         kept = {point.sensor_order: point for point in existing}
         kept_by_device = {point.device_id: point for point in existing if point.device_id}
         devices = set(ProgeoDevice.objects.using(db_name).filter(location=location).values_list("id", flat=True))
+        lageplans = set(ProgeoLageplan.objects.using(db_name).filter(location=location).values_list("id", flat=True))
         assigned = set()
         normalized_points = []
         for idx, point in enumerate(raw_points, start=1):
@@ -692,8 +733,21 @@ class StatusViewSet(ProgeoModalViewSet):
                 device_id = None
 
             previous = kept_by_device.get(device_id) if device_id else kept.get(idx)
+            # The Lageplan (view) the point was placed on; without one it
+            # stays where it was.
+            lageplan_id = point.get("lageplan_id")
+            if lageplan_id not in (None, ""):
+                try:
+                    lageplan_id = int(lageplan_id)
+                except (TypeError, ValueError):
+                    return RequestFailed({"reason": f"points[{idx - 1}] has an invalid lageplan_id"})
+                if lageplan_id not in lageplans:
+                    return RequestFailed({"reason": f"points[{idx - 1}]: Lageplan {lageplan_id} is not at this location"})
+            else:
+                lageplan_id = previous.lageplan_id if previous else None
             normalized_points.append(ProgeoMeasurePoint(
                 location=location,
+                lageplan_id=lageplan_id,
                 device_id=device_id,
                 sensor_order=idx,
                 # x/y and nx/ny are both the normalized 0..1 position here

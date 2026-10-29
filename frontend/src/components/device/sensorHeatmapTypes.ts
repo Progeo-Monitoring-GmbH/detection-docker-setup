@@ -64,6 +64,10 @@ export type SensorHeatmapPoint = {
   grid_y?: number | null;
   last_value?: number | null;
   threshold?: number | null;
+  /** Climate heatmap: the device measuring here and its name in the
+   * climate charts (ProgeoDevice.display_name). */
+  device?: number | null;
+  label?: string | null;
 };
 
 export type SensorHeatmapResponse = {

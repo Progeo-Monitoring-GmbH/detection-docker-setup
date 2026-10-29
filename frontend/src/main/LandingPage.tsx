@@ -37,7 +37,7 @@ const LANDING_MODULES: LandingModule[] = [
   {
     permission: 'module_docker_enabled',
     labelKey: 'landing_module_docker',
-    target: '/docker/',
+    target: '/developer/docker/',
   },
   {
     permission: 'module_admin_enabled',

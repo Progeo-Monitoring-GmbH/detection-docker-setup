@@ -3,11 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { Link, useLocation as useRouterLocation } from 'react-router';
 import {
   Bell,
-  Box,
-  Broadcast,
   Calendar3,
   Database,
-  FileEarmarkText,
   Gear,
   Geo,
   Hdd,
@@ -182,13 +179,6 @@ const LocationSidebar = ({
       visible: hasPermission('module_backup_enabled'),
     },
     {
-      key: 'docker',
-      label: t('sidebar_docker'),
-      icon: Box,
-      to: '/docker/',
-      visible: isSuperuser,
-    },
-    {
       key: 'admin-panel',
       label: t('sidebar_admin_panel'),
       icon: Gear,
@@ -220,24 +210,11 @@ const LocationSidebar = ({
       visible: isSuperuser,
     },
     {
-      key: 'legacy',
-      label: t('sidebar_legacy_import'),
-      icon: FileEarmarkText,
-      to: '/legacy/import/',
-      visible: isSuperuser,
-    },
-    {
-      key: 'ws-debug',
-      label: t('sidebar_ws_debug'),
-      icon: Broadcast,
-      to: '/ws-debug',
-      visible: isSuperuser,
-    },
-    {
-      key: 'dev',
-      label: t('sidebar_dev'),
+      // Docker, Legacy Import, WS Debug and Dev - tabs of DeveloperView.
+      key: 'developer',
+      label: t('sidebar_developer'),
       icon: Terminal,
-      to: '/dev',
+      to: '/developer/',
       visible: isSuperuser,
     },
   ];

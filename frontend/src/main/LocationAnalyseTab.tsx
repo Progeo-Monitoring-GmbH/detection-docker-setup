@@ -54,6 +54,8 @@ const LocationAnalyseTab = () => {
   // must not let a slower, older response win.
   const requestId = useRef(0);
   const [exportMsg, setExportMsg] = useState<string | null>(null);
+  // LoRaWAN: the device hovered on the heatmap or in a chart - highlighted in both.
+  const [hoveredDeviceId, setHoveredDeviceId] = useState<number | null>(null);
   const [exportingPdf, setExportingPdf] = useState(false);
 
   const exportCsv = () => {
@@ -164,8 +166,17 @@ const LocationAnalyseTab = () => {
 
       {isLorawan ? (
         <>
-          <LocationClimateHeatmap locationId={locationId} />
-          <LocationClimatePanels locationId={locationId} showBattery={isStaff} />
+          <LocationClimateHeatmap
+            locationId={locationId}
+            hoveredDeviceId={hoveredDeviceId}
+            onHoverDevice={setHoveredDeviceId}
+          />
+          <LocationClimatePanels
+            locationId={locationId}
+            showBattery={isStaff}
+            hoveredDeviceId={hoveredDeviceId}
+            onHoverDevice={setHoveredDeviceId}
+          />
         </>
       ) : (
         <>
@@ -191,7 +202,7 @@ const LocationAnalyseTab = () => {
                   <Spinner size="sm" animation="border" /> Loading heatmap...
                 </div>
               ) : (
-                <SensorHeatmap2D response={heatmap} />
+                <SensorHeatmap2D response={heatmap} fitPlan hideChrome />
               )}
             </Card.Body>
           </Card>

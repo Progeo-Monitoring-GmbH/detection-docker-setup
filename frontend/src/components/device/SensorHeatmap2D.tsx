@@ -73,6 +73,17 @@ type SensorHeatmap2DProps = {
    * colour scale over all frames, labelled with `unit`.
    */
   field?: { unit: string; decimals?: number };
+  /**
+   * Show the whole Lageplan, fitted to the full width (the canvas grows as
+   * tall as the plan needs) instead of the area around the sensors with
+   * `height` as the upper bound.
+   */
+  fitPlan?: boolean;
+  /** Device (sensor_points[].device) whose marker is highlighted - e.g. the
+   * line hovered in the climate charts. */
+  highlightedDevice?: number | null;
+  /** Called with the device of the hovered marker, null when it is left. */
+  onHoverDevice?: (device: number | null) => void;
 };
 
 type ImageSize = {
@@ -157,6 +168,8 @@ const ZOOM_STEP = 1.4;
 const MARKER_RADIUS = 4.5;
 /** Marker of a sensor reading above its threshold. */
 const OVER_THRESHOLD_COLOR = '#dc2626';
+/** fitPlan: the tallest canvas, relative to its width (very tall plans). */
+const FIT_PLAN_MAX_ASPECT = 2;
 
 type Chart = {
   world: WorldSize;
@@ -176,6 +189,9 @@ type Chart = {
     /** The sensor's own threshold, else the location's; null without one. */
     threshold: number | null;
     name: string | null;
+    /** Field mode: the device and its name in the climate charts. */
+    device: number | null;
+    label: string | null;
   }>;
   reference: [number, number] | null;
   /** Field mode: opacity per grid cell (0 away from the sensors). */
@@ -201,6 +217,9 @@ const SensorHeatmap2D = ({
   onTimestampChange,
   alarms,
   field,
+  fitPlan = false,
+  highlightedDevice = null,
+  onHoverDevice,
 }: SensorHeatmap2DProps) => {
   const { t } = useTranslation();
   // Primitives, so a new `field` object per render doesn't recompute.
@@ -357,6 +376,8 @@ const SensorHeatmap2D = ({
           ? Number(point.threshold)
           : null,
         name: point.name ?? null,
+        device: point.device ?? null,
+        label: point.label ?? null,
       }))
       .filter((entry) => Number.isFinite(entry.x) && Number.isFinite(entry.y));
 
@@ -379,6 +400,8 @@ const SensorHeatmap2D = ({
       series: data[key] || [],
       threshold: null as number | null,
       name: null as string | null,
+      device: null as number | null,
+      label: null as string | null,
     }));
   }, [response, location]);
 
@@ -514,6 +537,8 @@ const SensorHeatmap2D = ({
         // Thresholds are alarm levels of the summed heat, not of a field.
         threshold: fieldRange ? null : (sensor.threshold ?? locationThreshold),
         name: sensor.name,
+        device: sensor.device,
+        label: sensor.label,
       };
     });
 
@@ -525,10 +550,15 @@ const SensorHeatmap2D = ({
 
     // The initial view is cropped to the sensors, their heat border and the
     // reference point (plus a small margin) - the rest of the plan is mostly
-    // empty paper.
-    const xs = [field.left, field.right, ...placed.map((s) => s.wx), ...(reference ? [reference[0]] : [])];
-    const ys = [field.top, field.bottom, ...placed.map((s) => s.wy), ...(reference ? [reference[1]] : [])];
-    const margin = 0.02 * Math.max(world.width, world.height);
+    // empty paper. fitPlan: the whole plan (and any sensor beside it), the
+    // heat border may run off the edge.
+    const fitWholePlan = fitPlan && sizeKnown;
+    const extent = fitWholePlan
+      ? { xs: [0, world.width], ys: [0, world.height] }
+      : { xs: [field.left, field.right], ys: [field.top, field.bottom] };
+    const xs = [...extent.xs, ...placed.map((s) => s.wx), ...(reference ? [reference[0]] : [])];
+    const ys = [...extent.ys, ...placed.map((s) => s.wy), ...(reference ? [reference[1]] : [])];
+    const margin = (fitWholePlan ? 0.005 : 0.02) * Math.max(world.width, world.height);
     const bounds: WorldRect = {
       left: Math.min(...xs) - margin,
       right: Math.max(...xs) + margin,
@@ -557,6 +587,7 @@ const SensorHeatmap2D = ({
     lageplanImage,
     imageSize,
     fieldRange,
+    fitPlan,
   ]);
 
   // The heat field as an image (one pixel per grid cell), smoothed when drawn.
@@ -599,7 +630,9 @@ const SensorHeatmap2D = ({
 
   // Fit the canvas height to the content: the view keeps the plan's aspect
   // ratio, so a fixed height would leave empty bands above/below a wide
-  // plan. `height` is the upper bound.
+  // plan. `height` is the upper bound - with fitPlan the full width counts
+  // instead (up to FIT_PLAN_MAX_ASPECT), so a tall plan doesn't leave empty
+  // bands beside it.
   const canvasHeight = useMemo(() => {
     if (!chart || wrapSize.width <= 0) {
       return height;
@@ -610,8 +643,9 @@ const SensorHeatmap2D = ({
     if (spanX <= 0 || spanY <= 0 || usable <= 0) {
       return height;
     }
-    return Math.round(clamp((usable * spanY) / spanX, 160, height));
-  }, [chart, wrapSize.width, height]);
+    const maxHeight = fitPlan ? Math.max(height, usable * FIT_PLAN_MAX_ASPECT) : height;
+    return Math.round(clamp((usable * spanY) / spanX, 160, maxHeight));
+  }, [chart, wrapSize.width, height, fitPlan]);
 
   const canvasWidth = wrapSize.width;
   const fitted = useMemo(
@@ -674,7 +708,12 @@ const SensorHeatmap2D = ({
       height: number,
       dpr: number,
       drawView: View,
-      overlay: { hovered: number | null; cursor: [number, number] | null },
+      overlay: {
+        hovered: number | null;
+        /** Sensor index highlighted from outside (highlightedDevice). */
+        highlighted: number | null;
+        cursor: [number, number] | null;
+      },
       background: string | null,
     ) => {
       if (!chart) {
@@ -748,12 +787,27 @@ const SensorHeatmap2D = ({
       ctx.font = '600 10px system-ui, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'bottom';
-      chart.sensors.forEach((sensor, index) => {
+      // The highlighted sensor last - on top of its neighbours' labels.
+      const order = chart.sensors.map((_, index) => index);
+      if (overlay.highlighted != null) {
+        order.push(...order.splice(overlay.highlighted, 1));
+      }
+      order.forEach((index) => {
+        const sensor = chart.sensors[index];
         const [sx, sy] = toScreen(drawView, sensor.wx, sensor.wy);
         if (sx < -20 || sy < -20 || sx > width + 20 || sy > height + 20) {
           return;
         }
-        if (overlay.hovered === index) {
+        const highlighted = overlay.highlighted === index;
+        if (highlighted) {
+          ctx.beginPath();
+          ctx.arc(sx, sy, MARKER_RADIUS + 7, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+          ctx.fill();
+          ctx.strokeStyle = plotTheme.brandOrange;
+          ctx.lineWidth = 3;
+          ctx.stroke();
+        } else if (overlay.hovered === index) {
           ctx.beginPath();
           ctx.arc(sx, sy, MARKER_RADIUS + 4, 0, Math.PI * 2);
           ctx.strokeStyle = '#ffffff';
@@ -768,12 +822,17 @@ const SensorHeatmap2D = ({
         ctx.strokeStyle = '#ffffff';
         ctx.lineWidth = 1;
         ctx.stroke();
+        // Field mode: the sensors are devices - named like their lines in
+        // the climate charts; otherwise the sensor number.
+        const text = fieldUnit != null ? (sensor.label ?? sensor.name ?? String(sensor.pos)) : String(sensor.pos);
+        const textY = sy - MARKER_RADIUS - (highlighted ? 7 : 2);
+        ctx.font = highlighted ? '700 12px system-ui, sans-serif' : '600 10px system-ui, sans-serif';
         // Readable on the plan and on the heat: white with a dark outline.
         ctx.lineWidth = 3;
-        ctx.strokeStyle = 'rgba(9, 75, 129, 0.85)';
-        ctx.strokeText(String(sensor.pos), sx, sy - MARKER_RADIUS - 2);
+        ctx.strokeStyle = highlighted ? plotTheme.brandOrange : 'rgba(9, 75, 129, 0.85)';
+        ctx.strokeText(text, sx, textY);
         ctx.fillStyle = '#ffffff';
-        ctx.fillText(String(sensor.pos), sx, sy - MARKER_RADIUS - 2);
+        ctx.fillText(text, sx, textY);
       });
       ctx.restore();
 
@@ -818,6 +877,10 @@ const SensorHeatmap2D = ({
   const hoveredIndex = hoveredSensor
     ? (chart?.sensors.findIndex((sensor) => sensor.pos === hoveredSensor.pos) ?? -1)
     : -1;
+  const highlightedIndex =
+    highlightedDevice != null
+      ? (chart?.sensors.findIndex((sensor) => sensor.device === highlightedDevice) ?? -1)
+      : -1;
 
   // Redraw on every change; the export waits for the new timestamp's frame.
   const afterDrawRef = useRef<(() => void) | null>(null);
@@ -845,12 +908,13 @@ const SensorHeatmap2D = ({
       view,
       {
         hovered: hoveredIndex >= 0 ? hoveredIndex : null,
+        highlighted: highlightedIndex >= 0 ? highlightedIndex : null,
         // The guides only lead to a position in meters.
         cursor: cursorInfo?.meters ? cursorInfo.cursor : null,
       },
       null,
     );
-  }, [drawScene, chart, view, canvasWidth, canvasHeight, hoveredIndex, cursorInfo]);
+  }, [drawScene, chart, view, canvasWidth, canvasHeight, hoveredIndex, highlightedIndex, cursorInfo]);
 
   useEffect(() => {
     afterDrawRef.current?.();
@@ -877,7 +941,7 @@ const SensorHeatmap2D = ({
         tx: view.tx * factor + (width - canvasWidth * factor) / 2,
         ty: view.ty * factor + (height - canvasHeight * factor) / 2,
       };
-      drawScene(ctx, width, height, 1, frameView, { hovered: null, cursor: null }, '#ffffff');
+      drawScene(ctx, width, height, 1, frameView, { hovered: null, highlighted: null, cursor: null }, '#ffffff');
       return canvas;
     },
     [chart, view, canvasWidth, canvasHeight, drawScene],
@@ -927,12 +991,22 @@ const SensorHeatmap2D = ({
     return rect ? [event.clientX - rect.left, event.clientY - rect.top] : [0, 0];
   };
 
+  // The device last reported to onHoverDevice - pointer moves report changes only.
+  const reportedDevice = useRef<number | null>(null);
+  const reportHoveredDevice = (device: number | null) => {
+    if (reportedDevice.current !== device) {
+      reportedDevice.current = device;
+      onHoverDevice?.(device);
+    }
+  };
+
   const updateHover = (sx: number, sy: number) => {
     if (!chart || !view) {
       return;
     }
     const screenPoints = chart.sensors.map((sensor) => toScreen(view, sensor.wx, sensor.wy));
     const index = nearestPoint(screenPoints, sx, sy, SENSOR_HIT_RADIUS);
+    reportHoveredDevice(index != null ? chart.sensors[index].device : null);
     if (index != null) {
       const sensor = chart.sensors[index];
       setHoveredSensor({
@@ -969,6 +1043,7 @@ const SensorHeatmap2D = ({
   const clearHover = () => {
     setHoveredSensor(null);
     setCursorInfo(null);
+    reportHoveredDevice(null);
   };
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
@@ -1084,19 +1159,41 @@ const SensorHeatmap2D = ({
               </Form.Select>
             )}
 
-            <Form.Check
-              type="switch"
-              id="heatmap2d-auto-sigma"
-              className="small mb-0"
-              label={'Auto σ'}
-              checked={sigma === 'auto'}
-              onChange={(event) =>
-                setSigma(event.target.checked ? 'auto' : 0.04)
-              }
-              disabled={videoExporting}
-            />
-
-            <div className="ms-auto d-flex align-items-center gap-2">
+            {/* The kernel width sits with the export: both shape the video. */}
+            <div className="ms-auto d-flex flex-wrap align-items-center justify-content-end gap-2">
+              <Form.Check
+                type="switch"
+                id="heatmap2d-auto-sigma"
+                className="small mb-0"
+                label={'Auto σ'}
+                checked={sigma === 'auto'}
+                onChange={(event) =>
+                  setSigma(event.target.checked ? 'auto' : 0.04)
+                }
+                disabled={videoExporting}
+              />
+              {sigma !== 'auto' && (
+                <div className="d-flex align-items-center gap-2" style={{ width: 190 }}>
+                  <label
+                    htmlFor="heatmap2d-sigma"
+                    className="small text-muted mb-0 text-nowrap"
+                    title="σ (kernel width)"
+                  >
+                    {'σ'} {sigma.toFixed(3)}
+                  </label>
+                  <input
+                    id="heatmap2d-sigma"
+                    type="range"
+                    className="form-range"
+                    min={0.005}
+                    max={0.15}
+                    step={0.005}
+                    value={sigma}
+                    onChange={(event) => setSigma(Number(event.target.value))}
+                    disabled={videoExporting}
+                  />
+                </div>
+              )}
               {videoExporting ? (
                 <>
                   <Spinner size="sm" animation="border" />
@@ -1142,39 +1239,15 @@ const SensorHeatmap2D = ({
             </div>
           </div>
 
-          <div className="d-flex flex-wrap align-items-center gap-3 mt-1">
-            <div className="flex-grow-1 pb-1" style={{ minWidth: 200 }}>
-              <FrameSlider
-                id="heatmap2d-timestamp"
-                timestamps={timestamps}
-                index={timestampIndex}
-                onChange={setTimestampIndex}
-                disabled={videoExporting}
-                alarms={alarms}
-              />
-            </div>
-
-            {sigma !== 'auto' && (
-              <div style={{ width: 180 }}>
-                <label
-                  htmlFor="heatmap2d-sigma"
-                  className="form-label small text-muted mb-0"
-                >
-                  {'σ'} (kernel width): {sigma}
-                </label>
-                <input
-                  id="heatmap2d-sigma"
-                  type="range"
-                  className="form-range d-block"
-                  min={0.005}
-                  max={0.15}
-                  step={0.005}
-                  value={sigma}
-                  onChange={(event) => setSigma(Number(event.target.value))}
-                  disabled={videoExporting}
-                />
-              </div>
-            )}
+          <div className="mt-1 pb-1">
+            <FrameSlider
+              id="heatmap2d-timestamp"
+              timestamps={timestamps}
+              index={timestampIndex}
+              onChange={setTimestampIndex}
+              disabled={videoExporting}
+              alarms={alarms}
+            />
           </div>
         </div>
       )}
@@ -1240,10 +1313,13 @@ const SensorHeatmap2D = ({
             {hoveredSensor && (
               <SensorTooltip
                 sensorPos={hoveredSensor.pos}
-                // Field mode: the sensors are devices, named by their MAC.
+                // Field mode: the sensors are devices, named as in the charts.
                 name={
                   fieldRange
-                    ? chart?.sensors.find((sensor) => sensor.pos === hoveredSensor.pos)?.name
+                    ? (() => {
+                        const sensor = chart?.sensors.find((entry) => entry.pos === hoveredSensor.pos);
+                        return sensor?.label ?? sensor?.name;
+                      })()
                     : undefined
                 }
                 meters={hoveredSensor.meters}
