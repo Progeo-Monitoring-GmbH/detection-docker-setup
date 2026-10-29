@@ -21,6 +21,7 @@ import {
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
+import ProvisionTestMeasurements from '../components/device/ProvisionTestMeasurements';
 import LocationPicker, {
   type PickableLocation,
 } from '../components/location/LocationPicker';
@@ -115,6 +116,12 @@ const DeviceProvisionView = () => {
   const [settings, setSettings] = useState<ProvisionSettings>(EMPTY_SETTINGS);
   const [preview, setPreview] = useState<ProvisionPreview | null>(null);
   const [confirmed, setConfirmed] = useState(false);
+  // The device created by "Confirm" - its test measurements are shown below.
+  const [createdDevice, setCreatedDevice] = useState<{
+    id: number;
+    location: number;
+    raw_hash: string;
+  } | null>(null);
   const [loading, setLoading] = useState(false);
   const [airtable, setAirtable] = useState<AirtableSync | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -158,6 +165,7 @@ const DeviceProvisionView = () => {
   const resetPreview = () => {
     setPreview(null);
     setConfirmed(false);
+    setCreatedDevice(null);
   };
 
   const updateSetting = <K extends keyof ProvisionSettings>(
@@ -207,7 +215,15 @@ const DeviceProvisionView = () => {
       auth,
       '/v1/device/provision/confirm/',
       { signed: preview.signed },
-      () => {
+      (response) => {
+        const device = response?.data?.device;
+        if (device?.id != null) {
+          setCreatedDevice({
+            id: Number(device.id),
+            location: Number(locationId),
+            raw_hash: String(device.raw_hash ?? preview.device_hash),
+          });
+        }
         setConfirmed(true);
         setLoading(false);
         showSuccessBar(
@@ -753,6 +769,14 @@ const DeviceProvisionView = () => {
             </div>
           </Card.Body>
         </Card>
+      )}
+
+      {confirmed && createdDevice && (
+        <ProvisionTestMeasurements
+          locationId={createdDevice.location}
+          deviceId={createdDevice.id}
+          deviceHash={createdDevice.raw_hash}
+        />
       )}
     </Container>
   );

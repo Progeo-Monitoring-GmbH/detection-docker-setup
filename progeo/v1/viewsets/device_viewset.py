@@ -5,6 +5,7 @@ from dataclasses import asdict
 from datetime import datetime, timedelta
 
 from celery.exceptions import TimeoutError
+from django.db import transaction
 from django.utils import timezone
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action
@@ -25,7 +26,7 @@ from progeo.decorator import (
     permission_denied_response,
     require_module_permissions,
 )
-from progeo.helper import airtable_locations
+from progeo.helper import airtable_locations, device_commands
 from progeo.helper import device_provisioning as provisioning
 from progeo.helper.airtable import AirtableHelper
 from progeo.helper.alarm_evaluation import evaluate_measurement_instantly
@@ -59,10 +60,19 @@ from progeo.v1.legacy.executor import (
     save_measurement_from_legacy_data,
 )
 from progeo.v1.legacy.helper_resistance import calc_resistances
-from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurement
+from progeo.v1.models import (
+    LimitedToken,
+    ProgeoDevice,
+    ProgeoLocation,
+    ProgeoMeasurement,
+)
 from progeo.v1.serializers import DeviceSerializer, ProgeoMeasurementSerializer
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
-from progeo.v1.viewsets.setup_viewset import _get_controller_account, build_wifi_payload, qr_code_data_uri
+from progeo.v1.viewsets.setup_viewset import (
+    _get_controller_account,
+    build_wifi_payload,
+    qr_code_data_uri,
+)
 
 # ######################################################################################################################
 
@@ -275,10 +285,20 @@ class DeviceViewSet(ProgeoModalViewSet):
         except ValueError:
             return None
 
-    @action(detail=True, url_path="sample/cc", authentication_classes=[TransferTokenAuthentication], permission_classes=[IsTransferRequest], methods=["POST"])
+    @action(detail=True, url_path="sample/cc", authentication_classes=[TransferTokenAuthentication], permission_classes=[IsTransferRequest], methods=["GET", "POST"])
     def catch_live_data_c_n_c(self, request, pk, *args, **kwargs):
-        data = {"commands": []}
-        return RequestSuccess(data) # TODO
+        """The controller's command poll: {"commands": [...]} - e.g. "measure"
+        queued by the provisioning page ("Messung anfragen"). Handed out once
+        (helper/device_commands.py). The device is the one of the transfer
+        token (provisioned tokens name it), else ?device_hash= / the body's
+        device_hash, else the project_id (pk), like the samples."""
+        token = request.auth if isinstance(request.auth, LimitedToken) else None
+        raw_data = token.raw_data if token is not None and isinstance(token.raw_data, dict) else {}
+        body = request.data if isinstance(request.data, dict) else {}
+        raw_hash = str(
+            raw_data.get("device") or request.query_params.get("device_hash") or body.get("device_hash") or pk
+        ).strip()
+        return RequestSuccess({"commands": device_commands.take_commands(raw_hash)})
     
     @action(detail=True, url_path="sample", authentication_classes=[TransferTokenAuthentication], permission_classes=[IsTransferRequest], methods=["POST"])
     def catch_live_data(self, request, pk, *args, **kwargs):
@@ -1085,6 +1105,92 @@ class DeviceViewSet(ProgeoModalViewSet):
             "token_id": token.pk,
             "config": provisioning.render_config(plan),
         })
+
+    # ------------------------------------------------------------------ test measurements (helper/device_commands.py)
+
+    def _provision_device(self, request, params):
+        """(location, db_name, device) of `params` (location + device id) -
+        the device must sit at a location the user may provision for."""
+        location, db_name = self._provision_location(request, params.get("location"))
+        try:
+            device_id = int(params.get("device"))
+        except (TypeError, ValueError):
+            raise provisioning.ProvisionError("device must be an integer") from None
+        device = ProgeoDevice.objects.using(db_name).filter(pk=device_id, location=location).first()
+        if device is None:
+            raise provisioning.ProvisionError("Device not found at this location")
+        return location, db_name, device
+
+    @staticmethod
+    def _command_state(device):
+        return {
+            "pending_commands": list(device.pending_commands or []),
+            "last_command_poll": device.last_command_poll.isoformat() if device.last_command_poll else None,
+        }
+
+    @require_module_permissions("module_devices_provision")
+    @action(detail=False, url_path="provision/test-measurements", methods=["GET"])
+    def provision_test_measurements(self, request, *args, **kwargs):
+        """The newest measurements of a provisioned device (?location=&device=),
+        each checked (device_commands.check_test_pairs) and drawn as a PNG -
+        the provisioning page polls this while testing the controller."""
+        db_name = None
+        try:
+            _location, db_name, device = self._provision_device(request, request.query_params)
+            measurements = ProgeoMeasurement.objects.using(db_name).filter(device=device).order_by("-pk")[
+                :device_commands.TEST_MEASUREMENTS_LIMIT
+            ]
+            return RequestSuccess({
+                "measurements": [device_commands.measurement_row(measurement) for measurement in measurements],
+                "expected_rising": device_commands.EXPECTED_RISING,
+                **self._command_state(device),
+            })
+        except provisioning.ProvisionError as exc:
+            return RequestFailed({"reason": str(exc)})
+        finally:
+            release_connection(db_name)
+
+    @require_module_permissions("module_devices_provision")
+    @action(detail=False, url_path="provision/request-measurement", methods=["POST"])
+    def provision_request_measurement(self, request, *args, **kwargs):
+        """"Messung anfragen": queue "measure" - the controller takes it with
+        its next command poll (sample/cc) and measures."""
+        db_name = None
+        try:
+            _location, db_name, device = self._provision_device(request, request.data)
+            device_commands.queue_command(device, db_name, "measure")
+            return RequestSuccess(self._command_state(device))
+        except provisioning.ProvisionError as exc:
+            return RequestFailed({"reason": str(exc)})
+        finally:
+            release_connection(db_name)
+
+    @require_module_permissions("module_devices_provision")
+    @action(detail=False, url_path="provision/test-measurements/clear", methods=["POST"])
+    def provision_clear_test_measurements(self, request, *args, **kwargs):
+        """"Test-Messungen bereinigen": delete the listed test measurements
+        (`ids`) of the device - with the alarms they may have raised - so
+        they don't count as the location's data."""
+        db_name = None
+        try:
+            _location, db_name, device = self._provision_device(request, request.data)
+            ids = request.data.get("ids")
+            if not isinstance(ids, list):
+                raise provisioning.ProvisionError("ids must be a list")
+            try:
+                ids = [int(value) for value in ids]
+            except (TypeError, ValueError):
+                raise provisioning.ProvisionError("ids must be integers") from None
+            with transaction.atomic(using=db_name):
+                queryset = ProgeoMeasurement.objects.using(db_name).filter(device=device, pk__in=ids)
+                deleted = queryset.count()
+                queryset.delete()
+            ilog(f"Cleared {deleted} test measurement(s) of device {device.raw_hash}", tag="[PROVISION]")
+            return RequestSuccess({"deleted": deleted})
+        except provisioning.ProvisionError as exc:
+            return RequestFailed({"reason": str(exc)})
+        finally:
+            release_connection(db_name)
 
     # ------------------------------------------------------------------ Airtable sync (helper/airtable_locations.py)
     # Staff-only: both look at (and write) the locations of every account.

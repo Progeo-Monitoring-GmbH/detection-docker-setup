@@ -487,6 +487,11 @@ class ProgeoDevice(ProgeoModel, auto_prefetch.Model):
     has_internet = models.BooleanField(default=False)
     data_interval = models.IntegerField(default=3600)
     pull_resistance = models.IntegerField(default=Resistance.DEFAULT_100K, choices=Resistance)
+    # Commands for the controller ("measure": take a measurement now), handed
+    # out - and cleared - when it polls GET/POST /v1/device/<project_id>/sample/cc/
+    # (helper/device_commands.py); last_command_poll is when it last did.
+    pending_commands = models.JSONField(default=list, blank=True)
+    last_command_poll = models.DateTimeField(null=True, blank=True)
 
     @property
     def display_name(self):

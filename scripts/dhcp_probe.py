@@ -110,7 +110,7 @@ def main():
         receiver.settimeout(remaining)
         try:
             packet = receiver.recv(65535)
-        except socket.timeout:
+        except TimeoutError:
             continue
         offer = parse_offer(packet, xid)
         if offer:

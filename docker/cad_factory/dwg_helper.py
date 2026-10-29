@@ -20,7 +20,7 @@ import os
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -49,7 +49,7 @@ def _safe_filename_part(value: Any) -> str:
 
 
 def _build_output_base(input_path: Path, project_id: Any = None, source_name: str | None = None) -> Path:
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     source_stem = _safe_filename_part(Path(source_name).stem if source_name else input_path.stem)
     project_part = _safe_filename_part(project_id if project_id not in (None, "") else "unknown")
     file_name = f"{source_stem}_project_{project_part}_{timestamp}"

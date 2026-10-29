@@ -9,7 +9,11 @@ from django.test import override_settings
 from django.utils import timezone
 
 from progeo.helper import legacy_files
-from progeo.helper.legacy_files import fetch_legacy_file, load_legacy_file, parse_legacy_file
+from progeo.helper.legacy_files import (
+    fetch_legacy_file,
+    load_legacy_file,
+    parse_legacy_file,
+)
 from progeo.helper.project_db_copy import sync_project
 from progeo.tests import factories as f
 from progeo.tests.test_project_dbs import (  # noqa: F401 - project_dbs is a fixture

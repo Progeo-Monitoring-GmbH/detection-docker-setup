@@ -2,7 +2,12 @@
 import pytest
 
 from progeo.tests.factories import make_account, make_user, unique
-from progeo.v1.models import LimitedToken, ProgeoDevice, ProgeoLocation, ProgeoMeasurement
+from progeo.v1.models import (
+    LimitedToken,
+    ProgeoDevice,
+    ProgeoLocation,
+    ProgeoMeasurement,
+)
 
 LORAWAN_UPLINK = {
     "object": {

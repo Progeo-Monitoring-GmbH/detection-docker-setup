@@ -661,7 +661,10 @@ def legacy_file_rows(legacy_file, device_id):
     """Unsaved ProgeoMeasurement rows of a parsed legacy file - built exactly
     like the ingestion builds them (legacy_measurement_fields), one per
     receive time and device time."""
-    from progeo.v1.legacy.executor import _legacy_measurement_datetime, legacy_measurement_fields
+    from progeo.v1.legacy.executor import (
+        _legacy_measurement_datetime,
+        legacy_measurement_fields,
+    )
     from progeo.v1.models import ProgeoMeasurement
 
     rows, seen = [], set()

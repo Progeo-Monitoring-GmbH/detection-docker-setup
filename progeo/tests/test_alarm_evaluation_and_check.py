@@ -46,7 +46,7 @@ def fake_weather(monkeypatch):
 @pytest.fixture
 def window():
     """(start, at(minutes), end): a private one-day window in 2037."""
-    start = datetime.datetime(2037, 1, 1, tzinfo=datetime.timezone.utc) + datetime.timedelta(days=next(_windows))
+    start = datetime.datetime(2037, 1, 1, tzinfo=datetime.UTC) + datetime.timedelta(days=next(_windows))
     return start, lambda minutes: start + datetime.timedelta(minutes=minutes), start + datetime.timedelta(hours=23)
 
 
@@ -177,7 +177,7 @@ def _queries_to_evaluate(window, measurements):
 
 
 def test_prolonging_an_alarm_costs_no_query_per_measurement(window):
-    start = datetime.datetime(2037, 1, 1, tzinfo=datetime.timezone.utc) + datetime.timedelta(days=next(_windows))
+    start = datetime.datetime(2037, 1, 1, tzinfo=datetime.UTC) + datetime.timedelta(days=next(_windows))
     other_window = (start, lambda minutes: start + datetime.timedelta(minutes=minutes),
                     start + datetime.timedelta(hours=23))
 

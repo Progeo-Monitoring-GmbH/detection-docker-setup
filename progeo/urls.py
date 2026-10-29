@@ -25,11 +25,6 @@ from rest_framework_simplejwt.views import (
 from progeo import settings, views
 from progeo.routers import CustomRouter
 from progeo.v1.legacy.gprs import gprs_php
-from progeo.v1.viewsets.base_viewsets import (
-    AuthenticatedMediaView,
-    ProgeoTokenObtainPairView,
-    UserModulePermissionView,
-)
 from progeo.v1.viewsets.access_viewset import (
     AccessRequestCreateView,
     AccessRequestMeView,
@@ -45,6 +40,11 @@ from progeo.v1.viewsets.access_viewset import (
     StaffBreakerResetView,
     StaffMessagingView,
     StaffSuppressionDeleteView,
+)
+from progeo.v1.viewsets.base_viewsets import (
+    AuthenticatedMediaView,
+    ProgeoTokenObtainPairView,
+    UserModulePermissionView,
 )
 from progeo.v1.viewsets.docker_viewset import DockerViewSet
 from progeo.v1.viewsets.staff_admin_viewset import (

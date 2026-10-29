@@ -636,7 +636,11 @@ def create_database_backup(database: str, account_db: str, account_id: int, user
 
     from django.core.management import call_command
 
-    from progeo.helper.project_dbs import is_project_alias, register_project_db, release_connection
+    from progeo.helper.project_dbs import (
+        is_project_alias,
+        register_project_db,
+        release_connection,
+    )
     from progeo.settings import BACKUP_DIR
     from progeo.v1.models import Backup
 
