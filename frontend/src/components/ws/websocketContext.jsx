@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useEffect, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { getWsBaseUrl } from '../../backendUrl';
+import { checkBackend } from '../../maintenance';
 
 // Mirror the ReadyState values from the native WebSocket API.
 export const ReadyState = {
@@ -48,6 +49,8 @@ const WebSocketProvider = ({ children, url }) => {
     ws.onclose = () => {
       setReadyState(ReadyState.CLOSED);
       if (unmountedRef.current) return;
+      // A dropped socket is often the first sign of a backend restart.
+      void checkBackend();
       if (attemptsRef.current < RECONNECT_ATTEMPTS) {
         attemptsRef.current += 1;
         reconnectTimerRef.current = setTimeout(connect, RECONNECT_INTERVAL_MS);

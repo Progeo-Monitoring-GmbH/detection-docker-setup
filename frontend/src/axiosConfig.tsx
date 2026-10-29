@@ -7,6 +7,10 @@ import { defaultErrorCallback } from './helper.jsx';
 import i18n from './i18n.jsx';
 import { isDemoReadOnlyError, isDemoUser, loginPathFor } from './main/demo';
 import { isTwoFactorSetupError, TWO_FACTOR_SETUP_PATH } from './main/twoFactor';
+import { watchAxios } from './maintenance';
+
+// The login/logout requests (CoreAuthProvider) use the global instance.
+watchAxios(axios);
 
 const normalizeBackendUrl = (rawUrl?: string) => {
   if (!rawUrl) return rawUrl;
@@ -30,6 +34,7 @@ export default class axiosConfig {
     this.axiosHolder = axios.create({
       baseURL: normalizeBackendUrl(getBackendBaseUrl()),
     });
+    watchAxios(this.axiosHolder);
 
     const csrftoken = Cookies.get('csrftoken');
 

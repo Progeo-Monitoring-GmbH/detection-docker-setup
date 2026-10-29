@@ -59,6 +59,12 @@ from progeo.v1.viewsets.staff_admin_viewset import (
 def empty_favicon(request):
     return HttpResponse(status=204)
 
+
+def health(request):
+    """The frontend's "is the backend there" probe (frontend/src/maintenance.ts):
+    no database, no authentication."""
+    return HttpResponse(status=204)
+
 base_router = CustomRouter()
 base_router.register(r'docker', DockerViewSet, basename='docker')
 
@@ -94,6 +100,7 @@ urlpatterns = [
     re_path(r"^api/auth-support/staff/messaging/$", StaffMessagingView.as_view(), name="staff_messaging"),
     re_path(r"^api/auth-support/staff/messaging/breaker/reset/$", StaffBreakerResetView.as_view(), name="staff_messaging_breaker_reset"),
     re_path(r"^api/auth-support/staff/messaging/suppressions/(?P<pk>\d+)/delete/$", StaffSuppressionDeleteView.as_view(), name="staff_messaging_suppression_delete"),
+    re_path(r"^api/health/$", health, name="health"),
     re_path(r"^api/", include(base_router.urls)),
 
     re_path(r"^auth/login/", views.extended_obtain_auth_token_view, name="auth_login"),

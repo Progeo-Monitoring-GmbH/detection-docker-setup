@@ -1,0 +1,121 @@
+/* Same look as nginx's page (docker/nginx/maintenance/index.html). */
+.maintenance-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  background: #eeebeb;
+  color: #0b3659;
+  font-weight: 500;
+  line-height: 1.55;
+}
+
+.maintenance-screen main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+}
+
+.maintenance-card {
+  width: 100%;
+  max-width: 560px;
+  background: #ffffff;
+  border: 1px solid #dcd7d8;
+  border-top: 6px solid #eb633b;
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(11, 54, 89, 0.08);
+  padding: 40px 36px 32px;
+  text-align: center;
+}
+
+.maintenance-logo {
+  width: 200px;
+  max-width: 70%;
+  height: auto;
+  margin-bottom: 32px;
+}
+
+.maintenance-card h1 {
+  margin: 0 0 12px;
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.maintenance-card p {
+  margin: 0 0 12px;
+}
+
+.maintenance-card .maintenance-en {
+  color: #6b7f90;
+  font-size: 0.9rem;
+  font-weight: 300;
+}
+
+.maintenance-progress {
+  position: relative;
+  height: 4px;
+  margin: 28px 0 16px;
+  overflow: hidden;
+  background: #eeebeb;
+  border-radius: 2px;
+}
+
+.maintenance-progress::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -40%;
+  width: 40%;
+  height: 100%;
+  background: #eb633b;
+  border-radius: 2px;
+  animation: maintenance-slide 1.6s ease-in-out infinite;
+}
+
+@keyframes maintenance-slide {
+  to {
+    left: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .maintenance-progress::after {
+    animation: none;
+    left: 0;
+    width: 100%;
+    opacity: 0.4;
+  }
+}
+
+.maintenance-card .maintenance-status {
+  color: #6b7f90;
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.maintenance-screen footer {
+  background: #0b3659;
+  color: #ffffff;
+  padding: 15px 16px;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.maintenance-screen footer a {
+  color: #ffffff;
+}
+
+@media (max-width: 480px) {
+  .maintenance-card {
+    padding: 32px 20px 24px;
+  }
+
+  .maintenance-card h1 {
+    font-size: 1.4rem;
+  }
+}

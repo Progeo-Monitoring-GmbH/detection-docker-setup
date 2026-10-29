@@ -1,10 +1,11 @@
 import React from 'react';
-import { Col, Container, Row } from 'react-bootstrap';
+import { Container } from 'react-bootstrap';
 import { BrowserRouter, useLocation } from 'react-router';
 import { SnackbarProvider } from 'notistack';
 import CoreAuthProvider from '../hooks/CoreAuthProvider';
 import { ModalProvider } from './components/modal/coreModalContext';
 import CookieBanner from './components/privacy/CookieBanner';
+import MaintenanceGate from './components/ui/MaintenanceScreen';
 import { ConsentProvider, useConsent } from './components/privacy/ConsentProvider';
 
 import CoreRoutes from './CoreRoutes';
@@ -42,39 +43,40 @@ function PortalFrame({ children }: { children: React.ReactNode }) {
   if (FULL_PAGE_PATHS.has(pathname.replace(/\/+$/, '') || '/')) {
     return <>{children}</>;
   }
+  // Side padding grows with the window up to 32 px - empty grid columns
+  // took 1/12 per side (160 px on a 1920 px screen).
   return (
-    <Container fluid={true} style={{ minWidth: '750px', margin: '0' }}>
-      <Row>
-        <Col md={1} style={{ padding: '0' }}></Col>
-        <Col md={10} style={{ padding: '0' }}>
-          {children}
-        </Col>
-        <Col md={1} style={{ padding: '0' }}></Col>
-      </Row>
+    <Container
+      fluid={true}
+      style={{ minWidth: '750px', margin: '0', padding: '0 clamp(8px, 1.5vw, 32px)' }}
+    >
+      {children}
     </Container>
   );
 }
 
 function App() {
   return (
-    <SnackbarProvider
-      maxSnack={5}
-      dense={true}
-      anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-    >
-      <ConsentProvider>
-        <ModalProvider>
-          <BrowserRouter>
-            <CoreAuthProvider>
-              <PortalFrame>
-                <GatedMain />
-                <CookieBanner />
-              </PortalFrame>
-            </CoreAuthProvider>
-          </BrowserRouter>
-        </ModalProvider>
-      </ConsentProvider>
-    </SnackbarProvider>
+    <MaintenanceGate>
+      <SnackbarProvider
+        maxSnack={5}
+        dense={true}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        <ConsentProvider>
+          <ModalProvider>
+            <BrowserRouter>
+              <CoreAuthProvider>
+                <PortalFrame>
+                  <GatedMain />
+                  <CookieBanner />
+                </PortalFrame>
+              </CoreAuthProvider>
+            </BrowserRouter>
+          </ModalProvider>
+        </ConsentProvider>
+      </SnackbarProvider>
+    </MaintenanceGate>
   );
 }
 export default App;
