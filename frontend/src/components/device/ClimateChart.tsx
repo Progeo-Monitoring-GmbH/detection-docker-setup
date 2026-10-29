@@ -240,6 +240,13 @@ const ClimateChart = ({
       onUpdate={(_figure, graphDiv) => {
         graphRef.current = graphDiv;
       }}
+      // A purged div has no _fullLayout - Plotly.restyle on it throws. Happens
+      // when a range has no values of the metric (e.g. no battery reading in
+      // the last 24 h): the empty label replaces the plot, but the highlight
+      // effect still runs for the new (empty) traces.
+      onPurge={() => {
+        graphRef.current = null;
+      }}
       onHover={(event) => {
         const curve = event.points?.[0]?.curveNumber;
         if (curve != null && baseTraces[curve]) {

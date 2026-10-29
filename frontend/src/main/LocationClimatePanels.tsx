@@ -27,6 +27,8 @@ type LocationClimatePanelsProps = {
   locationId: number;
   /** Public demo view: read the series from /v1/demo/. */
   demo?: boolean;
+  /** The battery chart - LocationStatusView shows it to staff only. */
+  showBattery?: boolean;
 };
 
 /**
@@ -34,7 +36,11 @@ type LocationClimatePanelsProps = {
  * so no heatmap - instead humidity, temperature and battery per device, from
  * GET /v1/location/<pk>/climate/.
  */
-const LocationClimatePanels = ({ locationId, demo = false }: LocationClimatePanelsProps) => {
+const LocationClimatePanels = ({
+  locationId,
+  demo = false,
+  showBattery = true,
+}: LocationClimatePanelsProps) => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
   const { t } = useTranslation();
@@ -267,9 +273,11 @@ const LocationClimatePanels = ({ locationId, demo = false }: LocationClimatePane
       <PanelCard title={t('climate_temperature_title')}>
         {body('temperature', t('climate_temperature_axis'), '°C')}
       </PanelCard>
-      <PanelCard title={t('climate_battery_title')}>
-        {body('battery', t('climate_battery_axis'), '%')}
-      </PanelCard>
+      {showBattery && (
+        <PanelCard title={t('climate_battery_title')}>
+          {body('battery', t('climate_battery_axis'), '%')}
+        </PanelCard>
+      )}
       {isSuperuser && (
         <DeviceRenameModal
           show={renameOpen}

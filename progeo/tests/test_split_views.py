@@ -618,3 +618,90 @@ def test_a_pass_overtaken_by_an_access_change_is_not_cached(world, monkeypatch):
 
     assert cache.get(location_access._single_access_cache_key(user.pk)) is None
     assert cache.get(f"{location_access._single_access_cache_key(user.pk)}:lock") is None
+
+
+def _indexed(user):
+    from progeo.v1.models import ProgeoAccessIndex
+
+    return set(ProgeoAccessIndex.objects.using(f.DB).filter(user_id=user.pk).values_list("location_id", flat=True))
+
+
+@WITH_PROJECT_DBS
+@LOCMEM_CACHE
+def test_single_access_asks_only_the_databases_of_the_users_locations(world, monkeypatch):
+    from progeo.helper import location_access
+    from progeo.helper import project_dbs as helpers
+
+    user = _mirrored_user()
+    ProgeoAccess.objects.using(ALIAS).create(location_id=world["location"].pk, user_id=user.pk)
+    nobody = _mirrored_user()
+    forget_single_access(user.pk)
+
+    asked = []
+    original = helpers.map_databases
+    monkeypatch.setattr(helpers, "map_databases", lambda work, databases, **kw: asked.append(list(databases))
+                        or original(work, databases, **kw))
+    with SPLIT:
+        assert location_access.single_access_location_ids(user, world["account"]) == {world["location"].pk}
+        assert location_access.single_access_location_ids(nobody, world["account"]) == set()
+
+    # "default" and the location's project database - not UNKNOWN, and nothing for a user without rows.
+    assert asked == [sorted([f.DB, ALIAS])]
+
+
+@WITH_PROJECT_DBS
+@LOCMEM_CACHE
+def test_the_index_follows_the_access_rows(world):
+    first, second = _mirrored_user(), _mirrored_user()
+    location = world["location"]
+
+    rule = ProgeoAccess.objects.using(ALIAS).create(location_id=location.pk, user_id=first.pk)
+    assert _indexed(first) == {location.pk}
+
+    rule.user_id = second.pk  # moved to another user
+    rule.save(using=ALIAS)
+    assert _indexed(first) == set()
+    assert _indexed(second) == {location.pk}
+
+    duplicate = ProgeoAccess.objects.using(ALIAS).create(location_id=location.pk, user_id=second.pk)
+    duplicate.delete(using=ALIAS)
+    assert _indexed(second) == {location.pk}  # the first rule still grants it
+
+    rule.delete(using=ALIAS)
+    assert _indexed(second) == set()
+
+
+@WITH_PROJECT_DBS
+@LOCMEM_CACHE
+def test_a_stale_index_entry_grants_nothing(world):
+    from progeo.v1.models import ProgeoAccessIndex
+
+    user = _mirrored_user()
+    ProgeoAccessIndex.objects.using(f.DB).create(user_id=user.pk, location_id=world["location"].pk)  # no rows
+    forget_single_access(user.pk)
+
+    with SPLIT:
+        assert not ProgeoLocation.objects.using(f.DB).filter(location_q(user, world["account"])).exists()
+
+
+@WITH_PROJECT_DBS
+@LOCMEM_CACHE
+def test_access_index_command_rebuilds_the_index(world):
+    from django.core.management import call_command
+    from django.core.management.base import CommandError
+
+    from progeo.v1.models import ProgeoAccessIndex
+
+    user = _mirrored_user()
+    location = world["location"]
+    ProgeoAccess.objects.using(ALIAS).create(location_id=location.pk, user_id=user.pk)
+    ProgeoAccessIndex.objects.using(f.DB).filter(user_id=user.pk).delete()  # e.g. before the first rebuild
+    other = f.make_location(world["account"], name="Ohne Zugriff")
+    ProgeoAccessIndex.objects.using(f.DB).create(user_id=user.pk, location_id=other.pk)  # stale
+
+    with pytest.raises(CommandError):
+        call_command("access_index", "--check")
+    call_command("access_index", "--rebuild")
+
+    assert _indexed(user) == {location.pk}
+    call_command("access_index", "--check")

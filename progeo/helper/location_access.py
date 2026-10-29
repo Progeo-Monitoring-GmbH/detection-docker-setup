@@ -11,9 +11,10 @@ Two ways to get access to a location:
 Staff/superusers see everything. A user with neither kind of access sees
 nothing - there is deliberately no fallback to the request's default account.
 """
+from django.contrib.auth import get_user_model
 from django.db import DEFAULT_DB_ALIAS, connections
 from django.db.models import Q
-from django.db.models.signals import post_delete, post_save
+from django.db.models.signals import post_delete, post_save, pre_save
 from django.dispatch import receiver
 
 from progeo.helper.project_dbs import split_enabled
@@ -65,11 +66,13 @@ def single_access_location_ids(user, account) -> set[int]:
 
 
 # With PROJECT_DB_SPLIT the access rows live in the project databases (and
-# "default" for projects without one): a user's rows mean one query per
-# database (~1000), so they are read for all accounts in one pass, cached per
-# user and dropped on every ProgeoAccess save/delete (signals below), wherever
-# it happens (views, admin, shell). Requests that miss the cache at the same
-# time wait for one pass (lock in the cache) instead of each running its own.
+# "default" for projects without one). ProgeoAccessIndex (in "default") names
+# the locations a user holds rows for, so a pass only asks those locations'
+# databases - not every project database (~1000). The rows are read for all
+# accounts in one pass, cached per user and dropped on every ProgeoAccess
+# save/delete (signals below), wherever it happens (views, admin, shell).
+# Requests that miss the cache at the same time wait for one pass (lock in
+# the cache) instead of each running its own.
 SINGLE_ACCESS_CACHE_SECONDS = 300
 # Longest a pass may hold the lock; waiters give up waiting after it as well.
 SINGLE_ACCESS_LOCK_SECONDS = 120
@@ -116,27 +119,67 @@ def _split_single_access_by_account(user_id) -> dict[int, list[int]]:
             _cache_call(cache.delete, lock_key)
 
 
-def _read_single_access_by_account(user_id) -> dict[int, list[int]]:
-    from progeo.helper.project_dbs import (
-        existing_project_aliases,
-        map_databases,
-        register_project_db,
-    )
+def access_databases(location) -> list[str]:
+    """Where the access rows of a location (of "default") can live: "default"
+    (projects without a database, rows from before the split) and its
+    project database."""
+    from progeo.helper.project_dbs import project_db_for
 
-    def access_rows(alias):
-        database = alias if alias == DEFAULT_DB_ALIAS else register_project_db(alias)
+    return sorted({DEFAULT_DB_ALIAS, project_db_for(location)})
+
+
+def _read_single_access_by_account(user_id) -> dict[int, list[int]]:
+    from progeo.helper.project_dbs import map_databases
+    from progeo.v1.models import ProgeoAccessIndex, ProgeoLocation
+
+    # The candidates (ProgeoAccessIndex), confirmed in their databases only.
+    candidates = list(
+        ProgeoLocation.objects.using(DEFAULT_DB_ALIAS)
+        .filter(
+            pk__in=ProgeoAccessIndex.objects.using(DEFAULT_DB_ALIAS).filter(user_id=user_id).values("location_id"),
+            account__isnull=False,
+        )
+        .only("id", "account_id", "project_id")
+    )
+    by_db = {}
+    for location in candidates:
+        for database in access_databases(location):
+            by_db.setdefault(database, []).append(location.pk)
+
+    def granted(database):
         return list(
             ProgeoAccess.objects.using(database)
-            .filter(user_id=user_id, location__account__isnull=False)
-            .values_list("location__account_id", "location_id")
+            .filter(user_id=user_id, location_id__in=by_db[database])
+            .values_list("location_id", flat=True)
         )
 
-    # One query per database - in parallel (map_databases).
+    # One query per database holding candidates - in parallel (map_databases).
+    confirmed = {location_id for chunk in map_databases(granted, list(by_db)) for location_id in chunk} if by_db else set()
     by_account = {}
-    for chunk in map_databases(access_rows, [DEFAULT_DB_ALIAS, *existing_project_aliases()]):
-        for account_id, location_id in chunk:
-            by_account.setdefault(account_id, set()).add(location_id)
+    for location in candidates:
+        if location.pk in confirmed:
+            by_account.setdefault(location.account_id, set()).add(location.pk)
     return {account_id: sorted(ids) for account_id, ids in by_account.items()}
+
+
+def sync_access_index(user_id, location_id):
+    """Index entry (user, location) present exactly while the location's
+    databases (access_databases) hold access rows of the user for it."""
+    from progeo.v1.models import ProgeoAccessIndex, ProgeoLocation
+
+    index = ProgeoAccessIndex.objects.using(DEFAULT_DB_ALIAS).filter(user_id=user_id, location_id=location_id)
+    location = ProgeoLocation.objects.using(DEFAULT_DB_ALIAS).filter(pk=location_id).only("id", "project_id").first()
+    user_exists = get_user_model().objects.using(DEFAULT_DB_ALIAS).filter(pk=user_id).exists()
+    held = location is not None and user_exists and any(
+        ProgeoAccess.objects.using(database).filter(user_id=user_id, location_id=location_id).exists()
+        for database in access_databases(location)
+    )
+    if not held:
+        index.delete()
+    elif not index.exists():
+        ProgeoAccessIndex.objects.using(DEFAULT_DB_ALIAS).bulk_create(
+            [ProgeoAccessIndex(user_id=user_id, location_id=location_id)], ignore_conflicts=True
+        )
 
 
 def _single_access_generation_key(user_id):
@@ -231,11 +274,34 @@ def forget_single_access(user_id):
     _cache_call(cache.delete, _single_access_cache_key(user_id))
 
 
+def _indexed_database(using) -> bool:
+    """Databases whose locations are those of "default" (same ids): "default"
+    and the project databases - not the own databases of other accounts."""
+    from progeo.helper.project_dbs import is_project_alias
+
+    return using == DEFAULT_DB_ALIAS or is_project_alias(using)
+
+
+@receiver(pre_save, sender=ProgeoAccess)
+def _remember_previous_access(sender, instance, using, raw=False, **kwargs):
+    # A rule moved to another user/location leaves the old pair behind.
+    instance._previous_access = None
+    if instance.pk and not raw and _indexed_database(using):
+        instance._previous_access = (
+            sender.objects.using(using).filter(pk=instance.pk).values_list("user_id", "location_id").first()
+        )
+
+
 @receiver(post_save, sender=ProgeoAccess)
 @receiver(post_delete, sender=ProgeoAccess)
-def _forget_changed_access(sender, instance, **kwargs):
-    if instance.user_id:
-        forget_single_access(instance.user_id)
+def _forget_changed_access(sender, instance, using, **kwargs):
+    pairs = {(instance.user_id, instance.location_id), getattr(instance, "_previous_access", None) or (None, None)}
+    for user_id, location_id in pairs:
+        if not user_id:
+            continue
+        if location_id and _indexed_database(using):
+            sync_access_index(user_id, location_id)
+        forget_single_access(user_id)
 
 
 def user_accounts(user) -> list[Account]:
@@ -245,10 +311,27 @@ def user_accounts(user) -> list[Account]:
         return []
     accounts = list(user.accounts.order_by("id"))
     member_ids = {account.pk for account in accounts}
+    # The split's access rows of every account at once, not one cache
+    # lookup per account (single_access_location_ids skips the demo user).
+    split_rows = None
     for account in configured_accounts():
-        if account.pk not in member_ids and single_access_location_ids(user, account):
+        if account.pk in member_ids:
+            continue
+        if split_enabled() and account.db_name == DEFAULT_DB_ALIAS:
+            if split_rows is None:
+                split_rows = _split_single_access_by_account(user.pk) if not _is_demo(user) else {}
+            granted = split_rows.get(account.pk)
+        else:
+            granted = single_access_location_ids(user, account)
+        if granted:
             accounts.append(account)
     return accounts
+
+
+def _is_demo(user) -> bool:
+    from progeo.helper.demo import is_demo_user
+
+    return is_demo_user(user)
 
 
 def resolve_request_accounts(request, fallback_account=None) -> list[Account]:

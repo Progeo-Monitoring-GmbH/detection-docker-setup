@@ -137,6 +137,9 @@ const LocationStatusView = ({
   // The demo user sees the regular portal, but no actions with real side
   // effects (a measurement request reaches the devices).
   const readOnlyDemo = demo || isDemoUser(auth.user);
+  // Battery charts are device maintenance - staff (and superusers) only.
+  const authUser = auth?.user as { is_staff?: boolean; is_superuser?: boolean } | null;
+  const isStaff = !demo && Boolean(authUser?.is_staff || authUser?.is_superuser);
   const { t } = useTranslation();
 
   // The location's whole history in a fine base step (historyWindow),
@@ -824,7 +827,7 @@ const LocationStatusView = ({
       </div>
 
       {isLorawan ? (
-        <LocationClimatePanels locationId={locationId} demo={demo} />
+        <LocationClimatePanels locationId={locationId} demo={demo} showBattery={isStaff} />
       ) : (
         <>
           {clustersLoading || heatmapLoading ? (
@@ -908,11 +911,13 @@ const LocationStatusView = ({
                 />
               )}
             </PanelCard>
-            <LocationBatteryVoltagePanel
-              locationId={locationId}
-              days={rangeDays}
-              demo={demo}
-            />
+            {isStaff && (
+              <LocationBatteryVoltagePanel
+                locationId={locationId}
+                days={rangeDays}
+                demo={demo}
+              />
+            )}
             </>
           ) : (
             <div

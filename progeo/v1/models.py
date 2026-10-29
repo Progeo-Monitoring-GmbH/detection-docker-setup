@@ -1013,6 +1013,28 @@ class ProgeoAccess(ProgeoModel, auto_prefetch.Model):
         return f"{_id} ProgeoAccess: User={self.user}, Location={self.location}, Transport={self.return_active(self.unpack_transport())}, Type={self.return_active(self.unpack_type())}"
 
 
+class ProgeoAccessIndex(models.Model):
+    """Which user holds ProgeoAccess rows for which location - kept in
+    "default", while the rows themselves live in the location's project
+    database (PROJECT_DB_SPLIT). Lets the single-access lookup
+    (helper/location_access.py) ask only the databases of these locations
+    instead of every project database. A candidate list, never a grant:
+    the rows are always confirmed where they live, so a stale entry hides
+    nothing and shows nothing. Maintained by the ProgeoAccess signals,
+    rebuilt by `manage.py access_index --rebuild`."""
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="+")
+    location = models.ForeignKey(ProgeoLocation, on_delete=models.CASCADE, related_name="+")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["user", "location"], name="progeo_accessindex_user_location"),
+        ]
+
+    def __str__(self):
+        return f"ProgeoAccessIndex: User={self.user_id}, Location={self.location_id}"
+
+
 class EMail(ProgeoModel, auto_prefetch.Model):
     # Optional link to the location (project) this mail belongs to, e.g. a
     # disconnect notification for that project. Kept nullable so generic

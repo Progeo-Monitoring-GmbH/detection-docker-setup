@@ -39,6 +39,9 @@ const LocationAnalyseTab = () => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
   const { t } = useTranslation();
+  // Battery charts are device maintenance - staff (and superusers) only.
+  const authUser = auth?.user as { is_staff?: boolean; is_superuser?: boolean } | null;
+  const isStaff = Boolean(authUser?.is_staff || authUser?.is_superuser);
 
   const [range, setRange] = useState<TimeRange>('7d');
   const [heatmap, setHeatmap] = useState<SensorHeatmapResponse | null>(null);
@@ -159,7 +162,7 @@ const LocationAnalyseTab = () => {
       </div>
 
       {isLorawan ? (
-        <LocationClimatePanels locationId={locationId} />
+        <LocationClimatePanels locationId={locationId} showBattery={isStaff} />
       ) : (
         <>
           <div className="d-flex flex-wrap align-items-center gap-3">

@@ -56,6 +56,10 @@ python manage.py create_admin
 pprint "[7] sync default"
 python manage.py sync_default
 
+pprint "[8] access index"
+# Fills ProgeoAccessIndex on the first start, repairs drift afterwards.
+python manage.py access_index --rebuild
+
 pprint "### Starting Webserver: 0.0.0.0:${1}"
 # Replace the shell with Daphne so Supervisor tracks and captures the real server process logs.
 exec python -u -m daphne -b 0.0.0.0 -p "${1}" progeo.asgi:application
