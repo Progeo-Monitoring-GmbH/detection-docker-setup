@@ -21,7 +21,7 @@ locations share their parent's project_id and are left alone.
 import re
 
 from django.core import signing
-from django.db import DEFAULT_DB_ALIAS
+from django.db import DEFAULT_DB_ALIAS, connections
 
 from progeo.helper.location_access import configured_accounts
 from progeo.management.commands.airtable_projects_json import is_broken_address
@@ -137,8 +137,13 @@ def fetch_rows(helper):
 def existing_locations(project_ids):
     """{project_id: [(location, database)]} over every account's database."""
     found = {}
-    databases = dict.fromkeys([DEFAULT_DB_ALIAS, *(account.db_name for account in configured_accounts())])
-    for db_name in databases:
+    # One alias per physical database - two aliases of the same one (the test
+    # settings' "default" and "unit_tests") would list its locations twice.
+    databases = {}
+    for alias in [DEFAULT_DB_ALIAS, *(account.db_name for account in configured_accounts())]:
+        config = connections.settings[alias]
+        databases.setdefault((config.get("HOST"), config.get("PORT"), config.get("NAME")), alias)
+    for db_name in databases.values():
         for location in ProgeoLocation.objects.using(db_name).filter(project_id__in=project_ids):
             found.setdefault(location.project_id, []).append((location, db_name))
     return found

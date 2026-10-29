@@ -129,6 +129,11 @@ AIRTABLE_API_KEY = (os.getenv("AIRTABLE_API_KEY") or "").strip()
 AIRTABLE_BASE_ID = (os.getenv("AIRTABLE_BASE_ID") or "").strip()
 AIRTABLE_PROJECTS_TABLE = (os.getenv("AIRTABLE_PROJECTS_TABLE") or "Projects").strip()
 
+# Origin the provisioned controllers send their samples to (control.url of the
+# config, helper/device_provisioning.py) - on a local dev system e.g. the LAN
+# address of the backend.
+DEVICE_SAMPLE_BASE_URL = (os.getenv("DEVICE_SAMPLE_BASE_URL") or "").strip().rstrip("/") or "https://api.progeo.com"
+
 PRETTY_DATE_FORMAT = "%d.%m.%Y, %H:%M"
 DATETIME_FORMAT = PRETTY_DATE_FORMAT
 

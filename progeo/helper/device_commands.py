@@ -8,14 +8,21 @@ them out (take_commands). The provisioning page queues "measure"
 EXPECTED_RISING sensors with rising values, every other sensor stays empty
 (check_test_pairs) - each measurement is drawn as a small bar chart
 (pairs_png).
+
+"Emulate Measurement" (superusers): emulate_measurement POSTs a sample like
+the controller's to its control.url, with its transfer token - one MUX
+(MUX_SENSORS sensors) rising from EMULATE_RANGE[0] to EMULATE_RANGE[1], every
+other sensor 0.
 """
 import base64
+import math
 from io import BytesIO
 
+import requests
 from django.db import DEFAULT_DB_ALIAS, transaction
 from django.utils import timezone
 
-from progeo.v1.models import ProgeoDevice
+from progeo.v1.models import LimitedToken, ProgeoDevice
 
 COMMANDS = ("measure",)
 
@@ -35,6 +42,13 @@ RISING_COLOR = (9, 75, 129)
 OUTLIER_COLOR = (196, 77, 38)
 EMPTY_COLOR = (176, 183, 195)
 AXIS_COLOR = (207, 212, 218)
+
+# Sensors per multiplexer of the controller (MUX-1: sensors 1-16, ...).
+MUX_SENSORS = 16
+# The emulated MUX rises from the first to the second value, the rest is 0.
+EMULATE_RANGE = (15, 300)
+EMULATE_EVENT = "emulated"
+EMULATE_TIMEOUT_SEC = 10
 
 
 def device_db(raw_hash):
@@ -158,6 +172,88 @@ def pairs_png(pairs, check=None):
 
 def png_data_url(png):
     return "data:image/png;base64," + base64.b64encode(png).decode("ascii")
+
+
+class EmulateError(ValueError):
+    pass
+
+
+def transfer_token(device):
+    """The newest active transfer token provisioned for the device (its
+    control.token), None if there is none."""
+    from progeo.authentication import TRANSFER_TOKEN_PURPOSE
+
+    # raw_data is a text column (jsonfield): narrowed by text, matched exactly here.
+    tokens = LimitedToken.objects.using(DEFAULT_DB_ALIAS).filter(
+        raw_data__contains=device.raw_hash, purpose=TRANSFER_TOKEN_PURPOSE, disabled=False
+    ).order_by("-pk")
+    return next(
+        (token for token in tokens if isinstance(token.raw_data, dict) and token.raw_data.get("device") == device.raw_hash),
+        None,
+    )
+
+
+def token_sensors(token):
+    """measurement.sensors of the config the token was provisioned with."""
+    from progeo.helper.device_provisioning import DEFAULT_SENSORS
+
+    raw = token.raw_data if token is not None and isinstance(token.raw_data, dict) else {}
+    try:
+        return max(1, int(raw.get("sensors")))
+    except (TypeError, ValueError):
+        return DEFAULT_SENSORS
+
+
+def mux_count(sensors):
+    return math.ceil(sensors / MUX_SENSORS)
+
+
+def emulated_samples(sensors, mux):
+    """Interleaved [eigen, wirk, ...] of `sensors` sensors: the sensors of
+    MUX `mux` (from 1) rise from EMULATE_RANGE[0] to [1], all others are 0."""
+    low, high = EMULATE_RANGE
+    first = (mux - 1) * MUX_SENSORS
+    step = (high - low) / (MUX_SENSORS - 1)
+    samples = []
+    for sensor in range(sensors):
+        offset = sensor - first
+        value = round(low + offset * step) if 0 <= offset < MUX_SENSORS else 0
+        samples.extend((0, value))
+    return samples
+
+
+def emulate_measurement(device, mux):
+    """POST a sample like the controller's (sample url, transfer token) with
+    MUX `mux` rising - returns the response body of the sample endpoint."""
+    from progeo.helper.device_provisioning import sample_url
+
+    token = transfer_token(device)
+    if token is None:
+        raise EmulateError("The device has no active transfer token")
+    sensors = token_sensors(token)
+    if not 1 <= mux <= mux_count(sensors):
+        raise EmulateError(f"mux must be between 1 and {mux_count(sensors)}")
+
+    payload = {
+        "event": EMULATE_EVENT,
+        "sensors": sensors,
+        "samples": ",".join(str(value) for value in emulated_samples(sensors, mux)),
+        "device_hash": device.raw_hash,
+        "project_id": str(device.project_id),
+    }
+    try:
+        response = requests.post(
+            sample_url(device.project_id), json=payload,
+            headers={"Authorization": f"Token {token.raw_hash}"}, timeout=EMULATE_TIMEOUT_SEC,
+        )
+    except requests.RequestException as exc:
+        raise EmulateError(f"Sample endpoint not reachable: {exc}") from None
+    if not response.ok:
+        raise EmulateError(f"Sample endpoint answered {response.status_code}: {response.text[:200]}")
+    try:
+        return response.json()
+    except ValueError:
+        return {}
 
 
 def measurement_row(measurement):

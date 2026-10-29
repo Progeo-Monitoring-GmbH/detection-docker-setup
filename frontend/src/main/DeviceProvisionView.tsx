@@ -88,7 +88,7 @@ type AirtableSync = {
 
 const EMPTY_SETTINGS: ProvisionSettings = {
   sensors: '32',
-  interval_sec: '180',
+  interval_sec: '1800',
   pulldown_resistance: '136',
   protective_earth: false,
   wifi_ssid: '',
@@ -584,7 +584,6 @@ const DeviceProvisionView = () => {
                 <Form.Control
                   type="number"
                   min={1}
-                  max={128}
                   value={settings.sensors}
                   onChange={(event) =>
                     updateSetting('sensors', event.target.value)

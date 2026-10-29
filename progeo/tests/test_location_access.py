@@ -136,32 +136,31 @@ def test_measurement_for_account_respects_single_access(setup_account):
 
 
 @pytest.mark.django_db(databases=["unit_tests", "default"])
-def test_controller_account_uses_the_active_settings(settings, monkeypatch):
-    """Regression: it imported DJANGO_DATABASES from progeo.settings directly,
-    so under the test settings it targeted an unknown production database."""
+def test_controller_account_is_looked_up_in_default(monkeypatch):
+    """The account named by CONTROLLER_DEFAULT_ACCOUNT, from "default" -
+    created manually beforehand, never by the lookup."""
+    from progeo.v1.models import Account
     from progeo.v1.viewsets.setup_viewset import _get_controller_account
 
-    settings.DJANGO_DATABASES = ["default"]
     monkeypatch.setenv("CONTROLLER_DEFAULT_ACCOUNT", "controller-under-test")
+    created = Account.objects.using("default").create(
+        name="controller-under-test", raw_hash="controller-under-test", db_name="default"
+    )
 
-    account = _get_controller_account()
-
-    assert account.name == "controller-under-test"
-    assert account.db_name == "default"
-    assert _get_controller_account().pk == account.pk  # get, not create, the second time
+    assert _get_controller_account().pk == created.pk
+    assert Account.objects.using("default").filter(name="controller-under-test").count() == 1
 
 
 @pytest.mark.django_db(databases=["unit_tests", "default"])
-def test_controller_account_requires_configuration(settings, monkeypatch):
+def test_controller_account_requires_configuration(monkeypatch):
     from progeo.v1.viewsets.setup_viewset import _get_controller_account
 
     monkeypatch.setenv("CONTROLLER_DEFAULT_ACCOUNT", "")
     with pytest.raises(Exception, match="CONTROLLER_DEFAULT_ACCOUNT is not set"):
         _get_controller_account()
 
-    monkeypatch.setenv("CONTROLLER_DEFAULT_ACCOUNT", "x")
-    settings.DJANGO_DATABASES = []
-    with pytest.raises(Exception, match="DJANGO_DATABASES is empty"):
+    monkeypatch.setenv("CONTROLLER_DEFAULT_ACCOUNT", "no-such-controller-account")
+    with pytest.raises(Exception, match="not found in the 'default' database"):
         _get_controller_account()
 
 

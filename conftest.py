@@ -128,6 +128,32 @@ def enable_db_access(db):
 
 
 @pytest.fixture(autouse=True)
+def hide_undeclared_project_dbs(request, monkeypatch):
+    """The project databases of the project_dbs fixture (test_project_dbs.py)
+    stay on the server after the session. A test that neither uses it nor
+    lists them in its django_db marker must not see them: project_db_for()
+    would route e.g. a location without project_id to
+    unit_tests_project_unknown, which Django refuses for that test
+    (DatabaseOperationForbidden)."""
+    from progeo.helper import project_dbs
+
+    marker = request.node.get_closest_marker("django_db")
+    databases = (marker.kwargs.get("databases") if marker else None) or ()
+    if databases == "__all__" or "project_dbs" in request.fixturenames:
+        return
+    existing = project_dbs.existing_project_aliases
+
+    def declared_only(refresh=False):
+        return [alias for alias in existing(refresh) if alias in databases]
+
+    # Also where it was imported by name (middlewares, signals, viewsets).
+    for module in list(sys.modules.values()):
+        if getattr(module, "__name__", "").startswith("progeo") and \
+                getattr(module, "existing_project_aliases", None) is existing:
+            monkeypatch.setattr(module, "existing_project_aliases", declared_only)
+
+
+@pytest.fixture(autouse=True)
 def setup_args():
     os.environ.setdefault("TESTS_ACTIVE", "1")
 

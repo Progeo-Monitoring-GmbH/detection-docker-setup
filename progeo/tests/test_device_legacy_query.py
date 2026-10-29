@@ -300,10 +300,9 @@ def test_catch_legacy_field_data_builds_samples_from_payload_value_arrays(api_cl
     assert saved.samples == expected
     assert saved.battery_v == 3.651
     assert body.get("battery_v") == 3.651
-    # The IMEI doesn't fit ProgeoLocation.project_id - the location is keyed by name.
+    # Filed under the location of the payload's project.
     assert saved.device.location is not None
-    assert saved.device.location.project_id is None
-    assert saved.device.location.name == "863663069840161"
+    assert saved.device.location.project_id == 7001
 
 
 @pytest.mark.django_db(databases=["unit_tests", "default"])
@@ -341,6 +340,10 @@ def test_catch_legacy_field_data_accepts_test_json_shape_without_project_id(api_
     assert len(saved.samples) == 2
     # No battery in the payload.
     assert saved.battery_v is None
+    # No project: the location is keyed by the IMEI (too long for ProgeoLocation.project_id).
+    assert saved.device.location is not None
+    assert saved.device.location.project_id is None
+    assert saved.device.location.name == "863663069840180"
 
 
 @pytest.mark.django_db(databases=["unit_tests", "default"])

@@ -12,13 +12,16 @@ import re
 import secrets
 import string
 
+from django.conf import settings
 from django.core import signing
 from django.db import DEFAULT_DB_ALIAS, transaction
 
 from progeo.authentication import TRANSFER_TOKEN_PURPOSE
 from progeo.v1.models import LimitedToken, ProgeoDevice
 
-SAMPLE_URL = "https://api.progeo.com/v1/device/{project_id}/sample/"
+# Below settings.DEVICE_SAMPLE_BASE_URL (default DEFAULT_SAMPLE_BASE_URL).
+DEFAULT_SAMPLE_BASE_URL = "https://api.progeo.com"
+SAMPLE_PATH = "/v1/device/{project_id}/sample/"
 
 DEVICE_MODEL = "smartex mx"
 CONFIG_VERSION = "2026.11"
@@ -29,10 +32,11 @@ PORTAL_URL = "http://192.168.16.1"
 # control.poll_sec of the config: 4 h.
 CONTROL_POLL_SEC = 14400
 
-SENSORS_RANGE = (1, 128)
+# No upper limit on the sensors.
+SENSORS_RANGE = (1, None)
 INTERVAL_RANGE = (10, 86400)
 DEFAULT_SENSORS = 32
-DEFAULT_INTERVAL_SEC = 180
+DEFAULT_INTERVAL_SEC = 1800
 
 TOKEN_ALPHABET = string.ascii_letters + string.digits
 TOKEN_LENGTH = 16
@@ -56,8 +60,12 @@ def _int_field(data, key, default=None, bounds=None):
         value = int(value)
     except (TypeError, ValueError):
         raise ProvisionError(f"{key} must be an integer") from None
-    if bounds and not bounds[0] <= value <= bounds[1]:
-        raise ProvisionError(f"{key} must be between {bounds[0]} and {bounds[1]}")
+    if bounds:
+        low, high = bounds
+        if high is None and value < low:
+            raise ProvisionError(f"{key} must be at least {low}")
+        if high is not None and not low <= value <= high:
+            raise ProvisionError(f"{key} must be between {low} and {high}")
     return value
 
 
@@ -103,6 +111,11 @@ def generate_token() -> str:
         token = "".join(secrets.choice(TOKEN_ALPHABET) for _ in range(TOKEN_LENGTH))
         if not LimitedToken.objects.using(DEFAULT_DB_ALIAS).filter(raw_hash=token).exists():
             return token
+
+
+def sample_url(project_id) -> str:
+    base_url = (getattr(settings, "DEVICE_SAMPLE_BASE_URL", "") or DEFAULT_SAMPLE_BASE_URL).rstrip("/")
+    return base_url + SAMPLE_PATH.format(project_id=project_id)
 
 
 def lua_string(value) -> str:
@@ -157,7 +170,7 @@ def build_plan(location, db_name, settings) -> dict:
         "project_id": project_id,
         "device_hash": next_device_hash(project_id, db_name),
         "token": generate_token(),
-        "url": SAMPLE_URL.format(project_id=project_id),
+        "url": sample_url(project_id),
     }
 
 

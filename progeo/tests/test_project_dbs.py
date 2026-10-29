@@ -745,14 +745,14 @@ def test_restore_targets_the_database_of_the_dump(staff_client, backups, project
 
 @LOCMEM_CACHE
 def test_create_backup_of_a_project_database(staff_client, backups, project_dbs, monkeypatch):
-    calls = []
-    monkeypatch.setattr(backup_viewset, "call_command", lambda *args, **kwargs: calls.append(args))
+    queued = []
+    monkeypatch.setattr(backup_viewset.create_database_backup, "delay", lambda *args: queued.append(args))
 
     response = staff_client.post("/v1/1/backup/create/", {"project": PROJECT}, format="json")
     missing = staff_client.post("/v1/1/backup/create/", {"project": 424242}, format="json")
 
     assert response.status_code == 200, response.content
-    assert calls == [("dbbackup", f"--database={ALIAS}")]
+    assert [args[0] for args in queued] == [ALIAS]
     assert missing.json()["success"] is False
 
 

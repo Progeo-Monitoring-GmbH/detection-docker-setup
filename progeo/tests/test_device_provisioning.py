@@ -21,6 +21,12 @@ def location():
     return f.make_location(account, project_id=next(_project_ids))
 
 
+@pytest.fixture(autouse=True)
+def _sample_base_url(settings):
+    # Independent of DEVICE_SAMPLE_BASE_URL of the local env.
+    settings.DEVICE_SAMPLE_BASE_URL = "https://api.progeo.com"
+
+
 @pytest.fixture
 def staff_client(api_client):
     api_client.force_authenticate(user=f.make_user(staff=True))
@@ -35,9 +41,10 @@ def _preview(client, location, **settings):
 
 def test_parse_settings_validates_and_defaults():
     assert provisioning.parse_settings({}) == {
-        "sensors": 32, "interval_sec": 180, "pulldown_resistance": 136, "protective_earth": 0,
+        "sensors": 32, "interval_sec": 1800, "pulldown_resistance": 136, "protective_earth": 0,
         "wifi_ssid": "", "wifi_pwd": "",
     }
+    assert provisioning.parse_settings({"sensors": 1000})["sensors"] == 1000
     for bad in ({"sensors": 0}, {"sensors": "x"}, {"interval_sec": 1}, {"pulldown_resistance": 99},
                 {"protective_earth": 2}):
         with pytest.raises(provisioning.ProvisionError):
@@ -48,7 +55,7 @@ def test_render_config_escapes_lua_strings():
     plan = {
         **provisioning.parse_settings({"wifi_ssid": 'my "net"', "wifi_pwd": "a\\b"}),
         "project_id": 1312, "device_hash": "1312-01", "token": "THMojjuhE4eFzNTZ",
-        "url": provisioning.SAMPLE_URL.format(project_id=1312),
+        "url": provisioning.sample_url(1312),
     }
     config = provisioning.render_config(plan)
     assert 'ssid = "my \\"net\\"",' in config
@@ -58,6 +65,11 @@ def test_render_config_escapes_lua_strings():
     assert 'url = "https://api.progeo.com/v1/device/1312/sample/",' in config
     assert 'token = "THMojjuhE4eFzNTZ",' in config
     assert "poll_sec = 14400," in config
+
+
+def test_sample_url_follows_the_setting(settings):
+    settings.DEVICE_SAMPLE_BASE_URL = "http://192.168.0.42:8383"
+    assert provisioning.sample_url(1312) == "http://192.168.0.42:8383/v1/device/1312/sample/"
 
 
 def test_preview_saves_nothing_and_numbers_after_existing_devices(staff_client, location):
@@ -116,6 +128,73 @@ def test_confirm_twice_or_tampered_is_refused(staff_client, location):
     tampered = staff_client.post(confirm, {"signed": preview["signed"][:-2] + "xx"}, format="json")
     assert tampered.status_code != 200
     assert ProgeoDevice.objects.using(f.DB).filter(raw_hash=preview["device_hash"]).count() == 1
+
+
+def test_emulated_samples_rise_on_the_chosen_mux_only():
+    from progeo.helper import device_commands
+
+    samples = device_commands.emulated_samples(40, 3)
+
+    assert len(samples) == 80 and samples[0::2] == [0] * 40
+    wirk = samples[1::2]
+    assert wirk[:32] == [0] * 32
+    assert wirk[32:40] == [15, 34, 53, 72, 91, 110, 129, 148]  # cut at 40 sensors
+    full = device_commands.emulated_samples(48, 3)[1::2][32:]
+    assert full[0] == 15 and full[-1] == 300 and full == sorted(full)
+    assert device_commands.check_test_pairs(device_commands.emulated_samples(48, 2)[1::2])["status"] == "ok"
+
+
+def test_emulate_measurement_is_superuser_only_and_posts_like_the_controller(api_client, location, monkeypatch):
+    from rest_framework.test import APIClient
+
+    from progeo.helper import device_commands
+
+    staff = f.make_user(staff=True)
+    api_client.force_authenticate(user=staff)
+    preview = _preview(api_client, location, sensors=48)
+    confirm = api_client.post("/v1/device/provision/confirm/", {"signed": preview["signed"]}, format="json")
+    device_id = confirm.json()["device"]["id"]
+    params = {"location": location.pk, "device": device_id, "mux": 3}
+
+    # Recorded instead of the network - replayed as the controller below (a
+    # request nested in the view's request trips the debug toolbar's profiler).
+    posted = []
+
+    class Response:
+        status_code, ok, text = 200, True, ""
+
+        @staticmethod
+        def json():
+            return {"measurement_id": 1}
+
+    def post(url, json, headers, timeout):
+        posted.append((url, json, headers))
+        return Response()
+
+    monkeypatch.setattr(device_commands.requests, "post", post)
+
+    refused = api_client.post("/v1/device/provision/emulate-measurement/", params, format="json")
+    assert refused.status_code != 200 and not posted
+
+    api_client.force_authenticate(user=f.make_user(staff=True, is_superuser=True))
+    state = api_client.get(f"/v1/device/provision/test-measurements/?location={location.pk}&device={device_id}")
+    assert state.json()["mux_count"] == 3
+    response = api_client.post("/v1/device/provision/emulate-measurement/", params, format="json")
+
+    assert response.status_code == 200, response.content
+    url, payload, headers = posted[0]
+    assert url == preview["url"] and headers["Authorization"] == f"Token {preview['token']}"
+    assert payload["device_hash"] == preview["device_hash"] and payload["sensors"] == 48
+    controller = APIClient()
+    controller.credentials(HTTP_AUTHORIZATION=headers["Authorization"])
+    sample = controller.post(url.removeprefix("https://api.progeo.com"), payload, format="json")
+    assert sample.status_code == 200, sample.content
+    measurement = ProgeoMeasurement.objects.using(f.DB).get(pk=sample.json()["measurement_id"])
+    check = device_commands.check_test_pairs(measurement.get_pairs())
+    assert (check["status"], check["start"], check["end"]) == ("ok", 33, 48)
+
+    too_high = api_client.post("/v1/device/provision/emulate-measurement/", {**params, "mux": 4}, format="json")
+    assert too_high.status_code != 200 and "between 1 and 3" in too_high.json()["reason"]
 
 
 def test_users_need_the_permission_and_only_get_their_locations(api_client, location):

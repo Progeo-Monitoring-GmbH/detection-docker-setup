@@ -1143,6 +1143,10 @@ class DeviceViewSet(ProgeoModalViewSet):
             return RequestSuccess({
                 "measurements": [device_commands.measurement_row(measurement) for measurement in measurements],
                 "expected_rising": device_commands.EXPECTED_RISING,
+                # The MUX choices of "Emulate Measurement".
+                "mux_count": device_commands.mux_count(
+                    device_commands.token_sensors(device_commands.transfer_token(device))
+                ),
                 **self._command_state(device),
             })
         except provisioning.ProvisionError as exc:
@@ -1164,6 +1168,33 @@ class DeviceViewSet(ProgeoModalViewSet):
             return RequestFailed({"reason": str(exc)})
         finally:
             release_connection(db_name)
+
+    @require_module_permissions("module_devices_provision")
+    @action(detail=False, url_path="provision/emulate-measurement", methods=["POST"])
+    def provision_emulate_measurement(self, request, *args, **kwargs):
+        """"Emulate Measurement" (superusers): POST a sample like the
+        controller's to its control.url, with its transfer token - `mux`
+        rising, every other sensor 0 (device_commands.emulate_measurement)."""
+        if not request.user.is_superuser:
+            return RequestFailed({"reason": "Superuser access required"})
+        db_name = None
+        try:
+            _location, db_name, device = self._provision_device(request, request.data)
+            try:
+                mux = int(request.data.get("mux") or 1)
+            except (TypeError, ValueError):
+                raise provisioning.ProvisionError("mux must be an integer") from None
+        except provisioning.ProvisionError as exc:
+            return RequestFailed({"reason": str(exc)})
+        finally:
+            # Released before the POST - no project database connection held while waiting.
+            release_connection(db_name)
+        try:
+            result = device_commands.emulate_measurement(device, mux)
+        except device_commands.EmulateError as exc:
+            return RequestFailed({"reason": str(exc)})
+        ilog(f"Emulated a measurement (MUX-{mux}) of device {device.raw_hash}", tag="[PROVISION]")
+        return RequestSuccess({"mux": mux, **result})
 
     @require_module_permissions("module_devices_provision")
     @action(detail=False, url_path="provision/test-measurements/clear", methods=["POST"])

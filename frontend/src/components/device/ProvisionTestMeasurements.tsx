@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Badge, Button, Card, Spinner } from 'react-bootstrap';
-import { Broadcast, Trash } from 'react-bootstrap-icons';
+import { Alert, Badge, Button, Card, Form, Spinner } from 'react-bootstrap';
+import { Broadcast, Cpu, Trash } from 'react-bootstrap-icons';
 import DataTable, { type TableColumn } from 'react-data-table-component';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
@@ -34,6 +34,8 @@ type TestMeasurement = {
 type TestState = {
   measurements: TestMeasurement[];
   expected_rising: number;
+  /** MUXes of the controller (16 sensors each) - the choices of "Emulate Measurement". */
+  mux_count: number;
   pending_commands: string[];
   last_command_poll: string | null;
 };
@@ -68,6 +70,8 @@ type ProvisionTestMeasurementsProps = {
  * helper/device_commands.py) and shows its pairs as a small chart. "Messung
  * anfragen" queues a measurement for the controller's next command poll
  * (sample/cc), "Test-Messungen bereinigen" deletes the listed ones.
+ * Superusers can "Emulate Measurement": the backend POSTs a sample like the
+ * controller's to its control.url - the chosen MUX rising, the rest 0.
  */
 const ProvisionTestMeasurements = ({
   locationId,
@@ -80,6 +84,11 @@ const ProvisionTestMeasurements = ({
   const [requesting, setRequesting] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [mux, setMux] = useState(1);
+  const [emulating, setEmulating] = useState(false);
+  const isSuperuser = Boolean(
+    (auth?.user as { is_superuser?: boolean } | null)?.is_superuser,
+  );
   // Only report a failing poll once, not every POLL_MS.
   const pollFailed = useRef(false);
 
@@ -137,6 +146,28 @@ const ProvisionTestMeasurements = ({
           error,
         );
         setRequesting(false);
+      },
+    );
+  };
+
+  const emulateMeasurement = () => {
+    setEmulating(true);
+    void axiosConfig.perform_post(
+      auth,
+      '/v1/device/provision/emulate-measurement/',
+      { location: locationId, device: deviceId, mux },
+      () => {
+        setEmulating(false);
+        showSuccessBar(enqueueSnackbar, `Measurement of MUX-${mux} emulated.`);
+        load();
+      },
+      (error) => {
+        showRequestError(
+          enqueueSnackbar,
+          'Could not emulate a measurement',
+          error,
+        );
+        setEmulating(false);
       },
     );
   };
@@ -246,6 +277,38 @@ const ProvisionTestMeasurements = ({
       <Card.Body>
         <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
           <h5 className="mb-0 me-auto">Test-Messungen</h5>
+          {isSuperuser && (
+            <>
+              <Form.Select
+                aria-label="MUX"
+                value={mux}
+                onChange={(event) => setMux(Number(event.target.value))}
+                disabled={emulating}
+                style={{ width: 'auto' }}
+              >
+                {Array.from(
+                  { length: Math.max(state?.mux_count ?? 1, mux) },
+                  (_, index) => (
+                    <option key={index + 1} value={index + 1}>
+                      MUX-{index + 1}
+                    </option>
+                  ),
+                )}
+              </Form.Select>
+              <Button
+                variant="outline-secondary"
+                onClick={emulateMeasurement}
+                disabled={emulating}
+              >
+                {emulating ? (
+                  <Spinner size="sm" animation="border" className="me-2" />
+                ) : (
+                  <Cpu className="me-2" />
+                )}
+                Emulate Measurement
+              </Button>
+            </>
+          )}
           <Button
             variant="outline-primary"
             onClick={requestMeasurement}
