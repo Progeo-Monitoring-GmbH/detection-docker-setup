@@ -81,6 +81,8 @@ const deviceColor = (metric: ClimateMetric, index: number): string => {
 };
 
 const MUTED_TEXT = '#8B8383';
+// The mean over all devices.
+const OVERALL_MEAN_COLOR = '#9E9696';
 
 // One revision number per computed trace set (see Plot's revision prop).
 const revisions = new WeakMap<object, number>();
@@ -150,8 +152,9 @@ const mean = (values: Array<number | null>): number | null => {
 
 /**
  * Time series of one climate metric (humidity, temperature, battery or battery voltage), one line per
- * device of the location - a LoRaWAN object has several sensors. Each device's mean over the range is
- * drawn as a dashed line; clicking a point makes its time the reference the tooltips compare against.
+ * device of the location - a LoRaWAN object has several sensors. The mean over all devices is drawn as
+ * a gray dashed line, a device's own mean only while it is hovered; clicking a point makes its time the
+ * reference the tooltips compare against.
  */
 const ClimateChart = ({
   devices,
@@ -252,30 +255,43 @@ const ClimateChart = ({
     [averaged, decimals, devices, format, hoverTime, metric, referenceTime, t, tolerance, unit],
   );
 
+  // Mean over the readings of all devices.
+  const overallMean = useMemo(() => mean(baseTraces.flatMap((trace) => trace.y)), [baseTraces]);
+
   // Every plotted trace: the devices' lines, then their means (dashed, no
-  // hover). Highlight and hover map plot traces to devices by this list.
+  // hover, hidden until the device is hovered), then the overall mean.
+  // Highlight and hover map plot traces to devices by this list.
   const plotTraces = useMemo(() => {
     const first = Math.min(...devices.map((device) => device.timestamps[0] ?? Infinity));
     const last = Math.max(...devices.map((device) => device.timestamps[device.timestamps.length - 1] ?? -Infinity));
-    const means = Number.isFinite(first) && Number.isFinite(last)
+    const span = Number.isFinite(first) && Number.isFinite(last);
+    const meanLine = (deviceId: number | null, name: string, value: number, color: string, kind: 'mean' | 'overall') => ({
+      deviceId,
+      kind,
+      type: 'scatter' as const,
+      mode: 'lines' as const,
+      name,
+      x: [new Date(first * 1000), new Date(last * 1000)],
+      y: [value, value],
+      line: { color, width: 1.5, dash: 'dash' as const },
+      opacity: kind === 'overall' ? 1 : 0,
+      hoverinfo: 'skip' as const,
+    });
+    const means = span
       ? baseTraces
           .filter((trace) => trace.mean != null)
-          .map((trace) => ({
-            deviceId: trace.deviceId,
-            type: 'scatter' as const,
-            mode: 'lines' as const,
-            name: `Ø ${trace.name}`,
-            x: [new Date(first * 1000), new Date(last * 1000)],
-            y: [trace.mean, trace.mean],
-            line: { color: trace.line.color, width: 1.5, dash: 'dash' as const },
-            hoverinfo: 'skip' as const,
-          }))
+          .map((trace) => meanLine(trace.deviceId, `Ø ${trace.name}`, trace.mean as number, trace.line.color, 'mean'))
       : [];
+    const overall = span && overallMean != null ? [meanLine(null, 'Ø', overallMean, OVERALL_MEAN_COLOR, 'overall')] : [];
     return [
-      ...baseTraces.map(({ label: _label, mean: _mean, referenceIndex: _reference, ...trace }) => trace),
+      ...baseTraces.map(({ label: _label, mean: _mean, referenceIndex: _reference, ...trace }) => ({
+        ...trace,
+        kind: 'device' as const,
+      })),
       ...means,
+      ...overall,
     ];
-  }, [baseTraces, devices]);
+  }, [baseTraces, devices, overallMean]);
 
   // The hover highlight is applied straight to the plot (Plotly.restyle) and
   // never goes through the data props: re-feeding data on every hover made
@@ -293,10 +309,21 @@ const ClimateChart = ({
       gd as never,
       {
         'line.width': plotTraces.map((trace) => {
-          const width = trace.mode === 'lines' ? 1.5 : 2;
-          return trace.deviceId === active ? width * 2 : width;
+          if (trace.kind !== 'device') {
+            return 1.5;
+          }
+          return trace.deviceId === active ? 4 : 2;
         }),
-        opacity: plotTraces.map((trace) => (active == null || trace.deviceId === active ? 1 : 0.3)),
+        // A device's mean shows only while the device is hovered.
+        opacity: plotTraces.map((trace) => {
+          if (trace.kind === 'overall') {
+            return 1;
+          }
+          if (trace.kind === 'mean') {
+            return trace.deviceId === active ? 1 : 0;
+          }
+          return active == null || trace.deviceId === active ? 1 : 0.3;
+        }),
       } as never,
     );
   }, [plotTraces]);
@@ -339,13 +366,19 @@ const ClimateChart = ({
             style={{ width: 18, height: 3, borderRadius: 2, background: trace.line.color }}
           />
           {trace.label}
-          {trace.mean != null && (
+          {trace.mean != null && hoveredDeviceId === trace.deviceId && (
             <span style={{ color: MUTED_TEXT, fontWeight: 400 }}>
               Ø {trace.mean.toFixed(decimals)} {unit}
             </span>
           )}
         </span>
       ))}
+      {overallMean != null && (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: MUTED_TEXT }}>
+          <span style={{ width: 18, borderTop: `2px dashed ${OVERALL_MEAN_COLOR}` }} />
+          {t('climate_mean_all')} Ø {overallMean.toFixed(decimals)} {unit}
+        </span>
+      )}
       <span style={{ marginLeft: 'auto', fontSize: 11.5, color: MUTED_TEXT }}>
         {referenceTime != null ? (
           <>
@@ -380,7 +413,7 @@ const ClimateChart = ({
     </div>
     <Plot
       key={`${axisTitle}|${height}`}
-      data={plotTraces.map(({ deviceId: _id, ...trace }) => trace)}
+      data={plotTraces.map(({ deviceId: _id, kind: _kind, ...trace }) => trace)}
       revision={revision}
       onInitialized={(_figure, graphDiv) => {
         graphRef.current = graphDiv;
