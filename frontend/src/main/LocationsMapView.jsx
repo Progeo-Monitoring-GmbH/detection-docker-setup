@@ -23,6 +23,7 @@ import { useSnackbar } from 'notistack';
 
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
+import { matchesLocationSearch } from '../components/location/locationSearch';
 import { showInfoBar, showRequestError } from '../components/ui/Snackbar.jsx';
 import { useConsent } from '../components/privacy/ConsentProvider';
 import MapConsentNotice from '../components/privacy/MapConsentNotice';
@@ -346,32 +347,13 @@ const LocationsMapView = () => {
   }, [flashMarkers]);
 
   const filteredRows = useMemo(() => {
-    const needle = searchText.trim().toLowerCase();
     return rows.filter((location) => {
       const ageInfo = ageInfoFromDate(location.last_measurement_at);
       if (stateFilter !== 'all' && ageInfo.state !== stateFilter) {
         return false;
       }
 
-      if (!needle) {
-        return true;
-      }
-
-      const haystack = [
-        location.name,
-        location.city,
-        location.address,
-        location.plz,
-        location.manager,
-        location.telefon,
-        location.mail,
-        location.project_id,
-      ]
-        .filter((value) => value !== null && value !== undefined)
-        .join(' ')
-        .toLowerCase();
-
-      return haystack.includes(needle);
+      return matchesLocationSearch(location, searchText);
     });
   }, [rows, searchText, stateFilter]);
 
@@ -557,7 +539,7 @@ const LocationsMapView = () => {
                 <Form.Control
                   size="sm"
                   type="text"
-                  placeholder="Name, city, address, project..."
+                  placeholder="Name, address, postcode, city, project id…"
                   value={searchText}
                   onChange={(event) => setSearchText(event.target.value)}
                 />

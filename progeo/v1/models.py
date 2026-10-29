@@ -703,6 +703,15 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
 class ProgeoMeasurePoint(ProgeoModel, auto_prefetch.Model):
     location = models.ForeignKey(ProgeoLocation, on_delete=models.CASCADE, related_name="points", null=True, blank=True)
     lageplan = models.ForeignKey(ProgeoLageplan, on_delete=models.CASCADE, related_name="lageplaene", null=True, blank=True)
+    # The device measuring at this point - set when the sensors are placed by
+    # hand (Lageplan wizard), e.g. one LoRaWAN sensor per point; null for
+    # CAD points, whose sensor_order indexes the pairs of one device. No
+    # database constraint: a device can move to another location (and
+    # project database) while the point stays behind.
+    device = models.ForeignKey(
+        ProgeoDevice, on_delete=models.SET_NULL, related_name="measure_points",
+        null=True, blank=True, db_constraint=False,
+    )
     # Zone/area label (e.g. "Hauptdach", "Garage") - filled in by hand or by
     # the parse_lageplan_labels command, which OCRs the Lageplan's legend
     # table.

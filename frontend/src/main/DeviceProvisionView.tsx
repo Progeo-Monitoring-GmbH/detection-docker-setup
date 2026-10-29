@@ -21,13 +21,17 @@ import {
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
+import LocationPicker, {
+  type PickableLocation,
+} from '../components/location/LocationPicker';
 import {
   showErrorBar,
   showRequestError,
   showSuccessBar,
 } from '../components/ui/Snackbar.jsx';
 
-type ProvisionLocation = {
+/** A location of /v1/device/provision/locations/ (project_type: its label). */
+type ProvisionLocation = PickableLocation & {
   id: number;
   project_id: number;
   name: string | null;
@@ -545,21 +549,15 @@ const DeviceProvisionView = () => {
                 <Form.Label className="text-muted small mb-1">
                   Project / location
                 </Form.Label>
-                <Form.Select
-                  value={locationId}
-                  onChange={(event) => {
-                    setLocationId(event.target.value);
+                <LocationPicker
+                  id="provision-location-picker"
+                  locations={locations}
+                  value={locationId ? Number(locationId) : null}
+                  onChange={(location) => {
+                    setLocationId(location ? String(location.id) : '');
                     resetPreview();
                   }}
-                >
-                  <option value="">Select project_id…</option>
-                  {locations.map((location) => (
-                    <option key={location.id} value={location.id}>
-                      {location.project_id} – {location.name || 'Unnamed'} (
-                      {location.project_type})
-                    </option>
-                  ))}
-                </Form.Select>
+                />
               </Form.Group>
             </Col>
             <Col sm={4} md={2}>

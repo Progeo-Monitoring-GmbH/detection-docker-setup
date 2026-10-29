@@ -110,3 +110,111 @@ export const buildWeightedGrid = (
 
   return { axis, grid, max };
 };
+
+/** Kernel weight below which a sensor no longer contributes to the field
+ * (about 3 sigma), and the weight from which the field is fully opaque. */
+const FIELD_CUTOFF = 0.011;
+const FIELD_OPAQUE = 0.3;
+
+/**
+ * Interpolated field of readings that don't add up - e.g. humidity or
+ * temperature (LoRaWAN), where two sensors side by side are not "hotter"
+ * than one: every cell holds the Gaussian-weighted mean of the sensors
+ *
+ *   value(x) = sum_i k_i(x) * v_i / sum_i k_i(x),  k_i = exp(-d^2 / (2 sigma^2))
+ *
+ * scaled from [range.min, range.max] to [0, 1]. `coverage` (0..1) fades the
+ * field out away from the sensors: 1 up to ~1.5 sigma from the nearest one,
+ * 0 beyond ~3 sigma, where there is nothing to interpolate.
+ */
+export const buildFieldGrid = (
+  points: WeightedPoint[],
+  resolution: number,
+  sigma: number,
+  range: { min: number; max: number },
+  pad = 0,
+) => {
+  const res = Math.max(2, resolution);
+  const span = 1 + 2 * pad;
+  const cell = span / (res - 1);
+  const axis = Array.from({ length: res }, (_, index) => -pad + index * cell);
+  const weighted = Array.from({ length: res }, () => new Float64Array(res));
+  const weights = Array.from({ length: res }, () => new Float64Array(res));
+  const nearest = Array.from({ length: res }, () => new Float64Array(res));
+
+  const twoSigmaSquared = 2 * sigma * sigma;
+  const radius = Math.sqrt(twoSigmaSquared * Math.log(1 / FIELD_CUTOFF));
+  const radiusCells = Math.ceil(Math.min(radius, span) / cell);
+
+  points.forEach((point) => {
+    if (!Number.isFinite(point.weight)) {
+      return;
+    }
+    const cx = (clamp(point.x, 0, 1) + pad) / cell;
+    const cy = (clamp(point.y, 0, 1) + pad) / cell;
+    const startX = Math.max(0, Math.floor(cx - radiusCells));
+    const endX = Math.min(res - 1, Math.ceil(cx + radiusCells));
+    const startY = Math.max(0, Math.floor(cy - radiusCells));
+    const endY = Math.min(res - 1, Math.ceil(cy + radiusCells));
+
+    for (let gy = startY; gy <= endY; gy += 1) {
+      const dy = (gy - cy) * cell;
+      for (let gx = startX; gx <= endX; gx += 1) {
+        const dx = (gx - cx) * cell;
+        const kernel = Math.exp(-(dx * dx + dy * dy) / twoSigmaSquared);
+        if (kernel < FIELD_CUTOFF) {
+          continue;
+        }
+        weighted[gy][gx] += kernel * point.weight;
+        weights[gy][gx] += kernel;
+        nearest[gy][gx] = Math.max(nearest[gy][gx], kernel);
+      }
+    }
+  });
+
+  const extent = range.max - range.min;
+  const grid = weighted.map((row, gy) =>
+    row.map((sum, gx) => {
+      const weight = weights[gy][gx];
+      if (weight <= 0) {
+        return 0;
+      }
+      return extent > 0 ? clamp((sum / weight - range.min) / extent, 0, 1) : 0.5;
+    }),
+  );
+  const coverage = nearest.map((row) =>
+    row.map((kernel) =>
+      clamp((kernel - FIELD_CUTOFF) / (FIELD_OPAQUE - FIELD_CUTOFF), 0, 1),
+    ),
+  );
+
+  return { axis, grid, coverage };
+};
+
+/** [min, max] of all finite values of the series (the colour scale of a
+ * field heatmap, the same for every frame); widened by `minSpan` around its
+ * middle when the values hardly differ. Null without any value. */
+export const seriesRange = (
+  series: Array<ArrayLike<number | null>>,
+  minSpan = 1,
+): { min: number; max: number } | null => {
+  let min = Number.POSITIVE_INFINITY;
+  let max = Number.NEGATIVE_INFINITY;
+  series.forEach((values) => {
+    for (let index = 0; index < values.length; index += 1) {
+      const value = values[index];
+      if (value != null && Number.isFinite(value)) {
+        min = Math.min(min, value);
+        max = Math.max(max, value);
+      }
+    }
+  });
+  if (!Number.isFinite(min)) {
+    return null;
+  }
+  if (max - min < minSpan) {
+    const middle = (min + max) / 2;
+    return { min: middle - minSpan / 2, max: middle + minSpan / 2 };
+  }
+  return { min, max };
+};

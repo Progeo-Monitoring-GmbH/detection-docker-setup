@@ -275,7 +275,11 @@ class DeviceViewSet(ProgeoModalViewSet):
         except ValueError:
             return None
 
-
+    @action(detail=True, url_path="sample/cc", authentication_classes=[TransferTokenAuthentication], permission_classes=[IsTransferRequest], methods=["POST"])
+    def catch_live_data_c_n_c(self, request, pk, *args, **kwargs):
+        data = {"commands": []}
+        return RequestSuccess(data) # TODO
+    
     @action(detail=True, url_path="sample", authentication_classes=[TransferTokenAuthentication], permission_classes=[IsTransferRequest], methods=["POST"])
     def catch_live_data(self, request, pk, *args, **kwargs):
         """Store a live sample of a controller (event "sample").
@@ -1011,8 +1015,11 @@ class DeviceViewSet(ProgeoModalViewSet):
         """The locations a new controller can be filed under, with the defaults of the form."""
         return RequestSuccess({
             "locations": [
+                # The address fields make the frontend's LocationPicker searchable.
                 {"id": location.pk, "project_id": location.project_id, "name": location.name,
-                 "project_type": location.get_project_type_display()}
+                 "project_type": location.get_project_type_display(),
+                 "address": location.address, "plz": location.plz, "city": location.city,
+                 "country": location.country, "manager": location.manager}
                 for location, _ in self._provision_locations(request)
             ],
             "defaults": {

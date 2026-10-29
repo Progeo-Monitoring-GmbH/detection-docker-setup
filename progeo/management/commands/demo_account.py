@@ -675,7 +675,12 @@ class Command(BaseCommand):
             for point in self._create_points(location, plan, db, plan_spec["points"], first)
         ]
         if spec["project_type"] == TYPES.LORAWAN:
-            self._create_climate_data(location, db, spec, rng, now, hours)
+            devices = self._create_climate_data(location, db, spec, rng, now, hours)
+            # One sensor per point, as the Lageplan wizard places them by hand
+            # ("Manually set sensors") - the climate heatmap reads them so.
+            for point, device in zip(points, devices, strict=True):
+                point.device = device
+            ProgeoMeasurePoint.objects.using(db).bulk_update(points, ["device"])
         else:
             device = self._create_device(location, db, f"demo-device-{spec['kind']}", f"Demo-Device {spec['kind']}")
             measurements = self._create_measurements(device, db, spec, rng, now, hours)
@@ -837,7 +842,8 @@ class Command(BaseCommand):
         LORAWAN_INTERVAL_MIN minutes (own phase, some jitter), lost packets
         and two gateway outages, sensor noise, calibration offsets, 0.1
         resolution and a slowly draining battery. The rooms follow the
-        weather (_Weather) with their own inertia, see _Room."""
+        weather (_Weather) with their own inertia, see _Room. Returns the
+        devices in the order of spec["points"]."""
         devices = []
         for number, (label, *_position) in enumerate(spec["points"], start=1):
             device = self._create_device(
@@ -883,6 +889,7 @@ class Command(BaseCommand):
                 )
         measurements.sort(key=lambda measurement: measurement.last_fetched)  # pk order = time order
         ProgeoMeasurement.objects.using(db).bulk_create(measurements, batch_size=2000)
+        return [device for device, *_state in devices]
 
     # ---------------------------------------------------------------- lageplan
 

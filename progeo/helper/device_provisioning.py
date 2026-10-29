@@ -26,6 +26,8 @@ FIRMWARE_VERSION = "v1.2.0-tls-lua53"
 PORTAL = {"ssid": "MicroBoxInstallHelper", "pwd": "microWord", "timeout_sec": 60}
 # The controller's own address inside its setup network.
 PORTAL_URL = "http://192.168.16.1"
+# control.poll_sec of the config: 4 h.
+CONTROL_POLL_SEC = 14400
 
 SENSORS_RANGE = (1, 128)
 INTERVAL_RANGE = (10, 86400)
@@ -131,6 +133,7 @@ def render_config(plan) -> str:
         "  control = {",
         f"    url = {lua_string(plan['url'])}, -- {{project_id}}: device.project_id",
         f"    token = {lua_string(plan['token'])},",
+        f"    poll_sec = {CONTROL_POLL_SEC},",
         "  },",
         "  portal = {",
         f"    ssid = {lua_string(PORTAL['ssid'])},  -- name of the setup network",

@@ -115,9 +115,20 @@ export const heatColorTable = (): Uint8ClampedArray => {
   return table;
 };
 
+/** CSS colour of `heat` (0..1, clamped) from a heatColorTable. */
+export const heatColorAt = (table: Uint8ClampedArray, heat: number): string => {
+  const index = Math.round(Math.min(Math.max(Number.isFinite(heat) ? heat : 0, 0), 1) * 255) * 3;
+  return `rgb(${table[index]}, ${table[index + 1]}, ${table[index + 2]})`;
+};
+
 /** RGBA pixels of the heat grid (grid[gy][gx], gy upwards) as an image whose
- * first row is the top - i.e. the highest gy. */
-export const heatPixels = (grid: ArrayLike<number>[], table: Uint8ClampedArray): Uint8ClampedArray => {
+ * first row is the top - i.e. the highest gy. `alpha` (same shape, 0..1)
+ * makes cells transparent, e.g. a field heatmap away from its sensors. */
+export const heatPixels = (
+  grid: ArrayLike<number>[],
+  table: Uint8ClampedArray,
+  alpha?: ArrayLike<number>[],
+): Uint8ClampedArray => {
   const rows = grid.length;
   const columns = rows ? grid[0].length : 0;
   const pixels = new Uint8ClampedArray(rows * columns * 4);
@@ -131,7 +142,9 @@ export const heatPixels = (grid: ArrayLike<number>[], table: Uint8ClampedArray):
       pixels[pixel] = table[color];
       pixels[pixel + 1] = table[color + 1];
       pixels[pixel + 2] = table[color + 2];
-      pixels[pixel + 3] = 255;
+      pixels[pixel + 3] = alpha
+        ? Math.round(Math.min(Math.max(Number(alpha[gy][gx]) || 0, 0), 1) * 255)
+        : 255;
     }
   }
   return pixels;

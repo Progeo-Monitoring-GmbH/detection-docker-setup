@@ -58,6 +58,9 @@ const LocationClimatePanels = ({
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
   const [hoveredDeviceId, setHoveredDeviceId] = useState<number | null>(null);
+  // Reference time of the comparison tooltips (a clicked point) - shared by
+  // every chart, so humidity and temperature compare against the same moment.
+  const [referenceTime, setReferenceTime] = useState<number | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const [renameOpen, setRenameOpen] = useState(false);
   // Only the latest request may land - a slow (long-range, aggregated)
@@ -209,6 +212,8 @@ const LocationClimatePanels = ({
         hoveredDeviceId={hoveredDeviceId}
         onHoverDevice={setHoveredDeviceId}
         bucketSeconds={bucketSeconds}
+        referenceTime={referenceTime}
+        onReferenceChange={setReferenceTime}
       />
     );
 
@@ -221,7 +226,10 @@ const LocationClimatePanels = ({
             label: t(timeRangeLabelKey(value)),
           }))}
           value={range}
-          onChange={(value) => setSelectedRange(value as TimeRange)}
+          onChange={(value) => {
+            setSelectedRange(value as TimeRange);
+            setReferenceTime(null);
+          }}
         />
         {bucket && (
           <span style={{ color: '#8B8383', fontSize: 12 }}>

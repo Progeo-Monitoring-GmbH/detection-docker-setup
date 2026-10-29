@@ -12,11 +12,17 @@ import { Button, ButtonGroup, Card, Form, Spinner } from 'react-bootstrap';
 import { ArrowCounterclockwise, Film, ZoomIn, ZoomOut } from 'react-bootstrap-icons';
 import { plotTheme } from '../../styles/plotTheme';
 import FrameSlider, { type AlarmSpan } from './FrameSlider';
-import { buildWeightedGrid, type WeightedPoint } from './heatmapGrid';
+import {
+  buildFieldGrid,
+  buildWeightedGrid,
+  seriesRange,
+  type WeightedPoint,
+} from './heatmapGrid';
 import {
   containsPoint,
   fitView,
   heatAt,
+  heatColorAt,
   heatColorTable,
   heatPixels,
   heatRect,
@@ -60,6 +66,13 @@ type SensorHeatmap2DProps = {
   onTimestampChange?: (index: number) => void;
   /** Alarm periods, marked on the timestamp slider. */
   alarms?: AlarmSpan[];
+  /**
+   * Field mode, for readings that don't add up (LoRaWAN humidity and
+   * temperature): instead of summed heat around each sensor, the readings
+   * are interpolated between the sensors (buildFieldGrid) on a min-max
+   * colour scale over all frames, labelled with `unit`.
+   */
+  field?: { unit: string; decimals?: number };
 };
 
 type ImageSize = {
@@ -162,8 +175,11 @@ type Chart = {
     value: number;
     /** The sensor's own threshold, else the location's; null without one. */
     threshold: number | null;
+    name: string | null;
   }>;
   reference: [number, number] | null;
+  /** Field mode: opacity per grid cell (0 away from the sensors). */
+  coverage: Float64Array[] | null;
 };
 
 /**
@@ -184,8 +200,12 @@ const SensorHeatmap2D = ({
   hideChrome = false,
   onTimestampChange,
   alarms,
+  field,
 }: SensorHeatmap2DProps) => {
   const { t } = useTranslation();
+  // Primitives, so a new `field` object per render doesn't recompute.
+  const fieldUnit = field?.unit ?? null;
+  const fieldDecimals = field?.decimals ?? 1;
   const [timestampIndex, setTimestampIndex] = useState(0);
   const [sigma, setSigma] = useState<'auto' | number>('auto');
   const [imageSize, setImageSize] = useState<ImageSize | null>(null);
@@ -336,6 +356,7 @@ const SensorHeatmap2D = ({
         threshold: point.threshold != null && Number.isFinite(Number(point.threshold))
           ? Number(point.threshold)
           : null,
+        name: point.name ?? null,
       }))
       .filter((entry) => Number.isFinite(entry.x) && Number.isFinite(entry.y));
 
@@ -357,6 +378,7 @@ const SensorHeatmap2D = ({
       y: 1 - Math.floor(index / columns) / Math.max(rows - 1, 1),
       series: data[key] || [],
       threshold: null as number | null,
+      name: null as string | null,
     }));
   }, [response, location]);
 
@@ -365,11 +387,17 @@ const SensorHeatmap2D = ({
       return [];
     }
 
-    // Heat of the selected timestamp.
+    // Heat of the selected timestamp. In field mode the reading itself
+    // (temperatures can be negative), NaN without one - left out.
     return sensors.map((sensor) => {
       const value = sensor.series[timestampIndex];
+      const missing = value == null || !Number.isFinite(Number(value));
       const weight =
-        value == null || !Number.isFinite(Number(value))
+        fieldUnit != null
+        ? missing
+          ? Number.NaN
+          : Number(value)
+        : missing
           ? 0
           : Math.abs(Number(value));
 
@@ -380,7 +408,19 @@ const SensorHeatmap2D = ({
         weight,
       };
     });
-  }, [sensors, timestamps.length, timestampIndex]);
+  }, [sensors, timestamps.length, timestampIndex, fieldUnit]);
+
+  // Field mode: one colour scale for every frame, so the frames compare.
+  const fieldRange = useMemo(
+    () =>
+      fieldUnit != null
+        ? (seriesRange(
+            sensors.map((sensor) => sensor.series),
+            10 ** (1 - fieldDecimals),
+          ) ?? { min: 0, max: 1 })
+        : null,
+    [fieldUnit, fieldDecimals, sensors],
+  );
 
   const chart = useMemo<Chart | null>(() => {
     if (!timestamps.length || !sensors.length) {
@@ -439,13 +479,24 @@ const SensorHeatmap2D = ({
     // The heat field is computed in normalized space (isotropic kernels) and
     // stretched onto the scaled plot domain, so heat extends exactly as far
     // as the scaled sensor positions.
-    const { axis, grid } = buildWeightedGrid(
-      weightedPoints,
-      resolution,
-      usedSigma,
-      heatReference,
-      HEAT_BORDER_SIGMAS * autoSigma,
-    );
+    const { axis, grid, coverage } = fieldRange
+      ? buildFieldGrid(
+          weightedPoints,
+          resolution,
+          usedSigma,
+          fieldRange,
+          HEAT_BORDER_SIGMAS * autoSigma,
+        )
+      : {
+          ...buildWeightedGrid(
+            weightedPoints,
+            resolution,
+            usedSigma,
+            heatReference,
+            HEAT_BORDER_SIGMAS * autoSigma,
+          ),
+          coverage: null,
+        };
     const xAxis = axis.map((value) => toPlotX(value));
     const yAxis = axis.map((value) => toPlotY(value));
     const field = heatRect(xAxis, yAxis, world);
@@ -460,7 +511,9 @@ const SensorHeatmap2D = ({
         nx: sensor.nx,
         ny: sensor.ny,
         value: weightedPoints[index]?.weight ?? 0,
-        threshold: sensor.threshold ?? locationThreshold,
+        // Thresholds are alarm levels of the summed heat, not of a field.
+        threshold: fieldRange ? null : (sensor.threshold ?? locationThreshold),
+        name: sensor.name,
       };
     });
 
@@ -492,6 +545,7 @@ const SensorHeatmap2D = ({
       bounds,
       sensors: placed,
       reference,
+      coverage,
     };
   }, [
     sensors,
@@ -502,6 +556,7 @@ const SensorHeatmap2D = ({
     location,
     lageplanImage,
     imageSize,
+    fieldRange,
   ]);
 
   // The heat field as an image (one pixel per grid cell), smoothed when drawn.
@@ -519,7 +574,7 @@ const SensorHeatmap2D = ({
       return null;
     }
     const image = ctx.createImageData(size, size);
-    image.data.set(heatPixels(chart.grid, colorTable));
+    image.data.set(heatPixels(chart.grid, colorTable, chart.coverage ?? undefined));
     ctx.putImageData(image, 0, 0);
     return canvas;
   }, [chart, colorTable]);
@@ -598,6 +653,18 @@ const SensorHeatmap2D = ({
   const threshold = Number.isFinite(Number(location?.alarm_threshold))
     ? Number(location?.alarm_threshold)
     : null;
+
+  /** Field mode: the reading a grid value (0..1 of the scale) stands for. */
+  const fieldValue = useCallback(
+    (heat: number) =>
+      fieldRange ? fieldRange.min + heat * (fieldRange.max - fieldRange.min) : heat,
+    [fieldRange],
+  );
+  /** Field mode: a reading with its unit, e.g. "54.3 %". */
+  const formatField = useCallback(
+    (value: number) => `${value.toFixed(fieldDecimals)} ${fieldUnit ?? ''}`.trim(),
+    [fieldDecimals, fieldUnit],
+  );
 
   /** Draws the whole scene for `drawView` onto ctx (css pixels x dpr). */
   const drawScene = useCallback(
@@ -730,18 +797,22 @@ const SensorHeatmap2D = ({
       ctx.fillStyle = plotTheme.brandBlue;
       ctx.font = '600 10px system-ui, sans-serif';
       ctx.textBaseline = 'alphabetic';
-      ctx.fillText(t('heatmap_heat'), barX - 2, barTop - 5);
+      ctx.fillText(fieldUnit ?? t('heatmap_heat'), barX - 2, barTop - 5);
       ctx.font = '10px system-ui, sans-serif';
       ctx.textBaseline = 'middle';
       for (let tick = 0; tick <= 5; tick += 1) {
         const value = tick / 5;
         const y = barBottom - value * (barBottom - barTop);
         ctx.fillRect(barX + 10, y - 0.5, 3, 1);
-        ctx.fillText(value.toFixed(1), barX + 15, y);
+        ctx.fillText(
+          fieldRange ? fieldValue(value).toFixed(fieldDecimals) : value.toFixed(1),
+          barX + 15,
+          y,
+        );
       }
       ctx.restore();
     },
-    [chart, lageplanImage, heatCanvas, colorTable, t],
+    [chart, lageplanImage, heatCanvas, colorTable, t, fieldUnit, fieldRange, fieldValue, fieldDecimals],
   );
 
   const hoveredIndex = hoveredSensor
@@ -880,7 +951,13 @@ const SensorHeatmap2D = ({
     setHoveredSensor(null);
     const [wx, wy] = toWorld(view, sx, sy);
     const insidePlan = wx >= 0 && wy >= 0 && wx <= chart.world.width && wy <= chart.world.height;
-    const heat = heatAt(chart.grid, chart.xAxis, chart.yAxis, wx, wy, chart.world);
+    // A field has no value where it fades out (away from the sensors).
+    const covered = chart.coverage
+      ? (heatAt(chart.coverage, chart.xAxis, chart.yAxis, wx, wy, chart.world) ?? 0) > 0
+      : true;
+    const heat = covered
+      ? heatAt(chart.grid, chart.xAxis, chart.yAxis, wx, wy, chart.world)
+      : null;
     const meters = chart.reference && insidePlan ? pixelToMeters(wx, wy, location) : null;
     setCursorInfo(
       meters || heat != null
@@ -1163,9 +1240,29 @@ const SensorHeatmap2D = ({
             {hoveredSensor && (
               <SensorTooltip
                 sensorPos={hoveredSensor.pos}
+                // Field mode: the sensors are devices, named by their MAC.
+                name={
+                  fieldRange
+                    ? chart?.sensors.find((sensor) => sensor.pos === hoveredSensor.pos)?.name
+                    : undefined
+                }
                 meters={hoveredSensor.meters}
                 value={hoveredSensor.value}
-                threshold={chart?.sensors.find((sensor) => sensor.pos === hoveredSensor.pos)?.threshold ?? threshold}
+                unit={fieldUnit ?? undefined}
+                decimals={fieldRange ? fieldDecimals : undefined}
+                dotColor={
+                  fieldRange && fieldRange.max > fieldRange.min
+                    ? heatColorAt(
+                        colorTable,
+                        (hoveredSensor.value - fieldRange.min) / (fieldRange.max - fieldRange.min),
+                      )
+                    : undefined
+                }
+                threshold={
+                  fieldRange
+                    ? null
+                    : (chart?.sensors.find((sensor) => sensor.pos === hoveredSensor.pos)?.threshold ?? threshold)
+                }
                 cursorX={hoveredSensor.cursorX}
                 cursorY={hoveredSensor.cursorY}
                 containerWidth={wrapSize.width}
@@ -1189,7 +1286,11 @@ const SensorHeatmap2D = ({
               >
                 {[
                   cursorInfo.meters ? formatMeters(cursorInfo.meters) : null,
-                  cursorInfo.heat != null ? `${t('heatmap_heat')} ${cursorInfo.heat.toFixed(2)}` : null,
+                  cursorInfo.heat == null
+                    ? null
+                    : fieldRange
+                      ? formatField(fieldValue(cursorInfo.heat))
+                      : `${t('heatmap_heat')} ${cursorInfo.heat.toFixed(2)}`,
                 ]
                   .filter(Boolean)
                   .join(' · ')}

@@ -85,3 +85,57 @@ def test_climate_rejects_invalid_days(api_client, lorawan_location):
     response = api_client.get(f"/v1/location/{lorawan_location.id}/climate/?days=abc")
 
     assert response.status_code == 400
+
+
+# -- climate-heatmap -----------------------------------------------------------
+
+def _devices(location):
+    by_mac = {device.mac or device.hardware: device for device in location.progeodevice_set.using(f.DB).all()}
+    return by_mac["a-sensor"], by_mac["b-sensor"]
+
+
+def test_climate_heatmap_has_a_series_per_placed_device(api_client, lorawan_location):
+    sensor_a, sensor_b = _devices(lorawan_location)
+    f.make_measure_point(lorawan_location, 1, device=sensor_b, nx=0.2, ny=0.3)
+    f.make_measure_point(lorawan_location, 2, device=sensor_a, nx=0.6, ny=0.7, name="Nord")
+    f.make_measure_point(lorawan_location, 3, nx=0.5, ny=0.5)  # CAD point without device
+
+    response = api_client.get(f"/v1/location/{lorawan_location.id}/climate-heatmap/?metric=humidity&days=1")
+
+    assert response.status_code == 200, response.content
+    body = response.json()
+    assert (body["metric"], body["unit"], body["step"]) == ("humidity", "%", 3600)
+    assert len(body["timestamps"]) == 24
+    assert [(p["pos"], p["name"], p["x"]) for p in body["sensor_points"]] == [(1, "b-sensor", 0.2), (2, "Nord", 0.6)]
+    assert set(body["data"]) == {"1", "2"}
+    # Hourly frames ending now: the readings of 2 h and 1 h ago, the last one
+    # carried forward into the current hour; nothing before them.
+    assert [value for value in body["data"]["2"] if value is not None] == [50.0, 55.0, 55.0]
+    assert [value for value in body["data"]["1"] if value is not None] == [60.0, 60.0]
+    assert body["data"]["1"][0] is None
+
+
+def test_climate_heatmap_temperature_and_validation(api_client, lorawan_location):
+    sensor_a, _sensor_b = _devices(lorawan_location)
+    f.make_measure_point(lorawan_location, 1, device=sensor_a)
+
+    body = api_client.get(f"/v1/location/{lorawan_location.id}/climate-heatmap/?metric=temperature&days=1").json()
+    assert body["unit"] == "°C"
+    assert body["data"]["1"][-1] == 21.5
+
+    response = api_client.get(f"/v1/location/{lorawan_location.id}/climate-heatmap/?metric=battery")
+    assert response.status_code == 400
+    assert response.json()["reason"] == "metric must be one of humidity, temperature"
+
+
+def test_climate_heatmap_ignores_points_of_devices_moved_away(api_client, lorawan_location):
+    sensor_a, _sensor_b = _devices(lorawan_location)
+    f.make_measure_point(lorawan_location, 1, device=sensor_a)
+    other = f.make_location(f.make_account(), project_id=4344)
+    sensor_a.location = other
+    sensor_a.save(using=f.DB)
+
+    body = api_client.get(f"/v1/location/{lorawan_location.id}/climate-heatmap/").json()
+
+    assert body["sensor_points"] == []
+    assert body["data"] == {}

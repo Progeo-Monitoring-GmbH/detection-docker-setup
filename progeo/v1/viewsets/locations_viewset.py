@@ -39,6 +39,8 @@ from progeo.decorator import (
 from progeo.helper import heatmap_video, plan_meters
 from progeo.helper.basics import RequestFailed, RequestSuccess, dlog, save_check_dir
 from progeo.helper.cacher import cache_save_and_return, search_cache
+from progeo.helper.climate_heatmap import CLIMATE_METRICS, climate_frames
+from progeo.helper.climate_heatmap import frame_step as climate_frame_step
 from progeo.helper.demo import demo_export_throttle, is_demo_user
 from progeo.helper.legacy.geo import GeoHelper
 from progeo.helper.location_access import (
@@ -222,6 +224,48 @@ def _spread_over_window(queryset, limit):
     if total > limit:
         ids = [ids[-1]] if limit == 1 else [ids[round(i * (total - 1) / (limit - 1))] for i in range(limit)]
     return list(queryset.filter(pk__in=ids).order_by("pk")), total
+
+
+def _sensor_points_data(points, location, db_name, names=None):
+    """The sensor_points of a heatmap response: each ProgeoMeasurePoint with
+    its normalized and metric position. `names` ({point pk: name}) stands in
+    for points without a name of their own."""
+    # Meter positions are measured on the point's own Lageplan (a location
+    # may have several views, e.g. floors), else on the active one (the
+    # one every view shows by default); None while it isn't calibrated.
+    plans = list(ProgeoLageplan.objects.using(db_name).filter(location=location).order_by("-is_active", "-id"))
+    plans_by_id = {plan.pk: plan for plan in plans}
+    plan_sizes = {}
+
+    def _meters_of(point):
+        plan = plans_by_id.get(point.lageplan_id) or (plans[0] if plans else None)
+        if plan is None or not plan_meters.is_calibrated(plan):
+            return None
+        if plan.pk not in plan_sizes:
+            plan_sizes[plan.pk] = plan_meters.image_size(plan)
+        return plan_meters.point_meters(point.nx, point.ny, plan, plan_sizes[plan.pk])
+
+    sensor_points = []
+    for point in points:
+        meters = _meters_of(point)
+        sensor_points.append({
+            "pos": point.sensor_order,
+            # Raw normalized coordinates - the Lageplan's own alignment
+            # (offset/scale) maps them onto the plan, see SensorHeatmap2D.
+            "x": round(point.nx, 4),
+            "y": round(point.ny, 4),
+            "x_m": round(meters[0], 2) if meters else None,
+            "y_m": round(meters[1], 2) if meters else None,
+            "name": point.name or (names or {}).get(point.pk),
+            # The view (Lageplan) the point sits on, and its grid cell -
+            # the smartex® dm lines join the sensors of one grid row.
+            "lageplan": point.lageplan_id,
+            "grid_x": point.grid_x,
+            "grid_y": point.grid_y,
+            "last_value": point.last_value,
+            "threshold": point.threshold,
+        })
+    return sensor_points
 
 
 def _location_data(location, account):
@@ -1693,43 +1737,9 @@ class LocationViewSet(ProgeoModalViewSet):
             total = len(queryset)
 
         timestamps = []
-        sensor_points = []
         _map = {}
 
-        # Meter positions are measured on the point's own Lageplan (a location
-        # may have several views, e.g. floors), else on the active one (the
-        # one every view shows by default); None while it isn't calibrated.
-        plans = list(ProgeoLageplan.objects.using(db_name).filter(location=location).order_by("-is_active", "-id"))
-        plans_by_id = {plan.pk: plan for plan in plans}
-        plan_sizes = {}
-
-        def _meters_of(point):
-            plan = plans_by_id.get(point.lageplan_id) or (plans[0] if plans else None)
-            if plan is None or not plan_meters.is_calibrated(plan):
-                return None
-            if plan.pk not in plan_sizes:
-                plan_sizes[plan.pk] = plan_meters.image_size(plan)
-            return plan_meters.point_meters(point.nx, point.ny, plan, plan_sizes[plan.pk])
-
-        for point in points:
-            meters = _meters_of(point)
-            sensor_points.append({
-                "pos": point.sensor_order,
-                # Raw normalized coordinates - the Lageplan's own alignment
-                # (offset/scale) maps them onto the plan, see SensorHeatmap2D.
-                "x": round(point.nx, 4),
-                "y": round(point.ny, 4),
-                "x_m": round(meters[0], 2) if meters else None,
-                "y_m": round(meters[1], 2) if meters else None,
-                "name": point.name,
-                # The view (Lageplan) the point sits on, and its grid cell -
-                # the smartex® dm lines join the sensors of one grid row.
-                "lageplan": point.lageplan_id,
-                "grid_x": point.grid_x,
-                "grid_y": point.grid_y,
-                "last_value": point.last_value,
-                "threshold": point.threshold,
-            })
+        sensor_points = _sensor_points_data(points, location, db_name)
 
         for idx, measurement in enumerate(queryset):
             
@@ -1870,6 +1880,78 @@ class LocationViewSet(ProgeoModalViewSet):
             "days": days,
             "bucket_seconds": bucket_seconds,
             "devices": sorted(devices.values(), key=lambda entry: entry["label"]),
+        })
+
+    @require_module_permissions("module_locations_enabled", "module_measurements_enabled")
+    @action(detail=True, url_path="climate-heatmap", methods=["GET"])
+    def climate_heatmap(self, request, pk=None, *args, **kwargs):
+        """Heatmap of a LoRaWAN location: ?metric=humidity|temperature of the
+        devices placed on the plan (ProgeoMeasurePoint.device, Lageplan
+        wizard) over the last ?days=, in frames of `step` seconds (see
+        helper/climate_heatmap.py). Same shape as `heatmap` - data is keyed by
+        the points' sensor_order - plus metric and unit."""
+        metric = request.query_params.get("metric") or "humidity"
+        if metric not in CLIMATE_METRICS:
+            return RequestFailed({"reason": f"metric must be one of {', '.join(CLIMATE_METRICS)}"})
+        try:
+            days = int(request.query_params.get("days", 7))
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "days must be an integer"})
+        days = max(1, min(days, MAX_HISTORY_DAYS))
+
+        location, account = self._find_location(request, pk=pk)
+        if not location:
+            return RequestFailed({"reason": "Location not found"})
+        db_name = location_db(location, account)
+
+        devices = {
+            device.pk: device for device in ProgeoDevice.objects.using(db_name).filter(location=location)
+        }
+        # Only points whose device (still) belongs to the location.
+        points = [
+            point
+            for point in ProgeoMeasurePoint.objects.using(db_name)
+            .filter(location=location, device_id__isnull=False)
+            .order_by("sensor_order", "id")
+            if point.device_id in devices
+        ]
+
+        step = climate_frame_step(days)
+        end = timezone.now()
+        start = end - timedelta(days=days)
+        rows = (
+            ProgeoMeasurement.for_account(account, using=db_name, user=request.user)
+            .annotate(measured=MEASURED_TIME)
+            .filter(
+                device_id__in={point.device_id for point in points},
+                measured__gte=start,
+                measured__lt=end,
+                **{f"{metric}__isnull": False},
+            )
+            .order_by("measured", "id")
+            .values_list("device_id", "measured", metric)
+        )
+        timestamps, series = climate_frames(
+            ((device_id, measured.timestamp(), value) for device_id, measured, value in rows),
+            start.timestamp(),
+            end.timestamp(),
+            step,
+            [point.device_id for point in points],
+        )
+
+        return RequestSuccess({
+            "location": _location_data(location, account),
+            "days": days,
+            "step": step,
+            "metric": metric,
+            "unit": CLIMATE_METRICS[metric],
+            "total": len(timestamps),
+            "data": {str(point.sensor_order): series[point.device_id] for point in points},
+            "timestamps": timestamps,
+            "sensor_points": _sensor_points_data(
+                points, location, db_name,
+                names={point.pk: devices[point.device_id].display_name for point in points},
+            ),
         })
 
     @require_module_permissions("module_locations_enabled", "module_measurements_enabled")

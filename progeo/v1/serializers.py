@@ -232,7 +232,7 @@ class ProgeoLocationMinSerializer(ProgeoBaseSerializer):
 
     class Meta:
         model = ProgeoLocation
-        fields = ["project_id", "id", "clazz", "name", "city", "plz", "address", "manager", "telefon", "mail"]
+        fields = ["project_id", "id", "clazz", "name", "city", "plz", "address", "country", "manager", "telefon", "mail", "project_type"]
 
     @staticmethod
     def get_clazz_name(_):

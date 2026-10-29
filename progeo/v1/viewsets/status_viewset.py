@@ -606,7 +606,10 @@ class StatusViewSet(ProgeoModalViewSet):
     def measure_points(self, request, *args, **kwargs):
         """Measure points of a location, addressed by its project id
         (`location_id`) or by one of its devices (`device_id`, used by the
-        device editor). Only locations the user has access to are found."""
+        device editor). Only locations the user has access to are found.
+        GET ?with_devices=1 also lists the location's devices; POST replaces
+        all points, each {x, y} (0..1) with an optional device_id of this
+        location (sensors placed by hand in the Lageplan wizard)."""
         params = request.query_params if request.method == "GET" else request.data
         location, db_name, error = _measure_point_location(request, params)
         if error:
@@ -643,6 +646,14 @@ class StatusViewSet(ProgeoModalViewSet):
                     # No Lageplan uploaded yet.
                     response_data["lageplans"] = []
                     response_data["lageplan_url"] = None
+            if (request.query_params.get("with_devices") or "").strip().lower() in {"1", "true", "yes", "on"}:
+                # The devices a point can be assigned to (wizard: "Manually set sensors").
+                response_data["devices"] = list(
+                    ProgeoDevice.objects.using(db_name)
+                    .filter(location=location)
+                    .order_by("mac", "id")
+                    .values("id", "mac", "hardware", "type", "raw_hash")
+                )
             return RequestSuccess(response_data)
 
         raw_points = request.data.get("points")
@@ -650,11 +661,13 @@ class StatusViewSet(ProgeoModalViewSet):
             return RequestFailed({"reason": "points must be a list"})
 
         # Re-placing the points must not lose what was set per sensor
-        # elsewhere (name, threshold override in Einstellungen).
-        kept = {
-            point.sensor_order: point
-            for point in ProgeoMeasurePoint.objects.using(db_name).filter(location=location)
-        }
+        # elsewhere (name, threshold override in Einstellungen) - kept by
+        # device for points placed per device, else by sensor_order.
+        existing = list(ProgeoMeasurePoint.objects.using(db_name).filter(location=location).order_by("id"))
+        kept = {point.sensor_order: point for point in existing}
+        kept_by_device = {point.device_id: point for point in existing if point.device_id}
+        devices = set(ProgeoDevice.objects.using(db_name).filter(location=location).values_list("id", flat=True))
+        assigned = set()
         normalized_points = []
         for idx, point in enumerate(raw_points, start=1):
             if not isinstance(point, dict):
@@ -664,10 +677,24 @@ class StatusViewSet(ProgeoModalViewSet):
                 y = max(0.0, min(1.0, float(point.get("y"))))
             except (TypeError, ValueError):
                 return RequestFailed({"reason": f"points[{idx - 1}] has invalid x/y"})
+            device_id = point.get("device_id")
+            if device_id not in (None, ""):
+                try:
+                    device_id = int(device_id)
+                except (TypeError, ValueError):
+                    return RequestFailed({"reason": f"points[{idx - 1}] has an invalid device_id"})
+                if device_id not in devices:
+                    return RequestFailed({"reason": f"points[{idx - 1}]: device {device_id} is not at this location"})
+                if device_id in assigned:
+                    return RequestFailed({"reason": f"points[{idx - 1}]: device {device_id} is placed twice"})
+                assigned.add(device_id)
+            else:
+                device_id = None
 
-            previous = kept.get(idx)
+            previous = kept_by_device.get(device_id) if device_id else kept.get(idx)
             normalized_points.append(ProgeoMeasurePoint(
                 location=location,
+                device_id=device_id,
                 sensor_order=idx,
                 # x/y and nx/ny are both the normalized 0..1 position here
                 # (the device editor reads nx/ny); no grid for hand-placed points.

@@ -14,6 +14,7 @@ import MeasurementSamplesCompareChart, {
 } from '../components/device/MeasurementSamplesCompareChart.tsx';
 import type { PortalOutletContext } from './LocationPortalLayout';
 import LocationClimatePanels from './LocationClimatePanels';
+import LocationClimateHeatmap from './LocationClimateHeatmap';
 import { isLorawanProject } from './projectType';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import {
@@ -33,8 +34,8 @@ const MAX_MEASUREMENTS = 300;
  */
 const LocationAnalyseTab = () => {
   const { location, locationId } = useOutletContext<PortalOutletContext>();
-  // LoRaWAN objects have no samples - humidity/temperature charts replace
-  // the heatmap and the samples chart.
+  // LoRaWAN objects have no samples - a humidity/temperature heatmap of the
+  // placed sensors and their charts replace the heatmap and samples chart.
   const isLorawan = isLorawanProject(location?.project_type);
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
@@ -162,7 +163,10 @@ const LocationAnalyseTab = () => {
       </div>
 
       {isLorawan ? (
-        <LocationClimatePanels locationId={locationId} showBattery={isStaff} />
+        <>
+          <LocationClimateHeatmap locationId={locationId} />
+          <LocationClimatePanels locationId={locationId} showBattery={isStaff} />
+        </>
       ) : (
         <>
           <div className="d-flex flex-wrap align-items-center gap-3">

@@ -47,6 +47,61 @@ const canvasLayout = (
 
 type ImagePoint = [number, number];
 
+/** How measure points (normalized nx/ny) sit on the canvas: the plan's
+ * layout plus the point alignment (offset/scale/flip of the sliders). */
+type PointTransform = ReturnType<typeof canvasLayout> & {
+  offsetX: number;
+  offsetY: number;
+  scaleX: number;
+  scaleY: number;
+  flipY: boolean;
+  zoom: number;
+};
+
+const normalizedToCanvas = (
+  [nx, ny]: ImagePoint,
+  t: PointTransform,
+): ImagePoint => [
+  t.drawX + t.offsetX * t.zoom + nx * t.drawWidth * t.scaleX,
+  t.drawY +
+    t.offsetY * t.zoom +
+    (t.flipY ? 1 - ny : ny) * t.drawHeight * t.scaleY,
+];
+
+const canvasToNormalized = (
+  [x, y]: ImagePoint,
+  t: PointTransform,
+): ImagePoint => {
+  const drawnY = (y - t.drawY - t.offsetY * t.zoom) / (t.drawHeight * t.scaleY);
+  return [
+    (x - t.drawX - t.offsetX * t.zoom) / (t.drawWidth * t.scaleX),
+    t.flipY ? 1 - drawnY : drawnY,
+  ];
+};
+
+/** A sensor placed by hand (Lageplan wizard), normalized like nx/ny. */
+export type PlacedSensor = {
+  deviceId: number;
+  label: string;
+  nx: number;
+  ny: number;
+};
+
+/** Placing sensors by hand: a click on the plan places the active device,
+ * placed sensors can be dragged. Shown instead of `measurePoints`. */
+export type SensorPlacement = {
+  sensors: PlacedSensor[];
+  activeDeviceId: number | null;
+  activeLabel?: string;
+  onPlace: (nx: number, ny: number) => void;
+  onMove: (deviceId: number, nx: number, ny: number) => void;
+  onSelect: (deviceId: number) => void;
+};
+
+const SENSOR_RADIUS = 9;
+/** Mouse travel (px) up to which a press on the plan still counts as a click. */
+const CLICK_TOLERANCE = 4;
+
 /** Click tools: pan (default), place the metric reference point, or pick
  * the two points of a known distance for the meters-per-pixel calibration. */
 type CanvasTool = 'pan' | 'reference' | 'calibrate';
@@ -84,6 +139,7 @@ type ImageCanvasStageProps = {
   }) => void;
   /** Stores the metric scale (reference point in image pixels, m/px). */
   onSaveScale?: (values: PlanScaleValues) => void;
+  placement?: SensorPlacement;
 };
 
 const ImageCanvasStage = ({
@@ -96,6 +152,7 @@ const ImageCanvasStage = ({
   locationId,
   onSaveSliders,
   onSaveScale,
+  placement,
 }: ImageCanvasStageProps) => {
   const auth = useAuth();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -105,6 +162,10 @@ const ImageCanvasStage = ({
     startOffsetX: number;
     startOffsetY: number;
   } | null>(null);
+  // Placement: the sensor being dragged, and where a press on the plan
+  // started (a click places, a drag pans).
+  const sensorDragRef = useRef<number | null>(null);
+  const pressRef = useRef<{ x: number; y: number } | null>(null);
 
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const [imageError, setImageError] = useState('');
@@ -198,13 +259,17 @@ const ImageCanvasStage = ({
     ctx.fillStyle = '#f5f6f8';
     ctx.fillRect(0, 0, width, height);
 
-    const { scale, drawWidth, drawHeight, drawX, drawY } = canvasLayout(
-      canvas,
-      image,
+    const layout = canvasLayout(canvas, image, zoom, offsetX, offsetY);
+    const { scale, drawWidth, drawHeight, drawX, drawY } = layout;
+    const transform: PointTransform = {
+      ...layout,
+      offsetX: pointOffsetX,
+      offsetY: pointOffsetY,
+      scaleX: pointScaleX,
+      scaleY: pointScaleY,
+      flipY: isVerticallyFlipped,
       zoom,
-      offsetX,
-      offsetY,
-    );
+    };
     const toCanvas = ([x, y]: ImagePoint): ImagePoint => [
       drawX + x * scale,
       drawY + y * scale,
@@ -214,20 +279,48 @@ const ImageCanvasStage = ({
     ctx.strokeRect(0.5, 0.5, width - 1, height - 1);
     ctx.drawImage(image, drawX, drawY, drawWidth, drawHeight);
 
-    measurePoints.forEach((point, index) => {
+    // Sensors placed by hand: numbered dots with their label (MAC) beside.
+    placement?.sensors.forEach((sensor, index) => {
+      const [pointX, pointY] = normalizedToCanvas(
+        [sensor.nx, sensor.ny],
+        transform,
+      );
+      const active = sensor.deviceId === placement.activeDeviceId;
+
+      ctx.beginPath();
+      ctx.arc(pointX, pointY, SENSOR_RADIUS, 0, Math.PI * 2);
+      ctx.fillStyle = active ? '#0d6efd' : '#198754';
+      ctx.fill();
+      ctx.lineWidth = active ? 3 : 2;
+      ctx.strokeStyle = '#ffffff';
+      ctx.stroke();
+
+      ctx.font = '600 11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(String(index + 1), pointX, pointY);
+
+      ctx.font = '600 12px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.strokeText(sensor.label, pointX + SENSOR_RADIUS + 4, pointY);
+      ctx.fillStyle = active ? '#0d6efd' : '#212529';
+      ctx.fillText(sensor.label, pointX + SENSOR_RADIUS + 4, pointY);
+    });
+
+    (placement ? [] : measurePoints).forEach((point, index) => {
       const normalizedX = Number(point.nx);
-      const rawNormalizedY = Number(point.ny);
-      if (!Number.isFinite(normalizedX) || !Number.isFinite(rawNormalizedY)) {
+      const normalizedY = Number(point.ny);
+      if (!Number.isFinite(normalizedX) || !Number.isFinite(normalizedY)) {
         return;
       }
-      const normalizedY = isVerticallyFlipped
-        ? 1 - rawNormalizedY
-        : rawNormalizedY;
 
-      const pointX =
-        drawX + pointOffsetX * zoom + normalizedX * drawWidth * pointScaleX;
-      const pointY =
-        drawY + pointOffsetY * zoom + normalizedY * drawHeight * pointScaleY;
+      const [pointX, pointY] = normalizedToCanvas(
+        [normalizedX, normalizedY],
+        transform,
+      );
       const radius = 7;
       const label = String(point.pos ?? point.sensor_order ?? index + 1);
 
@@ -285,6 +378,7 @@ const ImageCanvasStage = ({
     calibrationPoints,
     image,
     measurePoints,
+    placement,
     offsetX,
     offsetY,
     pointOffsetX,
@@ -352,6 +446,7 @@ const ImageCanvasStage = ({
 
     const handleMouseUp = () => {
       dragRef.current = null;
+      sensorDragRef.current = null;
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -390,18 +485,30 @@ const ImageCanvasStage = ({
     setOffsetY(nextOffsetY);
   };
 
+  /** Canvas pixel under the mouse (the canvas is scaled by CSS, width: 100%). */
+  const canvasPointAt = (
+    event: React.MouseEvent<HTMLCanvasElement>,
+  ): ImagePoint | null => {
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      return null;
+    }
+    const rect = canvas.getBoundingClientRect();
+    return [
+      ((event.clientX - rect.left) * canvas.width) / rect.width,
+      ((event.clientY - rect.top) * canvas.height) / rect.height,
+    ];
+  };
+
   /** Image pixel under the mouse, or null outside the plan. */
   const imagePointAt = (
     event: React.MouseEvent<HTMLCanvasElement>,
   ): ImagePoint | null => {
     const canvas = canvasRef.current;
-    if (!canvas || !image) {
+    const canvasPoint = canvasPointAt(event);
+    if (!canvas || !image || !canvasPoint) {
       return null;
     }
-    const rect = canvas.getBoundingClientRect();
-    // The canvas is scaled by CSS (width: 100%).
-    const canvasX = ((event.clientX - rect.left) * canvas.width) / rect.width;
-    const canvasY = ((event.clientY - rect.top) * canvas.height) / rect.height;
     const { scale, drawX, drawY } = canvasLayout(
       canvas,
       image,
@@ -409,15 +516,105 @@ const ImageCanvasStage = ({
       offsetX,
       offsetY,
     );
-    const x = (canvasX - drawX) / scale;
-    const y = (canvasY - drawY) / scale;
+    const x = (canvasPoint[0] - drawX) / scale;
+    const y = (canvasPoint[1] - drawY) / scale;
     if (x < 0 || y < 0 || x > image.naturalWidth || y > image.naturalHeight) {
       return null;
     }
     return [x, y];
   };
 
+  const pointTransform = (): PointTransform | null => {
+    const canvas = canvasRef.current;
+    if (!canvas || !image) {
+      return null;
+    }
+    return {
+      ...canvasLayout(canvas, image, zoom, offsetX, offsetY),
+      offsetX: pointOffsetX,
+      offsetY: pointOffsetY,
+      scaleX: pointScaleX,
+      scaleY: pointScaleY,
+      flipY: isVerticallyFlipped,
+      zoom,
+    };
+  };
+
+  /** Normalized position (nx/ny) under the mouse. */
+  const normalizedPointAt = (
+    event: React.MouseEvent<HTMLCanvasElement>,
+  ): ImagePoint | null => {
+    const transform = pointTransform();
+    const canvasPoint = canvasPointAt(event);
+    return transform && canvasPoint
+      ? canvasToNormalized(canvasPoint, transform)
+      : null;
+  };
+
+  /** The placed sensor under the mouse (topmost), if any. */
+  const sensorAt = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    const transform = pointTransform();
+    const canvasPoint = canvasPointAt(event);
+    if (!placement || !transform || !canvasPoint) {
+      return null;
+    }
+    return (
+      [...placement.sensors].reverse().find((sensor) => {
+        const [x, y] = normalizedToCanvas([sensor.nx, sensor.ny], transform);
+        return (
+          Math.hypot(x - canvasPoint[0], y - canvasPoint[1]) <=
+          SENSOR_RADIUS + 3
+        );
+      }) ?? null
+    );
+  };
+
+  const handleSensorMouseMove = (
+    event: React.MouseEvent<HTMLCanvasElement>,
+  ) => {
+    if (!placement || sensorDragRef.current === null) {
+      return;
+    }
+    const point = normalizedPointAt(event);
+    if (point) {
+      placement.onMove(
+        sensorDragRef.current,
+        clamp(point[0], 0, 1),
+        clamp(point[1], 0, 1),
+      );
+    }
+  };
+
+  // A click (not a pan) on the plan places the active sensor.
+  const handleClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    const press = pressRef.current;
+    pressRef.current = null;
+    if (
+      !placement ||
+      placement.activeDeviceId === null ||
+      !press ||
+      Math.hypot(event.clientX - press.x, event.clientY - press.y) >
+        CLICK_TOLERANCE
+    ) {
+      return;
+    }
+    const point = normalizedPointAt(event);
+    if (point && point.every((value) => value >= 0 && value <= 1)) {
+      placement.onPlace(point[0], point[1]);
+    }
+  };
+
   const handleMouseDown = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    pressRef.current = null;
+    if (placement && tool === 'pan') {
+      const sensor = sensorAt(event);
+      if (sensor) {
+        sensorDragRef.current = sensor.deviceId;
+        placement.onSelect(sensor.deviceId);
+        return;
+      }
+      pressRef.current = { x: event.clientX, y: event.clientY };
+    }
     if (tool !== 'pan') {
       const point = imagePointAt(event);
       if (!point) {
@@ -455,6 +652,8 @@ const ImageCanvasStage = ({
         height={CANVAS_HEIGHT}
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
+        onMouseMove={handleSensorMouseMove}
+        onClick={handleClick}
         style={{
           width: '100%',
           height: 'auto',
@@ -462,7 +661,7 @@ const ImageCanvasStage = ({
           borderRadius: 8,
           background: '#f5f6f8',
           cursor:
-            tool !== 'pan'
+            tool !== 'pan' || placement?.activeDeviceId != null
               ? 'crosshair'
               : dragRef.current
                 ? 'grabbing'
@@ -476,7 +675,13 @@ const ImageCanvasStage = ({
 
       <div className="d-flex justify-content-between align-items-center text-muted small">
         <span>Zoom: {zoom.toFixed(2)}x</span>
-        <span>Drag to pan</span>
+        <span>
+          {placement
+            ? placement.activeDeviceId != null
+              ? `Click on the plan to place ${placement.activeLabel ?? 'the selected sensor'} · drag points to move them`
+              : 'Select a sensor in step 2 · drag points to move them'
+            : 'Drag to pan'}
+        </span>
       </div>
 
       {withSliders && (
@@ -591,8 +796,8 @@ const ImageCanvasStage = ({
       {withSliders && onSaveScale && (
         <div className="border-top pt-2 d-flex flex-column gap-2">
           <strong className="small">
-            Scale (positions in meters: x to the right, y up from the
-            reference point)
+            Scale (positions in meters: x to the right, y up from the reference
+            point)
           </strong>
 
           <div className="d-flex flex-wrap align-items-center gap-2">

@@ -57,6 +57,7 @@ def test_render_config_escapes_lua_strings():
     assert 'device_hash = "1312-01"' in config
     assert 'url = "https://api.progeo.com/v1/device/1312/sample/",' in config
     assert 'token = "THMojjuhE4eFzNTZ",' in config
+    assert "poll_sec = 14400," in config
 
 
 def test_preview_saves_nothing_and_numbers_after_existing_devices(staff_client, location):

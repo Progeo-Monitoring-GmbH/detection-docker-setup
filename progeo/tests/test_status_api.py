@@ -340,3 +340,55 @@ def test_measure_points_post_keeps_names_and_thresholds(api_client, world):
     first, second = body["points"]
     assert (first["name"], first["threshold"], first["nx"], first["ny"]) == ("Nord", 150, 0.5, 0.5)
     assert (second["name"], second["threshold"]) == (None, None)
+
+
+def test_measure_points_with_devices_lists_the_locations_devices(api_client, world):
+    location, _hidden_location, (first, second) = world[0], world[1], world[2]
+    api_client.force_authenticate(user=world[5])
+
+    body = _get(api_client, "/v1/status/measure_points/", location_id=location.project_id, with_devices="1")
+
+    assert [(d["id"], d["mac"]) for d in body["devices"]] == [(first.id, "11:11"), (second.id, "22:22")]
+    assert "devices" not in _get(api_client, "/v1/status/measure_points/", location_id=location.project_id)
+
+
+def test_measure_points_post_stores_devices_and_keeps_their_names(api_client, world):
+    location, (first, second) = world[0], world[2]
+    f.make_measure_point(location, 1, name="Nord", device=second)
+    api_client.force_authenticate(user=world[5])
+
+    body = api_client.post(
+        "/v1/status/measure_points/",
+        {"location_id": location.project_id,
+         "points": [{"x": 0.1, "y": 0.2, "device_id": first.id}, {"x": 0.3, "y": 0.4, "device_id": second.id}]},
+        format="json",
+    ).json()
+
+    assert [(p["sensor_order"], p["device"], p["name"]) for p in body["points"]] == [
+        (1, first.id, None), (2, second.id, "Nord")
+    ]
+
+
+@pytest.mark.parametrize("device, reason", [
+    ("x", "points[0] has an invalid device_id"),
+    ("foreign", "is not at this location"),
+    ("twice", "is placed twice"),
+])
+def test_measure_points_post_validates_devices(api_client, world, device, reason):
+    location, first = world[0], world[2][0]
+    existing = f.make_measure_point(location, 1)
+    points = [{"x": 0.1, "y": 0.1, "device_id": device}]
+    if device == "foreign":
+        foreign = f.make_device(world[1])
+        points = [{"x": 0.1, "y": 0.1, "device_id": foreign.id}]
+    elif device == "twice":
+        points = [{"x": 0.1, "y": 0.1, "device_id": first.id}, {"x": 0.2, "y": 0.2, "device_id": first.id}]
+    api_client.force_authenticate(user=world[5])
+
+    response = api_client.post(
+        "/v1/status/measure_points/", {"location_id": location.project_id, "points": points}, format="json"
+    )
+
+    assert response.status_code == 400
+    assert reason in response.json()["reason"]
+    assert list(ProgeoMeasurePoint.objects.using(f.DB).filter(location=location)) == [existing]

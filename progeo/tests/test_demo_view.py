@@ -157,6 +157,28 @@ def test_demo_user_reads_the_regular_portal_endpoints(api_client, demo):
     assert api_client.get("/v1/user/profile/").json()["username"] == "demo"
 
 
+def test_lorawan_demo_has_one_point_per_device_and_a_climate_heatmap(api_client, demo):
+    from progeo.v1.models import ProgeoDevice, ProgeoMeasurePoint
+
+    _login(api_client, demo)
+    db = settings.DEMO_DATABASE
+    location = ProgeoLocation.objects.using(db).get(account=demo.account, project_type=6)
+    points = list(ProgeoMeasurePoint.objects.using(db).filter(location=location).order_by("sensor_order"))
+    devices = ProgeoDevice.objects.using(db).filter(location=location)
+    # Each room's sensor on its room, like placed by hand in the Lageplan wizard.
+    assert sorted(point.device_id for point in points) == sorted(device.pk for device in devices)
+    assert all(point.lageplan_id for point in points)
+    assert [point.name for point in points] == [point.device.mac for point in points]
+
+    heatmap = api_client.get(f"/v1/location/{location.pk}/climate-heatmap/?metric=temperature&days=1")
+    assert heatmap.status_code == 200, heatmap.content
+    body = heatmap.json()
+    assert [p["name"] for p in body["sensor_points"]] == ["Keller", "Wohnzimmer", "Dachboden", "Bad"]
+    assert body["location"]["lageplans"]
+    # Every sensor has a temperature in the newest frame.
+    assert all(series[-1] is not None for series in body["data"].values())
+
+
 def test_demo_user_cannot_change_anything(api_client, demo):
     from progeo.v1.models import ProgeoAlarm
 

@@ -10,6 +10,7 @@ import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import KpiStrip from '../components/ui/kit/KpiStrip';
 import SeverityBadge, { type Severity } from '../components/ui/kit/SeverityBadge';
+import { matchesLocationSearch } from '../components/location/locationSearch';
 
 type VerwaltungRow = {
   id: number;
@@ -87,17 +88,14 @@ const LocationVerwaltungView = () => {
   }, []);
 
   const filtered = useMemo(() => {
-    const query = search.trim().toLowerCase();
     return rows.filter((row) => {
       if (statusFilter !== 'Alle' && row.status !== statusFilter) {
         return false;
       }
-      if (!query) {
-        return true;
-      }
-      return [row.name, row.nr != null ? String(row.nr) : '', row.city, row.owner]
-        .filter(Boolean)
-        .some((value) => (value as string).toLowerCase().includes(query));
+      return matchesLocationSearch(
+        { name: row.name, project_id: row.nr, city: row.city, owner: row.owner },
+        search,
+      );
     });
   }, [rows, search, statusFilter]);
 

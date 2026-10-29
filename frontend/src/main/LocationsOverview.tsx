@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
+import { matchesLocationSearch } from '../components/location/locationSearch';
 import { getBackendUrl } from '../backendUrl';
 import { showRequestError } from '../components/ui/Snackbar.jsx';
 import MeasurementSamplesCompareChart, {
@@ -266,28 +267,7 @@ const LocationsOverview = () => {
   };
 
   const filteredRows = useMemo(() => {
-    const needle = searchText.trim().toLowerCase();
-    if (!needle) {
-      return rows;
-    }
-
-    return rows.filter((row) => {
-      const haystack = [
-        row.name,
-        row.city,
-        row.address,
-        row.plz,
-        row.manager,
-        row.telefon,
-        row.mail,
-        row.project_id,
-      ]
-        .filter((value) => value !== null && value !== undefined)
-        .join(' ')
-        .toLowerCase();
-
-      return haystack.includes(needle);
-    });
+    return rows.filter((row) => matchesLocationSearch(row, searchText));
   }, [rows, searchText]);
 
   // Fetch the missing detail fields and alarm summary only for the page
@@ -486,7 +466,7 @@ const LocationsOverview = () => {
         <div className="d-flex flex-wrap gap-3 align-items-center">
           <Form.Control
             type="text"
-            placeholder="Search locations..."
+            placeholder="Search by name, address, postcode, city, project id…"
             value={searchText}
             onChange={(event) => {
               setSearchText(event.target.value);
