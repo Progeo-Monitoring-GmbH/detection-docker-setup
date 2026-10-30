@@ -37,6 +37,7 @@ import {
   availableTimeRanges,
   effectiveTimeRange,
   TIME_RANGE_DAYS,
+  timeRangeCandidates,
   timeRangeLabelKey,
   type TimeRange,
 } from './timeRanges';
@@ -318,8 +319,8 @@ const LocationStatusView = ({
     !isLorawan,
   );
   const rangeOptions = useMemo(
-    () => availableTimeRanges(measurementRange),
-    [measurementRange],
+    () => availableTimeRanges(measurementRange, timeRangeCandidates({ long: true, staff: isStaff })),
+    [isStaff, measurementRange],
   );
   const range = effectiveTimeRange(selectedRange, rangeOptions);
   const rangeDays = TIME_RANGE_DAYS[range];

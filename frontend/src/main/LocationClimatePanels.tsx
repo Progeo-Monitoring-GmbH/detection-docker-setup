@@ -19,6 +19,7 @@ import {
   bucketLabel,
   effectiveTimeRange,
   TIME_RANGE_DAYS,
+  timeRangeCandidates,
   timeRangeLabelKey,
   type TimeRange,
 } from './timeRanges';
@@ -34,6 +35,9 @@ type LocationClimatePanelsProps = {
    * with the climate heatmap); without, the panels keep their own. */
   hoveredDeviceId?: number | null;
   onHoverDevice?: (deviceId: number | null) => void;
+  /** The range, picked by the parent (Analyse tab: one toggle for the
+   * heatmap and the charts) - without, the panels offer their own toggle. */
+  range?: TimeRange;
 };
 
 /**
@@ -47,20 +51,23 @@ const LocationClimatePanels = ({
   showBattery = true,
   hoveredDeviceId: controlledHoveredDevice,
   onHoverDevice,
+  range: controlledRange,
 }: LocationClimatePanelsProps) => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
   const { t } = useTranslation();
+  const authUser = auth?.user as { is_staff?: boolean; is_superuser?: boolean } | null;
+  const isStaff = !demo && Boolean(authUser?.is_staff || authUser?.is_superuser);
 
-  // Long ranges only once the data reaches that far back; an unavailable
-  // selection falls back to the longest offered range.
-  const measurementRange = useMeasurementRange(locationId, demo);
+  // Only ranges the data reaches into; an unavailable selection falls back
+  // to the longest offered range.
+  const measurementRange = useMeasurementRange(locationId, demo, controlledRange == null);
   const availableRanges = useMemo(
-    () => availableTimeRanges(measurementRange),
-    [measurementRange],
+    () => availableTimeRanges(measurementRange, timeRangeCandidates({ long: true, staff: isStaff })),
+    [isStaff, measurementRange],
   );
   const [selectedRange, setSelectedRange] = useState<TimeRange>('7d');
-  const range = effectiveTimeRange(selectedRange, availableRanges);
+  const range = controlledRange ?? effectiveTimeRange(selectedRange, availableRanges);
   const [climate, setClimate] = useState<ClimateResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
@@ -69,7 +76,13 @@ const LocationClimatePanels = ({
   const setHoveredDeviceId = onHoverDevice ?? setOwnHoveredDevice;
   // Reference time of the comparison tooltips (a clicked point) - shared by
   // every chart, so humidity and temperature compare against the same moment.
-  const [referenceTime, setReferenceTime] = useState<number | null>(null);
+  // Kept per range - another range (also the parent's) drops it.
+  const [reference, setReference] = useState<{ range: TimeRange; time: number } | null>(null);
+  const referenceTime = reference?.range === range ? reference.time : null;
+  const setReferenceTime = useCallback(
+    (time: number | null) => setReference(time == null ? null : { range, time }),
+    [range],
+  );
   const importInputRef = useRef<HTMLInputElement>(null);
   const [renameOpen, setRenameOpen] = useState(false);
   // Only the latest request may land - a slow (long-range, aggregated)
@@ -113,8 +126,7 @@ const LocationClimatePanels = ({
   const bucketSeconds = climate?.bucket_seconds ?? null;
   const bucket = bucketLabel(bucketSeconds);
 
-  const isSuperuser =
-    !demo && Boolean((auth?.user as { is_superuser?: boolean } | null)?.is_superuser);
+  const isSuperuser = !demo && Boolean(authUser?.is_superuser);
   const [busy, setBusy] = useState(false);
 
   const cleanMeasurements = () => {
@@ -226,62 +238,63 @@ const LocationClimatePanels = ({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ padding: '2px 2px 0', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <SegmentedControl
-          options={availableRanges.map((value) => ({
-            value,
-            label: t(timeRangeLabelKey(value)),
-          }))}
-          value={range}
-          onChange={(value) => {
-            setSelectedRange(value as TimeRange);
-            setReferenceTime(null);
-          }}
-        />
-        {bucket && (
-          <span style={{ color: '#8B8383', fontSize: 12 }}>
-            {t(bucket.key, { count: bucket.count })}
-          </span>
-        )}
-        {isSuperuser && (
-          <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
-            <PillButton
-              variant="ghost"
-              label={t('device_rename_title')}
-              disabled={busy}
-              onClick={() => setRenameOpen(true)}
+      {(controlledRange == null || bucket || isSuperuser) && (
+        <div style={{ padding: '2px 2px 0', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {controlledRange == null && (
+            <SegmentedControl
+              options={availableRanges.map((value) => ({
+                value,
+                label: t(timeRangeLabelKey(value)),
+              }))}
+              value={range}
+              onChange={(value) => setSelectedRange(value as TimeRange)}
             />
-            <PillButton
-              variant="ghost"
-              label={t('measurements_export')}
-              disabled={busy}
-              onClick={exportMeasurements}
-            />
-            <PillButton
-              variant="ghost"
-              label={t('measurements_import')}
-              disabled={busy}
-              onClick={() => importInputRef.current?.click()}
-            />
-            <input
-              ref={importInputRef}
-              type="file"
-              accept="application/json"
-              style={{ display: 'none' }}
-              onChange={(event) => {
-                importMeasurements(event.target.files);
-                event.target.value = '';
-              }}
-            />
-            <PillButton
-              variant="ghost"
-              label={t('measurements_clean')}
-              disabled={busy}
-              onClick={cleanMeasurements}
-            />
-          </div>
-        )}
-      </div>
+          )}
+          {bucket && (
+            <span style={{ color: '#8B8383', fontSize: 12 }}>
+              {t(bucket.key, { count: bucket.count })}
+            </span>
+          )}
+          {isSuperuser && (
+            <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
+              <PillButton
+                variant="ghost"
+                label={t('device_rename_title')}
+                disabled={busy}
+                onClick={() => setRenameOpen(true)}
+              />
+              <PillButton
+                variant="ghost"
+                label={t('measurements_export')}
+                disabled={busy}
+                onClick={exportMeasurements}
+              />
+              <PillButton
+                variant="ghost"
+                label={t('measurements_import')}
+                disabled={busy}
+                onClick={() => importInputRef.current?.click()}
+              />
+              <input
+                ref={importInputRef}
+                type="file"
+                accept="application/json"
+                style={{ display: 'none' }}
+                onChange={(event) => {
+                  importMeasurements(event.target.files);
+                  event.target.value = '';
+                }}
+              />
+              <PillButton
+                variant="ghost"
+                label={t('measurements_clean')}
+                disabled={busy}
+                onClick={cleanMeasurements}
+              />
+            </div>
+          )}
+        </div>
+      )}
       <PanelCard title={t('climate_humidity_title')}>
         {body('humidity', t('climate_humidity_axis'), '%')}
       </PanelCard>

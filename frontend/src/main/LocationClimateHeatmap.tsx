@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
-import { Card, Spinner } from 'react-bootstrap';
+import { Spinner } from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
@@ -9,13 +9,9 @@ import axiosConfig from '../axiosConfig';
 import { showRequestError } from '../components/ui/Snackbar.jsx';
 import SensorHeatmap2D from '../components/device/SensorHeatmap2D.tsx';
 import type { SensorHeatmapResponse } from '../components/device/sensorHeatmapTypes';
+import PanelCard from '../components/ui/kit/PanelCard';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
-import {
-  SHORT_TIME_RANGES,
-  TIME_RANGE_DAYS,
-  timeRangeLabelKey,
-  type TimeRange,
-} from './timeRanges';
+import { TIME_RANGE_DAYS, type TimeRange } from './timeRanges';
 
 type ClimateMetric = 'humidity' | 'temperature';
 
@@ -33,11 +29,13 @@ const METRIC_LABEL_KEYS: Record<ClimateMetric, string> = {
 /**
  * Heatmap of a LoRaWAN location (Analyse tab): humidity or temperature of
  * the sensors placed on the Lageplan (Lageplan wizard, "Manually set
- * sensors"), interpolated between them - one frame per hour (24 h, 7 days)
- * or per 4 hours (30 days).
+ * sensors"), interpolated between them over the Analyse tab's range - one
+ * frame per hour (24 h, 7 days) or per 4 hours (30 days).
  */
 type LocationClimateHeatmapProps = {
   locationId: number | string;
+  /** The range picked in the Analyse tab - shared with the climate charts. */
+  range: TimeRange;
   /** Device hovered in the climate charts - its marker is highlighted. */
   hoveredDeviceId?: number | null;
   /** Called with the device of the hovered marker (null when left). */
@@ -46,6 +44,7 @@ type LocationClimateHeatmapProps = {
 
 const LocationClimateHeatmap = ({
   locationId,
+  range,
   hoveredDeviceId = null,
   onHoverDevice,
 }: LocationClimateHeatmapProps) => {
@@ -54,9 +53,11 @@ const LocationClimateHeatmap = ({
   const { t } = useTranslation();
   const { hasPermission } = usePermissions();
   const [metric, setMetric] = useState<ClimateMetric>('humidity');
-  const [range, setRange] = useState<TimeRange>('7d');
   const [response, setResponse] = useState<ClimateHeatmapResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  // The request (metric + range) the response belongs to - another one is loading.
+  const request = `metric=${metric}&days=${TIME_RANGE_DAYS[range]}`;
+  const [loadedRequest, setLoadedRequest] = useState<string | null>(null);
+  const loading = loadedRequest !== request;
   // Only the newest request may set the data (quick toggling).
   const requestId = useRef(0);
 
@@ -64,59 +65,44 @@ const LocationClimateHeatmap = ({
     const current = ++requestId.current;
     void axiosConfig.perform_get(
       auth,
-      `/v1/location/${locationId}/climate-heatmap/?metric=${metric}&days=${TIME_RANGE_DAYS[range]}`,
+      `/v1/location/${locationId}/climate-heatmap/?${request}`,
       (result) => {
         if (current === requestId.current) {
           setResponse((result?.data || null) as ClimateHeatmapResponse | null);
-          setLoading(false);
+          setLoadedRequest(request);
         }
       },
       (error) => {
         if (current === requestId.current) {
           showRequestError(enqueueSnackbar, 'Could not load heatmap', error);
-          setLoading(false);
+          setLoadedRequest(request);
         }
       },
     );
-  }, [auth, enqueueSnackbar, locationId, metric, range]);
+  }, [auth, enqueueSnackbar, locationId, request]);
 
   const hasPoints = Boolean(response?.sensor_points?.length);
 
   return (
-    <Card className="border-0 shadow-sm">
-      <Card.Body className="d-flex flex-column gap-2 p-2 p-md-3">
+    <PanelCard>
+      <div className="d-flex flex-column gap-2">
         <div className="d-flex flex-wrap align-items-center gap-3">
-          <h5 className="mb-0 me-auto">{t('climate_heatmap_title')}</h5>
-          {loading && response && (
-            <Spinner size="sm" animation="border" className="text-muted" />
-          )}
           <SegmentedControl
             options={(['humidity', 'temperature'] as const).map((value) => ({
               value,
               label: t(METRIC_LABEL_KEYS[value]),
             }))}
             value={metric}
-            onChange={(value) => {
-              setLoading(true);
-              setMetric(value as ClimateMetric);
-            }}
+            onChange={(value) => setMetric(value as ClimateMetric)}
           />
-          <SegmentedControl
-            options={SHORT_TIME_RANGES.map((value) => ({
-              value,
-              label: t(timeRangeLabelKey(value)),
-            }))}
-            value={range}
-            onChange={(value) => {
-              setLoading(true);
-              setRange(value as TimeRange);
-            }}
-          />
+          {loading && response && (
+            <Spinner size="sm" animation="border" className="text-muted" />
+          )}
         </div>
 
         {loading && !response ? (
           <div className="d-flex align-items-center gap-2 text-muted py-4">
-            <Spinner size="sm" animation="border" /> {t('climate_heatmap_title')}…
+            <Spinner size="sm" animation="border" /> {t('ui_loading')}
           </div>
         ) : !hasPoints ? (
           <div className="text-muted py-4 text-center">
@@ -144,8 +130,8 @@ const LocationClimateHeatmap = ({
             )}
           </>
         )}
-      </Card.Body>
-    </Card>
+      </div>
+    </PanelCard>
   );
 };
 

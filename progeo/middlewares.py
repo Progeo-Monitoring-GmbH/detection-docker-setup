@@ -282,6 +282,63 @@ class PendingAccessMiddleware:
         return token.get("user_id") if token.get(claim) else None
 
 
+class ImpersonationMiddleware:
+    """JWTs a superuser got via "log in as" (StaffUserImpersonateView, signed
+    claim `impersonator_id`) count only while that superuser still is an
+    active one, may not change the target's credentials (password, 2FA,
+    email) or administer users, and every change made with one is logged
+    with both names. Here, not in an authentication class: many viewsets
+    list simplejwt's JWTAuthentication themselves."""
+
+    # Unsafe methods only - reading these stays possible.
+    BLOCKED_PATHS = ("/v1/user/password/", "/v1/user/2fa/", "/v1/user/settings/", "/api/auth-support/staff/")
+    SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        claims = self._impersonation(request)
+        if claims is not None:
+            from django.contrib.auth.models import User
+            from django.http import JsonResponse
+
+            user_id, impersonator_id = claims
+            impersonator = User.objects.using(DEFAULT_DB_ALIAS).filter(
+                pk=impersonator_id, is_active=True, is_superuser=True,
+            ).first()
+            if impersonator is None:
+                return JsonResponse({"success": False, "reason": "Impersonation ended"}, status=401)
+            if request.method not in self.SAFE_METHODS:
+                if request.path.startswith(self.BLOCKED_PATHS):
+                    return JsonResponse(
+                        {"success": False, "reason": "Not allowed while logged in as another user",
+                         "impersonation": True},
+                        status=403,
+                    )
+                from progeo.helper.basics import ilog
+
+                ilog(f"{impersonator.username} as user {user_id}: {request.method} {request.path}",
+                     tag="[IMPERSONATION]")
+        return self.get_response(request)
+
+    @staticmethod
+    def _impersonation(request):
+        """(user id, impersonator id) of a valid "log in as" JWT, else None."""
+        header = request.META.get("HTTP_AUTHORIZATION", "")
+        if not header.startswith("Bearer "):
+            return None
+        from rest_framework_simplejwt.exceptions import TokenError
+        from rest_framework_simplejwt.tokens import AccessToken
+
+        try:
+            token = AccessToken(header[len("Bearer "):])
+        except TokenError:
+            return None
+        impersonator_id = token.get("impersonator_id")
+        return (token.get("user_id"), impersonator_id) if impersonator_id is not None else None
+
+
 class TwoFactorRequiredMiddleware:
     """With TWO_FACTOR_REQUIRED_FOR_STAFF, a staff member/superuser without
     2FA may only set it up: every request with a JWT carrying the signed

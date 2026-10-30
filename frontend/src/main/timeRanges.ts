@@ -1,28 +1,44 @@
 /**
  * Time ranges of the location views - the Zeitreihe toggle in
- * LocationStatusView and the climate charts in LocationClimatePanels. The
- * short ranges are always offered; the long ones only once the location's
- * measurements actually reach that far back (GET .../measurement-range/).
+ * LocationStatusView, the climate charts in LocationClimatePanels and the
+ * Analyse tab. A view names its candidate ranges (timeRangeCandidates); of
+ * those only the ones the location's measurements actually fill are offered
+ * (GET .../measurement-range/, availableTimeRanges).
  */
 
-export type TimeRange = '24h' | '7d' | '30d' | '1y' | '3y';
+export type TimeRange = '24h' | '7d' | '30d' | '90d' | '180d' | '1y' | '3y';
 
 export const TIME_RANGE_DAYS: Record<TimeRange, number> = {
   '24h': 1,
   '7d': 7,
   '30d': 30,
+  '90d': 90,
+  '180d': 180,
   '1y': 365,
   '3y': 1095,
 };
 
-/** Always offered - also while the measurement range is loading or failed. */
+/** Every view offers these (as far as the data reaches). */
 export const SHORT_TIME_RANGES: readonly TimeRange[] = ['24h', '7d', '30d'];
 
-/** Offered once the data spans more than `minSpanDays` (now - first). */
-const LONG_TIME_RANGES: readonly { range: TimeRange; minSpanDays: number }[] = [
-  { range: '1y', minSpanDays: 30 },
-  { range: '3y', minSpanDays: 365 },
-];
+/** The long ranges of the Status view and the climate charts. */
+const LONG_TIME_RANGES: readonly TimeRange[] = ['1y', '3y'];
+
+/** Staff (and superusers) additionally: last quarter, half year and year. */
+const STAFF_TIME_RANGES: readonly TimeRange[] = ['90d', '180d', '1y'];
+
+/** A view's candidate ranges, shortest first: the short ones, `long` adds
+ * 1y/3y, `staff` the quarter, half year and year. */
+export const timeRangeCandidates = ({
+  long = false,
+  staff = false,
+}: { long?: boolean; staff?: boolean } = {}): TimeRange[] =>
+  (Object.keys(TIME_RANGE_DAYS) as TimeRange[]).filter(
+    (range) =>
+      SHORT_TIME_RANGES.includes(range) ||
+      (long && LONG_TIME_RANGES.includes(range)) ||
+      (staff && STAFF_TIME_RANGES.includes(range)),
+  );
 
 /** GET /v1/location/<pk>/measurement-range/ (and /v1/demo/<pk>/...). */
 export type MeasurementRange = {
@@ -39,27 +55,30 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export const timeRangeLabelKey = (range: TimeRange) => `status_range_${range}`;
 
 /**
- * The ranges to offer, shortest first: the short ones always, '1y' when the
- * data spans more than 30 days and '3y' when it spans more than a year.
- * Without a (valid) measurement range only the short ones.
+ * The `candidates` to offer, shortest first: the shortest always, every
+ * longer one only once the data spans more than the candidate before it - it
+ * would show nothing the shorter one doesn't (no "last 30 days" for a week of
+ * data). Without measurements only the shortest; while the measurement range
+ * is unknown (loading, failed, unparsable) the short ones.
  */
 export const availableTimeRanges = (
   measurementRange: MeasurementRange | null | undefined,
+  candidates: readonly TimeRange[] = timeRangeCandidates({ long: true }),
   now: number = Date.now(),
 ): TimeRange[] => {
+  if (measurementRange && !measurementRange.first) {
+    return candidates.slice(0, 1);
+  }
   const first = measurementRange?.first
     ? new Date(measurementRange.first).getTime()
     : Number.NaN;
   if (!Number.isFinite(first)) {
-    return [...SHORT_TIME_RANGES];
+    return candidates.filter((range) => SHORT_TIME_RANGES.includes(range));
   }
   const spanDays = (now - first) / DAY_MS;
-  return [
-    ...SHORT_TIME_RANGES,
-    ...LONG_TIME_RANGES.filter((entry) => spanDays > entry.minSpanDays).map(
-      (entry) => entry.range,
-    ),
-  ];
+  return candidates.filter(
+    (_range, index) => index === 0 || spanDays > TIME_RANGE_DAYS[candidates[index - 1]],
+  );
 };
 
 /** The selected range if it is offered, otherwise the longest offered one. */

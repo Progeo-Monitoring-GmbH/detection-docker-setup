@@ -5,6 +5,7 @@ import { AuthContextType } from '../hooks/CoreAuthProvider';
 import { getBackendBaseUrl } from './backendUrl';
 import i18n from './i18n.jsx';
 import { isDemoReadOnlyError, isDemoUser, loginPathFor } from './main/demo';
+import { isImpersonationBlockedError } from './main/impersonation';
 import { isTwoFactorSetupError, TWO_FACTOR_SETUP_PATH } from './main/twoFactor';
 import { watchAxios } from './maintenance';
 
@@ -82,6 +83,13 @@ export default class axiosConfig {
         if (isDemoReadOnlyError(error)) {
           if (callBackError === defaultErrorCallback) {
             enqueueSnackbar(i18n.t('demo_read_only'), { variant: 'info' });
+          }
+          return;
+        }
+        if (isImpersonationBlockedError(error)) {
+          // Logged in as another user: their credentials stay theirs.
+          if (callBackError === defaultErrorCallback) {
+            enqueueSnackbar(i18n.t('impersonation_blocked'), { variant: 'info' });
           }
           return;
         }

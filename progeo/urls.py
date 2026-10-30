@@ -50,6 +50,7 @@ from progeo.v1.viewsets.docker_viewset import DockerViewSet
 from progeo.v1.viewsets.staff_admin_viewset import (
     StaffUserDeleteView,
     StaffUserDetailView,
+    StaffUserImpersonateView,
     StaffUserInviteView,
     StaffUserListView,
     StaffUserPasswordView,
@@ -84,6 +85,7 @@ urlpatterns = [
     re_path(r"^api/auth-support/staff/users/(?P<pk>\d+)/password/$", StaffUserPasswordView.as_view(), name="staff_user_password"),
     re_path(r"^api/auth-support/staff/users/(?P<pk>\d+)/delete/$", StaffUserDeleteView.as_view(), name="staff_user_delete"),
     re_path(r"^api/auth-support/staff/users/(?P<pk>\d+)/invite/$", StaffUserInviteView.as_view(), name="staff_user_invite"),
+    re_path(r"^api/auth-support/staff/users/(?P<pk>\d+)/impersonate/$", StaffUserImpersonateView.as_view(), name="staff_user_impersonate"),
     # Access requests, one-time login links, outbound overview (v1/viewsets/access_viewset.py).
     re_path(r"^api/auth-support/access-requests/$", AccessRequestCreateView.as_view(), name="access_request_create"),
     re_path(r"^api/auth-support/access-requests/verify/check/$", AccessRequestVerifyCheckView.as_view(), name="access_request_verify_check"),

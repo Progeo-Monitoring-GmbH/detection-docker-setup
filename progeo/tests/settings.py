@@ -112,6 +112,7 @@ MIDDLEWARE = [
     "progeo.middlewares.AccountMiddleware",
     "progeo.middlewares.DemoReadOnlyMiddleware",
     "progeo.middlewares.PendingAccessMiddleware",
+    "progeo.middlewares.ImpersonationMiddleware",
     "progeo.middlewares.TwoFactorRequiredMiddleware",
 ]
 

@@ -14,6 +14,7 @@ const SegmentedControl = ({ options, value, onChange }: SegmentedControlProps) =
     <div
       style={{
         display: 'flex',
+        flexWrap: 'wrap',
         gap: 3,
         background: 'var(--progeo-track)',
         borderRadius: 'var(--progeo-radius-pill)',

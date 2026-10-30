@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router';
 import { Card, Form, Spinner } from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
@@ -19,11 +19,14 @@ import LocationClimateHeatmap from './LocationClimateHeatmap';
 import { isLorawanProject } from './projectType';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import {
-  SHORT_TIME_RANGES,
+  availableTimeRanges,
+  effectiveTimeRange,
   TIME_RANGE_DAYS,
+  timeRangeCandidates,
   timeRangeLabelKey,
   type TimeRange,
 } from './timeRanges';
+import useMeasurementRange from './useMeasurementRange';
 
 /** Most measurements per period - spread evenly over it by the backend (?days=). */
 const MAX_MEASUREMENTS = 300;
@@ -32,8 +35,9 @@ type AnalyseDevice = { id: number; display_name: string };
 
 /**
  * Analyse route: the location heatmap plus the measurements of all its
- * devices over the selected period (last 24 h / 7 / 30 days). Reuses the
- * existing heatmap + measurement endpoints and components.
+ * devices over the selected period (last 24 h / 7 / 30 days; staff also the
+ * last quarter, half year and year) - only periods the data reaches into.
+ * Reuses the existing heatmap + measurement endpoints and components.
  */
 const LocationAnalyseTab = () => {
   const { location, locationId } = useOutletContext<PortalOutletContext>();
@@ -47,7 +51,15 @@ const LocationAnalyseTab = () => {
   const authUser = auth?.user as { is_staff?: boolean; is_superuser?: boolean } | null;
   const isStaff = Boolean(authUser?.is_staff || authUser?.is_superuser);
 
-  const [range, setRange] = useState<TimeRange>('7d');
+  // One period for the heatmap and the charts (also LoRaWAN's); an
+  // unavailable selection falls back to the longest offered one.
+  const measurementRange = useMeasurementRange(locationId, false);
+  const rangeOptions = useMemo(
+    () => availableTimeRanges(measurementRange, timeRangeCandidates({ staff: isStaff })),
+    [isStaff, measurementRange],
+  );
+  const [selectedRange, setSelectedRange] = useState<TimeRange>('7d');
+  const range = effectiveTimeRange(selectedRange, rangeOptions);
   // The time (epoch ms) of the heatmap's and the measurements' coupled
   // sliders - null: the newest measurement.
   const [frameTime, setFrameTime] = useState<number | null>(null);
@@ -185,15 +197,34 @@ const LocationAnalyseTab = () => {
         {exportMsg && <span className="text-success small">{exportMsg}</span>}
       </div>
 
+      <div className="d-flex flex-wrap align-items-center gap-3">
+        <SegmentedControl
+          options={rangeOptions.map((value) => ({
+            value,
+            label: t(timeRangeLabelKey(value)),
+          }))}
+          value={range}
+          onChange={(value) => {
+            setSelectedRange(value as TimeRange);
+            setFrameTime(null);
+          }}
+        />
+        {!isLorawan && loading && (heatmap || measurements.length > 0) && (
+          <Spinner size="sm" animation="border" className="text-muted" />
+        )}
+      </div>
+
       {isLorawan ? (
         <>
           <LocationClimateHeatmap
             locationId={locationId}
+            range={range}
             hoveredDeviceId={hoveredDeviceId}
             onHoverDevice={setHoveredDeviceId}
           />
           <LocationClimatePanels
             locationId={locationId}
+            range={range}
             showBattery={isStaff}
             hoveredDeviceId={hoveredDeviceId}
             onHoverDevice={setHoveredDeviceId}
@@ -201,26 +232,8 @@ const LocationAnalyseTab = () => {
         </>
       ) : (
         <>
-          <div className="d-flex flex-wrap align-items-center gap-3">
-            <SegmentedControl
-              options={SHORT_TIME_RANGES.map((value) => ({
-                value,
-                label: t(timeRangeLabelKey(value)),
-              }))}
-              value={range}
-              onChange={(value) => {
-                setRange(value as TimeRange);
-                setFrameTime(null);
-              }}
-            />
-            {loading && (heatmap || measurements.length > 0) && (
-              <Spinner size="sm" animation="border" className="text-muted" />
-            )}
-          </div>
-
           <Card className="border-0 shadow-sm p-2">
             <Card.Body>
-              <h5 className="mb-2">Heatmap</h5>
               {heatmapLoading && !heatmap ? (
                 <div className="d-flex align-items-center gap-2 text-muted py-4">
                   <Spinner size="sm" animation="border" /> Loading heatmap...

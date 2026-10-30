@@ -2,6 +2,7 @@ import { Outlet } from 'react-router';
 import LocationSidebar from '../components/sidebar/LocationSidebar';
 import TopBar from '../components/topbar/TopBar';
 import FavoritesBar from './FavoritesBar';
+import ImpersonationBanner from './ImpersonationBanner';
 
 /**
  * Layout for every route outside the object/location monitoring portal
@@ -29,6 +30,9 @@ const AppLayout = () => {
         }}
       >
         <TopBar />
+        <div style={{ marginTop: 14 }}>
+          <ImpersonationBanner />
+        </div>
         <FavoritesBar style={{ marginTop: 14 }} />
         <div style={{ marginTop: 14 }}>
           <Outlet />

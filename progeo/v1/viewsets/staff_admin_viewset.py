@@ -396,6 +396,39 @@ class StaffUserDeleteView(APIView):
         return RequestSuccess({"deleted": username})
 
 
+class StaffUserImpersonateView(APIView):
+    """Log in as another user: a superuser gets an access token of another user - no
+    password, no 2FA - to see the portal as that user. Superusers only, never
+    for another superuser or an inactive user. The token carries the signed
+    `impersonator_id`; ImpersonationMiddleware enforces its limits. No refresh
+    token: the access token's lifetime (SIMPLE_JWT ACCESS_TOKEN_LIFETIME) is
+    the longest it can last, and the target's last_login stays untouched."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk=None, *args, **kwargs):
+        from progeo.helper.basics import ilog
+        from progeo.v1.serializers import ProgeoTokenObtainPairSerializer
+
+        if not request.user.is_superuser:
+            return RequestFailed({"reason": "Superuser access required"})
+        user = User.objects.using(_USER_DB).filter(pk=pk).first()
+        if not user:
+            return RequestFailed({"reason": "Unknown user"})
+        if user.pk == request.user.pk:
+            return RequestFailed({"reason": "You cannot log in as yourself"})
+        if user.is_superuser:
+            return RequestFailed({"reason": "Superusers cannot be impersonated"})
+        if not user.is_active:
+            return RequestFailed({"reason": "The user is deactivated"})
+
+        access = ProgeoTokenObtainPairSerializer.get_token(user).access_token
+        access["impersonator_id"] = request.user.pk
+        access["impersonator"] = request.user.username
+        ilog(f"{request.user.username} logs in as {user.username} (id {user.pk})", tag="[IMPERSONATION]")
+        return RequestSuccess({"access": str(access), "username": user.username})
+
+
 # Convenience action methods for the ViewSet-style route mapping used below.
 def _check_staff(fn):
     def _wrapper(request, *args, **kwargs):

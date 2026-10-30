@@ -5,6 +5,7 @@ import {
   effectiveTimeRange,
   SHORT_TIME_RANGES,
   TIME_RANGE_DAYS,
+  timeRangeCandidates,
   timeRangeLabelKey,
   type MeasurementRange,
 } from './timeRanges';
@@ -17,12 +18,16 @@ const rangeFrom = (daysBack: number): MeasurementRange => ({
   count: 100,
 });
 
+const LONG = timeRangeCandidates({ long: true });
+
 describe('TIME_RANGE_DAYS', () => {
   it('maps every range to its request days, shortest first', () => {
     expect(TIME_RANGE_DAYS).toEqual({
       '24h': 1,
       '7d': 7,
       '30d': 30,
+      '90d': 90,
+      '180d': 180,
       '1y': 365,
       '3y': 1095,
     });
@@ -40,28 +45,66 @@ describe('TIME_RANGE_DAYS', () => {
   });
 });
 
-describe('availableTimeRanges', () => {
-  it('offers only the short ranges without a measurement range', () => {
-    expect(availableTimeRanges(null, NOW)).toEqual(['24h', '7d', '30d']);
-    expect(availableTimeRanges(undefined, NOW)).toEqual(['24h', '7d', '30d']);
+describe('timeRangeCandidates', () => {
+  it('is the short ranges by default', () => {
+    expect(timeRangeCandidates()).toEqual(['24h', '7d', '30d']);
   });
 
-  it('offers only the short ranges without measurements', () => {
+  it('adds 1y/3y for long views', () => {
+    expect(timeRangeCandidates({ long: true })).toEqual(['24h', '7d', '30d', '1y', '3y']);
+  });
+
+  it('adds quarter, half year and year for staff', () => {
+    expect(timeRangeCandidates({ staff: true })).toEqual([
+      '24h',
+      '7d',
+      '30d',
+      '90d',
+      '180d',
+      '1y',
+    ]);
+    expect(timeRangeCandidates({ long: true, staff: true })).toEqual([
+      '24h',
+      '7d',
+      '30d',
+      '90d',
+      '180d',
+      '1y',
+      '3y',
+    ]);
+  });
+});
+
+describe('availableTimeRanges', () => {
+  it('offers only the short ranges without a measurement range', () => {
+    expect(availableTimeRanges(null, LONG, NOW)).toEqual(['24h', '7d', '30d']);
+    expect(availableTimeRanges(undefined, LONG, NOW)).toEqual(['24h', '7d', '30d']);
+  });
+
+  it('offers only the shortest range without measurements', () => {
     expect(
-      availableTimeRanges({ first: null, last: null, count: 0 }, NOW),
-    ).toEqual(['24h', '7d', '30d']);
+      availableTimeRanges({ first: null, last: null, count: 0 }, LONG, NOW),
+    ).toEqual(['24h']);
   });
 
   it('ignores an unparsable first timestamp', () => {
     expect(
-      availableTimeRanges({ first: 'garbage', last: null, count: 1 }, NOW),
+      availableTimeRanges({ first: 'garbage', last: null, count: 1 }, LONG, NOW),
     ).toEqual(['24h', '7d', '30d']);
   });
 
+  it('offers no range the data does not reach into', () => {
+    expect(availableTimeRanges(rangeFrom(0.5), LONG, NOW)).toEqual(['24h']);
+    expect(availableTimeRanges(rangeFrom(1), LONG, NOW)).toEqual(['24h']);
+    expect(availableTimeRanges(rangeFrom(2), LONG, NOW)).toEqual(['24h', '7d']);
+    expect(availableTimeRanges(rangeFrom(7), LONG, NOW)).toEqual(['24h', '7d']);
+    expect(availableTimeRanges(rangeFrom(8), LONG, NOW)).toEqual(['24h', '7d', '30d']);
+  });
+
   it('offers 1y only once the data spans more than 30 days', () => {
-    expect(availableTimeRanges(rangeFrom(10), NOW)).toEqual(['24h', '7d', '30d']);
-    expect(availableTimeRanges(rangeFrom(30), NOW)).toEqual(['24h', '7d', '30d']);
-    expect(availableTimeRanges(rangeFrom(31), NOW)).toEqual([
+    expect(availableTimeRanges(rangeFrom(10), LONG, NOW)).toEqual(['24h', '7d', '30d']);
+    expect(availableTimeRanges(rangeFrom(30), LONG, NOW)).toEqual(['24h', '7d', '30d']);
+    expect(availableTimeRanges(rangeFrom(31), LONG, NOW)).toEqual([
       '24h',
       '7d',
       '30d',
@@ -70,20 +113,20 @@ describe('availableTimeRanges', () => {
   });
 
   it('offers 3y only once the data spans more than a year', () => {
-    expect(availableTimeRanges(rangeFrom(365), NOW)).toEqual([
+    expect(availableTimeRanges(rangeFrom(365), LONG, NOW)).toEqual([
       '24h',
       '7d',
       '30d',
       '1y',
     ]);
-    expect(availableTimeRanges(rangeFrom(366), NOW)).toEqual([
+    expect(availableTimeRanges(rangeFrom(366), LONG, NOW)).toEqual([
       '24h',
       '7d',
       '30d',
       '1y',
       '3y',
     ]);
-    expect(availableTimeRanges(rangeFrom(5 * 365), NOW)).toEqual([
+    expect(availableTimeRanges(rangeFrom(5 * 365), LONG, NOW)).toEqual([
       '24h',
       '7d',
       '30d',
@@ -92,8 +135,25 @@ describe('availableTimeRanges', () => {
     ]);
   });
 
+  it('steps the staff ranges along the data', () => {
+    const staff = timeRangeCandidates({ staff: true });
+    expect(availableTimeRanges(rangeFrom(60), staff, NOW)).toEqual(['24h', '7d', '30d', '90d']);
+    expect(availableTimeRanges(rangeFrom(120), staff, NOW)).toEqual([
+      '24h',
+      '7d',
+      '30d',
+      '90d',
+      '180d',
+    ]);
+    expect(availableTimeRanges(rangeFrom(200), staff, NOW)).toEqual(staff);
+  });
+
+  it('defaults to the long candidates', () => {
+    expect(availableTimeRanges(rangeFrom(400))).toEqual(LONG);
+  });
+
   it('does not hand out the shared short list itself', () => {
-    const ranges = availableTimeRanges(null, NOW);
+    const ranges = availableTimeRanges(null, SHORT_TIME_RANGES, NOW);
     ranges.push('3y');
     expect(SHORT_TIME_RANGES).toEqual(['24h', '7d', '30d']);
   });

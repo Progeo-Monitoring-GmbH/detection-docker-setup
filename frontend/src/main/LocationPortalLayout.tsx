@@ -10,6 +10,7 @@ import TopBar from '../components/topbar/TopBar';
 import EscalationBanner from './EscalationBanner';
 import FavoriteStar from './FavoriteStar';
 import FavoritesBar from './FavoritesBar';
+import ImpersonationBanner from './ImpersonationBanner';
 import { isStaffUser } from './favorites';
 import type { LocationDetail } from './locationTypes';
 
@@ -82,6 +83,7 @@ const LocationPortalLayout = () => {
         }}
       >
         <TopBar />
+        <ImpersonationBanner />
         <FavoritesBar />
         {id && !loading && location && isStaffUser(auth?.user) && (
           // Staff: the big star pins the location; superusers: its escalation.

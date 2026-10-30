@@ -11,12 +11,14 @@ import {
 import {
   ArrowRepeat,
   Envelope,
+  Incognito,
   Key,
   PencilSquare,
   PersonPlus,
   ShieldLock,
   ShieldX,
   Trash,
+  XLg,
 } from 'react-bootstrap-icons';
 import DataTable from 'react-data-table-component';
 import type { TableColumn } from 'react-data-table-component';
@@ -32,6 +34,8 @@ import {
   showRequestError,
   showSuccessBar,
 } from '../components/ui/Snackbar.jsx';
+import { formatDate } from './dateFormat';
+import { startImpersonation } from './impersonation';
 import StaffAccessRequests from './StaffAccessRequests';
 import StaffMessaging from './StaffMessaging';
 
@@ -78,6 +82,30 @@ const permissionLabel = (code: string): string => {
 
 const rowPermissions = (user: StaffUser): string[] =>
   Object.keys(user.permissions || {}).filter((code) => user.permissions[code]);
+
+type Role = 'superuser' | 'staff' | 'user';
+
+const roleOf = (user: StaffUser): Role =>
+  user.is_superuser ? 'superuser' : user.is_staff ? 'staff' : 'user';
+
+/** Sort order of the role column: users, staff, superusers. */
+const ROLE_RANK: Record<Role, number> = { user: 0, staff: 1, superuser: 2 };
+
+type Filters = {
+  text: string;
+  role: '' | Role;
+  active: '' | 'active' | 'inactive';
+  twoFactor: '' | 'on' | 'off';
+  permission: string;
+};
+
+const NO_FILTERS: Filters = {
+  text: '',
+  role: '',
+  active: '',
+  twoFactor: '',
+  permission: '',
+};
 
 /** Mirrors the backend's DEFAULT_USER_PERMISSIONS (progeo/v1/models.py) -
  * preselected for a new user; the backend applies these regardless. */
@@ -347,9 +375,25 @@ const StaffAdmin = () => {
     password: string;
   } | null>(null);
 
-  const isStaff = Boolean(
-    (auth?.user as { is_staff?: boolean } | null)?.is_staff,
-  );
+  const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+  // Toggled with every filter change: a shorter list may have fewer pages
+  // than the one shown - back to page 1.
+  const [resetPage, setResetPage] = useState(false);
+  const updateFilters = (next: Filters) => {
+    setFilters(next);
+    setResetPage((current) => !current);
+  };
+  const setFilter = <K extends keyof Filters>(key: K, value: Filters[K]) =>
+    updateFilters({ ...filters, [key]: value });
+  const filtersActive = Object.values(filters).some(Boolean);
+
+  const authUser = auth?.user as {
+    is_staff?: boolean;
+    is_superuser?: boolean;
+    user_id?: number | string;
+  } | null;
+  const isStaff = Boolean(authUser?.is_staff);
+  const isSuperuser = Boolean(authUser?.is_superuser);
 
   const fetchUsers = useCallback(() => {
     setLoading(true);
@@ -507,6 +551,89 @@ const StaffAdmin = () => {
     );
   };
 
+  // Superusers only: see the portal as this user (no password, no 2FA).
+  const handleImpersonate = (user: StaffUser) => {
+    if (
+      !window.confirm(
+        t('staff_impersonate_confirm', { username: user.username }),
+      )
+    ) {
+      return;
+    }
+    setBusyId(user.id);
+    void axiosConfig.perform_post(
+      auth,
+      `/api/auth-support/staff/users/${user.id}/impersonate/`,
+      {},
+      (result) => {
+        setBusyId(null);
+        startImpersonation(auth, result?.data?.access as string);
+        auth.navigate('/');
+      },
+      (error) => {
+        showRequestError(enqueueSnackbar, t('staff_impersonate_error'), error);
+        setBusyId(null);
+      },
+    );
+  };
+
+  const canImpersonate = (user: StaffUser) =>
+    isSuperuser &&
+    !user.is_superuser &&
+    user.is_active &&
+    String(user.id) !== String(authUser?.user_id);
+
+  const roleLabel = useCallback(
+    (role: Role) =>
+      role === 'superuser'
+        ? t('staff_badge_superuser')
+        : role === 'staff'
+          ? t('staff_badge_staff')
+          : t('staff_badge_user'),
+    [t],
+  );
+
+  const filteredUsers = useMemo(() => {
+    const needle = filters.text.trim().toLowerCase();
+    return response.users.filter((user) => {
+      if (filters.role && roleOf(user) !== filters.role) {
+        return false;
+      }
+      if (filters.active && user.is_active !== (filters.active === 'active')) {
+        return false;
+      }
+      if (
+        filters.twoFactor &&
+        Boolean(user.two_factor_enabled) !== (filters.twoFactor === 'on')
+      ) {
+        return false;
+      }
+      if (filters.permission && !user.permissions?.[filters.permission]) {
+        return false;
+      }
+      if (!needle) {
+        return true;
+      }
+      const permissions = rowPermissions(user);
+      const haystack = [
+        String(user.id),
+        user.username,
+        user.email,
+        roleLabel(roleOf(user)),
+        user.is_active ? t('staff_badge_active') : t('staff_badge_inactive'),
+        user.two_factor_enabled ? t('staff_badge_two_factor') : '',
+        ...permissions,
+        ...permissions.map(permissionLabel),
+        user.date_joined ? formatDate(user.date_joined) : '',
+        user.last_login ? formatDate(user.last_login) : '',
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(needle);
+    });
+  }, [response.users, filters, roleLabel, t]);
+
   const handleDelete = (user: StaffUser) => {
     if (
       !window.confirm(t('staff_delete_confirm', { username: user.username }))
@@ -538,8 +665,9 @@ const StaffAdmin = () => {
   const columns = useMemo<TableColumn<StaffUser>[]>(
     () => [
       {
+        id: 'username',
         name: t('staff_col_username'),
-        selector: (row) => row.username,
+        selector: (row) => row.username.toLowerCase(),
         sortable: true,
         cell: (row) => (
           <span>
@@ -552,43 +680,55 @@ const StaffAdmin = () => {
       },
       {
         name: t('staff_col_email'),
-        selector: (row) => row.email || '-',
+        selector: (row) => (row.email || '').toLowerCase(),
+        format: (row) => row.email || '-',
         sortable: true,
       },
       {
         name: t('staff_col_staff'),
-        cell: (row) =>
-          row.is_staff ? (
-            <Badge bg="warning" text="dark">
-              {t('staff_badge_staff')}
+        selector: (row) => ROLE_RANK[roleOf(row)],
+        sortable: true,
+        cell: (row) => {
+          const role = roleOf(row);
+          return (
+            <Badge
+              bg={role === 'user' ? 'secondary' : 'warning'}
+              text={role === 'user' ? undefined : 'dark'}
+            >
+              {roleLabel(role)}
             </Badge>
-          ) : (
-            <Badge bg="secondary">{t('staff_badge_user')}</Badge>
-          ),
-        width: '80px',
+          );
+        },
+        width: '120px',
       },
       {
         name: t('staff_col_active'),
+        selector: (row) => Number(row.is_active),
+        sortable: true,
         cell: (row) =>
           row.is_active ? (
             <Badge bg="success">{t('staff_badge_active')}</Badge>
           ) : (
             <Badge bg="danger">{t('staff_badge_inactive')}</Badge>
           ),
-        width: '90px',
+        width: '100px',
       },
       {
         name: t('staff_col_two_factor'),
+        selector: (row) => Number(Boolean(row.two_factor_enabled)),
+        sortable: true,
         cell: (row) =>
           row.two_factor_enabled ? (
             <Badge bg="success">{t('staff_badge_two_factor')}</Badge>
           ) : (
             <span className="text-muted small">-</span>
           ),
-        width: '70px',
+        width: '80px',
       },
       {
         name: t('staff_col_permissions'),
+        selector: (row) => rowPermissions(row).length,
+        sortable: true,
         cell: (row) => {
           const enabled = rowPermissions(row);
           if (enabled.length === 0) {
@@ -615,8 +755,22 @@ const StaffAdmin = () => {
         },
       },
       {
+        name: t('staff_col_date_joined'),
+        selector: (row) => row.date_joined || '',
+        format: (row) => formatDate(row.date_joined, 'date'),
+        sortable: true,
+        width: '120px',
+      },
+      {
+        name: t('staff_col_last_login'),
+        selector: (row) => row.last_login || '',
+        format: (row) => formatDate(row.last_login),
+        sortable: true,
+        width: '150px',
+      },
+      {
         name: t('staff_col_actions'),
-        width: '260px',
+        width: '300px',
         cell: (row) => (
           <span className="d-flex gap-1">
             <Button
@@ -661,6 +815,17 @@ const StaffAdmin = () => {
                 <ShieldX size={14} />
               </Button>
             )}
+            {canImpersonate(row) && (
+              <Button
+                size="sm"
+                variant="outline-dark"
+                title={t('staff_impersonate')}
+                disabled={busyId === row.id}
+                onClick={() => handleImpersonate(row)}
+              >
+                <Incognito size={14} />
+              </Button>
+            )}
             <Button
               size="sm"
               variant="outline-danger"
@@ -675,7 +840,7 @@ const StaffAdmin = () => {
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [busyId, t],
+    [busyId, t, roleLabel, isSuperuser],
   );
 
   if (!isStaff) {
@@ -721,10 +886,96 @@ const StaffAdmin = () => {
             </div>
           </div>
 
+          <div className="d-flex flex-wrap align-items-center gap-2 mb-2">
+            <Form.Control
+              size="sm"
+              style={{ width: 240 }}
+              placeholder={t('staff_filter_text')}
+              aria-label={t('staff_filter_text')}
+              value={filters.text}
+              onChange={(event) => setFilter('text', event.target.value)}
+            />
+            <Form.Select
+              size="sm"
+              style={{ width: 'auto' }}
+              aria-label={t('staff_col_staff')}
+              value={filters.role}
+              onChange={(event) =>
+                setFilter('role', event.target.value as Filters['role'])
+              }
+            >
+              <option value="">{t('staff_filter_all_roles')}</option>
+              <option value="superuser">{t('staff_badge_superuser')}</option>
+              <option value="staff">{t('staff_badge_staff')}</option>
+              <option value="user">{t('staff_badge_user')}</option>
+            </Form.Select>
+            <Form.Select
+              size="sm"
+              style={{ width: 'auto' }}
+              aria-label={t('staff_col_active')}
+              value={filters.active}
+              onChange={(event) =>
+                setFilter('active', event.target.value as Filters['active'])
+              }
+            >
+              <option value="">{t('staff_filter_all_states')}</option>
+              <option value="active">{t('staff_badge_active')}</option>
+              <option value="inactive">{t('staff_badge_inactive')}</option>
+            </Form.Select>
+            <Form.Select
+              size="sm"
+              style={{ width: 'auto' }}
+              aria-label={t('staff_col_two_factor')}
+              value={filters.twoFactor}
+              onChange={(event) =>
+                setFilter(
+                  'twoFactor',
+                  event.target.value as Filters['twoFactor'],
+                )
+              }
+            >
+              <option value="">{t('staff_filter_two_factor_any')}</option>
+              <option value="on">{t('staff_filter_two_factor_on')}</option>
+              <option value="off">{t('staff_filter_two_factor_off')}</option>
+            </Form.Select>
+            <Form.Select
+              size="sm"
+              style={{ width: 'auto', maxWidth: 260 }}
+              aria-label={t('staff_col_permissions')}
+              value={filters.permission}
+              onChange={(event) => setFilter('permission', event.target.value)}
+            >
+              <option value="">{t('staff_filter_all_permissions')}</option>
+              {response.all_permission_defs.map((def) => (
+                <option key={def.code} value={def.code}>
+                  {def.label}
+                </option>
+              ))}
+            </Form.Select>
+            {filtersActive && (
+              <Button
+                size="sm"
+                variant="outline-secondary"
+                onClick={() => updateFilters(NO_FILTERS)}
+              >
+                <XLg className="me-1" />
+                {t('staff_filter_clear')}
+              </Button>
+            )}
+            <small className="text-muted ms-auto">
+              {t('staff_filter_count', {
+                shown: filteredUsers.length,
+                total: response.users.length,
+              })}
+            </small>
+          </div>
+
           <DataTable
             columns={columns}
-            data={response.users}
+            data={filteredUsers}
+            defaultSortFieldId="username"
             pagination
+            paginationResetDefaultPage={resetPage}
             paginationPerPage={15}
             paginationRowsPerPageOptions={[10, 15, 25, 50]}
             progressPending={loading}

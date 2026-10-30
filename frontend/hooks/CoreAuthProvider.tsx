@@ -13,6 +13,7 @@ import { useLocation, useNavigate } from 'react-router';
 import { getBackendBaseUrl } from '../src/backendUrl';
 import { showErrorBar } from '../src/components/ui/Snackbar.jsx';
 import { isDemoUser, setDemoToken } from '../src/main/demo';
+import { clearImpersonation } from '../src/main/impersonation';
 import { otpReason, OtpReason } from '../src/main/twoFactor';
 
 type User = JwtPayload;
@@ -147,6 +148,7 @@ const CoreAuthProvider = ({ children }) => {
         setToken('');
         setRefreshToken('');
         localStorage.removeItem('authToken');
+        clearImpersonation();
         if (wasDemo) {
           // Leaving the demo: no way (and no reason) to come back to it via the login form.
           setDemoToken(null);
@@ -169,6 +171,7 @@ const CoreAuthProvider = ({ children }) => {
         localStorage.setItem('authToken', newToken);
         setToken(newToken);
         setRefreshToken(response.data.refresh);
+        clearImpersonation();
 
         if (forward) {
           navigate(forward);
