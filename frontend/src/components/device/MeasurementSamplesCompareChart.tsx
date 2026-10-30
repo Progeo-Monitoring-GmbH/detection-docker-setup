@@ -4,6 +4,7 @@ import Plot from 'react-plotly.js';
 import { useTranslation } from 'react-i18next';
 import { parseTimestamp } from '../../main/alarmUtils';
 import { plotTheme } from '../../styles/plotTheme';
+import FrameSlider from './FrameSlider';
 
 export type MeasurementCompareRow = {
   id: number;
@@ -39,6 +40,36 @@ type MeasurementSamplesCompareChartProps = {
    * (a single column when the duration is missing or zero).
    */
   alarmDurationMs?: number | null;
+  /**
+   * Time slider over the measurements (as on the heatmap): the selected
+   * measurement's EP - WP, EP and WP (optional EP + WP, WP - EP) are drawn
+   * on the upper plot, its time is marked on the lower one. Legend on top.
+   */
+  frameSlider?: boolean;
+};
+
+/** One measurement of the time slider, oldest first. */
+type Frame = {
+  id: number;
+  /** Epoch ms. */
+  ms: number;
+  ep: number[];
+  wp: number[];
+};
+
+/** EP / WP of the interleaved samples [eigen, wirk, ...]; an unpaired last value is dropped. */
+const toPotentials = (samples: number[] | null | undefined) => {
+  const ep: number[] = [];
+  const wp: number[] = [];
+  if (!Array.isArray(samples)) {
+    return { ep, wp };
+  }
+  const pairCount = Math.floor(samples.length / 2);
+  for (let i = 0; i < pairCount; i += 1) {
+    ep.push(Number(samples[i * 2] || 0));
+    wp.push(Number(samples[i * 2 + 1] || 0));
+  }
+  return { ep, wp };
 };
 
 const toPairAbsDiff = (
@@ -95,9 +126,28 @@ const MeasurementSamplesCompareChart = (
     isLoadingCurrentYear = false,
     alarmStartTime = null,
     alarmDurationMs = null,
+    frameSlider = false,
   } = props;
   const { t } = useTranslation();
   const currentYear = new Date().getFullYear();
+
+  const frames: Frame[] = React.useMemo(() => {
+    if (!frameSlider) {
+      return [];
+    }
+    return rows
+      .flatMap((row) => {
+        const ms = parseTimestamp(row.last_fetched);
+        return ms == null ? [] : [{ id: row.id, ms, ...toPotentials(row.samples) }];
+      })
+      .sort((a, b) => a.ms - b.ms);
+  }, [rows, frameSlider]);
+  const sliderTimestamps = React.useMemo(() => frames.map((frame) => frame.ms / 1000), [frames]);
+  // By id, so the selection survives reloads; the newest measurement by default.
+  const [selectedId, setSelectedId] = React.useState<number | null>(null);
+  const selectedIndex = frames.findIndex((frame) => frame.id === selectedId);
+  const frameIndex = selectedIndex >= 0 ? selectedIndex : frames.length - 1;
+  const currentFrame = frames[frameIndex] ?? null;
 
   const series: DiffSeries[] = React.useMemo(
     () =>
@@ -271,6 +321,88 @@ const MeasurementSamplesCompareChart = (
     ];
   }, [meanAndDeviationSeries, pairSumSeries, t]);
 
+  // The slider's measurement on the upper plot; EP + WP and WP - EP start
+  // hidden (legend click). Fixed uids keep the legend toggles while sliding.
+  const currentTraces = React.useMemo(() => {
+    if (!currentFrame || !currentFrame.ep.length) {
+      return [];
+    }
+    const { ep, wp } = currentFrame;
+    const x = ep.map((_, index) => index);
+    const line = (
+      uid: string,
+      name: string,
+      y: number[],
+      color: string,
+      width: number,
+      optional = false,
+    ) => ({
+      type: 'scatter' as const,
+      mode: 'lines' as const,
+      uid,
+      name,
+      x,
+      y,
+      line: { color, width },
+      hovertemplate: `%{y:.2f}<extra>${name}</extra>`,
+      ...(optional ? { visible: 'legendonly' as const } : {}),
+    });
+    return [
+      line('ep-wp', 'EP − WP', ep.map((value, i) => value - wp[i]), 'orange', 2),
+      line('ep', 'EP', ep, 'red', 1),
+      line('wp', 'WP', wp, 'blue', 1),
+      line('ep+wp', 'EP + WP', ep.map((value, i) => value + wp[i]), plotTheme.contrastViolet, 1, true),
+      line('wp-ep', 'WP − EP', wp.map((value, i) => value - ep[i]), plotTheme.contrastCyan, 1, true),
+    ];
+  }, [currentFrame]);
+
+  const shapes = React.useMemo(() => {
+    const result: Partial<Plotly.Shape>[] = [];
+    if (alarmBandX != null) {
+      result.push(
+        alarmBandX.end > alarmBandX.start
+          ? {
+              type: 'rect',
+              xref: 'x2',
+              yref: 'paper',
+              x0: alarmBandX.start,
+              x1: alarmBandX.end,
+              y0: 0,
+              y1: 0.24,
+              fillcolor: 'rgba(220, 38, 38, 0.22)',
+              line: { width: 0 },
+            }
+          : {
+              type: 'line',
+              xref: 'x2',
+              yref: 'paper',
+              x0: alarmBandX.start,
+              x1: alarmBandX.start,
+              y0: 0,
+              y1: 0.24,
+              line: {
+                color: 'rgba(220, 38, 38, 0.6)',
+                width: 2,
+              },
+            },
+      );
+    }
+    if (currentFrame) {
+      // The slider's time on the lower plot.
+      result.push({
+        type: 'line',
+        xref: 'x2',
+        yref: 'paper',
+        x0: currentFrame.ms,
+        x1: currentFrame.ms,
+        y0: 0,
+        y1: 0.24,
+        line: { color: 'orange', width: 2, dash: 'dot' },
+      });
+    }
+    return result;
+  }, [alarmBandX, currentFrame]);
+
   return (
     <Card className="border-0 shadow-sm p-3">
       <Card.Body>
@@ -300,8 +432,17 @@ const MeasurementSamplesCompareChart = (
           </small>
         </div>
 
+        {frameSlider && frames.length > 0 && (
+          <FrameSlider
+            id="measurement-compare-timestamp"
+            timestamps={sliderTimestamps}
+            index={frameIndex}
+            onChange={(index) => setSelectedId(frames[index]?.id ?? null)}
+          />
+        )}
+
         <Plot
-          data={traces}
+          data={[...traces, ...currentTraces]}
           useResizeHandler
           style={{ width: '100%', height: '520px' }}
           config={{
@@ -311,40 +452,14 @@ const MeasurementSamplesCompareChart = (
           }}
           layout={{
             autosize: true,
-            margin: { l: 56, r: 16, t: 16, b: 52 },
+            margin: { l: 56, r: 16, t: frameSlider ? 56 : 16, b: 52 },
             font: { color: plotTheme.brandBlue },
             plot_bgcolor: plotTheme.warmGray1,
             paper_bgcolor: plotTheme.white,
-            shapes:
-              alarmBandX != null
-                ? [
-                    alarmBandX.end > alarmBandX.start
-                      ? {
-                          type: 'rect',
-                          xref: 'x2',
-                          yref: 'paper',
-                          x0: alarmBandX.start,
-                          x1: alarmBandX.end,
-                          y0: 0,
-                          y1: 0.24,
-                          fillcolor: 'rgba(220, 38, 38, 0.22)',
-                          line: { width: 0 },
-                        }
-                      : {
-                          type: 'line',
-                          xref: 'x2',
-                          yref: 'paper',
-                          x0: alarmBandX.start,
-                          x1: alarmBandX.start,
-                          y0: 0,
-                          y1: 0.24,
-                          line: {
-                            color: 'rgba(220, 38, 38, 0.6)',
-                            width: 2,
-                          },
-                        },
-                  ]
-                : [],
+            // Keeps zoom and legend toggles while the slider redraws the
+            // plot; new rows reset them.
+            uirevision: `${rows.length}:${rows[0]?.id}:${rows[rows.length - 1]?.id}`,
+            shapes,
             xaxis: {
               title: t('measurement_compare_pair_index_axis'),
               domain: [0, 1],
@@ -380,7 +495,9 @@ const MeasurementSamplesCompareChart = (
             },
             legend: {
               orientation: 'h',
-              y: -0.25,
+              ...(frameSlider
+                ? { y: 1.02, yanchor: 'bottom' as const }
+                : { y: -0.25 }),
               x: 0,
               bgcolor: plotTheme.warmGray1,
               bordercolor: plotTheme.warmGray3,

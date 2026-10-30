@@ -136,6 +136,7 @@ const MeasurementDetailView = () => {
             rows={filteredRows}
             onLoadCurrentYear={() => loadMeasurements(new Date().getFullYear())}
             isLoadingCurrentYear={loading}
+            frameSlider
           />
         </>
       )}
