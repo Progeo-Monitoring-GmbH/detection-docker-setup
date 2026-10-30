@@ -24,6 +24,7 @@ export {
   parseTimestamp,
   type TimelineAlarm,
 } from './alarmUtils';
+import { formatDate } from './dateFormat';
 
 type AlarmTimelineProps = {
   alarms: TimelineAlarm[];
@@ -37,23 +38,11 @@ type AlarmTimelineProps = {
 /** Close delay for the floating alarm tooltip after the mouse left it (ms). */
 const TOOLTIP_CLOSE_DELAY_MS = 250;
 
-const formatClock = (ms: number): string =>
-  new Date(ms).toLocaleString(undefined, {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+const formatClock = (ms: number): string => formatDate(ms, 'dayMonthTime');
 
 /** Short day label for the day header, e.g. "Mo 18.08.". */
 const formatDayLabel = (ms: number): string =>
-  new Intl.DateTimeFormat('de-DE', {
-    weekday: 'short',
-    day: '2-digit',
-    month: '2-digit',
-  })
-    .format(new Date(ms))
-    .replace(/,/g, '');
+  formatDate(ms, 'weekdayDayMonth').replace(/,/g, '');
 
 const locationKey = (alarm: TimelineAlarm): string => {
   const loc = alarm.location;

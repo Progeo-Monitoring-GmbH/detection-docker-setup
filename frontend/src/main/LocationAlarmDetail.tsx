@@ -23,6 +23,7 @@ import AlarmTimeline, {
   type TimelineAlarm,
 } from './AlarmTimeline.tsx';
 import AlarmsOverview from './AlarmsOverview.tsx';
+import { formatDate } from './dateFormat';
 
 type LocationDetail = {
   id?: number | null;
@@ -293,18 +294,13 @@ const LocationAlarmDetail = ({
                   <dt className="col-sm-4">Triggered</dt>
                   <dd className="col-sm-8">
                     {selectedAlarm.triggered_at
-                      ? new Date(
-                          alarmStartTime(selectedAlarm) ?? Date.now(),
-                        ).toLocaleString()
+                      ? formatDate(alarmStartTime(selectedAlarm))
                       : '-'}
                   </dd>
                   <dt className="col-sm-4">Normalized</dt>
                   <dd className="col-sm-8">
                     {selectedAlarm.normalized_at
-                      ? new Date(
-                          parseTimestamp(selectedAlarm.normalized_at) ??
-                            Date.now(),
-                        ).toLocaleString()
+                      ? formatDate(selectedAlarm.normalized_at)
                       : '-'}
                   </dd>
                   <dt className="col-sm-4">Active For</dt>
@@ -345,10 +341,7 @@ const LocationAlarmDetail = ({
                       <dt className="col-sm-4">Acknowledged At</dt>
                       <dd className="col-sm-8">
                         {selectedAlarm.evaluated_at
-                          ? new Date(
-                              parseTimestamp(selectedAlarm.evaluated_at) ??
-                                Date.now(),
-                            ).toLocaleString()
+                          ? formatDate(selectedAlarm.evaluated_at)
                           : '-'}
                       </dd>
                     </>

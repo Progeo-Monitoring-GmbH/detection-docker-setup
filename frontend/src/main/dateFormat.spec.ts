@@ -1,23 +1,54 @@
-import { describe, expect, it } from 'vitest';
-import { formatDateTime, toLocalIso } from './dateFormat';
+import i18next from 'i18next';
+import { afterEach, describe, expect, it } from 'vitest';
+import { dateLocale, formatDate, toLocalIso } from './dateFormat';
 
-describe('formatDateTime', () => {
+const ms = new Date(2026, 7, 19, 11, 8, 9).getTime();
+
+describe('formatDate', () => {
+  afterEach(() => {
+    i18next.language = undefined as unknown as string;
+  });
+
   it('returns a dash placeholder for null, undefined and empty strings', () => {
-    expect(formatDateTime(null)).toBe('–');
-    expect(formatDateTime(undefined)).toBe('–');
-    expect(formatDateTime()).toBe('–');
-    expect(formatDateTime('')).toBe('–');
+    expect(formatDate(null)).toBe('–');
+    expect(formatDate(undefined)).toBe('–');
+    expect(formatDate('')).toBe('–');
   });
 
-  it('returns a dash placeholder (not "Invalid Date") for unparseable strings', () => {
-    expect(formatDateTime('not a date')).toBe('–');
-    expect(formatDateTime('2026-13-45T99:99:99')).toBe('–');
+  it('returns a dash placeholder (not "Invalid Date") for unparseable values', () => {
+    expect(formatDate('not a date')).toBe('–');
+    expect(formatDate('2026-13-45T99:99:99')).toBe('–');
+    expect(formatDate(Number.NaN)).toBe('–');
   });
 
-  it('formats a valid ISO string with toLocaleString', () => {
-    const value = '2026-08-19T11:08:00Z';
-    expect(formatDateTime(value)).toBe(new Date(value).toLocaleString());
-    expect(formatDateTime(value)).not.toBe('–');
+  it('falls back to our pretty format without a (known) language', () => {
+    expect(formatDate(ms)).toBe('19.08.2026, 11:08');
+    expect(formatDate(ms, 'dateTimeSeconds')).toBe('19.08.2026, 11:08:09');
+    expect(formatDate(ms, 'date')).toBe('19.08.2026');
+    expect(formatDate(ms, 'time')).toBe('11:08');
+    expect(formatDate(ms, 'dayMonthTime')).toBe('19.08., 11:08');
+  });
+
+  it('reads Dates, epoch ms, ISO strings and our pretty strings alike', () => {
+    expect(formatDate(new Date(ms))).toBe('19.08.2026, 11:08');
+    expect(formatDate('2026-08-19T11:08:09')).toBe('19.08.2026, 11:08');
+    expect(formatDate('19.08.2026, 11:08')).toBe('19.08.2026, 11:08');
+  });
+
+  it("formats in the user's language", () => {
+    i18next.language = 'en-US';
+    expect(formatDate(ms)).toBe(new Date(ms).toLocaleString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }));
+    expect(formatDate(ms, 'date')).toBe('08/19/2026');
+  });
+});
+
+describe('dateLocale', () => {
+  it('is the language when Intl knows it, else null', () => {
+    expect(dateLocale('de')).toBe('de');
+    expect(dateLocale('en-GB')).toBe('en-GB');
+    expect(dateLocale('cimode')).toBeNull();
+    expect(dateLocale('')).toBeNull();
+    expect(dateLocale('not a language!')).toBeNull();
   });
 });
 

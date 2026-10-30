@@ -15,7 +15,7 @@ import { Spinner } from 'react-bootstrap';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
-import { prettyDate } from '../helper.jsx';
+import { formatDate } from './dateFormat';
 import { showErrorBar, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import LocationPicker, { type PickableLocation } from '../components/location/LocationPicker';
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
@@ -568,7 +568,7 @@ const DeviceListView = () => {
                         <td style={tdStyle}>{hashChip(device)}</td>
                         <td style={tdStyle}>{statusChip(device)}</td>
                         <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                          {device.last_seen_at ? prettyDate(device.last_seen_at) : <span style={{ color: MUTED }}>–</span>}
+                          {device.last_seen_at ? formatDate(device.last_seen_at, 'dateTimeSeconds') : <span style={{ color: MUTED }}>–</span>}
                         </td>
                         <td style={tdStyle} className="font-monospace">
                           {device.ip || <span style={{ color: MUTED }}>–</span>}

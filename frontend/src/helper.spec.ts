@@ -8,7 +8,6 @@ import {
   getBasename,
   getCachedData,
   getDeepKeyFromObject,
-  prettyDate,
   removeElementFromArray,
   setCachedDataWithDispatcher,
   updateOrAppend,
@@ -83,33 +82,6 @@ describe('string helpers', () => {
     expect(getBasename('/media/files/a.pdf')).toBe('a.pdf');
     expect(getBasename('C:\\docs\\b.txt')).toBe('b.txt');
     expect(getBasename('plain.txt')).toBe('plain.txt');
-  });
-});
-
-describe('prettyDate', () => {
-  it('returns "-" for empty values', () => {
-    expect(prettyDate(null)).toBe('-');
-    expect(prettyDate(undefined)).toBe('-');
-    expect(prettyDate('')).toBe('-');
-  });
-
-  it('returns unparseable values unchanged', () => {
-    expect(prettyDate('garbage')).toBe('garbage');
-  });
-
-  it('formats valid dates in de-DE with 24h clock', () => {
-    const value = '2026-08-19T11:08:09Z';
-    const expected = new Date(value).toLocaleString('de-DE', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
-    });
-    expect(prettyDate(value)).toBe(expected);
-    expect(prettyDate(value)).toMatch(/^\d{2}\.\d{2}\.\d{4}, \d{2}:\d{2}:\d{2}$/);
   });
 });
 

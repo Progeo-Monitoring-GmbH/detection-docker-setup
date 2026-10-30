@@ -7,6 +7,7 @@ import { useAuth } from '../../../hooks/CoreAuthProvider';
 import axiosConfig from '../../axiosConfig';
 import ConfirmDialog from '../ui/kit/ConfirmDialog';
 import { showRequestError, showSuccessBar } from '../ui/Snackbar.jsx';
+import { formatDate } from '../../main/dateFormat';
 
 /** helper/device_commands.check_test_pairs (sensors numbered from 1). */
 type TestCheck = {
@@ -49,13 +50,7 @@ const STATUS: Record<TestCheck['status'], { bg: string; label: string }> = {
   fail: { bg: 'danger', label: 'Failed' },
 };
 
-const formatTime = (value: string | null) =>
-  value
-    ? new Date(value).toLocaleString(undefined, {
-        dateStyle: 'short',
-        timeStyle: 'medium',
-      })
-    : '-';
+const formatTime = (value: string | null) => formatDate(value, 'dateTimeSeconds');
 
 type ProvisionTestMeasurementsProps = {
   /** pk of the location the device was provisioned for. */

@@ -11,6 +11,7 @@ import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import SeverityBadge, { type Severity } from '../components/ui/kit/SeverityBadge';
 import { useProgeoRole } from './roleModel';
 import type { PortalOutletContext } from './LocationPortalLayout';
+import { formatDate } from './dateFormat';
 
 type TimelineEvent = {
   kind: 'email' | 'sms' | 'alarm_triggered' | 'alarm_acknowledged' | 'alarm_resolved';
@@ -257,7 +258,7 @@ const LocationNotificationsTab = () => {
                   <span style={{ fontSize: 14, fontWeight: 500 }}>{eventTitle(event)}</span>
                   {event.severity && <SeverityBadge severity={event.severity} label={t(`ui_severity_${event.severity}`)} />}
                   <span style={{ fontSize: 12, color: '#8B8383' }}>
-                    {new Date(event.at).toLocaleString()}
+                    {formatDate(event.at)}
                   </span>
                 </span>
                 {eventDetail(event) && (

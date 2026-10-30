@@ -11,7 +11,7 @@ import type { LocationDetail } from './locationTypes';
 import type { PortalOutletContext } from './LocationPortalLayout';
 import LocationStandortPanel from './LocationStandortPanel';
 import { useProgeoRole } from './roleModel';
-import { formatDateTime } from './dateFormat';
+import { formatDate } from './dateFormat';
 import { getProjectTypeLabel } from './projectType';
 
 type ProjectTypeOption = { value: number; label: string };
@@ -182,12 +182,12 @@ const LocationObjektTab = () => {
             />
             <LabeledInput
               label={t('objekt_field_online_since')}
-              value={formatDateTime(location?.last_updated)}
+              value={formatDate(location?.last_updated)}
               readOnly
             />
             <LabeledInput
               label={t('objekt_field_last_measurement')}
-              value={formatDateTime(location?.last_measurement_at)}
+              value={formatDate(location?.last_measurement_at)}
               readOnly
             />
           </div>

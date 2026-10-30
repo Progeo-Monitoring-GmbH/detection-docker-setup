@@ -1,4 +1,5 @@
 import { useState, type MouseEvent } from 'react';
+import { formatDate } from '../../main/dateFormat';
 
 export type ThresholdTrendPoint = {
   id: number | string;
@@ -94,13 +95,7 @@ const LegendSwatch = ({ color, dash, width = 2.5 }: { color: string; dash?: stri
 
 // The year only once the plotted span crosses a year (long ranges).
 const formatTime = (time: number, withYear = false) =>
-  new Date(time).toLocaleString(undefined, {
-    day: '2-digit',
-    month: '2-digit',
-    ...(withYear ? { year: 'numeric' as const } : {}),
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  formatDate(time, withYear ? 'dateTime' : 'dayMonthTime');
 
 const formatRatio = (ratio: number) => `${ratio.toFixed(ratio < 10 ? 2 : 0)}x`;
 

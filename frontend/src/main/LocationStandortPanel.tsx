@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Geo } from 'react-bootstrap-icons';
 import PanelCard from '../components/ui/kit/PanelCard';
 import type { LocationDetail } from './locationTypes';
-import { formatDateTime } from './dateFormat';
+import { formatDate } from './dateFormat';
 import { useConsent } from '../components/privacy/ConsentProvider';
 import MapConsentNotice from '../components/privacy/MapConsentNotice';
 
@@ -175,7 +175,7 @@ const LocationStandortPanel = ({
             {t('objekt_fact_last_measurement')}
           </span>
           <span style={{ fontWeight: 500 }}>
-            {formatDateTime(location?.last_measurement_at)}
+            {formatDate(location?.last_measurement_at)}
           </span>
         </div>
       </div>

@@ -4,7 +4,9 @@ import Plot from 'react-plotly.js';
 import { useTranslation } from 'react-i18next';
 import { parseTimestamp } from '../../main/alarmUtils';
 import { plotTheme } from '../../styles/plotTheme';
+import { formatDate } from '../../main/dateFormat';
 import FrameSlider from './FrameSlider';
+import MeasurementCompareTooltip, { type CompareTooltipData } from './MeasurementCompareTooltip';
 
 export type MeasurementCompareRow = {
   id: number;
@@ -52,18 +54,48 @@ type MeasurementSamplesCompareChartProps = {
   hideChrome?: boolean;
 };
 
-/** Traces without highlighting and that a legend click doesn't hide. */
-const FIXED_TRACES = new Set([
-  'min-max',
-  'min-max-lower',
-  'deviation',
-  'deviation-lower',
-  'pair-sum',
-  'pair-sum-diff',
-]);
+/** The bands: never highlighted. */
+const BAND_TRACES = new Set(['min-max', 'min-max-lower', 'deviation', 'deviation-lower']);
 
-/** Slider lines that start hidden, shown by a legend click. */
-const OPTIONAL_TRACES = new Set(['ep+wp', 'wp-ep']);
+/** Traces a legend click doesn't hide. */
+const FIXED_TRACES = new Set([...BAND_TRACES, 'pair-sum']);
+
+/** Lines that start hidden, shown by a legend click. */
+const OPTIONAL_TRACES = new Set(['ep+wp', 'wp-ep', 'pair-sum-diff']);
+
+const MIN_MAX_COLOR = 'rgba(153, 27, 27, 0.25)';
+const DEVIATION_COLOR = 'rgba(252, 122, 46, 0.31)';
+const EDGE_COLOR = 'rgba(0, 0, 0, 0)';
+
+/** Plotly visibility of an optional line: shown or only in the legend. */
+const visibility = (shown: ReadonlySet<string>, uid: string) => ({
+  visible: shown.has(uid) ? (true as const) : ('legendonly' as const),
+});
+
+const formatValue = (value: number) => value.toFixed(2);
+const formatSigned = (value: number) => `${value > 0 ? '+' : ''}${value.toFixed(2)}`;
+
+/** A dotted line across the plot at the hovered x. */
+const SPIKE = {
+  showspikes: true,
+  spikemode: 'across' as const,
+  spikesnap: 'cursor' as const,
+  spikethickness: 1,
+  spikedash: 'dot',
+  spikecolor: plotTheme.warmGray4,
+};
+
+/** What the tooltip reads of a hovered point's trace. */
+type HoverTrace = {
+  uid?: string;
+  name?: string;
+  xaxis?: string;
+  line?: { color?: string };
+  fillcolor?: string;
+};
+
+/** The full axis Plotly passes with hover points (the typings lack l2p). */
+type PixelAxis = { l2p?: (value: number) => number };
 
 /** How close (px) the cursor must be to a line to highlight it. */
 const HIGHLIGHT_DISTANCE_PX = 12;
@@ -115,26 +147,6 @@ const toPairAbsDiff = (
     points.push({ pairIndex: i, value: Math.abs(left - right) });
   }
   return points;
-};
-
-const formatDateTime = (value: string | null | undefined) => {
-  if (!value) {
-    return '-';
-  }
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat('de-DE', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  }).format(parsed);
 };
 
 const MeasurementSamplesCompareChart = (
@@ -281,7 +293,7 @@ const MeasurementSamplesCompareChart = (
       }
       x.push(ts);
       y.push(entry.points.reduce((acc, point) => acc + point.value, 0));
-      measurementDateTime.push(formatDateTime(entry.lastFetched));
+      measurementDateTime.push(formatDate(entry.lastFetched, 'dateTimeSeconds'));
     });
     // Change of the sum since the previous measurement (none for the first).
     const diff = y.map((value, index) => (index > 0 ? value - y[index - 1] : null));
@@ -289,78 +301,66 @@ const MeasurementSamplesCompareChart = (
     return { x, y, diff, measurementDateTime };
   }, [series]);
 
+  // EP + WP, WP - EP and the sum difference start hidden; a legend click
+  // shows them. Kept here, not by Plotly: they widen the locked y-axis or
+  // need their own axis.
+  const [shownOptional, setShownOptional] = React.useState<ReadonlySet<string>>(new Set());
+  const toggleOptional = (uid: string) =>
+    setShownOptional((shown) => {
+      const next = new Set(shown);
+      if (!next.delete(uid)) {
+        next.add(uid);
+      }
+      return next;
+    });
+  const showSumDiff = shownOptional.has('pair-sum-diff');
+
+  // All plain scatter (not scattergl): a highlight (width, opacity) then
+  // only restyles. No Plotly hover labels - the values go to the tooltip.
   const traces = React.useMemo(() => {
+    // A band: the transparent upper edge, then the lower edge filling up to
+    // it - the filled one carries the legend entry (with its colour).
+    const band = (uid: string, name: string, upper: number[], lower: number[], color: string) => [
+      {
+        type: 'scatter' as const,
+        mode: 'lines' as const,
+        uid,
+        name,
+        x: meanAndDeviationSeries.x,
+        y: upper,
+        line: { color: EDGE_COLOR, width: 1 },
+        hoverinfo: 'skip' as const,
+        showlegend: false,
+      },
+      {
+        type: 'scatter' as const,
+        mode: 'lines' as const,
+        uid: `${uid}-lower`,
+        name,
+        x: meanAndDeviationSeries.x,
+        y: lower,
+        line: { color: EDGE_COLOR, width: 1 },
+        fill: 'tonexty' as const,
+        fillcolor: color,
+        hoverinfo: 'none' as const,
+      },
+    ];
     return [
-      // Min-max band (like the deviation band, below it): the transparent
-      // max line carries the legend, the min line fills up to it.
+      ...band(
+        'min-max',
+        t('measurement_compare_min_max_label'),
+        meanAndDeviationSeries.max,
+        meanAndDeviationSeries.min,
+        MIN_MAX_COLOR,
+      ),
+      ...band(
+        'deviation',
+        t('measurement_compare_deviation_label'),
+        meanAndDeviationSeries.upper,
+        meanAndDeviationSeries.lower,
+        DEVIATION_COLOR,
+      ),
       {
-        type: 'scatter' as const,
-        mode: 'lines' as const,
-        uid: 'min-max',
-        name: t('measurement_compare_min_max_label'),
-        x: meanAndDeviationSeries.x,
-        y: meanAndDeviationSeries.max,
-        line: {
-          color: 'rgba(9, 75, 129, 0)',
-          width: 1,
-        },
-        hoverinfo: 'skip' as const,
-      },
-      {
-        type: 'scatter' as const,
-        mode: 'lines' as const,
-        uid: 'min-max-lower',
-        name: t('measurement_compare_min_max_label'),
-        x: meanAndDeviationSeries.x,
-        y: meanAndDeviationSeries.min,
-        line: {
-          color: 'rgba(9, 75, 129, 0)',
-          width: 1,
-        },
-        fill: 'tonexty' as const,
-        fillcolor: 'rgba(9, 75, 129, 0.12)',
-        hovertemplate: `${t('measurement_compare_pair_label')} %{x}<br>${t('measurement_compare_range_label')} %{customdata[0]:.2f} - %{customdata[1]:.2f}<extra>${t('measurement_compare_min_max_label')}</extra>`,
-        customdata: meanAndDeviationSeries.x.map((_, index) => [
-          meanAndDeviationSeries.min[index],
-          meanAndDeviationSeries.max[index],
-        ]),
-        showlegend: false,
-      },
-      {
-        type: 'scatter' as const,
-        mode: 'lines' as const,
-        uid: 'deviation',
-        name: t('measurement_compare_deviation_label'),
-        x: meanAndDeviationSeries.x,
-        y: meanAndDeviationSeries.upper,
-        line: {
-          color: 'rgba(36, 74, 132, 0)',
-          width: 1,
-        },
-        hoverinfo: 'skip' as const,
-      },
-      {
-        type: 'scatter' as const,
-        mode: 'lines' as const,
-        uid: 'deviation-lower',
-        name: t('measurement_compare_deviation_lower_bound_label'),
-        x: meanAndDeviationSeries.x,
-        y: meanAndDeviationSeries.lower,
-        line: {
-          color: 'rgba(196, 49, 151, 0)',
-          width: 1,
-        },
-        fill: 'tonexty' as const,
-        fillcolor: 'rgba(252, 122, 46, 0.31)',
-        hovertemplate: `${t('measurement_compare_pair_label')} %{x}<br>${t('measurement_compare_range_label')} %{customdata[0]:.2f} - %{customdata[1]:.2f}<extra>${t('measurement_compare_deviation_label')}</extra>`,
-        customdata: meanAndDeviationSeries.x.map((_, index) => [
-          meanAndDeviationSeries.lower[index],
-          meanAndDeviationSeries.upper[index],
-        ]),
-        showlegend: false,
-      },
-      {
-        // Not scattergl: a highlight (width, opacity) then only restyles.
         type: 'scatter' as const,
         mode: 'lines' as const,
         uid: 'mean',
@@ -369,13 +369,12 @@ const MeasurementSamplesCompareChart = (
         y: meanAndDeviationSeries.mean,
         line: {
           color: plotTheme.brandBlue,
-          width: 3,
+          width: 4,
         },
-        hovertemplate: `${t('measurement_compare_pair_label')} %{x}<br>${t('measurement_compare_mean_label')} %{y:.2f}<br>${t('measurement_compare_sigma_label')} %{customdata:.2f}<extra>${t('measurement_compare_mean_label')}</extra>`,
-        customdata: meanAndDeviationSeries.sigma,
+        hoverinfo: 'none' as const,
       },
       {
-        type: 'scattergl' as const,
+        type: 'scatter' as const,
         mode: 'lines' as const,
         uid: 'pair-sum',
         name: t('measurement_compare_pair_sum_label'),
@@ -385,13 +384,12 @@ const MeasurementSamplesCompareChart = (
         yaxis: 'y2' as const,
         line: {
           color: 'rgba(44, 160, 44, 0.95)',
-          width: 2,
+          width: 3,
         },
-        hovertemplate: `${t('measurement_compare_measurement_datetime_label')} %{customdata}<br>${t('measurement_compare_sum_label')} %{y:.2f}<extra>${t('measurement_compare_pair_sum_label')}</extra>`,
-        customdata: pairSumSeries.measurementDateTime,
+        hoverinfo: 'none' as const,
       },
       {
-        type: 'scattergl' as const,
+        type: 'scatter' as const,
         mode: 'lines' as const,
         uid: 'pair-sum-diff',
         name: t('measurement_compare_pair_sum_diff_label'),
@@ -402,24 +400,13 @@ const MeasurementSamplesCompareChart = (
         yaxis: 'y3' as const,
         line: {
           color: plotTheme.contrastViolet,
-          width: 1,
+          width: 2,
         },
-        hovertemplate: `%{y:+.2f}<extra>${t('measurement_compare_pair_sum_diff_label')}</extra>`,
+        hoverinfo: 'none' as const,
+        ...visibility(shownOptional, 'pair-sum-diff'),
       },
     ];
-  }, [meanAndDeviationSeries, pairSumSeries, t]);
-
-  // EP + WP and WP - EP start hidden; a legend click shows them. Kept here,
-  // not by Plotly, since they widen the locked y-axis.
-  const [shownOptional, setShownOptional] = React.useState<ReadonlySet<string>>(new Set());
-  const toggleOptional = (uid: string) =>
-    setShownOptional((shown) => {
-      const next = new Set(shown);
-      if (!next.delete(uid)) {
-        next.add(uid);
-      }
-      return next;
-    });
+  }, [meanAndDeviationSeries, pairSumSeries, shownOptional, t]);
 
   // The slider's measurement on the upper plot. Fixed uids keep the legend
   // toggles while sliding.
@@ -444,15 +431,15 @@ const MeasurementSamplesCompareChart = (
       x,
       y,
       line: { color, width },
-      hovertemplate: `%{y:.2f}<extra>${name}</extra>`,
-      ...(optional ? { visible: shownOptional.has(uid) ? (true as const) : ('legendonly' as const) } : {}),
+      hoverinfo: 'none' as const,
+      ...(optional ? visibility(shownOptional, uid) : {}),
     });
     return [
-      line('ep-wp', 'EP − WP', ep.map((value, i) => value - wp[i]), 'orange', 2),
-      line('ep', 'EP', ep, 'red', 1),
-      line('wp', 'WP', wp, 'blue', 1),
-      line('ep+wp', 'EP + WP', ep.map((value, i) => value + wp[i]), plotTheme.contrastViolet, 1, true),
-      line('wp-ep', 'WP − EP', wp.map((value, i) => value - ep[i]), plotTheme.contrastCyan, 1, true),
+      line('ep-wp', 'EP − WP', ep.map((value, i) => value - wp[i]), 'orange', 3),
+      line('ep', 'EP', ep, 'red', 2),
+      line('wp', 'WP', wp, 'blue', 2),
+      line('ep+wp', 'EP + WP', ep.map((value, i) => value + wp[i]), plotTheme.contrastViolet, 2, true),
+      line('wp-ep', 'WP − EP', wp.map((value, i) => value - ep[i]), plotTheme.contrastCyan, 2, true),
     ];
   }, [currentFrame, shownOptional]);
 
@@ -538,49 +525,106 @@ const MeasurementSamplesCompareChart = (
   }, [alarmBandX, currentFrame]);
 
   // The line under the cursor or its legend entry is highlighted: wider,
-  // the other lines faded. The fixed traces stay as they are.
+  // the other lines of its plot faded. The bands stay as they are.
   const [highlighted, setHighlighted] = React.useState<string | null>(null);
   const data = React.useMemo(() => {
     const all = [...traces, ...currentTraces];
-    if (highlighted == null) {
+    const subplot = (trace: (typeof all)[number] | undefined) =>
+      trace && 'xaxis' in trace ? trace.xaxis : 'x';
+    const highlightedTrace = all.find((trace) => trace.uid === highlighted);
+    if (!highlightedTrace) {
       return all;
     }
     return all.map((trace) => {
-      if (FIXED_TRACES.has(trace.uid)) {
+      if (BAND_TRACES.has(trace.uid) || subplot(trace) !== subplot(highlightedTrace)) {
         return trace;
       }
-      return trace.uid === highlighted
+      return trace === highlightedTrace
         ? { ...trace, line: { ...trace.line, width: trace.line.width + 2 } }
         : { ...trace, opacity: 0.3 };
     });
   }, [traces, currentTraces, highlighted]);
 
   // In 'x unified' hover every line reports its point at the cursor's x: the
-  // nearest one within HIGHLIGHT_DISTANCE_PX is the hovered line.
-  const highlightNearestLine = (event: Readonly<Plotly.PlotHoverEvent>) => {
+  // nearest one within HIGHLIGHT_DISTANCE_PX is the hovered line. Compared
+  // in pixels - the lower plot's lines have an axis each.
+  const nearestLine = (event: Readonly<Plotly.PlotHoverEvent>) => {
     // Plotly passes the hovered subplot's axes too, the typings lack them.
-    const { yaxes } = event as { yaxes?: { l2p?: (value: number) => number }[] };
-    const axis = yaxes?.[0];
+    const { yaxes } = event as { yaxes?: PixelAxis[] };
     const cursor = event.yvals?.[0];
-    if (!axis?.l2p || typeof cursor !== 'number') {
-      return;
+    const cursorPixel = typeof cursor === 'number' ? yaxes?.[0]?.l2p?.(cursor) : undefined;
+    if (cursorPixel == null) {
+      return null;
     }
-    const toPixel = axis.l2p;
     let nearest: string | null = null;
     let nearestDistance = HIGHLIGHT_DISTANCE_PX;
     event.points.forEach((point) => {
       const uid = (point.data as { uid?: string }).uid;
-      if (!uid || FIXED_TRACES.has(uid) || typeof point.y !== 'number') {
+      const toPixel = (point.yaxis as unknown as PixelAxis | undefined)?.l2p;
+      if (!uid || BAND_TRACES.has(uid) || typeof point.y !== 'number' || !toPixel) {
         return;
       }
-      const distance = Math.abs(toPixel(point.y) - toPixel(cursor));
+      const distance = Math.abs(toPixel(point.y) - cursorPixel);
       if (distance < nearestDistance) {
         nearest = uid;
         nearestDistance = distance;
       }
     });
-    setHighlighted(nearest);
+    return nearest;
   };
+
+  // The values at the cursor's x, shown in a corner of the plot.
+  const [tooltip, setTooltip] = React.useState<CompareTooltipData | null>(null);
+  const tooltipOf = (event: Readonly<Plotly.PlotHoverEvent>): CompareTooltipData | null => {
+    const points = [...event.points].sort((a, b) => a.curveNumber - b.curveNumber);
+    if (!points.length) {
+      return null;
+    }
+    const rows = points.flatMap((point) => {
+      const trace = point.data as HoverTrace;
+      const uid = trace.uid ?? '';
+      const index = point.pointIndex;
+      const row = { key: uid, name: String(trace.name ?? ''), color: String(trace.line?.color ?? '') };
+      if (uid === 'min-max-lower' || uid === 'deviation-lower') {
+        const [low, high] =
+          uid === 'min-max-lower'
+            ? [meanAndDeviationSeries.min[index], meanAndDeviationSeries.max[index]]
+            : [meanAndDeviationSeries.lower[index], meanAndDeviationSeries.upper[index]];
+        return [{ ...row, color: String(trace.fillcolor), band: true, value: `${formatValue(low)} – ${formatValue(high)}` }];
+      }
+      if (typeof point.y !== 'number') {
+        return [];
+      }
+      if (uid === 'mean') {
+        const sigma = meanAndDeviationSeries.sigma[index];
+        return [{ ...row, value: `${formatValue(point.y)} (${t('measurement_compare_sigma_label')} ${formatValue(sigma)})` }];
+      }
+      return [{ ...row, value: uid === 'pair-sum-diff' ? formatSigned(point.y) : formatValue(point.y) }];
+    });
+    const first = points[0];
+    if ((first.data as HoverTrace).xaxis === 'x2') {
+      return { title: pairSumSeries.measurementDateTime[first.pointIndex] ?? '', rows };
+    }
+    return {
+      title: `${t('measurement_compare_pair_label')} ${first.x}`,
+      // The time of the slider's measurement (EP / WP lines).
+      subtitle: currentFrame
+        ? `${t('measurement_compare_measurement_datetime_label')}: ${formatDate(currentFrame.ms, 'dateTimeSeconds')}`
+        : null,
+      rows,
+    };
+  };
+
+  const onHover = (event: Readonly<Plotly.PlotHoverEvent>) => {
+    setHighlighted(nearestLine(event));
+    setTooltip(tooltipOf(event));
+  };
+  const onUnhover = () => {
+    setHighlighted(null);
+    setTooltip(null);
+  };
+
+  const margin = { l: 56, r: showSumDiff ? 64 : 16, t: frameSlider ? 56 : 16, b: 52 };
 
   // Plotly has no legend hover event: listen on the legend items (g.traces,
   // whose d3 data holds the trace).
@@ -593,7 +637,7 @@ const MeasurementSamplesCompareChart = (
       const item = target instanceof Element ? target.closest('.legend .traces') : null;
       const uid = (item as { __data__?: [{ trace?: { uid?: string } }] } | null)?.__data__?.[0]
         ?.trace?.uid;
-      return uid && !FIXED_TRACES.has(uid) ? uid : null;
+      return uid && !BAND_TRACES.has(uid) ? uid : null;
     };
     const onOver = (event: MouseEvent) => {
       const uid = legendTrace(event.target);
@@ -652,99 +696,107 @@ const MeasurementSamplesCompareChart = (
         />
       )}
 
-      <Plot
-        data={data}
-        onInitialized={(_, graphDiv) => setGraphDiv(graphDiv as HTMLElement)}
-        onHover={highlightNearestLine}
-        onUnhover={() => setHighlighted(null)}
-        onLegendClick={(event) => {
-          const uid = event.data[event.curveNumber]?.uid ?? '';
-          if (OPTIONAL_TRACES.has(uid)) {
-            toggleOptional(uid);
-            return false;
-          }
-          return !FIXED_TRACES.has(uid);
-        }}
-        useResizeHandler
-        style={{ width: '100%', height: '520px' }}
-        config={{
-          responsive: true,
-          displaylogo: false,
-          scrollZoom: true,
-        }}
-        layout={{
-          autosize: true,
-          margin: { l: 56, r: 64, t: frameSlider ? 56 : 16, b: 52 },
-          font: { color: plotTheme.brandBlue },
-          plot_bgcolor: plotTheme.warmGray1,
-          paper_bgcolor: plotTheme.white,
-          // Keeps zoom and legend toggles while the slider redraws the
-          // plot; new rows reset them.
-          uirevision: `${rows.length}:${rows[0]?.id}:${rows[rows.length - 1]?.id}`,
-          shapes,
-          xaxis: {
-            title: t('measurement_compare_pair_index_axis'),
-            domain: [0, 1],
-            anchor: 'y',
-            showgrid: true,
-            gridcolor: plotTheme.warmGray2,
-            zeroline: false,
-          },
-          yaxis: {
-            title: t('measurement_compare_absolute_delta_axis'),
-            domain: [0.34, 1],
-            rangemode: 'tozero',
-            ...(upperRange ? { range: upperRange, autorange: false } : {}),
-            showgrid: true,
-            gridcolor: plotTheme.warmGray2,
-            zeroline: true,
-          },
-          xaxis2: {
-            type: 'date',
-            title: t('measurement_compare_measurement_datetime_label'),
-            domain: [0, 1],
-            anchor: 'y2',
-            showgrid: true,
-            gridcolor: plotTheme.warmGray2,
-            zeroline: false,
-          },
-          yaxis2: {
-            title: t('measurement_compare_pair_sum_axis'),
-            domain: [0, 0.24],
-            side: 'left',
-            showgrid: true,
-            gridcolor: plotTheme.warmGray2,
-            zeroline: false,
-          },
-          yaxis3: {
-            title: t('measurement_compare_pair_sum_diff_label'),
-            overlaying: 'y2',
-            side: 'right',
-            anchor: 'x2',
-            showgrid: false,
-            zeroline: true,
-            zerolinecolor: plotTheme.warmGray4,
-          },
-          legend: {
-            orientation: 'h',
-            ...(frameSlider
-              ? { y: 1.02, yanchor: 'bottom' as const }
-              : { y: -0.25 }),
-            x: 0,
-            // A double click would isolate a line - hiding the fixed ones.
-            itemdoubleclick: false,
-            bgcolor: plotTheme.warmGray1,
-            bordercolor: plotTheme.warmGray3,
-            borderwidth: 1,
-          },
-          hovermode: 'x unified',
-          hoverlabel: {
-            bgcolor: plotTheme.brandBlue,
-            bordercolor: plotTheme.warmGray3,
-            font: { color: plotTheme.white },
-          },
-        }}
-      />
+      <div style={{ position: 'relative' }}>
+        {tooltip && (
+          // Top right of the upper plot, wherever the cursor is.
+          <MeasurementCompareTooltip
+            tooltip={tooltip}
+            activeKey={highlighted}
+            style={{ top: margin.t + 8, right: margin.r + 8 }}
+          />
+        )}
+        <Plot
+          data={data}
+          onInitialized={(_, graphDiv) => setGraphDiv(graphDiv as HTMLElement)}
+          onHover={onHover}
+          onUnhover={onUnhover}
+          onLegendClick={(event) => {
+            const uid = event.data[event.curveNumber]?.uid ?? '';
+            if (OPTIONAL_TRACES.has(uid)) {
+              toggleOptional(uid);
+              return false;
+            }
+            return !FIXED_TRACES.has(uid);
+          }}
+          useResizeHandler
+          style={{ width: '100%', height: '520px' }}
+          config={{
+            responsive: true,
+            displaylogo: false,
+            scrollZoom: true,
+          }}
+          layout={{
+            autosize: true,
+            margin,
+            font: { color: plotTheme.brandBlue },
+            plot_bgcolor: plotTheme.warmGray1,
+            paper_bgcolor: plotTheme.white,
+            // Keeps zoom and legend toggles while the slider redraws the
+            // plot; new rows reset them.
+            uirevision: `${rows.length}:${rows[0]?.id}:${rows[rows.length - 1]?.id}`,
+            shapes,
+            xaxis: {
+              title: t('measurement_compare_pair_index_axis'),
+              domain: [0, 1],
+              anchor: 'y',
+              showgrid: true,
+              gridcolor: plotTheme.warmGray2,
+              zeroline: false,
+              ...SPIKE,
+            },
+            yaxis: {
+              title: t('measurement_compare_absolute_delta_axis'),
+              domain: [0.34, 1],
+              rangemode: 'tozero',
+              ...(upperRange ? { range: upperRange, autorange: false } : {}),
+              showgrid: true,
+              gridcolor: plotTheme.warmGray2,
+              zeroline: true,
+            },
+            xaxis2: {
+              type: 'date',
+              title: t('measurement_compare_measurement_datetime_label'),
+              domain: [0, 1],
+              anchor: 'y2',
+              showgrid: true,
+              gridcolor: plotTheme.warmGray2,
+              zeroline: false,
+              ...SPIKE,
+            },
+            yaxis2: {
+              title: t('measurement_compare_pair_sum_axis'),
+              domain: [0, 0.24],
+              side: 'left',
+              showgrid: true,
+              gridcolor: plotTheme.warmGray2,
+              zeroline: false,
+            },
+            yaxis3: {
+              visible: showSumDiff,
+              title: t('measurement_compare_pair_sum_diff_label'),
+              overlaying: 'y2',
+              side: 'right',
+              anchor: 'x2',
+              showgrid: false,
+              zeroline: true,
+              zerolinecolor: plotTheme.warmGray4,
+            },
+            legend: {
+              orientation: 'h',
+              ...(frameSlider
+                ? { y: 1.02, yanchor: 'bottom' as const }
+                : { y: -0.25 }),
+              x: 0,
+              // A double click would isolate a line - hiding the fixed ones.
+              itemdoubleclick: false,
+              bgcolor: plotTheme.warmGray1,
+              bordercolor: plotTheme.warmGray3,
+              borderwidth: 1,
+            },
+            hovermode: 'x unified',
+          }}
+        />
+      </div>
     </>
   );
 

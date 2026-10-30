@@ -19,6 +19,7 @@ import axiosConfig from '../axiosConfig';
 import { getBackendUrl } from '../backendUrl';
 import type { SensorHeatmapLageplanData } from '../components/device/sensorHeatmapTypes';
 import { isLorawanProject } from './projectType';
+import { formatDate } from './dateFormat';
 
 type ImportedCad = {
   location_id: number;
@@ -798,7 +799,7 @@ const LageplanWizardView = () => {
           <div style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>
             #{plan.id}
             {updated && !Number.isNaN(updated.getTime())
-              ? ` · ${updated.toLocaleDateString()}`
+              ? ` · ${formatDate(updated, 'date')}`
               : ''}
             {` · ${pointCount} point(s)`}
           </div>

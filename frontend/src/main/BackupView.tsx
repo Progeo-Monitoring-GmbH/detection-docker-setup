@@ -10,7 +10,7 @@ import { errorReason, showErrorBar, showSuccessBar } from '../components/ui/Snac
 import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
-import { formatDateTime } from './dateFormat';
+import { formatDate } from './dateFormat';
 import {
   type BackupProject,
   type BackupProjectOption,
@@ -428,7 +428,7 @@ const BackupView = () => {
       name: t('backup_col_date'),
       selector: (row) => row.created_at || '',
       sortable: true,
-      cell: (row) => <span>{formatDateTime(row.created_at)}</span>,
+      cell: (row) => <span>{formatDate(row.created_at)}</span>,
       width: '190px',
     },
     {

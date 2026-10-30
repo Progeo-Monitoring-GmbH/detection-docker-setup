@@ -55,6 +55,7 @@ import { useAlarmClusters } from './useAlarmClusters';
 import { useLocationHistory } from './useLocationHistory';
 import { useMeasurementRangeState } from './useMeasurementRange';
 import { isDemoUser } from './demo';
+import { formatDate } from './dateFormat';
 
 type LocationStatusViewProps = {
   location: LocationDetail | null;
@@ -68,13 +69,7 @@ type LocationStatusViewProps = {
 const ZEITREIHE_LIMIT = 720;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-const formatSpanTime = (ms: number) =>
-  new Date(ms).toLocaleString(undefined, {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+const formatSpanTime = (ms: number) => formatDate(ms, 'dayMonthTime');
 
 const Loading = () => {
   const { t } = useTranslation();

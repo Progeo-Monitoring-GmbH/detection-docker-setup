@@ -11,6 +11,7 @@ import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import PillSelect from '../components/ui/kit/PillSelect';
 import useLogStream, { type LogStreamStatus } from './admin/useLogStream';
+import { formatDate } from './dateFormat';
 
 type DiskInfo = {
   filesystem?: string;
@@ -48,15 +49,7 @@ const bytesToReadable = (value?: number) => {
   return `${val.toFixed(val >= 10 ? 1 : 2)} ${units[idx]}`;
 };
 
-const formatTime = (value?: string | Date | null) => {
-  if (!value) {
-    return '-';
-  }
-  const date = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(date.getTime())
-    ? String(value)
-    : date.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'medium' });
-};
+const formatTime = (value?: string | Date | null) => formatDate(value, 'dateTimeSeconds');
 
 /** "attachment; filename="x.tar"" -> x.tar */
 const attachmentName = (header?: string | null) => header?.match(/filename="?([^";]+)"?/)?.[1] ?? null;

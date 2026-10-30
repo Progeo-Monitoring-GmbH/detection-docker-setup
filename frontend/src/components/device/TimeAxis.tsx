@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { dateLocale, PRETTY_LOCALE } from '../../main/dateFormat';
 import { timeTicks } from './timeTicks';
 import './TimeAxis.css';
 
@@ -38,7 +39,13 @@ const TimeAxis = ({ from, to, position }: TimeAxisProps) => {
   }, []);
 
   const ticks = useMemo(
-    () => timeTicks(from, to, Math.max(2, Math.floor((width || 600) / LABEL_SPACING)), i18n.language),
+    () =>
+      timeTicks(
+        from,
+        to,
+        Math.max(2, Math.floor((width || 600) / LABEL_SPACING)),
+        dateLocale(i18n.language) ?? PRETTY_LOCALE,
+      ),
     [from, to, width, i18n.language],
   );
   const at = position ?? ((ms: number) => (ms - from) / (to - from));

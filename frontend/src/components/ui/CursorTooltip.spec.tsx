@@ -148,13 +148,7 @@ describe('CursorTooltip content', () => {
 describe('formatClock', () => {
   it('formats ms with day, month, hour and minute', () => {
     const ms = new Date(2026, 7, 19, 11, 8).getTime();
-    expect(formatClock(ms)).toBe(
-      new Date(ms).toLocaleString(undefined, {
-        day: '2-digit',
-        month: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
-    );
+    // Without a language: our pretty format (dateFormat.formatDate).
+    expect(formatClock(ms)).toBe('19.08., 11:08');
   });
 });

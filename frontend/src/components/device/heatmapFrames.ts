@@ -1,3 +1,5 @@
+import { formatDate } from '../../main/dateFormat';
+
 /**
  * Frame-export helpers for the sensor heatmap: capture PNG frames from the
  * plot and draw a timestamp label onto a canvas. The frames are rendered into
@@ -13,14 +15,7 @@ export const formatTimestamp = (timestamp: number | null | undefined) => {
   if (Number.isNaN(date.getTime())) {
     return String(timestamp);
   }
-  return date.toLocaleString(undefined, {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
+  return formatDate(date, 'dateTimeSeconds');
 };
 
 export const sleep = (milliseconds: number) =>

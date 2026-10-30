@@ -37,17 +37,10 @@ describe('formatTimestamp', () => {
     expect(formatTimestamp(undefined)).toBe('n/a');
   });
 
-  it('formats unix seconds (not ms) with a 2-digit locale format', () => {
-    const seconds = 1_787_000_000;
-    const expected = new Date(seconds * 1000).toLocaleString(undefined, {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    });
-    expect(formatTimestamp(seconds)).toBe(expected);
+  it('formats unix seconds (not ms) as date and time with seconds', () => {
+    const seconds = new Date(2026, 7, 19, 11, 8, 9).getTime() / 1000;
+    // Without a language: our pretty format (dateFormat.formatDate).
+    expect(formatTimestamp(seconds)).toBe('19.08.2026, 11:08:09');
   });
 
   it('returns the raw value for an invalid timestamp', () => {

@@ -23,6 +23,7 @@ import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
 import { showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import { plotTheme } from '../styles/plotTheme';
+import { formatDate } from './dateFormat';
 
 type AlarmProjectStatus = {
   status?: 'online' | 'disconnected' | 'dead';
@@ -77,18 +78,10 @@ type AlarmDailyReport = {
   }>;
 };
 
-const DATE_FMT: Intl.DateTimeFormatOptions = {
-  weekday: 'short',
-  day: '2-digit',
-  month: 'short',
-  year: 'numeric',
-};
-
-const formatDate = (iso: string): string => {
-  const date = new Date(`${iso}T00:00:00`);
-  return Number.isNaN(date.getTime())
-    ? iso
-    : date.toLocaleDateString(undefined, DATE_FMT);
+/** A report's day ("YYYY-MM-DD") with its weekday. */
+const formatReportDay = (iso: string): string => {
+  const ms = new Date(`${iso}T00:00:00`).getTime();
+  return Number.isNaN(ms) ? iso : formatDate(ms, 'weekdayDate');
 };
 
 const formatCount = (value: number | null | undefined): string =>
@@ -117,7 +110,7 @@ const ReportSummaryCard = ({ report }: { report: AlarmDailyReport | null }) => {
       <Card.Body>
         <h6 className="text-muted text-uppercase small mb-3">
           <Calendar3 className="me-1" />
-          {formatDate(report.date)}
+          {formatReportDay(report.date)}
         </h6>
         <Row className="g-3 text-center">
           <Col xs={6} md={4}>
@@ -165,7 +158,7 @@ const ReportSummaryCard = ({ report }: { report: AlarmDailyReport | null }) => {
           </span>
           {peakMs != null && (
             <span>
-              Peak at: <strong>{new Date(peakMs).toLocaleTimeString()}</strong>
+              Peak at: <strong>{formatDate(peakMs, 'timeSeconds')}</strong>
             </span>
           )}
         </div>
@@ -280,7 +273,7 @@ const ReportDateSelect = ({ label, dates, value, onChange }: ReportDateSelectPro
       <option value="">— select —</option>
       {dates.map((date) => (
         <option key={date} value={date}>
-          {formatDate(date)}
+          {formatReportDay(date)}
         </option>
       ))}
     </Form.Select>
@@ -554,7 +547,7 @@ const AlarmReportView = () => {
                   )}
                   {sortedDates.map((date) => (
                     <option key={date} value={date}>
-                      {formatDate(date)}
+                      {formatReportDay(date)}
                     </option>
                   ))}
                 </Form.Select>
@@ -569,7 +562,7 @@ const AlarmReportView = () => {
                 {reportLoading && <Spinner size="sm" animation="border" />}
                 {report && (
                   <Badge bg="info" pill>
-                    {formatDate(report.date)} · {report.total_count} alarms
+                    {formatReportDay(report.date)} · {report.total_count} alarms
                   </Badge>
                 )}
               </div>
@@ -638,11 +631,11 @@ const AlarmReportView = () => {
                         data={[
                           hourlyTrace(
                             comparison.report_a,
-                            formatDate(compareA),
+                            formatReportDay(compareA),
                           ),
                           hourlyTrace(
                             comparison.report_b,
-                            formatDate(compareB),
+                            formatReportDay(compareB),
                           ),
                         ]}
                         layout={{
@@ -681,8 +674,8 @@ const AlarmReportView = () => {
                           : comparison.report_b;
                       const dateLabel =
                         key === 'report_a'
-                          ? formatDate(compareA)
-                          : formatDate(compareB);
+                          ? formatReportDay(compareA)
+                          : formatReportDay(compareB);
                       return (
                         <Col md={6} key={key}>
                           <Card className="border-0 shadow-sm">

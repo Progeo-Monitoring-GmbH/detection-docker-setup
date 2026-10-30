@@ -7,6 +7,7 @@ import PanelCard from '../components/ui/kit/PanelCard';
 import SeverityBadge from '../components/ui/kit/SeverityBadge';
 import StateBadge from '../components/ui/kit/StateBadge';
 import { toggledSet, type VerdachtsstelleCluster } from './locationStatusData';
+import { formatDate } from './dateFormat';
 
 type VerdachtsstellenPanelProps = {
   clusters: VerdachtsstelleCluster[];
@@ -112,13 +113,6 @@ type VerdachtsstelleRowProps = {
   t: (key: string, options?: Record<string, unknown>) => string;
 };
 
-const formatDate = (value: string) =>
-  new Date(value).toLocaleDateString(undefined, {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
-
 const VerdachtsstelleRow = ({
   cluster,
   label,
@@ -190,10 +184,10 @@ const VerdachtsstelleRow = ({
           >
             {cluster.active
               ? cluster.since &&
-                t('status_since', { date: formatDate(cluster.since) })
+                t('status_since', { date: formatDate(cluster.since, 'date') })
               : cluster.resolved_at &&
                 t('status_resolved_at', {
-                  date: formatDate(cluster.resolved_at),
+                  date: formatDate(cluster.resolved_at, 'date'),
                 })}
             {meters && ` · ${formatMeters(meters)}`}
           </span>
@@ -266,15 +260,7 @@ const VerdachtsstelleRow = ({
                 }}
               >
                 <span style={{ fontWeight: 500 }}>
-                  {entry.triggered_at
-                    ? new Date(entry.triggered_at).toLocaleString(undefined, {
-                        day: '2-digit',
-                        month: '2-digit',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })
-                    : '–'}
+                  {formatDate(entry.triggered_at)}
                 </span>
                 <span>
                   <StateBadge
@@ -332,9 +318,7 @@ const VerdachtsstelleRow = ({
               <span style={{ fontSize: 11.5, color: '#8B8383' }}>
                 {t('status_acknowledged_by', {
                   name: cluster.ack_by,
-                  time: cluster.ack_at
-                    ? new Date(cluster.ack_at).toLocaleString()
-                    : '–',
+                  time: formatDate(cluster.ack_at),
                 })}
               </span>
             )}

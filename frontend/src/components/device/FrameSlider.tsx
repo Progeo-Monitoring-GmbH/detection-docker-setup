@@ -2,7 +2,7 @@ import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useRef, us
 import { Button } from 'react-bootstrap';
 import { PauseFill, PlayFill } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
-import { formatTimestamp } from './heatmapFrames';
+import { formatDate } from '../../main/dateFormat';
 import TimeAxis from './TimeAxis';
 import './FrameSlider.css';
 
@@ -229,7 +229,7 @@ const FrameSlider = ({
 
   return (
     <div className="pb-2 pt-3" style={{ minWidth: 200 }}>
-      <div className="d-flex align-items-center gap-2">
+      <div className="d-flex flex-wrap align-items-center gap-2">
         <Button
           size="sm"
           variant={playing ? 'primary' : 'outline-primary'}
@@ -244,8 +244,22 @@ const FrameSlider = ({
           {label}
         </Button>
         <label htmlFor={id} className="form-label small text-muted mb-0">
-          {count ? `${index + 1}/${count}: ${formatTimestamp(timestamps[index])}` : 'Timestamp'}
+          {count ? `${index + 1}/${count}` : 'Timestamp'}
         </label>
+        {count > 0 && (
+          // The frame's time, large - readable at a glance while it plays.
+          <div
+            className="ms-auto d-flex align-items-baseline gap-2 text-nowrap"
+            style={{ fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}
+          >
+            <span className="fw-semibold" style={{ fontSize: '2.25rem' }}>
+              {formatDate(timestamps[index] * 1000, 'time')}
+            </span>
+            <span className="text-muted" style={{ fontSize: '1.1rem' }}>
+              {formatDate(timestamps[index] * 1000, 'weekdayDate')}
+            </span>
+          </div>
+        )}
       </div>
       <div style={{ position: 'relative' }}>
         <input

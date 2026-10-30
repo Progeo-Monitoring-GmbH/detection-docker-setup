@@ -24,7 +24,7 @@ import AlarmTimeline, {
   isAlarmActive,
   parseTimestamp,
 } from './AlarmTimeline.tsx';
-import { toLocalIso } from './dateFormat';
+import { formatDate, toLocalIso } from './dateFormat';
 
 type AlarmDevice = {
   id?: number | null;
@@ -440,7 +440,7 @@ const AlarmsOverview = () => {
       cell: (row) => {
         const ms = alarmStartTime(row);
         return ms != null
-          ? new Date(ms).toLocaleString()
+          ? formatDate(ms)
           : row.triggered_at || '-';
       },
       sortable: true,
@@ -474,7 +474,7 @@ const AlarmsOverview = () => {
                   ? (() => {
                       const ms = parseTimestamp(row.evaluated_at);
                       return ms != null
-                        ? new Date(ms).toLocaleString()
+                        ? formatDate(ms)
                         : row.evaluated_at;
                     })()
                   : '-'}
@@ -545,9 +545,7 @@ const AlarmsOverview = () => {
           : (startMs ?? now);
     const range =
       startMs != null && endMs != null
-        ? `${new Date(startMs).toLocaleString()} → ${new Date(
-            endMs,
-          ).toLocaleString()}`
+        ? `${formatDate(startMs)} → ${formatDate(endMs)}`
         : '';
     return `Alarm #${selectedAlarm.id} - ${where}${range ? ` (${range})` : ''}`;
   }, [selectedAlarm, now]);

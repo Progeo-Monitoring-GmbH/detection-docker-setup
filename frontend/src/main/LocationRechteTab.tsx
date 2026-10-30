@@ -13,7 +13,7 @@ import PillButton from '../components/ui/kit/PillButton';
 import LabeledInput from '../components/ui/kit/LabeledInput';
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import type { PortalOutletContext } from './LocationPortalLayout';
-import { formatDateTime } from './dateFormat';
+import { formatDate } from './dateFormat';
 
 type AccessRule = {
   id: number;
@@ -387,7 +387,7 @@ const LocationRechteTab = () => {
           <div style={{ minWidth: 110 }}>
             <div style={{ ...fieldLabelStyle, marginBottom: 2 }}>{t('rechte_last_login')}</div>
             <div style={{ fontSize: 12.5, color: '#6E6868' }}>
-              {member.last_login ? formatDateTime(member.last_login) : t('rechte_never_logged_in')}
+              {member.last_login ? formatDate(member.last_login) : t('rechte_never_logged_in')}
             </div>
           </div>
           {canEdit && (

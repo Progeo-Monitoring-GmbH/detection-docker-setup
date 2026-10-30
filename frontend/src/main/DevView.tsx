@@ -17,6 +17,7 @@ import {
   Stopwatch,
 } from 'react-bootstrap-icons';
 import axiosConfig from '../axiosConfig';
+import { formatDate } from './dateFormat';
 
 type BootMetrics = {
   domContentLoadedMs: number | null;
@@ -166,7 +167,7 @@ const DevView = () => {
 
     setModuleResults(results);
     setIsRunningModules(false);
-    setLastRun(new Date().toLocaleString());
+    setLastRun(formatDate(Date.now(), 'dateTimeSeconds'));
   };
 
   const runApiDiagnostics = async () => {
@@ -211,7 +212,7 @@ const DevView = () => {
 
     setApiResults(results);
     setIsRunningApis(false);
-    setLastRun(new Date().toLocaleString());
+    setLastRun(formatDate(Date.now(), 'dateTimeSeconds'));
   };
 
   const runAllDiagnostics = async () => {

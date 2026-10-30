@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import Plot from 'react-plotly.js';
 import Plotly from 'plotly.js/dist/plotly';
 import { plotTheme } from '../../styles/plotTheme';
+import { formatDate } from '../../main/dateFormat';
 
 /** One device of GET /v1/location/<pk>/climate/ - aligned series, oldest first. */
 export type ClimateDeviceSeries = {
@@ -383,12 +384,7 @@ const ClimateChart = ({
         {referenceTime != null ? (
           <>
             {t('climate_reference_set', {
-              time: new Date(referenceTime).toLocaleString(undefined, {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-                ...(dailyBuckets ? {} : { hour: '2-digit', minute: '2-digit' }),
-              }),
+              time: formatDate(referenceTime, dailyBuckets ? 'date' : 'dateTime'),
             })}{' '}
             <button
               type="button"

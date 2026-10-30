@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode, RefObject } from 'react';
+import { formatDate } from '../../main/dateFormat';
 import '../../main/AlarmTooltip.css';
 
 /** Fixed gap between the cursor and the tooltip, in either direction. */
@@ -29,13 +30,7 @@ type CursorTooltipProps = {
   onMouseLeave?: () => void;
 };
 
-export const formatClock = (ms: number): string =>
-  new Date(ms).toLocaleString(undefined, {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+export const formatClock = (ms: number): string => formatDate(ms, 'dayMonthTime');
 
 /** One "key: value" line of a CursorTooltip. */
 export const TooltipRow = ({ label, children }: { label: ReactNode; children: ReactNode }) => (
