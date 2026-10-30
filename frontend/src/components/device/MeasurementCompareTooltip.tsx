@@ -1,4 +1,4 @@
-import { type CSSProperties, Fragment } from 'react';
+import { type CSSProperties, Fragment, type Ref } from 'react';
 
 export type CompareTooltipRow = {
   /** The trace's uid. */
@@ -21,6 +21,8 @@ const swatchStyle = (row: CompareTooltipRow): CSSProperties =>
     ? { width: 12, height: 10, background: row.color, border: `1px solid ${row.color}`, borderRadius: 2 }
     : { width: 14, height: 3, background: row.color, borderRadius: 2 };
 
+export const TOOLTIP_WIDTH = 280;
+
 /**
  * The values under the cursor of MeasurementSamplesCompareChart - always at
  * the same place (a corner of the plot, `style`) instead of following the
@@ -30,18 +32,23 @@ const MeasurementCompareTooltip = ({
   tooltip,
   activeKey,
   style,
+  ref,
 }: {
   tooltip: CompareTooltipData;
   activeKey: string | null;
   style: CSSProperties;
+  ref?: Ref<HTMLDivElement>;
 }) => (
   <div
+    ref={ref}
     className="position-absolute bg-white border rounded shadow-sm small px-2 py-1"
-    style={{ pointerEvents: 'none', zIndex: 2, minWidth: 190, opacity: 0.95, ...style }}
+    // Fixed width: growing and shrinking with the values, it would flicker
+    // while the cursor moves.
+    style={{ pointerEvents: 'none', zIndex: 2, width: TOOLTIP_WIDTH, opacity: 0.95, ...style }}
   >
-    <div className="fw-semibold">{tooltip.title}</div>
+    <div className="fw-semibold text-truncate">{tooltip.title}</div>
     {tooltip.subtitle && (
-      <div className="text-muted" style={{ fontSize: 11 }}>
+      <div className="text-muted text-truncate" style={{ fontSize: 11 }}>
         {tooltip.subtitle}
       </div>
     )}
@@ -49,7 +56,7 @@ const MeasurementCompareTooltip = ({
       className="mt-1"
       style={{
         display: 'grid',
-        gridTemplateColumns: 'auto 1fr auto',
+        gridTemplateColumns: 'auto minmax(0, 1fr) auto',
         alignItems: 'center',
         columnGap: 8,
         rowGap: 2,
@@ -60,8 +67,13 @@ const MeasurementCompareTooltip = ({
         return (
           <Fragment key={row.key}>
             <span style={swatchStyle(row)} />
-            <span className={active}>{row.name}</span>
-            <span className={active} style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+            <span className={`text-truncate ${active ?? ''}`} title={row.name}>
+              {row.name}
+            </span>
+            <span
+              className={active}
+              style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}
+            >
               {row.value}
             </span>
           </Fragment>

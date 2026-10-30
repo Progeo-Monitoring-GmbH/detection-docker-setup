@@ -5,8 +5,11 @@ import { useTranslation } from 'react-i18next';
 import { parseTimestamp } from '../../main/alarmUtils';
 import { plotTheme } from '../../styles/plotTheme';
 import { formatDate } from '../../main/dateFormat';
-import FrameSlider from './FrameSlider';
-import MeasurementCompareTooltip, { type CompareTooltipData } from './MeasurementCompareTooltip';
+import FrameSlider, { frameAt } from './FrameSlider';
+import MeasurementCompareTooltip, {
+  type CompareTooltipData,
+  TOOLTIP_WIDTH,
+} from './MeasurementCompareTooltip';
 
 export type MeasurementCompareRow = {
   id: number;
@@ -25,6 +28,9 @@ type DiffSeries = {
   id: number;
   lastFetched: string | null;
   points: DiffPoint[];
+  /** EP / WP by sensor - empty without samples. */
+  ep: number[];
+  wp: number[];
 };
 
 type MeasurementSamplesCompareChartProps = {
@@ -50,6 +56,13 @@ type MeasurementSamplesCompareChartProps = {
   frameSlider?: boolean;
   /** Whether the space bar plays the time slider - off next to a heatmap, whose slider has it. */
   sliderPlayKey?: boolean;
+  /**
+   * Couples the time slider with another one (the heatmap's): it shows the
+   * measurement at `time` (epoch ms; the newest while null) and reports the
+   * time picked here to `onTimeChange` instead of keeping it itself.
+   */
+  time?: number | null;
+  onTimeChange?: (ms: number) => void;
   /** Skip the component's own Card chrome so it can sit inside another panel wrapper. */
   hideChrome?: boolean;
 };
@@ -76,8 +89,8 @@ const formatValue = (value: number) => value.toFixed(2);
 const formatSigned = (value: number) => `${value > 0 ? '+' : ''}${value.toFixed(2)}`;
 
 /** Paper heights of the three plots: by sensor, the selected sensors over time, the sensor sum. */
-const UPPER_DOMAIN: [number, number] = [0.57, 1];
-const SENSORS_DOMAIN: [number, number] = [0.27, 0.47];
+const UPPER_DOMAIN: [number, number] = [0.6, 1];
+const SENSORS_DOMAIN: [number, number] = [0.27, 0.48];
 const SUM_DOMAIN: [number, number] = [0, 0.17];
 
 /** The two time plots (shared, matched time axis) and their heights. */
@@ -130,6 +143,25 @@ type PixelAxis = { l2p?: (value: number) => number };
 
 /** How close (px) the cursor must be to a line to highlight it. */
 const HIGHLIGHT_DISTANCE_PX = 12;
+
+/** The tooltip's distance (px) from the plot's top corner. */
+const TOOLTIP_INSET_PX = 8;
+
+/** How close (px) the cursor may come to the tooltip before it moves to the other side. */
+const TOOLTIP_FLIP_DISTANCE_PX = 24;
+
+/** The click hint's distance (px) from the cursor, right below it. */
+const HINT_OFFSET_PX = 14;
+
+/** Puts the click hint next to the cursor (px within the chart) - left of
+ * it where the chart ends. */
+const placeHint = (hint: HTMLElement | null, cursor: { x: number; y: number } | null) => {
+  if (hint && cursor) {
+    const fits = cursor.x + HINT_OFFSET_PX + hint.offsetWidth <= (hint.parentElement?.clientWidth ?? 0);
+    hint.style.left = `${fits ? cursor.x + HINT_OFFSET_PX : cursor.x - HINT_OFFSET_PX - hint.offsetWidth}px`;
+    hint.style.top = `${cursor.y + HINT_OFFSET_PX}px`;
+  }
+};
 
 /** One measurement of the time slider, oldest first. */
 type Frame = {
@@ -192,6 +224,8 @@ const MeasurementSamplesCompareChart = (
     frameSlider = false,
     sliderPlayKey = true,
     hideChrome = false,
+    time = null,
+    onTimeChange,
   } = props;
   const { t } = useTranslation();
   const currentYear = new Date().getFullYear();
@@ -209,10 +243,26 @@ const MeasurementSamplesCompareChart = (
   }, [rows, frameSlider]);
   const sliderTimestamps = React.useMemo(() => frames.map((frame) => frame.ms / 1000), [frames]);
   // By id, so the selection survives reloads; the newest measurement by default.
+  // Coupled (onTimeChange): the measurement at `time`.
   const [selectedId, setSelectedId] = React.useState<number | null>(null);
-  const selectedIndex = frames.findIndex((frame) => frame.id === selectedId);
+  const selectedIndex = onTimeChange
+    ? time == null
+      ? -1
+      : frameAt(sliderTimestamps, time)
+    : frames.findIndex((frame) => frame.id === selectedId);
   const frameIndex = selectedIndex >= 0 ? selectedIndex : frames.length - 1;
   const currentFrame = frames[frameIndex] ?? null;
+  const selectFrame = (index: number) => {
+    const frame = frames[index];
+    if (!frame) {
+      return;
+    }
+    if (onTimeChange) {
+      onTimeChange(frame.ms);
+    } else {
+      setSelectedId(frame.id);
+    }
+  };
 
   const series: DiffSeries[] = React.useMemo(
     () =>
@@ -220,6 +270,7 @@ const MeasurementSamplesCompareChart = (
         id: row.id,
         lastFetched: row.last_fetched,
         points: toPairAbsDiff(row.samples, row.pair_abs_values),
+        ...toPotentials(row.samples),
       })),
     [rows],
   );
@@ -317,10 +368,12 @@ const MeasurementSamplesCompareChart = (
     const x: number[] = [];
     const y: number[] = [];
     const measurementDateTime: string[] = [];
-    // Per measurement: its id (a click moves the slider to it) and its
-    // |EP - WP| by sensor (the selected sensors' plot).
+    // Per measurement: its id (a click moves the slider to it), its
+    // |EP - WP| by sensor (the selected sensors' plot) and its EP / WP by
+    // sensor (the tooltip of a hovered sensor line).
     const ids: number[] = [];
     const pairs: number[][] = [];
+    const potentials: { ep: number[]; wp: number[] }[] = [];
     orderedSeries.forEach((entry) => {
       const ts = parseTimestamp(entry.lastFetched);
       if (ts == null) {
@@ -331,11 +384,12 @@ const MeasurementSamplesCompareChart = (
       measurementDateTime.push(formatDate(entry.lastFetched, 'dateTimeSeconds'));
       ids.push(entry.id);
       pairs.push(entry.points.map((point) => point.value));
+      potentials.push({ ep: entry.ep, wp: entry.wp });
     });
     // Change of the sum since the previous measurement (none for the first).
     const diff = y.map((value, index) => (index > 0 ? value - y[index - 1] : null));
 
-    return { x, y, diff, measurementDateTime, ids, pairs };
+    return { x, y, diff, measurementDateTime, ids, pairs, potentials };
   }, [series]);
 
   // Sensors (pair index) whose values over time the second plot shows - a
@@ -376,6 +430,8 @@ const MeasurementSamplesCompareChart = (
       y: pairSumSeries.pairs.map((values) => values[sensor] ?? null),
       xaxis: 'x3' as const,
       yaxis: 'y4' as const,
+      // Their own legend, at the second plot.
+      legend: 'legend2',
       line: { color: sensorColor(sensor), width: 2 },
       hoverinfo: 'none' as const,
     }));
@@ -524,8 +580,9 @@ const MeasurementSamplesCompareChart = (
   }, [currentFrame, shownOptional]);
 
   // The upper y-axis is locked to the lines of all measurements of the
-  // slider - autorange would rescale (flicker) with every step.
-  const upperRange = React.useMemo(() => {
+  // slider - low (negative) as well as high - autorange would rescale
+  // (flicker) with every step.
+  const upperRange = React.useMemo((): [number, number] | null => {
     if (!frames.length) {
       return null;
     }
@@ -665,11 +722,34 @@ const MeasurementSamplesCompareChart = (
 
   // The values at the cursor's x, shown in a corner of the plot.
   const [tooltip, setTooltip] = React.useState<CompareTooltipData | null>(null);
-  const tooltipOf = (event: Readonly<Plotly.PlotHoverEvent>): CompareTooltipData | null => {
+  const tooltipOf = (
+    event: Readonly<Plotly.PlotHoverEvent>,
+    hovered: string | null,
+  ): CompareTooltipData | null => {
     const points = [...event.points].sort((a, b) => a.curveNumber - b.curveNumber);
     if (!points.length) {
       return null;
     }
+    // The sensor line whose EP and WP are added: the hovered one, else the
+    // only one there is.
+    const detailed =
+      hovered?.startsWith('sensor-')
+        ? hovered
+        : selectedSensors.length === 1
+          ? `sensor-${selectedSensors[0]}`
+          : null;
+    const potentialRows = (uid: string, index: number) => {
+      const sensor = Number(uid.slice('sensor-'.length));
+      const { ep, wp } = pairSumSeries.potentials[index] ?? { ep: [], wp: [] };
+      if (ep[sensor] == null || wp[sensor] == null) {
+        return [];
+      }
+      const of = `(${t('measurement_compare_pair_label')} ${sensor})`;
+      return [
+        { key: `${uid}-ep`, name: `EP ${of}`, color: 'red', value: formatValue(ep[sensor]) },
+        { key: `${uid}-wp`, name: `WP ${of}`, color: 'blue', value: formatValue(wp[sensor]) },
+      ];
+    };
     const rows = points.flatMap((point) => {
       const trace = point.data as HoverTrace;
       const uid = trace.uid ?? '';
@@ -689,6 +769,9 @@ const MeasurementSamplesCompareChart = (
         const sigma = meanAndDeviationSeries.sigma[index];
         return [{ ...row, value: `${formatValue(point.y)} (${t('measurement_compare_sigma_label')} ${formatValue(sigma)})` }];
       }
+      if (uid === detailed) {
+        return [{ ...row, value: formatValue(point.y) }, ...potentialRows(uid, index)];
+      }
       return [{ ...row, value: uid === 'pair-sum-diff' ? formatSigned(point.y) : formatValue(point.y) }];
     });
     const first = points[0];
@@ -706,16 +789,70 @@ const MeasurementSamplesCompareChart = (
     };
   };
 
+  // The sensor under the cursor on the first plot - a small hint at the
+  // cursor tells that a click follows it (or stops it) on the second plot.
+  const [hoveredSensor, setHoveredSensor] = React.useState<number | null>(null);
+
   const onHover = (event: Readonly<Plotly.PlotHoverEvent>) => {
-    setHighlighted(nearestLine(event));
-    setTooltip(tooltipOf(event));
+    const nearest = nearestLine(event);
+    setHighlighted(nearest);
+    setTooltip(tooltipOf(event, nearest));
+    const first = event.points[0];
+    const onFirstPlot = first && !(first.data as HoverTrace).xaxis;
+    setHoveredSensor(onFirstPlot && typeof first.x === 'number' ? first.x : null);
   };
   const onUnhover = () => {
     setHighlighted(null);
     setTooltip(null);
+    setHoveredSensor(null);
   };
 
-  const margin = { l: 56, r: showSumDiff ? 64 : 16, t: frameSlider ? 56 : 16, b: 52 };
+  const margin = { l: 64, r: showSumDiff ? 64 : 16, t: frameSlider ? 56 : 16, b: 52 };
+
+  // The tooltip sits top right - top left while the cursor comes near it,
+  // so it never covers what is hovered. Both follow the cursor without a
+  // re-render (the plot would redraw): the hint by its style, the side only
+  // when it changes.
+  const wrapRef = React.useRef<HTMLDivElement | null>(null);
+  const tooltipRef = React.useRef<HTMLDivElement | null>(null);
+  const hintRef = React.useRef<HTMLDivElement | null>(null);
+  const cursorRef = React.useRef<{ x: number; y: number } | null>(null);
+  const [tooltipLeft, setTooltipLeft] = React.useState(false);
+  const onMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
+    const wrap = wrapRef.current;
+    if (!wrap) {
+      return;
+    }
+    const box = wrap.getBoundingClientRect();
+    const x = event.clientX - box.left;
+    const y = event.clientY - box.top;
+    cursorRef.current = { x, y };
+    placeHint(hintRef.current, cursorRef.current);
+    // Near the tooltip's place on the right (with its current height).
+    const right = box.width - margin.r - TOOLTIP_INSET_PX;
+    const bottom = margin.t + TOOLTIP_INSET_PX + (tooltipRef.current?.offsetHeight ?? 0);
+    setTooltipLeft(
+      x >= right - TOOLTIP_WIDTH - TOOLTIP_FLIP_DISTANCE_PX && y <= bottom + TOOLTIP_FLIP_DISTANCE_PX,
+    );
+  };
+  // Placed as soon as it appears, not only with the next move.
+  React.useLayoutEffect(() => placeHint(hintRef.current, cursorRef.current), [hoveredSensor]);
+
+  // The selected sensors' legend: right above the second plot. Spread into
+  // the layout - the typings know only one legend.
+  const sensorLegend = {
+    legend2: {
+      orientation: 'h' as const,
+      x: 1,
+      xanchor: 'right' as const,
+      y: SENSORS_DOMAIN[1],
+      yanchor: 'bottom' as const,
+      itemdoubleclick: false as const,
+      bgcolor: plotTheme.warmGray1,
+      bordercolor: plotTheme.warmGray3,
+      borderwidth: 1,
+    },
+  };
 
   // Plotly has no legend hover event: listen on the legend items (g.traces,
   // whose d3 data holds the trace).
@@ -725,7 +862,7 @@ const MeasurementSamplesCompareChart = (
       return undefined;
     }
     const legendTrace = (target: EventTarget | null) => {
-      const item = target instanceof Element ? target.closest('.legend .traces') : null;
+      const item = target instanceof Element ? target.closest('.legend .traces, .legend2 .traces') : null;
       const uid = (item as { __data__?: [{ trace?: { uid?: string } }] } | null)?.__data__?.[0]
         ?.trace?.uid;
       return uid && !BAND_TRACES.has(uid) ? uid : null;
@@ -759,9 +896,7 @@ const MeasurementSamplesCompareChart = (
     const xaxis = (point.data as HoverTrace).xaxis;
     if (xaxis === 'x2' || xaxis === 'x3') {
       const id = pairSumSeries.ids[point.pointIndex];
-      if (id != null) {
-        setSelectedId(id);
-      }
+      selectFrame(frames.findIndex((frame) => frame.id === id));
       return;
     }
     if (typeof point.x === 'number') {
@@ -828,20 +963,39 @@ const MeasurementSamplesCompareChart = (
           id="measurement-compare-timestamp"
           timestamps={sliderTimestamps}
           index={frameIndex}
-          onChange={(index) => setSelectedId(frames[index]?.id ?? null)}
+          onChange={selectFrame}
           playKey={sliderPlayKey}
           visibleRange={visibleRange}
         />
       )}
 
-      <div style={{ position: 'relative' }}>
+      <div ref={wrapRef} style={{ position: 'relative' }} onMouseMove={onMouseMove}>
         {tooltip && (
-          // Top right of the upper plot, wherever the cursor is.
+          // Top right of the upper plot - top left while the cursor is near.
           <MeasurementCompareTooltip
+            ref={tooltipRef}
             tooltip={tooltip}
             activeKey={highlighted}
-            style={{ top: margin.t + 8, right: margin.r + 8 }}
+            style={
+              tooltipLeft
+                ? { top: margin.t + TOOLTIP_INSET_PX, left: margin.l + TOOLTIP_INSET_PX }
+                : { top: margin.t + TOOLTIP_INSET_PX, right: margin.r + TOOLTIP_INSET_PX }
+            }
           />
+        )}
+        {hoveredSensor != null && (
+          <div
+            ref={hintRef}
+            className="position-absolute bg-dark text-white rounded px-2 py-1 text-nowrap"
+            style={{ pointerEvents: 'none', zIndex: 3, fontSize: 11, opacity: 0.85 }}
+          >
+            {t(
+              selectedSensors.includes(hoveredSensor)
+                ? 'measurement_compare_sensor_click_remove'
+                : 'measurement_compare_sensor_click_add',
+              { sensor: hoveredSensor },
+            )}
+          </div>
         )}
         <Plot
           data={data}
@@ -892,7 +1046,7 @@ const MeasurementSamplesCompareChart = (
                   },
                 ],
             xaxis: {
-              title: t('measurement_compare_pair_index_axis'),
+              title: { text: t('measurement_compare_pair_index_axis') },
               domain: [0, 1],
               anchor: 'y',
               showgrid: true,
@@ -901,17 +1055,21 @@ const MeasurementSamplesCompareChart = (
               ...SPIKE,
             },
             yaxis: {
-              title: t('measurement_compare_absolute_delta_axis'),
+              title: { text: t('measurement_compare_absolute_delta_axis') },
               domain: UPPER_DOMAIN,
               rangemode: 'tozero',
-              ...(upperRange ? { range: upperRange, autorange: false } : {}),
+              // Also after a double click / autoscale, which turns autorange
+              // back on: it then still spans all measurements.
+              ...(upperRange
+                ? { range: upperRange, autorange: false, autorangeoptions: { include: upperRange } }
+                : {}),
               showgrid: true,
               gridcolor: plotTheme.warmGray2,
               zeroline: true,
             },
             xaxis2: {
               type: 'date',
-              title: t('measurement_compare_measurement_datetime_label'),
+              title: { text: t('measurement_compare_measurement_datetime_label') },
               domain: [0, 1],
               anchor: 'y2',
               showgrid: true,
@@ -920,7 +1078,7 @@ const MeasurementSamplesCompareChart = (
               ...SPIKE,
             },
             yaxis2: {
-              title: t('measurement_compare_pair_sum_axis'),
+              title: { text: t('measurement_compare_pair_sum_axis') },
               domain: SUM_DOMAIN,
               side: 'left',
               showgrid: true,
@@ -939,7 +1097,7 @@ const MeasurementSamplesCompareChart = (
               ...SPIKE,
             },
             yaxis4: {
-              title: t('measurement_compare_absolute_delta_axis'),
+              title: { text: t('measurement_compare_absolute_delta_axis') },
               domain: SENSORS_DOMAIN,
               anchor: 'x3',
               rangemode: 'tozero',
@@ -949,7 +1107,7 @@ const MeasurementSamplesCompareChart = (
             },
             yaxis3: {
               visible: showSumDiff,
-              title: t('measurement_compare_pair_sum_diff_label'),
+              title: { text: t('measurement_compare_pair_sum_diff_label') },
               overlaying: 'y2',
               side: 'right',
               anchor: 'x2',
@@ -969,6 +1127,7 @@ const MeasurementSamplesCompareChart = (
               bordercolor: plotTheme.warmGray3,
               borderwidth: 1,
             },
+            ...sensorLegend,
             hovermode: 'x unified',
           }}
         />

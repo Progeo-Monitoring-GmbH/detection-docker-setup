@@ -47,6 +47,9 @@ const LocationAnalyseTab = () => {
   const isStaff = Boolean(authUser?.is_staff || authUser?.is_superuser);
 
   const [range, setRange] = useState<TimeRange>('7d');
+  // The time (epoch ms) of the heatmap's and the measurements' coupled
+  // sliders - null: the newest measurement.
+  const [frameTime, setFrameTime] = useState<number | null>(null);
   const [heatmap, setHeatmap] = useState<SensorHeatmapResponse | null>(null);
   const [measurements, setMeasurements] = useState<MeasurementCompareRow[]>([]);
   // Measurements in the period, of which `measurements` are shown.
@@ -201,7 +204,10 @@ const LocationAnalyseTab = () => {
                 label: t(timeRangeLabelKey(value)),
               }))}
               value={range}
-              onChange={(value) => setRange(value as TimeRange)}
+              onChange={(value) => {
+                setRange(value as TimeRange);
+                setFrameTime(null);
+              }}
             />
             {loading && (heatmap || measurements.length > 0) && (
               <Spinner size="sm" animation="border" className="text-muted" />
@@ -216,7 +222,13 @@ const LocationAnalyseTab = () => {
                   <Spinner size="sm" animation="border" /> Loading heatmap...
                 </div>
               ) : (
-                <SensorHeatmap2D response={heatmap} fitPlan hideChrome />
+                <SensorHeatmap2D
+                  response={heatmap}
+                  fitPlan
+                  hideChrome
+                  time={frameTime}
+                  onTimeChange={setFrameTime}
+                />
               )}
             </Card.Body>
           </Card>
@@ -266,6 +278,8 @@ const LocationAnalyseTab = () => {
                   frameSlider
                   sliderPlayKey={false}
                   hideChrome
+                  time={frameTime}
+                  onTimeChange={setFrameTime}
                 />
               )}
             </Card.Body>

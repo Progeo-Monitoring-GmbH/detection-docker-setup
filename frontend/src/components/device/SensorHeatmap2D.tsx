@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useTranslation } from 'react-i18next';
 import { Card } from 'react-bootstrap';
 import { plotTheme } from '../../styles/plotTheme';
-import FrameSlider, { type AlarmSpan } from './FrameSlider';
+import FrameSlider, { type AlarmSpan, frameAt } from './FrameSlider';
 import { seriesRange } from './heatmapGrid';
 import { heatColorAt, heatColorTable } from './heatmapCanvas';
 import {
@@ -45,6 +45,13 @@ type SensorHeatmap2DProps = {
   hideChrome?: boolean;
   /** Called with the timestamp index the slider shows (also while exporting). */
   onTimestampChange?: (index: number) => void;
+  /**
+   * Couples the slider with another one (the measurements chart's): it shows
+   * the frame holding `time` (epoch ms; the newest while null) and reports
+   * the time picked here to `onTimeChange` instead of keeping it itself.
+   */
+  time?: number | null;
+  onTimeChange?: (ms: number) => void;
   /** Alarm periods, marked on the timestamp slider. */
   alarms?: AlarmSpan[];
   /**
@@ -118,6 +125,8 @@ const SensorHeatmap2D = ({
   alignment = null,
   hideChrome = false,
   onTimestampChange,
+  time = null,
+  onTimeChange,
   alarms,
   field,
   fitPlan = false,
@@ -138,7 +147,23 @@ const SensorHeatmap2D = ({
     () => (Array.isArray(response?.timestamps) ? response.timestamps : []),
     [response],
   );
-  const [timestampIndex, setTimestampIndex] = useState(0);
+  const [ownIndex, setOwnIndex] = useState(0);
+  // Coupled (onTimeChange): the frame holding `time`.
+  const timestampIndex = !onTimeChange
+    ? ownIndex
+    : time == null
+      ? timestamps.length - 1
+      : frameAt(timestamps, time);
+  const setTimestampIndex = useCallback(
+    (index: number) => {
+      if (!onTimeChange) {
+        setOwnIndex(index);
+      } else if (index >= 0 && index < timestamps.length) {
+        onTimeChange(timestamps[index] * 1000);
+      }
+    },
+    [onTimeChange, timestamps],
+  );
   // The shown frame, within the timestamps there are.
   const frameIndex = Math.max(0, Math.min(timestampIndex, timestamps.length - 1));
   useEffect(() => {
