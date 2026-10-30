@@ -678,11 +678,13 @@ class DeviceViewSet(ProgeoModalViewSet):
             if not imei_regex.match(raw_hash):
                 continue
 
+            # The VDC resistance is the IMEI sample (no column of its own).
+            resistance_vdc = measurement.get_resistance_vdc()
             try:
-                # The VDC resistance is the IMEI sample (no column of its own).
-                resistance_vdc = float(measurement.samples[0])
                 resistance_idc = float(measurement.resistance_idc)
-            except (TypeError, ValueError, IndexError, KeyError):
+            except (TypeError, ValueError):
+                continue
+            if resistance_vdc is None:
                 continue
 
             last_updated = measurement.last_updated

@@ -1,6 +1,7 @@
 import { Outlet } from 'react-router';
 import LocationSidebar from '../components/sidebar/LocationSidebar';
 import TopBar from '../components/topbar/TopBar';
+import FavoritesBar from './FavoritesBar';
 
 /**
  * Layout for every route outside the object/location monitoring portal
@@ -28,6 +29,7 @@ const AppLayout = () => {
         }}
       >
         <TopBar />
+        <FavoritesBar style={{ marginTop: 14 }} />
         <div style={{ marginTop: 14 }}>
           <Outlet />
         </div>

@@ -4,36 +4,18 @@ from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
 from progeo.helper.basics import dlog, elog, ilog
-from progeo.helper.legacy.geo import GeoHelper
 from progeo.management.commands._base import BaseCommand
 from progeo.settings import SETUP_DIR, UPLOAD_DIR
 from progeo.v1.creator import save_lageplan_upload
 from progeo.v1.legacy.executor import fetch_legacy_data, parse_sample_timestamp
 from progeo.v1.legacy.helper_resistance import MAX_JSON_SAFE_RESISTANCE_OHM
 from progeo.v1.models import (
-    Account,
     ProgeoDevice,
     ProgeoLageplan,
     ProgeoLocation,
     ProgeoMeasurement,
     ProgeoMeasurePoint,
 )
-
-
-def _parse_int(value, default=0):
-    """Parse an int from the legacy data-progeo.net export, which encodes
-    numeric fields as strings and sometimes as decimals (e.g. "0.1") - a bare
-    int("0.1") raises ValueError, so fall back to float() first."""
-    if value in (None, ""):
-        return default
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        pass
-    try:
-        return int(float(value))
-    except (TypeError, ValueError):
-        return default
 
 
 def fetch_device_locations():
@@ -60,6 +42,303 @@ def fetch_device_locations():
             device.location = location
             device.save()
             dlog(f"Assigned location {location} to device {device.raw_hash}")
+
+
+def fetch_koords():
+    """Stores the koordinate table of every project from data-progeo.net
+    (admin/bad.php?project_id=...) as media/setup/koords/<project_id>.json."""
+    target_dir = os.path.join(SETUP_DIR, "koords")
+    os.makedirs(target_dir, exist_ok=True)
+    project_ids = sorted(set(
+        ProgeoLocation.objects.exclude(project_id__isnull=True).values_list("project_id", flat=True)
+    ))
+    ilog(f"Fetching koords for {len(project_ids)} projects into {target_dir}")
+
+    stored, missing, failed = 0, [], []
+    for project_id in project_ids:
+        url = f"http://data-progeo.net/DB/admin/bad.php?project_id={project_id}"
+        try:
+            with urlopen(url, timeout=30) as response:
+                rows = json.loads(response.read().decode("utf-8", errors="replace"))
+        except HTTPError as exc:
+            if exc.code == 404:
+                missing.append(project_id)
+            else:
+                elog(f"Failed fetching koords for project {project_id}: {exc}")
+                failed.append(project_id)
+            continue
+        except (URLError, OSError, ValueError) as exc:
+            elog(f"Failed fetching koords for project {project_id}: {exc}")
+            failed.append(project_id)
+            continue
+
+        if not isinstance(rows, list):
+            elog(f"Unexpected koords payload for project {project_id}: {type(rows).__name__}")
+            failed.append(project_id)
+            continue
+
+        # Write next to the target and swap, so a crash never leaves a half-written file.
+        path = os.path.join(target_dir, f"{project_id}.json")
+        with open(f"{path}.tmp", "w", encoding="utf-8") as file:
+            json.dump(rows, file, ensure_ascii=False, indent=2)
+        os.replace(f"{path}.tmp", path)
+        stored += 1
+        dlog(f"Stored {len(rows)} koords for project {project_id}")
+
+        # The scale of the koords on the Lageplan (see koords_to_points).
+        url = f"http://data-progeo.net/DB/upload/{project_id}/system/koordsys.txt"
+        try:
+            with urlopen(url, timeout=30) as response:
+                koordsys = response.read().decode("utf-8", errors="replace")
+        except OSError as exc:
+            dlog(f"No koordsys for project {project_id}: {exc}")
+            continue
+        if _parse_koordsys(koordsys) is None:
+            dlog(f"Unusable koordsys for project {project_id}: {koordsys[:80]!r}")
+            continue
+        with open(os.path.join(target_dir, f"{project_id}.koordsys.txt"), "w", encoding="utf-8") as file:
+            file.write(koordsys)
+
+    if missing:
+        dlog(f"{len(missing)} projects without koord table: {missing}")
+    if failed:
+        elog(f"{len(failed)} projects failed: {failed}")
+    ilog(f"Stored koords for {stored} projects")
+
+
+# The legacy heatmap (showHeatmap.php, makeClipData.php) draws the koords into
+# a 602 x 402 px frame, with the Lageplan PNG at its natural size in the top
+# left corner.
+LEGACY_FRAME = (602, 402)
+# legacyPro intern/koordsys.txt, which script.php copies to every new project:
+# x0, xmax, y0, ymax of the frame in m.
+DEFAULT_KOORDSYS = (0.0, 60.2, 0.0, 40.2)
+
+
+def _parse_koordsys(text):
+    """(x0, xmax, y0, ymax) in m from a legacy koordsys.txt ("0,60.2,0,40.2"),
+    None if unusable."""
+    lines = (text or "").strip().splitlines()
+    if not lines:
+        return None
+    try:
+        x0, xmax, y0, ymax = (float(value) for value in lines[0].split(","))
+    except ValueError:
+        return None
+    if xmax == x0 or ymax == y0:
+        return None
+    return x0, xmax, y0, ymax
+
+
+def _koord_number(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _koord_int(value):
+    number = _koord_number(value)
+    return int(number) if number is not None else 0
+
+
+def _merge_koord_rows(project_id, rows):
+    """({sensor: row}, [conflicting sensors]) - one koord row per sensor
+    (feld_1), with its position parsed into "x"/"y".
+
+    A koord table copied from a template (feld_5 = the template's project,
+    mostly 5024) and filled in later holds the project's own rows and the
+    template's side by side: the own row wins, then a placed one (not at
+    0/0), then the first. Empty name/status/value of the winner are filled
+    from the others. A sensor with two different positions of the same rank
+    is a conflict (the winner is still the first). Rows without a sensor
+    number (the all-zero rows) or position are dropped."""
+    candidates = {}
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            continue
+        sensor = _koord_int(row.get("feld_1"))
+        x, y = _koord_number(row.get("feld_6")), _koord_number(row.get("feld_7"))
+        if sensor < 1 or x is None or y is None:
+            continue
+        rank = (str(row.get("feld_5")) != str(project_id), x == 0 and y == 0)
+        candidates.setdefault(sensor, []).append((rank, index, {**row, "x": x, "y": y}))
+
+    merged, conflicts = {}, []
+    for sensor, entries in candidates.items():
+        entries.sort(key=lambda entry: entry[:2])
+        rank, _index, best = entries[0]
+        for field in ("name", "status", "value"):
+            if best.get(field) in (None, ""):
+                best[field] = next(
+                    (row[field] for _, _, row in entries[1:] if row.get(field) not in (None, "")),
+                    best.get(field),
+                )
+        if any(other_rank == rank and (row["x"], row["y"]) != (best["x"], best["y"])
+               for other_rank, _, row in entries[1:]):
+            conflicts.append(sensor)
+        merged[sensor] = best
+    return merged, sorted(conflicts)
+
+
+def _koord_position(row, koordsys, image_size):
+    """(nx, ny) of a koord row on the Lageplan image, ny = 0 at the top - the
+    spot the legacy heatmap drew it: getMapData.php maps the koord (dm) into
+    the frame by koordsys.txt (m), with y counted from the bottom."""
+    x0, xmax, y0, ymax = koordsys
+    width, height = image_size or LEGACY_FRAME
+    frame_x = (row["x"] / 10 - x0) / (xmax - x0)
+    frame_y = 1 - (row["y"] / 10 - y0) / (ymax - y0)
+    return frame_x * LEGACY_FRAME[0] / width, frame_y * LEGACY_FRAME[1] / height
+
+
+def _koord_location(project_id):
+    """The location of a project; of the unnamed duplicates (see
+    drop_duplicate_locations) the named one."""
+    from django.db.models import F
+
+    return (
+        ProgeoLocation.objects.filter(project_id=project_id)
+        .order_by(F("name").asc(nulls_last=True), "id").first()
+    )
+
+
+def koords_to_points(apply=False):
+    """ProgeoMeasurePoints from the koord tables fetch_koords stored in
+    media/setup/koords/<project_id>.json: feld_1 is the sensor (sensor_order -
+    the legacy data position, i.e. pair index + 1 like the heatmap's pos),
+    feld_6/feld_7 its position in dm, feld_8 the line (grid_y), feld_9 the
+    sensor on it (grid_x); a status "individuell" carries the sensor's own
+    alarm threshold in value. Positioned on the Lageplan fetched from
+    data-progeo.net ("<project_id>.png"), where the legacy heatmap showed them.
+
+    Existing points (by sensor_order) are only completed: an unplaced one
+    (at 0/0 - a threshold or an OCR'd name only) gets the position, empty
+    name/threshold are filled; a point placed elsewhere (wizard, CAD) keeps
+    its position. Points of an earlier run (x/y = the raw koord) are moved
+    to the current position - re-run after fetch_koords got a koordsys.txt
+    or fetch_lageplan a plan. Read only unless `apply`."""
+    from django.db import transaction
+
+    from progeo.helper import plan_meters
+    from progeo.helper.project_dbs import location_db, release_connection
+
+    source_dir = os.path.join(SETUP_DIR, "koords")
+    project_ids = sorted(
+        int(name[:-5]) for name in os.listdir(source_dir) if name.endswith(".json") and name[:-5].isdigit()
+    ) if os.path.isdir(source_dir) else []
+    ilog(f"{len(project_ids)} koord tables in {source_dir}{'' if apply else ' (dry run, use --apply)'}")
+
+    totals = {"created": 0, "completed": 0, "kept": 0}
+    without_location, without_plan, failed = [], [], []
+    for project_id in project_ids:
+        try:
+            with open(os.path.join(source_dir, f"{project_id}.json"), encoding="utf-8") as file:
+                rows = json.load(file)
+        except (OSError, ValueError) as exc:
+            elog(f"project {project_id}: unreadable koords: {exc}")
+            failed.append(project_id)
+            continue
+        merged, conflicts = _merge_koord_rows(project_id, rows if isinstance(rows, list) else [])
+        if not merged:
+            continue
+        location = _koord_location(project_id)
+        if location is None:
+            without_location.append(project_id)
+            continue
+
+        koordsys = None
+        try:
+            with open(os.path.join(source_dir, f"{project_id}.koordsys.txt"), encoding="utf-8") as file:
+                koordsys = _parse_koordsys(file.read())
+        except OSError:
+            pass
+        if koordsys is None:
+            dlog(f"project {project_id}: no koordsys, using the default {DEFAULT_KOORDSYS}")
+            koordsys = DEFAULT_KOORDSYS
+
+        db_name = location_db(location, location.account)
+        try:
+            plans = list(ProgeoLageplan.objects.using(db_name).filter(location=location).order_by("-is_active", "-id"))
+            plan = next((plan for plan in plans if plan.name == f"{project_id}.png"), plans[0] if plans else None)
+            if plan is None:
+                without_plan.append(project_id)
+            image_size = plan_meters.image_size(plan) if plan else None
+
+            existing = {}
+            for point in ProgeoMeasurePoint.objects.using(db_name).filter(location=location).order_by("id"):
+                existing.setdefault(point.sensor_order, point)
+
+            created, completed, kept, off_plan = [], [], [], []
+            for sensor, row in sorted(merged.items()):
+                nx, ny = _koord_position(row, koordsys, image_size)
+                if not (0 <= nx <= 1 and 0 <= ny <= 1):
+                    off_plan.append(sensor)
+                position = {
+                    "x": row["x"], "y": row["y"], "nx": round(nx, 6), "ny": round(ny, 6),
+                    "grid_x": _koord_int(row.get("feld_9")), "grid_y": _koord_int(row.get("feld_8")),
+                }
+                name = (row.get("name") or "").strip()[:100] or None
+                threshold = _koord_number(row.get("value")) if row.get("status") == "individuell" else None
+
+                point = existing.get(sensor)
+                if point is None:
+                    created.append(ProgeoMeasurePoint(
+                        location_id=location.pk, lageplan_id=plan.pk if plan else None,
+                        sensor_order=sensor, name=name, threshold=threshold, **position,
+                    ))
+                    continue
+
+                fields = []
+                # Unplaced, or placed by an earlier run (the raw koord position
+                # in x/y) - then with the koordsys/Lageplan of now.
+                from_koords = (point.x, point.y) == (position["x"], position["y"])
+                if from_koords or not any((point.x, point.y, point.nx, point.ny)):
+                    fields += [field for field, value in position.items() if getattr(point, field) != value]
+                    for field in fields:
+                        setattr(point, field, position[field])
+                    if point.lageplan_id is None and plan:
+                        point.lageplan_id = plan.pk
+                        fields.append("lageplan")
+                elif abs(point.nx - position["nx"]) > 0.01 or abs(point.ny - position["ny"]) > 0.01:
+                    kept.append(sensor)
+                if not point.name and name:
+                    point.name = name
+                    fields.append("name")
+                if point.threshold is None and threshold is not None:
+                    point.threshold = threshold
+                    fields.append("threshold")
+                if fields:
+                    completed.append((point, fields))
+
+            dlog(f"project {project_id}: {len(created)} new, {len(completed)} completed, "
+                 f"{len(kept)} placed elsewhere (kept) points")
+            if conflicts:
+                elog(f"project {project_id}: sensors with two koord positions, took the first: {conflicts}")
+            if off_plan:
+                elog(f"project {project_id}: sensors off the Lageplan: {off_plan}")
+            if apply:
+                with transaction.atomic(using=db_name):
+                    ProgeoMeasurePoint.objects.using(db_name).bulk_create(created)
+                    for point, fields in completed:
+                        point.save(using=db_name, update_fields=fields)
+            totals["created"] += len(created)
+            totals["completed"] += len(completed)
+            totals["kept"] += len(kept)
+        except Exception as exc:
+            elog(f"project {project_id}: {exc}")
+            failed.append(project_id)
+        finally:
+            release_connection(db_name)
+
+    if without_location:
+        dlog(f"{len(without_location)} koord tables without a location: {without_location}")
+    if without_plan:
+        dlog(f"{len(without_plan)} projects without a Lageplan (positioned on the legacy frame): {without_plan}")
+    if failed:
+        elog(f"{len(failed)} projects failed: {failed}")
+    ilog(f"Points {'' if apply else 'to be '}created: {totals['created']}, completed: {totals['completed']}, "
+         f"placed elsewhere (kept): {totals['kept']}")
 
 
 def _lageplan_digest(lageplan):
@@ -175,18 +454,21 @@ class Command(BaseCommand):
         'Patches for live data. Selects the patch to run with -p/--patch.\n\n'
         'Available patches:\n'
         '  fix_dragino_usage         backfill last_updated / resistances for a dragino device\n'
-        '  fetch_projects            import projects from data-progeo.net into locations\n'
         '  fetch_legacy_data         fetch legacy measurement data (dry run)\n'
         '  fetch_device_locations    assign locations to devices without one\n'
         '  fetch_lageplan            download lageplan images for locations without one\n'
+        '  fetch_koords              store each project\'s koord table as media/setup/koords/<id>.json\n'
+        '  koords_to_points          create / complete the measure points from those koord tables\n'
+        '                            - read only unless --apply\n'
         '  drop_duplicate_locations  remove the unnamed duplicate locations and their copied\n'
         '                            lageplans ("Location None") - read only unless --apply\n\n'
         'Examples:\n'
-        '  python manage.py patch_live --patch fetch_projects\n'
         '  python manage.py patch_live --patch fix_dragino_usage\n'
         '  python manage.py patch_live --patch fetch_legacy_data\n'
         '  python manage.py patch_live --patch fetch_device_locations\n'
         '  python manage.py patch_live --patch fetch_lageplan\n'
+        '  python manage.py patch_live --patch fetch_koords\n'
+        '  python manage.py patch_live --patch koords_to_points [--apply]\n'
         '  python manage.py patch_live --patch drop_duplicate_locations [--apply]'
     )
 
@@ -195,7 +477,7 @@ class Command(BaseCommand):
                             help="Select a patch to run",
                             default=None)
         parser.add_argument("--apply", action="store_true",
-                            help="drop_duplicate_locations: change the data (default: only report)")
+                            help="drop_duplicate_locations, koords_to_points: change the data (default: only report)")
 
 
 
@@ -222,129 +504,6 @@ class Command(BaseCommand):
 
                 m.save()
 
-        if patch == "fetch_projects":
-            def get_status(status):
-                if status == "Auto-Alarm":
-                    return 1
-                elif status == "nur Messen":
-                    return 2
-                elif status == "offline":
-                    return 0
-                return -1
-
-
-            url = "http://data-progeo.net/DB/admin/bad.php"
-            dlog(f"Fetching projects from {url}")
-            geo_helper = GeoHelper(logger=dlog)
-
-            try:
-                with urlopen(url, timeout=30) as response:
-                    payload = response.read().decode("utf-8", errors="replace")
-            except (URLError, HTTPError, OSError) as exc:
-                fallback_path = os.path.join(SETUP_DIR, "projects.json")
-                dlog(f"Could not fetch {url} ({exc}), falling back to {fallback_path}")
-                if not os.path.isfile(fallback_path):
-                    elog(f"Fallback file not found: {fallback_path}")
-                    dlog("DONE!")
-                    return
-                with open(fallback_path, "r", encoding="utf-8") as fallback_file:
-                    payload = fallback_file.read()
-
-            project_rows = json.loads(payload)
-            if isinstance(project_rows, dict):
-                # Allow wrapped responses like {"results": [...]}.
-                for key in ("results", "data", "items"):
-                    if isinstance(project_rows.get(key), list):
-                        project_rows = project_rows[key]
-                        break
-
-            if not isinstance(project_rows, list):
-                dlog(f"Unexpected payload format: {type(project_rows).__name__}")
-                dlog("DONE!")
-                return
-
-            dlog(f"Parsed {len(project_rows)} project entries")
-
-            account = Account.objects.get(pk=1)
-            db_name = account.db_name
-            for row in project_rows:
-                if not isinstance(row, dict):
-                    continue
-
-                project_id_raw = row.get("project_ID")
-                if project_id_raw in (None, ""):
-                    continue
-
-                project_id = _parse_int(project_id_raw, default=None)
-                if project_id is None:
-                    elog(f"Skipping row with non-numeric project_ID: {project_id_raw!r}")
-                    continue
-
-                # Look up by project_id alone (the stable natural key from
-                # data-progeo.net) rather than (account, project_id): a location
-                # can already exist without the right account attached (e.g.
-                # auto-registered by a device before this patch ever ran), and
-                # scoping the lookup by account too would miss that row and
-                # create a second, duplicate location for the same project
-                # instead of adopting the existing one.
-                try:
-                    location, created = ProgeoLocation.objects.using(db_name).get_or_create(
-                        project_id=project_id,
-                    )
-                except Exception as exc:
-                    elog(f"Failed to get or create location for project {project_id}: {exc}")
-                    continue
-
-                # Always (re-)attach the account, not just on creation - an
-                # existing row found above might still be missing it or point
-                # at the wrong one.
-                location.account = account
-
-                location.name = row.get("project_name")
-                location.plz = row.get("project_plz")
-                location.city = row.get("project_ort")
-                location.address = row.get("project_street")
-                location.manager = row.get("project_manager")
-                location.telefon = row.get("project_tel")
-                location.mail = row.get("project_mail")
-                location.alarm_threshold = _parse_int(row.get("Level"), default=100)
-                location.alarm_integration_depth = _parse_int(row.get("Tiefe"), default=1)
-                location.alarm_umfeld = _parse_int(row.get("Umfeld"), default=0)
-                location.alarm_distance = _parse_int(row.get("Dist"), default=0)
-                location.alarm_timeout = _parse_int(row.get("TmeOut"), default=0)
-                location.alarm_m_status = get_status(row.get("MStatus"))
-                location.interval = row.get("intervall")
-
-                has_geo_source = all([
-                    location.city not in (None, ""),
-                    location.plz not in (None, ""),
-                    location.address not in (None, ""),
-                ])
-
-                if has_geo_source and (location.latitude is None or location.longitude is None):
-                    lat, lon = geo_helper.fetch_lat_lon(
-                        project_id=project_id,
-                        address=location.address,
-                        plz=location.plz,
-                        city=location.city,
-                    )
-                    if lat is not None and lon is not None:
-                        location.latitude = lat
-                        location.longitude = lon
-
-                location.save(using=db_name)
-
-                dlog(
-                    f"{'Created' if created else 'Updated'} location for project "
-                    f"{project_id}: {location.name}"
-                )
-
-                devices = ProgeoDevice.objects.using(db_name).filter(project_id=project_id).all()
-                if len(devices) == 1:
-                    device = devices[0]
-                    device.location = location
-                    device.save(using=db_name)
-
         if patch == "fetch_legacy_data":
             fetch_legacy_data(dry_run=True)
 
@@ -353,6 +512,12 @@ class Command(BaseCommand):
 
         if patch == "drop_duplicate_locations":
             drop_duplicate_locations(apply=options["apply"])
+
+        if patch == "fetch_koords":
+            fetch_koords()
+
+        if patch == "koords_to_points":
+            koords_to_points(apply=options["apply"])
 
         if patch == "fetch_lageplan":
             # Not for a project that has a Lageplan on another location already:

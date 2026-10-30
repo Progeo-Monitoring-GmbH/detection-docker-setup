@@ -97,9 +97,7 @@ class Command(BaseCommand):
         "  1. copy    (default) create the project databases (cloned from the\n"
         "             template, measurements partitioned by year), mirror the\n"
         "             shared rows, copy the project rows. Measurements are\n"
-        "             renumbered 1..n per project (alarms remapped), their\n"
-        "             samples moved into eigenpotenzial / wirkpotenzial (cut to\n"
-        "             m_points like script.php, anomalies reported), and\n"
+        "             renumbered 1..n per project (alarms remapped) and\n"
         "             replaced on every copy. Other rows: only rows newer than the target's\n"
         "             highest id, --upsert re-copies and updates them.\n"
         "             Projects whose database already holds all their rows\n"
@@ -255,12 +253,6 @@ class Command(BaseCommand):
         )
         for name, copied in result["copied"].items():
             self.stdout.write(f"    {name:<20} copied={copied}")
-        anomalies = result["anomalies"]
-        if any(anomalies.values()):
-            self.stdout.write(self.style.WARNING(
-                f"    ! samples not matching the declared points: {anomalies['surplus']} with more than "
-                f"the known trailing artifact (cut), {anomalies['incomplete']} with values missing (kept)"
-            ))
         return "copied" if self._print_verification(project_id, result["alias"]) else "incomplete"
 
     def _with_retry(self, prefix, alias, run, *args):

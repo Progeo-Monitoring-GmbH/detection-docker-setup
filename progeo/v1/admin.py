@@ -22,6 +22,9 @@ from progeo.v1.models import (
     ProgeoAccess,
     ProgeoAlarm,
     ProgeoDevice,
+    ProgeoEscalation,
+    ProgeoEscalationEntry,
+    ProgeoFavoriteLocation,
     ProgeoLageplan,
     ProgeoLocation,
     ProgeoMeasurement,
@@ -177,6 +180,27 @@ class ProgeoLageplanAdmin(MultiDBModelAdmin):
 class ProgeoMeasurePointAdmin(MultiDBModelAdmin):
     pass
 
+class ProgeoEscalationEntryInline(admin.TabularInline):
+    """The protocol - read-only, like in the frontend."""
+    model = ProgeoEscalationEntry
+    extra = 0
+    can_delete = False
+    readonly_fields = ("created", "kind", "author", "text", "data")
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+class ProgeoEscalationAdmin(admin.ModelAdmin):
+    list_display = ("created", "project_id", "location", "title", "status", "assigned_to", "closed_at")
+    list_filter = ("status",)
+    search_fields = ("title", "project_id")
+    raw_id_fields = ("location", "assigned_to", "created_by", "closed_by")
+    inlines = [ProgeoEscalationEntryInline]
+
+class ProgeoFavoriteLocationAdmin(admin.ModelAdmin):
+    list_display = ("created", "user", "location")
+    raw_id_fields = ("user", "location")
+
 class UserModulePermissionsAdminForm(ModelForm):
     module_permissions = forms.ModelMultipleChoiceField(
         queryset=Permission.objects.none(),
@@ -300,6 +324,8 @@ register_models = [
     {"model": ProgeoAccess, "admin": ProgeoAccessAdmin, "custom": True},
     {"model": EMail, "admin": EMailAdmin, "custom": True},
     {"model": SMS, "admin": SMSAdmin, "custom": True},
+    {"model": ProgeoEscalation, "admin": ProgeoEscalationAdmin, "custom": True},
+    {"model": ProgeoFavoriteLocation, "admin": ProgeoFavoriteLocationAdmin, "custom": True},
     
 ]
 

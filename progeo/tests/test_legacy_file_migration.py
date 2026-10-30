@@ -121,7 +121,7 @@ def test_file_lines_replace_their_default_rows_and_keep_the_alarms(legacy_dir):
 
     # default: the T1 transmission (stored with the phantom pair), an alarm on it,
     # and a LoRaWAN reading the file can't know.
-    stored = f.make_measurement(controller, pairs=[10, 20, 95], end_index=2)
+    stored = f.make_measurement(controller, pairs=[10, 20, 95])
     ProgeoMeasurement.objects.using(f.DB).filter(pk=stored.pk).update(
         last_updated=timezone.make_aware(datetime.datetime.fromtimestamp(_epoch(T1)))
     )

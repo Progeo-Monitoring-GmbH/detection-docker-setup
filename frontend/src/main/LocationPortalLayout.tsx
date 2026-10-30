@@ -7,6 +7,10 @@ import axiosConfig from '../axiosConfig';
 import { showRequestError } from '../components/ui/Snackbar.jsx';
 import LocationSidebar from '../components/sidebar/LocationSidebar';
 import TopBar from '../components/topbar/TopBar';
+import EscalationBanner from './EscalationBanner';
+import FavoriteStar from './FavoriteStar';
+import FavoritesBar from './FavoritesBar';
+import { isStaffUser } from './favorites';
 import type { LocationDetail } from './locationTypes';
 
 export type PortalOutletContext = {
@@ -78,6 +82,16 @@ const LocationPortalLayout = () => {
         }}
       >
         <TopBar />
+        <FavoritesBar />
+        {id && !loading && location && isStaffUser(auth?.user) && (
+          // Staff: the big star pins the location; superusers: its escalation.
+          <div className="d-flex align-items-center gap-3">
+            <FavoriteStar locationId={locationId} size={40} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <EscalationBanner locationId={locationId} />
+            </div>
+          </div>
+        )}
         {loading ? (
           <div className="d-flex justify-content-center py-5 text-muted">
             <Spinner animation="border" className="me-2" />

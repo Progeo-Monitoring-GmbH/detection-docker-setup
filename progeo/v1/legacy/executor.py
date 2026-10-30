@@ -180,10 +180,8 @@ def legacy_measurement_fields(measurement):
         "project_id": data.get("project_id"),
         "humidity": data.get("m_hum"),
         "temperature": data.get("m_temp"),
-        "end_index": data.get("end_index"),
         "eigenpotenzial": potentials.eigenpotenzial,
         "wirkpotenzial": potentials.wirkpotenzial,
-        "samples": None,
         "raw_data": {
             "status": data.get("status"),
             "error": data.get("error", 0),
@@ -515,10 +513,12 @@ def _store_legacy_measurement(measurement, project_id, raw_hash, numbered_sensor
             if last_battery_percentage is not None:
                 data["last_battery_percentage"] = last_battery_percentage
         
-            samples = data.pop("samples", [])
             # Interleaved pairs [eigen, wirk, ...] - stored as eigenpotenzial /
-            # wirkpotenzial instead of the outdated samples column.
+            # wirkpotenzial. Non-pair samples (IMEI resistances) stay in
+            # raw_data["samples"].
             potentials = data.pop("potentials", None)
+            if "samples" in data:
+                data["samples"] = ProgeoMeasurement.normalize_samples(data["samples"])
 
             measure = ProgeoMeasurement.objects.using(db_name).create(
                 device_id=device_id,
@@ -527,7 +527,6 @@ def _store_legacy_measurement(measurement, project_id, raw_hash, numbered_sensor
                 humidity=data.get("humidity"),
                 battery=data.get("battery"),
                 battery_v=data.get("battery_v"),
-                samples=samples,
                 raw_data=data,
             )
             if potentials is not None:

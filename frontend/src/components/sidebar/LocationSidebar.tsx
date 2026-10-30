@@ -5,6 +5,7 @@ import {
   Bell,
   Calendar3,
   Database,
+  ExclamationTriangle,
   Gear,
   Geo,
   Hdd,
@@ -46,8 +47,9 @@ type ModuleItem = {
  * this is built from). Mounted by LocationPortalLayout (with the open
  * location's tabs on top) and by AppLayout for every other route (without).
  *
- * Visibility of the module items: staff see Staff Admin; everything else is
- * superuser-only, Backup additionally needs its module permission.
+ * Visibility of the module items: staff see Staff Admin and Escalations;
+ * everything else is superuser-only, Backup additionally needs its module
+ * permission.
  * is_staff and is_superuser are separate roles - superusers see every item,
  * staff only the ones explicitly listed for them.
  */
@@ -160,6 +162,14 @@ const LocationSidebar = ({
       icon: Calendar3,
       to: '/alarms/report/',
       visible: isSuperuser,
+    },
+    {
+      // Every staff user sees the escalations; only superusers open them.
+      key: 'escalations',
+      label: t('sidebar_escalations'),
+      icon: ExclamationTriangle,
+      to: '/escalations/',
+      visible: isStaffUser || isSuperuser,
     },
   ];
 

@@ -3,6 +3,7 @@ import math
 import os
 import posixpath
 import time
+import uuid
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -208,7 +209,7 @@ def _step_frames(queryset, time_from, time_to, step):
     frames = {}
     total = 0
     rows = queryset.filter(last_fetched__gte=time_from, last_fetched__lte=time_to).only(
-        "id", "last_fetched", "eigenpotenzial", "wirkpotenzial", "samples", "end_index"
+        "id", "last_fetched", "eigenpotenzial", "wirkpotenzial", "raw_data"
     )
     for measurement in rows.iterator(chunk_size=2000):
         total += 1
@@ -1519,6 +1520,63 @@ class LocationViewSet(ProgeoModalViewSet):
             "meters_per_pixel": lageplan.meters_per_pixel,
         })
 
+    def _edit_heat_limitations(self, request, pk, change):
+        """Superuser: `change(areas)` on the heat limitations of one of the
+        location's Lageplans (`lageplan_id`, else the active one) - returns
+        the new list of areas or an error response. Locked while it runs, so
+        two editors don't drop each other's areas."""
+        location, account, error = self._superuser_location(request, pk)
+        if error:
+            return error
+        db_name = location_db(location, account)
+        lageplan, error = _target_lageplan(db_name, location, request.data.get("lageplan_id"))
+        if error:
+            return error
+        with transaction.atomic(using=db_name):
+            lageplan = ProgeoLageplan.objects.using(db_name).select_for_update().get(pk=lageplan.pk)
+            areas = [area for area in (lageplan.heat_limitations or []) if isinstance(area, dict)]
+            result = change(areas)
+            if isinstance(result, Response):
+                return result
+            lageplan.heat_limitations = result
+            lageplan.save(using=db_name, update_fields=["heat_limitations"])
+        return RequestSuccess({"lageplan_id": lageplan.pk, "heat_limitations": lageplan.heat_limitations})
+
+    @action(detail=True, url_path="heat-limitations", methods=["POST"])
+    def heat_limitations(self, request, pk=None, *args, **kwargs):
+        """Superuser: create a heat limitation of a Lageplan - an area the
+        heatmap's heat field is limited to - or, with `id`, replace that one:
+        POST {lageplan_id, id?, name?, points: [[x, y], ...]} (normalized to
+        the plan image, see ProgeoLageplan.clean_heat_limitation)."""
+        area, reason = ProgeoLageplan.clean_heat_limitation(request.data)
+        if reason:
+            return RequestFailed({"reason": reason})
+        area_id = request.data.get("id")
+
+        def change(areas):
+            if area_id in (None, ""):
+                return [*areas, {"id": uuid.uuid4().hex[:12], **area}]
+            if not any(existing.get("id") == area_id for existing in areas):
+                return RequestFailed({"reason": "Heat limitation not found"})
+            return [{"id": area_id, **area} if existing.get("id") == area_id else existing for existing in areas]
+
+        return self._edit_heat_limitations(request, pk, change)
+
+    @action(detail=True, url_path="heat-limitations/delete", methods=["POST"])
+    def heat_limitations_delete(self, request, pk=None, *args, **kwargs):
+        """Superuser: delete a heat limitation - POST {lageplan_id, id}."""
+        area_id = request.data.get("id")
+        if area_id in (None, ""):
+            return RequestFailed({"reason": "id required"})
+
+        def change(areas):
+            remaining = [existing for existing in areas if existing.get("id") != area_id]
+            if len(remaining) == len(areas):
+                return RequestFailed({"reason": "Heat limitation not found"})
+            return remaining
+
+        return self._edit_heat_limitations(request, pk, change)
+
     @require_module_permissions("module_locations_enabled", "module_locations_delete")
     def destroy(self, request, *args, **kwargs):
         return super().destroy(request, *args, **kwargs)
@@ -1789,22 +1847,6 @@ class LocationViewSet(ProgeoModalViewSet):
             # so sensor_points[].pos looks up its own series.
             for idz, sample in enumerate(pairs):
                 _map.setdefault(idz + 1, []).append(sample)
-
-            '''
-            for idz, sample in enumerate(measurement.samples):
-                if idz % 2 == 0:
-                    continue
-                
-                value = sample - measurement.samples[idz - 1]
-                r_id = idz // 2 + 1
-
-                try:
-                    samples = _map.get(r_id, [])
-                    samples.append(value)
-                    _map.update({r_id: samples})
-                except KeyError:
-                    print(f"Warning: No point found for sensor_order {r_id} in _map {_map}")
-            '''
 
 
         if stepped:

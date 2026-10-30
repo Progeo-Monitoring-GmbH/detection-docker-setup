@@ -11,6 +11,7 @@ import PillButton from '../components/ui/kit/PillButton';
 import KpiStrip from '../components/ui/kit/KpiStrip';
 import SeverityBadge, { type Severity } from '../components/ui/kit/SeverityBadge';
 import { matchesLocationSearch } from '../components/location/locationSearch';
+import FavoriteStar from './FavoriteStar';
 
 type VerwaltungRow = {
   id: number;
@@ -280,8 +281,11 @@ const LocationVerwaltungView = () => {
                       }}
                     >
                       <span style={{ fontWeight: 600 }}>{row.nr ?? '–'}</span>
-                      <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {row.name || '–'}
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                        <FavoriteStar locationId={row.id} size={26} />
+                        <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {row.name || '–'}
+                        </span>
                       </span>
                       <span style={{ color: '#8B8383' }}>{row.city || '–'}</span>
                       <span style={{ color: '#8B8383', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

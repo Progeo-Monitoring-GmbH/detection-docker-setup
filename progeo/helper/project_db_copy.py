@@ -333,58 +333,6 @@ def renumbered_models():
 FETCHED_SQL = sql.SQL("COALESCE(last_fetched, last_updated, now())")
 
 
-def legacy_pairs_sql(prefix=""):
-    """SQL (jsonb array or NULL) for the pair values of an old row: its
-    samples cut to the declared m_points pairs (end_index) like script.php
-    (array_slice(.., m_headerlines, m_points * 2)) - the controllers' trailing
-    artifact ("0, 95") goes - and to an even length. NULL for rows that are
-    no pair data (IMEI, LoRaWAN: no m_points) or already have the lists."""
-    p = sql.SQL(prefix)
-    # Nested CASE: Postgres guarantees CASE order, not AND order - the jsonb
-    # cast must only ever see text that looks like an array.
-    # The text is parsed once per row (s.j; OFFSET 0 keeps Postgres from
-    # inlining it again): a cast in the WHERE ran once per element, i.e.
-    # quadratic - 424-point controllers (project 4091) took ~0.1s per row.
-    return sql.SQL(
-        "CASE WHEN {p}eigenpotenzial IS NULL AND {p}end_index > 0 AND {p}samples ~ '^\\[.*\\]$' THEN "
-        " (SELECT COALESCE(jsonb_agg(e ORDER BY o), '[]'::jsonb) "
-        "  FROM (SELECT {p}samples::jsonb AS j OFFSET 0) s "
-        "  CROSS JOIN LATERAL jsonb_array_elements(s.j) WITH ORDINALITY t(e, o) "
-        "  WHERE o <= LEAST(2 * {p}end_index, jsonb_array_length(s.j) / 2 * 2)) "
-        "END"
-    ).format(p=p)
-
-
-def _potential_sql(column, odd):
-    """eigenpotenzial (odd positions) / wirkpotenzial (even) of a copied row:
-    the stored list, else taken from the pairs of the lateral `p.pairs`."""
-    return sql.SQL(
-        "COALESCE({column}, (SELECT array_agg(round((e #>> '{{}}')::numeric)::integer ORDER BY o) "
-        # %% - the query passes through mogrify, where a single % is a placeholder.
-        "FROM jsonb_array_elements(p.pairs) WITH ORDINALITY t(e, o) WHERE o %% 2 = {rest}))"
-    ).format(column=sql.Identifier(column), rest=sql.Literal(1 if odd else 0))
-
-
-def sample_anomalies(project, source=DEFAULT_DB_ALIAS):
-    """Rows of a project whose samples don't fit the declared m_points beyond
-    the known artifact: {"surplus": n (more than 2 extra values - cut anyway),
-    "incomplete": n (fewer values than declared - kept)}."""
-    from progeo.v1.legacy.executor import KNOWN_SURPLUS_VALUES
-    from progeo.v1.models import ProgeoMeasurement
-
-    where, params = project_filters(project, source)[ProgeoMeasurement]
-    query = sql.SQL(
-        "SELECT count(*) FILTER (WHERE n - 2 * end_index > %s), count(*) FILTER (WHERE n < 2 * end_index) "
-        "FROM (SELECT end_index, CASE WHEN samples ~ '^\\[.*\\]$' THEN jsonb_array_length(samples::jsonb) END n "
-        "      FROM {table} WHERE ({where}) AND eigenpotenzial IS NULL AND end_index > 0) s"
-    ).format(table=_table(ProgeoMeasurement), where=where)
-    with connections[source].cursor() as cursor:
-        raw = _raw(cursor)
-        raw.execute(query, [KNOWN_SURPLUS_VALUES, *params])
-        surplus, incomplete = raw.fetchone()
-    return {"surplus": surplus, "incomplete": incomplete}
-
-
 def measurement_years(project, source=DEFAULT_DB_ALIAS):
     """Calendar years (partition time zone) of a project's measurements."""
     from progeo.helper.project_db_partitions import PARTITION_TIME_ZONE
@@ -475,11 +423,11 @@ def _merge_file_rows(raw, file_rows, m_table, m_columns, m_cols, target):
     raw.execute(
         sql.SQL(
             "CREATE TEMP TABLE _u ON COMMIT DROP AS "
-            "SELECT * FROM _m m WHERE NOT (m.end_index > 0 AND EXISTS ("
-            "  SELECT 1 FROM _f f WHERE f.device_id = m.device_id AND f.last_updated = m.last_updated)) "
+            "SELECT * FROM _m m WHERE NOT EXISTS ("
+            "  SELECT 1 FROM _f f WHERE f.device_id = m.device_id AND f.last_updated = m.last_updated) "
             "UNION ALL "
-            "SELECT (SELECT min(m.old_id) FROM _m m WHERE m.end_index > 0 "
-            "        AND m.device_id = f.device_id AND m.last_updated = f.last_updated), {prefixed} "
+            "SELECT (SELECT min(m.old_id) FROM _m m "
+            "        WHERE m.device_id = f.device_id AND m.last_updated = f.last_updated), {prefixed} "
             "FROM _f f"
         ).format(prefixed=prefixed)
     )
@@ -497,9 +445,7 @@ def copy_measurements(project, target, source=DEFAULT_DB_ALIAS, delta=False, fil
     their copy are not followed - a full run (or the verify counts) catches
     that.
 
-    Both: last_fetched is never NULL (FETCHED_SQL); pair data moves from
-    samples into eigenpotenzial / wirkpotenzial, cut to the declared points
-    (legacy_pairs_sql) - samples stays only for non-pair data (IMEI); the
+    Both: last_fetched is never NULL (FETCHED_SQL); the
     old -> new ids go into ID_MAP_TABLE; every alarm of the project is
     inserted or updated (status changes!) with its remapped measurement_id,
     alarms gone from the source are removed. Alarms keep their ids.
@@ -526,23 +472,11 @@ def copy_measurements(project, target, source=DEFAULT_DB_ALIAS, delta=False, fil
     for column in m_columns:
         if column == "last_fetched":
             m_select.append(FETCHED_SQL)
-        elif column == "samples":
-            # Pair data moves into the two lists - not kept twice.
-            m_select.append(sql.SQL("CASE WHEN p.pairs IS NULL THEN samples END"))
-        elif column == "eigenpotenzial":
-            m_select.append(_potential_sql(column, odd=True))
-        elif column == "wirkpotenzial":
-            m_select.append(_potential_sql(column, odd=False))
         else:
             m_select.append(sql.Identifier(column))
     m_cols = sql.SQL(", ").join(map(sql.Identifier, m_columns))
-    # The filter's columns are unqualified - the lateral only adds `pairs`.
-    m_query = sql.SQL(
-        "SELECT id, {select} "
-        "FROM {table} CROSS JOIN LATERAL (SELECT {pairs} AS pairs) p WHERE ({where})"
-    ).format(
-        select=sql.SQL(", ").join(m_select),
-        table=_table(ProgeoMeasurement), pairs=legacy_pairs_sql(), where=m_where,
+    m_query = sql.SQL("SELECT id, {select} FROM {table} WHERE ({where})").format(
+        select=sql.SQL(", ").join(m_select), table=_table(ProgeoMeasurement), where=m_where,
     )
 
     a_columns = [f.column for f in ProgeoAlarm._meta.concrete_fields]
@@ -697,7 +631,7 @@ def sync_project(project, *, upsert=False, delta=False, chunk_size=DEFAULT_CHUNK
     to default alone.
 
     Returns {"alias", "created", "years", "copied": {model name: n},
-    "anomalies", "source": description of where the measurements came from}."""
+    "source": description of where the measurements came from}."""
     from progeo.helper.legacy_files import load_legacy_file
     from progeo.helper.project_db_partitions import PARTITION_TIME_ZONE
     from progeo.helper.project_dbs import (
@@ -759,15 +693,13 @@ def sync_project(project, *, upsert=False, delta=False, chunk_size=DEFAULT_CHUNK
         else:
             file_rows = legacy_file_rows(legacy_file, device_id)
 
-    anomalies = sample_anomalies(project, source)
-    ilog(f"{alias}: sample anomalies checked", tag="[SPLIT]")
     copied[ProgeoMeasurement.__name__], copied[ProgeoAlarm.__name__] = copy_measurements(
         project, alias, source=source, delta=delta, file_rows=file_rows
     )
     ilog(f"{alias}: measurements copied", tag="[SPLIT]")
     return {
         "alias": alias, "created": created, "years": sorted(years), "copied": copied,
-        "anomalies": anomalies, "source": source_note,
+        "source": source_note,
     }
 
 

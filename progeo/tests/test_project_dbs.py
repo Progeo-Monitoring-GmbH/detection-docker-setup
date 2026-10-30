@@ -272,10 +272,8 @@ def _at(year, month=6, day=1, hour=12):
 
 
 def _measurement(device, pairs, measured, **fields):
-    """A measurement as the old default database holds it: interleaved
-    samples with the declared points (end_index), received (and measured by
-    the device) at `measured`, no potential lists yet."""
-    fields.setdefault("end_index", len(pairs))
+    """A measurement as the default database holds it, received (and
+    measured by the device) at `measured`."""
     measurement = f.make_measurement(device, pairs=pairs, **fields)
     ProgeoMeasurement.objects.using(f.DB).filter(pk=measurement.pk).update(last_updated=measured, last_fetched=measured)
     measurement.refresh_from_db(using=f.DB)
@@ -421,18 +419,15 @@ def test_a_missing_years_partition_takes_its_rows_out_of_the_default_partition(p
 
 
 @WITH_PROJECT_DBS
-def test_copy_moves_pairs_into_the_potential_lists_cut_to_m_points(project_dbs):
+def test_copy_keeps_the_potential_lists(project_dbs):
     s = _scenario()
-    # 4 points declared, 5 pairs sent: the trailing (0, 97) is no sensor.
-    trailing = _measurement(s["device"], [10, 20, 30, 40, 97], _at(2026, 4), end_index=4)
+    _measurement(s["device"], [10, 20, 30, 40], _at(2026, 4))
 
     _copy()
 
-    rows = ProgeoMeasurement.objects.using(ALIAS).values_list("eigenpotenzial", "wirkpotenzial", "samples", "last_fetched")
-    # Rows without declared points (the alarms' factory measurements) are no pair data and keep samples.
-    by_wirk = {tuple(wirk): (eigen, samples, fetched) for eigen, wirk, samples, fetched in rows if wirk is not None}
-    assert by_wirk[(10, 20, 30, 40)] == ([0, 0, 0, 0], None, _at(2026, 4))  # (0, 97) gone, samples not kept
-    assert ProgeoMeasurement.objects.using(f.DB).get(pk=trailing.pk).samples[-1] == 97  # source untouched
+    rows = ProgeoMeasurement.objects.using(ALIAS).values_list("eigenpotenzial", "wirkpotenzial", "last_fetched")
+    by_wirk = {tuple(wirk): (eigen, fetched) for eigen, wirk, fetched in rows if wirk is not None}
+    assert by_wirk[(10, 20, 30, 40)] == ([0, 0, 0, 0], _at(2026, 4))
 
 
 @WITH_PROJECT_DBS
@@ -795,7 +790,7 @@ def _split_command(monkeypatch, tmp_path, sync, existing=(), missing_in=()):
 
 
 def _synced(project):
-    return {"alias": project_alias(project), "created": True, "years": [], "copied": {}, "anomalies": {},
+    return {"alias": project_alias(project), "created": True, "years": [], "copied": {},
             "source": "default"}
 
 

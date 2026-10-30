@@ -107,7 +107,8 @@ def test_progeomeasurement_get_pairs_fast_path():
     device = ProgeoDevice.objects.using("default").create(raw_hash="pair-values-device")
     measurement = ProgeoMeasurement.objects.using("default").create(
         device=device,
-        samples=[10, 5, 99, 111, 7, 7],
+        eigenpotenzial=[10, 99, 7],
+        wirkpotenzial=[5, 111, 7],
         raw_data={},
     )
 
@@ -125,12 +126,11 @@ def test_save_measurement_from_legacy_data_with_datameasurement():
     assert saved.project_id == 5709
     assert saved.device.raw_hash == "5709"
     assert saved.device.project_id == 5709
-    # Stored as the two lists, not in the outdated samples column.
-    assert saved.samples is None
+    # Stored as the two lists.
+    assert "samples" not in saved.raw_data
     assert saved.eigenpotenzial[:2] == [32, 32]
     assert saved.wirkpotenzial[:2] == [59, 68]
     assert saved.get_sample_values()[:3] == [32, 59, 32]
-    assert saved.end_index == 118
     assert saved.raw_data.get("filetype") == 1000
     assert saved.raw_data.get("m_i") == measurement.m_i
     assert saved.raw_data.get("m_u") == measurement.m_u
@@ -158,7 +158,9 @@ def test_save_measurement_from_legacy_data_with_dict_payload():
     assert saved is not None
     assert saved.project_id == 6001
     assert saved.device.raw_hash == "6001"
-    assert saved.samples == [1, 2, 3]
+    # Non-pair samples stay in raw_data.
+    assert saved.raw_data.get("samples") == [1, 2, 3]
+    assert saved.get_sample_values() == [1, 2, 3]
     assert saved.raw_data.get("battery_V") == 3800
     assert saved.raw_data.get("last_battery_percentage") == 82
 
@@ -297,7 +299,9 @@ def test_catch_legacy_field_data_builds_samples_from_payload_value_arrays(api_cl
     assert saved.project_id == 7001
     # An IMEI in the payload identifies the device, not the project_id.
     assert saved.device.raw_hash == "863663069840161"
-    assert saved.samples == expected
+    # The resistances stay in raw_data - the first is the VDC resistance.
+    assert saved.raw_data["samples"] == expected
+    assert saved.get_resistance_vdc() == expected[0]
     assert saved.battery_v == 3.651
     assert body.get("battery_v") == 3.651
     # Filed under the location of the payload's project.
@@ -336,8 +340,8 @@ def test_catch_legacy_field_data_accepts_test_json_shape_without_project_id(api_
     assert saved is not None
     assert saved.project_id is None
     assert saved.device.raw_hash == "863663069840180"
-    assert isinstance(saved.samples, list)
-    assert len(saved.samples) == 2
+    assert isinstance(saved.raw_data["samples"], list)
+    assert len(saved.raw_data["samples"]) == 2
     # No battery in the payload.
     assert saved.battery_v is None
     # No project: the location is keyed by the IMEI (too long for ProgeoLocation.project_id).
@@ -421,7 +425,7 @@ def test_catch_live_data_stores_potentials_and_device_info(api_client):
     # Cut to `sensors` pairs.
     assert saved.eigenpotenzial == [10, 20]
     assert saved.wirkpotenzial == [15, 40]
-    assert saved.samples is None
+    assert "samples" not in saved.raw_data
     assert saved.raw_data["heap"] == 17824
     assert saved.raw_data["mac"] == "2c:f4:32:34:e7:69"
 

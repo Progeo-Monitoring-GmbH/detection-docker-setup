@@ -76,7 +76,7 @@ def test_a_chunk_ends_in_its_length_check_too():
     measurement = parse_legacy_data_measurement(payload, broadcast=False)
 
     assert measurement.length_check is True
-    assert ProgeoMeasurement(samples=measurement.samples).get_pairs() == [10, 20, 30]
+    assert ProgeoMeasurement(raw_data={"samples": measurement.samples}).get_pairs() == [10, 20, 30]
 
 
 def test_exact_payloads_have_nothing_to_check():
@@ -104,14 +104,13 @@ def test_cut_to_points_flags_everything_but_the_known_artifact(values, m_points,
     assert cut_to_points(values, m_points) == (expected, issue)
 
 
-def test_set_potentials_stores_two_lists_instead_of_samples():
-    measurement = ProgeoMeasurement(samples=[9, 9])
+def test_set_potentials_stores_two_lists():
+    measurement = ProgeoMeasurement(raw_data={"samples": [9, 9]})
 
     measurement.set_potentials([100, 160, 200, 150, 50])
 
     assert measurement.eigenpotenzial == [100, 200]
     assert measurement.wirkpotenzial == [160, 150]  # the unpaired 50 is dropped
-    assert measurement.samples is None
     assert measurement.get_sample_values() == [100, 160, 200, 150]
     assert measurement.get_pairs() == [60, 50]
     assert measurement.get_potentials() == {
@@ -119,8 +118,8 @@ def test_set_potentials_stores_two_lists_instead_of_samples():
     }
 
 
-def test_old_rows_still_read_from_samples():
-    measurement = ProgeoMeasurement(samples=[100, 160, 200, 150])
+def test_rows_without_lists_read_the_samples_in_raw_data():
+    measurement = ProgeoMeasurement(raw_data={"samples": [100, 160, 200, 150]})
     assert measurement.get_potentials() == {
         "eigenpotenzial": [100, 200], "wirkpotenzial": [160, 150], "pairs": [60, 50],
     }

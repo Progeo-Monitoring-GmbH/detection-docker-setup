@@ -82,9 +82,12 @@ def samples_for(pairs):
 
 
 def make_measurement(device, pairs=(), fetched_at=None, **fields):
-    measurement = ProgeoMeasurement.objects.using(DB).create(
-        device=device, raw_data={}, samples=samples_for(pairs), **fields
-    )
+    """A measurement whose get_pairs() equals `pairs` (eigenpotenzial 0,
+    wirkpotenzial the value)."""
+    if pairs:
+        fields.setdefault("eigenpotenzial", [0] * len(pairs))
+        fields.setdefault("wirkpotenzial", list(pairs))
+    measurement = ProgeoMeasurement.objects.using(DB).create(device=device, raw_data={}, **fields)
     if fetched_at is not None:
         # last_fetched is auto-managed on save - force the wanted timestamp.
         ProgeoMeasurement.objects.using(DB).filter(pk=measurement.pk).update(last_fetched=fetched_at)

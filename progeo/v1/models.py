@@ -98,6 +98,11 @@ DEFAULT_STAFF_PERMISSIONS = _select_permissions(
 
 MODULE_PERMISSION_CODES = tuple(code for code, _ in MODULE_PERMISSION_DEFINITIONS)
 
+# ProgeoLageplan.heat_limitations: points per area and length of its name.
+HEAT_LIMITATION_MIN_POINTS = 3
+HEAT_LIMITATION_MAX_POINTS = 200
+HEAT_LIMITATION_NAME_MAX = 100
+
 
 class Durations(Enum):
     HALF_HOUR = datetime.timedelta(minutes=30)
@@ -441,13 +446,50 @@ class ProgeoLageplan(ProgeoModel, auto_prefetch.Model):
     reference_x = models.FloatField(null=True, blank=True, help_text="Reference point x (image pixels)")
     reference_y = models.FloatField(null=True, blank=True, help_text="Reference point y (image pixels)")
     meters_per_pixel = models.FloatField(null=True, blank=True, help_text="Meters per image pixel")
-    
+
+    # Heat limitations: the areas of the plan the heatmap's heat field is
+    # limited to (outside them it is cut off) - drawn by superusers on the
+    # heatmap. [{"id": str, "name": str, "points": [[x, y], ...]}], positions
+    # normalized to the plan image (0..1, y downwards) like the measure
+    # points; see clean_heat_limitation.
+    heat_limitations = models.JSONField(default=list, blank=True)
+
     # Metadata
     is_active = models.BooleanField(default=True, help_text="Whether this is the active/current lageplan")
     
     class Meta:
         base_manager_name = "prefetch_manager"
-    
+
+    @staticmethod
+    def clean_heat_limitation(data):
+        """(area, error) - a heat limitation as stored: name (stripped, at
+        most HEAT_LIMITATION_NAME_MAX characters) and HEAT_LIMITATION_MIN_POINTS
+        to HEAT_LIMITATION_MAX_POINTS points [x, y] within the plan (0..1).
+        The id is left to the caller."""
+        if not isinstance(data, dict):
+            return None, "area must be an object"
+        name = data.get("name") or ""
+        if not isinstance(name, str):
+            return None, "name must be a string"
+        name = name.strip()
+        if len(name) > HEAT_LIMITATION_NAME_MAX:
+            return None, f"name is limited to {HEAT_LIMITATION_NAME_MAX} characters"
+        raw_points = data.get("points")
+        if not isinstance(raw_points, list):
+            return None, "points must be a list of [x, y]"
+        if not HEAT_LIMITATION_MIN_POINTS <= len(raw_points) <= HEAT_LIMITATION_MAX_POINTS:
+            return None, f"an area needs {HEAT_LIMITATION_MIN_POINTS} to {HEAT_LIMITATION_MAX_POINTS} points"
+        points = []
+        for point in raw_points:
+            try:
+                x, y = (float(value) for value in point)
+            except (TypeError, ValueError):
+                return None, "points must be a list of [x, y]"
+            if not (math.isfinite(x) and math.isfinite(y) and 0 <= x <= 1 and 0 <= y <= 1):
+                return None, "points must lie on the plan (0..1)"
+            points.append([round(x, 6), round(y, 6)])
+        return {"name": name, "points": points}, None
+
     def __str__(self):
         _id = f"[{self.pk}] " if DEBUG else ""
         name_part = f" - {self.name}" if self.name else ""
@@ -534,20 +576,16 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
     battery = models.FloatField(null=True, blank=True)
     resistance_idc = models.FloatField(null=True, blank=True)
     # Battery voltage in V (IMEI/Dragino payload "battery"). Replaces the
-    # former resistance_vdc - that resistance is the IMEI sample (samples[0]).
+    # former resistance_vdc - that resistance is the IMEI sample
+    # (get_resistance_vdc).
     battery_v = models.FloatField(null=True, blank=True)
     # The two values a controller sends per sensor, one list each (index =
-    # sensor_order - 1). They replace `samples` for pair-based data; the
-    # sample pairs (alarm values) are derived: |wirk - eigen| (get_pairs).
+    # sensor_order - 1); the sample pairs (alarm values) are derived:
+    # |wirk - eigen| (get_pairs). Non-pair data (IMEI resistances) stays in
+    # raw_data["samples"] - the former samples column was migrated into the
+    # two (0043_heat_limitations_escalations_drop_samples).
     eigenpotenzial = ArrayField(models.IntegerField(), null=True, blank=True)
     wirkpotenzial = ArrayField(models.IntegerField(), null=True, blank=True)
-    # Outdated: the interleaved pairs [eigen, wirk, eigen, wirk, ...] of old
-    # rows and non-pair data (IMEI resistances). Dropped once every database
-    # has been migrated to eigenpotenzial / wirkpotenzial.
-    samples = JSONField(null=True, blank=True)
-    # The declared m_points of legacy rows - the split cuts their samples to
-    # it (project_db_copy.legacy_pairs_sql). Goes together with `samples`.
-    end_index = models.IntegerField(null=True, blank=True)
     raw_data = JSONField(blank=True)
     # last_fetched (receive time) is the measurement time and the partition
     # key of the yearly partitions in the project databases; last_updated is
@@ -617,11 +655,6 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
             cleaned["measure"] = {key: value for key, value in cleaned["measure"].items() if key != "samples"}
         return cleaned
 
-    def save(self, *args, **kwargs):
-        if self.samples is not None:
-            self.samples = self.normalize_samples(self.samples)
-        return super().save(*args, **kwargs)
-
     def evaluate(self, alarm_threshold):
         pairs = self.get_pairs()
         _idx, _value = None, None
@@ -658,17 +691,16 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
 
     def set_potentials(self, values):
         """Store interleaved pair values [eigen, wirk, eigen, wirk, ...] (already
-        cut to the declared points) as eigenpotenzial / wirkpotenzial - and not
-        in the outdated samples column. An unpaired last value is dropped."""
+        cut to the declared points) as eigenpotenzial / wirkpotenzial. An
+        unpaired last value is dropped."""
         values = self._coerce_numeric_samples(values)
         paired = values[: len(values) - len(values) % 2]
         self.eigenpotenzial = paired[0::2]
         self.wirkpotenzial = paired[1::2]
-        self.samples = None
 
     def get_potentials(self):
         """Per sensor: "eigenpotenzial", "wirkpotenzial" (the stored lists, or
-        split from the old samples column) and "pairs" = |wirk - eigen| (the
+        split from the samples in raw_data) and "pairs" = |wirk - eigen| (the
         alarm values, get_pairs)."""
         values = self.get_sample_values()
         paired = values[: len(values) - len(values) % 2]
@@ -680,13 +712,9 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
 
     def get_sample_values(self):
         """The interleaved pair values [eigen, wirk, ...]: from eigenpotenzial /
-        wirkpotenzial, for old rows from the outdated samples column."""
+        wirkpotenzial, else the samples the payload carried (raw_data)."""
         if self.eigenpotenzial is not None and self.wirkpotenzial is not None:
             return [value for pair in zip(self.eigenpotenzial, self.wirkpotenzial, strict=False) for value in pair]
-
-        samples = self._coerce_numeric_samples(self.samples)
-        if samples:
-            return samples
 
         raw_data = self.raw_data if isinstance(self.raw_data, dict) else {}
         measure_data = raw_data.get("measure")
@@ -697,10 +725,29 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
 
         return self._coerce_numeric_samples(raw_data.get("samples"))
 
+    def get_resistance_vdc(self):
+        """VDC resistance (Ohm) of an IMEI measurement - its first sample
+        (raw_data["samples"]), else the first resistance row's; None without
+        one."""
+        raw_data = self.raw_data if isinstance(self.raw_data, dict) else {}
+        samples = raw_data.get("samples")
+        rows = raw_data.get("resistance_rows")
+        if isinstance(samples, list) and samples:
+            value = samples[0]
+        elif isinstance(rows, list) and rows and isinstance(rows[0], dict):
+            value = rows[0].get("r_vdc_ohm")
+        else:
+            return None
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return None
+        return value if math.isfinite(value) else None
+
     def __str__(self):
         _id = f"[{self.pk}] "
         _device = f"Device {self.device.mac}" if self.device else "Unknown Device"
-        _samples = self.samples if self.eigenpotenzial is None else f"E{self.eigenpotenzial} W{self.wirkpotenzial}"
+        _samples = self.get_sample_values() if self.eigenpotenzial is None else f"E{self.eigenpotenzial} W{self.wirkpotenzial}"
 
         return f"{_id} 📊 {_device} - {self.project_id} | {self.last_fetched}: {_samples}"
 
@@ -1049,6 +1096,27 @@ class ProgeoAccessIndex(models.Model):
         return f"ProgeoAccessIndex: User={self.user_id}, Location={self.location_id}"
 
 
+class ProgeoFavoriteLocation(models.Model):
+    """A location a staff user pinned as favorite - shown in the favorites
+    bar at the top of the frontend, at most FAVORITES_MAX per user. Kept in
+    "default" next to the locations."""
+
+    FAVORITES_MAX = 10
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="+")
+    location = models.ForeignKey(ProgeoLocation, on_delete=models.CASCADE, related_name="+")
+    created = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["created", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["user", "location"], name="progeo_favorite_user_location"),
+        ]
+
+    def __str__(self):
+        return f"⭐ User={self.user_id}, Location={self.location_id}"
+
+
 class EMail(ProgeoModel, auto_prefetch.Model):
     # Optional link to the location (project) this mail belongs to, e.g. a
     # disconnect notification for that project. Kept nullable so generic
@@ -1257,6 +1325,81 @@ class AccessRequest(models.Model):
 
     def __str__(self):
         return f"🙋 {self.email} ({self.status})"
+
+
+class ProgeoEscalation(models.Model):
+    """A project in escalation - opened by a superuser on one of the
+    project's locations, worked on by staff (assignee, status, comments) and
+    finally closed. At most one escalation per project is open (project_id;
+    the location for locations without one). Lives in "default" like the
+    locations it points to. Every change is written to its protocol
+    (ProgeoEscalationEntry) - escalations are closed, never deleted."""
+
+    class Status(models.TextChoices):
+        OPEN = "open", "Offen"
+        IN_PROGRESS = "in_progress", "In Bearbeitung"
+        WAITING = "waiting", "Wartet auf Rückmeldung"
+        CLOSED = "closed", "Geschlossen"
+
+    location = models.ForeignKey(ProgeoLocation, on_delete=models.CASCADE, related_name="escalations")
+    # The location's project at creation - "one open escalation per project"
+    # spans all locations of the project.
+    project_id = models.IntegerField(null=True, blank=True, db_index=True)
+    title = models.CharField(max_length=200)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.OPEN, db_index=True)
+    assigned_to = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    created = models.DateTimeField(default=timezone.now)
+    updated = models.DateTimeField(default=timezone.now)
+    closed_at = models.DateTimeField(null=True, blank=True)
+    closed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+
+    class Meta:
+        ordering = ["-created"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["project_id"], condition=~models.Q(status="closed"),
+                name="progeo_escalation_one_open_per_project",
+            ),
+            models.UniqueConstraint(
+                fields=["location"], condition=~models.Q(status="closed"),
+                name="progeo_escalation_one_open_per_location",
+            ),
+        ]
+
+    @property
+    def is_open(self):
+        return self.status != self.Status.CLOSED
+
+    def __str__(self):
+        return f"🚨 {self.project_id or 'XXXX'} - {self.title} ({self.status})"
+
+
+class ProgeoEscalationEntry(models.Model):
+    """One line of an escalation's protocol: a comment of a staff user, or a
+    change (creation, status, assignment, closing) - with the message given
+    along with it. Written only, never changed."""
+
+    class Kind(models.TextChoices):
+        CREATED = "created", "Erstellt"
+        COMMENT = "comment", "Kommentar"
+        STATUS = "status", "Status"
+        ASSIGNED = "assigned", "Zuweisung"
+        CLOSED = "closed", "Geschlossen"
+
+    escalation = models.ForeignKey(ProgeoEscalation, on_delete=models.CASCADE, related_name="entries")
+    kind = models.CharField(max_length=16, choices=Kind.choices, default=Kind.COMMENT)
+    author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    text = models.TextField(blank=True, default="")
+    # The change: {"from": ..., "to": ...} - status values or user ids.
+    data = models.JSONField(default=dict, blank=True)
+    created = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["created", "id"]
+
+    def __str__(self):
+        return f"🚨 #{self.escalation_id} {self.kind}: {self.text[:40]}"
 
 
 # ==============================================================================================

@@ -56,6 +56,8 @@ These routes use the general application layout.
 | --- | --- |
 | `/admin/panel/` | Administrative panel with a live log stream. |
 | `/staff/` | Manage staff/user accounts. |
+| `/escalations/` | Escalations of all projects (staff only): list filtered by open/closed. Superusers open an escalation with "Create Escalation" in the project portal, where they also see whether the project is in escalation. |
+| `/escalations/:id` | One escalation with its protocol (comments and changes); staff comment, change the status, assign it to a staff user and close it. |
 | `/backup/:account/overview/` | View and manage backup information for the specified account. |
 | `/docker/` | View Docker container status. |
 | `/dev` | Frontend diagnostics and development information. |

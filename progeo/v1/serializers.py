@@ -31,6 +31,8 @@ from progeo.v1.models import (
     ProgeoAccess,
     ProgeoAlarm,
     ProgeoDevice,
+    ProgeoEscalation,
+    ProgeoEscalationEntry,
     ProgeoLageplan,
     ProgeoLocation,
     ProgeoMeasurement,
@@ -329,6 +331,7 @@ class ProgeoLageplanSerializer(ProgeoBaseSerializer):
             "reference_x",
             "reference_y",
             "meters_per_pixel",
+            "heat_limitations",
             "is_active",
             "last_fetched",
             "last_updated",
@@ -681,6 +684,81 @@ class MfSLogSerializer(ProgeoBaseSerializer):
     class Meta:
         model = MfSLog
         exclude = ["user", "account", "created"]
+
+
+def user_label(user):
+    """Name of a user as the escalations show it: full name, else username."""
+    if user is None:
+        return None
+    return user.get_full_name().strip() or user.username
+
+
+class ProgeoEscalationEntrySerializer(serializers.ModelSerializer):
+    """One line of an escalation's protocol."""
+
+    author_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProgeoEscalationEntry
+        fields = ["id", "kind", "author", "author_name", "text", "data", "created"]
+
+    @staticmethod
+    def get_author_name(obj):
+        return user_label(obj.author)
+
+
+class ProgeoEscalationSerializer(serializers.ModelSerializer):
+    """An escalation; with context={"entries": True} also its protocol."""
+
+    location_name = serializers.CharField(source="location.name", read_only=True)
+    assigned_to_name = serializers.SerializerMethodField()
+    created_by_name = serializers.SerializerMethodField()
+    closed_by_name = serializers.SerializerMethodField()
+    entry_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProgeoEscalation
+        fields = [
+            "id",
+            "location",
+            "location_name",
+            "project_id",
+            "title",
+            "status",
+            "assigned_to",
+            "assigned_to_name",
+            "created_by",
+            "created_by_name",
+            "created",
+            "updated",
+            "closed_at",
+            "closed_by",
+            "closed_by_name",
+            "entry_count",
+        ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.context.get("entries"):
+            self.fields["entries"] = ProgeoEscalationEntrySerializer(many=True, read_only=True)
+
+    @staticmethod
+    def get_assigned_to_name(obj):
+        return user_label(obj.assigned_to)
+
+    @staticmethod
+    def get_created_by_name(obj):
+        return user_label(obj.created_by)
+
+    @staticmethod
+    def get_closed_by_name(obj):
+        return user_label(obj.closed_by)
+
+    @staticmethod
+    def get_entry_count(obj):
+        # Annotated by the list (entry_count), else counted.
+        count = getattr(obj, "entry_count", None)
+        return count if count is not None else obj.entries.count()
 
 
 class TwoFactorRequired(exceptions.AuthenticationFailed):

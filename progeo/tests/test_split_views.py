@@ -55,7 +55,7 @@ def world(project_dbs):  # noqa: F811 - the imported session fixture
 
     # Only in the project database: what ingestion writes there with the split on.
     newest = ProgeoMeasurement.objects.using(ALIAS).create(
-        device_id=device.pk, raw_data={}, samples=f.samples_for([7, 8, 9])
+        device_id=device.pk, raw_data={}, eigenpotenzial=[0, 0, 0], wirkpotenzial=[7, 8, 9]
     )
     project_alarm = ProgeoAlarm.objects.using(ALIAS).create(
         measurement_id=newest.pk, sensor_id=2, threshold=100, max_value=170,
@@ -353,7 +353,7 @@ REPORT_DAY = timezone.localdate() - datetime.timedelta(days=3)
 
 
 def _alarm_on(db, device, report_date, value):
-    measurement = ProgeoMeasurement.objects.using(db).create(device_id=device.pk, raw_data={}, samples=[])
+    measurement = ProgeoMeasurement.objects.using(db).create(device_id=device.pk, raw_data={})
     return ProgeoAlarm.objects.using(db).create(
         measurement_id=measurement.pk, sensor_id=4, threshold=100, max_value=value,
         sensor_max_values=[{"sensor_id": 4, "max_value": value}],

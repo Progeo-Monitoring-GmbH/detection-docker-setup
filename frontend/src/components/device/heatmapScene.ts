@@ -28,6 +28,9 @@ export type Scene = {
   /** Title of the colour scale, and the label of a tick (0..1 of the scale). */
   scaleTitle: string;
   tickLabel: (value: number) => string;
+  /** The Lageplan's heat limitations (world coordinates): the heat field is
+   * only drawn inside them. Empty: everywhere. */
+  limits: Array<Array<[number, number]>>;
 };
 
 export type SceneOverlay = {
@@ -71,6 +74,15 @@ const drawWorld = (ctx: CanvasRenderingContext2D, scene: Scene, view: View, dpr:
     ctx.drawImage(scene.image, 0, 0, world.width, world.height);
   }
   if (scene.heatCanvas) {
+    if (scene.limits.length > 0) {
+      // Heat limitations: the field only inside their union.
+      ctx.beginPath();
+      scene.limits.forEach((polygon) => {
+        polygon.forEach(([x, y], index) => (index === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+        ctx.closePath();
+      });
+      ctx.clip('nonzero');
+    }
     ctx.globalAlpha = HEAT_OPACITY;
     ctx.drawImage(
       scene.heatCanvas,

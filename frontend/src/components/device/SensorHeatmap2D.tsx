@@ -25,6 +25,9 @@ import {
   type Scene,
 } from './heatmapScene';
 import { formatMeters } from './planMeters';
+import { toWorld } from './heatmapCanvas';
+import { HeatLimitationBar, HeatLimitationLayer, useHeatLimitationEditor } from './HeatLimitationEditor';
+import { limitPolygons, toPlanPoint } from './heatLimitations';
 import HeatmapToolbar from './HeatmapToolbar';
 import SensorTooltip from './SensorTooltip';
 import type { SensorHeatmapLocation, SensorHeatmapResponse } from './sensorHeatmapTypes';
@@ -33,6 +36,7 @@ import { useHeatmapViewport, usePanZoomGestures } from './useHeatmapViewport';
 import { useLageplanImage } from './useLageplanImage';
 import ZoomControls from './ZoomControls';
 import { getBackendUrl } from '../../backendUrl';
+import usePermissions from '../../../hooks/usePermissions';
 
 type SensorHeatmap2DProps = {
   response: SensorHeatmapResponse | null | undefined;
@@ -118,6 +122,10 @@ const usePlanChoice = <T,>(plans: T[] | null) => {
  * reference point) and the heat there. The video export draws its frames
  * from the same scene (renderSceneFrame).
  *
+ * The plan's heat limitations cut the heat field off outside their areas;
+ * superusers draw, edit and delete them right on the plan
+ * (HeatLimitationEditor.tsx).
+ *
  * Geometry and heat field: heatmapChart.ts, drawing: heatmapScene.ts.
  */
 const SensorHeatmap2D = ({
@@ -192,6 +200,16 @@ const SensorHeatmap2D = ({
     [image],
   );
 
+  // Heat limitations of the plan: superusers draw them on the plan image
+  // (not in the alignment wizard mode).
+  const { isAdmin: isSuperuser } = usePermissions();
+  const limitEditor = useHeatLimitationEditor({
+    plans,
+    plan: activePlan,
+    editable: isSuperuser && !alignment && image != null,
+  });
+  const drawing = limitEditor.draft != null;
+
   // ---------------------------------------------------------------- chart
 
   const flipY = Boolean(location?.flip_y);
@@ -235,6 +253,11 @@ const SensorHeatmap2D = ({
     () => (frame ? heatFieldCanvas(frame, colorTable) : null),
     [frame, colorTable],
   );
+  // Only on the plan image - without one the areas have nothing to refer to.
+  const limits = useMemo(
+    () => (layout && image ? limitPolygons(limitEditor.shownAreas, layout.world) : []),
+    [layout, image, limitEditor.shownAreas],
+  );
 
   const scene = useMemo<Scene | null>(
     () =>
@@ -254,9 +277,10 @@ const SensorHeatmap2D = ({
             scaleTitle: fieldScale?.unit ?? t('heatmap_heat'),
             tickLabel: (value) =>
               fieldScale ? fieldReading(fieldScale, value).toFixed(fieldScale.decimals) : value.toFixed(1),
+            limits,
           }
         : null,
-    [layout, frame, image, heatCanvas, colorTable, fieldMode, fieldScale, t],
+    [layout, frame, image, heatCanvas, colorTable, fieldMode, fieldScale, t, limits],
   );
 
   // ---------------------------------------------------------------- viewport
@@ -304,6 +328,11 @@ const SensorHeatmap2D = ({
     onHover: updateHover,
     onLeave: clearHover,
     onTap: (sx, sy) => {
+      if (scene && view && drawing) {
+        // Drawing a heat limitation: every click on the plan is a point.
+        limitEditor.addPoint(toPlanPoint(toWorld(view, sx, sy), scene.layout.world), scene.layout.world);
+        return;
+      }
       if (!scene || !view || !onSensorClick) {
         return;
       }
@@ -419,6 +448,7 @@ const SensorHeatmap2D = ({
             alarms={alarms}
           />
         </div>
+        <HeatLimitationBar editor={limitEditor} />
       </div>
 
       {videoExport.videoError && (
@@ -439,11 +469,28 @@ const SensorHeatmap2D = ({
             width: '100%',
             height: canvasHeight,
             touchAction: 'none',
-            cursor: hoveredIndex != null ? 'pointer' : grabbing ? 'grabbing' : 'grab',
+            cursor: drawing
+              ? 'crosshair'
+              : hoveredIndex != null
+                ? 'pointer'
+                : grabbing
+                  ? 'grabbing'
+                  : 'grab',
           }}
           {...handlers}
-          onDoubleClick={() => setView(null)}
+          // While drawing, double clicks are two points - not a reset.
+          onDoubleClick={() => !drawing && setView(null)}
         />
+
+        {view && (
+          <HeatLimitationLayer
+            editor={limitEditor}
+            view={view}
+            world={scene.layout.world}
+            width={width}
+            height={canvasHeight}
+          />
+        )}
 
         <ZoomControls
           onZoomIn={() => zoomBy(ZOOM_STEP)}

@@ -5,6 +5,17 @@
  * load it.
  */
 
+/**
+ * A heat limitation of a Lageplan (ProgeoLageplan.heat_limitations): an
+ * area the heat field is limited to. Points normalized to the plan image
+ * (0..1, y downwards) like the measure points.
+ */
+export type HeatLimitation = {
+  id: string;
+  name: string;
+  points: Array<[number, number]>;
+};
+
 /** One Lageplan of a location, as ProgeoLageplanSerializer sends it. */
 export type SensorHeatmapLageplanData = {
   id?: number;
@@ -23,6 +34,8 @@ export type SensorHeatmapLageplanData = {
   reference_x?: number | null;
   reference_y?: number | null;
   meters_per_pixel?: number | null;
+  /** Areas the heat field is limited to; none: not limited. */
+  heat_limitations?: HeatLimitation[] | null;
   is_active?: boolean;
   location_id?: number;
   location_name?: string | null;

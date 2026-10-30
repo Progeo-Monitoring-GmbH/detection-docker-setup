@@ -107,6 +107,7 @@ const MeasurementDetailView = React.lazy(
 );
 const AdminPanel = React.lazy(() => import('./main/AdminPanel.tsx'));
 const StaffAdmin = React.lazy(() => import('./main/StaffAdmin.tsx'));
+const EscalationsView = React.lazy(() => import('./main/EscalationsView.tsx'));
 const LandingPage = React.lazy(() => import('./main/LandingPage.tsx'));
 const FactoryVisualizerView = React.lazy(
   () => import('./main/FactoryVisualizerView.tsx'),
@@ -246,6 +247,8 @@ const CoreRoutes = () => {
           {/* The panel opens its own log-stream socket (admin/useLogStream). */}
           <Route path="/admin/panel/" element={<AdminPanel />} />
           <Route path="/staff/" element={<StaffAdmin />} />
+          <Route path="/escalations/" element={<EscalationsView />} />
+          <Route path="/escalations/:id" element={<EscalationsView />} />
           <Route path="/backup/:account/overview/" element={<BackupView />} />
           <Route path="/factory/" element={<FactoryVisualizerView />} />
           <Route path="/lageplan/wizard/" element={<LageplanWizardView />} />

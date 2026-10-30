@@ -1,0 +1,74 @@
+/* Toast (notistack content component, see Toast.tsx). */
+
+.progeo-toast {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: min(360px, calc(100vw - 32px));
+  padding: 10px 10px 13px 12px;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #2b2b2b;
+  font-size: 13.5px;
+  line-height: 1.35;
+  box-shadow: 0 6px 20px rgba(9, 75, 129, 0.18);
+  border-left: 4px solid var(--toast-color);
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.progeo-toast-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--toast-color);
+}
+
+.progeo-toast-message {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.progeo-toast-close {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  padding: 2px;
+  line-height: 0;
+  color: #8b8383;
+  cursor: pointer;
+}
+
+.progeo-toast:hover .progeo-toast-close {
+  color: #2b2b2b;
+}
+
+/* The time until it closes: runs down, pauses while hovered or focused. */
+.progeo-toast-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--toast-color);
+  opacity: 0.75;
+  transform-origin: left center;
+  animation-name: progeo-toast-countdown;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+.progeo-toast:hover .progeo-toast-progress,
+.progeo-toast:focus-within .progeo-toast-progress {
+  animation-play-state: paused;
+}
+
+@keyframes progeo-toast-countdown {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}

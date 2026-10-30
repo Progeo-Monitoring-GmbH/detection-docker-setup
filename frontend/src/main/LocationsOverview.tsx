@@ -12,6 +12,7 @@ import axiosConfig from '../axiosConfig';
 import { matchesLocationSearch } from '../components/location/locationSearch';
 import { getBackendUrl } from '../backendUrl';
 import { showRequestError } from '../components/ui/Snackbar.jsx';
+import FavoriteStar from './FavoriteStar';
 import LocationEditModal, {
   type LocationEditRow,
 } from '../components/modal/LocationEditModal.tsx';
@@ -208,6 +209,13 @@ const locationColumns = ({
   {
     name: 'Name',
     selector: (row) => row.name || '-',
+    // The star pins the location as favorite (staff only).
+    cell: (row) => (
+      <span className="d-flex align-items-center gap-2" style={{ minWidth: 0 }}>
+        <FavoriteStar locationId={row.id} size={26} />
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.name || '-'}</span>
+      </span>
+    ),
     sortable: true,
     grow: 1.4,
   },

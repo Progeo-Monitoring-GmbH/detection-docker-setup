@@ -5,6 +5,7 @@ import { SnackbarProvider } from 'notistack';
 import CoreAuthProvider from '../hooks/CoreAuthProvider';
 import { ModalProvider } from './components/modal/coreModalContext';
 import CookieBanner from './components/privacy/CookieBanner';
+import Toast from './components/ui/Toast';
 import MaintenanceGate from './components/ui/MaintenanceScreen';
 import { ConsentProvider, useConsent } from './components/privacy/ConsentProvider';
 
@@ -58,10 +59,16 @@ function PortalFrame({ children }: { children: React.ReactNode }) {
 function App() {
   return (
     <MaintenanceGate>
+      {/* Toasts bottom right, where they cover the least (not the top bar,
+          the page's actions or the sidebar), at most 3 and no repeats. They
+          close on click; Toast runs their timer (a progress bar that pauses
+          while hovered) - notistack's own is off. */}
       <SnackbarProvider
-        maxSnack={5}
-        dense={true}
-        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+        maxSnack={3}
+        preventDuplicate
+        autoHideDuration={null}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        Components={{ default: Toast, success: Toast, error: Toast, warning: Toast, info: Toast }}
       >
         <ConsentProvider>
           <ModalProvider>

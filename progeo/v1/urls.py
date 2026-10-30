@@ -7,6 +7,8 @@ from progeo.v1.viewsets.backup_viewset import BackupViewSet
 from progeo.v1.viewsets.data_transfer_viewset import DataTransferViewSet
 from progeo.v1.viewsets.demo_viewset import DemoViewSet
 from progeo.v1.viewsets.device_viewset import DeviceViewSet
+from progeo.v1.viewsets.escalation_viewset import EscalationViewSet
+from progeo.v1.viewsets.favorite_viewset import FavoriteViewSet
 from progeo.v1.viewsets.interface_viewset import InterfaceViewSet
 from progeo.v1.viewsets.locations_viewset import LocationViewSet
 from progeo.v1.viewsets.setup_viewset import AccountViewSet, SetupViewSet
@@ -45,6 +47,12 @@ data_router.register(r'', DataTransferViewSet, basename='data')
 demo_router = CustomRouter()
 demo_router.register(r'', DemoViewSet, basename='demo')
 
+escalation_router = CustomRouter()
+escalation_router.register(r'', EscalationViewSet, basename='escalation')
+
+favorite_router = CustomRouter()
+favorite_router.register(r'', FavoriteViewSet, basename='favorite')
+
 urlpatterns = [
     re_path(r'^(?P<account_id>\d+)/', include(progeo_router.urls)),
     re_path(r'^device/', include(device_router.urls)),
@@ -56,4 +64,6 @@ urlpatterns = [
     re_path(r'^interface/', include(interface_router.urls)),
     re_path(r'^data/', include(data_router.urls)),
     re_path(r'^demo/', include(demo_router.urls)),
+    re_path(r'^escalation/', include(escalation_router.urls)),
+    re_path(r'^favorite/', include(favorite_router.urls)),
 ]
