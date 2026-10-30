@@ -141,6 +141,9 @@ const AlarmMeasurementCompareChart = ({
                 rows={rows}
                 alarmStartTime={alarmStart}
                 alarmDurationMs={alarmDuration}
+                frameSlider
+                sliderPlayKey={false}
+                hideChrome
               />
             )}
           </>

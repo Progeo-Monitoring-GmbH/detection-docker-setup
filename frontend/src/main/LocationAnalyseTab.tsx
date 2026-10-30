@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router';
-import { Card, Spinner } from 'react-bootstrap';
+import { Card, Form, Spinner } from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
@@ -27,6 +27,8 @@ import {
 /** Most measurements per period - spread evenly over it by the backend (?days=). */
 const MAX_MEASUREMENTS = 300;
 
+type AnalyseDevice = { id: number; display_name: string };
+
 /**
  * Analyse route: the location heatmap plus the measurements of all its
  * devices over the selected period (last 24 h / 7 / 30 days). Reuses the
@@ -49,10 +51,18 @@ const LocationAnalyseTab = () => {
   const [measurements, setMeasurements] = useState<MeasurementCompareRow[]>([]);
   // Measurements in the period, of which `measurements` are shown.
   const [measurementTotal, setMeasurementTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
+  // The chart shows one device: the picked one (of this location), else the
+  // backend's default - the device that measured last.
+  const [devices, setDevices] = useState<AnalyseDevice[]>([]);
+  const [shownDevice, setShownDevice] = useState<number | null>(null);
+  const [pickedDevice, setPickedDevice] = useState<{ locationId: unknown; id: number } | null>(null);
+  const deviceId = pickedDevice?.locationId === locationId ? pickedDevice.id : null;
+  const [heatmapLoading, setHeatmapLoading] = useState(true);
+  const [measurementsLoading, setMeasurementsLoading] = useState(true);
   // Only the newest request may set the data - switching periods quickly
   // must not let a slower, older response win.
-  const requestId = useRef(0);
+  const heatmapRequest = useRef(0);
+  const measurementsRequest = useRef(0);
   const [exportMsg, setExportMsg] = useState<string | null>(null);
   // LoRaWAN: the device hovered on the heatmap or in a chart - highlighted in both.
   const [hoveredDeviceId, setHoveredDeviceId] = useState<number | null>(null);
@@ -77,70 +87,74 @@ const LocationAnalyseTab = () => {
     });
   };
 
-  const loadAll = useCallback(() => {
+  const query = `days=${TIME_RANGE_DAYS[range]}&limit=${MAX_MEASUREMENTS}`;
+
+  const loadHeatmap = useCallback(() => {
     if (isLorawan) {
       return;
     }
-    setLoading(true);
-    const current = ++requestId.current;
-    const isCurrent = () => current === requestId.current;
-    const query = `days=${TIME_RANGE_DAYS[range]}&limit=${MAX_MEASUREMENTS}`;
+    setHeatmapLoading(true);
+    const current = ++heatmapRequest.current;
+    const isCurrent = () => current === heatmapRequest.current;
+    void axiosConfig.perform_get(
+      auth,
+      `/v1/location/${locationId}/heatmap/?${query}`,
+      (response) => {
+        if (isCurrent()) {
+          setHeatmap((response?.data || null) as SensorHeatmapResponse | null);
+          setHeatmapLoading(false);
+        }
+      },
+      (error) => {
+        if (isCurrent()) {
+          showRequestError(enqueueSnackbar, 'Could not load heatmap', error);
+          setHeatmapLoading(false);
+        }
+      },
+    );
+  }, [auth, enqueueSnackbar, isLorawan, locationId, query]);
 
-    const loadHeatmap = (done: () => void) => {
-      void axiosConfig.perform_get(
-        auth,
-        `/v1/location/${locationId}/heatmap/?${query}`,
-        (response) => {
-          if (isCurrent()) {
-            setHeatmap((response?.data || null) as SensorHeatmapResponse | null);
-          }
-          done();
-        },
-        (error) => {
-          if (isCurrent()) {
-            showRequestError(enqueueSnackbar, 'Could not load heatmap', error);
-          }
-          done();
-        },
-      );
-    };
-
-    const loadMeasurements = (done: () => void) => {
-      void axiosConfig.perform_get(
-        auth,
-        `/v1/location/${locationId}/measurements/?${query}`,
-        (response) => {
-          if (isCurrent()) {
-            const rows = (response?.data?.measurements ||
-              []) as MeasurementCompareRow[];
-            setMeasurements(rows);
-            setMeasurementTotal(Number(response?.data?.total ?? rows.length));
-          }
-          done();
-        },
-        (error) => {
-          if (isCurrent()) {
-            showRequestError(enqueueSnackbar, 'Could not load measurements', error);
-          }
-          done();
-        },
-      );
-    };
-
-    let pending = 2;
-    const done = () => {
-      pending -= 1;
-      if (pending === 0 && isCurrent()) {
-        setLoading(false);
-      }
-    };
-    loadHeatmap(done);
-    loadMeasurements(done);
-  }, [auth, enqueueSnackbar, isLorawan, locationId, range]);
+  // Switching the device reloads only the measurements.
+  const loadMeasurements = useCallback(() => {
+    if (isLorawan) {
+      return;
+    }
+    setMeasurementsLoading(true);
+    const current = ++measurementsRequest.current;
+    const isCurrent = () => current === measurementsRequest.current;
+    const device = deviceId != null ? `&device=${deviceId}` : '';
+    void axiosConfig.perform_get(
+      auth,
+      `/v1/location/${locationId}/measurements/?${query}${device}`,
+      (response) => {
+        if (isCurrent()) {
+          const rows = (response?.data?.measurements ||
+            []) as MeasurementCompareRow[];
+          setMeasurements(rows);
+          setMeasurementTotal(Number(response?.data?.total ?? rows.length));
+          setDevices((response?.data?.devices || []) as AnalyseDevice[]);
+          setShownDevice((response?.data?.device ?? null) as number | null);
+          setMeasurementsLoading(false);
+        }
+      },
+      (error) => {
+        if (isCurrent()) {
+          showRequestError(enqueueSnackbar, 'Could not load measurements', error);
+          setMeasurementsLoading(false);
+        }
+      },
+    );
+  }, [auth, deviceId, enqueueSnackbar, isLorawan, locationId, query]);
 
   useEffect(() => {
-    loadAll();
-  }, [loadAll]);
+    loadHeatmap();
+  }, [loadHeatmap]);
+
+  useEffect(() => {
+    loadMeasurements();
+  }, [loadMeasurements]);
+
+  const loading = heatmapLoading || measurementsLoading;
 
   return (
     <div className="d-flex flex-column gap-4">
@@ -197,7 +211,7 @@ const LocationAnalyseTab = () => {
           <Card className="border-0 shadow-sm p-2">
             <Card.Body>
               <h5 className="mb-2">Heatmap</h5>
-              {loading && !heatmap ? (
+              {heatmapLoading && !heatmap ? (
                 <div className="d-flex align-items-center gap-2 text-muted py-4">
                   <Spinner size="sm" animation="border" /> Loading heatmap...
                 </div>
@@ -209,7 +223,27 @@ const LocationAnalyseTab = () => {
 
           <Card className="border-0 shadow-sm p-2">
             <Card.Body>
-              <h5 className="mb-1">{t('analyse_measurements_title')}</h5>
+              <div className="d-flex flex-wrap align-items-center gap-3 mb-1">
+                <h5 className="mb-0">{t('analyse_measurements_title')}</h5>
+                {devices.length > 1 && (
+                  <Form.Select
+                    size="sm"
+                    aria-label={t('analyse_device')}
+                    title={t('analyse_device')}
+                    value={shownDevice ?? ''}
+                    onChange={(event) =>
+                      setPickedDevice({ locationId, id: Number(event.target.value) })
+                    }
+                    style={{ width: 'auto', maxWidth: 260 }}
+                  >
+                    {devices.map((device) => (
+                      <option key={device.id} value={device.id}>
+                        {device.display_name}
+                      </option>
+                    ))}
+                  </Form.Select>
+                )}
+              </div>
               {measurementTotal > measurements.length && (
                 <div className="text-muted small mb-2">
                   {t('analyse_spread', {
@@ -218,7 +252,7 @@ const LocationAnalyseTab = () => {
                   })}
                 </div>
               )}
-              {loading && measurements.length === 0 ? (
+              {measurementsLoading && measurements.length === 0 ? (
                 <div className="d-flex align-items-center gap-2 text-muted py-4">
                   <Spinner size="sm" animation="border" /> Loading measurements...
                 </div>
@@ -227,7 +261,12 @@ const LocationAnalyseTab = () => {
                   {t('analyse_no_measurements')}
                 </div>
               ) : (
-                <MeasurementSamplesCompareChart rows={measurements} />
+                <MeasurementSamplesCompareChart
+                  rows={measurements}
+                  frameSlider
+                  sliderPlayKey={false}
+                  hideChrome
+                />
               )}
             </Card.Body>
           </Card>

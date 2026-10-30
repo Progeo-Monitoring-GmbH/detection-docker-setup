@@ -619,6 +619,7 @@ i18n
           analyse_export_csv_done: 'CSV export created — download started.',
           analyse_export_pdf_done: 'PDF report created — download started.',
           analyse_measurements_title: 'Measurements',
+          analyse_device: 'Device',
           analyse_spread:
             '{{count}} of {{total}} measurements, evenly spread over the period',
           analyse_no_measurements: 'No measurements in this period.',
@@ -1614,6 +1615,7 @@ i18n
           analyse_export_csv_done: 'CSV-Export erstellt — Download gestartet.',
           analyse_export_pdf_done: 'PDF-Report erstellt — Download gestartet.',
           analyse_measurements_title: 'Messungen',
+          analyse_device: 'Gerät',
           analyse_spread:
             '{{count}} von {{total}} Messungen, gleichmäßig über den Zeitraum verteilt',
           analyse_no_measurements: 'Keine Messungen in diesem Zeitraum.',

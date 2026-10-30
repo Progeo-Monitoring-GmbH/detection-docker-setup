@@ -246,6 +246,33 @@ def test_measurements_and_heatmap_of_the_last_days_are_spread_over_them(api_clie
     )
 
 
+def test_location_measurements_are_of_one_device(api_client, world):
+    """The Analyse tab's chart shows one device (?device=) - by default the
+    one that measured last - and lists the location's devices to pick from."""
+    user = f.make_user(perms=READ_PERMS)
+    world["account"].users.add(user)
+    api_client.force_authenticate(user=user)
+    location = f.make_location(world["account"])
+    first, second = f.make_device(location), f.make_device(location)
+    first_rows = [f.make_measurement(first, fetched_at=timezone.now() - f.minutes(30 - i)) for i in range(2)]
+    second_row = f.make_measurement(second, fetched_at=timezone.now() - f.minutes(10))
+    path = f"/v1/location/{location.id}/measurements/?days=1"
+
+    body = api_client.get(path).json()
+    assert [device["id"] for device in body["devices"]] == [first.id, second.id]
+    assert body["device"] == second.id
+    assert [row["id"] for row in body["measurements"]] == [second_row.id]
+
+    body = api_client.get(f"{path}&device={first.id}").json()
+    assert body["device"] == first.id
+    assert body["total"] == 2
+    assert [row["id"] for row in body["measurements"]] == [row.id for row in reversed(first_rows)]
+
+    assert api_client.get(f"{path}&device=x").json()["reason"] == "device must be an integer"
+    other = f.make_device(f.make_location(world["account"]))
+    assert api_client.get(f"{path}&device={other.id}").json()["reason"] == "Device not found"
+
+
 def test_location_details_skip_lageplans(api_client, world):
     user = f.make_user(perms=READ_PERMS)
     world["account"].users.add(user)

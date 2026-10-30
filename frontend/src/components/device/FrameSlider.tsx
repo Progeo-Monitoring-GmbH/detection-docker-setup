@@ -15,6 +15,8 @@ type FrameSliderProps = {
   disabled?: boolean;
   /** Alarm periods, marked on the slider - a click on one jumps to its start. */
   alarms?: AlarmSpan[];
+  /** Whether the space bar toggles the animation - off for a second slider on the page. */
+  playKey?: boolean;
 };
 
 /** An alarm's period (ms); `to` is now while it is still active. */
@@ -126,11 +128,13 @@ const useFramePlayback = ({
   index,
   onChange,
   canPlay,
+  playKey,
 }: {
   count: number;
   index: number;
   onChange: (index: number) => void;
   canPlay: boolean;
+  playKey: boolean;
 }) => {
   const [playing, setPlaying] = useState(false);
   // The interval and the key handler read the latest values.
@@ -177,7 +181,7 @@ const useFramePlayback = ({
   }, [canPlay]);
 
   useEffect(() => {
-    if (!canPlay) {
+    if (!canPlay || !playKey) {
       return undefined;
     }
     const onKey = (event: KeyboardEvent) => {
@@ -188,7 +192,7 @@ const useFramePlayback = ({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [canPlay, toggle]);
+  }, [canPlay, playKey, toggle]);
 
   return { playing, toggle };
 };
@@ -199,12 +203,20 @@ const useFramePlayback = ({
  * steps through the frames - from the start again when it is at the end -
  * and stops at the last one.
  */
-const FrameSlider = ({ id, timestamps, index, onChange, disabled = false, alarms = [] }: FrameSliderProps) => {
+const FrameSlider = ({
+  id,
+  timestamps,
+  index,
+  onChange,
+  disabled = false,
+  alarms = [],
+  playKey = true,
+}: FrameSliderProps) => {
   const { t } = useTranslation();
   const count = timestamps.length;
   const position = useCallback((ms: number) => framePosition(timestamps, ms), [timestamps]);
   const canPlay = count > 1 && !disabled;
-  const { playing, toggle } = useFramePlayback({ count, index, onChange, canPlay });
+  const { playing, toggle } = useFramePlayback({ count, index, onChange, canPlay, playKey });
 
   const label = playing ? t('heatmap_animation_stop') : t('heatmap_animation_start');
   const marks = alarms
@@ -224,7 +236,7 @@ const FrameSlider = ({ id, timestamps, index, onChange, disabled = false, alarms
           onClick={toggle}
           disabled={!canPlay}
           aria-pressed={playing}
-          title={`${label} (${t('heatmap_animation_key')})`}
+          title={playKey ? `${label} (${t('heatmap_animation_key')})` : label}
           className="d-inline-flex align-items-center gap-1 py-0"
           style={{ borderRadius: 'var(--progeo-radius-pill)', paddingInline: 12, fontSize: 12.5, fontWeight: 500 }}
         >

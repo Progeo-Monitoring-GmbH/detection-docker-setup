@@ -1564,12 +1564,29 @@ class LocationViewSet(ProgeoModalViewSet):
         except ValueError:
             return RequestFailed({"reason": "days must be an integer"})
 
+        device_raw = request.query_params.get("device")
+        device_id = None
+        if device_raw not in [None, ""]:
+            try:
+                device_id = int(device_raw)
+            except (TypeError, ValueError):
+                return RequestFailed({"reason": "device must be an integer"})
+
         location, account = self._find_location(request, pk=pk)
         if not location:
             return RequestFailed({"reason": "Location not found"})
         db_name = location_db(location, account)
 
         queryset = ProgeoMeasurement.for_account(account, using=db_name, user=request.user).filter(device__location=location)
+        # One device at a time (?device=) - measurements of several devices don't
+        # compare; by default the one that measured last.
+        devices = list(ProgeoDevice.objects.using(db_name).filter(location=location).order_by("id"))
+        if device_id is None:
+            device_id = queryset.order_by("-pk").values_list("device_id", flat=True).first()
+        elif device_id not in {device.pk for device in devices}:
+            return RequestFailed({"reason": "Device not found"})
+        if device_id is not None:
+            queryset = queryset.filter(device_id=device_id)
         total = None
         if year:
             queryset = queryset.select_related("device").filter(last_fetched__year=year).order_by("-id")
@@ -1587,6 +1604,8 @@ class LocationViewSet(ProgeoModalViewSet):
         return RequestSuccess(
             {
                 "location": _location_data(location, account),
+                "devices": [{"id": device.pk, "display_name": device.display_name} for device in devices],
+                "device": device_id,
                 "measurements": serialized,
                 "count": len(serialized),
                 # Measurements in the window (?days=), of which `count` are shown.
