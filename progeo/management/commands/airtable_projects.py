@@ -1,11 +1,21 @@
 import csv
 import json
+import os
 
 from django.core.management.base import CommandError
 
 from progeo.helper.airtable import AirtableHelper
+from progeo.helper.basics import save_check_dir
 from progeo.management.commands._base import BaseCommand
-from progeo.management.commands.airtable_projects_json import is_broken_address
+from progeo.management.commands.airtable_projects_json import (
+    AIRTABLE_EXPORT_DIR,
+    is_broken_address,
+)
+
+# The exports hold customer data - never in the repository: media/export is
+# git-ignored, and /media/ serves it to staff only (AuthenticatedMediaView).
+JSON_EXPORT = os.path.join(AIRTABLE_EXPORT_DIR, "projects.json")
+CSV_EXPORT = os.path.join(AIRTABLE_EXPORT_DIR, "projects.csv")
 
 
 class Command(BaseCommand):
@@ -43,12 +53,12 @@ class Command(BaseCommand):
         parser.add_argument(
             "--json",
             action="store_true",
-            help="Print the raw JSON records instead of a summary list.",
+            help=f"Write the raw JSON records to {JSON_EXPORT} instead of printing a summary list.",
         )
         parser.add_argument(
             "--csv",
             action="store_true",
-            help="Export all projects to airtable_projects.csv, splitting Baustellenadresse into street/plz/city.",
+            help=f"Export all projects to {CSV_EXPORT}, splitting Baustellenadresse into street/plz/city.",
         )
 
     def handle(self, *args, **options):
@@ -111,8 +121,10 @@ class Command(BaseCommand):
 
         if options["json"]:
 
-            with open("airtable_projects.json", "w", encoding="utf-8") as f:
+            save_check_dir(AIRTABLE_EXPORT_DIR)
+            with open(JSON_EXPORT, "w", encoding="utf-8") as f:
                 f.write(json.dumps(records, ensure_ascii=False))
+            self.stdout.write(self.style.SUCCESS(f"Wrote {len(records)} record(s) to {JSON_EXPORT}"))
             return
 
         if options["csv"]:
@@ -134,7 +146,8 @@ class Command(BaseCommand):
             "street", "plz", "city", "company", "address",
         ]
 
-        with open("airtable_projects.csv", "w", encoding="utf-8", newline="") as f:
+        save_check_dir(AIRTABLE_EXPORT_DIR)
+        with open(CSV_EXPORT, "w", encoding="utf-8", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=columns)
             writer.writeheader()
 
@@ -165,4 +178,4 @@ class Command(BaseCommand):
                     "address": address,
                 })
 
-        self.stdout.write(self.style.SUCCESS(f"Wrote {len(records)} project(s) to airtable_projects.csv"))
+        self.stdout.write(self.style.SUCCESS(f"Wrote {len(records)} project(s) to {CSV_EXPORT}"))

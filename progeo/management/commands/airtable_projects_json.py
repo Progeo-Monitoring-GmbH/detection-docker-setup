@@ -1,9 +1,18 @@
 import json
+import os
 import re
+
+from django.core.management.base import CommandError
 
 from progeo.helper.basics import dlog, elog, ilog, okaylog
 from progeo.management.commands._base import BaseCommand
+from progeo.settings import EXPORT_DIR
 from progeo.v1.models import ProgeoLocation
+
+# Where `airtable_projects --json/--csv` writes and this command reads: the
+# records hold customer data, so never the repository - media/export is
+# git-ignored.
+AIRTABLE_EXPORT_DIR = os.path.join(EXPORT_DIR, "airtable")
 
 
 def is_broken_address(address):
@@ -118,11 +127,18 @@ class Command(BaseCommand):
             action="store_true",
             help="List all tables of the base (id + name) and exit.",
         )
+        parser.add_argument(
+            "--file",
+            default=os.path.join(AIRTABLE_EXPORT_DIR, "projects.json"),
+            help="The records to check, as `airtable_projects --json` writes them (default: %(default)s).",
+        )
 
 
     def handle(self, *args, **options):
         
-        with open("airtable_projects_min.json", encoding="utf-8") as f:
+        if not os.path.isfile(options["file"]):
+            raise CommandError(f"{options['file']} not found - write it with: python manage.py airtable_projects --json")
+        with open(options["file"], encoding="utf-8") as f:
             records = json.load(f)
         project_ids = ProgeoLocation.objects.values_list('project_id', flat=True)
         new_projects_count = 0
