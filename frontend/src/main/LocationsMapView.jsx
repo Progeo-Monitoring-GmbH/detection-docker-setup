@@ -240,6 +240,11 @@ const LocationsMapView = () => {
   const [stateFilter, setStateFilter] = useState('all');
   const [flashMarkers, setFlashMarkers] = useState({});
   const [flashTick, setFlashTick] = useState(Date.now());
+  // The websocket handler is set up once - it looks the rows up through this.
+  const rowsRef = useRef(rows);
+  useEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
 
   useEffect(() => {
     setLoading(true);
@@ -269,9 +274,11 @@ const LocationsMapView = () => {
           return;
         }
 
-        const location = message?.location;
+        // The event carries the ids only - the details are in the loaded rows.
+        const locationId = message?.location_id;
         const projectId = message?.project_id;
-        if (!location || !location.id) {
+        const location = rowsRef.current.find((row) => row.id === locationId);
+        if (!location) {
           showInfoBar(
             enqueueSnackbar,
             `Legacy measurement parsed for project ${projectId}`,
@@ -279,31 +286,18 @@ const LocationsMapView = () => {
           return;
         }
 
-        const nowIso = message?.parsed_at || new Date().toISOString();
-        setRows((prev) => {
-          const index = prev.findIndex((row) => row.id === location.id);
-          if (index === -1) {
-            return [
-              {
-                ...location,
-                last_measurement_at: nowIso,
-              },
-              ...prev,
-            ];
-          }
-
-          const next = [...prev];
-          next[index] = {
-            ...next[index],
-            ...location,
-            last_measurement_at: nowIso,
-          };
-          return next;
-        });
+        const nowIso = new Date().toISOString();
+        setRows((prev) =>
+          prev.map((row) =>
+            row.id === locationId
+              ? { ...row, last_measurement_at: nowIso }
+              : row,
+          ),
+        );
 
         setFlashMarkers((prev) => ({
           ...prev,
-          [location.id]: Date.now() + FLASH_DURATION_MS,
+          [locationId]: Date.now() + FLASH_DURATION_MS,
         }));
 
         showInfoBar(

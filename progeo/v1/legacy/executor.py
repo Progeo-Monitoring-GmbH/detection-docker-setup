@@ -602,28 +602,18 @@ def _broadcast_legacy_location(project_id: int):
     if channel_layer is None:
         return
 
-    location = ProgeoLocation.objects.using("default").filter(project_id=project_id).first()
+    # Ids only: the map has the location details from /v1/location/ already.
+    location_id = (
+        ProgeoLocation.objects.using("default")
+        .filter(project_id=project_id)
+        .values_list("id", flat=True)
+        .first()
+    )
     payload = {
         "type": "legacy_location_event",
         "project_id": project_id,
-        "parsed_at": timezone.now().isoformat(),
-        "location": None,
+        "location_id": location_id,
     }
-
-    if location:
-        payload["location"] = {
-            "id": location.id,
-            "project_id": location.project_id,
-            "name": location.name,
-            "city": location.city,
-            "address": location.address,
-            "plz": location.plz,
-            "manager": location.manager,
-            "telefon": location.telefon,
-            "mail": location.mail,
-            "latitude": location.latitude,
-            "longitude": location.longitude,
-        }
 
     async_to_sync(channel_layer.group_send)(GRP_NAME, payload)
 

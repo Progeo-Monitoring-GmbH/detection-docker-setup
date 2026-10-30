@@ -59,6 +59,24 @@ def test_a_broken_live_broadcast_does_not_lose_the_measurement(client, monkeypat
     assert _measurements().count() == before + 1
 
 
+def test_the_live_broadcast_carries_only_the_ids(client, monkeypatch):
+    sent = []
+
+    class RecordingLayer:
+        async def group_send(self, group, message):
+            sent.append(message)
+
+    monkeypatch.setattr(executor, "get_channel_layer", RecordingLayer)
+
+    assert client.get(f"/gprs_5709.php?{FIRMWARE_QUERY}").status_code == 200
+
+    assert sent
+    for message in sent:
+        assert set(message) == {"type", "project_id", "location_id"}
+        assert message["type"] == "legacy_location_event"
+        assert message["project_id"] == 5709
+
+
 @override_settings(SECURE_SSL_REDIRECT=True)
 def test_only_the_legacy_endpoint_is_exempt_from_the_https_redirect(client):
     assert client.get(f"/gprs_5709.php?{FIRMWARE_QUERY}").status_code == 200

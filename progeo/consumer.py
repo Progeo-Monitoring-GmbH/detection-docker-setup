@@ -53,7 +53,7 @@ class CommandConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.kwargs = self.scope["url_route"]["kwargs"]
         # The group carries device commands and the legacy location events
-        # (names, addresses, contacts) of every customer, and relays what any
+        # (location and project ids) of every customer, and relays what any
         # client sends to all others - ProGeo staff only (session login).
         if not _is_staff_admin(self.scope.get("user")):
             await self.close(code=4403)
