@@ -143,25 +143,25 @@ describe('chartLayout', () => {
     expect(layout.bounds.bottom).toBeGreaterThan(900);
   });
 
-  it('views the heat field (sensors plus border) with a 2% margin', () => {
+  it('views the heat field (sensors plus border) with a 20% border', () => {
     // A plan scaled down to its left half: the field covers that half only.
     const { bounds, heatRect } = layoutOf(res, {
       location: { scale_x: 0.5 },
       imageSize: { width: 1000, height: 1000 },
     });
     expect(heatRect.right).toBeLessThan(1000);
-    expect(bounds).toEqual({
-      left: heatRect.left - 20,
-      right: heatRect.right + 20,
-      top: heatRect.top - 20,
-      bottom: heatRect.bottom + 20,
-    });
+    const border =
+      0.2 * Math.max(heatRect.right - heatRect.left, heatRect.bottom - heatRect.top);
+    expect(bounds.left).toBeCloseTo(heatRect.left - border);
+    expect(bounds.right).toBeCloseTo(heatRect.right + border);
+    expect(bounds.top).toBeCloseTo(heatRect.top - border);
+    expect(bounds.bottom).toBeCloseTo(heatRect.bottom + border);
   });
 
-  it('fits the whole plan with fitPlan', () => {
+  it('fits the whole plan with fitPlan, with a 20% border', () => {
     const { bounds } = layoutOf(res, { imageSize: { width: 1000, height: 1000 }, fitPlan: true });
-    expect(bounds.left).toBeCloseTo(-5);
-    expect(bounds.right).toBeCloseTo(1005);
+    expect(bounds.left).toBeCloseTo(-200);
+    expect(bounds.right).toBeCloseTo(1200);
   });
 
   it('has no thresholds in field mode', () => {

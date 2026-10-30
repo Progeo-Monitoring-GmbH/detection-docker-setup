@@ -72,6 +72,8 @@ type SensorHeatmap2DProps = {
   highlightedDevice?: number | null;
   /** Called with the device of the hovered marker, null when it is left. */
   onHoverDevice?: (device: number | null) => void;
+  /** Called with the pos (sensor_order) of a clicked sensor marker. */
+  onSensorClick?: (pos: number) => void;
 };
 
 /** What the cursor points at: a sensor (by its pos), else the position in
@@ -132,6 +134,7 @@ const SensorHeatmap2D = ({
   fitPlan = false,
   highlightedDevice = null,
   onHoverDevice,
+  onSensorClick,
 }: SensorHeatmap2DProps) => {
   const { t } = useTranslation();
   // Primitives, so a new `field` object per render doesn't recompute.
@@ -300,6 +303,15 @@ const SensorHeatmap2D = ({
     zoomBy,
     onHover: updateHover,
     onLeave: clearHover,
+    onTap: (sx, sy) => {
+      if (!scene || !view || !onSensorClick) {
+        return;
+      }
+      const target = hoverTarget(scene.layout, scene.frame, view, location, imageSize, sx, sy);
+      if (target?.kind === 'sensor') {
+        onSensorClick(scene.layout.sensors[target.index].pos);
+      }
+    },
     wheelZoomsAt: (sx, sy) => Boolean(scene && view && isOverDrawn(scene.layout, view, image != null, sx, sy)),
   });
 

@@ -86,7 +86,7 @@ export const useHeatmapViewport = ({
 /**
  * Pointer input of the heatmap canvas: drag to move, pinch to zoom (around
  * the fingers' middle), hover reports to `onHover`, leaving or dragging to
- * `onLeave`. The wheel zooms around the cursor - but only where
+ * `onLeave`, a click (no drag, one pointer) to `onTap`. The wheel zooms around the cursor - but only where
  * `wheelZoomsAt` says so (over the drawn plan); everywhere else it scrolls
  * the page as usual. While zooming it must not scroll the page (React's
  * wheel listener is passive, hence addEventListener).
@@ -98,6 +98,7 @@ export const usePanZoomGestures = ({
   zoomBy,
   onHover,
   onLeave,
+  onTap,
   wheelZoomsAt,
 }: {
   /** Whether the canvas is rendered. */
@@ -107,6 +108,7 @@ export const usePanZoomGestures = ({
   zoomBy: (factor: number, sx?: number, sy?: number) => void;
   onHover: (sx: number, sy: number) => void;
   onLeave: () => void;
+  onTap?: (sx: number, sy: number) => void;
   wheelZoomsAt: (sx: number, sy: number) => boolean;
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -166,11 +168,16 @@ export const usePanZoomGestures = ({
   };
 
   const onPointerUp = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    const tapped = !dragged.current && pointers.current.size === 1 && pointers.current.has(event.pointerId);
     pointers.current.delete(event.pointerId);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
     setGrabbing(pointers.current.size > 0);
+    if (tapped && event.type === 'pointerup') {
+      const [sx, sy] = localPoint(event);
+      onTap?.(sx, sy);
+    }
   };
 
   const onPointerLeave = (event: ReactPointerEvent<HTMLCanvasElement>) => {

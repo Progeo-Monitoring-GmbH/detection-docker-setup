@@ -31,6 +31,9 @@ type DiffSeries = {
   /** EP / WP by sensor - empty without samples. */
   ep: number[];
   wp: number[];
+  /** EP - WP by sensor, signed (the first plot's mean and bands) - without
+   * samples only the |EP - WP| of `points` there is. */
+  signed: DiffPoint[];
 };
 
 type MeasurementSamplesCompareChartProps = {
@@ -65,7 +68,19 @@ type MeasurementSamplesCompareChartProps = {
   onTimeChange?: (ms: number) => void;
   /** Skip the component's own Card chrome so it can sit inside another panel wrapper. */
   hideChrome?: boolean;
+  /**
+   * The sensors (pair index) the second plot shows, kept outside - e.g. also
+   * picked on the heatmap. Without them the chart keeps its own.
+   */
+  sensors?: number[];
+  onSensorsChange?: (sensors: number[]) => void;
 };
+
+/** `selected` with `sensor` added (sorted) or, if it was in there, removed. */
+export const toggledSensor = (selected: number[], sensor: number) =>
+  selected.includes(sensor)
+    ? selected.filter((entry) => entry !== sensor)
+    : [...selected, sensor].sort((a, b) => a - b);
 
 /** The bands: never highlighted. */
 const BAND_TRACES = new Set(['min-max', 'min-max-lower', 'deviation', 'deviation-lower']);
@@ -79,6 +94,13 @@ const OPTIONAL_TRACES = new Set(['ep+wp', 'wp-ep', 'pair-sum-diff']);
 const MIN_MAX_COLOR = 'rgba(153, 27, 27, 0.25)';
 const DEVIATION_COLOR = 'rgba(252, 122, 46, 0.31)';
 const EDGE_COLOR = 'rgba(0, 0, 0, 0)';
+const BASELINE_COLOR = '#4a4a4a';
+
+/** How many sensors the "most / least active" buttons add. */
+const ACTIVE_SENSOR_COUNT = 5;
+
+/** The plot's height (px). */
+const PLOT_HEIGHT = 800;
 
 /** Plotly visibility of an optional line: shown or only in the legend. */
 const visibility = (shown: ReadonlySet<string>, uid: string) => ({
@@ -226,6 +248,8 @@ const MeasurementSamplesCompareChart = (
     hideChrome = false,
     time = null,
     onTimeChange,
+    sensors,
+    onSensorsChange,
   } = props;
   const { t } = useTranslation();
   const currentYear = new Date().getFullYear();
@@ -266,12 +290,20 @@ const MeasurementSamplesCompareChart = (
 
   const series: DiffSeries[] = React.useMemo(
     () =>
-      rows.map((row) => ({
-        id: row.id,
-        lastFetched: row.last_fetched,
-        points: toPairAbsDiff(row.samples, row.pair_abs_values),
-        ...toPotentials(row.samples),
-      })),
+      rows.map((row) => {
+        const { ep, wp } = toPotentials(row.samples);
+        const points = toPairAbsDiff(row.samples, row.pair_abs_values);
+        return {
+          id: row.id,
+          lastFetched: row.last_fetched,
+          points,
+          ep,
+          wp,
+          signed: ep.length
+            ? ep.map((value, index) => ({ pairIndex: index, value: value - wp[index] }))
+            : points,
+        };
+      }),
     [rows],
   );
 
@@ -296,8 +328,9 @@ const MeasurementSamplesCompareChart = (
     const minimums: number[] = [];
     const maximums: number[] = [];
 
+    // Signed: the bands reach below zero where EP - WP does.
     series.forEach((entry) => {
-      entry.points.forEach((point) => {
+      entry.signed.forEach((point) => {
         const index = point.pairIndex;
         minimums[index] = Math.min(minimums[index] ?? point.value, point.value);
         maximums[index] = Math.max(maximums[index] ?? point.value, point.value);
@@ -329,7 +362,7 @@ const MeasurementSamplesCompareChart = (
       x.push(index);
       mean.push(avg);
       sigma.push(stdDev);
-      lower.push(Math.max(avg - stdDev, 0));
+      lower.push(avg - stdDev);
       upper.push(avg + stdDev);
       min.push(minimums[index]);
       max.push(maximums[index]);
@@ -393,13 +426,41 @@ const MeasurementSamplesCompareChart = (
   }, [series]);
 
   // Sensors (pair index) whose values over time the second plot shows - a
-  // click on the first plot adds or removes one.
-  const [selectedSensors, setSelectedSensors] = React.useState<number[]>([]);
+  // click on the first plot adds or removes one. Kept outside with
+  // onSensorsChange (shared with the heatmap).
+  const [ownSensors, setOwnSensors] = React.useState<number[]>([]);
+  const selectedSensors = sensors ?? ownSensors;
   const toggleSensor = (sensor: number) =>
-    setSelectedSensors((selected) =>
-      selected.includes(sensor)
-        ? selected.filter((entry) => entry !== sensor)
-        : [...selected, sensor].sort((a, b) => a - b),
+    (onSensorsChange ?? setOwnSensors)(toggledSensor(selectedSensors, sensor));
+
+  // The most / least active sensors: by their mean |EP - WP| over the
+  // measurements (the second plot's values). Sensors without any signal (0
+  // throughout) are left out - they would always be the least active.
+  const activeSensors = React.useMemo(() => {
+    const sums: number[] = [];
+    pairSumSeries.pairs.forEach((values) =>
+      values.forEach((value, sensor) => {
+        sums[sensor] = (sums[sensor] ?? 0) + Math.abs(value);
+      }),
+    );
+    const ranked = sums
+      .flatMap((sum, sensor) => (sum > 0 ? [{ sensor, sum }] : []))
+      .sort((a, b) => b.sum - a.sum)
+      .map(({ sensor }) => sensor);
+    return {
+      most: ranked.slice(0, ACTIVE_SENSOR_COUNT),
+      least: ranked.slice(-ACTIVE_SENSOR_COUNT).reverse(),
+    };
+  }, [pairSumSeries]);
+  // A button shows its group while all of it is shown; a click then removes
+  // the group, else adds it.
+  const groupShown = (group: number[]) =>
+    group.length > 0 && group.every((sensor) => selectedSensors.includes(sensor));
+  const toggleGroup = (group: number[]) =>
+    (onSensorsChange ?? setOwnSensors)(
+      groupShown(group)
+        ? selectedSensors.filter((sensor) => !group.includes(sensor))
+        : [...new Set([...selectedSensors, ...group])].sort((a, b) => a - b),
     );
 
   const sensorTraces = React.useMemo(() => {
@@ -518,6 +579,8 @@ const MeasurementSamplesCompareChart = (
         y: pairSumSeries.y,
         xaxis: 'x2' as const,
         yaxis: 'y2' as const,
+        // Their own legend, at the third plot.
+        legend: 'legend3',
         line: {
           color: 'rgba(44, 160, 44, 0.95)',
           width: 3,
@@ -532,6 +595,7 @@ const MeasurementSamplesCompareChart = (
         x: pairSumSeries.x,
         y: pairSumSeries.diff,
         xaxis: 'x2' as const,
+        legend: 'legend3',
         // Own axis (right): far smaller than the sum and signed.
         yaxis: 'y3' as const,
         line: {
@@ -593,7 +657,9 @@ const MeasurementSamplesCompareChart = (
       high = Math.max(high, value);
     };
     meanAndDeviationSeries.upper.forEach(include);
+    meanAndDeviationSeries.lower.forEach(include);
     meanAndDeviationSeries.max.forEach(include);
+    meanAndDeviationSeries.min.forEach(include);
     frames.forEach(({ ep, wp }) => {
       ep.forEach((value, i) => {
         include(value);
@@ -838,20 +904,22 @@ const MeasurementSamplesCompareChart = (
   // Placed as soon as it appears, not only with the next move.
   React.useLayoutEffect(() => placeHint(hintRef.current, cursorRef.current), [hoveredSensor]);
 
-  // The selected sensors' legend: right above the second plot. Spread into
-  // the layout - the typings know only one legend.
-  const sensorLegend = {
-    legend2: {
-      orientation: 'h' as const,
-      x: 1,
-      xanchor: 'right' as const,
-      y: SENSORS_DOMAIN[1],
-      yanchor: 'bottom' as const,
-      itemdoubleclick: false as const,
-      bgcolor: plotTheme.warmGray1,
-      bordercolor: plotTheme.warmGray3,
-      borderwidth: 1,
-    },
+  // The second and third plot's legends: right above each, on the left.
+  // Spread into the layout - the typings know only one legend.
+  const plotLegend = (top: number) => ({
+    orientation: 'h' as const,
+    x: 0,
+    xanchor: 'left' as const,
+    y: top,
+    yanchor: 'bottom' as const,
+    itemdoubleclick: false as const,
+    bgcolor: plotTheme.warmGray1,
+    bordercolor: plotTheme.warmGray3,
+    borderwidth: 1,
+  });
+  const plotLegends = {
+    legend2: plotLegend(SENSORS_DOMAIN[1]),
+    legend3: plotLegend(SUM_DOMAIN[1]),
   };
 
   // Plotly has no legend hover event: listen on the legend items (g.traces,
@@ -862,7 +930,10 @@ const MeasurementSamplesCompareChart = (
       return undefined;
     }
     const legendTrace = (target: EventTarget | null) => {
-      const item = target instanceof Element ? target.closest('.legend .traces, .legend2 .traces') : null;
+      const item =
+        target instanceof Element
+          ? target.closest('.legend .traces, .legend2 .traces, .legend3 .traces')
+          : null;
       const uid = (item as { __data__?: [{ trace?: { uid?: string } }] } | null)?.__data__?.[0]
         ?.trace?.uid;
       return uid && !BAND_TRACES.has(uid) ? uid : null;
@@ -878,11 +949,21 @@ const MeasurementSamplesCompareChart = (
         setHighlighted(null);
       }
     };
+    // No wheel zoom on the first plot (its drag area, subplot "xy") - stopped
+    // on the way down, before Plotly's own listener; the page scrolls instead.
+    // The time plots keep it.
+    const onWheel = (event: WheelEvent) => {
+      if (event.target instanceof Element && event.target.closest('.drag[data-subplot="xy"]')) {
+        event.stopPropagation();
+      }
+    };
     graphDiv.addEventListener('mouseover', onOver);
     graphDiv.addEventListener('mouseout', onOut);
+    graphDiv.addEventListener('wheel', onWheel, true);
     return () => {
       graphDiv.removeEventListener('mouseover', onOver);
       graphDiv.removeEventListener('mouseout', onOut);
+      graphDiv.removeEventListener('wheel', onWheel, true);
     };
   }, [graphDiv]);
 
@@ -997,6 +1078,41 @@ const MeasurementSamplesCompareChart = (
             )}
           </div>
         )}
+        {activeSensors.most.length > 0 && (
+          // Right above the second plot, on the right (its legend is on the left).
+          <div
+            className="position-absolute d-flex gap-2"
+            style={{
+              zIndex: 2,
+              right: margin.r,
+              top: margin.t + (1 - SENSORS_DOMAIN[1]) * (PLOT_HEIGHT - margin.t - margin.b) - 4,
+              transform: 'translateY(-100%)',
+            }}
+          >
+            {(
+              [
+                ['most', 'measurement_compare_add_most_active'],
+                ['least', 'measurement_compare_add_least_active'],
+              ] as const
+            ).map(([group, label]) => {
+              const shown = groupShown(activeSensors[group]);
+              return (
+                <Button
+                  key={group}
+                  size="sm"
+                  variant={shown ? 'primary' : 'outline-primary'}
+                  aria-pressed={shown}
+                  title={t('measurement_compare_activity_hint')}
+                  className="py-0"
+                  style={{ fontSize: 12 }}
+                  onClick={() => toggleGroup(activeSensors[group])}
+                >
+                  {t(label, { n: ACTIVE_SENSOR_COUNT })}
+                </Button>
+              );
+            })}
+          </div>
+        )}
         <Plot
           data={data}
           onInitialized={(_, graphDiv) => setGraphDiv(graphDiv as HTMLElement)}
@@ -1018,7 +1134,7 @@ const MeasurementSamplesCompareChart = (
             return !FIXED_TRACES.has(uid);
           }}
           useResizeHandler
-          style={{ width: '100%', height: '800px' }}
+          style={{ width: '100%', height: `${PLOT_HEIGHT}px` }}
           config={{
             responsive: true,
             displaylogo: false,
@@ -1065,7 +1181,10 @@ const MeasurementSamplesCompareChart = (
                 : {}),
               showgrid: true,
               gridcolor: plotTheme.warmGray2,
+              // The baseline: EP - WP and its bands run on both sides of it.
               zeroline: true,
+              zerolinecolor: BASELINE_COLOR,
+              zerolinewidth: 2,
             },
             xaxis2: {
               type: 'date',
@@ -1127,7 +1246,7 @@ const MeasurementSamplesCompareChart = (
               bordercolor: plotTheme.warmGray3,
               borderwidth: 1,
             },
-            ...sensorLegend,
+            ...plotLegends,
             hovermode: 'x unified',
           }}
         />

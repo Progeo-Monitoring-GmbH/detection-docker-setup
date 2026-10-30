@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { timeTicks } from './timeTicks';
+import { spacedTicks, timeTicks } from './timeTicks';
 
 const at = (month: number, day: number, hour = 0) => new Date(2026, month, day, hour).getTime();
 
@@ -41,3 +41,16 @@ describe('timeTicks', () => {
     }
   });
 });
+
+describe('spacedTicks', () => {
+  const mark = (x: number, major = false) => ({ tick: { major }, x });
+
+  it('leaves out the marks that fall too close together (a gap without data)', () => {
+    const kept = spacedTicks([mark(0), mark(100), mark(110), mark(115), mark(200)], 50);
+    expect(kept.map((entry) => entry.x)).toEqual([0, 100, 200]);
+  });
+
+  it('prefers a major mark over a too close minor one', () => {
+    const kept = spacedTicks([mark(0), mark(100), mark(120, true), mark(200)], 50);
+    expect(kept.map((entry) => entry.x)).toEqual([0, 120, 200]);
+  });});

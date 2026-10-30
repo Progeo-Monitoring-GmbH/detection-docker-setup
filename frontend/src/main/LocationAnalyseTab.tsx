@@ -11,6 +11,7 @@ import SensorHeatmap2D from '../components/device/SensorHeatmap2D.tsx';
 import { type SensorHeatmapResponse } from '../components/device/sensorHeatmapTypes';
 import MeasurementSamplesCompareChart, {
   type MeasurementCompareRow,
+  toggledSensor,
 } from '../components/device/MeasurementSamplesCompareChart.tsx';
 import type { PortalOutletContext } from './LocationPortalLayout';
 import LocationClimatePanels from './LocationClimatePanels';
@@ -50,6 +51,9 @@ const LocationAnalyseTab = () => {
   // The time (epoch ms) of the heatmap's and the measurements' coupled
   // sliders - null: the newest measurement.
   const [frameTime, setFrameTime] = useState<number | null>(null);
+  // The sensors (pair index) the measurements' second plot follows - picked
+  // there or on the heatmap.
+  const [sensors, setSensors] = useState<number[]>([]);
   const [heatmap, setHeatmap] = useState<SensorHeatmapResponse | null>(null);
   const [measurements, setMeasurements] = useState<MeasurementCompareRow[]>([]);
   // Measurements in the period, of which `measurements` are shown.
@@ -228,6 +232,8 @@ const LocationAnalyseTab = () => {
                   hideChrome
                   time={frameTime}
                   onTimeChange={setFrameTime}
+                  // pos is the sensor_order: pair index + 1.
+                  onSensorClick={(pos) => setSensors((selected) => toggledSensor(selected, pos - 1))}
                 />
               )}
             </Card.Body>
@@ -280,6 +286,8 @@ const LocationAnalyseTab = () => {
                   hideChrome
                   time={frameTime}
                   onTimeChange={setFrameTime}
+                  sensors={sensors}
+                  onSensorsChange={setSensors}
                 />
               )}
             </Card.Body>

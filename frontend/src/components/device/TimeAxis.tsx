@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { dateLocale, PRETTY_LOCALE } from '../../main/dateFormat';
-import { timeTicks } from './timeTicks';
+import { spacedTicks, timeTicks } from './timeTicks';
 import './TimeAxis.css';
 
 type TimeAxisProps = {
@@ -13,6 +13,8 @@ type TimeAxisProps = {
 
 /** Room per label (px): decides how fine the marks get. */
 const LABEL_SPACING = 78;
+/** Least distance (px) between two marks' labels ("20.10.", "Okt"). */
+const MIN_LABEL_GAP = 52;
 
 /**
  * Calendar marks under a time slider - hours, days, weeks, months or years,
@@ -49,14 +51,19 @@ const TimeAxis = ({ from, to, position }: TimeAxisProps) => {
     [from, to, width, i18n.language],
   );
   const at = position ?? ((ms: number) => (ms - from) / (to - from));
+  // Placed by `position`, the marks needn't be evenly spaced (a frame
+  // slider leaves out gaps without data) - those too close are left out.
+  const placed = spacedTicks(
+    ticks.flatMap((tick) => {
+      const fraction = at(tick.ms);
+      return fraction >= 0 && fraction <= 1 ? [{ tick, fraction, x: fraction * (width || 600) }] : [];
+    }),
+    MIN_LABEL_GAP,
+  );
 
   return (
     <div className="time-axis" ref={ref} aria-hidden="true">
-      {ticks.map((tick) => {
-        const fraction = at(tick.ms);
-        if (!(fraction >= 0 && fraction <= 1)) {
-          return null;
-        }
+      {placed.map(({ tick, fraction }) => {
         // Labels at the very ends stay inside the axis.
         const align = fraction < 0.04 ? 'start' : fraction > 0.96 ? 'end' : 'center';
         return (

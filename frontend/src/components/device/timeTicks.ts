@@ -112,6 +112,32 @@ const tickOf = (date: Date, interval: Interval, locale?: string): TimeTick => {
   }
 };
 
+/**
+ * The placed marks (`x` in px, ascending) whose labels don't run into each
+ * other: each kept at least `minGap` from the one before. Of two too close,
+ * the first stays - unless only the second is major.
+ * Needed where the axis isn't linear in time: a frame slider leaves out
+ * the time without data, so the marks of a gap fall close together.
+ */
+export const spacedTicks = <T extends { tick: { major: boolean }; x: number }>(
+  placed: T[],
+  minGap: number,
+): T[] => {
+  const kept: T[] = [];
+  placed.forEach((entry) => {
+    const last = kept[kept.length - 1];
+    if (!last || entry.x - last.x >= minGap) {
+      kept.push(entry);
+      return;
+    }
+    // Still far enough from the one before `last`: that one is minGap before `last`.
+    if (entry.tick.major && !last.tick.major) {
+      kept[kept.length - 1] = entry;
+    }
+  });
+  return kept;
+};
+
 /** The marks between `from` and `to` (ms), at most `maxTicks` (at least the
  * coarsest interval's). */
 export const timeTicks = (from: number, to: number, maxTicks: number, locale?: string): TimeTick[] => {

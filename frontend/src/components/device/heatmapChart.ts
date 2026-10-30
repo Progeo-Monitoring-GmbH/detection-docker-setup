@@ -104,6 +104,8 @@ const HEAT_BORDER_SIGMAS = 3;
 
 /** Space kept free on the right of the initial view for the colour scale. */
 export const COLORBAR_SPACE = 58;
+/** Border around the content (plan or heat field) of the initial view, relative to its larger span. */
+const VIEW_BORDER = 0.2;
 /** fitPlan: the tallest canvas, relative to its width (very tall plans). */
 const FIT_PLAN_MAX_ASPECT = 2;
 /** Hover radius around a sensor marker (screen pixels). */
@@ -330,7 +332,8 @@ export const chartLayout = ({
     : { xs: [field.left, field.right], ys: [field.top, field.bottom] };
   const xs = [...extent.xs, ...placed.map((s) => s.wx), ...(reference ? [reference[0]] : [])];
   const ys = [...extent.ys, ...placed.map((s) => s.wy), ...(reference ? [reference[1]] : [])];
-  const margin = (fitWholePlan ? 0.005 : 0.02) * Math.max(world.width, world.height);
+  // A border of VIEW_BORDER of the content's larger span on every side.
+  const margin = VIEW_BORDER * Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
 
   return {
     world,
