@@ -104,6 +104,14 @@ class Command(BaseCommand):
 
         started = time.monotonic()
         connections.close_all()
+        # Here, not in the worker threads: registering adds to settings.DATABASES,
+        # which the other workers iterate when they close their connections
+        # ("dictionary changed size during iteration" on a server without them yet).
+        for alias in restore:
+            if is_project_alias(alias):
+                register_project_db(alias)
+            else:
+                _register_database(alias)
         for alias in orphans:
             self._drop(alias)
             self.stdout.write(f"dropped {alias}")
@@ -134,11 +142,7 @@ class Command(BaseCommand):
             raise CommandError(f"Refusing to replace {name}")
         try:
             self._drop(alias, create=True)
-            if is_project_alias(alias):
-                register_project_db(alias)
-            else:
-                _register_database(alias)
-            command = ["dbrestore", f"--database={alias}", f"--input-filename={dump}", "--noinput"]
+            command =["dbrestore", f"--database={alias}", f"--input-filename={dump}", "--noinput"]
             if dump.endswith(".gz"):
                 command.append("--uncompress")
             call_command(*command)
