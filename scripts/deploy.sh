@@ -10,8 +10,14 @@
 #      done in 2 (marker logs/backend/deploy-prepared, see run-server.sh)
 #   4. waits until the backend accepts connections, then follows its log
 #
-#   bash scripts/deploy.sh               # deploy, then follow the backend log
-#   bash scripts/deploy.sh --no-follow   # deploy only (e.g. from CI or cron)
+#   bash scripts/deploy.sh                 # deploy, then follow the backend log
+#   bash scripts/deploy.sh --no-follow     # deploy only (e.g. from CI or cron)
+#   bash scripts/deploy.sh --skip-prepare  # staging: skip step 2 AND the steps
+#                                          # [3]-[8] of the new backend's start
+#
+# --skip-prepare is for servers whose data did not change since the last deploy
+# (staging): prepare_databases, sync_default, access_index, ... are not run at
+# all. If the pull brought new migrations, the full step 2 runs anyway.
 #
 # Migrations run while the OLD code still serves: they must stay compatible
 # with it (add columns/tables first, drop or rename in a later release).
@@ -47,14 +53,26 @@ READY_TIMEOUT="${READY_TIMEOUT:-300}"
 
 main() {
   local follow=1
+  local skip_prepare=0
 
+  local arg
+  for arg in "$@"; do
+    case "${arg}" in
+      --no-follow) follow=0 ;;
+      --skip-prepare) skip_prepare=1 ;;
+      *) fatal "Usage: bash scripts/deploy.sh [--no-follow] [--skip-prepare]" ;;
+    esac
+  done
+
+  local head_before
+  head_before=$(git rev-parse HEAD)
   git pull
-  
-  case "${1:-}" in
-    "") ;;
-    --no-follow) follow=0 ;;
-    *) fatal "Usage: bash scripts/deploy.sh [--no-follow]" ;;
-  esac
+
+  # New migrations need the full step 2, whatever the flag says.
+  if (( skip_prepare )) && [[ -n "$(git diff --name-only "${head_before}" HEAD -- '*/migrations/*.py')" ]]; then
+    skip_prepare=0
+    local new_migrations=1
+  fi
 
   local project_root
   project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -77,16 +95,27 @@ main() {
   log_info "[1/4] Building images (the old containers keep running)..."
   "${compose[@]}" build
 
-  log_info "[2/4] Migrating + syncing with the new image (the old backend keeps serving)..."
-  ensure_database
-  rm -f logs/backend/deploy-prepared
-  local prepare_started
-  prepare_started=$(date +%s)
-  if ! "${compose[@]}" run --rm --no-deps -T progeo-backend \
-      /bin/bash /home/progeo/detection-docker-setup/start-supervisord.sh prepare; then
-    fatal "Preparing the databases failed - nothing restarted, the old version is still running."
+  if [[ -n "${new_migrations:-}" ]]; then
+    log_info "--skip-prepare ignored: the pull brought new migrations"
   fi
-  log_success "Databases prepared in $(( $(date +%s) - prepare_started ))s"
+
+  if (( skip_prepare )); then
+    log_info "[2/4] Skipped (--skip-prepare) - the new backend skips steps [3]-[8] as well"
+    # The marker run-server.sh checks - as if step 2 had just run.
+    mkdir -p logs/backend
+    touch logs/backend/deploy-prepared
+  else
+    log_info "[2/4] Migrating + syncing with the new image (the old backend keeps serving)..."
+    ensure_database
+    rm -f logs/backend/deploy-prepared
+    local prepare_started
+    prepare_started=$(date +%s)
+    if ! "${compose[@]}" run --rm --no-deps -T progeo-backend \
+        /bin/bash /home/progeo/detection-docker-setup/start-supervisord.sh prepare; then
+      fatal "Preparing the databases failed - nothing restarted, the old version is still running."
+    fi
+    log_success "Databases prepared in $(( $(date +%s) - prepare_started ))s"
+  fi
 
   log_info "[3/4] Recreating the changed containers..."
   local downtime_started

@@ -162,6 +162,7 @@ i18n
           measurement_compare_sigma_label: 'σ',
           measurement_compare_pair_sum_label: 'Sensor sum',
           measurement_compare_pair_sum_diff_label: 'Sensor sum difference',
+          measurement_compare_sensor_hint: 'Click a sensor in the upper plot to follow it over time',
           measurement_compare_samples_label: 'Samples',
           measurement_compare_measurement_datetime_label:
             'Measurement datetime',
@@ -1148,6 +1149,7 @@ i18n
           measurement_compare_sigma_label: 'σ',
           measurement_compare_pair_sum_label: 'Sensor-Summe',
           measurement_compare_pair_sum_diff_label: 'Sensor-Summe-Differenz',
+          measurement_compare_sensor_hint: 'Sensor im oberen Diagramm anklicken, um ihn über die Zeit zu verfolgen',
           measurement_compare_samples_label: 'Stichproben',
           measurement_compare_measurement_datetime_label: 'Messungszeitpunkt',
           measurement_compare_measurements_included: 'Enthaltene Messungen',

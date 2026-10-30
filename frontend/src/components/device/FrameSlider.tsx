@@ -17,6 +17,8 @@ type FrameSliderProps = {
   alarms?: AlarmSpan[];
   /** Whether the space bar toggles the animation - off for a second slider on the page. */
   playKey?: boolean;
+  /** The time span (ms) shown elsewhere, e.g. a chart's zoomed time axis - a band on the track. */
+  visibleRange?: { from: number; to: number } | null;
 };
 
 /** An alarm's period (ms); `to` is now while it is still active. */
@@ -211,6 +213,7 @@ const FrameSlider = ({
   disabled = false,
   alarms = [],
   playKey = true,
+  visibleRange = null,
 }: FrameSliderProps) => {
   const { t } = useTranslation();
   const count = timestamps.length;
@@ -222,6 +225,9 @@ const FrameSlider = ({
   const marks = alarms
     .map((alarm) => ({ alarm, at: alarmPosition(timestamps, alarm) }))
     .filter((mark): mark is { alarm: AlarmSpan; at: { left: number; right: number } } => mark.at != null);
+  const visibleAt = visibleRange
+    ? alarmPosition(timestamps, { key: 'visible', label: '', ...visibleRange })
+    : null;
   const markStyle = (at: { left: number; right: number }) => ({
     left: `${at.left * 100}%`,
     width: `max(${(at.right - at.left) * 100}%, ${MIN_ALARM_WIDTH}px)`,
@@ -275,6 +281,17 @@ const FrameSlider = ({
           onChange={(event) => onChange(Number(event.target.value))}
           disabled={disabled}
         />
+        {visibleAt && (
+          <div className="frame-slider__visible-layer" aria-hidden="true">
+            <span
+              className="frame-slider__visible"
+              style={{
+                left: `${visibleAt.left * 100}%`,
+                width: `${(visibleAt.right - visibleAt.left) * 100}%`,
+              }}
+            />
+          </div>
+        )}
         {marks.length > 0 && (
           // Over the track, in the thumb's travel (1 rem inside the input);
           // the slider stays usable through it.

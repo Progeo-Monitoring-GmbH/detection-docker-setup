@@ -48,6 +48,23 @@
   background: var(--progeo-warm-gray-4);
 }
 
+/* The span shown elsewhere (e.g. a chart's zoomed time axis): a translucent
+   band over the track, in the thumb's travel like the alarm marks. */
+.frame-slider__visible-layer {
+  position: absolute;
+  inset: 0 0.5rem;
+  pointer-events: none;
+}
+
+.frame-slider__visible {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  background: rgba(9, 75, 129, 0.14);
+  border: 1px solid rgba(9, 75, 129, 0.35);
+  border-radius: 4px;
+}
+
 /* Alarm periods on the frame slider: translucent red over the track (the
    slider stays usable through it) and a clickable strip right below. Both
    inset by half a thumb (0.5 rem), where the thumb's centre travels. */
