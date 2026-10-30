@@ -127,3 +127,30 @@ describe('FrameSlider alarms', () => {
     expect(current()).toBe(2);
   });
 });
+
+describe('FrameSlider visible range', () => {
+  const renderRange = (visibleRange: { from: number; to: number } | null) =>
+    act(() =>
+      root.render(
+        <FrameSlider id="frames" timestamps={TIMESTAMPS} index={0} onChange={() => {}} visibleRange={visibleRange} />,
+      ),
+    );
+  const band = () => container.querySelector<HTMLElement>('.frame-slider__visible');
+
+  it('marks the shown span on the track, cut to the frames', () => {
+    renderRange({ from: at(1), to: at(3) });
+    expect(band()!.style.left).toBe('25%');
+    expect(band()!.style.width).toBe('50%');
+
+    renderRange({ from: at(-2), to: at(99) });
+    expect(band()!.style.left).toBe('0%');
+    expect(band()!.style.width).toBe('100%');
+  });
+
+  it('has no band without a span or outside of the frames', () => {
+    renderRange(null);
+    expect(band()).toBeNull();
+    renderRange({ from: at(10), to: at(12) });
+    expect(band()).toBeNull();
+  });
+});
