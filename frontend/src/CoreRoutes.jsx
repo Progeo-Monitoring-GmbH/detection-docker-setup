@@ -213,14 +213,7 @@ const CoreRoutes = () => {
             path="/dev"
             element={<Navigate to="/developer/dev/" replace />}
           />
-          <Route
-            path="/device/overview"
-            element={
-              <WebSocketProvider url="/ws/commands/list">
-                <DeviceListView />
-              </WebSocketProvider>
-            }
-          />
+          <Route path="/device/overview" element={<DeviceListView />} />
           <Route path="/alarms/" element={<AlarmsOverview />} />
           <Route path="/alarms/report/" element={<AlarmReportView />} />
           <Route

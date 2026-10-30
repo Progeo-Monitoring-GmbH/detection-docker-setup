@@ -38,7 +38,7 @@ These routes use the general application layout.
 
 | Route | Purpose |
 | --- | --- |
-| `/device/overview` | List devices and their status; supports device identification and permitted device actions. |
+| `/device/overview` | Devices of one location picked with the location picker (`?location=<pk>`, via `/v1/status/location_devices/`): KPIs (online, ping for staff, new hash pattern), type and hash breakdowns, device table with identification and permitted device actions. |
 | `/device/:id/editor/` | Edit the configuration of a specific device. |
 | `/device/provision/` | Provision a new smartex mx controller (staff or `module_devices_provision`): pick a project/location, set sensors/interval, generate the config (device hash + transfer token) and confirm to create the device under that location. Staff: "Sync with Airtable" lists the Airtable projects in "Messeinheit und Inbetriebnahme" without a location (select + account → create them) and merge-updates the existing ones. |
 | `/device/:id/detail` | View measurement details for a specific device. |

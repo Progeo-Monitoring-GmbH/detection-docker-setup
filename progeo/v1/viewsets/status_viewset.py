@@ -3,11 +3,13 @@ import json
 import os
 import posixpath
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from uuid import uuid4
 
 from celery.result import AsyncResult
 from django.db import transaction
+from django.db.models import OuterRef, Subquery
 from django.http import FileResponse, JsonResponse
 from django.utils import timezone
 from rest_framework.authentication import SessionAuthentication
@@ -18,6 +20,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from progeo.authentication import ExpiringTokenAuthentication
 from progeo.decorator import calc_runtime, require_module_permissions
 from progeo.helper.basics import RequestFailed, RequestSuccess, save_check_dir
+from progeo.helper.device_overview import device_stats, hash_kind, is_online
 from progeo.helper.docker_helper import start_cad_factory
 from progeo.helper.lageplan_export import (
     archive_name,
@@ -902,6 +905,92 @@ class StatusViewSet(ProgeoModalViewSet):
             data.extend(DeviceSerializer(devices, many=True).data)
         data.sort(key=lambda device: device.get("id") or 0)
         return RequestSuccess({"devices": data})
+
+    @calc_runtime
+    @require_module_permissions("module_devices_enabled")
+    @action(detail=False, url_path="location_devices", methods=["GET"])
+    def location_devices(self, request, *args, **kwargs):
+        """The devices of one location (`location`: its pk, as ?location=
+        elsewhere) with their last sign of life, hash kind and the overview's
+        counts (helper/device_overview.py) - one database and a few rows
+        instead of every device of every database (/devices/). ?ping=1 also
+        pings each device's private IPv4 (staff only, in parallel)."""
+        from progeo.v1.viewsets.locations_viewset import LocationViewSet
+
+        try:
+            location_pk = int(request.query_params.get("location"))
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "Missing or invalid parameter: location"})
+        location, account = LocationViewSet._find_location(request, pk=location_pk)
+        if not location:
+            return RequestFailed({"reason": f"Location not found for id {location_pk}"})
+        db_name = location_db(location, account)
+
+        # The newest measurement by pk (chronological) - its receive time and
+        # the IP the device reported with it.
+        latest = ProgeoMeasurement.objects.using(db_name).filter(device=OuterRef("pk")).order_by("-pk")
+        devices = list(
+            ProgeoDevice.objects.using(db_name)
+            .filter(location_id=location.pk)
+            .annotate(
+                last_measurement_at=Subquery(latest.values("last_fetched")[:1]),
+                # raw_data has no key lookups - the IP is read below.
+                last_raw_data=Subquery(latest.values("raw_data")[:1]),
+            )
+            .order_by("id")
+        )
+
+        def address(device):
+            raw_data = device.last_raw_data
+            if isinstance(raw_data, str):
+                try:
+                    raw_data = json.loads(raw_data)
+                except ValueError:
+                    raw_data = None
+            reported = raw_data.get("ip") if isinstance(raw_data, dict) else None
+            candidate = reported if isinstance(reported, str) and reported.strip() else device.device_ip
+            return (candidate or "").strip() or None
+
+        pinged = (
+            (request.query_params.get("ping") or "").strip().lower() in {"1", "true", "yes", "on"}
+            and is_staff_admin(request.user)
+        )
+        pings = {}
+        if pinged:
+            def ping(device):
+                ip = address(device)
+                try:
+                    parsed = ipaddress.ip_address(ip) if ip else None
+                except ValueError:
+                    parsed = None
+                # Only the private IPv4 network (like identify_device).
+                if parsed is None or parsed.version != 4 or not parsed.is_private:
+                    return None
+                return ping_host_quick(str(parsed), timeout_seconds=1)
+
+            with ThreadPoolExecutor(max_workers=min(16, len(devices) or 1)) as pool:
+                pings = dict(zip((device.pk for device in devices), pool.map(ping, devices)))
+
+        now = timezone.now()
+        rows = []
+        for device, data in zip(devices, DeviceSerializer(devices, many=True).data):
+            last_seen = max(filter(None, (device.last_measurement_at, device.last_command_poll)), default=None)
+            rows.append({
+                **data,
+                "last_measurement_at": device.last_measurement_at,
+                "last_seen_at": last_seen,
+                "online": is_online(last_seen, device.data_interval, now),
+                "hash_kind": hash_kind(device.raw_hash),
+                "ip": address(device),
+                "ping": pings.get(device.pk),
+            })
+
+        return RequestSuccess({
+            "location": {"id": location.pk, "project_id": location.project_id, "name": location.name},
+            "devices": rows,
+            "stats": device_stats(rows, ProgeoDevice.DeviceType.values, pinged),
+            "pinged": pinged,
+        })
 
     @calc_runtime
     @require_module_permissions("module_devices_enabled")
