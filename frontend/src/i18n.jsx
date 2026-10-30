@@ -156,6 +156,7 @@ i18n
           landing_module_docker: 'Docker Status',
           landing_module_admin: 'Admin Panel',
           measurement_compare_deviation_label: 'Deviation (±1σ)',
+          measurement_compare_min_max_label: 'Range (min–max)',
           measurement_compare_deviation_lower_bound_label:
             'Lower deviation bound',
           measurement_compare_pair_label: 'Sensor',
@@ -163,6 +164,7 @@ i18n
           measurement_compare_mean_label: 'Mean',
           measurement_compare_sigma_label: 'σ',
           measurement_compare_pair_sum_label: 'Sensor sum',
+          measurement_compare_pair_sum_diff_label: 'Sensor sum difference',
           measurement_compare_sum_label: 'Sum',
           measurement_compare_samples_label: 'Samples',
           measurement_compare_measurement_datetime_label:
@@ -1144,6 +1146,7 @@ i18n
           landing_module_docker: 'Docker-Status',
           landing_module_admin: 'Admin-Panel',
           measurement_compare_deviation_label: 'Abweichung (±1σ)',
+          measurement_compare_min_max_label: 'Spannweite (Min–Max)',
           measurement_compare_deviation_lower_bound_label:
             'Untere Abweichungsgrenze',
           measurement_compare_pair_label: 'Sensor',
@@ -1151,6 +1154,7 @@ i18n
           measurement_compare_mean_label: 'Mittelwert',
           measurement_compare_sigma_label: 'σ',
           measurement_compare_pair_sum_label: 'Sensor-Summe',
+          measurement_compare_pair_sum_diff_label: 'Sensor-Summe-Differenz',
           measurement_compare_sum_label: 'Summe',
           measurement_compare_samples_label: 'Stichproben',
           measurement_compare_measurement_datetime_label: 'Messungszeitpunkt',

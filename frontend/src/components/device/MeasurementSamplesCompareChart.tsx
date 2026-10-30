@@ -53,7 +53,17 @@ type MeasurementSamplesCompareChartProps = {
 };
 
 /** Traces without highlighting and that a legend click doesn't hide. */
-const FIXED_TRACES = new Set(['deviation', 'deviation-lower', 'pair-sum']);
+const FIXED_TRACES = new Set([
+  'min-max',
+  'min-max-lower',
+  'deviation',
+  'deviation-lower',
+  'pair-sum',
+  'pair-sum-diff',
+]);
+
+/** Slider lines that start hidden, shown by a legend click. */
+const OPTIONAL_TRACES = new Set(['ep+wp', 'wp-ep']);
 
 /** How close (px) the cursor must be to a line to highlight it. */
 const HIGHLIGHT_DISTANCE_PX = 12;
@@ -189,10 +199,14 @@ const MeasurementSamplesCompareChart = (
     const sums: number[] = [];
     const sumsSquared: number[] = [];
     const counts: number[] = [];
+    const minimums: number[] = [];
+    const maximums: number[] = [];
 
     series.forEach((entry) => {
       entry.points.forEach((point) => {
         const index = point.pairIndex;
+        minimums[index] = Math.min(minimums[index] ?? point.value, point.value);
+        maximums[index] = Math.max(maximums[index] ?? point.value, point.value);
         sums[index] = (sums[index] || 0) + point.value;
         sumsSquared[index] =
           (sumsSquared[index] || 0) + point.value * point.value;
@@ -205,6 +219,8 @@ const MeasurementSamplesCompareChart = (
     const upper: number[] = [];
     const lower: number[] = [];
     const sigma: number[] = [];
+    const min: number[] = [];
+    const max: number[] = [];
 
     counts.forEach((count, index) => {
       if (!count) {
@@ -221,9 +237,11 @@ const MeasurementSamplesCompareChart = (
       sigma.push(stdDev);
       lower.push(Math.max(avg - stdDev, 0));
       upper.push(avg + stdDev);
+      min.push(minimums[index]);
+      max.push(maximums[index]);
     });
 
-    return { x, mean, upper, lower, sigma };
+    return { x, mean, upper, lower, sigma, min, max };
   }, [series]);
 
   const overallMean = React.useMemo(() => {
@@ -265,12 +283,49 @@ const MeasurementSamplesCompareChart = (
       y.push(entry.points.reduce((acc, point) => acc + point.value, 0));
       measurementDateTime.push(formatDateTime(entry.lastFetched));
     });
+    // Change of the sum since the previous measurement (none for the first).
+    const diff = y.map((value, index) => (index > 0 ? value - y[index - 1] : null));
 
-    return { x, y, measurementDateTime };
+    return { x, y, diff, measurementDateTime };
   }, [series]);
 
   const traces = React.useMemo(() => {
     return [
+      // Min-max band (like the deviation band, below it): the transparent
+      // max line carries the legend, the min line fills up to it.
+      {
+        type: 'scatter' as const,
+        mode: 'lines' as const,
+        uid: 'min-max',
+        name: t('measurement_compare_min_max_label'),
+        x: meanAndDeviationSeries.x,
+        y: meanAndDeviationSeries.max,
+        line: {
+          color: 'rgba(9, 75, 129, 0)',
+          width: 1,
+        },
+        hoverinfo: 'skip' as const,
+      },
+      {
+        type: 'scatter' as const,
+        mode: 'lines' as const,
+        uid: 'min-max-lower',
+        name: t('measurement_compare_min_max_label'),
+        x: meanAndDeviationSeries.x,
+        y: meanAndDeviationSeries.min,
+        line: {
+          color: 'rgba(9, 75, 129, 0)',
+          width: 1,
+        },
+        fill: 'tonexty' as const,
+        fillcolor: 'rgba(9, 75, 129, 0.12)',
+        hovertemplate: `${t('measurement_compare_pair_label')} %{x}<br>${t('measurement_compare_range_label')} %{customdata[0]:.2f} - %{customdata[1]:.2f}<extra>${t('measurement_compare_min_max_label')}</extra>`,
+        customdata: meanAndDeviationSeries.x.map((_, index) => [
+          meanAndDeviationSeries.min[index],
+          meanAndDeviationSeries.max[index],
+        ]),
+        showlegend: false,
+      },
       {
         type: 'scatter' as const,
         mode: 'lines' as const,
@@ -335,11 +390,39 @@ const MeasurementSamplesCompareChart = (
         hovertemplate: `${t('measurement_compare_measurement_datetime_label')} %{customdata}<br>${t('measurement_compare_sum_label')} %{y:.2f}<extra>${t('measurement_compare_pair_sum_label')}</extra>`,
         customdata: pairSumSeries.measurementDateTime,
       },
+      {
+        type: 'scattergl' as const,
+        mode: 'lines' as const,
+        uid: 'pair-sum-diff',
+        name: t('measurement_compare_pair_sum_diff_label'),
+        x: pairSumSeries.x,
+        y: pairSumSeries.diff,
+        xaxis: 'x2' as const,
+        // Own axis (right): far smaller than the sum and signed.
+        yaxis: 'y3' as const,
+        line: {
+          color: plotTheme.contrastViolet,
+          width: 1,
+        },
+        hovertemplate: `%{y:+.2f}<extra>${t('measurement_compare_pair_sum_diff_label')}</extra>`,
+      },
     ];
   }, [meanAndDeviationSeries, pairSumSeries, t]);
 
-  // The slider's measurement on the upper plot; EP + WP and WP - EP start
-  // hidden (legend click). Fixed uids keep the legend toggles while sliding.
+  // EP + WP and WP - EP start hidden; a legend click shows them. Kept here,
+  // not by Plotly, since they widen the locked y-axis.
+  const [shownOptional, setShownOptional] = React.useState<ReadonlySet<string>>(new Set());
+  const toggleOptional = (uid: string) =>
+    setShownOptional((shown) => {
+      const next = new Set(shown);
+      if (!next.delete(uid)) {
+        next.add(uid);
+      }
+      return next;
+    });
+
+  // The slider's measurement on the upper plot. Fixed uids keep the legend
+  // toggles while sliding.
   const currentTraces = React.useMemo(() => {
     if (!currentFrame || !currentFrame.ep.length) {
       return [];
@@ -362,7 +445,7 @@ const MeasurementSamplesCompareChart = (
       y,
       line: { color, width },
       hovertemplate: `%{y:.2f}<extra>${name}</extra>`,
-      ...(optional ? { visible: 'legendonly' as const } : {}),
+      ...(optional ? { visible: shownOptional.has(uid) ? (true as const) : ('legendonly' as const) } : {}),
     });
     return [
       line('ep-wp', 'EP − WP', ep.map((value, i) => value - wp[i]), 'orange', 2),
@@ -371,7 +454,41 @@ const MeasurementSamplesCompareChart = (
       line('ep+wp', 'EP + WP', ep.map((value, i) => value + wp[i]), plotTheme.contrastViolet, 1, true),
       line('wp-ep', 'WP − EP', wp.map((value, i) => value - ep[i]), plotTheme.contrastCyan, 1, true),
     ];
-  }, [currentFrame]);
+  }, [currentFrame, shownOptional]);
+
+  // The upper y-axis is locked to the lines of all measurements of the
+  // slider - autorange would rescale (flicker) with every step.
+  const upperRange = React.useMemo(() => {
+    if (!frames.length) {
+      return null;
+    }
+    let low = 0;
+    let high = 0;
+    const include = (value: number) => {
+      low = Math.min(low, value);
+      high = Math.max(high, value);
+    };
+    meanAndDeviationSeries.upper.forEach(include);
+    meanAndDeviationSeries.max.forEach(include);
+    frames.forEach(({ ep, wp }) => {
+      ep.forEach((value, i) => {
+        include(value);
+        include(wp[i]);
+        include(value - wp[i]);
+        if (shownOptional.has('ep+wp')) {
+          include(value + wp[i]);
+        }
+        if (shownOptional.has('wp-ep')) {
+          include(wp[i] - value);
+        }
+      });
+    });
+    if (high <= low) {
+      return null;
+    }
+    const padding = (high - low) * 0.05;
+    return [low < 0 ? low - padding : 0, high + padding];
+  }, [frames, meanAndDeviationSeries, shownOptional]);
 
   const shapes = React.useMemo(() => {
     const result: Partial<Plotly.Shape>[] = [];
@@ -540,7 +657,14 @@ const MeasurementSamplesCompareChart = (
         onInitialized={(_, graphDiv) => setGraphDiv(graphDiv as HTMLElement)}
         onHover={highlightNearestLine}
         onUnhover={() => setHighlighted(null)}
-        onLegendClick={(event) => !FIXED_TRACES.has(event.data[event.curveNumber]?.uid ?? '')}
+        onLegendClick={(event) => {
+          const uid = event.data[event.curveNumber]?.uid ?? '';
+          if (OPTIONAL_TRACES.has(uid)) {
+            toggleOptional(uid);
+            return false;
+          }
+          return !FIXED_TRACES.has(uid);
+        }}
         useResizeHandler
         style={{ width: '100%', height: '520px' }}
         config={{
@@ -550,7 +674,7 @@ const MeasurementSamplesCompareChart = (
         }}
         layout={{
           autosize: true,
-          margin: { l: 56, r: 16, t: frameSlider ? 56 : 16, b: 52 },
+          margin: { l: 56, r: 64, t: frameSlider ? 56 : 16, b: 52 },
           font: { color: plotTheme.brandBlue },
           plot_bgcolor: plotTheme.warmGray1,
           paper_bgcolor: plotTheme.white,
@@ -570,6 +694,7 @@ const MeasurementSamplesCompareChart = (
             title: t('measurement_compare_absolute_delta_axis'),
             domain: [0.34, 1],
             rangemode: 'tozero',
+            ...(upperRange ? { range: upperRange, autorange: false } : {}),
             showgrid: true,
             gridcolor: plotTheme.warmGray2,
             zeroline: true,
@@ -590,6 +715,15 @@ const MeasurementSamplesCompareChart = (
             showgrid: true,
             gridcolor: plotTheme.warmGray2,
             zeroline: false,
+          },
+          yaxis3: {
+            title: t('measurement_compare_pair_sum_diff_label'),
+            overlaying: 'y2',
+            side: 'right',
+            anchor: 'x2',
+            showgrid: false,
+            zeroline: true,
+            zerolinecolor: plotTheme.warmGray4,
           },
           legend: {
             orientation: 'h',
