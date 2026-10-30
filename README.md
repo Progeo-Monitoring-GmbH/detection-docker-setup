@@ -100,7 +100,7 @@ bash scripts/build_progeo-cad_factory_resilient.sh logs
 
 ## Backups
 
-Every night at 23:53, the cron job `daily` ([docker/backend/cronjobs/daily.sh](docker/backend/cronjobs/daily.sh)) dumps every database into `media/backup`.
+Every night at 23:53 German time, the cron job `daily` ([docker/backend/cronjobs/daily.sh](docker/backend/cronjobs/daily.sh)) dumps every database into `media/backup`. Its log, `logs/backend/daily.log`, survives container restarts. The job's own timestamps and file names are UTC: only crond runs on Berlin time ([docker/backend/supervisord.conf](docker/backend/supervisord.conf)).
 Right after that, `manage.py transfer_backups` sends the newest dump of each database to a backup server over SFTP:
 
 - All dumps go as **one** tar file, `<BACKUP_REMOTE_PATH>/progeo-<YYYY-MM-DD-HHMMSS>.tar.gpg`, together with a `.sha256` file.

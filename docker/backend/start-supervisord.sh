@@ -111,11 +111,32 @@ apply_cron_disabled_jobs() {
 
 apply_cron_disabled_jobs
 
+# Logs of the nightly/weekly cron jobs survive restarts: they run once a day or
+# week, so a deploy in between must not erase the last run. They only move to
+# <name>.log.prev once they grow beyond 5 MB.
+PERSISTENT_LOGS="daily.log weekly.log"
+PERSISTENT_LOG_MAX_BYTES=5242880
+
 # Keep the previous run's logs as <name>.log.prev so a crash/restart doesn't wipe the evidence.
 # (.log.1, .log.2, ... are taken by supervisord's own size rotation; errors.jsonl rotates itself.)
 for log_file in /var/log/progeo/*.log; do
   [ -f "$log_file" ] || continue
+  case " ${PERSISTENT_LOGS} " in
+    *" $(basename "$log_file") "*)
+      if [ "$(stat -c %s "$log_file" 2>/dev/null || echo 0)" -gt "$PERSISTENT_LOG_MAX_BYTES" ]; then
+        mv -f "$log_file" "$log_file.prev" 2>/dev/null || true
+      fi
+      continue
+      ;;
+  esac
   mv -f "$log_file" "$log_file.prev" 2>/dev/null || true
+done
+
+for log_name in $PERSISTENT_LOGS; do
+  log_file="/var/log/progeo/${log_name}"
+  touch "$log_file" 2>/dev/null || true
+  chown progeo:progeo "$log_file" 2>/dev/null || true
+  chmod 666 "$log_file" 2>/dev/null || true
 done
 
 for log_file in \
@@ -127,11 +148,9 @@ for log_file in \
   /var/log/progeo/backend.err.log \
   /var/log/progeo/celery-worker.log \
   /var/log/progeo/celery-beat.log \
-  /var/log/progeo/half-hour.log \
-  /var/log/progeo/daily.log \
-  /var/log/progeo/weekly.log
+  /var/log/progeo/half-hour.log
 do
-  # Recreate/truncate logs on every container start.
+  # Recreate/truncate logs on every container start (not PERSISTENT_LOGS).
   : > "$log_file" 2>/dev/null || true
   chown progeo:progeo "$log_file" 2>/dev/null || true
   chmod 666 "$log_file" 2>/dev/null || true
