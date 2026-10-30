@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { useAuth } from '../../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../../axiosConfig';
 import { getWsBaseUrl } from '../../backendUrl';
 
 /** One file of the file list (log_files_helper.summarize_log_files). */
-export type LogFileItem = {
+type LogFileItem = {
   file: string;
   path: string;
   size_bytes: number;
@@ -12,6 +12,8 @@ export type LogFileItem = {
 };
 
 export type LogStreamStatus = 'connecting' | 'live' | 'reconnecting' | 'denied';
+
+type LogMessage = Record<string, unknown>;
 
 const WS_PATH = '/ws/logs/stream/';
 const RECONNECT_MIN_MS = 1000;
@@ -23,6 +25,8 @@ const WATCHDOG_MS = 45000;
 const HTTP_POLL_MS = 5000;
 // Appended lines kept in the viewer beyond the requested tail.
 const MAX_BUFFER_LINES = 5000;
+// Close code of the consumer for users without access.
+const DENIED_CODE = 4403;
 
 const keepLastLines = (text: string, count: number) => {
   let index = text.length;
@@ -33,6 +37,125 @@ const keepLastLines = (text: string, count: number) => {
     }
   }
   return text.slice(index + 1);
+};
+
+const parseMessage = (raw: unknown): LogMessage | null => {
+  try {
+    return JSON.parse(String(raw)) as LogMessage;
+  } catch {
+    return null;
+  }
+};
+
+/** The viewer's text after a log_content (replaces it) or a log_append
+ * (added, keeping the last MAX_BUFFER_LINES lines). */
+const nextContent = (data: LogMessage, current: string | null) => {
+  const text = String(data.content ?? '');
+  return data.type === 'log_content' ? text : keepLastLines((current ?? '') + text, MAX_BUFFER_LINES);
+};
+
+/** The streamed file's details from a log_content/log_append message. */
+const streamedMeta = (data: LogMessage, current: LogFileItem | null): LogFileItem => ({
+  file: String(data.file),
+  path: String(data.path ?? current?.path ?? ''),
+  size_bytes: Number(data.size_bytes ?? 0),
+  modified_at: String(data.modified_at ?? ''),
+});
+
+const streamFileMessage = (file: string, lines: number) =>
+  JSON.stringify({ action: 'stream_file', file, lines });
+
+/**
+ * Keeps the log socket connected: reconnects with backoff - at once when the
+ * browser is back online or the tab visible again - and closes a dead
+ * connection (no message within WATCHDOG_MS). A denied connection
+ * (DENIED_CODE) isn't retried. Returns the cleanup.
+ */
+const keepLogSocketConnected = ({
+  onSocket,
+  onStatus,
+  onOpen,
+  onMessage,
+}: {
+  /** The current socket; null once closed for good. */
+  onSocket: (ws: WebSocket | null) => void;
+  onStatus: (status: LogStreamStatus) => void;
+  onOpen: (ws: WebSocket) => void;
+  onMessage: (data: LogMessage, ws: WebSocket) => void;
+}) => {
+  let disposed = false;
+  let attempt = 0;
+  let socket: WebSocket | null = null;
+  let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
+
+  const armWatchdog = (ws: WebSocket) => {
+    clearTimeout(watchdog);
+    watchdog = setTimeout(() => ws.close(), WATCHDOG_MS);
+  };
+
+  const onClose = (event: CloseEvent) => {
+    clearTimeout(watchdog);
+    if (disposed) {
+      return;
+    }
+    if (event.code === DENIED_CODE) {
+      onStatus('denied');
+      return;
+    }
+    onStatus('reconnecting');
+    const delay = Math.min(RECONNECT_MIN_MS * 2 ** attempt, RECONNECT_MAX_MS);
+    attempt += 1;
+    reconnectTimer = setTimeout(connect, delay);
+  };
+
+  function connect() {
+    if (disposed) {
+      return;
+    }
+    const ws = new WebSocket(getWsBaseUrl().concat(WS_PATH));
+    socket = ws;
+    onSocket(ws);
+    ws.onopen = () => {
+      attempt = 0;
+      onStatus('live');
+      armWatchdog(ws);
+      onOpen(ws);
+    };
+    ws.onmessage = (event) => {
+      armWatchdog(ws);
+      const data = parseMessage(event.data);
+      if (data) {
+        onMessage(data, ws);
+      }
+    };
+    ws.onclose = onClose;
+  }
+
+  // Back online / tab visible again: don't wait for the backoff.
+  const reconnectNow = () => {
+    if (!disposed && (!socket || socket.readyState === WebSocket.CLOSED)) {
+      clearTimeout(reconnectTimer);
+      attempt = 0;
+      connect();
+    }
+  };
+
+  connect();
+  window.addEventListener('online', reconnectNow);
+  document.addEventListener('visibilitychange', reconnectNow);
+  return () => {
+    disposed = true;
+    clearTimeout(reconnectTimer);
+    clearTimeout(watchdog);
+    window.removeEventListener('online', reconnectNow);
+    document.removeEventListener('visibilitychange', reconnectNow);
+    onSocket(null);
+    if (socket) {
+      socket.onclose = null;
+      socket.close();
+    }
+  };
 };
 
 /**
@@ -53,10 +176,10 @@ const useLogStream = (auth: ReturnType<typeof useAuth>, lines: number) => {
 
   const wsRef = useRef<WebSocket | null>(null);
   const selectedRef = useRef('');
-  const linesRef = useRef(lines);
-  linesRef.current = lines;
-  const authRef = useRef(auth);
-  authRef.current = auth;
+  const latest = useRef({ lines, auth });
+  useLayoutEffect(() => {
+    latest.current = { lines, auth };
+  });
 
   const send = useCallback((payload: object) => {
     const ws = wsRef.current;
@@ -69,8 +192,8 @@ const useLogStream = (auth: ReturnType<typeof useAuth>, lines: number) => {
 
   const loadOverHttp = useCallback((file: string) => {
     void axiosConfig.perform_get(
-      authRef.current,
-      `/v1/status/admin/log_files/?file=${encodeURIComponent(file)}&lines=${linesRef.current}`,
+      latest.current.auth,
+      `/v1/status/admin/log_files/?file=${encodeURIComponent(file)}&lines=${latest.current.lines}`,
       (response) => {
         const data = response?.data || {};
         if (file !== selectedRef.current) {
@@ -88,7 +211,7 @@ const useLogStream = (auth: ReturnType<typeof useAuth>, lines: number) => {
 
   const listOverHttp = useCallback(() => {
     void axiosConfig.perform_get(
-      authRef.current,
+      latest.current.auth,
       '/v1/status/admin/log_files/',
       (response) => setFiles((response?.data?.files || []) as LogFileItem[]),
       () => setFiles((current) => current ?? []),
@@ -101,7 +224,7 @@ const useLogStream = (auth: ReturnType<typeof useAuth>, lines: number) => {
       setSelected(file);
       setContent(null);
       setError(null);
-      if (!send({ action: 'stream_file', file, lines: linesRef.current })) {
+      if (!send({ action: 'stream_file', file, lines: latest.current.lines })) {
         loadOverHttp(file);
       }
     },
@@ -122,118 +245,46 @@ const useLogStream = (auth: ReturnType<typeof useAuth>, lines: number) => {
   }, [lines, select]);
 
   useEffect(() => {
-    let disposed = false;
-    let attempt = 0;
-    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
-    let watchdog: ReturnType<typeof setTimeout> | undefined;
-
-    const armWatchdog = (ws: WebSocket) => {
-      clearTimeout(watchdog);
-      watchdog = setTimeout(() => ws.close(), WATCHDOG_MS);
+    /** The file list; without a selection its first file is streamed. */
+    const receiveFiles = (list: LogFileItem[], ws: WebSocket) => {
+      setFiles(list);
+      if (!selectedRef.current && list.length > 0) {
+        selectedRef.current = list[0].file;
+        setSelected(list[0].file);
+        ws.send(streamFileMessage(list[0].file, latest.current.lines));
+      }
     };
-
-    const connect = () => {
-      if (disposed) {
+    /** Content of the selected file - messages of a file switched away from are dropped. */
+    const receiveLog = (data: LogMessage) => {
+      if (data.file !== selectedRef.current) {
         return;
       }
-      const ws = new WebSocket(getWsBaseUrl().concat(WS_PATH));
-      wsRef.current = ws;
+      setContent((current) => nextContent(data, current));
+      setMeta((current) => streamedMeta(data, current));
+      setUpdatedAt(new Date());
+      setError(null);
+    };
+    const handlers: Record<string, (data: LogMessage, ws: WebSocket) => void> = {
+      file_list: (data, ws) => receiveFiles((data.files || []) as LogFileItem[], ws),
+      log_content: receiveLog,
+      log_append: receiveLog,
+      error: (data) => setError(String(data.message ?? 'Error')),
+    };
 
-      ws.onopen = () => {
-        attempt = 0;
-        setStatus('live');
+    return keepLogSocketConnected({
+      onSocket: (ws) => {
+        wsRef.current = ws;
+      },
+      onStatus: setStatus,
+      onOpen: (ws) => {
         setError(null);
-        armWatchdog(ws);
         ws.send(JSON.stringify({ action: 'list_files' }));
         if (selectedRef.current) {
-          ws.send(
-            JSON.stringify({ action: 'stream_file', file: selectedRef.current, lines: linesRef.current }),
-          );
+          ws.send(streamFileMessage(selectedRef.current, latest.current.lines));
         }
-      };
-
-      ws.onmessage = (event) => {
-        armWatchdog(ws);
-        let data: Record<string, unknown>;
-        try {
-          data = JSON.parse(event.data);
-        } catch {
-          return;
-        }
-        const type = data.type;
-        if (type === 'file_list') {
-          const list = (data.files || []) as LogFileItem[];
-          setFiles(list);
-          if (!selectedRef.current && list.length > 0) {
-            selectedRef.current = list[0].file;
-            setSelected(list[0].file);
-            ws.send(JSON.stringify({ action: 'stream_file', file: list[0].file, lines: linesRef.current }));
-          }
-        } else if (type === 'log_content' || type === 'log_append') {
-          if (data.file !== selectedRef.current) {
-            return; // a file switched away from
-          }
-          const text = String(data.content ?? '');
-          if (type === 'log_content') {
-            setContent(text);
-          } else {
-            setContent((current) => keepLastLines((current ?? '') + text, MAX_BUFFER_LINES));
-          }
-          setMeta((current) => ({
-            file: String(data.file),
-            path: String(data.path ?? current?.path ?? ''),
-            size_bytes: Number(data.size_bytes ?? 0),
-            modified_at: String(data.modified_at ?? ''),
-          }));
-          setUpdatedAt(new Date());
-          setError(null);
-        } else if (type === 'error') {
-          setError(String(data.message ?? 'Error'));
-        }
-      };
-
-      ws.onclose = (event) => {
-        clearTimeout(watchdog);
-        if (disposed) {
-          return;
-        }
-        if (event.code === 4403) {
-          setStatus('denied');
-          return;
-        }
-        setStatus('reconnecting');
-        const delay = Math.min(RECONNECT_MIN_MS * 2 ** attempt, RECONNECT_MAX_MS);
-        attempt += 1;
-        reconnectTimer = setTimeout(connect, delay);
-      };
-    };
-
-    // Back online / tab visible again: don't wait for the backoff.
-    const reconnectNow = () => {
-      const ws = wsRef.current;
-      if (!disposed && (!ws || ws.readyState === WebSocket.CLOSED)) {
-        clearTimeout(reconnectTimer);
-        attempt = 0;
-        connect();
-      }
-    };
-
-    connect();
-    window.addEventListener('online', reconnectNow);
-    document.addEventListener('visibilitychange', reconnectNow);
-    return () => {
-      disposed = true;
-      clearTimeout(reconnectTimer);
-      clearTimeout(watchdog);
-      window.removeEventListener('online', reconnectNow);
-      document.removeEventListener('visibilitychange', reconnectNow);
-      const ws = wsRef.current;
-      wsRef.current = null;
-      if (ws) {
-        ws.onclose = null;
-        ws.close();
-      }
-    };
+      },
+      onMessage: (data, ws) => handlers[String(data.type)]?.(data, ws),
+    });
   }, []);
 
   // Socket down (or never up): the file list and the selected file over HTTP.

@@ -1,19 +1,11 @@
 import { LinearProgress } from '@mui/material';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Col, Form, Row } from 'react-bootstrap';
-import axiosConfig from '../../axiosConfig';
+import axiosConfig, { defaultErrorCallback } from '../../axiosConfig';
 import { useDropzone } from 'react-dropzone';
-import { Thumbnail } from '../ui/GalleryHelper.tsx';
+import { IPreview, Thumbnail } from '../ui/GalleryHelper.tsx';
 import { showErrorBar, showSuccessBar } from '../ui/Snackbar.jsx';
 import { useSnackbar } from 'notistack';
-import { defaultErrorCallback } from '../../helper.jsx';
-
-export interface IPreview {
-  src: string;
-  width: string;
-  name?: string;
-  alt: string;
-}
 
 const RedDropbox = ({
   auth,

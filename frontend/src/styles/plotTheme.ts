@@ -12,14 +12,3 @@ export const plotTheme = {
   contrastCyan: '#61aac5',
   green: '#0bff17',
 };
-
-export const plotSeriesColors = [
-  plotTheme.brandBlue,
-  plotTheme.brandOrange,
-  plotTheme.contrastGreen,
-  plotTheme.contrastCyan,
-  plotTheme.contrastViolet,
-  plotTheme.contrastYellow,
-  plotTheme.warmGray4,
-  plotTheme.warmGray3,
-];

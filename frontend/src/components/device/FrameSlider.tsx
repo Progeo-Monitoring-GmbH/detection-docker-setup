@@ -1,4 +1,4 @@
-import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Button } from 'react-bootstrap';
 import { PauseFill, PlayFill } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
@@ -104,33 +104,48 @@ const typesText = (target: EventTarget | null) => {
   return target instanceof HTMLInputElement && target.type !== 'range' && target.type !== 'checkbox';
 };
 
-/**
- * The frame of the heatmap / plan: "3/168: date" above a slider over the
- * frames, calendar marks below it. "Start Animation" (or the space bar)
- * steps through the frames - from the start again when it is at the end -
- * and stops at the last one.
- */
-const FrameSlider = ({ id, timestamps, index, onChange, disabled = false, alarms = [] }: FrameSliderProps) => {
-  const { t } = useTranslation();
-  const count = timestamps.length;
-  const position = useCallback((ms: number) => framePosition(timestamps, ms), [timestamps]);
-  const [playing, setPlaying] = useState(false);
-  const playingRef = useRef(playing);
-  playingRef.current = playing;
-  const indexRef = useRef(index);
-  indexRef.current = index;
-  const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
+/** The space bar toggles the animation - unless the user is typing, or a
+ * button or link has the focus (space presses it; this one toggles via its
+ * click). */
+const isPlayToggleKey = (event: KeyboardEvent) =>
+  (event.code === 'Space' || event.key === ' ') &&
+  !event.repeat &&
+  !event.ctrlKey &&
+  !event.altKey &&
+  !event.metaKey &&
+  !typesText(event.target) &&
+  !(event.target instanceof HTMLButtonElement || event.target instanceof HTMLAnchorElement);
 
-  const canPlay = count > 1 && !disabled;
+/**
+ * Animation over `count` frames: `toggle` starts it - from the start again
+ * when it is at the end - and stops it; it stops by itself at the last frame
+ * and whenever it can't play. The space bar toggles it too.
+ */
+const useFramePlayback = ({
+  count,
+  index,
+  onChange,
+  canPlay,
+}: {
+  count: number;
+  index: number;
+  onChange: (index: number) => void;
+  canPlay: boolean;
+}) => {
+  const [playing, setPlaying] = useState(false);
+  // The interval and the key handler read the latest values.
+  const latest = useRef({ playing, index, onChange });
+  useLayoutEffect(() => {
+    latest.current = { playing, index, onChange };
+  });
 
   const toggle = useCallback(() => {
-    if (playingRef.current) {
+    if (latest.current.playing) {
       setPlaying(false);
       return;
     }
-    if (indexRef.current >= count - 1) {
-      onChangeRef.current(0); // at the end: play from the start
+    if (latest.current.index >= count - 1) {
+      latest.current.onChange(0); // at the end: play from the start
     }
     setPlaying(true);
   }, [count]);
@@ -140,13 +155,13 @@ const FrameSlider = ({ id, timestamps, index, onChange, disabled = false, alarms
       return undefined;
     }
     const timer = window.setInterval(() => {
-      const next = indexRef.current + 1;
+      const next = latest.current.index + 1;
       if (next >= count) {
         setPlaying(false);
         return;
       }
-      indexRef.current = next; // the next tick may come before the re-render
-      onChangeRef.current(next);
+      latest.current.index = next; // the next tick may come before the re-render
+      latest.current.onChange(next);
       if (next === count - 1) {
         setPlaying(false);
       }
@@ -161,28 +176,35 @@ const FrameSlider = ({ id, timestamps, index, onChange, disabled = false, alarms
     }
   }, [canPlay]);
 
-  // Space bar: start/stop - unless the user is typing, or a button other
-  // than this one has the focus (space presses it).
   useEffect(() => {
     if (!canPlay) {
       return undefined;
     }
     const onKey = (event: KeyboardEvent) => {
-      if (event.code !== 'Space' && event.key !== ' ') {
-        return;
+      if (isPlayToggleKey(event)) {
+        event.preventDefault(); // no page scroll
+        toggle();
       }
-      if (event.repeat || event.ctrlKey || event.altKey || event.metaKey || typesText(event.target)) {
-        return;
-      }
-      if (event.target instanceof HTMLButtonElement || event.target instanceof HTMLAnchorElement) {
-        return; // its own click (this button: toggles via onClick)
-      }
-      event.preventDefault(); // no page scroll
-      toggle();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [canPlay, toggle]);
+
+  return { playing, toggle };
+};
+
+/**
+ * The frame of the heatmap / plan: "3/168: date" above a slider over the
+ * frames, calendar marks below it. "Start Animation" (or the space bar)
+ * steps through the frames - from the start again when it is at the end -
+ * and stops at the last one.
+ */
+const FrameSlider = ({ id, timestamps, index, onChange, disabled = false, alarms = [] }: FrameSliderProps) => {
+  const { t } = useTranslation();
+  const count = timestamps.length;
+  const position = useCallback((ms: number) => framePosition(timestamps, ms), [timestamps]);
+  const canPlay = count > 1 && !disabled;
+  const { playing, toggle } = useFramePlayback({ count, index, onChange, canPlay });
 
   const label = playing ? t('heatmap_animation_stop') : t('heatmap_animation_start');
   const marks = alarms

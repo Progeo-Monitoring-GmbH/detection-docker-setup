@@ -1,6 +1,4 @@
 import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from 'react';
-import { Button, ButtonGroup } from 'react-bootstrap';
-import { ArrowCounterclockwise, ZoomIn, ZoomOut } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import axiosConfig from '../../axiosConfig';
@@ -9,6 +7,7 @@ import { alarmHeatColor } from '../../main/alarmUtils';
 import CursorTooltip, { TooltipRow } from '../ui/CursorTooltip';
 import { fullBox, isFull, panBox, type ViewBox, viewBoxAttribute, zoomBox } from './planViewBox';
 import SensorTooltip from './SensorTooltip';
+import ZoomControls from './ZoomControls';
 
 export type LageplanZonePoint = {
   pos: number;
@@ -438,33 +437,13 @@ const LageplanZoneOverlay = ({ imageUrl, points, height = 480, mode = 'lines' }:
         })}
       </svg>
 
-      <ButtonGroup
-        size="sm"
-        vertical
-        style={{ position: 'absolute', left: 8, top: 8, boxShadow: '0 2px 8px rgba(11, 54, 89, .18)' }}
-      >
-        <Button variant="light" onClick={() => zoomBy(ZOOM_STEP)} title={t('heatmap_zoom_in')} aria-label={t('heatmap_zoom_in')}>
-          <ZoomIn />
-        </Button>
-        <Button
-          variant="light"
-          onClick={() => zoomBy(1 / ZOOM_STEP)}
-          disabled={userBox == null}
-          title={t('heatmap_zoom_out')}
-          aria-label={t('heatmap_zoom_out')}
-        >
-          <ZoomOut />
-        </Button>
-        <Button
-          variant="light"
-          onClick={() => setUserBox(null)}
-          disabled={userBox == null}
-          title={`${t('heatmap_zoom_reset')} (${t('heatmap_canvas_hint')})`}
-          aria-label={t('heatmap_zoom_reset')}
-        >
-          <ArrowCounterclockwise />
-        </Button>
-      </ButtonGroup>
+      <ZoomControls
+        onZoomIn={() => zoomBy(ZOOM_STEP)}
+        onZoomOut={() => zoomBy(1 / ZOOM_STEP)}
+        onReset={() => setUserBox(null)}
+        zoomOutDisabled={userBox == null}
+        resetDisabled={userBox == null}
+      />
 
       {hover?.kind === 'point' && (
         <SensorTooltip

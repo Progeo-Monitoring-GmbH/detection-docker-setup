@@ -8,9 +8,8 @@ import {
 } from 'react-bootstrap-icons';
 import { showErrorBar, showSuccessBar } from './Snackbar';
 import { useSnackbar } from 'notistack';
-import axiosConfig from '../../axiosConfig';
+import axiosConfig, { defaultErrorCallback } from '../../axiosConfig';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
-import { defaultErrorCallback } from '@/helper.jsx';
 
 const DockerActionButtons = ({ modalState, setModalState, id, status }) => {
   const { enqueueSnackbar } = useSnackbar();

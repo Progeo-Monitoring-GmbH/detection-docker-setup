@@ -96,7 +96,7 @@ function NativePanel() {
       <pre style={{ background: '#111', color: '#ddd', padding: 12, borderRadius: 4, minHeight: 120, maxHeight: 280, overflowY: 'auto', fontSize: 12 }}>
         {log.length === 0
           ? '— press Connect to start —'
-          : log.map((e, i) => `[${e.time}] [${e.tag.toUpperCase().padEnd(5)}] ${e.text}`).join('\n')}
+          : log.map((e) => `[${e.time}] [${e.tag.toUpperCase().padEnd(5)}] ${e.text}`).join('\n')}
       </pre>
     </div>
   );

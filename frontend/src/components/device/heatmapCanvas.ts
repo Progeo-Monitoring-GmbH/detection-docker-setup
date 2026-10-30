@@ -23,7 +23,7 @@ export const MIN_ZOOM = 0.5;
 export const MAX_ZOOM = 25;
 
 /** Colour stops of the heat scale (0 = cold, 1 = saturated). */
-export const HEAT_STOPS: Array<[number, string]> = [
+const HEAT_STOPS: Array<[number, string]> = [
   [0, plotTheme.brandBlue],
   [0.35, plotTheme.contrastCyan],
   [0.65, plotTheme.contrastYellow],

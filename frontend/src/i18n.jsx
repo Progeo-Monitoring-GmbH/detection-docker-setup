@@ -88,7 +88,6 @@ i18n
           profile_loading: 'Loading profile...',
           profile_title: 'User Profile',
           profile_user: 'User',
-          profile_settings_button: 'Settings',
           profile_logout: 'Logout',
           profile_settings: 'Settings',
           profile_email: 'Email',
@@ -104,8 +103,6 @@ i18n
           profile_load_error: 'Could not load profile',
           profile_load_success: 'Profile loaded successfully',
           profile_modal_opening: 'Opening profile settings...',
-          profile_modal_reopen_hint:
-            'Profile settings are closed. Use the button to open them again.',
           profile_close: 'Close',
           profile_section_contact: 'Contact data',
           profile_first_name: 'First name',
@@ -1076,7 +1073,6 @@ i18n
           profile_loading: 'Profil wird geladen...',
           profile_title: 'Benutzerprofil',
           profile_user: 'Benutzer',
-          profile_settings_button: 'Einstellungen',
           profile_logout: 'Logout',
           profile_settings: 'Einstellungen',
           profile_email: 'E-Mail',
@@ -1092,8 +1088,6 @@ i18n
           profile_load_error: 'Profil konnte nicht geladen werden',
           profile_load_success: 'Profil erfolgreich geladen',
           profile_modal_opening: 'Profileinstellungen werden geöffnet...',
-          profile_modal_reopen_hint:
-            'Die Profileinstellungen sind geschlossen. Mit dem Button kannst du sie wieder öffnen.',
           profile_close: 'Schließen',
           profile_section_contact: 'Kontaktdaten',
           profile_first_name: 'Vorname',

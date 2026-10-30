@@ -262,6 +262,31 @@ const ProjectStatusCard = ({ report }: { report: AlarmDailyReport | null }) => {
   );
 };
 
+type ReportDateSelectProps = {
+  label: string;
+  dates: string[];
+  value: string;
+  onChange: (date: string) => void;
+};
+
+const ReportDateSelect = ({ label, dates, value, onChange }: ReportDateSelectProps) => (
+  <div>
+    <Form.Label className="small text-muted mb-1">{label}</Form.Label>
+    <Form.Select
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      style={{ width: 200 }}
+    >
+      <option value="">— select —</option>
+      {dates.map((date) => (
+        <option key={date} value={date}>
+          {formatDate(date)}
+        </option>
+      ))}
+    </Form.Select>
+  </div>
+);
+
 const AlarmReportView = () => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
@@ -571,40 +596,18 @@ const AlarmReportView = () => {
                 Compare two reports
               </h6>
               <div className="d-flex flex-wrap align-items-end gap-3 mb-3">
-                <div>
-                  <Form.Label className="small text-muted mb-1">
-                    Report A
-                  </Form.Label>
-                  <Form.Select
-                    value={compareA}
-                    onChange={(event) => setCompareA(event.target.value)}
-                    style={{ width: 200 }}
-                  >
-                    <option value="">— select —</option>
-                    {sortedDates.map((date) => (
-                      <option key={date} value={date}>
-                        {formatDate(date)}
-                      </option>
-                    ))}
-                  </Form.Select>
-                </div>
-                <div>
-                  <Form.Label className="small text-muted mb-1">
-                    Report B
-                  </Form.Label>
-                  <Form.Select
-                    value={compareB}
-                    onChange={(event) => setCompareB(event.target.value)}
-                    style={{ width: 200 }}
-                  >
-                    <option value="">— select —</option>
-                    {sortedDates.map((date) => (
-                      <option key={date} value={date}>
-                        {formatDate(date)}
-                      </option>
-                    ))}
-                  </Form.Select>
-                </div>
+                <ReportDateSelect
+                  label="Report A"
+                  dates={sortedDates}
+                  value={compareA}
+                  onChange={setCompareA}
+                />
+                <ReportDateSelect
+                  label="Report B"
+                  dates={sortedDates}
+                  value={compareB}
+                  onChange={setCompareB}
+                />
                 {compareLoading && <Spinner size="sm" animation="border" />}
                 {compareA && compareB && compareA === compareB && (
                   <Badge bg="warning" text="dark">

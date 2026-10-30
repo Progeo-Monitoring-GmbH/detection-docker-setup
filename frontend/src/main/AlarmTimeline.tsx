@@ -17,17 +17,11 @@ import {
 import './AlarmTimeline.css';
 
 export {
-  alarmHeatColor,
   alarmKey,
-  alarmPeakValue,
-  alarmRainSpans,
   alarmStartTime,
   formatDuration,
   isAlarmActive,
   parseTimestamp,
-  type AlarmDeviceLite,
-  type AlarmLocationLite,
-  type AlarmMaxValueEntry,
   type TimelineAlarm,
 } from './alarmUtils';
 

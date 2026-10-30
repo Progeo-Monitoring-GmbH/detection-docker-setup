@@ -33,28 +33,6 @@ export const canvasToPngBlob = (canvas: HTMLCanvasElement) =>
     canvas.toBlob(resolve, 'image/png');
   });
 
-export const downloadBlob = (blob: Blob, filename: string) => {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
-};
-
-export const loadImageFromDataUrl = (
-  image: HTMLImageElement,
-  dataUrl: string,
-  errorMessage = 'Could not decode the captured frame.',
-) =>
-  new Promise<void>((resolve, reject) => {
-    image.onload = () => resolve();
-    image.onerror = () => reject(new Error(errorMessage));
-    image.src = dataUrl;
-  });
-
 /**
  * Draws the frame timestamp (date/time of that frame) plus a frame counter
  * into the bottom-right corner, on a translucent brand-blue pill.

@@ -4,7 +4,7 @@ import { AuthContextType, useAuth } from './CoreAuthProvider';
 
 export type ModulePermissions = Record<string, boolean>;
 
-export type ModulePermissionPayload = {
+type ModulePermissionPayload = {
   user_id?: number;
   username?: string;
   permissions: ModulePermissions;

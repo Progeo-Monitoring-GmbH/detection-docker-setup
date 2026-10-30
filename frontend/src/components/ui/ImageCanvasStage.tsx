@@ -89,7 +89,7 @@ export type PlacedSensor = {
 
 /** Placing sensors by hand: a click on the plan places the active device,
  * placed sensors can be dragged. Shown instead of `measurePoints`. */
-export type SensorPlacement = {
+type SensorPlacement = {
   sensors: PlacedSensor[];
   activeDeviceId: number | null;
   activeLabel?: string;

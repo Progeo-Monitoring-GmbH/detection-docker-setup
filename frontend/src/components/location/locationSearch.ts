@@ -47,7 +47,7 @@ const searchTextCache = new WeakMap<object, string>();
 
 /** All searchable fields of a location as one folded string (cached per
  * object - the lists filter on every keystroke). */
-export const locationSearchText = (location: SearchableLocation) => {
+const locationSearchText = (location: SearchableLocation) => {
   let cached = searchTextCache.get(location);
   if (cached === undefined) {
     cached = foldSearchText(

@@ -23,10 +23,10 @@ import {
   showSuccessBar,
 } from '../components/ui/Snackbar.jsx';
 
-export type AccessRequestStatus =
+type AccessRequestStatus =
   'unverified' | 'pending' | 'approved' | 'rejected';
 
-export type AccessRequest = {
+type AccessRequest = {
   id: number;
   status: AccessRequestStatus;
   first_name: string;

@@ -11,6 +11,24 @@ import type { SensorHeatmapResponse } from './sensorHeatmapTypes';
 
 type Series = { timestamps: number[]; data: Record<string, Array<number | null>> };
 
+const finiteOrNull = (raw: unknown) => {
+  const value = raw == null ? Number.NaN : Number(raw);
+  return Number.isFinite(value) ? value : null;
+};
+
+/** Adds a history value to a sensor's frames: a new frame starts with it,
+ * an ongoing one keeps its highest value. */
+const addToFrame = (series: Array<number | null>, value: number | null, isNew: boolean) => {
+  if (isNew) {
+    series.push(value);
+    return;
+  }
+  const current = series[series.length - 1];
+  if (value != null && (current == null || value > current)) {
+    series[series.length - 1] = value;
+  }
+};
+
 /**
  * The frames of [from, to) in steps of `stepMs` from the step boundary at or
  * before `from` (local time): per frame and sensor the highest value of the
@@ -37,17 +55,7 @@ const group = (history: SensorHeatmapResponse, from: number, to: number, stepMs:
       last = bucket;
     }
     for (const key of keys) {
-      const raw = history.data[key]?.[index];
-      const value = raw == null ? null : Number(raw);
-      const series = values[key];
-      if (isNew) {
-        series.push(value != null && Number.isFinite(value) ? value : null);
-      } else if (value != null && Number.isFinite(value)) {
-        const current = series[series.length - 1];
-        if (current == null || value > current) {
-          series[series.length - 1] = value;
-        }
-      }
+      addToFrame(values[key], finiteOrNull(history.data[key]?.[index]), isNew);
     }
   }
   return { timestamps: buckets.map((bucket) => (origin + bucket * stepMs) / 1000), data: values };

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+  // Reached only through resolve.alias in vite.config.ts.
+  "entry": ["src/plotly.ts", "src/plotly-no-maplibre.css"],
+  // bootstrap: imported by scss/style.scss via the "~" alias.
+  // buffer: browser polyfill aliased for Plotly's source modules.
+  "ignoreDependencies": ["bootstrap", "buffer"],
+  "duplicates": {
+    // Vendored @font-face declarations.
+    "ignore": ["src/assets/fonts/**"]
+  }
+}

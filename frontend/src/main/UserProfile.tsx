@@ -554,22 +554,3 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
     </div>
   );
 };
-
-const UserProfile = () => {
-  const { t } = useTranslation();
-  const [showModal, setShowModal] = React.useState(true);
-
-  return (
-    <div>
-      <UserProfileModal show={showModal} onHide={() => setShowModal(false)} />
-      {!showModal && (
-        <div className="d-flex justify-content-between align-items-center p-4">
-          <span>{t('profile_modal_reopen_hint')}</span>
-          <PillButton label={t('profile_settings_button')} onClick={() => setShowModal(true)} />
-        </div>
-      )}
-    </div>
-  );
-};
-
-export default UserProfile;

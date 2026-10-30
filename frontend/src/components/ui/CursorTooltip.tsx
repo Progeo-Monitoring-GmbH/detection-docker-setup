@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { ReactNode, RefObject } from 'react';
 import '../../main/AlarmTooltip.css';
 
 /** Fixed gap between the cursor and the tooltip, in either direction. */
@@ -45,6 +45,47 @@ export const TooltipRow = ({ label, children }: { label: ReactNode; children: Re
   </div>
 );
 
+type Size = { width: number; height: number };
+
+/**
+ * Where a tooltip of `size` goes (its center x, its top): centered on the
+ * cursor, clamped to the container; above the cursor, below when there is no
+ * room up top.
+ */
+export const tooltipPosition = (
+  [cursorX, cursorY]: [number, number],
+  size: Size,
+  container: Size,
+) => {
+  const half = size.width / 2 + EDGE_MARGIN_PX;
+  const left = Math.min(Math.max(cursorX, half), Math.max(container.width - half, half));
+  const above = cursorY - size.height - CURSOR_GAP_PX;
+  const preferred = above < EDGE_MARGIN_PX ? cursorY + CURSOR_GAP_PX : above;
+  const maxTop = Math.max(EDGE_MARGIN_PX, container.height - size.height - EDGE_MARGIN_PX);
+  return { left, top: Math.min(Math.max(preferred, EDGE_MARGIN_PX), maxTop) };
+};
+
+/** The rendered size of the element, kept up to date; null before the
+ * first measurement. */
+const useElementSize = (ref: RefObject<HTMLElement | null>) => {
+  const [size, setSize] = useState<Size | null>(null);
+  useLayoutEffect(() => {
+    const node = ref.current;
+    if (!node) {
+      return undefined;
+    }
+    const measure = () => {
+      const rect = node.getBoundingClientRect();
+      setSize({ width: rect.width, height: rect.height });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [ref]);
+  return size;
+};
+
 /**
  * Shared shell of the timeline/heatmap hover tooltips: measures itself,
  * centers horizontally on the cursor (clamped to the container) and is drawn
@@ -67,51 +108,26 @@ const CursorTooltip = ({
   onMouseLeave,
 }: CursorTooltipProps) => {
   const tooltipRef = useRef<HTMLDivElement | null>(null);
-  const [size, setSize] = useState<{ width: number; height: number } | null>(null);
+  const size = useElementSize(tooltipRef);
 
-  useLayoutEffect(() => {
-    const node = tooltipRef.current;
-    if (!node) {
-      return;
-    }
-    const measure = () => {
-      const rect = node.getBoundingClientRect();
-      setSize({ width: rect.width, height: rect.height });
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, []);
-
-  const width = size?.width ?? fixedWidth ?? fallbackWidth;
-  const height = size?.height ?? 0;
-
-  const left = Math.min(
-    Math.max(cursorX, width / 2 + EDGE_MARGIN_PX),
-    Math.max(containerWidth - width / 2 - EDGE_MARGIN_PX, width / 2 + EDGE_MARGIN_PX),
+  const { left, top } = tooltipPosition(
+    [cursorX, cursorY],
+    { width: size?.width ?? fixedWidth ?? fallbackWidth, height: size?.height ?? 0 },
+    { width: containerWidth, height: containerHeight },
   );
-
-  let top = cursorY - height - CURSOR_GAP_PX;
-  if (top < EDGE_MARGIN_PX) {
-    top = cursorY + CURSOR_GAP_PX;
-  }
-  const maxTop = Math.max(EDGE_MARGIN_PX, containerHeight - height - EDGE_MARGIN_PX);
-  top = Math.min(Math.max(top, EDGE_MARGIN_PX), maxTop);
+  const style = fixedWidth != null ? { left, top, width: fixedWidth } : { left, top };
+  const dotStyle = { background: dotColor, borderColor: dotBorderColor ?? dotColor };
 
   return (
     <div
       ref={tooltipRef}
       className="alarm-tooltip"
-      style={{ left, top, ...(fixedWidth != null ? { width: fixedWidth } : {}) }}
+      style={style}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
       <div className="alarm-tooltip-head">
-        <span
-          className="alarm-tooltip-dot"
-          style={{ background: dotColor, borderColor: dotBorderColor ?? dotColor }}
-        />
+        <span className="alarm-tooltip-dot" style={dotStyle} />
         <span className="alarm-tooltip-title">{title}</span>
         {headExtra}
       </div>

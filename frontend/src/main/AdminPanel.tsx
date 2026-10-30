@@ -5,6 +5,7 @@ import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig.tsx';
+import { downloadBlob } from '../download';
 import { showErrorBar, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
@@ -59,17 +60,6 @@ const formatTime = (value?: string | Date | null) => {
 
 /** "attachment; filename="x.tar"" -> x.tar */
 const attachmentName = (header?: string | null) => header?.match(/filename="?([^";]+)"?/)?.[1] ?? null;
-
-const saveBlob = (blob: Blob, filename: string) => {
-  const href = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = href;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(href), 1000);
-};
 
 // ------------------------------------------------------------------- storage
 
@@ -239,7 +229,7 @@ const LageplanExportSection = () => {
         const headers = response?.headers || {};
         const usedDays = Number(headers['x-lageplan-days'] ?? days);
         const count = Number(headers['x-lageplan-count'] ?? 0);
-        saveBlob(
+        downloadBlob(
           new Blob([response.data], { type: 'application/x-tar' }),
           attachmentName(headers['content-disposition']) ?? `lageplans_${usedDays}d.tar`,
         );
@@ -500,7 +490,7 @@ const LogsSection = () => {
               icon={<Download />}
               disabled={!text}
               onClick={() =>
-                saveBlob(new Blob([text], { type: 'text/plain' }), (selected.split('/').pop() || 'log') + '.txt')
+                downloadBlob(new Blob([text], { type: 'text/plain' }), (selected.split('/').pop() || 'log') + '.txt')
               }
             />
           </div>

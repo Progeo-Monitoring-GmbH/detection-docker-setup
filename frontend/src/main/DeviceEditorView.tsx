@@ -32,6 +32,17 @@ const MAX_ZOOM = 4;
 const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, value));
 
+/** Canvas points from a measure_points response (normalized nx/ny). */
+const storedCanvasPoints = (data) => {
+  const stored = Array.isArray(data?.points) ? data.points : [];
+  return stored.map((point: any, index: number) => ({
+    id: index + 1,
+    x: clamp(point.nx * CANVAS_WIDTH, 0, CANVAS_WIDTH),
+    y: clamp(point.ny * CANVAS_HEIGHT, 0, CANVAS_HEIGHT),
+    reference: !!point.reference,
+  }));
+};
+
 const DeviceEditorView = () => {
   const { id } = useParams();
   // ?location= (from the device card): device ids are only unique within one project database.
@@ -144,15 +155,7 @@ const DeviceEditorView = () => {
       auth,
       `/v1/status/measure_points/?device_id=${encodeURIComponent(id)}${locationQuery}`,
       (response) => {
-        const data = response?.data || {};
-        const incoming = Array.isArray(data.points) ? data.points : [];
-        const loaded = incoming.map((point: any, index: number) => ({
-          id: index + 1,
-          x: clamp(point.nx * CANVAS_WIDTH, 0, CANVAS_WIDTH),
-          y: clamp(point.ny * CANVAS_HEIGHT, 0, CANVAS_HEIGHT),
-          reference: !!point.reference,
-        }));
-        setPoints(markReferencePoint(loaded));
+        setPoints(markReferencePoint(storedCanvasPoints(response?.data)));
       },
       (error) => {
         showErrorBar(
@@ -364,15 +367,8 @@ const DeviceEditorView = () => {
       `/v1/status/measure_points/${locationParam ? `?location=${encodeURIComponent(locationParam)}` : ''}`,
       payload,
       (response) => {
-        const data = response?.data || {};
-        const stored = Array.isArray(data.points) ? data.points : [];
-        const loaded = stored.map((point: any, index: number) => ({
-          id: index + 1,
-          x: clamp(point.nx * CANVAS_WIDTH, 0, CANVAS_WIDTH),
-          y: clamp(point.ny * CANVAS_HEIGHT, 0, CANVAS_HEIGHT),
-          reference: !!point.reference,
-        }));
-        setPoints(markReferencePoint(loaded));
+        const stored = storedCanvasPoints(response?.data);
+        setPoints(markReferencePoint(stored));
         setIsStoring(false);
         showSuccessBar(enqueueSnackbar, `Stored ${stored.length} point(s)`);
       },

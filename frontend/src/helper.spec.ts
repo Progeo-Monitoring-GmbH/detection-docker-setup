@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { defaultErrorCallback } from './axiosConfig';
 import {
   capitalizeFirstLetter,
   dateStringToTimestamp,
-  defaultErrorCallback,
   filterObject,
   getBasename,
   getCachedData,

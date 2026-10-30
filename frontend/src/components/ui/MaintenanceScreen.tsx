@@ -9,7 +9,7 @@ import './MaintenanceScreen.css';
 /** "Wartungsarbeiten" in place of the app while the backend is gone. Like
  * nginx's page in German and English - it may show before the
  * translations have loaded. */
-export function MaintenanceScreen() {
+function MaintenanceScreen() {
   return (
     <div className="maintenance-screen">
       <main>

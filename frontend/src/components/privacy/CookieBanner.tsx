@@ -5,6 +5,7 @@ import {
   useState,
   type CSSProperties,
   type KeyboardEvent,
+  type RefObject,
 } from 'react';
 import { Form } from 'react-bootstrap';
 import { X } from 'react-bootstrap-icons';
@@ -51,51 +52,66 @@ const categoryDescStyle: CSSProperties = {
   color: '#6E6868',
 };
 
-/**
- * Privacy banner shown until the user has decided, and again whenever the
- * settings are reopened (`useConsent().openSettings()`, e.g. from the top bar).
- * Nothing optional is loaded before an explicit opt-in.
- */
-const CookieBanner = () => {
-  const { t } = useTranslation();
-  const { consent, settingsOpen, acceptAll, rejectAll, save, closeSettings } =
-    useConsent();
-  const visible = consent === null || settingsOpen;
-
-  const [showDetails, setShowDetails] = useState(false);
-  const [mapsChoice, setMapsChoice] = useState(false);
-  const [statsChoice, setStatsChoice] = useState(false);
-  const dialogRef = useRef<HTMLDivElement>(null);
-  const returnFocusRef = useRef<Element | null>(null);
-  const titleId = useId();
-  const descId = useId();
-  const mapsSwitchId = useId();
-  const statsSwitchId = useId();
-
-  // Each time the banner opens: mirror the stored choice, move focus into the
-  // dialog so screen readers announce it, and hand focus back when it closes.
+/** Moves focus into the dialog while it is shown, so screen readers announce
+ * it, and hands focus back to where it was when it closes. */
+const useDialogFocus = (dialogRef: RefObject<HTMLDivElement | null>) => {
   useEffect(() => {
-    if (!visible) {
-      return undefined;
-    }
-    setShowDetails(settingsOpen);
-    setMapsChoice(consent?.categories.externalMaps ?? false);
-    setStatsChoice(consent?.categories.statistics ?? false);
-    returnFocusRef.current = document.activeElement;
+    const previous = document.activeElement;
     dialogRef.current?.focus();
     return () => {
-      const previous = returnFocusRef.current;
       if (previous instanceof HTMLElement && previous.isConnected) {
         previous.focus();
       }
     };
-    // Only react to opening/closing - not to the consent update that closes it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible]);
+  }, [dialogRef]);
+};
 
-  if (!visible) {
-    return null;
-  }
+/** An optional consent category with its switch and description. */
+const ConsentSwitch = ({
+  title,
+  description,
+  checked,
+  onChange,
+}: {
+  title: string;
+  description: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) => {
+  const id = useId();
+  return (
+    <li style={categoryStyle}>
+      <Form.Check
+        type="switch"
+        id={id}
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        label={<strong>{title}</strong>}
+        aria-describedby={`${id}-desc`}
+        style={{ marginBottom: 0 }}
+      />
+      <p id={`${id}-desc`} style={categoryDescStyle}>
+        {description}
+      </p>
+    </li>
+  );
+};
+
+/**
+ * The banner's dialog, mounted each time it opens - so it starts from the
+ * stored choice (details shown when the settings were reopened).
+ */
+const CookieDialog = () => {
+  const { t } = useTranslation();
+  const { consent, settingsOpen, acceptAll, rejectAll, save, closeSettings } =
+    useConsent();
+  const [showDetails, setShowDetails] = useState(settingsOpen);
+  const [mapsChoice, setMapsChoice] = useState(consent?.categories.externalMaps ?? false);
+  const [statsChoice, setStatsChoice] = useState(consent?.categories.statistics ?? false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  const descId = useId();
+  useDialogFocus(dialogRef);
 
   // Escape only dismisses a reopened settings dialog; a first-time visitor has
   // to make an actual choice (dismissing must not be mistaken for consent).
@@ -181,34 +197,18 @@ const CookieBanner = () => {
               </div>
               <p style={categoryDescStyle}>{t('consent_necessary_desc')}</p>
             </li>
-            <li style={categoryStyle}>
-              <Form.Check
-                type="switch"
-                id={mapsSwitchId}
-                checked={mapsChoice}
-                onChange={(event) => setMapsChoice(event.target.checked)}
-                label={<strong>{t('consent_maps_title')}</strong>}
-                aria-describedby={`${mapsSwitchId}-desc`}
-                style={{ marginBottom: 0 }}
-              />
-              <p id={`${mapsSwitchId}-desc`} style={categoryDescStyle}>
-                {t('consent_maps_desc')}
-              </p>
-            </li>
-            <li style={categoryStyle}>
-              <Form.Check
-                type="switch"
-                id={statsSwitchId}
-                checked={statsChoice}
-                onChange={(event) => setStatsChoice(event.target.checked)}
-                label={<strong>{t('consent_stats_title')}</strong>}
-                aria-describedby={`${statsSwitchId}-desc`}
-                style={{ marginBottom: 0 }}
-              />
-              <p id={`${statsSwitchId}-desc`} style={categoryDescStyle}>
-                {t('consent_stats_desc')}
-              </p>
-            </li>
+            <ConsentSwitch
+              title={t('consent_maps_title')}
+              description={t('consent_maps_desc')}
+              checked={mapsChoice}
+              onChange={setMapsChoice}
+            />
+            <ConsentSwitch
+              title={t('consent_stats_title')}
+              description={t('consent_stats_desc')}
+              checked={statsChoice}
+              onChange={setStatsChoice}
+            />
           </ul>
         )}
       </div>
@@ -240,6 +240,16 @@ const CookieBanner = () => {
       </div>
     </div>
   );
+};
+
+/**
+ * Privacy banner shown until the user has decided, and again whenever the
+ * settings are reopened (`useConsent().openSettings()`, e.g. from the top bar).
+ * Nothing optional is loaded before an explicit opt-in.
+ */
+const CookieBanner = () => {
+  const { consent, settingsOpen } = useConsent();
+  return consent === null || settingsOpen ? <CookieDialog /> : null;
 };
 
 export default CookieBanner;

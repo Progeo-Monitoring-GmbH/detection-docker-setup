@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
+import { downloadBlob } from '../download';
 import {
   errorReason,
   showRequestError,
@@ -57,7 +58,7 @@ const errorStyle: React.CSSProperties = {
  * The recovery codes - shown once, right after they were generated; the
  * backend only keeps their hashes.
  */
-export const RecoveryCodes = ({
+const RecoveryCodes = ({
   codes,
   onDone,
 }: {
@@ -74,14 +75,8 @@ export const RecoveryCodes = ({
       .then(() => showSuccessBar(enqueueSnackbar, t('tfa_recovery_copied')));
   };
 
-  const download = () => {
-    const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'progeo-wiederherstellungscodes.txt';
-    link.click();
-    URL.revokeObjectURL(url);
-  };
+  const download = () =>
+    downloadBlob(new Blob([text], { type: 'text/plain' }), 'progeo-wiederherstellungscodes.txt');
 
   return (
     <div style={{ ...panelStyle, border: '1px solid var(--progeo-orange)' }}>

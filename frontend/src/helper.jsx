@@ -1,35 +1,5 @@
-import React, { useState } from 'react';
-import { Link } from '@mui/material';
-import axiosConfig from './axiosConfig';
-import { Button } from 'react-bootstrap';
-
-export function generateRandomNumber(min = 0, max = 1, fixxed = 0) {
-  const v = Math.random() * (max - min) + min;
-  if (fixxed) {
-    return Number(v.toFixed(fixxed));
-  }
-  return v;
-}
-
-export function generateRandomFrom(arr) {
-  return arr[(Math.random() * arr.length) >> 0];
-}
-
-export const prettyBool = (value) => {
-  if (value) {
-    return <span className={'text-success'}>True</span>;
-  } else {
-    return <span className={'text-danger'}>False</span>;
-  }
-};
-
-export const getToday = () => {
-  return new Date().toLocaleDateString('fr-CA', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-};
+import axiosConfig, { defaultErrorCallback } from './axiosConfig';
+import { downloadBlob } from './download';
 
 export const prettyDate = (value) => {
   if (!value) {
@@ -58,42 +28,6 @@ export const dateStringToTimestamp = (dateString, offset = 0) => {
   }
   return date.getTime();
 };
-
-export function SelectListened({
-  options,
-  onChange,
-  disabled,
-  selected = undefined,
-}) {
-  return (
-    <select
-      className={'form-select mb-3'}
-      disabled={disabled || null}
-      onChange={onChange}
-    >
-      {Object.keys(options).map((value) => {
-        if (options[value] === selected) {
-          return (
-            <option
-              data-key={value === selected}
-              key={value}
-              value={value}
-              selected={true}
-            >
-              {options[value]}
-            </option>
-          );
-        } else {
-          return (
-            <option data-key={value === selected} key={value} value={value}>
-              {options[value]}
-            </option>
-          );
-        }
-      })}
-    </select>
-  );
-}
 
 export function updateOrAppend(elements, newData, field = 'id') {
   if (elements !== undefined) {
@@ -133,10 +67,6 @@ export function filterObject(elements, filter) {
   return Object.fromEntries(Object.entries(elements).filter(filter));
 }
 
-function sleep(milliseconds) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
 export function capitalizeFirstLetter(string) {
   return string.charAt(0).toUpperCase() + string.slice(1);
 }
@@ -144,14 +74,6 @@ export function capitalizeFirstLetter(string) {
 export function getBasename(_path) {
   return _path.split(/[\\/]/).pop();
 }
-
-export const defaultErrorCallback = (error) => {
-  if (error.response) {
-    console.error(error.response.data);
-  } else {
-    console.error(error);
-  }
-};
 
 export async function standardFetchData(
   auth,
@@ -201,14 +123,7 @@ export async function downloadResponse(auth, url, filename) {
       const blob = new Blob([response.data], {
         type: response.headers['content-type'],
       });
-      const href = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = href;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.setTimeout(() => window.URL.revokeObjectURL(href), 1000);
+      downloadBlob(blob, filename);
       ok = true;
     },
     defaultErrorCallback,

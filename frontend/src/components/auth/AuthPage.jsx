@@ -26,7 +26,7 @@ export const FIELD = {
   width: '100%',
 };
 
-export const CAPTION = {
+const CAPTION = {
   fontSize: 10,
   letterSpacing: '.12em',
   textTransform: 'uppercase',

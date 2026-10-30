@@ -3,7 +3,7 @@ import { useAuth } from '../../hooks/CoreAuthProvider';
 import { needsTwoFactorSetup, TWO_FACTOR_SETUP_PATH } from './twoFactor';
 
 /** True for a user whose access request still waits for the staff's review. */
-export const isPendingUser = (user: unknown) =>
+const isPendingUser = (user: unknown) =>
   Boolean((user as { is_pending?: boolean } | null)?.is_pending);
 
 /**

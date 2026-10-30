@@ -21,7 +21,7 @@ export const HEATMAP_STEPS: readonly HeatmapStep[] = [
 ];
 
 /** Frames one range shows at most (slider, video export). */
-export const HEATMAP_MAX_FRAMES = 2000;
+const HEATMAP_MAX_FRAMES = 2000;
 /** Frames of a range's default step at most - enough to follow a leak,
  * few enough to step through. */
 const DEFAULT_MAX_FRAMES = 200;

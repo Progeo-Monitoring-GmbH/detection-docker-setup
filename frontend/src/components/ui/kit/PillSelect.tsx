@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-export type PillSelectOption = { value: string; label: string };
+type PillSelectOption = { value: string; label: string };
 
 type PillSelectProps = {
   /** Text before the field (it labels the select). */

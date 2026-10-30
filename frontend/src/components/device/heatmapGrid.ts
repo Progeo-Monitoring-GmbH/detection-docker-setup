@@ -16,6 +16,37 @@ const clamp = (value: number, min: number, max: number) =>
 /** Heat (fraction of the scale) below which a kernel is no longer drawn. */
 const HEAT_CUTOFF = 0.001;
 
+/** Regular grid over [-pad, 1 + pad] with `resolution` (at least 2) points
+ * per axis; `cell` is the normalized length of one grid cell. */
+export const gridAxis = (resolution: number, pad: number) => {
+  const res = Math.max(2, resolution);
+  const span = 1 + 2 * pad;
+  const cell = span / (res - 1);
+  const axis = Array.from({ length: res }, (_, index) => -pad + index * cell);
+  return { res, span, cell, axis };
+};
+
+/** Grid position of a point (clamped to the unit square) and the cells
+ * within `radiusCells` around it. */
+const kernelWindow = (
+  point: WeightedPoint,
+  pad: number,
+  cell: number,
+  res: number,
+  radiusCells: number,
+) => {
+  const cx = (clamp(point.x, 0, 1) + pad) / cell;
+  const cy = (clamp(point.y, 0, 1) + pad) / cell;
+  return {
+    cx,
+    cy,
+    startX: Math.max(0, Math.floor(cx - radiusCells)),
+    endX: Math.min(res - 1, Math.ceil(cx + radiusCells)),
+    startY: Math.max(0, Math.floor(cy - radiusCells)),
+    endY: Math.min(res - 1, Math.ceil(cy + radiusCells)),
+  };
+};
+
 /**
  * Weighted Gaussian splatting on a regular grid over [-pad, 1 + pad]^2 - the
  * padding lets the heat of sensors on the border fade out instead of being
@@ -40,11 +71,7 @@ export const buildWeightedGrid = (
   referenceMax: number | null = null,
   pad = 0,
 ) => {
-  const res = Math.max(2, resolution);
-  const span = 1 + 2 * pad;
-  // Normalized length of one grid cell.
-  const cell = span / (res - 1);
-  const axis = Array.from({ length: res }, (_, index) => -pad + index * cell);
+  const { res, span, cell, axis } = gridAxis(resolution, pad);
   const grid = Array.from({ length: res }, () => new Float64Array(res));
 
   const twoSigmaSquared = 2 * sigma * sigma;
@@ -66,12 +93,13 @@ export const buildWeightedGrid = (
     const radius = Math.sqrt(twoSigmaSquared * Math.log(point.weight / cutoff));
     const radiusCells = Math.ceil(Math.min(radius, span) / cell);
 
-    const cx = (clamp(point.x, 0, 1) + pad) / cell;
-    const cy = (clamp(point.y, 0, 1) + pad) / cell;
-    const startX = Math.max(0, Math.floor(cx - radiusCells));
-    const endX = Math.min(res - 1, Math.ceil(cx + radiusCells));
-    const startY = Math.max(0, Math.floor(cy - radiusCells));
-    const endY = Math.min(res - 1, Math.ceil(cy + radiusCells));
+    const { cx, cy, startX, endX, startY, endY } = kernelWindow(
+      point,
+      pad,
+      cell,
+      res,
+      radiusCells,
+    );
 
     for (let gy = startY; gy <= endY; gy += 1) {
       const dyNormalized = (gy - cy) * cell;
@@ -134,10 +162,7 @@ export const buildFieldGrid = (
   range: { min: number; max: number },
   pad = 0,
 ) => {
-  const res = Math.max(2, resolution);
-  const span = 1 + 2 * pad;
-  const cell = span / (res - 1);
-  const axis = Array.from({ length: res }, (_, index) => -pad + index * cell);
+  const { res, span, cell, axis } = gridAxis(resolution, pad);
   const weighted = Array.from({ length: res }, () => new Float64Array(res));
   const weights = Array.from({ length: res }, () => new Float64Array(res));
   const nearest = Array.from({ length: res }, () => new Float64Array(res));
@@ -150,12 +175,13 @@ export const buildFieldGrid = (
     if (!Number.isFinite(point.weight)) {
       return;
     }
-    const cx = (clamp(point.x, 0, 1) + pad) / cell;
-    const cy = (clamp(point.y, 0, 1) + pad) / cell;
-    const startX = Math.max(0, Math.floor(cx - radiusCells));
-    const endX = Math.min(res - 1, Math.ceil(cx + radiusCells));
-    const startY = Math.max(0, Math.floor(cy - radiusCells));
-    const endY = Math.min(res - 1, Math.ceil(cy + radiusCells));
+    const { cx, cy, startX, endX, startY, endY } = kernelWindow(
+      point,
+      pad,
+      cell,
+      res,
+      radiusCells,
+    );
 
     for (let gy = startY; gy <= endY; gy += 1) {
       const dy = (gy - cy) * cell;

@@ -4,6 +4,7 @@ import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
+import { downloadBlob } from '../download';
 import { showErrorBar, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import PillButton from '../components/ui/kit/PillButton';
 import DeviceRenameModal from '../components/modal/DeviceRenameModal';
@@ -146,12 +147,10 @@ const LocationClimatePanels = ({
       auth,
       `/v1/location/${locationId}/measurements/export/`,
       (response) => {
-        const url = URL.createObjectURL(new Blob([response.data], { type: 'application/json' }));
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `measurements_location_${locationId}.json`;
-        link.click();
-        URL.revokeObjectURL(url);
+        downloadBlob(
+          new Blob([response.data], { type: 'application/json' }),
+          `measurements_location_${locationId}.json`,
+        );
         setBusy(false);
       },
       (error) => {

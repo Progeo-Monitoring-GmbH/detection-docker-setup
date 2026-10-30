@@ -73,7 +73,7 @@ const MeasurementDetailView = () => {
           Back to Devices
         </Button>
 
-        <Button variant="outline-primary" onClick={loadMeasurements}>
+        <Button variant="outline-primary" onClick={() => loadMeasurements()}>
           Refresh
         </Button>
       </div>

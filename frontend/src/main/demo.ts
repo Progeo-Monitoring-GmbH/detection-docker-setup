@@ -6,7 +6,7 @@
  */
 
 /** localStorage key of the demo link token - lets an expired session log in again. */
-export const DEMO_TOKEN_KEY = 'demoToken';
+const DEMO_TOKEN_KEY = 'demoToken';
 
 /** JWT claim `is_demo` (ProgeoTokenObtainPairSerializer). */
 export const isDemoUser = (user: unknown) =>
@@ -19,7 +19,7 @@ export const isDemoReadOnlyError = (error: unknown) =>
       ?.data?.demo_read_only,
   );
 
-export const getDemoToken = () => {
+const getDemoToken = () => {
   try {
     return localStorage.getItem(DEMO_TOKEN_KEY);
   } catch {

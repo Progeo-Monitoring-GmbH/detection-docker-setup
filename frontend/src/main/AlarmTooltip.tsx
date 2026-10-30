@@ -10,6 +10,7 @@ import {
   parseTimestamp,
   type TimelineAlarm,
 } from './alarmUtils';
+import type { ReactNode } from 'react';
 import CursorTooltip, { formatClock, TooltipRow } from '../components/ui/CursorTooltip';
 
 type AlarmTooltipProps = {
@@ -30,6 +31,27 @@ type AlarmTooltipProps = {
   onMouseLeave: () => void;
 };
 
+/** A row only shown with a value. */
+const OptionalRow = ({ label, children }: { label: string; children: ReactNode }) =>
+  children == null || children === '' ? null : <TooltipRow label={label}>{children}</TooltipRow>;
+
+/** "#3 (412), #5" - the sensors over threshold with their highest value. */
+const sensorsText = (sensors: ReturnType<typeof alarmSensors>) =>
+  sensors.length > 0
+    ? sensors
+        .map((pair) => `#${pair.sensor_id ?? '-'}${pair.max_value != null ? ` (${pair.max_value})` : ''}`)
+        .join(', ')
+    : null;
+
+/** Who acknowledged the alarm, and when; null while it isn't. */
+const acknowledgedText = (alarm: TimelineAlarm) => {
+  if (alarm.status !== 1) {
+    return null;
+  }
+  const at = parseTimestamp(alarm.evaluated_at);
+  return `${alarm.evaluated_by?.username || 'unknown'}${at != null ? ` · ${formatClock(at)}` : ''}`;
+};
+
 const AlarmTooltip = ({
   alarm,
   start,
@@ -44,10 +66,7 @@ const AlarmTooltip = ({
 }: AlarmTooltipProps) => {
   const navigate = useNavigate();
   const active = isAlarmActive(alarm);
-  const peak = alarmPeakValue(alarm);
-  const sensors = alarmSensors(alarm);
   const locationId = alarm.location?.id ?? alarm.location?.project_id ?? null;
-  const evaluatedAt = parseTimestamp(alarm.evaluated_at);
 
   const openDetails = () => {
     if (locationId != null) {
@@ -83,21 +102,10 @@ const AlarmTooltip = ({
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
-      {alarm.location?.name && <TooltipRow label="Location">{alarm.location.name}</TooltipRow>}
-      {(alarm.device?.display_name || alarm.device?.raw_hash) && (
-        <TooltipRow label="Device">{alarm.device?.display_name || alarm.device?.raw_hash}</TooltipRow>
-      )}
-      {sensors.length > 0 && (
-        <TooltipRow label="Sensors">
-          {sensors
-            .map(
-              (pair) =>
-                `#${pair.sensor_id ?? '-'}${pair.max_value != null ? ` (${pair.max_value})` : ''}`,
-            )
-            .join(', ')}
-        </TooltipRow>
-      )}
-      {peak != null && <TooltipRow label="Max value">{peak}</TooltipRow>}
+      <OptionalRow label="Location">{alarm.location?.name}</OptionalRow>
+      <OptionalRow label="Device">{alarm.device?.display_name || alarm.device?.raw_hash}</OptionalRow>
+      <OptionalRow label="Sensors">{sensorsText(alarmSensors(alarm))}</OptionalRow>
+      <OptionalRow label="Max value">{alarmPeakValue(alarm)}</OptionalRow>
       <TooltipRow label="Triggered">{formatClock(start)}</TooltipRow>
       <TooltipRow label={active ? 'Running for' : 'Active for'}>
         {formatDuration((end - start) / 1000)}
@@ -107,12 +115,7 @@ const AlarmTooltip = ({
       ) : (
         <TooltipRow label="Normalized">{formatClock(end)}</TooltipRow>
       )}
-      {alarm.status === 1 && (
-        <TooltipRow label="Acknowledged">
-          {alarm.evaluated_by?.username || 'unknown'}
-          {evaluatedAt != null ? ` · ${formatClock(evaluatedAt)}` : ''}
-        </TooltipRow>
-      )}
+      <OptionalRow label="Acknowledged">{acknowledgedText(alarm)}</OptionalRow>
     </CursorTooltip>
   );
 };

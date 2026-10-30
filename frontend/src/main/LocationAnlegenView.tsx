@@ -47,6 +47,33 @@ const EMPTY_FORM: FormState = {
  * "Daten importieren" reuses the existing generic import feature
  * (/v1/data/import/) instead of a second import mechanism.
  */
+type FilePickerCardProps = {
+  title: string;
+  hint: string;
+  chooseLabel: string;
+  files: File[];
+  onChange: (files: File[]) => void;
+};
+
+const FilePickerCard = ({ title, hint, chooseLabel, files, onChange }: FilePickerCardProps) => (
+  <div style={{ background: 'var(--progeo-surface)', borderRadius: 13, padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div style={{ fontSize: 13.5, fontWeight: 500 }}>{title}</div>
+    <div style={{ fontSize: 12, color: '#8B8383' }}>{hint}</div>
+    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 9, height: 36, padding: '0 15px', borderRadius: 10, background: 'var(--progeo-track-soft)', color: 'var(--progeo-blue)', fontSize: 13, fontWeight: 500, cursor: 'pointer', alignSelf: 'flex-start' }}>
+      <span>{chooseLabel}</span>
+      <input
+        type="file"
+        multiple
+        onChange={(event) => onChange(Array.from(event.target.files || []))}
+        style={{ display: 'none' }}
+      />
+    </label>
+    {files.map((file) => (
+      <div key={file.name} style={{ fontSize: 12.5 }}>{file.name}</div>
+    ))}
+  </div>
+);
+
 const LocationAnlegenView = () => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
@@ -246,38 +273,20 @@ const LocationAnlegenView = () => {
       <PanelCard title={t('anlegen_section_files')}>
         <div style={{ fontSize: 12.5, color: '#8B8383', marginBottom: 14 }}>{t('anlegen_section_files_hint')}</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
-          <div style={{ background: 'var(--progeo-surface)', borderRadius: 13, padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 500 }}>{t('anlegen_field_visualization')}</div>
-            <div style={{ fontSize: 12, color: '#8B8383' }}>{t('anlegen_field_visualization_hint')}</div>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 9, height: 36, padding: '0 15px', borderRadius: 10, background: 'var(--progeo-track-soft)', color: 'var(--progeo-blue)', fontSize: 13, fontWeight: 500, cursor: 'pointer', alignSelf: 'flex-start' }}>
-              <span>{t('anlegen_choose_files')}</span>
-              <input
-                type="file"
-                multiple
-                onChange={(event) => setVisualizationFiles(Array.from(event.target.files || []))}
-                style={{ display: 'none' }}
-              />
-            </label>
-            {visualizationFiles.map((file) => (
-              <div key={file.name} style={{ fontSize: 12.5 }}>{file.name}</div>
-            ))}
-          </div>
-          <div style={{ background: 'var(--progeo-surface)', borderRadius: 13, padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 500 }}>{t('anlegen_field_coordinates')}</div>
-            <div style={{ fontSize: 12, color: '#8B8383' }}>{t('anlegen_field_coordinates_hint')}</div>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 9, height: 36, padding: '0 15px', borderRadius: 10, background: 'var(--progeo-track-soft)', color: 'var(--progeo-blue)', fontSize: 13, fontWeight: 500, cursor: 'pointer', alignSelf: 'flex-start' }}>
-              <span>{t('anlegen_choose_files')}</span>
-              <input
-                type="file"
-                multiple
-                onChange={(event) => setCoordinateFiles(Array.from(event.target.files || []))}
-                style={{ display: 'none' }}
-              />
-            </label>
-            {coordinateFiles.map((file) => (
-              <div key={file.name} style={{ fontSize: 12.5 }}>{file.name}</div>
-            ))}
-          </div>
+          <FilePickerCard
+            title={t('anlegen_field_visualization')}
+            hint={t('anlegen_field_visualization_hint')}
+            chooseLabel={t('anlegen_choose_files')}
+            files={visualizationFiles}
+            onChange={setVisualizationFiles}
+          />
+          <FilePickerCard
+            title={t('anlegen_field_coordinates')}
+            hint={t('anlegen_field_coordinates_hint')}
+            chooseLabel={t('anlegen_choose_files')}
+            files={coordinateFiles}
+            onChange={setCoordinateFiles}
+          />
         </div>
       </PanelCard>
 

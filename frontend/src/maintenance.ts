@@ -12,7 +12,7 @@ import { getBackendUrl } from './backendUrl';
  */
 
 /** Answers 204 without touching the database (progeo/urls.py). */
-export const HEALTH_PATH = '/api/health/';
+const HEALTH_PATH = '/api/health/';
 export const HEARTBEAT_MS = 30_000;
 export const RETRY_MS = 5_000;
 // A backend that is busy but there still counts as there - only "no
@@ -83,7 +83,7 @@ export function checkBackend(): Promise<boolean> {
 
 /** nginx's JSON answer for API clients while the backend is unreachable
  * (docker/nginx/maintenance/maintenance.json). */
-export const isMaintenanceAnswer = (error: AxiosError) =>
+const isMaintenanceAnswer = (error: AxiosError) =>
   error?.response?.status === 503 &&
   (error.response.data as { code?: string })?.code === 'maintenance';
 

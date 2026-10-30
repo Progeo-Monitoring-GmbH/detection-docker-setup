@@ -3,7 +3,6 @@ import Cookies from 'js-cookie';
 import { enqueueSnackbar } from 'notistack';
 import { AuthContextType } from '../hooks/CoreAuthProvider';
 import { getBackendBaseUrl } from './backendUrl';
-import { defaultErrorCallback } from './helper.jsx';
 import i18n from './i18n.jsx';
 import { isDemoReadOnlyError, isDemoUser, loginPathFor } from './main/demo';
 import { isTwoFactorSetupError, TWO_FACTOR_SETUP_PATH } from './main/twoFactor';
@@ -11,6 +10,14 @@ import { watchAxios } from './maintenance';
 
 // The login/logout requests (CoreAuthProvider) use the global instance.
 watchAxios(axios);
+
+export const defaultErrorCallback = (error) => {
+  if (error.response) {
+    console.error(error.response.data);
+  } else {
+    console.error(error);
+  }
+};
 
 const normalizeBackendUrl = (rawUrl?: string) => {
   if (!rawUrl) return rawUrl;

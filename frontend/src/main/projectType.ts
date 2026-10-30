@@ -25,7 +25,7 @@ export const PROJECT_TYPE_BRAND_LABELS: Record<number, string> = {
 
 // LoRaWAN objects report humidity/temperature per device instead of
 // samples, so they get climate charts instead of the heatmap.
-export const PROJECT_TYPE_LORAWAN = 6;
+const PROJECT_TYPE_LORAWAN = 6;
 
 export const isLorawanProject = (value: number | null | undefined): boolean =>
   value === PROJECT_TYPE_LORAWAN;

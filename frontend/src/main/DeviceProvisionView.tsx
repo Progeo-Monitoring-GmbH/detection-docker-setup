@@ -21,6 +21,7 @@ import {
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
+import { downloadBlob } from '../download';
 import ProvisionTestMeasurements from '../components/device/ProvisionTestMeasurements';
 import LocationPicker, {
   type PickableLocation,
@@ -350,14 +351,10 @@ const DeviceProvisionView = () => {
     if (!preview) {
       return;
     }
-    const url = URL.createObjectURL(
+    downloadBlob(
       new Blob([preview.config], { type: 'text/plain' }),
+      `device_config_${preview.device_hash}.lua`,
     );
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `device_config_${preview.device_hash}.lua`;
-    link.click();
-    URL.revokeObjectURL(url);
   };
 
   const portalQrCode = (title: string, caption: string, code: QrCode) => (

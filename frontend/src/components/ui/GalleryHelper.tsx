@@ -1,4 +1,10 @@
-import { IPreview } from '../form/RedDropbox.tsx';
+export interface IPreview {
+  src: string;
+  width: string;
+  height?: number | string;
+  name?: string;
+  alt: string;
+}
 
 export function Thumbnail({
   src,

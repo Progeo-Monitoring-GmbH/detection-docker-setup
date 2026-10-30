@@ -1,6 +1,6 @@
 import PillButton from './PillButton';
 
-export type SegmentedOption = { value: string; label: string };
+type SegmentedOption = { value: string; label: string };
 
 type SegmentedControlProps = {
   options: SegmentedOption[];

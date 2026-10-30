@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import DataTable from 'react-data-table-component';
 import type { TableColumn } from 'react-data-table-component';
-import { Button, Card, Form, Spinner } from 'react-bootstrap';
+import { Button, Form, Spinner } from 'react-bootstrap';
 import { Pencil } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
 import { useNavigate } from 'react-router';
@@ -12,13 +12,9 @@ import axiosConfig from '../axiosConfig';
 import { matchesLocationSearch } from '../components/location/locationSearch';
 import { getBackendUrl } from '../backendUrl';
 import { showRequestError } from '../components/ui/Snackbar.jsx';
-import MeasurementSamplesCompareChart, {
-  type MeasurementCompareRow,
-} from '../components/device/MeasurementSamplesCompareChart.tsx';
 import LocationEditModal, {
   type LocationEditRow,
 } from '../components/modal/LocationEditModal.tsx';
-import { measurementsQuery } from './measurementQuery';
 
 type LocationRow = LocationEditRow & {
   measurement_count?: number;
@@ -46,6 +42,222 @@ const ROW_STYLES = {
   },
 };
 
+/** Query of /v1/location/min/: the search text, only connected locations. */
+const locationsQuery = (search: string, hasDevice: boolean) => {
+  const params = new URLSearchParams();
+  if (search.trim()) {
+    params.set('search', search.trim());
+  }
+  if (hasDevice) {
+    params.set('has_device', '1');
+  }
+  return params.toString();
+};
+
+/**
+ * Alarm summaries merged with a new batch for `ids`. The backend only returns
+ * an entry for locations that actually have alarms - the rest are backfilled
+ * with an explicit zero, so an absent key reliably means "not loaded yet"
+ * (the State column's loading-spinner check) rather than "confirmed no alarms".
+ */
+const mergeAlarmSummary = (
+  current: Record<string, LocationAlarmSummary>,
+  loaded: Record<string, LocationAlarmSummary>,
+  ids: number[],
+) => {
+  const merged = { ...current, ...loaded };
+  const missing = ids.filter((id) => !(String(id) in merged));
+  return {
+    ...merged,
+    ...Object.fromEntries(missing.map((id) => [String(id), { count: 0, active: 0 }])),
+  };
+};
+
+/** Rows with the detail fields of `details` merged in. */
+const mergeDetails = (rows: LocationRow[], details: LocationRow[]) => {
+  const detailsById = new Map(details.map((detail) => [detail.id, detail]));
+  return rows.map((row) => {
+    const detail = detailsById.get(row.id);
+    return detail ? { ...row, ...detail } : row;
+  });
+};
+
+/** Rows with an edited location merged in (counts it didn't send kept). */
+const mergeSaved = (rows: LocationRow[], updated: LocationEditRow) =>
+  rows.map((row) =>
+    row.id === updated.id
+      ? {
+          ...row,
+          ...updated,
+          device_count: updated.device_count ?? row.device_count,
+          has_device: updated.has_device ?? row.has_device,
+        }
+      : row,
+  );
+
+type LocationState = keyof typeof ROW_STYLES;
+
+/** Priority: alarms (yellow) > measurements (green) > none (gray). */
+const locationState = (row: LocationRow, summary: LocationAlarmSummary | undefined): LocationState => {
+  if (summary && summary.count > 0) {
+    return 'alarm';
+  }
+  if ((row.measurement_count ?? 0) > 0 || row.last_measurement_at) {
+    return 'measurement';
+  }
+  return 'none';
+};
+
+const STATE_DOT_COLORS: Record<LocationState, string> = {
+  alarm: '#fbbc15',
+  measurement: '#8dc160',
+  none: '#6c757d',
+};
+
+/** The State column: a dot and "2/3 active" / "Measurements" / "No data";
+ * a spinner until the alarm summary and the details are loaded. */
+const LocationStateCell = ({
+  row,
+  summary,
+}: {
+  row: LocationRow;
+  summary: LocationAlarmSummary | undefined;
+}) => {
+  if (!summary || row.measurement_count === undefined) {
+    return (
+      <div className="d-flex align-items-center gap-2 text-muted">
+        <Spinner size="sm" animation="border" />
+      </div>
+    );
+  }
+  const state = locationState(row, summary);
+  const labels: Record<LocationState, string> = {
+    alarm: `${summary.active}/${summary.count} active`,
+    measurement: 'Measurements',
+    none: 'No data',
+  };
+  return (
+    <div className="d-flex align-items-center gap-2">
+      <span
+        className="d-inline-block rounded-circle"
+        style={{ width: 10, height: 10, backgroundColor: STATE_DOT_COLORS[state] }}
+      />
+      <span className="small">{labels[state]}</span>
+    </div>
+  );
+};
+
+/** The Actions column: edit, and delete (in the Django admin). */
+const LocationActions = ({
+  row,
+  onEdit,
+  canDelete,
+}: {
+  row: LocationRow;
+  /** Null without the permission to edit. */
+  onEdit: ((row: LocationRow) => void) | null;
+  canDelete: boolean;
+}) => (
+  <div className="d-flex gap-2">
+    {onEdit && (
+      <Button
+        size="sm"
+        variant="outline-primary"
+        title="Edit location"
+        onClick={(event) => {
+          event.stopPropagation();
+          onEdit(row);
+        }}
+      >
+        <Pencil />
+      </Button>
+    )}
+    {canDelete && (
+      <Button
+        size="sm"
+        variant="outline-danger"
+        title="Open in Django admin for delete"
+        href={getBackendUrl(`/aadmin/progeo/progeolocation/${row.id}/delete/`)}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(event) => event.stopPropagation()}
+      >
+        Delete
+      </Button>
+    )}
+  </div>
+);
+
+/** Columns of the locations table. */
+const locationColumns = ({
+  alarmSummary,
+  onEdit,
+  canDelete,
+}: {
+  alarmSummary: Record<string, LocationAlarmSummary>;
+  /** Null without the permission to edit. */
+  onEdit: ((row: LocationRow) => void) | null;
+  canDelete: boolean;
+}): TableColumn<LocationRow>[] => [
+  {
+    name: 'Project',
+    selector: (row) => row.project_id ?? '-',
+    sortable: true,
+    width: '110px',
+  },
+  {
+    name: 'Name',
+    selector: (row) => row.name || '-',
+    sortable: true,
+    grow: 1.4,
+  },
+  {
+    name: 'City',
+    selector: (row) => row.city || '-',
+    sortable: true,
+    grow: 1.2,
+  },
+  {
+    name: 'Address',
+    selector: (row) => row.address || '-',
+    grow: 1.7,
+    sortable: true,
+    wrap: true,
+  },
+  {
+    name: 'Contact',
+    selector: (row) => row.manager || row.telefon || row.mail || '-',
+    sortable: true,
+    grow: 1.5,
+    wrap: true,
+  },
+  {
+    name: 'State',
+    cell: (row) => <LocationStateCell row={row} summary={alarmSummary[String(row.id)]} />,
+    width: '150px',
+  },
+  {
+    name: 'Devices',
+    selector: (row) => row.device_count || 0,
+    sortable: true,
+    width: '120px',
+  },
+  {
+    name: 'Actions',
+    width: '300px',
+    cell: (row) => (
+      <LocationActions row={row} onEdit={onEdit} canDelete={canDelete} />
+    ),
+  },
+];
+
+/** Row colors by state (see locationState). */
+const rowStylesFor = (alarmSummary: Record<string, LocationAlarmSummary>) =>
+  (Object.keys(ROW_STYLES) as LocationState[]).map((state) => ({
+    when: (row: LocationRow) => locationState(row, alarmSummary[String(row.id)]) === state,
+    style: ROW_STYLES[state],
+  }));
+
 const LocationsOverview = () => {
   const auth = useAuth();
   const { hasPermission } = usePermissions();
@@ -68,13 +280,6 @@ const LocationsOverview = () => {
   >({});
   const [searchText, setSearchText] = useState('');
   const [onlyConnected, setOnlyConnected] = useState(true);
-  const [selectedLocationId, setSelectedLocationId] = useState<number | null>(
-    null,
-  );
-  const [selectedMeasurements, setSelectedMeasurements] = useState<
-    MeasurementCompareRow[]
-  >([]);
-  const [measurementsLoading, setMeasurementsLoading] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingLocation, setEditingLocation] = useState<LocationRow | null>(
     null,
@@ -89,19 +294,9 @@ const LocationsOverview = () => {
 
   const fetchLocations = (search = '', hasDevice = false) => {
     setLoading(true);
-    const params = new URLSearchParams();
-
-    if (search.trim()) {
-      params.set('search', search.trim());
-    }
-
-    if (hasDevice) {
-      params.set('has_device', '1');
-    }
-
     void axiosConfig.perform_get(
       auth,
-      `/v1/location/min/?${params.toString()}`,
+      `/v1/location/min/?${locationsQuery(search, hasDevice)}`,
       (response) => {
         const next = (response?.data || []) as LocationRow[];
         loadedDetailIds.current.clear();
@@ -142,19 +337,7 @@ const LocationsOverview = () => {
           string,
           LocationAlarmSummary
         >;
-        setAlarmSummary((prev) => {
-          const next = { ...prev, ...payload };
-          // The backend only returns an entry for locations that actually
-          // have alarms - backfill the rest with an explicit zero so an
-          // absent key reliably means "not loaded yet" (the State column's
-          // loading-spinner check) rather than "confirmed no alarms".
-          ids.forEach((id) => {
-            if (!(String(id) in next)) {
-              next[String(id)] = { count: 0, active: 0 };
-            }
-          });
-          return next;
-        });
+        setAlarmSummary((prev) => mergeAlarmSummary(prev, payload, ids));
       },
       (error) => {
         ids.forEach((id) => loadedAlarmIds.current.delete(id));
@@ -184,15 +367,7 @@ const LocationsOverview = () => {
       `/v1/location/details/?ids=${ids.join(',')}&skip_lageplans=1`,
       (response) => {
         const details = (response?.data || []) as LocationRow[];
-        const detailsById = new Map(
-          details.map((detail) => [detail.id, detail]),
-        );
-        setRows((prev) =>
-          prev.map((row) => {
-            const detail = detailsById.get(row.id);
-            return detail ? { ...row, ...detail } : row;
-          }),
-        );
+        setRows((prev) => mergeDetails(prev, details));
       },
       (error) => {
         // Allow a retry on the next page change instead of silently missing data.
@@ -210,34 +385,6 @@ const LocationsOverview = () => {
     navigate(`/location/${row.id}/status`);
   };
 
-  const fetchLocationMeasurements = (locationId: number, year?: number) => {
-    setMeasurementsLoading(true);
-    void axiosConfig.perform_get(
-      auth,
-      `/v1/location/${locationId}/measurements/?${measurementsQuery(year)}`,
-      (response) => {
-        const measurements = (response?.data?.measurements ||
-          []) as MeasurementCompareRow[];
-        setSelectedMeasurements(measurements);
-        setMeasurementsLoading(false);
-      },
-      (error) => {
-        showRequestError(
-          enqueueSnackbar,
-          'Could not load location measurements',
-          error,
-        );
-        setSelectedMeasurements([]);
-        setMeasurementsLoading(false);
-      },
-    );
-  };
-
-  const handleCompareClick = (row: LocationRow) => {
-    setSelectedLocationId(row.id);
-    fetchLocationMeasurements(row.id);
-  };
-
   const openEditModal = (row: LocationRow) => {
     setEditingLocation(row);
     setShowEditModal(true);
@@ -249,19 +396,7 @@ const LocationsOverview = () => {
   };
 
   const handleLocationSaved = (updated: LocationEditRow) => {
-    setRows((prev) =>
-      prev.map((row) => {
-        if (row.id !== updated.id) {
-          return row;
-        }
-        return {
-          ...row,
-          ...updated,
-          device_count: updated.device_count ?? row.device_count,
-          has_device: updated.has_device ?? row.has_device,
-        };
-      }),
-    );
+    setRows((prev) => mergeSaved(prev, updated));
     setShowEditModal(false);
     setEditingLocation(null);
   };
@@ -293,170 +428,12 @@ const LocationsOverview = () => {
     }
   }, [filteredRows, currentPage, rowsPerPage]);
 
-  // Row coloring priority: alarms (yellow) > measurements (green) > none (gray).
-  const rowColorStyle = (row: LocationRow) => {
-    const summary = alarmSummary[String(row.id)];
-    if (summary && summary.count > 0) {
-      return ROW_STYLES.alarm;
-    }
-    if ((row.measurement_count ?? 0) > 0 || row.last_measurement_at) {
-      return ROW_STYLES.measurement;
-    }
-    return ROW_STYLES.none;
-  };
-
-  useEffect(() => {
-    if (!selectedLocationId) {
-      return;
-    }
-
-    const existsInFilteredRows = filteredRows.some(
-      (row) => row.id === selectedLocationId,
-    );
-    if (!existsInFilteredRows) {
-      setSelectedLocationId(null);
-      setSelectedMeasurements([]);
-    }
-  }, [filteredRows, selectedLocationId]);
-
-  const columns: TableColumn<LocationRow>[] = [
-    {
-      name: 'Project',
-      selector: (row) => row.project_id ?? '-',
-      sortable: true,
-      width: '110px',
-    },
-    {
-      name: 'Name',
-      selector: (row) => row.name || '-',
-      sortable: true,
-      grow: 1.4,
-    },
-    {
-      name: 'City',
-      selector: (row) => row.city || '-',
-      sortable: true,
-      grow: 1.2,
-    },
-    {
-      name: 'Address',
-      selector: (row) => row.address || '-',
-      grow: 1.7,
-      sortable: true,
-      wrap: true,
-    },
-    {
-      name: 'Contact',
-      selector: (row) => row.manager || row.telefon || row.mail || '-',
-      sortable: true,
-      grow: 1.5,
-      wrap: true,
-    },
-    {
-      name: 'State',
-      cell: (row) => {
-        const summary = alarmSummary[String(row.id)];
-        const detailsLoaded = row.measurement_count !== undefined;
-        if (!summary || !detailsLoaded) {
-          return (
-            <div className="d-flex align-items-center gap-2 text-muted">
-              <Spinner size="sm" animation="border" />
-            </div>
-          );
-        }
-        const hasAlarm = summary.count > 0;
-        const hasMeasurements =
-          (row.measurement_count ?? 0) > 0 || Boolean(row.last_measurement_at);
-        return (
-          <div className="d-flex align-items-center gap-2">
-            <span
-              className="d-inline-block rounded-circle"
-              style={{
-                width: 10,
-                height: 10,
-                backgroundColor: hasAlarm
-                  ? '#fbbc15'
-                  : hasMeasurements
-                    ? '#8dc160'
-                    : '#6c757d',
-              }}
-            />
-            <span className="small">
-              {hasAlarm
-                ? `${summary.active}/${summary.count} active`
-                : hasMeasurements
-                  ? 'Measurements'
-                  : 'No data'}
-            </span>
-          </div>
-        );
-      },
-      width: '150px',
-    },
-    {
-      name: 'Devices',
-      selector: (row) => row.device_count || 0,
-      sortable: true,
-      width: '120px',
-    },
-    {
-      name: 'Actions',
-      width: '300px',
-      cell: (row) => (
-        <div className="d-flex gap-2">
-          {canEdit && (
-            <Button
-              size="sm"
-              variant="outline-primary"
-              title="Edit location"
-              onClick={(event) => {
-                event.stopPropagation();
-                openEditModal(row);
-              }}
-            >
-              <Pencil />
-            </Button>
-          )}
-          {canDelete && (
-            <Button
-              size="sm"
-              variant="outline-danger"
-              title="Open in Django admin for delete"
-              href={getBackendUrl(`/aadmin/progeo/progeolocation/${row.id}/delete/`)}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(event) => event.stopPropagation()}
-            >
-              Delete
-            </Button>
-          )}
-        </div>
-      ),
-    },
-  ];
-
-  const conditionalRowStyles = [
-    {
-      when: (row: LocationRow) => rowColorStyle(row) === ROW_STYLES.alarm,
-      style: ROW_STYLES.alarm,
-    },
-    {
-      when: (row: LocationRow) => rowColorStyle(row) === ROW_STYLES.measurement,
-      style: ROW_STYLES.measurement,
-    },
-    {
-      when: (row: LocationRow) => rowColorStyle(row) === ROW_STYLES.none,
-      style: ROW_STYLES.none,
-    },
-    // Selected highlight last so it stays visible on colored rows.
-    {
-      when: (row: LocationRow) => row.id === selectedLocationId,
-      style: {
-        backgroundColor: 'rgba(13, 110, 253, 0.22)',
-        borderLeft: '3px solid #0d6efd',
-      },
-    },
-  ];
+  const columns = locationColumns({
+    alarmSummary,
+    onEdit: canEdit ? openEditModal : null,
+    canDelete,
+  });
+  const conditionalRowStyles = rowStylesFor(alarmSummary);
 
   return (
     <React.Fragment>

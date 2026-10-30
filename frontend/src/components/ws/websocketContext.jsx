@@ -1,5 +1,4 @@
 import React, { createContext, useCallback, useEffect, useRef, useState } from 'react';
-import PropTypes from 'prop-types';
 import { getWsBaseUrl } from '../../backendUrl';
 import { checkBackend } from '../../maintenance';
 
@@ -88,11 +87,6 @@ const WebSocketProvider = ({ children, url }) => {
       {children}
     </WebsocketContext.Provider>
   );
-};
-
-WebSocketProvider.propTypes = {
-  children: PropTypes.element,
-  url: PropTypes.string,
 };
 
 export { WebsocketContext, WebSocketProvider };
