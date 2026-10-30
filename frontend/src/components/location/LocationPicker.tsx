@@ -128,6 +128,8 @@ const LocationPicker = <T extends PickableLocation>({
         paginationText={t('location_picker_more')}
         disabled={disabled || loading || !locations.length}
         maxResults={50}
+        // fixed menu: not clipped by overflow:hidden parents (PanelCard)
+        positionFixed
         paginate
         clearButton
         highlightOnlyResult

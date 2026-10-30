@@ -55,6 +55,10 @@ class Command(BaseCommand):
         "  python manage.py restore_backups --apply --db default --db 5180"
     )
 
+    # call_command only: {database: dump file name} instead of the newest per
+    # database (import_live_backup restores exactly the dumps it unpacked).
+    stealth_options = ("dumps",)
+
     def add_arguments(self, parser):
         parser.add_argument("--apply", action="store_true", help="Drop and restore (default: only report).")
         parser.add_argument("--noinput", action="store_true", help="Do not ask for confirmation.")
@@ -63,7 +67,7 @@ class Command(BaseCommand):
                             help="Databases restored in parallel (default 4).")
 
     def handle(self, *args, **options):
-        dumps = newest_dumps()
+        dumps = options.get("dumps") or newest_dumps()
         if options["databases"]:
             dumps = {db: name for db, name in dumps.items() if db in options["databases"]}
         restore = {db: name for db, name in dumps.items() if not db.startswith(PROTECTED_PREFIX)}

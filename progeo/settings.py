@@ -453,6 +453,24 @@ BACKUP_REMOTE_KEEP = int(os.getenv("BACKUP_REMOTE_KEEP", "") or 14)
 # unencrypted. The private key never belongs on this host.
 BACKUP_REMOTE_GPG_KEY_FILE = (os.getenv("BACKUP_REMOTE_GPG_KEY_FILE", "").strip()
                               or "/etc/progeo/backup/backup-public-key.asc")
+# LIVE server: the same bundle, encrypted for the staging server's own key, to the
+# staging server (`transfer_backups --target staging`, daily.sh). Empty host = off.
+STAGING_REMOTE_HOST = os.getenv("STAGING_REMOTE_HOST", "").strip()
+STAGING_REMOTE_PORT = int(os.getenv("STAGING_REMOTE_PORT", "") or 22)
+STAGING_REMOTE_USER = os.getenv("STAGING_REMOTE_USER", "").strip()
+STAGING_REMOTE_PASSWORD = os.getenv("STAGING_REMOTE_PASSWORD", "")
+STAGING_REMOTE_KEY_FILE = os.getenv("STAGING_REMOTE_KEY_FILE", "").strip() or BACKUP_REMOTE_KEY_FILE
+STAGING_REMOTE_HOST_KEY = os.getenv("STAGING_REMOTE_HOST_KEY", "").strip()
+STAGING_REMOTE_PATH = os.getenv("STAGING_REMOTE_PATH", "").strip() or "detection-docker-setup/media/staging"
+STAGING_REMOTE_KEEP = int(os.getenv("STAGING_REMOTE_KEEP", "") or 2)
+STAGING_REMOTE_GPG_KEY_FILE = (os.getenv("STAGING_REMOTE_GPG_KEY_FILE", "").strip()
+                               or "/etc/progeo/backup/staging-public-key.asc")
+# STAGING server: where the live server's bundles arrive (`import_live_backup`) and
+# the private key that opens them - this key opens staging bundles only.
+STAGING_IMPORT_DIR = os.path.join(MEDIA_ROOT, os.getenv("STAGING_IMPORT_DIR", "staging"))
+STAGING_IMPORT_GPG_KEY_FILE = (os.getenv("STAGING_IMPORT_GPG_KEY_FILE", "").strip()
+                               or "/etc/progeo/backup/staging-private-key.asc")
+STAGING_IMPORT_GPG_PASSPHRASE = os.getenv("STAGING_IMPORT_GPG_PASSPHRASE", "")
 SETUP_DIR = os.path.join(MEDIA_ROOT, os.getenv("SETUP_DIR", "setup"))
 UPLOAD_DIR = os.path.join(MEDIA_ROOT, os.getenv("UPLOAD_DIR", "uploads"))
 UPLOAD_REL_DIR = os.path.join(MEDIA_URL, os.getenv("UPLOAD_DIR", "uploads"))[1:]

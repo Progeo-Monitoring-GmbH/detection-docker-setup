@@ -5,6 +5,8 @@ from django.core.management import CommandError
 
 from progeo.helper.backup_transfer import (
     RECENT_HOURS,
+    TARGETS,
+    Target,
     TransferError,
     gpg_keyring,
     is_enabled,
@@ -19,20 +21,26 @@ class Command(BaseCommand):
     help = (
         "Sends tonight's dumps (newest per database) as one OpenPGP-encrypted tar file\n"
         "to the backup server over SFTP (BACKUP_REMOTE_* in .env, helper/backup_transfer.py).\n"
+        "--target staging sends them to the staging server instead (STAGING_REMOTE_*),\n"
+        "where `import_live_backup` unpacks them.\n"
         "Run by the cron job daily.sh right after handle_all_dbs --command=dbbackup.\n\n"
         "Examples:\n"
         "  python manage.py transfer_backups\n"
-        "  python manage.py transfer_backups --dry-run   # only list what would be sent, check the key"
+        "  python manage.py transfer_backups --dry-run   # only list what would be sent, check the key\n"
+        "  python manage.py transfer_backups --target staging"
     )
 
     def add_arguments(self, parser):
         parser.add_argument("--dry-run", action="store_true", help="List the dumps and keys, send nothing.")
+        parser.add_argument("--target", choices=list(TARGETS), default="backup",
+                            help="backup (default): the backup server; staging: the staging server.")
 
     def handle(self, *args, **options):
-        if not is_enabled():
-            ilog("BACKUP_REMOTE_HOST is empty - no backup transfer")
+        config = Target.of(options["target"])
+        if not is_enabled(config.name):
+            ilog(f"{config.prefix}_HOST is empty - no backup transfer to {config.name}")
             return
-        target = f"{settings.BACKUP_REMOTE_USER}@{settings.BACKUP_REMOTE_HOST}:{settings.BACKUP_REMOTE_PATH}"
+        target = f"{config.user}@{config.host}:{config.path}"
 
         if options["dry_run"]:
             since = datetime.datetime.now() - datetime.timedelta(hours=RECENT_HOURS)
@@ -41,7 +49,7 @@ class Command(BaseCommand):
                 self.stdout.write(path)
             self.stdout.write(f"{len(dumps)} dumps would go to {target}; no dump of the last {RECENT_HOURS}h: {stale or '-'}")
             try:
-                with gpg_keyring() as (_home, recipients):
+                with gpg_keyring(config.gpg_key_file) as (_home, recipients):
                     for fingerprint, uid in recipients:
                         self.stdout.write(f"encrypted for {fingerprint} {uid}")
             except TransferError as exc:
@@ -49,7 +57,7 @@ class Command(BaseCommand):
             return
 
         try:
-            result = transfer_backups()
+            result = transfer_backups(target=config.name)
         except TransferError as exc:
             elog(f"Backup transfer to {target} failed: {exc}")
             raise CommandError(str(exc)) from exc

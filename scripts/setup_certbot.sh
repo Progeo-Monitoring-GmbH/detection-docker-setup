@@ -80,6 +80,19 @@ docker exec progeo-nginx nginx -s reload
 echo "[6/6] Testing auto-renewal..."
 certbot renew --dry-run --webroot -w "$WEBROOT_PATH"
 
+# ===== RELOAD NGINX AFTER EVERY RENEWAL =====
+# The snap's own timer (snap.certbot.renew.timer) renews too, without the cron
+# job's --deploy-hook - nginx then kept the old certificate until it expired.
+# Hooks in renewal-hooks/deploy run after every renewal, whoever started it.
+HOOK_FILE="/etc/letsencrypt/renewal-hooks/deploy/reload-progeo-nginx.sh"
+mkdir -p "$(dirname "$HOOK_FILE")"
+tee "$HOOK_FILE" >/dev/null <<'EOF'
+#!/bin/sh
+docker exec progeo-nginx nginx -s reload
+EOF
+chmod 755 "$HOOK_FILE"
+echo "[OK] Deploy hook installed at $HOOK_FILE"
+
 # ===== INSTALL AUTO-RENEW CRONJOB =====
 echo "=== Configuring auto-renew cronjob ==="
 
@@ -88,11 +101,13 @@ tee "$CRON_FILE" >/dev/null <<EOF
 SHELL=/bin/bash
 PATH=/sbin:/bin:/usr/sbin:/usr/bin:/snap/bin
 
-# Renew certificates every day at 03:17. Certbot renews only when needed.
-17 3 * * * root certbot renew --quiet --deploy-hook "docker exec progeo-nginx nginx -s reload"
+# Renew certificates every day at 03:17. Certbot renews only when needed;
+# the deploy hook ($HOOK_FILE) reloads nginx.
+17 3 * * * root certbot renew --quiet
 EOF
 
 chmod 644 "$CRON_FILE"
 echo "[OK] Auto-renew cronjob installed at $CRON_FILE"
 
 echo "=== DONE! SSL is configured for domains: ${DOMAINS[*]} ==="
+echo "nginx uses it with CERT_PATH=\"/etc/letsencrypt/live/${DOMAINS[0]}\" in .env (see: certbot certificates)"

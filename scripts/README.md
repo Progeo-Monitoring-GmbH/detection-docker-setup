@@ -74,7 +74,7 @@ sudo bash scripts/setup_reverse_ssh_shell.sh \
 
 | Script | Purpose |
 | --- | --- |
-| `setup_certbot.sh` | Requests Let's Encrypt certificates (webroot challenge), reloads `progeo-nginx` and installs a daily renewal cron job. **root** |
+| `setup_certbot.sh` | Requests Let's Encrypt certificates (webroot challenge), reloads `progeo-nginx` and installs a daily renewal cron job. A deploy hook (`/etc/letsencrypt/renewal-hooks/deploy/`) reloads nginx after every renewal, including those by the snap's own timer. The certificate lands in `/etc/letsencrypt/live/<first domain>`, which is the `CERT_PATH` for `.env`. **root** |
 | `check_https_local.ps1` | Windows dev check for local HTTPS. For every domain in `DNS_BACK_NAMES` / `DNS_FRONT_NAMES` it verifies the hosts-file entry, the nginx container, the TLS handshake, certificate expiry, SAN and Windows trust, and whether Firefox trusts the mkcert root. |
 | `subdomain_audit.py` | Checks DNS and HTTP(S) for each progeo.com subdomain and classifies it as ACTIVE, DEAD or SUSPICIOUS, which makes unused subdomains easy to spot. |
 

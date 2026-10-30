@@ -22,6 +22,11 @@ BACKUP_REMOTE_KEY_FILE if it exists, else with BACKUP_REMOTE_PASSWORD.
 
 Every run writes its result to LOG_DIR/backup_transfer.json; progeo/metrics.py
 exports it for the BackupTransfer* alerts.
+
+A second target, "staging" (STAGING_REMOTE_*, `transfer_backups --target staging`),
+sends the same bundle to the staging server, encrypted for the staging
+server's own key; there helper/backup_import.py unpacks it into BACKUP_DIR.
+Its result goes to LOG_DIR/backup_transfer_staging.json, no alerts.
 """
 import base64
 import datetime
@@ -77,12 +82,46 @@ class TransferResult:
     seconds: float = 0.0
 
 
-def is_enabled():
-    return bool(getattr(settings, "BACKUP_REMOTE_HOST", ""))
+# Target name -> prefix of its settings (<prefix>_HOST, _PORT, ...)
+TARGETS = {"backup": "BACKUP_REMOTE", "staging": "STAGING_REMOTE"}
 
 
-def status_path():
-    return os.path.join(getattr(settings, "LOG_DIR", settings.BASE_DIR), STATUS_FILE)
+@dataclass(frozen=True)
+class Target:
+    """Where a bundle goes, read from the settings <prefix>_*."""
+    name: str
+    prefix: str
+    host: str
+    port: int
+    user: str
+    password: str
+    key_file: str
+    host_key: str
+    path: str
+    keep: int
+    gpg_key_file: str
+
+    @classmethod
+    def of(cls, name="backup"):
+        if name not in TARGETS:
+            raise TransferError(f"Unknown target {name!r} - one of {', '.join(TARGETS)}")
+        prefix = TARGETS[name]
+
+        def value(key):
+            return getattr(settings, f"{prefix}_{key}", "")
+
+        return cls(name, prefix, value("HOST"), value("PORT") or 22, value("USER"), value("PASSWORD"),
+                   value("KEY_FILE"), value("HOST_KEY"), value("PATH"), int(value("KEEP") or 0),
+                   value("GPG_KEY_FILE"))
+
+
+def is_enabled(target="backup"):
+    return bool(getattr(settings, f"{TARGETS[target]}_HOST", ""))
+
+
+def status_path(target="backup"):
+    name = STATUS_FILE if target == "backup" else STATUS_FILE.replace(".json", f"_{target}.json")
+    return os.path.join(getattr(settings, "LOG_DIR", settings.BASE_DIR), name)
 
 
 # ---------------------------------------------------------------------------- selection
@@ -134,7 +173,7 @@ def clean_old_dumps(backup_dir, database, keep):
 
 # ---------------------------------------------------------------------------- connection
 
-def parse_host_key(value):
+def parse_host_key(value, setting="BACKUP_REMOTE_HOST_KEY"):
     """(key type, PKey) from an ssh-keyscan / known_hosts line
     ("[host]:port ssh-ed25519 AAAA...") or just "ssh-ed25519 AAAA..."."""
     import paramiko
@@ -145,35 +184,36 @@ def parse_host_key(value):
             try:
                 return part, paramiko.PKey.from_type_string(part, base64.b64decode(parts[index + 1]))
             except Exception as exc:  # binascii and paramiko errors alike
-                raise TransferError(f"BACKUP_REMOTE_HOST_KEY is not a valid {part} key: {exc}") from exc
-    raise TransferError("BACKUP_REMOTE_HOST_KEY needs the key type and key, e.g. \"ssh-ed25519 AAAA...\"")
+                raise TransferError(f"{setting} is not a valid {part} key: {exc}") from exc
+    raise TransferError(f"{setting} needs the key type and key, e.g. \"ssh-ed25519 AAAA...\"")
 
 
-def connect():
-    """An open (SSHClient, SFTPClient) to the backup server."""
+def connect(target=None):
+    """An open (SSHClient, SFTPClient) to the target's server (default: the backup server)."""
     import paramiko
 
-    host, port = settings.BACKUP_REMOTE_HOST, settings.BACKUP_REMOTE_PORT
-    if not settings.BACKUP_REMOTE_HOST_KEY:
+    target = target or Target.of()
+    host, port = target.host, target.port
+    if not target.host_key:
         raise TransferError(
-            f"BACKUP_REMOTE_HOST_KEY is empty - get it with: ssh-keyscan -p {port} -t ed25519 {host}"
+            f"{target.prefix}_HOST_KEY is empty - get it with: ssh-keyscan -p {port} -t ed25519 {host}"
         )
-    key_type, host_key = parse_host_key(settings.BACKUP_REMOTE_HOST_KEY)
+    key_type, host_key = parse_host_key(target.host_key, f"{target.prefix}_HOST_KEY")
 
     client = paramiko.SSHClient()
     client.get_host_keys().add(host if port == 22 else f"[{host}]:{port}", key_type, host_key)
     client.set_missing_host_key_policy(paramiko.RejectPolicy())
     credentials = {}
-    key_file = settings.BACKUP_REMOTE_KEY_FILE
+    key_file = target.key_file
     if key_file and os.path.isfile(key_file):
         credentials["pkey"] = paramiko.PKey.from_path(key_file)
-    elif settings.BACKUP_REMOTE_PASSWORD:
-        credentials["password"] = settings.BACKUP_REMOTE_PASSWORD
+    elif target.password:
+        credentials["password"] = target.password
     else:
-        raise TransferError(f"Neither the key file {key_file} nor BACKUP_REMOTE_PASSWORD is there")
+        raise TransferError(f"Neither the key file {key_file} nor {target.prefix}_PASSWORD is there")
     try:
         client.connect(
-            host, port=port, username=settings.BACKUP_REMOTE_USER or None,
+            host, port=port, username=target.user or None,
             look_for_keys=False, allow_agent=False,
             timeout=_TIMEOUT, banner_timeout=_TIMEOUT, auth_timeout=_TIMEOUT, **credentials,
         )
@@ -218,7 +258,7 @@ def parse_keys(listing):
         elif keys and fields[0] == "uid" and not keys[-1][2]:
             keys[-1][2] = fields[9]
     if any(kind == "sec" for kind, *_ in keys):
-        raise TransferError("BACKUP_REMOTE_GPG_KEY_FILE holds a PRIVATE key - export only the public key "
+        raise TransferError("The *_GPG_KEY_FILE holds a PRIVATE key - export only the public key "
                             "(gpg --armor --export), the private key must not be on this host")
     return [(fingerprint, uid, usable) for _kind, fingerprint, uid, usable in keys]
 
@@ -229,7 +269,7 @@ def gpg_keyring(key_file=None):
     yields (home, [(fingerprint, user id)] of the keys the bundle is encrypted for)."""
     key_file = key_file or settings.BACKUP_REMOTE_GPG_KEY_FILE
     if not os.path.isfile(key_file):
-        raise TransferError(f"The public key BACKUP_REMOTE_GPG_KEY_FILE={key_file} is missing - nothing is sent unencrypted")
+        raise TransferError(f"The public key {key_file} is missing - nothing is sent unencrypted")
     home = tempfile.mkdtemp(prefix="progeo-gpg-")
     try:
         # An existing common.conf keeps gpg >= 2.4.1 from switching a new home to keyboxd
@@ -383,13 +423,15 @@ def _write_status(path, ok, result=None, error=""):
     os.replace(tmp, path)
 
 
-def transfer_backups(backup_dir=None, now=None, connector=connect, status_file=None, key_file=None):
-    """Bundles tonight's dumps encrypted onto the backup server; raises
-    TransferError (after recording it in the status file) when nothing or not
-    all of it got there."""
+def transfer_backups(backup_dir=None, now=None, connector=None, status_file=None, key_file=None, target="backup"):
+    """Bundles tonight's dumps encrypted onto the target's server (default:
+    the backup server); raises TransferError (after recording it in the
+    status file) when nothing or not all of it got there."""
     backup_dir = backup_dir or settings.BACKUP_DIR
     now = now or datetime.datetime.now()
-    status_file = status_file or status_path()
+    status_file = status_file or status_path(target)
+    config = Target.of(target)
+    connector = connector or (lambda: connect(config))
     started = time.monotonic()
     result = TransferResult(bundle=f"{BUNDLE_PREFIX}{now:%Y-%m-%d-%H%M%S}{BUNDLE_SUFFIX}")
     try:
@@ -402,15 +444,15 @@ def transfer_backups(backup_dir=None, now=None, connector=connect, status_file=N
             raise TransferError(f"No dump of '{DEFAULT_DB_ALIAS}' of the last {RECENT_HOURS}h in {backup_dir} "
                                 f"- nothing sent, the bundle could not be restored")
         result.files = [os.path.basename(path) for path in dumps.values()]
-        remote_dir = settings.BACKUP_REMOTE_PATH.rstrip("/") or "."
-        with gpg_keyring(key_file) as (gpg_home, recipients):  # before connecting: no key, no transfer
+        remote_dir = config.path.rstrip("/") or "."
+        with gpg_keyring(key_file or config.gpg_key_file) as (gpg_home, recipients):  # before connecting: no key, no transfer
             result.recipients = [f"{fingerprint} {uid}" for fingerprint, uid in recipients]
             client, sftp = connector()
             try:
                 _makedirs(sftp, remote_dir)
                 result.bytes, result.sha256 = upload_bundle(sftp, remote_dir, result.bundle, dumps,
                                                             gpg_home, recipients)
-                result.removed = prune(sftp, remote_dir, settings.BACKUP_REMOTE_KEEP, result.bundle)
+                result.removed = prune(sftp, remote_dir, config.keep, result.bundle)
             finally:
                 sftp.close()
                 client.close()

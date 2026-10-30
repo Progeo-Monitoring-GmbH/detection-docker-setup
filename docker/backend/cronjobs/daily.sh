@@ -15,3 +15,7 @@ echo "[$(date '+%Y-%m-%d %H:%M:%S')] daily dbbackup finished (exit $rc), transfe
 python manage.py transfer_backups
 rc=$?
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] daily transfer finished (exit $rc)"
+# The same dumps, encrypted for the staging server's key, to the staging server (STAGING_REMOTE_* in .env; off while empty).
+python manage.py transfer_backups --target staging
+rc=$?
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] daily staging transfer finished (exit $rc)"

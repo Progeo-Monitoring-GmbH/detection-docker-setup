@@ -162,6 +162,88 @@ docker exec progeo-backend python manage.py handle_all_dbs --command=dbrestore
 
 Bundles from before the encryption are plain `progeo-*.tar` files. Unpack those with `tar -xf`. They are deleted as they age out of `BACKUP_REMOTE_KEEP`.
 
+## Staging server
+
+The staging server runs under `staging.api.progeo.com` and `staging.dashboard.progeo.com`. It holds a copy of the live databases:
+
+- Every night the live server sends tonight's dumps to it (`transfer_backups --target staging`, right after the backup transfer in `daily.sh`).
+- The dumps are encrypted for the staging server's **own** key pair. That key opens these bundles only, never the backup server's.
+- On the staging server, `import_live_backup` checks, decrypts and unpacks a bundle into `media/backup` and restores exactly those dumps (`restore_backups`).
+- Live connects to staging, never the other way round. The staging server needs no access to the live server or the backup server.
+
+### .env / django.env of the staging server
+
+The databases hold real customers. In `django.env` and `.env` of the staging server, set:
+
+| Setting | Value | Why |
+| --- | --- | --- |
+| `MAIL_TEST_MODE` / `SMS_DRY_RUN` | `1` | Alarms and reports go to `MAIL_TEST_RECIPIENT`; SMS are only logged. |
+| `BACKUP_REMOTE_HOST` | empty | Otherwise staging's dumps land between the live bundles on the backup server and push them out. |
+| `STAGING_REMOTE_HOST` | empty | Staging sends nothing anywhere. |
+| `DNS_FRONT_NAMES` / `DNS_BACK_NAMES` | `"staging.dashboard.progeo.com localhost"` / `"staging.api.progeo.com"` | nginx `server_name`. |
+| `FRONTEND_URL`, `FULL_BACKEND_URL`, `BACKEND_URL`, `MONITORING_URL` | the `staging.` names | Links in mails, Grafana. |
+| `DEVICE_SAMPLE_BASE_URL` | `https://staging.api.progeo.com` | Device configs made on staging must not point at live. |
+| `ALLOWED_ORIGINS` | the `staging.` origins | CORS / CSRF. |
+| `CERT_PATH` | `/etc/letsencrypt/live/staging.api.progeo.com` | See below. |
+| `SENTRY_ENVIRONMENT`, `ALERT_SERVER_NAME` | `staging` | Errors and alerts must not look like live. |
+
+Also check the jobs that talk to the outside world, e.g. the Airtable sync (`AIRTABLE_*`). Switch them off with `CELERY_DISABLED_TASKS` / `CRON_DISABLED_JOBS` where staging must not write.
+
+### Certificate (on the staging server)
+
+1. Point the DNS A records of `staging.api.progeo.com` and `staging.dashboard.progeo.com` to the staging server. Port 80 must be reachable.
+2. Request the certificate while nginx still runs with the old config. It serves the ACME challenge from `/var/www/certbot`. Put `staging.api.progeo.com` first, because certbot names the directory after the first domain:
+   ```bash
+   sudo bash scripts/setup_certbot.sh admin@progeo.com staging.api.progeo.com staging.dashboard.progeo.com
+   ```
+3. Set the `.env` values above and recreate nginx, which reads `CERT_PATH` only at start: `docker compose up -d --force-recreate progeo-nginx`.
+4. Remove the copied `api.progeo.com` certificate from the staging server. Its renewal can only fail there, because the challenge goes to the live server. Every failure counts against Let's Encrypt's per-account limit, which the copied account shares with the live server:
+   ```bash
+   sudo certbot delete --cert-name api.progeo.com   # local files only - check the name with: certbot certificates
+   ```
+   **Never `certbot revoke` there.** The copy may be the very certificate the live server uses.
+
+### Data transfer setup
+
+1. **Staging server**: make the key pair. The private key stays here, without a passphrase, so the import runs unattended. Otherwise set `STAGING_IMPORT_GPG_PASSPHRASE`.
+   ```bash
+   mkdir -p secrets/backup && cd secrets/backup
+   export GNUPGHOME="$(mktemp -d)"
+   gpg --batch --pinentry-mode loopback --passphrase "" --quick-generate-key "Progeo Staging <staging@progeo.com>" ed25519 cert never
+   gpg --batch --pinentry-mode loopback --passphrase "" --quick-add-key "$(gpg --list-keys --with-colons | awk -F: '/^fpr/ {print $10; exit}')" cv25519 encr never
+   gpg --armor --export > staging-public-key.asc
+   gpg --batch --pinentry-mode loopback --passphrase "" --armor --export-secret-keys > staging-private-key.asc
+   chmod 600 staging-private-key.asc && rm -rf "$GNUPGHOME"
+   ```
+2. **Staging server**: allow the live server's backup SSH key (`secrets/backup/id_ed25519.pub` on live) for the user `progeo`, restricted to SFTP. Add it as one line to `~progeo/.ssh/authorized_keys`:
+   ```text
+   restrict,command="/usr/lib/openssh/sftp-server" ssh-ed25519 AAAA... progeo-backup
+   ```
+3. **Live server**: copy `staging-public-key.asc` (the public key **only**) to `secrets/backup/`. In `.env`, set `STAGING_REMOTE_HOST`, `STAGING_REMOTE_USER=progeo` and `STAGING_REMOTE_HOST_KEY`:
+   ```bash
+   ssh-keyscan -p 22 -t ed25519 staging.api.progeo.com
+   ```
+   The bundles land in `~progeo/detection-docker-setup/media/staging` (`STAGING_REMOTE_PATH`). The newest 2 are kept.
+   - If the staging server is a disk copy of the live server, both have the same SSH host key. Then the key pinning can't tell them apart. Make new host keys on staging first: `sudo rm /etc/ssh/ssh_host_* && sudo dpkg-reconfigure openssh-server`.
+4. **Live server**: test, then restart the backend so `daily.sh` picks it up:
+   ```bash
+   docker exec progeo-backend python manage.py transfer_backups --target staging --dry-run
+   docker exec progeo-backend python manage.py transfer_backups --target staging
+   ```
+   The result goes to `logs/backend/backup_transfer_staging.json`.
+
+### Refresh the staging data
+
+```bash
+docker exec -it progeo-backend python manage.py import_live_backup --list    # what arrived
+docker exec -it progeo-backend python manage.py import_live_backup           # unpack, show what restore would do
+docker exec -it progeo-backend python manage.py import_live_backup --apply   # drop + restore (asks first)
+docker compose restart progeo-backend
+```
+
+- The restore replaces **all** databases of the staging server, including users and test data made there. Project databases that live doesn't have are dropped.
+- If the staging code is newer than live, run `migrate` afterwards.
+
 ## Notes
 
 - Most service ports are controlled via `.env` variables.

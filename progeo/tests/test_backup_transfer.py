@@ -326,3 +326,122 @@ def test_clean_old_dumps_matches_the_database_prefix_only(tmp_path):
         *[f"2026-host-2026-10-{day}-015300.psql.gz" for day in range(25, 28)],
         "default-host-2026-10-27-015300.psql.gz",
     ]
+
+
+# ---------------------------------------------------------------------------- staging
+
+STAGING = "detection-docker-setup/media/staging"
+STAGING_SETTINGS = override_settings(
+    BACKUP_REMOTE_HOST="backup.progeo.com", BACKUP_REMOTE_PATH=REMOTE, BACKUP_REMOTE_KEEP=14,
+    STAGING_REMOTE_HOST="staging.api.progeo.com", STAGING_REMOTE_PATH=STAGING, STAGING_REMOTE_KEEP=1,
+)
+
+
+@pytest.fixture
+def private_key(gpg_key, tmp_path):
+    """The test key pair's private key file, as on the staging server."""
+    gpg, _public, fingerprint = gpg_key
+    path = tmp_path / "staging-private-key.asc"
+    path.write_bytes(subprocess.run([*gpg, "--armor", "--export-secret-keys", fingerprint],
+                                    check=True, capture_output=True, timeout=30).stdout)
+    return path
+
+
+def _send_to_staging(dirs, gpg_key, now=NOW):
+    backup_dir, server, status = dirs
+    sftp = FakeSFTP(str(server))
+    return bt.transfer_backups(str(backup_dir), now, lambda: (FakeClient(), sftp), str(status), str(gpg_key[1]),
+                               target="staging")
+
+
+@STAGING_SETTINGS
+def test_the_staging_target_has_its_own_path_retention_and_status_file(dirs, gpg_key, tmp_path):
+    backup_dir, server, _status = dirs
+    _dump(backup_dir, "default-srv-2026-10-26-235301.psql.gz")
+
+    _send_to_staging(dirs, gpg_key, NOW - datetime.timedelta(minutes=1))
+    _send_to_staging(dirs, gpg_key)
+
+    assert sorted(os.listdir(server / STAGING)) == ["progeo-2026-10-27-013000.tar.gpg",
+                                                    "progeo-2026-10-27-013000.tar.gpg.sha256"]
+    assert not (server / REMOTE).exists()  # the backup server's bundles are not touched
+    with override_settings(LOG_DIR=str(tmp_path)):
+        assert bt.status_path() == str(tmp_path / "backup_transfer.json")
+        assert bt.status_path("staging") == str(tmp_path / "backup_transfer_staging.json")
+    assert bt.is_enabled("staging")
+    with override_settings(STAGING_REMOTE_HOST=""):
+        assert not bt.is_enabled("staging") and bt.is_enabled()
+
+
+@STAGING_SETTINGS
+def test_staging_unpacks_what_the_live_server_sent(dirs, gpg_key, private_key, tmp_path):
+    from progeo.helper import backup_import as bi
+
+    backup_dir, server, _status = dirs
+    _dump(backup_dir, "default-srv-2026-10-26-235301.psql.gz", os.urandom(3 * 1024 * 1024))
+    _dump(backup_dir, "project_1-srv-2026-10-26-235402.psql.gz")
+    result = _send_to_staging(dirs, gpg_key)
+    (server / STAGING / "progeo-2026-10-28-013000.tar.gpg.part").write_bytes(b"still arriving")
+    staging_backup = tmp_path / "staging-backup"
+
+    assert bi.bundles(str(server / STAGING)) == [result.bundle]
+    dumps = bi.unpack(str(server / STAGING / result.bundle), str(staging_backup), str(private_key), "")
+
+    assert dumps == {"default": "default-srv-2026-10-26-235301.psql.gz",
+                     "project_1": "project_1-srv-2026-10-26-235402.psql.gz"}
+    for name in dumps.values():
+        assert (staging_backup / name).read_bytes() == (backup_dir / name).read_bytes()
+    assert sorted(os.listdir(staging_backup)) == sorted(dumps.values())
+
+
+@STAGING_SETTINGS
+def test_a_damaged_bundle_is_refused_before_decrypting(dirs, gpg_key, private_key, tmp_path):
+    from progeo.helper import backup_import as bi
+
+    backup_dir, server, _status = dirs
+    _dump(backup_dir, "default-srv-2026-10-26-235301.psql.gz")
+    bundle = server / STAGING / _send_to_staging(dirs, gpg_key).bundle
+    with open(bundle, "ab") as handle:
+        handle.write(b"x")
+
+    with pytest.raises(bt.TransferError, match="does not match"):
+        bi.unpack(str(bundle), str(tmp_path / "out"), str(private_key), "")
+    assert not (tmp_path / "out").exists()
+
+
+@STAGING_SETTINGS
+def test_without_the_right_private_key_nothing_is_unpacked(dirs, gpg_key, tmp_path):
+    from progeo.helper import backup_import as bi
+
+    backup_dir, server, _status = dirs
+    _dump(backup_dir, "default-srv-2026-10-26-235301.psql.gz")
+    bundle = server / STAGING / _send_to_staging(dirs, gpg_key).bundle
+    out = tmp_path / "out"
+
+    with pytest.raises(bt.TransferError, match="missing"):
+        bi.unpack(str(bundle), str(out), str(tmp_path / "no-key.asc"), "")
+    with pytest.raises(bt.TransferError, match="gpg --decrypt"):
+        bi.unpack(str(bundle), str(out), str(gpg_key[1]), "")  # the public key only
+    assert os.listdir(out) == []
+
+
+def test_only_dump_files_are_unpacked(gpg_key, private_key, tmp_path):
+    from progeo.helper import backup_import as bi
+
+    gpg, _public, fingerprint = gpg_key
+    plain = io.BytesIO()
+    with tarfile.open(fileobj=plain, mode="w") as tar:
+        for name in ("default-srv-2026-10-26-235301.psql.gz", "../default-srv-2026-10-26-235302.psql.gz"):
+            info = tarfile.TarInfo(name)
+            info.size = 4
+            tar.addfile(info, io.BytesIO(b"dump"))
+    bundle = tmp_path / "progeo-2026-10-27-013000.tar.gpg"
+    bundle.write_bytes(subprocess.run([*gpg, "--trust-model", "always", "--recipient", fingerprint, "--encrypt"],
+                                      input=plain.getvalue(), check=True, capture_output=True, timeout=30).stdout)
+    (tmp_path / f"{bundle.name}.sha256").write_text(f"{hashlib.sha256(bundle.read_bytes()).hexdigest()}  {bundle.name}\n")
+    out = tmp_path / "out"
+
+    with pytest.raises(bt.TransferError, match="Unexpected entry '../default"):
+        bi.unpack(str(bundle), str(out), str(private_key), "")
+    assert os.listdir(out) == []  # the first dump is removed again
+    assert not (tmp_path / "default-srv-2026-10-26-235302.psql.gz").exists()
