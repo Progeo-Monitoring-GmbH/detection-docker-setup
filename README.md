@@ -101,6 +101,7 @@ bash scripts/build_progeo-cad_factory_resilient.sh logs
 ## Backups
 
 Every night at 23:53 German time, the cron job `daily` ([docker/backend/cronjobs/daily.sh](docker/backend/cronjobs/daily.sh)) dumps every database into `media/backup`. Its log, `logs/backend/daily.log`, survives container restarts. The job's own timestamps and file names are UTC: only crond runs on Berlin time ([docker/backend/supervisord.conf](docker/backend/supervisord.conf)).
+The created dump files are then registered in the backup models with `manage.py sync_backups`, so the backup list in the UI is current before anything is transferred.
 Right after that, `manage.py transfer_backups` sends the newest dump of each database to a backup server over SFTP:
 
 - All dumps go as **one** tar file, `<BACKUP_REMOTE_PATH>/progeo-<YYYY-MM-DD-HHMMSS>.tar.gpg`, together with a `.sha256` file.
@@ -180,6 +181,7 @@ The databases hold real customers. In `django.env` and `.env` of the staging ser
 | `MAIL_TEST_MODE` / `SMS_DRY_RUN` | `1` | Alarms and reports go to `MAIL_TEST_RECIPIENT`; SMS are only logged. |
 | `BACKUP_REMOTE_HOST` | empty | Otherwise staging's dumps land between the live bundles on the backup server and push them out. |
 | `STAGING_REMOTE_HOST` | empty | Staging sends nothing anywhere. |
+| `VITE_SERVER_ENV` | `staging` | Build arg of the frontend image: shows the pink staging frame and the always-visible "Staging Server" banner. A host name containing `staging` enables it too. |
 | `DNS_FRONT_NAMES` / `DNS_BACK_NAMES` | `"staging.dashboard.progeo.com localhost"` / `"staging.api.progeo.com"` | nginx `server_name`. |
 | `FRONTEND_URL`, `FULL_BACKEND_URL`, `BACKEND_URL`, `MONITORING_URL` | the `staging.` names | Links in mails, Grafana. |
 | `DEVICE_SAMPLE_BASE_URL` | `https://staging.api.progeo.com` | Device configs made on staging must not point at live. |

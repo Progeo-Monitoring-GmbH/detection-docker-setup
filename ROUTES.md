@@ -40,7 +40,8 @@ These routes use the general application layout.
 | --- | --- |
 | `/device/overview` | Devices of one location picked with the location picker (`?location=<pk>`, via `/v1/status/location_devices/`): KPIs (online, ping for staff, new hash pattern), type and hash breakdowns, device table with identification and permitted device actions. |
 | `/device/:id/editor/` | Edit the configuration of a specific device. |
-| `/device/provision/` | Provision a new smartex mx controller (staff or `module_devices_provision`): pick a project/location, set sensors/interval, generate the config (device hash + transfer token) and confirm to create the device under that location. Staff: "Sync with Airtable" lists the Airtable projects in "Messeinheit und Inbetriebnahme" without a location (select + account → create them) and merge-updates the existing ones. |
+| `/device/provision/` | Provision a new smartex mx controller (staff or `module_devices_provision`): pick a project/location, set sensors/interval, generate the config (device hash + transfer token) and confirm to create the device under that location. Existing devices of the selected location can continue their measurement test instead. Staff: "Sync with Airtable" lists the Airtable projects in "Messeinheit und Inbetriebnahme" without a location (select + account → create them) and merge-updates the existing ones. |
+| `/device/statistics/` | Staff-only device/location statistics (`module_devices_enabled`): totals, devices by type, by chip_id, measured in the last 24 h, missing Lageplan, dead devices and unused/dead locations without a Lageplan. |
 | `/device/:id/detail` | View measurement details for a specific device. |
 | `/device/:id/update/` | Retired device-configuration URL; looks up the device and redirects to its location settings, or to `/device/overview/` if it has no location or cannot be resolved. |
 | `/alarms/` | Overview of alarms. |

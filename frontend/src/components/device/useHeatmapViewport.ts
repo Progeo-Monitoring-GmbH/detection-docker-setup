@@ -43,9 +43,16 @@ export const useHeatmapViewport = ({
   }, [hasChart]);
 
   const canvasHeight = canvasHeightFor(bounds, width, height, fitPlan);
+  // A readable margin that follows the card's width (8-28 px) instead of a
+  // fixed fraction of the plan: small in the narrow /status card, larger in
+  // the wide /analyse card, never a huge empty band.
+  const viewPadding = width > 0 ? Math.round(Math.min(28, Math.max(8, width * 0.02))) : 12;
   const fitted = useMemo(
-    () => (bounds && width > 0 ? fitView(bounds, width, canvasHeight, COLORBAR_SPACE) : null),
-    [bounds, width, canvasHeight],
+    () =>
+      bounds && width > 0
+        ? fitView(bounds, width, canvasHeight, COLORBAR_SPACE, viewPadding)
+        : null,
+    [bounds, width, canvasHeight, viewPadding],
   );
 
   // The user's view, for the bounds it was made on.

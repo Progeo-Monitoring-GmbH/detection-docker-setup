@@ -150,6 +150,17 @@ services:
     image: progeomonitoring/detection-docker-setup:frontend-${IMAGE_VERSION:-latest}
     container_name: progeo-frontend
     restart: unless-stopped
+    # Normal production pulls the prebuilt image above; this build block only
+    # applies when the image is built locally (e.g. a staging server without a
+    # published staging image). Vite inlines VITE_SERVER_ENV at build time.
+    build:
+      context: .
+      dockerfile: docker/frontend/Dockerfile
+      args:
+        FRONTEND_URL: ${FRONTEND_URL}
+        FRONTEND_PORT: ${FRONTEND_PORT}
+        # "staging" turns on the pink staging frame + banner (default: production).
+        VITE_SERVER_ENV: ${VITE_SERVER_ENV:-production}
     environment:
       - NODE_OPTIONS=--max-old-space-size=8196
       - MAX_OLD_SPACE_SIZE=8196

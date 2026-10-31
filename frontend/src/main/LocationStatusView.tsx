@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useState } from 'react';
-import { Spinner } from 'react-bootstrap';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Form, Spinner } from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
@@ -81,6 +81,16 @@ const Loading = () => {
   );
 };
 
+/** A device that can be asked for a measurement (GET
+ * /v1/location/<pk>/request-measurement/devices/). Only devices with a
+ * chip_id are offered - the backend refuses the others. */
+type RequestableDevice = {
+  id: number;
+  display_name: string | null;
+  chip_id: string | null;
+  device_ip: string | null;
+};
+
 /** Name, project and address of the location, and "request measurement". */
 const LocationStatusHeader = ({
   location,
@@ -95,18 +105,62 @@ const LocationStatusHeader = ({
   const { enqueueSnackbar } = useSnackbar();
   const { t } = useTranslation();
   const [requesting, setRequesting] = useState(false);
+  // Several devices can belong to one location - the request names one.
+  const [devices, setDevices] = useState<RequestableDevice[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<number | null>(null);
+  // Answers of an older location are dropped.
+  const deviceRequest = useRef(0);
+
+  useEffect(() => {
+    if (!canRequestMeasurement) {
+      deviceRequest.current += 1;
+      setDevices([]);
+      setSelectedDeviceId(null);
+      return;
+    }
+    const request = ++deviceRequest.current;
+    void axiosConfig.perform_get(
+      auth,
+      `/v1/location/${locationId}/request-measurement/devices/`,
+      (response) => {
+        if (request !== deviceRequest.current) {
+          return;
+        }
+        // A measurement can only be requested from a device that identifies
+        // itself (chip_id) and that has an address to reach (device_ip).
+        const list = ((response?.data?.devices ?? []) as RequestableDevice[]).filter(
+          (device) => Boolean(device.chip_id) && Boolean(device.device_ip),
+        );
+        setDevices(list);
+        setSelectedDeviceId(list.length ? list[0].id : null);
+      },
+      () => {
+        if (request !== deviceRequest.current) {
+          return;
+        }
+        // No devices to ask: the button stays hidden.
+        setDevices([]);
+        setSelectedDeviceId(null);
+      },
+    );
+    // Once per location - auth changes with the path.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canRequestMeasurement, locationId]);
 
   const requestMeasurement = () => {
+    if (selectedDeviceId == null) {
+      return;
+    }
     setRequesting(true);
     void axiosConfig.perform_post(
       auth,
       `/v1/location/${locationId}/request-measurement/`,
-      {},
+      { device: selectedDeviceId },
       (response) => {
         showSuccessBar(
           enqueueSnackbar,
           t('status_request_measurement_sent', {
-            count: response?.data?.requested_devices ?? 0,
+            count: response?.data?.requested_devices ?? 1,
           }),
         );
         setRequesting(false);
@@ -164,32 +218,57 @@ const LocationStatusHeader = ({
           </div>
         )}
       </div>
-      {canRequestMeasurement && (
-        <button
-          type="button"
-          onClick={requestMeasurement}
-          disabled={requesting}
+      {canRequestMeasurement && devices.length > 0 && (
+        <div
           style={{
-            height: 38,
-            padding: '0 18px',
-            border: 'none',
-            borderRadius: 10,
-            background: 'var(--progeo-orange)',
-            color: '#fff',
-            fontFamily: 'inherit',
-            fontSize: 13,
-            fontWeight: 500,
-            cursor: requesting ? 'default' : 'pointer',
-            boxShadow: '0 4px 14px rgba(235, 99, 59, .28)',
             display: 'flex',
             alignItems: 'center',
             gap: 8,
             flexShrink: 0,
           }}
         >
-          {requesting && <Spinner size="sm" animation="border" />}
-          {t('status_request_measurement')}
-        </button>
+          {devices.length > 1 && (
+            <Form.Select
+              aria-label={t('status_request_measurement_device')}
+              title={t('status_request_measurement_device')}
+              value={selectedDeviceId ?? ''}
+              onChange={(event) => setSelectedDeviceId(Number(event.target.value))}
+              disabled={requesting}
+              style={{ width: 'auto', maxWidth: 260, height: 38 }}
+            >
+              {devices.map((device) => (
+                <option key={device.id} value={device.id}>
+                  {device.display_name || device.chip_id || `#${device.id}`}
+                </option>
+              ))}
+            </Form.Select>
+          )}
+          <button
+            type="button"
+            onClick={requestMeasurement}
+            disabled={requesting || selectedDeviceId == null}
+            style={{
+              height: 38,
+              padding: '0 18px',
+              border: 'none',
+              borderRadius: 10,
+              background: 'var(--progeo-orange)',
+              color: '#fff',
+              fontFamily: 'inherit',
+              fontSize: 13,
+              fontWeight: 500,
+              cursor: requesting ? 'default' : 'pointer',
+              boxShadow: '0 4px 14px rgba(235, 99, 59, .28)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              flexShrink: 0,
+            }}
+          >
+            {requesting && <Spinner size="sm" animation="border" />}
+            {t('status_request_measurement')}
+          </button>
+        </div>
       )}
     </div>
   );

@@ -52,16 +52,26 @@ export const toWorld = (view: View, sx: number, sy: number): [number, number] =>
 
 /** The view showing `bounds` as large as possible, centred, in a viewport of
  * width x height (minus `reservedRight` pixels on the right, e.g. a colour
- * scale). */
-export const fitView = (bounds: WorldRect, width: number, height: number, reservedRight = 0): View => {
+ * scale, and `padding` pixels on every side). The screen padding is the
+ * readable margin - it stays the same visual size in every card, unlike a
+ * border relative to the plan. */
+export const fitView = (
+  bounds: WorldRect,
+  width: number,
+  height: number,
+  reservedRight = 0,
+  padding = 0,
+): View => {
   const boundsWidth = Math.max(bounds.right - bounds.left, 1e-9);
   const boundsHeight = Math.max(bounds.bottom - bounds.top, 1e-9);
-  const usableWidth = Math.max(width - reservedRight, 1);
-  const scale = Math.min(usableWidth / boundsWidth, Math.max(height, 1) / boundsHeight);
+  const inset = Math.max(padding, 0);
+  const usableWidth = Math.max(width - reservedRight - inset * 2, 1);
+  const usableHeight = Math.max(height - inset * 2, 1);
+  const scale = Math.min(usableWidth / boundsWidth, usableHeight / boundsHeight);
   return {
     scale,
-    tx: (usableWidth - boundsWidth * scale) / 2 - bounds.left * scale,
-    ty: (height - boundsHeight * scale) / 2 - bounds.top * scale,
+    tx: inset + (usableWidth - boundsWidth * scale) / 2 - bounds.left * scale,
+    ty: inset + (usableHeight - boundsHeight * scale) / 2 - bounds.top * scale,
   };
 };
 

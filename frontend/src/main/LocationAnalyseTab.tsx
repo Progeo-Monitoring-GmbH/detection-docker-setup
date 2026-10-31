@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router';
-import { Card, Form, Spinner } from 'react-bootstrap';
+import { Button, Card, Collapse, Form, Spinner } from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
@@ -78,6 +78,8 @@ const LocationAnalyseTab = () => {
   const deviceId = pickedDevice?.locationId === locationId ? pickedDevice.id : null;
   const [heatmapLoading, setHeatmapLoading] = useState(true);
   const [measurementsLoading, setMeasurementsLoading] = useState(true);
+  // The heatmap card is foldable - its height is the page's largest block.
+  const [heatmapOpen, setHeatmapOpen] = useState(true);
   // Only the newest request may set the data - switching periods quickly
   // must not let a slower, older response win.
   const heatmapRequest = useRef(0);
@@ -232,24 +234,44 @@ const LocationAnalyseTab = () => {
         </>
       ) : (
         <>
-          <Card className="border-0 shadow-sm p-2">
-            <Card.Body>
-              {heatmapLoading && !heatmap ? (
-                <div className="d-flex align-items-center gap-2 text-muted py-4">
-                  <Spinner size="sm" animation="border" /> Loading heatmap...
-                </div>
-              ) : (
-                <SensorHeatmap2D
-                  response={heatmap}
-                  fitPlan
-                  hideChrome
-                  time={frameTime}
-                  onTimeChange={setFrameTime}
-                  // pos is the sensor_order: pair index + 1.
-                  onSensorClick={(pos) => setSensors((selected) => toggledSensor(selected, pos - 1))}
-                />
+          <Card className="border-0 shadow-sm">
+            <Card.Header className="bg-transparent border-0 pt-2 pb-1">
+              <Button
+                variant="link"
+                className="p-0 text-decoration-none fw-semibold"
+                style={{ color: 'var(--progeo-blue)' }}
+                aria-expanded={heatmapOpen}
+                aria-controls="analyse-heatmap"
+                onClick={() => setHeatmapOpen((open) => !open)}
+              >
+                <span className="me-2">{heatmapOpen ? '▾' : '▸'}</span>
+                {t('analyse_heatmap_title')}
+              </Button>
+              {heatmapLoading && (
+                <Spinner size="sm" animation="border" className="ms-2 text-muted" />
               )}
-            </Card.Body>
+            </Card.Header>
+            <Collapse in={heatmapOpen}>
+              <div id="analyse-heatmap">
+                <Card.Body className="pt-1">
+                  {heatmapLoading && !heatmap ? (
+                    <div className="d-flex align-items-center gap-2 text-muted py-4">
+                      <Spinner size="sm" animation="border" /> Loading heatmap...
+                    </div>
+                  ) : (
+                    <SensorHeatmap2D
+                      response={heatmap}
+                      fitPlan
+                      hideChrome
+                      time={frameTime}
+                      onTimeChange={setFrameTime}
+                      // pos is the sensor_order: pair index + 1.
+                      onSensorClick={(pos) => setSensors((selected) => toggledSensor(selected, pos - 1))}
+                    />
+                  )}
+                </Card.Body>
+              </div>
+            </Collapse>
           </Card>
 
           <Card className="border-0 shadow-sm p-2">

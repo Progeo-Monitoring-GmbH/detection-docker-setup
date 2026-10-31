@@ -1,12 +1,13 @@
 import { useMemo, useRef, useState, type PointerEvent } from 'react';
 import { Button, Form, Spinner } from 'react-bootstrap';
-import { ArrowCounterclockwise, Check2, PencilSquare, PlusLg, Trash, XLg } from 'react-bootstrap-icons';
+import { ArrowCounterclockwise, Check2, Copy, PencilSquare, PlusLg, Trash, XLg } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import axiosConfig from '../../axiosConfig';
 import { plotTheme } from '../../styles/plotTheme';
 import { showRequestError, showSuccessBar } from '../ui/Snackbar.jsx';
+import HeatLimitationCopyPicker from './HeatLimitationCopyPicker';
 import { toScreen, toWorld, type View, type WorldSize } from './heatmapCanvas';
 import { centroid, MIN_AREA_POINTS, nearestEdge, toPlanPoint, toWorldPoint, type Point } from './heatLimitations';
 import type { HeatLimitation, SensorHeatmapLageplanData } from './sensorHeatmapTypes';
@@ -20,10 +21,10 @@ const HANDLE_RADIUS = 7;
 
 /**
  * Heat limitations of the shown Lageplan (ProgeoLageplan.heat_limitations)
- * and their editing - superusers draw an area as draggable points on the
- * heatmap and confirm it (POST /v1/location/<id>/heat-limitations/), edit or
- * delete existing ones. The saved list is kept per plan until the plans
- * change (a new response brings it along).
+ * and their editing - staff and superusers draw an area as draggable points
+ * on the heatmap and confirm it (POST /v1/location/<id>/heat-limitations/),
+ * edit, delete or copy existing ones. The saved list is kept per plan until
+ * the plans change (a new response brings it along).
  */
 export const useHeatLimitationEditor = ({
   plans,
@@ -32,7 +33,7 @@ export const useHeatLimitationEditor = ({
 }: {
   plans: SensorHeatmapLageplanData[] | null;
   plan: SensorHeatmapLageplanData | null;
-  /** Whether the user may edit (superuser, plan image shown). */
+  /** Whether the user may edit (staff or superuser, plan image shown). */
   editable: boolean;
 }) => {
   const { t } = useTranslation();
@@ -67,6 +68,17 @@ export const useHeatLimitationEditor = ({
     return draft.id ? areas.map((area) => (area.id === draft.id ? preview : area)) : [...areas, preview];
   }, [areas, draft]);
 
+  /** The plan's new list, as every save response sends it. */
+  const remember = (list: HeatLimitation[]) => {
+    if (planId == null) {
+      return;
+    }
+    setSaved((current) => ({
+      plans,
+      byPlan: { ...(current?.plans === plans ? current.byPlan : {}), [planId]: list },
+    }));
+  };
+
   const post = (suffix: string, data: Record<string, unknown>, success: string) => {
     if (planId == null || locationId == null) {
       return;
@@ -77,11 +89,7 @@ export const useHeatLimitationEditor = ({
       `/v1/location/${locationId}/heat-limitations/${suffix}`,
       { lageplan_id: planId, ...data },
       (response) => {
-        const list = (response?.data?.heat_limitations ?? []) as HeatLimitation[];
-        setSaved((current) => ({
-          plans,
-          byPlan: { ...(current?.plans === plans ? current.byPlan : {}), [planId]: list },
-        }));
+        remember((response?.data?.heat_limitations ?? []) as HeatLimitation[]);
         setDraft(null);
         setBusy(false);
         showSuccessBar(enqueueSnackbar, success);
@@ -91,6 +99,43 @@ export const useHeatLimitationEditor = ({
         showRequestError(enqueueSnackbar, t('heat_limit_save_failed'), error);
       },
     );
+  };
+
+  /**
+   * Copies areas of another plan into the current one: each is POSTed
+   * without its old id (a new area is created) and with its points
+   * unchanged - they are normalized to the plan image already. Stops at the
+   * first failure; returns whether every area was saved.
+   */
+  const copyAreas = async (sourceAreas: HeatLimitation[]): Promise<boolean> => {
+    if (planId == null || locationId == null || sourceAreas.length === 0) {
+      return false;
+    }
+    setBusy(true);
+    for (const area of sourceAreas) {
+      const stored = await new Promise<boolean>((resolve) => {
+        void axiosConfig.perform_post(
+          auth,
+          `/v1/location/${locationId}/heat-limitations/`,
+          { lageplan_id: planId, name: area.name, points: area.points },
+          (response) => {
+            remember((response?.data?.heat_limitations ?? []) as HeatLimitation[]);
+            resolve(true);
+          },
+          (error) => {
+            showRequestError(enqueueSnackbar, t('heat_limit_save_failed'), error);
+            resolve(false);
+          },
+        );
+      });
+      if (!stored) {
+        setBusy(false);
+        return false;
+      }
+    }
+    setBusy(false);
+    showSuccessBar(enqueueSnackbar, t('heat_limit_saved'));
+    return true;
   };
 
   const updatePoints = (change: (points: Point[]) => Point[]) =>
@@ -126,6 +171,7 @@ export const useHeatLimitationEditor = ({
         post('', { id: draft.id ?? undefined, name: draft.name, points: draft.points }, t('heat_limit_saved'));
       }
     },
+    copyAreas,
     remove: (area: HeatLimitation) => {
       if (window.confirm(t('heat_limit_delete_confirm', { name: area.name || t('heat_limit_unnamed') }))) {
         post('delete/', { id: area.id }, t('heat_limit_deleted'));
@@ -137,12 +183,14 @@ export const useHeatLimitationEditor = ({
 export type HeatLimitationEditor = ReturnType<typeof useHeatLimitationEditor>;
 
 /**
- * The controls above the heatmap (superusers only): "Create Heat-Limitation"
+ * The controls above the heatmap (staff and superusers): "Create
+ * Heat-Limitation", "Copy from existing project" (HeatLimitationCopyPicker)
  * and the existing areas with edit / delete - while drawing, the name, the
  * hint and Confirm / Cancel.
  */
 export const HeatLimitationBar = ({ editor }: { editor: HeatLimitationEditor }) => {
   const { t } = useTranslation();
+  const [copyOpen, setCopyOpen] = useState(false);
   if (!editor.canEdit) {
     return null;
   }
@@ -188,49 +236,64 @@ export const HeatLimitationBar = ({ editor }: { editor: HeatLimitationEditor }) 
   }
 
   return (
-    <div className="d-flex flex-wrap align-items-center gap-2 mt-2">
-      <Button size="sm" variant="outline-primary" onClick={editor.start} disabled={busy}>
-        <PlusLg className="me-1" />
-        {t('heat_limit_create')}
-      </Button>
-      {editor.areas.map((area, index) => (
-        <span
-          key={area.id}
-          className="d-inline-flex align-items-center gap-1 small border rounded-pill ps-2 pe-1"
-          style={{ color: AREA_COLOR }}
+    <>
+      <div className="d-flex flex-wrap align-items-center gap-2 mt-2">
+        <Button size="sm" variant="outline-primary" onClick={editor.start} disabled={busy}>
+          <PlusLg className="me-1" />
+          {t('heat_limit_create')}
+        </Button>
+        <Button
+          size="sm"
+          variant="outline-secondary"
+          onClick={() => setCopyOpen(true)}
+          disabled={busy}
+          data-testid="heat-limit-copy"
         >
-          {area.name || t('heat_limit_numbered', { number: index + 1 })}
-          <Button
-            size="sm"
-            variant="link"
-            className="p-0 px-1"
-            title={t('heat_limit_edit')}
-            aria-label={t('heat_limit_edit')}
-            onClick={() => editor.edit(area)}
-            disabled={busy}
+          <Copy className="me-1" />
+          {t('heat_limit_copy')}
+        </Button>
+        {editor.areas.map((area, index) => (
+          <span
+            key={area.id}
+            className="d-inline-flex align-items-center gap-1 small border rounded-pill ps-2 pe-1"
+            style={{ color: AREA_COLOR }}
           >
-            <PencilSquare />
-          </Button>
-          <Button
-            size="sm"
-            variant="link"
-            className="p-0 px-1 text-danger"
-            title={t('heat_limit_delete')}
-            aria-label={t('heat_limit_delete')}
-            onClick={() => editor.remove(area)}
-            disabled={busy}
-          >
-            <Trash />
-          </Button>
-        </span>
-      ))}
-    </div>
+            {area.name || t('heat_limit_numbered', { number: index + 1 })}
+            <Button
+              size="sm"
+              variant="link"
+              className="p-0 px-1"
+              title={t('heat_limit_edit')}
+              aria-label={t('heat_limit_edit')}
+              onClick={() => editor.edit(area)}
+              disabled={busy}
+            >
+              <PencilSquare />
+            </Button>
+            <Button
+              size="sm"
+              variant="link"
+              className="p-0 px-1 text-danger"
+              title={t('heat_limit_delete')}
+              aria-label={t('heat_limit_delete')}
+              onClick={() => editor.remove(area)}
+              disabled={busy}
+            >
+              <Trash />
+            </Button>
+          </span>
+        ))}
+      </div>
+      {copyOpen && (
+        <HeatLimitationCopyPicker onClose={() => setCopyOpen(false)} onCopy={editor.copyAreas} />
+      )}
+    </>
   );
 };
 
 /**
- * The areas over the heatmap canvas (superusers only), in its view: saved
- * ones outlined with their name, the draft filled with draggable points
+ * The areas over the heatmap canvas (staff and superusers), in its view:
+ * saved ones outlined with their name, the draft filled with draggable points
  * (double-click removes one). Only the points take the pointer - the canvas
  * below keeps zooming, moving and, while drawing, receives the clicks that
  * add points.

@@ -1,4 +1,4 @@
-"""Escalations of a project: /v1/escalation/ - opened by superusers, worked on
+"""Escalations of a project: /v1/escalation/ - opened by staff, worked on
 by staff (comments, status, assignment, closing), everything protocolled."""
 import pytest
 
@@ -56,12 +56,14 @@ def test_one_open_escalation_per_project(api_client, world):
     _open(api_client, sibling)
 
 
-def test_staff_cannot_open_but_work_on_escalations(api_client, world):
+def test_staff_opens_and_works_on_escalations(api_client, world):
     escalation = _open(api_client, world["location"])
     api_client.force_authenticate(user=world["staff"])
 
-    refused = api_client.post(URL, {"location": world["location"].pk, "title": "x"}, format="json")
-    assert refused.status_code == 403
+    # Another project, so the one open escalation rule does not interfere.
+    other = f.make_location(world["account"], project_id=4713)
+    opened = api_client.post(URL, {"location": other.pk, "title": "x"}, format="json")
+    assert opened.status_code == 200, opened.content
 
     base = f"{URL}{escalation['id']}/"
     assert api_client.post(f"{base}comment/", {"text": "Bin vor Ort"}, format="json").status_code == 200

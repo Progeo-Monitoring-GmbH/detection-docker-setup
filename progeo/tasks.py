@@ -26,13 +26,20 @@ def download_device_config(device_ip: str, path: str | None = None):
     path = path or ALLOWED_DEVICE_CONFIG_PATH
     logger = logging.getLogger('progeo.tasks')
 
-    base_url = normalize_device_base_url(device_ip)
-    encoded_path = normalize_config_path(path)
-    msg = f"download_device_config start ip={device_ip} path={path}"
-    logger.info(f"[CELERY] {msg}")
-    _dlog(msg, tag="[CELERY]")
+    try:
+        base_url = normalize_device_base_url(device_ip)
+        encoded_path = normalize_config_path(path)
+        msg = f"download_device_config start ip={device_ip} path={path}"
+        logger.info(f"[CELERY] {msg}")
+        _dlog(msg, tag="[CELERY]")
 
-    response = requests.get(f"{base_url}/download?path={encoded_path}", timeout=25)
+        response = requests.get(f"{base_url}/download?path={encoded_path}", timeout=25)
+    except (ValueError, OSError) as exc:
+        # A missing/invalid device IP or an unreachable device is a normal
+        # failure of this task - return it like an HTTP failure, don't crash.
+        reason = str(exc) or exc.__class__.__name__
+        logger.warning(f"[CELERY] download_device_config failed ip={device_ip} path={path}: {reason}")
+        return {"ok": False, "status_code": None, "content": "", "reason": reason}
 
     done_msg = f"download_device_config done status={response.status_code}"
     logger.info(f"[CELERY] {done_msg}")
@@ -61,14 +68,21 @@ def upload_device_config(device_ip: str, content: str, path: str | None = None):
     path = path or ALLOWED_DEVICE_CONFIG_PATH
     logger = logging.getLogger('progeo.tasks')
 
-    base_url = normalize_device_base_url(device_ip)
-    encoded_path = normalize_config_path(path)
-    msg = f"upload_device_config start ip={device_ip} path={path}"
-    logger.info(f"[CELERY] {msg}")
-    _dlog(msg, tag="[CELERY]")
+    try:
+        base_url = normalize_device_base_url(device_ip)
+        encoded_path = normalize_config_path(path)
+        msg = f"upload_device_config start ip={device_ip} path={path}"
+        logger.info(f"[CELERY] {msg}")
+        _dlog(msg, tag="[CELERY]")
 
-    body = (content or "").encode("utf-8")
-    ok, status_code, response_content = socket_upload(base_url, encoded_path, body, timeout=25)
+        body = (content or "").encode("utf-8")
+        ok, status_code, response_content = socket_upload(base_url, encoded_path, body, timeout=25)
+    except (ValueError, OSError) as exc:
+        # Same as download_device_config: report a missing/invalid IP or an
+        # unreachable device instead of letting the task crash.
+        reason = str(exc) or exc.__class__.__name__
+        logger.warning(f"[CELERY] upload_device_config failed ip={device_ip} path={path}: {reason}")
+        return {"ok": False, "status_code": None, "content": "", "reason": reason}
 
     done_msg = f"upload_device_config done status={status_code}"
     logger.info(f"[CELERY] {done_msg}")

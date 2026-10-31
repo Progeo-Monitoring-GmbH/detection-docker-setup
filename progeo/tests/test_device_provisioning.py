@@ -130,6 +130,25 @@ def test_confirm_twice_or_tampered_is_refused(staff_client, location):
     assert ProgeoDevice.objects.using(f.DB).filter(raw_hash=preview["device_hash"]).count() == 1
 
 
+def test_device_hash_taken_only_checks_the_target_and_default_database(location):
+    """confirm used to scan every project database via locate_device -> 504."""
+    from progeo.helper import project_dbs
+
+    def no_full_scan(*args, **kwargs):
+        raise AssertionError("device_hash_taken must not scan every project database")
+
+    db_name = f.DB
+    original = project_dbs.locate_device
+    project_dbs.locate_device = no_full_scan
+    try:
+        pid = location.project_id
+        assert provisioning.device_hash_taken(f"{pid}-99", db_name) is False
+        f.make_device(location, raw_hash=f"{pid}-99")
+        assert provisioning.device_hash_taken(f"{pid}-99", db_name) is True
+    finally:
+        project_dbs.locate_device = original
+
+
 def test_emulated_samples_rise_on_the_chosen_mux_only():
     from progeo.helper import device_commands
 
@@ -195,6 +214,73 @@ def test_emulate_measurement_is_superuser_only_and_posts_like_the_controller(api
 
     too_high = api_client.post("/v1/device/provision/emulate-measurement/", {**params, "mux": 4}, format="json")
     assert too_high.status_code != 200 and "between 1 and 3" in too_high.json()["reason"]
+
+
+def test_provision_devices_lists_existing_devices_with_their_last_measurement(staff_client, location):
+    first = f.make_device(
+        location, raw_hash=f"{location.project_id}-01", chip_id="chip-1",
+        type=ProgeoDevice.DeviceType.SMARTBOX, hardware="mx",
+    )
+    second = f.make_device(location, raw_hash=f"{location.project_id}-02")
+    f.make_measurement(first)
+
+    body = staff_client.get(f"/v1/device/provision/devices/?location={location.pk}").json()
+
+    rows = {row["id"]: row for row in body["devices"]}
+    assert set(rows) == {first.pk, second.pk}
+    assert rows[first.pk]["raw_hash"] == first.raw_hash
+    assert rows[first.pk]["chip_id"] == "chip-1"
+    assert rows[first.pk]["type"] == ProgeoDevice.DeviceType.SMARTBOX
+    assert rows[first.pk]["last_measurement_at"] is not None
+    assert rows[second.pk]["last_measurement_at"] is None
+
+    empty = f.make_location(location.account, project_id=next(_project_ids))
+    assert staff_client.get(f"/v1/device/provision/devices/?location={empty.pk}").json()["devices"] == []
+
+
+def test_request_measurement_devices_and_the_request_need_a_chip_id(staff_client, location, monkeypatch):
+    from types import SimpleNamespace
+
+    dispatched = []
+
+    def dispatch(device_id, db_name):
+        dispatched.append(device_id)
+        return SimpleNamespace(id=f"task-{device_id}")
+
+    monkeypatch.setattr("progeo.tasks.request_device_measurement", SimpleNamespace(delay=dispatch))
+
+    chipped = f.make_device(location, raw_hash=f"{location.project_id}-11", chip_id="chip-11", device_ip="10.0.0.1")
+    unreachable = f.make_device(location, raw_hash=f"{location.project_id}-12", chip_id="chip-12")
+    no_chip = f.make_device(location, raw_hash=f"{location.project_id}-13", device_ip="10.0.0.3")
+
+    devices = staff_client.get(f"/v1/location/{location.pk}/request-measurement/devices/").json()
+    assert [(row["id"], row["chip_id"]) for row in devices["devices"]] == [(chipped.pk, "chip-11"),
+                                                                         (unreachable.pk, "chip-12")]
+    assert devices["count"] == 2
+
+    refused = staff_client.post(f"/v1/location/{location.pk}/request-measurement/", {"device": no_chip.pk},
+                                format="json")
+    assert refused.status_code == 400 and refused.json()["reason"] == "Device has no chip_id"
+    unreachable_response = staff_client.post(
+        f"/v1/location/{location.pk}/request-measurement/", {"device": unreachable.pk}, format="json"
+    )
+    assert unreachable_response.status_code == 400
+    assert not dispatched
+
+    other = f.make_location(location.account, project_id=next(_project_ids))
+    foreign = staff_client.post(f"/v1/location/{other.pk}/request-measurement/", {"device": chipped.pk},
+                                format="json")
+    assert foreign.status_code == 400 and foreign.json()["reason"] == "Device not found for this location"
+
+    single = staff_client.post(f"/v1/location/{location.pk}/request-measurement/", {"device": chipped.pk},
+                               format="json")
+    assert single.json()["device_ids"] == [chipped.pk]
+    assert single.json()["task_ids"] == [f"task-{chipped.pk}"]
+    # Without `device`: every requestable (chip_id) device with an IP.
+    all_devices = staff_client.post(f"/v1/location/{location.pk}/request-measurement/", {}, format="json")
+    assert all_devices.json()["requested_devices"] == 1
+    assert all_devices.json()["device_ids"] == [chipped.pk]
+    assert dispatched == [chipped.pk, chipped.pk]
 
 
 def test_users_need_the_permission_and_only_get_their_locations(api_client, location):

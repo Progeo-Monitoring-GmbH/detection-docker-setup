@@ -8,6 +8,7 @@ import {
   ExclamationTriangle,
   Gear,
   Geo,
+  GraphUp,
   Hdd,
   Layers,
   Map,
@@ -148,6 +149,17 @@ const LocationSidebar = ({
       to: '/device/provision/',
       // Staff always (like the backend's require_module_permissions), users with the permission.
       visible: isStaffUser || hasPermission('module_devices_provision'),
+    },
+    {
+      // Staff tool: devices/locations in need of attention (type, chip ID,
+      // 24 h activity, missing Lageplan, dead/unused).
+      key: 'device-statistics',
+      label: t('sidebar_device_statistics'),
+      icon: GraphUp,
+      to: '/device/statistics/',
+      visible:
+        (isStaffUser || isSuperuser) &&
+        hasPermission('module_devices_enabled'),
     },
     {
       key: 'alarms',

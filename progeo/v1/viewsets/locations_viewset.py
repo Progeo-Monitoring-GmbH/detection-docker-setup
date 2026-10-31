@@ -724,6 +724,16 @@ class LocationViewSet(ProgeoModalViewSet):
             return None, None, RequestFailed({"reason": "Location not found"})
         return location, account, None
 
+    def _staff_location(self, request, pk):
+        """(location, account, error) - heat-limitation maintenance is staff-only
+        (is_staff or is_superuser), unlike the superuser-only maintenance actions."""
+        if not _is_staff_admin(request.user):
+            return None, None, RequestFailed({"reason": "Staff access required"})
+        location, account = self._find_location(request, pk=pk)
+        if not location:
+            return None, None, RequestFailed({"reason": "Location not found"})
+        return location, account, None
+
     @action(detail=True, url_path="devices/names", methods=["GET", "POST"])
     def device_names(self, request, pk=None, *args, **kwargs):
         """Superuser: GET lists the location's devices with their custom name
@@ -1520,12 +1530,55 @@ class LocationViewSet(ProgeoModalViewSet):
             "meters_per_pixel": lageplan.meters_per_pixel,
         })
 
+    @staticmethod
+    def _lageplan_url(lageplan):
+        """The same media URL the location serializer gives a Lageplan."""
+        if lageplan.lageplan and getattr(lageplan.lageplan, "name", ""):
+            return posixpath.join("media", "uploads", lageplan.lageplan.name)
+        return None
+
+    def _heat_limitations_data(self, request, pk):
+        """Staff: the location's Lageplans with their heat limitations plus the
+        target plan's list - for copying areas to another plan/location."""
+        location, account, error = self._staff_location(request, pk)
+        if error:
+            return error
+        db_name = location_db(location, account)
+        lageplans = list(
+            ProgeoLageplan.objects.using(db_name).filter(location=location).order_by("-is_active", "-id")
+        )
+        lageplan_id = request.query_params.get("lageplan_id")
+        target = None
+        if lageplans or lageplan_id not in (None, ""):
+            target, error = _target_lageplan(db_name, location, lageplan_id)
+            if error:
+                return error
+
+        def areas(lageplan):
+            return [area for area in (lageplan.heat_limitations or []) if isinstance(area, dict)] if lageplan else []
+
+        return RequestSuccess({
+            "location_id": location.pk,
+            "lageplan_id": target.pk if target else None,
+            "plans": [
+                {
+                    "id": lageplan.pk,
+                    "name": lageplan.name,
+                    "is_active": lageplan.is_active,
+                    "url": self._lageplan_url(lageplan),
+                    "heat_limitations": areas(lageplan),
+                }
+                for lageplan in lageplans
+            ],
+            "heat_limitations": areas(target),
+        })
+
     def _edit_heat_limitations(self, request, pk, change):
-        """Superuser: `change(areas)` on the heat limitations of one of the
+        """Staff: `change(areas)` on the heat limitations of one of the
         location's Lageplans (`lageplan_id`, else the active one) - returns
         the new list of areas or an error response. Locked while it runs, so
         two editors don't drop each other's areas."""
-        location, account, error = self._superuser_location(request, pk)
+        location, account, error = self._staff_location(request, pk)
         if error:
             return error
         db_name = location_db(location, account)
@@ -1542,12 +1595,16 @@ class LocationViewSet(ProgeoModalViewSet):
             lageplan.save(using=db_name, update_fields=["heat_limitations"])
         return RequestSuccess({"lageplan_id": lageplan.pk, "heat_limitations": lageplan.heat_limitations})
 
-    @action(detail=True, url_path="heat-limitations", methods=["POST"])
+    @action(detail=True, url_path="heat-limitations", methods=["GET", "POST"])
     def heat_limitations(self, request, pk=None, *args, **kwargs):
-        """Superuser: create a heat limitation of a Lageplan - an area the
-        heatmap's heat field is limited to - or, with `id`, replace that one:
+        """Staff: GET lists the location's plans with their heat limitations
+        (and, with `lageplan_id`, that plan's areas - else the active one);
+        POST creates a heat limitation of a Lageplan - an area the heatmap's
+        heat field is limited to - or, with `id`, replaces that one:
         POST {lageplan_id, id?, name?, points: [[x, y], ...]} (normalized to
         the plan image, see ProgeoLageplan.clean_heat_limitation)."""
+        if request.method == "GET":
+            return self._heat_limitations_data(request, pk)
         area, reason = ProgeoLageplan.clean_heat_limitation(request.data)
         if reason:
             return RequestFailed({"reason": reason})
@@ -1564,7 +1621,7 @@ class LocationViewSet(ProgeoModalViewSet):
 
     @action(detail=True, url_path="heat-limitations/delete", methods=["POST"])
     def heat_limitations_delete(self, request, pk=None, *args, **kwargs):
-        """Superuser: delete a heat limitation - POST {lageplan_id, id}."""
+        """Staff: delete a heat limitation - POST {lageplan_id, id}."""
         area_id = request.data.get("id")
         if area_id in (None, ""):
             return RequestFailed({"reason": "id required"})
@@ -1672,10 +1729,36 @@ class LocationViewSet(ProgeoModalViewSet):
         )
     
     @require_module_permissions("module_locations_enabled", "module_measurements_enabled")
+    @action(detail=True, url_path="request-measurement/devices", methods=["GET"])
+    def request_measurement_devices(self, request, pk=None, *args, **kwargs):
+        """The devices of this location that can be asked for a fresh reading
+        ("Messung anfordern") - only those with a chip_id identify a controller."""
+        location, account = self._find_location(request, pk=pk)
+        if not location:
+            return RequestFailed({"reason": "Location not found"})
+
+        devices = ProgeoDevice.objects.using(location_db(location, account)).filter(location=location).order_by("id")
+        requestable = [device for device in devices if (device.chip_id or "").strip()]
+        return RequestSuccess({
+            "devices": [
+                {
+                    "id": device.pk,
+                    "display_name": device.display_name,
+                    "chip_id": device.chip_id,
+                    "device_ip": device.device_ip,
+                }
+                for device in requestable
+            ],
+            "count": len(requestable),
+        })
+
+    @require_module_permissions("module_locations_enabled", "module_measurements_enabled")
     @action(detail=True, url_path="request-measurement", methods=["POST"])
     def request_measurement(self, request, pk=None, *args, **kwargs):
-        """Ask every device of this location for a fresh, on-demand reading
-        (the Status tab's "Messung anfordern" button).
+        """Ask one device (`device` id) - or, without it, every requestable
+        device - of this location for a fresh, on-demand reading (the Status
+        tab's "Messung anfordern" button). Only devices with a chip_id are
+        requested, and only reachable ones (a known device_ip).
 
         Fire-and-forget: a physical measurement can take minutes, so this
         dispatches `request_device_measurement` per device and returns
@@ -1689,8 +1772,26 @@ class LocationViewSet(ProgeoModalViewSet):
         if not location:
             return RequestFailed({"reason": "Location not found"})
 
-        devices = ProgeoDevice.objects.using(location_db(location, account)).filter(location=location)
-        reachable = [device for device in devices if device.device_ip]
+        devices = ProgeoDevice.objects.using(location_db(location, account)).filter(location=location).order_by("id")
+        device_id = request.data.get("device")
+        if device_id not in (None, ""):
+            try:
+                device_id = int(device_id)
+            except (TypeError, ValueError):
+                return RequestFailed({"reason": "device must be an integer"})
+            device = next((candidate for candidate in devices if candidate.pk == device_id), None)
+            if device is None:
+                return RequestFailed({"reason": "Device not found for this location"})
+            if not (device.chip_id or "").strip():
+                return RequestFailed({"reason": "Device has no chip_id"})
+            candidates = [device]
+        else:
+            # Backward compatibility: all requestable devices of the location.
+            candidates = [device for device in devices if (device.chip_id or "").strip()]
+        if not candidates:
+            return RequestFailed({"reason": "No device with a chip_id for this location"})
+
+        reachable = [device for device in candidates if device.device_ip]
         if not reachable:
             return RequestFailed({"reason": "No device with a known IP address for this location"})
 
@@ -1699,6 +1800,7 @@ class LocationViewSet(ProgeoModalViewSet):
 
         return RequestSuccess({
             "requested_devices": len(reachable),
+            "device_ids": [device.pk for device in reachable],
             "task_ids": task_ids,
         })
 

@@ -99,11 +99,19 @@ def next_device_hash(project_id, db_name) -> str:
 
 
 def device_hash_taken(raw_hash, db_name) -> bool:
-    from progeo.helper.project_dbs import locate_device, split_enabled
+    """Whether `raw_hash` is already used in the target database or "default".
 
-    if _taken_hashes(db_name, rf"^{re.escape(raw_hash)}$"):
-        return True
-    return split_enabled() and locate_device(raw_hash) is not None
+    Provisioned hashes are project-scoped ("<project_id>-<nn>") and
+    create_device writes to `db_name`, so those two databases are the only
+    ones that can hold the hash. Searching every project database
+    (project_dbs.locate_device scans all ~1000 of them) made
+    provision/confirm time out with a 504; the device may still be found in
+    its project database by locate_device when its samples arrive.
+    """
+    for db in dict.fromkeys([db_name, DEFAULT_DB_ALIAS]):
+        if ProgeoDevice.objects.using(db).filter(raw_hash=raw_hash).exists():
+            return True
+    return False
 
 
 def generate_token() -> str:

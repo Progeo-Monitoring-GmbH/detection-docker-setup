@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 from celery.exceptions import TimeoutError
 from django.db import transaction
+from django.db.models import DateTimeField, OuterRef, Subquery
 from django.utils import timezone
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action
@@ -1054,6 +1055,48 @@ class DeviceViewSet(ProgeoModalViewSet):
                 {"value": value, "label": label} for value, label in ProgeoDevice.Resistance.choices
             ],
         })
+
+    @require_module_permissions("module_devices_provision")
+    @action(detail=False, url_path="provision/devices", methods=["GET"])
+    def provision_devices(self, request, *args, **kwargs):
+        """The devices already filed under a location (?location=), so the
+        provisioning page can continue a measurement-testing session."""
+        db_name = None
+        try:
+            location, db_name = self._provision_location(request, request.query_params.get("location"))
+            last_measurement = Subquery(
+                ProgeoMeasurement.objects.using(db_name)
+                .filter(device=OuterRef("pk"))
+                .order_by("-pk")
+                .values("last_fetched")[:1],
+                output_field=DateTimeField(),
+            )
+            devices = (
+                ProgeoDevice.objects.using(db_name)
+                .filter(location=location)
+                .annotate(last_measurement_at=last_measurement)
+                .order_by("id")
+            )
+            return RequestSuccess({
+                "devices": [
+                    {
+                        "id": device.pk,
+                        "raw_hash": device.raw_hash,
+                        "display_name": device.display_name,
+                        "chip_id": device.chip_id,
+                        "type": device.type,
+                        "hardware": device.hardware,
+                        "last_measurement_at": (
+                            device.last_measurement_at.isoformat() if device.last_measurement_at else None
+                        ),
+                    }
+                    for device in devices
+                ]
+            })
+        except provisioning.ProvisionError as exc:
+            return RequestFailed({"reason": str(exc)})
+        finally:
+            release_connection(db_name)
 
     @require_module_permissions("module_devices_provision")
     @action(detail=False, url_path="provision/preview", methods=["POST"])

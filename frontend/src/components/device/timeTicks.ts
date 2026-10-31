@@ -12,16 +12,22 @@ export type TimeTick = {
 };
 
 type Interval =
+  | { unit: 'minute'; count: number }
   | { unit: 'hour'; count: number }
   | { unit: 'day'; count: number }
   | { unit: 'week'; count: number }
   | { unit: 'month'; count: number }
   | { unit: 'year'; count: number };
 
-const HOUR = 60 * 60 * 1000;
+const MINUTE = 60 * 1000;
+const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
+/** The frame pickers never show fewer labels than this. */
+export const MIN_TIME_TICKS = 5;
+
 const INTERVALS: Array<{ interval: Interval; approxMs: number }> = [
+  ...[5, 10, 15, 30].map((count) => ({ interval: { unit: 'minute', count } as Interval, approxMs: count * MINUTE })),
   ...[1, 2, 3, 6, 12].map((count) => ({ interval: { unit: 'hour', count } as Interval, approxMs: count * HOUR })),
   ...[1, 2].map((count) => ({ interval: { unit: 'day', count } as Interval, approxMs: count * DAY })),
   ...[1, 2].map((count) => ({ interval: { unit: 'week', count } as Interval, approxMs: count * 7 * DAY })),
@@ -33,6 +39,12 @@ const INTERVALS: Array<{ interval: Interval; approxMs: number }> = [
 const firstBoundary = (ms: number, interval: Interval) => {
   const date = new Date(ms);
   switch (interval.unit) {
+    case 'minute':
+      date.setSeconds(0, 0);
+      while (date.getTime() < ms || date.getMinutes() % interval.count !== 0) {
+        date.setMinutes(date.getMinutes() + 1);
+      }
+      break;
     case 'hour':
       date.setMinutes(0, 0, 0);
       while (date.getTime() < ms || date.getHours() % interval.count !== 0) {
@@ -66,6 +78,9 @@ const firstBoundary = (ms: number, interval: Interval) => {
 
 const advance = (date: Date, interval: Interval) => {
   switch (interval.unit) {
+    case 'minute':
+      date.setMinutes(date.getMinutes() + interval.count);
+      break;
     case 'hour':
       date.setHours(date.getHours() + interval.count);
       break;
@@ -96,6 +111,10 @@ const tickOf = (date: Date, interval: Interval, locale?: string): TimeTick => {
   const ms = date.getTime();
   const midnight = date.getHours() === 0 && date.getMinutes() === 0;
   switch (interval.unit) {
+    case 'minute':
+      return midnight
+        ? { ms, label: dayLabel(date, locale), major: true }
+        : { ms, label: date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }), major: false };
     case 'hour':
       return midnight
         ? { ms, label: dayLabel(date, locale), major: true }
@@ -139,7 +158,8 @@ export const spacedTicks = <T extends { tick: { major: boolean }; x: number }>(
 };
 
 /** The marks between `from` and `to` (ms), at most `maxTicks` (at least the
- * coarsest interval's). */
+ * coarsest interval's) - but never fewer than MIN_TIME_TICKS: very short or
+ * very long spans fall back to evenly spaced labels. */
 export const timeTicks = (from: number, to: number, maxTicks: number, locale?: string): TimeTick[] => {
   if (!(to > from) || maxTicks < 1) {
     return [];
@@ -153,6 +173,40 @@ export const timeTicks = (from: number, to: number, maxTicks: number, locale?: s
   while (date.getTime() <= to && ticks.length <= maxTicks * 2) {
     ticks.push(tickOf(date, interval, locale));
     advance(date, interval);
+  }
+  // Calendar boundaries can be rarer than the minimum (a short window, an
+  // interval coarser than the span): spread the labels evenly over the span.
+  return ticks.length >= MIN_TIME_TICKS
+    ? ticks
+    : evenTimeTicks(from, to, MIN_TIME_TICKS, locale);
+};
+
+/** `count` labels evenly spread over [from, to] - the fallback that keeps the
+ * frame pickers at MIN_TIME_TICKS labels. */
+export const evenTimeTicks = (
+  from: number,
+  to: number,
+  count: number,
+  locale?: string,
+): TimeTick[] => {
+  if (!(to > from) || count < 1) {
+    return [];
+  }
+  const span = to - from;
+  const labelOf = (date: Date) =>
+    span >= 2 * DAY
+      ? dayLabel(date, locale)
+      : span >= HOUR
+        ? date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
+        : date.toLocaleTimeString(locale, {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+          });
+  const ticks: TimeTick[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const ms = from + (span * index) / Math.max(count - 1, 1);
+    ticks.push({ ms, label: labelOf(new Date(ms)), major: false });
   }
   return ticks;
 };

@@ -158,6 +158,8 @@ services:
       args:
         FRONTEND_URL: ${FRONTEND_URL}
         FRONTEND_PORT: ${FRONTEND_PORT}
+        # "staging" turns on the pink staging frame + banner (default: production).
+        VITE_SERVER_ENV: ${VITE_SERVER_ENV:-production}
     environment:
       - NODE_OPTIONS=--max-old-space-size=8196
       - MAX_OLD_SPACE_SIZE=8196

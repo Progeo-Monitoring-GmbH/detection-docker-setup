@@ -54,10 +54,10 @@ def _text(request, field="text"):
 class EscalationViewSet(viewsets.ViewSet):
     """Escalations of projects (ProgeoEscalation) and their protocol.
 
-    Staff (is_staff or is_superuser) see every escalation, comment on it,
-    assign it, change its status and close it; only superusers open one -
-    at most one open escalation per project. Every change is protocolled as
-    a ProgeoEscalationEntry, with the message given along with it.
+    Staff (is_staff or is_superuser) see every escalation, open one, comment on
+    it, assign it, change its status and close it - at most one open escalation
+    per project. Every change is protocolled as a ProgeoEscalationEntry, with
+    the message given along with it.
 
         GET  /v1/escalation/?state=open|closed|all&location=<id>
         POST /v1/escalation/                {location, title, text?, assigned_to?}
@@ -114,7 +114,7 @@ class EscalationViewSet(viewsets.ViewSet):
     @staticmethod
     def _protocol(escalation, request, kind, text="", data=None):
         ProgeoEscalationEntry.objects.using(DB).create(
-            escalation=escalation, kind=kind, author=request.user, text=text, data=data or {}
+            escalation=escalation, kind=kind, author_id=request.user.pk, text=text, data=data or {}
         )
 
     # ------------------------------------------------------------------ list / create
@@ -147,7 +147,7 @@ class EscalationViewSet(viewsets.ViewSet):
         return RequestSuccess({"escalations": ProgeoEscalationSerializer(queryset, many=True).data})
 
     def create(self, request, *args, **kwargs):
-        denied = self._denied(request, superuser=True)
+        denied = self._denied(request)
         if denied:
             return denied
         data = request.data if hasattr(request.data, "get") else {}
@@ -191,8 +191,8 @@ class EscalationViewSet(viewsets.ViewSet):
                     location=location,
                     project_id=location.project_id,
                     title=title,
-                    assigned_to=assignee,
-                    created_by=request.user,
+                    assigned_to_id=assignee.pk if assignee else None,
+                    created_by_id=request.user.pk,
                 )
                 self._protocol(escalation, request, Kind.CREATED, text, {"title": title})
                 if assignee:
@@ -277,7 +277,7 @@ class EscalationViewSet(viewsets.ViewSet):
                 "to": assignee.pk if assignee else None,
                 "to_name": user_label(assignee),
             })
-            escalation.assigned_to = assignee
+            escalation.assigned_to_id = assignee.pk if assignee else None
             return None
 
         return self._change(request, pk, apply)
@@ -288,7 +288,7 @@ class EscalationViewSet(viewsets.ViewSet):
             self._protocol(escalation, request, Kind.CLOSED, text, {"from": escalation.status, "to": Status.CLOSED})
             escalation.status = Status.CLOSED
             escalation.closed_at = timezone.now()
-            escalation.closed_by = request.user
+            escalation.closed_by_id = request.user.pk
 
         return self._change(request, pk, apply)
 

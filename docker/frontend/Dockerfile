@@ -1,6 +1,7 @@
 FROM node:24.22.1-alpine AS node
 
 ARG FRONTEND_URL
+ARG VITE_SERVER_ENV
 
 WORKDIR /home/progeo-frontend
 
@@ -8,6 +9,7 @@ COPY ./frontend/package.json ./frontend/package-lock.json ./
 COPY ./docker/frontend/.env.production ./.env
 
 RUN sed -i -r "s|FRONTEND-TEMPLATE|${FRONTEND_URL}|g" ./.env
+RUN sed -i -r "s|SERVER_ENV-TEMPLATE|${VITE_SERVER_ENV}|g" ./.env
 
 RUN npm ci
 

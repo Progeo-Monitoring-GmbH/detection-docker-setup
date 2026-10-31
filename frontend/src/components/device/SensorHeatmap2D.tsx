@@ -36,7 +36,7 @@ import { useHeatmapViewport, usePanZoomGestures } from './useHeatmapViewport';
 import { useLageplanImage } from './useLageplanImage';
 import ZoomControls from './ZoomControls';
 import { getBackendUrl } from '../../backendUrl';
-import usePermissions from '../../../hooks/usePermissions';
+import { useAuth } from '../../../hooks/CoreAuthProvider';
 
 type SensorHeatmap2DProps = {
   response: SensorHeatmapResponse | null | undefined;
@@ -123,7 +123,7 @@ const usePlanChoice = <T,>(plans: T[] | null) => {
  * from the same scene (renderSceneFrame).
  *
  * The plan's heat limitations cut the heat field off outside their areas;
- * superusers draw, edit and delete them right on the plan
+ * staff and superusers draw, edit and delete them right on the plan
  * (HeatLimitationEditor.tsx).
  *
  * Geometry and heat field: heatmapChart.ts, drawing: heatmapScene.ts.
@@ -200,13 +200,17 @@ const SensorHeatmap2D = ({
     [image],
   );
 
-  // Heat limitations of the plan: superusers draw them on the plan image
-  // (not in the alignment wizard mode).
-  const { isAdmin: isSuperuser } = usePermissions();
+  // Heat limitations of the plan: staff and superusers draw them on the plan
+  // image (not in the alignment wizard mode).
+  const auth = useAuth();
+  const canEditLimits = Boolean(
+    (auth?.user as { is_staff?: boolean; is_superuser?: boolean } | null)?.is_staff ||
+      (auth?.user as { is_superuser?: boolean } | null)?.is_superuser,
+  );
   const limitEditor = useHeatLimitationEditor({
     plans,
     plan: activePlan,
-    editable: isSuperuser && !alignment && image != null,
+    editable: canEditLimits && !alignment && image != null,
   });
   const drawing = limitEditor.draft != null;
 

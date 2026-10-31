@@ -5,22 +5,24 @@ import { useTranslation } from 'react-i18next';
 import { useSnackbar } from 'notistack';
 import { Link, useNavigate } from 'react-router';
 import { useAuth } from '../../hooks/CoreAuthProvider';
-import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
 import { showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import EscalationStatusBadge from './EscalationStatusBadge';
 import { ESCALATION_URL, escalationPath, type Escalation, type StaffUser } from './escalations';
 
 /**
- * Superusers only, at the top of the project portal: whether the project is
- * in escalation (its open escalation, linked to the Escalations page) -
- * otherwise "Create Escalation". Nobody else sees that a project is
+ * Staff and superusers only, at the top of the project portal: whether the
+ * project is in escalation (its open escalation, linked to the Escalations
+ * page) - otherwise "Create Escalation". Nobody else sees that a project is
  * escalated here.
  */
 const EscalationBanner = ({ locationId }: { locationId: number }) => {
   const { t } = useTranslation();
   const auth = useAuth();
-  const { isAdmin: isSuperuser } = usePermissions();
+  const isStaff = Boolean(
+    (auth?.user as { is_staff?: boolean; is_superuser?: boolean } | null)?.is_staff ||
+      (auth?.user as { is_superuser?: boolean } | null)?.is_superuser,
+  );
   // The location's open escalation (null: none) - undefined until it is known.
   const [loaded, setLoaded] = useState<{ locationId: number; escalation: Escalation | null } | null>(null);
   const [creating, setCreating] = useState(false);
@@ -28,7 +30,7 @@ const EscalationBanner = ({ locationId }: { locationId: number }) => {
   const setOpen = (escalation: Escalation | null) => setLoaded({ locationId, escalation });
 
   useEffect(() => {
-    if (!isSuperuser || !locationId) {
+    if (!isStaff || !locationId) {
       return;
     }
     void axiosConfig.perform_get(
@@ -40,9 +42,9 @@ const EscalationBanner = ({ locationId }: { locationId: number }) => {
     );
     // Once per location - `auth` changes with the path.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSuperuser, locationId]);
+  }, [isStaff, locationId]);
 
-  if (!isSuperuser || open === undefined) {
+  if (!isStaff || open === undefined) {
     return null;
   }
 

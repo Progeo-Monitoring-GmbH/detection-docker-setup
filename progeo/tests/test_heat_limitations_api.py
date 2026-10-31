@@ -1,16 +1,17 @@
 """Heat limitations of a Lageplan: /v1/location/<id>/heat-limitations/ (and
-/delete/) - superuser-only areas the heatmap's heat field is limited to."""
+/delete/) - staff-only areas the heatmap's heat field is limited to."""
 import pytest
 
 from progeo.tests import factories as f
-from progeo.v1.models import ProgeoLageplan
+from progeo.v1.models import Account, ProgeoLageplan
 
 SQUARE = [[0.1, 0.1], [0.5, 0.1], [0.5, 0.5], [0.1, 0.5]]
 
 
 @pytest.fixture
 def setup(api_client):
-    account = f.make_account()
+    # The request account (AccountMiddleware) - staff see its locations.
+    account = Account.objects.using(f.DB).get(pk=1)
     location = f.make_location(account)
     lageplan = ProgeoLageplan.objects.using(f.DB).create(location=location, name="EG")
     superuser = f.make_user(is_superuser=True, accounts=[account])
@@ -100,17 +101,59 @@ def test_unknown_ids_are_refused(api_client, setup):
     assert delete.status_code == 400
 
 
-@pytest.mark.parametrize("fields", [{"staff": True}, {}])
-def test_only_superusers_edit_areas(api_client, setup, fields):
+@pytest.mark.parametrize("fields", [{"staff": True}, {"is_superuser": True}])
+def test_staff_users_edit_areas(api_client, setup, fields):
     location, lageplan = setup
     account = location.account
     api_client.force_authenticate(user=f.make_user(accounts=[account], **fields))
 
     response = api_client.post(_url(location), {"lageplan_id": lageplan.pk, "points": SQUARE}, format="json")
 
+    assert response.status_code == 200, response.content
+    assert len(_areas(lageplan)) == 1
+
+
+def test_normal_users_cannot_edit_areas(api_client, setup):
+    location, lageplan = setup
+    account = location.account
+    api_client.force_authenticate(user=f.make_user(accounts=[account]))
+
+    response = api_client.post(_url(location), {"lageplan_id": lageplan.pk, "points": SQUARE}, format="json")
+
     assert response.status_code == 400
-    assert response.json()["reason"] == "Superuser access required"
+    assert response.json()["reason"] == "Staff access required"
     assert _areas(lageplan) == []
+
+
+def test_heat_limitations_can_be_copied(api_client, setup):
+    location, lageplan = setup
+    api_client.post(_url(location), {"lageplan_id": lageplan.pk, "name": "Halle", "points": SQUARE}, format="json")
+    inactive = ProgeoLageplan.objects.using(f.DB).create(location=location, name="OG", is_active=False)
+
+    body = api_client.get(_url(location), {"lageplan_id": lageplan.pk}).json()
+
+    assert body["location_id"] == location.pk
+    assert body["lageplan_id"] == lageplan.pk
+    assert [plan["id"] for plan in body["plans"]] == [lageplan.pk, inactive.pk]
+    assert body["plans"][0]["name"] == "EG" and body["plans"][0]["is_active"] is True
+    assert body["plans"][0]["url"] is None
+    assert body["plans"][0]["heat_limitations"] == _areas(lageplan)
+    assert body["heat_limitations"] == _areas(lageplan)
+    # The other plan has no areas to copy.
+    other = api_client.get(_url(location), {"lageplan_id": inactive.pk}).json()
+    assert (other["lageplan_id"], other["heat_limitations"]) == (inactive.pk, [])
+    # Without lageplan_id the active plan is the target.
+    assert api_client.get(_url(location)).json()["lageplan_id"] == lageplan.pk
+
+
+def test_normal_users_cannot_read_the_copy_payload(api_client, setup):
+    location, _lageplan = setup
+    api_client.force_authenticate(user=f.make_user(accounts=[location.account]))
+
+    response = api_client.get(_url(location))
+
+    assert response.status_code == 400
+    assert response.json()["reason"] == "Staff access required"
 
 
 def test_the_areas_come_with_the_lageplan(api_client, setup):

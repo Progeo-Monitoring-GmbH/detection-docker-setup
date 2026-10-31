@@ -14,7 +14,11 @@ cd "$PROJECT_ROOT" || exit 1
 echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] daily dbbackup started"
 python manage.py handle_all_dbs --command=dbbackup
 rc=$?
-echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] daily dbbackup finished (exit $rc), transfer started"
+echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] daily dbbackup finished (exit $rc), sync backups started"
+# Create the Backup rows for tonight's dumps, so the backup list is current before transfer.
+python manage.py sync_backups
+rc=$?
+echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] daily sync_backups finished (exit $rc), transfer started"
 # Tonight's dumps as one OpenPGP-encrypted tar to the backup server (BACKUP_REMOTE_* in .env; off while empty).
 python manage.py transfer_backups
 rc=$?

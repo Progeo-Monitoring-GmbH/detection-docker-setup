@@ -104,10 +104,18 @@ const HEAT_BORDER_SIGMAS = 3;
 
 /** Space kept free on the right of the initial view for the colour scale. */
 export const COLORBAR_SPACE = 58;
-/** Border around the content (plan or heat field) of the initial view, relative to its larger span. */
-const VIEW_BORDER = 0.2;
+/**
+ * Small safety border around the content (plan or heat field) of the initial
+ * view; the readable margin itself is added in screen pixels by fitView (see
+ * useHeatmapViewport) so it adapts to the card instead of scaling with the
+ * plan. Kept small - a fixed fraction looked cramped in /status and left
+ * huge empty bands in /analyse.
+ */
+const VIEW_BORDER = 0.02;
 /** fitPlan: the tallest canvas, relative to its width (very tall plans). */
 const FIT_PLAN_MAX_ASPECT = 2;
+/** No card needs a canvas taller than this; fitPlan stops growing here. */
+export const MAX_CANVAS_HEIGHT = 900;
 /** Hover radius around a sensor marker (screen pixels). */
 const SENSOR_HIT_RADIUS = 11;
 
@@ -408,7 +416,12 @@ export const canvasHeightFor = (
   if (width <= 0 || spanX <= 0 || spanY <= 0 || usable <= 0) {
     return height;
   }
-  const maxHeight = fitPlan ? Math.max(height, usable * FIT_PLAN_MAX_ASPECT) : height;
+  const maxHeight = fitPlan
+    ? Math.min(
+        Math.max(height, usable * FIT_PLAN_MAX_ASPECT),
+        Math.max(height, MAX_CANVAS_HEIGHT),
+      )
+    : height;
   return Math.round(clamp((usable * spanY) / spanX, 160, maxHeight));
 };
 

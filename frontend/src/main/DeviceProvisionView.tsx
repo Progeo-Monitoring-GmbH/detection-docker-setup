@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Button,
@@ -12,6 +12,7 @@ import {
 } from 'react-bootstrap';
 import {
   ArrowRepeat,
+  Broadcast,
   CheckCircle,
   Clipboard,
   Download,
@@ -19,6 +20,7 @@ import {
   PlusCircle,
 } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
 import { downloadBlob } from '../download';
@@ -27,10 +29,12 @@ import LocationPicker, {
   type PickableLocation,
 } from '../components/location/LocationPicker';
 import {
+  errorReason,
   showErrorBar,
   showRequestError,
   showSuccessBar,
 } from '../components/ui/Snackbar.jsx';
+import { formatDate } from './dateFormat';
 
 /** A location of /v1/device/provision/locations/ (project_type: its label). */
 type ProvisionLocation = PickableLocation & {
@@ -41,6 +45,18 @@ type ProvisionLocation = PickableLocation & {
 };
 
 type Option = { value: number; label: string };
+
+/** A device already provisioned for the selected location
+ * (GET /v1/device/provision/devices/?location=<pk>). */
+type ExistingProvisionDevice = {
+  id: number;
+  raw_hash: string;
+  display_name: string | null;
+  chip_id: string | null;
+  type: string | null;
+  hardware: string | null;
+  last_measurement_at: string | null;
+};
 
 type ProvisionSettings = {
   sensors: string;
@@ -109,6 +125,7 @@ const EMPTY_SETTINGS: ProvisionSettings = {
  */
 const DeviceProvisionView = () => {
   const auth = useAuth();
+  const { t } = useTranslation();
   const { enqueueSnackbar } = useSnackbar();
 
   const [locations, setLocations] = useState<ProvisionLocation[]>([]);
@@ -124,6 +141,19 @@ const DeviceProvisionView = () => {
     raw_hash: string;
   } | null>(null);
   const [loading, setLoading] = useState(false);
+  // Devices that already exist for the selected location: continue their
+  // measurement-testing session instead of creating a new device.
+  const [existingDevices, setExistingDevices] = useState<ExistingProvisionDevice[]>([]);
+  const [selectedExistingId, setSelectedExistingId] = useState<number | null>(null);
+  const [existingLoading, setExistingLoading] = useState(false);
+  const [existingError, setExistingError] = useState<string | null>(null);
+  const existingRequest = useRef(0);
+  // The existing device whose test measurements are shown below.
+  const [testingDevice, setTestingDevice] = useState<{
+    id: number;
+    location: number;
+    raw_hash: string;
+  } | null>(null);
   const [airtable, setAirtable] = useState<AirtableSync | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [importAccount, setImportAccount] = useState('');
@@ -162,6 +192,60 @@ const DeviceProvisionView = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /** Forget the existing-device panel (and drop a running answer). */
+  const clearExistingDevices = () => {
+    existingRequest.current += 1;
+    setExistingDevices([]);
+    setSelectedExistingId(null);
+    setExistingError(null);
+    setExistingLoading(false);
+  };
+
+  const loadExistingDevices = (id: number) => {
+    const request = ++existingRequest.current;
+    // Never show another location's devices while this answer is pending.
+    setExistingDevices([]);
+    setSelectedExistingId(null);
+    setExistingLoading(true);
+    setExistingError(null);
+    void axiosConfig.perform_get(
+      auth,
+      `/v1/device/provision/devices/?location=${id}`,
+      (response) => {
+        if (request !== existingRequest.current) {
+          return;
+        }
+        const list = Array.isArray(response?.data?.devices)
+          ? (response.data.devices as ExistingProvisionDevice[])
+          : [];
+        setExistingDevices(list);
+        setSelectedExistingId(list.length ? list[0].id : null);
+        setExistingLoading(false);
+      },
+      (error) => {
+        if (request !== existingRequest.current) {
+          return;
+        }
+        setExistingDevices([]);
+        setSelectedExistingId(null);
+        setExistingError(errorReason(error) || 'unknown error');
+        setExistingLoading(false);
+      },
+    );
+  };
+
+  // A selected location may already hold devices - offer to continue their
+  // measurement test instead of provisioning another one.
+  useEffect(() => {
+    if (!locationId) {
+      clearExistingDevices();
+      return;
+    }
+    loadExistingDevices(Number(locationId));
+    // Once per selected location - auth changes with the path.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locationId]);
+
   // Any change makes the generated config stale - generate it again.
   const resetPreview = () => {
     setPreview(null);
@@ -184,6 +268,8 @@ const DeviceProvisionView = () => {
     }
     setLoading(true);
     resetPreview();
+    // A new config is a new device - stop showing another device's tests.
+    setTestingDevice(null);
     void axiosConfig.perform_post(
       auth,
       '/v1/device/provision/preview/',
@@ -212,6 +298,9 @@ const DeviceProvisionView = () => {
       return;
     }
     setLoading(true);
+    // Confirming starts a new device - stop showing another device's tests.
+    setTestingDevice(null);
+    setCreatedDevice(null);
     void axiosConfig.perform_post(
       auth,
       '/v1/device/provision/confirm/',
@@ -227,6 +316,10 @@ const DeviceProvisionView = () => {
         }
         setConfirmed(true);
         setLoading(false);
+        // The new device now belongs to the location's existing devices.
+        if (locationId) {
+          loadExistingDevices(Number(locationId));
+        }
         showSuccessBar(
           enqueueSnackbar,
           `Device ${preview.device_hash} created.`,
@@ -237,6 +330,21 @@ const DeviceProvisionView = () => {
         setLoading(false);
       },
     );
+  };
+
+  /** Show the test measurements of an already provisioned device. */
+  const continueTesting = () => {
+    const device = existingDevices.find(
+      (entry) => entry.id === selectedExistingId,
+    );
+    if (!device || !locationId) {
+      return;
+    }
+    setTestingDevice({
+      id: device.id,
+      location: Number(locationId),
+      raw_hash: device.raw_hash,
+    });
   };
 
   const syncAirtable = () => {
@@ -377,6 +485,10 @@ const DeviceProvisionView = () => {
   const selectedLocation = locations.find(
     (location) => String(location.id) === locationId,
   );
+
+  // Test measurements below: the continued session wins over a device that
+  // was just created.
+  const testDevice = testingDevice ?? (confirmed ? createdDevice : null);
 
   return (
     <Container fluid className="py-4">
@@ -569,6 +681,8 @@ const DeviceProvisionView = () => {
                   onChange={(location) => {
                     setLocationId(location ? String(location.id) : '');
                     resetPreview();
+                    // Another location - another device session.
+                    setTestingDevice(null);
                   }}
                 />
               </Form.Group>
@@ -680,6 +794,80 @@ const DeviceProvisionView = () => {
         </Card.Body>
       </Card>
 
+      {locationId && (existingLoading || existingError || existingDevices.length > 0) && (
+        <Alert variant="info" className="mb-3">
+          <div className="d-flex align-items-start justify-content-between gap-2 mb-2">
+            <div>
+              <strong>{t('provision_existing_title')}</strong>
+              <div className="small">{t('provision_existing_hint')}</div>
+            </div>
+            {existingLoading && <Spinner size="sm" animation="border" />}
+          </div>
+          {existingError ? (
+            <div className="small text-danger">
+              {t('provision_existing_load_failed', { reason: existingError })}{' '}
+              <Button
+                variant="link"
+                size="sm"
+                className="p-0 align-baseline"
+                onClick={() => loadExistingDevices(Number(locationId))}
+              >
+                {t('provision_existing_retry')}
+              </Button>
+            </div>
+          ) : existingDevices.length > 0 ? (
+            <Row className="g-2 align-items-end">
+              <Col md={8}>
+                <Form.Label
+                  className="small mb-1"
+                  htmlFor="provision-existing-device"
+                >
+                  {t('provision_existing_device')}
+                </Form.Label>
+                <Form.Select
+                  id="provision-existing-device"
+                  aria-label={t('provision_existing_device')}
+                  value={selectedExistingId ?? ''}
+                  onChange={(event) =>
+                    setSelectedExistingId(Number(event.target.value))
+                  }
+                  disabled={existingLoading}
+                >
+                  {existingDevices.map((device) => (
+                    <option key={device.id} value={device.id}>
+                      {[
+                        device.display_name,
+                        device.raw_hash,
+                        device.last_measurement_at
+                          ? t('provision_existing_last_measurement', {
+                              date: formatDate(
+                                device.last_measurement_at,
+                                'dateTime',
+                              ),
+                            })
+                          : null,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </option>
+                  ))}
+                </Form.Select>
+              </Col>
+              <Col md="auto">
+                <Button
+                  variant="outline-primary"
+                  onClick={continueTesting}
+                  disabled={existingLoading || selectedExistingId == null}
+                >
+                  <Broadcast className="me-2" />
+                  {t('provision_existing_continue')}
+                </Button>
+              </Col>
+            </Row>
+          ) : null}
+        </Alert>
+      )}
+
       {preview && (
         <Card className="border-0 shadow-sm p-3">
           <Card.Body>
@@ -767,11 +955,11 @@ const DeviceProvisionView = () => {
         </Card>
       )}
 
-      {confirmed && createdDevice && (
+      {testDevice && (
         <ProvisionTestMeasurements
-          locationId={createdDevice.location}
-          deviceId={createdDevice.id}
-          deviceHash={createdDevice.raw_hash}
+          locationId={testDevice.location}
+          deviceId={testDevice.id}
+          deviceHash={testDevice.raw_hash}
         />
       )}
     </Container>

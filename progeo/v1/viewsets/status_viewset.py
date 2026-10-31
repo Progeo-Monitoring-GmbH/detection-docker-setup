@@ -20,6 +20,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from progeo.authentication import ExpiringTokenAuthentication
 from progeo.decorator import calc_runtime, require_module_permissions
 from progeo.helper.basics import RequestFailed, RequestSuccess, save_check_dir
+from progeo.helper.device_inventory import build_device_statistics
 from progeo.helper.device_overview import device_stats, hash_kind, is_online
 from progeo.helper.docker_helper import start_cad_factory
 from progeo.helper.lageplan_export import (
@@ -905,6 +906,18 @@ class StatusViewSet(ProgeoModalViewSet):
             data.extend(DeviceSerializer(devices, many=True).data)
         data.sort(key=lambda device: device.get("id") or 0)
         return RequestSuccess({"devices": data})
+
+    @calc_runtime
+    @require_module_permissions("module_devices_enabled")
+    @action(detail=False, url_path="device_statistics", methods=["GET"])
+    def device_statistics(self, request, *args, **kwargs):
+        """Staff-only inventory statistics of the account's devices and
+        locations (helper/device_inventory.py): per type, chip_id, measurement
+        in the last 24h, missing Lageplan, dead/unused."""
+        if not is_staff_admin(request.user):
+            return RequestFailed({"reason": "Staff access required"})
+        accounts = [account for account in _request_accounts(request) if account]
+        return RequestSuccess(build_device_statistics(accounts))
 
     @calc_runtime
     @require_module_permissions("module_devices_enabled")

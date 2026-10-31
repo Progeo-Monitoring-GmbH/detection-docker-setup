@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { dateLocale, PRETTY_LOCALE } from '../../main/dateFormat';
-import { spacedTicks, timeTicks } from './timeTicks';
+import { MIN_TIME_TICKS, spacedTicks, timeTicks } from './timeTicks';
 import './TimeAxis.css';
 
 type TimeAxisProps = {
@@ -45,7 +45,7 @@ const TimeAxis = ({ from, to, position }: TimeAxisProps) => {
       timeTicks(
         from,
         to,
-        Math.max(2, Math.floor((width || 600) / LABEL_SPACING)),
+        Math.max(MIN_TIME_TICKS, Math.floor((width || 600) / LABEL_SPACING)),
         dateLocale(i18n.language) ?? PRETTY_LOCALE,
       ),
     [from, to, width, i18n.language],
@@ -53,13 +53,17 @@ const TimeAxis = ({ from, to, position }: TimeAxisProps) => {
   const at = position ?? ((ms: number) => (ms - from) / (to - from));
   // Placed by `position`, the marks needn't be evenly spaced (a frame
   // slider leaves out gaps without data) - those too close are left out.
-  const placed = spacedTicks(
-    ticks.flatMap((tick) => {
-      const fraction = at(tick.ms);
-      return fraction >= 0 && fraction <= 1 ? [{ tick, fraction, x: fraction * (width || 600) }] : [];
-    }),
-    MIN_LABEL_GAP,
-  );
+  const candidates = ticks.flatMap((tick) => {
+    const fraction = at(tick.ms);
+    return fraction >= 0 && fraction <= 1 ? [{ tick, fraction, x: fraction * (width || 600) }] : [];
+  });
+  let placed = spacedTicks(candidates, MIN_LABEL_GAP);
+  // "Always at least 5 labels": where the labels would run into each other,
+  // keep five of them spread over the axis instead of dropping below that.
+  if (placed.length < MIN_TIME_TICKS && candidates.length >= MIN_TIME_TICKS) {
+    const step = (candidates.length - 1) / (MIN_TIME_TICKS - 1);
+    placed = Array.from({ length: MIN_TIME_TICKS }, (_, index) => candidates[Math.round(index * step)]);
+  }
 
   return (
     <div className="time-axis" ref={ref} aria-hidden="true">

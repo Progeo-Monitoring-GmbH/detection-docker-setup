@@ -97,7 +97,10 @@ const EDGE_COLOR = 'rgba(0, 0, 0, 0)';
 const BASELINE_COLOR = '#4a4a4a';
 
 /** How many sensors the "most / least active" buttons add. */
-const ACTIVE_SENSOR_COUNT = 5;
+const ACTIVE_SENSOR_COUNT = 2;
+
+/** Legend suffix of a selected sensor: clicking the entry removes the sensor. */
+const REMOVE_MARK = ' ✕';
 
 /** The plot's height (px). */
 const PLOT_HEIGHT = 800;
@@ -430,8 +433,10 @@ const MeasurementSamplesCompareChart = (
   // onSensorsChange (shared with the heatmap).
   const [ownSensors, setOwnSensors] = React.useState<number[]>([]);
   const selectedSensors = sensors ?? ownSensors;
+  const updateSensors = (next: number[]) =>
+    (onSensorsChange ?? setOwnSensors)(next);
   const toggleSensor = (sensor: number) =>
-    (onSensorsChange ?? setOwnSensors)(toggledSensor(selectedSensors, sensor));
+    updateSensors(toggledSensor(selectedSensors, sensor));
 
   // The most / least active sensors: by their mean |EP - WP| over the
   // measurements (the second plot's values). Sensors without any signal (0
@@ -452,12 +457,36 @@ const MeasurementSamplesCompareChart = (
       least: ranked.slice(-ACTIVE_SENSOR_COUNT).reverse(),
     };
   }, [pairSumSeries]);
+  // Every sensor that reported at least one measurement - the pool for
+  // "Add random sensor".
+  const availableSensors = React.useMemo(() => {
+    const count = pairSumSeries.pairs.reduce(
+      (highest, values) => Math.max(highest, values.length),
+      0,
+    );
+    return Array.from({ length: count }, (_, sensor) => sensor).filter((sensor) =>
+      pairSumSeries.pairs.some((values) => values[sensor] != null),
+    );
+  }, [pairSumSeries]);
+  const randomCandidates = availableSensors.filter(
+    (sensor) => !selectedSensors.includes(sensor),
+  );
+  const addRandomSensor = () => {
+    const pool = randomCandidates.length ? randomCandidates : availableSensors;
+    if (!pool.length) {
+      return;
+    }
+    const sensor = pool[Math.floor(Math.random() * pool.length)];
+    updateSensors(
+      [...new Set([...selectedSensors, sensor])].sort((a, b) => a - b),
+    );
+  };
   // A button shows its group while all of it is shown; a click then removes
   // the group, else adds it.
   const groupShown = (group: number[]) =>
     group.length > 0 && group.every((sensor) => selectedSensors.includes(sensor));
   const toggleGroup = (group: number[]) =>
-    (onSensorsChange ?? setOwnSensors)(
+    updateSensors(
       groupShown(group)
         ? selectedSensors.filter((sensor) => !group.includes(sensor))
         : [...new Set([...selectedSensors, ...group])].sort((a, b) => a - b),
@@ -486,7 +515,9 @@ const MeasurementSamplesCompareChart = (
       type: 'scatter' as const,
       mode: 'lines' as const,
       uid: `sensor-${sensor}`,
-      name: `${t('measurement_compare_pair_label')} ${sensor}`,
+      // The trailing ✕ is the legend's remove control: clicking the entry
+      // removes the sensor from the second plot.
+      name: `${t('measurement_compare_pair_label')} ${sensor}${REMOVE_MARK}`,
       x: pairSumSeries.x,
       y: pairSumSeries.pairs.map((values) => values[sensor] ?? null),
       xaxis: 'x3' as const,
@@ -820,7 +851,12 @@ const MeasurementSamplesCompareChart = (
       const trace = point.data as HoverTrace;
       const uid = trace.uid ?? '';
       const index = point.pointIndex;
-      const row = { key: uid, name: String(trace.name ?? ''), color: String(trace.line?.color ?? '') };
+      const row = {
+        key: uid,
+        // The legend's ✕ is a remove control, not part of the sensor name.
+        name: String(trace.name ?? '').replace(REMOVE_MARK, ''),
+        color: String(trace.line?.color ?? ''),
+      };
       if (uid === 'min-max-lower' || uid === 'deviation-lower') {
         const [low, high] =
           uid === 'min-max-lower'
@@ -949,11 +985,12 @@ const MeasurementSamplesCompareChart = (
         setHighlighted(null);
       }
     };
-    // No wheel zoom on the first plot (its drag area, subplot "xy") - stopped
-    // on the way down, before Plotly's own listener; the page scrolls instead.
-    // The time plots keep it.
+    // No wheel zoom on any of the three plots (their drag areas, every
+    // subplot) - stopped on the way down, before Plotly's own listener; the
+    // page scrolls instead. Zooming stays available with the drag/autoscale
+    // controls, exactly like the first plot did before.
     const onWheel = (event: WheelEvent) => {
-      if (event.target instanceof Element && event.target.closest('.drag[data-subplot="xy"]')) {
+      if (event.target instanceof Element && event.target.closest('.drag')) {
         event.stopPropagation();
       }
     };
@@ -1050,6 +1087,66 @@ const MeasurementSamplesCompareChart = (
         />
       )}
 
+      {/* The second plot's controls, in normal flow above the chart: they can
+          never overlap its legend, however many sensors are selected. */}
+      <div
+        className="d-flex flex-wrap align-items-center gap-2 mb-2"
+        data-testid="measurement-compare-sensor-toolbar"
+      >
+        <small className="text-muted me-1">
+          {t('measurement_compare_selected_sensors', {
+            count: selectedSensors.length,
+          })}
+        </small>
+        <Button
+          size="sm"
+          variant="outline-secondary"
+          className="py-0"
+          style={{ fontSize: 12 }}
+          onClick={() => updateSensors([])}
+          disabled={selectedSensors.length === 0}
+        >
+          {t('measurement_compare_clear_sensors')}
+        </Button>
+        <Button
+          size="sm"
+          variant="outline-secondary"
+          className="py-0"
+          style={{ fontSize: 12 }}
+          onClick={addRandomSensor}
+          disabled={randomCandidates.length === 0}
+          title={t('measurement_compare_add_random_hint')}
+        >
+          {t('measurement_compare_add_random')}
+        </Button>
+        {activeSensors.most.length > 0 && (
+          <>
+            {(
+              [
+                ['most', 'measurement_compare_add_most_active'],
+                ['least', 'measurement_compare_add_least_active'],
+              ] as const
+            ).map(([group, label]) => {
+              const shown = groupShown(activeSensors[group]);
+              return (
+                <Button
+                  key={group}
+                  size="sm"
+                  variant={shown ? 'primary' : 'outline-primary'}
+                  aria-pressed={shown}
+                  title={t('measurement_compare_activity_hint')}
+                  className="py-0"
+                  style={{ fontSize: 12 }}
+                  onClick={() => toggleGroup(activeSensors[group])}
+                >
+                  {t(label, { n: ACTIVE_SENSOR_COUNT })}
+                </Button>
+              );
+            })}
+          </>
+        )}
+      </div>
+
       <div ref={wrapRef} style={{ position: 'relative' }} onMouseMove={onMouseMove}>
         {tooltip && (
           // Top right of the upper plot - top left while the cursor is near.
@@ -1076,41 +1173,6 @@ const MeasurementSamplesCompareChart = (
                 : 'measurement_compare_sensor_click_add',
               { sensor: hoveredSensor },
             )}
-          </div>
-        )}
-        {activeSensors.most.length > 0 && (
-          // Right above the second plot, on the right (its legend is on the left).
-          <div
-            className="position-absolute d-flex gap-2"
-            style={{
-              zIndex: 2,
-              right: margin.r,
-              top: margin.t + (1 - SENSORS_DOMAIN[1]) * (PLOT_HEIGHT - margin.t - margin.b) - 4,
-              transform: 'translateY(-100%)',
-            }}
-          >
-            {(
-              [
-                ['most', 'measurement_compare_add_most_active'],
-                ['least', 'measurement_compare_add_least_active'],
-              ] as const
-            ).map(([group, label]) => {
-              const shown = groupShown(activeSensors[group]);
-              return (
-                <Button
-                  key={group}
-                  size="sm"
-                  variant={shown ? 'primary' : 'outline-primary'}
-                  aria-pressed={shown}
-                  title={t('measurement_compare_activity_hint')}
-                  className="py-0"
-                  style={{ fontSize: 12 }}
-                  onClick={() => toggleGroup(activeSensors[group])}
-                >
-                  {t(label, { n: ACTIVE_SENSOR_COUNT })}
-                </Button>
-              );
-            })}
           </div>
         )}
         <Plot

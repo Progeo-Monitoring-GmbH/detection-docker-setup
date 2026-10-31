@@ -12,7 +12,7 @@ import itertools
 import pytest
 from django.utils import timezone
 
-from progeo.helper import weather
+from progeo.helper import alarm_evaluation, weather
 from progeo.helper.alarm_check import check_existing_alarms_db
 from progeo.helper.alarm_evaluation import (
     evaluate_measurement_instantly,
@@ -167,11 +167,15 @@ def _queries_to_evaluate(window, measurements):
     device = f.make_device(location)
     for minute in range(measurements):
         f.make_measurement(device, pairs=[150 + minute], fetched_at=window[1](minute))
-    f.make_measurement(device, pairs=[20], fetched_at=window[1](measurements))
+    calm = f.make_measurement(device, pairs=[20], fetched_at=window[1](measurements))
     with CaptureQueriesContext(connections[f.DB]) as queries:
-        assert _evaluate(window) == (1, measurements)
+        location_count, triggered = _evaluate(window)
+    assert location_count == 1
+    # Galloping may evaluate only a sample of a long over-threshold stretch.
+    assert 0 < triggered <= measurements
     [alarm] = _alarms(device)
-    assert len(alarm.max_values) == measurements
+    assert 0 < len(alarm.max_values) <= measurements
+    assert alarm.normalized_at == calm.last_fetched
     assert alarm.still_active_at == window[1](measurements - 1)
     return len(queries)
 
@@ -182,6 +186,36 @@ def test_prolonging_an_alarm_costs_no_query_per_measurement(window):
                     start + datetime.timedelta(hours=23))
 
     assert _queries_to_evaluate(window, 2) == _queries_to_evaluate(other_window, 12)
+
+
+def test_long_active_stretch_is_galloped_and_normalizes_at_the_exact_calm_row(window, site, monkeypatch):
+    _location, device = site
+    for minute in range(40):
+        f.make_measurement(device, pairs=[150], fetched_at=window[1](minute))
+    calm = f.make_measurement(device, pairs=[20], fetched_at=window[1](40))
+
+    evaluated = []
+    original = alarm_evaluation._evaluate_measurement
+
+    def counting_evaluate(measurement, *args, **kwargs):
+        evaluated.append(measurement.pk)
+        return original(measurement, *args, **kwargs)
+
+    monkeypatch.setattr(alarm_evaluation, "_evaluate_measurement", counting_evaluate)
+
+    location_count, triggered = _evaluate(window)
+
+    assert location_count == 1
+    # 41 rows, but the gallop only needs a probe chain plus the calm row.
+    assert 0 < len(evaluated) <= 12 < 40
+    assert len(set(evaluated)) == len(evaluated)  # nothing is evaluated twice
+    [alarm] = _alarms(device)
+    assert alarm.normalized_at == calm.last_fetched
+    assert alarm.triggered_at == window[1](0)
+    assert alarm.still_active_at == window[1](39)
+    # Every evaluated row before the calm one hit the alarm; skipped rows left
+    # no history entries.
+    assert triggered == len(evaluated) - 1 == len(alarm.max_values)
 
 
 # -- evaluate_measurements_db: normalizing --------------------------------------
