@@ -102,12 +102,18 @@ const MuxStatusPanel = ({
   if (muxCount <= 0) {
     return null;
   }
+  // Do not rely on the array order: the datatable sorts by time and the
+  // incremental poll merges responses, so the newest measurement for a MUX is
+  // not necessarily the first row in `measurements`. Pick by id (pk) instead.
   const newest = new Map<number, TestCheck>();
-  measurements.forEach((row) => {
-    if (row.check.mux && !newest.has(row.check.mux)) {
-      newest.set(row.check.mux, row.check);
-    }
-  });
+  [...measurements]
+    .sort((left, right) => right.id - left.id)
+    .forEach((row) => {
+      const mux = Number(row.check.mux);
+      if (Number.isInteger(mux) && mux > 0 && !newest.has(mux)) {
+        newest.set(mux, row.check);
+      }
+    });
 
   const headerButtonStyle = {
     border: 0,
