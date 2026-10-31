@@ -88,6 +88,25 @@ class Command(BaseCommand):
         if options["vacuum"] and options["vacuum_full"]:
             raise CommandError("Use either --vacuum or --vacuum-full, not both.")
         database = options["database"]
+        # Project databases ("1312", "project_1312", ...) are not in
+        # DATABASES until this process registers them. Accept the alias or
+        # the project id, not just the preconfigured aliases.
+        if database not in connections.settings:
+            from progeo.helper.project_dbs import (
+                is_project_alias,
+                project_alias,
+                register_project_db,
+            )
+
+            alias = project_alias(database) if str(database).isdigit() else database
+            if not is_project_alias(alias):
+                raise CommandError(
+                    f"Unknown database alias: {database}. "
+                    "Use default or a project database alias/id (e.g. 1312)."
+                )
+            register_project_db(alias)
+            database = alias
+
         connection = connections[database]
         if connection.vendor != "postgresql":
             raise CommandError(
