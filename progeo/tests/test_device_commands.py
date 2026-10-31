@@ -136,7 +136,7 @@ def test_png_is_150_high_and_at_most_600_wide():
         pixels = image.convert("RGB").load()
         assert any(
             pixels[x, y] != (255, 255, 255)
-            for x in range(0, 45)
+            for x in range(45)
             for y in range(10, 140)
         )
 

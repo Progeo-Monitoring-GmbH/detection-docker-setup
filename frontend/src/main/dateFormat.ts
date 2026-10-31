@@ -91,8 +91,14 @@ export const formatRelativeTime = (
     return NO_DATE;
   }
   const seconds = Math.max(0, Math.floor((now - ms) / 1000));
-  const relative = (key: string, options: Record<string, number>, fallback: string) =>
-    i18next.t(key, { ...options, defaultValue: fallback });
+  const relative = (key: string, options: Record<string, number>, fallback: string) => {
+    if (!i18next.isInitialized) {
+      return fallback.replace(/\{\{(\w+)\}\}/g, (_, name: string) =>
+        String(options[name] ?? ''),
+      );
+    }
+    return i18next.t(key, { ...options, defaultValue: fallback });
+  };
 
   if (seconds < 10) {
     return relative('device_stats_relative_now', {}, 'just now');
