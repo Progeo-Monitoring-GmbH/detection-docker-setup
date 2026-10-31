@@ -23,7 +23,7 @@ import {
   showRequestError,
   showSuccessBar,
 } from '../components/ui/Snackbar.jsx';
-import { formatDate } from './dateFormat';
+import { formatDate, formatRelativeTime } from './dateFormat';
 import { plotTheme } from '../styles/plotTheme';
 
 /** A row of GET /v1/status/device_statistics/ - devices.* and by_type values. */
@@ -213,6 +213,16 @@ const adminEditUrl = (
 ) =>
   `/aadmin/progeo/${model}/${row.id}/change/?db=${encodeURIComponent(row.database)}`;
 
+/** Re-render the relative "last measurement" labels every 30 s. */
+const useNow = (intervalMs = 30_000) => {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), intervalMs);
+    return () => window.clearInterval(timer);
+  }, [intervalMs]);
+  return now;
+};
+
 const deviceDetailUrl = (row: StatisticsDevice) =>
   `/device/${row.id}/detail${row.location_id != null ? `?location=${row.location_id}` : ''}`;
 
@@ -234,6 +244,7 @@ const DeviceList = ({
   showAdminEdit?: boolean;
 }) => {
   const { t } = useTranslation();
+  const now = useNow();
 
   if (!rows.length) {
     return <div className="small text-muted py-2">{t('device_stats_empty')}</div>;
@@ -311,8 +322,11 @@ const DeviceList = ({
       selector: (row) => row.last_measurement_at ?? '',
       sortable: true,
       cell: (row) => (
-        <span className="small">
-          {formatDate(row.last_measurement_at, 'dateTime')}
+        <span
+          className="small"
+          title={formatDate(row.last_measurement_at, 'dateTime')}
+        >
+          {formatRelativeTime(row.last_measurement_at, now)}
         </span>
       ),
       width: '135px',
@@ -374,6 +388,7 @@ const LocationList = ({
   showAdminEdit?: boolean;
 }) => {
   const { t } = useTranslation();
+  const now = useNow();
 
   if (!rows.length) {
     return <div className="small text-muted py-2">{t('device_stats_empty')}</div>;
@@ -409,8 +424,11 @@ const LocationList = ({
       selector: (row) => row.last_measurement_at ?? '',
       sortable: true,
       cell: (row) => (
-        <span className="small">
-          {formatDate(row.last_measurement_at, 'dateTime')}
+        <span
+          className="small"
+          title={formatDate(row.last_measurement_at, 'dateTime')}
+        >
+          {formatRelativeTime(row.last_measurement_at, now)}
         </span>
       ),
       width: '135px',

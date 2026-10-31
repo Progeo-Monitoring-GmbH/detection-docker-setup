@@ -1,6 +1,6 @@
 import i18next from 'i18next';
 import { afterEach, describe, expect, it } from 'vitest';
-import { dateLocale, formatDate, toLocalIso } from './dateFormat';
+import { dateLocale, formatDate, formatRelativeTime, toLocalIso } from './dateFormat';
 
 const ms = new Date(2026, 7, 19, 11, 8, 9).getTime();
 
@@ -39,6 +39,24 @@ describe('formatDate', () => {
     i18next.language = 'en-US';
     expect(formatDate(ms)).toBe(new Date(ms).toLocaleString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }));
     expect(formatDate(ms, 'date')).toBe('08/19/2026');
+  });
+});
+
+describe('formatRelativeTime', () => {
+  const now = new Date(2026, 7, 19, 11, 8, 9).getTime();
+
+  it('shows seconds, two-part minutes and larger ages', () => {
+    expect(formatRelativeTime(now - 10_000, now)).toBe('10s ago');
+    expect(formatRelativeTime(now - 70_000, now)).toBe('1min, 10s ago');
+    expect(formatRelativeTime(now - (2 * 60 + 5) * 60_000, now)).toBe('2h, 5min ago');
+    expect(formatRelativeTime(now - (3 * 24 + 4) * 3_600_000, now)).toBe('3d, 4h ago');
+    expect(formatRelativeTime(now - 40 * 24 * 3_600_000, now)).toBe('1mo, 10d ago');
+  });
+
+  it('handles just now, future values and missing dates', () => {
+    expect(formatRelativeTime(now - 2_000, now)).toBe('just now');
+    expect(formatRelativeTime(now + 60_000, now)).toBe('just now');
+    expect(formatRelativeTime(null, now)).toBe('–');
   });
 });
 

@@ -78,6 +78,71 @@ export const formatDate = (
   return date.toLocaleString(PRETTY_LOCALE, options);
 };
 
+/**
+ * "1min, 10s ago" / "2h, 5min ago" - always two units to keep the age useful
+ * without being noisy. Future timestamps (clock skew) read as "just now".
+ */
+export const formatRelativeTime = (
+  value: Date | number | string | null | undefined,
+  now: number = Date.now(),
+): string => {
+  const ms = toMs(value);
+  if (ms == null) {
+    return NO_DATE;
+  }
+  const seconds = Math.max(0, Math.floor((now - ms) / 1000));
+  const relative = (key: string, options: Record<string, number>, fallback: string) =>
+    i18next.t(key, { ...options, defaultValue: fallback });
+
+  if (seconds < 10) {
+    return relative('device_stats_relative_now', {}, 'just now');
+  }
+  if (seconds < 60) {
+    return relative(
+      'device_stats_relative_seconds',
+      { seconds },
+      '{{seconds}}s ago',
+    );
+  }
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) {
+    return relative(
+      'device_stats_relative_minutes',
+      { minutes, seconds: seconds % 60 },
+      '{{minutes}}min, {{seconds}}s ago',
+    );
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return relative(
+      'device_stats_relative_hours',
+      { hours, minutes: minutes % 60 },
+      '{{hours}}h, {{minutes}}min ago',
+    );
+  }
+  const days = Math.floor(hours / 24);
+  if (days < 30) {
+    return relative(
+      'device_stats_relative_days',
+      { days, hours: hours % 24 },
+      '{{days}}d, {{hours}}h ago',
+    );
+  }
+  const months = Math.floor(days / 30);
+  if (months < 12) {
+    return relative(
+      'device_stats_relative_months',
+      { months, days: days % 30 },
+      '{{months}}mo, {{days}}d ago',
+    );
+  }
+  return relative(
+    'device_stats_relative_years',
+    { years: Math.floor(months / 12), months: months % 12 },
+    '{{years}}y, {{months}}mo ago',
+  );
+};
+
 /** ms -> naive local ISO string (matches the backend from/to params). */
 export const toLocalIso = (ms: number): string => {
   const date = new Date(ms);
