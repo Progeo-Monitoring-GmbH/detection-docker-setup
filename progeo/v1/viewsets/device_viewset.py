@@ -1264,7 +1264,10 @@ class DeviceViewSet(ProgeoModalViewSet):
     def provision_clear_test_measurements(self, request, *args, **kwargs):
         """"Test-Messungen bereinigen": delete the listed test measurements
         (`ids`) of the device - with the alarms they may have raised - so
-        they don't count as the location's data."""
+        they don't count as the location's data. Deleting measurements is
+        reserved for superusers; staff can still run the test session."""
+        if not getattr(request.user, "is_superuser", False):
+            return RequestFailed({"reason": "Superuser access required"})
         db_name = None
         try:
             _location, db_name, device = self._provision_device(request, request.data)

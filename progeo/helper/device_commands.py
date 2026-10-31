@@ -41,7 +41,7 @@ PNG_MIN_WIDTH = 160
 BELOW_THRESHOLD_COLOR = (9, 75, 129)
 ABOVE_THRESHOLD_COLOR = (196, 38, 38)
 THRESHOLD_LINE_COLOR = (220, 38, 38)
-EP_COLOR = (235, 99, 59)
+EP_COLOR = (226, 74, 154)
 WP_COLOR = (141, 193, 96)
 AXIS_COLOR = (207, 212, 218)
 
@@ -114,8 +114,9 @@ def check_test_pairs(pairs, expected=EXPECTED_RISING, empty_fraction=EMPTY_FRACT
     values = [float(value or 0) for value in pairs]
     peak = max(values, default=0.0)
     if peak <= 0:
-        return {"status": "fail", "rising": 0, "start": None, "end": None, "outliers": [],
-                "reasons": ["Every sensor is empty."]}
+        return {"status": "fail", "rising": 0, "start": None, "end": None, "mux": None,
+                "noise": 0, "noise_sensors": 0, "quality": 0,
+                "outliers": [], "reasons": ["Every sensor is empty."]}
 
     empty = peak * empty_fraction
     best_start, best_length = None, 0
@@ -131,6 +132,16 @@ def check_test_pairs(pairs, expected=EXPECTED_RISING, empty_fraction=EMPTY_FRACT
             best_start, best_length = start, length
 
     run = range(best_start, best_start + best_length)
+    # One test segment belongs to exactly one MUX. A run can touch the next
+    # one at a boundary; report the MUX holding most of its sensors.
+    mux_counts = {}
+    for index in run:
+        mux_counts[index // MUX_SENSORS] = mux_counts.get(index // MUX_SENSORS, 0) + 1
+    detected_mux = (
+        max(mux_counts, key=lambda mux: (mux_counts[mux], -mux)) + 1
+        if mux_counts
+        else None
+    )
     outliers = [index + 1 for index, value in enumerate(values) if index not in run and value > empty]
     # A missing first plug value leaves 15 of the 16 rising values: the sensor
     # right before the run is empty, so the run still starts at the plug.
@@ -167,11 +178,28 @@ def check_test_pairs(pairs, expected=EXPECTED_RISING, empty_fraction=EMPTY_FRACT
         elif best_start > 0:
             display_start = best_start - 1
 
+    # Quality: how much of the measurement's total signal sits inside the
+    # detected test segment. Everything outside is noise, including small
+    # non-empty values; `noise_sensors` counts the sensors that contributed.
+    segment = range(display_start, min(display_end, len(values)))
+    segment_set = set(segment)
+    signal = sum(values[index] for index in segment)
+    noise_values = [
+        value for index, value in enumerate(values) if index not in segment_set
+    ]
+    noise = sum(noise_values)
+    noise_sensors = sum(1 for value in noise_values if value > 0)
+    quality = round(100 * signal / (signal + noise)) if signal + noise > 0 else 0
+
     return {
         "status": "ok" if success else "fail",
         "rising": best_length,
         "start": display_start + 1,
         "end": display_end,
+        "mux": detected_mux,
+        "noise": round(noise, 2),
+        "noise_sensors": noise_sensors,
+        "quality": quality,
         "outliers": outliers,
         "reasons": reasons,
     }
@@ -181,7 +209,7 @@ def pairs_png(pairs, check=None, threshold=None, ep=None, wp=None):
     """The pairs as filled bars (PNG_HEIGHT high, at most PNG_MAX_WIDTH wide)
     with EP/WP lines, a labelled y-axis and the alarm threshold line: pair
     values above the threshold red, those below blue."""
-    from PIL import Image, ImageDraw
+    from PIL import Image, ImageDraw, ImageFont
 
     values = [max(0.0, float(value or 0)) for value in pairs]
     ep_values = [max(0.0, float(value or 0)) for value in (ep or [])]
@@ -216,6 +244,8 @@ def pairs_png(pairs, check=None, threshold=None, ep=None, wp=None):
         )
     image = Image.alpha_composite(image, overlay)
     draw = ImageDraw.Draw(image)
+    font = ImageFont.load_default(size=10)
+    mux_font = ImageFont.load_default(size=11)
 
     def value_label(value):
         return f"{value:.1f}" if 0 < abs(value) < 10 else f"{value:.0f}"
@@ -240,8 +270,8 @@ def pairs_png(pairs, check=None, threshold=None, ep=None, wp=None):
         draw.line([(left, y), (width - right, y)], fill=(240, 242, 245))
         draw.line([(left - 3, y), (left, y)], fill=AXIS_COLOR)
         label = value_label(value)
-        label_width = draw.textbbox((0, 0), label)[2]
-        draw.text((left - 6 - label_width, y - 5), label, fill=(110, 112, 118))
+        label_width = draw.textbbox((0, 0), label, font=font)[2]
+        draw.text((left - 6 - label_width, y - 6), label, fill=(55, 58, 66), font=font)
 
     # Threshold line with its value - values above it are drawn red.
     plot_height = bottom - top
@@ -253,7 +283,7 @@ def pairs_png(pairs, check=None, threshold=None, ep=None, wp=None):
             width=1,
         )
         label = f"Limit {value_label(threshold_value)}"
-        label_width = draw.textbbox((0, 0), label)[2]
+        label_width = draw.textbbox((0, 0), label, font=font)[2]
         label_x = max(left + 2, width - right - label_width - 8)
         label_y = threshold_y - 14 if threshold_y > top + 13 else threshold_y + 3
         # Small opaque padding so the label does not sit on grid/data pixels.
@@ -261,11 +291,11 @@ def pairs_png(pairs, check=None, threshold=None, ep=None, wp=None):
             [label_x - 3, label_y - 1, label_x + label_width + 3, label_y + 10],
             fill=(255, 255, 255, 245),
         )
-        draw.text((label_x, label_y), label, fill=THRESHOLD_LINE_COLOR)
+        draw.text((label_x, label_y), label, fill=THRESHOLD_LINE_COLOR, font=font)
 
     # Sensor labels: every second one where there is room, a coarser step for
     # many sensors (350 sensors at 600 px would otherwise overlap completely).
-    widest_label = draw.textbbox((0, 0), str(count))[2]
+    widest_label = draw.textbbox((0, 0), str(count), font=font)[2]
     max_labels = max(2, math.floor(plot_width / (widest_label + 6)))
     label_step = next(
         (step for step in (2, 5, 10, 20, 25, 50, 100) if math.ceil(count / step) <= max_labels),
@@ -274,24 +304,20 @@ def pairs_png(pairs, check=None, threshold=None, ep=None, wp=None):
     for index in range(0, count, label_step):
         x = left + (index + 0.5) * slot
         label = str(index + 1)
-        label_width = draw.textbbox((0, 0), label)[2]
-        draw.text((x - label_width / 2, bottom + 2), label, fill=(145, 147, 152))
+        label_width = draw.textbbox((0, 0), label, font=font)[2]
+        draw.text((x - label_width / 2, bottom + 2), label, fill=(60, 64, 72), font=font)
 
     # MUX labels under the segments - "MUX n" when it fits, "Mn" when the
-    # block is narrow (e.g. 22 MUXes at 350 sensors). The MUX(es) containing
-    # the detected test segment get a bold label.
-    test_muxes = set()
-    if check and check.get("start") and check.get("end"):
-        first_mux = (int(check["start"]) - 1) // MUX_SENSORS
-        last_mux = (int(check["end"]) - 1) // MUX_SENSORS
-        test_muxes = set(range(first_mux, last_mux + 1))
+    # block is narrow (e.g. 22 MUXes at 350 sensors). The single detected
+    # test MUX gets a bold label.
+    detected_mux = (check or {}).get("mux")
     for mux_index, start_index in enumerate(mux_ranges):
         end_index = min(start_index + MUX_SENSORS, count)
         block_width = (end_index - start_index) * slot
         full_label = f"MUX {mux_index + 1}"
         short_label = f"M{mux_index + 1}"
-        full_width = draw.textbbox((0, 0), full_label)[2]
-        short_width = draw.textbbox((0, 0), short_label)[2]
+        full_width = draw.textbbox((0, 0), full_label, font=mux_font)[2]
+        short_width = draw.textbbox((0, 0), short_label, font=mux_font)[2]
         if block_width >= full_width + 6:
             label, label_width = full_label, full_width
         elif block_width >= short_width + 2:
@@ -304,7 +330,8 @@ def pairs_png(pairs, check=None, threshold=None, ep=None, wp=None):
             (center - label_width / 2, bottom + 13),
             label,
             fill=color,
-            stroke_width=1 if mux_index in test_muxes else 0,
+            font=mux_font,
+            stroke_width=1 if detected_mux == mux_index + 1 else 0,
             stroke_fill=color,
         )
 
@@ -351,7 +378,8 @@ def pairs_png(pairs, check=None, threshold=None, ep=None, wp=None):
         legend_x = left + 6
         legend_y = top + 3
         legend_width = 2 + sum(
-            12 + draw.textbbox((0, 0), label)[2] + 8 for label, _color in legend
+            12 + draw.textbbox((0, 0), label, font=font)[2] + 8
+            for label, _color in legend
         )
         draw.rectangle(
             [left + 2, top, left + legend_width + 4, top + 14],
@@ -363,11 +391,12 @@ def pairs_png(pairs, check=None, threshold=None, ep=None, wp=None):
                 fill=line_color,
                 width=2,
             )
-            label_width = draw.textbbox((0, 0), label)[2]
+            label_width = draw.textbbox((0, 0), label, font=font)[2]
             draw.text(
-                (legend_x + 12, legend_y - 2),
+                (legend_x + 12, legend_y - 3),
                 label,
-                fill=(70, 74, 80),
+                fill=(45, 48, 55),
+                font=font,
             )
             legend_x += 12 + label_width + 8
 

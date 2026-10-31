@@ -19,7 +19,11 @@ LADDER = [0.0] * 4 + [float(step * 10) for step in range(1, 17)] + [0.0, 1.0] + 
 def test_check_accepts_sixteen_rising_values_with_the_rest_empty():
     check = device_commands.check_test_pairs(LADDER)
 
-    assert check == {"status": "ok", "rising": 16, "start": 5, "end": 20, "outliers": [], "reasons": []}
+    assert check == {
+        "status": "ok", "rising": 16, "start": 5, "end": 20, "mux": 1,
+        "noise": 1, "noise_sensors": 1, "quality": 100,
+        "outliers": [], "reasons": [],
+    }
 
 
 def test_check_tolerates_sensors_outside_the_run():
@@ -112,7 +116,7 @@ def test_png_draws_ep_and_wp_lines():
     image = Image.open(BytesIO(png)).convert("RGB")
     colors = {color for _count, color in image.getcolors(maxcolors=image.width * image.height)}
 
-    assert (235, 99, 59) in colors  # EP
+    assert (226, 74, 154) in colors  # EP (pink)
     assert (141, 193, 96) in colors  # WP
 
 
@@ -214,6 +218,7 @@ def test_test_measurements_are_listed_checked_and_cleared(api_client, provisione
     assert body["expected_rising"] == 16
     assert body["pending_commands"] == []
 
+    api_client.force_authenticate(user=f.make_user(staff=True, is_superuser=True))
     cleared = api_client.post(
         "/v1/device/provision/test-measurements/clear/", {**params, "ids": [good.pk, bad.pk, other.pk]}, format="json"
     )
@@ -222,6 +227,19 @@ def test_test_measurements_are_listed_checked_and_cleared(api_client, provisione
     assert not ProgeoAlarm.objects.using(f.DB).filter(measurement_id=bad.pk).exists()
     # Another device's measurement is not a test measurement of this one.
     assert ProgeoMeasurement.objects.using(f.DB).filter(pk=other.pk).exists()
+
+
+def test_clearing_test_measurements_needs_superuser(api_client, provisioned):
+    location, device, _preview = provisioned
+
+    response = api_client.post(
+        "/v1/device/provision/test-measurements/clear/",
+        {"location": location.pk, "device": device.pk, "ids": []},
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert response.json()["reason"] == "Superuser access required"
 
 
 def test_test_measurements_can_be_polled_incrementally(api_client, provisioned):

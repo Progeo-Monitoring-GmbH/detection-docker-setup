@@ -19,6 +19,13 @@ type TestCheck = {
   rising: number;
   start: number | null;
   end: number | null;
+  /** The single MUX the test segment belongs to (1-based), if detected. */
+  mux: number | null;
+  /** Signal outside the detected test segment: sensors and summed values. */
+  noise: number;
+  noise_sensors: number;
+  /** 0-100: share of the total signal that lies inside the test segment. */
+  quality: number;
   outliers: number[];
   reasons: string[];
 };
@@ -57,6 +64,92 @@ const STATUS: Record<TestCheck['status'], { bg: string; label: string }> = {
 };
 
 const formatTime = (value: string | null) => formatDate(value, 'dateTimeSeconds');
+
+const MUX_BOX: Record<
+  TestCheck['status'] | 'pending',
+  { background: string; border: string; text: string; label: string }
+> = {
+  ok: { background: '#E7F3DD', border: '#3F7A1C', text: '#2F5D16', label: 'OK' },
+  warn: { background: '#FDF1D6', border: '#B54708', text: '#7A3206', label: 'Check' },
+  fail: { background: '#FCE9E2', border: '#C44D26', text: '#8E2F13', label: 'Failed' },
+  pending: { background: '#F3F1F0', border: '#B8B0B0', text: '#6E6868', label: 'not tested' },
+};
+
+/** Floating status board of a running measurement-test session: one 100x100
+ * box per MUX, coloured by its newest test measurement. */
+const MuxStatusPanel = ({
+  muxCount,
+  measurements,
+}: {
+  muxCount: number;
+  measurements: TestMeasurement[];
+}) => {
+  if (muxCount <= 0) {
+    return null;
+  }
+  const newest = new Map<number, TestCheck>();
+  measurements.forEach((row) => {
+    if (row.check.mux && !newest.has(row.check.mux)) {
+      newest.set(row.check.mux, row.check);
+    }
+  });
+
+  return (
+    <div
+      data-testid="mux-status-panel"
+      style={{
+        position: 'fixed',
+        top: 8,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: 1100,
+        display: 'flex',
+        gap: 8,
+        maxWidth: 'calc(100vw - 24px)',
+        overflowX: 'auto',
+        padding: 8,
+        borderRadius: 12,
+        background: 'var(--progeo-surface)',
+        boxShadow: '0 10px 28px rgba(11, 54, 89, .22)',
+      }}
+    >
+      {Array.from({ length: muxCount }, (_, index) => {
+        const mux = index + 1;
+        const check = newest.get(mux);
+        const style = MUX_BOX[check?.status ?? 'pending'];
+        return (
+          <div
+            key={mux}
+            title={`MUX ${mux}: ${style.label}`}
+            style={{
+              width: 100,
+              height: 100,
+              flex: '0 0 100px',
+              borderRadius: 10,
+              border: `2px solid ${style.border}`,
+              background: style.background,
+              color: style.text,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 4,
+              boxSizing: 'border-box',
+            }}
+          >
+            <strong style={{ fontSize: 15 }}>MUX {mux}</strong>
+            <span style={{ fontSize: 12, fontWeight: 600 }}>{style.label}</span>
+            {check && (
+              <span style={{ fontSize: 10 }}>
+                {check.rising} rising
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
 
 type ProvisionTestMeasurementsProps = {
   /** pk of the location the device was provisioned for. */
@@ -301,6 +394,58 @@ const ProvisionTestMeasurements = ({
       wrap: true,
     },
     {
+      id: 'mux',
+      name: 'MUX',
+      selector: (row) => row.check.mux ?? 0,
+      sortable: true,
+      cell: (row) =>
+        row.check.mux ? (
+          <Badge bg="primary">MUX {row.check.mux}</Badge>
+        ) : (
+          <span className="text-muted">–</span>
+        ),
+      width: '86px',
+    },
+    {
+      id: 'quality',
+      name: 'Quality',
+      selector: (row) => row.check.quality,
+      sortable: true,
+      cell: (row) => {
+        const quality = row.check.quality;
+        const bg =
+          quality >= 95
+            ? 'success'
+            : quality >= 80
+              ? 'info'
+              : quality >= 60
+                ? 'warning'
+                : 'danger';
+        return (
+          <Badge bg={bg} text={bg === 'warning' ? 'dark' : undefined}>
+            {quality}%
+          </Badge>
+        );
+      },
+      width: '90px',
+    },
+    {
+      id: 'noise',
+      name: 'Noise',
+      selector: (row) => row.check.noise,
+      sortable: true,
+      cell: (row) => (
+        <div
+          className="small"
+          title={`Sum of values outside the test segment: ${row.check.noise}`}
+        >
+          {row.check.noise_sensors} sensors
+          <div className="text-muted">Σ {row.check.noise}</div>
+        </div>
+      ),
+      width: '110px',
+    },
+    {
       id: 'sensors',
       name: 'Sensors',
       selector: (row) => row.count,
@@ -352,8 +497,15 @@ const ProvisionTestMeasurements = ({
   ];
 
   return (
-    <Card className="border-0 shadow-sm p-3 mt-3">
-      <Card.Body>
+    <>
+      {state && (
+        <MuxStatusPanel
+          muxCount={state.mux_count ?? 1}
+          measurements={measurements}
+        />
+      )}
+      <Card className="border-0 shadow-sm p-3 mt-3">
+        <Card.Body>
         <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
           <h5 className="mb-0 me-auto">Test-Messungen</h5>
           {isSuperuser && (
@@ -400,14 +552,16 @@ const ProvisionTestMeasurements = ({
             )}
             Messung anfragen
           </Button>
-          <Button
-            variant="outline-danger"
-            onClick={() => setConfirmClear(true)}
-            disabled={!measurements.length || clearing}
-          >
-            <Trash className="me-2" />
-            Test-Messungen bereinigen
-          </Button>
+          {isSuperuser && (
+            <Button
+              variant="outline-danger"
+              onClick={() => setConfirmClear(true)}
+              disabled={!measurements.length || clearing}
+            >
+              <Trash className="me-2" />
+              Test-Messungen bereinigen
+            </Button>
+          )}
         </div>
 
         <div className="small text-muted mb-3">
@@ -450,8 +604,9 @@ const ProvisionTestMeasurements = ({
           onCancel={() => setConfirmClear(false)}
           confirming={clearing}
         />
-      </Card.Body>
-    </Card>
+        </Card.Body>
+      </Card>
+    </>
   );
 };
 
