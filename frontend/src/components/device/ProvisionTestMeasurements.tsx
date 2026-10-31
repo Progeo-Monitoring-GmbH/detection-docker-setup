@@ -43,6 +43,8 @@ type TestState = {
 
 /** How often the list is fetched while the card is open. */
 const POLL_MS = 5000;
+/** The backend's TEST_MEASUREMENTS_LIMIT - the list never grows beyond it. */
+const TEST_MEASUREMENTS_LIMIT = 50;
 
 const STATUS: Record<TestCheck['status'], { bg: string; label: string }> = {
   ok: { bg: 'success', label: 'OK' },
@@ -86,14 +88,45 @@ const ProvisionTestMeasurements = ({
   );
   // Only report a failing poll once, not every POLL_MS.
   const pollFailed = useRef(false);
+  // Newest measurement timestamp already merged into the table. After the
+  // first full fetch every poll asks only for rows newer than this.
+  const knownSince = useRef<string | null>(null);
 
   const load = useCallback(() => {
+    const since = knownSince.current
+      ? `&know_since=${encodeURIComponent(knownSince.current)}`
+      : '';
     void axiosConfig.perform_get(
       auth,
-      `/v1/device/provision/test-measurements/?location=${locationId}&device=${deviceId}`,
+      `/v1/device/provision/test-measurements/?location=${locationId}&device=${deviceId}${since}`,
       (response) => {
         pollFailed.current = false;
-        setState((response?.data || null) as TestState | null);
+        const data = (response?.data || null) as TestState | null;
+        if (!data) {
+          return;
+        }
+        const incoming = data.measurements ?? [];
+        const newest = incoming[0];
+        setState((current) => {
+          if (!current) {
+            return data;
+          }
+          // Incremental polls return only new rows - merge them newest first.
+          const byId = new Map<number, TestMeasurement>();
+          [...incoming, ...current.measurements].forEach((row) => {
+            if (!byId.has(row.id)) {
+              byId.set(row.id, row);
+            }
+          });
+          return {
+            ...current,
+            ...data,
+            measurements: [...byId.values()].slice(0, TEST_MEASUREMENTS_LIMIT),
+          };
+        });
+        if (newest?.time) {
+          knownSince.current = newest.time;
+        }
       },
       (error) => {
         if (!pollFailed.current) {
@@ -109,6 +142,7 @@ const ProvisionTestMeasurements = ({
   }, [auth, enqueueSnackbar, locationId, deviceId]);
 
   useEffect(() => {
+    knownSince.current = null;
     load();
     const timer = window.setInterval(load, POLL_MS);
     return () => window.clearInterval(timer);
@@ -186,6 +220,11 @@ const ProvisionTestMeasurements = ({
           enqueueSnackbar,
           `${response?.data?.deleted ?? 0} test measurement(s) deleted.`,
         );
+        // Forget the cursor too - the next fetch is a full (empty) list.
+        knownSince.current = null;
+        setState((current) =>
+          current ? { ...current, measurements: [] } : current,
+        );
         load();
       },
       (error) => {
@@ -204,8 +243,10 @@ const ProvisionTestMeasurements = ({
 
   const columns: TableColumn<TestMeasurement>[] = [
     {
+      id: 'time',
       name: 'Time',
       selector: (row) => row.time ?? '',
+      sortable: true,
       cell: (row) => (
         <div className="small">
           {formatTime(row.time)}
@@ -215,7 +256,10 @@ const ProvisionTestMeasurements = ({
       width: '150px',
     },
     {
+      id: 'check',
       name: 'Check',
+      selector: (row) => row.check.status,
+      sortable: true,
       cell: (row) => (
         <div className="small py-2">
           <Badge bg={STATUS[row.check.status].bg}>
@@ -241,8 +285,10 @@ const ProvisionTestMeasurements = ({
       wrap: true,
     },
     {
+      id: 'sensors',
       name: 'Sensors',
       selector: (row) => row.count,
+      sortable: true,
       cell: (row) => (
         <div className="small">
           {row.count}
@@ -252,7 +298,10 @@ const ProvisionTestMeasurements = ({
       width: '90px',
     },
     {
+      id: 'pairs',
       name: 'Pairs',
+      selector: (row) => row.pairs.length,
+      sortable: true,
       cell: (row) => (
         <img
           src={row.png}
@@ -347,7 +396,13 @@ const ProvisionTestMeasurements = ({
             measurement.
           </Alert>
         ) : (
-          <DataTable columns={columns} data={measurements} dense={false} />
+          <DataTable
+            columns={columns}
+            data={measurements}
+            dense
+            defaultSortFieldId="time"
+            defaultSortAsc={false}
+          />
         )}
 
         <ConfirmDialog

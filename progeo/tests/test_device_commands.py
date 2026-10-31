@@ -144,6 +144,30 @@ def test_test_measurements_are_listed_checked_and_cleared(api_client, provisione
     assert ProgeoMeasurement.objects.using(f.DB).filter(pk=other.pk).exists()
 
 
+def test_test_measurements_can_be_polled_incrementally(api_client, provisioned):
+    location, device, _preview = provisioned
+    old = f.make_measurement(device, pairs=LADDER)
+    params = {"location": location.pk, "device": device.pk}
+
+    body = api_client.get("/v1/device/provision/test-measurements/", params).json()
+    assert [row["id"] for row in body["measurements"]] == [old.pk]
+    since = body["measurements"][0]["time"]
+
+    newer = f.make_measurement(device, pairs=LADDER)
+    incremental = api_client.get(
+        "/v1/device/provision/test-measurements/", {**params, "know_since": since}
+    ).json()
+
+    assert [row["id"] for row in incremental["measurements"]] == [newer.pk]
+    assert incremental["measurements"][0]["png"].startswith("data:image/png;base64,")
+
+    invalid = api_client.get(
+        "/v1/device/provision/test-measurements/", {**params, "know_since": "not-a-time"}
+    )
+    assert invalid.status_code == 400
+    assert invalid.json()["reason"] == "know_since must be an ISO-8601 timestamp"
+
+
 def test_test_measurements_need_the_permission_and_the_device_at_the_location(api_client, provisioned):
     location, device, _preview = provisioned
     elsewhere = f.make_location(Account.objects.using(f.DB).get(pk=1), project_id=next(_project_ids))

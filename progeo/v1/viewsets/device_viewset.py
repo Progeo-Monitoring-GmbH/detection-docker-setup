@@ -1182,9 +1182,24 @@ class DeviceViewSet(ProgeoModalViewSet):
         db_name = None
         try:
             _location, db_name, device = self._provision_device(request, request.query_params)
-            measurements = ProgeoMeasurement.objects.using(db_name).filter(device=device).order_by("-pk")[
-                :device_commands.TEST_MEASUREMENTS_LIMIT
-            ]
+            # The page polls every few seconds: after the first response it
+            # sends the newest timestamp it knows, so only genuinely new rows
+            # are read and rendered (no 50 measurements + PNGs per poll).
+            know_since = (request.query_params.get("know_since") or "").strip()
+            since = None
+            if know_since:
+                from django.utils.dateparse import parse_datetime
+
+                since = parse_datetime(know_since)
+                if since is None:
+                    return RequestFailed({"reason": "know_since must be an ISO-8601 timestamp"})
+                if timezone.is_naive(since):
+                    since = timezone.make_aware(since, timezone.get_current_timezone())
+
+            measurements = ProgeoMeasurement.objects.using(db_name).filter(device=device)
+            if since is not None:
+                measurements = measurements.filter(last_fetched__gt=since)
+            measurements = measurements.order_by("-pk")[:device_commands.TEST_MEASUREMENTS_LIMIT]
             return RequestSuccess({
                 "measurements": [device_commands.measurement_row(measurement) for measurement in measurements],
                 "expected_rising": device_commands.EXPECTED_RISING,
