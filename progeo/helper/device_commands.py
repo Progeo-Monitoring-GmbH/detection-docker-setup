@@ -41,6 +41,8 @@ PNG_MIN_WIDTH = 160
 BELOW_THRESHOLD_COLOR = (9, 75, 129)
 ABOVE_THRESHOLD_COLOR = (196, 38, 38)
 THRESHOLD_LINE_COLOR = (220, 38, 38)
+EP_COLOR = (235, 99, 59)
+WP_COLOR = (141, 193, 96)
 AXIS_COLOR = (207, 212, 218)
 
 # Sensors per multiplexer of the controller (MUX-1: sensors 1-16, ...).
@@ -137,7 +139,12 @@ def check_test_pairs(pairs, expected=EXPECTED_RISING, empty_fraction=EMPTY_FRACT
         and best_start > 0
         and values[best_start - 1] <= empty
     )
-    success = best_length >= expected or first_value_missing
+    last_value_missing = (
+        best_length == expected - 1
+        and best_start + best_length < len(values)
+        and values[best_start + best_length] <= empty
+    )
+    success = best_length >= expected or first_value_missing or last_value_missing
     reasons = []
     if not success:
         # Keep this short: the UI shows whether a MUX test segment was found,
@@ -146,44 +153,39 @@ def check_test_pairs(pairs, expected=EXPECTED_RISING, empty_fraction=EMPTY_FRACT
             f"MUX test segment not recognized: {best_length} rising values "
             f"(target {expected}, {expected - 1} accepted)."
         )
+
+    # Report the 16-sensor test segment, not the raw run: an overlong run gets
+    # its leading extra sensor(s) trimmed (MUX2 starts at S17, not S16), and a
+    # 15-value run includes the missing end sensor in its range (…–S305).
+    display_start = best_start
+    display_end = best_start + best_length
+    if best_length > expected:
+        display_start = best_start + (best_length - expected)
+    elif success and best_length == expected - 1:
+        if best_start + expected <= len(values):
+            display_end = best_start + expected
+        elif best_start > 0:
+            display_start = best_start - 1
+
     return {
         "status": "ok" if success else "fail",
         "rising": best_length,
-        "start": best_start + 1,
-        "end": best_start + best_length,
+        "start": display_start + 1,
+        "end": display_end,
         "outliers": outliers,
         "reasons": reasons,
     }
 
 
-def _dotted_line(draw, start, end, fill, dash=3, gap=3):
-    """A dashed segment (PIL has no dash style of its own)."""
-    x1, y1 = start
-    x2, y2 = end
-    length = math.hypot(x2 - x1, y2 - y1)
-    if length <= 0:
-        return
-    dx, dy = (x2 - x1) / length, (y2 - y1) / length
-    position = 0.0
-    while position < length:
-        stop = min(position + dash, length)
-        draw.line(
-            [
-                (x1 + dx * position, y1 + dy * position),
-                (x1 + dx * stop, y1 + dy * stop),
-            ],
-            fill=fill,
-        )
-        position = stop + gap
-
-
-def pairs_png(pairs, check=None, threshold=None):
-    """The pairs as a dotted step-line PNG (PNG_HEIGHT high, at most
-    PNG_MAX_WIDTH wide) with a labelled y-axis and the alarm threshold line:
+def pairs_png(pairs, check=None, threshold=None, ep=None, wp=None):
+    """The pairs as filled bars (PNG_HEIGHT high, at most PNG_MAX_WIDTH wide)
+    with EP/WP lines, a labelled y-axis and the alarm threshold line: pair
     values above the threshold red, those below blue."""
     from PIL import Image, ImageDraw
 
     values = [max(0.0, float(value or 0)) for value in pairs]
+    ep_values = [max(0.0, float(value or 0)) for value in (ep or [])]
+    wp_values = [max(0.0, float(value or 0)) for value in (wp or [])]
     count = max(len(values), 1)
     width = max(PNG_MIN_WIDTH, min(PNG_MAX_WIDTH, count * PNG_BAR_WIDTH))
     image = Image.new("RGBA", (width, PNG_HEIGHT), (255, 255, 255, 255))
@@ -194,8 +196,13 @@ def pairs_png(pairs, check=None, threshold=None):
     slot = plot_width / count
     peak = max(values, default=0.0)
     threshold_value = float(threshold) if threshold is not None and threshold > 0 else None
-    # Keep a threshold above all values visible (it then defines the y-scale).
-    scale_max = max(peak, threshold_value or 0.0)
+    # Keep threshold and EP/WP visible; they share the pairs' axis.
+    scale_max = max(
+        peak,
+        threshold_value or 0.0,
+        max(ep_values, default=0.0),
+        max(wp_values, default=0.0),
+    )
 
     # Transparent MUX background bands (composited before the axes/lines).
     overlay = Image.new("RGBA", (width, PNG_HEIGHT), (0, 0, 0, 0))
@@ -247,12 +254,14 @@ def pairs_png(pairs, check=None, threshold=None):
         )
         label = f"Limit {value_label(threshold_value)}"
         label_width = draw.textbbox((0, 0), label)[2]
-        label_y = threshold_y - 10 if threshold_y > top + 10 else threshold_y + 2
-        draw.text(
-            (width - right - label_width - 2, label_y),
-            label,
-            fill=THRESHOLD_LINE_COLOR,
+        label_x = max(left + 2, width - right - label_width - 8)
+        label_y = threshold_y - 14 if threshold_y > top + 13 else threshold_y + 3
+        # Small opaque padding so the label does not sit on grid/data pixels.
+        draw.rectangle(
+            [label_x - 3, label_y - 1, label_x + label_width + 3, label_y + 10],
+            fill=(255, 255, 255, 245),
         )
+        draw.text((label_x, label_y), label, fill=THRESHOLD_LINE_COLOR)
 
     # Sensor labels: every second one where there is room, a coarser step for
     # many sensors (350 sensors at 600 px would otherwise overlap completely).
@@ -299,27 +308,68 @@ def pairs_png(pairs, check=None, threshold=None):
             stroke_fill=color,
         )
 
-    def point(index):
-        return (
-            left + (index + 0.5) * slot,
-            bottom - (plot_height * values[index] / scale_max if scale_max else 0),
-        )
-
     def color(index):
         if threshold_value is not None and values[index] > threshold_value:
             return ABOVE_THRESHOLD_COLOR
         return BELOW_THRESHOLD_COLOR
 
-    # Dotted step line: horizontal to the next sensor, then vertical to its value.
-    for index in range(1, count):
-        previous = point(index - 1)
-        current = point(index)
-        _dotted_line(draw, previous, (current[0], previous[1]), color(index - 1))
-        _dotted_line(draw, (current[0], previous[1]), current, color(index))
+    # Filled bars of the pairs, coloured by the threshold.
+    gap = 1 if slot >= 3 else 0
     for index, value in enumerate(values):
-        if value > 0:
-            x, y = point(index)
-            draw.ellipse([x - 1.5, y - 1.5, x + 1.5, y + 1.5], fill=color(index))
+        if value <= 0:
+            continue
+        height = plot_height * value / scale_max if scale_max else 0
+        bar_left = left + index * slot + gap
+        bar_right = max(bar_left + 1, left + (index + 1) * slot - gap)
+        draw.rectangle(
+            [bar_left, bottom - max(height, 1), bar_right, bottom],
+            fill=color(index),
+        )
+
+    # EP and WP lines over the bars (they share the y-scale).
+    def line_points(series):
+        return [
+            (
+                left + (index + 0.5) * slot,
+                bottom - (plot_height * value / scale_max if scale_max else 0),
+            )
+            for index, value in enumerate(series[:count])
+        ]
+
+    if len(ep_values) > 1:
+        draw.line(line_points(ep_values), fill=EP_COLOR, width=2)
+    if len(wp_values) > 1:
+        draw.line(line_points(wp_values), fill=WP_COLOR, width=2)
+
+    # EP/WP legend, padded in the top-left corner of the plot.
+    legend = []
+    if len(ep_values) > 1:
+        legend.append(("EP", EP_COLOR))
+    if len(wp_values) > 1:
+        legend.append(("WP", WP_COLOR))
+    if legend:
+        legend_x = left + 6
+        legend_y = top + 3
+        legend_width = 2 + sum(
+            12 + draw.textbbox((0, 0), label)[2] + 8 for label, _color in legend
+        )
+        draw.rectangle(
+            [left + 2, top, left + legend_width + 4, top + 14],
+            fill=(255, 255, 255, 245),
+        )
+        for label, line_color in legend:
+            draw.line(
+                [(legend_x, legend_y + 4), (legend_x + 9, legend_y + 4)],
+                fill=line_color,
+                width=2,
+            )
+            label_width = draw.textbbox((0, 0), label)[2]
+            draw.text(
+                (legend_x + 12, legend_y - 2),
+                label,
+                fill=(70, 74, 80),
+            )
+            legend_x += 12 + label_width + 8
 
     buffer = BytesIO()
     image.save(buffer, format="PNG", optimize=True)
@@ -425,5 +475,13 @@ def measurement_row(measurement, threshold=None):
         "max": max(pairs, default=None),
         "pairs": pairs,
         "check": check,
-        "png": png_data_url(pairs_png(pairs, check, threshold=threshold)),
+        "png": png_data_url(
+            pairs_png(
+                pairs,
+                check,
+                threshold=threshold,
+                ep=measurement.eigenpotenzial,
+                wp=measurement.wirkpotenzial,
+            )
+        ),
     }

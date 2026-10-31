@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Badge, Button, Card, Form, Spinner } from 'react-bootstrap';
-import { Broadcast, Cpu, Trash } from 'react-bootstrap-icons';
+import { Broadcast, Clipboard, Cpu, Trash } from 'react-bootstrap-icons';
 import DataTable, { type TableColumn } from 'react-data-table-component';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import axiosConfig from '../../axiosConfig';
 import ConfirmDialog from '../ui/kit/ConfirmDialog';
-import { showRequestError, showSuccessBar } from '../ui/Snackbar.jsx';
+import {
+  showErrorBar,
+  showRequestError,
+  showSuccessBar,
+} from '../ui/Snackbar.jsx';
 import { formatDate } from '../../main/dateFormat';
 
 /** helper/device_commands.check_test_pairs (sensors numbered from 1). */
@@ -241,6 +245,18 @@ const ProvisionTestMeasurements = ({
   const expected = state?.expected_rising ?? 16;
   const pending = (state?.pending_commands ?? []).includes('measure');
 
+  const copyMeasurement = (row: TestMeasurement) => {
+    const text = row.pairs.join(', ');
+    if (!navigator.clipboard?.writeText) {
+      showErrorBar(enqueueSnackbar, 'Clipboard is not available in this browser.');
+      return;
+    }
+    void navigator.clipboard.writeText(text).then(
+      () => showSuccessBar(enqueueSnackbar, 'Measurement data copied to the clipboard.'),
+      () => showErrorBar(enqueueSnackbar, 'Could not copy the measurement data.'),
+    );
+  };
+
   const columns: TableColumn<TestMeasurement>[] = [
     {
       id: 'time',
@@ -313,6 +329,25 @@ const ProvisionTestMeasurements = ({
       ),
       minWidth: '200px',
       grow: 3,
+    },
+    {
+      id: 'copy',
+      name: '',
+      button: true,
+      sortable: false,
+      cell: (row) => (
+        <Button
+          size="sm"
+          variant="outline-secondary"
+          className="py-0"
+          title="Copy measurement data to the clipboard"
+          aria-label="Copy measurement data to the clipboard"
+          onClick={() => copyMeasurement(row)}
+        >
+          <Clipboard size={14} />
+        </Button>
+      ),
+      width: '54px',
     },
   ];
 

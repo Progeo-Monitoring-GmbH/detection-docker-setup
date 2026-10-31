@@ -37,7 +37,7 @@ def test_check_accepts_more_than_the_expected_rising_values():
 
     check = device_commands.check_test_pairs(pairs)
 
-    assert (check["status"], check["rising"], check["start"], check["end"]) == ("ok", 18, 5, 22)
+    assert (check["status"], check["rising"], check["start"], check["end"]) == ("ok", 18, 7, 22)
     assert check["reasons"] == []
 
 
@@ -47,7 +47,19 @@ def test_check_accepts_fifteen_rising_values_when_the_first_one_is_missing():
 
     check = device_commands.check_test_pairs(pairs)
 
-    assert (check["status"], check["rising"], check["start"], check["end"]) == ("ok", 15, 6, 20)
+    # The range is the 16-sensor window: the missing last sensor is included.
+    assert (check["status"], check["rising"], check["start"], check["end"]) == ("ok", 15, 6, 21)
+    assert check["reasons"] == []
+
+
+def test_check_accepts_fifteen_rising_values_when_the_last_one_is_missing():
+    # The 15 rising values start after a non-empty sensor; the 16th (last) is
+    # missing, and the reported range still ends at that missing sensor.
+    pairs = [50.0] + [float(step * 10) for step in range(1, 16)] + [0.0] * 16
+
+    check = device_commands.check_test_pairs(pairs)
+
+    assert (check["status"], check["rising"], check["start"], check["end"]) == ("ok", 15, 2, 17)
     assert check["reasons"] == []
 
 
@@ -84,6 +96,24 @@ def test_png_marks_the_threshold_and_colors_values_above_it_red():
     colors = {color for _count, color in image.getcolors(maxcolors=image.width * image.height)}
     assert (196, 38, 38) in colors  # above the threshold
     assert (9, 75, 129) in colors  # below the threshold
+
+
+def test_png_draws_ep_and_wp_lines():
+    from io import BytesIO
+
+    from PIL import Image
+
+    png = device_commands.pairs_png(
+        [10.0, 40.0, 90.0],
+        threshold=100,
+        ep=[5.0, 15.0, 25.0],
+        wp=[15.0, 55.0, 115.0],
+    )
+    image = Image.open(BytesIO(png)).convert("RGB")
+    colors = {color for _count, color in image.getcolors(maxcolors=image.width * image.height)}
+
+    assert (235, 99, 59) in colors  # EP
+    assert (141, 193, 96) in colors  # WP
 
 
 def test_png_is_150_high_and_at_most_600_wide():
