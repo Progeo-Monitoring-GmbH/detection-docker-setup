@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Badge, Button, Card, Form, Spinner } from 'react-bootstrap';
-import { Broadcast, Clipboard, Cpu, Trash } from 'react-bootstrap-icons';
+import {
+  Broadcast,
+  ChevronDown,
+  Clipboard,
+  Cpu,
+  DashLg,
+  Trash,
+  X,
+} from 'react-bootstrap-icons';
 import DataTable, { type TableColumn } from 'react-data-table-component';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
@@ -46,11 +54,16 @@ type TestMeasurement = {
 type TestState = {
   measurements: TestMeasurement[];
   expected_rising: number;
+  /** Sensors the controller reports (latest measurement or provisioning). */
+  sensor_count?: number;
   /** MUXes of the controller (16 sensors each) - the choices of "Emulate Measurement". */
   mux_count: number;
   pending_commands: string[];
   last_command_poll: string | null;
 };
+
+/** A MUX carries 16 sensor pairs. */
+const MUX_SENSORS = 16;
 
 /** How often the list is fetched while the card is open. */
 const POLL_MS = 5000;
@@ -84,6 +97,8 @@ const MuxStatusPanel = ({
   muxCount: number;
   measurements: TestMeasurement[];
 }) => {
+  const [collapsed, setCollapsed] = useState(false);
+  const [closed, setClosed] = useState(false);
   if (muxCount <= 0) {
     return null;
   }
@@ -93,6 +108,47 @@ const MuxStatusPanel = ({
       newest.set(row.check.mux, row.check);
     }
   });
+
+  const headerButtonStyle = {
+    border: 0,
+    background: 'transparent',
+    color: '#4A4F57',
+    padding: 2,
+    borderRadius: 4,
+    display: 'flex',
+    alignItems: 'center',
+    cursor: 'pointer',
+  } as const;
+
+  if (closed) {
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          setClosed(false);
+          setCollapsed(false);
+        }}
+        title="Show MUX test status"
+        style={{
+          position: 'fixed',
+          top: 8,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 1100,
+          padding: '4px 12px',
+          border: '1px solid #B8B0B0',
+          borderRadius: 999,
+          background: 'var(--progeo-surface)',
+          color: '#4A4F57',
+          fontSize: 12,
+          boxShadow: '0 4px 12px rgba(11, 54, 89, .18)',
+          cursor: 'pointer',
+        }}
+      >
+        MUX test status · {newest.size}/{muxCount}
+      </button>
+    );
+  }
 
   return (
     <div
@@ -104,49 +160,90 @@ const MuxStatusPanel = ({
         transform: 'translateX(-50%)',
         zIndex: 1100,
         display: 'flex',
-        gap: 8,
+        flexDirection: 'column',
         maxWidth: 'calc(100vw - 24px)',
-        overflowX: 'auto',
+        overflow: 'hidden',
         padding: 8,
         borderRadius: 12,
         background: 'var(--progeo-surface)',
         boxShadow: '0 10px 28px rgba(11, 54, 89, .22)',
       }}
     >
-      {Array.from({ length: muxCount }, (_, index) => {
-        const mux = index + 1;
-        const check = newest.get(mux);
-        const style = MUX_BOX[check?.status ?? 'pending'];
-        return (
-          <div
-            key={mux}
-            title={`MUX ${mux}: ${style.label}`}
-            style={{
-              width: 100,
-              height: 100,
-              flex: '0 0 100px',
-              borderRadius: 10,
-              border: `2px solid ${style.border}`,
-              background: style.background,
-              color: style.text,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 4,
-              boxSizing: 'border-box',
-            }}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '0 2px 6px',
+        }}
+      >
+        <strong style={{ fontSize: 13, color: '#2F3A45' }}>
+          MUX test status
+        </strong>
+        <span style={{ fontSize: 11, color: '#6E6868' }}>
+          {newest.size}/{muxCount} tested
+        </span>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+          <button
+            type="button"
+            title={collapsed ? 'Expand' : 'Minimize'}
+            aria-label={collapsed ? 'Expand MUX status' : 'Minimize MUX status'}
+            onClick={() => setCollapsed((value) => !value)}
+            style={headerButtonStyle}
           >
-            <strong style={{ fontSize: 15 }}>MUX {mux}</strong>
-            <span style={{ fontSize: 12, fontWeight: 600 }}>{style.label}</span>
-            {check && (
-              <span style={{ fontSize: 10 }}>
-                {check.rising} rising
-              </span>
-            )}
-          </div>
-        );
-      })}
+            {collapsed ? <ChevronDown size={14} /> : <DashLg size={14} />}
+          </button>
+          <button
+            type="button"
+            title="Close"
+            aria-label="Close MUX status"
+            onClick={() => setClosed(true)}
+            style={headerButtonStyle}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      </div>
+      {!collapsed && (
+        <div style={{ display: 'flex', gap: 8, overflowX: 'auto' }}>
+          {Array.from({ length: muxCount }, (_, index) => {
+            const mux = index + 1;
+            const check = newest.get(mux);
+            const style = MUX_BOX[check?.status ?? 'pending'];
+            return (
+              <div
+                key={mux}
+                title={`MUX ${mux}: ${style.label}`}
+                style={{
+                  width: 100,
+                  height: 100,
+                  flex: '0 0 100px',
+                  borderRadius: 10,
+                  border: `2px solid ${style.border}`,
+                  background: style.background,
+                  color: style.text,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 4,
+                  boxSizing: 'border-box',
+                }}
+              >
+                <strong style={{ fontSize: 15 }}>MUX {mux}</strong>
+                <span style={{ fontSize: 12, fontWeight: 600 }}>
+                  {style.label}
+                </span>
+                {check && (
+                  <span style={{ fontSize: 10 }}>
+                    {check.rising} rising
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };
@@ -299,6 +396,17 @@ const ProvisionTestMeasurements = ({
   };
 
   const measurements = state?.measurements ?? [];
+  // Existing controllers can have more sensors than their provisioning token;
+  // the measurements are the authoritative count (444 sensors = 28 MUXes).
+  const measuredSensors = measurements.reduce(
+    (maximum, row) => Math.max(maximum, row.count),
+    0,
+  );
+  const muxCount = Math.max(
+    state?.mux_count ?? 1,
+    Math.ceil((state?.sensor_count ?? measuredSensors) / MUX_SENSORS),
+    Math.ceil(measuredSensors / MUX_SENSORS),
+  );
 
   const clearMeasurements = () => {
     setClearing(true);
@@ -499,10 +607,7 @@ const ProvisionTestMeasurements = ({
   return (
     <>
       {state && (
-        <MuxStatusPanel
-          muxCount={state.mux_count ?? 1}
-          measurements={measurements}
-        />
+        <MuxStatusPanel muxCount={muxCount} measurements={measurements} />
       )}
       <Card className="border-0 shadow-sm p-3 mt-3">
         <Card.Body>
@@ -518,7 +623,7 @@ const ProvisionTestMeasurements = ({
                 style={{ width: 'auto' }}
               >
                 {Array.from(
-                  { length: Math.max(state?.mux_count ?? 1, mux) },
+                  { length: Math.max(muxCount, mux) },
                   (_, index) => (
                     <option key={index + 1} value={index + 1}>
                       MUX-{index + 1}

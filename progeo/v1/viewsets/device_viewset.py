@@ -1200,16 +1200,19 @@ class DeviceViewSet(ProgeoModalViewSet):
             if since is not None:
                 measurements = measurements.filter(last_fetched__gt=since)
             measurements = measurements.order_by("-pk")[:device_commands.TEST_MEASUREMENTS_LIMIT]
+            # Existing devices can report far more sensors than the token they
+            # were provisioned with: take the newest measurement's count too,
+            # so the MUX board/plot shows all MUXes (444 sensors = 28 MUXes).
+            sensor_count = device_commands.device_sensor_count(device, db_name)
             return RequestSuccess({
                 "measurements": [
                     device_commands.measurement_row(measurement, threshold=location.alarm_threshold)
                     for measurement in measurements
                 ],
                 "expected_rising": device_commands.EXPECTED_RISING,
+                "sensor_count": sensor_count,
                 # The MUX choices of "Emulate Measurement".
-                "mux_count": device_commands.mux_count(
-                    device_commands.token_sensors(device_commands.transfer_token(device))
-                ),
+                "mux_count": device_commands.mux_count(sensor_count),
                 **self._command_state(device),
             })
         except provisioning.ProvisionError as exc:
@@ -1242,7 +1245,8 @@ class DeviceViewSet(ProgeoModalViewSet):
             return RequestFailed({"reason": "Superuser access required"})
         db_name = None
         try:
-            _location, db_name, device = self._provision_device(request, request.data)
+            location, db_name, device = self._provision_device(request, request.data)
+            sensor_count = device_commands.device_sensor_count(device, db_name)
             try:
                 mux = int(request.data.get("mux") or 1)
             except (TypeError, ValueError):
@@ -1253,7 +1257,13 @@ class DeviceViewSet(ProgeoModalViewSet):
             # Released before the POST - no project database connection held while waiting.
             release_connection(db_name)
         try:
-            result = device_commands.emulate_measurement(device, mux)
+            result = device_commands.emulate_measurement(
+                device,
+                mux,
+                sensors=sensor_count,
+                location=location,
+                user=request.user,
+            )
         except device_commands.EmulateError as exc:
             return RequestFailed({"reason": str(exc)})
         ilog(f"Emulated a measurement (MUX-{mux}) of device {device.raw_hash}", tag="[PROVISION]")

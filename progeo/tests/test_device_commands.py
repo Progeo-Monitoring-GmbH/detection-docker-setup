@@ -229,6 +229,49 @@ def test_test_measurements_are_listed_checked_and_cleared(api_client, provisione
     assert ProgeoMeasurement.objects.using(f.DB).filter(pk=other.pk).exists()
 
 
+def test_test_measurements_state_uses_the_measurement_sensor_count(api_client, provisioned):
+    location, device, _preview = provisioned
+    pairs = [0.0] * 444
+    pairs[240:256] = [float(step * 10) for step in range(1, 17)]
+    f.make_measurement(device, pairs=pairs)
+
+    body = api_client.get(
+        "/v1/device/provision/test-measurements/",
+        {"location": location.pk, "device": device.pk},
+    ).json()
+
+    assert body["sensor_count"] == 444
+    assert body["mux_count"] == 28
+
+
+def test_emulate_measurement_accepts_a_high_mux_of_an_existing_device(monkeypatch, provisioned):
+    _location, device, _preview = provisioned
+    captured = {}
+
+    class Response:
+        ok = True
+        status_code = 200
+        text = ""
+
+        def json(self):
+            return {"ok": True}
+
+    def fake_post(url, json, headers, timeout):
+        captured.update(url=url, json=json, headers=headers, timeout=timeout)
+        return Response()
+
+    monkeypatch.setattr(device_commands.requests, "post", fake_post)
+
+    result = device_commands.emulate_measurement(device, 28, sensors=444)
+
+    assert result == {"ok": True}
+    assert captured["json"]["sensors"] == 444
+    samples = [float(value) for value in captured["json"]["samples"].split(",")]
+    assert len(samples) == 444 * 2
+    # MUX 28 is only partially populated (444 = 27 * 16 + 12).
+    assert any(value > 0 for value in samples[(28 - 1) * 16 * 2 :])
+
+
 def test_clearing_test_measurements_needs_superuser(api_client, provisioned):
     location, device, _preview = provisioned
 

@@ -245,7 +245,12 @@ def pairs_png(pairs, check=None, threshold=None, ep=None, wp=None):
     image = Image.alpha_composite(image, overlay)
     draw = ImageDraw.Draw(image)
     font = ImageFont.load_default(size=10)
-    mux_font = ImageFont.load_default(size=11)
+    mux_block = slot * MUX_SENSORS
+    mux_font = ImageFont.load_default(size=11 if mux_block >= 24 else 9 if mux_block >= 18 else 7)
+    # With many narrow MUXes (444 sensors = 28 blocks), label every second or
+    # third one; the detected MUX is always labelled.
+    mux_label_width = draw.textbbox((0, 0), "M99", font=mux_font)[2]
+    mux_label_step = max(1, math.ceil((mux_label_width + 4) / mux_block))
 
     def value_label(value):
         return f"{value:.1f}" if 0 < abs(value) < 10 else f"{value:.0f}"
@@ -312,6 +317,11 @@ def pairs_png(pairs, check=None, threshold=None, ep=None, wp=None):
     # test MUX gets a bold label.
     detected_mux = (check or {}).get("mux")
     for mux_index, start_index in enumerate(mux_ranges):
+        if (
+            mux_index % mux_label_step != 0
+            and detected_mux != mux_index + 1
+        ):
+            continue
         end_index = min(start_index + MUX_SENSORS, count)
         block_width = (end_index - start_index) * slot
         full_label = f"MUX {mux_index + 1}"
@@ -320,7 +330,7 @@ def pairs_png(pairs, check=None, threshold=None, ep=None, wp=None):
         short_width = draw.textbbox((0, 0), short_label, font=mux_font)[2]
         if block_width >= full_width + 6:
             label, label_width = full_label, full_width
-        elif block_width >= short_width + 2:
+        elif block_width >= short_width:
             label, label_width = short_label, short_width
         else:
             continue
@@ -428,6 +438,55 @@ def transfer_token(device):
     )
 
 
+def device_sensor_count(device, db_name):
+    """Sensors of the device: the provisioning token can be older/smaller than
+    what the controller actually reports, so the newest measurement wins."""
+    from progeo.v1.models import ProgeoMeasurement
+
+    latest = (
+        ProgeoMeasurement.objects.using(db_name)
+        .filter(device=device)
+        .order_by("-pk")
+        .first()
+    )
+    return max(
+        token_sensors(transfer_token(device)),
+        len(latest.get_pairs()) if latest is not None else 0,
+    )
+
+
+def ensure_transfer_token(device, location, user, sensors):
+    """The device's transfer token, renewed if expired, created if the device
+    predates provisioning tokens - emulation must work for every device."""
+    token = transfer_token(device)
+    if token is not None:
+        if token.valid_until and token.valid_until <= timezone.now():
+            token.valid_until = None
+            token.save(update_fields=["valid_until"])
+        return token
+    if location is None or location.account_id is None:
+        raise EmulateError("The device has no account to create a transfer token for")
+
+    from progeo.authentication import TRANSFER_TOKEN_PURPOSE
+    from progeo.helper.device_provisioning import generate_token
+
+    raw_token = generate_token()
+    while LimitedToken.objects.using(DEFAULT_DB_ALIAS).filter(raw_hash=raw_token).exists():
+        raw_token = generate_token()
+    return LimitedToken.objects.using(DEFAULT_DB_ALIAS).create(
+        raw_hash=raw_token,
+        raw_data={
+            "label": f"{device.hardware or 'device'} {device.raw_hash}",
+            "device": device.raw_hash,
+            "project_id": device.project_id,
+            "sensors": sensors,
+        },
+        account_id=location.account_id,
+        user_id=getattr(user, "pk", None),
+        purpose=TRANSFER_TOKEN_PURPOSE,
+    )
+
+
 def token_sensors(token):
     """measurement.sensors of the config the token was provisioned with."""
     from progeo.helper.device_provisioning import DEFAULT_SENSORS
@@ -457,15 +516,23 @@ def emulated_samples(sensors, mux):
     return samples
 
 
-def emulate_measurement(device, mux):
+def emulate_measurement(device, mux, sensors=None, location=None, user=None):
     """POST a sample like the controller's (sample url, transfer token) with
-    MUX `mux` rising - returns the response body of the sample endpoint."""
+    MUX `mux` rising - returns the response body of the sample endpoint.
+
+    `sensors` is the device's real sensor count (from its newest measurement),
+    not the possibly stale provisioning token. A missing/expired token is
+    created/renewed so emulation also works for older devices."""
     from progeo.helper.device_provisioning import sample_url
 
-    token = transfer_token(device)
-    if token is None:
-        raise EmulateError("The device has no active transfer token")
-    sensors = token_sensors(token)
+    existing = transfer_token(device)
+    if sensors is None:
+        sensors = token_sensors(existing) if existing is not None else 0
+    if not sensors:
+        from progeo.helper.device_provisioning import DEFAULT_SENSORS
+
+        sensors = DEFAULT_SENSORS
+    token = ensure_transfer_token(device, location, user, sensors)
     if not 1 <= mux <= mux_count(sensors):
         raise EmulateError(f"mux must be between 1 and {mux_count(sensors)}")
 
