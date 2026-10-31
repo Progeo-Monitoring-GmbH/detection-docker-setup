@@ -567,6 +567,10 @@ LOG_DIR = os.getenv("LOG_DIR", "/var/log/progeo")
 if not (os.path.isdir(LOG_DIR) and os.access(LOG_DIR, os.W_OK)):
     LOG_DIR = os.path.join(BASE_DIR, "logs", "backend")
 
+# Status files written by the cron wrapper (docker/backend/cronjobs/run_job.sh),
+# read at scrape time by progeo.metrics.CronJobCollector.
+CRON_STATUS_DIR = os.getenv("CRON_STATUS_DIR", os.path.join(LOG_DIR, "cron"))
+
 # stdout -> backend.log (INFO), stderr -> backend.err.log (WARNING+: 4xx/5xx requests, exceptions, security).
 # Supervisor splits the two streams; see docker/backend/supervisord.conf.
 # errors.jsonl: WARNING+ of every process (web, celery, cron commands, elog/wlog) as JSON lines,

@@ -1,13 +1,17 @@
 """Prometheus metrics of the backend (progeo/metrics.py)."""
 
 import asyncio
+import io
+import json
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from django.http import HttpResponse
 from django.test import Client, RequestFactory, override_settings
 from django.urls import resolve
 from prometheus_client import REGISTRY
 
-from progeo.metrics import MetricsMiddleware, track_websocket
+from progeo.metrics import CronJobCollector, MetricsMiddleware, track_websocket
 
 # Like production: Prometheus calls http://progeo-backend:8383/metrics, a host
 # not in ALLOWED_HOSTS, over plain http while SECURE_SSL_REDIRECT is on.
@@ -71,6 +75,56 @@ def test_middleware_does_not_count_the_scrapes_and_labels_unresolved_requests():
 
     assert _sample("progeo_http_requests_total", view="unresolved", method="GET", status="404") == unresolved_before + 1
     assert _sample("progeo_http_requests_total", view="unresolved", method="GET", status="200") == 0
+
+
+def test_middleware_counts_write_requests_by_account_database():
+    request = RequestFactory().post("/some/write")
+    request.account = SimpleNamespace(db_name="customer_42")
+    before = _sample(
+        "progeo_http_write_requests_total",
+        database="customer_42",
+        method="POST",
+        status="204",
+    )
+
+    MetricsMiddleware(lambda req: HttpResponse(status=204))(request)
+
+    assert _sample(
+        "progeo_http_write_requests_total",
+        database="customer_42",
+        method="POST",
+        status="204",
+    ) == before + 1
+
+
+def test_cron_collector_reads_status_and_last_success():
+    status = {
+        "job": "daily",
+        "state": "finished",
+        "started_at": 1_000,
+        "finished_at": 1_120,
+        "duration_seconds": 120,
+        "exit_code": 0,
+    }
+
+    def fake_open(path, encoding=None):
+        if str(path).endswith(".success"):
+            return io.StringIO("1100 100\n")
+        return io.StringIO(json.dumps(status))
+
+    with (
+        patch("os.path.isdir", return_value=True),
+        patch("os.listdir", return_value=["daily.json"]),
+        patch("builtins.open", side_effect=fake_open),
+        override_settings(CRON_STATUS_DIR="/fake-cron-status"),
+    ):
+        families = {family.name: family for family in CronJobCollector().collect()}
+
+    assert families["progeo_cron_job_last_exit_code"].samples[0].value == 0
+    assert families["progeo_cron_job_last_duration_seconds"].samples[0].value == 120
+    assert families["progeo_cron_job_last_success_timestamp_seconds"].samples[0].value == 1100
+    assert families["progeo_cron_job_last_success_duration_seconds"].samples[0].value == 100
+    assert families["progeo_cron_job_running"].samples[0].value == 0
 
 
 def test_websocket_gauge_follows_the_open_connection():

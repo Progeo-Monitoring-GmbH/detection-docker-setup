@@ -36,6 +36,17 @@ groups:
         annotations:
           summary: '{{ $labels.name }} restarted {{ $value }} times within 15 minutes'
 
+  - name: cronjobs
+    rules:
+      - alert: CronJobFailed
+        expr: progeo_cron_job_last_exit_code > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Cron job {{ $labels.job }} failed'
+          description: 'The last finished run of cron job {{ $labels.job }} returned exit code {{ $value }}. Check logs/backend/cron.log and the "Cronjobs" dashboard.'
+
   - name: django
     rules:
       - alert: DjangoHigh5xxRate

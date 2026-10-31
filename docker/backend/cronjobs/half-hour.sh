@@ -13,4 +13,6 @@ echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] half-hour scan started"
 
 cd "$PROJECT_ROOT" || exit 1
 python manage.py scan_devices
-echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] half-hour scan finished"
+rc=$?
+echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] half-hour scan finished (exit $rc)"
+exit "$rc"

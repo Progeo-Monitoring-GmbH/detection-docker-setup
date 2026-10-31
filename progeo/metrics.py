@@ -30,6 +30,11 @@ HTTP_DURATION = Histogram(
     buckets=(0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60),
 )
 HTTP_IN_PROGRESS = Gauge("progeo_http_requests_in_progress", "HTTP requests being handled right now")
+HTTP_WRITE_REQUESTS = Counter(
+    "progeo_http_write_requests",
+    "Write HTTP requests by account database, method and status",
+    ["database", "method", "status"],
+)
 WEBSOCKET_CONNECTIONS = Gauge("progeo_websocket_connections", "Open websocket connections by route", ["route"])
 WEBSOCKET_OPENED = Counter("progeo_websocket_connections_opened", "Websocket connections opened by route", ["route"])
 
@@ -64,7 +69,101 @@ class BackupTransferCollector:
             yield GaugeMetricFamily(f"progeo_backup_transfer_{name}", documentation, value=value)
 
 
+class CronJobCollector:
+    """Last run of the backend cron jobs.
+
+    The cron wrapper (docker/backend/cronjobs/run_job.sh) writes one JSON
+    status file per job plus a `.success` sidecar; cron runs in a different
+    process, so the files are read at scrape time.
+    """
+
+    @staticmethod
+    def describe():
+        return []
+
+    def collect(self):
+        import json
+        import os
+
+        from django.conf import settings
+
+        directory = getattr(settings, "CRON_STATUS_DIR", "")
+        if not directory or not os.path.isdir(directory):
+            return
+
+        started = GaugeMetricFamily(
+            "progeo_cron_job_last_start_timestamp_seconds",
+            "When the job last started", labels=["job"],
+        )
+        finished = GaugeMetricFamily(
+            "progeo_cron_job_last_finish_timestamp_seconds",
+            "When the job last finished", labels=["job"],
+        )
+        duration = GaugeMetricFamily(
+            "progeo_cron_job_last_duration_seconds",
+            "Wall-clock duration of the last finished run", labels=["job"],
+        )
+        exit_code = GaugeMetricFamily(
+            "progeo_cron_job_last_exit_code",
+            "Exit code of the last run (-1 while running)", labels=["job"],
+        )
+        running = GaugeMetricFamily(
+            "progeo_cron_job_running", "1 while the job is running", labels=["job"],
+        )
+        last_ok = GaugeMetricFamily(
+            "progeo_cron_job_last_run_ok", "1 if the last finished run succeeded", labels=["job"],
+        )
+        last_success = GaugeMetricFamily(
+            "progeo_cron_job_last_success_timestamp_seconds",
+            "When the job last succeeded", labels=["job"],
+        )
+        last_success_duration = GaugeMetricFamily(
+            "progeo_cron_job_last_success_duration_seconds",
+            "Duration of the last successful run", labels=["job"],
+        )
+
+        for filename in sorted(os.listdir(directory)):
+            if not filename.endswith(".json"):
+                continue
+            try:
+                with open(os.path.join(directory, filename), encoding="utf-8") as handle:
+                    data = json.load(handle)
+            except (OSError, ValueError):
+                continue
+            if not isinstance(data, dict):
+                continue
+            job = str(data.get("job") or filename[:-5])
+            running.add_metric([job], 1 if data.get("state") == "running" else 0)
+            if data.get("started_at"):
+                started.add_metric([job], float(data["started_at"]))
+            if data.get("state") == "running":
+                exit_code.add_metric([job], -1)
+            elif data.get("exit_code") is not None:
+                exit_value = int(data.get("exit_code") or 0)
+                exit_code.add_metric([job], exit_value)
+                last_ok.add_metric([job], 1 if exit_value == 0 else 0)
+                if data.get("finished_at"):
+                    finished.add_metric([job], float(data["finished_at"]))
+                if data.get("duration_seconds") is not None:
+                    duration.add_metric([job], float(data["duration_seconds"]))
+
+            success_path = os.path.join(directory, f"{job}.success")
+            try:
+                with open(success_path, encoding="utf-8") as handle:
+                    success_at, success_duration = handle.read().split()[:2]
+                last_success.add_metric([job], float(success_at))
+                last_success_duration.add_metric([job], float(success_duration))
+            except (OSError, ValueError):
+                pass
+
+        yield from (
+            started, finished, duration, exit_code, running,
+            last_ok, last_success, last_success_duration,
+        )
+
+
 REGISTRY.register(BackupTransferCollector())
+REGISTRY.register(CronJobCollector())
 
 
 def _view_label(request):
@@ -72,6 +171,17 @@ def _view_label(request):
     # paths carry account names and ids and would explode the label values.
     match = getattr(request, "resolver_match", None)
     return match.view_name if match else "unresolved"
+
+
+def _write_database_label(request):
+    """Account database of a write request; "default" for auth/global calls.
+    This is one low-cardinality label per account database, not per query."""
+    try:
+        account = getattr(request, "account", None)
+        database = getattr(account, "db_name", None) if account is not None else None
+    except Exception:  # noqa: BLE001 - a metrics label must never break the request
+        database = None
+    return str(database or "default")
 
 
 class MetricsMiddleware:
@@ -96,6 +206,12 @@ class MetricsMiddleware:
         view = _view_label(request)
         HTTP_DURATION.labels(view, request.method).observe(time.perf_counter() - started)
         HTTP_REQUESTS.labels(view, request.method, str(response.status_code)).inc()
+        if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+            HTTP_WRITE_REQUESTS.labels(
+                _write_database_label(request),
+                request.method,
+                str(response.status_code),
+            ).inc()
         return response
 
 
