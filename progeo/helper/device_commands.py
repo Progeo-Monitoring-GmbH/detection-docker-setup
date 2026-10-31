@@ -45,10 +45,10 @@ AXIS_COLOR = (207, 212, 218)
 
 # Sensors per multiplexer of the controller (MUX-1: sensors 1-16, ...).
 MUX_SENSORS = 16
-# Background tint of each MUX segment (RGBA, transparent over white) and the
-# bracket colour - the segments are marked with "[" ... "]" in the PNG.
+# Background tint and x-axis colour of each MUX segment (RGBA; the tint is
+# transparent over white).
 MUX_TINTS = ((9, 75, 129, 24), (149, 119, 179, 24))
-MUX_BRACKET_COLOR = (84, 94, 110, 255)
+MUX_AXIS_COLORS = ((9, 75, 129, 255), (149, 119, 179, 255))
 # The emulated MUX rises from the first to the second value, the rest is 0.
 EMULATE_RANGE = (15, 300)
 EMULATE_EVENT = "emulated"
@@ -101,11 +101,12 @@ def take_commands(raw_hash):
 
 def check_test_pairs(pairs, expected=EXPECTED_RISING, empty_fraction=EMPTY_FRACTION):
     """Check the pairs of a test measurement: the longest run of consecutive
-    sensors with rising, non-empty values must be `expected` long, every
-    sensor outside it empty (<= empty_fraction of the largest value).
+    sensors with rising, non-empty values must be at least `expected` long.
 
-    status: "ok"; "warn" (the run is right, but other sensors aren't empty);
-    "fail" (no or a wrong run). Sensors are numbered from 1."""
+    More than `expected` rising sensors are fine (a longer run still proves
+    the plug), and small non-empty values outside the run are tolerated: they
+    are reported in `outliers` but do not turn a correct run into a failure.
+    Sensors are numbered from 1."""
     values = [float(value or 0) for value in pairs]
     peak = max(values, default=0.0)
     if peak <= 0:
@@ -128,13 +129,12 @@ def check_test_pairs(pairs, expected=EXPECTED_RISING, empty_fraction=EMPTY_FRACT
     run = range(best_start, best_start + best_length)
     outliers = [index + 1 for index, value in enumerate(values) if index not in run and value > empty]
     reasons = []
-    if best_length != expected:
-        reasons.append(f"{best_length} rising values, expected {expected}.")
-    if outliers:
-        reasons.append(f"Not empty outside the rising values: sensor {', '.join(map(str, outliers))}.")
-    status = "fail" if best_length != expected else "warn" if outliers else "ok"
+    if best_length < expected:
+        reasons.append(f"{best_length} rising values, expected at least {expected}.")
+        if outliers:
+            reasons.append(f"Not empty outside the rising values: sensor {', '.join(map(str, outliers))}.")
     return {
-        "status": status,
+        "status": "fail" if best_length < expected else "ok",
         "rising": best_length,
         "start": best_start + 1,
         "end": best_start + best_length,
@@ -175,7 +175,8 @@ def pairs_png(pairs, check=None, threshold=None):
     width = max(PNG_MIN_WIDTH, min(PNG_MAX_WIDTH, count * PNG_BAR_WIDTH))
     image = Image.new("RGBA", (width, PNG_HEIGHT), (255, 255, 255, 255))
     left, right = 46, 6
-    top, bottom = 12, PNG_HEIGHT - 20
+    # The bottom band holds sensor labels and the MUX labels below them.
+    top, bottom = 10, PNG_HEIGHT - 30
     plot_width = width - left - right
     slot = plot_width / count
     peak = max(values, default=0.0)
@@ -195,16 +196,6 @@ def pairs_png(pairs, check=None, threshold=None):
         )
     image = Image.alpha_composite(image, overlay)
     draw = ImageDraw.Draw(image)
-    # Brackets "[" ... "]" above the plot mark the MUX segments.
-    for start_index in mux_ranges:
-        end_index = min(start_index + MUX_SENSORS, count)
-        for x, opening in (
-            (left + start_index * slot, True),
-            (left + end_index * slot, False),
-        ):
-            draw.line([(x, 1), (x, 9)], fill=MUX_BRACKET_COLOR)
-            draw.line([(x, 1), (x + (5 if opening else -5), 1)], fill=MUX_BRACKET_COLOR)
-            draw.line([(x, 9), (x + (5 if opening else -5), 9)], fill=MUX_BRACKET_COLOR)
 
     def value_label(value):
         return f"{value:.1f}" if 0 < abs(value) < 10 else f"{value:.0f}"
@@ -212,6 +203,17 @@ def pairs_png(pairs, check=None, threshold=None):
     # Y-axis with 0 / half / top labels and light grid lines.
     draw.line([(left, top), (left, bottom)], fill=AXIS_COLOR)
     draw.line([(left, bottom), (width - right, bottom)], fill=AXIS_COLOR)
+    # The x-axis itself is segmented by MUX: one coloured stroke per block.
+    for mux_index, start_index in enumerate(mux_ranges):
+        end_index = min(start_index + MUX_SENSORS, count)
+        draw.line(
+            [
+                (left + start_index * slot, bottom),
+                (left + end_index * slot, bottom),
+            ],
+            fill=MUX_AXIS_COLORS[mux_index % len(MUX_AXIS_COLORS)],
+            width=3,
+        )
     ticks = [0.0] if scale_max <= 0 else [0.0, scale_max / 2, scale_max]
     for value in ticks:
         y = bottom - (bottom - top) * (value / scale_max if scale_max else 0)
@@ -239,13 +241,41 @@ def pairs_png(pairs, check=None, threshold=None):
             fill=THRESHOLD_LINE_COLOR,
         )
 
-    # Sensor numbers at the ends (and the middle for wide plots).
-    if count > 1:
-        for index in sorted({0, count // 2, count - 1}):
-            x = left + (index + 0.5) * plot_width / count
-            label = str(index + 1)
-            label_width = draw.textbbox((0, 0), label)[2]
-            draw.text((x - label_width / 2, bottom + 3), label, fill=(145, 147, 152))
+    # Sensor labels: every second one where there is room, a coarser step for
+    # many sensors (350 sensors at 600 px would otherwise overlap completely).
+    widest_label = draw.textbbox((0, 0), str(count))[2]
+    max_labels = max(2, math.floor(plot_width / (widest_label + 6)))
+    label_step = next(
+        (step for step in (2, 5, 10, 20, 25, 50, 100) if math.ceil(count / step) <= max_labels),
+        100,
+    )
+    for index in range(0, count, label_step):
+        x = left + (index + 0.5) * slot
+        label = str(index + 1)
+        label_width = draw.textbbox((0, 0), label)[2]
+        draw.text((x - label_width / 2, bottom + 2), label, fill=(145, 147, 152))
+
+    # MUX labels under the segments - "MUX n" when it fits, "Mn" when the
+    # block is narrow (e.g. 22 MUXes at 350 sensors).
+    for mux_index, start_index in enumerate(mux_ranges):
+        end_index = min(start_index + MUX_SENSORS, count)
+        block_width = (end_index - start_index) * slot
+        full_label = f"MUX {mux_index + 1}"
+        short_label = f"M{mux_index + 1}"
+        full_width = draw.textbbox((0, 0), full_label)[2]
+        short_width = draw.textbbox((0, 0), short_label)[2]
+        if block_width >= full_width + 6:
+            label, label_width = full_label, full_width
+        elif block_width >= short_width + 2:
+            label, label_width = short_label, short_width
+        else:
+            continue
+        center = left + (start_index + end_index) * slot / 2
+        draw.text(
+            (center - label_width / 2, bottom + 13),
+            label,
+            fill=MUX_AXIS_COLORS[mux_index % len(MUX_AXIS_COLORS)][:3],
+        )
 
     def point(index):
         return (

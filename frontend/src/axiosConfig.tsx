@@ -1,4 +1,8 @@
-import axios, { AxiosInstance, AxiosResponse } from 'axios';
+import axios, {
+  AxiosInstance,
+  AxiosResponse,
+  type InternalAxiosRequestConfig,
+} from 'axios';
 import Cookies from 'js-cookie';
 import { enqueueSnackbar } from 'notistack';
 import { AuthContextType } from '../hooks/CoreAuthProvider';
@@ -8,6 +12,7 @@ import { isDemoReadOnlyError, isDemoUser, loginPathFor } from './main/demo';
 import { isImpersonationBlockedError } from './main/impersonation';
 import { isTwoFactorSetupError, TWO_FACTOR_SETUP_PATH } from './main/twoFactor';
 import { watchAxios } from './maintenance';
+import { refreshAccessToken } from './tokenRefresh';
 
 // The login/logout requests (CoreAuthProvider) use the global instance.
 watchAxios(axios);
@@ -43,6 +48,42 @@ export default class axiosConfig {
       baseURL: normalizeBackendUrl(getBackendBaseUrl()),
     });
     watchAxios(this.axiosHolder);
+
+    // An expired access token is renewed and the request retried once. This
+    // covers tabs asleep past the token lifetime; CoreAuthProvider also
+    // renews proactively. Only Bearer sessions refresh - an explicit "Token"
+    // (transfer token) must never be replaced by the user's session.
+    type RetryableConfig = InternalAxiosRequestConfig & { __authRetry?: boolean };
+    this.axiosHolder.interceptors.response.use(
+      (response) => response,
+      async (error) => {
+        const config = error?.config as RetryableConfig | undefined;
+        const authorization = config?.headers?.Authorization;
+        const isBearer =
+          typeof authorization === 'string' &&
+          authorization.startsWith('Bearer ');
+        if (
+          error?.response?.status !== 401 ||
+          !config ||
+          !isBearer ||
+          config.__authRetry ||
+          String(config.url || '').includes('/api/token/')
+        ) {
+          return Promise.reject(error);
+        }
+        config.__authRetry = true;
+        const access = await refreshAccessToken();
+        if (!access) {
+          return Promise.reject(error);
+        }
+        if (typeof config.headers.set === 'function') {
+          config.headers.set('Authorization', `Bearer ${access}`);
+        } else {
+          config.headers.Authorization = `Bearer ${access}`;
+        }
+        return this.axiosHolder.request(config);
+      },
+    );
 
     const csrftoken = Cookies.get('csrftoken');
 

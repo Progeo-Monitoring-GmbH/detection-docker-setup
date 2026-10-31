@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AxiosResponse } from 'axios';
+import axios, { type AxiosResponse } from 'axios';
 import axiosConfig from './axiosConfig';
 import type { AuthContextType } from '../hooks/CoreAuthProvider';
 
@@ -140,6 +140,42 @@ describe('perform_get', () => {
     await axiosConfig.perform_get(makeAuth(), '/x', vi.fn());
 
     expect(axiosConfig.holder.defaults.headers.common['Authorization']).toBeUndefined();
+  });
+});
+
+describe('expired access token', () => {
+  it('refreshes it once and retries the original request', async () => {
+    localStorage.setItem('authToken', 'old-access');
+    localStorage.setItem('refreshToken', 'old-refresh');
+    axiosConfig.updateToken();
+    const refresh = vi.spyOn(axios, 'post').mockResolvedValue({
+      data: { access: 'new-access', refresh: 'new-refresh' },
+    });
+    const originalAdapter = axiosConfig.holder.defaults.adapter;
+    let calls = 0;
+    axiosConfig.holder.defaults.adapter = async (config) => {
+      calls += 1;
+      if (calls === 1) {
+        const error = Object.assign(new Error('Unauthorized'), {
+          config,
+          response: { status: 401, data: {}, headers: {}, config, statusText: 'Unauthorized' },
+        });
+        throw error;
+      }
+      return { data: 'ok', status: 200, statusText: 'OK', headers: {}, config };
+    };
+
+    try {
+      const response = await axiosConfig.holder.request({ url: '/v1/protected/' });
+
+      expect(response.data).toBe('ok');
+      expect(calls).toBe(2);
+      expect(refresh).toHaveBeenCalledTimes(1);
+      expect(localStorage.getItem('authToken')).toBe('new-access');
+      expect(localStorage.getItem('refreshToken')).toBe('new-refresh');
+    } finally {
+      axiosConfig.holder.defaults.adapter = originalAdapter;
+    }
   });
 });
 

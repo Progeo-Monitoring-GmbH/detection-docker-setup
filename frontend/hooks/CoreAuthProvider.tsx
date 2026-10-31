@@ -15,6 +15,14 @@ import { showErrorBar } from '../src/components/ui/Snackbar.jsx';
 import { isDemoUser, setDemoToken } from '../src/main/demo';
 import { clearImpersonation } from '../src/main/impersonation';
 import { otpReason, OtpReason } from '../src/main/twoFactor';
+import {
+  clearStoredTokens,
+  onTokensRefreshed,
+  readStoredTokens,
+  refreshAccessToken,
+  shouldRefreshAccessToken,
+  storeTokens,
+} from '../src/tokenRefresh';
 
 type User = JwtPayload;
 const intervalMin = 30;
@@ -57,27 +65,16 @@ export interface AuthContextType {
 }
 
 const refreshApi = async (refreshToken) => {
-  try {
-    const response = await axios.post(
-      `${API_URL}/api/token/refresh/`,
-      refreshToken,
-      {
-        headers: { Authorization: `Bearer ${refreshToken}` },
-      },
-    );
-
-    return {
-      isSuccess: true,
-      newAuthToken: response.data.token,
-      newAuthTokenExpireIn: intervalMin,
-      newRefreshTokenExpiresIn: intervalMin * 2,
-    } as AuthRefresh;
-  } catch (error) {
-    console.error(error);
-    return {
-      isSuccess: false,
-    } as AuthRefresh;
+  const access = await refreshAccessToken(refreshToken);
+  if (!access) {
+    return { isSuccess: false } as AuthRefresh;
   }
+  return {
+    isSuccess: true,
+    newAuthToken: access,
+    newAuthTokenExpireIn: intervalMin,
+    newRefreshTokenExpiresIn: intervalMin * 2,
+  } as AuthRefresh;
 };
 
 const defaultAuthContextValue: AuthContextType = {
@@ -99,9 +96,9 @@ const AuthContext = createContext<AuthContextType>(
 const API_URL = getBackendBaseUrl();
 
 const CoreAuthProvider = ({ children }) => {
-  const [token, setToken] = useState(localStorage.getItem('authToken') || '');
+  const [token, setToken] = useState(() => readStoredTokens().access);
   const [refreshToken, setRefreshToken] = useState(
-    localStorage.getItem('refreshToken') || '',
+    () => readStoredTokens().refresh,
   );
   const [user, setUser] = useState<User | null>(null);
   const location = useLocation();
@@ -122,11 +119,34 @@ const CoreAuthProvider = ({ children }) => {
     }
   }, [token]);
 
-  // useEffect(() => {
-  //   if (user) {
-  //     console.log('USER', user);
-  //   }
-  // }, [user]);
+  // The axios interceptor renews an expired access token on a 401. Adopt the
+  // rotated tokens here too, so auth.token/user (and permission loading) stay
+  // current.
+  useEffect(
+    () =>
+      onTokensRefreshed((access, refresh) => {
+        setToken(access);
+        setRefreshToken(refresh);
+      }),
+    [],
+  );
+
+  // Renew shortly before expiry, so an active tab never even hits the 401
+  // path. The interval also covers a laptop waking from sleep; the axios
+  // interceptor is the fallback if the timer was paused.
+  useEffect(() => {
+    if (!token) {
+      return undefined;
+    }
+    const renew = () => {
+      if (shouldRefreshAccessToken(token)) {
+        void refreshAccessToken();
+      }
+    };
+    renew();
+    const timer = window.setInterval(renew, 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, [token]);
 
   const getCurrentUrl = () => {
     return location.pathname;
@@ -147,7 +167,7 @@ const CoreAuthProvider = ({ children }) => {
         const wasDemo = isDemoUser(user);
         setToken('');
         setRefreshToken('');
-        localStorage.removeItem('authToken');
+        clearStoredTokens();
         clearImpersonation();
         if (wasDemo) {
           // Leaving the demo: no way (and no reason) to come back to it via the login form.
@@ -160,7 +180,7 @@ const CoreAuthProvider = ({ children }) => {
         }
       }
     },
-    [navigate, user],
+    [navigate, refreshToken, user],
   );
 
   const loginAction = useCallback(
@@ -168,7 +188,9 @@ const CoreAuthProvider = ({ children }) => {
       try {
         const response = await axios.post(`${API_URL}/api/token/`, data);
         const newToken = response.data.access;
-        localStorage.setItem('authToken', newToken);
+        // Persist the refresh token too - without it a reload (or the next
+        // access-token expiry) leaves an active session unable to renew.
+        storeTokens(newToken, response.data.refresh);
         setToken(newToken);
         setRefreshToken(response.data.refresh);
         clearImpersonation();
@@ -196,7 +218,7 @@ const CoreAuthProvider = ({ children }) => {
   );
 
   const loginWithTokens = useCallback((access: string, refresh: string) => {
-    localStorage.setItem('authToken', access);
+    storeTokens(access, refresh);
     setToken(access);
     setRefreshToken(refresh);
   }, []);

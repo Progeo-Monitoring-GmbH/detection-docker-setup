@@ -22,13 +22,23 @@ def test_check_accepts_sixteen_rising_values_with_the_rest_empty():
     assert check == {"status": "ok", "rising": 16, "start": 5, "end": 20, "outliers": [], "reasons": []}
 
 
-def test_check_warns_about_sensors_outside_the_run():
+def test_check_tolerates_sensors_outside_the_run():
     pairs = list(LADDER)
     pairs[25] = 80.0
 
     check = device_commands.check_test_pairs(pairs)
 
-    assert (check["status"], check["rising"], check["outliers"]) == ("warn", 16, [26])
+    assert (check["status"], check["rising"], check["outliers"]) == ("ok", 16, [26])
+    assert check["reasons"] == []
+
+
+def test_check_accepts_more_than_the_expected_rising_values():
+    pairs = [0.0] * 4 + [float(step * 10) for step in range(1, 19)] + [0.0] * 10
+
+    check = device_commands.check_test_pairs(pairs)
+
+    assert (check["status"], check["rising"], check["start"], check["end"]) == ("ok", 18, 5, 22)
+    assert check["reasons"] == []
 
 
 @pytest.mark.parametrize("pairs, rising", [
