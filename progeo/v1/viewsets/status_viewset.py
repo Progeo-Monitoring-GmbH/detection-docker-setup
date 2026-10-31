@@ -20,7 +20,12 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from progeo.authentication import ExpiringTokenAuthentication
 from progeo.decorator import calc_runtime, require_module_permissions
 from progeo.helper.basics import RequestFailed, RequestSuccess, save_check_dir
-from progeo.helper.device_inventory import build_device_statistics
+from progeo.helper.device_inventory import (
+    SECTION_NAMES,
+    statistics_base,
+    statistics_section,
+    statistics_snapshot,
+)
 from progeo.helper.device_overview import device_stats, hash_kind, is_online
 from progeo.helper.docker_helper import start_cad_factory
 from progeo.helper.lageplan_export import (
@@ -913,11 +918,29 @@ class StatusViewSet(ProgeoModalViewSet):
     def device_statistics(self, request, *args, **kwargs):
         """Staff-only inventory statistics of the account's devices and
         locations (helper/device_inventory.py): per type, chip_id, measurement
-        in the last 24h, missing Lageplan, dead/unused."""
+        in the last 24h, missing Lageplan, dead/unused.
+
+        Without `section` this returns only the page shell (no database work).
+        The frontend then requests the sections one by one (`?section=...`);
+        the first builds the full snapshot, the rest hit its short cache.
+        `refresh=1` rebuilds the snapshot.
+        """
         if not is_staff_admin(request.user):
             return RequestFailed({"reason": "Staff access required"})
+        section = (request.query_params.get("section") or "").strip()
+        if not section:
+            return RequestSuccess(statistics_base())
+        if section not in SECTION_NAMES:
+            return RequestFailed({"reason": f"Unknown section: {section}"})
         accounts = [account for account in _request_accounts(request) if account]
-        return RequestSuccess(build_device_statistics(accounts))
+        refresh = (request.query_params.get("refresh") or "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        payload = statistics_snapshot(accounts, refresh=refresh)
+        return RequestSuccess(statistics_section(payload, section))
 
     @calc_runtime
     @require_module_permissions("module_devices_enabled")

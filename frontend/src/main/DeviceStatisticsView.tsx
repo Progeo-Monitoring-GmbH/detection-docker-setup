@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { Alert, Badge, Spinner, Table } from 'react-bootstrap';
 import { ArrowRepeat } from 'react-bootstrap-icons';
 import DataTable, { type TableColumn } from 'react-data-table-component';
@@ -61,7 +67,8 @@ type StatisticsTypeRow = {
   count: number;
 };
 
-type DeviceStatistics = {
+/** One section response of GET /v1/status/device_statistics/?section=... */
+type DeviceStatisticsSection = {
   generated_at: string | null;
   totals: StatisticsTotals;
   by_type: StatisticsTypeRow[];
@@ -74,12 +81,20 @@ type DeviceStatistics = {
     missing_lageplan: StatisticsDevice[];
     dead: StatisticsDevice[];
   };
-  locations: {
-    unused: StatisticsLocation[];
-    missing_lageplan: StatisticsLocation[];
-    dead: StatisticsLocation[];
-  };
+  locations: Record<string, StatisticsLocation[]>;
 };
+
+/** The API section a tab requests. `by_type` also carries the overview. */
+type StatisticsRequestSection =
+  | 'overview'
+  | 'by_type'
+  | 'chip_id'
+  | 'measured'
+  | 'lageplan'
+  | 'dead'
+  | 'unused_locations'
+  | 'locations_missing_lageplan'
+  | 'dead_locations';
 
 type StatsSection =
   | 'by_type'
@@ -105,11 +120,10 @@ const EMPTY_TOTALS: StatisticsTotals = {
 };
 
 /** Missing lists/keys become empty instead of crashing the page. */
-const normalizeStatistics = (raw: unknown): DeviceStatistics => {
-  const data = (raw || {}) as Partial<DeviceStatistics>;
-  const devices = (data.devices ?? {}) as Partial<DeviceStatistics['devices']>;
-  const locations = (data.locations ?? {}) as Partial<
-    DeviceStatistics['locations']
+const normalizeSection = (raw: unknown): DeviceStatisticsSection => {
+  const data = (raw || {}) as Partial<DeviceStatisticsSection>;
+  const devices = (data.devices ?? {}) as Partial<
+    DeviceStatisticsSection['devices']
   >;
   return {
     generated_at: data.generated_at ?? null,
@@ -124,12 +138,20 @@ const normalizeStatistics = (raw: unknown): DeviceStatistics => {
       missing_lageplan: devices.missing_lageplan ?? [],
       dead: devices.dead ?? [],
     },
-    locations: {
-      unused: locations.unused ?? [],
-      missing_lageplan: locations.missing_lageplan ?? [],
-      dead: locations.dead ?? [],
-    },
+    locations: data.locations ?? {},
   };
+};
+
+/** The API section a tab needs; the by-type tab doubles as the overview. */
+const REQUEST_SECTION: Record<StatsSection, StatisticsRequestSection> = {
+  by_type: 'overview',
+  chip_id: 'chip_id',
+  measured: 'measured',
+  lageplan: 'lageplan',
+  dead: 'dead',
+  unused_locations: 'unused_locations',
+  locations_missing_lageplan: 'locations_missing_lageplan',
+  dead_locations: 'dead_locations',
 };
 
 const RED = '#B42318';
@@ -199,7 +221,7 @@ const DeviceList = ({ rows }: { rows: StatisticsDevice[] }) => {
         row.chip_id ? (
           <code className="small">{row.chip_id}</code>
         ) : (
-          <span style={{ color: MUTED }}>–</span>
+          <span style={{ color: MUTED }}>â€“</span>
         ),
       width: '145px',
     },
@@ -208,7 +230,7 @@ const DeviceList = ({ rows }: { rows: StatisticsDevice[] }) => {
       selector: (row) => row.location_name ?? '',
       cell: (row) => (
         <div className="small">
-          <div>{row.location_name || '–'}</div>
+          <div>{row.location_name || 'â€“'}</div>
           {row.project_id != null && (
             <div className="text-muted">#{row.project_id}</div>
           )}
@@ -254,7 +276,7 @@ const LocationList = ({ rows }: { rows: StatisticsLocation[] }) => {
       selector: (row) => row.name ?? '',
       cell: (row) => (
         <div className="small">
-          <div>{row.name || '–'}</div>
+          <div>{row.name || 'â€“'}</div>
           {row.project_id != null && (
             <div className="text-muted">#{row.project_id}</div>
           )}
@@ -301,7 +323,7 @@ const LocationList = ({ rows }: { rows: StatisticsLocation[] }) => {
           ) : null}
           {row.dead ? <Badge bg="danger">{t('device_stats_dead')}</Badge> : null}
           {!row.unused && !row.dead ? (
-            <span style={{ color: MUTED }}>–</span>
+            <span style={{ color: MUTED }}>â€“</span>
           ) : null}
         </div>
       ),
@@ -336,35 +358,72 @@ const DeviceStatisticsView = () => {
     | undefined;
   const isStaff = Boolean(user?.is_staff || user?.is_superuser);
 
-  const [stats, setStats] = useState<DeviceStatistics | null>(null);
+  // One response per requested API section. The base UI renders before any of
+  // them arrives; the by-type tab (overview) is requested first.
+  const [sections, setSections] = useState<
+    Partial<Record<StatisticsRequestSection, DeviceStatisticsSection>>
+  >({});
+  const [section, setSection] = useState<StatsSection>('by_type');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [section, setSection] = useState<StatsSection>('by_type');
+  const requestRef = useRef(0);
+  const authRef = useRef(auth);
+  authRef.current = auth;
 
-  const load = useCallback(() => {
+  const loadSection = useCallback(
+    (key: StatisticsRequestSection, refresh = false) => {
+      if (!isStaff) {
+        return;
+      }
+      const request = ++requestRef.current;
+      setLoading(true);
+      setError(null);
+      void axiosConfig.perform_get(
+        authRef.current,
+        `/v1/status/device_statistics/?section=${key}${refresh ? '&refresh=1' : ''}`,
+        (response) => {
+          if (request !== requestRef.current) {
+            return;
+          }
+          const data = normalizeSection(response?.data);
+          setSections((current) => ({ ...current, [key]: data }));
+          setLoading(false);
+        },
+        (requestError) => {
+          if (request !== requestRef.current) {
+            return;
+          }
+          setError(errorReason(requestError) || 'Unknown error');
+          setLoading(false);
+        },
+      );
+    },
+    [isStaff],
+  );
+
+  useEffect(() => {
     if (!isStaff) {
       return;
     }
-    setLoading(true);
-    setError(null);
-    void axiosConfig.perform_get(
-      auth,
-      '/v1/status/device_statistics/',
-      (response) => {
-        setStats(normalizeStatistics(response?.data));
-        setLoading(false);
-      },
-      (requestError) => {
-        setStats(null);
-        setError(errorReason(requestError) || 'Unknown error');
-        setLoading(false);
-      },
-    );
-    // Once per auth state - auth changes with the path.
+    // The shell is already on screen; this is the first (warming) section.
+    loadSection('overview');
+    // Once per staff state / auth context.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isStaff]);
+  }, [isStaff, loadSection]);
 
-  useEffect(load, [load]);
+  const requestKey = REQUEST_SECTION[section];
+  const hasCurrent = Boolean(sections[requestKey]);
+
+  // Every tab request waits until the overview (which warms the server cache)
+  // is there, so switching tabs early cannot start two expensive scans.
+  useEffect(() => {
+    if (!isStaff || !sections.overview || hasCurrent) {
+      return;
+    }
+    loadSection(requestKey);
+    // Runs when the overview arrives or the tab changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isStaff, sections.overview, hasCurrent, requestKey, loadSection]);
 
   if (!isStaff) {
     return (
@@ -374,15 +433,31 @@ const DeviceStatisticsView = () => {
     );
   }
 
+  const chooseSection = (next: StatsSection) => setSection(next);
+
+  const refresh = () => {
+    // The overview rebuilds (and re-caches) the full snapshot; the tab effect
+    // then fetches the current section from that fresh cache.
+    setSections({});
+    loadSection('overview', true);
+  };
+
+  const current = sections[requestKey] ?? null;
+  const overview = sections.overview ?? null;
+  const totals = current?.totals ?? overview?.totals ?? EMPTY_TOTALS;
+  const hasTotals = current != null || overview != null;
+  const generatedAt = current?.generated_at ?? overview?.generated_at ?? null;
+  const typeRows = overview?.by_type ?? [];
+
   const header = (
     <PanelCard
       title={t('device_stats_title')}
       actions={
         <div className="d-flex align-items-center gap-2 flex-wrap">
-          {stats?.generated_at && (
+          {generatedAt && (
             <span className="small text-muted">
               {t('device_stats_generated_at', {
-                date: formatDate(stats.generated_at, 'dateTime'),
+                date: formatDate(generatedAt, 'dateTime'),
               })}
             </span>
           )}
@@ -396,7 +471,7 @@ const DeviceStatisticsView = () => {
               )
             }
             label={t('device_stats_refresh')}
-            onClick={load}
+            onClick={refresh}
             disabled={loading}
           />
         </div>
@@ -413,37 +488,6 @@ const DeviceStatisticsView = () => {
     </PanelCard>
   );
 
-  if (!stats) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {header}
-        <PanelCard>
-          {loading ? (
-            <div className="d-flex justify-content-center py-5 text-muted">
-              <Spinner animation="border" className="me-2" />
-              {t('ui_loading')}
-            </div>
-          ) : (
-            <div className="small text-muted py-2">{t('device_stats_empty')}</div>
-          )}
-        </PanelCard>
-      </div>
-    );
-  }
-
-  const { totals } = stats;
-  // The label of a type as the backend resolved it ("unset" included).
-  const typeLabel = (type: string) =>
-    stats.by_type.find((row) => row.type === type)?.label ||
-    (type === 'unset' ? t('devices_type_unset') : type);
-  const typeGroups = stats.by_type
-    .map((row) => ({
-      type: row.type,
-      label: row.label || typeLabel(row.type),
-      rows: stats.devices.by_type[row.type] ?? [],
-    }))
-    .filter((group) => group.rows.length > 0);
-
   const sectionOptions = [
     { value: 'by_type', label: t('device_stats_by_type_title') },
     { value: 'chip_id', label: t('device_stats_view_chip_id') },
@@ -458,7 +502,34 @@ const DeviceStatisticsView = () => {
     { value: 'dead_locations', label: t('device_stats_dead_locations') },
   ];
 
+  const typeLabel = (type: string) =>
+    typeRows.find((row) => row.type === type)?.label ||
+    (type === 'unset' ? t('devices_type_unset') : type);
+
+  const typeGroups = typeRows
+    .map((row) => ({
+      type: row.type,
+      label: row.label || typeLabel(row.type),
+      rows: overview?.devices.by_type[row.type] ?? [],
+    }))
+    .filter((group) => group.rows.length > 0);
+
+  const waiting = (
+    <div className="d-flex align-items-center gap-2 text-muted py-3">
+      <Spinner animation="border" size="sm" />
+      {t('ui_loading')}
+    </div>
+  );
+
   const renderSection = () => {
+    if (!current) {
+      // The overview warms the cache; its arrival immediately starts the
+      // current tab, so show the spinner instead of a one-frame empty state.
+      if (loading || (!error && sections.overview)) {
+        return waiting;
+      }
+      return <div className="small text-muted py-2">{t('device_stats_empty')}</div>;
+    }
     switch (section) {
       case 'by_type':
         return typeGroups.length ? (
@@ -487,10 +558,10 @@ const DeviceStatisticsView = () => {
         return (
           <>
             <ListSection title={t('device_stats_with_chip_id')}>
-              <DeviceList rows={stats.devices.with_chip_id} />
+              <DeviceList rows={current.devices.with_chip_id} />
             </ListSection>
             <ListSection title={t('device_stats_without_chip_id')}>
-              <DeviceList rows={stats.devices.without_chip_id} />
+              <DeviceList rows={current.devices.without_chip_id} />
             </ListSection>
           </>
         );
@@ -498,41 +569,43 @@ const DeviceStatisticsView = () => {
         return (
           <>
             <ListSection title={t('device_stats_measured_24h')}>
-              <DeviceList rows={stats.devices.measured_24h} />
+              <DeviceList rows={current.devices.measured_24h} />
             </ListSection>
             <ListSection title={t('device_stats_not_measured_24h')}>
-              <DeviceList rows={stats.devices.not_measured_24h} />
+              <DeviceList rows={current.devices.not_measured_24h} />
             </ListSection>
           </>
         );
       case 'lageplan':
         return (
           <ListSection title={t('device_stats_missing_lageplan')}>
-            <DeviceList rows={stats.devices.missing_lageplan} />
+            <DeviceList rows={current.devices.missing_lageplan} />
           </ListSection>
         );
       case 'dead':
         return (
           <ListSection title={t('device_stats_dead_devices')}>
-            <DeviceList rows={stats.devices.dead} />
+            <DeviceList rows={current.devices.dead} />
           </ListSection>
         );
       case 'unused_locations':
         return (
           <ListSection title={t('device_stats_unused_locations')}>
-            <LocationList rows={stats.locations.unused} />
+            <LocationList rows={current.locations.unused_locations ?? []} />
           </ListSection>
         );
       case 'locations_missing_lageplan':
         return (
           <ListSection title={t('device_stats_locations_missing_lageplan')}>
-            <LocationList rows={stats.locations.missing_lageplan} />
+            <LocationList
+              rows={current.locations.locations_missing_lageplan ?? []}
+            />
           </ListSection>
         );
       case 'dead_locations':
         return (
           <ListSection title={t('device_stats_dead_locations')}>
-            <LocationList rows={stats.locations.dead} />
+            <LocationList rows={current.locations.dead_locations ?? []} />
           </ListSection>
         );
       default:
@@ -543,40 +616,46 @@ const DeviceStatisticsView = () => {
   const kpiTiles = [
     {
       label: t('device_stats_kpi_devices'),
-      value: String(totals.devices),
-      note: t('device_stats_kpi_locations_note', { count: totals.locations }),
+      value: hasTotals ? String(totals.devices) : '–',
+      note: hasTotals
+        ? t('device_stats_kpi_locations_note', { count: totals.locations })
+        : undefined,
     },
     {
       label: t('device_stats_with_chip_id'),
-      value: String(totals.with_chip_id),
-      note: t('device_stats_kpi_without_chip_id_note', {
-        count: totals.without_chip_id,
-      }),
+      value: hasTotals ? String(totals.with_chip_id) : '–',
+      note: hasTotals
+        ? t('device_stats_kpi_without_chip_id_note', {
+            count: totals.without_chip_id,
+          })
+        : undefined,
     },
     {
       label: t('device_stats_measured_24h'),
-      value: String(totals.measured_24h),
-      note: t('device_stats_kpi_not_measured_24h_note', {
-        count: totals.not_measured_24h,
-      }),
+      value: hasTotals ? String(totals.measured_24h) : '–',
+      note: hasTotals
+        ? t('device_stats_kpi_not_measured_24h_note', {
+            count: totals.not_measured_24h,
+          })
+        : undefined,
     },
     {
       label: t('device_stats_missing_lageplan'),
-      value: String(totals.missing_lageplan),
+      value: hasTotals ? String(totals.missing_lageplan) : '–',
     },
     {
       label: t('device_stats_dead_devices'),
-      value: String(totals.dead),
+      value: hasTotals ? String(totals.dead) : '–',
       valueColor: totals.dead > 0 ? RED : undefined,
     },
     {
       label: t('device_stats_unused_locations'),
-      value: String(totals.unused_locations),
+      value: hasTotals ? String(totals.unused_locations) : '–',
       valueColor: totals.unused_locations > 0 ? AMBER : undefined,
     },
     {
       label: t('device_stats_locations_missing_lageplan'),
-      value: String(totals.locations_missing_lageplan),
+      value: hasTotals ? String(totals.locations_missing_lageplan) : '–',
     },
   ];
 
@@ -587,7 +666,9 @@ const DeviceStatisticsView = () => {
       <KpiStrip tiles={kpiTiles} />
 
       <PanelCard title={t('device_stats_by_type_title')}>
-        {stats.by_type.length === 0 ? (
+        {!overview ? (
+          loading ? waiting : <div className="small text-muted py-2">{t('device_stats_empty')}</div>
+        ) : typeRows.length === 0 ? (
           <div className="small text-muted py-2">{t('device_stats_empty')}</div>
         ) : (
           <Table responsive size="sm" className="align-middle mb-0">
@@ -598,7 +679,7 @@ const DeviceStatisticsView = () => {
               </tr>
             </thead>
             <tbody>
-              {stats.by_type.map((row) => (
+              {typeRows.map((row) => (
                 <tr key={row.type}>
                   <td>{row.label || typeLabel(row.type)}</td>
                   <td className="text-end">{row.count}</td>
@@ -615,7 +696,7 @@ const DeviceStatisticsView = () => {
           <SegmentedControl
             options={sectionOptions}
             value={section}
-            onChange={(value) => setSection(value as StatsSection)}
+            onChange={(value) => chooseSection(value as StatsSection)}
           />
         }
       >

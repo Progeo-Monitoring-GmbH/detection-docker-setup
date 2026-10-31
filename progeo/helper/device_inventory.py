@@ -27,12 +27,14 @@ Definitions
 from collections import Counter
 from datetime import timedelta
 
+from django.core.cache import cache
 from django.db.models import Exists, OuterRef, Subquery
 from django.utils import timezone
 
 from progeo.helper.project_dbs import (
     existing_project_aliases,
     locations_by_db,
+    map_databases,
     register_project_db,
     release_connection,
     split_enabled,
@@ -51,6 +53,25 @@ DEAD_AFTER = timedelta(days=30)
 # Each response list is capped; the counts/totals above stay complete.
 MAX_LIST_ROWS = 500
 UNKNOWN_TYPE = "unknown"
+
+# The full inventory is expensive on servers with many project databases. It
+# is built once per account set and reused by the per-section requests, so a
+# page with several tabs scans the databases only once.
+CACHE_SECONDS = 180
+CACHE_PREFIX = "progeo:device-statistics:"
+# The sections the frontend requests one by one (the first also warms the
+# cache for all following ones, which are then served from it).
+SECTION_NAMES = (
+    "overview",
+    "by_type",
+    "chip_id",
+    "measured",
+    "lageplan",
+    "dead",
+    "unused_locations",
+    "locations_missing_lageplan",
+    "dead_locations",
+)
 
 
 def _iso(value):
@@ -176,8 +197,15 @@ def build_device_statistics(accounts, now=None):
 
     device_rows = []
     location_rows = []
-    for database, db_locations in location_groups.items():
-        devices, lageplans = _rows_of_database(database, db_locations)
+    databases = list(location_groups)
+    # ~1000 project databases: query them in parallel (PROJECT_DB_WORKERS)
+    # instead of one round trip after the other - the main cost of the page.
+    rows_by_database = map_databases(
+        lambda database: _rows_of_database(database, location_groups[database]),
+        databases,
+    )
+    for database, (devices, lageplans) in zip(databases, rows_by_database, strict=True):
+        db_locations = location_groups[database]
 
         device_counts = Counter(device.location_id for device in devices)
         last_by_location = {}
@@ -274,3 +302,98 @@ def build_device_statistics(accounts, now=None):
     if truncated:
         payload["truncated"] = True
     return payload
+
+
+def _cache_key(accounts) -> str:
+    """One snapshot per account set (staff usually resolve to one account)."""
+    return CACHE_PREFIX + ",".join(str(account.pk) for account in accounts)
+
+
+def statistics_snapshot(accounts, refresh=False):
+    """The full statistics payload, cached for CACHE_SECONDS.
+
+    The page asks for one section at a time; the first request builds (and
+    caches) the whole snapshot, every later section is a cache hit. `refresh`
+    forces a new pass after the dumps/devices changed.
+    """
+    key = _cache_key(accounts)
+    if not refresh:
+        try:
+            cached = cache.get(key)
+        except Exception:  # noqa: BLE001 - cache unavailable: build it
+            cached = None
+        if cached:
+            return cached
+    import time
+
+    from progeo.helper.basics import ilog
+
+    started = time.monotonic()
+    payload = build_device_statistics(accounts)
+    ilog(
+        f"[device_statistics] built {payload['totals']['devices']} devices / "
+        f"{payload['totals']['locations']} locations in {time.monotonic() - started:.1f}s"
+    )
+    try:
+        cache.set(key, payload, CACHE_SECONDS)
+    except Exception:  # noqa: BLE001 - cache unavailable: still answer
+        pass
+    return payload
+
+
+def statistics_base():
+    """The instantly available shell of the page - no database work.
+
+    The UI renders its frame from this and then requests the sections one by
+    one; nothing here can time out on a large installation.
+    """
+    return {
+        "generated_at": timezone.now().isoformat(),
+        "sections": list(SECTION_NAMES),
+    }
+
+
+def statistics_section(payload, section):
+    """One section of a full snapshot, with its totals for the KPI tiles."""
+    if section not in SECTION_NAMES:
+        raise KeyError(section)
+    base = {
+        "generated_at": payload["generated_at"],
+        "totals": payload["totals"],
+    }
+    if "truncated" in payload:
+        base["truncated"] = True
+
+    devices = payload["devices"]
+    locations = payload["locations"]
+    if section == "overview":
+        return {**base, "by_type": payload["by_type"]}
+    if section == "by_type":
+        return {**base, "by_type": payload["by_type"], "devices": {"by_type": devices["by_type"]}}
+    if section == "chip_id":
+        return {
+            **base,
+            "devices": {
+                "with_chip_id": devices["with_chip_id"],
+                "without_chip_id": devices["without_chip_id"],
+            },
+        }
+    if section == "measured":
+        return {
+            **base,
+            "devices": {
+                "measured_24h": devices["measured_24h"],
+                "not_measured_24h": devices["not_measured_24h"],
+            },
+        }
+    if section == "lageplan":
+        return {**base, "devices": {"missing_lageplan": devices["missing_lageplan"]}}
+    if section == "dead":
+        return {**base, "devices": {"dead": devices["dead"]}}
+    # The three location sections.
+    location_key = {
+        "unused_locations": "unused",
+        "locations_missing_lageplan": "missing_lageplan",
+        "dead_locations": "dead",
+    }[section]
+    return {**base, "locations": {section: locations[location_key]}}

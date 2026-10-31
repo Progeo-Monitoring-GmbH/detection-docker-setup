@@ -1,9 +1,8 @@
 """GET /v1/status/device_statistics/ - the staff-only inventory statistics.
 
-The endpoint reports the devices and locations of the request's account
-(Account pk=1 in tests) in one payload: totals, type counts, and the lists the
-"Geräte-Statistik" screen shows (chip_id, measured in the last 24h, missing
-Lageplan, dead devices, unused/dead locations).
+The base URL returns only the page shell; the frontend requests the individual
+sections (`?section=...`). The first section builds the full snapshot for the
+account (Account pk=1 in tests), the following ones are served from its cache.
 """
 from datetime import timedelta
 
@@ -53,9 +52,14 @@ def world(bound_account):
     }
 
 
-def _get(api_client, user):
+def _get(api_client, user, section=None, refresh=False):
     api_client.force_authenticate(user=user)
-    response = api_client.get(URL)
+    params = {}
+    if section is not None:
+        params["section"] = section
+    if refresh:
+        params["refresh"] = "1"
+    response = api_client.get(URL, params)
     assert response.status_code == 200, response.content
     return response.json()
 
@@ -64,8 +68,40 @@ def _ids(body, key):
     return {row["id"] for row in body["devices"][key]}
 
 
-def test_staff_gets_totals_and_lists(api_client, world):
+def test_base_url_is_only_the_page_shell(api_client, world):
     body = _get(api_client, f.make_user(staff=True))
+
+    assert body["generated_at"]
+    assert body["sections"] == [
+        "overview", "by_type", "chip_id", "measured", "lageplan", "dead",
+        "unused_locations", "locations_missing_lageplan", "dead_locations",
+    ]
+    # No inventory data and therefore no expensive scan on the base request.
+    assert "totals" not in body
+    assert "devices" not in body
+
+
+def test_non_staff_is_refused(api_client, world):
+    no_staff = f.make_user(perms=("module_devices_enabled",))
+    api_client.force_authenticate(user=no_staff)
+
+    response = api_client.get(URL)
+
+    assert response.status_code == 400
+    assert response.json()["reason"] == "Staff access required"
+
+
+def test_unknown_section_is_refused(api_client, world):
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    response = api_client.get(URL, {"section": "nope"})
+
+    assert response.status_code == 400
+    assert response.json()["reason"] == "Unknown section: nope"
+
+
+def test_overview_has_totals_and_type_breakdown(api_client, world):
+    body = _get(api_client, f.make_user(staff=True), "overview", refresh=True)
 
     assert body["generated_at"]
     totals = body["totals"]
@@ -86,34 +122,13 @@ def test_staff_gets_totals_and_lists(api_client, world):
         {"type": "node", "label": "node", "count": 1},
         {"type": "smartbox", "label": "smartbox", "count": 1},
     ]
-    assert set(body["devices"]) == {
-        "by_type", "with_chip_id", "without_chip_id", "measured_24h",
-        "not_measured_24h", "missing_lageplan", "dead",
-    }
-    assert set(body["locations"]) == {"unused", "missing_lageplan", "dead"}
+    assert "devices" not in body
     assert "truncated" not in body
 
 
-def test_non_staff_is_refused(api_client, world):
-    no_staff = f.make_user(perms=("module_devices_enabled",))
-    api_client.force_authenticate(user=no_staff)
+def test_by_type_section_lists_every_type(api_client, world):
+    body = _get(api_client, f.make_user(staff=True), "by_type", refresh=True)
 
-    response = api_client.get(URL)
-
-    assert response.status_code == 400
-    assert response.json()["reason"] == "Staff access required"
-
-
-def test_devices_land_in_chip_and_measurement_lists(api_client, world):
-    body = _get(api_client, f.make_user(staff=True))
-
-    assert _ids(body, "with_chip_id") == {world["smartbox"].id, world["old"].id}
-    assert _ids(body, "without_chip_id") == {world["never"].id}
-    assert _ids(body, "measured_24h") == {world["smartbox"].id}
-    assert _ids(body, "not_measured_24h") == {world["never"].id, world["old"].id}
-    assert _ids(body, "dead") == {world["never"].id, world["old"].id}
-    # The never-measured node sits at the location without a Lageplan.
-    assert _ids(body, "missing_lageplan") == {world["never"].id}
     rows = body["devices"]["by_type"]
     assert [row["id"] for row in rows["smartbox"]] == [world["smartbox"].id]
     assert [row["id"] for row in rows["node"]] == [world["never"].id]
@@ -129,13 +144,33 @@ def test_devices_land_in_chip_and_measurement_lists(api_client, world):
     assert row["dead"] is False
 
 
+def test_devices_land_in_chip_and_measurement_lists(api_client, world):
+    user = f.make_user(staff=True)
+    chip = _get(api_client, user, "chip_id", refresh=True)
+    measured = _get(api_client, user, "measured")
+    lageplan = _get(api_client, user, "lageplan")
+    dead = _get(api_client, user, "dead")
+
+    assert _ids(chip, "with_chip_id") == {world["smartbox"].id, world["old"].id}
+    assert _ids(chip, "without_chip_id") == {world["never"].id}
+    assert _ids(measured, "measured_24h") == {world["smartbox"].id}
+    assert _ids(measured, "not_measured_24h") == {world["never"].id, world["old"].id}
+    assert _ids(dead, "dead") == {world["never"].id, world["old"].id}
+    # The never-measured node sits at the location without a Lageplan.
+    assert _ids(lageplan, "missing_lageplan") == {world["never"].id}
+    # Every section carries the totals for the KPI tiles.
+    assert chip["totals"]["devices"] == 3
+
+
 def test_location_without_lageplan_is_listed(api_client, world):
-    body = _get(api_client, f.make_user(staff=True))
+    user = f.make_user(staff=True)
+    body = _get(api_client, user, "unused_locations", refresh=True)
+    missing = _get(api_client, user, "locations_missing_lageplan")
 
-    missing = {row["id"] for row in body["locations"]["missing_lageplan"]}
-    assert missing == {world["without_plan"].id}
-
-    unused = {row["id"]: row for row in body["locations"]["unused"]}
+    assert {row["id"] for row in missing["locations"]["locations_missing_lageplan"]} == {
+        world["without_plan"].id
+    }
+    unused = {row["id"]: row for row in body["locations"]["unused_locations"]}
     row = unused[world["without_plan"].id]
     assert row["has_lageplan"] is False
     assert row["device_count"] == 1
