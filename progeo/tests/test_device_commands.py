@@ -41,6 +41,25 @@ def test_check_accepts_more_than_the_expected_rising_values():
     assert check["reasons"] == []
 
 
+def test_check_accepts_fifteen_rising_values_when_the_first_one_is_missing():
+    # Sensor 5 is the first plug value but empty; the remaining 15 rise.
+    pairs = [0.0] * 5 + [float(step * 10) for step in range(1, 16)] + [0.0] * 12
+
+    check = device_commands.check_test_pairs(pairs)
+
+    assert (check["status"], check["rising"], check["start"], check["end"]) == ("ok", 15, 6, 20)
+    assert check["reasons"] == []
+
+
+def test_check_still_fails_with_two_missing_first_values():
+    pairs = [0.0] * 6 + [float(step * 10) for step in range(1, 15)] + [0.0] * 12
+
+    check = device_commands.check_test_pairs(pairs)
+
+    assert check["status"] == "fail"
+    assert check["rising"] == 14
+
+
 @pytest.mark.parametrize("pairs, rising", [
     ([0.0] * 32, 0),
     ([float(step) for step in range(1, 13)] + [0.0] * 20, 12),  # a short run

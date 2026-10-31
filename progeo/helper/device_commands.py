@@ -104,9 +104,11 @@ def check_test_pairs(pairs, expected=EXPECTED_RISING, empty_fraction=EMPTY_FRACT
     sensors with rising, non-empty values must be at least `expected` long.
 
     More than `expected` rising sensors are fine (a longer run still proves
-    the plug), and small non-empty values outside the run are tolerated: they
-    are reported in `outliers` but do not turn a correct run into a failure.
-    Sensors are numbered from 1."""
+    the plug). A run of `expected - 1` rising values also passes when the
+    sensor right before it is empty - the first value of the plug is missing,
+    not the whole test. Small non-empty values outside the run are tolerated:
+    they are reported in `outliers` but do not turn a correct run into a
+    failure. Sensors are numbered from 1."""
     values = [float(value or 0) for value in pairs]
     peak = max(values, default=0.0)
     if peak <= 0:
@@ -128,13 +130,24 @@ def check_test_pairs(pairs, expected=EXPECTED_RISING, empty_fraction=EMPTY_FRACT
 
     run = range(best_start, best_start + best_length)
     outliers = [index + 1 for index, value in enumerate(values) if index not in run and value > empty]
+    # A missing first plug value leaves 15 of the 16 rising values: the sensor
+    # right before the run is empty, so the run still starts at the plug.
+    first_value_missing = (
+        best_length == expected - 1
+        and best_start > 0
+        and values[best_start - 1] <= empty
+    )
+    success = best_length >= expected or first_value_missing
     reasons = []
-    if best_length < expected:
-        reasons.append(f"{best_length} rising values, expected at least {expected}.")
-        if outliers:
-            reasons.append(f"Not empty outside the rising values: sensor {', '.join(map(str, outliers))}.")
+    if not success:
+        # Keep this short: the UI shows whether a MUX test segment was found,
+        # not a list of every sensor outside the run.
+        reasons.append(
+            f"MUX test segment not recognized: {best_length} rising values "
+            f"(target {expected}, {expected - 1} accepted)."
+        )
     return {
-        "status": "fail" if best_length < expected else "ok",
+        "status": "ok" if success else "fail",
         "rising": best_length,
         "start": best_start + 1,
         "end": best_start + best_length,
@@ -256,7 +269,13 @@ def pairs_png(pairs, check=None, threshold=None):
         draw.text((x - label_width / 2, bottom + 2), label, fill=(145, 147, 152))
 
     # MUX labels under the segments - "MUX n" when it fits, "Mn" when the
-    # block is narrow (e.g. 22 MUXes at 350 sensors).
+    # block is narrow (e.g. 22 MUXes at 350 sensors). The MUX(es) containing
+    # the detected test segment get a bold label.
+    test_muxes = set()
+    if check and check.get("start") and check.get("end"):
+        first_mux = (int(check["start"]) - 1) // MUX_SENSORS
+        last_mux = (int(check["end"]) - 1) // MUX_SENSORS
+        test_muxes = set(range(first_mux, last_mux + 1))
     for mux_index, start_index in enumerate(mux_ranges):
         end_index = min(start_index + MUX_SENSORS, count)
         block_width = (end_index - start_index) * slot
@@ -271,10 +290,13 @@ def pairs_png(pairs, check=None, threshold=None):
         else:
             continue
         center = left + (start_index + end_index) * slot / 2
+        color = MUX_AXIS_COLORS[mux_index % len(MUX_AXIS_COLORS)][:3]
         draw.text(
             (center - label_width / 2, bottom + 13),
             label,
-            fill=MUX_AXIS_COLORS[mux_index % len(MUX_AXIS_COLORS)][:3],
+            fill=color,
+            stroke_width=1 if mux_index in test_muxes else 0,
+            stroke_fill=color,
         )
 
     def point(index):
