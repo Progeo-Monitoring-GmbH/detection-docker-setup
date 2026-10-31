@@ -151,10 +151,13 @@ def _rows_of_database(database, locations):
         release_connection(database)
 
 
-def _device_row(device, location, now):
+def _device_row(device, location, now, database):
     last = device.last_measurement_at
     return {
         "id": device.pk,
+        # The database is the row's address for admin links and bulk deletes:
+        # ids are only unique within one project database.
+        "database": database,
         "raw_hash": device.raw_hash,
         "display_name": device.display_name,
         "type": device.type or UNKNOWN_TYPE,
@@ -171,10 +174,11 @@ def _device_row(device, location, now):
     }
 
 
-def _location_row(location, device_count, last, has_lageplan, now):
+def _location_row(location, device_count, last, has_lageplan, now, database):
     dead = last is None or last < now - DEAD_AFTER
     return {
         "id": location.pk,
+        "database": database,
         "name": location.name,
         "project_id": location.project_id,
         "device_count": device_count,
@@ -218,7 +222,9 @@ def build_device_statistics(accounts, now=None):
                 last_by_location[device.location_id] = last
 
         for device in devices:
-            device_rows.append(_device_row(device, db_locations.get(device.location_id), now))
+            device_rows.append(
+                _device_row(device, db_locations.get(device.location_id), now, database)
+            )
         for location_id, location in db_locations.items():
             location_rows.append(
                 _location_row(
@@ -227,6 +233,7 @@ def build_device_statistics(accounts, now=None):
                     last_by_location.get(location_id),
                     bool(lageplans.get(location_id)),
                     now,
+                    database,
                 )
             )
 
@@ -307,6 +314,14 @@ def build_device_statistics(accounts, now=None):
 def _cache_key(accounts) -> str:
     """One snapshot per account set (staff usually resolve to one account)."""
     return CACHE_PREFIX + ",".join(str(account.pk) for account in accounts)
+
+
+def invalidate_statistics(accounts):
+    """Drop the cached snapshot after rows were deleted (or devices changed)."""
+    try:
+        cache.delete(_cache_key(accounts))
+    except Exception:  # noqa: BLE001 - cache unavailable: TTL handles it
+        pass
 
 
 def statistics_snapshot(accounts, refresh=False):

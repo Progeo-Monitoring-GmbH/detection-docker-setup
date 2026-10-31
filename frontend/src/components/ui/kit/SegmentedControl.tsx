@@ -6,10 +6,17 @@ type SegmentedControlProps = {
   options: SegmentedOption[];
   value: string;
   onChange: (value: string) => void;
+  /** Block switching while a request is running (e.g. a heavy stats scan). */
+  disabled?: boolean;
 };
 
 /** The pill-track filter/toggle group (view switchers, sequence controls, ...). */
-const SegmentedControl = ({ options, value, onChange }: SegmentedControlProps) => {
+const SegmentedControl = ({
+  options,
+  value,
+  onChange,
+  disabled = false,
+}: SegmentedControlProps) => {
   return (
     <div
       style={{
@@ -27,6 +34,7 @@ const SegmentedControl = ({ options, value, onChange }: SegmentedControlProps) =
           label={option.label}
           active={option.value === value}
           onClick={() => onChange(option.value)}
+          disabled={disabled}
         />
       ))}
     </div>

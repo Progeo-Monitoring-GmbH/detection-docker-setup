@@ -10,7 +10,7 @@ import pytest
 from django.utils import timezone
 
 from progeo.tests import factories as f
-from progeo.v1.models import Account, ProgeoLageplan
+from progeo.v1.models import Account, ProgeoDevice, ProgeoLageplan, ProgeoLocation
 
 URL = "/v1/status/device_statistics/"
 
@@ -135,6 +135,7 @@ def test_by_type_section_lists_every_type(api_client, world):
     assert [row["id"] for row in rows["imei"]] == [world["old"].id]
 
     row = rows["smartbox"][0]
+    assert row["database"] == f.DB
     assert row["chip_id"] == "chip-1"
     assert row["location_id"] == world["with_plan"].id
     assert row["location_name"] == "Halle mit Plan"
@@ -178,3 +179,51 @@ def test_location_without_lageplan_is_listed(api_client, world):
     assert row["unused"] is True
     assert row["dead"] is True
     assert world["with_plan"].id not in unused
+
+
+def test_selected_devices_and_empty_locations_can_be_deleted(api_client, world):
+    user = f.make_user(staff=True)
+    body = _get(api_client, user, "unused_locations", refresh=True)
+    location_row = next(
+        row for row in body["locations"]["unused_locations"]
+        if row["id"] == world["without_plan"].id
+    )
+    by_type = _get(api_client, user, "by_type")
+
+    response = api_client.post(
+        f"{URL}delete/",
+        {
+            "devices": [
+                {"id": world["old"].id, "database": by_type["devices"]["by_type"]["imei"][0]["database"]},
+                {"id": world["never"].id, "database": by_type["devices"]["by_type"]["node"][0]["database"]},
+            ],
+            "locations": [
+                {"id": location_row["id"], "database": location_row["database"]},
+                # Still has its smartbox - must be skipped, never cascaded.
+                {"id": world["with_plan"].id, "database": location_row["database"]},
+            ],
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200, response.content
+    payload = response.json()
+    assert payload["deleted_devices"] == 2
+    assert payload["deleted_locations"] == 1
+    assert any(item["kind"] == "location" and item["id"] == world["with_plan"].id for item in payload["skipped"])
+    assert not ProgeoDevice.objects.using(f.DB).filter(pk__in=[world["old"].id, world["never"].id]).exists()
+    assert not ProgeoLocation.objects.using(f.DB).filter(pk=world["without_plan"].id).exists()
+    assert ProgeoLocation.objects.using(f.DB).filter(pk=world["with_plan"].id).exists()
+    # The snapshot cache is dropped: a normal section request already shows the new totals.
+    after = _get(api_client, user, "overview")
+    assert after["totals"]["devices"] == 1
+    assert after["totals"]["locations"] == 1
+
+
+def test_bulk_delete_is_staff_only(api_client, world):
+    api_client.force_authenticate(user=f.make_user(perms=("module_devices_enabled",)))
+
+    response = api_client.post(f"{URL}delete/", {"devices": [], "locations": []}, format="json")
+
+    assert response.status_code == 400
+    assert response.json()["reason"] == "Staff access required"

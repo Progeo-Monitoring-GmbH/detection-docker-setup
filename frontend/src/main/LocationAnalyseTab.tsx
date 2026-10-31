@@ -13,6 +13,8 @@ import MeasurementSamplesCompareChart, {
   type MeasurementCompareRow,
   toggledSensor,
 } from '../components/device/MeasurementSamplesCompareChart.tsx';
+import { frameAt } from '../components/device/FrameSlider';
+import { parseTimestamp } from './alarmUtils';
 import type { PortalOutletContext } from './LocationPortalLayout';
 import LocationClimatePanels from './LocationClimatePanels';
 import LocationClimateHeatmap from './LocationClimateHeatmap';
@@ -32,6 +34,30 @@ import useMeasurementRange from './useMeasurementRange';
 const MAX_MEASUREMENTS = 300;
 
 type AnalyseDevice = { id: number; display_name: string };
+
+/** Frame steps of the arrow keys: ←/→ one frame, ↑/↓ ten. */
+const FRAME_KEY_STEPS: Record<string, number> = {
+  ArrowLeft: -1,
+  ArrowRight: 1,
+  ArrowUp: 10,
+  ArrowDown: -10,
+};
+
+/** Keys typed into a form control keep their normal meaning. */
+const isFormTarget = (target: EventTarget | null) => {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  if (target.isContentEditable) {
+    return true;
+  }
+  // The frame slider is a range input: the global handler owns its arrows
+  // too (preventing the browser's own one-step move, so ↑/↓ can do 10).
+  if (target instanceof HTMLInputElement && target.type === 'range') {
+    return false;
+  }
+  return ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
+};
 
 /**
  * Analyse route: the location heatmap plus the measurements of all its
@@ -63,6 +89,9 @@ const LocationAnalyseTab = () => {
   // The time (epoch ms) of the heatmap's and the measurements' coupled
   // sliders - null: the newest measurement.
   const [frameTime, setFrameTime] = useState<number | null>(null);
+  // Which slider was used last - the arrow keys step through its frames.
+  // Both sliders are coupled through `frameTime`; their frame sets differ.
+  const [activeSlider, setActiveSlider] = useState<'heatmap' | 'chart'>('heatmap');
   // The sensors (pair index) the measurements' second plot follows - picked
   // there or on the heatmap.
   const [sensors, setSensors] = useState<number[]>([]);
@@ -175,6 +204,58 @@ const LocationAnalyseTab = () => {
     loadMeasurements();
   }, [loadMeasurements]);
 
+  // The frames of the two sliders. They share `frameTime` but sample
+  // differently, so the keys step through the frames of the slider used last.
+  const heatmapFrames = useMemo(
+    () => [...(heatmap?.timestamps ?? [])].sort((a, b) => a - b),
+    [heatmap],
+  );
+  const chartFrames = useMemo(
+    () =>
+      measurements
+        .flatMap((row) => {
+          const ms = parseTimestamp(row.last_fetched);
+          return ms == null ? [] : [ms / 1000];
+        })
+        .sort((a, b) => a - b),
+    [measurements],
+  );
+  const frameSeconds =
+    activeSlider === 'chart' && chartFrames.length
+      ? chartFrames
+      : heatmapFrames.length
+        ? heatmapFrames
+        : chartFrames;
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const step = FRAME_KEY_STEPS[event.key];
+      if (
+        step == null ||
+        !frameSeconds.length ||
+        event.defaultPrevented ||
+        event.isComposing ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.metaKey ||
+        event.shiftKey ||
+        isFormTarget(event.target)
+      ) {
+        return;
+      }
+      event.preventDefault();
+      const last = frameSeconds.length - 1;
+      const current =
+        frameTime == null ? last : frameAt(frameSeconds, frameTime);
+      const next = Math.min(Math.max(current + step, 0), last);
+      if (next !== current) {
+        setFrameTime(frameSeconds[next] * 1000);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [frameSeconds, frameTime]);
+
   const loading = heatmapLoading || measurementsLoading;
 
   return (
@@ -264,7 +345,10 @@ const LocationAnalyseTab = () => {
                       fitPlan
                       hideChrome
                       time={frameTime}
-                      onTimeChange={setFrameTime}
+                      onTimeChange={(ms) => {
+                        setActiveSlider('heatmap');
+                        setFrameTime(ms);
+                      }}
                       // pos is the sensor_order: pair index + 1.
                       onSensorClick={(pos) => setSensors((selected) => toggledSensor(selected, pos - 1))}
                     />
@@ -320,7 +404,10 @@ const LocationAnalyseTab = () => {
                   sliderPlayKey={false}
                   hideChrome
                   time={frameTime}
-                  onTimeChange={setFrameTime}
+                  onTimeChange={(ms) => {
+                    setActiveSlider('chart');
+                    setFrameTime(ms);
+                  }}
                   sensors={sensors}
                   onSensorsChange={setSensors}
                 />

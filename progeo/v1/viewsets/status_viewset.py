@@ -19,9 +19,11 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.authentication import ExpiringTokenAuthentication
 from progeo.decorator import calc_runtime, require_module_permissions
-from progeo.helper.basics import RequestFailed, RequestSuccess, save_check_dir
+from progeo.helper.basics import RequestFailed, RequestSuccess, ilog, save_check_dir
+from progeo.helper.creator import create_MfS_log
 from progeo.helper.device_inventory import (
     SECTION_NAMES,
+    invalidate_statistics,
     statistics_base,
     statistics_section,
     statistics_snapshot,
@@ -941,6 +943,118 @@ class StatusViewSet(ProgeoModalViewSet):
         }
         payload = statistics_snapshot(accounts, refresh=refresh)
         return RequestSuccess(statistics_section(payload, section))
+
+    @calc_runtime
+    @require_module_permissions("module_devices_enabled")
+    @action(detail=False, url_path="device_statistics/delete", methods=["POST"])
+    def device_statistics_delete(self, request, *args, **kwargs):
+        """Delete selected statistics rows (staff).
+
+        Devices are deleted with their measurements/alarms (the FK cascade).
+        Locations are only deleted when they have no devices left - selected
+        locations that still hold devices are skipped and reported, never
+        cascaded by accident. Every row names its database, because ids are
+        only unique within one project database.
+        """
+        if not is_staff_admin(request.user):
+            return RequestFailed({"reason": "Staff access required"})
+        accounts = [account for account in _request_accounts(request) if account]
+        if not accounts:
+            return RequestFailed({"reason": "No account for this user"})
+        account = accounts[0]
+        data = request.data if hasattr(request.data, "get") else {}
+        device_refs = data.get("devices") or []
+        location_refs = data.get("locations") or []
+        if not isinstance(device_refs, list) or not isinstance(location_refs, list):
+            return RequestFailed({"reason": "devices and locations must be lists"})
+        if len(device_refs) > 500 or len(location_refs) > 500:
+            return RequestFailed({"reason": "At most 500 rows per kind can be deleted at once"})
+
+        known_databases = set(existing_project_aliases())
+        skipped = []
+
+        def grouped(refs, kind):
+            groups = {}
+            for ref in refs:
+                try:
+                    row_id = int(ref.get("id"))
+                except (AttributeError, TypeError, ValueError):
+                    skipped.append({"kind": kind, "id": None, "reason": "invalid id"})
+                    continue
+                database = str(ref.get("database") or "")
+                if database != account.db_name and database not in known_databases:
+                    skipped.append({"kind": kind, "id": row_id, "reason": "unknown database"})
+                    continue
+                groups.setdefault(database, set()).add(row_id)
+            return groups
+
+        deleted_devices = 0
+        for database, ids in grouped(device_refs, "device").items():
+            if database in known_databases:
+                register_project_db(database)
+            try:
+                valid = list(
+                    ProgeoDevice.objects.using(database)
+                    .filter(pk__in=ids, location__account=account)
+                    .values_list("pk", flat=True)
+                )
+                for row_id in sorted(ids - set(valid)):
+                    skipped.append({"kind": "device", "id": row_id, "reason": "not found for this account"})
+                with transaction.atomic(using=database):
+                    ProgeoDevice.objects.using(database).filter(pk__in=valid).delete()
+                deleted_devices += len(valid)
+            finally:
+                release_connection(database)
+
+        # Locations are read/deleted in the account database; deleting there
+        # mirrors into the project database (project_db_signals).
+        location_ids = {
+            row_id
+            for ids in grouped(location_refs, "location").values()
+            for row_id in ids
+        }
+        locations = {
+            location.pk: location
+            for location in ProgeoLocation.objects.using(account.db_name).filter(
+                pk__in=location_ids, account=account
+            )
+        }
+        for row_id in sorted(location_ids - set(locations)):
+            skipped.append({"kind": "location", "id": row_id, "reason": "not found for this account"})
+
+        deletable_locations = []
+        for location in locations.values():
+            database = location_db(location, account)
+            if database in known_databases:
+                register_project_db(database)
+            try:
+                has_devices = ProgeoDevice.objects.using(database).filter(location_id=location.pk).exists()
+            finally:
+                release_connection(database)
+            if has_devices:
+                skipped.append({"kind": "location", "id": location.pk, "reason": "still has devices"})
+            else:
+                deletable_locations.append(location.pk)
+
+        deleted_locations = 0
+        if deletable_locations:
+            with transaction.atomic(using=account.db_name):
+                ProgeoLocation.objects.using(account.db_name).filter(
+                    pk__in=deletable_locations
+                ).delete()
+            deleted_locations = len(deletable_locations)
+
+        invalidate_statistics(accounts)
+        create_MfS_log(request)
+        ilog(
+            f"[device_statistics] deleted devices={deleted_devices} locations={deleted_locations} "
+            f"skipped={len(skipped)}"
+        )
+        return RequestSuccess({
+            "deleted_devices": deleted_devices,
+            "deleted_locations": deleted_locations,
+            "skipped": skipped[:100],
+        })
 
     @calc_runtime
     @require_module_permissions("module_devices_enabled")

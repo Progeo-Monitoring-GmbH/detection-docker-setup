@@ -1040,6 +1040,20 @@ i18n
           device_stats_kpi_without_chip_id_note: '{{count}} without chip ID',
           device_stats_kpi_not_measured_24h_note:
             '{{count}} without a measurement in 24 h',
+          device_stats_open_device: 'Open measurements',
+          device_stats_open_location: 'Open location',
+          device_stats_type_open: 'Show the devices of this type',
+          device_stats_admin_edit: 'Edit in Django admin',
+          device_stats_delete_selected: 'Delete selected ({{count}})',
+          device_stats_delete_title: 'Delete selected rows?',
+          device_stats_delete_message:
+            'Delete {{devices}} device(s) and {{locations}} location(s)? Devices are deleted together with their measurements and alarms. Locations are only deleted when they have no devices; the others are skipped.',
+          device_stats_delete_confirm: 'Delete',
+          device_stats_deleted:
+            'Deleted {{devices}} device(s) and {{locations}} location(s).',
+          device_stats_delete_skipped:
+            '{{count}} row(s) skipped (locations that still have devices).',
+          device_stats_delete_failed: 'Could not delete the selected rows',
           devices_col_device: 'Device',
           devices_col_type: 'Type',
           devices_col_hash: 'Hash',
@@ -2195,6 +2209,21 @@ i18n
           device_stats_kpi_without_chip_id_note: '{{count}} ohne Chip-ID',
           device_stats_kpi_not_measured_24h_note:
             '{{count}} ohne Messung in 24 h',
+          device_stats_open_device: 'Messungen öffnen',
+          device_stats_open_location: 'Standort öffnen',
+          device_stats_type_open: 'Geräte dieses Typs anzeigen',
+          device_stats_admin_edit: 'Im Django-Admin bearbeiten',
+          device_stats_delete_selected: 'Ausgewählte löschen ({{count}})',
+          device_stats_delete_title: 'Ausgewählte Zeilen löschen?',
+          device_stats_delete_message:
+            '{{devices}} Gerät(e) und {{locations}} Standort(e) löschen? Geräte werden mit ihren Messungen und Alarmen gelöscht. Standorte werden nur gelöscht, wenn sie keine Geräte mehr haben; die anderen werden übersprungen.',
+          device_stats_delete_confirm: 'Löschen',
+          device_stats_deleted:
+            '{{devices}} Gerät(e) und {{locations}} Standort(e) gelöscht.',
+          device_stats_delete_skipped:
+            '{{count}} Zeile(n) übersprungen (Standorte mit Geräten).',
+          device_stats_delete_failed:
+            'Die ausgewählten Zeilen konnten nicht gelöscht werden',
           devices_col_device: 'Gerät',
           devices_col_type: 'Typ',
           devices_col_hash: 'Hash',
