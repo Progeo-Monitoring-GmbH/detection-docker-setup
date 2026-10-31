@@ -38,6 +38,7 @@ _LEVELS = {
 _lock = threading.Lock()
 _last_sent_at = 0.0
 _recent: dict[str, float] = {}
+_last_error = ""
 
 
 def webhook_configured() -> bool:
@@ -185,6 +186,7 @@ def _allow(key: str) -> bool:
 
 
 def _post(url: str, payload: dict) -> bool:
+    global _last_error
     try:
         response = requests.post(
             url,
@@ -192,16 +194,34 @@ def _post(url: str, payload: dict) -> bool:
             timeout=max(float(getattr(settings, "TEAMS_TIMEOUT_SEC", 5) or 5), 1.0),
         )
     except requests.RequestException as exc:
+        _last_error = f"request failed: {exc}"
         _log.warning("Teams webhook request failed: %s", exc)
         return False
     if response.status_code >= 300:
+        _last_error = f"HTTP {response.status_code}: {_truncate(getattr(response, 'text', ''), 500)}"
         _log.warning(
             "Teams webhook answered %s: %s",
             response.status_code,
             _truncate(getattr(response, "text", ""), 300),
         )
         return False
+    _last_error = ""
     return True
+
+
+def last_error() -> str:
+    """Details of the last failed webhook call (empty after success)."""
+    return _last_error
+
+
+def redacted_webhook() -> str:
+    """A log-safe description of the configured URL (never the token)."""
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(getattr(settings, "TEAMS_WEBHOOK_URL", "") or "")
+    if not parts.netloc:
+        return "(not configured)"
+    return f"{parts.scheme or 'https'}://{parts.netloc}/…"
 
 
 def notify(
@@ -226,7 +246,9 @@ def notify(
 
     payload = build_payload(title, message, level_name, facts)
     key = hashlib.sha256(f"{level_name}\n{title}\n{message}".encode("utf-8", "replace")).hexdigest()
-    if not _allow(key):
+    # `force` is for operators: bypass the min level, duplicate and interval
+    # checks so a test message is always attempted.
+    if not force and not _allow(key):
         return False
 
     url = settings.TEAMS_WEBHOOK_URL
@@ -243,7 +265,8 @@ def notify_important(title: str, message: str, facts=None, level="ERROR") -> boo
 
 
 def _reset_for_tests() -> None:
-    global _last_sent_at
+    global _last_sent_at, _last_error
     with _lock:
         _last_sent_at = 0.0
         _recent.clear()
+        _last_error = ""

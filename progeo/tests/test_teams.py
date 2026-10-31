@@ -96,6 +96,22 @@ def test_duplicate_messages_are_suppressed(settings, monkeypatch):
     assert len(calls) == 1
 
 
+def test_teams_test_command_dry_run_prints_the_payload(settings):
+    from io import StringIO
+
+    from django.core.management import call_command
+
+    _configure(settings)
+    out = StringIO()
+
+    call_command("teams_test", "--dry-run", "--format", "json", stdout=out)
+
+    output = out.getvalue()
+    assert "Webhook: https://t.api.powerplatform.com:443/…" in output
+    assert '"title": "ProGeo Teams test"' in output
+    assert '"level": "INFO"' in output
+
+
 def test_error_log_handler_forwards_to_teams(settings, monkeypatch):
     import logging
 
