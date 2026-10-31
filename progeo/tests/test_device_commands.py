@@ -52,7 +52,7 @@ def test_png_marks_the_threshold_and_colors_values_above_it_red():
     png = device_commands.pairs_png([20.0, 120.0, 80.0], threshold=100)
     image = Image.open(BytesIO(png)).convert("RGB")
 
-    colors = set(image.getdata())
+    colors = {color for _count, color in image.getcolors(maxcolors=image.width * image.height)}
     assert (196, 38, 38) in colors  # above the threshold
     assert (9, 75, 129) in colors  # below the threshold
 
