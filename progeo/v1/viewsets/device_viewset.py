@@ -1181,7 +1181,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         the provisioning page polls this while testing the controller."""
         db_name = None
         try:
-            _location, db_name, device = self._provision_device(request, request.query_params)
+            location, db_name, device = self._provision_device(request, request.query_params)
             # The page polls every few seconds: after the first response it
             # sends the newest timestamp it knows, so only genuinely new rows
             # are read and rendered (no 50 measurements + PNGs per poll).
@@ -1201,7 +1201,10 @@ class DeviceViewSet(ProgeoModalViewSet):
                 measurements = measurements.filter(last_fetched__gt=since)
             measurements = measurements.order_by("-pk")[:device_commands.TEST_MEASUREMENTS_LIMIT]
             return RequestSuccess({
-                "measurements": [device_commands.measurement_row(measurement) for measurement in measurements],
+                "measurements": [
+                    device_commands.measurement_row(measurement, threshold=location.alarm_threshold)
+                    for measurement in measurements
+                ],
                 "expected_rising": device_commands.EXPECTED_RISING,
                 # The MUX choices of "Emulate Measurement".
                 "mux_count": device_commands.mux_count(

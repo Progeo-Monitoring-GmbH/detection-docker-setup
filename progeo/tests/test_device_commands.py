@@ -44,6 +44,19 @@ def test_check_fails_without_the_rising_run(pairs, rising):
     assert check["reasons"]
 
 
+def test_png_marks_the_threshold_and_colors_values_above_it_red():
+    from io import BytesIO
+
+    from PIL import Image
+
+    png = device_commands.pairs_png([20.0, 120.0, 80.0], threshold=100)
+    image = Image.open(BytesIO(png)).convert("RGB")
+
+    colors = set(image.getdata())
+    assert (196, 38, 38) in colors  # above the threshold
+    assert (9, 75, 129) in colors  # below the threshold
+
+
 def test_png_is_150_high_and_at_most_600_wide():
     from io import BytesIO
 
@@ -53,8 +66,16 @@ def test_png_is_150_high_and_at_most_600_wide():
         png = device_commands.pairs_png([float(index) for index in range(count)])
         image = Image.open(BytesIO(png))
         assert image.format == "PNG"
+        assert image.mode == "RGBA"
         assert image.height == 150
         assert 160 <= image.width <= 600
+        # The y-axis labels live left of the plot area.
+        pixels = image.convert("RGB").load()
+        assert any(
+            pixels[x, y] != (255, 255, 255)
+            for x in range(0, 45)
+            for y in range(10, 140)
+        )
 
 
 # -- endpoints ------------------------------------------------------------------

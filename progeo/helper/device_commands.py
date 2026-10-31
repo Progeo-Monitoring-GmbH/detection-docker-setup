@@ -38,13 +38,17 @@ PNG_HEIGHT = 150
 PNG_MAX_WIDTH = 600
 PNG_BAR_WIDTH = 14
 PNG_MIN_WIDTH = 160
-RISING_COLOR = (9, 75, 129)
-OUTLIER_COLOR = (196, 77, 38)
-EMPTY_COLOR = (176, 183, 195)
+BELOW_THRESHOLD_COLOR = (9, 75, 129)
+ABOVE_THRESHOLD_COLOR = (196, 38, 38)
+THRESHOLD_LINE_COLOR = (220, 38, 38)
 AXIS_COLOR = (207, 212, 218)
 
 # Sensors per multiplexer of the controller (MUX-1: sensors 1-16, ...).
 MUX_SENSORS = 16
+# Background tint of each MUX segment (RGBA, transparent over white) and the
+# bracket colour - the segments are marked with "[" ... "]" in the PNG.
+MUX_TINTS = ((9, 75, 129, 24), (149, 119, 179, 24))
+MUX_BRACKET_COLOR = (84, 94, 110, 255)
 # The emulated MUX rises from the first to the second value, the rest is 0.
 EMULATE_RANGE = (15, 300)
 EMULATE_EVENT = "emulated"
@@ -139,31 +143,131 @@ def check_test_pairs(pairs, expected=EXPECTED_RISING, empty_fraction=EMPTY_FRACT
     }
 
 
-def pairs_png(pairs, check=None):
-    """The pairs as a bar chart PNG (PNG_HEIGHT high, at most PNG_MAX_WIDTH
-    wide): the rising run blue, non-empty outliers orange, the rest grey."""
+def _dotted_line(draw, start, end, fill, dash=3, gap=3):
+    """A dashed segment (PIL has no dash style of its own)."""
+    x1, y1 = start
+    x2, y2 = end
+    length = math.hypot(x2 - x1, y2 - y1)
+    if length <= 0:
+        return
+    dx, dy = (x2 - x1) / length, (y2 - y1) / length
+    position = 0.0
+    while position < length:
+        stop = min(position + dash, length)
+        draw.line(
+            [
+                (x1 + dx * position, y1 + dy * position),
+                (x1 + dx * stop, y1 + dy * stop),
+            ],
+            fill=fill,
+        )
+        position = stop + gap
+
+
+def pairs_png(pairs, check=None, threshold=None):
+    """The pairs as a dotted step-line PNG (PNG_HEIGHT high, at most
+    PNG_MAX_WIDTH wide) with a labelled y-axis and the alarm threshold line:
+    values above the threshold red, those below blue."""
     from PIL import Image, ImageDraw
 
     values = [max(0.0, float(value or 0)) for value in pairs]
     count = max(len(values), 1)
     width = max(PNG_MIN_WIDTH, min(PNG_MAX_WIDTH, count * PNG_BAR_WIDTH))
-    image = Image.new("RGB", (width, PNG_HEIGHT), "white")
-    draw = ImageDraw.Draw(image)
-    top, bottom = 6, PNG_HEIGHT - 6
-    draw.line([(0, bottom), (width, bottom)], fill=AXIS_COLOR)
-
+    image = Image.new("RGBA", (width, PNG_HEIGHT), (255, 255, 255, 255))
+    left, right = 46, 6
+    top, bottom = 12, PNG_HEIGHT - 20
+    plot_width = width - left - right
+    slot = plot_width / count
     peak = max(values, default=0.0)
-    run = range(check["start"] - 1, check["end"]) if check and check.get("start") else range(0)
-    outliers = {sensor - 1 for sensor in (check or {}).get("outliers", [])}
-    slot = width / count
-    gap = 1 if slot >= 4 else 0
+    threshold_value = float(threshold) if threshold is not None and threshold > 0 else None
+    # Keep a threshold above all values visible (it then defines the y-scale).
+    scale_max = max(peak, threshold_value or 0.0)
+
+    # Transparent MUX background bands (composited before the axes/lines).
+    overlay = Image.new("RGBA", (width, PNG_HEIGHT), (0, 0, 0, 0))
+    tint_draw = ImageDraw.Draw(overlay)
+    mux_ranges = list(range(0, count, MUX_SENSORS))
+    for mux_index, start_index in enumerate(mux_ranges):
+        end_index = min(start_index + MUX_SENSORS, count)
+        tint_draw.rectangle(
+            [left + start_index * slot, top, left + end_index * slot, bottom],
+            fill=MUX_TINTS[mux_index % len(MUX_TINTS)],
+        )
+    image = Image.alpha_composite(image, overlay)
+    draw = ImageDraw.Draw(image)
+    # Brackets "[" ... "]" above the plot mark the MUX segments.
+    for start_index in mux_ranges:
+        end_index = min(start_index + MUX_SENSORS, count)
+        for x, opening in (
+            (left + start_index * slot, True),
+            (left + end_index * slot, False),
+        ):
+            draw.line([(x, 1), (x, 9)], fill=MUX_BRACKET_COLOR)
+            draw.line([(x, 1), (x + (5 if opening else -5), 1)], fill=MUX_BRACKET_COLOR)
+            draw.line([(x, 9), (x + (5 if opening else -5), 9)], fill=MUX_BRACKET_COLOR)
+
+    def value_label(value):
+        return f"{value:.1f}" if 0 < abs(value) < 10 else f"{value:.0f}"
+
+    # Y-axis with 0 / half / top labels and light grid lines.
+    draw.line([(left, top), (left, bottom)], fill=AXIS_COLOR)
+    draw.line([(left, bottom), (width - right, bottom)], fill=AXIS_COLOR)
+    ticks = [0.0] if scale_max <= 0 else [0.0, scale_max / 2, scale_max]
+    for value in ticks:
+        y = bottom - (bottom - top) * (value / scale_max if scale_max else 0)
+        draw.line([(left, y), (width - right, y)], fill=(240, 242, 245))
+        draw.line([(left - 3, y), (left, y)], fill=AXIS_COLOR)
+        label = value_label(value)
+        label_width = draw.textbbox((0, 0), label)[2]
+        draw.text((left - 6 - label_width, y - 5), label, fill=(110, 112, 118))
+
+    # Threshold line with its value - values above it are drawn red.
+    plot_height = bottom - top
+    if threshold_value is not None:
+        threshold_y = bottom - plot_height * min(threshold_value / scale_max, 1)
+        draw.line(
+            [(left, threshold_y), (width - right, threshold_y)],
+            fill=THRESHOLD_LINE_COLOR,
+            width=1,
+        )
+        label = f"Limit {value_label(threshold_value)}"
+        label_width = draw.textbbox((0, 0), label)[2]
+        label_y = threshold_y - 10 if threshold_y > top + 10 else threshold_y + 2
+        draw.text(
+            (width - right - label_width - 2, label_y),
+            label,
+            fill=THRESHOLD_LINE_COLOR,
+        )
+
+    # Sensor numbers at the ends (and the middle for wide plots).
+    if count > 1:
+        for index in sorted({0, count // 2, count - 1}):
+            x = left + (index + 0.5) * plot_width / count
+            label = str(index + 1)
+            label_width = draw.textbbox((0, 0), label)[2]
+            draw.text((x - label_width / 2, bottom + 3), label, fill=(145, 147, 152))
+
+    def point(index):
+        return (
+            left + (index + 0.5) * slot,
+            bottom - (plot_height * values[index] / scale_max if scale_max else 0),
+        )
+
+    def color(index):
+        if threshold_value is not None and values[index] > threshold_value:
+            return ABOVE_THRESHOLD_COLOR
+        return BELOW_THRESHOLD_COLOR
+
+    # Dotted step line: horizontal to the next sensor, then vertical to its value.
+    for index in range(1, count):
+        previous = point(index - 1)
+        current = point(index)
+        _dotted_line(draw, previous, (current[0], previous[1]), color(index - 1))
+        _dotted_line(draw, (current[0], previous[1]), current, color(index))
     for index, value in enumerate(values):
-        if peak <= 0 or value <= 0:
-            continue
-        height = (bottom - top) * value / peak
-        color = RISING_COLOR if index in run else OUTLIER_COLOR if index in outliers else EMPTY_COLOR
-        left = index * slot + gap
-        draw.rectangle([left, bottom - max(height, 1), max(left, (index + 1) * slot - gap - 1), bottom], fill=color)
+        if value > 0:
+            x, y = point(index)
+            draw.ellipse([x - 1.5, y - 1.5, x + 1.5, y + 1.5], fill=color(index))
 
     buffer = BytesIO()
     image.save(buffer, format="PNG", optimize=True)
@@ -256,7 +360,7 @@ def emulate_measurement(device, mux):
         return {}
 
 
-def measurement_row(measurement):
+def measurement_row(measurement, threshold=None):
     """A test measurement as the provisioning page lists it."""
     pairs = [round(value, 2) for value in measurement.get_pairs()]
     check = check_test_pairs(pairs)
@@ -269,5 +373,5 @@ def measurement_row(measurement):
         "max": max(pairs, default=None),
         "pairs": pairs,
         "check": check,
-        "png": png_data_url(pairs_png(pairs, check)),
+        "png": png_data_url(pairs_png(pairs, check, threshold=threshold)),
     }
