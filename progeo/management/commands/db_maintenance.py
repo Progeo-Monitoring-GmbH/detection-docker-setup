@@ -17,7 +17,8 @@ class Command(BaseCommand):
         "  python manage.py db_maintenance\n"
         "  python manage.py db_maintenance --database default\n"
         "  python manage.py db_maintenance --vacuum\n"
-        "  python manage.py db_maintenance --vacuum-full"
+        "  python manage.py db_maintenance --vacuum-full\n"
+        "  python manage.py db_maintenance --vacuum-full --table progeo_progeomeasurement"
     )
 
     def add_arguments(self, parser):
@@ -38,6 +39,10 @@ class Command(BaseCommand):
             type=float,
             default=0,
             help="Only show tables at least this many MB (default: 0).",
+        )
+        parser.add_argument(
+            "--table",
+            help="Vacuum only this table (e.g. progeo_progeomeasurement) instead of the whole database.",
         )
 
     def _report(self, connection, limit, min_size):
@@ -91,17 +96,20 @@ class Command(BaseCommand):
 
         self._report(connection, options["limit"], options["min_size_mb"])
 
+        target = f" {connection.ops.quote_name(options['table'])}" if options["table"] else ""
         if options["vacuum_full"]:
             # VACUUM cannot run inside a transaction block.
             connection.set_autocommit(True)
-            self.stdout.write(self.style.WARNING("Running VACUUM (FULL, ANALYZE) - tables are locked..."))
+            self.stdout.write(self.style.WARNING(
+                f"Running VACUUM (FULL, ANALYZE){target or ' on the whole database'} - tables are locked..."
+            ))
             with connection.cursor() as cursor:
-                cursor.execute("VACUUM (FULL, ANALYZE)")
+                cursor.execute(f"VACUUM (FULL, ANALYZE){target}")
         elif options["vacuum"]:
             connection.set_autocommit(True)
-            self.stdout.write("Running VACUUM (ANALYZE)...")
+            self.stdout.write(f"Running VACUUM (ANALYZE){target}...")
             with connection.cursor() as cursor:
-                cursor.execute("VACUUM (ANALYZE)")
+                cursor.execute(f"VACUUM (ANALYZE){target}")
 
         if options["vacuum"] or options["vacuum_full"]:
             self.stdout.write(self.style.SUCCESS("Vacuum finished."))
