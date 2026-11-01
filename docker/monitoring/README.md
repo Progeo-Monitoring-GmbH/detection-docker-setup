@@ -20,6 +20,7 @@ The backend exposes its own metrics at `/metrics` ([progeo/metrics.py](../../pro
 - latency histogram by view
 - requests in progress
 - write requests by account database, method and status
+- outbound mail/SMS attempts by channel and status, plus the last attempt timestamp (shared through Redis, so Celery sends are included)
 - open WebSocket connections by route
 - cron job start/finish/exit/duration/last-success status (from the cron wrapper's status files)
 
@@ -99,6 +100,7 @@ docker exec progeo-prometheus wget -qO- --header 'Content-Type: application/json
 - **~1000 project databases:** the postgres job is scraped every 60s with a 45s timeout, because the stats of every database take a few seconds.
   - Its dashboard panels use a minimum interval of 2m.
   - Database sizes come from a second exporter (`progeo-postgres-sizes-exporter`, job `postgres-sizes`), scraped only every 15 minutes: `pg_database_size()` of every database costs the server about 3s of work.
+- **Overview:** [overview.json](grafana/dashboards/overview.json) combines API, Celery, cron jobs, Alertmanager notifications, Docker/host and PostgreSQL on one page.
 - **Cron jobs:** [cronjobs.json](grafana/dashboards/cronjobs.json) shows last run, last success age, duration and running state. The wrapper [run_job.sh](../backend/cronjobs/run_job.sh) writes status files to `CRON_STATUS_DIR` (default `LOG_DIR/cron`); the backend exposes them at `/metrics`.
 - **Database writes:** [database-writes.json](grafana/dashboards/database-writes.json) counts HTTP write requests per account database. It is a top-20/top-10 view so an installation with ~1000 databases stays cheap to query; the metric itself is a lightweight counter, not a SQL statement counter.
 - **Dashboards** are generated JSON in [grafana/dashboards](grafana/dashboards). Grafana re-reads them every 30s.

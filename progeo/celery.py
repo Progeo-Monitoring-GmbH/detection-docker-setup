@@ -178,15 +178,27 @@ def task_completed_handler(task_id, task, *args, **kwargs):
     import logging
     _log = logging.getLogger('progeo.tasks')
     _log.info(f"[CELERY POSTRUN] Task {task.name} completed with ID {task_id}")
-    
+
     try:
-        result = TaskResult.objects.get(task_id=task_id)
-        dlog("TaskResult", f"result={result.result}")
-    except Exception as e:
-        dlog(f"Could not get TaskResult: {e}", logger=logger)
-    
-    if task_id in running_tasks:
-        running_tasks[task_id].update({"status": "done", "time": timezone.now().strftime("%Y-%m-%d %H:%M:%S")})
+        try:
+            result = TaskResult.objects.get(task_id=task_id)
+            dlog("TaskResult", f"result={result.result}")
+        except Exception as e:  # noqa: BLE001 - task result lookup must not break postrun cleanup
+            dlog(f"Could not get TaskResult: {e}", logger=logger)
+
+        if task_id in running_tasks:
+            running_tasks[task_id].update({"status": "done", "time": timezone.now().strftime("%Y-%m-%d %H:%M:%S")})
+    finally:
+        # Celery has no request/response cycle that closes Django connections:
+        # without this, every project database a task touched stays open in its
+        # prefork worker until the process dies. With ~1000 project databases
+        # that is exactly how workers push PostgreSQL to max_connections.
+        try:
+            from progeo.helper.project_dbs import release_project_connections
+
+            release_project_connections()
+        except Exception as exc:  # noqa: BLE001 - never fail a task after it finished
+            dlog(f"Could not release project DB connections: {exc!r}", logger=logger)
 
 
 @celery_instance.task

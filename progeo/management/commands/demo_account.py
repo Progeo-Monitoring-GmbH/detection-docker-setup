@@ -3,6 +3,7 @@ import math
 import os
 import random
 import secrets
+import uuid
 
 from django.contrib.auth.models import Permission, User
 from django.core.files.storage import FileSystemStorage
@@ -220,6 +221,23 @@ def _zone_points(zones):
     return [point for name, (rect, columns, rows) in zones.items() for point in _grid(*rect, columns, rows, name, snake=True)]
 
 
+def _area(name, points):
+    """A heat limitation in plan pixels, normalized to PLAN_SIZE (0..1, y down)."""
+    width, height = PLAN_SIZE
+    return {
+        "name": name,
+        "points": [
+            [round(x / width, 6), round(y / height, 6)]
+            for x, y in points
+        ],
+    }
+
+
+def _rect_area(name, rect):
+    x1, y1, x2, y2 = rect
+    return _area(name, [(x1, y1), (x2, y1), (x2, y2), (x1, y2)])
+
+
 def _named_points(sensors, view=0):
     """Single sensors (name or None, x, y); grid_x counts them, grid_y is the view."""
     return [(name, x, y, index, view) for index, (name, x, y) in enumerate(sensors)]
@@ -249,10 +267,14 @@ LOCATIONS = [_location(spec) for spec in (
         "address": "Musterstrasse 1",
         "city": "Musterstadt",
         "coordinates": (52.5306, 13.3846),
-        "plans": [{"draw": lambda plan: _draw_smartex(plan), "points": [
-            (DM_LINES[grid_y], px, py, grid_x, grid_y)
-            for _name, px, py, grid_x, grid_y in _grid(*SMARTEX_ROOF, 5, 5)
-        ]}],
+        "plans": [{
+            "draw": lambda plan: _draw_smartex(plan),
+            "areas": [_rect_area("Halle A", SMARTEX_ROOF)],
+            "points": [
+                (DM_LINES[grid_y], px, py, grid_x, grid_y)
+                for _name, px, py, grid_x, grid_y in _grid(*SMARTEX_ROOF, 5, 5)
+            ],
+        }],
         "leak": SMARTEX_LEAK,
     },
     {
@@ -263,7 +285,11 @@ LOCATIONS = [_location(spec) for spec in (
         "address": "Dorfweg 12",
         "city": "Beispieldorf",
         "coordinates": (52.4559, 13.2905),
-        "plans": [{"draw": lambda plan: _draw_smartex_is(plan), "points": _zone_points(IS_ZONES)}],
+        "plans": [{
+            "draw": lambda plan: _draw_smartex_is(plan),
+            "areas": [_rect_area(name, rect) for name, (rect, _columns, _rows) in IS_ZONES.items()],
+            "points": _zone_points(IS_ZONES),
+        }],
         "leak": IS_LEAK,
     },
     {
@@ -274,9 +300,15 @@ LOCATIONS = [_location(spec) for spec in (
         "address": "Sensorallee 3",
         "city": "Funkstadt",
         "coordinates": (52.5163, 13.4542),
-        "plans": [{"draw": lambda plan: _draw_lorawan(plan), "points": [
-            (label, x, y, index, 0) for index, (label, (x, y)) in enumerate(LORAWAN_ROOMS.items())
-        ]}],
+        "plans": [{
+            "draw": lambda plan: _draw_lorawan(plan),
+            "areas": [_area("Gebaeude", [
+                (160, 460), (650, 150), (1140, 460), (1100, 960), (200, 960),
+            ])],
+            "points": [
+                (label, x, y, index, 0) for index, (label, (x, y)) in enumerate(LORAWAN_ROOMS.items())
+            ],
+        }],
     },
     {
         "kind": "smartex_mx_peel",
@@ -286,7 +318,11 @@ LOCATIONS = [_location(spec) for spec in (
         "address": "Hallenweg 4",
         "city": "Lagerstadt",
         "coordinates": (52.5452, 13.3611),
-        "plans": [{"draw": lambda plan: _draw_mx_peel(plan), "points": _grid(*PEEL_ROOF, 8, 4)}],
+        "plans": [{
+            "draw": lambda plan: _draw_mx_peel(plan),
+            "areas": [_rect_area("Logistikhalle", PEEL_ROOF)],
+            "points": _grid(*PEEL_ROOF, 8, 4),
+        }],
         "leak": PEEL_LEAK,
     },
     {
@@ -299,6 +335,7 @@ LOCATIONS = [_location(spec) for spec in (
         "coordinates": (52.5003, 13.4198),
         "plans": [
             {"suffix": f"ug{index + 1}", "name": level, "draw": lambda plan, level=level: _draw_mx_va(plan, level),
+             "areas": [_rect_area(f"Tiefgarage {level}", (120, 140, 1480, 980))],
              "points": _zone_points(zones)}
             for index, (level, zones) in enumerate(VA_LEVELS.items())
         ],
@@ -312,7 +349,11 @@ LOCATIONS = [_location(spec) for spec in (
         "address": "Werkstrasse 6",
         "city": "Hallenburg",
         "coordinates": (52.4811, 13.3302),
-        "plans": [{"draw": lambda plan: _draw_mx_al(plan), "points": _zone_points(AL_ZONES)}],
+        "plans": [{
+            "draw": lambda plan: _draw_mx_al(plan),
+            "areas": [_rect_area("Hallendach", AL_ROOF)],
+            "points": _zone_points(AL_ZONES),
+        }],
         "leak": AL_LEAK,
     },
     {
@@ -325,6 +366,7 @@ LOCATIONS = [_location(spec) for spec in (
         "coordinates": (52.5204, 13.4049),
         "plans": [
             {"suffix": floor.lower(), "name": floor, "draw": lambda plan, floor=floor: _draw_io(plan, floor),
+             "areas": [_rect_area("Buerogebaeude", (150, 150, 1450, 930))],
              "points": _named_points(sensors, view)}
             for view, (floor, (_rooms, sensors)) in enumerate(IO_FLOORS.items())
         ],
@@ -338,7 +380,14 @@ LOCATIONS = [_location(spec) for spec in (
         "address": "Gartenring 8",
         "city": "Wohnfeld",
         "coordinates": (52.4702, 13.4403),
-        "plans": [{"draw": lambda plan: _draw_vt(plan), "points": _named_points(VT_SENSORS)}],
+        "plans": [{
+            "draw": lambda plan: _draw_vt(plan),
+            "areas": [
+                _rect_area(name, (x1, y1, x2, y2 + 110))
+                for name, (x1, y1, x2, y2) in VT_HOUSES.items()
+            ] + [_rect_area("Laubengang", (700, 450, 900, 530))],
+            "points": _named_points(VT_SENSORS),
+        }],
         "leak": VT_LEAK,
     },
 )]
@@ -932,6 +981,10 @@ class Command(BaseCommand):
         stored = FileSystemStorage(location=UPLOAD_DIR).save(
             f"{DEMO_LAGEPLAN_PREFIX_REL}{file_name}", ContentFile(buffer.getvalue(), name=file_name)
         )
+        heat_limitations = [
+            {"id": uuid.uuid4().hex[:12], **area}
+            for area in plan_spec.get("areas", [])
+        ]
         return ProgeoLageplan.objects.using(db).create(
             location=location,
             lageplan=stored,
@@ -940,6 +993,7 @@ class Command(BaseCommand):
             reference_x=reference[0],
             reference_y=reference[1],
             meters_per_pixel=meters_per_pixel,
+            heat_limitations=heat_limitations,
         )
 
 

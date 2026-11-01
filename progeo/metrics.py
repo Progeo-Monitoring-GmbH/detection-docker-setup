@@ -18,7 +18,7 @@ from prometheus_client import (
     Histogram,
     generate_latest,
 )
-from prometheus_client.core import GaugeMetricFamily
+from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily
 
 HTTP_REQUESTS = Counter(
     "progeo_http_requests", "HTTP requests by view, method and status code", ["view", "method", "status"]
@@ -39,6 +39,15 @@ WEBSOCKET_CONNECTIONS = Gauge("progeo_websocket_connections", "Open websocket co
 WEBSOCKET_OPENED = Counter("progeo_websocket_connections_opened", "Websocket connections opened by route", ["route"])
 
 METRICS_PATH = "/metrics"
+
+# Expected schedule of the backend cron jobs; exposed as a gauge so the
+# dashboard can show "how often" without hard-coding names in Grafana.
+CRON_JOB_INTERVALS = {
+    "measure": 5 * 60,
+    "half-hour": 30 * 60,
+    "daily": 24 * 60 * 60,
+    "weekly": 7 * 24 * 60 * 60,
+}
 
 
 class BackupTransferCollector:
@@ -121,6 +130,10 @@ class CronJobCollector:
             "progeo_cron_job_last_success_duration_seconds",
             "Duration of the last successful run", labels=["job"],
         )
+        interval = GaugeMetricFamily(
+            "progeo_cron_job_interval_seconds",
+            "Expected schedule interval of the job", labels=["job"],
+        )
 
         for filename in sorted(os.listdir(directory)):
             if not filename.endswith(".json"):
@@ -134,6 +147,8 @@ class CronJobCollector:
                 continue
             job = str(data.get("job") or filename[:-5])
             running.add_metric([job], 1 if data.get("state") == "running" else 0)
+            if job in CRON_JOB_INTERVALS:
+                interval.add_metric([job], CRON_JOB_INTERVALS[job])
             if data.get("started_at"):
                 started.add_metric([job], float(data["started_at"]))
             if data.get("state") == "running":
@@ -158,12 +173,50 @@ class CronJobCollector:
 
         yield from (
             started, finished, duration, exit_code, running,
-            last_ok, last_success, last_success_duration,
+            last_ok, last_success, last_success_duration, interval,
         )
+
+
+class OutboundCollector:
+    """Mail/SMS attempts, published through the shared Redis cache by
+    helper/outbound.log in both the web and Celery processes."""
+
+    @staticmethod
+    def describe():
+        return []
+
+    def collect(self):
+        from django.core.cache import cache
+
+        from progeo.helper.outbound import OUTBOUND_METRIC_PREFIX
+        from progeo.v1.models import OutboundMessage
+
+        counts = CounterMetricFamily(
+            "progeo_outbound_messages",
+            "Outbound mail/SMS attempts by channel and status",
+            labels=["channel", "status"],
+        )
+        last = GaugeMetricFamily(
+            "progeo_outbound_last_attempt_timestamp_seconds",
+            "When the last outbound mail/SMS attempt with this status happened",
+            labels=["channel", "status"],
+        )
+        for channel in OutboundMessage.Channel.values:
+            for status in OutboundMessage.Status.values:
+                count = cache.get(f"{OUTBOUND_METRIC_PREFIX}count:{channel}:{status}")
+                if count is None:
+                    continue
+                counts.add_metric([channel, status], int(count))
+                timestamp = cache.get(f"{OUTBOUND_METRIC_PREFIX}last:{channel}:{status}")
+                if timestamp is not None:
+                    last.add_metric([channel, status], float(timestamp))
+        yield counts
+        yield last
 
 
 REGISTRY.register(BackupTransferCollector())
 REGISTRY.register(CronJobCollector())
+REGISTRY.register(OutboundCollector())
 
 
 def _view_label(request):

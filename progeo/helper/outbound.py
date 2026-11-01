@@ -15,6 +15,7 @@ The counters live in the database, not in Redis: they must survive restarts
 and work on every server, and a few indexed COUNTs per send are cheap at the
 volumes we allow.
 """
+import time
 from datetime import timedelta
 
 from django.conf import settings
@@ -22,6 +23,10 @@ from django.db import transaction
 from django.utils import timezone
 
 from progeo.helper.basics import elog, ilog, wlog
+
+# Shared by the Prometheus collector; cache keys are written by whichever
+# process actually sends (web or Celery worker).
+OUTBOUND_METRIC_PREFIX = "progeo:outbound:"
 
 DB = "default"
 BREAKER_KEY = "outbound_breaker"
@@ -200,7 +205,20 @@ def log(channel: str, status: str, recipient: str, *, actual_recipient: str = ""
         subject: str = "", message_id: str = "", location=None, error: str | None = None) -> None:
     """Store one OutboundMessage row. Like the EMail/SMS log it must never
     break or mask the send, so failures are only reported (in a savepoint)."""
+    from django.core.cache import cache
+
     from progeo.v1.models import OutboundMessage
+
+    # Mail/SMS also leave from Celery workers, whose prometheus registry is
+    # never scraped. Publish small shared Redis counters for the Daphne
+    # /metrics endpoint instead.
+    try:
+        count_key = f"{OUTBOUND_METRIC_PREFIX}count:{channel}:{status}"
+        cache.add(count_key, 0, None)
+        cache.incr(count_key)
+        cache.set(f"{OUTBOUND_METRIC_PREFIX}last:{channel}:{status}", time.time(), None)
+    except Exception:  # noqa: BLE001, S110 - monitoring must not affect sending
+        pass
 
     try:
         with transaction.atomic(using=DB):

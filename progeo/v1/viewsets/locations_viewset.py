@@ -369,14 +369,19 @@ class LocationViewSet(ProgeoModalViewSet):
     @require_module_permissions("module_locations_enabled")
     @action(detail=False, url_path="min", methods=["GET"])
     def min_list(self, request, *args, **kwargs):
-        # A user can belong to several accounts, each living in its own
-        # database, so locations must be collected per account/db_name.
+        # This feeds the location pickers on almost every page. Only the
+        # serializer's columns are read: selecting all 30 ProgeoLocation
+        # columns was one of the hottest default-database statements.
         accounts = self._resolve_request_accounts(request)
         data = []
+        fields = (
+            "id", "project_id", "name", "city", "plz", "address", "country",
+            "manager", "telefon", "mail", "project_type",
+        )
         for account in accounts:
             locations = ProgeoLocation.objects.using(account.db_name).filter(
                 location_q(request.user, account)
-            )
+            ).only(*fields)
             data.extend(ProgeoLocationMinSerializer(locations, many=True).data)
         return Response(data=data)
 

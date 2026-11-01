@@ -125,6 +125,28 @@ def test_cron_collector_reads_status_and_last_success():
     assert families["progeo_cron_job_last_success_timestamp_seconds"].samples[0].value == 1100
     assert families["progeo_cron_job_last_success_duration_seconds"].samples[0].value == 100
     assert families["progeo_cron_job_running"].samples[0].value == 0
+    assert families["progeo_cron_job_interval_seconds"].samples[0].value == 24 * 60 * 60
+
+
+def test_outbound_collector_reads_the_shared_cache():
+    from django.core.cache import cache
+
+    from progeo.helper.outbound import OUTBOUND_METRIC_PREFIX
+    from progeo.metrics import OutboundCollector
+
+    cache.set(f"{OUTBOUND_METRIC_PREFIX}count:mail:sent", 3, None)
+    cache.set(f"{OUTBOUND_METRIC_PREFIX}last:mail:sent", 1_700_000_000, None)
+    try:
+        families = {family.name: family for family in OutboundCollector().collect()}
+        count_sample = next(
+            sample for sample in families["progeo_outbound_messages"].samples
+            if sample.name == "progeo_outbound_messages_total"
+        )
+        assert count_sample.value == 3
+        assert families["progeo_outbound_last_attempt_timestamp_seconds"].samples[0].value == 1_700_000_000
+    finally:
+        cache.delete(f"{OUTBOUND_METRIC_PREFIX}count:mail:sent")
+        cache.delete(f"{OUTBOUND_METRIC_PREFIX}last:mail:sent")
 
 
 def test_websocket_gauge_follows_the_open_connection():
