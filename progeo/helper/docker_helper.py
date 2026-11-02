@@ -1,4 +1,5 @@
 import os
+import threading
 from datetime import datetime
 
 from django.utils import timezone
@@ -70,10 +71,27 @@ def restart_nginx(tag=None, *args):
         sleep_ms(10000)
 
 
-def start_cad_factory(cad_input: str, coord_margin: float = 0.2, skip_convert: bool = False,
-                      timeout_seconds: int = 300, project_id: int | None = None,
-                      source_name: str | None = None) -> tuple[int, str, str]:
-    """Run progeo-cad_factory via Docker SDK and return (exit_code, stdout, stderr)."""
+def _split_lines(chunks, on_line):
+    """Calls on_line(text) for every line of a stream of byte chunks."""
+    buffer = b""
+    for chunk in chunks:
+        buffer += chunk
+        *lines, buffer = buffer.replace(b"\r\n", b"\n").replace(b"\r", b"\n").split(b"\n")
+        for line in lines:
+            on_line(line.decode("utf-8", errors="replace"))
+    if buffer:
+        on_line(buffer.decode("utf-8", errors="replace"))
+
+
+def run_cad_factory(cad_input: str, coord_margin: float = 0.2, skip_convert: bool = False,
+                    timeout_seconds: int = 1800, project_id: int | None = None,
+                    source_name: str | None = None, on_line=None) -> dict:
+    """Run progeo-cad_factory via Docker SDK. Every output line (stdout and
+    stderr, as written) goes to on_line(text) while the container runs; a
+    container still running after timeout_seconds is killed.
+
+    Returns {"exit_code", "stdout", "stderr", "oom_killed", "timed_out"}.
+    """
     client = docker.from_env()
     base_name = os.getenv("DOCKER_BASE_IMAGE", "detection-docker-setup")
     image_name = f"{base_name}-progeo-cad_factory"
@@ -98,6 +116,17 @@ def start_cad_factory(cad_input: str, coord_margin: float = 0.2, skip_convert: b
     run_user = f"{os.getenv('DOCKER_UID', '1000')}:{os.getenv('DOCKER_GID', '1001')}"
 
     container = None
+    timed_out = threading.Event()
+
+    def kill_on_timeout():
+        timed_out.set()
+        try:
+            container.kill()
+        except DockerException:
+            pass
+
+    watchdog = threading.Timer(timeout_seconds, kill_on_timeout)
+    watchdog.daemon = True
     try:
         container = client.containers.run(
             image=image_name,
@@ -112,17 +141,30 @@ def start_cad_factory(cad_input: str, coord_margin: float = 0.2, skip_convert: b
             volumes=volumes,
             environment=environment,
         )
+        watchdog.start()
 
-        wait_result = container.wait(timeout=timeout_seconds)
+        # Ends when the container stops (also when killed by the watchdog).
+        _split_lines(container.logs(stream=True, follow=True), on_line or (lambda _line: None))
+
+        wait_result = container.wait(timeout=60)
         exit_code = int(wait_result.get("StatusCode", 1))
+        container.reload()
+        oom_killed = bool(container.attrs.get("State", {}).get("OOMKilled"))
         stdout_bytes = container.logs(stdout=True, stderr=False)
         stderr_bytes = container.logs(stdout=False, stderr=True)
         stdout = (stdout_bytes or b"").decode("utf-8", errors="replace")
         stderr = (stderr_bytes or b"").decode("utf-8", errors="replace")
-        return exit_code, stdout, stderr
+        return {
+            "exit_code": exit_code,
+            "stdout": stdout,
+            "stderr": stderr,
+            "oom_killed": oom_killed,
+            "timed_out": timed_out.is_set(),
+        }
     except DockerException as exc:
         raise RuntimeError(f"Failed to run progeo-cad_factory: {exc}") from exc
     finally:
+        watchdog.cancel()
         if container is not None:
             try:
                 container.remove(force=True)

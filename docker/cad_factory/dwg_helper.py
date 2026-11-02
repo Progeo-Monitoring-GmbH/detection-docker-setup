@@ -10,6 +10,8 @@ docker compose run --rm progeo-cad_factory media/uploads/OG2.dxf --skip-convert 
 docker compose run --rm progeo-cad_factory media/uploads/VP_20230228_OPR_TSO_BSO_Waiblingen_003.dwg
 docker compose build progeo-cad_factory ; docker compose run --rm progeo-cad_factory media/uploads/VP_20230228_OPR_TSO_BSO_Waiblingen_003.dwg
 
+Progress goes to stderr as timestamped lines (elapsed time and memory use), so
+the backend can stream it to the frontend; stdout carries only the points JSON.
 """
 
 from __future__ import annotations
@@ -19,15 +21,82 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
+import traceback
+from collections import deque
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import ezdxf
 from ezdxf import recover
+from ezdxf.addons import iterdxf
 
 VALID_LAYERS = ["DKS_MPLE", "DKS_Visualisierung", "DKS_Konstruktion", "DKS_Dachaufbauten"]
+
+# dwg2dxf can print a warning per unknown object - only the first lines are forwarded.
+DWG2DXF_MAX_LINES = 200
+HEARTBEAT_SECONDS = 15
+PROGRESS_EVERY_ENTITIES = 100_000
+
+_STARTED = time.monotonic()
+
+
+def _rss_mb(pid: int | str = "self") -> int | None:
+    """Resident memory of a process in MB (Linux /proc), None if unknown."""
+    try:
+        with open(f"/proc/{pid}/status", encoding="ascii") as handle:
+            for line in handle:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) // 1024
+    except (OSError, ValueError, IndexError):
+        pass
+    return None
+
+
+def _memory_limit_mb() -> int | None:
+    """The container's memory limit (cgroup v2, then v1), None if unlimited."""
+    for path in ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
+        try:
+            raw = Path(path).read_text().strip()
+        except OSError:
+            continue
+        if raw.isdigit() and int(raw) < 1 << 60:
+            return int(raw) // (1024 * 1024)
+        return None
+    return None
+
+
+def log(message: str, pid: int | str = "self") -> None:
+    elapsed = time.monotonic() - _STARTED
+    rss = _rss_mb(pid)
+    memory = f" {rss} MB" if rss is not None else ""
+    print(f"[{datetime.now(UTC):%H:%M:%S} +{elapsed:.1f}s{memory}] {message}", file=sys.stderr, flush=True)
+
+
+@contextmanager
+def heartbeat(task: str, watch_file: Path | None = None, pid_of=None):
+    """Logs "still <task>" every HEARTBEAT_SECONDS while the block runs - long
+    silent steps would otherwise look like a hung container. `watch_file`
+    adds its growing size, `pid_of()` the memory of that process."""
+    stop = threading.Event()
+    started = time.monotonic()
+
+    def beat():
+        while not stop.wait(HEARTBEAT_SECONDS):
+            details = f"{time.monotonic() - started:.0f}s"
+            if watch_file is not None and watch_file.exists():
+                details += f", {watch_file.name}: {watch_file.stat().st_size / 1024 / 1024:.1f} MB"
+            log(f"Still {task} ({details})", pid=(pid_of() if pid_of else None) or "self")
+
+    thread = threading.Thread(target=beat, daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join(timeout=1)
 
 
 def _safe_filename_part(value: Any) -> str:
@@ -93,19 +162,6 @@ def _export_points_preview(points: list[dict[str, int]], output_base: Path) -> N
     fig.savefig(f"{output_base}.svg")
     plt.close(fig)
 
-def sleep_ms(delay=0, msg=None):
-    """
-    sleeps for a specific amount of ms
-    :param msg:
-    :param delay: Delay as String in ms or 'None' as string
-    """
-    if msg:
-        print(f"Sleep for {delay} | From: {msg}")
-
-    if delay == 0 or (isinstance(delay, str) and delay == "---"):
-        time.sleep(3)
-    else:
-        time.sleep(int(delay) / 1000)
 
 def _to_jsonable(value: Any) -> Any:
     if isinstance(value, (str, int, float, bool)) or value is None:
@@ -166,30 +222,86 @@ def _extract_xy_from_attributes(attributes: dict[str, Any]) -> tuple[float | Non
 
 
 def convert_dwg_to_dxf(input_dwg: Path, output_dxf: Path) -> None:
-    """Convert DWG to DXF using LibreDWG's dwg2dxf tool."""
+    """Convert DWG to DXF using LibreDWG's dwg2dxf tool, forwarding its output."""
     command = ["dwg2dxf", "-y", "-o", str(output_dxf), str(input_dwg)]
     try:
-        subprocess.run(command, check=True, capture_output=True, text=False)
+        process = subprocess.Popen(
+            command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace"
+        )
     except FileNotFoundError as exc:
         raise RuntimeError("dwg2dxf was not found in progeo-cad_factory image.") from exc
-    except subprocess.CalledProcessError as exc:
-        stderr = exc.stderr.decode("utf-8", errors="replace").strip() if exc.stderr else "no error output"
-        stdout = exc.stdout.decode("utf-8", errors="replace").strip() if exc.stdout else ""
-        extra = f"\n{stdout}" if stdout else ""
-        raise RuntimeError(f"DWG to DXF conversion failed: {stderr}{extra}") from exc
+
+    tail: deque[str] = deque(maxlen=20)
+    forwarded = 0
+    with heartbeat("converting DWG to DXF", watch_file=output_dxf, pid_of=lambda: process.pid):
+        for line in process.stdout:
+            line = line.rstrip()
+            if not line:
+                continue
+            tail.append(line)
+            if forwarded < DWG2DXF_MAX_LINES:
+                print(f"dwg2dxf: {line}", file=sys.stderr, flush=True)
+            forwarded += 1
+        returncode = process.wait()
+
+    if forwarded > DWG2DXF_MAX_LINES:
+        log(f"dwg2dxf: {forwarded - DWG2DXF_MAX_LINES} more output lines not shown")
+    if returncode != 0:
+        details = "\n".join(tail) or "no error output"
+        raise RuntimeError(f"DWG to DXF conversion failed (dwg2dxf exit code {returncode}): {details}")
 
 
-def collect_layer_polyline_points_raw(dxf_path: Path, layer_name: str) -> list[dict[str, int]]:
-    """Raw DXF fallback: collect raw points from code pairs inside ENTITIES section."""
+def _collect_entity(entity, present: set[str], points: dict[str, list[dict[str, int]]]) -> None:
+    """Notes the layer of an ezdxf entity and the polyline points of the wanted layers."""
+    layer = entity.dxf.layer
+    if layer not in points:
+        return
+    present.add(layer)
+
+    etype = entity.dxftype()
+    if etype == "LWPOLYLINE":
+        for x, y in entity.get_points("xy"):
+            points[layer].append({"x": scale_to_int(x), "y": scale_to_int(y)})
+
+    elif etype == "POLYLINE":
+        for vertex in entity.vertices:
+            loc = vertex.dxf.location
+            point: dict[str, int] = {
+                "x": scale_to_int(loc.x),
+                "y": scale_to_int(loc.y),
+            }
+            if loc.z:
+                point["z"] = scale_to_int(loc.z)
+            points[layer].append(point)
+
+
+def _scan_with_ezdxf(entities, present, points) -> None:
+    for count, entity in enumerate(entities, start=1):
+        _collect_entity(entity, present, points)
+        if count % PROGRESS_EVERY_ENTITIES == 0:
+            log(f"Read {count} entities, found layers: {sorted(present) or 'none yet'}")
+
+
+def _iter_raw_tags(dxf_path: Path):
+    """(code, value) pairs of an ASCII DXF, read line by line."""
     with dxf_path.open("r", encoding="utf-8", errors="ignore") as handle:
-        lines = [line.rstrip("\n\r") for line in handle]
+        while True:
+            code = handle.readline()
+            value = handle.readline()
+            if not value:
+                return
+            yield code.strip(), value.strip()
 
+
+def _scan_raw(dxf_path: Path, present: set[str], points: dict[str, list[dict[str, int]]]) -> None:
+    """Raw DXF fallback: raw points from the code pairs of every entity of the
+    wanted layers inside the ENTITIES section."""
     in_entities = False
+    section_header = False
     current_type: str | None = None
     current_codes: dict[str, Any] = {}
-    raw_points: list[dict[str, int]] = []
 
-    def scale_to_int(value: Any) -> int | None:
+    def raw_scale(value: Any) -> int | None:
         number = _to_float(value)
         if number is None:
             return None
@@ -212,29 +324,26 @@ def collect_layer_polyline_points_raw(dxf_path: Path, layer_name: str) -> list[d
         if isinstance(layer_value, list):
             layer_value = layer_value[-1] if layer_value else None
 
-        if layer_value == layer_name:
+        if layer_value in points:
+            present.add(layer_value)
             xs = values_as_list(current_codes.get("10"))
             ys = values_as_list(current_codes.get("20"))
             for x_raw, y_raw in zip(xs, ys):
-                x_val = scale_to_int(x_raw)
-                y_val = scale_to_int(y_raw)
+                x_val = raw_scale(x_raw)
+                y_val = raw_scale(y_raw)
                 if x_val is None or y_val is None:
                     continue
-                raw_points.append({"x": x_val, "y": y_val})
+                points[layer_value].append({"x": x_val, "y": y_val})
 
         current_type = None
         current_codes = {}
 
-    i = 0
-    while i + 1 < len(lines):
-        code = lines[i].strip()
-        value = lines[i + 1].strip()
-
-        if code == "0" and value == "SECTION" and i + 3 < len(lines):
-            sec_code = lines[i + 2].strip()
-            sec_name = lines[i + 3].strip()
-            in_entities = sec_code == "2" and sec_name == "ENTITIES"
-            i += 2
+    for code, value in _iter_raw_tags(dxf_path):
+        if section_header:
+            section_header = False
+            in_entities = code == "2" and value == "ENTITIES"
+        elif code == "0" and value == "SECTION":
+            section_header = True
         elif in_entities and code == "0" and value == "ENDSEC":
             finalize_entity()
             in_entities = False
@@ -250,82 +359,40 @@ def collect_layer_polyline_points_raw(dxf_path: Path, layer_name: str) -> list[d
             else:
                 current_codes[code] = [existing, value]
 
-        i += 2
-
     if in_entities:
         finalize_entity()
 
-    return raw_points
 
+def scan_dxf(dxf_path: Path, valid_layers: list[str]) -> tuple[set[str], dict[str, list[dict[str, int]]]]:
+    """One pass over the modelspace: which of `valid_layers` have entities,
+    and the raw polyline points of each of them.
 
-def detect_first_valid_layer(dxf_path: Path, valid_layers: list[str]) -> str | None:
-    """Return the first layer from valid_layers that exists in the DXF."""
-    try:
-        doc = ezdxf.readfile(dxf_path)
-        present_layers = {entity.dxf.layer for entity in doc.modelspace()}
-    except Exception:  # noqa: BLE001
+    Streams the entities (ezdxf iterdxf) instead of loading the whole document,
+    so big DXF files don't run the container out of memory; broken files fall
+    back to ezdxf's recover mode (loads everything), then to a raw tag parser.
+    """
+    size_mb = dxf_path.stat().st_size / 1024 / 1024
+    attempts = [
+        ("streaming reader", lambda present, points: _scan_with_ezdxf(iterdxf.modelspace(dxf_path), present, points)),
+        ("recover mode", lambda present, points: _scan_with_ezdxf(recover.readfile(str(dxf_path))[0].modelspace(), present, points)),
+        ("raw parser", lambda present, points: _scan_raw(dxf_path, present, points)),
+    ]
+    for index, (name, scan) in enumerate(attempts):
+        present: set[str] = set()
+        points: dict[str, list[dict[str, int]]] = {layer: [] for layer in valid_layers}
+        log(f"Reading {dxf_path.name} ({size_mb:.1f} MB) with the {name}")
         try:
-            doc, _ = recover.readfile(str(dxf_path))
-            present_layers = {entity.dxf.layer for entity in doc.modelspace()}
-        except Exception:
-            # Raw fallback: collect all layer names from ENTITIES section.
-            with dxf_path.open("r", encoding="utf-8", errors="ignore") as handle:
-                lines = [line.rstrip("\n\r") for line in handle]
+            with heartbeat(f"reading the DXF ({name})"):
+                scan(present, points)
+        except Exception as exc:
+            if index == len(attempts) - 1:
+                raise
+            log(f"The {name} failed ({type(exc).__name__}: {exc}) - trying the {attempts[index + 1][0]}")
+            continue
+        log(f"Read the DXF with the {name}, layers found: {sorted(present) or 'none'}")
+        return present, points
+    raise AssertionError("unreachable")
 
-            in_entities = False
-            current_type: str | None = None
-            current_codes: dict[str, Any] = {}
-            present_layers: set[str] = set()
-
-            def finalize_entity() -> None:
-                nonlocal current_type, current_codes
-                if not current_type:
-                    current_codes = {}
-                    return
-
-                layer_value = current_codes.get("8")
-                if isinstance(layer_value, list):
-                    layer_value = layer_value[-1] if layer_value else None
-                if isinstance(layer_value, str) and layer_value.strip():
-                    present_layers.add(layer_value.strip())
-
-                current_type = None
-                current_codes = {}
-
-            i = 0
-            while i + 1 < len(lines):
-                code = lines[i].strip()
-                value = lines[i + 1].strip()
-
-                if code == "0" and value == "SECTION" and i + 3 < len(lines):
-                    sec_code = lines[i + 2].strip()
-                    sec_name = lines[i + 3].strip()
-                    in_entities = sec_code == "2" and sec_name == "ENTITIES"
-                    i += 2
-                elif in_entities and code == "0" and value == "ENDSEC":
-                    finalize_entity()
-                    in_entities = False
-                elif in_entities and code == "0":
-                    finalize_entity()
-                    current_type = value
-                elif in_entities and current_type:
-                    existing = current_codes.get(code)
-                    if existing is None:
-                        current_codes[code] = value
-                    elif isinstance(existing, list):
-                        existing.append(value)
-                    else:
-                        current_codes[code] = [existing, value]
-
-                i += 2
-
-            if in_entities:
-                finalize_entity()
-
-    for layer_name in valid_layers:
-        if layer_name in present_layers:
-            return layer_name
-    return None
 
 def scale_to_int(value: float) -> int:
     return round(float(value) * 10)
@@ -414,49 +481,6 @@ def _normalize_points_with_grid(raw_points: list[dict[str, int]], coord_margin: 
 
     return result
 
-    
-def collect_layer_polyline_points(dxf_path: Path, layer_name: str, coord_margin: float = 0.2) -> list[dict[str, int]]:
-    """Return ordered polyline points for one layer as scaled integer coordinates."""
-    try:
-        doc = ezdxf.readfile(dxf_path)
-    except Exception:  # noqa: BLE001
-        try:
-            doc, _ = recover.readfile(str(dxf_path))
-        except Exception as exc:
-            print(f"Cannot open DXF: {exc}", file=sys.stderr)
-            raw_points = collect_layer_polyline_points_raw(dxf_path, layer_name)
-            return _normalize_points_with_grid(raw_points, coord_margin)
-
-    modelspace = doc.modelspace()
-    raw_points: list[dict[str, int]] = []
-
-
-    for entity in modelspace:
-        if entity.dxf.layer != layer_name:
-            continue
-
-        etype = entity.dxftype()
-        if etype == "LWPOLYLINE":
-            points = list(entity.get_points("xy"))
-            for x, y in points:
-                raw_points.append({"x": scale_to_int(x), "y": scale_to_int(y)})
-
-        elif etype == "POLYLINE":
-            for vertex in entity.vertices:
-                loc = vertex.dxf.location
-                point: dict[str, int] = {
-                    "x": scale_to_int(loc.x),
-                    "y": scale_to_int(loc.y),
-                }
-                if loc.z:
-                    point["z"] = scale_to_int(loc.z)
-                raw_points.append(point)
-
-    if not raw_points:
-        return []
-
-    return _normalize_points_with_grid(raw_points, coord_margin)
-
 
 def main() -> int:
     parser = argparse.ArgumentParser(
@@ -467,12 +491,12 @@ def main() -> int:
         "--output",
         type=Path,
         default=None,
-        help="Path to generated DXF. Default: input with .dxf extension.",
+        help="Path to the generated DXF. Default: next to the input, named after source, project and time.",
     )
     parser.add_argument(
         "--skip-convert",
         action="store_true",
-        help="Skip conversion and read an existing DXF from --output.",
+        help="Skip conversion and read an existing DXF: --output, else the input itself.",
     )
     parser.add_argument(
         "--points",
@@ -492,45 +516,63 @@ def main() -> int:
     source_name = os.getenv("CAD_FACTORY_SOURCE_NAME", "")
 
     if not input_path.exists():
-        print(f"Input file does not exist: {input_path}", file=sys.stderr)
+        log(f"Input file does not exist: {input_path}")
         return 2
 
-    output_path = args.output.resolve() if args.output else _build_output_base(input_path, project_id, source_name).with_suffix(".dxf")
-    output_base = output_path.with_suffix("")
+    output_base = _build_output_base(input_path, project_id, source_name)
+    if args.output:
+        output_path = args.output.resolve()
+    elif args.skip_convert:
+        # A DXF upload: read it as is (the timestamped name only names the results).
+        output_path = input_path
+    else:
+        output_path = output_base.with_suffix(".dxf")
+    if args.output:
+        output_base = output_path.with_suffix("")
+
+    limit = _memory_limit_mb()
+    log(
+        f"Started for {source_name or input_path.name} ({input_path.stat().st_size / 1024 / 1024:.1f} MB), "
+        f"project {project_id or 'unknown'}, memory limit: {f'{limit} MB' if limit else 'none'}"
+    )
 
     try:
         if not args.skip_convert:
+            log("Converting DWG to DXF")
             convert_dwg_to_dxf(input_path, output_path)
-            print(f"Converted DWG to DXF: {output_path}", file=sys.stderr)
+            log(f"Converted DWG to DXF: {output_path}")
         elif not output_path.exists():
-            print(f"DXF file does not exist: {output_path}", file=sys.stderr)
+            log(f"DXF file does not exist: {output_path}")
             return 2
 
-        selected_layer = detect_first_valid_layer(output_path, VALID_LAYERS)
+        present_layers, layer_points = scan_dxf(output_path, VALID_LAYERS)
+        selected_layer = next((layer for layer in VALID_LAYERS if layer in present_layers), None)
         if not selected_layer:
-            print(
-                f"None of the valid layers were found: {', '.join(VALID_LAYERS)}",
-                file=sys.stderr,
-            )
+            log(f"None of the valid layers were found: {', '.join(VALID_LAYERS)}")
             return 2
 
-        points = collect_layer_polyline_points(output_path, selected_layer, coord_margin=args.coord_margin)
+        raw_points = layer_points[selected_layer]
+        points = _normalize_points_with_grid(raw_points, args.coord_margin) if raw_points else []
+        log(f"Found {len(points)} polyline points on layer '{selected_layer}'.")
         result = json.dumps(points, ensure_ascii=True)
-        print(result)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        print(result, flush=True)
+        output_base.parent.mkdir(parents=True, exist_ok=True)
         with open(output_base.with_suffix(".json"), "w", encoding="utf-8") as json_file:
             json_file.write(result)
-            print(f"Saved points to JSON: {json_file.name}", file=sys.stderr)
-        _export_points_preview(points, output_base)
-        print(f"Saved preview image: {output_base.with_suffix('.png').name}", file=sys.stderr)
-        print(f"Saved preview image: {output_base.with_suffix('.svg').name}", file=sys.stderr)
-        print(f"Found {len(points)} polyline points on layer '{selected_layer}'.", file=sys.stderr)
-
-        sleep_ms(10000, "Sleeping for 10 seconds before exit to allow Docker logs to flush.")
+        log(f"Saved points to JSON: {output_base.with_suffix('.json').name}")
+        try:
+            _export_points_preview(points, output_base)
+        except Exception as exc:  # noqa: BLE001 - the preview is optional
+            log(f"Preview image skipped: {exc}")
+        else:
+            if points:
+                log(f"Saved preview images: {output_base.with_suffix('.png').name}, {output_base.with_suffix('.svg').name}")
     except Exception as exc:  # noqa: BLE001
-        print(str(exc), file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        log(f"Failed: {type(exc).__name__}: {exc}")
         return 1
 
+    log("Done")
     return 0
 
 

@@ -41,7 +41,16 @@ RUN git clone --depth 1 --branch 0.13.4 https://github.com/LibreDWG/libredwg.git
 RUN python3 -m venv /opt/venv \
     && /opt/venv/bin/pip install --no-cache-dir ezdxf==1.4.3
 
-ENV PATH="/opt/venv/bin:${PATH}"
+# The container runs as DOCKER_UID:DOCKER_GID without a home directory, so
+# ezdxf couldn't write its font cache to ~/.cache/ezdxf ("Cannot create cache
+# home directory: '/.cache/ezdxf'") and rebuilt it on every run. It is built
+# once here instead. Unbuffered output: the backend streams the log live.
+ENV PATH="/opt/venv/bin:${PATH}" \
+    HOME=/tmp \
+    XDG_CACHE_HOME=/opt/cache \
+    PYTHONUNBUFFERED=1
+RUN python -c "from ezdxf.fonts import fonts; fonts.build_system_font_cache()" \
+    && chmod -R a+rwX /opt/cache
 
 WORKDIR /workspace
 COPY ./docker/cad_factory/dwg_helper.py /usr/local/bin/dwg_helper.py

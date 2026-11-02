@@ -686,6 +686,15 @@ def render_heatmap_video(job_id: str, framerate: int = 2):
 
 
 @shared_task
+def run_cad_import(job_id: str):
+    """DWG/DXF measure point import: runs progeo-cad_factory and streams its
+    log, then stores the points (helper/cad_import.py)."""
+    from progeo.helper.cad_import import run_job
+
+    run_job(job_id)
+
+
+@shared_task
 def send_alarm_notification(alarm_id: int, location_id: int, db_name: str = "default"):
     """Mail/SMS the subscribers of a new alarm (helper/notifications.py) -
     queued by queue_alarm_notification for instantly evaluated uploads."""

@@ -7,6 +7,7 @@ from datetime import datetime
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
 
+from progeo.helper.cad_import import get_job, job_group, public_job
 from progeo.v1.log_files_helper import (
     allowed_log_files,
     read_appended,
@@ -39,6 +40,18 @@ def _may_read_logs(user) -> bool:
     from progeo.decorator import has_module_permissions
 
     return has_module_permissions(user, "module_admin_enabled")
+
+
+@database_sync_to_async
+def _may_follow_cad_job(user, job) -> bool:
+    """The user who uploaded the file, still allowed to upload (status_viewset upload_cad)."""
+    from progeo.decorator import has_module_permissions
+
+    return (
+        user is not None and getattr(user, "is_authenticated", False)
+        and job.get("user_id") == user.pk
+        and has_module_permissions(user, "module_devices_enabled", "module_devices_edit")
+    )
 
 
 # ==============================================================================================
@@ -215,3 +228,59 @@ class LogStreamConsumer(AsyncWebsocketConsumer):
                 await asyncio.sleep(LOG_STREAM_DOCKER_POLL_SECONDS if docker else LOG_STREAM_POLL_SECONDS)
         except asyncio.CancelledError:
             pass
+
+
+# ==============================================================================================
+
+class CadFactoryJobConsumer(AsyncWebsocketConsumer):
+    """Live log of a DWG/DXF import job (helper/cad_import.py) for the user
+    who uploaded the file.
+
+    Server -> client: "cad_snapshot" with the job (status, log so far, result)
+    on connect; "cad_log" {seq, line} per new log line (seq = index in the
+    job's log - a line the snapshot already had may come again); "cad_done"
+    with the finished job; "heartbeat" every LOG_STREAM_HEARTBEAT_SECONDS.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.job_id = None
+        self.heartbeat_task = None
+
+    async def connect(self):
+        job_id = self.scope["url_route"]["kwargs"]["job_id"]
+        job = await asyncio.to_thread(get_job, job_id)
+        if not job or not await _may_follow_cad_job(self.scope.get("user"), job):
+            await self.close(code=4403)
+            return
+
+        self.job_id = job_id
+        # Joined before the snapshot is read: no line falls in between.
+        await self.channel_layer.group_add(job_group(job_id), self.channel_name)
+        await self.accept()
+        job = await asyncio.to_thread(get_job, job_id) or job
+        await self.send_json({"type": "cad_snapshot", "job": public_job(job)})
+        self.heartbeat_task = asyncio.create_task(self._heartbeat())
+
+    async def disconnect(self, close_code):
+        if self.heartbeat_task:
+            self.heartbeat_task.cancel()
+        if self.job_id:
+            await self.channel_layer.group_discard(job_group(self.job_id), self.channel_name)
+
+    async def send_json(self, payload):
+        await self.send(text_data=json.dumps(payload))
+
+    async def _heartbeat(self):
+        try:
+            while True:
+                await asyncio.sleep(LOG_STREAM_HEARTBEAT_SECONDS)
+                await self.send_json({"type": "heartbeat"})
+        except asyncio.CancelledError:
+            pass
+
+    async def cad_log(self, event):
+        await self.send_json({"type": "cad_log", "seq": event["seq"], "line": event["line"]})
+
+    async def cad_done(self, event):
+        await self.send_json({"type": "cad_done", "job": event["job"]})

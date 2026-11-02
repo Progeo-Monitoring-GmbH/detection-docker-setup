@@ -19,6 +19,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.authentication import ExpiringTokenAuthentication
 from progeo.decorator import calc_runtime, require_module_permissions
+from progeo.helper import cad_import
 from progeo.helper.basics import RequestFailed, RequestSuccess, ilog, save_check_dir
 from progeo.helper.creator import create_MfS_log
 from progeo.helper.device_inventory import (
@@ -29,7 +30,6 @@ from progeo.helper.device_inventory import (
     statistics_snapshot,
 )
 from progeo.helper.device_overview import device_stats, hash_kind, is_online
-from progeo.helper.docker_helper import start_cad_factory
 from progeo.helper.lageplan_export import (
     archive_name,
     recent_lageplans,
@@ -53,7 +53,7 @@ from progeo.helper.project_dbs import (
     split_enabled,
 )
 from progeo.settings import SETUP_DIR, UPLOAD_DIR
-from progeo.tasks import collect_host_storage_info
+from progeo.tasks import collect_host_storage_info, run_cad_import
 from progeo.tasks import identify_device as identify_device_task
 from progeo.v1.creator import create_progeo_measure_point_safe, save_lageplan_upload
 from progeo.v1.helper import dlog
@@ -409,21 +409,6 @@ class StatusViewSet(ProgeoModalViewSet):
         })
 
     @staticmethod
-    def _extract_json_list_from_output(output: str):
-        """Find the last JSON list in command output."""
-        lines = [line.strip() for line in (output or "").splitlines() if line.strip()]
-        for line in reversed(lines):
-            if not line.startswith("["):
-                continue
-            try:
-                parsed = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(parsed, list):
-                return parsed
-        return None
-
-    @staticmethod
     def _parse_semicolon_points_text(raw_text: str):
         """Parse semicolon-delimited point lines.
 
@@ -544,10 +529,16 @@ class StatusViewSet(ProgeoModalViewSet):
     @require_module_permissions("module_devices_enabled", "module_devices_edit")
     @action(detail=False, url_path="measure_points/upload_cad", methods=["POST"])
     def upload_measure_points_from_cad(self, request, *args, **kwargs):
-        # By project id, within the user's access.
-        location, db_name, error = _measure_point_location(
-            request, {"location_id": request.query_params.get("location_id") or request.data.get("location_id")}
-        )
+        """Replaces a location's measure points with imported ones. Text
+        (semicolon rows) is stored right away; a DWG/DXF file takes minutes in
+        progeo-cad_factory, so only a job is started: the answer is {job_id},
+        follow it on /ws/cad_factory/<job_id>/ or poll measure_points/cad_job
+        (helper/cad_import.py) - its result is this answer for text."""
+        # By project id or device, within the user's access.
+        location, db_name, error = _measure_point_location(request, {
+            "location_id": request.query_params.get("location_id") or request.data.get("location_id"),
+            "device_id": request.query_params.get("device_id") or request.data.get("device_id"),
+        })
         if error:
             return error
 
@@ -570,33 +561,24 @@ class StatusViewSet(ProgeoModalViewSet):
                 with open(target_path, "wb") as handle:
                     handle.writelines(upload.chunks())
 
-                cad_input = posixpath.join("media", "uploads", "cad_imports", target_name)
-                project_id = getattr(location, "project_id", None)
-                try:
-                    exit_code, stdout, stderr = start_cad_factory(
-                        cad_input=cad_input,
-                        coord_margin=coord_margin,
-                        skip_convert=(suffix == ".dxf"),
-                        project_id=project_id,
-                        source_name=upload.name,
-                    )
-                except Exception as exc:
-                    return RequestFailed({"reason": f"Failed to start progeo-cad_factory: {exc}"})
+                job_id = cad_import.create_job(
+                    user_id=request.user.pk,
+                    location_pk=location.pk,
+                    db_name=db_name,
+                    cad_input=posixpath.join("media", "uploads", "cad_imports", target_name),
+                    source_name=upload.name,
+                    coord_margin=coord_margin,
+                    skip_convert=(suffix == ".dxf"),
+                    project_id=getattr(location, "project_id", None),
+                )
+                run_cad_import.delay(job_id)
+                return RequestSuccess({"job_id": job_id, "status": "queued", "location_id": location.id})
 
-                points = self._extract_json_list_from_output(stdout)
-                if points is None:
-                    return RequestFailed({
-                        "reason": "Could not parse points from progeo-cad_factory output",
-                        "exit_code": exit_code,
-                        "stdout": stdout[-2000:],
-                        "stderr": stderr[-2000:],
-                    })
-            else:
-                try:
-                    text_data = upload.read().decode("utf-8", errors="replace")
-                    points = self._parse_semicolon_points_text(text_data)
-                except ValueError as exc:
-                    return RequestFailed({"reason": f"Invalid text point format: {exc}"})
+            try:
+                text_data = upload.read().decode("utf-8", errors="replace")
+                points = self._parse_semicolon_points_text(text_data)
+            except ValueError as exc:
+                return RequestFailed({"reason": f"Invalid text point format: {exc}"})
         else:
             text_data = request.data.get("text") or request.data.get("content")
             if not text_data:
@@ -614,42 +596,20 @@ class StatusViewSet(ProgeoModalViewSet):
                 points = self._parse_semicolon_points_text(text_data)
             except ValueError as exc:
                 return RequestFailed({"reason": f"Invalid text point format: {exc}"})
-        
 
-        if not points:
-            ProgeoMeasurePoint.objects.using(db_name).filter(location=location).delete()
-            return RequestSuccess({"location_id": location.id, "stored": 0, "points": []})
+        return RequestSuccess(cad_import.store_measure_points(location, db_name, points))
 
-        bulk_points = []
-        reference_sensor_order = None
-        for idx, point in enumerate(points, start=1):
-            if bool(point.get("reference")):
-                reference_sensor_order = idx
-
-            point, _ = create_progeo_measure_point_safe(
-                location=location,
-                sensor_order=idx,
-                x=point.get("x"),
-                y=point.get("y"),
-                nx=point.get("nx"),
-                ny=point.get("ny"),
-                grid_x=point.get("gx", 0),
-                grid_y=point.get("gy", 0),
-                db=db_name,
-            )
-
-            bulk_points.append(point)
-
-        ProgeoMeasurePoint.objects.using(db_name).filter(location=location).delete()
-        ProgeoMeasurePoint.objects.using(db_name).bulk_create(bulk_points)
-
-        stored_qs = ProgeoMeasurePoint.objects.using(db_name).filter(location=location).order_by("sensor_order")
-        stored = ProgeoMeasurePointSerializer(
-            stored_qs,
-            many=True,
-            context={"reference_sensor_order": reference_sensor_order},
-        ).data
-        return RequestSuccess({"location_id": location.id, "stored": len(stored), "points": stored})
+    @calc_runtime
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
+    @action(detail=False, url_path="measure_points/cad_job", methods=["GET"])
+    def cad_import_job(self, request, *args, **kwargs):
+        """State of a DWG/DXF import job of upload_cad (?job_id=): status, the
+        log so far and, once done, upload_cad's result. Only for the user who
+        uploaded the file - the websocket /ws/cad_factory/<job_id>/ streams the same."""
+        job = cad_import.get_job((request.query_params.get("job_id") or "").strip())
+        if not job or job.get("user_id") != request.user.pk:
+            return RequestFailed({"reason": "Import job not found"})
+        return RequestSuccess({"job": cad_import.public_job(job)})
 
 
     @calc_runtime
