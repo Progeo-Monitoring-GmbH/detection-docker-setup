@@ -572,18 +572,69 @@ def test_json_import_keeps_the_band_ends_and_connects_the_device(api_client, loc
     assert [(p.device_id, p.x_end) for p in stored] == [(device.pk, 100), (device.pk, None)]
 
 
-def test_dwg_job_connects_the_points_to_its_device(location, events, monkeypatch):
-    device = f.make_device(location)
-    _fake_run(monkeypatch, [], stdout=json.dumps(POINTS) + "\n")
+def test_dwg_job_splits_the_sensors_over_their_devices(location, events, monkeypatch):
+    first, second = f.make_device(location), f.make_device(location)
+    # dm 1, 2 and 4 (no dm 3 in the plan).
+    points = [{**POINTS[0], "pos": 1}, {**POINTS[1], "pos": 2}, {**POINTS[1], "pos": 4}]
+    _fake_run(monkeypatch, [], stdout=json.dumps(points) + "\n")
     job_id = cad_import.create_job(
         user_id=1, location_pk=location.pk, db_name=f.DB, cad_input="media/uploads/cad_imports/x.dwg",
-        source_name="plan.dwg", device_pk=device.pk,
+        source_name="plan.dwg", device_ranges=[(first.pk, 1, 2), (second.pk, 3, None)],
     )
 
     cad_import.run_job(job_id)
 
-    stored = ProgeoMeasurePoint.objects.using(f.DB).filter(location=location)
-    assert sorted(stored.values_list("device_id", flat=True)) == [device.pk, device.pk]
+    stored = ProgeoMeasurePoint.objects.using(f.DB).filter(location=location).order_by("sensor_order")
+    assert [(p.sensor_order, p.device_id) for p in stored] == [(1, first.pk), (2, first.pk), (4, second.pk)]
+    second.refresh_from_db(using=f.DB)
+    # The second device's pair 1 is dm 3 (not in the plan), its pair 2 dm 4.
+    assert (second.first_sensor_order, second.sensor_order_of(1)) == (3, 4)
+
+
+def test_a_devices_pairs_start_at_its_first_sensor():
+    from progeo.v1.models import ProgeoDevice
+
+    assert ProgeoDevice(first_sensor_order=301).sensor_order_of(0) == 301
+    assert ProgeoDevice().sensor_order_of(4) == 5
+
+
+def test_heatmap_series_follow_each_devices_sensors():
+    from types import SimpleNamespace
+
+    from progeo.v1.viewsets.locations_viewset import _aligned_series, _sensor_values
+
+    first = SimpleNamespace(device_id=1, get_pairs=lambda: [10, 11])
+    second = SimpleNamespace(device_id=2, get_pairs=lambda: [20])  # dm 301 on
+    frames = [_sensor_values(measurement, {1: 1, 2: 301}) for measurement in (first, second, first)]
+
+    assert frames[1] == {301: 20}
+    # The heatmap keeps a sensor's last value through the other device's measurements ...
+    assert _aligned_series(frames) == {1: [10, 10, 10], 2: [11, 11, 11], 301: [None, 20, 20]}
+    # ... the export leaves them empty.
+    assert _aligned_series(frames, carry=False)[301] == [None, 20, None]
+
+
+@pytest.mark.parametrize(("ranges", "reason"), [
+    ([{"device_id": "A", "from": 1, "to": 9}, {"device_id": "B", "from": 5}], "The sensors of device B overlap"),
+    ([{"device_id": "A", "from": 1}, {"device_id": "B", "from": 5}], "The sensors of device B overlap"),
+    ([{"device_id": "A", "from": 4, "to": 2}], "Device A: the sensors must run from 1 up"),
+    ([{"device_id": "A", "to": 2}, {"device_id": "A", "from": 3}], "One range per device"),
+])
+def test_device_ranges_must_not_overlap(api_client, location, ranges, reason):
+    devices = {"A": f.make_device(location).pk, "B": f.make_device(location).pk}
+    for entry in ranges:
+        entry["device_id"] = devices[entry["device_id"]]
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    response = api_client.post("/v1/status/measure_points/upload_cad/", {
+        "location_id": location.project_id, "point_devices": json.dumps(ranges),
+        "files0": SimpleUploadedFile("points.txt", b"1;0;0;0;931001;10;20\n"),
+    })
+
+    assert response.status_code == 400
+    expected = reason.replace("device A", f"device {devices['A']}").replace("device B", f"device {devices['B']}")
+    expected = expected.replace("Device A", f"Device {devices['A']}")
+    assert response.json()["reason"].startswith(expected)
 
 
 def test_stored_points_keep_their_numbers(location):

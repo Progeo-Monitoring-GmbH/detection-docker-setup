@@ -403,15 +403,17 @@ def _evaluate_measurement(measurement, location, db: str, weather_helper, alarme
                 alarms.reload(measurement.device_id)
         return False
 
+    # Pair index -> sensor_order (1-based; a device can start at a later sensor).
+    sensor_order_of = measurement.device.sensor_order_of if measurement.device else (lambda idx: idx + 1)
     sensor_max_values = [
-        {"sensor_id": idx + 1, "max_value": float(value)}  # 1-based sensor index
+        {"sensor_id": sensor_order_of(idx), "max_value": float(value)}
         for idx, value in over_threshold
     ]
     peak_idx, peak_value = max(over_threshold, key=lambda pair: pair[1])
     overlapping = None if alarms is None else alarms.overlapping(measurement.device_id, measurement.last_fetched)
     alarm, created = create_progeo_alarm_safe(
         measurement=measurement,
-        sensor_id=peak_idx + 1,  # 1-based sensor index, matches sensor_order
+        sensor_id=sensor_order_of(peak_idx),  # matches sensor_order
         max_value=float(peak_value),
         sensor_max_values=sensor_max_values,
         threshold=threshold,

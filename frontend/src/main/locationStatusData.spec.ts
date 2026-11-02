@@ -178,6 +178,22 @@ describe('sensorLinesOf', () => {
       ['single-6', '#6', [6]],
     ]);
   });
+
+  it('makes every dm sensor with its band line a line of its own', () => {
+    const lines = sensorLinesOf(
+      [
+        point(4, { grid_y: 0, x_end: 0.9, y_end: 0.5 }),
+        point(2, { grid_y: 0, x_end: 0.9, y_end: 0.4, name: 'Attika' }),
+        point(3, { grid_y: 0 }), // no band in the plan
+      ],
+      (row) => `Linie ${row + 1}`,
+    );
+    expect(lines.map(({ key, label, points }) => [key, label, points.map((p) => p.pos)])).toEqual([
+      ['band-2', 'Attika', [2]],
+      ['band-4', 'dm 4', [4]],
+      ['row-0', 'Linie 1', [3]],
+    ]);
+  });
 });
 
 describe('zonePointsOf', () => {
@@ -200,6 +216,16 @@ describe('zonePointsOf', () => {
     expect(zones.map((zone) => [zone.group, zone.groupLabel])).toEqual([
       ['row-0', 'Linie'],
       [null, '#2'],
+    ]);
+  });
+
+  it('hands a dm band its end', () => {
+    const bandPoints = [point(1, { x_end: 0.8, y_end: 0.5 }), point(2)];
+    const lines = sensorLinesOf(bandPoints, () => 'Linie');
+    const zones = zonePointsOf({ points: bandPoints, lines, heatmap, frameIndex: 2, threshold: null });
+    expect(zones.map((zone) => [zone.group, zone.groupLabel, zone.end, zone.value])).toEqual([
+      ['band-1', 'dm 1', [0.8, 0.5], 30],
+      [null, '#2', null, null],
     ]);
   });
 });

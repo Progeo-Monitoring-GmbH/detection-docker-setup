@@ -193,11 +193,20 @@ export const viewHeatmapOf = (
   };
 };
 
+/** smartex® dm sensor with its band line (from the CAD import): x/y -> x_end/y_end. */
+export const hasBand = (point: SensorHeatmapPoint) =>
+  point.x_end != null && point.y_end != null && Number.isFinite(point.x_end) && Number.isFinite(point.y_end);
+
+/** Group key of a sensor drawn as its own band line. */
+const bandKey = (point: SensorHeatmapPoint) => `band-${point.pos}`;
+
 /**
- * smartex® dm: the sensors of one grid row are one line (a sensor run) -
- * drawn joined, listed as one table row and judged by their strongest
- * reading. Named after their common measure point name, else
- * `lineLabel(row)`. Sensors without a grid row are lines of their own.
+ * smartex® dm: a sensor with its band line (CAD import) is a line of its
+ * own, "dm <pos>" (or its name). Without band lines, the sensors of one
+ * grid row are one line (a sensor run) - drawn joined, listed as one table
+ * row and judged by their strongest reading, named after their common
+ * measure point name, else `lineLabel(row)`. Sensors without a grid row are
+ * lines of their own.
  */
 export const sensorLinesOf = (
   points: SensorHeatmapPoint[],
@@ -205,7 +214,14 @@ export const sensorLinesOf = (
 ): SensorLine[] => {
   const rows = new Map<number, SensorHeatmapPoint[]>();
   const singles: SensorHeatmapPoint[] = [];
+  const bands: SensorLine[] = points
+    .filter(hasBand)
+    .sort((a, b) => a.pos - b.pos)
+    .map((point) => ({ key: bandKey(point), label: point.name || `dm ${point.pos}`, points: [point] }));
   points.forEach((point) => {
+    if (hasBand(point)) {
+      return;
+    }
     if (point.grid_y == null) {
       singles.push(point);
     } else {
@@ -217,6 +233,7 @@ export const sensorLinesOf = (
     return names.size === 1 ? [...names][0] || null : null;
   };
   return [
+    ...bands,
     ...[...rows.entries()]
       .sort(([a], [b]) => a - b)
       .map(([row, linePoints]) => ({
@@ -262,8 +279,10 @@ export const zonePointsOf = ({
     name: point.name ?? null,
     ...(lines
       ? {
-          group: point.grid_y != null ? `row-${point.grid_y}` : null,
+          // A dm sensor with its band line is a line of its own.
+          group: hasBand(point) ? bandKey(point) : point.grid_y != null ? `row-${point.grid_y}` : null,
           groupLabel: lineOf.get(point.pos)?.label ?? null,
+          end: hasBand(point) ? ([point.x_end, point.y_end] as [number, number]) : null,
         }
       : {}),
     value: frameValue(heatmap, frameIndex, point.pos) ?? point.last_value ?? null,

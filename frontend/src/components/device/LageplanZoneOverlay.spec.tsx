@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import axiosConfig from '../../axiosConfig';
 import LageplanZoneOverlay, {
+  alignedFraction,
   convexHull,
   segmentPadding,
   type LageplanOverlayMode,
@@ -189,6 +190,63 @@ describe('LageplanZoneOverlay points', () => {
     render(null, 'points', [point(7, 0.2, 0.2, 'Bad Dusche', 42)]);
     hover(container.querySelector('[data-testid="zone-point"]')!);
     expect(container.textContent).toContain('Bad Dusche (#7)');
+  });
+});
+
+describe('LageplanZoneOverlay dm bands', () => {
+  const band = (pos: number, value: number, end: [number, number] | null): LageplanZonePoint => ({
+    ...point(pos, 0.1, 0.2 * pos, null, value),
+    group: end ? `band-${pos}` : null,
+    groupLabel: `dm ${pos}`,
+    end,
+  });
+
+  it('draws a sensor with its band as that line, red-rimmed above the threshold', () => {
+    render(null, 'lines', [band(1, 20, [0.9, 0.2]), band(2, 150, [0.9, 0.4]), band(3, 5, null)]);
+    const bands = container.querySelectorAll('[data-testid="zone-band"]');
+    expect(bands).toHaveLength(2);
+    expect([bands[0].getAttribute('x1'), bands[0].getAttribute('x2')]).toEqual(['0.1', '0.9']);
+    // dm 2 over its threshold: a red line under the coloured one.
+    expect(container.querySelectorAll('line[stroke="#dc2626"]')).toHaveLength(1);
+    // dm 3 has no band in the plan: a dot.
+    expect(container.querySelectorAll('[data-testid="zone-point"]')).toHaveLength(1);
+  });
+
+  it('shows the sensor when hovering its band', () => {
+    render(null, 'lines', [band(7, 42, [0.9, 0.2])]);
+    hover(container.querySelector('[data-testid="zone-band"]')!);
+    expect(container.textContent).toContain('dm 7 (#7)');
+    expect(container.textContent).toContain('42');
+  });
+
+  it('reports a click on a band, not a drag', () => {
+    const clicked: number[] = [];
+    act(() => {
+      root.render(
+        <LageplanZoneOverlay imageUrl={null} points={[band(5, 1, [0.9, 0.2])]} mode="lines" onPointClick={(pos) => clicked.push(pos)} />,
+      );
+    });
+    const target = container.querySelector('[data-testid="zone-band"]')!;
+    act(() => {
+      target.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(clicked).toEqual([5]);
+  });
+});
+
+describe('alignedFraction', () => {
+  it('places a point as the alignment wizard does', () => {
+    // 1000x500 plan: the wizard draws it at 0.868 - 86.8 canvas px are a tenth of its width.
+    const [x, y] = alignedFraction(
+      [0.2, 0.3],
+      { offset_x: 86.8, offset_y: 0, scale_x: 1, scale_y: 2, flip_y: true },
+      [1000, 500],
+    );
+    expect(x).toBeCloseTo(0.3);
+    expect(y).toBeCloseTo(1.4);
+    // Without the image size (yet) no offsets.
+    expect(alignedFraction([0.2, 0.3], { offset_x: 86.8 }, null)).toEqual([0.2, 0.3]);
+    expect(alignedFraction([0.2, 0.3], null, [1000, 500])).toEqual([0.2, 0.3]);
   });
 });
 

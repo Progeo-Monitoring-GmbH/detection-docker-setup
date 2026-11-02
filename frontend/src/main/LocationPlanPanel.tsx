@@ -171,6 +171,7 @@ const LocationPlanPanel = ({
           points={zonePoints}
           height={480}
           mode={visualization}
+          alignment={shownPlan}
         />
         {sensorTable}
       </>

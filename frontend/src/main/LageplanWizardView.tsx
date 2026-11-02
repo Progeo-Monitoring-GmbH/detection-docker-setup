@@ -34,7 +34,12 @@ type WizardDevice = {
   hardware?: string | null;
   type?: string | null;
   raw_hash?: string | null;
+  /** sensor_order of the device's pair 1 (ProgeoDevice.first_sensor_order). */
+  first_sensor_order?: number | null;
 };
+
+/** Step 3: the sensors from..to (sensor_order, '' = open) of one device. */
+type DeviceRange = { deviceId: number | null; from: string; to: string };
 
 /** A Lageplan of the location (ProgeoLageplanSerializer). */
 type WizardLageplan = SensorHeatmapLageplanData & { id: number };
@@ -119,17 +124,54 @@ const placedFromPoints = (
     });
 };
 
-/** The device imported points get connected to: the one the stored imported
- * points belong to, else the location's only device. */
-const defaultPointDevice = (
+/** The devices imported points get connected to: as the stored imported
+ * points are (each device's first sensor to its last), else all on the
+ * location's only device. */
+const defaultDeviceRanges = (
   points: Array<Record<string, unknown>>,
   devices: WizardDevice[],
-): number | null => {
-  const imported = [...pointsPerDevice(points)].filter(([, count]) => count > 1);
-  if (imported.length === 1 && devices.some((device) => device.id === imported[0][0])) {
-    return imported[0][0];
+): DeviceRange[] => {
+  const imported = [...pointsPerDevice(points)]
+    .filter(([deviceId, count]) => count > 1 && devices.some((device) => device.id === deviceId))
+    .map(([deviceId]) => {
+      const orders = points
+        .filter((point) => Number(point.device) === deviceId)
+        .map((point) => Number(point.sensor_order));
+      const device = devices.find((candidate) => candidate.id === deviceId);
+      return {
+        deviceId,
+        from: String(device?.first_sensor_order ?? Math.min(...orders)),
+        to: String(Math.max(...orders)),
+      };
+    })
+    .sort((a, b) => Number(a.from) - Number(b.from));
+  if (imported.length) {
+    // The last device takes every sensor from its first on.
+    imported[imported.length - 1].to = '';
+    return imported;
   }
-  return devices.length === 1 ? devices[0].id : null;
+  return devices.length === 1 ? [{ deviceId: devices[0].id, from: '1', to: '' }] : [];
+};
+
+/** Why the ranges can't be imported, or null. */
+const rangesProblem = (ranges: DeviceRange[]): string | null => {
+  const used = ranges.filter((range) => range.deviceId != null);
+  if (new Set(used.map((range) => range.deviceId)).size !== used.length) {
+    return 'Each device only once - its pair 1 is the first sensor of its range.';
+  }
+  const parsed = used
+    .map((range) => ({
+      from: range.from.trim() ? Number(range.from) : 1,
+      to: range.to.trim() ? Number(range.to) : Infinity,
+    }))
+    .sort((a, b) => a.from - b.from);
+  if (parsed.some((range) => !Number.isInteger(range.from) || range.from < 1 || range.to < range.from)) {
+    return 'The sensors of a device run from 1 up (from <= to).';
+  }
+  if (parsed.some((range, index) => index > 0 && parsed[index - 1].to >= range.from)) {
+    return 'The ranges of two devices overlap.';
+  }
+  return null;
 };
 
 const requestReason = (requestError: unknown) =>
@@ -363,8 +405,9 @@ const LageplanWizardView = () => {
   const [placedSensors, setPlacedSensors] = useState<WizardSensor[]>([]);
   const [activeDeviceId, setActiveDeviceId] = useState<number | null>(null);
   const [placementDirty, setPlacementDirty] = useState(false);
-  // Step 3, CAD/JSON/TXT: the device the imported points are connected to.
-  const [pointDeviceId, setPointDeviceId] = useState<number | null>(null);
+  // Step 3, CAD/JSON/TXT: the devices the imported points are connected to,
+  // each with its sensors (a plan's sensors can be split over devices).
+  const [deviceRanges, setDeviceRanges] = useState<DeviceRange[]>([]);
 
   // Everything below step 1 belongs to the selected location.
   const selectLocation = (next: WizardLocation | null) => {
@@ -381,7 +424,7 @@ const LageplanWizardView = () => {
     setPlacedSensors([]);
     setActiveDeviceId(null);
     setPlacementDirty(false);
-    setPointDeviceId(null);
+    setDeviceRanges([]);
     setError('');
   };
 
@@ -452,7 +495,7 @@ const LageplanWizardView = () => {
           setPlacedSensors(placed);
           setActiveDeviceId(null);
           setPlacementDirty(false);
-          setPointDeviceId(defaultPointDevice(points, loadedDevices));
+          setDeviceRanges(defaultDeviceRanges(points, loadedDevices));
           if (placed.length) {
             setPointSource('manual');
           }
@@ -656,13 +699,30 @@ const LageplanWizardView = () => {
   // Saving replaces every point of the location, also the imported ones.
   const replacedPointCount =
     measurePoints.length - placedFromPoints(measurePoints, devices).length;
-  // Imported points (CAD/JSON/TXT) are connected to this device.
+  // Imported points (CAD/JSON/TXT) are connected to these devices
+  // (StatusViewSet._point_devices).
+  const usedRanges = deviceRanges.filter((range) => range.deviceId != null);
   const importPayload = {
     location_id: selectedLocationId,
-    ...(pointDeviceId != null ? { point_device_id: pointDeviceId } : {}),
+    point_devices: JSON.stringify(
+      usedRanges.map((range) => ({
+        device_id: range.deviceId,
+        from: range.from.trim() || 1,
+        to: range.to.trim(),
+      })),
+    ),
   };
+  const deviceRangesProblem = rangesProblem(deviceRanges);
+  const updateRange = (index: number, values: Partial<DeviceRange>) =>
+    setDeviceRanges((current) =>
+      current.map((range, position) => (position === index ? { ...range, ...values } : range)),
+    );
   const deviceLabels = useMemo(
     () => Object.fromEntries(devices.map((device) => [device.id, deviceLabel(device)])),
+    [devices],
+  );
+  const devicePairStarts = useMemo(
+    () => Object.fromEntries(devices.map((device) => [device.id, device.first_sensor_order ?? 1])),
     [devices],
   );
   const connectedCount = (deviceId: number) =>
@@ -1116,43 +1176,105 @@ const LageplanWizardView = () => {
     </div>
   );
 
-  // The device the imported points are connected to (their measurements
-  // come from it); "none" keeps them without device.
-  const renderPointDevice = () => (
-    <div className="d-flex flex-wrap align-items-center gap-2">
-      <label
-        htmlFor="wizard-point-device"
-        className="mb-0"
-        style={{ fontSize: 12.5, color: MUTED }}
+  // The devices the imported points are connected to (their measurements
+  // come from them): each takes the sensors from..to, its pair 1 being the
+  // first of them. Without a row the points stay without device.
+  const renderDeviceRanges = () => {
+    const fieldStyle: React.CSSProperties = { borderRadius: 10, height: 32 };
+    const rangeLabel = (text: string) => (
+      <span style={{ fontSize: 12, color: MUTED }}>{text}</span>
+    );
+    return (
+      <div
+        className="d-flex flex-column gap-2"
+        style={{ background: 'var(--progeo-surface)', borderRadius: 13, padding: 14 }}
       >
-        Connect the imported points to
-      </label>
-      <select
-        id="wizard-point-device"
-        className="form-select form-select-sm"
-        style={{ width: 'auto', minWidth: 220, borderRadius: 10, height: 32 }}
-        value={pointDeviceId ?? ''}
-        disabled={devices.length === 0}
-        onChange={(event) =>
-          setPointDeviceId(event.target.value ? Number(event.target.value) : null)
-        }
-      >
-        <option value="">
-          {devices.length ? 'no device' : 'no device at this location'}
-        </option>
-        {devices.map((device) => {
-          const connected = connectedCount(device.id);
-          return (
-            <option key={device.id} value={device.id}>
-              {deviceLabel(device)}
-              {device.hardware && device.mac ? ` · ${device.hardware}` : ''}
-              {connected ? ` · ${connected} point(s) now` : ''}
-            </option>
-          );
-        })}
-      </select>
-    </div>
-  );
+        <div>
+          <div style={{ fontSize: 13.5, fontWeight: 500 }}>Devices</div>
+          <div style={{ fontSize: 12, color: MUTED }}>
+            {devices.length === 0
+              ? 'No devices are connected to this location - the points are imported without device.'
+              : 'The imported sensors are connected to these devices. Each device counts its pairs from 1: pair 1 is the first sensor of its range. Leave "to" empty for all sensors from "from" on.'}
+          </div>
+        </div>
+        {deviceRanges.map((range, index) => (
+          // Rows have no id of their own.
+          <div key={index} className="d-flex flex-wrap align-items-center gap-2">
+            <select
+              aria-label="Device"
+              className="form-select form-select-sm"
+              style={{ ...fieldStyle, width: 'auto', minWidth: 200 }}
+              value={range.deviceId ?? ''}
+              onChange={(event) =>
+                updateRange(index, {
+                  deviceId: event.target.value ? Number(event.target.value) : null,
+                })
+              }
+            >
+              <option value="">choose a device</option>
+              {devices.map((device) => {
+                const connected = connectedCount(device.id);
+                return (
+                  <option key={device.id} value={device.id}>
+                    {deviceLabel(device)}
+                    {device.hardware && device.mac ? ` · ${device.hardware}` : ''}
+                    {connected ? ` · ${connected} point(s) now` : ''}
+                  </option>
+                );
+              })}
+            </select>
+            {rangeLabel('sensors')}
+            <input
+              aria-label="First sensor"
+              type="number"
+              min={1}
+              className="form-control form-control-sm"
+              style={{ ...fieldStyle, width: 90 }}
+              placeholder="1"
+              value={range.from}
+              onChange={(event) => updateRange(index, { from: event.target.value })}
+            />
+            {rangeLabel('to')}
+            <input
+              aria-label="Last sensor"
+              type="number"
+              min={1}
+              className="form-control form-control-sm"
+              style={{ ...fieldStyle, width: 90 }}
+              placeholder="last"
+              value={range.to}
+              onChange={(event) => updateRange(index, { to: event.target.value })}
+            />
+            <PillButton
+              variant="ghost"
+              label="Remove"
+              onClick={() =>
+                setDeviceRanges((current) => current.filter((_range, position) => position !== index))
+              }
+            />
+          </div>
+        ))}
+        {devices.length > deviceRanges.length && (
+          <div>
+            <PillButton
+              variant="ghost"
+              label={deviceRanges.length ? 'Add another device' : 'Connect a device'}
+              onClick={() =>
+                setDeviceRanges((current) => {
+                  // A new row continues after the last one's range.
+                  const last = current[current.length - 1];
+                  const next = last?.to.trim() ? String(Number(last.to) + 1) : current.length ? '' : '1';
+                  const unused = devices.find((device) => !current.some((range) => range.deviceId === device.id));
+                  return [...current, { deviceId: unused?.id ?? null, from: next, to: '' }];
+                })
+              }
+            />
+          </div>
+        )}
+        {deviceRangesProblem && <Notice tone="warning">{deviceRangesProblem}</Notice>}
+      </div>
+    );
+  };
 
   const renderStepThree = () => (
     <StepCard
@@ -1181,8 +1303,9 @@ const LageplanWizardView = () => {
             </div>
           </div>
 
-          {pointSource !== 'manual' && renderPointDevice()}
-          {pointSource === 'cad' && (
+          {pointSource !== 'manual' && renderDeviceRanges()}
+          {/* No import while the device ranges don't fit (see the notice). */}
+          {!deviceRangesProblem && pointSource === 'cad' && (
             <CadUploadDropbox
               auth={auth}
               url={`/v1/status/measure_points/upload_cad/`}
@@ -1195,7 +1318,7 @@ const LageplanWizardView = () => {
               callBackProcessing={handleCadUpload}
             />
           )}
-          {pointSource === 'json' && (
+          {!deviceRangesProblem && pointSource === 'json' && (
             <RedDropbox
               auth={auth}
               url={`/v1/status/measure_points/from_json/`}
@@ -1207,7 +1330,7 @@ const LageplanWizardView = () => {
               callBackProcessing={handleJsonUpload}
             />
           )}
-          {pointSource === 'txt' && (
+          {!deviceRangesProblem && pointSource === 'txt' && (
             <CadUploadDropbox
               auth={auth}
               url={`/v1/status/measure_points/upload_cad/`}
@@ -1268,6 +1391,7 @@ const LageplanWizardView = () => {
           // smartex dm: every sensor is a band line (nx/ny -> nx_end/ny_end).
           lineSensors={planVisualization(selectedLocation?.project_type) === 'lines'}
           deviceLabels={deviceLabels}
+          devicePairStarts={devicePairStarts}
           withSliders={canEditLocation}
           onSaveSliders={canEditLocation ? handleSaveSliders : undefined}
           onSaveScale={canEditLocation ? handleSaveScale : undefined}

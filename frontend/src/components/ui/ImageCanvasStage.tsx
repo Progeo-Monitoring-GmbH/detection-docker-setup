@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import axiosConfig from '../../axiosConfig';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
+import ZoomControls from '../device/ZoomControls';
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
@@ -17,6 +18,10 @@ const MAX_PIXEL_RATIO = 4;
 // and the average distance between sensors from which they get labels.
 const HOVER_TOLERANCE = 8;
 const LABEL_SPACING = 34;
+const MIN_ZOOM = 0.4;
+const MAX_ZOOM = 20;
+/** Zoom per click of the zoom buttons. */
+const ZOOM_STEP = 1.5;
 
 /** Colour of the index-th of `count` sensors in sensor order, red to violet:
  * neighbours are told apart, and runs of sensors are easy to follow. */
@@ -196,6 +201,8 @@ type ImageCanvasStageProps = {
   lineSensors?: boolean;
   /** Names of the devices points are connected to (tooltip), by id. */
   deviceLabels?: Record<number, string>;
+  /** sensor_order of each device's pair 1 (ProgeoDevice.first_sensor_order), by id. */
+  devicePairStarts?: Record<number, number>;
   withSliders?: boolean;
   onSaveSliders?: (values: {
     offsetX: number;
@@ -217,6 +224,7 @@ const ImageCanvasStage = ({
   measurePoints = [],
   lineSensors = false,
   deviceLabels,
+  devicePairStarts,
   withSliders = false,
   locationId,
   lageplanId,
@@ -638,31 +646,59 @@ const ImageCanvasStage = ({
     };
   }, []);
 
-  const handleWheel = (event: React.WheelEvent<HTMLCanvasElement>) => {
-    event.preventDefault();
-
-    const pointer = canvasPointAt(event);
-    if (!pointer) {
-      return;
-    }
-
-    const [pointerX, pointerY] = pointer;
-    const nextZoom = clamp(
-      zoom * (event.deltaY < 0 ? 1.12 : 1 / 1.12),
-      0.4,
-      20,
-    );
-
-    // The plan point under the mouse stays under it.
-    const nextOffsetX =
-      offsetX + (pointerX - CANVAS_WIDTH / 2 - offsetX) * (1 - nextZoom / zoom);
-    const nextOffsetY =
-      offsetY + (pointerY - CANVAS_HEIGHT / 2 - offsetY) * (1 - nextZoom / zoom);
-
+  /** Zoom by `factor` around a canvas point (default: the middle) - the
+   * plan point there stays where it is. */
+  const zoomAround = (factor: number, at?: ImagePoint) => {
+    const [pointerX, pointerY] = at ?? [CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2];
+    const nextZoom = clamp(zoom * factor, MIN_ZOOM, MAX_ZOOM);
+    const ratio = 1 - nextZoom / zoom;
     setZoom(nextZoom);
-    setOffsetX(nextOffsetX);
-    setOffsetY(nextOffsetY);
+    setOffsetX(offsetX + (pointerX - CANVAS_WIDTH / 2 - offsetX) * ratio);
+    setOffsetY(offsetY + (pointerY - CANVAS_HEIGHT / 2 - offsetY) * ratio);
   };
+  const resetView = () => {
+    setZoom(1);
+    setOffsetX(0);
+    setOffsetY(0);
+  };
+  const zoomAroundRef = useRef(zoomAround);
+  zoomAroundRef.current = zoomAround;
+
+  // Ctrl (or ⌘) + wheel zooms - a trackpad pinch too; the plain wheel
+  // scrolls the page and only shows how to zoom. Native listener: React's
+  // wheel handler is passive and can't keep the page from scrolling.
+  const [wheelHint, setWheelHint] = useState(false);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      return undefined;
+    }
+    let hintTimer: ReturnType<typeof setTimeout> | undefined;
+    const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey) {
+        setWheelHint(true);
+        clearTimeout(hintTimer);
+        hintTimer = setTimeout(() => setWheelHint(false), 1400);
+        return;
+      }
+      event.preventDefault();
+      setWheelHint(false);
+      const rect = canvas.getBoundingClientRect();
+      if (!rect.width || !rect.height) {
+        return;
+      }
+      const delta = clamp(event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY, -120, 120);
+      zoomAroundRef.current(Math.exp(-delta * 0.0015), [
+        ((event.clientX - rect.left) * CANVAS_WIDTH) / rect.width,
+        ((event.clientY - rect.top) * CANVAS_HEIGHT) / rect.height,
+      ]);
+    };
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      canvas.removeEventListener('wheel', onWheel);
+      clearTimeout(hintTimer);
+    };
+  }, []);
 
   /** Canvas unit (LOGICAL) under the mouse - the canvas is shown at any width. */
   const canvasPointAt = (
@@ -947,6 +983,11 @@ const ImageCanvasStage = ({
     if (point.device != null) {
       const deviceId = Number(point.device);
       rows.push(['Device', deviceLabels?.[deviceId] ?? `#${deviceId}`]);
+      // Which pair of the device's measurements is this sensor.
+      const start = devicePairStarts?.[deviceId];
+      if (start != null) {
+        rows.push(['Pair', String(Number(item.label) - start + 1)]);
+      }
     }
     if (item.end) {
       if (image && validMetersPerPixel) {
@@ -995,7 +1036,6 @@ const ImageCanvasStage = ({
             ref={canvasRef}
             width={Math.round(CANVAS_WIDTH * pixelRatio)}
             height={Math.round(CANVAS_HEIGHT * pixelRatio)}
-            onWheel={handleWheel}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseLeave={() => setHover(null)}
@@ -1018,6 +1058,33 @@ const ImageCanvasStage = ({
                       : 'grab',
             }}
           />
+          <ZoomControls
+            onZoomIn={() => zoomAround(ZOOM_STEP)}
+            onZoomOut={() => zoomAround(1 / ZOOM_STEP)}
+            onReset={resetView}
+            zoomOutDisabled={zoom <= MIN_ZOOM}
+            resetDisabled={zoom === 1 && offsetX === 0 && offsetY === 0}
+          />
+          {wheelHint && (
+            <div
+              aria-live="polite"
+              style={{
+                position: 'absolute',
+                inset: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                pointerEvents: 'none',
+                borderRadius: 13,
+                background: 'rgba(16, 20, 25, 0.35)',
+                color: '#ffffff',
+                fontSize: 15,
+                fontWeight: 600,
+              }}
+            >
+              Ctrl + scroll to zoom the plan
+            </div>
+          )}
           {hover && hoveredItem && (
             <div
               role="tooltip"
@@ -1087,7 +1154,7 @@ const ImageCanvasStage = ({
               ? placement.activeDeviceId != null
                 ? `Click on the plan to place ${placement.activeLabel ?? 'the selected sensor'} · drag points to move them`
                 : 'Select a sensor in step 3 · drag points to move them'
-              : 'Drag to pan · scroll to zoom · hover a sensor for details'}
+              : 'Drag to pan · Ctrl + scroll or the buttons to zoom · hover a sensor for details'}
           </span>
         </div>
 

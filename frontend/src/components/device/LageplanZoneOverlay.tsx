@@ -5,6 +5,7 @@ import axiosConfig from '../../axiosConfig';
 import { getBackendUrl } from '../../backendUrl';
 import { alarmHeatColor } from '../../main/alarmUtils';
 import CursorTooltip, { TooltipRow } from '../ui/CursorTooltip';
+import { alignmentBaseScale } from '../ui/ImageCanvasStage';
 import { fullBox, isFull, panBox, type ViewBox, viewBoxAttribute, zoomBox } from './planViewBox';
 import SensorTooltip from './SensorTooltip';
 import ZoomControls from './ZoomControls';
@@ -24,6 +25,19 @@ export type LageplanZonePoint = {
   threshold: number | null;
   /** Position in meters; null while the plan isn't calibrated. */
   meters?: [number, number] | null;
+  /** smartex® dm: the end of the sensor's band line (normalized like x/y) -
+   * the sensor is drawn as that line from x/y. */
+  end?: [number, number] | null;
+};
+
+/** The Lageplan's alignment of its measure points (set in the Lageplan
+ * wizard, ImageCanvasStage): offsets in wizard canvas pixels, scales, flip. */
+export type PlanPointAlignment = {
+  offset_x?: number | null;
+  offset_y?: number | null;
+  scale_x?: number | null;
+  scale_y?: number | null;
+  flip_y?: boolean | null;
 };
 
 /**
@@ -40,7 +54,34 @@ type LageplanZoneOverlayProps = {
   points: LageplanZonePoint[];
   height?: number;
   mode?: LageplanOverlayMode;
+  /** Where the points lie on the plan image (the shown Lageplan's alignment). */
+  alignment?: PlanPointAlignment | null;
+  /** A click (not a drag) on a sensor or dm band, with its pos. */
+  onPointClick?: (pos: number) => void;
 };
+
+/**
+ * Normalized point -> fraction of the plan image (y downwards), as the
+ * alignment wizard draws it: offset (canvas pixels at alignmentBaseScale)
+ * plus the coordinate scaled, y mirrored with flip_y. Offsets need the
+ * image size; without it they are left out.
+ */
+export const alignedFraction = (
+  [x, y]: [number, number],
+  alignment: PlanPointAlignment | null | undefined,
+  imageSize: [number, number] | null,
+): [number, number] => {
+  const scaleX = alignment?.scale_x || 1;
+  const scaleY = alignment?.scale_y || 1;
+  const base = imageSize ? alignmentBaseScale(imageSize[0], imageSize[1]) : 0;
+  const offsetX = imageSize && base ? (alignment?.offset_x ?? 0) / (imageSize[0] * base) : 0;
+  const offsetY = imageSize && base ? (alignment?.offset_y ?? 0) / (imageSize[1] * base) : 0;
+  return [offsetX + x * scaleX, offsetY + (alignment?.flip_y ? 1 - y : y) * scaleY];
+};
+
+/** A group drawn as one sensor's band line. */
+const isBand = (group: ZoneGroup, mode: LageplanOverlayMode) =>
+  mode === 'lines' && group.points.length === 1 && group.points[0].end != null;
 
 type ZoneGroup = {
   key: string;
@@ -72,7 +113,10 @@ const DRAG_THRESHOLD = 3;
  * planVisualization in main/projectType.ts). Every sensor, line and segment
  * is coloured on the heatmap's scale (alarmHeatColor); readings above the
  * threshold get a red outline. Hovering a sensor shows its values, hovering
- * a line or segment the group's.
+ * a line or segment the group's. A smartex® dm sensor with its band line
+ * (`end`) is drawn as that line; hovering it shows the sensor's values.
+ * Points lie on the plan by its alignment (alignedFraction), as in the
+ * Lageplan wizard and the heatmap.
  *
  * The plan image lies in the SVG with its own size (image pixels) as
  * coordinate system, so the points land exactly on it (a square viewBox
@@ -80,7 +124,14 @@ const DRAG_THRESHOLD = 3;
  * the plan, pinch, buttons) and drag change the viewBox - markers and lines
  * keep their size on screen. Double click resets.
  */
-const LageplanZoneOverlay = ({ imageUrl, points, height = 480, mode = 'lines' }: LageplanZoneOverlayProps) => {
+const LageplanZoneOverlay = ({
+  imageUrl,
+  points,
+  height = 480,
+  mode = 'lines',
+  alignment = null,
+  onPointClick,
+}: LageplanZoneOverlayProps) => {
   const { t } = useTranslation();
   const groups = groupPoints(points, mode);
 
@@ -101,6 +152,18 @@ const LageplanZoneOverlay = ({ imageUrl, points, height = 480, mode = 'lines' }:
   // Pointers pressed on the plan (drag: one, pinch: two).
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const [dragging, setDragging] = useState(false);
+  // Whether the current press became a drag - its click then isn't one.
+  const dragged = useRef(false);
+  const clickProps = (point: LageplanZonePoint) =>
+    onPointClick
+      ? {
+          onClick: () => {
+            if (!dragged.current) {
+              onPointClick(point.pos);
+            }
+          },
+        }
+      : {};
 
   useEffect(() => {
     setImageSrc(null);
@@ -143,7 +206,11 @@ const LageplanZoneOverlay = ({ imageUrl, points, height = 480, mode = 'lines' }:
   const planUnit = Math.min(viewWidth, viewHeight);
   // ... markers, lines and labels to the shown part's: same size on screen at any zoom.
   const unit = Math.min(box.w, box.h);
-  const toView = (point: LageplanZonePoint): [number, number] => [point.x * viewWidth, point.y * viewHeight];
+  const fractionToView = ([fx, fy]: [number, number]): [number, number] => [fx * viewWidth, fy * viewHeight];
+  const toView = (point: LageplanZonePoint): [number, number] =>
+    fractionToView(alignedFraction([point.x, point.y], alignment, imageSize));
+  const endToView = (point: LageplanZonePoint): [number, number] | null =>
+    point.end ? fractionToView(alignedFraction(point.end, alignment, imageSize)) : null;
 
   // Screen -> plan coordinates (null where the browser can't tell, e.g. jsdom).
   const toPlan = (clientX: number, clientY: number) => {
@@ -199,6 +266,7 @@ const LageplanZoneOverlay = ({ imageUrl, points, height = 480, mode = 'lines' }:
       return;
     }
     pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    dragged.current = false;
   };
 
   const onPointerMove = (event: PointerEvent<SVGSVGElement>) => {
@@ -220,6 +288,7 @@ const LageplanZoneOverlay = ({ imageUrl, points, height = 480, mode = 'lines' }:
       setDragging(true);
       setHover(null);
     }
+    dragged.current = true;
     pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (others.length === 0) {
       const scale = toPlan(event.clientX, event.clientY)?.pixelsPerUnit;
@@ -363,6 +432,44 @@ const LageplanZoneOverlay = ({ imageUrl, points, height = 480, mode = 'lines' }:
         {groups.map((group) => {
           const coords = group.points.map((point) => toView(point).join(',')).join(' ');
           const color = group.color;
+          if (isBand(group, mode)) {
+            // A smartex® dm sensor: its band line, coloured by its value, red-rimmed above the threshold.
+            const point = group.points[0];
+            const [x1, y1] = toView(point);
+            const [x2, y2] = endToView(point) as [number, number];
+            const over = isOverThreshold(point);
+            return (
+              <g key={group.key}>
+                {over && (
+                  <line
+                    x1={x1}
+                    y1={y1}
+                    x2={x2}
+                    y2={y2}
+                    stroke={OVER_THRESHOLD_COLOR}
+                    strokeWidth={0.013 * unit}
+                    strokeLinecap="round"
+                  />
+                )}
+                <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={color} strokeWidth={0.007 * unit} strokeLinecap="round" />
+                <circle cx={x1} cy={y1} r={0.006 * unit} fill={color} stroke="#ffffff" strokeWidth={0.002 * unit} />
+                {/* Wider invisible hit area for hovering the band. */}
+                <line
+                  data-testid="zone-band"
+                  x1={x1}
+                  y1={y1}
+                  x2={x2}
+                  y2={y2}
+                  stroke="transparent"
+                  strokeWidth={0.025 * unit}
+                  style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
+                  onMouseMove={(event) => hoverAt(event, { point })}
+                  onMouseLeave={() => setHover(null)}
+                  {...clickProps(point)}
+                />
+              </g>
+            );
+          }
           return (
             <g key={group.key}>
               {mode === 'lines' && group.points.length > 1 && (
@@ -425,6 +532,7 @@ const LageplanZoneOverlay = ({ imageUrl, points, height = 480, mode = 'lines' }:
                       style={{ cursor: 'pointer' }}
                       onMouseMove={(event) => hoverAt(event, asLine ? { group } : { point })}
                       onMouseLeave={() => setHover(null)}
+                      {...clickProps(point)}
                     />
                   </g>
                 );
@@ -448,8 +556,14 @@ const LageplanZoneOverlay = ({ imageUrl, points, height = 480, mode = 'lines' }:
       {hover?.kind === 'point' && (
         <SensorTooltip
           sensorPos={hover.point.pos}
-          // Zone names are the zone's - only the points view names sensors.
-          name={mode === 'points' ? hover.point.name : null}
+          // Zone names are the zone's - only the points view and dm bands name sensors.
+          name={
+            mode === 'points'
+              ? hover.point.name
+              : hover.point.end
+                ? hover.point.groupLabel || `dm ${hover.point.pos}`
+                : null
+          }
           meters={hover.point.meters ?? null}
           value={hover.point.value ?? Number.NaN}
           threshold={hover.point.threshold}

@@ -534,6 +534,16 @@ class ProgeoDevice(ProgeoModel, auto_prefetch.Model):
     # (helper/device_commands.py); last_command_poll is when it last did.
     pending_commands = models.JSONField(default=list, blank=True)
     last_command_poll = models.DateTimeField(null=True, blank=True)
+    # The measure point (sensor_order) of the device's first pair: the sensors
+    # of a location can be split over devices (e.g. dm 301-558 on a second
+    # one), each counting its pairs from 1 - see sensor_order_of. Set by the
+    # Lageplan wizard's import (helper/cad_import.py).
+    first_sensor_order = models.IntegerField(default=1)
+
+    def sensor_order_of(self, pair_index: int) -> int:
+        """sensor_order of the measure point the 0-based pair `pair_index` of
+        this device's measurements belongs to."""
+        return (self.first_sensor_order or 1) + pair_index
 
     @property
     def display_name(self):

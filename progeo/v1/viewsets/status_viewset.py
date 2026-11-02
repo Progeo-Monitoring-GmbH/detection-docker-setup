@@ -134,19 +134,51 @@ def _measure_point_location(request, params):
     return None, None, RequestFailed({"reason": f"No location found for device {device_id}"})
 
 
-def _point_device(request, location, db_name):
-    """(device pk or None, error_response) - `point_device_id`: the device of
-    the location imported measure points are connected to (Lageplan wizard)."""
-    raw = request.query_params.get("point_device_id") or request.data.get("point_device_id")
-    if raw in (None, "", "null"):
-        return None, None
-    try:
-        device_pk = int(raw)
-    except (TypeError, ValueError):
-        return None, RequestFailed({"reason": "point_device_id must be an integer"})
-    if not ProgeoDevice.objects.using(db_name).filter(location=location, pk=device_pk).exists():
-        return None, RequestFailed({"reason": f"Device {device_pk} is not at this location"})
-    return device_pk, None
+def _point_devices(request, location, db_name):
+    """(device ranges, error_response): the devices of the location imported
+    measure points are connected to (Lageplan wizard) - cad_import.store_measure_points.
+
+    `point_devices`: JSON [{"device_id", "from", "to"}, ...] - the sensors
+    (sensor_order) from..to of each device, `to` empty: all from `from` on;
+    one range per device (its pair 1 is sensor `from`), no overlaps.
+    `point_device_id`: one device for all sensors."""
+    params = request.query_params if "point_devices" in request.query_params else request.data
+    raw = params.get("point_devices")
+    if raw in (None, "", "null", "[]"):
+        single = request.query_params.get("point_device_id") or request.data.get("point_device_id")
+        if single in (None, "", "null"):
+            return [], None
+        raw = [{"device_id": single}]
+    elif isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return None, RequestFailed({"reason": "point_devices must be a JSON list"})
+    if not isinstance(raw, list):
+        return None, RequestFailed({"reason": "point_devices must be a JSON list"})
+
+    known = set(ProgeoDevice.objects.using(db_name).filter(location=location).values_list("pk", flat=True))
+    ranges = []
+    for entry in raw:
+        try:
+            device_pk = int(entry.get("device_id"))
+            first = int(entry.get("from") or 1)
+            last = None if entry.get("to") in (None, "") else int(entry.get("to"))
+        except (AttributeError, TypeError, ValueError):
+            return None, RequestFailed({"reason": "point_devices: device_id, from and to must be integers"})
+        if device_pk not in known:
+            return None, RequestFailed({"reason": f"Device {device_pk} is not at this location"})
+        if first < 1 or (last is not None and last < first):
+            return None, RequestFailed({"reason": f"Device {device_pk}: the sensors must run from 1 up ({first}-{last})"})
+        ranges.append((device_pk, first, last))
+
+    if len({device_pk for device_pk, _first, _last in ranges}) != len(ranges):
+        return None, RequestFailed({"reason": "One range per device - its pair 1 is the first sensor of it"})
+    ordered = sorted(ranges, key=lambda entry: entry[1])
+    for (_pk, _first, last), (next_pk, next_first, _next_last) in zip(ordered, ordered[1:]):
+        if last is None or last >= next_first:
+            return None, RequestFailed({"reason": f"The sensors of device {next_pk} overlap another device's"})
+    return ranges, None
 
 
 def get_connected_devices(*args, **kwargs) -> dict:
@@ -532,7 +564,7 @@ class StatusViewSet(ProgeoModalViewSet):
         )
         if error:
             return error
-        device_pk, error = _point_device(request, location, db_name)
+        device_ranges, error = _point_devices(request, location, db_name)
         if error:
             return error
 
@@ -546,12 +578,14 @@ class StatusViewSet(ProgeoModalViewSet):
                                                                 db=db_name)
             # A dm band's end (cad_reader output) and the connected device.
             changed = {field: point[field] for field in cad_import.END_FIELDS if field in point}
-            if device_pk:
-                changed["device_id"] = device_pk
+            if device_ranges and measure_point:
+                changed["device_id"] = cad_import.device_of(device_ranges, measure_point.sensor_order)
             if measure_point and changed:
                 for field, value in changed.items():
                     setattr(measure_point, field, value)
                 measure_point.save(using=db_name, update_fields=list(changed))
+        for device_pk, first, _last in device_ranges:
+            ProgeoDevice.objects.using(db_name).filter(pk=device_pk).update(first_sensor_order=first)
         return RequestSuccess({"data": data})
 
     @calc_runtime
@@ -578,7 +612,8 @@ class StatusViewSet(ProgeoModalViewSet):
     @action(detail=False, url_path="measure_points/upload_cad", methods=["POST"])
     def upload_measure_points_from_cad(self, request, *args, **kwargs):
         """Replaces a location's measure points with imported ones, connected
-        to the location's device `point_device_id` if given. Text
+        to the location's devices `point_devices` / `point_device_id` if given
+        (_point_devices). Text
         (semicolon rows) is stored right away; a DWG/DXF plan is read by
         progeo-cad_factory in a background job: the answer is {job_id}, follow it on
         /ws/cad_import/<job_id>/ or poll measure_points/cad_job
@@ -590,7 +625,7 @@ class StatusViewSet(ProgeoModalViewSet):
         })
         if error:
             return error
-        device_pk, error = _point_device(request, location, db_name)
+        device_ranges, error = _point_devices(request, location, db_name)
         if error:
             return error
 
@@ -608,7 +643,7 @@ class StatusViewSet(ProgeoModalViewSet):
                     coord_margin = 0.2
 
                 return self._queue_cad_job(request, location, db_name, upload, suffix, coord_margin=coord_margin,
-                                           device_pk=device_pk)
+                                           device_ranges=device_ranges)
 
             try:
                 text_data = upload.read().decode("utf-8", errors="replace")
@@ -633,7 +668,7 @@ class StatusViewSet(ProgeoModalViewSet):
             except ValueError as exc:
                 return RequestFailed({"reason": f"Invalid text point format: {exc}"})
 
-        return RequestSuccess(cad_import.store_measure_points(location, db_name, points, device_pk))
+        return RequestSuccess(cad_import.store_measure_points(location, db_name, points, device_ranges))
 
     @calc_runtime
     @require_module_permissions("module_devices_enabled", "module_devices_edit")
@@ -701,7 +736,7 @@ class StatusViewSet(ProgeoModalViewSet):
                     ProgeoDevice.objects.using(db_name)
                     .filter(location=location)
                     .order_by("mac", "id")
-                    .values("id", "mac", "hardware", "type", "raw_hash")
+                    .values("id", "mac", "hardware", "type", "raw_hash", "first_sensor_order")
                 )
             return RequestSuccess(response_data)
 

@@ -18,7 +18,8 @@ import { parseTimestamp } from './alarmUtils';
 import type { PortalOutletContext } from './LocationPortalLayout';
 import LocationClimatePanels from './LocationClimatePanels';
 import LocationClimateHeatmap from './LocationClimateHeatmap';
-import { isLorawanProject } from './projectType';
+import LocationDmPlan from './LocationDmPlan';
+import { isLorawanProject, planVisualization } from './projectType';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import {
   availableTimeRanges,
@@ -76,6 +77,8 @@ const LocationAnalyseTab = () => {
   // LoRaWAN objects have no samples - a humidity/temperature heatmap of the
   // placed sensors and their charts replace the heatmap and samples chart.
   const isLorawan = isLorawanProject(location?.project_type);
+  // smartex® dm: the sensors are band lines on the plan - no heat field.
+  const showsLines = planVisualization(location?.project_type) === 'lines';
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
   const { t } = useTranslation();
@@ -299,6 +302,21 @@ const LocationAnalyseTab = () => {
 
   const loading = heatmapLoading || measurementsLoading;
 
+  // A sensor clicked on the plan (pos = sensor_order) -> the pair of its
+  // device in the samples chart: a location's sensors can be split over
+  // devices, each counting its pairs from 1. Shows that device if needed.
+  const selectPlanSensor = (pos: number) => {
+    const point = heatmap?.sensor_points?.find((candidate) => candidate.pos === pos);
+    const pairIndex = (point?.pair ?? pos) - 1;
+    const device = point?.device ?? null;
+    if (device != null && device !== shownDevice && devices.some((candidate) => candidate.id === device)) {
+      setPickedDevice({ locationId, id: device });
+      setSensors([pairIndex]);
+      return;
+    }
+    setSensors((selected) => toggledSensor(selected, pairIndex));
+  };
+
   return (
     <div className="d-flex flex-column gap-4">
       <div className="d-flex flex-wrap align-items-center gap-3">
@@ -380,6 +398,16 @@ const LocationAnalyseTab = () => {
                     <div className="d-flex align-items-center gap-2 text-muted py-4">
                       <Spinner size="sm" animation="border" /> Loading heatmap...
                     </div>
+                  ) : showsLines ? (
+                    <LocationDmPlan
+                      heatmap={heatmap}
+                      time={frameTime}
+                      onTimeChange={(ms) => {
+                        setActiveSlider('heatmap');
+                        setFrameTime(ms);
+                      }}
+                      onSensorClick={selectPlanSensor}
+                    />
                   ) : (
                     <SensorHeatmap2D
                       response={heatmap}
@@ -390,8 +418,7 @@ const LocationAnalyseTab = () => {
                         setActiveSlider('heatmap');
                         setFrameTime(ms);
                       }}
-                      // pos is the sensor_order: pair index + 1.
-                      onSensorClick={(pos) => setSensors((selected) => toggledSensor(selected, pos - 1))}
+                      onSensorClick={selectPlanSensor}
                     />
                   )}
                 </Card.Body>

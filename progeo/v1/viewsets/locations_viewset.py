@@ -200,38 +200,62 @@ def _db_datetime(value):
     return timezone.make_naive(value) if timezone.is_aware(value) else value
 
 
-def _step_frames(queryset, time_from, time_to, step):
+def _device_starts(location, db_name):
+    """{device pk: sensor_order of its pair 1} of the location's devices - the
+    sensors of a location can be split over devices (ProgeoDevice.first_sensor_order)."""
+    return dict(
+        ProgeoDevice.objects.using(db_name).filter(location=location).values_list("pk", "first_sensor_order")
+    )
+
+
+def _sensor_values(measurement, starts):
+    """{sensor_order: value} of a measurement's pairs: pair i of its device is
+    sensor first_sensor_order + i (ProgeoDevice.sensor_order_of)."""
+    first = starts.get(measurement.device_id) or 1
+    return {first + index: value for index, value in enumerate(measurement.get_pairs())}
+
+
+def _aligned_series(frames, carry=True):
+    """[{sensor: value}, ...] (one per timestamp) -> {sensor: values aligned
+    with the timestamps}. A frame without a value of a sensor (with the
+    sensors split over devices, a measurement holds only its device's) keeps
+    the sensor's previous value with `carry`, else None - and None before
+    the sensor's first value."""
+    data = {}
+    for sensor in sorted({sensor for frame in frames for sensor in frame}):
+        values, last = [], None
+        for frame in frames:
+            if sensor in frame:
+                last = frame[sensor]
+                values.append(last)
+            else:
+                values.append(last if carry else None)
+        data[sensor] = values
+    return data
+
+
+def _step_frames(queryset, time_from, time_to, step, starts):
     """The measurements of [time_from, time_to] grouped into frames of `step`
     seconds (counted from time_from): per frame - at its start time - and
     sensor the highest value, so a short spike can't fall between two frames.
-    Frames without measurements are left out. Returns (timestamps,
-    {sensor: values aligned with timestamps}, number of measurements)."""
+    Frames without measurements are left out. Sensors are keyed by
+    sensor_order (_sensor_values, `starts`: _device_starts). Returns
+    (timestamps, {sensor: values aligned with timestamps}, number of measurements)."""
     frames = {}
     total = 0
     rows = queryset.filter(last_fetched__gte=time_from, last_fetched__lte=time_to).only(
-        "id", "last_fetched", "eigenpotenzial", "wirkpotenzial", "raw_data"
+        "id", "device_id", "last_fetched", "eigenpotenzial", "wirkpotenzial", "raw_data"
     )
     for measurement in rows.iterator(chunk_size=2000):
         total += 1
         index = int((measurement.last_fetched - time_from).total_seconds() // step)
-        frame = frames.get(index)
-        pairs = measurement.get_pairs()
-        if frame is None:
-            frames[index] = list(pairs)
-            continue
-        for sensor, value in enumerate(pairs):
-            if sensor >= len(frame):
-                frame.append(value)
-            elif value > frame[sensor]:
+        frame = frames.setdefault(index, {})
+        for sensor, value in _sensor_values(measurement, starts).items():
+            if sensor not in frame or value > frame[sensor]:
                 frame[sensor] = value
     order = sorted(frames)
-    sensors = max((len(frames[index]) for index in order), default=0)
     timestamps = [(time_from + timedelta(seconds=index * step)).timestamp() for index in order]
-    data = {
-        sensor + 1: [frames[index][sensor] if sensor < len(frames[index]) else None for index in order]
-        for sensor in range(sensors)
-    }
-    return timestamps, data, total
+    return timestamps, _aligned_series([frames[index] for index in order]), total
 
 
 def _spread_over_window(queryset, limit):
@@ -256,6 +280,7 @@ def _sensor_points_data(points, location, db_name, names=None):
     plans = list(ProgeoLageplan.objects.using(db_name).filter(location=location).order_by("-is_active", "-id"))
     plans_by_id = {plan.pk: plan for plan in plans}
     plan_sizes = {}
+    starts = _device_starts(location, db_name)
 
     def _meters_of(point):
         plan = plans_by_id.get(point.lageplan_id) or (plans[0] if plans else None)
@@ -277,6 +302,13 @@ def _sensor_points_data(points, location, db_name, names=None):
             "x_m": round(meters[0], 2) if meters else None,
             "y_m": round(meters[1], 2) if meters else None,
             "name": point.name or (names or {}).get(point.pk),
+            # smartex® dm: the sensor is its band line from x/y to here.
+            "x_end": round(point.nx_end, 4) if point.nx_end is not None else None,
+            "y_end": round(point.ny_end, 4) if point.ny_end is not None else None,
+            "device": point.device_id,
+            # Which pair (1-based) of its device's measurements the sensor is
+            # (ProgeoDevice.first_sensor_order); None without device.
+            "pair": point.sensor_order - (starts[point.device_id] or 1) + 1 if point.device_id in starts else None,
             # The view (Lageplan) the point sits on, and its grid cell -
             # the smartex® dm lines join the sensors of one grid row.
             "lageplan": point.lageplan_id,
@@ -1920,9 +1952,10 @@ class LocationViewSet(ProgeoModalViewSet):
 
         points = ProgeoMeasurePoint.objects.using(db_name).filter(location=location)
         queryset = ProgeoMeasurement.for_account(account, using=db_name, user=request.user).filter(device__location=location)
+        starts = _device_starts(location, db_name)
         stepped = None
         if step:
-            stepped = _step_frames(queryset, time_from, time_to, step)
+            stepped = _step_frames(queryset, time_from, time_to, step, starts)
             queryset = []
         elif time_from:
             queryset = queryset.filter(last_fetched__gte=time_from)
@@ -1940,21 +1973,17 @@ class LocationViewSet(ProgeoModalViewSet):
             total = len(queryset)
 
         timestamps = []
-        _map = {}
+        frames = []
 
         sensor_points = _sensor_points_data(points, location, db_name)
 
-        for idx, measurement in enumerate(queryset):
-            
+        for measurement in queryset:
             ts = measurement.last_fetched.timestamp() if measurement.last_fetched else None
             timestamps.append(ts)
-            pairs = measurement.get_pairs()
-
-            # 1-based like ProgeoMeasurePoint.sensor_order (pair index + 1),
-            # so sensor_points[].pos looks up its own series.
-            for idz, sample in enumerate(pairs):
-                _map.setdefault(idz + 1, []).append(sample)
-
+            # Keyed by ProgeoMeasurePoint.sensor_order (the device's pair 1 is
+            # its first_sensor_order), so sensor_points[].pos looks up its own series.
+            frames.append(_sensor_values(measurement, starts))
+        _map = _aligned_series(frames)
 
         if stepped:
             timestamps, _map = stepped[0], stepped[1]
@@ -2233,9 +2262,9 @@ class LocationViewSet(ProgeoModalViewSet):
     def _measurement_series(cls, location, account, db_name, request, limit=2000):
         """Shared by export_csv/export_pdf: the location's measurement
         points, the measurement timestamps (oldest first, the latest `limit`)
-        and per sensor (1-based, = ProgeoMeasurePoint.sensor_order) a value
-        series aligned with `timestamps` - None where a measurement has no
-        value for that sensor."""
+        and per sensor (= ProgeoMeasurePoint.sensor_order) a value series
+        aligned with `timestamps` - None where a measurement has no value for
+        that sensor."""
         time_from = request.query_params.get("from")
         time_to = request.query_params.get("to")
         if time_from:
@@ -2256,12 +2285,10 @@ class LocationViewSet(ProgeoModalViewSet):
         measurements = list(queryset.order_by("-last_fetched", "-id")[:limit])[::-1]
 
         timestamps = [measurement.last_fetched for measurement in measurements]
-        rows = [measurement.get_pairs() for measurement in measurements]
-        sensor_count = max((len(pairs) for pairs in rows), default=0)
-        series = {
-            sensor: [pairs[sensor - 1] if sensor <= len(pairs) else None for pairs in rows]
-            for sensor in range(1, sensor_count + 1)
-        }
+        # By sensor_order (a device's pair 1 is its first_sensor_order); a
+        # measurement of another device leaves the sensor empty.
+        starts = _device_starts(location, db_name)
+        series = _aligned_series([_sensor_values(measurement, starts) for measurement in measurements], carry=False)
         return points, timestamps, series
 
     @staticmethod

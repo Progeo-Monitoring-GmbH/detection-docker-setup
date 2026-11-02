@@ -66,6 +66,9 @@ export type SensorHeatmapPoint = {
   /** Normalized position on the plan (0..1, y downwards). */
   x: number;
   y: number;
+  /** smartex® dm: the end of the sensor's band line (from x/y), like x/y; null otherwise. */
+  x_end?: number | null;
+  y_end?: number | null;
   /** Position in meters; null while the plan isn't calibrated. */
   x_m?: number | null;
   y_m?: number | null;
@@ -77,9 +80,12 @@ export type SensorHeatmapPoint = {
   grid_y?: number | null;
   last_value?: number | null;
   threshold?: number | null;
-  /** Climate heatmap: the device measuring here and its name in the
+  /** The device measuring here; climate heatmap: also its name in the
    * climate charts (ProgeoDevice.display_name). */
   device?: number | null;
+  /** Which pair (1-based) of that device's measurements this sensor is -
+   * a location's sensors can be split over devices; null without device. */
+  pair?: number | null;
   label?: string | null;
 };
 

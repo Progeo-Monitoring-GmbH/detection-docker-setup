@@ -82,7 +82,7 @@ def check_existing_alarms_db(db: str, silence_hours: int = 24) -> tuple[int, int
             # Keep tracking the alarm's development while it stays active.
             peak_idx, peak_value = max(over_threshold, key=lambda pair: pair[1])
             max_value = float(peak_value)
-            sensor_id = peak_idx + 1  # 1-based sensor index, matches sensor_order
+            sensor_id = device.sensor_order_of(peak_idx)  # matches sensor_order
             if max_value is not None:
                 # Runs every 15 minutes, so the same timestamp can be appended more
                 # than once; only record an entry when it is genuinely new.

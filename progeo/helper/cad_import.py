@@ -62,10 +62,10 @@ def _key(job_id: str) -> str:
 
 
 def create_job(*, user_id, location_pk, db_name, cad_input, source_name, coord_margin=0.2, kind="points",
-               device_pk=None) -> str:
+               device_ranges=None) -> str:
     """cad_input: the uploaded plan, relative to the project root (media/uploads/...);
-    kind: "points" (DWG/DXF) or "lageplan" (PDF); device_pk: the device of the
-    location the imported points are connected to."""
+    kind: "points" (DWG/DXF) or "lageplan" (PDF); device_ranges: the devices of
+    the location the imported points are connected to (store_measure_points)."""
     job_id = uuid4().hex
     _save(job_id, {
         "job_id": job_id,
@@ -74,7 +74,7 @@ def create_job(*, user_id, location_pk, db_name, cad_input, source_name, coord_m
         "user_id": user_id,
         "location_pk": location_pk,
         "db_name": db_name,
-        "device_pk": device_pk,
+        "device_ranges": device_ranges,
         "cad_input": cad_input,
         "source_name": source_name,
         "coord_margin": coord_margin,
@@ -121,13 +121,24 @@ def _append_log(job: dict, line: str) -> None:
     _send(job["job_id"], {"type": "cad.log", "seq": len(log) - 1, "line": line})
 
 
-def store_measure_points(location, db_name: str, points: list, device_pk=None) -> dict:
+def device_of(device_ranges, sensor_order: int):
+    """The device pk whose range [first, last] (last None: open) holds sensor_order, else None."""
+    for device_pk, first, last in device_ranges or ():
+        if first <= sensor_order and (last is None or sensor_order <= last):
+            return device_pk
+    return None
+
+
+def store_measure_points(location, db_name: str, points: list, device_ranges=None) -> dict:
     """Replaces the location's measure points with the imported ones (one
-    bulk insert), all connected to the device device_pk if given; returns
-    upload_cad's answer {"location_id", "stored", "points"}."""
+    bulk insert); returns upload_cad's answer {"location_id", "stored", "points"}.
+
+    device_ranges: [(device pk, first, last), ...] - the sensors (sensor_order)
+    first..last (None: all from first on) are connected to that device, and
+    its pair 1 is sensor `first` (ProgeoDevice.first_sensor_order)."""
     from django.db import transaction
 
-    from progeo.v1.models import ProgeoMeasurePoint
+    from progeo.v1.models import ProgeoDevice, ProgeoMeasurePoint
     from progeo.v1.serializers import ProgeoMeasurePointSerializer
 
     bulk_points = []
@@ -145,7 +156,7 @@ def store_measure_points(location, db_name: str, points: list, device_pk=None) -
         bulk_points.append(ProgeoMeasurePoint(
             last_fetched=now,
             location=location,
-            device_id=device_pk,
+            device_id=device_of(device_ranges, sensor_order),
             sensor_order=sensor_order,
             x=point.get("x"),
             y=point.get("y"),
@@ -159,6 +170,10 @@ def store_measure_points(location, db_name: str, points: list, device_pk=None) -
     with transaction.atomic(using=db_name):
         ProgeoMeasurePoint.objects.using(db_name).filter(location=location).delete()
         ProgeoMeasurePoint.objects.using(db_name).bulk_create(bulk_points)
+        for device_pk, first, _last in device_ranges or ():
+            ProgeoDevice.objects.using(db_name).filter(pk=device_pk, location=location).update(
+                first_sensor_order=first
+            )
 
     stored_qs = ProgeoMeasurePoint.objects.using(db_name).filter(location=location).order_by("sensor_order")
     stored = ProgeoMeasurePointSerializer(
@@ -276,7 +291,7 @@ def run_job(job_id: str) -> None:
             _append_log(job, f"Stored Lageplan #{lageplan.pk}")
             _finish(job, "done", result=lageplan_answer(lageplan))
             return
-        result = store_measure_points(location, job["db_name"], points, job.get("device_pk"))
+        result = store_measure_points(location, job["db_name"], points, job.get("device_ranges"))
         _append_log(job, f"Stored {result['stored']} measure points")
         _finish(job, "done", result=result)
     except Exception as exc:  # noqa: BLE001 - reported to the user
