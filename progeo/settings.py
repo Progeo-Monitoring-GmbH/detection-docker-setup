@@ -479,6 +479,12 @@ UPLOAD_DIR = os.path.join(MEDIA_ROOT, os.getenv("UPLOAD_DIR", "uploads"))
 UPLOAD_REL_DIR = os.path.join(MEDIA_URL, os.getenv("UPLOAD_DIR", "uploads"))[1:]
 EXPORT_DIR = os.path.join(MEDIA_ROOT, os.getenv("EXPORT_DIR", "export"))
 STONKS_DIR = os.path.join(MEDIA_ROOT, os.getenv("STONKS_DIR", "stonks"))
+# Flash bundles for the field app (helper/firmware.py). nginx serves this
+# directory publicly at /firmware/ (docker/nginx/snippets/firmware.conf), so
+# the name is fixed.
+FIRMWARE_DIR = os.path.join(MEDIA_ROOT, "firmware")
+# Bearer token of the upload API /v1/firmware/ (release.sh); empty = API off (404).
+FIRMWARE_UPLOAD_TOKEN = (os.getenv("FIRMWARE_UPLOAD_TOKEN") or "").strip()
 
 dyn_backups = {}
 for db in DJANGO_DATABASES:

@@ -204,7 +204,8 @@ services:
       - ${CERT_LOCAL}:/etc/nginx/ssl
       - /var/www/:/var/www/
       # Read-only view of the media dir so nginx can serve large files that
-      # AuthenticatedMediaView hands over via X-Accel-Redirect.
+      # AuthenticatedMediaView hands over via X-Accel-Redirect, and the public
+      # flash bundles in media/firmware (snippets/firmware.conf).
       - ./media:/media:ro
     networks:
       default_net:

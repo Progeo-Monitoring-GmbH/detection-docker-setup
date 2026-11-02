@@ -21,6 +21,9 @@ server {
     # "Wartungsarbeiten" page while the backend is not reachable (still booting).
     include /etc/nginx/snippets/maintenance.conf;
 
+    # Public flash bundles for the field app (https://api.progeo.com/firmware/).
+    include /etc/nginx/snippets/firmware.conf;
+
     # Prometheus scrapes the backend directly (docker network); never public.
     location = /metrics {
         return 404;

@@ -320,6 +320,9 @@ SETUP_DIR = os.path.join(MEDIA_ROOT, os.getenv("SETUP_DIR", "setup"))
 UPLOAD_DIR = os.path.join(MEDIA_ROOT, os.getenv("UPLOAD_DIR", "uploads"))
 UPLOAD_REL_DIR = os.path.join(MEDIA_URL, os.getenv("UPLOAD_DIR", "uploads"))[1:]
 EXPORT_DIR = os.path.join(MEDIA_ROOT, os.getenv("EXPORT_DIR", "export"))
+# Tests point it at tmp_path (test_firmware_upload.py).
+FIRMWARE_DIR = os.path.join(MEDIA_ROOT, "firmware")
+FIRMWARE_UPLOAD_TOKEN = ""
 
 dyn_backups = {}
 for db in DJANGO_DATABASES:

@@ -9,6 +9,10 @@ from progeo.v1.viewsets.demo_viewset import DemoViewSet
 from progeo.v1.viewsets.device_viewset import DeviceViewSet
 from progeo.v1.viewsets.escalation_viewset import EscalationViewSet
 from progeo.v1.viewsets.favorite_viewset import FavoriteViewSet
+from progeo.v1.viewsets.firmware_viewset import (
+    FirmwareBundleUploadView,
+    FirmwareChannelUploadView,
+)
 from progeo.v1.viewsets.interface_viewset import InterfaceViewSet
 from progeo.v1.viewsets.locations_viewset import LocationViewSet
 from progeo.v1.viewsets.setup_viewset import AccountViewSet, SetupViewSet
@@ -66,4 +70,7 @@ urlpatterns = [
     re_path(r'^demo/', include(demo_router.urls)),
     re_path(r'^escalation/', include(escalation_router.urls)),
     re_path(r'^favorite/', include(favorite_router.urls)),
+    # Flash bundle uploads (release.sh); nginx serves them at /firmware/.
+    re_path(r'^firmware/bundles/$', FirmwareBundleUploadView.as_view(), name='firmware_bundle_upload'),
+    re_path(r'^firmware/channels/(?P<channel>[^/]+)/$', FirmwareChannelUploadView.as_view(), name='firmware_channel_upload'),
 ]
