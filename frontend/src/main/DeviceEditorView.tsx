@@ -12,7 +12,7 @@ import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
 import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
-import RedDropbox from '../components/form/RedDropbox.tsx';
+import CadUploadDropbox from '../components/form/CadUploadDropbox.tsx';
 
 type CanvasPoint = {
   id: number;
@@ -436,7 +436,7 @@ const DeviceEditorView = () => {
         </Card.Header>
         <Card.Body>
           {canEdit && (
-            <RedDropbox
+            <CadUploadDropbox
               auth={auth}
               url={`/v1/status/measure_points/upload_cad/?device_id=${encodeURIComponent(String(id || ''))}`}
               accept="cad"

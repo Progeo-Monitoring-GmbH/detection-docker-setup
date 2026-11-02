@@ -2,6 +2,7 @@ import React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Badge, Button, Spinner } from 'react-bootstrap';
 import { CheckLg, FileEarmarkPdf, PlusLg } from 'react-bootstrap-icons';
+import CadUploadDropbox from '../components/form/CadUploadDropbox.tsx';
 import RedDropbox from '../components/form/RedDropbox.tsx';
 import LocationPicker, {
   type PickableLocation,
@@ -1103,7 +1104,7 @@ const LageplanWizardView = () => {
           </div>
 
           {pointSource === 'cad' && (
-            <RedDropbox
+            <CadUploadDropbox
               auth={auth}
               url={`/v1/status/measure_points/upload_cad/`}
               accept="cad"
@@ -1128,7 +1129,7 @@ const LageplanWizardView = () => {
             />
           )}
           {pointSource === 'txt' && (
-            <RedDropbox
+            <CadUploadDropbox
               auth={auth}
               url={`/v1/status/measure_points/upload_cad/`}
               accept="text"
