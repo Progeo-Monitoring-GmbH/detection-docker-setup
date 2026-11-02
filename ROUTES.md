@@ -63,7 +63,6 @@ These routes use the general application layout.
 | `/docker/` | View Docker container status. |
 | `/dev` | Frontend diagnostics and development information. |
 | `/ws-debug` | Inspect WebSocket connection and messages. |
-| `/factory/` | Factory visualizer. |
 | `/lageplan/wizard/` | Wizard for creating or editing a site plan. |
 | `/legacy/import/` | Import legacy data. |
 | `/map/` | Map view of locations. |

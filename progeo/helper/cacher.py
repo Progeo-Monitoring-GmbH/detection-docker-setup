@@ -39,6 +39,14 @@ def search_clear_cache(_key):
         cache.delete(key)
 
 
+def clear_cache_pattern(pattern):
+    """Deletes every cached answer whose key matches the glob `pattern` -
+    django-redis walks the keys with SCAN, not the blocking KEYS."""
+    deleted = cache.delete_pattern(pattern)
+    dlog("Clear Cache", pattern, deleted, tag="[CACHE]", active=DEBUG)
+    return deleted
+
+
 def cache_save(_key, _data, time_out=DEFAULT_TIME_OUT):
     dlog("Cache created", _key, tag="[CACHE]")
     cache.set(_key, json.dumps(_data, default=DjangoJSONEncoder().default), time_out)

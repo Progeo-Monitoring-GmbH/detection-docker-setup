@@ -138,8 +138,10 @@ def save_lageplan_upload(location: ProgeoLocation, source: bytes | Any, original
 
 	fs = FileSystemStorage(location=UPLOAD_DIR)
 	saved_name = fs.save(filename, source)
+	# Vertically flipped by default: CAD/measure point y runs up, image y down
+	# (the Lageplan wizard's alignment starts from there).
 	return ProgeoLageplan.objects.using(db).create(
-		location=location, lageplan=saved_name, name=original_name,
+		location=location, lageplan=saved_name, name=original_name, flip_y=True,
 	)
 
 

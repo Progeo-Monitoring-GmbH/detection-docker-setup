@@ -35,6 +35,7 @@ import { useHeatmapFrameExport } from './useHeatmapFrameExport';
 import { useHeatmapViewport, usePanZoomGestures } from './useHeatmapViewport';
 import { useLageplanImage } from './useLageplanImage';
 import ZoomControls from './ZoomControls';
+import { useWheelHint, WheelZoomHint } from '../ui/wheelZoom';
 import { getBackendUrl } from '../../backendUrl';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import { staffFlags } from '../../main/access';
@@ -322,6 +323,8 @@ const SensorHeatmap2D = ({
     reportHoveredDevice(null);
   };
 
+  // Ctrl + wheel zooms; the plain wheel over the plan shows how (wheelZoom).
+  const [wheelHint, showWheelHint] = useWheelHint();
   const { canvasRef, grabbing, handlers } = usePanZoomGestures({
     enabled: scene != null,
     view,
@@ -344,6 +347,7 @@ const SensorHeatmap2D = ({
       }
     },
     wheelZoomsAt: (sx, sy) => Boolean(scene && view && isOverDrawn(scene.layout, view, image != null, sx, sy)),
+    onPlainWheel: showWheelHint,
   });
 
   // ---------------------------------------------------------------- drawing
@@ -494,6 +498,7 @@ const SensorHeatmap2D = ({
           />
         )}
 
+        <WheelZoomHint visible={wheelHint} radius={0} />
         <ZoomControls
           onZoomIn={() => zoomBy(ZOOM_STEP)}
           onZoomOut={() => zoomBy(1 / ZOOM_STEP)}

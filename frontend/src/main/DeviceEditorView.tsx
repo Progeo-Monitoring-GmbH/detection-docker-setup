@@ -13,6 +13,7 @@ import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
 import { showErrorBar, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import CadUploadDropbox from '../components/form/CadUploadDropbox.tsx';
+import { useWheelHint, useZoomWheel, WheelZoomHint } from '../components/ui/wheelZoom';
 
 type CanvasPoint = {
   id: number;
@@ -224,9 +225,8 @@ const DeviceEditorView = () => {
     setIsPanning(true);
   };
 
-  const handleCanvasWheel = (event: React.WheelEvent<HTMLDivElement>) => {
-    event.preventDefault();
-
+  // Ctrl (or ⌘) + wheel zooms (useZoomWheel) - the plain wheel scrolls the page.
+  const handleCanvasWheel = (event: WheelEvent) => {
     const wrapper = canvasWrapperRef.current;
     if (!wrapper) {
       return;
@@ -246,6 +246,8 @@ const DeviceEditorView = () => {
       y: relativeY - worldY * nextZoom,
     });
   };
+  const [wheelHint, showWheelHint] = useWheelHint();
+  useZoomWheel(canvasWrapperRef, handleCanvasWheel, showWheelHint);
 
   useEffect(() => {
     if (dragPointId === null) {
@@ -426,7 +428,7 @@ const DeviceEditorView = () => {
           </Form.Group>
           <div className="text-muted">
             <CloudArrowUp className="me-1" />
-            Canvas {CANVAS_WIDTH}x{CANVAS_HEIGHT} | Wheel: zoom | Drag
+            Canvas {CANVAS_WIDTH}x{CANVAS_HEIGHT} | Ctrl + wheel: zoom | Drag
             background: pan
           </div>
           <div className="text-muted ms-auto">
@@ -462,7 +464,6 @@ const DeviceEditorView = () => {
 
           <div
             ref={canvasWrapperRef}
-            onWheel={handleCanvasWheel}
             style={{
               width: CANVAS_WIDTH,
               height: CANVAS_HEIGHT,
@@ -475,6 +476,7 @@ const DeviceEditorView = () => {
               cursor: isPanning ? 'grabbing' : isAddMode ? 'crosshair' : 'grab',
             }}
           >
+            <WheelZoomHint visible={wheelHint} radius={8} />
             <div
               ref={stageRef}
               style={{

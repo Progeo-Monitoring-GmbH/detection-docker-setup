@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import axiosConfig from '../../axiosConfig';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import ZoomControls from '../device/ZoomControls';
+import { ALIGN_PINS, fitAlignment, type AlignPin } from './alignmentFit';
+import { isZoomWheel, useWheelHint, WheelZoomHint } from './wheelZoom';
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
@@ -165,6 +167,22 @@ const PILL_BUTTON: React.CSSProperties = {
   fontWeight: 500,
 };
 const FIELD: React.CSSProperties = { borderRadius: 10, height: 32 };
+/** A keyboard key in a hint. */
+const KEY_BADGE: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  minWidth: 24,
+  height: 24,
+  padding: '0 6px',
+  borderRadius: 6,
+  background: '#ffffff',
+  color: 'var(--progeo-blue)',
+  border: '1px solid #cfd4da',
+  boxShadow: 'inset 0 -2px 0 #cfd4da',
+  fontSize: 12,
+  fontWeight: 700,
+};
 /** Mouse travel (px) up to which a press on the plan still counts as a click. */
 const CLICK_TOLERANCE = 4;
 
@@ -255,7 +273,8 @@ const ImageCanvasStage = ({
   const [pointScaleX, setPointScaleX] = useState(sourceMeta?.scale_x ?? 1);
   const [pointScaleY, setPointScaleY] = useState(sourceMeta?.scale_y ?? 1);
   const [isVerticallyFlipped, setIsVerticallyFlipped] = useState(
-    sourceMeta?.flip_y ?? false,
+    // Flipped unless the plan says otherwise - the wizard's default.
+    sourceMeta?.flip_y ?? true,
   );
   const [tool, setTool] = useState<CanvasTool>('pan');
   const [referencePoint, setReferencePoint] = useState<ImagePoint | null>(null);
@@ -265,6 +284,22 @@ const ImageCanvasStage = ({
   // The sensor under the mouse (index into items) and the mouse position
   // over the canvas in CSS pixels, for its tooltip.
   const [hover, setHover] = useState<{ index: number; x: number; y: number } | null>(null);
+  // Point calibration: while A is held (alignKey), a sensor dragged onto its
+  // place on the plan is pinned there - from the pins (by index into items)
+  // the alignment is computed (alignmentFit); the values before are restored
+  // on cancel. alignDrag: the sensor being dragged, the grabbed point on it
+  // (normalized) and the mouse (canvas units).
+  const [alignKey, setAlignKey] = useState(false);
+  const [pins, setPins] = useState<Array<AlignPin & { index: number }>>([]);
+  const [alignDrag, setAlignDrag] = useState<{ index: number; source: ImagePoint; at: ImagePoint } | null>(null);
+  const aligning = pins.length > 0 || alignDrag != null;
+  const [alignBefore, setAlignBefore] = useState<{
+    offsetX: number;
+    offsetY: number;
+    scaleX: number;
+    scaleY: number;
+    flipY: boolean;
+  } | null>(null);
 
   // Shown width of the canvas (CSS pixels): it is drawn at that size times
   // the device pixel ratio; sizes of markers and labels are screen pixels.
@@ -317,6 +352,58 @@ const ImageCanvasStage = ({
   }, [measurePoints]);
   const lineCount = items.filter((item) => item.end).length;
   const lineMode = lineSensors || lineCount > 0;
+
+  // Point calibration with the sliders' panel (alignment editable), not while placing sensors.
+  const canAlign = withSliders && !placement && image != null && items.length >= ALIGN_PINS;
+  // A (no modifier, not typing) held: drags pin sensors; released on keyup or leaving the window.
+  useEffect(() => {
+    const typing = (target: EventTarget | null) =>
+      target instanceof HTMLElement &&
+      (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() === 'a' && !event.ctrlKey && !event.metaKey && !event.altKey && !typing(event.target)) {
+        setAlignKey(true);
+      }
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() === 'a') {
+        setAlignKey(false);
+      }
+    };
+    const release = () => setAlignKey(false);
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', release);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', release);
+    };
+  }, []);
+
+  // The alignment of the pins, applied to the sliders as soon as it can be computed.
+  const alignFit = useMemo(
+    () =>
+      aligning && image
+        ? fitAlignment(
+            pins,
+            image.naturalWidth,
+            image.naturalHeight,
+            alignmentBaseScale(image.naturalWidth, image.naturalHeight),
+          )
+        : null,
+    [aligning, image, pins],
+  );
+  useEffect(() => {
+    if (alignFit && 'alignment' in alignFit) {
+      const { alignment } = alignFit;
+      setPointOffsetX(alignment.offsetX);
+      setPointOffsetY(alignment.offsetY);
+      setPointScaleX(alignment.scaleX);
+      setPointScaleY(alignment.scaleY);
+      setIsVerticallyFlipped(alignment.flipY);
+    }
+  }, [alignFit]);
 
   useEffect(() => {
     setImage(null);
@@ -481,14 +568,6 @@ const ImageCanvasStage = ({
         ctx.lineWidth = (active ? 5.5 : 3) * px;
         ctx.strokeStyle = item.color;
         ctx.stroke();
-        // The start: where the band begins.
-        ctx.beginPath();
-        ctx.arc(start[0], start[1], (active ? 5 : 3.5) * px, 0, Math.PI * 2);
-        ctx.fillStyle = item.color;
-        ctx.fill();
-        ctx.lineWidth = 1.5 * px;
-        ctx.strokeStyle = '#ffffff';
-        ctx.stroke();
         return;
       }
       ctx.beginPath();
@@ -522,6 +601,48 @@ const ImageCanvasStage = ({
         item === hovered ? 13 : 11,
       );
     });
+
+    // "Align": each pin's target (crosshair, numbered) and a dashed line from
+    // where its sensor point lies now - the lines vanish once it fits; the
+    // sensor being dragged follows the mouse.
+    if (aligning) {
+      const fractionToCanvas = ([fx, fy]: ImagePoint): ImagePoint => [drawX + fx * drawWidth, drawY + fy * drawHeight];
+      const pinLine = (from: ImagePoint, to: ImagePoint) => {
+        ctx.beginPath();
+        ctx.moveTo(from[0], from[1]);
+        ctx.lineTo(to[0], to[1]);
+        ctx.setLineDash([5 * px, 4 * px]);
+        ctx.lineWidth = 2 * px;
+        ctx.strokeStyle = '#0d6efd';
+        ctx.stroke();
+        ctx.setLineDash([]);
+      };
+      pins.forEach((pin, number) => {
+        const from = normalizedToCanvas(pin.source, transform);
+        const [tx, ty] = fractionToCanvas(pin.target);
+        pinLine(from, [tx, ty]);
+        ctx.beginPath();
+        ctx.moveTo(tx - 10 * px, ty);
+        ctx.lineTo(tx + 10 * px, ty);
+        ctx.moveTo(tx, ty - 10 * px);
+        ctx.lineTo(tx, ty + 10 * px);
+        ctx.lineWidth = 2.5 * px;
+        ctx.strokeStyle = '#0d6efd';
+        ctx.stroke();
+        drawLabel(String(number + 1), tx + 8 * px, ty - 10 * px, '#0d6efd', 13);
+      });
+      if (alignDrag) {
+        const from = normalizedToCanvas(alignDrag.source, transform);
+        pinLine(from, alignDrag.at);
+        ctx.beginPath();
+        ctx.arc(alignDrag.at[0], alignDrag.at[1], 7 * px, 0, Math.PI * 2);
+        ctx.fillStyle = items[alignDrag.index]?.color ?? '#0d6efd';
+        ctx.fill();
+        ctx.lineWidth = 2 * px;
+        ctx.strokeStyle = '#ffffff';
+        ctx.stroke();
+      }
+    }
 
     // Calibration: the two picked points and the line between them.
     if (calibrationPoints.length) {
@@ -563,6 +684,9 @@ const ImageCanvasStage = ({
     image,
     items,
     hover,
+    aligning,
+    pins,
+    alignDrag,
     lineMode,
     pixelRatio,
     px,
@@ -583,7 +707,7 @@ const ImageCanvasStage = ({
       setPointOffsetY(sourceMeta.offset_y ?? 0);
       setPointScaleX(sourceMeta.scale_x ?? 1);
       setPointScaleY(sourceMeta.scale_y ?? 1);
-      setIsVerticallyFlipped(sourceMeta.flip_y ?? false);
+      setIsVerticallyFlipped(sourceMeta.flip_y ?? true);
       setReferencePoint(
         sourceMeta.reference_x != null && sourceMeta.reference_y != null
           ? [sourceMeta.reference_x, sourceMeta.reference_y]
@@ -634,6 +758,9 @@ const ImageCanvasStage = ({
 
     const handleMouseUp = () => {
       dragRef.current = null;
+      // Released off the canvas: the "Align" drag is dropped (on it, the
+      // canvas pins it first - see handleCanvasMouseUp).
+      setAlignDrag(null);
       sensorDragRef.current = null;
     };
 
@@ -664,25 +791,21 @@ const ImageCanvasStage = ({
   const zoomAroundRef = useRef(zoomAround);
   zoomAroundRef.current = zoomAround;
 
-  // Ctrl (or ⌘) + wheel zooms - a trackpad pinch too; the plain wheel
-  // scrolls the page and only shows how to zoom. Native listener: React's
-  // wheel handler is passive and can't keep the page from scrolling.
-  const [wheelHint, setWheelHint] = useState(false);
+  // Ctrl (or ⌘) + wheel zooms (isZoomWheel); the plain wheel scrolls the
+  // page and only shows how to zoom. Native listener: React's wheel handler
+  // is passive and can't keep the page from scrolling.
+  const [wheelHint, showWheelHint] = useWheelHint();
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) {
       return undefined;
     }
-    let hintTimer: ReturnType<typeof setTimeout> | undefined;
     const onWheel = (event: WheelEvent) => {
-      if (!event.ctrlKey && !event.metaKey) {
-        setWheelHint(true);
-        clearTimeout(hintTimer);
-        hintTimer = setTimeout(() => setWheelHint(false), 1400);
+      if (!isZoomWheel(event)) {
+        showWheelHint();
         return;
       }
       event.preventDefault();
-      setWheelHint(false);
       const rect = canvas.getBoundingClientRect();
       if (!rect.width || !rect.height) {
         return;
@@ -694,11 +817,8 @@ const ImageCanvasStage = ({
       ]);
     };
     canvas.addEventListener('wheel', onWheel, { passive: false });
-    return () => {
-      canvas.removeEventListener('wheel', onWheel);
-      clearTimeout(hintTimer);
-    };
-  }, []);
+    return () => canvas.removeEventListener('wheel', onWheel);
+  }, [showWheelHint]);
 
   /** Canvas unit (LOGICAL) under the mouse - the canvas is shown at any width. */
   const canvasPointAt = (
@@ -810,7 +930,74 @@ const ImageCanvasStage = ({
     return best;
   };
 
+  /** "Align": the sensor under the mouse and the grabbed point on it
+   * (normalized - on a dm line where it was grabbed), or null. */
+  const grabAt = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    const index = itemAt(event);
+    const transform = pointTransform();
+    const at = canvasPointAt(event);
+    if (index === null || !transform || !at) {
+      return null;
+    }
+    const item = items[index];
+    if (!item.end) {
+      return { index, source: item.start, at };
+    }
+    const [ax, ay] = normalizedToCanvas(item.start, transform);
+    const [bx, by] = normalizedToCanvas(item.end, transform);
+    const lengthSq = (bx - ax) ** 2 + (by - ay) ** 2;
+    const t = lengthSq ? clamp(((at[0] - ax) * (bx - ax) + (at[1] - ay) * (by - ay)) / lengthSq, 0, 1) : 0;
+    const source: ImagePoint = [
+      item.start[0] + t * (item.end[0] - item.start[0]),
+      item.start[1] + t * (item.end[1] - item.start[1]),
+    ];
+    return { index, source, at };
+  };
+
+  /** Fraction of the plan image (0..1, y down) at a canvas point. */
+  const imageFractionAt = ([x, y]: ImagePoint): ImagePoint | null => {
+    if (!image) {
+      return null;
+    }
+    const { drawX, drawY, drawWidth, drawHeight } = canvasLayout(LOGICAL, image, zoom, offsetX, offsetY);
+    return [(x - drawX) / drawWidth, (y - drawY) / drawHeight];
+  };
+
+  // A dragged sensor dropped on the plan: pinned there (again, if it was).
+  const handleCanvasMouseUp = () => {
+    if (!alignDrag) {
+      return;
+    }
+    const target = imageFractionAt(alignDrag.at);
+    if (target && target.every((value) => value >= -0.05 && value <= 1.05)) {
+      const pin = { index: alignDrag.index, source: alignDrag.source, target };
+      setPins((current) => [...current.filter((existing) => existing.index !== pin.index), pin]);
+    }
+    setAlignDrag(null);
+  };
+
+  // The point calibration ends with "Store alignment" or "Cancel" (restore).
+  const stopAligning = (restore: boolean) => {
+    if (restore && alignBefore) {
+      setPointOffsetX(alignBefore.offsetX);
+      setPointOffsetY(alignBefore.offsetY);
+      setPointScaleX(alignBefore.scaleX);
+      setPointScaleY(alignBefore.scaleY);
+      setIsVerticallyFlipped(alignBefore.flipY);
+    }
+    setAlignBefore(null);
+    setPins([]);
+    setAlignDrag(null);
+  };
+
   const handleMouseMove = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    if (alignDrag) {
+      const at = canvasPointAt(event);
+      if (at) {
+        setAlignDrag({ ...alignDrag, at });
+      }
+      return;
+    }
     handleSensorMouseMove(event);
     // No tooltip while panning.
     const index = dragRef.current ? null : itemAt(event);
@@ -859,6 +1046,25 @@ const ImageCanvasStage = ({
 
   const handleMouseDown = (event: React.MouseEvent<HTMLCanvasElement>) => {
     pressRef.current = null;
+    // A held: a press on a sensor drags it to its place (elsewhere it pans);
+    // the first one remembers the alignment before, for "Cancel".
+    if (alignKey && canAlign && tool === 'pan') {
+      const grabbed = grabAt(event);
+      if (grabbed) {
+        if (!aligning) {
+          setAlignBefore({
+            offsetX: pointOffsetX,
+            offsetY: pointOffsetY,
+            scaleX: pointScaleX,
+            scaleY: pointScaleY,
+            flipY: isVerticallyFlipped,
+          });
+        }
+        setAlignDrag(grabbed);
+        setHover(null);
+        return;
+      }
+    }
     if (placement && tool === 'pan') {
       const sensor = sensorAt(event);
       if (sensor) {
@@ -951,27 +1157,30 @@ const ImageCanvasStage = ({
       step: 1,
       onChange: setPointOffsetY,
     },
+    // Four decimals - "Align" computes them that precisely.
     {
       id: 'point-scale-x',
       label: 'Scale X',
       value: pointScaleX,
-      display: pointScaleX.toFixed(2),
+      display: pointScaleX.toFixed(4),
       min: 0.1,
       max: 5,
-      step: 0.01,
+      step: 0.0001,
       onChange: setPointScaleX,
     },
     {
       id: 'point-scale-y',
       label: 'Scale Y',
       value: pointScaleY,
-      display: pointScaleY.toFixed(2),
+      display: pointScaleY.toFixed(4),
       min: 0.1,
       max: 5,
-      step: 0.01,
+      step: 0.0001,
       onChange: setPointScaleY,
     },
   ];
+  const alignProblem = alignFit && 'problem' in alignFit ? alignFit.problem : null;
+  const alignError = alignFit && 'alignment' in alignFit ? alignFit.alignment.errorPx : null;
 
   /** What the tooltip of a measure point / dm line tells. */
   const tooltipRows = (item: MarkerItem): Array<[string, string]> => {
@@ -1037,6 +1246,7 @@ const ImageCanvasStage = ({
             width={Math.round(CANVAS_WIDTH * pixelRatio)}
             height={Math.round(CANVAS_HEIGHT * pixelRatio)}
             onMouseDown={handleMouseDown}
+            onMouseUp={handleCanvasMouseUp}
             onMouseMove={handleMouseMove}
             onMouseLeave={() => setHover(null)}
             onClick={handleClick}
@@ -1051,8 +1261,12 @@ const ImageCanvasStage = ({
               cursor:
                 tool !== 'pan' || placement?.activeDeviceId != null
                   ? 'crosshair'
-                  : dragRef.current
+                  : dragRef.current || alignDrag
                     ? 'grabbing'
+                    : alignKey && canAlign
+                      ? hoveredItem
+                        ? 'grab'
+                        : 'crosshair'
                     : hoveredItem
                       ? 'pointer'
                       : 'grab',
@@ -1065,24 +1279,28 @@ const ImageCanvasStage = ({
             zoomOutDisabled={zoom <= MIN_ZOOM}
             resetDisabled={zoom === 1 && offsetX === 0 && offsetY === 0}
           />
-          {wheelHint && (
+          <WheelZoomHint visible={wheelHint} />
+          {alignKey && canAlign && (
             <div
               aria-live="polite"
               style={{
                 position: 'absolute',
-                inset: 0,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
+                top: 10,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                zIndex: 2,
                 pointerEvents: 'none',
-                borderRadius: 13,
-                background: 'rgba(16, 20, 25, 0.35)',
+                background: '#0d6efd',
                 color: '#ffffff',
-                fontSize: 15,
+                borderRadius: 'var(--progeo-radius-pill)',
+                padding: '5px 14px',
+                fontSize: 12.5,
                 fontWeight: 600,
+                boxShadow: '0 2px 8px rgba(11, 54, 89, .25)',
+                whiteSpace: 'nowrap',
               }}
             >
-              Ctrl + scroll to zoom the plan
+              Align: drag a {lineMode ? 'dm line' : 'sensor'} onto its right place
             </div>
           )}
           {hover && hoveredItem && (
@@ -1154,7 +1372,7 @@ const ImageCanvasStage = ({
               ? placement.activeDeviceId != null
                 ? `Click on the plan to place ${placement.activeLabel ?? 'the selected sensor'} · drag points to move them`
                 : 'Select a sensor in step 3 · drag points to move them'
-              : 'Drag to pan · Ctrl + scroll or the buttons to zoom · hover a sensor for details'}
+              : `Drag to pan · Ctrl + scroll or the buttons to zoom · hover a sensor for details${canAlign ? ' · hold A + drag a sensor to align' : ''}`}
           </span>
         </div>
 
@@ -1210,7 +1428,7 @@ const ImageCanvasStage = ({
               >
                 Vertical flip
               </button>
-              {onSaveSliders && (
+              {onSaveSliders && !aligning && (
                 <button
                   type="button"
                   className="btn btn-sm btn-primary"
@@ -1222,6 +1440,57 @@ const ImageCanvasStage = ({
               )}
             </div>
           </div>
+
+          {canAlign && !aligning && (
+            <div className="d-flex align-items-center gap-2" style={{ fontSize: 12.5, color: MUTED }}>
+              <kbd style={KEY_BADGE}>A</kbd>
+              <span>
+                Hold <strong>A</strong> and drag a {lineMode ? 'dm line' : 'sensor'} onto its right place on
+                the plan - two far apart (e.g. opposite corners) set the alignment, more refine it.
+              </span>
+            </div>
+          )}
+
+          {aligning && (
+            <div
+              className="d-flex flex-wrap align-items-center gap-2"
+              style={{
+                background: '#E7F0FD',
+                color: '#0B3659',
+                borderRadius: 12,
+                padding: '10px 14px',
+                fontSize: 12.5,
+              }}
+            >
+              <div style={{ flex: '1 1 260px' }}>
+                <div style={{ fontWeight: 600 }}>
+                  {pins.length} {lineMode ? 'dm sensor(s)' : 'sensor(s)'} pinned
+                </div>
+                <div>
+                  {alignProblem && pins.length >= ALIGN_PINS
+                    ? alignProblem
+                    : alignError != null
+                      ? `Computed from the pins - off by at most ${alignError.toFixed(1)} px of the plan. Hold A and drag more to refine, or store it.`
+                      : `Hold A and drag one more ${lineMode ? 'dm line' : 'sensor'} onto its place, far from the first. Dragging one again moves its pin.`}
+                </div>
+              </div>
+              <button type="button" className="btn btn-sm btn-outline-secondary" style={PILL_BUTTON} onClick={() => stopAligning(true)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                style={PILL_BUTTON}
+                disabled={alignError == null}
+                onClick={() => {
+                  stopAligning(false);
+                  storeAlignment(isVerticallyFlipped);
+                }}
+              >
+                Store alignment
+              </button>
+            </div>
+          )}
 
           <div
             style={{
@@ -1249,8 +1518,9 @@ const ImageCanvasStage = ({
                   id={slider.id}
                   className="form-range"
                   type="range"
-                  min={slider.min}
-                  max={slider.max}
+                  // A computed value outside the usual range widens it.
+                  min={Math.min(slider.min, slider.value)}
+                  max={Math.max(slider.max, slider.value)}
                   step={slider.step}
                   value={slider.value}
                   onChange={(event) =>

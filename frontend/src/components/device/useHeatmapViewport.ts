@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { fitView, MAX_ZOOM, MIN_ZOOM, panBy, zoomAt, type View, type WorldRect } from './heatmapCanvas';
 import { canvasHeightFor, COLORBAR_SPACE } from './heatmapChart';
+import { isZoomWheel } from '../ui/wheelZoom';
 
 /**
  * Size and view of the heatmap canvas: its width follows the wrapper
@@ -93,10 +94,11 @@ export const useHeatmapViewport = ({
 /**
  * Pointer input of the heatmap canvas: drag to move, pinch to zoom (around
  * the fingers' middle), hover reports to `onHover`, leaving or dragging to
- * `onLeave`, a click (no drag, one pointer) to `onTap`. The wheel zooms around the cursor - but only where
- * `wheelZoomsAt` says so (over the drawn plan); everywhere else it scrolls
- * the page as usual. While zooming it must not scroll the page (React's
- * wheel listener is passive, hence addEventListener).
+ * `onLeave`, a click (no drag, one pointer) to `onTap`. Ctrl (or ⌘) + wheel
+ * (isZoomWheel) zooms around the cursor - but only where `wheelZoomsAt` says
+ * so (over the drawn plan); the plain wheel scrolls the page, over the plan
+ * calling `onPlainWheel` (the hint how to zoom). While zooming it must not
+ * scroll the page (React's wheel listener is passive, hence addEventListener).
  */
 export const usePanZoomGestures = ({
   enabled,
@@ -107,6 +109,7 @@ export const usePanZoomGestures = ({
   onLeave,
   onTap,
   wheelZoomsAt,
+  onPlainWheel,
 }: {
   /** Whether the canvas is rendered. */
   enabled: boolean;
@@ -117,6 +120,7 @@ export const usePanZoomGestures = ({
   onLeave: () => void;
   onTap?: (sx: number, sy: number) => void;
   wheelZoomsAt: (sx: number, sy: number) => boolean;
+  onPlainWheel?: () => void;
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   // Active pointers (mouse, pen, fingers) for dragging and pinching.
@@ -194,9 +198,9 @@ export const usePanZoomGestures = ({
   };
 
   // The wheel listener stays registered; it reads the latest callbacks.
-  const wheelRef = useRef({ zoomBy, wheelZoomsAt });
+  const wheelRef = useRef({ zoomBy, wheelZoomsAt, onPlainWheel });
   useLayoutEffect(() => {
-    wheelRef.current = { zoomBy, wheelZoomsAt };
+    wheelRef.current = { zoomBy, wheelZoomsAt, onPlainWheel };
   });
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -208,6 +212,10 @@ export const usePanZoomGestures = ({
       const sx = event.clientX - rect.left;
       const sy = event.clientY - rect.top;
       if (!wheelRef.current.wheelZoomsAt(sx, sy)) {
+        return; // the page scrolls
+      }
+      if (!isZoomWheel(event)) {
+        wheelRef.current.onPlainWheel?.();
         return; // the page scrolls
       }
       event.preventDefault();

@@ -104,7 +104,12 @@ const LocationObjektTab = () => {
         mail: form.mail,
         contact_person: form.contact_person,
       },
-      () => {
+      (response) => {
+        // The other tabs (product: lines or heatmap, header) see the saved values at once.
+        const saved = response?.data;
+        if (saved && typeof saved === 'object') {
+          setLocation((current) => (current ? { ...current, ...saved } : current));
+        }
         showSuccessBar(enqueueSnackbar, t('objekt_saved'));
         setSaving(false);
       },

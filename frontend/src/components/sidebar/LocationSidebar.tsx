@@ -11,7 +11,6 @@ import {
   GraphUp,
   Hdd,
   Layers,
-  Map,
   People,
   PlusSquare,
   Terminal,
@@ -202,13 +201,6 @@ const LocationSidebar = ({
   ];
 
   const toolItems: ModuleItem[] = [
-    {
-      key: 'factory',
-      label: t('sidebar_factory'),
-      icon: Map,
-      to: '/factory/',
-      visible: can(routeRule('/factory/')),
-    },
     {
       key: 'lageplan',
       label: t('sidebar_lageplan_wizard'),

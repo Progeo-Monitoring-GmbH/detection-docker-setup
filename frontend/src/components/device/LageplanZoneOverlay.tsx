@@ -6,6 +6,7 @@ import { getBackendUrl } from '../../backendUrl';
 import { alarmHeatColor } from '../../main/alarmUtils';
 import CursorTooltip, { TooltipRow } from '../ui/CursorTooltip';
 import { alignmentBaseScale } from '../ui/ImageCanvasStage';
+import { isZoomWheel, useWheelHint, WheelZoomHint } from '../ui/wheelZoom';
 import { fullBox, isFull, panBox, type ViewBox, viewBoxAttribute, zoomBox } from './planViewBox';
 import SensorTooltip from './SensorTooltip';
 import ZoomControls from './ZoomControls';
@@ -102,7 +103,7 @@ type Hover = {
 /** Marker outline of a sensor (or segment) reading above its threshold - as on the heatmap. */
 const OVER_THRESHOLD_COLOR = '#dc2626';
 const SEGMENT_OPACITY = 0.55;
-/** Zoom per button click; the wheel zooms continuously. */
+/** Zoom per button click; Ctrl + wheel zooms continuously. */
 const ZOOM_STEP = 1.5;
 /** Pointer movement (px) after which a press is a drag, not a click. */
 const DRAG_THRESHOLD = 3;
@@ -120,8 +121,8 @@ const DRAG_THRESHOLD = 3;
  *
  * The plan image lies in the SVG with its own size (image pixels) as
  * coordinate system, so the points land exactly on it (a square viewBox
- * would squeeze them towards the middle of a wide plan). Zoom (wheel over
- * the plan, pinch, buttons) and drag change the viewBox - markers and lines
+ * would squeeze them towards the middle of a wide plan). Zoom (Ctrl + wheel
+ * over the plan, pinch, buttons) and drag change the viewBox - markers and lines
  * keep their size on screen. Double click resets.
  */
 const LageplanZoneOverlay = ({
@@ -242,7 +243,9 @@ const LageplanZoneOverlay = ({
   const onPlanRef = useRef(onPlan);
   onPlanRef.current = onPlan;
 
-  // Wheel zoom only over the plan image - elsewhere the page scrolls.
+  // Ctrl (or ⌘) + wheel zooms over the plan image (isZoomWheel) - the plain
+  // wheel scrolls the page and shows how to zoom, elsewhere it just scrolls.
+  const [wheelHint, showWheelHint] = useWheelHint();
   useEffect(() => {
     const svg = svgRef.current;
     if (!svg) {
@@ -253,13 +256,17 @@ const LageplanZoneOverlay = ({
       if (!at || !onPlanRef.current(at.x, at.y)) {
         return;
       }
+      if (!isZoomWheel(event)) {
+        showWheelHint();
+        return;
+      }
       event.preventDefault();
       const delta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
       zoomByRef.current(Math.exp(-delta * 0.0015), event.clientX, event.clientY);
     };
     svg.addEventListener('wheel', onWheel, { passive: false });
     return () => svg.removeEventListener('wheel', onWheel);
-  }, []);
+  }, [showWheelHint]);
 
   const onPointerDown = (event: PointerEvent<SVGSVGElement>) => {
     if (event.pointerType === 'mouse' && event.button !== 0) {
@@ -452,7 +459,6 @@ const LageplanZoneOverlay = ({
                   />
                 )}
                 <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={color} strokeWidth={0.007 * unit} strokeLinecap="round" />
-                <circle cx={x1} cy={y1} r={0.006 * unit} fill={color} stroke="#ffffff" strokeWidth={0.002 * unit} />
                 {/* Wider invisible hit area for hovering the band. */}
                 <line
                   data-testid="zone-band"
@@ -545,6 +551,7 @@ const LageplanZoneOverlay = ({
         })}
       </svg>
 
+      <WheelZoomHint visible={wheelHint} radius={14} />
       <ZoomControls
         onZoomIn={() => zoomBy(ZOOM_STEP)}
         onZoomOut={() => zoomBy(1 / ZOOM_STEP)}

@@ -183,3 +183,41 @@ def test_editing_a_location_never_changes_its_project_id(api_client):
     location.refresh_from_db(using="default")
     assert location.name == "Halle Nord"
     assert location.project_id == 4711
+
+
+def test_a_write_drops_the_cached_answers_of_its_resource():
+    from types import SimpleNamespace
+
+    from django.core.cache import cache
+
+    from progeo.v1.viewsets.locations_viewset import LocationViewSet
+
+    keys = ["/v1/location/15/@1", "/v1/location/15/@7", "/v1/location/?search=x@1", "/v1/device/3/@1"]
+    for key in keys:
+        cache.set(key, "{}", 60)
+    view = LocationViewSet()
+    view.request = SimpleNamespace(path="/v1/location/15/")
+    view.kwargs = {"pk": "15"}
+
+    view._clear_cached_answers()
+
+    assert [key for key in keys if cache.get(key) is not None] == ["/v1/device/3/@1"]
+    cache.delete("/v1/device/3/@1")
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_a_saved_location_is_not_answered_from_the_cache(api_client):
+    """retrieve caches its answer (15 min) - the Objekt tab reloads the
+    location right after saving and must see the change."""
+    from progeo.tests import factories as f
+
+    account = f.make_account()
+    location = f.make_location(account, project_id=4712, name="Halle", project_type=0)
+    user = f.make_user(perms=("module_locations_enabled", "module_locations_edit"), accounts=[account])
+    api_client.force_authenticate(user)
+    assert api_client.get(f"/v1/location/{location.pk}/").json()["project_type"] == 0  # now cached
+
+    response = api_client.patch(f"/v1/location/{location.pk}/", {"project_type": 1}, format="json")
+
+    assert response.status_code == 200, response.content
+    assert api_client.get(f"/v1/location/{location.pk}/").json()["project_type"] == 1

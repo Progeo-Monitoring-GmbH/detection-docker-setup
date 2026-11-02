@@ -513,6 +513,18 @@ def test_update_alignment_saves_onto_the_active_lageplan(api_client, geo_world):
     assert inactive.offset_x is None
 
 
+def test_update_alignment_keeps_the_calibrated_scale_precision(api_client, geo_world):
+    lageplan = _lageplan(geo_world[1])
+    api_client.force_authenticate(user=geo_world[4])
+
+    api_client.post("/v1/location/update/", {
+        "location_id": 910001, "offset_x": 17, "offset_y": -4, "scale_x": 0.9643, "scale_y": 1.0028,
+    }, format="json")
+
+    lageplan.refresh_from_db(using=f.DB)
+    assert (lageplan.offset_x, lageplan.offset_y, lageplan.scale_x, lageplan.scale_y) == (17, -4, 0.9643, 1.0028)
+
+
 def test_update_alignment_saves_onto_the_picked_lageplan(api_client, geo_world):
     location = geo_world[1]
     picked = _lageplan(location, name="alt", is_active=False)

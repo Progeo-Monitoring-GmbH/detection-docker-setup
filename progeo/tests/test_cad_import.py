@@ -137,6 +137,25 @@ def test_dm_labels_at_the_same_position_are_named(cad_reader, tmp_path):
     assert result.description.endswith("; same position: dm 001 + dm 002")
 
 
+def test_a_dm_band_drawn_as_polyline_runs_from_its_first_to_its_last_vertex(cad_reader, tmp_path):
+    def build(msp):
+        msp.add_line((0, 0), (30, 0), dxfattribs={"layer": "DKS_MPLE"})
+        msp.add_mtext("dm 001", dxfattribs={"layer": "DKS_MPLE", "insert": (28, 0.1)})
+        # Split and joined again in CAD: a straight LWPOLYLINE with a vertex in between.
+        msp.add_lwpolyline([(0, 3), (4, 3), (30, 3)], dxfattribs={"layer": "DKS_MPLE"})
+        msp.add_mtext("dm 002", dxfattribs={"layer": "DKS_MPLE", "insert": (28, 3.1)})
+        # A closed outline is no band.
+        msp.add_lwpolyline([(0, 6), (30, 6), (30, 9), (0, 6)], dxfattribs={"layer": "DKS_MPLE"})
+
+    result = cad_reader.read_measure_points(_dxf(tmp_path / "dm.dxf", build))
+
+    assert [(p["pos"], p["x"], p["y"], p["x_end"], p["y_end"]) for p in result.points] == [
+        (1, 0, 0, 300, 0),
+        (2, 0, 30, 300, 30),
+    ]
+    assert result.description == "2 dm labels on DKS_MPLE, placed on 2 band lines"
+
+
 def test_a_dm_number_left_out_keeps_the_others_numbers(cad_reader, tmp_path):
     def build(msp):
         for row, number in enumerate((1, 2, 4)):  # no dm 003 in the plan
@@ -494,6 +513,8 @@ def test_lageplan_job_stores_the_rendered_plan(location, events, tmp_path, monke
     assert job["status"] == "done", job["error"]
     lageplan = location.lageplans.using(f.DB).get(pk=job["result"]["lageplan_id"])
     assert lageplan.name == "Plan 1.png"
+    # New plans start vertically flipped (CAD y runs up).
+    assert lageplan.flip_y is True
     assert (tmp_path / lageplan.lageplan.name).read_bytes() == b"\x89PNG plan"
     assert job["result"]["lageplan"]["id"] == lageplan.pk
     assert job["log"][-1] == f"Stored Lageplan #{lageplan.pk}"

@@ -17,7 +17,8 @@ Which entities are the measure points depends on the kind of plan:
    on every tap); taps not on a polyline follow in drawing order.
 2. smartex dm Breitband: one point per "dm NNN" label (MTEXT/TEXT) on
    DKS_MPLE, ordered by NNN, which is its pos (sensor order - a number left
-   out in the plan stays unused). A dm sensor is its band LINE on DKS_MPLE: the
+   out in the plan stays unused). A dm sensor is its band on DKS_MPLE - a
+   LINE, or an open LWPOLYLINE (first to last vertex): the
    point is the band's start, with its end in x_end/y_end/nx_end/ny_end; a
    label without a band stays at its own position, without an end.
    Every band belongs to one label: the closest label/band pairs are matched first.
@@ -191,6 +192,23 @@ def _segment_distance(point, start, end) -> float:
     return math.hypot(point[0] - (start[0] + t * dx), point[1] - (start[1] + t * dy))
 
 
+def _band_distance(point, band: Shape) -> float:
+    """Distance of `point` to a band (LINE, or polyline: its closest segment)."""
+    return min(_segment_distance(point, start, end) for start, end in zip(band.points, band.points[1:]))
+
+
+def _band_length(band: Shape) -> float:
+    return sum(math.dist(start, end) for start, end in zip(band.points, band.points[1:]))
+
+
+def _is_band(shape: Shape) -> bool:
+    """A dm band on DKS_MPLE: a LINE, or an open polyline - some bands are
+    drawn as LWPOLYLINE with extra vertices (e.g. split and joined again)."""
+    if shape.kind == "line":
+        return True
+    return shape.kind == "polyline" and len(shape.points) >= 2 and math.dist(shape.points[0], shape.points[-1]) > 0
+
+
 def _dm_points(labels: list[tuple[int, Shape]], lines: list[Shape]):
     """Per label (by number) the start of its band line and the band's end,
     None without a band; (points, ends, numbers, labels without a band).
@@ -200,11 +218,12 @@ def _dm_points(labels: list[tuple[int, Shape]], lines: list[Shape]):
     A band farther from the label than the band is long is not its band - such
     a label (e.g. its band was deleted from the plan) stays at its own position.
     """
+    lengths = [_band_length(line) for line in lines]
     pairs = sorted(
         (distance, label_index, line_index)
         for label_index, (_number, label) in enumerate(labels)
         for line_index, line in enumerate(lines)
-        if (distance := _segment_distance(label.points[0], *line.points)) <= math.dist(*line.points)
+        if (distance := _band_distance(label.points[0], line)) <= lengths[line_index]
     )
     band_of, used = {}, set()
     for _distance, label_index, line_index in pairs:
@@ -216,7 +235,8 @@ def _dm_points(labels: list[tuple[int, Shape]], lines: list[Shape]):
     for label_index, (number, label) in sorted(enumerate(labels), key=lambda item: item[1][0]):
         numbers.append(number)
         if label_index in band_of:
-            start, end = lines[band_of[label_index]].points
+            band = lines[band_of[label_index]].points
+            start, end = band[0], band[-1]
             points.append(start)
             ends.append(end)
         else:
@@ -256,7 +276,7 @@ def find_measure_points(shapes: list[Shape]):
         if shape.kind == "text" and (match := DM_LABEL_RE.match(shape.text))
     ]
     if labels:
-        lines = [shape for shape in on_mple if shape.kind == "line"]
+        lines = [shape for shape in on_mple if _is_band(shape)]
         points, ends, numbers, without_band = _dm_points(labels, lines)
         description = f"{len(labels)} dm labels on {MPLE_LAYER}, placed on {len(lines)} band lines"
         if without_band:

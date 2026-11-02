@@ -15,6 +15,7 @@ from progeo.decorator import calc_runtime
 from progeo.helper.cacher import (
     cache_save,
     cache_save_and_return,
+    clear_cache_pattern,
     search_cache,
     search_cache_raw,
 )
@@ -41,6 +42,27 @@ class ProgeoModalViewSet(viewsets.ModelViewSet):
             and not is_staff_admin(request.user)
         ):
             raise PermissionDenied("Staff access required")
+
+    # retrieve/list answers are cached per path and user (DEFAULT_TIME_OUT) -
+    # a write drops those of the resource, its list and every object (e.g.
+    # /v1/location/*), so the change shows at once, not 15 minutes later.
+    def _clear_cached_answers(self):
+        path = self.request.path
+        if self.kwargs.get(self.lookup_url_kwarg or self.lookup_field) is not None:
+            path = path.rstrip("/").rsplit("/", 1)[0] + "/"
+        clear_cache_pattern(f"{path}*")
+
+    def perform_create(self, serializer):
+        super().perform_create(serializer)
+        self._clear_cached_answers()
+
+    def perform_update(self, serializer):
+        super().perform_update(serializer)
+        self._clear_cached_answers()
+
+    def perform_destroy(self, instance):
+        super().perform_destroy(instance)
+        self._clear_cached_answers()
 
     def get_queryset_ids(self, qs=None):
         if qs:

@@ -45,7 +45,7 @@ describe('ImageCanvasStage zoom', () => {
     const event = wheel({ deltaY: -100 });
     expect(event.defaultPrevented).toBe(false);
     expect(container.textContent).toContain('Zoom 1.00×');
-    expect(container.textContent).toContain('Ctrl + scroll to zoom the plan');
+    expect(container.textContent).toContain('Ctrl + scroll to zoom');
   });
 
   it('zooms with Ctrl + wheel', () => {

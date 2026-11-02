@@ -6,6 +6,7 @@ import { parseTimestamp } from '../../main/alarmUtils';
 import { plotTheme } from '../../styles/plotTheme';
 import { formatDate } from '../../main/dateFormat';
 import FrameSlider, { frameAt } from './FrameSlider';
+import { isZoomWheel, useWheelHint, WheelZoomHint } from '../ui/wheelZoom';
 import MeasurementCompareTooltip, {
   type CompareTooltipData,
   TOOLTIP_WIDTH,
@@ -1018,6 +1019,7 @@ const MeasurementSamplesCompareChart = (
   // Plotly has no legend hover event: listen on the legend items (g.traces,
   // whose d3 data holds the trace).
   const [graphDiv, setGraphDiv] = React.useState<HTMLElement | null>(null);
+  const [wheelHint, showWheelHint] = useWheelHint();
   React.useEffect(() => {
     if (!graphDiv) {
       return undefined;
@@ -1042,14 +1044,21 @@ const MeasurementSamplesCompareChart = (
         setHighlighted(null);
       }
     };
-    // No wheel zoom on any of the three plots (their drag areas, every
-    // subplot) - stopped on the way down, before Plotly's own listener; the
-    // page scrolls instead. Zooming stays available with the drag/autoscale
-    // controls, exactly like the first plot did before.
+    // Over the plots (their drag areas, every subplot) only Ctrl (or ⌘) +
+    // wheel zooms (isZoomWheel), handed on to Plotly's scrollZoom - neither
+    // the page nor the browser zooms then. The plain wheel is stopped on the
+    // way down, before Plotly's own listener: the page scrolls and the hint
+    // shows how to zoom.
     const onWheel = (event: WheelEvent) => {
-      if (event.target instanceof Element && event.target.closest('.drag')) {
-        event.stopPropagation();
+      if (!(event.target instanceof Element && event.target.closest('.drag'))) {
+        return;
       }
+      if (isZoomWheel(event)) {
+        event.preventDefault();
+        return;
+      }
+      event.stopPropagation();
+      showWheelHint();
     };
     graphDiv.addEventListener('mouseover', onOver);
     graphDiv.addEventListener('mouseout', onOut);
@@ -1059,7 +1068,7 @@ const MeasurementSamplesCompareChart = (
       graphDiv.removeEventListener('mouseout', onOut);
       graphDiv.removeEventListener('wheel', onWheel, true);
     };
-  }, [graphDiv]);
+  }, [graphDiv, showWheelHint]);
 
   // A click on the first plot adds or removes that sensor in the second; one
   // on a time plot moves the slider to that measurement.
@@ -1239,6 +1248,7 @@ const MeasurementSamplesCompareChart = (
       </div>
 
       <div ref={wrapRef} style={{ position: 'relative' }} onMouseMove={onMouseMove}>
+        <WheelZoomHint visible={wheelHint} radius={0} />
         {tooltip && (
           // Top right of the upper plot - top left while the cursor is near.
           <MeasurementCompareTooltip

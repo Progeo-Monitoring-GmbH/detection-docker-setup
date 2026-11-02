@@ -83,9 +83,10 @@ const deviceLabel = (device: WizardDevice) =>
 const planLabel = (plan: WizardLageplan) =>
   plan.name || plan.url?.split('/').pop() || `Lageplan #${plan.id}`;
 
-/** Whether the plan's points were moved/scaled away from the defaults. */
+/** Whether the plan's points were moved/scaled away from the defaults (the
+ * vertical flip is one - new plans start flipped). */
 const isAligned = (plan: WizardLageplan) =>
-  Boolean(plan.offset_x || plan.offset_y || plan.flip_y) ||
+  Boolean(plan.offset_x || plan.offset_y) ||
   (plan.scale_x ?? 1) !== 1 ||
   (plan.scale_y ?? 1) !== 1;
 
@@ -555,7 +556,8 @@ const LageplanWizardView = () => {
             scale_x: selectedPlan.scale_x ?? 1,
             scale_y: selectedPlan.scale_y ?? 1,
             flip_x: selectedPlan.flip_x ?? false,
-            flip_y: selectedPlan.flip_y ?? false,
+            // Vertically flipped unless the plan says otherwise (the default of new plans).
+            flip_y: selectedPlan.flip_y ?? true,
             reference_x: selectedPlan.reference_x ?? null,
             reference_y: selectedPlan.reference_y ?? null,
             meters_per_pixel: selectedPlan.meters_per_pixel ?? null,

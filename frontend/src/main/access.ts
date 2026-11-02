@@ -72,7 +72,6 @@ export const APP_ROUTE_ACCESS = {
   '/escalations/': STAFF,
   '/escalations/:id': STAFF,
   '/backup/:account/overview/': permission('module_backup_enabled'),
-  '/factory/': SUPERUSER,
   '/lageplan/wizard/': SUPERUSER,
   '/map/': SUPERUSER,
   // Object management - ProGeo-Admins (roleModel: superusers).

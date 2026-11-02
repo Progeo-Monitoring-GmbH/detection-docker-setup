@@ -118,9 +118,6 @@ const AdminPanel = React.lazy(() => import('./main/AdminPanel.tsx'));
 const StaffAdmin = React.lazy(() => import('./main/StaffAdmin.tsx'));
 const EscalationsView = React.lazy(() => import('./main/EscalationsView.tsx'));
 const LandingPage = React.lazy(() => import('./main/LandingPage.tsx'));
-const FactoryVisualizerView = React.lazy(
-  () => import('./main/FactoryVisualizerView.tsx'),
-);
 const LageplanWizardView = React.lazy(
   () => import('./main/LageplanWizardView.tsx'),
 );
@@ -301,10 +298,6 @@ const CoreRoutes = () => {
           <Route
             path="/backup/:account/overview/"
             element={guard('/backup/:account/overview/', <BackupView />)}
-          />
-          <Route
-            path="/factory/"
-            element={guard('/factory/', <FactoryVisualizerView />)}
           />
           <Route
             path="/lageplan/wizard/"
