@@ -1108,6 +1108,7 @@ const LageplanWizardView = () => {
               url={`/v1/status/measure_points/upload_cad/`}
               accept="cad"
               hint="Drop a DWG/DXF file here, or click to choose"
+              maxSizeMB={100}
               instantFileUpload={true}
               withPreview={false}
               payload={{ location_id: selectedLocationId }}

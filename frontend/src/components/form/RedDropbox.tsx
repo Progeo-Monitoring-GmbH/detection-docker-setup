@@ -66,7 +66,13 @@ const RedDropbox = ({
     },
     onDropRejected: (fileRejections) => {
       console.log('Rejected files:', fileRejections);
-      showErrorBar(enqueueSnackbar, `Rejected! ${error && error}`);
+      const reasons = fileRejections
+        .map(
+          ({ file, errors }) =>
+            `${file.name}: ${errors.map((e) => e.message).join(', ')}`,
+        )
+        .join('; ');
+      showErrorBar(enqueueSnackbar, `Rejected! ${reasons}`);
     },
   };
 
