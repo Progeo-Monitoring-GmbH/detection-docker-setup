@@ -172,6 +172,8 @@ i18n
           measurement_compare_clear_sensors: 'Clear sensors',
           measurement_compare_add_random: 'Add random sensor',
           measurement_compare_add_random_hint: 'Adds one of the sensors that is not shown yet',
+          measurement_compare_sensor_history: 'Last 3 months',
+          measurement_compare_sensor_history_hint: 'Shows the selected sensors over the last 3 months (to spot trends) - the shaded part is the selected period',
           measurement_compare_samples_label: 'Samples',
           measurement_compare_measurement_datetime_label:
             'Measurement datetime',
@@ -1345,6 +1347,8 @@ i18n
           measurement_compare_clear_sensors: 'Sensoren leeren',
           measurement_compare_add_random: 'Zufälligen Sensor hinzufügen',
           measurement_compare_add_random_hint: 'Fügt einen der noch nicht angezeigten Sensoren hinzu',
+          measurement_compare_sensor_history: 'Letzte 3 Monate',
+          measurement_compare_sensor_history_hint: 'Zeigt die gewählten Sensoren über die letzten 3 Monate (um Trends zu erkennen) - der schattierte Teil ist der gewählte Zeitraum',
           measurement_compare_samples_label: 'Stichproben',
           measurement_compare_measurement_datetime_label: 'Messungszeitpunkt',
           measurement_compare_measurements_included: 'Enthaltene Messungen',

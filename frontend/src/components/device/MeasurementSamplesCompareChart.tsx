@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button, Card } from 'react-bootstrap';
+import { Button, Card, Spinner } from 'react-bootstrap';
 import Plot from 'react-plotly.js';
 import { useTranslation } from 'react-i18next';
 import { parseTimestamp } from '../../main/alarmUtils';
@@ -31,7 +31,7 @@ type DiffSeries = {
   /** EP / WP by sensor - empty without samples. */
   ep: number[];
   wp: number[];
-  /** EP - WP by sensor, signed (the first plot's mean and bands) - without
+  /** WP - EP by sensor, signed (the first plot's mean and bands) - without
    * samples only the |EP - WP| of `points` there is. */
   signed: DiffPoint[];
 };
@@ -74,6 +74,15 @@ type MeasurementSamplesCompareChartProps = {
    */
   sensors?: number[];
   onSensorsChange?: (sensors: number[]) => void;
+  /**
+   * Staff: a longer history (the last 3 months) for the second plot only -
+   * its sensor lines then follow these rows on their own time axis instead
+   * of `rows`. null: `rows`.
+   */
+  sensorHistoryRows?: MeasurementCompareRow[] | null;
+  /** Shows the history button: loads the history, or drops it while shown. */
+  onToggleSensorHistory?: (() => void) | null;
+  isLoadingSensorHistory?: boolean;
 };
 
 /** `selected` with `sensor` added (sorted) or, if it was in there, removed. */
@@ -95,6 +104,7 @@ const MIN_MAX_COLOR = 'rgba(153, 27, 27, 0.25)';
 const DEVIATION_COLOR = 'rgba(252, 122, 46, 0.31)';
 const EDGE_COLOR = 'rgba(0, 0, 0, 0)';
 const BASELINE_COLOR = '#4a4a4a';
+const PERIOD_COLOR = 'rgba(0, 0, 0, 0.06)';
 
 /** How many sensors the "most / least active" buttons add. */
 const ACTIVE_SENSOR_COUNT = 2;
@@ -104,6 +114,20 @@ const REMOVE_MARK = ' ✕';
 
 /** The plot's height (px). */
 const PLOT_HEIGHT = 800;
+
+/** About how many ticks the sensor axis shows. */
+const SENSOR_TICKS = 10;
+
+/** The sensor axis' tick step for `span` visible sensors: whole sensors
+ * only (1, 2, 5, 10, 20, ...) - never a half one. */
+const sensorTickStep = (span: number) => {
+  const raw = span / SENSOR_TICKS;
+  if (raw <= 1) {
+    return 1;
+  }
+  const magnitude = 10 ** Math.floor(Math.log10(raw));
+  return [1, 2, 5].map((factor) => factor * magnitude).find((step) => step >= raw) ?? 10 * magnitude;
+};
 
 /** Plotly visibility of an optional line: shown or only in the legend. */
 const visibility = (shown: ReadonlySet<string>, uid: string) => ({
@@ -237,6 +261,54 @@ const toPairAbsDiff = (
   return points;
 };
 
+const toDiffSeries = (row: MeasurementCompareRow): DiffSeries => {
+  const { ep, wp } = toPotentials(row.samples);
+  const points = toPairAbsDiff(row.samples, row.pair_abs_values);
+  return {
+    id: row.id,
+    lastFetched: row.last_fetched,
+    points,
+    ep,
+    wp,
+    signed: ep.length
+      ? wp.map((value, index) => ({ pairIndex: index, value: value - ep[index] }))
+      : points,
+  };
+};
+
+/** The measurements over time (oldest first) - the time plots' data. */
+const toTimeSeries = (series: DiffSeries[]) => {
+  // The time plots are date axes: x values are the measurement timestamps
+  // (epoch ms), so the axis shows real dates instead of row indices.
+  const orderedSeries = [...series].reverse();
+
+  const x: number[] = [];
+  const y: number[] = [];
+  const measurementDateTime: string[] = [];
+  // Per measurement: its id (a click moves the slider to it), its
+  // |EP - WP| by sensor (the selected sensors' plot) and its EP / WP by
+  // sensor (the tooltip of a hovered sensor line).
+  const ids: number[] = [];
+  const pairs: number[][] = [];
+  const potentials: { ep: number[]; wp: number[] }[] = [];
+  orderedSeries.forEach((entry) => {
+    const ts = parseTimestamp(entry.lastFetched);
+    if (ts == null) {
+      return; // cannot be placed on the date axis
+    }
+    x.push(ts);
+    y.push(entry.points.reduce((acc, point) => acc + point.value, 0));
+    measurementDateTime.push(formatDate(entry.lastFetched, 'dateTimeSeconds'));
+    ids.push(entry.id);
+    pairs.push(entry.points.map((point) => point.value));
+    potentials.push({ ep: entry.ep, wp: entry.wp });
+  });
+  // Change of the sum since the previous measurement (none for the first).
+  const diff = y.map((value, index) => (index > 0 ? value - y[index - 1] : null));
+
+  return { x, y, diff, measurementDateTime, ids, pairs, potentials };
+};
+
 const MeasurementSamplesCompareChart = (
   props: MeasurementSamplesCompareChartProps,
 ) => {
@@ -253,6 +325,9 @@ const MeasurementSamplesCompareChart = (
     onTimeChange,
     sensors,
     onSensorsChange,
+    sensorHistoryRows = null,
+    onToggleSensorHistory = null,
+    isLoadingSensorHistory = false,
   } = props;
   const { t } = useTranslation();
   const currentYear = new Date().getFullYear();
@@ -291,24 +366,7 @@ const MeasurementSamplesCompareChart = (
     }
   };
 
-  const series: DiffSeries[] = React.useMemo(
-    () =>
-      rows.map((row) => {
-        const { ep, wp } = toPotentials(row.samples);
-        const points = toPairAbsDiff(row.samples, row.pair_abs_values);
-        return {
-          id: row.id,
-          lastFetched: row.last_fetched,
-          points,
-          ep,
-          wp,
-          signed: ep.length
-            ? ep.map((value, index) => ({ pairIndex: index, value: value - wp[index] }))
-            : points,
-        };
-      }),
-    [rows],
-  );
+  const series: DiffSeries[] = React.useMemo(() => rows.map(toDiffSeries), [rows]);
 
   // The pair-sum subplot (x2) is a date axis, so the alarm band is positioned
   // directly by the alarm's own start/end timestamps (no index mapping).
@@ -331,7 +389,7 @@ const MeasurementSamplesCompareChart = (
     const minimums: number[] = [];
     const maximums: number[] = [];
 
-    // Signed: the bands reach below zero where EP - WP does.
+    // Signed WP - EP only: the bands reach below zero where it does.
     series.forEach((entry) => {
       entry.signed.forEach((point) => {
         const index = point.pairIndex;
@@ -396,37 +454,13 @@ const MeasurementSamplesCompareChart = (
     return sum / meanAndDeviationSeries.sigma.length;
   }, [meanAndDeviationSeries]);
 
-  const pairSumSeries = React.useMemo(() => {
-    // The x2 subplot is a date axis: x values are the measurement timestamps
-    // (epoch ms), so the axis shows real dates instead of row indices.
-    const orderedSeries = [...series].reverse();
-
-    const x: number[] = [];
-    const y: number[] = [];
-    const measurementDateTime: string[] = [];
-    // Per measurement: its id (a click moves the slider to it), its
-    // |EP - WP| by sensor (the selected sensors' plot) and its EP / WP by
-    // sensor (the tooltip of a hovered sensor line).
-    const ids: number[] = [];
-    const pairs: number[][] = [];
-    const potentials: { ep: number[]; wp: number[] }[] = [];
-    orderedSeries.forEach((entry) => {
-      const ts = parseTimestamp(entry.lastFetched);
-      if (ts == null) {
-        return; // cannot be placed on the date axis
-      }
-      x.push(ts);
-      y.push(entry.points.reduce((acc, point) => acc + point.value, 0));
-      measurementDateTime.push(formatDate(entry.lastFetched, 'dateTimeSeconds'));
-      ids.push(entry.id);
-      pairs.push(entry.points.map((point) => point.value));
-      potentials.push({ ep: entry.ep, wp: entry.wp });
-    });
-    // Change of the sum since the previous measurement (none for the first).
-    const diff = y.map((value, index) => (index > 0 ? value - y[index - 1] : null));
-
-    return { x, y, diff, measurementDateTime, ids, pairs, potentials };
-  }, [series]);
+  const pairSumSeries = React.useMemo(() => toTimeSeries(series), [series]);
+  // The second plot's measurements: the loaded history, else the chart's.
+  const historySeries = React.useMemo(
+    () => (sensorHistoryRows ? toTimeSeries(sensorHistoryRows.map(toDiffSeries)) : null),
+    [sensorHistoryRows],
+  );
+  const sensorSeries = historySeries ?? pairSumSeries;
 
   // Sensors (pair index) whose values over time the second plot shows - a
   // click on the first plot adds or removes one. Kept outside with
@@ -518,8 +552,8 @@ const MeasurementSamplesCompareChart = (
       // The trailing ✕ is the legend's remove control: clicking the entry
       // removes the sensor from the second plot.
       name: `${t('measurement_compare_pair_label')} ${sensor}${REMOVE_MARK}`,
-      x: pairSumSeries.x,
-      y: pairSumSeries.pairs.map((values) => values[sensor] ?? null),
+      x: sensorSeries.x,
+      y: sensorSeries.pairs.map((values) => values[sensor] ?? null),
       xaxis: 'x3' as const,
       yaxis: 'y4' as const,
       // Their own legend, at the second plot.
@@ -527,7 +561,7 @@ const MeasurementSamplesCompareChart = (
       line: { color: sensorColor(sensor), width: 2 },
       hoverinfo: 'none' as const,
     }));
-  }, [selectedSensors, pairSumSeries, t]);
+  }, [selectedSensors, sensorSeries, t]);
 
   // EP + WP, WP - EP and the sum difference start hidden; a legend click
   // shows them. Kept here, not by Plotly: they widen the locked y-axis or
@@ -711,17 +745,24 @@ const MeasurementSamplesCompareChart = (
     return [low < 0 ? low - padding : 0, high + padding];
   }, [frames, meanAndDeviationSeries, shownOptional]);
 
+  // The highest sensor index on the first plot.
+  const lastSensor = Math.max(
+    meanAndDeviationSeries.x[meanAndDeviationSeries.x.length - 1] ?? 0,
+    (currentFrame?.ep.length ?? 0) - 1,
+  );
+
   const shapes = React.useMemo(() => {
     const result: Partial<Plotly.Shape>[] = [];
-    // The selected sensors, marked on the first plot in their colour.
+    // The selected sensors, marked on the first plot in their colour - cut
+    // at the first and last sensor, so the axis doesn't widen for them.
     selectedSensors.forEach((sensor) => {
       result.push({
         type: 'rect',
         layer: 'below',
         xref: 'x',
         yref: 'paper',
-        x0: sensor - 0.5,
-        x1: sensor + 0.5,
+        x0: Math.max(sensor - 0.5, 0),
+        x1: Math.min(sensor + 0.5, lastSensor),
         y0: UPPER_DOMAIN[0],
         y1: UPPER_DOMAIN[1],
         fillcolor: sensorColor(sensor),
@@ -729,6 +770,21 @@ const MeasurementSamplesCompareChart = (
         line: { width: 0 },
       });
     });
+    // With the history: the slider's period, shaded on the second plot.
+    if (historySeries && frames.length) {
+      result.push({
+        type: 'rect',
+        layer: 'below',
+        xref: 'x3',
+        yref: 'paper',
+        x0: frames[0].ms,
+        x1: frames[frames.length - 1].ms,
+        y0: SENSORS_DOMAIN[0],
+        y1: SENSORS_DOMAIN[1],
+        fillcolor: PERIOD_COLOR,
+        line: { width: 0 },
+      });
+    }
     // The alarm and the slider's time on both time plots.
     TIME_PLOTS.forEach(([xref, [y0, y1]]) => {
       const onPlot = { xref: xref as Plotly.XAxisName, yref: 'paper' as const, y0, y1 };
@@ -766,7 +822,7 @@ const MeasurementSamplesCompareChart = (
       }
     });
     return result;
-  }, [alarmBandX, currentFrame, selectedSensors]);
+  }, [alarmBandX, currentFrame, selectedSensors, lastSensor, historySeries, frames]);
 
   // The line under the cursor or its legend entry is highlighted: wider,
   // the other lines of its plot faded. The bands stay as they are.
@@ -837,7 +893,7 @@ const MeasurementSamplesCompareChart = (
           : null;
     const potentialRows = (uid: string, index: number) => {
       const sensor = Number(uid.slice('sensor-'.length));
-      const { ep, wp } = pairSumSeries.potentials[index] ?? { ep: [], wp: [] };
+      const { ep, wp } = sensorSeries.potentials[index] ?? { ep: [], wp: [] };
       if (ep[sensor] == null || wp[sensor] == null) {
         return [];
       }
@@ -879,7 +935,8 @@ const MeasurementSamplesCompareChart = (
     const first = points[0];
     const firstAxis = (first.data as HoverTrace).xaxis;
     if (firstAxis === 'x2' || firstAxis === 'x3') {
-      return { title: pairSumSeries.measurementDateTime[first.pointIndex] ?? '', rows };
+      const timeSeries = firstAxis === 'x3' ? sensorSeries : pairSumSeries;
+      return { title: timeSeries.measurementDateTime[first.pointIndex] ?? '', rows };
     }
     return {
       title: `${t('measurement_compare_pair_label')} ${first.x}`,
@@ -1013,8 +1070,14 @@ const MeasurementSamplesCompareChart = (
     }
     const xaxis = (point.data as HoverTrace).xaxis;
     if (xaxis === 'x2' || xaxis === 'x3') {
-      const id = pairSumSeries.ids[point.pointIndex];
-      selectFrame(frames.findIndex((frame) => frame.id === id));
+      const timeSeries = xaxis === 'x3' ? sensorSeries : pairSumSeries;
+      const id = timeSeries.ids[point.pointIndex];
+      const ms = timeSeries.x[point.pointIndex];
+      const index = frames.findIndex((frame) => frame.id === id);
+      // A history point: the slider's measurement at its time - none
+      // outside the slider's period.
+      const inPeriod = frames.length > 0 && ms >= frames[0].ms && ms <= frames[frames.length - 1].ms;
+      selectFrame(index >= 0 ? index : inPeriod ? frameAt(sliderTimestamps, ms) : -1);
       return;
     }
     if (typeof point.x === 'number') {
@@ -1030,8 +1093,20 @@ const MeasurementSamplesCompareChart = (
   // the slider. Read from Plotly's own axis: its range in ms, whichever of
   // the matched time axes was zoomed.
   const [zoom, setZoom] = React.useState<{ revision: string; from: number; to: number } | null>(null);
+  // How many sensors the first plot shows (zoomed) - its tick step.
+  const [sensorZoom, setSensorZoom] = React.useState<{ revision: string; span: number } | null>(null);
   const onRelayout = () => {
-    const axis = (graphDiv as { _fullLayout?: { xaxis2?: PlotlyFullAxis } } | null)?._fullLayout?.xaxis2;
+    const fullLayout = (graphDiv as { _fullLayout?: { xaxis?: PlotlyFullAxis; xaxis2?: PlotlyFullAxis } } | null)
+      ?._fullLayout;
+    const sensorAxis = fullLayout?.xaxis;
+    if (sensorAxis?.range) {
+      setSensorZoom(
+        sensorAxis.autorange
+          ? null
+          : { revision: uiRevision, span: Number(sensorAxis.range[1]) - Number(sensorAxis.range[0]) },
+      );
+    }
+    const axis = fullLayout?.xaxis2;
     if (!axis?.r2l || !axis.range) {
       return;
     }
@@ -1047,6 +1122,7 @@ const MeasurementSamplesCompareChart = (
       : frames.length
         ? { from: frames[0].ms, to: frames[frames.length - 1].ms }
         : null;
+  const sensorSpan = sensorZoom?.revision === uiRevision ? sensorZoom.span : lastSensor;
 
   const content = (
     <>
@@ -1145,6 +1221,21 @@ const MeasurementSamplesCompareChart = (
             })}
           </>
         )}
+        {onToggleSensorHistory && (
+          <Button
+            size="sm"
+            variant={historySeries ? 'primary' : 'outline-primary'}
+            aria-pressed={historySeries != null}
+            title={t('measurement_compare_sensor_history_hint')}
+            className="py-0"
+            style={{ fontSize: 12 }}
+            onClick={onToggleSensorHistory}
+            disabled={isLoadingSensorHistory || (!historySeries && selectedSensors.length === 0)}
+          >
+            {isLoadingSensorHistory && <Spinner size="sm" animation="border" className="me-1" />}
+            {t('measurement_compare_sensor_history')}
+          </Button>
+        )}
       </div>
 
       <div ref={wrapRef} style={{ position: 'relative' }} onMouseMove={onMouseMove}>
@@ -1227,6 +1318,10 @@ const MeasurementSamplesCompareChart = (
               title: { text: t('measurement_compare_pair_index_axis') },
               domain: [0, 1],
               anchor: 'y',
+              // Sensors are whole numbers: ticks on whole sensors only.
+              tickmode: 'linear',
+              tick0: 0,
+              dtick: sensorTickStep(sensorSpan),
               showgrid: true,
               gridcolor: plotTheme.warmGray2,
               zeroline: false,
@@ -1243,7 +1338,7 @@ const MeasurementSamplesCompareChart = (
                 : {}),
               showgrid: true,
               gridcolor: plotTheme.warmGray2,
-              // The baseline: EP - WP and its bands run on both sides of it.
+              // The baseline: the lines and bands run on both sides of it.
               zeroline: true,
               zerolinecolor: BASELINE_COLOR,
               zerolinewidth: 2,
@@ -1266,10 +1361,12 @@ const MeasurementSamplesCompareChart = (
               gridcolor: plotTheme.warmGray2,
               zeroline: false,
             },
-            // The selected sensors over time - zoomed together with the sum.
+            // The selected sensors over time - zoomed together with the sum,
+            // or on its own while it shows the longer history.
             xaxis3: {
               type: 'date',
-              matches: 'x2',
+              ...(historySeries ? {} : { matches: 'x2' }),
+              uirevision: `${uiRevision}:${historySeries ? 'history' : 'period'}`,
               domain: [0, 1],
               anchor: 'y4',
               showgrid: true,

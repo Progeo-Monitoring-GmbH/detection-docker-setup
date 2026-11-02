@@ -34,6 +34,11 @@ import { staffFlags } from './access';
 /** Most measurements per period - spread evenly over it by the backend (?days=). */
 const MAX_MEASUREMENTS = 300;
 
+/** Staff: the selected sensors' history (second plot) - the last 3 months,
+ * in as many measurements as the backend gives (its limit). */
+const SENSOR_HISTORY_DAYS = TIME_RANGE_DAYS['90d'];
+const MAX_HISTORY_MEASUREMENTS = 2000;
+
 type AnalyseDevice = { id: number; display_name: string };
 
 /** Frame steps of the arrow keys: ←/→ one frame, ↑/↓ ten. */
@@ -117,6 +122,15 @@ const LocationAnalyseTab = () => {
   // LoRaWAN: the device hovered on the heatmap or in a chart - highlighted in both.
   const [hoveredDeviceId, setHoveredDeviceId] = useState<number | null>(null);
   const [exportingPdf, setExportingPdf] = useState(false);
+  // Staff: the shown device's last 3 months for the second plot - by
+  // location and device, so another one's history is never shown.
+  const [sensorHistory, setSensorHistory] = useState<{ key: string; rows: MeasurementCompareRow[] } | null>(null);
+  const [sensorHistoryLoading, setSensorHistoryLoading] = useState(false);
+  const sensorHistoryRequest = useRef(0);
+  const sensorHistoryKey = `${locationId}:${shownDevice}`;
+  const sensorHistoryRows = sensorHistory?.key === sensorHistoryKey ? sensorHistory.rows : null;
+  // Not while the period itself already reaches as far back.
+  const offerSensorHistory = isStaff && TIME_RANGE_DAYS[range] < SENSOR_HISTORY_DAYS;
 
   const exportCsv = () => {
     void openResponseInNewTab(auth, `/v1/location/${locationId}/export_csv/`);
@@ -195,6 +209,33 @@ const LocationAnalyseTab = () => {
       },
     );
   }, [auth, deviceId, enqueueSnackbar, isLorawan, locationId, query]);
+
+  const toggleSensorHistory = () => {
+    if (sensorHistoryRows) {
+      setSensorHistory(null);
+      return;
+    }
+    setSensorHistoryLoading(true);
+    const current = ++sensorHistoryRequest.current;
+    const key = sensorHistoryKey;
+    const device = shownDevice != null ? `&device=${shownDevice}` : '';
+    void axiosConfig.perform_get(
+      auth,
+      `/v1/location/${locationId}/measurements/?days=${SENSOR_HISTORY_DAYS}&limit=${MAX_HISTORY_MEASUREMENTS}${device}`,
+      (response) => {
+        if (current === sensorHistoryRequest.current) {
+          setSensorHistory({ key, rows: (response?.data?.measurements || []) as MeasurementCompareRow[] });
+          setSensorHistoryLoading(false);
+        }
+      },
+      (error) => {
+        if (current === sensorHistoryRequest.current) {
+          showRequestError(enqueueSnackbar, 'Could not load the sensor history', error);
+          setSensorHistoryLoading(false);
+        }
+      },
+    );
+  };
 
   useEffect(() => {
     loadHeatmap();
@@ -410,6 +451,9 @@ const LocationAnalyseTab = () => {
                   }}
                   sensors={sensors}
                   onSensorsChange={setSensors}
+                  sensorHistoryRows={offerSensorHistory ? sensorHistoryRows : null}
+                  onToggleSensorHistory={offerSensorHistory ? toggleSensorHistory : null}
+                  isLoadingSensorHistory={sensorHistoryLoading}
                 />
               )}
             </Card.Body>
