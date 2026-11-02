@@ -775,6 +775,12 @@ class ProgeoMeasurePoint(ProgeoModel, auto_prefetch.Model):
     ny = models.FloatField(null=False, blank=False)
     grid_x = models.IntegerField(null=False, blank=True)
     grid_y = models.IntegerField(null=False, blank=True)
+    # A smartex dm sensor is a band line from x/y (nx/ny) to its end, in the
+    # same frame - null for point sensors (CAD import, docker/cad_factory/cad_reader.py).
+    x_end = models.FloatField(null=True, blank=True)
+    y_end = models.FloatField(null=True, blank=True)
+    nx_end = models.FloatField(null=True, blank=True)
+    ny_end = models.FloatField(null=True, blank=True)
     last_value = models.FloatField(null=True, blank=True)
     threshold = models.FloatField(null=True, blank=True)
 

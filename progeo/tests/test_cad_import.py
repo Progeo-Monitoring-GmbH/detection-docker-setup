@@ -25,7 +25,8 @@ DEVICES = ("module_devices_enabled", "module_devices_edit")
 TAP = "smartex_Messabgriff"
 CAD_READER = Path(__file__).resolve().parents[2] / "docker" / "cad_factory" / "cad_reader.py"
 POINTS = [
-    {"pos": 1, "x": 0, "y": 0, "nx": 0.0, "ny": 0.0, "gx": 0, "gy": 0, "reference": True},
+    {"pos": 1, "x": 0, "y": 0, "nx": 0.0, "ny": 0.0, "gx": 0, "gy": 0, "reference": True,
+     "x_end": 100, "y_end": 0, "nx_end": 1.0, "ny_end": 0.0},  # a dm band
     {"pos": 2, "x": 100, "y": 0, "nx": 1.0, "ny": 0.0, "gx": 1, "gy": 0, "reference": False},
 ]
 
@@ -109,11 +110,16 @@ def test_each_dm_band_belongs_to_one_label(cad_reader, tmp_path):
 
     result = cad_reader.read_measure_points(_dxf(tmp_path / "dm.dxf", build))
 
-    # By number: dm 001 at its band's midpoint (15, 0), dm 002 at (15, 3), dm 003 at the label.
-    assert _xy(result) == [(0, 0), (0, 30), (850, 1000)]
+    # By number: dm 001 at its band's start (0, 0), dm 002 at (0, 3), dm 003 at the label.
+    assert _xy(result) == [(0, 0), (0, 30), (1000, 1000)]
     assert result.description == (
         "3 dm labels on DKS_MPLE, placed on 3 band lines; 1 without a band, placed at the label: dm 003"
     )
+    # A dm sensor is its band: x/y its start, *_end its end, in the same frame.
+    first, second, third = result.points
+    assert (first["x_end"], first["y_end"], first["nx_end"], first["ny_end"]) == (300, 0, 0.3, 0.0)
+    assert (second["x_end"], second["y_end"], second["ny"], second["ny_end"]) == (300, 30, 0.03, 0.03)
+    assert not any(key.endswith("_end") for key in third)
 
 
 def test_dm_labels_at_the_same_position_are_named(cad_reader, tmp_path):
@@ -157,6 +163,16 @@ def test_close_coordinates_share_a_grid_index(cad_reader):
     assert [(p["nx"], p["ny"]) for p in points] == [(0.0, 0.0), (0.990099, 0.0), (1.0, 1.0)]
 
 
+def test_coordinates_start_at_the_minimum_corner_without_a_point_there(cad_reader):
+    points = cad_reader.normalize_points([(0, 5), (10, 0), (20, 10)], coord_margin=0.2)
+
+    assert [(p["x"], p["y"], p["nx"], p["ny"]) for p in points] == [
+        (0, 50, 0.0, 0.5), (100, 0, 0.5, 0.0), (200, 100, 1.0, 1.0),
+    ]
+    # No point on the corner: the lowest-x one is the reference.
+    assert [p["reference"] for p in points] == [True, False, False]
+
+
 def test_command_line_prints_the_points_as_json(cad_reader, tmp_path, monkeypatch, capsys):
     def build(msp):
         msp.add_blockref(TAP, (10, 0), dxfattribs={"layer": "DKS_MPLE"})
@@ -182,6 +198,47 @@ def test_command_line_explains_a_plan_without_points(cad_reader, tmp_path, monke
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "] No measure points found:" in captured.err.splitlines()[-1]
+
+
+def _pdf(path, layers):
+    """A landscape page with a frame (no layer) and a 400 x 200 plan on the given layers."""
+    pymupdf = pytest.importorskip("pymupdf")
+
+    doc = pymupdf.open()
+    page = doc.new_page(width=842, height=595)
+    page.draw_rect(pymupdf.Rect(10, 10, 832, 585))
+    for layer in layers:
+        oc = doc.add_ocg(layer)
+        page.draw_rect(pymupdf.Rect(100, 100, 500, 300), oc=oc)
+        page.draw_line((100, 200), (500, 200), oc=oc)
+    doc.save(path)
+    return str(path)
+
+
+def test_a_plan_pdf_is_cropped_to_the_plan_layers(cad_reader, tmp_path):
+    pymupdf = pytest.importorskip("pymupdf")
+    png = tmp_path / "plan.png"
+
+    description = cad_reader.render_pdf_plan(_pdf(tmp_path / "plan.pdf", ["DKS_MPLE", "DKS_Konstruktion 2"]),
+                                             str(png), max_pixels=1000)
+
+    # The plan with 2 % margin (8 pt): 416 x 216 pt, the longer side 1000 px
+    # (MuPDF rounds the pixmap outward by a pixel).
+    pixmap = pymupdf.Pixmap(str(png))
+    assert (pixmap.width, pixmap.height) == (1001, 520)
+    assert description == "page 1 of 1, cropped to 4 drawings on the plan layers: 1001 x 520 px"
+
+
+def test_a_pdf_without_plan_layers_is_rendered_whole(cad_reader, tmp_path, monkeypatch, capsys):
+    pymupdf = pytest.importorskip("pymupdf")
+    png = tmp_path / "plan.png"
+    monkeypatch.setattr(sys, "argv", ["cad_reader.py", _pdf(tmp_path / "plan.pdf", ["Schriftkopf"]),
+                                      "--png-out", str(png)])
+
+    assert cad_reader.main() == 0
+
+    assert pymupdf.Pixmap(str(png)).width == cad_reader.PDF_MAX_PIXELS
+    assert "Done: Lageplan from page 1 of 1 (no plan layers" in capsys.readouterr().err
 
 
 # -- docker_helper.run_cad_factory ----------------------------------------------
@@ -298,6 +355,19 @@ def test_run_cad_factory_is_a_one_off_of_the_compose_service(docker_client):
     ]}
 
 
+def test_run_cad_factory_lets_a_pdf_write_only_its_output_directory(docker_client):
+    client = docker_client(FakeContainer([]))
+
+    docker_helper.run_cad_factory("media/x.pdf", run_id="abc123", png_out="job.png")
+
+    run = client.run_kwargs
+    assert run["command"] == ["media/x.pdf", "--coord-margin", "0.2", "--png-out", "/workspace/out/job.png"]
+    assert run["volumes"] == {
+        "/media": {"bind": "/workspace/media", "mode": "ro"},
+        "/media/uploads/cad_imports": {"bind": "/workspace/out", "mode": "rw"},
+    }
+
+
 def test_run_cad_factory_without_service_container_uses_the_local_build(docker_client):
     client = docker_client(FakeContainer([]), service_image=None)
 
@@ -327,10 +397,13 @@ def _job(location, user):
     )
 
 
-def _fake_run(monkeypatch, lines, **outcome):
-    def run(on_line, **kwargs):
+def _fake_run(monkeypatch, lines, png=None, **outcome):
+    """run_cad_factory printing lines; with png, writing it as the rendered PDF."""
+    def run(on_line, png_out=None, **kwargs):
         for line in lines:
             on_line(line)
+        if png is not None:
+            Path(cad_import.UPLOAD_DIR, cad_import.IMPORT_DIR, png_out).write_bytes(png)
         return {"exit_code": 0, "stdout": "", "stderr": "", "oom_killed": False, "timed_out": False, **outcome}
 
     monkeypatch.setattr(docker_helper, "run_cad_factory", run)
@@ -358,13 +431,74 @@ def test_upload_of_a_dxf_starts_a_job(api_client, location, tmp_path, monkeypatc
     assert (tmp_path / "cad_imports" / Path(job["cad_input"]).name).read_bytes() == b"0\nEOF\n"
 
     body = api_client.get("/v1/status/measure_points/cad_job/", {"job_id": job_id}).json()
-    assert body["job"]["status"] == "queued"
+    assert (body["job"]["status"], body["job"]["kind"]) == ("queued", "points")
     assert "cad_input" not in body["job"]
 
     api_client.force_authenticate(user=f.make_user(staff=True))
     response = api_client.get("/v1/status/measure_points/cad_job/", {"job_id": job_id})
     assert response.status_code == 400
     assert response.json()["reason"] == "Import job not found"
+
+
+def test_upload_of_a_pdf_starts_a_lageplan_job(api_client, location, tmp_path, monkeypatch):
+    monkeypatch.setattr(status_viewset, "UPLOAD_DIR", str(tmp_path))
+    queued = []
+    monkeypatch.setattr(status_viewset.run_cad_import, "delay", queued.append)
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    response = api_client.post(
+        "/v1/status/measure_points/from_pdf/",
+        {"location_id": location.project_id, "files0": SimpleUploadedFile("Plan 1.pdf", b"%PDF-1.7")},
+    )
+
+    assert response.status_code == 200, response.content
+    job = cad_import.get_job(response.json()["job_id"])
+    assert (job["kind"], job["source_name"], queued) == ("lageplan", "Plan 1.pdf", [job["job_id"]])
+    assert job["cad_input"].endswith(".pdf")
+
+    response = api_client.post(
+        "/v1/status/measure_points/from_pdf/",
+        {"location_id": location.project_id, "files0": SimpleUploadedFile("plan.png", b"png")},
+    )
+    assert (response.status_code, response.json()["reason"]) == (400, "Upload a PDF file.")
+
+
+def test_lageplan_job_stores_the_rendered_plan(location, events, tmp_path, monkeypatch):
+    from progeo.v1 import creator
+
+    for module in (cad_import, creator):
+        monkeypatch.setattr(module, "UPLOAD_DIR", str(tmp_path))
+    (tmp_path / cad_import.IMPORT_DIR).mkdir()
+    _fake_run(monkeypatch, ["[10:00:01 +0.9s 74 MB] Done: Lageplan from page 1 of 1"], png=b"\x89PNG plan")
+    job_id = cad_import.create_job(
+        user_id=1, location_pk=location.pk, db_name=f.DB, cad_input="media/uploads/cad_imports/x.pdf",
+        source_name="Plan 1.pdf", kind="lageplan",
+    )
+
+    cad_import.run_job(job_id)
+
+    job = cad_import.get_job(job_id)
+    assert job["status"] == "done", job["error"]
+    lageplan = location.lageplans.using(f.DB).get(pk=job["result"]["lageplan_id"])
+    assert lageplan.name == "Plan 1.png"
+    assert (tmp_path / lageplan.lageplan.name).read_bytes() == b"\x89PNG plan"
+    assert job["result"]["lageplan"]["id"] == lageplan.pk
+    assert job["log"][-1] == f"Stored Lageplan #{lageplan.pk}"
+    # The rendered PNG is only handed over.
+    assert list((tmp_path / cad_import.IMPORT_DIR).iterdir()) == []
+
+
+def test_lageplan_job_without_a_png_fails(location, events, tmp_path, monkeypatch):
+    monkeypatch.setattr(cad_import, "UPLOAD_DIR", str(tmp_path))
+    _fake_run(monkeypatch, [], stderr="[10:00:01 +0.9s 74 MB] Reading the PDF (0.2 MB)\n")
+    job_id = cad_import.create_job(
+        user_id=1, location_pk=location.pk, db_name=f.DB, cad_input="media/uploads/cad_imports/x.pdf",
+        source_name="Plan 1.pdf", kind="lageplan",
+    )
+
+    cad_import.run_job(job_id)
+
+    assert cad_import.get_job(job_id)["error"] == "progeo-cad_factory gave no result: Reading the PDF (0.2 MB)"
 
 
 def test_job_streams_the_log_and_stores_the_points(location, events, monkeypatch):
@@ -386,7 +520,8 @@ def test_job_streams_the_log_and_stores_the_points(location, events, monkeypatch
         ("cad.log", 0), ("cad.log", 1), ("cad.log", 2), ("cad.done", None),
     ]
     assert events[-1]["job"]["result"]["points"][0]["reference"] is True
-    assert ProgeoMeasurePoint.objects.using(f.DB).filter(location=location).count() == 2
+    stored = ProgeoMeasurePoint.objects.using(f.DB).filter(location=location).order_by("sensor_order")
+    assert [(p.x_end, p.nx_end) for p in stored] == [(100, 1.0), (None, None)]
 
 
 def test_job_passes_on_why_a_plan_has_no_points_and_keeps_the_old_ones(location, events, monkeypatch):

@@ -6,10 +6,15 @@ the celery task run_cad_import; the task runs progeo-cad_factory
 (docker/cad_factory/cad_reader.py, see docker_helper.run_cad_factory), passes
 each output line on while it runs, then stores the points it printed.
 
+A plan PDF (status_viewset from_pdf) is a job of kind "lageplan": the
+container renders it as PNG into UPLOAD_DIR/cad_imports, which is stored as a
+new Lageplan of the location.
+
 A job lives JOB_TTL_SECONDS in the cache (written by the task only):
 
     {"status": "queued" | "running" | "done" | "failed", "log": [line, ...],
-     "result": upload_cad's answer (location_id, stored, points) once done,
+     "result": upload_cad's answer (location_id, stored, points) once done -
+               upload_png's (lageplan_answer) for a "lageplan" job,
      "error": why it failed, ...}
 
 Every log line also goes to the channel layer group job_group(job_id) as
@@ -20,6 +25,7 @@ measure_points/cad_job is the HTTP fallback.
 """
 import json
 import os
+import posixpath
 import re
 from uuid import uuid4
 
@@ -29,7 +35,12 @@ from django.core.cache import cache
 from django.utils import timezone
 
 from progeo.helper.basics import dlog, elog
+from progeo.settings import UPLOAD_DIR
 
+# Below UPLOAD_DIR: the uploaded plans and the PNGs rendered from PDFs.
+IMPORT_DIR = "cad_imports"
+# The band end of a dm sensor - x/y its start (ProgeoMeasurePoint, cad_reader.normalize_points).
+END_FIELDS = ("x_end", "y_end", "nx_end", "ny_end")
 JOB_TTL_SECONDS = 24 * 60 * 60
 # The container's log is a few lines - this only guards the cache entry against a runaway one.
 MAX_LOG_LINES = 2000
@@ -50,11 +61,13 @@ def _key(job_id: str) -> str:
     return f"cad_import_job:{job_id}"
 
 
-def create_job(*, user_id, location_pk, db_name, cad_input, source_name, coord_margin) -> str:
-    """cad_input: the uploaded plan, relative to the project root (media/uploads/...)."""
+def create_job(*, user_id, location_pk, db_name, cad_input, source_name, coord_margin=0.2, kind="points") -> str:
+    """cad_input: the uploaded plan, relative to the project root (media/uploads/...);
+    kind: "points" (DWG/DXF) or "lageplan" (PDF)."""
     job_id = uuid4().hex
     _save(job_id, {
         "job_id": job_id,
+        "kind": kind,
         "status": "queued",
         "user_id": user_id,
         "location_pk": location_pk,
@@ -79,7 +92,7 @@ def get_job(job_id: str) -> dict | None:
 
 def public_job(job: dict) -> dict:
     """What the job's user sees (no database or file names)."""
-    keys = ("job_id", "status", "source_name", "created_at", "finished_at", "log", "result", "error")
+    keys = ("job_id", "kind", "status", "source_name", "created_at", "finished_at", "log", "result", "error")
     return {key: job.get(key) for key in keys}
 
 
@@ -122,7 +135,7 @@ def store_measure_points(location, db_name: str, points: list) -> dict:
         if bool(point.get("reference")):
             reference_sensor_order = idx
 
-        point, _ = create_progeo_measure_point_safe(
+        measure_point, _ = create_progeo_measure_point_safe(
             location=location,
             sensor_order=idx,
             x=point.get("x"),
@@ -133,8 +146,10 @@ def store_measure_points(location, db_name: str, points: list) -> dict:
             grid_y=point.get("gy", 0),
             db=db_name,
         )
+        for field in END_FIELDS:
+            setattr(measure_point, field, point.get(field))
 
-        bulk_points.append(point)
+        bulk_points.append(measure_point)
 
     ProgeoMeasurePoint.objects.using(db_name).filter(location=location).delete()
     ProgeoMeasurePoint.objects.using(db_name).bulk_create(bulk_points)
@@ -146,6 +161,20 @@ def store_measure_points(location, db_name: str, points: list) -> dict:
         context={"reference_sensor_order": reference_sensor_order},
     ).data
     return {"location_id": location.id, "stored": len(stored), "points": stored}
+
+
+def lageplan_answer(lageplan) -> dict:
+    """upload_png's answer for a stored Lageplan - also the result of a "lageplan" job."""
+    from progeo.v1.serializers import ProgeoLageplanSerializer
+
+    return {
+        "message": "Lageplan uploaded successfully.",
+        "files0": lageplan.lageplan.name,
+        "lageplan_id": lageplan.pk,
+        "lageplan_url": posixpath.join("media", "uploads", lageplan.lageplan.name),
+        # The new plan as listed by measure_points ?with_lageplan=1.
+        "lageplan": ProgeoLageplanSerializer(lageplan).data,
+    }
 
 
 def _finish(job: dict, status: str, *, result=None, error=None) -> None:
@@ -188,12 +217,16 @@ def failure_reason(outcome: dict) -> str:
     last = _LOG_PREFIX_RE.sub("", stderr_lines[-1]) if stderr_lines else "no error output"
     if exit_code == 2:  # cad_reader.py: not readable or no measure points - its message is for the user
         return last
+    if exit_code == 0:
+        return f"progeo-cad_factory gave no result: {last}"
     return f"progeo-cad_factory failed (exit code {exit_code}): {last}"
 
 
 def run_job(job_id: str) -> None:
-    """Runs progeo-cad_factory for a queued job and stores the points (celery task run_cad_import)."""
+    """Runs progeo-cad_factory for a queued job and stores the points - or,
+    for a "lageplan" job, the rendered Lageplan (celery task run_cad_import)."""
     from progeo.helper.docker_helper import run_cad_factory
+    from progeo.v1.creator import save_lageplan_upload
     from progeo.v1.models import ProgeoLocation
 
     job = get_job(job_id)
@@ -201,6 +234,9 @@ def run_job(job_id: str) -> None:
         return
     job["status"] = "running"
     _append_log(job, f"Starting progeo-cad_factory for {job['source_name']}")
+    is_lageplan = job.get("kind") == "lageplan"
+    png_name = f"{job_id}.png" if is_lageplan else None
+    png_path = os.path.join(UPLOAD_DIR, IMPORT_DIR, png_name) if png_name else None
 
     def on_line(line: str) -> None:
         if line.strip() and not _is_points_output(line):
@@ -214,9 +250,11 @@ def run_job(job_id: str) -> None:
             timeout_seconds=CAD_FACTORY_TIMEOUT_SECONDS,
             on_line=on_line,
             run_id=job_id[:12],
+            png_out=png_name,
         )
-        points = extract_json_list(outcome["stdout"])
-        if outcome["exit_code"] != 0 or points is None:
+        points = None if is_lageplan else extract_json_list(outcome["stdout"])
+        produced = os.path.isfile(png_path) if is_lageplan else points is not None
+        if outcome["exit_code"] != 0 or not produced:
             _finish(job, "failed", error=failure_reason(outcome))
             return
 
@@ -224,9 +262,20 @@ def run_job(job_id: str) -> None:
         if location is None:
             _finish(job, "failed", error="The location no longer exists.")
             return
+        if is_lageplan:
+            with open(png_path, "rb") as handle:
+                png_bytes = handle.read()
+            name = f"{os.path.splitext(job['source_name'])[0]}.png"
+            lageplan = save_lageplan_upload(location, png_bytes, name, db=job["db_name"])
+            _append_log(job, f"Stored Lageplan #{lageplan.pk}")
+            _finish(job, "done", result=lageplan_answer(lageplan))
+            return
         result = store_measure_points(location, job["db_name"], points)
         _append_log(job, f"Stored {result['stored']} measure points")
         _finish(job, "done", result=result)
     except Exception as exc:  # noqa: BLE001 - reported to the user
         elog(f"CAD import {job_id} failed", exc, tag="[CAD-FACTORY]")
         _finish(job, "failed", error=f"{type(exc).__name__}: {exc}")
+    finally:
+        if png_path and os.path.isfile(png_path):
+            os.remove(png_path)

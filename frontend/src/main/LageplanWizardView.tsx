@@ -521,8 +521,6 @@ const LageplanWizardView = () => {
     setError('');
   };
 
-  const handleFromPdfUpload = async (_payload: FormData) => {};
-
   const handleSaveSliders = async (values: {
     offsetX: number;
     offsetY: number;
@@ -836,8 +834,8 @@ const LageplanWizardView = () => {
           <div style={{ fontSize: 13.5, fontWeight: 500 }}>Add a Lageplan</div>
           <div style={{ fontSize: 12, color: MUTED }}>
             Upload a PNG rendering of the plan - it is added to the existing
-            ones and selected. PDF files are processed through the export
-            pipeline.
+            ones and selected. A PDF export of the CAD plan is rendered as
+            PNG, cropped to the plan.
           </div>
         </div>
         {lageplans.length > 0 && (
@@ -867,15 +865,15 @@ const LageplanWizardView = () => {
           payload={{ location_id: selectedLocationId }}
           callBackProcessing={handleSourceUpload}
         />
-        <RedDropbox
+        <CadUploadDropbox
           auth={auth}
           url="/v1/status/measure_points/from_pdf/"
           accept="pdf"
           hint="Drop a PDF here, or click to choose"
           instantFileUpload={true}
           withPreview={false}
-          payload={{ location_id: selectedLocationId ?? 0 }}
-          callBackProcessing={handleFromPdfUpload}
+          payload={{ location_id: selectedLocationId }}
+          callBackProcessing={handleSourceUpload}
         />
       </div>
     </div>

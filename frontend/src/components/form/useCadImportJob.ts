@@ -6,10 +6,13 @@ import { getWsBaseUrl } from '../../backendUrl';
 /** A DWG/DXF import job of upload_cad (progeo/helper/cad_import.py). */
 export type CadImportJob = {
   job_id: string;
+  /** "points": DWG/DXF of upload_cad, "lageplan": PDF of from_pdf. */
+  kind?: 'points' | 'lageplan';
   status: 'queued' | 'running' | 'done' | 'failed';
   source_name?: string;
   log: string[];
-  /** upload_cad's answer for text uploads ({location_id, stored, points}). */
+  /** upload_cad's answer for text uploads ({location_id, stored, points}) -
+   * upload_png's ({lageplan, ...}) for a "lageplan" job. */
   result: Record<string, unknown> | null;
   error: string | null;
 };

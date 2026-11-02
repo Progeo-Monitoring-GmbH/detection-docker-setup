@@ -43,7 +43,6 @@ from progeo.helper.location_access import (
     resolve_request_accounts,
     visible_locations_by_db,
 )
-from progeo.helper.pdf_cropper import process_pdf_to_png_and_extract_crosses
 from progeo.helper.project_dbs import (
     existing_project_aliases,
     location_db,
@@ -470,13 +469,43 @@ class StatusViewSet(ProgeoModalViewSet):
 
         return points
 
+    @staticmethod
+    def _queue_cad_job(request, location, db_name, upload, suffix, **job_options):
+        """Stores the upload in UPLOAD_DIR/cad_imports and queues a progeo-cad_factory
+        job for it (helper/cad_import.py); the answer is {job_id}."""
+        import_dir = save_check_dir(UPLOAD_DIR, cad_import.IMPORT_DIR)
+        target_name = f"{uuid4().hex}{suffix}"
+        with open(os.path.join(import_dir, target_name), "wb") as handle:
+            handle.writelines(upload.chunks())
+
+        job_id = cad_import.create_job(
+            user_id=request.user.pk,
+            location_pk=location.pk,
+            db_name=db_name,
+            cad_input=posixpath.join("media", "uploads", cad_import.IMPORT_DIR, target_name),
+            source_name=upload.name,
+            **job_options,
+        )
+        run_cad_import.delay(job_id)
+        return RequestSuccess({"job_id": job_id, "status": "queued", "location_id": location.id})
+
     @calc_runtime
     @require_module_permissions("module_devices_enabled", "module_devices_edit")
     @action(detail=False, url_path="measure_points/from_pdf", methods=["POST"])
     def upload_measure_points_from_pdf(self, request, *args, **kwargs):
-        pdf_path = request.FILES.get("files0")
-        json_path = process_pdf_to_png_and_extract_crosses(pdf_path, dpi=300)
-        return RequestSuccess({"message": "PDF processed and points extracted successfully.", "json_path": str(json_path)})
+        """A new Lageplan from a plan PDF: progeo-cad_factory renders it as PNG,
+        cropped to the plan, in a background job - the answer is {job_id} like
+        upload_cad's, the job's result upload_png's answer."""
+        location, db_name, error = _measure_point_location(
+            request, {"location_id": request.query_params.get("location_id") or request.data.get("location_id")}
+        )
+        if error:
+            return error
+
+        upload = next(iter(request.FILES.values()), None)
+        if not upload or os.path.splitext(upload.name)[1].lower() != ".pdf":
+            return RequestFailed({"reason": "Upload a PDF file."})
+        return self._queue_cad_job(request, location, db_name, upload, ".pdf", kind="lageplan")
 
     @calc_runtime
     @require_module_permissions("module_devices_enabled", "module_devices_edit")
@@ -516,14 +545,7 @@ class StatusViewSet(ProgeoModalViewSet):
 
         lageplan = save_lageplan_upload(location, upload, upload.name, db=db_name)
         dlog(f"Lageplan uploaded for location {location.id} at {lageplan.lageplan.name}")
-        return RequestSuccess({
-            "message": "Lageplan uploaded successfully.",
-            "files0": lageplan.lageplan.name,
-            "lageplan_id": lageplan.pk,
-            "lageplan_url": posixpath.join("media", "uploads", lageplan.lageplan.name),
-            # The new plan as listed by measure_points ?with_lageplan=1.
-            "lageplan": ProgeoLageplanSerializer(lageplan).data,
-        })
+        return RequestSuccess(cad_import.lageplan_answer(lageplan))
 
     @calc_runtime
     @require_module_permissions("module_devices_enabled", "module_devices_edit")
@@ -555,22 +577,7 @@ class StatusViewSet(ProgeoModalViewSet):
                 except (TypeError, ValueError):
                     coord_margin = 0.2
 
-                import_dir = save_check_dir(UPLOAD_DIR, "cad_imports")
-                target_name = f"{uuid4().hex}{suffix}"
-                target_path = os.path.join(import_dir, target_name)
-                with open(target_path, "wb") as handle:
-                    handle.writelines(upload.chunks())
-
-                job_id = cad_import.create_job(
-                    user_id=request.user.pk,
-                    location_pk=location.pk,
-                    db_name=db_name,
-                    cad_input=posixpath.join("media", "uploads", "cad_imports", target_name),
-                    source_name=upload.name,
-                    coord_margin=coord_margin,
-                )
-                run_cad_import.delay(job_id)
-                return RequestSuccess({"job_id": job_id, "status": "queued", "location_id": location.id})
+                return self._queue_cad_job(request, location, db_name, upload, suffix, coord_margin=coord_margin)
 
             try:
                 text_data = upload.read().decode("utf-8", errors="replace")
@@ -601,8 +608,8 @@ class StatusViewSet(ProgeoModalViewSet):
     @require_module_permissions("module_devices_enabled", "module_devices_edit")
     @action(detail=False, url_path="measure_points/cad_job", methods=["GET"])
     def cad_import_job(self, request, *args, **kwargs):
-        """State of a DWG/DXF import job of upload_cad (?job_id=): status, the
-        log so far and, once done, upload_cad's result. Only for the user who
+        """State of an import job of upload_cad or from_pdf (?job_id=): status,
+        the log so far and, once done, its result. Only for the user who
         uploaded the file - the websocket /ws/cad_import/<job_id>/ streams the same."""
         job = cad_import.get_job((request.query_params.get("job_id") or "").strip())
         if not job or job.get("user_id") != request.user.pk:

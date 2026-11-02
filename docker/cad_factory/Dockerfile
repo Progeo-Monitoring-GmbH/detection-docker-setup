@@ -1,5 +1,6 @@
-# progeo-cad_factory: reads the measure points of a DWG/DXF plan
-# (docker/cad_factory/cad_reader.py). DWG with ezdwg - no conversion to DXF.
+# progeo-cad_factory: reads the measure points of a DWG/DXF plan and renders
+# plan PDFs as Lageplan PNG (docker/cad_factory/cad_reader.py). DWG with
+# ezdwg - no conversion to DXF -, PDF with PyMuPDF.
 
 # ezdwg is built from its sdist with ezdwg-r2004-long-offsets.patch: its
 # decompressor misreads back-references beyond 32 KiB, so it can't open DWGs
@@ -40,7 +41,7 @@ ENV HOME=/tmp \
     PYTHONUNBUFFERED=1
 
 COPY --from=ezdwg-wheel /wheels /tmp/wheels
-RUN pip install --no-cache-dir /tmp/wheels/*.whl ezdxf==1.4.5 \
+RUN pip install --no-cache-dir /tmp/wheels/*.whl ezdxf==1.4.5 pymupdf==1.28.2 \
     && rm -rf /tmp/wheels \
     && python -c "from ezdxf.fonts import fonts; fonts.build_system_font_cache()" \
     && chmod -R a+rwX /opt/cache

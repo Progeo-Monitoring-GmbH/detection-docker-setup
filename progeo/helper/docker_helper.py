@@ -91,12 +91,16 @@ def _split_lines(chunks, on_line):
 
 
 def run_cad_factory(cad_input: str, coord_margin: float = 0.2, timeout_seconds: int = 1800,
-                    on_line=None, run_id: str | None = None) -> dict:
+                    on_line=None, run_id: str | None = None, png_out: str | None = None) -> dict:
     """Run progeo-cad_factory (docker/cad_factory/cad_reader.py) on a plan below
     media/ as a one-off container of the compose service, named
     progeo-cad_factory-run-<run_id> (see _cad_factory_run_settings). Every
     output line (stdout and stderr, as written) goes to on_line(text) while
     the container runs; a container still running after timeout_seconds is killed.
+
+    media/ is mounted read-only; with png_out (a file name - for a PDF) the
+    container may write media/uploads/cad_imports, and renders the plan to
+    that file there.
 
     Returns {"exit_code", "stdout", "stderr", "oom_killed", "timed_out"}.
     """
@@ -105,12 +109,12 @@ def run_cad_factory(cad_input: str, coord_margin: float = 0.2, timeout_seconds: 
     settings = _cad_factory_run_settings(client, backend, run_id or uuid4().hex[:12])
 
     # Resolve the Docker host source path so mounts work when backend runs in a container.
-    volumes = {
-        _resolve_media_source_for_cad_factory(client, backend): {
-            "bind": "/workspace/media",
-            "mode": "ro",
-        }
-    }
+    media_source = _resolve_media_source_for_cad_factory(client, backend)
+    volumes = {media_source: {"bind": "/workspace/media", "mode": "ro"}}
+    command = [cad_input, "--coord-margin", str(coord_margin)]
+    if png_out:
+        volumes[f"{media_source.rstrip('/')}/uploads/cad_imports"] = {"bind": "/workspace/out", "mode": "rw"}
+        command += ["--png-out", f"/workspace/out/{png_out}"]
     run_user = f"{os.getenv('DOCKER_UID', '1000')}:{os.getenv('DOCKER_GID', '1001')}"
 
     container = None
@@ -131,7 +135,7 @@ def run_cad_factory(cad_input: str, coord_margin: float = 0.2, timeout_seconds: 
             name=settings["name"],
             labels=settings["labels"],
             network=settings["network"],
-            command=[cad_input, "--coord-margin", str(coord_margin)],
+            command=command,
             hostname=settings["name"],
             working_dir="/workspace",
             user=run_user,
