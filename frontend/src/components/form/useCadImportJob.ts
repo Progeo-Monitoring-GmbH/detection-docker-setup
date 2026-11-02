@@ -33,7 +33,7 @@ const parseMessage = (raw: unknown): JobMessage | null => {
 };
 
 /**
- * Follows an import job: the websocket /ws/cad_factory/<job_id>/ (snapshot,
+ * Follows an import job: the websocket /ws/cad_import/<job_id>/ (snapshot,
  * then each new log line), measure_points/cad_job over HTTP while the socket
  * is down. `onFinished` gets the job once it is done or failed.
  */
@@ -77,7 +77,7 @@ const useCadImportJob = (
     }
     let disposed = false;
     let watchdog: ReturnType<typeof setTimeout> | undefined;
-    const ws = new WebSocket(`${getWsBaseUrl()}/ws/cad_factory/${jobId}/`);
+    const ws = new WebSocket(`${getWsBaseUrl()}/ws/cad_import/${jobId}/`);
     const armWatchdog = () => {
       clearTimeout(watchdog);
       watchdog = setTimeout(() => ws.close(), WATCHDOG_MS);

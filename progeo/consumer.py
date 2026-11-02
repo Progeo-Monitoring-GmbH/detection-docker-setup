@@ -232,7 +232,7 @@ class LogStreamConsumer(AsyncWebsocketConsumer):
 
 # ==============================================================================================
 
-class CadFactoryJobConsumer(AsyncWebsocketConsumer):
+class CadImportJobConsumer(AsyncWebsocketConsumer):
     """Live log of a DWG/DXF import job (helper/cad_import.py) for the user
     who uploaded the file.
 

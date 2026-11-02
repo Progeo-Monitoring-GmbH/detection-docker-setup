@@ -1,10 +1,10 @@
 """
-DWG/DXF measure point import as a background job: converting and reading a
-big CAD file in progeo-cad_factory takes minutes - far longer than nginx waits
-for an HTTP answer (504). The upload (status_viewset upload_cad) only creates
-the job and queues the celery task run_cad_import; the task runs the container
-and passes each log line on while it runs, then stores the points like the
-upload did before.
+DWG/DXF measure point import as a background job: reading a big CAD file can
+take longer than nginx waits for an HTTP answer (504). The upload
+(status_viewset upload_cad) only stores the file, creates the job and queues
+the celery task run_cad_import; the task runs progeo-cad_factory
+(docker/cad_factory/cad_reader.py, see docker_helper.run_cad_factory), passes
+each output line on while it runs, then stores the points it printed.
 
 A job lives JOB_TTL_SECONDS in the cache (written by the task only):
 
@@ -15,7 +15,7 @@ A job lives JOB_TTL_SECONDS in the cache (written by the task only):
 Every log line also goes to the channel layer group job_group(job_id) as
 {"type": "cad.log", "seq": index in "log", "line": text}, the end as
 {"type": "cad.done", "job": public_job(...)} - the websocket
-/ws/cad_factory/<job_id>/ (consumer.CadFactoryJobConsumer) forwards them;
+/ws/cad_import/<job_id>/ (consumer.CadImportJobConsumer) forwards them;
 measure_points/cad_job is the HTTP fallback.
 """
 import json
@@ -31,26 +31,27 @@ from django.utils import timezone
 from progeo.helper.basics import dlog, elog
 
 JOB_TTL_SECONDS = 24 * 60 * 60
-# The container's log is short (dwg2dxf output is capped in dwg_helper.py) -
-# this only guards the cache entry against a runaway one.
+# The container's log is a few lines - this only guards the cache entry against a runaway one.
 MAX_LOG_LINES = 2000
 # progeo-cad_factory is killed after this; below celery's task_soft_time_limit (1 h).
 CAD_FACTORY_TIMEOUT_SECONDS = int(os.getenv("CAD_FACTORY_TIMEOUT_SECONDS", "1800"))
+# "[12:00:00 +1.2s 80 MB] " in front of every cad_reader.py log line.
+_LOG_PREFIX_RE = re.compile(r"^\[[^\]]*\]\s*")
 
 JOB_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 FINISHED = ("done", "failed")
 
 
 def job_group(job_id: str) -> str:
-    return f"cad-factory.{job_id}"
+    return f"cad-import.{job_id}"
 
 
 def _key(job_id: str) -> str:
-    return f"cad_factory_job:{job_id}"
+    return f"cad_import_job:{job_id}"
 
 
-def create_job(*, user_id, location_pk, db_name, cad_input, source_name, coord_margin, skip_convert,
-               project_id) -> str:
+def create_job(*, user_id, location_pk, db_name, cad_input, source_name, coord_margin) -> str:
+    """cad_input: the uploaded plan, relative to the project root (media/uploads/...)."""
     job_id = uuid4().hex
     _save(job_id, {
         "job_id": job_id,
@@ -61,8 +62,6 @@ def create_job(*, user_id, location_pk, db_name, cad_input, source_name, coord_m
         "cad_input": cad_input,
         "source_name": source_name,
         "coord_margin": coord_margin,
-        "skip_convert": skip_convert,
-        "project_id": project_id,
         "created_at": timezone.now().isoformat(),
         "finished_at": None,
         "log": [],
@@ -92,7 +91,7 @@ def _send(job_id: str, event: dict) -> None:
     try:
         async_to_sync(get_channel_layer().group_send)(job_group(job_id), event)
     except Exception as exc:  # noqa: BLE001 - the job goes on, clients still poll the cache
-        elog(f"CAD import {job_id}: could not send {event.get('type')}: {exc}", tag="[CAD-FACTORY]")
+        elog(f"CAD import {job_id}: could not send {event.get('type')}: {exc}", tag="[CAD-IMPORT]")
 
 
 def _append_log(job: dict, line: str) -> None:
@@ -104,40 +103,6 @@ def _append_log(job: dict, line: str) -> None:
     log.append(line)
     _save(job["job_id"], job)
     _send(job["job_id"], {"type": "cad.log", "seq": len(log) - 1, "line": line})
-
-
-def _is_points_output(line: str) -> bool:
-    """The points JSON on stdout - big, it comes with the result instead."""
-    text = line.strip()
-    return text.startswith("[{") or text == "[]"
-
-
-def extract_json_list(output: str):
-    """Find the last JSON list in command output."""
-    lines = [line.strip() for line in (output or "").splitlines() if line.strip()]
-    for line in reversed(lines):
-        if not line.startswith("["):
-            continue
-        try:
-            parsed = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(parsed, list):
-            return parsed
-    return None
-
-
-def failure_reason(outcome: dict) -> str:
-    """Why a container run gave no points, for the user."""
-    if outcome.get("timed_out"):
-        return f"Stopped after {CAD_FACTORY_TIMEOUT_SECONDS // 60} minutes (CAD_FACTORY_TIMEOUT_SECONDS)."
-    exit_code = outcome.get("exit_code")
-    if outcome.get("oom_killed") or exit_code == 137:
-        return ("progeo-cad_factory ran out of memory and was killed (exit code 137) - "
-                "the CAD file is too big for the memory available to the container.")
-    stderr_lines = [line for line in (outcome.get("stderr") or "").splitlines() if line.strip()]
-    last = stderr_lines[-1] if stderr_lines else "no error output"
-    return f"progeo-cad_factory failed (exit code {exit_code}): {last}"
 
 
 def store_measure_points(location, db_name: str, points: list) -> dict:
@@ -191,6 +156,41 @@ def _finish(job: dict, status: str, *, result=None, error=None) -> None:
     _send(job["job_id"], {"type": "cad.done", "job": public_job(job)})
 
 
+def _is_points_output(line: str) -> bool:
+    """The points JSON on stdout - big, it comes with the result instead."""
+    text = line.strip()
+    return text.startswith("[{") or text == "[]"
+
+
+def extract_json_list(output: str):
+    """The last JSON list in the container's stdout, None without one."""
+    for line in reversed([line.strip() for line in (output or "").splitlines()]):
+        if not line.startswith("["):
+            continue
+        try:
+            parsed = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, list):
+            return parsed
+    return None
+
+
+def failure_reason(outcome: dict) -> str:
+    """Why a container run gave no points, for the user."""
+    if outcome.get("timed_out"):
+        return f"Stopped after {CAD_FACTORY_TIMEOUT_SECONDS // 60} minutes (CAD_FACTORY_TIMEOUT_SECONDS)."
+    exit_code = outcome.get("exit_code")
+    if outcome.get("oom_killed") or exit_code == 137:
+        return ("progeo-cad_factory ran out of memory and was killed (exit code 137) - "
+                "the CAD file is too big for the memory available to the container.")
+    stderr_lines = [line for line in (outcome.get("stderr") or "").splitlines() if line.strip()]
+    last = _LOG_PREFIX_RE.sub("", stderr_lines[-1]) if stderr_lines else "no error output"
+    if exit_code == 2:  # cad_reader.py: not readable or no measure points - its message is for the user
+        return last
+    return f"progeo-cad_factory failed (exit code {exit_code}): {last}"
+
+
 def run_job(job_id: str) -> None:
     """Runs progeo-cad_factory for a queued job and stores the points (celery task run_cad_import)."""
     from progeo.helper.docker_helper import run_cad_factory
@@ -211,14 +211,12 @@ def run_job(job_id: str) -> None:
         outcome = run_cad_factory(
             cad_input=job["cad_input"],
             coord_margin=job["coord_margin"],
-            skip_convert=job["skip_convert"],
-            project_id=job["project_id"],
-            source_name=job["source_name"],
             timeout_seconds=CAD_FACTORY_TIMEOUT_SECONDS,
             on_line=on_line,
+            run_id=job_id[:12],
         )
         points = extract_json_list(outcome["stdout"])
-        if points is None:
+        if outcome["exit_code"] != 0 or points is None:
             _finish(job, "failed", error=failure_reason(outcome))
             return
 

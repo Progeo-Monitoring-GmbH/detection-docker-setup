@@ -219,7 +219,8 @@ services:
 
   # Optional helper: only built + started when COMPOSE_PROFILES=cad_factory
   # is set (see .env). With the profile inactive the image is not built and
-  # the container not started.
+  # the container not started. The backend runs it per CAD import
+  # (progeo/helper/docker_helper.py run_cad_factory).
   progeo-cad_factory:
     container_name: progeo-cad_factory
     restart: 'no'
@@ -228,7 +229,7 @@ services:
       context: .
       dockerfile: docker/cad_factory/Dockerfile
     volumes:
-      - ./media:/workspace/media:rw
+      - ./media:/workspace/media:ro
     networks:
       default_net:
 

@@ -1,0 +1,38 @@
+--- a/crates/ezdwg-core/src/dwg/r2004.rs
++++ b/crates/ezdwg-core/src/dwg/r2004.rs
+@@ -1649,22 +1649,20 @@
+         }
+ 
+         let (compressed_bytes, compressed_offset, next_literal_len, next_opcode1) = match opcode1 {
+-            0x10 => {
+-                let comp_bytes = read_long_compression_offset(&mut cursor)? + 9;
++            0x11 => break,
++            0x10..=0x1F => {
++                // Only the low 3 bits are the length (0: long form); bit 3 adds
++                // 0x4000 to the offset, for back-references beyond 32 KiB (as
++                // libredwg). Only system sections that big (the section map of
++                // a drawing with ~2200+ pages) use it.
++                let low = (opcode1 & 0x07) as usize;
++                let comp_bytes = (if low == 0 {
++                    read_long_compression_offset(&mut cursor)? + 7
++                } else {
++                    low
++                }) + 2;
+                 let (offset, literal_count) = read_two_byte_offset(&mut cursor)?;
+-                let offset = offset + 0x3FFF;
+-                let (literal_len, next_opcode1) = if literal_count == 0 {
+-                    read_literal_length(&mut cursor)?
+-                } else {
+-                    (literal_count, 0x00)
+-                };
+-                (comp_bytes, offset, literal_len, next_opcode1)
+-            }
+-            0x11 => break,
+-            0x12..=0x1F => {
+-                let comp_bytes = (opcode1 & 0x0F) as usize + 2;
+-                let (offset, literal_count) = read_two_byte_offset(&mut cursor)?;
+-                let offset = offset + 0x3FFF;
++                let offset = offset + 0x3FFF + (((opcode1 & 0x08) as usize) << 11);
+                 let (literal_len, next_opcode1) = if literal_count == 0 {
+                     read_literal_length(&mut cursor)?
+                 } else {

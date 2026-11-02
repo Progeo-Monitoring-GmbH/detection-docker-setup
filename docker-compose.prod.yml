@@ -223,7 +223,7 @@ services:
     restart: 'no'
     profiles: ['cad_factory']
     volumes:
-      - ./media:/workspace/media:rw
+      - ./media:/workspace/media:ro
     networks:
       default_net:
 

@@ -530,9 +530,9 @@ class StatusViewSet(ProgeoModalViewSet):
     @action(detail=False, url_path="measure_points/upload_cad", methods=["POST"])
     def upload_measure_points_from_cad(self, request, *args, **kwargs):
         """Replaces a location's measure points with imported ones. Text
-        (semicolon rows) is stored right away; a DWG/DXF file takes minutes in
-        progeo-cad_factory, so only a job is started: the answer is {job_id},
-        follow it on /ws/cad_factory/<job_id>/ or poll measure_points/cad_job
+        (semicolon rows) is stored right away; a DWG/DXF plan is read by
+        progeo-cad_factory in a background job: the answer is {job_id}, follow it on
+        /ws/cad_import/<job_id>/ or poll measure_points/cad_job
         (helper/cad_import.py) - its result is this answer for text."""
         # By project id or device, within the user's access.
         location, db_name, error = _measure_point_location(request, {
@@ -568,8 +568,6 @@ class StatusViewSet(ProgeoModalViewSet):
                     cad_input=posixpath.join("media", "uploads", "cad_imports", target_name),
                     source_name=upload.name,
                     coord_margin=coord_margin,
-                    skip_convert=(suffix == ".dxf"),
-                    project_id=getattr(location, "project_id", None),
                 )
                 run_cad_import.delay(job_id)
                 return RequestSuccess({"job_id": job_id, "status": "queued", "location_id": location.id})
@@ -605,7 +603,7 @@ class StatusViewSet(ProgeoModalViewSet):
     def cad_import_job(self, request, *args, **kwargs):
         """State of a DWG/DXF import job of upload_cad (?job_id=): status, the
         log so far and, once done, upload_cad's result. Only for the user who
-        uploaded the file - the websocket /ws/cad_factory/<job_id>/ streams the same."""
+        uploaded the file - the websocket /ws/cad_import/<job_id>/ streams the same."""
         job = cad_import.get_job((request.query_params.get("job_id") or "").strip())
         if not job or job.get("user_id") != request.user.pk:
             return RequestFailed({"reason": "Import job not found"})

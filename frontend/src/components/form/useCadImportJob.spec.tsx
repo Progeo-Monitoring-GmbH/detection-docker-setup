@@ -71,7 +71,7 @@ describe('useCadImportJob', () => {
   it('shows the snapshot, then appends new lines once', () => {
     act(() => hook.state.follow(JOB_ID));
     const socket = FakeSocket.last;
-    expect(socket.url).toMatch(new RegExp(`/ws/cad_factory/${JOB_ID}/$`));
+    expect(socket.url).toMatch(new RegExp(`/ws/cad_import/${JOB_ID}/$`));
 
     socket.receive({ type: 'cad_snapshot', job: job({ log: ['one'] }) });
     socket.receive({ type: 'cad_log', seq: 0, line: 'one' }); // already in the snapshot

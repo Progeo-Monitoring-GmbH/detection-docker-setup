@@ -9,16 +9,16 @@ type Props = ComponentProps<typeof RedDropbox>;
 
 const STATUS_TEXT: Record<CadImportJob['status'], string> = {
   queued: 'Waiting for a worker…',
-  running: 'Converting and reading the CAD file…',
+  running: 'Reading the CAD file…',
   done: 'Import finished',
   failed: 'Import failed',
 };
 
 /**
  * RedDropbox for measure_points/upload_cad: a DWG/DXF upload is answered with
- * a job (progeo/helper/cad_import.py) - its log is shown live while
- * progeo-cad_factory runs, and callBackProcessing gets the job's result, the
- * same answer a text upload gets right away.
+ * a job (progeo/helper/cad_import.py) - its log is shown live while the plan
+ * is read, and callBackProcessing gets the job's result, the same answer a
+ * text upload gets right away.
  */
 const CadUploadDropbox = ({ callBackProcessing = () => {}, ...props }: Props) => {
   const { enqueueSnackbar } = useSnackbar();
