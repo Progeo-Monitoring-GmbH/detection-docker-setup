@@ -4,13 +4,13 @@ import { Spinner } from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
-import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
 import { showRequestError } from '../components/ui/Snackbar.jsx';
 import SensorHeatmap2D from '../components/device/SensorHeatmap2D.tsx';
 import type { SensorHeatmapResponse } from '../components/device/sensorHeatmapTypes';
 import PanelCard from '../components/ui/kit/PanelCard';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
+import { routeRule, useAccess } from './access';
 import { TIME_RANGE_DAYS, type TimeRange } from './timeRanges';
 
 type ClimateMetric = 'humidity' | 'temperature';
@@ -51,7 +51,7 @@ const LocationClimateHeatmap = ({
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
   const { t } = useTranslation();
-  const { hasPermission } = usePermissions();
+  const { can } = useAccess();
   const [metric, setMetric] = useState<ClimateMetric>('humidity');
   const [response, setResponse] = useState<ClimateHeatmapResponse | null>(null);
   // The request (metric + range) the response belongs to - another one is loading.
@@ -107,7 +107,7 @@ const LocationClimateHeatmap = ({
         ) : !hasPoints ? (
           <div className="text-muted py-4 text-center">
             {t('climate_heatmap_no_points')}
-            {hasPermission('module_devices_edit') && (
+            {can(routeRule('/lageplan/wizard/')) && (
               <div className="mt-2">
                 <Link to="/lageplan/wizard/">{t('climate_heatmap_open_wizard')}</Link>
               </div>

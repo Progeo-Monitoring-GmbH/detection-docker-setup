@@ -4,6 +4,7 @@ import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
 import { showErrorBar, showRequestError } from '../components/ui/Snackbar.jsx';
+import { staffFlags } from './access';
 
 /**
  * Favorite locations of a staff user (/v1/favorite/, FavoriteViewSet) - the
@@ -51,10 +52,8 @@ const adopt = (response: FavoritesResponse) =>
   setState({ favorites: response?.data?.favorites ?? [], max: response?.data?.max ?? state.max });
 
 /** Whether the user is staff - only staff have favorites. */
-export const isStaffUser = (user: unknown) => {
-  const flags = user as { is_staff?: boolean; is_superuser?: boolean } | null;
-  return Boolean(flags?.is_staff || flags?.is_superuser);
-};
+export const isStaffUser = (user: unknown) =>
+  staffFlags(user).isStaffOrSuperuser;
 
 export const useFavorites = () => {
   const { t } = useTranslation();

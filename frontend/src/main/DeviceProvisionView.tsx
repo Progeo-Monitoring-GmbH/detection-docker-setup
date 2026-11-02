@@ -35,6 +35,7 @@ import {
   showSuccessBar,
 } from '../components/ui/Snackbar.jsx';
 import { formatDate } from './dateFormat';
+import { staffFlags } from './access';
 
 /** A location of /v1/device/provision/locations/ (project_type: its label). */
 type ProvisionLocation = PickableLocation & {
@@ -159,9 +160,7 @@ const DeviceProvisionView = () => {
   const [importAccount, setImportAccount] = useState('');
   const [syncing, setSyncing] = useState(false);
 
-  const user = auth?.user as
-    { is_staff?: boolean; is_superuser?: boolean } | null | undefined;
-  const isStaff = Boolean(user?.is_staff || user?.is_superuser);
+  const isStaff = staffFlags(auth?.user).isStaffOrSuperuser;
 
   const loadLocations = () => {
     void axiosConfig.perform_get(

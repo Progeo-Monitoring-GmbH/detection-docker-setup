@@ -19,6 +19,7 @@ import DeviceConfigPanel, {
 import type { PortalOutletContext } from './LocationPortalLayout';
 import { getProjectTypeLabel } from './projectType';
 import { useProgeoRole } from './roleModel';
+import { staffFlags } from './access';
 
 /** One sensor of the object; `id` is null while it has no ProgeoMeasurePoint. */
 type SensorThreshold = {
@@ -116,15 +117,9 @@ const LocationEinstellungenTab = () => {
   const { hasPermission } = usePermissions();
   const { t } = useTranslation();
   const role = useProgeoRole();
-  const authUser = auth?.user as {
-    is_staff?: boolean;
-    is_superuser?: boolean;
-  } | null;
   // The backend lets staff and superusers assign ProGeo staff / an
   // Objektleitung by email (locations_viewset._objektleitung_user).
-  const canAssignByEmail = Boolean(
-    authUser?.is_staff || authUser?.is_superuser,
-  );
+  const canAssignByEmail = staffFlags(auth?.user).isStaffOrSuperuser;
 
   // Each setting is gated by the permission its endpoint checks:
   // PATCH /v1/location/ + measurepoints -> module_locations_edit,

@@ -1,7 +1,16 @@
 import React from 'react';
 import { Navigate, Route, Routes, useParams } from 'react-router';
 import { WebSocketProvider } from './components/ws/websocketContext';
+import { routeRule } from './main/access';
 import { PORTAL_NAV_ITEMS } from './main/portalNav';
+import RequireAccess from './main/RequireAccess';
+
+// Every page below the layouts goes through its rule in APP_ROUTE_ACCESS
+// (access.ts; access.spec.ts checks no route is left out). `path` must be
+// the route's own.
+const guard = (path, element) => (
+  <RequireAccess rule={routeRule(path)}>{element}</RequireAccess>
+);
 
 // The old tab-based /location/:id/detail/ route is replaced by
 // /location/:id/status - redirect any stray bookmarks/links there.
@@ -167,7 +176,10 @@ const CoreRoutes = () => {
       <Route element={<PendingGate />}>
         {/* Object/location monitoring portal - its own mockup-driven sidebar. */}
         <Route element={<LocationPortalLayout />}>
-          <Route path="/location/overview/" element={<LocationsOverview />} />
+          <Route
+            path="/location/overview/"
+            element={guard('/location/overview/', <LocationsOverview />)}
+          />
           {PORTAL_NAV_ITEMS.map((item) => (
             <Route
               key={item.key}
@@ -186,7 +198,10 @@ const CoreRoutes = () => {
           retired Navbar.jsx's item list). */}
         <Route element={<AppLayout />}>
           {/* Developer tools (sidebar: Tools > Developer), one tab each. */}
-          <Route path="/developer" element={<DeveloperView />}>
+          <Route
+            path="/developer"
+            element={guard('/developer', <DeveloperView />)}
+          >
             <Route index element={<Navigate to="docker/" replace />} />
             <Route path="docker/" element={<DockerStatusView />} />
             <Route path="legacy-import/" element={<LegacyImportView />} />
@@ -217,49 +232,94 @@ const CoreRoutes = () => {
             path="/dev"
             element={<Navigate to="/developer/dev/" replace />}
           />
-          <Route path="/device/overview" element={<DeviceListView />} />
-          <Route path="/alarms/" element={<AlarmsOverview />} />
-          <Route path="/alarms/report/" element={<AlarmReportView />} />
+          <Route
+            path="/device/overview"
+            element={guard('/device/overview', <DeviceListView />)}
+          />
+          <Route
+            path="/alarms/"
+            element={guard('/alarms/', <AlarmsOverview />)}
+          />
+          <Route
+            path="/alarms/report/"
+            element={guard('/alarms/report/', <AlarmReportView />)}
+          />
           <Route
             path="/location/:id/heatplot"
-            element={<LocationHeatplotView />}
+            element={guard('/location/:id/heatplot', <LocationHeatplotView />)}
           />
           <Route
             path="/locations/:id/heatplot"
-            element={<LocationHeatplotView />}
+            element={guard('/locations/:id/heatplot', <LocationHeatplotView />)}
           />
           <Route
             path="/location/:id/heatmap2d"
-            element={<LocationHeatmap2DView />}
+            element={guard(
+              '/location/:id/heatmap2d',
+              <LocationHeatmap2DView />,
+            )}
           />
           <Route
             path="/location/:id/alarms"
-            element={<LocationAlarmDetail />}
+            element={guard('/location/:id/alarms', <LocationAlarmDetail />)}
           />
           {/* Retired: device config moved to /location/:id/einstellungen. */}
           <Route
             path="/device/:id/update/"
-            element={<DeviceSettingsRedirect />}
+            element={guard('/device/:id/update/', <DeviceSettingsRedirect />)}
           />
-          <Route path="/device/:id/editor/" element={<DeviceEditorView />} />
-          <Route path="/device/provision/" element={<DeviceProvisionView />} />
-          <Route path="/device/statistics/" element={<DeviceStatisticsView />} />
+          <Route
+            path="/device/:id/editor/"
+            element={guard('/device/:id/editor/', <DeviceEditorView />)}
+          />
+          <Route
+            path="/device/provision/"
+            element={guard('/device/provision/', <DeviceProvisionView />)}
+          />
+          <Route
+            path="/device/statistics/"
+            element={guard('/device/statistics/', <DeviceStatisticsView />)}
+          />
           <Route
             path="/device/:id/detail"
-            element={<MeasurementDetailView />}
+            element={guard('/device/:id/detail', <MeasurementDetailView />)}
           />
           {/* The panel opens its own log-stream socket (admin/useLogStream). */}
-          <Route path="/admin/panel/" element={<AdminPanel />} />
-          <Route path="/staff/" element={<StaffAdmin />} />
-          <Route path="/escalations/" element={<EscalationsView />} />
-          <Route path="/escalations/:id" element={<EscalationsView />} />
-          <Route path="/backup/:account/overview/" element={<BackupView />} />
-          <Route path="/factory/" element={<FactoryVisualizerView />} />
-          <Route path="/lageplan/wizard/" element={<LageplanWizardView />} />
-          <Route path="/map/" element={<LocationsMapView />} />
-          <Route path="/verwaltung/" element={<LocationVerwaltungView />} />
-          <Route path="/anlegen/" element={<LocationAnlegenView />} />
-          <Route path="*" element={<LandingPage />} />
+          <Route
+            path="/admin/panel/"
+            element={guard('/admin/panel/', <AdminPanel />)}
+          />
+          <Route path="/staff/" element={guard('/staff/', <StaffAdmin />)} />
+          <Route
+            path="/escalations/"
+            element={guard('/escalations/', <EscalationsView />)}
+          />
+          <Route
+            path="/escalations/:id"
+            element={guard('/escalations/:id', <EscalationsView />)}
+          />
+          <Route
+            path="/backup/:account/overview/"
+            element={guard('/backup/:account/overview/', <BackupView />)}
+          />
+          <Route
+            path="/factory/"
+            element={guard('/factory/', <FactoryVisualizerView />)}
+          />
+          <Route
+            path="/lageplan/wizard/"
+            element={guard('/lageplan/wizard/', <LageplanWizardView />)}
+          />
+          <Route path="/map/" element={guard('/map/', <LocationsMapView />)} />
+          <Route
+            path="/verwaltung/"
+            element={guard('/verwaltung/', <LocationVerwaltungView />)}
+          />
+          <Route
+            path="/anlegen/"
+            element={guard('/anlegen/', <LocationAnlegenView />)}
+          />
+          <Route path="*" element={guard('*', <LandingPage />)} />
         </Route>
       </Route>
     </Routes>

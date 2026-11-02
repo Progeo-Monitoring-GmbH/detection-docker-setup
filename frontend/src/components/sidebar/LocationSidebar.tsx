@@ -17,8 +17,8 @@ import {
   Terminal,
 } from 'react-bootstrap-icons';
 import { useAuth } from '../../../hooks/CoreAuthProvider.tsx';
-import usePermissions from '../../../hooks/usePermissions';
 import axiosConfig from '../../axiosConfig';
+import { portalItemRule, routeRule, useAccess } from '../../main/access';
 import { useProgeoRole } from '../../main/roleModel';
 import { PORTAL_NAV_ITEMS, portalNavPath } from '../../main/portalNav';
 import type { LocationDetail } from '../../main/locationTypes';
@@ -48,11 +48,8 @@ type ModuleItem = {
  * this is built from). Mounted by LocationPortalLayout (with the open
  * location's tabs on top) and by AppLayout for every other route (without).
  *
- * Visibility of the module items: staff see Staff Admin and Escalations;
- * everything else is superuser-only, Backup additionally needs its module
- * permission.
- * is_staff and is_superuser are separate roles - superusers see every item,
- * staff only the ones explicitly listed for them.
+ * Visibility of every item is its route's rule in access.ts - the same rule
+ * guards the page itself.
  */
 const LocationSidebar = ({
   location = null,
@@ -60,7 +57,7 @@ const LocationSidebar = ({
 }: LocationSidebarProps) => {
   const { t } = useTranslation();
   const auth = useAuth();
-  const { hasPermission, isAdmin: isSuperuser } = usePermissions();
+  const { can, hasPermission } = useAccess();
   const role = useProgeoRole();
   const routerLocation = useRouterLocation();
 
@@ -91,16 +88,14 @@ const LocationSidebar = ({
     );
   }, [canSeeMeasurements, locationId]);
 
-  // "Einstellungen" is superuser-only, regardless of module permissions.
+  // The routes are guarded by the same rules (access.ts) - an item shows
+  // exactly when its page opens.
   const visibleItems = PORTAL_NAV_ITEMS.filter((item) =>
-    item.key === 'einstell' ? isSuperuser : hasPermission(item.permission),
+    can(portalItemRule(item)),
   );
   // ProGeo-Admins (superusers) manage objects.
-  const canCreateLocation = role === 'progeo-admin';
-  // The Staff-Admin page is open to staff too, independent of the role.
-  const isStaffUser = Boolean(
-    (auth?.user as { is_staff?: boolean } | null)?.is_staff,
-  );
+  const canCreateLocation =
+    role === 'progeo-admin' && can(routeRule('/verwaltung/'));
   const verwaltungPath = canCreateLocation
     ? '/verwaltung/'
     : '/location/overview/';
@@ -132,7 +127,7 @@ const LocationSidebar = ({
       to: '/location/overview/',
       visible:
         canCreateLocation &&
-        hasPermission('module_locations_enabled') &&
+        can(routeRule('/location/overview/')) &&
         (locationCount ?? 0) > 1,
     },
     {
@@ -140,15 +135,14 @@ const LocationSidebar = ({
       label: t('sidebar_devices'),
       icon: Hdd,
       to: '/device/overview',
-      visible: isSuperuser,
+      visible: can(routeRule('/device/overview')),
     },
     {
       key: 'device-provision',
       label: t('sidebar_device_provision'),
       icon: PlusSquare,
       to: '/device/provision/',
-      // Staff always (like the backend's require_module_permissions), users with the permission.
-      visible: isStaffUser || hasPermission('module_devices_provision'),
+      visible: can(routeRule('/device/provision/')),
     },
     {
       // Staff tool: devices/locations in need of attention (type, chip ID,
@@ -157,23 +151,21 @@ const LocationSidebar = ({
       label: t('sidebar_device_statistics'),
       icon: GraphUp,
       to: '/device/statistics/',
-      visible:
-        (isStaffUser || isSuperuser) &&
-        hasPermission('module_devices_enabled'),
+      visible: can(routeRule('/device/statistics/')),
     },
     {
       key: 'alarms',
       label: t('sidebar_alarms'),
       icon: Bell,
       to: '/alarms/',
-      visible: isSuperuser,
+      visible: can(routeRule('/alarms/')),
     },
     {
       key: 'alarm-report',
       label: t('sidebar_reports'),
       icon: Calendar3,
       to: '/alarms/report/',
-      visible: isSuperuser,
+      visible: can(routeRule('/alarms/report/')),
     },
     {
       // Every staff user sees the escalations; only superusers open them.
@@ -181,7 +173,7 @@ const LocationSidebar = ({
       label: t('sidebar_escalations'),
       icon: ExclamationTriangle,
       to: '/escalations/',
-      visible: isStaffUser || isSuperuser,
+      visible: can(routeRule('/escalations/')),
     },
   ];
 
@@ -191,21 +183,21 @@ const LocationSidebar = ({
       label: t('sidebar_staff_admin'),
       icon: People,
       to: '/staff/',
-      visible: isStaffUser || isSuperuser,
+      visible: can(routeRule('/staff/')),
     },
     {
       key: 'backup',
       label: t('sidebar_backup'),
       icon: Database,
       to: '/backup/1/overview/',
-      visible: hasPermission('module_backup_enabled'),
+      visible: can(routeRule('/backup/:account/overview/')),
     },
     {
       key: 'admin-panel',
       label: t('sidebar_admin_panel'),
       icon: Gear,
       to: '/admin/panel/',
-      visible: isSuperuser,
+      visible: can(routeRule('/admin/panel/')),
     },
   ];
 
@@ -215,21 +207,21 @@ const LocationSidebar = ({
       label: t('sidebar_factory'),
       icon: Map,
       to: '/factory/',
-      visible: isSuperuser,
+      visible: can(routeRule('/factory/')),
     },
     {
       key: 'lageplan',
       label: t('sidebar_lageplan_wizard'),
       icon: Layers,
       to: '/lageplan/wizard/',
-      visible: isSuperuser,
+      visible: can(routeRule('/lageplan/wizard/')),
     },
     {
       key: 'map',
       label: t('sidebar_map'),
       icon: Geo,
       to: '/map/',
-      visible: isSuperuser,
+      visible: can(routeRule('/map/')),
     },
     {
       // Docker, Legacy Import, WS Debug and Dev - tabs of DeveloperView.
@@ -237,7 +229,7 @@ const LocationSidebar = ({
       label: t('sidebar_developer'),
       icon: Terminal,
       to: '/developer/',
-      visible: isSuperuser,
+      visible: can(routeRule('/developer')),
     },
   ];
 

@@ -38,6 +38,7 @@ import { formatDate } from './dateFormat';
 import { startImpersonation } from './impersonation';
 import StaffAccessRequests from './StaffAccessRequests';
 import StaffMessaging from './StaffMessaging';
+import { staffFlags } from './access';
 
 type PermissionDef = {
   code: string;
@@ -54,6 +55,10 @@ type StaffUser = {
   date_joined?: string | null;
   last_login?: string | null;
   two_factor_enabled?: boolean;
+  /** Holds a valid (unexpired, not logged out) refresh token somewhere. */
+  logged_in?: boolean;
+  /** Newest of those tokens: the last login or renewal (~hourly in an open tab). */
+  last_activity?: string | null;
   permissions: Record<string, boolean>;
   grantable: Record<string, boolean>;
 };
@@ -96,6 +101,7 @@ type Filters = {
   role: '' | Role;
   active: '' | 'active' | 'inactive';
   twoFactor: '' | 'on' | 'off';
+  session: '' | 'in' | 'out';
   permission: string;
 };
 
@@ -104,7 +110,30 @@ const NO_FILTERS: Filters = {
   role: '',
   active: '',
   twoFactor: '',
+  session: '',
   permission: '',
+};
+
+/** Small dot before the username: green while logged in, a grey ring if not. */
+const SessionDot = ({ user }: { user: StaffUser }) => {
+  const { t } = useTranslation();
+  const title = user.logged_in
+    ? t('staff_session_logged_in', { time: formatDate(user.last_activity) })
+    : t('staff_session_logged_out');
+  return (
+    <span
+      role="img"
+      aria-label={title}
+      title={title}
+      className="d-inline-block rounded-circle me-2 flex-shrink-0"
+      style={{
+        width: 8,
+        height: 8,
+        background: user.logged_in ? 'var(--bs-success)' : 'transparent',
+        border: `1px solid ${user.logged_in ? 'var(--bs-success)' : 'var(--bs-gray-400)'}`,
+      }}
+    />
+  );
 };
 
 /** Mirrors the backend's DEFAULT_USER_PERMISSIONS (progeo/v1/models.py) -
@@ -387,13 +416,9 @@ const StaffAdmin = () => {
     updateFilters({ ...filters, [key]: value });
   const filtersActive = Object.values(filters).some(Boolean);
 
-  const authUser = auth?.user as {
-    is_staff?: boolean;
-    is_superuser?: boolean;
-    user_id?: number | string;
-  } | null;
-  const isStaff = Boolean(authUser?.is_staff);
-  const isSuperuser = Boolean(authUser?.is_superuser);
+  const authUser = auth?.user as { user_id?: number | string } | null;
+  // Staff or superuser, like the route (access.ts) and the backend.
+  const { isStaffOrSuperuser: isStaff, isSuperuser } = staffFlags(auth?.user);
 
   const fetchUsers = useCallback(() => {
     setLoading(true);
@@ -608,6 +633,12 @@ const StaffAdmin = () => {
       ) {
         return false;
       }
+      if (
+        filters.session &&
+        Boolean(user.logged_in) !== (filters.session === 'in')
+      ) {
+        return false;
+      }
       if (filters.permission && !user.permissions?.[filters.permission]) {
         return false;
       }
@@ -622,6 +653,7 @@ const StaffAdmin = () => {
         roleLabel(roleOf(user)),
         user.is_active ? t('staff_badge_active') : t('staff_badge_inactive'),
         user.two_factor_enabled ? t('staff_badge_two_factor') : '',
+        user.logged_in ? t('staff_filter_logged_in') : '',
         ...permissions,
         ...permissions.map(permissionLabel),
         user.date_joined ? formatDate(user.date_joined) : '',
@@ -670,7 +702,8 @@ const StaffAdmin = () => {
         selector: (row) => row.username.toLowerCase(),
         sortable: true,
         cell: (row) => (
-          <span>
+          <span className="d-inline-flex align-items-center">
+            <SessionDot user={row} />
             {row.username}
             {row.is_superuser && (
               <ShieldLock className="ms-2 text-warning" size={14} />
@@ -937,6 +970,19 @@ const StaffAdmin = () => {
               <option value="">{t('staff_filter_two_factor_any')}</option>
               <option value="on">{t('staff_filter_two_factor_on')}</option>
               <option value="off">{t('staff_filter_two_factor_off')}</option>
+            </Form.Select>
+            <Form.Select
+              size="sm"
+              style={{ width: 'auto' }}
+              aria-label={t('staff_col_session')}
+              value={filters.session}
+              onChange={(event) =>
+                setFilter('session', event.target.value as Filters['session'])
+              }
+            >
+              <option value="">{t('staff_filter_session_any')}</option>
+              <option value="in">{t('staff_filter_logged_in')}</option>
+              <option value="out">{t('staff_filter_logged_out')}</option>
             </Form.Select>
             <Form.Select
               size="sm"

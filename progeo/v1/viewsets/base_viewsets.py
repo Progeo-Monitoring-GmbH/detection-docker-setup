@@ -24,7 +24,7 @@ from progeo.helper.basics import RequestFailed, RequestSuccess
 from progeo.helper.creator import create_MfS_log
 from progeo.helper.demo import DEMO_LAGEPLAN_PREFIX, is_demo_user
 from progeo.settings import MEDIA_ROOT, MEDIA_X_ACCEL, UPLOAD_DIR
-from progeo.v1.models import MODULE_PERMISSION_CODES
+from progeo.v1.models import DEFAULT_USER_PERMISSIONS, MODULE_PERMISSION_CODES
 from progeo.v1.serializers import ProgeoTokenObtainPairSerializer
 
 
@@ -196,6 +196,9 @@ class ProgeoTokenObtainPairView(TokenObtainPairView):
         return Response(serializer.validated_data, status=status.HTTP_200_OK)
 
 
+DEFAULT_USER_PERMISSION_CODES = frozenset(code for code, _ in DEFAULT_USER_PERMISSIONS)
+
+
 class UserModulePermissionView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -208,10 +211,10 @@ class UserModulePermissionView(APIView):
         )
 
     @staticmethod
-    def _permission_payload(user):
+    def _permission_payload(user, extra_codes=()):
         values = {}
         for code in MODULE_PERMISSION_CODES:
-            values[code] = user.has_perm(f"progeo.{code}")
+            values[code] = code in extra_codes or user.has_perm(f"progeo.{code}")
         enabled = [code for code, is_enabled in values.items() if is_enabled]
         return {
             "user_id": user.pk,
@@ -233,8 +236,10 @@ class UserModulePermissionView(APIView):
 
     def get(self, request, *args, **kwargs):
         user = request.user
-        if request.GET.get("as_user"):
-            user = self._as_normal_user(user)
+        if request.GET.get("as_user") and user.is_superuser:
+            # A superuser rarely holds explicit grants - the defaults every
+            # new user gets keep the portal usable in this view.
+            return RequestSuccess(self._permission_payload(self._as_normal_user(user), DEFAULT_USER_PERMISSION_CODES))
         return RequestSuccess(self._permission_payload(user))
 
     def post(self, request, *args, **kwargs):

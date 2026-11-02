@@ -134,6 +134,64 @@ def test_list_permissions_match_has_perm(api_client, staff):
     assert rows[via_group.pk]["module_docker_enabled"] is True
 
 
+# -- logged in ----------------------------------------------------------------
+
+def _sessions(api_client):
+    return {row["id"]: (row["logged_in"], row["last_activity"]) for row in api_client.get(BASE).json()["users"]}
+
+
+def test_list_shows_who_is_logged_in(api_client, staff):
+    from datetime import timedelta
+
+    from django.utils import timezone
+    from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
+    from rest_framework_simplejwt.tokens import RefreshToken
+
+    logged_in = f.make_user()
+    RefreshToken.for_user(logged_in)
+    renewed = RefreshToken.for_user(logged_in)  # the newest token is the last activity
+    logged_out = f.make_user()
+    RefreshToken.for_user(logged_out).blacklist()
+    expired = f.make_user()
+    OutstandingToken.objects.using(f.DB).create(
+        user=expired, jti=f.unique("jti"), token="x",
+        created_at=timezone.now() - timedelta(days=2), expires_at=timezone.now() - timedelta(days=1),
+    )
+    never = f.make_user()
+
+    sessions = _sessions(api_client)
+
+    newest = OutstandingToken.objects.using(f.DB).get(jti=renewed["jti"]).created_at
+    assert sessions[logged_in.pk] == (True, newest.isoformat())
+    assert sessions[logged_out.pk] == (False, None)
+    assert sessions[expired.pk] == (False, None)
+    assert sessions[never.pk] == (False, None)
+
+
+def test_password_reset_logs_the_user_out(api_client, staff):
+    from rest_framework_simplejwt.tokens import RefreshToken
+
+    target = f.make_user()
+    RefreshToken.for_user(target)
+    assert _sessions(api_client)[target.pk][0] is True
+
+    assert api_client.post(f"{BASE}{target.pk}/password/", {}, format="json").json()["success"] is True
+
+    assert _sessions(api_client)[target.pk] == (False, None)
+
+
+def test_update_payload_has_the_session_state(api_client, staff):
+    from rest_framework_simplejwt.tokens import RefreshToken
+
+    target = f.make_user()
+    RefreshToken.for_user(target)
+
+    body = api_client.post(f"{BASE}{target.pk}/update/", {"email": "x@progeo.com"}, format="json").json()
+
+    assert body["user"]["logged_in"] is True
+    assert body["user"]["last_activity"]
+
+
 def test_superuser_may_grant_every_code(api_client, superuser):
     from progeo.v1.models import MODULE_PERMISSION_CODES
 

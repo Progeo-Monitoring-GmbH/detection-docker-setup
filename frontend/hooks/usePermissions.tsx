@@ -29,34 +29,16 @@ let cachedToken = '';
 let cachedPermissionPayload: ModulePermissionPayload | null = null;
 let pendingPermissionRequest: Promise<ModulePermissionPayload> | null = null;
 
+// A user with a single module permission is sent to its page. Only pages a
+// normal user may open (access.ts) - superusers are never forwarded.
 const PERMISSION_ROUTE_MAP: Record<string, PermissionRouteConfig> = {
-  module_devices_enabled: {
-    target: '/device/overview/',
-    allowedPrefixes: ['/device/overview', '/device/'],
-  },
   module_locations_enabled: {
     target: '/location/overview/',
     allowedPrefixes: ['/location/overview', '/location/'],
   },
-  module_measurements_enabled: {
-    target: '/device/measure/',
-    allowedPrefixes: ['/device/measure'],
-  },
-  module_imei_enabled: {
-    target: '/devices/imei/display/',
-    allowedPrefixes: ['/devices/imei/display'],
-  },
   module_backup_enabled: {
     target: '/backup/1/overview/',
     allowedPrefixes: ['/backup/'],
-  },
-  module_docker_enabled: {
-    target: '/docker/',
-    allowedPrefixes: ['/docker/'],
-  },
-  module_admin_enabled: {
-    target: '/admin/panel/',
-    allowedPrefixes: ['/admin/panel/', '/aadmin'],
   },
 };
 
@@ -147,7 +129,7 @@ const clearPermissionsCache = () => {
 
 /**
  * The token plus the view: as a normal user (viewAsUser) a superuser gets
- * only the permissions granted to it, not all of them.
+ * a new user's default permissions plus the ones granted to it, not all.
  */
 const permissionCacheKey = (auth: AuthContextType, token: string) =>
   token && auth?.viewAsUser ? `${token}|as_user` : token;

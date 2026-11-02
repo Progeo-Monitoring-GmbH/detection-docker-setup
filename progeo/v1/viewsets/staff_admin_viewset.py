@@ -87,11 +87,32 @@ def _two_factor_user_ids():
     )
 
 
-def _user_payload(user, grantable, granted_codes=None, two_factor_ids=None):
+def _session_activity_by_user(user_ids=None):
+    """{user id: newest creation time} of the refresh tokens still valid (not
+    expired, not blacklisted) - the users logged in somewhere. Every login and
+    every renewal (about hourly while a tab is open; tokens rotate) issues a
+    new one, so the time is also the user's last sign of activity. One query;
+    `user_ids` limits it."""
+    from django.db.models import Max
+    from django.utils import timezone
+    from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
+
+    tokens = OutstandingToken.objects.using(_USER_DB).filter(
+        user_id__isnull=False, expires_at__gt=timezone.now(), blacklistedtoken__isnull=True,
+    )
+    if user_ids is not None:
+        tokens = tokens.filter(user_id__in=user_ids)
+    return {row["user_id"]: row["last"] for row in tokens.values("user_id").annotate(last=Max("created_at"))}
+
+
+def _user_payload(user, grantable, granted_codes=None, two_factor_ids=None, sessions=None):
     """`granted_codes`: the user's entry of _module_codes_by_user() for lists;
     None asks user.has_perm() (single users). `two_factor_ids`: see
-    _two_factor_user_ids() (lists); None looks the user up."""
+    _two_factor_user_ids() (lists); None looks the user up. `sessions`: see
+    _session_activity_by_user() (lists); None looks the user up."""
     from progeo.helper.two_factor import is_enabled
+    if sessions is None:
+        sessions = _session_activity_by_user([user.pk])
     values = {}
     for code in MODULE_PERMISSION_CODES:
         if granted_codes is None:
@@ -109,6 +130,8 @@ def _user_payload(user, grantable, granted_codes=None, two_factor_ids=None):
         "date_joined": user.date_joined.isoformat() if user.date_joined else None,
         "last_login": user.last_login.isoformat() if user.last_login else None,
         "two_factor_enabled": user.pk in two_factor_ids if two_factor_ids is not None else is_enabled(user),
+        "logged_in": user.pk in sessions,
+        "last_activity": sessions[user.pk].isoformat() if sessions.get(user.pk) else None,
         "permissions": values,
         "grantable": {code: values[code] for code in grantable},
     }
@@ -161,9 +184,10 @@ class StaffUserListView(APIView):
         users = list(User.objects.using(_USER_DB).order_by("username"))
         codes_by_user = _module_codes_by_user()
         two_factor_ids = _two_factor_user_ids()
+        sessions = _session_activity_by_user()
         return RequestSuccess({
             "users": [
-                _user_payload(user, grantable, codes_by_user.get(user.pk, set()), two_factor_ids)
+                _user_payload(user, grantable, codes_by_user.get(user.pk, set()), two_factor_ids, sessions)
                 for user in users
             ],
             "grantable_codes": sorted(grantable),

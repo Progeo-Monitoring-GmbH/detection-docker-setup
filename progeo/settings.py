@@ -472,6 +472,8 @@ STAGING_IMPORT_DIR = os.path.join(MEDIA_ROOT, os.getenv("STAGING_IMPORT_DIR", "s
 STAGING_IMPORT_GPG_KEY_FILE = (os.getenv("STAGING_IMPORT_GPG_KEY_FILE", "").strip()
                                or "/etc/progeo/backup/staging-private-key.asc")
 STAGING_IMPORT_GPG_PASSPHRASE = os.getenv("STAGING_IMPORT_GPG_PASSPHRASE", "")
+# STAGING server: cronjobs/staging-import.sh restores each new bundle at night. Off by default.
+STAGING_AUTO_IMPORT = parse_boolean(os.getenv("STAGING_AUTO_IMPORT"))
 SETUP_DIR = os.path.join(MEDIA_ROOT, os.getenv("SETUP_DIR", "setup"))
 UPLOAD_DIR = os.path.join(MEDIA_ROOT, os.getenv("UPLOAD_DIR", "uploads"))
 UPLOAD_REL_DIR = os.path.join(MEDIA_URL, os.getenv("UPLOAD_DIR", "uploads"))[1:]

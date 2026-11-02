@@ -37,6 +37,7 @@ import { useLageplanImage } from './useLageplanImage';
 import ZoomControls from './ZoomControls';
 import { getBackendUrl } from '../../backendUrl';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
+import { staffFlags } from '../../main/access';
 
 type SensorHeatmap2DProps = {
   response: SensorHeatmapResponse | null | undefined;
@@ -203,10 +204,7 @@ const SensorHeatmap2D = ({
   // Heat limitations of the plan: staff and superusers draw them on the plan
   // image (not in the alignment wizard mode).
   const auth = useAuth();
-  const canEditLimits = Boolean(
-    (auth?.user as { is_staff?: boolean; is_superuser?: boolean } | null)?.is_staff ||
-      (auth?.user as { is_superuser?: boolean } | null)?.is_superuser,
-  );
+  const canEditLimits = staffFlags(auth?.user).isStaffOrSuperuser;
   const limitEditor = useHeatLimitationEditor({
     plans,
     plan: activePlan,

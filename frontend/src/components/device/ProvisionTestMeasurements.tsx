@@ -20,6 +20,7 @@ import {
   showSuccessBar,
 } from '../ui/Snackbar.jsx';
 import { formatDate } from '../../main/dateFormat';
+import { staffFlags } from '../../main/access';
 
 /** helper/device_commands.check_test_pairs (sensors numbered from 1). */
 type TestCheck = {
@@ -283,9 +284,7 @@ const ProvisionTestMeasurements = ({
   const [clearing, setClearing] = useState(false);
   const [mux, setMux] = useState(1);
   const [emulating, setEmulating] = useState(false);
-  const isSuperuser = Boolean(
-    (auth?.user as { is_superuser?: boolean } | null)?.is_superuser,
-  );
+  const { isSuperuser } = staffFlags(auth?.user);
   // Only report a failing poll once, not every POLL_MS.
   const pollFailed = useRef(false);
   // Newest measurement timestamp already merged into the table. After the

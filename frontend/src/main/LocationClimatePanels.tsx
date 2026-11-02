@@ -24,6 +24,7 @@ import {
   type TimeRange,
 } from './timeRanges';
 import useMeasurementRange from './useMeasurementRange';
+import { staffFlags } from './access';
 
 type LocationClimatePanelsProps = {
   locationId: number;
@@ -56,8 +57,8 @@ const LocationClimatePanels = ({
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
   const { t } = useTranslation();
-  const authUser = auth?.user as { is_staff?: boolean; is_superuser?: boolean } | null;
-  const isStaff = !demo && Boolean(authUser?.is_staff || authUser?.is_superuser);
+  const flags = staffFlags(auth?.user);
+  const isStaff = !demo && flags.isStaffOrSuperuser;
 
   // Only ranges the data reaches into; an unavailable selection falls back
   // to the longest offered range.
@@ -126,7 +127,7 @@ const LocationClimatePanels = ({
   const bucketSeconds = climate?.bucket_seconds ?? null;
   const bucket = bucketLabel(bucketSeconds);
 
-  const isSuperuser = !demo && Boolean(authUser?.is_superuser);
+  const isSuperuser = !demo && flags.isSuperuser;
   const [busy, setBusy] = useState(false);
 
   const cleanMeasurements = () => {

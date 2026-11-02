@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 import { Button, Card, Col, Row } from 'react-bootstrap';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider';
@@ -6,41 +6,43 @@ import usePermissions, {
   getSinglePermissionForwardUrl,
 } from '../../hooks/usePermissions';
 import LoadingIcon from '../components/ui/LoadingIcon';
+import { routeRule, useAccess, type AppRoutePath } from './access';
 
 type LandingModule = {
-  permission: string;
+  /** Its route in APP_ROUTE_ACCESS - offered only where that lets the user in. */
+  route: AppRoutePath;
   labelKey: string;
   target: string;
 };
 
 const LANDING_MODULES: LandingModule[] = [
   {
-    permission: 'module_devices_enabled',
+    route: '/device/overview',
     labelKey: 'landing_module_devices',
     target: '/device/overview/',
   },
   {
-    permission: 'module_locations_enabled',
+    route: '/location/overview/',
     labelKey: 'landing_module_locations',
     target: '/location/overview/',
   },
   {
-    permission: 'module_measurements_enabled',
+    route: '/alarms/',
     labelKey: 'landing_module_alarms',
     target: '/alarms/',
   },
   {
-    permission: 'module_backup_enabled',
+    route: '/backup/:account/overview/',
     labelKey: 'landing_module_backup',
     target: '/backup/1/overview/',
   },
   {
-    permission: 'module_docker_enabled',
+    route: '/developer',
     labelKey: 'landing_module_docker',
     target: '/developer/docker/',
   },
   {
-    permission: 'module_admin_enabled',
+    route: '/admin/panel/',
     labelKey: 'landing_module_admin',
     target: '/admin/panel/',
   },
@@ -50,10 +52,10 @@ const LandingPage = () => {
   const auth = useAuth();
   const { t } = useTranslation();
   const { hasPermission, isLoading, permissions } = usePermissions();
+  const { can } = useAccess();
 
-  const availableModules = React.useMemo(
-    () => LANDING_MODULES.filter((module) => hasPermission(module.permission)),
-    [hasPermission],
+  const availableModules = LANDING_MODULES.filter((module) =>
+    can(routeRule(module.route)),
   );
 
   useEffect(() => {
@@ -119,7 +121,7 @@ const LandingPage = () => {
               <Card.Text>{t('landing_select_description')}</Card.Text>
               {availableModules.map((module) => (
                 <Button
-                  key={module.permission}
+                  key={module.route}
                   className="me-2 mb-2"
                   onClick={() => auth.navigate(module.target)}
                 >

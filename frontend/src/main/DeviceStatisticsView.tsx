@@ -25,6 +25,7 @@ import {
 } from '../components/ui/Snackbar.jsx';
 import { formatDate, formatRelativeTime } from './dateFormat';
 import { plotTheme } from '../styles/plotTheme';
+import { staffFlags } from './access';
 
 /** A row of GET /v1/status/device_statistics/ - devices.* and by_type values. */
 type StatisticsDevice = {
@@ -682,12 +683,7 @@ const TypePieChart = ({
 const DeviceStatisticsView = () => {
   const auth = useAuth();
   const { t } = useTranslation();
-  const user = auth?.user as
-    | { is_staff?: boolean; is_superuser?: boolean }
-    | null
-    | undefined;
-  const isStaff = Boolean(user?.is_staff || user?.is_superuser);
-  const isSuperuser = Boolean(user?.is_superuser);
+  const { isStaffOrSuperuser: isStaff, isSuperuser } = staffFlags(auth?.user);
   const { enqueueSnackbar } = useSnackbar();
 
   // One response per requested API section. The base UI renders before any of

@@ -21,6 +21,7 @@ import {
   type EscalationStatus,
   type StaffUser,
 } from './escalations';
+import { staffFlags } from './access';
 
 type StateFilter = 'open' | 'closed' | 'all';
 
@@ -39,8 +40,7 @@ const EscalationsView = () => {
   const navigate = useNavigate();
   const { id } = useParams();
   const selectedId = id ? Number(id) : null;
-  const user = auth?.user as { is_staff?: boolean; is_superuser?: boolean } | null;
-  const isStaff = Boolean(user?.is_staff || user?.is_superuser);
+  const isStaff = staffFlags(auth?.user).isStaffOrSuperuser;
 
   const [filter, setFilter] = useState<StateFilter>('open');
   const [list, setList] = useState<Escalation[] | null>(null);

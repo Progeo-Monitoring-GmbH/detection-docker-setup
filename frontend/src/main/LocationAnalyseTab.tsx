@@ -29,6 +29,7 @@ import {
   type TimeRange,
 } from './timeRanges';
 import useMeasurementRange from './useMeasurementRange';
+import { staffFlags } from './access';
 
 /** Most measurements per period - spread evenly over it by the backend (?days=). */
 const MAX_MEASUREMENTS = 300;
@@ -74,8 +75,7 @@ const LocationAnalyseTab = () => {
   const { enqueueSnackbar } = useSnackbar();
   const { t } = useTranslation();
   // Battery charts are device maintenance - staff (and superusers) only.
-  const authUser = auth?.user as { is_staff?: boolean; is_superuser?: boolean } | null;
-  const isStaff = Boolean(authUser?.is_staff || authUser?.is_superuser);
+  const isStaff = staffFlags(auth?.user).isStaffOrSuperuser;
 
   // One period for the heatmap and the charts (also LoRaWAN's); an
   // unavailable selection falls back to the longest offered one.

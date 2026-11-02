@@ -57,6 +57,7 @@ import { useLocationHistory } from './useLocationHistory';
 import { useMeasurementRangeState } from './useMeasurementRange';
 import { isDemoUser } from './demo';
 import { formatDate } from './dateFormat';
+import { staffFlags } from './access';
 
 type LocationStatusViewProps = {
   location: LocationDetail | null;
@@ -375,8 +376,7 @@ const LocationStatusView = ({
   // effects (a measurement request reaches the devices).
   const readOnlyDemo = demo || isDemoUser(auth.user);
   // Battery charts are device maintenance - staff (and superusers) only.
-  const authUser = auth?.user as { is_staff?: boolean; is_superuser?: boolean } | null;
-  const isStaff = !demo && Boolean(authUser?.is_staff || authUser?.is_superuser);
+  const isStaff = !demo && staffFlags(auth?.user).isStaffOrSuperuser;
 
   const [statusView, setStatusView] = useState<'roof' | 'zeitreihe'>('roof');
   // The range of both views - the plan's frames and the Zeitreihe.

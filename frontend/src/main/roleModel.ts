@@ -1,5 +1,6 @@
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import usePermissions from '../../hooks/usePermissions';
+import { staffFlags } from './access';
 
 export type ProgeoRole = 'progeo-admin' | 'kundenadmin' | 'nutzer';
 
@@ -17,15 +18,12 @@ export type ProgeoRole = 'progeo-admin' | 'kundenadmin' | 'nutzer';
 export const useProgeoRole = (): ProgeoRole => {
   const auth = useAuth();
   const { hasPermission } = usePermissions();
-  const user = auth?.user as {
-    is_staff?: boolean;
-    is_superuser?: boolean;
-  } | null;
+  const { isStaff, isSuperuser } = staffFlags(auth?.user);
 
-  if (user?.is_superuser) {
+  if (isSuperuser) {
     return 'progeo-admin';
   }
-  if (user?.is_staff || hasPermission('module_locations_edit')) {
+  if (isStaff || hasPermission('module_locations_edit')) {
     return 'kundenadmin';
   }
   return 'nutzer';

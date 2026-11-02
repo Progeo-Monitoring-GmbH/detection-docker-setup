@@ -23,6 +23,7 @@ import KpiStrip from '../components/ui/kit/KpiStrip';
 import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
+import { staffFlags } from './access';
 
 type HashKind = 'project' | 'mac' | 'legacy';
 
@@ -175,10 +176,7 @@ const DeviceListView = () => {
   const { hasPermission } = usePermissions();
   const [searchParams, setSearchParams] = useSearchParams();
   // Identify and ping are staff tools (is_staff_admin in the backend).
-  const isStaff = Boolean(
-    (auth?.user as { is_staff?: boolean; is_superuser?: boolean } | null)?.is_staff ||
-      (auth?.user as { is_superuser?: boolean } | null)?.is_superuser,
-  );
+  const isStaff = staffFlags(auth?.user).isStaffOrSuperuser;
   const canEdit = hasPermission('module_devices_edit');
   const canDelete = hasPermission('module_devices_delete');
 

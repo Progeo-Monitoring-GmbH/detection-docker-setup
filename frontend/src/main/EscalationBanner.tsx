@@ -9,6 +9,7 @@ import axiosConfig from '../axiosConfig';
 import { showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import EscalationStatusBadge from './EscalationStatusBadge';
 import { ESCALATION_URL, escalationPath, type Escalation, type StaffUser } from './escalations';
+import { staffFlags } from './access';
 
 /**
  * Staff and superusers only, at the top of the project portal: whether the
@@ -19,10 +20,7 @@ import { ESCALATION_URL, escalationPath, type Escalation, type StaffUser } from 
 const EscalationBanner = ({ locationId }: { locationId: number }) => {
   const { t } = useTranslation();
   const auth = useAuth();
-  const isStaff = Boolean(
-    (auth?.user as { is_staff?: boolean; is_superuser?: boolean } | null)?.is_staff ||
-      (auth?.user as { is_superuser?: boolean } | null)?.is_superuser,
-  );
+  const isStaff = staffFlags(auth?.user).isStaffOrSuperuser;
   // The location's open escalation (null: none) - undefined until it is known.
   const [loaded, setLoaded] = useState<{ locationId: number; escalation: Escalation | null } | null>(null);
   const [creating, setCreating] = useState(false);

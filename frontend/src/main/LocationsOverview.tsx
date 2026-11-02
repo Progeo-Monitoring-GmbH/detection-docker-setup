@@ -16,6 +16,7 @@ import FavoriteStar from './FavoriteStar';
 import LocationEditModal, {
   type LocationEditRow,
 } from '../components/modal/LocationEditModal.tsx';
+import { staffFlags } from './access';
 
 type LocationRow = LocationEditRow & {
   measurement_count?: number;
@@ -274,8 +275,7 @@ const LocationsOverview = () => {
   // Deleting goes through the Django admin, which needs a staff account on
   // top of the module permission.
   const canDelete =
-    hasPermission('module_locations_delete') &&
-    Boolean((auth?.user as { is_staff?: boolean } | null)?.is_staff);
+    hasPermission('module_locations_delete') && staffFlags(auth?.user).isStaff;
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
   // Only auto-forward on the very first load (an account with a single
