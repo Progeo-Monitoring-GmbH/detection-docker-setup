@@ -186,9 +186,31 @@ const KEY_BADGE: React.CSSProperties = {
 /** Mouse travel (px) up to which a press on the plan still counts as a click. */
 const CLICK_TOLERANCE = 4;
 
+/** Delay (ms) after the last change of the alignment before it is stored. */
+const ALIGN_STORE_DELAY = 600;
+
 /** Click tools: pan (default), place the metric reference point, or pick
- * the two points of a known distance for the meters-per-pixel calibration. */
+ * the two points of a known distance for the meters-per-pixel calibration
+ * (picked only while C is held - plain presses still pan). */
 type CanvasTool = 'pan' | 'reference' | 'calibrate';
+/** Held keys that change what a press on the plan does: A drags sensors to
+ * align, R sets the reference point, C picks a calibration point. */
+type HeldKey = 'a' | 'r' | 'c';
+const HELD_KEYS: HeldKey[] = ['a', 'r', 'c'];
+
+type AlignmentValues = {
+  offsetX: number;
+  offsetY: number;
+  scaleX: number;
+  scaleY: number;
+  flipY: boolean;
+};
+const sameAlignment = (a: AlignmentValues, b: AlignmentValues) =>
+  a.offsetX === b.offsetX &&
+  a.offsetY === b.offsetY &&
+  a.scaleX === b.scaleX &&
+  a.scaleY === b.scaleY &&
+  a.flipY === b.flipY;
 
 export type PlanScaleValues = {
   reference_x?: number;
@@ -222,13 +244,8 @@ type ImageCanvasStageProps = {
   /** sensor_order of each device's pair 1 (ProgeoDevice.first_sensor_order), by id. */
   devicePairStarts?: Record<number, number>;
   withSliders?: boolean;
-  onSaveSliders?: (values: {
-    offsetX: number;
-    offsetY: number;
-    scaleX: number;
-    scaleY: number;
-    flipY: boolean;
-  }) => void;
+  /** Stores the alignment - called by itself shortly after it changed. */
+  onSaveSliders?: (values: AlignmentValues) => void;
   /** Stores the metric scale (reference point in image pixels, m/px). */
   onSaveScale?: (values: PlanScaleValues) => void;
   placement?: SensorPlacement;
@@ -277,10 +294,18 @@ const ImageCanvasStage = ({
     sourceMeta?.flip_y ?? true,
   );
   const [tool, setTool] = useState<CanvasTool>('pan');
-  const [referencePoint, setReferencePoint] = useState<ImagePoint | null>(null);
+  // Taken from sourceMeta once: a different plan mounts anew (key), and a
+  // stored scale or alignment must not reset what else is being edited.
+  const [referencePoint, setReferencePoint] = useState<ImagePoint | null>(() =>
+    sourceMeta?.reference_x != null && sourceMeta.reference_y != null
+      ? [sourceMeta.reference_x, sourceMeta.reference_y]
+      : null,
+  );
   const [calibrationPoints, setCalibrationPoints] = useState<ImagePoint[]>([]);
   const [calibrationMeters, setCalibrationMeters] = useState('');
-  const [metersPerPixel, setMetersPerPixel] = useState('');
+  const [metersPerPixel, setMetersPerPixel] = useState(() =>
+    sourceMeta?.meters_per_pixel ? String(sourceMeta.meters_per_pixel) : '',
+  );
   // The sensor under the mouse (index into items) and the mouse position
   // over the canvas in CSS pixels, for its tooltip.
   const [hover, setHover] = useState<{ index: number; x: number; y: number } | null>(null);
@@ -289,17 +314,12 @@ const ImageCanvasStage = ({
   // the alignment is computed (alignmentFit); the values before are restored
   // on cancel. alignDrag: the sensor being dragged, the grabbed point on it
   // (normalized) and the mouse (canvas units).
-  const [alignKey, setAlignKey] = useState(false);
+  const [heldKey, setHeldKey] = useState<HeldKey | null>(null);
+  const alignKey = heldKey === 'a';
   const [pins, setPins] = useState<Array<AlignPin & { index: number }>>([]);
   const [alignDrag, setAlignDrag] = useState<{ index: number; source: ImagePoint; at: ImagePoint } | null>(null);
   const aligning = pins.length > 0 || alignDrag != null;
-  const [alignBefore, setAlignBefore] = useState<{
-    offsetX: number;
-    offsetY: number;
-    scaleX: number;
-    scaleY: number;
-    flipY: boolean;
-  } | null>(null);
+  const [alignBefore, setAlignBefore] = useState<AlignmentValues | null>(null);
 
   // Shown width of the canvas (CSS pixels): it is drawn at that size times
   // the device pixel ratio; sizes of markers and labels are screen pixels.
@@ -355,22 +375,25 @@ const ImageCanvasStage = ({
 
   // Point calibration with the sliders' panel (alignment editable), not while placing sensors.
   const canAlign = withSliders && !placement && image != null && items.length >= ALIGN_PINS;
-  // A (no modifier, not typing) held: drags pin sensors; released on keyup or leaving the window.
+  // Reference point and calibration with the scale panel.
+  const canScale = withSliders && onSaveScale != null && image != null;
+  // A/R/C (no modifier, not typing) held: what a press on the plan does;
+  // released on keyup or leaving the window.
   useEffect(() => {
     const typing = (target: EventTarget | null) =>
       target instanceof HTMLElement &&
       (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() === 'a' && !event.ctrlKey && !event.metaKey && !event.altKey && !typing(event.target)) {
-        setAlignKey(true);
+      const key = event.key.toLowerCase() as HeldKey;
+      if (HELD_KEYS.includes(key) && !event.ctrlKey && !event.metaKey && !event.altKey && !typing(event.target)) {
+        setHeldKey(key);
       }
     };
     const onKeyUp = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() === 'a') {
-        setAlignKey(false);
-      }
+      const key = event.key.toLowerCase();
+      setHeldKey((current) => (current === key ? null : current));
     };
-    const release = () => setAlignKey(false);
+    const release = () => setHeldKey(null);
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('blur', release);
@@ -701,27 +724,6 @@ const ImageCanvasStage = ({
     zoom,
   ]);
 
-  useEffect(() => {
-    if (sourceMeta) {
-      setPointOffsetX(sourceMeta.offset_x ?? 0);
-      setPointOffsetY(sourceMeta.offset_y ?? 0);
-      setPointScaleX(sourceMeta.scale_x ?? 1);
-      setPointScaleY(sourceMeta.scale_y ?? 1);
-      setIsVerticallyFlipped(sourceMeta.flip_y ?? true);
-      setReferencePoint(
-        sourceMeta.reference_x != null && sourceMeta.reference_y != null
-          ? [sourceMeta.reference_x, sourceMeta.reference_y]
-          : null,
-      );
-      setMetersPerPixel(
-        sourceMeta.meters_per_pixel ? String(sourceMeta.meters_per_pixel) : '',
-      );
-      setCalibrationPoints([]);
-      setCalibrationMeters('');
-      setTool('pan');
-    }
-  }, [sourceMeta]);
-
   // Two picked points + their real distance -> meters per image pixel.
   const calibrationPixels =
     calibrationPoints.length === 2
@@ -1048,7 +1050,7 @@ const ImageCanvasStage = ({
     pressRef.current = null;
     // A held: a press on a sensor drags it to its place (elsewhere it pans);
     // the first one remembers the alignment before, for "Cancel".
-    if (alignKey && canAlign && tool === 'pan') {
+    if (alignKey && canAlign && tool !== 'reference') {
       const grabbed = grabAt(event);
       if (grabbed) {
         if (!aligning) {
@@ -1065,6 +1067,26 @@ const ImageCanvasStage = ({
         return;
       }
     }
+    // R held (or the reference tool): a press sets the reference point.
+    if (canScale && (heldKey === 'r' || tool === 'reference')) {
+      const point = imagePointAt(event);
+      if (point) {
+        setReferencePoint(point);
+        setTool('pan');
+      }
+      return;
+    }
+    // C held: a press picks a calibration point - a third starts a new measurement.
+    if (canScale && heldKey === 'c') {
+      const point = imagePointAt(event);
+      if (point) {
+        setTool('calibrate');
+        setCalibrationPoints((current) =>
+          current.length >= 2 ? [point] : [...current, point],
+        );
+      }
+      return;
+    }
     if (placement && tool === 'pan') {
       const sensor = sensorAt(event);
       if (sensor) {
@@ -1074,22 +1096,6 @@ const ImageCanvasStage = ({
       }
       pressRef.current = { x: event.clientX, y: event.clientY };
     }
-    if (tool !== 'pan') {
-      const point = imagePointAt(event);
-      if (!point) {
-        return;
-      }
-      if (tool === 'reference') {
-        setReferencePoint(point);
-        setTool('pan');
-      } else {
-        // A third click starts a new measurement.
-        setCalibrationPoints((current) =>
-          current.length >= 2 ? [point] : [...current, point],
-        );
-      }
-      return;
-    }
     dragRef.current = {
       startX: event.clientX,
       startY: event.clientY,
@@ -1098,14 +1104,7 @@ const ImageCanvasStage = ({
     };
   };
 
-  const storeAlignment = (flipY: boolean) => {
-    const values = {
-      offsetX: pointOffsetX,
-      offsetY: pointOffsetY,
-      scaleX: pointScaleX,
-      scaleY: pointScaleY,
-      flipY,
-    };
+  const storeAlignment = (values: AlignmentValues) => {
     if (onSaveSliders) {
       onSaveSliders(values);
       return;
@@ -1126,6 +1125,41 @@ const ImageCanvasStage = ({
       () => {},
     );
   };
+
+  // The alignment (sliders, flip, pins) is stored by itself, a moment after
+  // the last change; one still pending is stored when the plan is left.
+  const storedAlignRef = useRef<AlignmentValues>({
+    offsetX: sourceMeta?.offset_x ?? 0,
+    offsetY: sourceMeta?.offset_y ?? 0,
+    scaleX: sourceMeta?.scale_x ?? 1,
+    scaleY: sourceMeta?.scale_y ?? 1,
+    flipY: sourceMeta?.flip_y ?? true,
+  });
+  const pendingAlignRef = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    const values: AlignmentValues = {
+      offsetX: pointOffsetX,
+      offsetY: pointOffsetY,
+      scaleX: pointScaleX,
+      scaleY: pointScaleY,
+      flipY: isVerticallyFlipped,
+    };
+    if (!withSliders || sameAlignment(values, storedAlignRef.current)) {
+      pendingAlignRef.current = null;
+      return undefined;
+    }
+    const store = () => {
+      pendingAlignRef.current = null;
+      storedAlignRef.current = values;
+      storeAlignment(values);
+    };
+    pendingAlignRef.current = store;
+    const timer = window.setTimeout(store, ALIGN_STORE_DELAY);
+    return () => window.clearTimeout(timer);
+    // storeAlignment changes every render - the values decide.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [withSliders, pointOffsetX, pointOffsetY, pointScaleX, pointScaleY, isVerticallyFlipped]);
+  useEffect(() => () => pendingAlignRef.current?.(), []);
 
   const sliders: Array<{
     id: string;
@@ -1259,7 +1293,9 @@ const ImageCanvasStage = ({
               background: 'var(--progeo-surface)',
               boxShadow: 'inset 0 0 0 1px rgba(11, 54, 89, 0.08)',
               cursor:
-                tool !== 'pan' || placement?.activeDeviceId != null
+                tool === 'reference' ||
+                placement?.activeDeviceId != null ||
+                (canScale && (heldKey === 'r' || heldKey === 'c'))
                   ? 'crosshair'
                   : dragRef.current || alignDrag
                     ? 'grabbing'
@@ -1280,7 +1316,7 @@ const ImageCanvasStage = ({
             resetDisabled={zoom === 1 && offsetX === 0 && offsetY === 0}
           />
           <WheelZoomHint visible={wheelHint} />
-          {alignKey && canAlign && (
+          {((alignKey && canAlign) || (canScale && (heldKey === 'r' || heldKey === 'c'))) && (
             <div
               aria-live="polite"
               style={{
@@ -1300,7 +1336,11 @@ const ImageCanvasStage = ({
                 whiteSpace: 'nowrap',
               }}
             >
-              Align: drag a {lineMode ? 'dm line' : 'sensor'} onto its right place
+              {heldKey === 'r'
+                ? 'Reference point: click it on the plan'
+                : heldKey === 'c'
+                  ? `Calibrate: click ${calibrationPoints.length === 1 ? 'the second' : 'the first'} point of a known distance`
+                  : `Align: drag a ${lineMode ? 'dm line' : 'sensor'} onto its right place`}
             </div>
           )}
           {hover && hoveredItem && (
@@ -1372,7 +1412,7 @@ const ImageCanvasStage = ({
               ? placement.activeDeviceId != null
                 ? `Click on the plan to place ${placement.activeLabel ?? 'the selected sensor'} · drag points to move them`
                 : 'Select a sensor in step 3 · drag points to move them'
-              : `Drag to pan · Ctrl + scroll or the buttons to zoom · hover a sensor for details${canAlign ? ' · hold A + drag a sensor to align' : ''}`}
+              : `Drag to pan · Ctrl + scroll or the buttons to zoom · hover a sensor for details${canAlign ? ' · hold A + drag a sensor to align' : ''}${canScale ? ' · hold R + click: reference point · hold C + click: calibrate' : ''}`}
           </span>
         </div>
 
@@ -1412,7 +1452,8 @@ const ImageCanvasStage = ({
             <div>
               <div style={{ fontSize: 13.5, fontWeight: 500 }}>Alignment</div>
               <div style={{ fontSize: 12, color: MUTED }}>
-                Moves and scales the measure points onto the plan.
+                Moves and scales the measure points onto the plan - stored
+                automatically.
               </div>
             </div>
             <div className="ms-auto d-flex gap-2">
@@ -1421,23 +1462,10 @@ const ImageCanvasStage = ({
                 className={`btn btn-sm ${isVerticallyFlipped ? 'btn-secondary' : 'btn-outline-secondary'}`}
                 style={PILL_BUTTON}
                 aria-pressed={isVerticallyFlipped}
-                onClick={() => {
-                  setIsVerticallyFlipped((current) => !current);
-                  storeAlignment(!isVerticallyFlipped);
-                }}
+                onClick={() => setIsVerticallyFlipped((current) => !current)}
               >
                 Vertical flip
               </button>
-              {onSaveSliders && !aligning && (
-                <button
-                  type="button"
-                  className="btn btn-sm btn-primary"
-                  style={PILL_BUTTON}
-                  onClick={() => storeAlignment(isVerticallyFlipped)}
-                >
-                  Store alignment
-                </button>
-              )}
             </div>
           </div>
 
@@ -1470,7 +1498,7 @@ const ImageCanvasStage = ({
                   {alignProblem && pins.length >= ALIGN_PINS
                     ? alignProblem
                     : alignError != null
-                      ? `Computed from the pins - off by at most ${alignError.toFixed(1)} px of the plan. Hold A and drag more to refine, or store it.`
+                      ? `Computed from the pins (stored) - off by at most ${alignError.toFixed(1)} px of the plan. Hold A and drag more to refine.`
                       : `Hold A and drag one more ${lineMode ? 'dm line' : 'sensor'} onto its place, far from the first. Dragging one again moves its pin.`}
                 </div>
               </div>
@@ -1481,13 +1509,9 @@ const ImageCanvasStage = ({
                 type="button"
                 className="btn btn-sm btn-primary"
                 style={PILL_BUTTON}
-                disabled={alignError == null}
-                onClick={() => {
-                  stopAligning(false);
-                  storeAlignment(isVerticallyFlipped);
-                }}
+                onClick={() => stopAligning(false)}
               >
-                Store alignment
+                Done
               </button>
             </div>
           )}
@@ -1563,6 +1587,11 @@ const ImageCanvasStage = ({
                   ? `at pixel (${Math.round(referencePoint[0])}, ${Math.round(referencePoint[1])})`
                   : 'not set'}
             </span>
+            {tool !== 'reference' && (
+              <span className="d-flex align-items-center gap-1" style={{ fontSize: 12, color: MUTED }}>
+                · or hold <kbd style={KEY_BADGE}>R</kbd> and click
+              </span>
+            )}
           </div>
 
           <div className="d-flex flex-wrap align-items-center gap-2">
@@ -1579,10 +1608,10 @@ const ImageCanvasStage = ({
             >
               Calibrate
             </button>
-            {tool === 'calibrate' && calibrationPixels == null && (
-              <span style={{ fontSize: 12, color: MUTED }}>
-                Click two points with a known distance (
-                {calibrationPoints.length}/2).
+            {calibrationPixels == null && (
+              <span className="d-flex align-items-center gap-1" style={{ fontSize: 12, color: MUTED }}>
+                Hold <kbd style={KEY_BADGE}>C</kbd> and click two points with a known distance
+                {tool === 'calibrate' ? ` (${calibrationPoints.length}/2)` : ''}.
               </span>
             )}
             {calibrationPixels != null && (
