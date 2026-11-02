@@ -28,6 +28,7 @@ class Command(BaseCommand):
         parser.add_argument("--bundle", help="This bundle instead of the newest (file name).")
         parser.add_argument("--apply", action="store_true", help="Restore the unpacked dumps (default: dry run).")
         parser.add_argument("--noinput", action="store_true", help="Do not ask for confirmation.")
+        parser.add_argument("--workers", type=int, help="Databases restored in parallel (see restore_backups).")
 
     def handle(self, *args, **options):
         import_dir = settings.STAGING_IMPORT_DIR
@@ -48,9 +49,9 @@ class Command(BaseCommand):
             dumps = unpack(os.path.join(import_dir, name))
         except TransferError as exc:
             raise CommandError(str(exc)) from exc
-        removed = [old for database in dumps
-                   for old in clean_old_dumps(settings.BACKUP_DIR, database, settings.DBBACKUP_CLEANUP_KEEP)]
+        removed = clean_old_dumps(settings.BACKUP_DIR, dumps, settings.DBBACKUP_CLEANUP_KEEP)
         ilog(f"Unpacked {len(dumps)} dumps of {name}; older dumps removed: {len(removed)}")
 
+        restore = {"workers": options["workers"]} if options["workers"] else {}
         call_command("restore_backups", apply=options["apply"], noinput=options["noinput"], dumps=dumps,
-                     stdout=self.stdout, stderr=self.stderr)
+                     stdout=self.stdout, stderr=self.stderr, **restore)

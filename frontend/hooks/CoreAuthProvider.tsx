@@ -16,6 +16,12 @@ import { isDemoUser, setDemoToken } from '../src/main/demo';
 import { clearImpersonation } from '../src/main/impersonation';
 import { otpReason, OtpReason } from '../src/main/twoFactor';
 import {
+  asNormalUser,
+  isStaffAccount,
+  readViewAsUser,
+  storeViewAsUser,
+} from '../src/main/viewAsUser';
+import {
   clearStoredTokens,
   onTokensRefreshed,
   readStoredTokens,
@@ -48,7 +54,17 @@ export interface AuthContextType {
   token: string;
   /** Sent along with password/2FA changes - this device stays logged in. */
   refreshToken: string;
+  /**
+   * The JWT's claims - without is_staff/is_superuser while a staff member
+   * views the portal as a normal user (viewAsUser), so staff checks need
+   * nothing else.
+   */
   user: User | null;
+  /** The real user is staff/superuser: may switch to the normal-user view. */
+  canViewAsUser: boolean;
+  /** "Show as normal user" is on (TopBar). */
+  viewAsUser: boolean;
+  setViewAsUser: (on: boolean) => void;
   refreshApi: (refreshToken: string) => Promise<AuthRefresh>;
   loginAction: (
     data: AuthCredentials,
@@ -81,6 +97,9 @@ const defaultAuthContextValue: AuthContextType = {
   token: '',
   refreshToken: '',
   user: null,
+  canViewAsUser: false,
+  viewAsUser: false,
+  setViewAsUser: () => {},
   refreshApi: (t) => refreshApi(t),
   loginAction: async () => 'failed',
   loginWithTokens: () => {},
@@ -101,6 +120,7 @@ const CoreAuthProvider = ({ children }) => {
     () => readStoredTokens().refresh,
   );
   const [user, setUser] = useState<User | null>(null);
+  const [viewAsUser, setViewAsUserState] = useState(readViewAsUser);
   const location = useLocation();
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
@@ -148,6 +168,11 @@ const CoreAuthProvider = ({ children }) => {
     return () => window.clearInterval(timer);
   }, [token]);
 
+  const setViewAsUser = useCallback((on: boolean) => {
+    storeViewAsUser(on);
+    setViewAsUserState(on);
+  }, []);
+
   const getCurrentUrl = () => {
     return location.pathname;
   };
@@ -169,6 +194,7 @@ const CoreAuthProvider = ({ children }) => {
         setRefreshToken('');
         clearStoredTokens();
         clearImpersonation();
+        setViewAsUser(false);
         if (wasDemo) {
           // Leaving the demo: no way (and no reason) to come back to it via the login form.
           setDemoToken(null);
@@ -180,7 +206,7 @@ const CoreAuthProvider = ({ children }) => {
         }
       }
     },
-    [navigate, refreshToken, user],
+    [navigate, refreshToken, user, setViewAsUser],
   );
 
   const loginAction = useCallback(
@@ -194,6 +220,7 @@ const CoreAuthProvider = ({ children }) => {
         setToken(newToken);
         setRefreshToken(response.data.refresh);
         clearImpersonation();
+        setViewAsUser(false);
 
         if (forward) {
           navigate(forward);
@@ -214,7 +241,7 @@ const CoreAuthProvider = ({ children }) => {
         return 'failed';
       }
     },
-    [navigate, logoutAction], // depends on logoutAction as it is defined below
+    [navigate, logoutAction, setViewAsUser], // depends on logoutAction as it is defined below
   );
 
   const loginWithTokens = useCallback((access: string, refresh: string) => {
@@ -227,11 +254,19 @@ const CoreAuthProvider = ({ children }) => {
   // effects that depend on `auth` - a new object on every render of the
   // provider made them request it again.
   const pathname = location.pathname;
+  const canViewAsUser = isStaffAccount(user);
+  const shownUser = useMemo(
+    () => (user && canViewAsUser && viewAsUser ? asNormalUser(user) : user),
+    [user, canViewAsUser, viewAsUser],
+  );
   const value = useMemo(
     () => ({
       token,
       refreshToken,
-      user,
+      user: shownUser,
+      canViewAsUser,
+      viewAsUser: canViewAsUser && viewAsUser,
+      setViewAsUser,
       refreshApi: () => refreshApi(refreshToken),
       loginAction,
       loginWithTokens,
@@ -239,7 +274,19 @@ const CoreAuthProvider = ({ children }) => {
       navigate: (to, options) => navigate(to, options),
       location: pathname,
     }),
-    [token, user, refreshToken, loginAction, loginWithTokens, logoutAction, navigate, pathname],
+    [
+      token,
+      shownUser,
+      canViewAsUser,
+      viewAsUser,
+      setViewAsUser,
+      refreshToken,
+      loginAction,
+      loginWithTokens,
+      logoutAction,
+      navigate,
+      pathname,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

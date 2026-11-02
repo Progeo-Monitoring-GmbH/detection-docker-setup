@@ -220,8 +220,22 @@ class UserModulePermissionView(APIView):
             "enabled": enabled,
         }
 
+    @staticmethod
+    def _as_normal_user(user):
+        """`user` without the superuser shortcut (has_perm is always true for
+        a superuser) - for the portal's "show as normal user" view. A fresh
+        instance: the permission caches of `user` were filled as superuser."""
+        if not user.is_superuser:
+            return user
+        plain = User.objects.get(pk=user.pk)
+        plain.is_superuser = False
+        return plain
+
     def get(self, request, *args, **kwargs):
-        return RequestSuccess(self._permission_payload(request.user))
+        user = request.user
+        if request.GET.get("as_user"):
+            user = self._as_normal_user(user)
+        return RequestSuccess(self._permission_payload(user))
 
     def post(self, request, *args, **kwargs):
         if not request.user.is_staff and not request.user.is_superuser:

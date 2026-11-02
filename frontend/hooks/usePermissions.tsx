@@ -24,6 +24,7 @@ const EMPTY_PERMISSIONS: ModulePermissionPayload = {
   enabled: [],
 };
 
+// Token and view (see viewAsUser) the cached payload belongs to.
 let cachedToken = '';
 let cachedPermissionPayload: ModulePermissionPayload | null = null;
 let pendingPermissionRequest: Promise<ModulePermissionPayload> | null = null;
@@ -144,34 +145,50 @@ const clearPermissionsCache = () => {
   pendingPermissionRequest = null;
 };
 
+/**
+ * The token plus the view: as a normal user (viewAsUser) a superuser gets
+ * only the permissions granted to it, not all of them.
+ */
+const permissionCacheKey = (auth: AuthContextType, token: string) =>
+  token && auth?.viewAsUser ? `${token}|as_user` : token;
+
 const fetchPermissionPayload = async (auth: AuthContextType, token: string) => {
+  const cacheKey = permissionCacheKey(auth, token);
   if (!token) {
     clearPermissionsCache();
     return EMPTY_PERMISSIONS;
   }
 
-  if (cachedPermissionPayload && cachedToken === token) {
+  if (cachedPermissionPayload && cachedToken === cacheKey) {
     return cachedPermissionPayload;
   }
 
-  if (pendingPermissionRequest && cachedToken === token) {
+  if (pendingPermissionRequest && cachedToken === cacheKey) {
     return pendingPermissionRequest;
   }
 
-  cachedToken = token;
+  cachedToken = cacheKey;
+  cachedPermissionPayload = null;
   pendingPermissionRequest = new Promise((resolve, reject) => {
     axiosConfig.perform_get(
       auth,
-      '/api/auth-support/module-permissions/',
+      auth?.viewAsUser
+        ? '/api/auth-support/module-permissions/?as_user=1'
+        : '/api/auth-support/module-permissions/',
       (response: { data?: PermissionResponsePayload }) => {
         const nextPayload = normalizePermissionPayload(response?.data);
-        cachedPermissionPayload = nextPayload;
-        pendingPermissionRequest = null;
+        // The view may have been switched meanwhile - keep its cache.
+        if (cachedToken === cacheKey) {
+          cachedPermissionPayload = nextPayload;
+          pendingPermissionRequest = null;
+        }
         resolve(nextPayload);
       },
       (error) => {
-        pendingPermissionRequest = null;
-        cachedPermissionPayload = null;
+        if (cachedToken === cacheKey) {
+          pendingPermissionRequest = null;
+          cachedPermissionPayload = null;
+        }
         reject(error);
       },
     );
@@ -183,6 +200,7 @@ const fetchPermissionPayload = async (auth: AuthContextType, token: string) => {
 const usePermissions = () => {
   const auth = useAuth();
   const token = auth?.token || '';
+  const cacheKey = permissionCacheKey(auth, token);
   const isAdmin = Boolean(
     (auth?.user as { is_superuser?: boolean } | null)?.is_superuser,
   );
@@ -204,7 +222,7 @@ const usePermissions = () => {
       };
     }
 
-    if (cachedPermissionPayload && cachedToken === token) {
+    if (cachedPermissionPayload && cachedToken === cacheKey) {
       setPermissionPayload(cachedPermissionPayload);
       setIsLoading(false);
       setError(null);
@@ -238,7 +256,7 @@ const usePermissions = () => {
     return () => {
       isMounted = false;
     };
-  }, [auth, token]);
+  }, [auth, token, cacheKey]);
 
   const permissions = permissionPayload.permissions;
 

@@ -445,3 +445,15 @@ def test_only_dump_files_are_unpacked(gpg_key, private_key, tmp_path):
         bi.unpack(str(bundle), str(out), str(private_key), "")
     assert os.listdir(out) == []  # the first dump is removed again
     assert not (tmp_path / "default-srv-2026-10-26-235302.psql.gz").exists()
+
+
+def test_clean_old_dumps_of_several_databases_in_one_scan(tmp_path):
+    for database in ("default", "5180", "5181"):
+        for day in range(20, 25):
+            (tmp_path / f"{database}-host-2026-10-{day}-015300.psql.gz").write_bytes(b"x")
+
+    removed = bt.clean_old_dumps(str(tmp_path), {"5180": "a.psql.gz", "5181": "b.psql.gz"}, keep=2)
+
+    assert sorted(removed) == sorted(f"{database}-host-2026-10-{day}-015300.psql.gz"
+                                     for database in ("5180", "5181") for day in range(20, 23))
+    assert len(os.listdir(tmp_path)) == 5 + 2 + 2

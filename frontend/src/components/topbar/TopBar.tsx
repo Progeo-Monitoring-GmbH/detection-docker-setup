@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
-import { DoorOpen, InfoCircle } from 'react-bootstrap-icons';
+import { DoorOpen, Eye, InfoCircle, PersonGear } from 'react-bootstrap-icons';
 import { useAuth } from '../../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../../axiosConfig';
 import { UserProfileModal } from '../../main/UserProfile.tsx';
@@ -106,6 +106,25 @@ const TopBar = () => {
         >
           {t('demo_badge')}
         </span>
+      )}
+      {auth.canViewAsUser && (
+        <button
+          type="button"
+          onClick={() => auth.setViewAsUser(!auth.viewAsUser)}
+          title={auth.viewAsUser ? undefined : t('topbar_view_as_user_title')}
+          style={{
+            ...pillButtonStyle(true),
+            ...(auth.viewAsUser && {
+              background: 'var(--progeo-orange)',
+              color: '#fff',
+            }),
+          }}
+        >
+          {auth.viewAsUser ? <PersonGear size={16} /> : <Eye size={16} />}
+          {auth.viewAsUser
+            ? t('topbar_view_as_staff')
+            : t('topbar_view_as_user')}
+        </button>
       )}
       <div style={{ position: 'relative' }}>
         <button

@@ -1,12 +1,13 @@
 import os
 import time
+from contextlib import contextmanager
 
 import psycopg2
-from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.db import DEFAULT_DB_ALIAS, connections
 from psycopg2 import sql
 
+from progeo.dbbackup_connector import restore_file
 from progeo.helper.project_dbs import (
     _register_database,
     database_of_backup,
@@ -41,7 +42,8 @@ class Command(BaseCommand):
     help = (
         "Replace the databases of THIS server with the newest dump of each in "
         "BACKUP_DIR (media/backup), e.g. a live server's backups on a local "
-        "machine. Per database: drop it, create it empty, `dbrestore` the dump. "
+        "machine. Per database: drop it, create it empty, restore the dump with psql "
+        "(all databases are dropped and created first, then restored in parallel). "
         "Local project databases without a dump are dropped too; other databases "
         "without a dump (archives, demo, the template, ...) are left alone, and "
         "'unit_tests*' is never touched. Read only unless --apply, which asks "
@@ -63,8 +65,8 @@ class Command(BaseCommand):
         parser.add_argument("--apply", action="store_true", help="Drop and restore (default: only report).")
         parser.add_argument("--noinput", action="store_true", help="Do not ask for confirmation.")
         parser.add_argument("--db", action="append", dest="databases", help="Only this database (repeatable).")
-        parser.add_argument("--workers", type=int, default=4,
-                            help="Databases restored in parallel (default 4).")
+        parser.add_argument("--workers", type=int, default=os.cpu_count() or 4,
+                            help=f"Databases restored in parallel (default: the CPU count, {os.cpu_count() or 4} here).")
 
     def handle(self, *args, **options):
         dumps = options.get("dumps") or newest_dumps()
@@ -112,13 +114,34 @@ class Command(BaseCommand):
                 register_project_db(alias)
             else:
                 _register_database(alias)
-        for alias in orphans:
-            self._drop(alias)
-            self.stdout.write(f"dropped {alias}")
-        if DEFAULT_DB_ALIAS in restore:  # first: everything else references its rows
-            self._restore(DEFAULT_DB_ALIAS, restore[DEFAULT_DB_ALIAS])
-        others = [db for db in restore if db != DEFAULT_DB_ALIAS]
-        failed = [db for db, ok in zip(others, map_databases(
+        protected = [self._name(db) for db in [*orphans, *restore] if self._name(db).startswith(PROTECTED_PREFIX)]
+        if protected:
+            raise CommandError(f"Refusing to replace {protected}")
+        # All dropped and created here, one after another, before the restores:
+        # DROP DATABASE forces an immediate checkpoint - in the workers every
+        # one of them stalled behind flushing what the other restores wrote.
+        failed = []
+        with self._maintenance() as cursor:
+            for alias in orphans:
+                self._drop(cursor, alias)
+                self.stdout.write(f"dropped {alias}")
+            for alias in restore:
+                try:
+                    self._drop(cursor, alias, create=True)
+                except psycopg2.Error as exc:
+                    self.stdout.write(self.style.ERROR(f"{self._name(alias)}: drop/create failed: {exc!r}"))
+                    failed.append(alias)
+        self.stdout.write(f"Dropped {len(orphans)} and recreated {len(restore) - len(failed)} databases "
+                          f"in {time.monotonic() - started:.0f}s")
+
+        # default first: everything else references its rows
+        if (DEFAULT_DB_ALIAS in restore and DEFAULT_DB_ALIAS not in failed
+                and not self._restore(DEFAULT_DB_ALIAS, restore[DEFAULT_DB_ALIAS])):
+            failed.append(DEFAULT_DB_ALIAS)
+        # Largest first: a big dump started last would run on alone at the end
+        others = sorted((db for db in restore if db != DEFAULT_DB_ALIAS and db not in failed),
+                        key=lambda db: self._size(restore[db]), reverse=True)
+        failed += [db for db, ok in zip(others, map_databases(
             lambda db: self._restore(db, restore[db]), others, workers=max(1, options["workers"])
         ), strict=True) if not ok]
 
@@ -126,7 +149,7 @@ class Command(BaseCommand):
             f"Restored {len(restore) - len(failed)} of {len(restore)} databases in {time.monotonic() - started:.0f}s."
         ))
         if failed:
-            raise CommandError(f"Restore failed for: {failed}")
+            raise CommandError(f"Restore failed for: {sorted(failed)}")
 
     # ------------------------------------------------------------------ helpers
 
@@ -136,32 +159,27 @@ class Command(BaseCommand):
         configured = connections.settings.get(alias)
         return configured["NAME"] if configured else alias
 
+    @staticmethod
+    def _size(dump):
+        return os.path.getsize(os.path.join(BACKUP_DIR, dump))
+
     def _restore(self, alias, dump):
+        """psql the dump into the (new, empty) database; True if it worked."""
         name = self._name(alias)
-        if name.startswith(PROTECTED_PREFIX):
-            raise CommandError(f"Refusing to replace {name}")
+        started = time.monotonic()
         try:
-            self._drop(alias, create=True)
-            command =["dbrestore", f"--database={alias}", f"--input-filename={dump}", "--noinput"]
-            if dump.endswith(".gz"):
-                command.append("--uncompress")
-            call_command(*command)
-            self.stdout.write(f"restored {name} <- {dump}")
+            restore_file(alias, os.path.join(BACKUP_DIR, dump))
+            self.stdout.write(f"restored {name} <- {dump} in {time.monotonic() - started:.1f}s")
             return True
         except Exception as exc:  # noqa: BLE001 - one broken dump must not stop the others
             self.stdout.write(self.style.ERROR(f"{name}: restore failed: {exc!r}"))
             return False
-        finally:
-            if alias in connections.settings:
-                connections[alias].close()
 
-    def _drop(self, alias, create=False):
-        """DROP (and CREATE, empty) a database through the maintenance
-        database - a database can't drop itself, and DROP/CREATE DATABASE
-        refuse to run inside a transaction."""
-        name = self._name(alias)
-        if name.startswith(PROTECTED_PREFIX):
-            raise CommandError(f"Refusing to drop {name}")
+    @staticmethod
+    @contextmanager
+    def _maintenance():
+        """A cursor on the maintenance database - a database can't drop
+        itself, and DROP/CREATE DATABASE refuse to run inside a transaction."""
         server = connections.settings[DEFAULT_DB_ALIAS]
         maintenance = psycopg2.connect(
             dbname="postgres", user=server["USER"], password=server["PASSWORD"],
@@ -170,14 +188,21 @@ class Command(BaseCommand):
         maintenance.autocommit = True
         try:
             with maintenance.cursor() as cursor:
-                cursor.execute(
-                    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = %s AND pid <> pg_backend_pid()",
-                    [name],
-                )
-                cursor.execute(sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(name)))
-                if create:
-                    cursor.execute(sql.SQL("CREATE DATABASE {} ENCODING 'UTF8' TEMPLATE template0").format(
-                        sql.Identifier(name)
-                    ))
+                yield cursor
         finally:
             maintenance.close()
+
+    def _drop(self, cursor, alias, create=False):
+        """DROP (and CREATE, empty) a database through the maintenance cursor."""
+        name = self._name(alias)
+        if name.startswith(PROTECTED_PREFIX):
+            raise CommandError(f"Refusing to drop {name}")
+        cursor.execute(
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = %s AND pid <> pg_backend_pid()",
+            [name],
+        )
+        cursor.execute(sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(name)))
+        if create:
+            cursor.execute(sql.SQL("CREATE DATABASE {} ENCODING 'UTF8' TEMPLATE template0").format(
+                sql.Identifier(name)
+            ))
