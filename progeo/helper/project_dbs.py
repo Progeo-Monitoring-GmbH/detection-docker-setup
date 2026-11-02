@@ -176,20 +176,6 @@ def database_write_counters(aliases):
         return {names[name]: count for name, count in cursor.fetchall()}
 
 
-def table_write_signature(models, alias=DEFAULT_DB_ALIAS):
-    """{table: [rows inserted + updated + deleted, file node]} of the models'
-    tables in `alias` - changes with every write to them; the file node also
-    with TRUNCATE, which the counters don't see."""
-    tables = [model._meta.db_table for model in models]
-    with connections[alias].cursor() as cursor:
-        cursor.execute(
-            "SELECT relname, n_tup_ins + n_tup_upd + n_tup_del, pg_relation_filenode(relid)"
-            " FROM pg_stat_user_tables WHERE relname = ANY(%s)",
-            [tables],
-        )
-        return {name: [count, node] for name, count, node in cursor.fetchall()}
-
-
 def release_project_connections():
     """release_connection() for every open connection but "default" - for
     long loops (commands) that touch several databases per step."""

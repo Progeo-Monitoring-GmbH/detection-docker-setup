@@ -4,7 +4,11 @@ import { Col, Form, Row } from 'react-bootstrap';
 import axiosConfig, { defaultErrorCallback } from '../../axiosConfig';
 import { useDropzone, type Accept } from 'react-dropzone';
 import { IPreview, Thumbnail } from '../ui/GalleryHelper.tsx';
-import { showErrorBar, showSuccessBar } from '../ui/Snackbar.jsx';
+import {
+  showErrorBar,
+  showRequestError,
+  showSuccessBar,
+} from '../ui/Snackbar.jsx';
 import { useSnackbar } from 'notistack';
 
 const RedDropbox = ({
@@ -144,7 +148,12 @@ const RedDropbox = ({
 
       const valid: File[] = [];
       for (const f of Array.from(list)) {
-        if (accept && !matchesAccept(f, Object.keys(_types))) {
+        // MIME types and extensions: browsers give e.g. .dwg no MIME type.
+        const parts = [
+          ...Object.keys(_types),
+          ...Object.values(_types).flat(),
+        ];
+        if (accept && !matchesAccept(f, parts)) {
           setError(`Unsupported file type: ${f.type || f.name}`);
           continue;
         }
@@ -280,7 +289,11 @@ const RedDropbox = ({
           showErrorBar(enqueueSnackbar, 'Failed uploading!');
         }
       },
-      defaultErrorCallback,
+      (requestError) => {
+        defaultErrorCallback(requestError);
+        showRequestError(enqueueSnackbar, 'Upload failed', requestError);
+        setProgress(0);
+      },
       {
         headers: headers,
         onUploadProgress: (event) => {

@@ -21,8 +21,10 @@ from progeo.helper.project_db_copy import (
     check_purge_safe,
     copied_high_water,
     copy_measurements,
+    expected_mirrors,
     mirror_shared,
     new_measurement_id,
+    outdated_mirrors,
     project_filters,
     purge_project,
     renumbered_models,
@@ -498,6 +500,25 @@ def test_delta_copy_falls_back_to_a_full_copy_the_first_time(project_dbs):
 
     assert measurements == 5
     assert sorted(ProgeoMeasurement.objects.using(ALIAS).values_list("pk", flat=True)) == [1, 2, 3, 4, 5]
+
+
+@WITH_PROJECT_DBS
+def test_outdated_mirrors_finds_only_the_tables_that_differ(project_dbs):
+    s = _scenario()
+    mirror_shared(ALIAS, PROJECT)
+    assert outdated_mirrors(ALIAS, expected_mirrors(PROJECT)) == []
+
+    # .update(): no signals, like a write the mirror signals missed.
+    User.objects.filter(pk=s["user"].pk).update(last_login=timezone.now())
+    assert outdated_mirrors(ALIAS, expected_mirrors(PROJECT)) == []
+
+    User.objects.filter(pk=s["user"].pk).update(first_name="Changed")
+    ProgeoLocation.objects.filter(pk=s["parent"].pk).update(name="Renamed parent")
+    assert outdated_mirrors(ALIAS, expected_mirrors(PROJECT)) == [User, ProgeoLocation]
+
+    mirror_shared(ALIAS, PROJECT, models=[User, ProgeoLocation])
+    assert outdated_mirrors(ALIAS, expected_mirrors(PROJECT)) == []
+    assert User.objects.using(ALIAS).get(pk=s["user"].pk).first_name == "Changed"
 
 
 @WITH_PROJECT_DBS

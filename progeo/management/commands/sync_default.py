@@ -1,29 +1,14 @@
-﻿import json
-import os
-
-from django.conf import settings
-from django.core.management.base import CommandError
+﻿from django.core.management.base import CommandError
 from django.core.management.color import no_style
 from django.db import DatabaseError, connections, transaction
 from rest_framework.authtoken.models import Token
 
 from progeo.helper.basics import dlog, elog, okaylog
-from progeo.helper.project_db_copy import mirror_shared
-from progeo.helper.project_dbs import (
-    database_write_counters,
-    mirrored_models,
-    project_key_from_alias,
-    register_all_project_dbs,
-    release_connection,
-    table_write_signature,
-)
+from progeo.helper.project_db_copy import expected_mirrors, mirror_shared, outdated_mirrors
+from progeo.helper.project_dbs import map_databases, project_key_from_alias, register_all_project_dbs
 from progeo.management.commands._base import BaseCommand
 from progeo.sets import DJANGO_MODELS
 from progeo.settings import DJANGO_DATABASES
-
-# What the last run mirrored (see projects_to_mirror) - in media/, so it
-# survives a recreated container; a missing file means a full mirror.
-STATE_FILE = os.path.join(settings.MEDIA_ROOT, ".sync-default-state.json")
 
 # Models whose rows are removed from the target DB when they no longer exist in
 # the source DB. Token is one-to-one with User: a rotated token would otherwise
@@ -85,45 +70,46 @@ def reset_sequences(models, db):
             cursor.execute(sql)
 
 
-def read_state(path=None):
-    try:
-        with open(path or STATE_FILE, encoding="utf-8") as handle:
-            return json.load(handle)
-    except (OSError, ValueError):
-        return {}
+def mirror_project_dbs(aliases, full=False):
+    """Repair the mirrored rows of the project databases: compares them with
+    "default" (a digest per table, see outdated_mirrors) and copies only the
+    tables that differ - the post_save signals keep them current
+    (helper/project_db_signals.py), so usually nothing. full=True copies
+    every table without comparing. Returns ({alias: mirrored models}, failed)."""
+    projects = {alias: project_key_from_alias(alias) for alias in aliases}
+    expected = {}
+    if not full:
+        cache = {}  # users and accounts are the same for every project: read once
+        expected = {alias: expected_mirrors(project, cache) for alias, project in projects.items()}
 
+    def mirror(alias):
+        try:
+            models = None if full else outdated_mirrors(alias, expected[alias])
+            if models != []:
+                mirror_shared(alias, projects[alias], models=models)
+            return models, None
+        except DatabaseError as e:
+            return None, e
 
-def write_state(state, path=None):
-    """Written to a temp file and renamed, so a crash never leaves half a file."""
-    path = path or STATE_FILE
-    partial = f"{path}.part"
-    with open(partial, "w", encoding="utf-8") as handle:
-        json.dump(state, handle)
-    os.replace(partial, path)
-
-
-def projects_to_mirror(aliases, state, source):
-    """The project databases whose mirrors may be outdated. All of them when
-    a mirrored table in "default" was written to since the last run (or there
-    was none) - `source` is table_write_signature() of those tables. Else only
-    the ones that are new, failed last time or were written to themselves
-    since their mirror (e.g. restored from a backup); the post_save signals
-    keep the others current (helper/project_db_signals.py)."""
-    if state.get("source") != source:
-        return list(aliases)
-    synced = state.get("synced", {})
-    counters = database_write_counters(aliases)
-    return [alias for alias in aliases if alias not in synced or synced[alias] != counters.get(alias)]
+    mirrored, failed = {}, []
+    for alias, (models, error) in zip(aliases, map_databases(mirror, aliases)):
+        if error is not None:
+            elog(f"Mirror sync to '{alias}' failed and was rolled back: {error!r}")
+            failed.append(alias)
+        elif models != []:
+            mirrored[alias] = models
+            names = "all" if models is None else ", ".join(model.__name__ for model in models)
+            okaylog(f"'default' => '{alias}' mirrors synced ({names})")
+    return mirrored, failed
 
 
 class Command(BaseCommand):
     help = (
         "Sync all: copies the configured models (DJANGO_MODELS) from the 'default' "
         "database into every other configured database, including many-to-many "
-        "relations between those models (e.g. Account.users), and refreshes the "
-        "mirrored rows of the project databases - of all of them only when a "
-        "mirrored table in 'default' changed since the last run, else of the new, "
-        "failed and otherwise written-to ones.\n\n"
+        "relations between those models (e.g. Account.users), and repairs the "
+        "mirrored rows of the project databases - only the tables whose rows "
+        "differ from 'default'.\n\n"
         "Examples:\n"
         "  python manage.py sync_default\n"
         "  python manage.py sync_default --full   # mirror every project database"
@@ -132,7 +118,7 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--full", action="store_true",
-                            help="Mirror every project database, also the unchanged ones.")
+                            help="Mirror every table of every project database without comparing.")
 
     def handle(self, *args, **options):
         # Order matters: FK targets (User) must be copied before their dependents (Token).
@@ -154,32 +140,11 @@ class Command(BaseCommand):
                 failed.append(db)
 
         # Project databases get users/accounts plus their own locations and
-        # devices (helper/project_dbs.py). Read before mirroring: writes to
-        # "default" during the run count as changes for the next one.
+        # devices (helper/project_dbs.py).
         aliases = register_all_project_dbs()
-        state = {} if options["full"] else read_state()
-        source = table_write_signature(mirrored_models())
-        visit = projects_to_mirror(aliases, state, source)
-        for alias in visit:
-            try:
-                mirror_shared(alias, project_key_from_alias(alias))
-                okaylog(f"'default' => '{alias}' mirrors synced")
-            except DatabaseError as e:
-                elog(f"Mirror sync to '{alias}' failed and was rolled back: {e!r}")
-                failed.append(alias)
-            finally:
-                # ~1000 project databases: an open connection each exceeds Postgres' max_connections.
-                release_connection(alias)
-
-        # The counters after mirroring (our own writes included); skipped
-        # databases keep theirs, failed ones are left out and retried.
-        synced = {
-            alias: count for alias, count in state.get("synced", {}).items()
-            if alias in aliases and alias not in visit
-        }
-        synced.update(database_write_counters([alias for alias in visit if alias not in failed]))
-        write_state({"source": source, "synced": synced})
-        okaylog(f"mirrored {len(visit)} of {len(aliases)} project databases")
+        mirrored, mirror_failed = mirror_project_dbs(aliases, full=options["full"])
+        failed += mirror_failed
+        okaylog(f"mirrored {len(mirrored)} of {len(aliases)} project databases")
 
         dlog("DONE!", DJANGO_DATABASES)
         if failed:

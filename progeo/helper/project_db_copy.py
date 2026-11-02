@@ -271,16 +271,25 @@ def max_pk(model, alias):
         return raw.fetchone()[0]
 
 
-def mirror_shared(alias, project_id, source=DEFAULT_DB_ALIAS):
-    """Upsert the shared rows a project database needs (see mirror_filters).
-    Rows deleted in "default" are not removed here (their delete has to
-    cascade over the project rows) - the post_delete mirror signals do that."""
+def _replaced(model):
+    """Nothing points to these rows (Account.users, UserProfile), so
+    mirror_shared replaces the whole table instead of upserting by id."""
+    return not model._meta.related_objects
+
+
+def mirror_shared(alias, project_id, source=DEFAULT_DB_ALIAS, models=None):
+    """Upsert the shared rows a project database needs (see mirror_filters),
+    of `models` only if given (e.g. outdated_mirrors()). Rows deleted in
+    "default" are not removed here (their delete has to cascade over the
+    project rows) - the post_delete mirror signals do that."""
     counts = {}
     filters = mirror_filters(project_id, source)
     with transaction.atomic(using=alias):
         for model in mirrored_models():
+            if models is not None and model not in models:
+                continue
             where, params = filters[model]
-            if not model._meta.related_objects:
+            if _replaced(model):
                 # Nothing points to these rows (Account.users, UserProfile),
                 # and they get recreated with new ids for the same user
                 # (`.set()`, a new profile) - an upsert by id would hit their
@@ -290,6 +299,64 @@ def mirror_shared(alias, project_id, source=DEFAULT_DB_ALIAS):
             copied, _, _ = transfer_rows(model, where, params, alias, upsert=True, source=source)
             counts[model] = copied
     return counts
+
+
+# Left out when comparing mirrors: every login saves last_login, and the
+# mirror signals skip those saves (project_db_signals._mirror_user).
+MIRROR_IGNORED_COLUMNS = {"auth_user": ["last_login"]}
+
+
+def rows_digest(model, where, params, alias):
+    """(pks, digest) of the `model` rows matching `where` in `alias` - the
+    digest changes with any value of them but MIRROR_IGNORED_COLUMNS. Over
+    jsonb, so the column order of the table doesn't matter."""
+    pk = sql.Identifier(model._meta.pk.column)
+    query = sql.SQL(
+        "SELECT COALESCE(array_agg({pk} ORDER BY {pk}), '{{}}'),"
+        " md5(COALESCE(string_agg(md5((to_jsonb(t) - %s::text[])::text), '' ORDER BY {pk}), ''))"
+        " FROM {table} t WHERE ({where})"
+    ).format(pk=pk, table=_table(model), where=where)
+    ignored = MIRROR_IGNORED_COLUMNS.get(model._meta.db_table, [])
+    with connections[alias].cursor() as cursor:
+        raw = _raw(cursor)
+        raw.execute(query, [ignored, *params])
+        return raw.fetchone()
+
+
+def expected_mirrors(project_id, cache=None, source=DEFAULT_DB_ALIAS):
+    """{model: (where, params, digest)} of the mirrored rows the database of
+    `project_id` should have - `where` selects them there. `cache` (a dict
+    kept between calls) holds the rows every project gets (users, accounts),
+    so those are read once."""
+    from progeo.v1.models import ProgeoLocation
+
+    cache = {} if cache is None else cache
+    expected = {}
+    for model, (where, params) in mirror_filters(project_id, source).items():
+        shared = model is not ProgeoLocation
+        if shared and model in cache:
+            expected[model] = cache[model]
+            continue
+        pks, digest = rows_digest(model, where, params, source)
+        if _replaced(model):
+            # mirror_shared replaces the table: rows beyond these are outdated, too.
+            where, params = sql.SQL("TRUE"), []
+        else:
+            # Rows beyond these stay - their delete is the post_delete signals' job.
+            where, params = sql.SQL("{} = ANY(%s)").format(sql.Identifier(model._meta.pk.column)), [pks]
+        expected[model] = (where, params, digest)
+        if shared:
+            cache[model] = expected[model]
+    return expected
+
+
+def outdated_mirrors(alias, expected):
+    """The mirrored models (parents first) whose rows in `alias` differ from
+    `expected` (expected_mirrors) - mirror_shared(models=...) repairs them."""
+    return [
+        model for model in mirrored_models()
+        if model in expected and rows_digest(model, *expected[model][:2], alias)[1] != expected[model][2]
+    ]
 
 
 def align_sequences(alias, models, source=DEFAULT_DB_ALIAS):
