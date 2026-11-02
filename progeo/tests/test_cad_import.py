@@ -115,6 +115,8 @@ def test_each_dm_band_belongs_to_one_label(cad_reader, tmp_path):
     assert result.description == (
         "3 dm labels on DKS_MPLE, placed on 3 band lines; 1 without a band, placed at the label: dm 003"
     )
+    # The dm number is the sensor order.
+    assert [p["pos"] for p in result.points] == [1, 2, 3]
     # A dm sensor is its band: x/y its start, *_end its end, in the same frame.
     first, second, third = result.points
     assert (first["x_end"], first["y_end"], first["nx_end"], first["ny_end"]) == (300, 0, 0.3, 0.0)
@@ -133,6 +135,17 @@ def test_dm_labels_at_the_same_position_are_named(cad_reader, tmp_path):
 
     assert _xy(result) == [(0, 0), (0, 0)]
     assert result.description.endswith("; same position: dm 001 + dm 002")
+
+
+def test_a_dm_number_left_out_keeps_the_others_numbers(cad_reader, tmp_path):
+    def build(msp):
+        for row, number in enumerate((1, 2, 4)):  # no dm 003 in the plan
+            msp.add_line((0, row * 3), (30, row * 3), dxfattribs={"layer": "DKS_MPLE"})
+            msp.add_mtext(f"dm {number:03d}", dxfattribs={"layer": "DKS_MPLE", "insert": (15, row * 3 + 0.1)})
+
+    result = cad_reader.read_measure_points(_dxf(tmp_path / "dm.dxf", build))
+
+    assert [(p["pos"], p["y"]) for p in result.points] == [(1, 0), (2, 30), (4, 60)]
 
 
 def test_polylines_are_the_fallback(cad_reader, tmp_path):
@@ -522,6 +535,63 @@ def test_job_streams_the_log_and_stores_the_points(location, events, monkeypatch
     assert events[-1]["job"]["result"]["points"][0]["reference"] is True
     stored = ProgeoMeasurePoint.objects.using(f.DB).filter(location=location).order_by("sensor_order")
     assert [(p.x_end, p.nx_end) for p in stored] == [(100, 1.0), (None, None)]
+
+
+def test_imported_points_are_connected_to_the_picked_device(api_client, location, monkeypatch):
+    device = f.make_device(location)
+    other = f.make_device(f.make_location(Account.objects.using(f.DB).get(pk=1), project_id=931002))
+    api_client.force_authenticate(user=f.make_user(staff=True))
+    rows = "1;0;0;0;931001;10;20\n2;0;0;0;931001;30;20\n"
+
+    response = api_client.post("/v1/status/measure_points/upload_cad/", {
+        "location_id": location.project_id, "point_device_id": device.pk,
+        "files0": SimpleUploadedFile("points.txt", rows.encode()),
+    })
+
+    assert response.status_code == 200, response.content
+    assert [p["device"] for p in response.json()["points"]] == [device.pk, device.pk]
+
+    response = api_client.post("/v1/status/measure_points/upload_cad/", {
+        "location_id": location.project_id, "point_device_id": other.pk,
+        "files0": SimpleUploadedFile("points.txt", rows.encode()),
+    })
+    assert (response.status_code, response.json()["reason"]) == (400, f"Device {other.pk} is not at this location")
+
+
+def test_json_import_keeps_the_band_ends_and_connects_the_device(api_client, location):
+    device = f.make_device(location)
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    response = api_client.post("/v1/status/measure_points/from_json/", {
+        "location_id": location.project_id, "point_device_id": device.pk,
+        "files0": SimpleUploadedFile("points.json", json.dumps(POINTS).encode()),
+    })
+
+    assert response.status_code == 200, response.content
+    stored = ProgeoMeasurePoint.objects.using(f.DB).filter(location=location).order_by("sensor_order")
+    assert [(p.device_id, p.x_end) for p in stored] == [(device.pk, 100), (device.pk, None)]
+
+
+def test_dwg_job_connects_the_points_to_its_device(location, events, monkeypatch):
+    device = f.make_device(location)
+    _fake_run(monkeypatch, [], stdout=json.dumps(POINTS) + "\n")
+    job_id = cad_import.create_job(
+        user_id=1, location_pk=location.pk, db_name=f.DB, cad_input="media/uploads/cad_imports/x.dwg",
+        source_name="plan.dwg", device_pk=device.pk,
+    )
+
+    cad_import.run_job(job_id)
+
+    stored = ProgeoMeasurePoint.objects.using(f.DB).filter(location=location)
+    assert sorted(stored.values_list("device_id", flat=True)) == [device.pk, device.pk]
+
+
+def test_stored_points_keep_their_numbers(location):
+    points = [{**POINTS[0], "pos": 1}, {**POINTS[1], "pos": 4}]
+
+    result = cad_import.store_measure_points(location, f.DB, points)
+
+    assert [p["sensor_order"] for p in result["points"]] == [1, 4]
 
 
 def test_job_passes_on_why_a_plan_has_no_points_and_keeps_the_old_ones(location, events, monkeypatch):

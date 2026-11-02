@@ -16,7 +16,8 @@ Which entities are the measure points depends on the kind of plan:
    in the order of the DKS_Visualisierung polylines (one per strand, a vertex
    on every tap); taps not on a polyline follow in drawing order.
 2. smartex dm Breitband: one point per "dm NNN" label (MTEXT/TEXT) on
-   DKS_MPLE, ordered by NNN. A dm sensor is its band LINE on DKS_MPLE: the
+   DKS_MPLE, ordered by NNN, which is its pos (sensor order - a number left
+   out in the plan stays unused). A dm sensor is its band LINE on DKS_MPLE: the
    point is the band's start, with its end in x_end/y_end/nx_end/ny_end; a
    label without a band stays at its own position, without an end.
    Every band belongs to one label: the closest label/band pairs are matched first.
@@ -192,7 +193,7 @@ def _segment_distance(point, start, end) -> float:
 
 def _dm_points(labels: list[tuple[int, Shape]], lines: list[Shape]):
     """Per label (by number) the start of its band line and the band's end,
-    None without a band; (points, ends, labels without a band).
+    None without a band; (points, ends, numbers, labels without a band).
 
     Label/band pairs are matched closest first, each band once: a label a bit
     off its band must not take the band of a neighbour that sits right on it.
@@ -211,8 +212,9 @@ def _dm_points(labels: list[tuple[int, Shape]], lines: list[Shape]):
             band_of[label_index] = line_index
             used.add(line_index)
 
-    points, ends, without_band = [], [], []
-    for label_index, (_number, label) in sorted(enumerate(labels), key=lambda item: item[1][0]):
+    points, ends, numbers, without_band = [], [], [], []
+    for label_index, (number, label) in sorted(enumerate(labels), key=lambda item: item[1][0]):
+        numbers.append(number)
         if label_index in band_of:
             start, end = lines[band_of[label_index]].points
             points.append(start)
@@ -221,7 +223,7 @@ def _dm_points(labels: list[tuple[int, Shape]], lines: list[Shape]):
             points.append(label.points[0])
             ends.append(None)
             without_band.append(label.text)
-    return points, ends, without_band
+    return points, ends, numbers, without_band
 
 
 def _shared_positions(points: list[tuple[float, float]], names: list[str]) -> list[str]:
@@ -234,7 +236,8 @@ def _shared_positions(points: list[tuple[float, float]], names: list[str]) -> li
 
 def find_measure_points(shapes: list[Shape]):
     """The measure points of a plan (drawing units), how they were found and,
-    for a dm plan, each point's band end or None - (points, description, ends)."""
+    for a dm plan, each point's band end or None and its dm number -
+    (points, description, ends, numbers)."""
     on_mple = [shape for shape in shapes if shape.layer == MPLE_LAYER]
 
     taps = [shape for shape in on_mple if shape.kind == "insert"]
@@ -245,7 +248,7 @@ def find_measure_points(shapes: list[Shape]):
         return points, (
             f"{len(taps)} taps ({', '.join(names)}) on {MPLE_LAYER}, {routed} of them ordered along "
             f"{len(routes)} {ROUTE_LAYER} polylines"
-        ), None
+        ), None, None
 
     labels = [
         (int(match.group(1)), shape)
@@ -254,20 +257,20 @@ def find_measure_points(shapes: list[Shape]):
     ]
     if labels:
         lines = [shape for shape in on_mple if shape.kind == "line"]
-        points, ends, without_band = _dm_points(labels, lines)
+        points, ends, numbers, without_band = _dm_points(labels, lines)
         description = f"{len(labels)} dm labels on {MPLE_LAYER}, placed on {len(lines)} band lines"
         if without_band:
             description += f"; {len(without_band)} without a band, placed at the label: {', '.join(without_band)}"
         shared = _shared_positions(points, [label.text for _number, label in sorted(labels, key=lambda item: item[0])])
         if shared:
             description += f"; same position: {', '.join(shared)}"
-        return points, description, ends
+        return points, description, ends, numbers
 
     for layer in POLYLINE_LAYERS:
         polylines = [shape for shape in shapes if shape.layer == layer and shape.kind == "polyline"]
         if polylines:
             points = [point for polyline in polylines for point in polyline.points]
-            return points, f"{len(points)} vertices of {len(polylines)} polylines on {layer}", None
+            return points, f"{len(points)} vertices of {len(polylines)} polylines on {layer}", None, None
 
     raise CadReadError(
         f"No measure points found: no taps (block inserts) or 'dm NNN' labels on {MPLE_LAYER} "
@@ -304,10 +307,10 @@ def _scaled(point: tuple[float, float]) -> dict:
     return {"x": round(point[0] * 10), "y": round(point[1] * 10)}
 
 
-def normalize_points(points: list[tuple[float, float]], coord_margin: float, ends=None) -> list[dict]:
+def normalize_points(points: list[tuple[float, float]], coord_margin: float, ends=None, numbers=None) -> list[dict]:
     """Points scaled by 10 to integers, relative to the minimum x/y corner, with
-    nx/ny (0..1), grid indices gx/gy (x/y values within coord_margin share one)
-    and one reference point.
+    nx/ny (0..1), grid indices gx/gy (x/y values within coord_margin share one),
+    one reference point and pos - 1, 2, ... or the given numbers.
 
     ends: per point the end of its dm band (the point is the start) or None -
     x_end/y_end/nx_end/ny_end in the same frame, which then spans the ends too.
@@ -352,7 +355,7 @@ def normalize_points(points: list[tuple[float, float]], coord_margin: float, end
         x_offset = point["x"] - ref_x
         y_offset = point["y"] - ref_y
         entry = {
-            "pos": index,
+            "pos": numbers[index - 1] if numbers else index,
             "x": x_offset,
             "y": y_offset,
             "nx": nx_of(x_offset),
@@ -382,9 +385,9 @@ def read_measure_points(path: str, coord_margin: float = 0.2, log=None) -> PlanP
     shapes = _read_dwg(path) if suffix == ".dwg" else _read_dxf(path)
     log(f"Read {len(shapes)} entities on the DKS layers in {time.monotonic() - started:.1f}s")
 
-    points, description, ends = find_measure_points(shapes)
+    points, description, ends, numbers = find_measure_points(shapes)
     log(f"Measure points: {description}")
-    return PlanPoints(points=normalize_points(points, coord_margin, ends), description=description)
+    return PlanPoints(points=normalize_points(points, coord_margin, ends, numbers), description=description)
 
 
 def render_pdf_plan(path: str, png_out: str, max_pixels: int = PDF_MAX_PIXELS, log=None) -> str:

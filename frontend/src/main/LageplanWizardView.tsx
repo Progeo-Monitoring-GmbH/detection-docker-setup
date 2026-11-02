@@ -19,7 +19,7 @@ import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
 import { getBackendUrl } from '../backendUrl';
 import type { SensorHeatmapLageplanData } from '../components/device/sensorHeatmapTypes';
-import { isLorawanProject } from './projectType';
+import { isLorawanProject, planVisualization } from './projectType';
 import { formatDate } from './dateFormat';
 
 type ImportedCad = {
@@ -84,13 +84,27 @@ const isAligned = (plan: WizardLageplan) =>
   (plan.scale_x ?? 1) !== 1 ||
   (plan.scale_y ?? 1) !== 1;
 
-/** The hand-placed sensors among stored points (in sensor order). */
+/** How many of the points belong to each device. */
+const pointsPerDevice = (points: Array<Record<string, unknown>>) => {
+  const counts = new Map<number, number>();
+  points.forEach((point) => {
+    if (point.device != null) {
+      const deviceId = Number(point.device);
+      counts.set(deviceId, (counts.get(deviceId) ?? 0) + 1);
+    }
+  });
+  return counts;
+};
+
+/** The hand-placed sensors among stored points (in sensor order): one point
+ * per device - imported points connected to their device are many per device. */
 const placedFromPoints = (
   points: Array<Record<string, unknown>>,
   devices: WizardDevice[],
-): WizardSensor[] =>
-  points
-    .filter((point) => point.device != null)
+): WizardSensor[] => {
+  const counts = pointsPerDevice(points);
+  return points
+    .filter((point) => point.device != null && counts.get(Number(point.device)) === 1)
     .sort((a, b) => Number(a.sensor_order) - Number(b.sensor_order))
     .map((point) => {
       const deviceId = Number(point.device);
@@ -103,6 +117,20 @@ const placedFromPoints = (
         lageplanId: point.lageplan == null ? null : Number(point.lageplan),
       };
     });
+};
+
+/** The device imported points get connected to: the one the stored imported
+ * points belong to, else the location's only device. */
+const defaultPointDevice = (
+  points: Array<Record<string, unknown>>,
+  devices: WizardDevice[],
+): number | null => {
+  const imported = [...pointsPerDevice(points)].filter(([, count]) => count > 1);
+  if (imported.length === 1 && devices.some((device) => device.id === imported[0][0])) {
+    return imported[0][0];
+  }
+  return devices.length === 1 ? devices[0].id : null;
+};
 
 const requestReason = (requestError: unknown) =>
   (requestError as { response?: { data?: { reason?: string } } })?.response
@@ -335,6 +363,8 @@ const LageplanWizardView = () => {
   const [placedSensors, setPlacedSensors] = useState<WizardSensor[]>([]);
   const [activeDeviceId, setActiveDeviceId] = useState<number | null>(null);
   const [placementDirty, setPlacementDirty] = useState(false);
+  // Step 3, CAD/JSON/TXT: the device the imported points are connected to.
+  const [pointDeviceId, setPointDeviceId] = useState<number | null>(null);
 
   // Everything below step 1 belongs to the selected location.
   const selectLocation = (next: WizardLocation | null) => {
@@ -351,6 +381,7 @@ const LageplanWizardView = () => {
     setPlacedSensors([]);
     setActiveDeviceId(null);
     setPlacementDirty(false);
+    setPointDeviceId(null);
     setError('');
   };
 
@@ -421,6 +452,7 @@ const LageplanWizardView = () => {
           setPlacedSensors(placed);
           setActiveDeviceId(null);
           setPlacementDirty(false);
+          setPointDeviceId(defaultPointDevice(points, loadedDevices));
           if (placed.length) {
             setPointSource('manual');
           }
@@ -621,10 +653,20 @@ const LageplanWizardView = () => {
   );
   const activeDevice =
     devices.find((device) => device.id === activeDeviceId) ?? null;
-  // Saving replaces every point of the location, also those without device.
-  const replacedPointCount = measurePoints.filter(
-    (point) => point.device == null,
-  ).length;
+  // Saving replaces every point of the location, also the imported ones.
+  const replacedPointCount =
+    measurePoints.length - placedFromPoints(measurePoints, devices).length;
+  // Imported points (CAD/JSON/TXT) are connected to this device.
+  const importPayload = {
+    location_id: selectedLocationId,
+    ...(pointDeviceId != null ? { point_device_id: pointDeviceId } : {}),
+  };
+  const deviceLabels = useMemo(
+    () => Object.fromEntries(devices.map((device) => [device.id, deviceLabel(device)])),
+    [devices],
+  );
+  const connectedCount = (deviceId: number) =>
+    measurePoints.filter((point) => Number(point.device) === deviceId).length;
   // What the canvas shows: the points / sensors of the picked plan.
   const planPoints = measurePoints.filter((point) =>
     belongsTo(point.lageplan, selectedPlanId),
@@ -1074,6 +1116,44 @@ const LageplanWizardView = () => {
     </div>
   );
 
+  // The device the imported points are connected to (their measurements
+  // come from it); "none" keeps them without device.
+  const renderPointDevice = () => (
+    <div className="d-flex flex-wrap align-items-center gap-2">
+      <label
+        htmlFor="wizard-point-device"
+        className="mb-0"
+        style={{ fontSize: 12.5, color: MUTED }}
+      >
+        Connect the imported points to
+      </label>
+      <select
+        id="wizard-point-device"
+        className="form-select form-select-sm"
+        style={{ width: 'auto', minWidth: 220, borderRadius: 10, height: 32 }}
+        value={pointDeviceId ?? ''}
+        disabled={devices.length === 0}
+        onChange={(event) =>
+          setPointDeviceId(event.target.value ? Number(event.target.value) : null)
+        }
+      >
+        <option value="">
+          {devices.length ? 'no device' : 'no device at this location'}
+        </option>
+        {devices.map((device) => {
+          const connected = connectedCount(device.id);
+          return (
+            <option key={device.id} value={device.id}>
+              {deviceLabel(device)}
+              {device.hardware && device.mac ? ` · ${device.hardware}` : ''}
+              {connected ? ` · ${connected} point(s) now` : ''}
+            </option>
+          );
+        })}
+      </select>
+    </div>
+  );
+
   const renderStepThree = () => (
     <StepCard
       number={3}
@@ -1101,6 +1181,7 @@ const LageplanWizardView = () => {
             </div>
           </div>
 
+          {pointSource !== 'manual' && renderPointDevice()}
           {pointSource === 'cad' && (
             <CadUploadDropbox
               auth={auth}
@@ -1110,7 +1191,7 @@ const LageplanWizardView = () => {
               maxSizeMB={100}
               instantFileUpload={true}
               withPreview={false}
-              payload={{ location_id: selectedLocationId }}
+              payload={importPayload}
               callBackProcessing={handleCadUpload}
             />
           )}
@@ -1122,7 +1203,7 @@ const LageplanWizardView = () => {
               hint="Drop a JSON file here, or click to choose"
               instantFileUpload={true}
               withPreview={false}
-              payload={{ location_id: selectedLocationId }}
+              payload={importPayload}
               callBackProcessing={handleJsonUpload}
             />
           )}
@@ -1134,7 +1215,7 @@ const LageplanWizardView = () => {
               hint="Drop a TXT file here, or click to choose"
               instantFileUpload={true}
               withPreview={false}
-              payload={{ location_id: selectedLocationId }}
+              payload={importPayload}
               callBackProcessing={handleCadUpload}
             />
           )}
@@ -1176,12 +1257,17 @@ const LageplanWizardView = () => {
           title={
             manualPlacement
               ? `${planSensors.length} sensor(s) placed on this plan`
-              : `${planPoints.length} measure point(s) on this plan`
+              : planVisualization(selectedLocation?.project_type) === 'lines'
+                ? `${planPoints.length} dm sensor(s) on this plan`
+                : `${planPoints.length} measure point(s) on this plan`
           }
           fileName={sourceMeta.fileName}
           locationId={selectedLocationId ?? undefined}
           lageplanId={selectedPlanId ?? undefined}
           measurePoints={planPoints}
+          // smartex dm: every sensor is a band line (nx/ny -> nx_end/ny_end).
+          lineSensors={planVisualization(selectedLocation?.project_type) === 'lines'}
+          deviceLabels={deviceLabels}
           withSliders={canEditLocation}
           onSaveSliders={canEditLocation ? handleSaveSliders : undefined}
           onSaveScale={canEditLocation ? handleSaveScale : undefined}

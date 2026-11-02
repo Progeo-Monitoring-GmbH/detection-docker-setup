@@ -1,13 +1,45 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import axiosConfig from '../../axiosConfig';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
 
+// The canvas' own coordinate system (positions, pan, stored offsets); it is
+// drawn at the size it is shown, sharp at any width (see pixelRatio).
 const CANVAS_WIDTH = 900;
 const CANVAS_HEIGHT = 600;
 const CANVAS_PADDING = 32;
+const LOGICAL = { width: CANVAS_WIDTH, height: CANVAS_HEIGHT };
+// Backing store pixels per canvas unit at most (huge screens / zoomed pages).
+const MAX_PIXEL_RATIO = 4;
+// Screen pixels: how close the mouse must be to a sensor for its tooltip,
+// and the average distance between sensors from which they get labels.
+const HOVER_TOLERANCE = 8;
+const LABEL_SPACING = 34;
+
+/** Colour of the index-th of `count` sensors in sensor order, red to violet:
+ * neighbours are told apart, and runs of sensors are easy to follow. */
+const rainbowColor = (index: number, count: number) =>
+  `hsl(${count > 1 ? Math.round((index / (count - 1)) * 280) : 0}, 85%, 45%)`;
+
+const RAINBOW_GRADIENT = `linear-gradient(to right, ${[0, 1, 2, 3, 4]
+  .map((step) => rainbowColor(step, 5))
+  .join(', ')})`;
+
+const segmentDistance = (
+  [px, py]: [number, number],
+  [ax, ay]: [number, number],
+  [bx, by]: [number, number],
+) => {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lengthSq = dx * dx + dy * dy;
+  const t = lengthSq ? clamp(((px - ax) * dx + (py - ay) * dy) / lengthSq, 0, 1) : 0;
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+};
+
+const finite = (value: unknown) => (value == null || value === '' ? NaN : Number(value));
 
 /**
  * Scale at which the alignment canvas fits a Lageplan of the given size (at
@@ -98,6 +130,16 @@ type SensorPlacement = {
   onSelect: (deviceId: number) => void;
 };
 
+/** A measure point as drawn: its place in sensor order (colour), label and
+ * normalized start - plus the end of its band for a smartex dm sensor. */
+type MarkerItem = {
+  point: Record<string, unknown>;
+  label: string;
+  color: string;
+  start: ImagePoint;
+  end: ImagePoint | null;
+};
+
 const SENSOR_RADIUS = 9;
 
 const MUTED = '#8B8383';
@@ -150,6 +192,10 @@ type ImageCanvasStageProps = {
   title?: string;
   fileName?: string;
   measurePoints?: Array<Record<string, unknown>>;
+  /** smartex dm: the sensors are band lines from nx/ny to nx_end/ny_end. */
+  lineSensors?: boolean;
+  /** Names of the devices points are connected to (tooltip), by id. */
+  deviceLabels?: Record<number, string>;
   withSliders?: boolean;
   onSaveSliders?: (values: {
     offsetX: number;
@@ -169,6 +215,8 @@ const ImageCanvasStage = ({
   title = 'Image preview',
   fileName,
   measurePoints = [],
+  lineSensors = false,
+  deviceLabels,
   withSliders = false,
   locationId,
   lageplanId,
@@ -206,6 +254,61 @@ const ImageCanvasStage = ({
   const [calibrationPoints, setCalibrationPoints] = useState<ImagePoint[]>([]);
   const [calibrationMeters, setCalibrationMeters] = useState('');
   const [metersPerPixel, setMetersPerPixel] = useState('');
+  // The sensor under the mouse (index into items) and the mouse position
+  // over the canvas in CSS pixels, for its tooltip.
+  const [hover, setHover] = useState<{ index: number; x: number; y: number } | null>(null);
+
+  // Shown width of the canvas (CSS pixels): it is drawn at that size times
+  // the device pixel ratio; sizes of markers and labels are screen pixels.
+  const [cssWidth, setCssWidth] = useState(CANVAS_WIDTH);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || typeof ResizeObserver === 'undefined') {
+      return undefined;
+    }
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry.contentRect.width > 0) {
+        setCssWidth(entry.contentRect.width);
+      }
+    });
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, []);
+  const screenScale = cssWidth / CANVAS_WIDTH;
+  const pixelRatio = Math.min(
+    MAX_PIXEL_RATIO,
+    screenScale * (typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1),
+  );
+  // Canvas units per screen pixel.
+  const px = 1 / screenScale;
+  const screenScaleRef = useRef(screenScale);
+  screenScaleRef.current = screenScale;
+
+  // Measure points in sensor order, coloured along it.
+  const items = useMemo<MarkerItem[]>(() => {
+    const valid = measurePoints
+      .map((point, index) => {
+        const start: ImagePoint = [finite(point.nx), finite(point.ny)];
+        const end: ImagePoint = [finite(point.nx_end), finite(point.ny_end)];
+        return {
+          point,
+          order: finite(point.sensor_order ?? point.pos) || index + 1,
+          start,
+          end: end.every(Number.isFinite) ? end : null,
+        };
+      })
+      .filter((entry) => entry.start.every(Number.isFinite))
+      .sort((a, b) => a.order - b.order);
+    return valid.map((entry, index) => ({
+      point: entry.point,
+      label: String(entry.order),
+      color: rainbowColor(index, valid.length),
+      start: entry.start,
+      end: entry.end,
+    }));
+  }, [measurePoints]);
+  const lineCount = items.filter((item) => item.end).length;
+  const lineMode = lineSensors || lineCount > 0;
 
   useEffect(() => {
     setImage(null);
@@ -276,12 +379,15 @@ const ImageCanvasStage = ({
       return;
     }
 
-    const { width, height } = canvas;
+    // Drawn in canvas units (LOGICAL), at pixelRatio backing pixels each.
+    ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    const { width, height } = LOGICAL;
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = '#f5f6f8';
     ctx.fillRect(0, 0, width, height);
+    ctx.imageSmoothingQuality = 'high';
 
-    const layout = canvasLayout(canvas, image, zoom, offsetX, offsetY);
+    const layout = canvasLayout(LOGICAL, image, zoom, offsetX, offsetY);
     const { scale, drawWidth, drawHeight, drawX, drawY } = layout;
     const transform: PointTransform = {
       ...layout,
@@ -298,8 +404,22 @@ const ImageCanvasStage = ({
     ];
 
     ctx.strokeStyle = '#cfd4da';
-    ctx.strokeRect(0.5, 0.5, width - 1, height - 1);
+    ctx.lineWidth = px;
+    ctx.strokeRect(px / 2, px / 2, width - px, height - px);
     ctx.drawImage(image, drawX, drawY, drawWidth, drawHeight);
+
+    /** Text with a white halo, readable on any plan. */
+    const drawLabel = (text: string, x: number, y: number, color: string, size = 11) => {
+      ctx.font = `600 ${size * px}px sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = 3.5 * px;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.92)';
+      ctx.strokeText(text, x, y);
+      ctx.fillStyle = color;
+      ctx.fillText(text, x, y);
+    };
 
     // Sensors placed by hand: numbered dots with their label (MAC) beside.
     placement?.sensors.forEach((sensor, index) => {
@@ -310,55 +430,89 @@ const ImageCanvasStage = ({
       const active = sensor.deviceId === placement.activeDeviceId;
 
       ctx.beginPath();
-      ctx.arc(pointX, pointY, SENSOR_RADIUS, 0, Math.PI * 2);
+      ctx.arc(pointX, pointY, SENSOR_RADIUS * px, 0, Math.PI * 2);
       ctx.fillStyle = active ? '#0d6efd' : '#198754';
       ctx.fill();
-      ctx.lineWidth = active ? 3 : 2;
+      ctx.lineWidth = (active ? 3 : 2) * px;
       ctx.strokeStyle = '#ffffff';
       ctx.stroke();
 
-      ctx.font = '600 11px sans-serif';
+      ctx.font = `600 ${11 * px}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = '#ffffff';
       ctx.fillText(String(index + 1), pointX, pointY);
 
-      ctx.font = '600 12px sans-serif';
-      ctx.textAlign = 'left';
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-      ctx.strokeText(sensor.label, pointX + SENSOR_RADIUS + 4, pointY);
-      ctx.fillStyle = active ? '#0d6efd' : '#212529';
-      ctx.fillText(sensor.label, pointX + SENSOR_RADIUS + 4, pointY);
+      drawLabel(sensor.label, pointX + (SENSOR_RADIUS + 4) * px, pointY, active ? '#0d6efd' : '#212529', 12);
     });
 
-    (placement ? [] : measurePoints).forEach((point, index) => {
-      const normalizedX = Number(point.nx);
-      const normalizedY = Number(point.ny);
-      if (!Number.isFinite(normalizedX) || !Number.isFinite(normalizedY)) {
+    // Measure points, rainbow-coloured in sensor order; a smartex dm sensor
+    // is its band line from the point (start) to its end. The hovered one is
+    // drawn last, on top. Sizes are screen pixels (px) at any zoom.
+    const hovered = hover ? (items[hover.index] ?? null) : null;
+    const shown = placement ? [] : items;
+    const positioned = shown.map((item) => ({
+      item,
+      start: normalizedToCanvas(item.start, transform),
+      end: item.end ? normalizedToCanvas(item.end, transform) : null,
+    }));
+    const drawOrder = hovered
+      ? [...positioned.filter((entry) => entry.item !== hovered), ...positioned.filter((entry) => entry.item === hovered)]
+      : positioned;
+
+    drawOrder.forEach(({ item, start, end }) => {
+      const active = item === hovered;
+      if (end) {
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(start[0], start[1]);
+        ctx.lineTo(end[0], end[1]);
+        ctx.lineWidth = (active ? 9 : 5.5) * px;
+        ctx.strokeStyle = active ? '#101419' : 'rgba(255, 255, 255, 0.85)';
+        ctx.stroke();
+        ctx.lineWidth = (active ? 5.5 : 3) * px;
+        ctx.strokeStyle = item.color;
+        ctx.stroke();
+        // The start: where the band begins.
+        ctx.beginPath();
+        ctx.arc(start[0], start[1], (active ? 5 : 3.5) * px, 0, Math.PI * 2);
+        ctx.fillStyle = item.color;
+        ctx.fill();
+        ctx.lineWidth = 1.5 * px;
+        ctx.strokeStyle = '#ffffff';
+        ctx.stroke();
         return;
       }
-
-      const [pointX, pointY] = normalizedToCanvas(
-        [normalizedX, normalizedY],
-        transform,
-      );
-      const radius = 7;
-      const label = String(point.pos ?? point.sensor_order ?? index + 1);
-
       ctx.beginPath();
-      ctx.arc(pointX, pointY, radius, 0, Math.PI * 2);
-      ctx.fillStyle = '#dc3545';
+      ctx.arc(start[0], start[1], (active ? 8.5 : 6.5) * px, 0, Math.PI * 2);
+      ctx.fillStyle = item.color;
       ctx.fill();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = (active ? 3 : 2) * px;
+      ctx.strokeStyle = active ? '#101419' : '#ffffff';
+      // A dm sensor without its band: dashed.
+      ctx.setLineDash(lineMode ? [3 * px, 2 * px] : []);
       ctx.stroke();
+      ctx.setLineDash([]);
+    });
 
-      ctx.font = '600 12px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText(label, pointX, pointY);
+    // Numbers where there is room for them (average distance on screen),
+    // the hovered one always.
+    const planArea = drawWidth * pointScaleX * drawHeight * pointScaleY;
+    const roomy =
+      positioned.length > 0 &&
+      Math.sqrt(planArea / positioned.length) / px >= LABEL_SPACING;
+    drawOrder.forEach(({ item, start, end }) => {
+      if (!roomy && item !== hovered) {
+        return;
+      }
+      const [x, y] = end ? [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2] : start;
+      drawLabel(
+        lineMode ? `dm ${item.label}` : item.label,
+        x + 9 * px,
+        end ? y - 9 * px : y,
+        item === hovered ? '#101419' : '#343a40',
+        item === hovered ? 13 : 11,
+      );
     });
 
     // Calibration: the two picked points and the line between them.
@@ -366,7 +520,7 @@ const ImageCanvasStage = ({
       const [first, second] = calibrationPoints.map(toCanvas);
       ctx.strokeStyle = '#fd7e14';
       ctx.fillStyle = '#fd7e14';
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 2 * px;
       if (second) {
         ctx.beginPath();
         ctx.moveTo(first[0], first[1]);
@@ -375,7 +529,7 @@ const ImageCanvasStage = ({
       }
       [first, second].filter(Boolean).forEach(([x, y]) => {
         ctx.beginPath();
-        ctx.arc(x, y, 5, 0, Math.PI * 2);
+        ctx.arc(x, y, 5 * px, 0, Math.PI * 2);
         ctx.fill();
       });
     }
@@ -384,22 +538,26 @@ const ImageCanvasStage = ({
     if (referencePoint) {
       const [x, y] = toCanvas(referencePoint);
       ctx.strokeStyle = '#0d6efd';
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 2 * px;
       ctx.beginPath();
-      ctx.moveTo(x - 12, y);
-      ctx.lineTo(x + 12, y);
-      ctx.moveTo(x, y - 12);
-      ctx.lineTo(x, y + 12);
+      ctx.moveTo(x - 12 * px, y);
+      ctx.lineTo(x + 12 * px, y);
+      ctx.moveTo(x, y - 12 * px);
+      ctx.lineTo(x, y + 12 * px);
       ctx.stroke();
       ctx.beginPath();
-      ctx.arc(x, y, 6, 0, Math.PI * 2);
+      ctx.arc(x, y, 6 * px, 0, Math.PI * 2);
       ctx.stroke();
     }
   }, [
     referencePoint,
     calibrationPoints,
     image,
-    measurePoints,
+    items,
+    hover,
+    lineMode,
+    pixelRatio,
+    px,
     placement,
     offsetX,
     offsetY,
@@ -412,7 +570,6 @@ const ImageCanvasStage = ({
   ]);
 
   useEffect(() => {
-    console.log('sourceMeta changed:', sourceMeta);
     if (sourceMeta) {
       setPointOffsetX(sourceMeta.offset_x ?? 0);
       setPointOffsetY(sourceMeta.offset_y ?? 0);
@@ -460,8 +617,9 @@ const ImageCanvasStage = ({
         return;
       }
 
-      const dx = event.clientX - dragRef.current.startX;
-      const dy = event.clientY - dragRef.current.startY;
+      // Mouse travel in screen pixels -> canvas units: the plan follows the mouse.
+      const dx = (event.clientX - dragRef.current.startX) / screenScaleRef.current;
+      const dy = (event.clientY - dragRef.current.startY) / screenScaleRef.current;
       setOffsetX(dragRef.current.startOffsetX + dx);
       setOffsetY(dragRef.current.startOffsetY + dy);
     };
@@ -483,31 +641,30 @@ const ImageCanvasStage = ({
   const handleWheel = (event: React.WheelEvent<HTMLCanvasElement>) => {
     event.preventDefault();
 
-    const canvas = canvasRef.current;
-    if (!canvas) {
+    const pointer = canvasPointAt(event);
+    if (!pointer) {
       return;
     }
 
-    const rect = canvas.getBoundingClientRect();
-    const pointerX = event.clientX - rect.left;
-    const pointerY = event.clientY - rect.top;
+    const [pointerX, pointerY] = pointer;
     const nextZoom = clamp(
       zoom * (event.deltaY < 0 ? 1.12 : 1 / 1.12),
       0.4,
-      10,
+      20,
     );
 
+    // The plan point under the mouse stays under it.
     const nextOffsetX =
-      offsetX + (pointerX - canvas.width / 2) * (1 - nextZoom / zoom);
+      offsetX + (pointerX - CANVAS_WIDTH / 2 - offsetX) * (1 - nextZoom / zoom);
     const nextOffsetY =
-      offsetY + (pointerY - canvas.height / 2) * (1 - nextZoom / zoom);
+      offsetY + (pointerY - CANVAS_HEIGHT / 2 - offsetY) * (1 - nextZoom / zoom);
 
     setZoom(nextZoom);
     setOffsetX(nextOffsetX);
     setOffsetY(nextOffsetY);
   };
 
-  /** Canvas pixel under the mouse (the canvas is scaled by CSS, width: 100%). */
+  /** Canvas unit (LOGICAL) under the mouse - the canvas is shown at any width. */
   const canvasPointAt = (
     event: React.MouseEvent<HTMLCanvasElement>,
   ): ImagePoint | null => {
@@ -516,9 +673,12 @@ const ImageCanvasStage = ({
       return null;
     }
     const rect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) {
+      return null;
+    }
     return [
-      ((event.clientX - rect.left) * canvas.width) / rect.width,
-      ((event.clientY - rect.top) * canvas.height) / rect.height,
+      ((event.clientX - rect.left) * CANVAS_WIDTH) / rect.width,
+      ((event.clientY - rect.top) * CANVAS_HEIGHT) / rect.height,
     ];
   };
 
@@ -532,7 +692,7 @@ const ImageCanvasStage = ({
       return null;
     }
     const { scale, drawX, drawY } = canvasLayout(
-      canvas,
+      LOGICAL,
       image,
       zoom,
       offsetX,
@@ -552,7 +712,7 @@ const ImageCanvasStage = ({
       return null;
     }
     return {
-      ...canvasLayout(canvas, image, zoom, offsetX, offsetY),
+      ...canvasLayout(LOGICAL, image, zoom, offsetX, offsetY),
       offsetX: pointOffsetX,
       offsetY: pointOffsetY,
       scaleX: pointScaleX,
@@ -585,10 +745,45 @@ const ImageCanvasStage = ({
         const [x, y] = normalizedToCanvas([sensor.nx, sensor.ny], transform);
         return (
           Math.hypot(x - canvasPoint[0], y - canvasPoint[1]) <=
-          SENSOR_RADIUS + 3
+          (SENSOR_RADIUS + 3) * px
         );
       }) ?? null
     );
+  };
+
+  /** Index (into items) of the measure point / dm line under the mouse - the
+   * closest within HOVER_TOLERANCE screen pixels - or null. */
+  const itemAt = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    const transform = pointTransform();
+    const canvasPoint = canvasPointAt(event);
+    if (placement || !transform || !canvasPoint) {
+      return null;
+    }
+    let best: number | null = null;
+    let bestDistance = HOVER_TOLERANCE * px;
+    for (const [index, item] of items.entries()) {
+      const start = normalizedToCanvas(item.start, transform);
+      const distance = item.end
+        ? segmentDistance(canvasPoint, start, normalizedToCanvas(item.end, transform))
+        : Math.hypot(start[0] - canvasPoint[0], start[1] - canvasPoint[1]);
+      if (distance <= bestDistance) {
+        best = index;
+        bestDistance = distance;
+      }
+    }
+    return best;
+  };
+
+  const handleMouseMove = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    handleSensorMouseMove(event);
+    // No tooltip while panning.
+    const index = dragRef.current ? null : itemAt(event);
+    if (index === null) {
+      setHover((current) => (current ? null : current));
+      return;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    setHover({ index, x: event.clientX - rect.left, y: event.clientY - rect.top });
   };
 
   const handleSensorMouseMove = (
@@ -742,6 +937,49 @@ const ImageCanvasStage = ({
     },
   ];
 
+  /** What the tooltip of a measure point / dm line tells. */
+  const tooltipRows = (item: MarkerItem): Array<[string, string]> => {
+    const { point } = item;
+    const rows: Array<[string, string]> = [];
+    if (point.name) {
+      rows.push(['Name', String(point.name)]);
+    }
+    if (point.device != null) {
+      const deviceId = Number(point.device);
+      rows.push(['Device', deviceLabels?.[deviceId] ?? `#${deviceId}`]);
+    }
+    if (item.end) {
+      if (image && validMetersPerPixel) {
+        // Meters per pixel of the plan image, the band as the plan shows it.
+        const pixels = Math.hypot(
+          (item.end[0] - item.start[0]) * image.naturalWidth * pointScaleX,
+          (item.end[1] - item.start[1]) * image.naturalHeight * pointScaleY,
+        );
+        rows.push(['Length', `${(pixels * validMetersPerPixel).toFixed(1)} m`]);
+      } else {
+        // x/y are CAD coordinates times 10 (cad_reader.normalize_points).
+        const length =
+          Math.hypot(finite(point.x_end) - finite(point.x), finite(point.y_end) - finite(point.y)) / 10;
+        if (Number.isFinite(length)) {
+          rows.push(['Length', `${length.toFixed(1)} CAD units`]);
+        }
+      }
+    } else if (lineMode) {
+      rows.push(['Band', 'not in the plan - shown at its label']);
+    }
+    if (point.threshold != null) {
+      rows.push(['Threshold', String(point.threshold)]);
+    }
+    if (point.last_value != null) {
+      rows.push(['Last value', String(point.last_value)]);
+    }
+    return rows;
+  };
+
+  const hoveredItem = hover ? (items[hover.index] ?? null) : null;
+  const cssHeight = (cssWidth * CANVAS_HEIGHT) / CANVAS_WIDTH;
+  const tooltipBelow = hover ? hover.y < cssHeight - 140 : true;
+
   return (
     <div className="d-flex flex-column gap-3">
       <div className="d-flex justify-content-between align-items-baseline gap-2 flex-wrap">
@@ -752,43 +990,121 @@ const ImageCanvasStage = ({
       </div>
 
       <div className="d-flex flex-column gap-2">
-        <canvas
-          ref={canvasRef}
-          width={CANVAS_WIDTH}
-          height={CANVAS_HEIGHT}
-          onWheel={handleWheel}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleSensorMouseMove}
-          onClick={handleClick}
-          style={{
-            display: 'block',
-            width: '100%',
-            height: 'auto',
-            borderRadius: 13,
-            background: 'var(--progeo-surface)',
-            boxShadow: 'inset 0 0 0 1px rgba(11, 54, 89, 0.08)',
-            cursor:
-              tool !== 'pan' || placement?.activeDeviceId != null
-                ? 'crosshair'
-                : dragRef.current
-                  ? 'grabbing'
-                  : 'grab',
-          }}
-        />
+        <div style={{ position: 'relative' }}>
+          <canvas
+            ref={canvasRef}
+            width={Math.round(CANVAS_WIDTH * pixelRatio)}
+            height={Math.round(CANVAS_HEIGHT * pixelRatio)}
+            onWheel={handleWheel}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseLeave={() => setHover(null)}
+            onClick={handleClick}
+            style={{
+              display: 'block',
+              width: '100%',
+              height: 'auto',
+              aspectRatio: `${CANVAS_WIDTH} / ${CANVAS_HEIGHT}`,
+              borderRadius: 13,
+              background: 'var(--progeo-surface)',
+              boxShadow: 'inset 0 0 0 1px rgba(11, 54, 89, 0.08)',
+              cursor:
+                tool !== 'pan' || placement?.activeDeviceId != null
+                  ? 'crosshair'
+                  : dragRef.current
+                    ? 'grabbing'
+                    : hoveredItem
+                      ? 'pointer'
+                      : 'grab',
+            }}
+          />
+          {hover && hoveredItem && (
+            <div
+              role="tooltip"
+              style={{
+                position: 'absolute',
+                left: clamp(hover.x + 14, 4, Math.max(4, cssWidth - 244)),
+                top: tooltipBelow ? hover.y + 16 : hover.y - 16,
+                transform: tooltipBelow ? undefined : 'translateY(-100%)',
+                pointerEvents: 'none',
+                zIndex: 2,
+                minWidth: 150,
+                maxWidth: 240,
+                background: 'rgba(16, 20, 25, 0.93)',
+                color: '#ffffff',
+                borderRadius: 10,
+                padding: '8px 11px',
+                fontSize: 12,
+                lineHeight: 1.5,
+                boxShadow: '0 6px 18px rgba(0, 0, 0, 0.25)',
+              }}
+            >
+              <div className="d-flex align-items-center gap-2" style={{ fontWeight: 600, fontSize: 13 }}>
+                <span
+                  style={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: '50%',
+                    flexShrink: 0,
+                    background: hoveredItem.color,
+                  }}
+                />
+                {lineMode ? `dm ${hoveredItem.label}` : `Sensor ${hoveredItem.label}`}
+              </div>
+              {tooltipRows(hoveredItem).map(([label, value]) => (
+                <div key={label} className="d-flex gap-2">
+                  <span style={{ color: '#aab4be' }}>{label}</span>
+                  <span className="ms-auto text-end">{value}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         <div
           className="d-flex justify-content-between align-items-center gap-2 flex-wrap"
           style={{ fontSize: 12, color: MUTED, padding: '0 2px' }}
         >
           <span>Zoom {zoom.toFixed(2)}×</span>
+          {!placement && items.length > 1 && (
+            <span className="d-flex align-items-center gap-2">
+              <span>{lineMode ? `dm ${items[0].label}` : items[0].label}</span>
+              <span
+                aria-hidden="true"
+                style={{ width: 120, height: 8, borderRadius: 4, background: RAINBOW_GRADIENT }}
+              />
+              <span>{items[items.length - 1].label}</span>
+              {lineMode && (
+                <span>
+                  · {lineCount} line(s)
+                  {items.length > lineCount ? ` · ${items.length - lineCount} without band` : ''}
+                </span>
+              )}
+            </span>
+          )}
           <span>
             {placement
               ? placement.activeDeviceId != null
                 ? `Click on the plan to place ${placement.activeLabel ?? 'the selected sensor'} · drag points to move them`
                 : 'Select a sensor in step 3 · drag points to move them'
-              : 'Drag to pan · scroll to zoom'}
+              : 'Drag to pan · scroll to zoom · hover a sensor for details'}
           </span>
         </div>
+
+        {!placement && lineSensors && items.length > 0 && lineCount === 0 && (
+          <div
+            style={{
+              background: '#FBF3DE',
+              color: '#9A7208',
+              borderRadius: 12,
+              padding: '10px 14px',
+              fontSize: 12.5,
+            }}
+          >
+            This is a smartex dm project, but these measure points have no band
+            ends - import the DWG/DXF again in step 3 to get the sensor lines.
+          </div>
+        )}
       </div>
 
       {imageError && (

@@ -134,6 +134,21 @@ def _measure_point_location(request, params):
     return None, None, RequestFailed({"reason": f"No location found for device {device_id}"})
 
 
+def _point_device(request, location, db_name):
+    """(device pk or None, error_response) - `point_device_id`: the device of
+    the location imported measure points are connected to (Lageplan wizard)."""
+    raw = request.query_params.get("point_device_id") or request.data.get("point_device_id")
+    if raw in (None, "", "null"):
+        return None, None
+    try:
+        device_pk = int(raw)
+    except (TypeError, ValueError):
+        return None, RequestFailed({"reason": "point_device_id must be an integer"})
+    if not ProgeoDevice.objects.using(db_name).filter(location=location, pk=device_pk).exists():
+        return None, RequestFailed({"reason": f"Device {device_pk} is not at this location"})
+    return device_pk, None
+
+
 def get_connected_devices(*args, **kwargs) -> dict:
         devices = []
         leases_path = "/var/lib/misc/dnsmasq.leases"
@@ -517,15 +532,26 @@ class StatusViewSet(ProgeoModalViewSet):
         )
         if error:
             return error
+        device_pk, error = _point_device(request, location, db_name)
+        if error:
+            return error
 
         json_path = request.FILES.get("files0")
         data = json.load(json_path)
         for point in data:
-            _measure_point, _ = create_progeo_measure_point_safe(location=location, sensor_order=point.get('pos'),
-                                                                 x=point.get('x'), y=point.get('y'), 
-                                                                 nx=point.get('nx'), ny=point.get('ny'), 
-                                                                 grid_x=point.get('gx'), grid_y=point.get('gy'), 
-                                                                 db=db_name)
+            measure_point, _ = create_progeo_measure_point_safe(location=location, sensor_order=point.get('pos'),
+                                                                x=point.get('x'), y=point.get('y'),
+                                                                nx=point.get('nx'), ny=point.get('ny'),
+                                                                grid_x=point.get('gx'), grid_y=point.get('gy'),
+                                                                db=db_name)
+            # A dm band's end (cad_reader output) and the connected device.
+            changed = {field: point[field] for field in cad_import.END_FIELDS if field in point}
+            if device_pk:
+                changed["device_id"] = device_pk
+            if measure_point and changed:
+                for field, value in changed.items():
+                    setattr(measure_point, field, value)
+                measure_point.save(using=db_name, update_fields=list(changed))
         return RequestSuccess({"data": data})
 
     @calc_runtime
@@ -551,7 +577,8 @@ class StatusViewSet(ProgeoModalViewSet):
     @require_module_permissions("module_devices_enabled", "module_devices_edit")
     @action(detail=False, url_path="measure_points/upload_cad", methods=["POST"])
     def upload_measure_points_from_cad(self, request, *args, **kwargs):
-        """Replaces a location's measure points with imported ones. Text
+        """Replaces a location's measure points with imported ones, connected
+        to the location's device `point_device_id` if given. Text
         (semicolon rows) is stored right away; a DWG/DXF plan is read by
         progeo-cad_factory in a background job: the answer is {job_id}, follow it on
         /ws/cad_import/<job_id>/ or poll measure_points/cad_job
@@ -561,6 +588,9 @@ class StatusViewSet(ProgeoModalViewSet):
             "location_id": request.query_params.get("location_id") or request.data.get("location_id"),
             "device_id": request.query_params.get("device_id") or request.data.get("device_id"),
         })
+        if error:
+            return error
+        device_pk, error = _point_device(request, location, db_name)
         if error:
             return error
 
@@ -577,7 +607,8 @@ class StatusViewSet(ProgeoModalViewSet):
                 except (TypeError, ValueError):
                     coord_margin = 0.2
 
-                return self._queue_cad_job(request, location, db_name, upload, suffix, coord_margin=coord_margin)
+                return self._queue_cad_job(request, location, db_name, upload, suffix, coord_margin=coord_margin,
+                                           device_pk=device_pk)
 
             try:
                 text_data = upload.read().decode("utf-8", errors="replace")
@@ -602,7 +633,7 @@ class StatusViewSet(ProgeoModalViewSet):
             except ValueError as exc:
                 return RequestFailed({"reason": f"Invalid text point format: {exc}"})
 
-        return RequestSuccess(cad_import.store_measure_points(location, db_name, points))
+        return RequestSuccess(cad_import.store_measure_points(location, db_name, points, device_pk))
 
     @calc_runtime
     @require_module_permissions("module_devices_enabled", "module_devices_edit")
@@ -641,7 +672,9 @@ class StatusViewSet(ProgeoModalViewSet):
                 "1", "true", "yes", "on"
             }
             if with_lageplan:
-                lageplans_qs = location.lageplans.order_by("-is_active", "-id")
+                # From db_name, not location.lageplans: the location may come
+                # from "default" while its plans live in the project database.
+                lageplans_qs = ProgeoLageplan.objects.using(db_name).filter(location=location).order_by("-is_active", "-id")
                 if lageplans_qs.exists():
                     lageplans_serialized = ProgeoLageplanSerializer(lageplans_qs, many=True).data
                     response_data["lageplans"] = lageplans_serialized

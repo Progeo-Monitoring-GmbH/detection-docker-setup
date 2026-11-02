@@ -61,9 +61,11 @@ def _key(job_id: str) -> str:
     return f"cad_import_job:{job_id}"
 
 
-def create_job(*, user_id, location_pk, db_name, cad_input, source_name, coord_margin=0.2, kind="points") -> str:
+def create_job(*, user_id, location_pk, db_name, cad_input, source_name, coord_margin=0.2, kind="points",
+               device_pk=None) -> str:
     """cad_input: the uploaded plan, relative to the project root (media/uploads/...);
-    kind: "points" (DWG/DXF) or "lageplan" (PDF)."""
+    kind: "points" (DWG/DXF) or "lageplan" (PDF); device_pk: the device of the
+    location the imported points are connected to."""
     job_id = uuid4().hex
     _save(job_id, {
         "job_id": job_id,
@@ -72,6 +74,7 @@ def create_job(*, user_id, location_pk, db_name, cad_input, source_name, coord_m
         "user_id": user_id,
         "location_pk": location_pk,
         "db_name": db_name,
+        "device_pk": device_pk,
         "cad_input": cad_input,
         "source_name": source_name,
         "coord_margin": coord_margin,
@@ -118,41 +121,44 @@ def _append_log(job: dict, line: str) -> None:
     _send(job["job_id"], {"type": "cad.log", "seq": len(log) - 1, "line": line})
 
 
-def store_measure_points(location, db_name: str, points: list) -> dict:
-    """Replaces the location's measure points with the imported ones; returns
+def store_measure_points(location, db_name: str, points: list, device_pk=None) -> dict:
+    """Replaces the location's measure points with the imported ones (one
+    bulk insert), all connected to the device device_pk if given; returns
     upload_cad's answer {"location_id", "stored", "points"}."""
-    from progeo.v1.creator import create_progeo_measure_point_safe
+    from django.db import transaction
+
     from progeo.v1.models import ProgeoMeasurePoint
     from progeo.v1.serializers import ProgeoMeasurePointSerializer
 
-    if not points:
-        ProgeoMeasurePoint.objects.using(db_name).filter(location=location).delete()
-        return {"location_id": location.id, "stored": 0, "points": []}
-
     bulk_points = []
     reference_sensor_order = None
+    # bulk_create skips save(), which sets last_fetched.
+    now = timezone.now()
     for idx, point in enumerate(points, start=1):
+        # pos: the sensor's own number (a dm label's NNN, a text row's id), else its place.
+        try:
+            sensor_order = int(point["pos"])
+        except (KeyError, TypeError, ValueError):
+            sensor_order = idx
         if bool(point.get("reference")):
-            reference_sensor_order = idx
-
-        measure_point, _ = create_progeo_measure_point_safe(
+            reference_sensor_order = sensor_order
+        bulk_points.append(ProgeoMeasurePoint(
+            last_fetched=now,
             location=location,
-            sensor_order=idx,
+            device_id=device_pk,
+            sensor_order=sensor_order,
             x=point.get("x"),
             y=point.get("y"),
             nx=point.get("nx"),
             ny=point.get("ny"),
             grid_x=point.get("gx", 0),
             grid_y=point.get("gy", 0),
-            db=db_name,
-        )
-        for field in END_FIELDS:
-            setattr(measure_point, field, point.get(field))
+            **{field: point.get(field) for field in END_FIELDS},
+        ))
 
-        bulk_points.append(measure_point)
-
-    ProgeoMeasurePoint.objects.using(db_name).filter(location=location).delete()
-    ProgeoMeasurePoint.objects.using(db_name).bulk_create(bulk_points)
+    with transaction.atomic(using=db_name):
+        ProgeoMeasurePoint.objects.using(db_name).filter(location=location).delete()
+        ProgeoMeasurePoint.objects.using(db_name).bulk_create(bulk_points)
 
     stored_qs = ProgeoMeasurePoint.objects.using(db_name).filter(location=location).order_by("sensor_order")
     stored = ProgeoMeasurePointSerializer(
@@ -270,7 +276,7 @@ def run_job(job_id: str) -> None:
             _append_log(job, f"Stored Lageplan #{lageplan.pk}")
             _finish(job, "done", result=lageplan_answer(lageplan))
             return
-        result = store_measure_points(location, job["db_name"], points)
+        result = store_measure_points(location, job["db_name"], points, job.get("device_pk"))
         _append_log(job, f"Stored {result['stored']} measure points")
         _finish(job, "done", result=result)
     except Exception as exc:  # noqa: BLE001 - reported to the user
