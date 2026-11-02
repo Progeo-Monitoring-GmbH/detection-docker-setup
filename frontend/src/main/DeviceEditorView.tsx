@@ -18,8 +18,6 @@ type CanvasPoint = {
   id: number;
   x: number;
   y: number;
-  grid_x: number;
-  grid_y: number;
   reference?: boolean;
 };
 
@@ -565,7 +563,7 @@ const DeviceEditorView = () => {
                     border: '1px solid #ffffff',
                     boxShadow: '0 1px 6px rgba(0, 0, 0, 0.35)',
                   }}
-                  title={`Point ${point.id} | (${point.grid_x}, ${point.grid_y})}`}
+                  title={`Point ${point.id} | (${Math.round(point.x)}, ${Math.round(point.y)})`}
                 >
                   {point.id}
                 </div>

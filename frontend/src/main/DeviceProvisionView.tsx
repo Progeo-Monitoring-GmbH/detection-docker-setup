@@ -956,6 +956,9 @@ const DeviceProvisionView = () => {
 
       {testDevice && (
         <ProvisionTestMeasurements
+          // A fresh instance per device: its polls merge new rows into the
+          // shown ones, so a reused instance mixed the devices' measurements.
+          key={`${testDevice.location}-${testDevice.id}`}
           locationId={testDevice.location}
           deviceId={testDevice.id}
           deviceHash={testDevice.raw_hash}

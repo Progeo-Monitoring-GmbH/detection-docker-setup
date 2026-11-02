@@ -2,7 +2,7 @@ import { LinearProgress } from '@mui/material';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Col, Form, Row } from 'react-bootstrap';
 import axiosConfig, { defaultErrorCallback } from '../../axiosConfig';
-import { useDropzone } from 'react-dropzone';
+import { useDropzone, type Accept } from 'react-dropzone';
 import { IPreview, Thumbnail } from '../ui/GalleryHelper.tsx';
 import { showErrorBar, showSuccessBar } from '../ui/Snackbar.jsx';
 import { useSnackbar } from 'notistack';
@@ -20,7 +20,9 @@ const RedDropbox = ({
   payload = {},
   hint = 'Drag & drop some files here, or click to select files',
 }) => {
-  const getAcceptesTypes = (kind: string) => {
+  // Typed as Accept: the inferred union of the literals gives every branch
+  // the other branches' keys as `?: undefined`, which useDropzone rejects.
+  const getAcceptesTypes = (kind: string): Accept => {
     const key = (kind || '').toLowerCase();
     if (key === 'cad') {
       return {

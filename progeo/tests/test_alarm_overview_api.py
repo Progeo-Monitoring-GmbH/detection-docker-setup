@@ -117,6 +117,62 @@ def test_summary_requires_permission(api_client, world):
     assert api_client.get("/v1/alarm/location_summary/").status_code == 403
 
 
+# -- active ------------------------------------------------------------------
+
+def _active(api_client):
+    response = api_client.get("/v1/alarm/active/")
+    assert response.status_code == 200, response.content
+    return response.json()
+
+
+def test_active_lists_open_alarms_of_every_location_newest_first(api_client, world):
+    _account, location, other_location, device, member = world
+    old = f.make_alarm(device, triggered_ago=timedelta(days=30), sensor_id=4, value=210)  # open, outside 14 days
+    f.make_alarm(device, triggered_ago=f.minutes(90), normalized_ago=f.minutes(60))  # resolved
+    newest = f.make_alarm(f.make_device(other_location), triggered_ago=f.minutes(5))
+    api_client.force_authenticate(user=member)
+
+    body = _active(api_client)
+
+    assert body["truncated"] is False
+    assert [alarm["id"] for alarm in body["alarms"]] == [newest.id, old.id]
+    row = body["alarms"][1]
+    assert row["location"] == {"id": location.id, "name": location.name, "project_id": location.project_id,
+                               "city": location.city}
+    assert row["device"] == {"id": device.id, "raw_hash": device.raw_hash, "display_name": "AA:BB"}
+    assert (row["sensor_id"], row["max_value"], row["status"]) == (4, 210, "neu")
+    assert _ts(row["triggered_at"]) == old.triggered_at
+
+
+def test_active_is_scoped_for_single_access_users(api_client, world):
+    _account, _location, other_location, device, _member = world
+    f.make_alarm(device, triggered_ago=f.minutes(30))
+    visible = f.make_alarm(f.make_device(other_location), triggered_ago=f.minutes(5))
+    single = f.make_user(perms=MEASURE)
+    f.make_access(other_location, single)
+    api_client.force_authenticate(user=single)
+
+    assert [alarm["id"] for alarm in _active(api_client)["alarms"]] == [visible.id]
+
+
+def test_active_is_capped(api_client, world, monkeypatch):
+    monkeypatch.setattr("progeo.v1.viewsets.alarm_viewset.ACTIVE_ALARMS_LIMIT", 2)
+    device, member = world[3], world[4]
+    alarms = [f.make_alarm(device, triggered_ago=f.minutes(minutes)) for minutes in (10, 20, 30)]
+    api_client.force_authenticate(user=member)
+
+    body = _active(api_client)
+
+    assert body["truncated"] is True
+    assert [alarm["id"] for alarm in body["alarms"]] == [alarms[0].id, alarms[1].id]
+
+
+def test_active_requires_permission(api_client, world):
+    api_client.force_authenticate(user=f.make_user(accounts=[world[0]]))
+
+    assert api_client.get("/v1/alarm/active/").status_code == 403
+
+
 # -- clusters ----------------------------------------------------------------
 
 @pytest.fixture

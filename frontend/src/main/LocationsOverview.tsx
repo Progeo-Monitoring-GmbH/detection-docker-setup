@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import DataTable from 'react-data-table-component';
 import type { TableColumn } from 'react-data-table-component';
-import { Button, Form, Spinner } from 'react-bootstrap';
-import { Pencil } from 'react-bootstrap-icons';
+import { Alert, Button, Card, Form, Spinner } from 'react-bootstrap';
+import { Bell, Pencil } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
 import { useNavigate } from 'react-router';
 
@@ -17,6 +17,7 @@ import LocationEditModal, {
   type LocationEditRow,
 } from '../components/modal/LocationEditModal.tsx';
 import { staffFlags } from './access';
+import { formatDate } from './dateFormat';
 
 type LocationRow = LocationEditRow & {
   measurement_count?: number;
@@ -27,6 +28,84 @@ type LocationAlarmSummary = {
   count: number;
   active: number;
 };
+
+/** A row of GET /v1/alarm/active/: a not yet normalized alarm. */
+type ActiveAlarm = {
+  id: number;
+  triggered_at: string | null;
+  still_active_at: string | null;
+  status: string | null;
+  sensor_id: number | null;
+  max_value: number | null;
+  threshold: number | null;
+  device: { id: number; raw_hash: string; display_name: string };
+  location: {
+    id: number;
+    name: string | null;
+    project_id: number | null;
+    city: string | null;
+  };
+};
+
+/** Columns of the active alarms list (a row opens its location's alarms). */
+const activeAlarmColumns: TableColumn<ActiveAlarm>[] = [
+  {
+    name: 'Triggered',
+    selector: (row) => row.triggered_at ?? '',
+    format: (row) => formatDate(row.triggered_at, 'dateTime'),
+    sortable: true,
+    width: '160px',
+  },
+  {
+    name: 'Project',
+    selector: (row) => row.location.project_id ?? '-',
+    sortable: true,
+    width: '110px',
+  },
+  {
+    name: 'Location',
+    selector: (row) => row.location.name || '-',
+    cell: (row) => (
+      <div className="small">
+        {row.location.name || '-'}
+        {row.location.city && (
+          <div className="text-muted">{row.location.city}</div>
+        )}
+      </div>
+    ),
+    sortable: true,
+    grow: 1.6,
+  },
+  {
+    name: 'Device',
+    selector: (row) => row.device.display_name,
+    sortable: true,
+    grow: 1.2,
+  },
+  {
+    name: 'Sensor',
+    selector: (row) => row.sensor_id ?? 0,
+    format: (row) => (row.sensor_id != null ? `S${row.sensor_id}` : '-'),
+    sortable: true,
+    width: '90px',
+  },
+  {
+    name: 'Value',
+    selector: (row) => row.max_value ?? 0,
+    format: (row) =>
+      row.max_value != null
+        ? `${row.max_value}${row.threshold != null ? ` / ${row.threshold}` : ''}`
+        : '-',
+    sortable: true,
+    width: '120px',
+  },
+  {
+    name: 'Status',
+    selector: (row) => row.status ?? '-',
+    sortable: true,
+    width: '110px',
+  },
+];
 
 /** Row coloring: yellow = has alarms, green = has measurements, gray = none. */
 const ROW_STYLES = {
@@ -276,6 +355,8 @@ const LocationsOverview = () => {
   // top of the module permission.
   const canDelete =
     hasPermission('module_locations_delete') && staffFlags(auth?.user).isStaff;
+  // Backend: /v1/alarm/active/ requires module_measurements_enabled.
+  const canListAlarms = hasPermission('module_measurements_enabled');
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
   // Only auto-forward on the very first load (an account with a single
@@ -299,6 +380,27 @@ const LocationsOverview = () => {
   const loadedDetailIds = useRef<Set<number>>(new Set());
   // Ids for which the alarm summary was already loaded, same on-page-demand pattern.
   const loadedAlarmIds = useRef<Set<number>>(new Set());
+  // "Active alarms": every open alarm of all locations, loaded on demand.
+  const [activeAlarms, setActiveAlarms] = useState<ActiveAlarm[] | null>(null);
+  const [activeTruncated, setActiveTruncated] = useState(false);
+  const [loadingActive, setLoadingActive] = useState(false);
+
+  const fetchActiveAlarms = () => {
+    setLoadingActive(true);
+    void axiosConfig.perform_get(
+      auth,
+      '/v1/alarm/active/',
+      (response) => {
+        setActiveAlarms((response?.data?.alarms || []) as ActiveAlarm[]);
+        setActiveTruncated(Boolean(response?.data?.truncated));
+        setLoadingActive(false);
+      },
+      (error) => {
+        showRequestError(enqueueSnackbar, 'Could not load the active alarms', error);
+        setLoadingActive(false);
+      },
+    );
+  };
 
   const fetchLocations = (search = '', hasDevice = false) => {
     setLoading(true);
@@ -466,8 +568,65 @@ const LocationsOverview = () => {
             checked={onlyConnected}
             onChange={(event) => setOnlyConnected(event.target.checked)}
           />
+          {canListAlarms && (
+            <Button
+              variant="outline-warning"
+              onClick={fetchActiveAlarms}
+              disabled={loadingActive}
+            >
+              {loadingActive ? (
+                <Spinner size="sm" animation="border" className="me-2" />
+              ) : (
+                <Bell className="me-2" />
+              )}
+              Active alarms
+            </Button>
+          )}
         </div>
       </div>
+
+      {activeAlarms && (
+        <Card className="border-0 shadow-sm mb-3">
+          <Card.Body>
+            <div className="d-flex justify-content-between align-items-start mb-2">
+              <h5 className="mb-0">
+                Active alarms ({activeAlarms.length}
+                {activeTruncated ? '+' : ''})
+              </h5>
+              <Button
+                variant="link"
+                size="sm"
+                className="p-0"
+                onClick={() => setActiveAlarms(null)}
+              >
+                Close
+              </Button>
+            </div>
+            {activeTruncated && (
+              <Alert variant="warning" className="small py-2">
+                Only the newest {activeAlarms.length} active alarms are listed.
+              </Alert>
+            )}
+            {activeAlarms.length === 0 ? (
+              <Alert variant="success" className="mb-0">
+                No active alarms.
+              </Alert>
+            ) : (
+              <DataTable
+                columns={activeAlarmColumns}
+                data={activeAlarms}
+                pagination
+                highlightOnHover
+                pointerOnHover
+                onRowClicked={(row) => navigate(`/location/${row.location.id}/alarms`)}
+                defaultSortFieldId={1}
+                defaultSortAsc={false}
+                dense
+              />
+            )}
+          </Card.Body>
+        </Card>
+      )}
 
       <DataTable
         columns={columns}

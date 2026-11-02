@@ -143,11 +143,12 @@ function ContextPanel() {
     ctx.readyState === ReadyState.OPEN ? '#4caf50' :
     ctx.readyState === ReadyState.CONNECTING ? '#f0a500' : '#f44336';
 
-  function sendPing() {
+  // An arrow function, not a hoisted declaration: keeps ctx narrowed to non-null.
+  const sendPing = () => {
     const msg = JSON.stringify({ type: 'ping', ts: Date.now() });
     ctx.sendMessage(msg);
     setLog((prev) => [...prev, { time: ts(), tag: 'sent', text: msg }]);
-  }
+  };
 
   return (
     <div style={{ border: '1px solid #333', borderRadius: 6, padding: 16 }}>

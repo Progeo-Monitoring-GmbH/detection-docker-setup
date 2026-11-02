@@ -127,11 +127,13 @@ def test_alarm_overview_and_summary_include_the_project_databases_alarms(staff_c
         overview = staff_client.get("/v1/alarm/?days=2").json()["alarms"]
         per_location = staff_client.get(f"/v1/alarm/?location={location}&days=2").json()["alarms"]
         summary = staff_client.get(f"/v1/alarm/location_summary/?ids={location}").json()["locations"]
+        active = staff_client.get("/v1/alarm/active/").json()["alarms"]
 
     project_ids = sorted(ProgeoAlarm.objects.using(ALIAS).values_list("pk", flat=True))
     assert world["project_alarm"].pk in _ids(overview)
     assert _ids(per_location) == project_ids
     assert summary[str(location)]["count"] == len(project_ids)
+    assert world["project_alarm"].pk in _ids(alarm for alarm in active if alarm["location"]["id"] == location)
 
 
 @WITH_PROJECT_DBS

@@ -1,7 +1,8 @@
 from collections import defaultdict
 from datetime import datetime, timedelta
+from datetime import timezone as dt_timezone
 
-from django.db.models import Count, Q
+from django.db.models import Count, F, Q
 from django.utils import timezone
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action
@@ -35,6 +36,8 @@ STATUS_ACKNOWLEDGED = ProgeoAlarm.Status.QUITTIERT
 DEFAULT_ALARM_DAYS = 14
 # Longest history the location views offer (3 years, see frontend timeRanges.ts).
 MAX_HISTORY_DAYS = 1096
+# The locations overview's "active alarms" list stays bounded.
+ACTIVE_ALARMS_LIMIT = 1000
 
 
 class AlarmViewSet(ProgeoModalViewSet):
@@ -144,6 +147,70 @@ class AlarmViewSet(ProgeoModalViewSet):
             }
 
         return RequestSuccess({"locations": locations})
+
+    @require_module_permissions("module_measurements_enabled")
+    @action(detail=False, url_path="active", methods=["GET"])
+    def active(self, request, *args, **kwargs):
+        """
+        Every still-active alarm (not normalized, regardless of age - the
+        "active" of location_summary) of all locations the user sees, for the
+        locations overview's "Active alarms" list. Newest first, at most
+        ACTIVE_ALARMS_LIMIT. Returns {"alarms": [...], "truncated": bool}.
+        """
+        accounts = resolve_request_accounts(request, fallback_account=_get_controller_account())
+        if not accounts:
+            return RequestSuccess({"alarms": [], "truncated": False})
+        groups = accessible_locations_by_db(request.user, accounts)
+
+        def active_rows(db_name):
+            return list(
+                ProgeoAlarm.objects.using(db_name)
+                .filter(measurement__device__location_id__in=groups[db_name], normalized_at__isnull=True)
+                .order_by(F("triggered_at").desc(nulls_last=True), "-id")
+                .values(
+                    "id", "triggered_at", "last_fetched", "still_active_at", "status",
+                    "sensor_id", "max_value", "threshold",
+                    "measurement__device_id", "measurement__device__raw_hash",
+                    "measurement__device__mac", "measurement__device__hardware",
+                    "measurement__device__location_id", "measurement__device__location__name",
+                    "measurement__device__location__project_id", "measurement__device__location__city",
+                )[:ACTIVE_ALARMS_LIMIT + 1]
+            )
+
+        rows = [row for chunk in map_databases(active_rows, groups) for row in chunk]
+        # Newest first over all databases; untriggered rows by their fetch time.
+        oldest = datetime.min.replace(tzinfo=dt_timezone.utc)
+        rows.sort(key=lambda row: (row["triggered_at"] or row["last_fetched"] or oldest, row["id"]), reverse=True)
+
+        def iso(value):
+            return value.isoformat() if value else None
+
+        alarms = [
+            {
+                "id": row["id"],
+                "triggered_at": iso(row["triggered_at"] or row["last_fetched"]),
+                "still_active_at": iso(row["still_active_at"]),
+                "status": ProgeoAlarm.Status(row["status"]).label if row["status"] in ProgeoAlarm.Status.values else None,
+                "sensor_id": row["sensor_id"],
+                "max_value": row["max_value"],
+                "threshold": row["threshold"],
+                "device": {
+                    "id": row["measurement__device_id"],
+                    "raw_hash": row["measurement__device__raw_hash"],
+                    # ProgeoDevice.display_name
+                    "display_name": row["measurement__device__mac"] or row["measurement__device__hardware"]
+                                    or row["measurement__device__raw_hash"],
+                },
+                "location": {
+                    "id": row["measurement__device__location_id"],
+                    "name": row["measurement__device__location__name"],
+                    "project_id": row["measurement__device__location__project_id"],
+                    "city": row["measurement__device__location__city"],
+                },
+            }
+            for row in rows[:ACTIVE_ALARMS_LIMIT]
+        ]
+        return RequestSuccess({"alarms": alarms, "truncated": len(rows) > ACTIVE_ALARMS_LIMIT})
 
     @require_module_permissions("module_measurements_enabled")
     @action(detail=False, url_path="clusters", methods=["GET"])
