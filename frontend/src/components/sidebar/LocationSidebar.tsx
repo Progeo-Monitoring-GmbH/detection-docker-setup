@@ -12,6 +12,7 @@ import {
   Hdd,
   Layers,
   People,
+  Plug,
   PlusSquare,
   Terminal,
 } from 'react-bootstrap-icons';
@@ -183,6 +184,14 @@ const LocationSidebar = ({
       icon: People,
       to: '/staff/',
       visible: can(routeRule('/staff/')),
+    },
+    {
+      // SMTP/Modbus/SMS/messenger - system-wide, not per location.
+      key: 'schnittstelle',
+      label: t('nav_schnittstelle'),
+      icon: Plug,
+      to: '/schnittstelle/',
+      visible: can(routeRule('/schnittstelle/')),
     },
     {
       key: 'backup',

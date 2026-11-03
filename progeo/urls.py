@@ -13,6 +13,7 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path("blog/", include("blog.urls"))
 """
+from django.conf import settings as django_settings
 from django.contrib import admin
 from django.http import HttpResponse
 from django.urls import include, re_path
@@ -121,3 +122,11 @@ urlpatterns = [
     ###re_path(r"^silk/", include("silk.urls", namespace="silk")),
 
 ]
+
+# The portal as OpenID Connect provider for our Matrix server (progeo/oidc.py),
+# only with a signing key and issuer (PORTAL_OIDC_KEY_FILE / PORTAL_OIDC_ISSUER).
+# django.conf's settings, not the progeo.settings module: tests have their own.
+if django_settings.PORTAL_OIDC_ENABLED:
+    from progeo import oidc
+
+    urlpatterns.append(re_path(r"^auth/oidc/", include((oidc.urlpatterns(), "oauth2_provider"))))

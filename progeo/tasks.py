@@ -772,3 +772,23 @@ def refresh_demo_account():
     out = StringIO()
     call_command("demo_account", stdout=out)
     return out.getvalue()
+
+
+SIGNAL_LINK_CACHE = "progeo:signal_link:"
+
+
+@shared_task
+def signal_link_wait_task(login_id: str, step_id: str):
+    """Waits until ProGeo's Signal phone scanned the bridge's QR code
+    (helper/messenger.signal_link_start) and stores the outcome for the
+    Schnittstelle page, which polls it (InterfaceViewSet.signal_link_state)."""
+    from django.core.cache import cache
+
+    from progeo.helper.messenger import MessengerError, signal_link_wait
+
+    try:
+        result = {"state": "linked", **signal_link_wait(login_id, step_id)}
+    except MessengerError as exc:
+        result = {"state": "failed", "error": str(exc)}
+    cache.set(f"{SIGNAL_LINK_CACHE}{login_id}", result, 3600)
+    return result

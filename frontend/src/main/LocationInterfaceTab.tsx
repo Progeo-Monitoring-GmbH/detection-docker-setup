@@ -54,14 +54,16 @@ const MESSENGER_CARDS: Record<
     title: 'Signal',
     description: (
       <>
-        Sends through the <code>progeo-signal</code> container (compose
-        profile <code>messenger</code>) with a registered or linked sender
-        number. Falls back to the <code>SIGNAL_*</code> env vars until saved.
+        Sent through Matrix: the Signal bridge (<code>progeo-signal-bridge</code>,
+        compose profile <code>messenger</code>) is linked to ProGeo&apos;s Signal
+        number, and the Matrix bot writes into the bridged chats – so the Matrix
+        card below must be set up too. The provisioning secret is{' '}
+        <code>MATRIX_SIGNAL_PROVISIONING_SECRET</code> of <code>.env</code>.
       </>
     ),
     fields: [
-      { key: 'api_url', label: 'API URL', placeholder: 'http://progeo-signal:8080', md: 6 },
-      { key: 'number', label: 'Sender number', placeholder: '+49 151 2345678', md: 6 },
+      { key: 'bridge_url', label: 'Bridge URL', placeholder: 'http://progeo-signal-bridge:29328', md: 6 },
+      { key: 'provisioning_secret', label: 'Provisioning secret', secret: true, md: 6 },
     ],
     toPlaceholder: '+49 151 2345678',
   },
@@ -91,7 +93,8 @@ const MESSENGER_CARDS: Record<
       <>
         A bot account on a Matrix homeserver – our own runs in the compose
         profile <code>messenger</code> (<code>http://progeo-matrix:8008</code>).
-        Each user gets a direct room on
+        The bot&apos;s token: <code>mas-cli manage issue-compatibility-token
+        progeo-bot</code> (docker/matrix/README.md). Each user gets a direct room on
         the first message and has to accept the invite. Messages are not
         end-to-end encrypted. Env fallback: <code>MATRIX_*</code>.
       </>
@@ -243,12 +246,13 @@ const BusyLabel = ({ busy, busyText, children }: { busy: boolean; busyText: stri
   );
 
 /**
- * Schnittstelle tab: runtime configuration of the SMTP server, the Modbus
+ * Schnittstelle page (/schnittstelle/, system-wide - not tied to a
+ * location): runtime configuration of the SMTP server, the Modbus
  * connection, the Esendex SMS gateway and the messenger gateways (stored in
  * SystemConfig, falls back to django.env until saved). The messenger cards
  * share the SMS permissions - both are text message gateways. Cards are shown according to the granular
- * module_interface_* permissions; the tab itself is hidden by
- * LocationDetailView when module_interface_enabled is missing.
+ * module_interface_* permissions; the page itself needs
+ * module_interface_enabled (access.ts).
  */
 const LocationInterfaceTab = () => {
   const { hasPermission } = usePermissions();
@@ -657,6 +661,134 @@ const EsendexSmsCard = () => {
  * One messenger gateway (Signal / WhatsApp / Matrix): its config + a real
  * "send test message" button. Same permissions as the SMS card.
  */
+type SignalLogin = { id?: string; name?: string | null; state?: string | null };
+
+/**
+ * Which Signal number the bridge sends from, and linking one: the backend
+ * starts the bridge's QR login, the code is scanned in the Signal app of
+ * ProGeo's phone (Settings -> Linked devices), a background task waits for it.
+ */
+const SignalLinkPanel = ({ canEdit }: { canEdit: boolean }) => {
+  const auth = useAuth();
+  const { enqueueSnackbar } = useSnackbar();
+  const [logins, setLogins] = useState<SignalLogin[] | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [link, setLink] = useState<{ login_id: string; qr: string; instructions?: string } | null>(null);
+  const [linkState, setLinkState] = useState<{ state: string; error?: string } | null>(null);
+  const [starting, setStarting] = useState(false);
+
+  const loadStatus = useCallback(() => {
+    void axiosConfig.perform_get(
+      auth,
+      '/v1/interface/messenger/signal/status/',
+      (response) => {
+        setLogins((response?.data?.status?.logins || null) as SignalLogin[] | null);
+        setStatusError(response?.data?.error || null);
+      },
+      (error) => setStatusError(errorReason(error)),
+    );
+  }, [auth]);
+
+  useEffect(() => {
+    loadStatus();
+  }, [loadStatus]);
+
+  // While a QR code is shown: ask every 3 s whether it was scanned.
+  useEffect(() => {
+    if (!link || (linkState && linkState.state !== 'waiting')) {
+      return undefined;
+    }
+    const timer = window.setInterval(() => {
+      void axiosConfig.perform_get(
+        auth,
+        `/v1/interface/messenger/signal/link/${link.login_id}/`,
+        (response) => {
+          const state = response?.data?.link || { state: 'waiting' };
+          setLinkState(state);
+          if (state.state === 'linked') {
+            showSuccessBar(enqueueSnackbar, 'Signal number linked.');
+            setLink(null);
+            loadStatus();
+          }
+        },
+        () => {},
+      );
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [auth, enqueueSnackbar, link, linkState, loadStatus]);
+
+  const startLink = () => {
+    setStarting(true);
+    setLinkState(null);
+    void axiosConfig.perform_post(
+      auth,
+      '/v1/interface/messenger/signal/link/',
+      {},
+      (response) => {
+        setStarting(false);
+        if (response?.data?.link) {
+          setLink(response.data.link);
+          setLinkState({ state: 'waiting' });
+        } else {
+          showErrorBar(enqueueSnackbar, `Could not start linking: ${response?.data?.error || '?'}`);
+        }
+      },
+      (error) => {
+        setStarting(false);
+        showRequestError(enqueueSnackbar, 'Could not start linking', error);
+      },
+    );
+  };
+
+  return (
+    <div className="mt-3 p-3 border rounded bg-light">
+      <div className="small fw-semibold mb-2">ProGeo&apos;s Signal number</div>
+      {statusError ? (
+        <div className="small text-danger text-break">{statusError}</div>
+      ) : logins === null ? (
+        <div className="small text-muted">
+          <Spinner size="sm" animation="border" className="me-1" /> Asking the bridge…
+        </div>
+      ) : logins.length === 0 ? (
+        <div className="small text-muted">Not linked yet – Signal messages can&apos;t be sent.</div>
+      ) : (
+        <ul className="small mb-0 ps-3">
+          {logins.map((login) => (
+            <li key={login.id}>
+              {login.name || login.id} <span className="text-muted">({login.state || '?'})</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {canEdit && !link && (
+        <Button size="sm" variant="outline-primary" className="mt-2" onClick={startLink} disabled={starting}>
+          <BusyLabel busy={starting} busyText="Starting…">
+            {logins && logins.length > 0 ? 'Link another number' : 'Link Signal number'}
+          </BusyLabel>
+        </Button>
+      )}
+      {link && (
+        <div className="d-flex gap-3 mt-2 flex-wrap align-items-start">
+          <img src={link.qr} alt="Signal QR code" width={180} height={180} />
+          <div className="small" style={{ maxWidth: 320 }}>
+            <div className="fw-semibold mb-1">Scan with ProGeo&apos;s Signal phone</div>
+            Signal → Settings → Linked devices → Link new device. The code is
+            valid for a few minutes.
+            {linkState?.state === 'failed' && (
+              <div className="text-danger mt-2 text-break">{linkState.error || 'Linking failed.'}</div>
+            )}
+            <div className="mt-2">
+              <Button size="sm" variant="outline-secondary" onClick={() => setLink(null)}>
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const MessengerCard = ({ service }: { service: MessengerService }) => {
   const { enqueueSnackbar } = useSnackbar();
   const { hasPermission } = usePermissions();
@@ -719,6 +851,8 @@ const MessengerCard = ({ service }: { service: MessengerService }) => {
             <ReadOnlyHint permission="module_interface_sms_edit" action="zum Bearbeiten und zum Versenden" />
           )}
         </div>
+
+        {service === 'signal' && <SignalLinkPanel canEdit={canEdit} />}
 
         {canEdit && (
           <div className="mt-3 p-3 border rounded bg-light">

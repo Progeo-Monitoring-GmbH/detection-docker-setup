@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { Eye, EyeSlash } from 'react-bootstrap-icons';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
+import { oidcLoginHint } from '../../main/oidcForward';
 import AuthPage, {
   AuthLinks,
   ERROR_TEXT,
@@ -25,7 +26,10 @@ import AuthPage, {
  */
 const LoginForm = () => {
   const [searchParams] = useSearchParams();
-  const { register, handleSubmit, formState, resetField } = useForm();
+  // From the chat app's login link (QR code in Mein Konto).
+  const { register, handleSubmit, formState, resetField } = useForm({
+    defaultValues: { username: oidcLoginHint(searchParams.get('forward')) },
+  });
   const [showPasswd, setShowPasswd] = useState(false);
   // null: credentials; 'otp_required'/'otp_invalid': the 2FA step.
   const [otpStep, setOtpStep] = useState(null);

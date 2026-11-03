@@ -57,11 +57,14 @@ DNS_BACK_SERVER_NAMES="$(unique_names ${back_names})"
 DNS_BACK_SERVER_NAMES="${DNS_BACK_SERVER_NAMES:-api.invalid}"
 # Matrix homeserver block (compose profile "messenger"); unset = never matches.
 MATRIX_SERVER_NAME="${MATRIX_DOMAIN:-matrix.invalid}"
-export DNS_FRONT_SERVER_NAMES DNS_BACK_SERVER_NAMES MATRIX_SERVER_NAME
+MATRIX_AUTH_SERVER_NAME="${MATRIX_AUTH_DOMAIN:-matrix-auth.invalid}"
+# Federation endpoints only with MATRIX_FEDERATION=1 (as progeo-matrix).
+if [ "${MATRIX_FEDERATION:-0}" = "1" ]; then MATRIX_FEDERATION_ENABLED=1; else MATRIX_FEDERATION_ENABLED=0; fi
+export DNS_FRONT_SERVER_NAMES DNS_BACK_SERVER_NAMES MATRIX_SERVER_NAME MATRIX_AUTH_SERVER_NAME MATRIX_FEDERATION_ENABLED
 echo "server names: api block '${DNS_BACK_SERVER_NAMES}', frontend block '${DNS_FRONT_SERVER_NAMES}', matrix block '${MATRIX_SERVER_NAME}'"
 
 if [ -f /etc/nginx/conf.d/progeo.conf.template ]; then
-  envsubst '\$DNS_BACK_SERVER_NAMES \$DNS_FRONT_SERVER_NAMES \$MATRIX_SERVER_NAME \$CERT_FILE \$CERT_KEY \$CERT_PATH' < /etc/nginx/conf.d/progeo.conf.template > /etc/nginx/conf.d/progeo.conf
+  envsubst '\$DNS_BACK_SERVER_NAMES \$DNS_FRONT_SERVER_NAMES \$MATRIX_SERVER_NAME \$MATRIX_AUTH_SERVER_NAME \$MATRIX_FEDERATION_ENABLED \$CERT_FILE \$CERT_KEY \$CERT_PATH' < /etc/nginx/conf.d/progeo.conf.template > /etc/nginx/conf.d/progeo.conf
   rm /etc/nginx/conf.d/progeo.conf.template
 fi
 

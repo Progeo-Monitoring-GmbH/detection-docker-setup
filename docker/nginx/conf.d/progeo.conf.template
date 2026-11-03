@@ -253,8 +253,13 @@ server {
 
 
 # Matrix homeserver on MATRIX_DOMAIN (compose profile "messenger",
-# docker/matrix/README.md). Clients and federation both use 443. Without the
-# profile progeo-matrix doesn't resolve and this answers 502.
+# docker/matrix/README.md). Only the client API is public; federation only
+# with MATRIX_FEDERATION=1. Without the profile progeo-matrix doesn't
+# resolve and the API answers 502.
+
+# Matrix logins/registrations: 10 per minute and client address.
+limit_req_zone $binary_remote_addr zone=matrix_login:10m rate=10r/m;
+
 server {
     listen 443 ssl;
     listen [::]:443 ssl;
@@ -264,52 +269,106 @@ server {
     ssl_certificate ${CERT_PATH}/${CERT_FILE};
     ssl_certificate_key ${CERT_PATH}/${CERT_KEY};
 
+    # A JSON API: no page may embed or run anything from here.
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header Content-Security-Policy "default-src 'none'; frame-ancestors 'none'" always;
     add_header X-Content-Type-Options "nosniff" always;
-    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "no-referrer" always;
 
     # Matches homeserver.yaml max_upload_size.
     client_max_body_size 10M;
 
-    # ^~: no regex location below (scanner filter) gets these - media file
-    # names may end in .log, .conf, ... Without a URI in proxy_pass, nginx
-    # passes the request URI unchanged (Synapse needs encoded IDs as sent).
-    location ^~ /_matrix/ {
-        set $matrix_upstream progeo-matrix:8008;
-        proxy_pass http://$matrix_upstream;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $remote_addr;
-        proxy_set_header X-Forwarded-Proto $scheme;
+    # 1 = federation endpoints are served (MATRIX_FEDERATION, fix_host_file.sh).
+    set $matrix_federation ${MATRIX_FEDERATION_ENABLED};
+
+    # The client API - all a client needs, media included (authenticated,
+    # /_matrix/client/v1/media). ^~: the scanner regexes below never see it,
+    # media file names may end in .log, .conf, ...
+    location ^~ /_matrix/client/ {
+        # Login, logout and token refresh belong to MAS (its compatibility
+        # layer for clients without OAuth support).
+        location ~ ^/_matrix/client/[^/]+/(login|logout|refresh)(/|$) {
+            limit_req zone=matrix_login burst=5 nodelay;
+            limit_req_status 429;
+            include /etc/nginx/snippets/mas_proxy.conf;
+        }
+        location ~ ^/_matrix/client/[^/]+/register {
+            limit_req zone=matrix_login burst=5 nodelay;
+            limit_req_status 429;
+            include /etc/nginx/snippets/matrix_proxy.conf;
+        }
+        include /etc/nginx/snippets/matrix_proxy.conf;
     }
 
-    location ^~ /_synapse/client/ {
-        set $matrix_upstream progeo-matrix:8008;
-        proxy_pass http://$matrix_upstream;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $remote_addr;
-        proxy_set_header X-Forwarded-Proto $scheme;
+    location ^~ /_matrix/federation/ {
+        if ($matrix_federation != 1) {
+            return 404;
+        }
+        include /etc/nginx/snippets/matrix_proxy.conf;
     }
 
-    # Other servers find the federation port here, clients the homeserver.
+    location ^~ /_matrix/key/ {
+        if ($matrix_federation != 1) {
+            return 404;
+        }
+        include /etc/nginx/snippets/matrix_proxy.conf;
+    }
+
+    # Other servers find the federation port here (federation only) ...
     location = /.well-known/matrix/server {
+        if ($matrix_federation != 1) {
+            return 404;
+        }
         default_type application/json;
         add_header Access-Control-Allow-Origin "*" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options "nosniff" always;
         return 200 '{"m.server": "${MATRIX_SERVER_NAME}:443"}';
     }
 
+    # ... clients the homeserver.
     location = /.well-known/matrix/client {
         default_type application/json;
         add_header Access-Control-Allow-Origin "*" always;
-        return 200 '{"m.homeserver": {"base_url": "https://${MATRIX_SERVER_NAME}"}}';
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        return 200 '{"m.homeserver": {"base_url": "https://${MATRIX_SERVER_NAME}"}, "org.matrix.msc2965.authentication": {"issuer": "https://${MATRIX_AUTH_SERVER_NAME}/", "account": "https://${MATRIX_AUTH_SERVER_NAME}/account/"}}';
     }
 
     include /etc/nginx/snippets/block_scanners.conf;
 
-    # The admin API (/_synapse/admin) and everything else stay closed - admin
-    # work runs inside the container (docker/matrix/README.md).
+    # Everything else stays closed: the admin API (/_synapse/admin), Synapse's
+    # own pages (/_synapse/client: SSO, consent, email password reset - none
+    # in use) and the unauthenticated legacy media API (/_matrix/media).
+    # Admin work runs inside the container (docker/matrix/README.md).
     location / {
         return 404;
+    }
+}
+# Matrix Authentication Service on MATRIX_AUTH_DOMAIN (compose profile
+# "messenger"): the login pages and OAuth endpoints of the chat. Its only
+# login is the ProGeo portal; MAS's admin API is not enabled at all.
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name ${MATRIX_AUTH_SERVER_NAME};
+    resolver 127.0.0.11 ipv6=off valid=30s;
+
+    ssl_certificate ${CERT_PATH}/${CERT_FILE};
+    ssl_certificate_key ${CERT_PATH}/${CERT_KEY};
+
+    # MAS sets its own Content-Security-Policy for its pages.
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    client_max_body_size 1M;
+
+    include /etc/nginx/snippets/block_scanners.conf;
+
+    location / {
+        include /etc/nginx/snippets/mas_proxy.conf;
     }
 }

@@ -1,5 +1,5 @@
 export type PortalNavItem = {
-  key: 'status' | 'objekt' | 'analyse' | 'benach' | 'rechte' | 'einstell' | 'schnittstelle';
+  key: 'status' | 'objekt' | 'analyse' | 'benach' | 'rechte' | 'einstell';
   labelKey: string;
   /** SVG path `d` attribute, viewBox 0 0 24 24 - matches the mockup's icon style. */
   icon: string;
@@ -15,8 +15,8 @@ export type PortalNavItem = {
  * coarser 0/1/2 role-level scheme - that scheme only informed which items
  * belong here and their order.
  *
- * "schnittstelle" has no equivalent in the mockup (SMTP/Modbus/SMS config) -
- * kept here so existing functionality still has a home in the new sidebar.
+ * The interface configuration (SMTP/Modbus/SMS/messenger) is system-wide,
+ * not per object - it lives at the top-level /schnittstelle/ route instead.
  */
 export const PORTAL_NAV_ITEMS: PortalNavItem[] = [
   {
@@ -60,13 +60,6 @@ export const PORTAL_NAV_ITEMS: PortalNavItem[] = [
     icon: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19 12l2 1.3-1.6 3-2.3-.7-1.7 1-.4 2.4h-3.4l-.4-2.4-1.7-1-2.3.7L3.6 13.3 5.6 12l-2-1.3 1.6-3 2.3.7 1.7-1L9.6 5h3.4l.4 2.4 1.7 1 2.3-.7 1.6 3z',
     permission: 'module_locations_enabled',
     segment: 'einstellungen',
-  },
-  {
-    key: 'schnittstelle',
-    labelKey: 'nav_schnittstelle',
-    icon: 'M9 2v4M15 2v4M6 8h12v4a6 6 0 0 1-6 6 6 6 0 0 1-6-6V8zM9 20v-2M15 20v-2',
-    permission: 'module_interface_enabled',
-    segment: 'schnittstelle',
   },
 ];
 

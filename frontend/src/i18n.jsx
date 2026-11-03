@@ -118,6 +118,11 @@ i18n
           profile_messenger_no_number: 'No number - enter a mobile or messenger number.',
           profile_messenger_unavailable: 'This messenger is currently not offered on this server.',
           profile_matrix_id_invalid: 'A Matrix ID looks like @name:server.',
+          profile_messenger_own_matrix_hint: 'Your account on the ProGeo chat server - it is created on your first login in the app.',
+          profile_section_chat: 'ProGeo chat (Matrix)',
+          profile_chat_qr_alt: 'QR code for the login in Element X',
+          profile_chat_intro: 'Scan the code with your smartphone: Element X opens with the ProGeo server, and you sign in with your ProGeo login. Your chat account is created on the first login.',
+          profile_chat_open_here: 'Open on this device',
           profile_section_access: 'Access',
           profile_request_access: 'Request access to another project',
           profile_request_access_info:
@@ -1307,6 +1312,11 @@ i18n
           profile_messenger_no_number: 'Keine Nummer - bitte Mobil- oder Messenger-Nummer eintragen.',
           profile_messenger_unavailable: 'Dieser Messenger wird auf diesem Server derzeit nicht angeboten.',
           profile_matrix_id_invalid: 'Eine Matrix-ID hat die Form @name:server.',
+          profile_messenger_own_matrix_hint: 'Ihr Konto auf dem ProGeo-Chatserver - es entsteht bei der ersten Anmeldung in der App.',
+          profile_section_chat: 'ProGeo-Chat (Matrix)',
+          profile_chat_qr_alt: 'QR-Code für die Anmeldung in Element X',
+          profile_chat_intro: 'Scannen Sie den Code mit dem Smartphone: Element X öffnet sich mit dem ProGeo-Server, angemeldet wird mit Ihrem ProGeo-Login. Ihr Chat-Konto entsteht bei der ersten Anmeldung.',
+          profile_chat_open_here: 'Auf diesem Gerät öffnen',
           profile_section_access: 'Zugriff',
           profile_request_access: 'Zugriff auf weiteres Projekt anfragen',
           profile_request_access_info:

@@ -105,7 +105,6 @@ const PORTAL_NAV_COMPONENTS = {
   benach: LocationNotificationsTabRoute,
   rechte: LocationRechteTab,
   einstell: LocationEinstellungenTab,
-  schnittstelle: LocationInterfaceTab,
 };
 const DeviceSettingsRedirect = React.lazy(
   () => import('./main/DeviceSettingsRedirect.tsx'),
@@ -189,6 +188,11 @@ const CoreRoutes = () => {
             />
           ))}
           <Route path="/location/:id/detail/" element={<RedirectToStatus />} />
+          {/* Was a portal tab, but the interface config is system-wide. */}
+          <Route
+            path="/location/:id/schnittstelle"
+            element={<Navigate to="/schnittstelle/" replace />}
+          />
         </Route>
 
         {/* Everything else - the general-purpose sidebar (ported 1:1 from the
@@ -287,6 +291,11 @@ const CoreRoutes = () => {
             element={guard('/admin/panel/', <AdminPanel />)}
           />
           <Route path="/staff/" element={guard('/staff/', <StaffAdmin />)} />
+          {/* System-wide SMTP/Modbus/SMS/messenger config - not per location. */}
+          <Route
+            path="/schnittstelle/"
+            element={guard('/schnittstelle/', <LocationInterfaceTab />)}
+          />
           <Route
             path="/escalations/"
             element={guard('/escalations/', <EscalationsView />)}

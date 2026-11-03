@@ -27,8 +27,10 @@ def _password_invalid(exc):
 
 
 def _contact_fields(user) -> dict:
-    """Mobile and messenger of `user` (UserProfile), plus the messengers this
-    server can send on."""
+    """Mobile and messenger of `user` (UserProfile), the messengers this
+    server can send on and the user's account on our Matrix server (ID, login
+    link and its QR code - helper/matrix_accounts.py), if there is one."""
+    from progeo.helper.matrix_accounts import account_info
     from progeo.helper.messenger import configured_services
 
     profile = getattr(user, "profile", None)
@@ -37,6 +39,7 @@ def _contact_fields(user) -> dict:
         "messenger": profile.messenger if profile is not None else None,
         "messenger_id": profile.messenger_id if profile is not None else None,
         "messenger_services": configured_services(),
+        "matrix": account_info(user),
     }
 
 
@@ -136,8 +139,16 @@ class UserProfileViewSet(viewsets.ViewSet):
         if "mobile" in data:
             contact["mobile"] = (data.get("mobile") or "").strip() or None
         if "messenger" in data:
+            from progeo.helper import matrix_accounts
+            from progeo.v1.models import Messenger
+
             contact["messenger"] = (data.get("messenger") or "").strip() or None
             contact["messenger_id"] = (data.get("messenger_id") or "").strip() or None
+            # With our own Matrix server the user's account there is the address.
+            if contact["messenger"] == Messenger.MATRIX and matrix_accounts.enabled():
+                if not matrix_accounts.may_use_matrix(user):
+                    return _failed("matrix_not_allowed", "this account cannot use the ProGeo chat")
+                contact["messenger_id"] = matrix_accounts.matrix_user_id(user)
             invalid = _messenger_invalid(contact["messenger"], contact["messenger_id"] or "")
             if invalid:
                 return invalid

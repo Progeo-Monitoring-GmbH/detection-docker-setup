@@ -23,7 +23,7 @@ SMS_VIEW = ("module_interface_enabled", "module_interface_sms_enabled")
 SMS_EDIT = (*SMS_VIEW, "module_interface_sms_edit")
 CONFIG_KEYS = ["signal", "whatsapp", "matrix", messenger.MATRIX_ROOMS_KEY]
 
-SIGNAL = {"api_url": "http://progeo-signal:8080/", "number": "+4915100000000"}
+SIGNAL = {"bridge_url": "http://progeo-signal-bridge:29328/", "provisioning_secret": "bridge-secret"}
 WHATSAPP = {"phone_number_id": "1234", "access_token": "wa-token", "template": "", "template_language": "de",
             "api_version": "v21.0"}
 MATRIX = {"homeserver": "https://matrix.progeo.com", "access_token": "mx-token"}
@@ -81,14 +81,82 @@ def _store(key, value):
 
 # -- gateways ----------------------------------------------------------------
 
-def test_signal_posts_to_the_rest_api(gateway):
-    gateway.answers = [FakeResponse(201, {"timestamp": "1730000000000"})]
+BOT = "@progeo-bot:matrix.progeo.com"
+WHOAMI = FakeResponse(200, {"user_id": BOT})
+PROVISION = "http://progeo-signal-bridge:29328/_matrix/provision/v3"
+BOT_QUERY = "user_id=%40progeo-bot%3Amatrix.progeo.com"
 
-    assert messenger._dispatch("signal", "+4915112345", "Alarm", SIGNAL) == "1730000000000"
 
-    [call] = gateway.calls
-    assert (call["method"], call["url"]) == ("POST", "http://progeo-signal:8080/v2/send")
-    assert call["json"] == {"message": "Alarm", "number": "+4915100000000", "recipients": ["+4915112345"]}
+def test_signal_goes_through_the_bridge_and_the_matrix_bot(gateway):
+    _store("matrix", MATRIX)
+    gateway.answers = [WHOAMI, FakeResponse(200, {"dm_room_mxid": "!sig:matrix.progeo.com"}), FakeResponse(200, {}),
+                       FakeResponse(200, {"event_id": "$s1"}), WHOAMI, FakeResponse(200, {"event_id": "$s2"})]
+
+    assert messenger._dispatch("signal", "+4915112345", "Alarm", SIGNAL) == "$s1"
+    assert messenger._dispatch("signal", "+4915112345", "Alarm", SIGNAL) == "$s2"
+
+    whoami, create_dm, join, send, _whoami, send_again = gateway.calls
+    assert whoami["url"] == "https://matrix.progeo.com/_matrix/client/v3/account/whoami"
+    assert (create_dm["method"], create_dm["url"]) == ("POST", f"{PROVISION}/create_dm/%2B4915112345?{BOT_QUERY}")
+    assert create_dm["headers"] == {"Authorization": "Bearer bridge-secret"}
+    assert join["url"] == "https://matrix.progeo.com/_matrix/client/v3/join/%21sig%3Amatrix.progeo.com"
+    assert join["headers"] == {"Authorization": "Bearer mx-token"}
+    assert send["url"].startswith("https://matrix.progeo.com/_matrix/client/v3/rooms/%21sig%3Amatrix.progeo.com/send/")
+    assert send["json"] == {"msgtype": "m.text", "body": "Alarm"}
+    # The chat is remembered: the second message goes straight into it.
+    assert "/rooms/%21sig%3Amatrix.progeo.com/send/" in send_again["url"]
+    assert messenger._matrix_rooms() == {"signal:+4915112345": "!sig:matrix.progeo.com"}
+
+
+def test_signal_opens_a_new_chat_when_the_old_one_is_gone(gateway):
+    _store("matrix", MATRIX)
+    _store(messenger.MATRIX_ROOMS_KEY, {"signal:+4915112345": "!old:matrix.progeo.com"})
+    gateway.answers = [WHOAMI, FakeResponse(403, {"errcode": "M_FORBIDDEN"}),
+                       FakeResponse(200, {"dm_room_mxid": "!new:matrix.progeo.com"}), FakeResponse(200, {}),
+                       FakeResponse(200, {"event_id": "$s"})]
+
+    assert messenger._dispatch("signal", "+4915112345", "Alarm", SIGNAL) == "$s"
+    assert messenger._matrix_rooms() == {"signal:+4915112345": "!new:matrix.progeo.com"}
+
+
+def test_signal_needs_the_matrix_bot_and_a_linked_number(gateway):
+    with pytest.raises(messenger.MessengerError, match="configure Matrix first"):
+        messenger._dispatch("signal", "+4915112345", "Alarm", SIGNAL)
+    _store("matrix", MATRIX)
+    gateway.answers = [WHOAMI, FakeResponse(400, {"errcode": "FI.MAU.NOT_LOGGED_IN", "error": "Not logged in"})]
+    with pytest.raises(messenger.MessengerError, match="Signal API answered HTTP 400.*Not logged in"):
+        messenger._dispatch("signal", "+4915112345", "Alarm", SIGNAL)
+
+
+def test_signal_status_lists_the_linked_numbers(gateway):
+    _store("matrix", MATRIX)
+    _store("signal", SIGNAL)
+    gateway.answers = [WHOAMI, FakeResponse(200, {"logins": [
+        {"id": "uuid-1", "name": "", "profile": {"phone": "+4915100000000"}, "state": {"state_event": "CONNECTED"}},
+    ]})]
+
+    assert messenger.signal_status() == {
+        "bot": BOT, "logins": [{"id": "uuid-1", "name": "+4915100000000", "state": "CONNECTED"}],
+    }
+    assert gateway.calls[1]["url"] == f"{PROVISION}/whoami?{BOT_QUERY}"
+
+
+def test_signal_link_starts_the_qr_login_and_waits_for_the_scan(gateway):
+    _store("matrix", MATRIX)
+    _store("signal", SIGNAL)
+    gateway.answers = [
+        WHOAMI, FakeResponse(200, {"flows": [{"id": "qr", "name": "QR"}]}),
+        FakeResponse(200, {"login_id": "L1", "type": "display_and_wait", "step_id": "fi.mau.signal.login.qr",
+                           "instructions": "Scan", "display_and_wait": {"type": "qr", "data": "sgnl://linkdevice?x"}}),
+        WHOAMI, FakeResponse(200, {"type": "complete", "complete": {"user_login_id": "uuid-1"}}),
+    ]
+
+    assert messenger.signal_link_start() == {"login_id": "L1", "step_id": "fi.mau.signal.login.qr",
+                                             "qr_data": "sgnl://linkdevice?x", "instructions": "Scan"}
+    assert messenger.signal_link_wait("L1", "fi.mau.signal.login.qr") == {"linked": True, "login": "uuid-1"}
+
+    assert gateway.calls[2]["url"] == f"{PROVISION}/login/start/qr?{BOT_QUERY}"
+    assert gateway.calls[4]["url"] == f"{PROVISION}/login/step/L1/fi.mau.signal.login.qr/display_and_wait?{BOT_QUERY}"
 
 
 def test_whatsapp_sends_the_text_as_template_parameter(gateway):
@@ -149,11 +217,11 @@ def test_matrix_rejects_other_addresses(gateway):
 
 
 def test_missing_config_and_api_errors_raise(gateway):
-    with pytest.raises(messenger.MessengerError, match="missing number"):
-        messenger._dispatch("signal", "+491", "x", {**SIGNAL, "number": ""})
-    gateway.answers = [FakeResponse(400, {"error": "Invalid recipient"})]
+    with pytest.raises(messenger.MessengerError, match="missing provisioning_secret"):
+        messenger._dispatch("signal", "+491", "x", {**SIGNAL, "provisioning_secret": ""})
+    gateway.answers = [FakeResponse(400, {"error": {"message": "Invalid recipient"}})]
     with pytest.raises(messenger.MessengerError, match="HTTP 400.*Invalid recipient"):
-        messenger._dispatch("signal", "+491", "x", SIGNAL)
+        messenger._dispatch("whatsapp", "+491", "x", WHATSAPP)
 
 
 def test_network_errors_raise(monkeypatch):
@@ -161,15 +229,18 @@ def test_network_errors_raise(monkeypatch):
         raise requests.ConnectionError("refused")
 
     monkeypatch.setattr(messenger.requests, "request", _fail)
-    with pytest.raises(messenger.MessengerError, match="Could not reach the Signal API"):
-        messenger._dispatch("signal", "+491", "x", SIGNAL)
+    with pytest.raises(messenger.MessengerError, match="Could not reach the WhatsApp API"):
+        messenger._dispatch("whatsapp", "+491", "x", WHATSAPP)
 
 
 def test_configured_services_need_a_complete_config():
     _store("signal", SIGNAL)
     _store("matrix", {**MATRIX, "access_token": ""})
+    # Signal needs the Matrix bot, which needs its token.
+    assert messenger.configured_services() == []
 
-    assert messenger.configured_services() == ["signal"]
+    _store("matrix", MATRIX)
+    assert messenger.configured_services() == ["signal", "matrix"]
 
 
 # -- send_message: guard and log ---------------------------------------------
@@ -189,14 +260,14 @@ def test_dry_run_only_logs(gateway):
 
 
 def test_live_send_is_logged_as_sent(gateway, live):
-    _store("signal", SIGNAL)
-    gateway.answers = [FakeResponse(201, {"timestamp": "42"})]
+    _store("whatsapp", WHATSAPP)
+    gateway.answers = [FakeResponse(200, {"messages": [{"id": "wamid.42"}]})]
 
-    result = messenger.send_message("signal", "+4915112345", "Alarm", db=f.DB)
+    result = messenger.send_message("whatsapp", "+4915112345", "Alarm", db=f.DB)
 
-    assert result == {"success": True, "service": "signal", "to": "+4915112345", "message_id": "42"}
+    assert result == {"success": True, "service": "whatsapp", "to": "+4915112345", "message_id": "wamid.42"}
     row = SMS.objects.using(f.DB).get(sent_to="+4915112345")
-    assert (row.sent, row.batch_id, row.sender) == (True, "42", "+4915100000000")
+    assert (row.channel, row.sent, row.batch_id) == ("whatsapp", True, "wamid.42")
     assert OutboundMessage.objects.using(f.DB).get(recipient="+4915112345").status == "sent"
 
 
@@ -317,17 +388,50 @@ def test_messenger_config_saves_and_masks_the_token(api_client):
 
 
 def test_messenger_test_sends_with_the_form_values(api_client, gateway, live):
-    _store("signal", SIGNAL)
-    gateway.answers = [FakeResponse(201, {"timestamp": "7"})]
+    _store("whatsapp", WHATSAPP)
+    gateway.answers = [FakeResponse(200, {"messages": [{"id": "wamid.7"}]})]
     _login(api_client, *SMS_EDIT)
 
-    test = api_client.post("/v1/interface/messenger/signal/test/",
-                           {"to": "+4915112345", "number": "+4915999"}, format="json").json()["test"]
+    test = api_client.post("/v1/interface/messenger/whatsapp/test/",
+                           {"to": "+4915112345", "template": "progeo_test"}, format="json").json()["test"]
 
-    assert test == {"ok": True, "steps": ["Sending a Signal message to +4915112345 ...", "Delivered (7)."],
+    assert test == {"ok": True, "steps": ["Sending a WhatsApp message to +4915112345 ...", "Delivered (wamid.7)."],
                     "error": None}
-    assert gateway.calls[0]["json"]["number"] == "+4915999"
-    assert gateway.calls[0]["json"]["message"] == messenger.DEFAULT_TEST_BODY
+    template = gateway.calls[0]["json"]["template"]
+    assert template["name"] == "progeo_test"
+    assert template["components"][0]["parameters"][0]["text"] == messenger.DEFAULT_TEST_BODY
+
+
+def test_signal_link_shows_the_qr_code_and_reports_the_scan(api_client, monkeypatch):
+    from progeo.tasks import SIGNAL_LINK_CACHE
+
+    monkeypatch.setattr(messenger, "signal_link_start", lambda: {
+        "login_id": "L1", "step_id": "S1", "qr_data": "sgnl://linkdevice?x", "instructions": "Scan"})
+    waited = []
+    monkeypatch.setattr(messenger, "signal_link_wait", lambda login_id, step_id: waited.append((login_id, step_id))
+                        or {"linked": True, "login": "uuid-1"})
+    _login(api_client, *SMS_VIEW)
+    assert api_client.post("/v1/interface/messenger/signal/link/", {}, format="json").status_code == 403
+
+    _login(api_client, *SMS_EDIT)
+    link = api_client.post("/v1/interface/messenger/signal/link/", {}, format="json").json()["link"]
+
+    assert link["login_id"] == "L1" and link["qr"].startswith("data:image/png;base64,")
+    # OUTBOUND_ASYNC is off in tests: the waiting task ran right away.
+    assert waited == [("L1", "S1")]
+    state = api_client.get("/v1/interface/messenger/signal/link/L1/").json()["link"]
+    assert state == {"state": "linked", "linked": True, "login": "uuid-1"}
+    assert api_client.get("/v1/interface/messenger/signal/link/L2/").json()["link"] == {"state": "waiting"}
+    from django.core.cache import cache
+    cache.delete(f"{SIGNAL_LINK_CACHE}L1")
+
+
+def test_signal_status_reports_bridge_errors(api_client, gateway):
+    _login(api_client, *SMS_VIEW)
+
+    body = api_client.get("/v1/interface/messenger/signal/status/").json()
+
+    assert body["status"] is None and "configure Matrix first" in body["error"]
 
 
 def test_messenger_test_never_sends_the_stored_token_elsewhere(api_client, gateway, live):
@@ -349,23 +453,45 @@ def _settings(api_client, user, **data):
 
 
 def test_profile_stores_the_messenger(api_client):
-    _store("signal", SIGNAL)
+    _store("whatsapp", WHATSAPP)
     user = _login(api_client)
 
-    body = _settings(api_client, user, mobile="+49 151 1", messenger="signal", messenger_id="").json()
+    body = _settings(api_client, user, mobile="+49 151 1", messenger="whatsapp", messenger_id="").json()
 
-    assert (body["messenger"], body["messenger_id"], body["messenger_services"]) == ("signal", None, ["signal"])
+    assert (body["messenger"], body["messenger_id"], body["messenger_services"]) == ("whatsapp", None, ["whatsapp"])
     assert UserProfile.objects.using(f.DB).get(user=user).messenger_address() == "+49 151 1"
-    assert api_client.get("/v1/user/profile/").json()["messenger"] == "signal"
+    assert api_client.get("/v1/user/profile/").json()["messenger"] == "whatsapp"
 
 
-def test_profile_validates_the_matrix_id(api_client):
+def test_profile_shows_the_account_on_our_matrix_server(api_client):
+    user = _login(api_client)
+
+    matrix = api_client.get("/v1/user/profile/").json()["matrix"]
+
+    assert matrix["user_id"] == f"@{user.username}:matrix.progeo.com"
+    assert matrix["login_link"] == ("https://mobile.element.io/element?account_provider=matrix.progeo.com"
+                                    f"&login_hint={user.username}")
+    assert matrix["qr"].startswith("data:image/png;base64,")
+
+
+def test_own_matrix_server_sets_the_matrix_id(api_client):
+    user = _login(api_client)
+
+    body = _settings(api_client, user, messenger="matrix", messenger_id="@someone:matrix.org").json()
+
+    assert body["messenger_id"] == f"@{user.username}:matrix.progeo.com"
+    assert UserProfile.objects.using(f.DB).get(user=user).messenger_address() == body["messenger_id"]
+
+
+def test_profile_validates_other_matrix_ids(api_client, settings):
+    settings.MATRIX_DOMAIN = ""
     user = _login(api_client)
 
     response = _settings(api_client, user, messenger="matrix", messenger_id="kai")
 
     assert response.json()["code"] == "matrix_id_invalid"
     assert not UserProfile.objects.using(f.DB).filter(user=user).exists()
+    assert api_client.get("/v1/user/profile/").json()["matrix"] is None
 
 
 def test_clearing_the_mobile_keeps_the_messenger(api_client):

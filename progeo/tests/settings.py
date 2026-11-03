@@ -53,6 +53,36 @@ MAGIC_LINK_LOGIN_MINUTES = 15
 MAGIC_LINK_INVITE_HOURS = 72
 ACCESS_REQUEST_VERIFY_HOURS = 48
 MAGIC_LINK_ALLOW_STAFF = False
+
+# Our Matrix server and the portal's OpenID Connect provider (progeo/settings.py)
+# - always on in tests, with a throwaway signing key.
+def _test_oidc_key():
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    return key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+                             serialization.NoEncryption()).decode()
+
+
+MATRIX_DOMAIN = "matrix.progeo.com"
+MATRIX_AUTH_DOMAIN = "auth.matrix.progeo.com"
+PORTAL_OIDC_ISSUER = "https://dashboard.progeo.com/auth/oidc"
+PORTAL_OIDC_PRIVATE_KEY = _test_oidc_key()
+PORTAL_OIDC_ENABLED = True
+OAUTH2_PROVIDER = {
+    "OIDC_ENABLED": True,
+    "OIDC_RSA_PRIVATE_KEY": PORTAL_OIDC_PRIVATE_KEY,
+    "OIDC_ISS_ENDPOINT": PORTAL_OIDC_ISSUER,
+    "OIDC_RP_INITIATED_LOGOUT_ENABLED": False,
+    "OAUTH2_VALIDATOR_CLASS": "progeo.oidc.ProgeoOIDCValidator",
+    "SCOPES": {"openid": "OpenID Connect", "profile": "Name"},
+    "DEFAULT_SCOPES": ["openid"],
+    "PKCE_REQUIRED": True,
+    "ALLOWED_REDIRECT_URI_SCHEMES": ["https"],
+    "AUTHORIZATION_CODE_EXPIRE_SECONDS": 60,
+    "ACCESS_TOKEN_EXPIRE_SECONDS": 300,
+}
 ACCESS_REQUEST_NOTIFY = "kontakt@progeo.com"
 PASSWORD_RESET_MINUTES = 30
 # High: the suite shares one cache and one client IP - tests of the lockout
@@ -88,6 +118,7 @@ INSTALLED_APPS = [
     "rest_framework.authtoken",
     "rest_framework_simplejwt",
     "rest_framework_simplejwt.token_blacklist",
+    "oauth2_provider",
 
     "dbbackup",
     "corsheaders",

@@ -69,6 +69,8 @@ export const APP_ROUTE_ACCESS = {
   '/device/:id/detail': STAFF,
   '/admin/panel/': SUPERUSER,
   '/staff/': STAFF,
+  // System-wide interface config; the cards check module_interface_* themselves.
+  '/schnittstelle/': permission('module_interface_enabled'),
   '/escalations/': STAFF,
   '/escalations/:id': STAFF,
   '/backup/:account/overview/': permission('module_backup_enabled'),

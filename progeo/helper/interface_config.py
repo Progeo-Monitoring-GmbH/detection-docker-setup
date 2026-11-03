@@ -35,10 +35,11 @@ DEFAULT_ESENDEX = {
 
 # Stored shapes of the messenger gateways (helper/messenger.py).
 DEFAULT_SIGNAL = {
-    # signal-cli-rest-api, e.g. "http://progeo-signal:8080"
-    "api_url": "",
-    # the registered/linked sender number, "+49..."
-    "number": "",
+    # mautrix-signal (compose profile "messenger"); its provisioning API
+    # opens the chats, the Matrix bot sends into them.
+    "bridge_url": "http://progeo-signal-bridge:29328",
+    # = MATRIX_SIGNAL_PROVISIONING_SECRET of .env (the bridge's shared secret)
+    "provisioning_secret": "",
 }
 DEFAULT_WHATSAPP = {
     "phone_number_id": "",
@@ -50,7 +51,9 @@ DEFAULT_WHATSAPP = {
     "api_version": "v21.0",
 }
 DEFAULT_MATRIX = {
-    "homeserver": "",
+    # Our own homeserver (compose profile "messenger"); the backend talks to
+    # the container directly.
+    "homeserver": "http://progeo-matrix:8008",
     "access_token": "",
 }
 
@@ -76,8 +79,8 @@ _ESENDEX_ENV = {
     "from": "ESENDEX_FROM",
 }
 _SIGNAL_ENV = {
-    "api_url": "SIGNAL_API_URL",
-    "number": "SIGNAL_NUMBER",
+    "bridge_url": "SIGNAL_BRIDGE_URL",
+    "provisioning_secret": "MATRIX_SIGNAL_PROVISIONING_SECRET",
 }
 _WHATSAPP_ENV = {
     "phone_number_id": "WHATSAPP_PHONE_NUMBER_ID",
@@ -93,7 +96,7 @@ _MATRIX_ENV = {
 # Messenger service -> (SystemConfig key, default, env map, secret field,
 # fields the stored secret is bound to).
 MESSENGER_CONFIGS = {
-    "signal": ("signal", DEFAULT_SIGNAL, _SIGNAL_ENV, None, ()),
+    "signal": ("signal", DEFAULT_SIGNAL, _SIGNAL_ENV, "provisioning_secret", ("bridge_url",)),
     "whatsapp": ("whatsapp", DEFAULT_WHATSAPP, _WHATSAPP_ENV, "access_token", ("phone_number_id",)),
     "matrix": ("matrix", DEFAULT_MATRIX, _MATRIX_ENV, "access_token", ("homeserver",)),
 }

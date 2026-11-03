@@ -161,6 +161,8 @@ INSTALLED_APPS = [
     "rest_framework.authtoken",
     "rest_framework_simplejwt",
     "rest_framework_simplejwt.token_blacklist",
+    # The portal as OpenID Connect provider for our Matrix server (progeo/oidc.py).
+    "oauth2_provider",
 
     "dbbackup",
     "corsheaders",
@@ -267,6 +269,37 @@ SIMPLE_JWT = {
 
     "JTI_CLAIM": "jti",
 
+}
+
+# ########################################################################
+# Our Matrix server (compose profile "messenger", docker/matrix/README.md)
+#
+# The portal is the OpenID Connect provider of its Matrix Authentication
+# Service: users sign in to the chat apps with their portal login. Off
+# without a signing key (openssl genrsa -out secrets/oidc/private.pem 4096)
+# or issuer.
+# ########################################################################
+MATRIX_DOMAIN = (os.getenv("MATRIX_DOMAIN") or "").strip()
+MATRIX_AUTH_DOMAIN = (os.getenv("MATRIX_AUTH_DOMAIN") or "").strip()
+PORTAL_OIDC_ISSUER = (os.getenv("PORTAL_OIDC_ISSUER") or "").strip().rstrip("/")
+PORTAL_OIDC_KEY_FILE = (os.getenv("PORTAL_OIDC_KEY_FILE") or "/etc/progeo/oidc/private.pem").strip()
+try:
+    PORTAL_OIDC_PRIVATE_KEY = Path(PORTAL_OIDC_KEY_FILE).read_text()
+except OSError:
+    PORTAL_OIDC_PRIVATE_KEY = ""
+PORTAL_OIDC_ENABLED = bool(PORTAL_OIDC_ISSUER and PORTAL_OIDC_PRIVATE_KEY)
+OAUTH2_PROVIDER = {
+    "OIDC_ENABLED": PORTAL_OIDC_ENABLED,
+    "OIDC_RSA_PRIVATE_KEY": PORTAL_OIDC_PRIVATE_KEY,
+    "OIDC_ISS_ENDPOINT": PORTAL_OIDC_ISSUER,
+    "OIDC_RP_INITIATED_LOGOUT_ENABLED": False,
+    "OAUTH2_VALIDATOR_CLASS": "progeo.oidc.ProgeoOIDCValidator",
+    "SCOPES": {"openid": "OpenID Connect", "profile": "Name"},
+    "DEFAULT_SCOPES": ["openid"],
+    "PKCE_REQUIRED": True,
+    "ALLOWED_REDIRECT_URI_SCHEMES": ["https"],
+    "AUTHORIZATION_CODE_EXPIRE_SECONDS": 60,
+    "ACCESS_TOKEN_EXPIRE_SECONDS": 300,
 }
 
 ROOT_URLCONF = "progeo.urls"

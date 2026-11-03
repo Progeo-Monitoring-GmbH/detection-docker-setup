@@ -48,6 +48,7 @@ describe('APP_ROUTE_ACCESS', () => {
         '/location/:id/heatplot',
         '/location/overview/',
         '/locations/:id/heatplot',
+        '/schnittstelle/',
       ].sort(),
     );
   });

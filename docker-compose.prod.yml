@@ -81,6 +81,9 @@ services:
       # SSH key for the daily backup transfer (BACKUP_REMOTE_KEY_FILE, default
       # /etc/progeo/backup/id_ed25519) - outside media/, which the API serves.
       - ./secrets/backup:/etc/progeo/backup:ro
+      # Signing key of the portal's OpenID Connect provider (chat login,
+      # progeo/oidc.py): openssl genrsa -out secrets/oidc/private.pem 4096
+      - ./secrets/oidc:/etc/progeo/oidc:ro
       # The host's .env + django.env, never baked into the (public) image:
       # start-supervisord.sh builds django.env from them on every start.
       # create_host_path: false - a missing file fails instead of becoming a directory.
@@ -185,6 +188,8 @@ services:
       - DNS_FRONT_NAMES=${DNS_FRONT_NAMES}
       - DNS_BACK_NAMES=${DNS_BACK_NAMES}
       - MATRIX_DOMAIN=${MATRIX_DOMAIN:-}
+      - MATRIX_FEDERATION=${MATRIX_FEDERATION:-0}
+      - MATRIX_AUTH_DOMAIN=${MATRIX_AUTH_DOMAIN:-}
       - CERT_MODE=${CERT_MODE}
       - CERT_LOCAL=${CERT_LOCAL}
       - CERT_PATH=${CERT_PATH}
@@ -232,57 +237,128 @@ services:
   # ---------------------------------------------------------------------------
   # Messenger gateways (helper/messenger.py, docker/matrix/README.md) - only
   # started with the compose profile "messenger" (COMPOSE_PROFILES=messenger).
-  # WhatsApp is Meta's cloud API and needs no container.
+  # Signal goes through Matrix (mautrix-signal); WhatsApp is Meta's cloud
+  # API and needs no container.
   # ---------------------------------------------------------------------------
 
-  # Signal: reachable from the backend only. Link it once as a secondary
-  # device of the sender phone: `docker compose exec progeo-backend curl -o
-  # /tmp/qr.png "http://progeo-signal:8080/v1/qrcodelink?device_name=progeo"`,
-  # scan the QR code in Signal (Linked devices), then set SIGNAL_API_URL /
-  # SIGNAL_NUMBER or the Schnittstelle -> Signal panel.
-  progeo-signal:
-    image: bbernhard/signal-cli-rest-api:0.101
-    container_name: progeo-signal
+  # One-shot preparations, run on every `docker compose up` before the
+  # services: MAS's config, signing key and database (docker/matrix/
+  # mas_init.py, in the Synapse image - the MAS image has no shell) and the
+  # Signal bridge's config and appservice registration.
+  progeo-matrix-init:
+    image: matrixdotorg/synapse:v1.162.0
+    container_name: progeo-matrix-init
+    restart: 'no'
+    profiles: ['messenger']
+    entrypoint: ['python', '/config/mas_init.py']
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
+    environment:
+      MATRIX_DOMAIN: ${MATRIX_DOMAIN:-}
+      MATRIX_AUTH_DOMAIN: ${MATRIX_AUTH_DOMAIN:-}
+      MATRIX_DB_PASSWORD: ${MATRIX_DB_PASSWORD:-}
+      MATRIX_MAS_DB_PASSWORD: ${MATRIX_MAS_DB_PASSWORD:-}
+      MATRIX_MAS_SECRET: ${MATRIX_MAS_SECRET:-}
+      MATRIX_MAS_ENCRYPTION: ${MATRIX_MAS_ENCRYPTION:-}
+      MATRIX_OIDC_CLIENT_SECRET: ${MATRIX_OIDC_CLIENT_SECRET:-}
+      PORTAL_OIDC_ISSUER: ${PORTAL_OIDC_ISSUER:-}
+    volumes:
+      - ./docker/matrix/mas_init.py:/config/mas_init.py:ro
+      - mas_data:/mas
+    depends_on:
+      - progeo-matrix-db
+    networks:
+      matrix_db_net:
+
+  progeo-signal-bridge-init:
+    image: dock.mau.dev/mautrix/signal:v0.2610.0
+    container_name: progeo-signal-bridge-init
+    restart: 'no'
+    profiles: ['messenger']
+    entrypoint: ['/bin/bash', '/config/signal_bridge_init.sh']
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
+    environment:
+      MATRIX_DOMAIN: ${MATRIX_DOMAIN:-}
+      MATRIX_SIGNAL_PROVISIONING_SECRET: ${MATRIX_SIGNAL_PROVISIONING_SECRET:-}
+    volumes:
+      - ./docker/matrix/signal_bridge_init.sh:/config/signal_bridge_init.sh:ro
+      - signal_bridge_data:/data
+    network_mode: none
+
+  # Matrix Authentication Service on MATRIX_AUTH_DOMAIN: logins and accounts
+  # of the Matrix server. Its only login is the ProGeo portal (OpenID Connect,
+  # progeo/oidc.py) - every portal user gets an account on the first login.
+  progeo-mas:
+    image: ghcr.io/element-hq/matrix-authentication-service:1.27.0
+    container_name: progeo-mas
     restart: unless-stopped
     profiles: ['messenger']
-    environment:
-      - MODE=json-rpc
+    command: ['server', '--config', '/mas/config.yaml']
+    # Runs as its own user (65532) - needs no capabilities at all.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
     volumes:
-      - signal_data:/home/.local/share/signal-cli
+      - mas_data:/mas:ro
+    depends_on:
+      progeo-matrix-init:
+        condition: service_completed_successfully
     networks:
       default_net:
+      matrix_db_net:
 
-  # Matrix homeserver (Synapse) on MATRIX_DOMAIN. progeo-nginx terminates TLS
-  # for clients and federation; the backend talks to http://progeo-matrix:8008.
+  # Matrix homeserver (Synapse) on MATRIX_DOMAIN. progeo-nginx terminates TLS;
+  # the backend talks to http://progeo-matrix:8008. Logins: progeo-mas.
   progeo-matrix:
     image: matrixdotorg/synapse:v1.162.0
     container_name: progeo-matrix
     restart: unless-stopped
     profiles: ['messenger']
     entrypoint: ['/bin/sh', '/config/entrypoint.sh']
+    # Starts as root only to hand /data over and switch to its own user.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
     environment:
       MATRIX_DOMAIN: ${MATRIX_DOMAIN:-}
+      MATRIX_FEDERATION: ${MATRIX_FEDERATION:-0}
       MATRIX_DB_PASSWORD: ${MATRIX_DB_PASSWORD:-}
-      MATRIX_REGISTRATION_SECRET: ${MATRIX_REGISTRATION_SECRET:-}
+      MATRIX_MAS_SECRET: ${MATRIX_MAS_SECRET:-}
       MATRIX_MACAROON_SECRET: ${MATRIX_MACAROON_SECRET:-}
       MATRIX_FORM_SECRET: ${MATRIX_FORM_SECRET:-}
     volumes:
       - ./docker/matrix/entrypoint.sh:/config/entrypoint.sh:ro
       - ./docker/matrix/log.config:/config/log.config:ro
       - matrix_data:/data
+      # The bridge's appservice registration.
+      - signal_bridge_data:/bridges/signal:ro
     depends_on:
-      - progeo-matrix-db
+      progeo-matrix-db:
+        condition: service_started
+      progeo-signal-bridge-init:
+        condition: service_completed_successfully
     networks:
       default_net:
       matrix_db_net:
 
   # Synapse's own database - Synapse needs C collation, and its data stays
-  # out of the ProGeo databases and their backups.
+  # out of the ProGeo databases and their backups. Also MAS's database.
   progeo-matrix-db:
     image: postgres:17-alpine
     container_name: progeo-matrix-db
     restart: unless-stopped
     profiles: ['messenger']
+    # Starts as root only to hand /data over and switch to its own user.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
     environment:
       POSTGRES_USER: synapse
       POSTGRES_PASSWORD: ${MATRIX_DB_PASSWORD:-}
@@ -292,6 +368,29 @@ services:
       - matrix_db_data:/var/lib/postgresql/data
     networks:
       matrix_db_net:
+
+  # Signal <-> Matrix bridge (mautrix-signal). The Matrix bot is its only
+  # user: linked to ProGeo's Signal number (Schnittstelle -> Signal -> QR
+  # code), it sends the Signal notifications. Needs the internet (Signal).
+  progeo-signal-bridge:
+    image: dock.mau.dev/mautrix/signal:v0.2610.0
+    container_name: progeo-signal-bridge
+    restart: unless-stopped
+    profiles: ['messenger']
+    # Starts as root only to hand /data over and switch to its own user.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
+    volumes:
+      - signal_bridge_data:/data
+    depends_on:
+      progeo-signal-bridge-init:
+        condition: service_completed_successfully
+      progeo-matrix:
+        condition: service_started
+    networks:
+      default_net:
 
   # ---------------------------------------------------------------------------
   # Monitoring (docker/monitoring/README.md) - only built + started with the
@@ -555,6 +654,7 @@ volumes:
   prometheus_data:
   alertmanager_data:
   grafana_data:
-  signal_data:
+  signal_bridge_data:
+  mas_data:
   matrix_data:
   matrix_db_data:

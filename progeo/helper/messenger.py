@@ -6,16 +6,22 @@ transport bit then reach them there. The gateways are configured in the
 "Schnittstelle" tab (SystemConfig rows "signal" / "whatsapp" / "matrix", see
 helper/interface_config.py), with django.env as fallback:
 
-  Signal    signal-cli-rest-api (container progeo-signal, profile "messenger") with
-            a registered or linked sender number:
-              POST {api_url}/v2/send {"message", "number", "recipients": [...]}
+  Signal    through Matrix: mautrix-signal (container progeo-signal-bridge,
+            profile "messenger") is linked to ProGeo's Signal number as the
+            Matrix bot's login (signal_link_start - a QR code staff scan in
+            the Signal app). Per recipient the bridge opens a chat
+              POST {bridge_url}/_matrix/provision/v3/create_dm/{phone}
+            and the bot posts the message there - like any Matrix message.
+            "Sent" means handed to the bridge; Signal errors show up later as
+            bridge notices in that chat.
   WhatsApp  WhatsApp Business Cloud API (Meta):
               POST https://graph.facebook.com/{api_version}/{phone_number_id}/messages
             Business-initiated messages are only delivered as approved
             templates (outside the 24h window after the user wrote to us),
             so with `template` set the text goes in as its body parameter {{1}}.
-  Matrix    a bot account on any homeserver (access token) - our own is
-            progeo-matrix (profile "messenger", docker/matrix/README.md). A user address
+  Matrix    a bot account on the homeserver (access token) - our own is
+            progeo-matrix (profile "messenger", docker/matrix/README.md),
+            whose users sign in with their portal login (helper/matrix_accounts.py). A user address
             "@name:server" gets a direct room, created on first use and
             remembered in SystemConfig "matrix_rooms"; "!room:server" is used
             as is. Messages are not end-to-end encrypted.
@@ -37,13 +43,15 @@ SERVICES = ("signal", "whatsapp", "matrix")
 LABELS = {"signal": "Signal", "whatsapp": "WhatsApp", "matrix": "Matrix"}
 # Required config fields per service (the rest has defaults).
 REQUIRED = {
-    "signal": ("api_url", "number"),
+    "signal": ("bridge_url", "provisioning_secret"),
     "whatsapp": ("phone_number_id", "access_token"),
     "matrix": ("homeserver", "access_token"),
 }
 MATRIX_ROOMS_KEY = "matrix_rooms"
 MAX_LENGTH = 2000
 TIMEOUT = 15
+# How long a Signal QR code waits to be scanned (signal_link_wait).
+SIGNAL_LINK_TIMEOUT = 300
 
 DEFAULT_TEST_BODY = "ProGeo: Messenger-Verbindung funktioniert."
 
@@ -67,7 +75,9 @@ def effective_config(service: str, cfg: dict | None = None) -> dict:
 
 def is_configured(service: str, cfg: dict | None = None) -> bool:
     cfg = effective_config(service, cfg)
-    return all(str(cfg.get(field) or "").strip() for field in REQUIRED[service])
+    complete = all(str(cfg.get(field) or "").strip() for field in REQUIRED[service])
+    # Signal messages are sent by the Matrix bot.
+    return complete and (service != "signal" or is_configured("matrix"))
 
 
 def configured_services() -> list[str]:
@@ -139,7 +149,7 @@ def send_message(service: str, to: str, body: str, cfg: dict | None = None, loca
     if not recipient:
         raise MessengerError(f"No {LABELS[service]} address given.")
     effective = effective_config(service, cfg)
-    sender = effective.get("number") if service == "signal" else None
+    sender = None
     subject = f"[{LABELS[service]}] {body}"
 
     _allowed, rejected = outbound.check(channel, [recipient])
@@ -182,11 +192,11 @@ def _dispatch(service: str, to: str, body: str, cfg: dict) -> str | None:
     return {"signal": _send_signal, "whatsapp": _send_whatsapp, "matrix": _send_matrix}[service](to, body, cfg)
 
 
-def _request(service: str, method: str, url: str, **kwargs):
+def _request(service: str, method: str, url: str, timeout: int = TIMEOUT, **kwargs):
     """`requests.request` -> (response, parsed json or None); network errors
     become MessengerError."""
     try:
-        response = requests.request(method, url, timeout=TIMEOUT, **kwargs)
+        response = requests.request(method, url, timeout=timeout, **kwargs)
     except requests.RequestException as exc:
         raise MessengerError(f"Could not reach the {LABELS[service]} API: {type(exc).__name__}: {exc}") from exc
     try:
@@ -203,17 +213,110 @@ def _api_error(service: str, response) -> MessengerError:
     )
 
 
-# ---------------------------------------------------------------------------- Signal
+# ---------------------------------------------------------------------------- Signal (via Matrix)
+
+def _matrix_bot():
+    """(config, user id) of the Matrix bot - it is the bridge's Signal login."""
+    cfg = effective_config("matrix")
+    if not is_configured("matrix"):
+        raise MessengerError("Signal is sent by the Matrix bot: configure Matrix first.")
+    response, data = _request("matrix", "GET", _matrix_url(cfg, "/account/whoami"), headers=_matrix_headers(cfg))
+    user_id = data.get("user_id") if isinstance(data, dict) else None
+    if not response.ok or not user_id:
+        raise _api_error("matrix", response)
+    return cfg, user_id
+
+
+def _provision(cfg: dict, method: str, path: str, bot_id: str, **kwargs):
+    """A request to the bridge's provisioning API, on behalf of the bot."""
+    separator = "&" if "?" in path else "?"
+    url = f"{str(cfg['bridge_url']).rstrip('/')}/_matrix/provision/v3{path}{separator}user_id={quote(bot_id)}"
+    return _request("signal", method, url, headers={"Authorization": f"Bearer {cfg['provisioning_secret']}"},
+                    **kwargs)
+
+
+def _signal_room(to: str, cfg: dict, matrix_cfg: dict, bot_id: str, fresh: bool = False) -> str:
+    """The bridged chat with phone number `to` (remembered in matrix_rooms)."""
+    key = f"signal:{to}"
+    room_id = None if fresh else _matrix_rooms().get(key)
+    if room_id:
+        return room_id
+    response, data = _provision(cfg, "POST", f"/create_dm/{quote(to, safe='')}", bot_id)
+    room_id = data.get("dm_room_mxid") if isinstance(data, dict) else None
+    if not response.ok or not room_id:
+        raise _api_error("signal", response)
+    # The bridge invites the bot into the new chat.
+    response, _data = _request("matrix", "POST", _matrix_url(matrix_cfg, f"/join/{quote(room_id, safe='')}"),
+                               headers=_matrix_headers(matrix_cfg), json={})
+    if not response.ok:
+        raise _api_error("matrix", response)
+    _remember_matrix_room(key, room_id)
+    return room_id
+
 
 def _send_signal(to: str, body: str, cfg: dict) -> str | None:
-    response, data = _request(
-        "signal", "POST", f"{str(cfg['api_url']).rstrip('/')}/v2/send",
-        json={"message": body, "number": cfg["number"], "recipients": [to]},
-    )
+    matrix_cfg, bot_id = _matrix_bot()
+    response, data = _post_matrix_message(_signal_room(to, cfg, matrix_cfg, bot_id), body, matrix_cfg)
+    if response.status_code in (403, 404):
+        # The remembered chat is gone: the bridge opens a new one.
+        _remember_matrix_room(f"signal:{to}", None)
+        response, data = _post_matrix_message(_signal_room(to, cfg, matrix_cfg, bot_id, fresh=True), body, matrix_cfg)
     if not response.ok:
+        raise _api_error("matrix", response)
+    return data.get("event_id") if isinstance(data, dict) else None
+
+
+def signal_status(cfg: dict | None = None) -> dict:
+    """The bridge's Signal logins of the bot: [{"id", "name", "state"}]."""
+    cfg = effective_config("signal", cfg)
+    _matrix_cfg, bot_id = _matrix_bot()
+    response, data = _provision(cfg, "GET", "/whoami", bot_id)
+    if not response.ok or not isinstance(data, dict):
         raise _api_error("signal", response)
-    timestamp = data.get("timestamp") if isinstance(data, dict) else None
-    return str(timestamp) if timestamp else None
+    logins = []
+    for login in data.get("logins") or []:
+        profile = login.get("profile") or {}
+        logins.append({
+            "id": login.get("id"),
+            "name": login.get("name") or profile.get("phone") or profile.get("name"),
+            "state": (login.get("state") or {}).get("state_event"),
+        })
+    return {"bot": bot_id, "logins": logins}
+
+
+def signal_link_start(cfg: dict | None = None) -> dict:
+    """Start linking ProGeo's Signal number to the bridge: {"login_id",
+    "step_id", "qr_data", "instructions"} - the QR code is scanned in the
+    Signal app (Settings -> Linked devices), signal_link_wait finishes it."""
+    cfg = effective_config("signal", cfg)
+    _matrix_cfg, bot_id = _matrix_bot()
+    response, data = _provision(cfg, "GET", "/login/flows", bot_id)
+    flows = [flow.get("id") for flow in (data or {}).get("flows") or [] if isinstance(flow, dict)]
+    if not response.ok or not flows:
+        raise _api_error("signal", response)
+    flow = "qr" if "qr" in flows else flows[0]
+    response, data = _provision(cfg, "POST", f"/login/start/{quote(flow, safe='')}", bot_id, json={})
+    display = (data or {}).get("display_and_wait") or {}
+    if not response.ok or display.get("type") != "qr" or not data.get("login_id"):
+        raise _api_error("signal", response)
+    return {"login_id": data["login_id"], "step_id": data.get("step_id"), "qr_data": display.get("data"),
+            "instructions": data.get("instructions")}
+
+
+def signal_link_wait(login_id: str, step_id: str, cfg: dict | None = None) -> dict:
+    """Wait (up to SIGNAL_LINK_TIMEOUT) until the QR code was scanned. Returns
+    {"linked": True, "login": <id>} or raises MessengerError."""
+    cfg = effective_config("signal", cfg)
+    _matrix_cfg, bot_id = _matrix_bot()
+    response, data = _provision(
+        cfg, "POST", f"/login/step/{quote(login_id, safe='')}/{quote(step_id, safe='')}/display_and_wait",
+        bot_id, json={}, timeout=SIGNAL_LINK_TIMEOUT,
+    )
+    if not response.ok or not isinstance(data, dict):
+        raise _api_error("signal", response)
+    if data.get("type") != "complete":
+        raise MessengerError(f"Signal login not finished: {data.get('instructions') or data.get('type')}")
+    return {"linked": True, "login": (data.get("complete") or {}).get("user_login_id")}
 
 
 # ---------------------------------------------------------------------------- WhatsApp
@@ -262,14 +365,15 @@ def _matrix_rooms() -> dict:
     return dict(row.value) if row and isinstance(row.value, dict) else {}
 
 
-def _remember_matrix_room(user_id: str, room_id: str | None) -> None:
+def _remember_matrix_room(key: str, room_id: str | None) -> None:
+    """`key`: a Matrix user ID, or "signal:<phone>" for a bridged chat."""
     from progeo.v1.models import SystemConfig
 
     rooms = _matrix_rooms()
     if room_id:
-        rooms[user_id] = room_id
+        rooms[key] = room_id
     else:
-        rooms.pop(user_id, None)
+        rooms.pop(key, None)
     SystemConfig.objects.using("default").update_or_create(key=MATRIX_ROOMS_KEY, defaults={"value": rooms})
 
 

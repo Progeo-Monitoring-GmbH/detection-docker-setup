@@ -29,7 +29,7 @@ These routes use the location portal layout, which loads the location identified
 | `/location/:id/benachrichtigungen` | Configure and review location notifications. |
 | `/location/:id/rechte` | Manage access rights for the location. |
 | `/location/:id/einstellungen` | Configure location settings, including thresholds and system settings. |
-| `/location/:id/schnittstelle` | Configure location interfaces, including integrations such as SMTP, Modbus, SMS, and the Signal / WhatsApp / Matrix messenger gateways. |
+| `/location/:id/schnittstelle` | Retired portal tab; redirects to `/schnittstelle/`. |
 | `/location/:id/detail/` | Retired tab-based location URL; redirects to `/location/:id/status`. |
 
 ## Devices, measurements, and alarms
@@ -57,6 +57,7 @@ These routes use the general application layout.
 | --- | --- |
 | `/admin/panel/` | Administrative panel with a live log stream. |
 | `/staff/` | Manage staff/user accounts. |
+| `/schnittstelle/` | System-wide interface configuration (`module_interface_enabled`), independent of any location: SMTP, Modbus, SMS and the Signal / WhatsApp / Matrix messenger gateways. Each card checks its own `module_interface_*` permission. |
 | `/escalations/` | Escalations of all projects (staff only): list filtered by open/closed. Superusers open an escalation with "Create Escalation" in the project portal, where they also see whether the project is in escalation. |
 | `/escalations/:id` | One escalation with its protocol (comments and changes); staff comment, change the status, assign it to a staff user and close it. |
 | `/backup/:account/overview/` | View and manage backup information for the specified account. |

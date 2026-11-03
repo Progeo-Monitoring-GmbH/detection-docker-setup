@@ -303,3 +303,47 @@ class InterfaceViewSet(ViewSet):
             return RequestSuccess({"test": {"ok": True, "steps": steps, "error": None, "dry_run": True}})
         steps.append("Delivered" + (f" ({result['message_id']})" if result.get("message_id") else "") + ".")
         return RequestSuccess({"test": {"ok": True, "steps": steps, "error": None}})
+
+    # ------------------------------------------------------------------ #
+    # Signal: linking ProGeo's Signal number to the bridge
+    # ------------------------------------------------------------------ #
+
+    @require_module_permissions(MODULE_INTERFACE, MODULE_SMS_ENABLED)
+    @action(detail=False, url_path="messenger/signal/status", methods=["GET"])
+    def signal_link_status(self, request, *args, **kwargs):
+        """GET: the Signal number(s) the bridge is linked to, for the bot."""
+        from progeo.helper.messenger import MessengerError, signal_status
+
+        try:
+            return RequestSuccess({"status": signal_status()})
+        except MessengerError as exc:
+            return RequestSuccess({"status": None, "error": str(exc)})
+
+    @require_module_permissions(MODULE_INTERFACE, MODULE_SMS_ENABLED, MODULE_SMS_EDIT)
+    @action(detail=False, url_path="messenger/signal/link", methods=["POST"])
+    def signal_link(self, request, *args, **kwargs):
+        """POST: start linking - returns the QR code to scan in the Signal app
+        of ProGeo's phone (Settings -> Linked devices). A background task
+        waits for the scan; GET .../link/<login_id>/ tells how it went."""
+        from progeo.helper import outbound
+        from progeo.helper.matrix_accounts import qr_data_uri
+        from progeo.helper.messenger import MessengerError, signal_link_start
+        from progeo.tasks import signal_link_wait_task
+
+        try:
+            login = signal_link_start()
+        except MessengerError as exc:
+            return RequestSuccess({"link": None, "error": str(exc)})
+        outbound.dispatch(signal_link_wait_task, login["login_id"], login["step_id"])
+        return RequestSuccess({"link": {"login_id": login["login_id"], "qr": qr_data_uri(login["qr_data"]),
+                                        "instructions": login["instructions"]}})
+
+    @require_module_permissions(MODULE_INTERFACE, MODULE_SMS_ENABLED, MODULE_SMS_EDIT)
+    @action(detail=False, url_path=r"messenger/signal/link/(?P<login_id>[A-Za-z0-9_-]{1,64})", methods=["GET"])
+    def signal_link_state(self, request, login_id=None, *args, **kwargs):
+        """GET: {"state": "waiting" | "linked" | "failed", "error"?}."""
+        from django.core.cache import cache
+
+        from progeo.tasks import SIGNAL_LINK_CACHE
+
+        return RequestSuccess({"link": cache.get(f"{SIGNAL_LINK_CACHE}{login_id}") or {"state": "waiting"}})

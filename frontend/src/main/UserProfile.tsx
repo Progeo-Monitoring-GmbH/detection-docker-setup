@@ -24,6 +24,8 @@ type UserProfileResponse = {
   messenger_id?: string | null;
   /** The messengers this server can send on (configured gateways). */
   messenger_services?: Messenger[];
+  /** The user's account on our Matrix server (helper/matrix_accounts.py). */
+  matrix?: MatrixAccount | null;
   language: string;
   two_factor_enabled?: boolean;
   /** False for users invited per link - they never chose a password. */
@@ -31,6 +33,15 @@ type UserProfileResponse = {
 };
 
 type Messenger = 'signal' | 'whatsapp' | 'matrix';
+
+type MatrixAccount = {
+  user_id: string;
+  homeserver: string;
+  /** Element X provisioning link - opens the app with our server preset. */
+  login_link: string;
+  /** The login link as PNG QR code (data URI). */
+  qr: string;
+};
 
 const MESSENGER_LABELS: Record<Messenger, string> = { signal: 'Signal', whatsapp: 'WhatsApp', matrix: 'Matrix' };
 
@@ -169,6 +180,9 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
   const [messenger, setMessenger] = React.useState<Messenger | ''>('');
   const [messengerId, setMessengerId] = React.useState('');
   const [messengerServices, setMessengerServices] = React.useState<Messenger[]>([]);
+  const [matrixAccount, setMatrixAccount] = React.useState<MatrixAccount | null>(null);
+  // Our own Matrix server: the account there is the address, nothing to type.
+  const ownMatrixId = messenger === 'matrix' && matrixAccount ? matrixAccount.user_id : null;
   const [language, setLanguage] = React.useState('de');
 
   const [currentPassword, setCurrentPassword] = React.useState('');
@@ -211,6 +225,7 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
         setMessenger(data.messenger || '');
         setMessengerId(data.messenger_id || '');
         setMessengerServices(data.messenger_services || []);
+        setMatrixAccount(data.matrix || null);
         setLanguage(data.language || 'de');
         setTwoFactorEnabled(Boolean(data.two_factor_enabled));
         setHasUsablePassword(data.has_usable_password !== false);
@@ -256,7 +271,7 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
       showErrorBar(enqueueSnackbar, t('profile_email_invalid'));
       return;
     }
-    if (messenger === 'matrix' && !isValidMatrixId(messengerId)) {
+    if (messenger === 'matrix' && !ownMatrixId && !isValidMatrixId(messengerId)) {
       showErrorBar(enqueueSnackbar, t('profile_matrix_id_invalid'));
       return;
     }
@@ -462,8 +477,9 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
                     {messenger ? (
                       <LabeledInput
                         label={messenger === 'matrix' ? t('profile_matrix_id') : t('profile_messenger_number')}
-                        value={messengerId}
-                        onChange={setMessengerId}
+                        value={ownMatrixId ?? messengerId}
+                        onChange={ownMatrixId ? undefined : setMessengerId}
+                        readOnly={Boolean(ownMatrixId)}
                         title={messenger === 'matrix' ? '@name:matrix.org' : t('profile_messenger_number_hint')}
                       />
                     ) : (
@@ -472,7 +488,7 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
                     {messenger && (
                       <div style={{ gridColumn: 'span 2', fontSize: 12, color: '#8B8383' }}>
                         {messenger === 'matrix'
-                          ? t('profile_messenger_matrix_hint')
+                          ? t(ownMatrixId ? 'profile_messenger_own_matrix_hint' : 'profile_messenger_matrix_hint')
                           : t('profile_messenger_number_hint')}
                         {messenger === 'whatsapp' && <> {t('profile_messenger_whatsapp_hint')}</>}
                         {messenger !== 'matrix' && !messengerId.trim() && !mobile.trim() && (
@@ -487,6 +503,31 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
                 )}
               </div>
             </section>
+
+            {matrixAccount && (
+              <section>
+                <div style={sectionLabelStyle}>{t('profile_section_chat')}</div>
+                <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                  <img
+                    src={matrixAccount.qr}
+                    alt={t('profile_chat_qr_alt')}
+                    width={148}
+                    height={148}
+                    style={{ borderRadius: 12, background: '#fff', boxShadow: '0 1px 4px rgba(11,54,89,.09)' }}
+                  />
+                  <div style={{ flex: 1, minWidth: 180, display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
+                    <div>{t('profile_chat_intro')}</div>
+                    <div>
+                      <span style={{ color: '#8B8383' }}>{t('profile_matrix_id')}: </span>
+                      <span style={{ fontWeight: 500, wordBreak: 'break-all' }}>{matrixAccount.user_id}</span>
+                    </div>
+                    <a href={matrixAccount.login_link} target="_blank" rel="noreferrer">
+                      {t('profile_chat_open_here')}
+                    </a>
+                  </div>
+                </div>
+              </section>
+            )}
 
             <section>
               <div style={sectionLabelStyle}>{t('profile_section_access')}</div>

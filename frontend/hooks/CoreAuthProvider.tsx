@@ -14,6 +14,7 @@ import { getBackendBaseUrl } from '../src/backendUrl';
 import { showErrorBar } from '../src/components/ui/Snackbar.jsx';
 import { isDemoUser, setDemoToken } from '../src/main/demo';
 import { clearImpersonation } from '../src/main/impersonation';
+import { oidcForwardUrl } from '../src/main/oidcForward';
 import { otpReason, OtpReason } from '../src/main/twoFactor';
 import {
   asNormalUser,
@@ -222,6 +223,12 @@ const CoreAuthProvider = ({ children }) => {
         clearImpersonation();
         setViewAsUser(false);
 
+        // Login for the chat app (progeo/oidc.py): back to the backend.
+        const oidcUrl = oidcForwardUrl(forward);
+        if (oidcUrl) {
+          window.location.assign(oidcUrl);
+          return 'ok';
+        }
         if (forward) {
           navigate(forward);
         } else {
