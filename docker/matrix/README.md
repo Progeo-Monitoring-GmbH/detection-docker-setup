@@ -110,8 +110,11 @@ Element are encrypted.
 8. **Link ProGeo's Signal number:** Schnittstelle → Signal → "Link Signal number". Scan the QR code
    with ProGeo's phone in Signal (Settings → Linked devices → Link new device).
 
-MAS fetches the portal's OpenID configuration from `PORTAL_OIDC_ISSUER`, so the server must reach its
-own public URL. It usually can. If not, add the dashboard name to the server's `/etc/hosts`.
+MAS calls the portal at `PORTAL_OIDC_ISSUER` server to server: OpenID configuration, signing keys,
+token exchange. Inside Docker, nginx also answers to `PORTAL_OIDC_HOST` (default
+`dashboard.progeo.com`), so these calls stay on the Docker network instead of going out to the
+internet and back. That detour fails with `Network is unreachable` when the name has an IPv6 address
+but Docker has no IPv6 route.
 
 ### Coming from the first setup (Synapse with its own passwords)
 

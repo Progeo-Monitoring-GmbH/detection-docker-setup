@@ -218,6 +218,10 @@ services:
         aliases:
           - dashboard.progeo.app
           - api.progeo.app
+          # The portal's public name inside Docker: progeo-mas fetches the
+          # chat login's tokens from PORTAL_OIDC_ISSUER without going out to
+          # the internet and back (IPv6 / hairpin NAT fail there).
+          - ${PORTAL_OIDC_HOST:-dashboard.progeo.com}
       # Proxies /grafana/ and /flower/ (progeo.conf.template). Fixed address:
       # Grafana trusts the auth proxy header from this address only.
       monitoring_net:
