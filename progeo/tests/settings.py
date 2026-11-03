@@ -70,6 +70,8 @@ MATRIX_AUTH_DOMAIN = "auth.matrix.progeo.com"
 PORTAL_OIDC_ISSUER = "https://dashboard.progeo.com/auth/oidc"
 PORTAL_OIDC_PRIVATE_KEY = _test_oidc_key()
 PORTAL_OIDC_ENABLED = True
+# Off by default - tests of the account sync switch it on.
+MATRIX_MAS_ADMIN_SECRET = ""
 OAUTH2_PROVIDER = {
     "OIDC_ENABLED": True,
     "OIDC_RSA_PRIVATE_KEY": PORTAL_OIDC_PRIVATE_KEY,

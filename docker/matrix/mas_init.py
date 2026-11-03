@@ -22,9 +22,13 @@ from psycopg2 import sql
 # Upstream provider "ProGeo" - must stay the same: MAS links accounts to it,
 # and the portal's redirect URI contains it (manage.py matrix_oidc_client).
 PROGEO_PROVIDER_ID = "01M6GBK9WNWPFWH861CMP1EMFX"
+# The portal's client for MAS's admin API (helper/matrix_accounts.py: a
+# deleted/deactivated portal user's chat account follows) - same id there.
+PORTAL_ADMIN_CLIENT_ID = "01M6GQTJFXK52DY0ZYC0EEZK2Y"
 MAS_UID = 65532  # the user of the MAS image
 REQUIRED = ("MATRIX_DOMAIN", "MATRIX_AUTH_DOMAIN", "MATRIX_DB_PASSWORD", "MATRIX_MAS_DB_PASSWORD",
-            "MATRIX_MAS_SECRET", "MATRIX_MAS_ENCRYPTION", "PORTAL_OIDC_ISSUER", "MATRIX_OIDC_CLIENT_SECRET")
+            "MATRIX_MAS_SECRET", "MATRIX_MAS_ENCRYPTION", "PORTAL_OIDC_ISSUER", "MATRIX_OIDC_CLIENT_SECRET",
+            "MATRIX_MAS_ADMIN_SECRET")
 
 
 def env(name):
@@ -80,6 +84,12 @@ http:
         - name: assets
       binds:
         - address: '[::]:8080'
+    # Admin API for the portal only: port 8081 is never proxied by nginx.
+    - name: internal
+      resources:
+        - name: adminapi
+      binds:
+        - address: '[::]:8081'
 
 database:
   uri: 'postgresql://mas:{env("MATRIX_MAS_DB_PASSWORD")}@progeo-matrix-db/mas'
@@ -94,6 +104,17 @@ secrets:
   encryption: '{env("MATRIX_MAS_ENCRYPTION")}'
   keys:
     - key_file: /mas/keys/rsa.pem
+
+# The portal deactivates/reactivates chat accounts with its portal user
+# (client credentials, scope urn:mas:admin).
+clients:
+  - client_id: '{PORTAL_ADMIN_CLIENT_ID}'
+    client_auth_method: client_secret_basic
+    client_secret: '{env("MATRIX_MAS_ADMIN_SECRET")}'
+policy:
+  data:
+    admin_clients:
+      - '{PORTAL_ADMIN_CLIENT_ID}'
 
 # No passwords and no sign-up in MAS: the ProGeo portal is the only login.
 passwords:

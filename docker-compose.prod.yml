@@ -267,6 +267,7 @@ services:
       MATRIX_MAS_SECRET: ${MATRIX_MAS_SECRET:-}
       MATRIX_MAS_ENCRYPTION: ${MATRIX_MAS_ENCRYPTION:-}
       MATRIX_OIDC_CLIENT_SECRET: ${MATRIX_OIDC_CLIENT_SECRET:-}
+      MATRIX_MAS_ADMIN_SECRET: ${MATRIX_MAS_ADMIN_SECRET:-}
       PORTAL_OIDC_ISSUER: ${PORTAL_OIDC_ISSUER:-}
     volumes:
       - ./docker/matrix/mas_init.py:/config/mas_init.py:ro

@@ -792,3 +792,19 @@ def signal_link_wait_task(login_id: str, step_id: str):
         result = {"state": "failed", "error": str(exc)}
     cache.set(f"{SIGNAL_LINK_CACHE}{login_id}", result, 3600)
     return result
+
+
+@shared_task
+def matrix_account_task(localpart: str, action: str):
+    """The chat account follows its portal user (helper/matrix_accounts.py):
+    deactivate / erase / reactivate it in MAS."""
+    from progeo.helper.basics import elog, ilog
+    from progeo.helper.matrix_accounts import MatrixAdminError, set_account_state
+
+    try:
+        result = set_account_state(localpart, action)
+    except MatrixAdminError as exc:
+        elog(f"[matrix_account] {action} {localpart} failed: {exc}")
+        return {"error": str(exc)}
+    ilog(f"[matrix_account] {action} {localpart}: {result}")
+    return {"result": result}

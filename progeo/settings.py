@@ -294,6 +294,9 @@ except OSError as _oidc_error:
         print(f"PORTAL_OIDC_ISSUER is set, but the signing key {PORTAL_OIDC_KEY_FILE} can't be read "
               f"({_oidc_error.strerror}) - the chat login is off", file=sys.stderr)
 PORTAL_OIDC_ENABLED = bool(PORTAL_OIDC_ISSUER and PORTAL_OIDC_PRIVATE_KEY)
+# The portal's client for MAS's admin API: a deleted/deactivated portal user's
+# chat account follows (helper/matrix_accounts.py). Empty = it doesn't.
+MATRIX_MAS_ADMIN_SECRET = (os.getenv("MATRIX_MAS_ADMIN_SECRET") or "").strip()
 OAUTH2_PROVIDER = {
     "OIDC_ENABLED": PORTAL_OIDC_ENABLED,
     "OIDC_RSA_PRIVATE_KEY": PORTAL_OIDC_PRIVATE_KEY,

@@ -127,6 +127,27 @@ over: `docker compose down`, `docker volume rm detection-docker-setup_matrix_dat
 detection-docker-setup_matrix_db_data`, then the setup above. `MATRIX_REGISTRATION_SECRET` is no
 longer used.
 
+## Deleting or deactivating accounts
+
+The chat account follows its portal user, through MAS's admin API. The portal's admin client uses
+`MATRIX_MAS_ADMIN_SECRET`, and the API listens on `progeo-mas:8081`, which nginx never proxies.
+
+| In the portal | In the chat |
+| --- | --- |
+| user deleted | account deactivated, and its content erased (GDPR) |
+| user deactivated (`is_active` off, e.g. a rejected access request) | account deactivated; it can't sign in, its sessions end |
+| user reactivated | account reactivated; it was removed from its rooms, so the bot opens a new chat with the next notification |
+
+By hand:
+
+```sh
+docker compose exec progeo-mas mas-cli manage lock-user --config /mas/config.yaml --deactivate <name>
+docker compose exec progeo-mas mas-cli manage unlock-user --config /mas/config.yaml --reactivate <name>
+```
+
+Matrix never gives an ID out again. A deleted user's name (`@<name>:matrix.progeo.com`) stays taken,
+so a new portal user with the same username can't get a chat account. Give them another username.
+
 ## Backups
 
 The volumes `matrix_data` (Synapse's signing key, media), `matrix_db_data` (Synapse and MAS),
