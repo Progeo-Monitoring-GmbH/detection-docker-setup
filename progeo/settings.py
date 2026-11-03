@@ -285,8 +285,14 @@ PORTAL_OIDC_ISSUER = (os.getenv("PORTAL_OIDC_ISSUER") or "").strip().rstrip("/")
 PORTAL_OIDC_KEY_FILE = (os.getenv("PORTAL_OIDC_KEY_FILE") or "/etc/progeo/oidc/private.pem").strip()
 try:
     PORTAL_OIDC_PRIVATE_KEY = Path(PORTAL_OIDC_KEY_FILE).read_text()
-except OSError:
+except OSError as _oidc_error:
     PORTAL_OIDC_PRIVATE_KEY = ""
+    if PORTAL_OIDC_ISSUER:
+        # Without the key /auth/oidc/ isn't routed - MAS then only sees a 404.
+        import sys
+
+        print(f"PORTAL_OIDC_ISSUER is set, but the signing key {PORTAL_OIDC_KEY_FILE} can't be read "
+              f"({_oidc_error.strerror}) - the chat login is off", file=sys.stderr)
 PORTAL_OIDC_ENABLED = bool(PORTAL_OIDC_ISSUER and PORTAL_OIDC_PRIVATE_KEY)
 OAUTH2_PROVIDER = {
     "OIDC_ENABLED": PORTAL_OIDC_ENABLED,

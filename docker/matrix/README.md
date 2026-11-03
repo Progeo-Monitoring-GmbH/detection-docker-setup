@@ -70,8 +70,17 @@ Element are encrypted.
        matrix.progeo.com auth.matrix.progeo.com
    ```
 
-3. **Portal signing key** (OpenID Connect): `openssl genrsa -out secrets/oidc/private.pem 4096`. The
-   backend reads it from `/etc/progeo/oidc/private.pem`.
+3. **Portal signing key** (OpenID Connect), readable by the backend's user (`DOCKER_UID` /
+   `DOCKER_GID` of `.env`, i.e. the host user `progeo`):
+
+   ```sh
+   openssl genrsa -out secrets/oidc/private.pem 4096
+   sudo chown "$(id -u progeo):$(id -g progeo)" secrets/oidc/private.pem
+   chmod 600 secrets/oidc/private.pem
+   ```
+
+   The backend reads it from `/etc/progeo/oidc/private.pem`. If it can't, the chat login is off,
+   `/auth/oidc/…` answers 404 and the backend logs `the signing key … can't be read`.
 
 4. **`.env`** (see `.env.template`, section Messenger):
    - `MATRIX_DOMAIN=matrix.progeo.com` and `MATRIX_AUTH_DOMAIN=auth.matrix.progeo.com`
