@@ -3,8 +3,11 @@
 Users never register there: the Matrix Authentication Service signs them in
 through the portal (OpenID Connect, progeo/oidc.py) and creates the account
 on the first login, named matrix_localpart(user). The profile shows the
-resulting Matrix ID and a QR code with Element's provisioning link, which
-opens the app with our server and the user's name already filled in.
+resulting Matrix ID and per chat app a QR code: for Element X its
+provisioning link (opens the app with our server and the user's name), for
+FluffyChat - which has no such link - its download page, the server is
+typed in. Every login in an app passes the portal's token endpoint
+(app_authorized): UserProfile.matrix_connected_at confirms the connection.
 """
 import base64
 import io
@@ -12,6 +15,8 @@ import re
 from urllib.parse import urlencode
 
 from django.conf import settings
+from django.dispatch import receiver
+from oauth2_provider.signals import app_authorized
 
 # The portal's OpenID Connect client for MAS (manage.py matrix_oidc_client)
 # and MAS's id of the portal as login provider - the same in
@@ -26,6 +31,7 @@ RESERVED_PREFIXES = ("signal_", "_")
 # Django username, so the "=<pk>" suffix can't collide with a real name.
 _INVALID = re.compile(r"[^a-z0-9._-]")
 ELEMENT_PROVISIONING_LINK = "https://mobile.element.io/element"
+FLUFFYCHAT_LINK = "https://fluffychat.im/"
 
 
 def matrix_domain() -> str:
@@ -79,10 +85,33 @@ def qr_data_uri(payload: str) -> str:
     return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
 
 
+def connected_at(user):
+    """When the user last signed in to a chat app on our server, or None."""
+    profile = getattr(user, "profile", None)
+    return getattr(profile, "matrix_connected_at", None)
+
+
 def account_info(user) -> dict | None:
-    """What the profile shows about the user's Matrix account, or None."""
+    """What the profile shows about the user's Matrix account, or None:
+    Matrix ID, last app login and per app the link + its QR code."""
     if not enabled() or not may_use_matrix(user):
         return None
-    link = login_link(user)
-    return {"user_id": matrix_user_id(user), "homeserver": matrix_domain(), "login_link": link,
-            "qr": qr_data_uri(link)}
+    apps = {"element_x": login_link(user), "fluffychat": FLUFFYCHAT_LINK}
+    return {
+        "user_id": matrix_user_id(user),
+        "homeserver": matrix_domain(),
+        "connected_at": connected_at(user),
+        "apps": {app: {"link": link, "qr": qr_data_uri(link)} for app, link in apps.items()},
+    }
+
+
+@receiver(app_authorized)
+def remember_chat_login(sender, request, token, **kwargs):
+    """The portal issued MAS a token: the user just signed in to a chat app."""
+    if token.user_id is None or getattr(token.application, "client_id", None) != OIDC_CLIENT_ID:
+        return
+    from django.utils import timezone
+
+    from progeo.v1.models import UserProfile
+
+    UserProfile.objects.update_or_create(user_id=token.user_id, defaults={"matrix_connected_at": timezone.now()})

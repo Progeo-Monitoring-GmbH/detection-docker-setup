@@ -1,0 +1,78 @@
+// Tails the backend's log files (./logs/backend, mounted read-only) and pushes
+// them to progeo-loki. Labels: job="progeo-backend", file=<basename>, level.
+//
+// Only *.log and errors.jsonl: *.log.prev / *.log.1 are the same lines again
+// after start-supervisord.sh or supervisord rotated them.
+
+local.file_match "progeo" {
+  path_targets = [
+    {"__path__" = "/var/log/progeo/*.log", "job" = "progeo-backend"},
+    {"__path__" = "/var/log/progeo/errors.jsonl", "job" = "progeo-backend"},
+  ]
+  sync_period = "10s"
+}
+
+// file = basename of the path (the source adds the full path as "filename").
+discovery.relabel "progeo" {
+  targets = local.file_match.progeo.targets
+
+  rule {
+    source_labels = ["__path__"]
+    regex         = ".*/([^/]+)"
+    target_label  = "file"
+  }
+}
+
+loki.source.file "progeo" {
+  targets    = discovery.relabel.progeo.output
+  forward_to = [loki.process.progeo.receiver]
+  // Without a stored position (first start, new file) start at the end:
+  // old lines would all get the current time stamp.
+  tail_from_end = true
+}
+
+loki.process "progeo" {
+  forward_to = [loki.write.loki.receiver]
+
+  stage.label_drop {
+    values = ["filename"]
+  }
+
+  // Colour codes of the console formatter ("\e[34m 13:27:00 [INFO] ... \e[0m").
+  stage.replace {
+    expression = "(\\x1b\\[[0-9;]*m)"
+    replace    = ""
+  }
+
+  // errors.jsonl: {"time": ..., "level": "ERROR", "logger": ..., "message": ...}
+  stage.match {
+    selector = "{file=\"errors.jsonl\"}"
+
+    stage.json {
+      expressions = {lvl_json = "level"}
+    }
+  }
+
+  // "[2026-11-03 12:25:46] [INFO] [daphne] - ...", " 13:27:00.071 [INFO] ...",
+  // "2026-11-03 10:14:46,276 INFO reaped ..." (supervisord: CRIT ERRO WARN INFO
+  // DEBG TRAC BLAT), "INFO Backing Up ..."
+  stage.regex {
+    expression = "^(?:\\S+ \\S+ )?(?P<lvl_plain>DEBUG|INFO|WARNING|ERROR|CRITICAL|CRIT|ERRO|WARN|DEBG|TRAC|BLAT) |\\[(?P<lvl_bracket>DEBUG|INFO|WARNING|ERROR|CRITICAL)\\]"
+  }
+
+  // Lines without a level (tracebacks, shell output): level="unknown".
+  stage.template {
+    source   = "level"
+    template = "{{ $l := or .lvl_json .lvl_bracket .lvl_plain \"unknown\" }}{{ if eq $l \"CRIT\" }}CRITICAL{{ else if eq $l \"ERRO\" }}ERROR{{ else if eq $l \"WARN\" }}WARNING{{ else if eq $l \"DEBG\" \"TRAC\" \"BLAT\" }}DEBUG{{ else }}{{ $l }}{{ end }}"
+  }
+
+  stage.labels {
+    values = {level = ""}
+  }
+}
+
+loki.write "loki" {
+  endpoint {
+    url = "http://progeo-loki:3100/loki/api/v1/push"
+  }
+}

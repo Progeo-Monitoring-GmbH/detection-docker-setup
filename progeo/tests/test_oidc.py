@@ -180,9 +180,37 @@ def test_client_command_needs_its_secret(monkeypatch):
         call_command("matrix_oidc_client")
 
 
-def test_oauth_tables_live_in_default_only():
+def test_oauth_tables_stay_out_of_project_databases(settings):
     from django.db import router
 
+    from progeo.helper.project_dbs import project_alias, template_alias
+
     assert router.allow_migrate("default", "oauth2_provider") is True
-    assert router.allow_migrate("unit_tests_project_4711", "oauth2_provider") is False
-    assert router.allow_migrate("unit_tests_project_4711", "progeo") is True
+    assert router.allow_migrate("unit_tests", "oauth2_provider") is True
+    for alias in (project_alias(4711), template_alias(), settings.DEMO_DATABASE):
+        assert router.allow_migrate(alias, "oauth2_provider") is False
+    assert router.allow_migrate(project_alias(4711), "progeo") is True
+
+
+def test_a_chat_login_is_remembered_and_confirmed(client, mas_client, api_client):
+    from progeo.v1.models import UserProfile
+
+    user = f.make_user()
+    api_client.force_authenticate(user=user)
+    assert api_client.get("/v1/user/matrix/").json()["connected_at"] is None
+
+    client.force_login(user)
+    verifier, challenge = _pkce()
+    code = parse_qs(urlparse(_authorize(client, challenge)["Location"]).query)["code"][0]
+    client.logout()
+    basic = base64.b64encode(f"progeo-matrix:{SECRET}".encode()).decode()
+    assert client.post("/auth/oidc/token/", {"grant_type": "authorization_code", "code": code,
+                                             "redirect_uri": REDIRECT, "code_verifier": verifier},
+                       HTTP_AUTHORIZATION=f"Basic {basic}").status_code == 200
+
+    connected = UserProfile.objects.using(f.DB).get(user_id=user.pk).matrix_connected_at
+    assert connected is not None
+    user.refresh_from_db()
+    assert api_client.get("/v1/user/matrix/").json()["connected_at"] is not None
+    # A profile that only holds the connection is not "empty".
+    assert not UserProfile.objects.using(f.DB).get(user_id=user.pk).is_empty()

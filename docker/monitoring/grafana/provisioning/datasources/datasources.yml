@@ -11,6 +11,16 @@ datasources:
     jsonData:
       timeInterval: 15s
 
+  # Log files of the backend (logs/backend/*.log, errors.jsonl), shipped by progeo-alloy.
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://progeo-loki:3100
+    editable: false
+    jsonData:
+      maxLines: 1000
+
   # Firing alerts and silences of progeo-alertmanager (Alerting -> Alert list / Silences).
   - name: Alertmanager
     uid: alertmanager

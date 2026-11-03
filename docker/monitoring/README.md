@@ -8,6 +8,8 @@ Without that profile, nothing here is pulled or started.
 | progeo-prometheus | prom/prometheus | Scrapes all targets and evaluates [alert rules](prometheus/rules/alerts.yml) |
 | progeo-alertmanager | prom/alertmanager | Mails alerts to `ALERT_EMAIL` |
 | progeo-grafana | grafana/grafana-oss | Dashboards in folder "Progeo"; firing alerts and silences under Alerting |
+| progeo-loki | grafana/loki | Stores the lines of the backend's log files (`LOKI_RETENTION_PERIOD`, 30d) |
+| progeo-alloy | grafana/alloy | Tails `logs/backend/*.log` and `errors.jsonl` and pushes them to Loki |
 | progeo-flower | mher/flower | Celery tasks and workers (from the `-E` worker events) |
 | progeo-postgres-exporter | prometheuscommunity/postgres-exporter | Connections, transactions, locks, sizes, `pg_stat_statements` |
 | progeo-redis-exporter | oliver006/redis_exporter | Redis health and length of the celery queue |
@@ -100,7 +102,14 @@ docker exec progeo-prometheus wget -qO- --header 'Content-Type: application/json
 - **~1000 project databases:** the postgres job is scraped every 60s with a 45s timeout, because the stats of every database take a few seconds.
   - Its dashboard panels use a minimum interval of 2m.
   - Database sizes come from a second exporter (`progeo-postgres-sizes-exporter`, job `postgres-sizes`), scraped only every 15 minutes: `pg_database_size()` of every database costs the server about 3s of work.
-- **Overview:** [overview.json](grafana/dashboards/overview.json) combines API, Celery, cron jobs, Alertmanager notifications, Docker/host and PostgreSQL on one page.
+- **Overview:** [overview.json](grafana/dashboards/overview.json) combines API, Celery, cron jobs, Alertmanager notifications, log warnings/errors, Docker/host and PostgreSQL on one page.
+- **Log files:** [alloy/config.alloy](alloy/config.alloy) tails `logs/backend/*.log` and `errors.jsonl` (mounted read-only) and labels each line with `file` and `level`.
+  - `level` comes from `[INFO]`, `INFO ...` or the JSON `level`; lines without one (traceback lines, shell output) get `level="unknown"`.
+  - Rotated copies (`*.log.prev`, `*.log.1`) are skipped, they hold the same lines again.
+  - Lines carry the time Alloy read them, not the time in the line. On its first start Alloy begins at the end of each file, so older lines never reach Loki.
+  - [logs.json](grafana/dashboards/logs.json) ("Progeo Logs") browses all lines by file, level and text; the overview shows only WARNING/ERROR/CRITICAL.
+  - In Explore: `{job="progeo-backend", file="daily.log"} |= "dbbackup"`.
+  - `LOKI_RETENTION_PERIOD` must be a multiple of 24h.
 - **Cron jobs:** [cronjobs.json](grafana/dashboards/cronjobs.json) shows last run, last success age, duration and running state. The wrapper [run_job.sh](../backend/cronjobs/run_job.sh) writes status files to `CRON_STATUS_DIR` (default `LOG_DIR/cron`); the backend exposes them at `/metrics`.
 - **Database writes:** [database-writes.json](grafana/dashboards/database-writes.json) counts HTTP write requests per account database. It is a top-20/top-10 view so an installation with ~1000 databases stays cheap to query; the metric itself is a lightweight counter, not a SQL statement counter.
 - **Dashboards** are generated JSON in [grafana/dashboards](grafana/dashboards). Grafana re-reads them every 30s.

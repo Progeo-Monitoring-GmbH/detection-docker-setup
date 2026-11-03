@@ -11,6 +11,7 @@ import { errorReason, showErrorBar, showInfoBar, showSuccessBar } from '../compo
 import PillButton from '../components/ui/kit/PillButton';
 import LabeledInput from '../components/ui/kit/LabeledInput';
 import { isDemoReadOnlyError, isDemoUser } from './demo';
+import MatrixChatSection, { type MatrixAccount } from './MatrixChatSection';
 import TwoFactorSettings from './TwoFactorSettings';
 import { serverErrorText } from './twoFactor';
 
@@ -33,15 +34,6 @@ type UserProfileResponse = {
 };
 
 type Messenger = 'signal' | 'whatsapp' | 'matrix';
-
-type MatrixAccount = {
-  user_id: string;
-  homeserver: string;
-  /** Element X provisioning link - opens the app with our server preset. */
-  login_link: string;
-  /** The login link as PNG QR code (data URI). */
-  qr: string;
-};
 
 const MESSENGER_LABELS: Record<Messenger, string> = { signal: 'Signal', whatsapp: 'WhatsApp', matrix: 'Matrix' };
 
@@ -504,30 +496,7 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
               </div>
             </section>
 
-            {matrixAccount && (
-              <section>
-                <div style={sectionLabelStyle}>{t('profile_section_chat')}</div>
-                <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                  <img
-                    src={matrixAccount.qr}
-                    alt={t('profile_chat_qr_alt')}
-                    width={148}
-                    height={148}
-                    style={{ borderRadius: 12, background: '#fff', boxShadow: '0 1px 4px rgba(11,54,89,.09)' }}
-                  />
-                  <div style={{ flex: 1, minWidth: 180, display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
-                    <div>{t('profile_chat_intro')}</div>
-                    <div>
-                      <span style={{ color: '#8B8383' }}>{t('profile_matrix_id')}: </span>
-                      <span style={{ fontWeight: 500, wordBreak: 'break-all' }}>{matrixAccount.user_id}</span>
-                    </div>
-                    <a href={matrixAccount.login_link} target="_blank" rel="noreferrer">
-                      {t('profile_chat_open_here')}
-                    </a>
-                  </div>
-                </div>
-              </section>
-            )}
+            {matrixAccount && <MatrixChatSection account={matrixAccount} labelStyle={sectionLabelStyle} />}
 
             <section>
               <div style={sectionLabelStyle}>{t('profile_section_access')}</div>

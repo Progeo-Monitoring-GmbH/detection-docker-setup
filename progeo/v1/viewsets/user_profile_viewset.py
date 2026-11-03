@@ -117,6 +117,14 @@ class UserProfileViewSet(viewsets.ViewSet):
             "has_usable_password": user.has_usable_password(),
         })
 
+    @action(detail=False, url_path="matrix", methods=["GET"])
+    def matrix_connection(self, request, *args, **kwargs):
+        """{"connected_at": <last chat app login> | null} - polled by Mein Konto
+        while it shows the chat QR codes (no QR rendering, unlike profile)."""
+        from progeo.helper.matrix_accounts import connected_at
+
+        return RequestSuccess({"connected_at": connected_at(request.user)})
+
     @action(detail=False, url_path="settings", methods=["POST"])
     def update_settings(self, request, *args, **kwargs):
         from progeo.v1.models import UserProfile

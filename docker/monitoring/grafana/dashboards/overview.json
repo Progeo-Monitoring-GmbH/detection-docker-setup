@@ -1,7 +1,7 @@
 {
   "uid": "progeo-overview",
   "title": "Progeo Overview",
-  "description": "One-page overview: API, Celery, cron exports, Docker/host and PostgreSQL.",
+  "description": "One-page overview: API, Celery, cron exports, log files, Docker/host and PostgreSQL.",
   "tags": [
     "progeo"
   ],
@@ -546,12 +546,276 @@
     },
     {
       "type": "row",
+      "title": "Logs (logs/backend)",
+      "collapsed": false,
+      "id": 36,
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 37,
+      "type": "timeseries",
+      "title": "Warnings and errors by level",
+      "description": "Lines with level WARNING, ERROR or CRITICAL in logs/backend/*.log and errors.jsonl.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (level) (count_over_time({job=\"progeo-backend\", level=~\"WARNING|ERROR|CRITICAL\"} [$__auto]))",
+          "legendFormat": "{{level}}",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "CRITICAL"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "dark-red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ERROR"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "WARNING"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "INFO"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "DEBUG"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "unknown"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 19,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "id": 38,
+      "type": "timeseries",
+      "title": "Warnings and errors by file",
+      "description": "Same lines, split by log file.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (file) (count_over_time({job=\"progeo-backend\", level=~\"WARNING|ERROR|CRITICAL\"} [$__auto]))",
+          "legendFormat": "{{file}}",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 19,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "id": 39,
+      "type": "logs",
+      "title": "Latest warnings and errors",
+      "description": "Newest first. Click a line for its labels (file, level); the panel link opens the Logs dashboard with all lines.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{job=\"progeo-backend\", level=~\"WARNING|ERROR|CRITICAL\"}",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 27,
+        "w": 24,
+        "h": 10
+      },
+      "links": [
+        {
+          "title": "Logs dashboard (all lines, filter by file/level/text)",
+          "url": "/d/progeo-logs/logs?${__url_time_range}"
+        }
+      ]
+    },
+    {
+      "type": "row",
       "title": "API",
       "collapsed": false,
       "id": 7,
       "gridPos": {
         "x": 0,
-        "y": 18,
+        "y": 37,
         "w": 24,
         "h": 1
       }
@@ -610,7 +874,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 19,
+        "y": 38,
         "w": 12,
         "h": 8
       }
@@ -683,7 +947,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 19,
+        "y": 38,
         "w": 12,
         "h": 8
       }
@@ -739,7 +1003,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 27,
+        "y": 46,
         "w": 12,
         "h": 8
       }
@@ -795,7 +1059,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 27,
+        "y": 46,
         "w": 12,
         "h": 8
       }
@@ -850,7 +1114,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 35,
+        "y": 54,
         "w": 24,
         "h": 8
       }
@@ -862,7 +1126,7 @@
       "id": 13,
       "gridPos": {
         "x": 0,
-        "y": 43,
+        "y": 62,
         "w": 24,
         "h": 1
       }
@@ -917,7 +1181,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 44,
+        "y": 63,
         "w": 12,
         "h": 8
       }
@@ -972,7 +1236,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 44,
+        "y": 63,
         "w": 12,
         "h": 8
       }
@@ -1036,7 +1300,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 52,
+        "y": 71,
         "w": 12,
         "h": 8
       }
@@ -1100,7 +1364,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 52,
+        "y": 71,
         "w": 12,
         "h": 8
       }
@@ -1112,7 +1376,7 @@
       "id": 18,
       "gridPos": {
         "x": 0,
-        "y": 60,
+        "y": 79,
         "w": 24,
         "h": 1
       }
@@ -1343,7 +1607,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 61,
+        "y": 80,
         "w": 24,
         "h": 9
       }
@@ -1355,7 +1619,7 @@
       "id": 20,
       "gridPos": {
         "x": 0,
-        "y": 70,
+        "y": 89,
         "w": 24,
         "h": 1
       }
@@ -1411,7 +1675,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 71,
+        "y": 90,
         "w": 12,
         "h": 8
       }
@@ -1471,7 +1735,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 71,
+        "y": 90,
         "w": 12,
         "h": 8
       }
@@ -1545,7 +1809,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 79,
+        "y": 98,
         "w": 12,
         "h": 8
       }
@@ -1601,7 +1865,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 79,
+        "y": 98,
         "w": 12,
         "h": 8
       }
@@ -1666,7 +1930,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 87,
+        "y": 106,
         "w": 12,
         "h": 8
       }
@@ -1731,7 +1995,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 87,
+        "y": 106,
         "w": 12,
         "h": 8
       }
@@ -1795,7 +2059,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 95,
+        "y": 114,
         "w": 12,
         "h": 8
       }
@@ -1807,7 +2071,7 @@
       "id": 27,
       "gridPos": {
         "x": 0,
-        "y": 103,
+        "y": 122,
         "w": 24,
         "h": 1
       }
@@ -1867,7 +2131,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 104,
+        "y": 123,
         "w": 12,
         "h": 8
       }
@@ -1932,7 +2196,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 104,
+        "y": 123,
         "w": 12,
         "h": 8
       }
@@ -1997,7 +2261,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 112,
+        "y": 131,
         "w": 24,
         "h": 8
       }

@@ -469,9 +469,12 @@ def test_profile_shows_the_account_on_our_matrix_server(api_client):
     matrix = api_client.get("/v1/user/profile/").json()["matrix"]
 
     assert matrix["user_id"] == f"@{user.username}:matrix.progeo.com"
-    assert matrix["login_link"] == ("https://mobile.element.io/element?account_provider=matrix.progeo.com"
-                                    f"&login_hint={user.username}")
-    assert matrix["qr"].startswith("data:image/png;base64,")
+    assert matrix["connected_at"] is None
+    apps = matrix["apps"]
+    assert apps["element_x"]["link"] == ("https://mobile.element.io/element?account_provider=matrix.progeo.com"
+                                         f"&login_hint={user.username}")
+    assert apps["fluffychat"]["link"] == "https://fluffychat.im/"
+    assert all(app["qr"].startswith("data:image/png;base64,") for app in apps.values())
 
 
 def test_own_matrix_server_sets_the_matrix_id(api_client):

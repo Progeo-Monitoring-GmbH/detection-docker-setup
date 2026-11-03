@@ -461,6 +461,7 @@ services:
     profiles: ['monitoring']
     depends_on:
       - progeo-prometheus
+      - progeo-loki
     environment:
       # Applied on the very first start only (then stored in grafana_data).
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
@@ -491,6 +492,42 @@ services:
       - ./docker/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./docker/monitoring/grafana/dashboards:/var/lib/grafana-dashboards:ro
       - grafana_data:/var/lib/grafana
+    networks:
+      monitoring_net:
+
+  # Log files of the backend (./logs/backend) in Grafana: progeo-alloy tails
+  # them, progeo-loki stores them (LOKI_RETENTION_PERIOD), Grafana queries Loki.
+  progeo-loki:
+    image: grafana/loki:3.7.9
+    container_name: progeo-loki
+    restart: unless-stopped
+    profiles: ['monitoring']
+    command: ['-config.file=/etc/loki/loki.yml', '-config.expand-env=true']
+    environment:
+      LOKI_RETENTION_PERIOD: ${LOKI_RETENTION_PERIOD:-30d}
+    volumes:
+      - ./docker/monitoring/loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki_data:/loki
+    networks:
+      monitoring_net:
+
+  progeo-alloy:
+    image: grafana/alloy:v1.21.3
+    container_name: progeo-alloy
+    restart: unless-stopped
+    profiles: ['monitoring']
+    command:
+      - run
+      - --storage.path=/var/lib/alloy/data
+      - --disable-reporting
+      - /etc/alloy/config.alloy
+    volumes:
+      - ./docker/monitoring/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - ./logs/backend:/var/log/progeo:ro
+      # Read position per file: a restart doesn't resend or skip lines.
+      - alloy_data:/var/lib/alloy/data
+    depends_on:
+      - progeo-loki
     networks:
       monitoring_net:
 
@@ -658,6 +695,8 @@ volumes:
   prometheus_data:
   alertmanager_data:
   grafana_data:
+  loki_data:
+  alloy_data:
   signal_bridge_data:
   mas_data:
   matrix_data:

@@ -1018,6 +1018,9 @@ class UserProfile(models.Model):
     # Matrix ID (@name:server) - or for Signal/WhatsApp another number than
     # `mobile`; empty = `mobile`.
     messenger_id = models.CharField(max_length=255, null=True, blank=True)
+    # Last login in a chat app on our Matrix server (the portal handed MAS a
+    # token, helper/matrix_accounts.py) - Mein Konto confirms the connection.
+    matrix_connected_at = models.DateTimeField(null=True, blank=True)
 
     def messenger_address(self):
         """Where the messenger notifications go, or None when incomplete."""
@@ -1029,7 +1032,7 @@ class UserProfile(models.Model):
         return address or None
 
     def is_empty(self):
-        return not (self.mobile or self.messenger or self.messenger_id)
+        return not (self.mobile or self.messenger or self.messenger_id or self.matrix_connected_at)
 
     def __str__(self):
         return f"[{self.pk}] {self.user.username} - {self.mobile or 'no mobile'}"
@@ -1625,5 +1628,6 @@ class SystemConfig(ProgeoModel, auto_prefetch.Model):
         return f"{_id} ⚙️ {self.key}"
 
 
-# Mirrors users/accounts/locations/devices into the project databases.
-from progeo.helper import project_db_signals  # noqa: F401
+# Signal receivers: mirroring users/accounts/locations/devices into the
+# project databases, remembering chat logins (UserProfile.matrix_connected_at).
+from progeo.helper import matrix_accounts, project_db_signals  # noqa: F401

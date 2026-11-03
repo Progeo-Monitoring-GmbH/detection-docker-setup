@@ -233,8 +233,9 @@ class ProjectRouter:
     _warned = set()
 
     # Apps only "default" uses: the portal's OpenID Connect provider (chat
-    # login, progeo/oidc.py). Its migrations in every project database made
-    # adv_migrate crawl - there they are recorded without running.
+    # login, progeo/oidc.py). Their migrations in every project database (and
+    # the template they are cloned from, and the demo) made adv_migrate crawl
+    # - there they are recorded without running.
     DEFAULT_ONLY_APPS = {"oauth2_provider"}
 
     def db_for_read(self, model, **hints):
@@ -244,8 +245,15 @@ class ProjectRouter:
         return self._route(model, hints)
 
     def allow_migrate(self, db, app_label, model_name=None, **hints):
-        if app_label in self.DEFAULT_ONLY_APPS:
-            return db == "default"
+        if app_label not in self.DEFAULT_ONLY_APPS:
+            return None
+        from django.conf import settings
+
+        from progeo.helper.project_dbs import is_project_alias, template_alias
+
+        # Not db == "default": the tests migrate their database as "unit_tests".
+        if is_project_alias(db) or db in (template_alias(), getattr(settings, "DEMO_DATABASE", None)):
+            return False
         return None
 
 

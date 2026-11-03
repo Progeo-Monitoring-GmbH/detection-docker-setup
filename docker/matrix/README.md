@@ -20,15 +20,19 @@ numbers banned).
 
 ## How a login works
 
-1. The user scans the QR code in Mein Konto. It holds Element's provisioning link
-   (`https://mobile.element.io/element?account_provider=matrix.progeo.com&login_hint=<name>`) and
-   opens Element X, or its store page, with our server preset.
+1. The user scans a QR code in Mein Konto, one per app:
+   - **Element X:** Element's provisioning link
+     (`https://mobile.element.io/element?account_provider=matrix.progeo.com&login_hint=<name>`). It
+     opens the app, or its store page, with our server preset.
+   - **FluffyChat:** its download page (`https://fluffychat.im/`). FluffyChat has no such link, so
+     the user enters `matrix.progeo.com` as server in the app.
 2. Element asks MAS, and MAS asks the portal (`/auth/oidc/authorize/`).
 3. Without a portal session, the portal's login page comes first: password, then 2FA if the user has
    it. The name is filled in from the link.
 4. The portal returns the user to MAS. On the first login MAS creates the account; the name comes
    from `matrix_localpart()`: the username, or a cleaned-up version of it with a `=<id>` suffix.
-5. Back in the app.
+5. Back in the app. The portal notes the login (`UserProfile.matrix_connected_at`, set when it hands
+   MAS the token), and Mein Konto, which polls while the QR codes are shown, confirms the connection.
 
 The public demo user and users with a pending access request get no chat.
 
