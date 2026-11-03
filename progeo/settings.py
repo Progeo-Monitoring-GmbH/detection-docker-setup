@@ -564,18 +564,6 @@ SHOW_LAST_TAGS = 25
 
 TIME_CALC_OFFSET = parse_int(os.getenv("TIME_CALC_OFFSET", "0"))
 
-# Microsoft Teams notifications (progeo/helper/teams.py). The URL is a Power
-# Automate workflow trigger; an empty URL disables the whole integration.
-TEAMS_WEBHOOK_URL = (os.getenv("TEAMS_WEBHOOK_URL") or "").strip()
-TEAMS_ENABLED = parse_boolean(os.getenv("TEAMS_ENABLED", "1")) and bool(TEAMS_WEBHOOK_URL)
-_TEAMS_LEVEL = (os.getenv("TEAMS_MIN_LEVEL") or "ERROR").upper()
-TEAMS_MIN_LEVEL = _TEAMS_LEVEL if _TEAMS_LEVEL in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"} else "ERROR"
-TEAMS_ENVIRONMENT = (os.getenv("TEAMS_ENVIRONMENT") or os.getenv("SENTRY_ENVIRONMENT") or "production").strip()
-TEAMS_TIMEOUT_SEC = parse_int(os.getenv("TEAMS_TIMEOUT_SEC"), 5)
-TEAMS_DEDUPE_SECONDS = parse_int(os.getenv("TEAMS_DEDUPE_SECONDS"), 300)
-TEAMS_MIN_INTERVAL_SECONDS = parse_int(os.getenv("TEAMS_MIN_INTERVAL_SECONDS"), 1)
-TEAMS_PAYLOAD_FORMAT = (os.getenv("TEAMS_PAYLOAD_FORMAT") or "").strip().lower()
-
 # Log directory shared by all backend processes (bind-mounted to ./logs/backend in docker).
 # Falls back to the repo's logs/backend when /var/log/progeo doesn't exist (local dev).
 LOG_DIR = os.getenv("LOG_DIR", "/var/log/progeo")
@@ -637,21 +625,16 @@ LOGGING = {
             "formatter": "json",
             "filters": ["sanitize_url", "skip_client_errors"],
         },
-        "teams": {
-            "level": TEAMS_MIN_LEVEL,
-            "class": "progeo.logging.TeamsHandler",
-            "filters": ["sanitize_url", "skip_client_errors"],
-        },
     },
     "root": {
-        "handlers": ["stdout", "stderr", "errors_file", "teams"],
+        "handlers": ["stdout", "stderr", "errors_file"],
         "level": "INFO",
     },
     "loggers": {
         # elog/wlog/flog/ilog (progeo.helper.basics) already print to the console themselves;
-        # their records only feed errors.jsonl, Teams and Sentry (breadcrumbs from INFO, events from ERROR).
+        # their records only feed errors.jsonl and Sentry (breadcrumbs from INFO, events from ERROR).
         "progeo.console": {
-            "handlers": ["errors_file", "teams"],
+            "handlers": ["errors_file"],
             "level": "INFO",
             "propagate": False,
         },

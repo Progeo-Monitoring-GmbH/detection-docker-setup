@@ -112,17 +112,6 @@ def trip_breaker(reason: str) -> None:
     )
     elog(f"Circuit breaker tripped - all mail/SMS/messenger sending stopped: {reason}", tag="[OUTBOUND]")
     try:
-        from progeo.helper.teams import notify_important
-
-        notify_important(
-            "Outbound circuit breaker tripped",
-            f"All mail/SMS/messenger sending is stopped: {reason}",
-            facts={"Reason": reason},
-            level="ERROR",
-        )
-    except Exception as exc:  # noqa: BLE001 - the breaker itself must hold
-        elog(f"Could not send the Teams breaker alert: {exc}", tag="[OUTBOUND]")
-    try:
         from progeo.helper.emailhelper import send_breaker_alert
 
         send_breaker_alert(reason)

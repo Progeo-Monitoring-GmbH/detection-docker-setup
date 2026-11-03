@@ -48,47 +48,6 @@ class SkipClientErrorsFilter(logging.Filter):
         return not (isinstance(status_code, int) and 400 <= status_code < 500)
 
 
-class TeamsHandler(logging.Handler):
-    """Forward ERROR+ log records to Microsoft Teams.
-
-    The actual send happens in a daemon thread, so a slow/unreachable Teams
-    webhook never delays a request or a Celery task. `progeo.helper.teams`
-    applies the same level/dedupe checks as explicit notifications.
-    """
-
-    def emit(self, record):
-        if record.name == "progeo.teams":
-            return  # never notify about the notifier itself
-        try:
-            from django.conf import settings
-
-            if not getattr(settings, "TEAMS_ENABLED", False):
-                return
-            from progeo.helper.teams import notify
-
-            message = record.getMessage()
-            if record.exc_info:
-                message = f"{message}\n\n{self.formatException(record.exc_info)}"
-            facts = {
-                "Logger": record.name,
-                "Location": f"{record.pathname}:{record.lineno}",
-                "Process": process_role(),
-                "Environment": getattr(settings, "TEAMS_ENVIRONMENT", "production"),
-            }
-            path = getattr(record, "cleaned_path", None)
-            if path and path != "-":
-                facts["Path"] = path
-            notify(
-                f"{record.levelname} · {record.name}",
-                message,
-                level=record.levelname,
-                facts=facts,
-                background=True,
-            )
-        except Exception:  # noqa: BLE001 - logging must never fail on Teams
-            self.handleError(record)
-
-
 class SanitizeURLFilter(logging.Filter):
     def filter(self, record):
         record.cleaned_path = "-"
