@@ -178,3 +178,11 @@ def test_client_command_needs_its_secret(monkeypatch):
 
     with pytest.raises(CommandError, match="MATRIX_OIDC_CLIENT_SECRET"):
         call_command("matrix_oidc_client")
+
+
+def test_oauth_tables_live_in_default_only():
+    from django.db import router
+
+    assert router.allow_migrate("default", "oauth2_provider") is True
+    assert router.allow_migrate("unit_tests_project_4711", "oauth2_provider") is False
+    assert router.allow_migrate("unit_tests_project_4711", "progeo") is True

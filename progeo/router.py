@@ -232,11 +232,21 @@ class ProjectRouter:
 
     _warned = set()
 
+    # Apps only "default" uses: the portal's OpenID Connect provider (chat
+    # login, progeo/oidc.py). Its migrations in every project database made
+    # adv_migrate crawl - there they are recorded without running.
+    DEFAULT_ONLY_APPS = {"oauth2_provider"}
+
     def db_for_read(self, model, **hints):
         return self._route(model, hints)
 
     def db_for_write(self, model, **hints):
         return self._route(model, hints)
+
+    def allow_migrate(self, db, app_label, model_name=None, **hints):
+        if app_label in self.DEFAULT_ONLY_APPS:
+            return db == "default"
+        return None
 
 
 class AccountRouter:
