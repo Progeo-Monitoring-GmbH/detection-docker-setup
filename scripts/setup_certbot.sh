@@ -71,8 +71,10 @@ for domain in "${DOMAINS[@]}"; do
   CERTBOT_DOMAIN_ARGS+=("-d" "$domain")
 done
 
+# --expand: an existing certificate of the first domain gets the new names
+# (e.g. matrix.progeo.com) instead of failing in non-interactive mode.
 certbot certonly --webroot -w "$WEBROOT_PATH" "${CERTBOT_DOMAIN_ARGS[@]}" \
-  --non-interactive --agree-tos -m "$EMAIL"
+  --non-interactive --agree-tos --expand -m "$EMAIL"
 
 docker exec progeo-nginx nginx -s reload
 

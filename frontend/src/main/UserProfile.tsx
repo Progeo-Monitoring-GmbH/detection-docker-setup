@@ -20,11 +20,21 @@ type UserProfileResponse = {
   last_name?: string | null;
   email: string;
   mobile?: string | null;
+  messenger?: Messenger | null;
+  messenger_id?: string | null;
+  /** The messengers this server can send on (configured gateways). */
+  messenger_services?: Messenger[];
   language: string;
   two_factor_enabled?: boolean;
   /** False for users invited per link - they never chose a password. */
   has_usable_password?: boolean;
 };
+
+type Messenger = 'signal' | 'whatsapp' | 'matrix';
+
+const MESSENGER_LABELS: Record<Messenger, string> = { signal: 'Signal', whatsapp: 'WhatsApp', matrix: 'Matrix' };
+
+const isValidMatrixId = (input: string): boolean => /^@[^\s:]+:\S+$/.test(input.trim());
 
 /**
  * 'change': with the current password. 'set': with a 2FA code instead -
@@ -156,6 +166,9 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
   const [lastName, setLastName] = React.useState('');
   const [email, setEmail] = React.useState('');
   const [mobile, setMobile] = React.useState('');
+  const [messenger, setMessenger] = React.useState<Messenger | ''>('');
+  const [messengerId, setMessengerId] = React.useState('');
+  const [messengerServices, setMessengerServices] = React.useState<Messenger[]>([]);
   const [language, setLanguage] = React.useState('de');
 
   const [currentPassword, setCurrentPassword] = React.useState('');
@@ -195,6 +208,9 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
         setLastName(data.last_name || '');
         setEmail(data.email || '');
         setMobile(data.mobile || '');
+        setMessenger(data.messenger || '');
+        setMessengerId(data.messenger_id || '');
+        setMessengerServices(data.messenger_services || []);
         setLanguage(data.language || 'de');
         setTwoFactorEnabled(Boolean(data.two_factor_enabled));
         setHasUsablePassword(data.has_usable_password !== false);
@@ -240,11 +256,23 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
       showErrorBar(enqueueSnackbar, t('profile_email_invalid'));
       return;
     }
+    if (messenger === 'matrix' && !isValidMatrixId(messengerId)) {
+      showErrorBar(enqueueSnackbar, t('profile_matrix_id_invalid'));
+      return;
+    }
     setSaving(true);
     void axiosConfig.perform_post(
       auth,
       '/v1/user/settings/',
-      { first_name: firstName, last_name: lastName, email, mobile, language },
+      {
+        first_name: firstName,
+        last_name: lastName,
+        email,
+        mobile,
+        messenger,
+        messenger_id: messenger ? messengerId : '',
+        language,
+      },
       async () => {
         await i18n.changeLanguage(language);
         showSuccessBar(enqueueSnackbar, t('profile_settings_saved'));
@@ -260,7 +288,10 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
           onHide();
           return;
         }
-        const reason = errorReason(error);
+        const reason =
+          error?.response?.data?.code === 'matrix_id_invalid'
+            ? t('profile_matrix_id_invalid')
+            : errorReason(error);
         showErrorBar(enqueueSnackbar, `${t('profile_settings_error')}: ${reason}`);
         setSaving(false);
       },
@@ -407,6 +438,53 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
                     <option value="en">English</option>
                   </select>
                 </label>
+                {(messengerServices.length > 0 || messenger) && (
+                  <>
+                    <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                      <span style={{ fontSize: 11, letterSpacing: '.07em', textTransform: 'uppercase', color: '#8B8383', fontWeight: 500 }}>
+                        {t('profile_messenger')}
+                      </span>
+                      <select
+                        value={messenger}
+                        onChange={(event) => setMessenger(event.target.value as Messenger | '')}
+                        style={{ height: 40, border: 'none', borderRadius: 11, background: 'var(--progeo-surface)', boxShadow: '0 1px 4px rgba(11,54,89,.09)', padding: '0 13px', fontFamily: 'inherit', fontSize: 14, color: 'var(--progeo-blue)' }}
+                      >
+                        <option value="">{t('profile_messenger_none')}</option>
+                        {(Object.keys(MESSENGER_LABELS) as Messenger[])
+                          .filter((service) => messengerServices.includes(service) || service === messenger)
+                          .map((service) => (
+                            <option key={service} value={service}>
+                              {MESSENGER_LABELS[service]}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                    {messenger ? (
+                      <LabeledInput
+                        label={messenger === 'matrix' ? t('profile_matrix_id') : t('profile_messenger_number')}
+                        value={messengerId}
+                        onChange={setMessengerId}
+                        title={messenger === 'matrix' ? '@name:matrix.org' : t('profile_messenger_number_hint')}
+                      />
+                    ) : (
+                      <div />
+                    )}
+                    {messenger && (
+                      <div style={{ gridColumn: 'span 2', fontSize: 12, color: '#8B8383' }}>
+                        {messenger === 'matrix'
+                          ? t('profile_messenger_matrix_hint')
+                          : t('profile_messenger_number_hint')}
+                        {messenger === 'whatsapp' && <> {t('profile_messenger_whatsapp_hint')}</>}
+                        {messenger !== 'matrix' && !messengerId.trim() && !mobile.trim() && (
+                          <div style={{ color: '#C44D26', marginTop: 4 }}>{t('profile_messenger_no_number')}</div>
+                        )}
+                        {!messengerServices.includes(messenger) && (
+                          <div style={{ color: '#C44D26', marginTop: 4 }}>{t('profile_messenger_unavailable')}</div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             </section>
 

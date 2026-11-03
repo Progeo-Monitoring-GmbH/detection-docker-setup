@@ -167,8 +167,8 @@ class EMailAdmin(MultiDBModelAdmin):
     search_fields = ("sent_to", "subject", "message")
 
 class SMSAdmin(MultiDBModelAdmin):
-    list_display = ("created", "sent", "location", "sent_to", "sender", "batch_id", "error")
-    list_filter = ("sent", "location")
+    list_display = ("created", "channel", "sent", "location", "sent_to", "sender", "batch_id", "error")
+    list_filter = ("channel", "sent", "location")
     search_fields = ("sent_to", "message", "batch_id")
 
 class ProgeoAccessAdmin(MultiDBModelAdmin):

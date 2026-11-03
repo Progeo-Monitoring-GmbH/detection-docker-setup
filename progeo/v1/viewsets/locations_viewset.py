@@ -519,6 +519,7 @@ class LocationViewSet(ProgeoModalViewSet):
                         "username": user.username,
                         "email": user.email,
                         "mobile": profile.mobile if profile is not None else None,
+                        "messenger": profile.messenger if profile is not None and profile.messenger_address() else None,
                     })
             # The staff list (Objektleitung picker) is for staff only - and
             # the public demo user must not learn who ProGeo's staff are.
@@ -642,6 +643,8 @@ class LocationViewSet(ProgeoModalViewSet):
             "full_name": user.get_full_name() or None,
             "email": user.email or None,
             "mobile": profile.mobile if profile is not None else None,
+            # The user's messenger (signal/whatsapp/matrix) when it has an address.
+            "messenger": profile.messenger if profile is not None and profile.messenger_address() else None,
             "last_login": user.last_login,
         }
 
@@ -976,7 +979,13 @@ class LocationViewSet(ProgeoModalViewSet):
                 defaults={"mobile": str(mobile).strip()},
             )
         elif mobile is not None:
-            UserProfile.objects.using(db_name).filter(user_id=user_id).delete()
+            profile = UserProfile.objects.using(db_name).filter(user_id=user_id).first()
+            if profile is not None:
+                profile.mobile = None
+                if profile.is_empty():
+                    profile.delete(using=db_name)
+                else:
+                    profile.save(using=db_name)
 
         profile = getattr(user, "profile", None)
         return RequestSuccess({
@@ -1130,7 +1139,8 @@ class LocationViewSet(ProgeoModalViewSet):
     def get_locations_timeline(self, request, pk=None, *args, **kwargs):
         """
         Benachrichtigungen (Ereignisverlauf): a chronological feed merging
-        sent e-mails (EMail), sent SMS (SMS) and alarm lifecycle events
+        sent e-mails (EMail), sent SMS and messenger messages (SMS, by
+        `channel`) and alarm lifecycle events
         (triggered/acknowledged/resolved) for this location. Optional ?days=
         (default 30, capped at 365). Returns {"events": [...]}, most recent
         first.
@@ -1191,10 +1201,12 @@ class LocationViewSet(ProgeoModalViewSet):
             })
 
         for message in sms:
+            is_sms = message.channel in (None, "", SMS.Channel.SMS)
             events.append({
-                "kind": "sms",
+                "kind": "sms" if is_sms else "messenger",
                 "at": message.created,
-                "title": None,
+                # The messenger service (signal/whatsapp/matrix).
+                "title": None if is_sms else message.channel,
                 "detail": message.sent_to,
                 "success": message.sent,
                 "error": message.error,
@@ -2194,8 +2206,8 @@ class LocationViewSet(ProgeoModalViewSet):
     @staticmethod
     def _notification_recipients(location, db_name):
         """Real ProgeoAccess-based recipients of a location, resolved to
-        {user_id, name, mail, mobile, kanal} rows - shared by Testleackage
-        and the PDF-Report email. `mail`/`mobile` are only populated when
+        {user_id, name, mail, mobile, messenger, kanal} rows - shared by
+        Testleackage and the PDF-Report email. `mail`/`mobile`/`messenger` are only populated when
         that channel is actually active for the row - see
         helper/notifications.py, which the alarm notifications share."""
         from progeo.helper.notifications import notification_recipients
@@ -2207,8 +2219,8 @@ class LocationViewSet(ProgeoModalViewSet):
         """Testleackage (mockup: `showTest: admin`). GET previews the
         location's real recipients; POST sends a real test notification to
         each of them - email via send_template_mail (already logs an EMail
-        row), SMS via Esendex (its first real caller in this codebase) -
-        and reports per-recipient results instead of failing the whole
+        row), SMS via Esendex (its first real caller in this codebase),
+        messenger via helper/messenger.py - and reports per-recipient results instead of failing the whole
         request when one channel is unavailable/misconfigured."""
         if not _is_staff_admin(getattr(request, "user", None)):
             return RequestFailed({"reason": "Staff access required"})
@@ -2222,7 +2234,7 @@ class LocationViewSet(ProgeoModalViewSet):
         if request.method == "GET":
             return RequestSuccess({"recipients": recipients})
 
-        from progeo.helper import esendex
+        from progeo.helper import esendex, messenger
         from progeo.helper.emailhelper import send_template_mail
         from progeo.helper.esendex import EsendexError
 
@@ -2255,6 +2267,20 @@ class LocationViewSet(ProgeoModalViewSet):
                 except EsendexError as exc:
                     result["sms_ok"] = False
                     result["sms_error"] = str(exc)
+            if recipient["messenger"]:
+                try:
+                    messenger.send_message(
+                        recipient["messenger"]["service"],
+                        recipient["messenger"]["address"],
+                        f"ProGeo Testleackage - Objekt {location.project_id or ''} {location.name or ''}",
+                        location=location,
+                        db=db_name,
+                        category="test",
+                    )
+                    result["messenger_ok"] = True
+                except messenger.MessengerError as exc:
+                    result["messenger_ok"] = False
+                    result["messenger_error"] = str(exc)
             results.append(result)
         return RequestSuccess({"results": results})
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Alert, Button, Card, Col, Form, Row, Spinner } from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
@@ -30,6 +30,78 @@ type EsendexConfig = {
   username?: string;
   password?: string;
   from?: string;
+};
+
+type MessengerService = 'signal' | 'whatsapp' | 'matrix';
+
+type MessengerConfig = Record<string, string | undefined>;
+
+type MessengerField = {
+  key: string;
+  label: string;
+  placeholder?: string;
+  /** Masked by the backend; empty/unchanged keeps the stored value. */
+  secret?: boolean;
+  md: number;
+};
+
+/** The three messenger gateways (helper/messenger.py) - one card each. */
+const MESSENGER_CARDS: Record<
+  MessengerService,
+  { title: string; description: ReactNode; fields: MessengerField[]; toPlaceholder: string }
+> = {
+  signal: {
+    title: 'Signal',
+    description: (
+      <>
+        Sends through the <code>progeo-signal</code> container (compose
+        profile <code>messenger</code>) with a registered or linked sender
+        number. Falls back to the <code>SIGNAL_*</code> env vars until saved.
+      </>
+    ),
+    fields: [
+      { key: 'api_url', label: 'API URL', placeholder: 'http://progeo-signal:8080', md: 6 },
+      { key: 'number', label: 'Sender number', placeholder: '+49 151 2345678', md: 6 },
+    ],
+    toPlaceholder: '+49 151 2345678',
+  },
+  whatsapp: {
+    title: 'WhatsApp',
+    description: (
+      <>
+        WhatsApp Business Cloud API (Meta). Messages the business starts are
+        only delivered as approved templates: set a template with one body
+        parameter <code>{'{{1}}'}</code> (the notification text). Without a
+        template, messages only arrive within 24h after the user last wrote
+        to the business number. Env fallback: <code>WHATSAPP_*</code>.
+      </>
+    ),
+    fields: [
+      { key: 'phone_number_id', label: 'Phone number ID', md: 6 },
+      { key: 'access_token', label: 'Access token', secret: true, md: 6 },
+      { key: 'template', label: 'Template name', placeholder: 'progeo_alarm', md: 4 },
+      { key: 'template_language', label: 'Template language', placeholder: 'de', md: 4 },
+      { key: 'api_version', label: 'Graph API version', placeholder: 'v21.0', md: 4 },
+    ],
+    toPlaceholder: '+49 151 2345678',
+  },
+  matrix: {
+    title: 'Matrix',
+    description: (
+      <>
+        A bot account on a Matrix homeserver – our own runs in the compose
+        profile <code>messenger</code> (<code>http://progeo-matrix:8008</code>).
+        Each user gets a direct room on
+        the first message and has to accept the invite. Messages are not
+        end-to-end encrypted. Env fallback: <code>MATRIX_*</code>.
+      </>
+    ),
+    fields: [
+      { key: 'homeserver', label: 'Homeserver', placeholder: 'http://progeo-matrix:8008', md: 6 },
+      { key: 'access_token', label: 'Bot access token', secret: true, md: 6 },
+    ],
+    toPlaceholder: '@name:matrix.progeo.com',
+  },
 };
 
 type TestResult = {
@@ -67,7 +139,7 @@ const TestFeedback = ({ result }: { result: TestResult | null }) => {
   );
 };
 
-type InterfaceKind = 'smtp' | 'modbus' | 'sms';
+type InterfaceKind = 'smtp' | 'modbus' | 'sms' | `messenger/${MessengerService}`;
 
 /**
  * Load/save/test plumbing shared by the interface cards: GET/POST
@@ -172,8 +244,9 @@ const BusyLabel = ({ busy, busyText, children }: { busy: boolean; busyText: stri
 
 /**
  * Schnittstelle tab: runtime configuration of the SMTP server, the Modbus
- * connection and the Esendex SMS gateway (stored in SystemConfig, falls back
- * to django.env until saved). Cards are shown according to the granular
+ * connection, the Esendex SMS gateway and the messenger gateways (stored in
+ * SystemConfig, falls back to django.env until saved). The messenger cards
+ * share the SMS permissions - both are text message gateways. Cards are shown according to the granular
  * module_interface_* permissions; the tab itself is hidden by
  * LocationDetailView when module_interface_enabled is missing.
  */
@@ -183,6 +256,11 @@ const LocationInterfaceTab = () => {
     hasPermission('module_interface_smtp_enabled') ? <SmtpConfigCard key="smtp" /> : null,
     hasPermission('module_interface_modbus_enabled') ? <ModbusConfigCard key="modbus" /> : null,
     hasPermission('module_interface_sms_enabled') ? <EsendexSmsCard key="sms" /> : null,
+    ...(hasPermission('module_interface_sms_enabled')
+      ? (Object.keys(MESSENGER_CARDS) as MessengerService[]).map((service) => (
+          <MessengerCard key={service} service={service} />
+        ))
+      : []),
   ].filter(Boolean);
 
   if (cards.length === 0) {
@@ -566,6 +644,115 @@ const EsendexSmsCard = () => {
             <div className="small text-muted mt-1">
               Sends a real SMS to the given number using the config above –
               even if it is not saved yet.
+            </div>
+          </div>
+        )}
+        <TestFeedback result={testResult} />
+      </Card.Body>
+    </Card>
+  );
+};
+
+/**
+ * One messenger gateway (Signal / WhatsApp / Matrix): its config + a real
+ * "send test message" button. Same permissions as the SMS card.
+ */
+const MessengerCard = ({ service }: { service: MessengerService }) => {
+  const { enqueueSnackbar } = useSnackbar();
+  const { hasPermission } = usePermissions();
+  const canEdit = hasPermission('module_interface_sms_edit');
+  const { title, description, fields, toPlaceholder } = MESSENGER_CARDS[service];
+  const [to, setTo] = useState('');
+  const {
+    config,
+    form,
+    setForm,
+    loading,
+    saving,
+    save,
+    testing: sending,
+    testResult,
+    setTestResult,
+    runTest,
+  } = useInterfaceConfig<MessengerConfig>(`messenger/${service}`, title);
+
+  const sendTest = () => {
+    if (!to.trim()) {
+      showErrorBar(enqueueSnackbar, 'Enter a recipient first.');
+      return;
+    }
+    runTest({ to: to.trim() });
+  };
+
+  if (loading) {
+    return <ConfigLoadingCard label={title} />;
+  }
+
+  return (
+    <Card className="border-0 shadow-sm p-2">
+      <Card.Body>
+        <h5 className="mb-1">Messenger: {title}</h5>
+        <p className="text-muted small">{description}</p>
+        <Row className="g-3">
+          {fields.map((field) => (
+            <Col md={field.md} key={field.key}>
+              <Form.Label className="small text-muted">{field.label}</Form.Label>
+              <Form.Control
+                size="sm"
+                type={field.secret ? 'password' : 'text'}
+                placeholder={field.secret ? (config?.[field.key] ? PASSWORD_MASK : '') : field.placeholder}
+                value={form[field.key] ?? ''}
+                onChange={(event) => setForm((prev) => ({ ...prev, [field.key]: event.target.value }))}
+                disabled={!canEdit}
+              />
+            </Col>
+          ))}
+        </Row>
+
+        <div className="d-flex gap-2 align-items-center mt-3 flex-wrap">
+          {canEdit && (
+            <Button size="sm" variant="primary" onClick={save} disabled={saving || sending}>
+              {saving ? 'Saving…' : `Save ${title} config`}
+            </Button>
+          )}
+          {!canEdit && (
+            <ReadOnlyHint permission="module_interface_sms_edit" action="zum Bearbeiten und zum Versenden" />
+          )}
+        </div>
+
+        {canEdit && (
+          <div className="mt-3 p-3 border rounded bg-light">
+            <div className="small fw-semibold mb-2">Send a test message</div>
+            <div className="d-flex flex-wrap align-items-end gap-2">
+              <Form.Control
+                size="sm"
+                style={{ width: 240 }}
+                placeholder={toPlaceholder}
+                value={to}
+                onChange={(event) => {
+                  setTo(event.target.value);
+                  setTestResult(null);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    sendTest();
+                  }
+                }}
+              />
+              <Button
+                size="sm"
+                variant="success"
+                onClick={sendTest}
+                disabled={sending || saving || !to.trim()}
+                title={`Sends one real ${title} message.`}
+              >
+                <BusyLabel busy={sending} busyText="Sending…">
+                  Send test message
+                </BusyLabel>
+              </Button>
+            </div>
+            <div className="small text-muted mt-1">
+              Uses the config above – even if it is not saved yet.
             </div>
           </div>
         )}

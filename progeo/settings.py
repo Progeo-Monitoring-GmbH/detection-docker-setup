@@ -61,11 +61,13 @@ METRICS_TOKEN = (os.getenv("METRICS_TOKEN") or "").strip()
 # Outbound mail / SMS safety (see django.env.template, helper/outbound.py)
 #
 # Safe by default: unless the env explicitly says MAIL_TEST_MODE=0 every mail
-# goes to MAIL_TEST_RECIPIENT, and unless SMS_DRY_RUN=0 SMS are only logged.
+# goes to MAIL_TEST_RECIPIENT, and unless SMS_DRY_RUN=0 / MESSENGER_DRY_RUN=0
+# SMS / messenger messages (Signal, WhatsApp, Matrix) are only logged.
 # ########################################################################
 MAIL_TEST_MODE = parse_boolean(os.getenv("MAIL_TEST_MODE", "1"))
 MAIL_TEST_RECIPIENT = (os.getenv("MAIL_TEST_RECIPIENT") or "test-mails@progeo.com").strip()
 SMS_DRY_RUN = parse_boolean(os.getenv("SMS_DRY_RUN", "1"))
+MESSENGER_DRY_RUN = parse_boolean(os.getenv("MESSENGER_DRY_RUN", "1"))
 # Envelope sender (Return-Path) - bounces land in this mailbox. Empty = the
 # SMTP login (MAIL_USER) when it is an address, else the From address.
 MAIL_ENVELOPE_FROM = (os.getenv("MAIL_ENVELOPE_FROM") or "").strip()
@@ -82,6 +84,11 @@ OUTBOUND_LIMITS = {
     "sms_global_day": parse_int(os.getenv("SMS_LIMIT_GLOBAL_DAY"), 50),
     # Longer SMS are cut to this many segments (160 GSM-7 chars each).
     "sms_max_segments": parse_int(os.getenv("SMS_MAX_SEGMENTS"), 1),
+    # Signal / WhatsApp / Matrix together.
+    "messenger_per_recipient_hour": parse_int(os.getenv("MESSENGER_LIMIT_PER_RECIPIENT_HOUR"), 10),
+    "messenger_per_recipient_day": parse_int(os.getenv("MESSENGER_LIMIT_PER_RECIPIENT_DAY"), 50),
+    "messenger_global_hour": parse_int(os.getenv("MESSENGER_LIMIT_GLOBAL_HOUR"), 50),
+    "messenger_global_day": parse_int(os.getenv("MESSENGER_LIMIT_GLOBAL_DAY"), 200),
 }
 # Mails triggered by requests (alarms of instantly evaluated uploads, access
 # requests, login links) are handed to celery so the request never waits on

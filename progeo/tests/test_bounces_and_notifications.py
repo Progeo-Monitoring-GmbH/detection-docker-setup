@@ -168,7 +168,7 @@ def test_new_alarm_mails_each_alarm_subscriber_separately(site):
     _subscriber(location, "timeout-only@progeo.com", type=ProgeoAccess.NotifiTypes.TIMEOUT)
     alarm = f.make_alarm(device, value=180, triggered_ago=f.minutes(5))
 
-    assert notifications.notify_alarm(alarm, location, f.DB) == {"mails": 2, "sms": 0}
+    assert notifications.notify_alarm(alarm, location, f.DB) == {"mails": 2, "sms": 0, "messenger": 0}
 
     originals = sorted(m["X-Original-To"] for m in FakeSMTP.parsed())
     assert originals == ["a@progeo.com", "b@progeo.com"]
@@ -182,7 +182,7 @@ def test_alarm_sms_goes_through_the_dry_run(site):
     _subscriber(location, "a@progeo.com", transport=ProgeoAccess.NotifiTrans.SMS, mobile="+49 151 1234")
     alarm = f.make_alarm(device, value=180, triggered_ago=f.minutes(5))
 
-    assert notifications.notify_alarm(alarm, location, f.DB) == {"mails": 0, "sms": 1}
+    assert notifications.notify_alarm(alarm, location, f.DB) == {"mails": 0, "sms": 1, "messenger": 0}
 
     [row] = SMS.objects.using(f.DB).filter(location=location)
     assert row.sent is False and len(row.message) <= 160

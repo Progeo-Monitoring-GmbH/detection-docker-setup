@@ -55,11 +55,13 @@ done
 DNS_BACK_SERVER_NAMES="$(unique_names ${back_names})"
 # server_name needs a value; ".invalid" never matches a request.
 DNS_BACK_SERVER_NAMES="${DNS_BACK_SERVER_NAMES:-api.invalid}"
-export DNS_FRONT_SERVER_NAMES DNS_BACK_SERVER_NAMES
-echo "server names: api block '${DNS_BACK_SERVER_NAMES}', frontend block '${DNS_FRONT_SERVER_NAMES}'"
+# Matrix homeserver block (compose profile "messenger"); unset = never matches.
+MATRIX_SERVER_NAME="${MATRIX_DOMAIN:-matrix.invalid}"
+export DNS_FRONT_SERVER_NAMES DNS_BACK_SERVER_NAMES MATRIX_SERVER_NAME
+echo "server names: api block '${DNS_BACK_SERVER_NAMES}', frontend block '${DNS_FRONT_SERVER_NAMES}', matrix block '${MATRIX_SERVER_NAME}'"
 
 if [ -f /etc/nginx/conf.d/progeo.conf.template ]; then
-  envsubst '\$DNS_BACK_SERVER_NAMES \$DNS_FRONT_SERVER_NAMES \$CERT_FILE \$CERT_KEY \$CERT_PATH' < /etc/nginx/conf.d/progeo.conf.template > /etc/nginx/conf.d/progeo.conf
+  envsubst '\$DNS_BACK_SERVER_NAMES \$DNS_FRONT_SERVER_NAMES \$MATRIX_SERVER_NAME \$CERT_FILE \$CERT_KEY \$CERT_PATH' < /etc/nginx/conf.d/progeo.conf.template > /etc/nginx/conf.d/progeo.conf
   rm /etc/nginx/conf.d/progeo.conf.template
 fi
 

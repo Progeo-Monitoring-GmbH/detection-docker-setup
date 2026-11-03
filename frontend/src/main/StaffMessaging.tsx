@@ -25,7 +25,7 @@ type MessageStatus =
 
 type OutboundMessage = {
   id: number;
-  channel: 'mail' | 'sms';
+  channel: 'mail' | 'sms' | 'messenger';
   status: MessageStatus;
   category: string;
   recipient: string;
@@ -50,15 +50,28 @@ type MessagingState = {
   mail_test_mode: boolean;
   mail_test_recipient: string;
   sms_dry_run: boolean;
+  messenger_dry_run: boolean;
   breaker: {
     tripped: boolean;
     tripped_at: string | null;
     reason: string | null;
   };
   limits: Record<string, number>;
-  counts: { mail_last_hour: number; sms_last_hour: number; sms_today: number };
+  counts: {
+    mail_last_hour: number;
+    sms_last_hour: number;
+    sms_today: number;
+    messenger_last_hour: number;
+    messenger_today: number;
+  };
   messages: OutboundMessage[];
   suppressions: Suppression[];
+};
+
+const CHANNEL_BADGES: Record<OutboundMessage['channel'], { bg: string; label: string }> = {
+  mail: { bg: 'primary', label: 'Mail' },
+  sms: { bg: 'dark', label: 'SMS' },
+  messenger: { bg: 'success', label: 'Messenger' },
 };
 
 const STATUS_VARIANT: Record<MessageStatus, string> = {
@@ -166,10 +179,10 @@ const StaffMessaging = () => {
       },
       {
         name: t('staff_messaging_col_channel'),
-        width: '80px',
+        width: '100px',
         cell: (row) => (
-          <Badge bg={row.channel === 'sms' ? 'dark' : 'primary'}>
-            {row.channel === 'sms' ? 'SMS' : 'Mail'}
+          <Badge bg={CHANNEL_BADGES[row.channel]?.bg || 'secondary'}>
+            {CHANNEL_BADGES[row.channel]?.label || row.channel}
           </Badge>
         ),
       },
@@ -274,6 +287,13 @@ const StaffMessaging = () => {
           ) : (
             <Badge bg="success">{t('staff_messaging_sms_live')}</Badge>
           )}
+          {state.messenger_dry_run ? (
+            <Badge bg="info" text="dark">
+              {t('staff_messaging_messenger_dry_run')}
+            </Badge>
+          ) : (
+            <Badge bg="success">{t('staff_messaging_messenger_live')}</Badge>
+          )}
         </div>
 
         {state.breaker.tripped && (
@@ -315,6 +335,14 @@ const StaffMessaging = () => {
             <tr>
               <th>{t('staff_messaging_count_sms_today')}</th>
               <td>{state.counts.sms_today}</td>
+            </tr>
+            <tr>
+              <th>{t('staff_messaging_count_messenger_hour')}</th>
+              <td>{state.counts.messenger_last_hour}</td>
+            </tr>
+            <tr>
+              <th>{t('staff_messaging_count_messenger_today')}</th>
+              <td>{state.counts.messenger_today}</td>
             </tr>
             {Object.entries(state.limits).map(([name, value]) => (
               <tr key={name}>

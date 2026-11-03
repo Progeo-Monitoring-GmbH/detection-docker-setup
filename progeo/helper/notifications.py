@@ -1,9 +1,11 @@
 """Notifications of the users subscribed to a location (ProgeoAccess rules).
 
-A rule says which channels (transport bitmask: EMAIL / SMS / EMAIL_AND_SMS)
-and which events (type bitmask: ALARM / TIMEOUT / NEWS) a user wants for a
-location. Everything here goes through emailhelper/esendex, i.e. through the
-outbound guard (test modes, limits, suppression list - helper/outbound.py).
+A rule says which channels (transport bitmask: EMAIL / SMS / MESSENGER, the
+legacy EMAIL_AND_SMS = EMAIL | SMS) and which events (type bitmask: ALARM /
+TIMEOUT / NEWS) a user wants for a location. The messenger is the one the
+user picked in the profile (Signal / WhatsApp / Matrix). Everything here goes
+through emailhelper/esendex/messenger, i.e. through the outbound guard (test
+modes, limits, suppression list - helper/outbound.py).
 
 Alarm notifications are deliberately sparse: only new alarms, only recent
 ones (ALARM_NOTIFY_MAX_AGE_HOURS - re-evaluating old measurements must not
@@ -24,13 +26,15 @@ TIMEOUT_CATEGORY = "timeout"
 
 def notification_recipients(location, db_name, notify_type=None):
     """Real ProgeoAccess-based recipients of a location, resolved to
-    {user_id, name, mail, mobile, kanal} rows - shared by Testleackage, the
-    PDF-Report email and the alarm/timeout notifications. `mail`/`mobile` are
-    only populated when that channel is actually active for the row
+    {user_id, name, mail, mobile, messenger, kanal} rows - shared by
+    Testleackage, the PDF-Report email and the alarm/timeout notifications.
+    `mail`/`mobile`/`messenger` ({service, address}) are only populated when
+    that channel is actually active for the row
     (unpack_transport()'s bitmask, not the buggy/unused
     check_has_email/check_has_mobile). With `notify_type` (a
     ProgeoAccess.NotifiTypes bit) only rules subscribed to that event count.
     Inactive users (rejected access requests, ...) get nothing."""
+    from progeo.helper.messenger import LABELS
     from progeo.v1.models import ProgeoAccess
 
     rows = (
@@ -47,21 +51,28 @@ def notification_recipients(location, db_name, notify_type=None):
         transport = rule.unpack_transport()
         has_email = bool(transport.get("EMAIL") or transport.get("EMAIL_AND_SMS"))
         has_sms = bool(transport.get("SMS") or transport.get("EMAIL_AND_SMS"))
-        if not has_email and not has_sms:
+        has_messenger = bool(transport.get("MESSENGER"))
+        if not has_email and not has_sms and not has_messenger:
             continue
         profile = getattr(rule.user, "profile", None)
         mobile = profile.mobile if profile is not None else None
         has_sms = has_sms and bool(mobile)
-        if not has_email and not has_sms:
+        address = profile.messenger_address() if profile is not None and has_messenger else None
+        messenger = {"service": profile.messenger, "address": address} if address else None
+        if not has_email and not has_sms and not messenger:
             continue
         kanal = " + ".join(
-            label for label, ok in (("E-Mail", has_email), ("SMS", has_sms)) if ok
+            label for label, ok in (
+                ("E-Mail", has_email), ("SMS", has_sms),
+                (LABELS.get(messenger["service"]) if messenger else None, bool(messenger)),
+            ) if ok
         )
         recipients.append({
             "user_id": rule.user_id,
             "name": rule.user.get_full_name() or rule.user.username,
             "mail": rule.user.email if has_email and rule.user.email else None,
             "mobile": mobile if has_sms else None,
+            "messenger": messenger,
             "kanal": kanal or "—",
         })
     return recipients
@@ -78,9 +89,9 @@ def _format_time(value):
 
 
 def notify_alarm(alarm, location, db_name) -> dict:
-    """Mail/SMS the ALARM subscribers of `location` about the new `alarm`.
-    Returns {"skipped": reason} or {"mails": n, "sms": n}."""
-    from progeo.helper import esendex
+    """Mail/SMS/messenger the ALARM subscribers of `location` about the new
+    `alarm`. Returns {"skipped": reason} or {"mails": n, "sms": n, "messenger": n}."""
+    from progeo.helper import esendex, messenger
     from progeo.helper.emailhelper import portal_url, send_template_mail
     from progeo.v1.models import ProgeoAccess
 
@@ -117,8 +128,15 @@ def notify_alarm(alarm, location, db_name) -> dict:
         f"ProGeo Alarm Objekt {context['project_nr']} {context['project_name']}: "
         f"Messwert {context['max_value']} > Schwelle {context['threshold']}. Details im Portal."
     )
+    # Messenger messages cost nothing per character: the sensors and the link too.
+    messenger_body = (
+        f"ProGeo Alarm - Objekt {context['project_nr']} {context['project_name']}\n"
+        f"{context['triggered_at']}: Messwert {context['max_value']} > Schwelle {context['threshold']}"
+        + (f"\nSensoren: {sensors}" if sensors else "")
+        + f"\n{context['portal_link']}"
+    )
 
-    mails = sms = 0
+    mails = sms = chats = 0
     for recipient in recipients:
         if recipient["mail"] and send_template_mail(
             [recipient["mail"]], "alarm_notification", context,
@@ -132,8 +150,16 @@ def notify_alarm(alarm, location, db_name) -> dict:
                 sms += 1
             except esendex.EsendexError as exc:
                 elog(f"[notify_alarm] SMS to {recipient['name']} failed: {exc}")
-    ilog(f"[notify_alarm] Alarm {alarm.pk} at location {location.pk}: {mails} mail(s), {sms} SMS")
-    return {"mails": mails, "sms": sms}
+        if recipient["messenger"]:
+            try:
+                messenger.send_message(recipient["messenger"]["service"], recipient["messenger"]["address"],
+                                       messenger_body, location=location, db=db_name, category=ALARM_CATEGORY)
+                chats += 1
+            except messenger.MessengerError as exc:
+                elog(f"[notify_alarm] Messenger message to {recipient['name']} failed: {exc}")
+    ilog(f"[notify_alarm] Alarm {alarm.pk} at location {location.pk}: {mails} mail(s), {sms} SMS, "
+         f"{chats} messenger message(s)")
+    return {"mails": mails, "sms": sms, "messenger": chats}
 
 
 def queue_alarm_notification(alarm, location, db_name) -> None:

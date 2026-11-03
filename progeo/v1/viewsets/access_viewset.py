@@ -287,12 +287,15 @@ class StaffMessagingView(_StaffView):
             "mail_test_mode": outbound.mail_test_mode(),
             "mail_test_recipient": outbound.mail_test_recipient(),
             "sms_dry_run": outbound.sms_dry_run(),
+            "messenger_dry_run": outbound.messenger_dry_run(),
             "breaker": {**breaker, "tripped_at": breaker.get("tripped_at")},
             "limits": outbound.limits(),
             "counts": {
                 "mail_last_hour": counted.filter(channel="mail", created__gte=now - timedelta(hours=1)).count(),
                 "sms_last_hour": counted.filter(channel="sms", created__gte=now - timedelta(hours=1)).count(),
                 "sms_today": counted.filter(channel="sms", created__gte=now - timedelta(days=1)).count(),
+                "messenger_last_hour": counted.filter(channel="messenger", created__gte=now - timedelta(hours=1)).count(),
+                "messenger_today": counted.filter(channel="messenger", created__gte=now - timedelta(days=1)).count(),
             },
             "messages": [{
                 "id": row.pk, "channel": row.channel, "status": row.status, "category": row.category,

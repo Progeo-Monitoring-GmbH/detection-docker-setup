@@ -29,6 +29,7 @@ DATETIME_FORMAT = PRETTY_DATE_FORMAT
 MAIL_TEST_MODE = True
 MAIL_TEST_RECIPIENT = "test-mails@progeo.com"
 SMS_DRY_RUN = True
+MESSENGER_DRY_RUN = True
 MAIL_ENVELOPE_FROM = ""
 OUTBOUND_LIMITS = {
     "mail_max_recipients": 5,
@@ -40,6 +41,10 @@ OUTBOUND_LIMITS = {
     "sms_global_hour": 20,
     "sms_global_day": 50,
     "sms_max_segments": 1,
+    "messenger_per_recipient_hour": 10,
+    "messenger_per_recipient_day": 50,
+    "messenger_global_hour": 50,
+    "messenger_global_day": 200,
 }
 OUTBOUND_ASYNC = False
 ALARM_NOTIFY_COOLDOWN_MINUTES = 60

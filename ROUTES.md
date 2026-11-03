@@ -29,7 +29,7 @@ These routes use the location portal layout, which loads the location identified
 | `/location/:id/benachrichtigungen` | Configure and review location notifications. |
 | `/location/:id/rechte` | Manage access rights for the location. |
 | `/location/:id/einstellungen` | Configure location settings, including thresholds and system settings. |
-| `/location/:id/schnittstelle` | Configure location interfaces, including integrations such as SMTP, Modbus, and SMS. |
+| `/location/:id/schnittstelle` | Configure location interfaces, including integrations such as SMTP, Modbus, SMS, and the Signal / WhatsApp / Matrix messenger gateways. |
 | `/location/:id/detail/` | Retired tab-based location URL; redirects to `/location/:id/status`. |
 
 ## Devices, measurements, and alarms

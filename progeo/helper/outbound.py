@@ -1,9 +1,10 @@
-"""Outbound mail/SMS guard - every mail (emailhelper.send_mail) and SMS
-(esendex.send_sms) passes here before anything leaves the box.
+"""Outbound mail/SMS/messenger guard - every mail (emailhelper.send_mail),
+SMS (esendex.send_sms) and messenger message (messenger.send_message)
+passes here before anything leaves the box.
 
-  - Test modes (settings.MAIL_TEST_MODE / SMS_DRY_RUN): on unless the env
-    switches them off explicitly - mails go to MAIL_TEST_RECIPIENT, SMS are
-    only logged.
+  - Test modes (settings.MAIL_TEST_MODE / SMS_DRY_RUN / MESSENGER_DRY_RUN):
+    on unless the env switches them off explicitly - mails go to
+    MAIL_TEST_RECIPIENT, SMS and messenger messages are only logged.
   - Limits (settings.OUTBOUND_LIMITS): per recipient per hour/day and global.
     We never mass send: hitting a global limit trips the circuit breaker,
     which blocks ALL sending until staff reset it (StaffMessagingView).
@@ -41,6 +42,10 @@ DEFAULT_LIMITS = {
     "sms_global_hour": 20,
     "sms_global_day": 50,
     "sms_max_segments": 1,
+    "messenger_per_recipient_hour": 10,
+    "messenger_per_recipient_day": 50,
+    "messenger_global_hour": 50,
+    "messenger_global_day": 200,
 }
 
 
@@ -58,6 +63,10 @@ def mail_test_recipient() -> str:
 
 def sms_dry_run() -> bool:
     return bool(getattr(settings, "SMS_DRY_RUN", True))
+
+
+def messenger_dry_run() -> bool:
+    return bool(getattr(settings, "MESSENGER_DRY_RUN", True))
 
 
 def normalize_address(address) -> str:
@@ -101,13 +110,13 @@ def trip_breaker(reason: str) -> None:
         key=BREAKER_KEY,
         defaults={"value": {"tripped": True, "tripped_at": timezone.now().isoformat(), "reason": reason}},
     )
-    elog(f"Circuit breaker tripped - all mail/SMS sending stopped: {reason}", tag="[OUTBOUND]")
+    elog(f"Circuit breaker tripped - all mail/SMS/messenger sending stopped: {reason}", tag="[OUTBOUND]")
     try:
         from progeo.helper.teams import notify_important
 
         notify_important(
             "Outbound circuit breaker tripped",
-            f"All mail/SMS sending is stopped: {reason}",
+            f"All mail/SMS/messenger sending is stopped: {reason}",
             facts={"Reason": reason},
             level="ERROR",
         )
@@ -188,8 +197,8 @@ def check(channel: str, recipients: list) -> tuple[list, dict]:
 
     if allowed:
         global_limits = [("hour", hour_ago, cfg[f"{channel}_global_hour"])]
-        if channel == OutboundMessage.Channel.SMS:
-            global_limits.append(("day", day_ago, cfg["sms_global_day"]))
+        if f"{channel}_global_day" in cfg:
+            global_limits.append(("day", day_ago, cfg[f"{channel}_global_day"]))
         for label, since, limit in global_limits:
             if _count(channel, since, None) + len(allowed) > limit:
                 trip_breaker(f"Globales {channel.upper()}-Limit ({limit} pro {'Stunde' if label == 'hour' else 'Tag'}) erreicht")

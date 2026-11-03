@@ -996,8 +996,16 @@ class AlarmDailyReport(ProgeoModel, auto_prefetch.Model):
     def is_complete(self):
         return self.total_count > 0
 
+class Messenger(models.TextChoices):
+    """Messenger services a user can be notified on (helper/messenger.py)."""
+    SIGNAL = "signal", "Signal"
+    WHATSAPP = "whatsapp", "WhatsApp"
+    MATRIX = "matrix", "Matrix"
+
+
 class UserProfile(models.Model):
-    """Extra contact data of a user that does not fit on auth.User (mobile)."""
+    """Extra contact data of a user that does not fit on auth.User (mobile,
+    messenger)."""
 
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
@@ -1005,6 +1013,23 @@ class UserProfile(models.Model):
         related_name="profile",
     )
     mobile = models.CharField(max_length=50, null=True, blank=True, help_text="Mobile number for SMS notifications")
+    # The messenger the user wants ProgeoAccess MESSENGER notifications on.
+    messenger = models.CharField(max_length=16, choices=Messenger.choices, null=True, blank=True)
+    # Matrix ID (@name:server) - or for Signal/WhatsApp another number than
+    # `mobile`; empty = `mobile`.
+    messenger_id = models.CharField(max_length=255, null=True, blank=True)
+
+    def messenger_address(self):
+        """Where the messenger notifications go, or None when incomplete."""
+        if not self.messenger:
+            return None
+        address = (self.messenger_id or "").strip()
+        if not address and self.messenger in (Messenger.SIGNAL, Messenger.WHATSAPP):
+            address = (self.mobile or "").strip()
+        return address or None
+
+    def is_empty(self):
+        return not (self.mobile or self.messenger or self.messenger_id)
 
     def __str__(self):
         return f"[{self.pk}] {self.user.username} - {self.mobile or 'no mobile'}"
@@ -1012,11 +1037,14 @@ class UserProfile(models.Model):
 
 class ProgeoAccess(ProgeoModel, auto_prefetch.Model):
 
+    # A bitmask. EMAIL_AND_SMS predates combinable bits and means EMAIL | SMS;
+    # the frontend saves combinations of EMAIL / SMS / MESSENGER instead.
     class NotifiTrans(models.IntegerChoices):
         SILENT = 0
         EMAIL = 1
         SMS = 2
         EMAIL_AND_SMS = 4
+        MESSENGER = 8
 
     class NotifiTypes(models.IntegerChoices):
         SILENT = 0
@@ -1067,6 +1095,7 @@ class ProgeoAccess(ProgeoModel, auto_prefetch.Model):
             "EMAIL": 1 if value & 1 else 0,
             "SMS": 1 if value & 2 else 0,
             "EMAIL_AND_SMS": 1 if value & 4 else 0,
+            "MESSENGER": 1 if value & 8 else 0,
         }
 
     def unpack_type(self):
@@ -1164,8 +1193,18 @@ class EMail(ProgeoModel, auto_prefetch.Model):
 
 
 class SMS(ProgeoModel, auto_prefetch.Model):
-    """Log of every SMS send attempt through Esendex (helper/esendex.py) -
-    one row per message, also when sending failed or was not configured."""
+    """Log of every short text message send attempt - SMS through Esendex
+    (helper/esendex.py) and messenger messages (helper/messenger.py, see
+    `channel`) - one row per message, also when sending failed or was not
+    configured."""
+
+    class Channel(models.TextChoices):
+        SMS = "sms", "SMS"
+        SIGNAL = "signal", "Signal"
+        WHATSAPP = "whatsapp", "WhatsApp"
+        MATRIX = "matrix", "Matrix"
+
+    channel = models.CharField(max_length=16, choices=Channel.choices, default=Channel.SMS)
     # Optional link to the location (project) the SMS belongs to, e.g. a
     # Testleackage; system/test SMS are stored without a location.
     location = models.ForeignKey(
@@ -1179,9 +1218,9 @@ class SMS(ProgeoModel, auto_prefetch.Model):
     sent_to = models.CharField(max_length=64)
     sender = models.CharField(max_length=64, null=True, blank=True)
     message = models.TextField()
-    # Send outcome: True = accepted by Esendex, False = failed (kept for the log).
+    # Send outcome: True = accepted by the gateway, False = failed (kept for the log).
     sent = models.BooleanField(default=False)
-    # Esendex batch id of an accepted message, for support requests.
+    # Esendex batch id / messenger message id of an accepted message, for support requests.
     batch_id = models.CharField(max_length=64, null=True, blank=True)
     # Human-readable reason when the SMS could not be sent.
     error = models.TextField(null=True, blank=True)
@@ -1201,12 +1240,14 @@ class OutboundMessage(models.Model):
     class Channel(models.TextChoices):
         MAIL = "mail", "E-Mail"
         SMS = "sms", "SMS"
+        # Signal / WhatsApp / Matrix - one limit for all of them.
+        MESSENGER = "messenger", "Messenger"
 
     class Status(models.TextChoices):
         SENT = "sent", "Versendet"
         # MAIL_TEST_MODE: delivered to MAIL_TEST_RECIPIENT instead.
         REDIRECTED = "redirected", "Umgeleitet (Testmodus)"
-        # SMS_DRY_RUN: logged, never handed to Esendex.
+        # SMS_DRY_RUN / MESSENGER_DRY_RUN: logged, never handed to the gateway.
         DRY_RUN = "dry_run", "Nicht versendet (Testmodus)"
         RATE_LIMITED = "rate_limited", "Limit erreicht"
         SUPPRESSED = "suppressed", "Adresse gesperrt (Bounce)"
@@ -1219,7 +1260,7 @@ class OutboundMessage(models.Model):
     # test modes would have been) handed to the gateway.
     COUNTED_STATUSES = (Status.SENT, Status.REDIRECTED, Status.DRY_RUN, Status.FAILED, Status.BOUNCED)
 
-    channel = models.CharField(max_length=8, choices=Channel.choices)
+    channel = models.CharField(max_length=16, choices=Channel.choices)
     status = models.CharField(max_length=16, choices=Status.choices)
     created = models.DateTimeField(default=timezone.now)
     # Normalized original recipient (lowercase mail / phone number).

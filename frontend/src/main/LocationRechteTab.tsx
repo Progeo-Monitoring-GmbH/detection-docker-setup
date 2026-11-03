@@ -28,6 +28,8 @@ type UserContact = {
   full_name?: string | null;
   email?: string | null;
   mobile?: string | null;
+  /** The user's messenger when it has an address (profile). */
+  messenger?: 'signal' | 'whatsapp' | 'matrix' | null;
   last_login?: string | null;
 };
 
@@ -59,13 +61,22 @@ const BADGE_COLORS: Record<Access, { background: string; color: string }> = {
   staff: { background: 'var(--progeo-track-soft)', color: '#6E6868' },
 };
 
-// ProgeoAccess.NotifiTrans / NotifiTypes bit values.
-const TRANSPORT_OPTIONS = [
-  { value: 0, labelKey: 'rechte_transport_silent' },
-  { value: 1, labelKey: 'rechte_transport_email' },
-  { value: 2, labelKey: 'rechte_transport_sms' },
-  { value: 4, labelKey: 'rechte_transport_both' },
+// ProgeoAccess.NotifiTrans / NotifiTypes bit values. The channels combine;
+// 4 is the legacy "E-Mail + SMS" value, read as (and saved as) 1 | 2.
+const TRANSPORT_EMAIL = 1;
+const TRANSPORT_SMS = 2;
+const TRANSPORT_LEGACY_BOTH = 4;
+const TRANSPORT_MESSENGER = 8;
+const CHANNEL_OPTIONS = [
+  { value: TRANSPORT_EMAIL, labelKey: 'rechte_transport_email' },
+  { value: TRANSPORT_SMS, labelKey: 'rechte_transport_sms' },
+  { value: TRANSPORT_MESSENGER, labelKey: 'rechte_transport_messenger' },
 ];
+const MESSENGER_LABELS = { signal: 'Signal', whatsapp: 'WhatsApp', matrix: 'Matrix' };
+const channelBits = (transport: number) =>
+  transport & TRANSPORT_LEGACY_BOTH
+    ? (transport & ~TRANSPORT_LEGACY_BOTH) | TRANSPORT_EMAIL | TRANSPORT_SMS
+    : transport;
 const TYPE_OPTIONS = [
   { value: 1, labelKey: 'rechte_type_alarm' },
   { value: 2, labelKey: 'rechte_type_timeout' },
@@ -335,7 +346,12 @@ const LocationRechteTab = () => {
   const renderMember = (member: Member) => {
     const hasEmail = Boolean(member.email?.trim());
     const hasMobile = Boolean(member.mobile?.trim());
-    const transport = member.rule?.transport ?? 0;
+    const transport = channelBits(member.rule?.transport ?? 0);
+    const available: Record<number, boolean> = {
+      [TRANSPORT_EMAIL]: hasEmail,
+      [TRANSPORT_SMS]: hasMobile,
+      [TRANSPORT_MESSENGER]: Boolean(member.messenger),
+    };
     const type = member.rule?.type ?? 0;
     // Only single-access can be revoked here; account/staff access is
     // broader than this object. Staff notification rules are their
@@ -418,19 +434,28 @@ const LocationRechteTab = () => {
           <div>
             <div style={fieldLabelStyle}>{t('rechte_channel')}</div>
             <div style={segmentTrackStyle}>
-              {TRANSPORT_OPTIONS.map((option) => {
-                const disabled =
-                  !canEditRule ||
-                  (option.value === 1 && !hasEmail) ||
-                  (option.value === 2 && !hasMobile) ||
-                  (option.value === 4 && (!hasEmail || !hasMobile));
+              <PillButton
+                label={t('rechte_transport_silent')}
+                active={transport === 0}
+                disabled={!canEditRule}
+                onClick={() => setTransport(member, 0)}
+              />
+              {CHANNEL_OPTIONS.map((option) => {
+                const active = (transport & option.value) !== 0;
+                const isMessenger = option.value === TRANSPORT_MESSENGER;
                 return (
                   <PillButton
                     key={option.value}
-                    label={t(option.labelKey)}
-                    active={transport === option.value}
-                    disabled={disabled}
-                    onClick={() => setTransport(member, option.value)}
+                    label={
+                      isMessenger && member.messenger
+                        ? MESSENGER_LABELS[member.messenger]
+                        : t(option.labelKey)
+                    }
+                    active={active}
+                    // An active channel can always be switched off.
+                    disabled={!canEditRule || (!active && !available[option.value])}
+                    title={isMessenger && !member.messenger ? t('rechte_messenger_missing') : undefined}
+                    onClick={() => setTransport(member, transport ^ option.value)}
                   />
                 );
               })}

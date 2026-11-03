@@ -696,7 +696,7 @@ def run_cad_import(job_id: str):
 
 @shared_task
 def send_alarm_notification(alarm_id: int, location_id: int, db_name: str = "default"):
-    """Mail/SMS the subscribers of a new alarm (helper/notifications.py) -
+    """Mail/SMS/messenger the subscribers of a new alarm (helper/notifications.py) -
     queued by queue_alarm_notification for instantly evaluated uploads."""
     from progeo.helper.notifications import notify_alarm
     from progeo.v1.models import ProgeoAlarm, ProgeoLocation

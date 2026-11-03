@@ -184,6 +184,7 @@ services:
       - NGINX_ALWAYS_TLS_REDIRECT="on"
       - DNS_FRONT_NAMES=${DNS_FRONT_NAMES}
       - DNS_BACK_NAMES=${DNS_BACK_NAMES}
+      - MATRIX_DOMAIN=${MATRIX_DOMAIN:-}
       - CERT_MODE=${CERT_MODE}
       - CERT_LOCAL=${CERT_LOCAL}
       - CERT_PATH=${CERT_PATH}
@@ -227,6 +228,70 @@ services:
       - ./media:/workspace/media:ro
     networks:
       default_net:
+
+  # ---------------------------------------------------------------------------
+  # Messenger gateways (helper/messenger.py, docker/matrix/README.md) - only
+  # started with the compose profile "messenger" (COMPOSE_PROFILES=messenger).
+  # WhatsApp is Meta's cloud API and needs no container.
+  # ---------------------------------------------------------------------------
+
+  # Signal: reachable from the backend only. Link it once as a secondary
+  # device of the sender phone: `docker compose exec progeo-backend curl -o
+  # /tmp/qr.png "http://progeo-signal:8080/v1/qrcodelink?device_name=progeo"`,
+  # scan the QR code in Signal (Linked devices), then set SIGNAL_API_URL /
+  # SIGNAL_NUMBER or the Schnittstelle -> Signal panel.
+  progeo-signal:
+    image: bbernhard/signal-cli-rest-api:0.101
+    container_name: progeo-signal
+    restart: unless-stopped
+    profiles: ['messenger']
+    environment:
+      - MODE=json-rpc
+    volumes:
+      - signal_data:/home/.local/share/signal-cli
+    networks:
+      default_net:
+
+  # Matrix homeserver (Synapse) on MATRIX_DOMAIN. progeo-nginx terminates TLS
+  # for clients and federation; the backend talks to http://progeo-matrix:8008.
+  progeo-matrix:
+    image: matrixdotorg/synapse:v1.162.0
+    container_name: progeo-matrix
+    restart: unless-stopped
+    profiles: ['messenger']
+    entrypoint: ['/bin/sh', '/config/entrypoint.sh']
+    environment:
+      MATRIX_DOMAIN: ${MATRIX_DOMAIN:-}
+      MATRIX_DB_PASSWORD: ${MATRIX_DB_PASSWORD:-}
+      MATRIX_REGISTRATION_SECRET: ${MATRIX_REGISTRATION_SECRET:-}
+      MATRIX_MACAROON_SECRET: ${MATRIX_MACAROON_SECRET:-}
+      MATRIX_FORM_SECRET: ${MATRIX_FORM_SECRET:-}
+    volumes:
+      - ./docker/matrix/entrypoint.sh:/config/entrypoint.sh:ro
+      - ./docker/matrix/log.config:/config/log.config:ro
+      - matrix_data:/data
+    depends_on:
+      - progeo-matrix-db
+    networks:
+      default_net:
+      matrix_db_net:
+
+  # Synapse's own database - Synapse needs C collation, and its data stays
+  # out of the ProGeo databases and their backups.
+  progeo-matrix-db:
+    image: postgres:17-alpine
+    container_name: progeo-matrix-db
+    restart: unless-stopped
+    profiles: ['messenger']
+    environment:
+      POSTGRES_USER: synapse
+      POSTGRES_PASSWORD: ${MATRIX_DB_PASSWORD:-}
+      POSTGRES_DB: synapse
+      POSTGRES_INITDB_ARGS: '--encoding=UTF8 --lc-collate=C --lc-ctype=C'
+    volumes:
+      - matrix_db_data:/var/lib/postgresql/data
+    networks:
+      matrix_db_net:
 
   # ---------------------------------------------------------------------------
   # Monitoring (docker/monitoring/README.md) - only built + started with the
@@ -470,6 +535,9 @@ services:
 
 networks:
   default_net:
+  # progeo-matrix <-> progeo-matrix-db only, no way out.
+  matrix_db_net:
+    internal: true
   database_net:
   redis_net:
   # Fixed subnet: progeo-node-exporter listens on its gateway (MONITORING_GATEWAY),
@@ -487,3 +555,6 @@ volumes:
   prometheus_data:
   alertmanager_data:
   grafana_data:
+  signal_data:
+  matrix_data:
+  matrix_db_data:

@@ -14,7 +14,7 @@ import type { PortalOutletContext } from './LocationPortalLayout';
 import { formatDate } from './dateFormat';
 
 type TimelineEvent = {
-  kind: 'email' | 'sms' | 'alarm_triggered' | 'alarm_acknowledged' | 'alarm_resolved';
+  kind: 'email' | 'sms' | 'messenger' | 'alarm_triggered' | 'alarm_acknowledged' | 'alarm_resolved';
   at: string;
   title?: string | null;
   detail?: string | number | null;
@@ -31,10 +31,14 @@ type TestRecipient = {
   name: string;
   mail: string | null;
   mobile: string | null;
+  messenger: { service: string; address: string } | null;
   kanal: string;
 };
 
 const DAYS_WINDOW = 90;
+
+/** Messenger events carry the service (signal/whatsapp/matrix) as title. */
+const MESSENGER_LABELS: Record<string, string> = { signal: 'Signal', whatsapp: 'WhatsApp', matrix: 'Matrix' };
 
 /**
  * Benachrichtigungen (Ereignisverlauf): a real chronological feed of what
@@ -84,8 +88,9 @@ const LocationNotificationsTab = () => {
           name: string;
           email_ok?: boolean;
           sms_ok?: boolean;
+          messenger_ok?: boolean;
         }[];
-        const okCount = results.filter((r) => r.email_ok || r.sms_ok).length;
+        const okCount = results.filter((r) => r.email_ok || r.sms_ok || r.messenger_ok).length;
         setTestSending(false);
         setTestOpen(false);
         showSuccessBar(
@@ -132,6 +137,8 @@ const LocationNotificationsTab = () => {
         return event.title || t('benach_event_email');
       case 'sms':
         return t('benach_event_sms');
+      case 'messenger':
+        return t('benach_event_messenger', { service: MESSENGER_LABELS[event.title || ''] || event.title });
       case 'alarm_triggered':
         return t('benach_event_triggered');
       case 'alarm_acknowledged':
@@ -144,7 +151,7 @@ const LocationNotificationsTab = () => {
   };
 
   const eventDetail = (event: TimelineEvent): string | null => {
-    if (event.kind === 'email' || event.kind === 'sms') {
+    if (event.kind === 'email' || event.kind === 'sms' || event.kind === 'messenger') {
       return event.success
         ? t('benach_email_sent_to', { recipients: event.detail })
         : t('benach_email_failed', { recipients: event.detail, reason: event.error || '?' });
@@ -167,7 +174,7 @@ const LocationNotificationsTab = () => {
   };
 
   const dotColor = (event: TimelineEvent): string => {
-    if (event.kind === 'email' || event.kind === 'sms') {
+    if (event.kind === 'email' || event.kind === 'sms' || event.kind === 'messenger') {
       return event.success ? '#3F7A1C' : '#C44D26';
     }
     if (event.kind === 'alarm_resolved') {

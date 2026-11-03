@@ -1,4 +1,4 @@
-"""Runtime interface configuration (SMTP, Modbus).
+"""Runtime interface configuration (SMTP, Modbus, SMS, messengers).
 
 The values live in the ``SystemConfig`` table so they can be edited at
 runtime from the UI ("Schnittstelle" tab). Env vars remain the fallback until
@@ -33,6 +33,27 @@ DEFAULT_ESENDEX = {
     "from": "",
 }
 
+# Stored shapes of the messenger gateways (helper/messenger.py).
+DEFAULT_SIGNAL = {
+    # signal-cli-rest-api, e.g. "http://progeo-signal:8080"
+    "api_url": "",
+    # the registered/linked sender number, "+49..."
+    "number": "",
+}
+DEFAULT_WHATSAPP = {
+    "phone_number_id": "",
+    "access_token": "",
+    # Approved template with one body parameter {{1}}; empty = free text
+    # (only delivered within 24h after the user wrote to the business).
+    "template": "",
+    "template_language": "de",
+    "api_version": "v21.0",
+}
+DEFAULT_MATRIX = {
+    "homeserver": "",
+    "access_token": "",
+}
+
 _SMTP_ENV = {
     "sender": "MAIL_SENDER",
     "reply_to": "MAIL_REPLY_TO",
@@ -53,6 +74,28 @@ _ESENDEX_ENV = {
     "username": "ESENDEX_USERNAME",
     "password": "ESENDEX_PASSWORD",
     "from": "ESENDEX_FROM",
+}
+_SIGNAL_ENV = {
+    "api_url": "SIGNAL_API_URL",
+    "number": "SIGNAL_NUMBER",
+}
+_WHATSAPP_ENV = {
+    "phone_number_id": "WHATSAPP_PHONE_NUMBER_ID",
+    "access_token": "WHATSAPP_ACCESS_TOKEN",
+    "template": "WHATSAPP_TEMPLATE",
+    "template_language": "WHATSAPP_TEMPLATE_LANGUAGE",
+    "api_version": "WHATSAPP_API_VERSION",
+}
+_MATRIX_ENV = {
+    "homeserver": "MATRIX_HOMESERVER",
+    "access_token": "MATRIX_ACCESS_TOKEN",
+}
+# Messenger service -> (SystemConfig key, default, env map, secret field,
+# fields the stored secret is bound to).
+MESSENGER_CONFIGS = {
+    "signal": ("signal", DEFAULT_SIGNAL, _SIGNAL_ENV, None, ()),
+    "whatsapp": ("whatsapp", DEFAULT_WHATSAPP, _WHATSAPP_ENV, "access_token", ("phone_number_id",)),
+    "matrix": ("matrix", DEFAULT_MATRIX, _MATRIX_ENV, "access_token", ("homeserver",)),
 }
 
 
@@ -96,6 +139,13 @@ def get_esendex_config() -> dict[str, Any]:
     return _merged("esendex", DEFAULT_ESENDEX, _ESENDEX_ENV)
 
 
+def get_messenger_config(service: str) -> dict[str, Any]:
+    """Settings of the messenger gateway `service` (signal/whatsapp/matrix):
+    stored SystemConfig row merged over env defaults."""
+    key, default, env_map, _secret, _bound = MESSENGER_CONFIGS[service]
+    return _merged(key, default, env_map)
+
+
 def set_smtp_config(values: dict) -> dict[str, Any]:
     """Persist the SMTP config. ``password`` may be a mask (empty or
     '********') to keep the previously stored password unchanged - as long
@@ -112,6 +162,14 @@ def set_esendex_config(values: dict) -> dict[str, Any]:
     """Persist the Esendex config. ``password`` may be a mask (empty or
     '********') to keep the previously stored password unchanged."""
     return _save("esendex", values, DEFAULT_ESENDEX, "password")
+
+
+def set_messenger_config(service: str, values: dict) -> dict[str, Any]:
+    """Persist the config of messenger gateway `service`. Its secret (access
+    token) may be a mask to keep the stored one - as long as the account it
+    belongs to (phone number id / homeserver) stays."""
+    key, default, _env, secret, bound = MESSENGER_CONFIGS[service]
+    return _save(key, values, default, secret, bound_fields=bound)
 
 
 def _save(key: str, values: dict, default: dict, secret_field: str | None,

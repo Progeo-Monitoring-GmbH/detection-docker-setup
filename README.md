@@ -178,7 +178,7 @@ The databases hold real customers. In `django.env` and `.env` of the staging ser
 
 | Setting | Value | Why |
 | --- | --- | --- |
-| `MAIL_TEST_MODE` / `SMS_DRY_RUN` | `1` | Alarms and reports go to `MAIL_TEST_RECIPIENT`; SMS are only logged. |
+| `MAIL_TEST_MODE` / `SMS_DRY_RUN` / `MESSENGER_DRY_RUN` | `1` | Alarms and reports go to `MAIL_TEST_RECIPIENT`; SMS and messenger messages (Signal, WhatsApp, Matrix) are only logged. |
 | `BACKUP_REMOTE_HOST` | empty | Otherwise staging's dumps land between the live bundles on the backup server and push them out. |
 | `STAGING_REMOTE_HOST` | empty | Staging sends nothing anywhere. |
 | `VITE_SERVER_ENV` | `staging` | Build arg of the frontend image: shows the pink staging frame and the always-visible "Staging Server" banner. A host name containing `staging` enables it too. |

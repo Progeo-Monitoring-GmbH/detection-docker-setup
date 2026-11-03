@@ -26,6 +26,31 @@ def _password_invalid(exc):
     return _failed("password_invalid", " ".join(exc.messages), password_codes=[error.code for error in exc.error_list])
 
 
+def _contact_fields(user) -> dict:
+    """Mobile and messenger of `user` (UserProfile), plus the messengers this
+    server can send on."""
+    from progeo.helper.messenger import configured_services
+
+    profile = getattr(user, "profile", None)
+    return {
+        "mobile": profile.mobile if profile is not None else None,
+        "messenger": profile.messenger if profile is not None else None,
+        "messenger_id": profile.messenger_id if profile is not None else None,
+        "messenger_services": configured_services(),
+    }
+
+
+def _messenger_invalid(service, address):
+    """A RequestFailed when `service`/`address` can't be stored, else None."""
+    from progeo.v1.models import Messenger
+
+    if service and service not in Messenger.values:
+        return _failed("messenger_invalid", f"unknown messenger '{service}'")
+    if service == Messenger.MATRIX and not (address.startswith("@") and ":" in address):
+        return _failed("matrix_id_invalid", "a Matrix ID looks like @name:server")
+    return None
+
+
 def _token_pair(user) -> dict:
     """Fresh JWTs - their claims (two_factor_setup_required) follow a 2FA change."""
     from progeo.v1.serializers import ProgeoTokenObtainPairSerializer
@@ -78,13 +103,12 @@ class UserProfileViewSet(viewsets.ViewSet):
     def profile(self, request, *args, **kwargs):
         user = request.user
         language = self._normalize_language(request.session.get(LANGUAGE_SESSION_KEY)) or "de"
-        profile = getattr(user, "profile", None)
         return RequestSuccess({
             "username": user.username,
             "first_name": user.first_name,
             "last_name": user.last_name,
             "email": user.email,
-            "mobile": profile.mobile if profile is not None else None,
+            **_contact_fields(user),
             "language": language,
             "two_factor_enabled": two_factor.is_enabled(user),
             "has_usable_password": user.has_usable_password(),
@@ -108,6 +132,16 @@ class UserProfileViewSet(viewsets.ViewSet):
         except ValidationError:
             return RequestFailed({"reason": "invalid email address"})
 
+        contact = {}
+        if "mobile" in data:
+            contact["mobile"] = (data.get("mobile") or "").strip() or None
+        if "messenger" in data:
+            contact["messenger"] = (data.get("messenger") or "").strip() or None
+            contact["messenger_id"] = (data.get("messenger_id") or "").strip() or None
+            invalid = _messenger_invalid(contact["messenger"], contact["messenger_id"] or "")
+            if invalid:
+                return invalid
+
         user.email = next_email
         # first_name/last_name are optional (Kontaktdaten) - only touched
         # when the key is present, so callers that don't send them (e.g. the
@@ -121,23 +155,25 @@ class UserProfileViewSet(viewsets.ViewSet):
             update_fields.append("last_name")
         user.save(update_fields=update_fields)
 
-        if "mobile" in data:
-            mobile = (data.get("mobile") or "").strip()
-            if mobile:
-                UserProfile.objects.update_or_create(user=user, defaults={"mobile": mobile})
+        if contact:
+            profile, _ = UserProfile.objects.get_or_create(user_id=user.pk)
+            for field, value in contact.items():
+                setattr(profile, field, value)
+            if profile.is_empty():
+                profile.delete()
             else:
-                UserProfile.objects.filter(user=user).delete()
+                profile.save()
+            user.refresh_from_db()
 
         if next_language:
             request.session[LANGUAGE_SESSION_KEY] = next_language
             translation.activate(next_language)
 
-        profile = getattr(user, "profile", None)
         return RequestSuccess({
             "email": user.email,
             "first_name": user.first_name,
             "last_name": user.last_name,
-            "mobile": profile.mobile if profile is not None else None,
+            **_contact_fields(user),
             "language": next_language or self._normalize_language(request.session.get(LANGUAGE_SESSION_KEY)) or "de",
         })
 

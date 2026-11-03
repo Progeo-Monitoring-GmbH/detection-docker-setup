@@ -1,4 +1,5 @@
-"""Interface (Schnittstelle) configuration endpoints: SMTP server + Modbus + SMS.
+"""Interface (Schnittstelle) configuration endpoints: SMTP server + Modbus + SMS
++ messengers (Signal / WhatsApp / Matrix).
 
 The config is stored runtime-editable in SystemConfig (progeo/helper/
 interface_config.py) and falls back to the django.env values until saved.
@@ -8,6 +9,7 @@ Permissions (all AND-combined, staff/superuser bypass):
   SMTP  view  .............. + module_interface_smtp_enabled   (edit: smtp_edit)
   Modbus view .............. + module_interface_modbus_enabled (edit: modbus_edit)
   SMS   view  .............. + module_interface_sms_enabled    (edit: sms_edit)
+  Messenger ................ like SMS - both are text message gateways
 """
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action
@@ -23,10 +25,13 @@ from progeo.decorator import (
 )
 from progeo.helper.basics import RequestSuccess
 from progeo.helper.interface_config import (
+    MESSENGER_CONFIGS,
     get_esendex_config,
+    get_messenger_config,
     get_modbus_config,
     get_smtp_config,
     set_esendex_config,
+    set_messenger_config,
     set_modbus_config,
     set_smtp_config,
 )
@@ -59,6 +64,7 @@ MODULE_MODBUS_ENABLED = "module_interface_modbus_enabled"
 MODULE_MODBUS_EDIT = "module_interface_modbus_edit"
 MODULE_SMS_ENABLED = "module_interface_sms_enabled"
 MODULE_SMS_EDIT = "module_interface_sms_edit"
+MESSENGER_PATH = r"messenger/(?P<service>signal|whatsapp|matrix)"
 
 
 class InterfaceViewSet(ViewSet):
@@ -223,3 +229,77 @@ class InterfaceViewSet(ViewSet):
             return RequestSuccess({
                 "test": {"ok": False, "steps": steps, "error": str(exc)}
             })
+
+    # ------------------------------------------------------------------ #
+    # Messenger (Signal / WhatsApp / Matrix)
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _masked_messenger(service, cfg):
+        cfg = dict(cfg)
+        secret = MESSENGER_CONFIGS[service][3]
+        if secret and cfg.get(secret):
+            cfg[secret] = PASSWORD_MASK
+        return cfg
+
+    @require_module_permissions(MODULE_INTERFACE, MODULE_SMS_ENABLED)
+    @action(detail=False, url_path=MESSENGER_PATH, methods=["GET", "POST"])
+    def messenger(self, request, service=None, *args, **kwargs):
+        """GET: the gateway config of `service` (token masked) and whether it
+        is complete. POST: save it."""
+        from progeo.helper.messenger import is_configured
+
+        if request.method == "POST":
+            if not has_module_permissions(request.user, MODULE_SMS_EDIT):
+                return permission_denied_response([MODULE_SMS_EDIT])
+            set_messenger_config(service, request.data if isinstance(request.data, dict) else {})
+        return RequestSuccess({
+            "config": self._masked_messenger(service, get_messenger_config(service)),
+            "configured": is_configured(service),
+        })
+
+    @require_module_permissions(MODULE_INTERFACE, MODULE_SMS_ENABLED, MODULE_SMS_EDIT)
+    @action(detail=False, url_path=MESSENGER_PATH + "/test", methods=["POST"])
+    def messenger_test(self, request, service=None, *args, **kwargs):
+        """POST: send a real test message via `service`.
+
+        Body: {"to": "+4915..." | "@name:server", "message"?: "..."} plus
+        optional config overrides, so unsaved form values can be tested."""
+        from progeo.helper.messenger import (
+            DEFAULT_TEST_BODY,
+            LABELS,
+            MessengerError,
+            send_message,
+        )
+
+        values = request.data if isinstance(request.data, dict) else {}
+        to = str(values.get("to") or "").strip()
+        if not to:
+            return RequestSuccess({
+                "test": {"ok": False, "steps": [], "error": "No recipient given ('to' is empty)."}
+            })
+        cfg = get_messenger_config(service)
+        overrides = {
+            field: value for field, value in values.items()
+            if field in cfg and value not in (None, "", PASSWORD_MASK)
+        }
+        # The stored token never follows a test to another account/server.
+        _key, _default, _env, secret, bound = MESSENGER_CONFIGS[service]
+        if secret and secret not in overrides and _changes(cfg, overrides, bound):
+            return RequestSuccess({"test": {
+                "ok": False, "steps": [],
+                "error": f"Enter the {secret.replace('_', ' ')} again - {', '.join(bound)} changed.",
+            }})
+
+        body = str(values.get("message") or DEFAULT_TEST_BODY).strip()
+        steps = [f"Sending a {LABELS[service]} message to {to} ..."]
+        try:
+            result = send_message(service, to, body, cfg=overrides, category="test")
+        except MessengerError as exc:
+            steps.append("Sending failed.")
+            return RequestSuccess({"test": {"ok": False, "steps": steps, "error": str(exc)}})
+        if result.get("dry_run"):
+            steps.append(f"MESSENGER_DRY_RUN is on: logged only, nothing was sent to {LABELS[service]}.")
+            return RequestSuccess({"test": {"ok": True, "steps": steps, "error": None, "dry_run": True}})
+        steps.append("Delivered" + (f" ({result['message_id']})" if result.get("message_id") else "") + ".")
+        return RequestSuccess({"test": {"ok": True, "steps": steps, "error": None}})
