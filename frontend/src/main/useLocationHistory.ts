@@ -3,7 +3,11 @@ import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
 import { heatmapQuery, type HeatmapWindow } from '../components/device/heatmapSteps';
-import type { SensorHeatmapResponse } from '../components/device/sensorHeatmapTypes';
+import {
+  type HeatProfile,
+  heatProfileQuery,
+  type SensorHeatmapResponse,
+} from '../components/device/sensorHeatmapTypes';
 import { showRequestError } from '../components/ui/Snackbar.jsx';
 
 type LocationHistory = {
@@ -25,6 +29,8 @@ export const useLocationHistory = (
   locationId: number,
   demo: boolean,
   spec: HeatmapWindow | null,
+  /** The value per sensor (?profile=) - |WP - EP| by default. */
+  profile: HeatProfile = 'diff',
 ): LocationHistory => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
@@ -40,7 +46,7 @@ export const useLocationHistory = (
     if (!spec) {
       return;
     }
-    const url = `${demo ? '/v1/demo' : '/v1/location'}/${locationId}/heatmap/?${heatmapQuery(spec)}`;
+    const url = `${demo ? '/v1/demo' : '/v1/location'}/${locationId}/heatmap/?${heatmapQuery(spec)}${heatProfileQuery(profile)}`;
     if (requested.current === url) {
       return;
     }
@@ -70,7 +76,7 @@ export const useLocationHistory = (
         setState((prev) => ({ ...prev, loading: false, denied }));
       },
     );
-  }, [auth, demo, enqueueSnackbar, locationId, spec]);
+  }, [auth, demo, enqueueSnackbar, locationId, profile, spec]);
 
   return state;
 };

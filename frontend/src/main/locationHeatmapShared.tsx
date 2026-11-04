@@ -5,7 +5,7 @@ import { useSnackbar } from 'notistack';
 import { useNavigate } from 'react-router';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig.tsx';
-import type { SensorHeatmapResponse } from '../components/device/sensorHeatmapTypes';
+import { type HeatProfile, heatProfileQuery, type SensorHeatmapResponse } from '../components/device/sensorHeatmapTypes';
 import { showRequestError } from '../components/ui/Snackbar.jsx';
 
 /** Debounce for the measurement-count slider before refetching. */
@@ -15,7 +15,7 @@ const RELOAD_DEBOUNCE_MS = 900;
  * Loads /v1/location/:id/heatmap/ for the 2D and 3D heatmap views, refetching
  * (debounced) whenever the measurement limit changes or `refresh` is called.
  */
-export const useLocationHeatmap = (id: string | undefined) => {
+export const useLocationHeatmap = (id: string | undefined, profile: HeatProfile = 'diff') => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
   const [loading, setLoading] = useState(true);
@@ -31,7 +31,7 @@ export const useLocationHeatmap = (id: string | undefined) => {
     const timeoutId = window.setTimeout(() => {
       void axiosConfig.perform_get(
         auth,
-        `/v1/location/${id}/heatmap/?limit=${limit}`,
+        `/v1/location/${id}/heatmap/?limit=${limit}${heatProfileQuery(profile)}`,
         (result) => {
           setResponse((result?.data || null) as SensorHeatmapResponse | null);
           setLoading(false);
@@ -44,7 +44,7 @@ export const useLocationHeatmap = (id: string | undefined) => {
       );
     }, RELOAD_DEBOUNCE_MS);
     return () => window.clearTimeout(timeoutId);
-  }, [id, limit, reloadVersion]);
+  }, [id, limit, profile, reloadVersion]);
 
   const refresh = () => setReloadVersion((version) => version + 1);
 

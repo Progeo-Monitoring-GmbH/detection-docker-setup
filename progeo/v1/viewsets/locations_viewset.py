@@ -189,6 +189,19 @@ HEATMAP_MAX_FRAMES = 20000
 HEATMAP_MIN_STEP_SECONDS = 60
 
 
+def _days_window(days, until):
+    """(from, to) of ?days=N: the N days up to ?to= (the Analyse tab's
+    comparison with the past), else up to now (to: None)."""
+    end = _db_datetime(until) if until else None
+    return (end or timezone.now()) - timedelta(days=days), end
+
+
+def _query_datetime(request, name):
+    """?<name>= as a datetime (ISO-8601); None without it. ValueError if invalid."""
+    raw = request.query_params.get(name)
+    return datetime.fromisoformat(raw) if raw not in (None, "") else None
+
+
 def _db_datetime(value):
     """`value` as the database compares it: aware with USE_TZ, else naive
     local time (the browser sends UTC, the production settings run without
@@ -1747,6 +1760,12 @@ class LocationViewSet(ProgeoModalViewSet):
             days = _window_days(request)
         except ValueError:
             return RequestFailed({"reason": "days must be an integer"})
+        # With ?days=: the days up to ?to= (ISO-8601) instead of up to now -
+        # the same period in the past (the Analyse tab's comparison).
+        try:
+            until = _query_datetime(request, "to")
+        except ValueError:
+            return RequestFailed({"reason": "to must be an ISO-8601 timestamp"})
 
         device_raw = request.query_params.get("device")
         device_id = None
@@ -1775,11 +1794,13 @@ class LocationViewSet(ProgeoModalViewSet):
         if year:
             queryset = queryset.select_related("device").filter(last_fetched__year=year).order_by("-id")
         elif days:
-            # The last `days` days, at most `limit` measurements spread over them - newest first.
-            queryset, total = _spread_over_window(
-                queryset.select_related("device").filter(last_fetched__gte=timezone.now() - timedelta(days=days)),
-                limit,
-            )
+            # The last `days` days (up to ?to=), at most `limit` measurements
+            # spread over them - newest first.
+            window_from, window_to = _days_window(days, until)
+            window = queryset.select_related("device").filter(last_fetched__gte=window_from)
+            if window_to:
+                window = window.filter(last_fetched__lte=window_to)
+            queryset, total = _spread_over_window(window, limit)
             queryset.reverse()
         else:
             queryset = queryset.select_related("device").order_by("-id")[:limit]
@@ -1949,13 +1970,14 @@ class LocationViewSet(ProgeoModalViewSet):
                 time_to = datetime.fromisoformat(time_to)
         except (TypeError, ValueError):
             return RequestFailed({"reason": "from/to must be ISO-8601 timestamps"})
-        # Or ?days=N: the last N days, spread over them (see _spread_over_window).
+        # Or ?days=N: the last N days (up to ?to=, else now), spread over
+        # them (see _spread_over_window).
         try:
             days = _window_days(request)
         except ValueError:
             return RequestFailed({"reason": "days must be an integer"})
         if days:
-            time_from, time_to = timezone.now() - timedelta(days=days), None
+            time_from, time_to = _days_window(days, time_to)
 
         # Or ?step=<seconds> (with from/to or days): every measurement of the
         # window, grouped into frames of that length (see _step_frames).

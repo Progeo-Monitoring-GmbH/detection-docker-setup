@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   canvasHeightFor,
+  closestOnSegment,
+  heatSources,
+  sensorsInRect,
+  seriesPeak,
   chartFrame,
   chartLayout,
   COLORBAR_SPACE,
@@ -271,5 +275,96 @@ describe('isOverDrawn / hoverTarget', () => {
 
   it('is null off the plan and the heat field', () => {
     expect(hoverTarget(layout, frame, IDENTITY, location, imageSize, -5000, -5000)).toBeNull();
+  });
+});
+
+describe('band lines (smartex® dm)', () => {
+  const res = response([{ pos: 1, x: 0.2, y: 0.5, x_end: 0.8, y_end: 0.5 }, { pos: 2, x: 0.5, y: 0.9 }], {
+    '1': [100, 300],
+    '2': [-50, 20],
+  });
+  const imageSize = { width: 1000, height: 1000 };
+  const layout = layoutOf(res, { imageSize })!;
+
+  it('keeps each line end with its sensor - point sensors have none', () => {
+    const [line, point] = plotSensors(res, false);
+    expect([line.xEnd, line.yEnd]).toEqual([0.8, 0.5]);
+    expect([point.xEnd, point.yEnd]).toEqual([null, null]);
+    expect(layout.lines).toEqual([[0.2, 0.5, 0.8, 0.5], null]);
+    expect(layout.sensors[0].wxEnd).toBeCloseTo(800);
+    expect(layout.sensors[1].wxEnd).toBeNull();
+  });
+
+  it('spreads a line\'s heat along it, peaking at about its value', () => {
+    const sigma = 0.05;
+    const sources = heatSources(
+      [
+        { pos: 1, x: 0.2, y: 0.5, weight: 100 },
+        { pos: 2, x: 0.5, y: 0.1, weight: 40 },
+      ],
+      layout.lines,
+      sigma,
+    );
+    const along = sources.filter((source) => source.pos === 1);
+    expect(along.length).toBeGreaterThan(10);
+    expect(along[0]).toMatchObject({ x: 0.2, y: 0.5 });
+    expect(along[along.length - 1].x).toBeCloseTo(0.8);
+    // Summed gaussians along the line: about the sensor's value.
+    const spacing = 0.6 / (along.length - 1);
+    const peak = along.reduce((sum, source) => sum + source.weight * Math.exp(-((source.x - 0.5) ** 2) / (2 * sigma ** 2)), 0);
+    expect(peak).toBeCloseTo(100, -1);
+    expect(spacing).toBeLessThanOrEqual(sigma / 2);
+    // The point sensor stays one source.
+    expect(sources.filter((source) => source.pos === 2)).toEqual([{ pos: 2, x: 0.5, y: 0.1, weight: 40 }]);
+  });
+
+  it('puts a line shorter than sigma at its middle', () => {
+    expect(heatSources([{ pos: 1, x: 0, y: 0, weight: 5 }], [[0, 0, 0.01, 0]], 0.05)).toEqual([
+      { pos: 1, x: 0.005, y: 0, weight: 5 },
+    ]);
+  });
+
+  it('hits a line anywhere along it', () => {
+    const frame = chartFrame(layout, frameWeights(plotSensors(res, false), 0, false), {
+      sigma: 'auto',
+      heatReference: null,
+      fieldRange: null,
+    });
+    expect(hoverTarget(layout, frame, IDENTITY, null, imageSize, 600, 505)).toMatchObject({
+      kind: 'sensor',
+      index: 0,
+      screen: [600, 500],
+    });
+  });
+
+  it('normalizes to the highest magnitude of the period', () => {
+    expect(seriesPeak(plotSensors(res, false))).toBe(300);
+    expect(seriesPeak(plotSensors(response([{ pos: 1 }], { '1': [null, 0] }), false))).toBeNull();
+  });
+
+  it('finds the nearest point on a segment', () => {
+    expect(closestOnSegment([0, 0], [10, 0], [4, 3])).toEqual([4, 0]);
+    expect(closestOnSegment([0, 0], [10, 0], [-5, 3])).toEqual([0, 0]);
+    expect(closestOnSegment([2, 2], [2, 2], [9, 9])).toEqual([2, 2]);
+  });
+});
+
+describe('sensorsInRect', () => {
+  const res = response(
+    [
+      { pos: 1, x: 0.1, y: 0.1 },
+      { pos: 2, x: 0.5, y: 0.5 },
+      { pos: 3, x: 0.2, y: 0.9, x_end: 0.9, y_end: 0.9 },
+    ],
+    { '1': [1], '2': [1], '3': [1] },
+  );
+  const layout = layoutOf(res, { imageSize: { width: 1000, height: 1000 } })!;
+
+  it('selects point sensors inside and lines crossing the rectangle, from any corner', () => {
+    expect(sensorsInRect(layout, IDENTITY, [0, 0, 600, 600])).toEqual([0, 1]);
+    // Crosses only the middle of line 3.
+    expect(sensorsInRect(layout, IDENTITY, [500, 850, 600, 950])).toEqual([2]);
+    expect(sensorsInRect(layout, IDENTITY, [600, 950, 500, 850])).toEqual([2]);
+    expect(sensorsInRect(layout, IDENTITY, [300, 300, 400, 400])).toEqual([]);
   });
 });

@@ -15,7 +15,11 @@ import axiosConfig from '../axiosConfig';
 import { showErrorBar, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import { FilterComponent } from '../components/ui/FilterComponent.jsx';
 import SensorHeatmap2D from '../components/device/SensorHeatmap2D.tsx';
-import { type SensorHeatmapResponse } from '../components/device/sensorHeatmapTypes';
+import {
+  type HeatProfile,
+  heatProfileQuery,
+  type SensorHeatmapResponse,
+} from '../components/device/sensorHeatmapTypes';
 import AlarmMeasurementCompareChart from '../components/device/AlarmMeasurementCompareChart.tsx';
 import AlarmTimeline, {
   alarmKey,
@@ -115,6 +119,10 @@ const AlarmsOverview = () => {
   const [heatmapLoading, setHeatmapLoading] = useState(false);
   const [heatmapResponse, setHeatmapResponse] =
     useState<SensorHeatmapResponse | null>(null);
+  // Staff: the heat's value per sensor; switching it keeps the shown
+  // heatmap until the other one arrives.
+  const [heatProfile, setHeatProfile] = useState<HeatProfile>('diff');
+  const [profileLoading, setProfileLoading] = useState(false);
   const [filterText, setFilterText] = useState('');
   const [onlyActive, setOnlyActive] = useState(false);
   const [onlyLastHour, setOnlyLastHour] = useState(false);
@@ -234,7 +242,7 @@ const AlarmsOverview = () => {
   }, []);
 
   const fetchHeatmap = useCallback(
-    (alarm: AlarmRow) => {
+    (alarm: AlarmRow, profile: HeatProfile = heatProfile, profileSwitch = false) => {
       const locationId = alarm.location?.id;
       if (locationId == null) {
         showErrorBar(
@@ -265,23 +273,32 @@ const AlarmsOverview = () => {
       });
 
       setSelectedAlarm(alarm);
-      setHeatmapLoading(true);
-      setHeatmapResponse(null);
+      if (profileSwitch) {
+        setProfileLoading(true);
+      } else {
+        setHeatmapLoading(true);
+        setHeatmapResponse(null);
+      }
       void axiosConfig.perform_get(
         auth,
-        `/v1/location/${locationId}/heatmap/?${params.toString()}`,
+        `/v1/location/${locationId}/heatmap/?${params.toString()}${heatProfileQuery(profile)}`,
         (result) => {
           setHeatmapResponse(
             (result?.data || null) as SensorHeatmapResponse | null,
           );
           setHeatmapLoading(false);
+          setProfileLoading(false);
         },
         (error) => {
           showRequestError(enqueueSnackbar, 'Could not load alarm heatmap', error);
           setHeatmapResponse(null);
           setHeatmapLoading(false);
+          setProfileLoading(false);
         },
       );
+      if (profileSwitch) {
+        return;
+      }
 
       // Bring the heatmap card into view once the selection is made.
       window.setTimeout(() => {
@@ -291,7 +308,7 @@ const AlarmsOverview = () => {
         });
       }, 50);
     },
-    [auth, enqueueSnackbar, now],
+    [auth, enqueueSnackbar, heatProfile, now],
   );
 
   const acknowledgeAlarm = useCallback(
@@ -658,7 +675,15 @@ const AlarmsOverview = () => {
             </div>
           ) : (
             <>
-              <SensorHeatmap2D response={heatmapResponse} />
+              <SensorHeatmap2D
+                response={heatmapResponse}
+                profile={heatProfile}
+                onProfileChange={(profile) => {
+                  setHeatProfile(profile);
+                  fetchHeatmap(selectedAlarm, profile, true);
+                }}
+                profileLoading={profileLoading}
+              />
               <div className="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
                 <h5 className="mb-0">
                   <Activity className="me-2 text-primary" />

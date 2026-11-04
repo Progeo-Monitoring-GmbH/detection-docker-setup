@@ -149,6 +149,25 @@ def test_heatmap_profiles_choose_the_value_per_sensor(api_client, profile, expec
     assert body["data"] == expected
 
 
+def test_days_count_back_from_to_for_a_period_in_the_past(api_client):
+    account = f.make_account()
+    location = f.make_location(account, project_id=4345)
+    device = f.make_device(location)
+    now = timezone.now().replace(microsecond=0)
+    for days_ago, value in ((1, 1), (8, 8), (12, 12), (20, 20)):
+        f.make_measurement(device, pairs=[value], fetched_at=now - timedelta(days=days_ago))
+    api_client.force_authenticate(f.make_user(perms=PERMS, accounts=[account]))
+    # The 7 days up to 7 days ago: the measurements of 8 and 12 days ago.
+    to = (now - timedelta(days=7)).isoformat()
+
+    heatmap = api_client.get(f"/v1/location/{location.id}/heatmap/", {"days": 7, "to": to}).json()
+    measurements = api_client.get(f"/v1/location/{location.id}/measurements/", {"days": 7, "to": to}).json()
+
+    assert heatmap["data"] == {"1": [12, 8]}
+    assert [row["pair_abs_values"] for row in measurements["measurements"]] == [[8], [12]]
+    assert measurements["total"] == 2
+
+
 def test_heatmap_refuses_an_unknown_profile(api_client, location_with_data):
     body = api_client.get(f"/v1/location/{location_with_data.id}/heatmap/?profile=nope").json()
 

@@ -35,6 +35,10 @@ export type PlotSensor = {
   ny: number | null;
   x: number;
   y: number;
+  /** smartex® dm: the end of the sensor's band line (plot coordinates like
+   * x/y, which are its start); null for a point sensor. */
+  xEnd: number | null;
+  yEnd: number | null;
   series: Array<number | null>;
   threshold: number | null;
   name: string | null;
@@ -44,9 +48,12 @@ export type PlotSensor = {
 };
 
 /** A sensor at its position on the plan (world = image pixels). */
-export type ChartSensor = Omit<PlotSensor, 'x' | 'y' | 'series' | 'threshold'> & {
+export type ChartSensor = Omit<PlotSensor, 'x' | 'y' | 'xEnd' | 'yEnd' | 'series' | 'threshold'> & {
   wx: number;
   wy: number;
+  /** The end of its band line on the plan; null for a point sensor. */
+  wxEnd: number | null;
+  wyEnd: number | null;
   /** The sensor's own threshold, else the location's; null without one and
    * in field mode (thresholds are alarm levels of the summed heat). */
   threshold: number | null;
@@ -66,6 +73,9 @@ export type ChartLayout = {
   /** The initial view: sensors, their heat border and the reference point. */
   bounds: WorldRect;
   sensors: ChartSensor[];
+  /** Per sensor (as `sensors`) its band line in plot coordinates (x, y,
+   * xEnd, yEnd) - the heat runs along it; null for a point sensor. */
+  lines: Array<[number, number, number, number] | null>;
   /** Reference point of the positions in meters (image pixels). */
   reference: [number, number] | null;
 };
@@ -121,6 +131,70 @@ const SENSOR_HIT_RADIUS = 11;
 
 const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, value));
+
+/** Whether the segment a-b crosses or lies in the rectangle (any corners). */
+const segmentInRect = (
+  [ax, ay]: [number, number],
+  [bx, by]: [number, number],
+  [x0, y0, x1, y1]: [number, number, number, number],
+) => {
+  const left = Math.min(x0, x1);
+  const right = Math.max(x0, x1);
+  const top = Math.min(y0, y1);
+  const bottom = Math.max(y0, y1);
+  // Liang-Barsky: clip the segment to the rectangle.
+  let t0 = 0;
+  let t1 = 1;
+  const dx = bx - ax;
+  const dy = by - ay;
+  const edges: Array<[number, number]> = [
+    [-dx, ax - left],
+    [dx, right - ax],
+    [-dy, ay - top],
+    [dy, bottom - ay],
+  ];
+  for (const [p, q] of edges) {
+    if (p === 0) {
+      if (q < 0) {
+        return false;
+      }
+    } else {
+      const t = q / p;
+      if (p < 0) {
+        t0 = Math.max(t0, t);
+      } else {
+        t1 = Math.min(t1, t);
+      }
+      if (t0 > t1) {
+        return false;
+      }
+    }
+  }
+  return true;
+};
+
+/** The sensors (indices into layout.sensors) inside a dragged screen
+ * rectangle: a point sensor with its position, a band line with any part. */
+export const sensorsInRect = (layout: ChartLayout, view: View, rect: [number, number, number, number]) =>
+  layout.sensors.flatMap((sensor, index) => {
+    const start = toScreen(view, sensor.wx, sensor.wy);
+    const end =
+      sensor.wxEnd != null && sensor.wyEnd != null ? toScreen(view, sensor.wxEnd, sensor.wyEnd) : start;
+    return segmentInRect(start, end, rect) ? [index] : [];
+  });
+
+/** The point of the segment a-b nearest to p. */
+export const closestOnSegment = (
+  [ax, ay]: [number, number],
+  [bx, by]: [number, number],
+  [px, py]: [number, number],
+): [number, number] => {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lengthSquared = dx * dx + dy * dy;
+  const t = lengthSquared > 0 ? clamp(((px - ax) * dx + (py - ay) * dy) / lengthSquared, 0, 1) : 0;
+  return [ax + t * dx, ay + t * dy];
+};
 
 const finiteOr = (raw: unknown, fallback: number) => {
   const value = Number(raw);
@@ -184,12 +258,17 @@ export const plotSensors = (
   const placed = (response?.sensor_points || [])
     .map((point) => {
       const threshold = Number(point.threshold);
+      const xEnd = point.x_end == null ? Number.NaN : Number(point.x_end);
+      const yEnd = point.y_end == null ? Number.NaN : Number(point.y_end);
+      const hasLine = Number.isFinite(xEnd) && Number.isFinite(yEnd);
       return {
         pos: point.pos,
         nx: Number(point.x) as number | null,
         ny: Number(point.y) as number | null,
         x: Number(point.x),
         y: flipY ? Number(point.y) : 1 - Number(point.y),
+        xEnd: hasLine ? xEnd : null,
+        yEnd: hasLine ? (flipY ? yEnd : 1 - yEnd) : null,
         series: Array.isArray(data[String(point.pos)]) ? data[String(point.pos)] : [],
         threshold: point.threshold != null && Number.isFinite(threshold) ? threshold : null,
         name: point.name ?? null,
@@ -211,6 +290,8 @@ export const plotSensors = (
     ny: null,
     x: (index % columns) / Math.max(columns - 1, 1),
     y: 1 - Math.floor(index / columns) / Math.max(rows - 1, 1),
+    xEnd: null,
+    yEnd: null,
     series: data[key] || [],
     threshold: null,
     name: null,
@@ -316,10 +397,16 @@ export const chartLayout = ({
   const fallbackThreshold = locationThreshold(location);
   const placed = sensors.map((sensor): ChartSensor => {
     const [wx, wy] = plotToWorld(toPlotX(sensor.x), toPlotY(sensor.y), world);
+    const end =
+      sensor.xEnd != null && sensor.yEnd != null
+        ? plotToWorld(toPlotX(sensor.xEnd), toPlotY(sensor.yEnd), world)
+        : null;
     return {
       pos: sensor.pos,
       wx,
       wy,
+      wxEnd: end ? end[0] : null,
+      wyEnd: end ? end[1] : null,
       nx: sensor.nx,
       ny: sensor.ny,
       threshold: fieldMode ? null : (sensor.threshold ?? fallbackThreshold),
@@ -338,8 +425,19 @@ export const chartLayout = ({
   const extent = fitWholePlan
     ? { xs: [0, world.width], ys: [0, world.height] }
     : { xs: [field.left, field.right], ys: [field.top, field.bottom] };
-  const xs = [...extent.xs, ...placed.map((s) => s.wx), ...(reference ? [reference[0]] : [])];
-  const ys = [...extent.ys, ...placed.map((s) => s.wy), ...(reference ? [reference[1]] : [])];
+  const ends = placed.flatMap((s) => (s.wxEnd != null && s.wyEnd != null ? [[s.wxEnd, s.wyEnd]] : []));
+  const xs = [
+    ...extent.xs,
+    ...placed.map((s) => s.wx),
+    ...ends.map(([x]) => x),
+    ...(reference ? [reference[0]] : []),
+  ];
+  const ys = [
+    ...extent.ys,
+    ...placed.map((s) => s.wy),
+    ...ends.map(([, y]) => y),
+    ...(reference ? [reference[1]] : []),
+  ];
   // A border of VIEW_BORDER of the content's larger span on every side.
   const margin = VIEW_BORDER * Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
 
@@ -358,8 +456,59 @@ export const chartLayout = ({
       bottom: Math.max(...ys) + margin,
     },
     sensors: placed,
+    lines: sensors.map((sensor) =>
+      sensor.xEnd != null && sensor.yEnd != null ? [sensor.x, sensor.y, sensor.xEnd, sensor.yEnd] : null,
+    ),
     reference,
   };
+};
+
+/**
+ * The heat sources of the sensors: a point sensor's heat at its position, a
+ * band line's spread along the line - points `sigma / 2` apart, each with its
+ * share of the weight, so the line's heat peaks at about the sensor's value
+ * (a gaussian summed along a line: sigma * sqrt(2 pi) / spacing). A line
+ * shorter than sigma: one point in its middle.
+ */
+export const heatSources = (
+  weights: WeightedPoint[],
+  lines: ChartLayout['lines'],
+  sigma: number,
+): WeightedPoint[] =>
+  weights.flatMap((point, index) => {
+    const line = lines[index];
+    if (!line) {
+      return [point];
+    }
+    const [x0, y0, x1, y1] = line;
+    const length = Math.hypot(x1 - x0, y1 - y0);
+    if (!(length >= sigma) || !(sigma > 0)) {
+      return [{ ...point, x: (x0 + x1) / 2, y: (y0 + y1) / 2 }];
+    }
+    const count = Math.ceil(length / (sigma / 2)) + 1;
+    const spacing = length / (count - 1);
+    const share = Math.min(1, spacing / (sigma * Math.sqrt(2 * Math.PI)));
+    return Array.from({ length: count }, (_, step) => ({
+      ...point,
+      x: x0 + ((x1 - x0) * step) / (count - 1),
+      y: y0 + ((y1 - y0) * step) / (count - 1),
+      weight: point.weight * share,
+    }));
+  });
+
+/** The highest reading (magnitude) of the sensors over all frames - the
+ * normalized heat's full scale; null without any. */
+export const seriesPeak = (sensors: PlotSensor[]) => {
+  let peak = 0;
+  sensors.forEach((sensor) =>
+    sensor.series.forEach((raw) => {
+      const value = Math.abs(Number(raw ?? Number.NaN));
+      if (Number.isFinite(value) && value > peak) {
+        peak = value;
+      }
+    }),
+  );
+  return peak > 0 ? peak : null;
 };
 
 /**
@@ -391,7 +540,13 @@ export const chartFrame = (
   const { grid, coverage } = fieldRange
     ? buildFieldGrid(weights, layout.resolution, usedSigma, fieldRange, layout.pad)
     : {
-        grid: buildWeightedGrid(weights, layout.resolution, usedSigma, reference, layout.pad).grid,
+        grid: buildWeightedGrid(
+          heatSources(weights, layout.lines, usedSigma),
+          layout.resolution,
+          usedSigma,
+          reference,
+          layout.pad,
+        ).grid,
         coverage: null,
       };
   return { grid, coverage, values: weights.map((point) => point.weight) };
@@ -450,7 +605,13 @@ export const hoverTarget = (
   sx: number,
   sy: number,
 ): HoverTarget | null => {
-  const screenPoints = layout.sensors.map((sensor) => toScreen(view, sensor.wx, sensor.wy));
+  // A band line is hit anywhere along it: at its point nearest the cursor.
+  const screenPoints = layout.sensors.map((sensor) => {
+    const start = toScreen(view, sensor.wx, sensor.wy);
+    return sensor.wxEnd != null && sensor.wyEnd != null
+      ? closestOnSegment(start, toScreen(view, sensor.wxEnd, sensor.wyEnd), [sx, sy])
+      : start;
+  });
   const index = nearestPoint(screenPoints, sx, sy, SENSOR_HIT_RADIUS);
   if (index != null) {
     const sensor = layout.sensors[index];

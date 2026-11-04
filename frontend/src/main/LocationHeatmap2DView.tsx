@@ -6,7 +6,7 @@ import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig.tsx';
 import SensorHeatmap2D from '../components/device/SensorHeatmap2D.tsx';
-import { type SensorHeatmapLocation } from '../components/device/sensorHeatmapTypes';
+import { type HeatProfile, type SensorHeatmapLocation } from '../components/device/sensorHeatmapTypes';
 import { showErrorBar, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import { HeatmapViewHeader, useLocationHeatmap } from './locationHeatmapShared';
 
@@ -24,7 +24,9 @@ const LocationHeatmap2DView = () => {
   const withSliders =
     searchParams.get('with_sliders') === 'true' ||
     searchParams.get('with_silder') === 'true';
-  const { loading, response, limit, setLimit, refresh } = useLocationHeatmap(id);
+  // Staff: the heat's value per sensor (reloads the heatmap).
+  const [heatProfile, setHeatProfile] = useState<HeatProfile>('diff');
+  const { loading, response, limit, setLimit, refresh } = useLocationHeatmap(id, heatProfile);
   const [alignment, setAlignment] = useState<SensorHeatmapLocation | null>(
     null,
   );
@@ -280,6 +282,8 @@ const LocationHeatmap2DView = () => {
         <SensorHeatmap2D
           response={response}
           alignment={withSliders ? alignment : null}
+          profile={heatProfile}
+          onProfileChange={setHeatProfile}
         />
       )}
     </Container>

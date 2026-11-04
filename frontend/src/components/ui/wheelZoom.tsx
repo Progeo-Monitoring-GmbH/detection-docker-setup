@@ -56,6 +56,33 @@ export const useZoomWheel = (
   }, [ref, ...deps]);
 };
 
+/**
+ * A Plotly figure (its graph div): over the plots (their drag areas) only
+ * Ctrl (or ⌘) + wheel zooms - handed on to Plotly's scrollZoom, neither the
+ * page nor the browser zooms. The plain wheel is stopped on the way down,
+ * before Plotly's own listener: the page scrolls and `onPlain` shows the hint.
+ */
+export const usePlotlyWheelZoom = (graphDiv: HTMLElement | null, onPlain: () => void) => {
+  useEffect(() => {
+    if (!graphDiv) {
+      return undefined;
+    }
+    const onWheel = (event: WheelEvent) => {
+      if (!(event.target instanceof Element && event.target.closest('.drag'))) {
+        return;
+      }
+      if (isZoomWheel(event)) {
+        event.preventDefault();
+        return;
+      }
+      event.stopPropagation();
+      onPlain();
+    };
+    graphDiv.addEventListener('wheel', onWheel, true);
+    return () => graphDiv.removeEventListener('wheel', onWheel, true);
+  }, [graphDiv, onPlain]);
+};
+
 /** "Ctrl + scroll to zoom" over a plan or plot (its parent: position relative). */
 export const WheelZoomHint = ({ visible, radius = 13 }: { visible: boolean; radius?: number }) =>
   visible ? (

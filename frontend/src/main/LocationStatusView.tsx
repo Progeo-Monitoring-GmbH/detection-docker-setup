@@ -23,6 +23,7 @@ import KpiStrip from '../components/ui/kit/KpiStrip';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import PillSelect from '../components/ui/kit/PillSelect';
 import type { LocationDetail } from './locationTypes';
+import type { HeatProfile } from '../components/device/sensorHeatmapTypes';
 import {
   getProjectTypeLabel,
   isLorawanProject,
@@ -427,6 +428,16 @@ const LocationStatusView = ({
     loading: historyLoading,
     denied: historyDenied,
   } = useLocationHistory(locationId, demo, historySpec);
+  // Staff: the plan's heat as another value per sensor (WP, EP, WP + EP) -
+  // its own history, only for the heatmap; the Zeitreihe, the KPIs and the
+  // sensor table keep |WP - EP| (the alarm value).
+  const [heatProfile, setHeatProfile] = useState<HeatProfile>('diff');
+  const profileHistory = useLocationHistory(
+    locationId,
+    demo,
+    heatProfile === 'diff' ? null : historySpec,
+    heatProfile,
+  );
   const {
     clusters,
     loading: clustersLoading,
@@ -450,6 +461,15 @@ const LocationStatusView = ({
   const heatmap = useMemo(
     () => framesOf(history, { from: now - rangeDays * DAY_MS, to: now, step: heatmapStep }),
     [history, now, rangeDays, heatmapStep],
+  );
+  // While the picked profile loads, the heat keeps |WP - EP|.
+  const profileHistoryShown = heatProfile !== 'diff' && profileHistory.history ? profileHistory.history : null;
+  const profileHeatmap = useMemo(
+    () =>
+      profileHistoryShown
+        ? framesOf(profileHistoryShown, { from: now - rangeDays * DAY_MS, to: now, step: heatmapStep })
+        : null,
+    [profileHistoryShown, now, rangeDays, heatmapStep],
   );
   const zeitreihe = useMemo(
     () => seriesOf(history, now - rangeDays * DAY_MS, now, ZEITREIHE_LIMIT, baseStep ?? 30 * 60),
@@ -596,6 +616,10 @@ const LocationStatusView = ({
                   threshold={thresholdValue}
                   denied={historyDenied}
                   alarmSpans={alarmSpans}
+                  profileHeatmap={profileHeatmap}
+                  profile={heatProfile}
+                  onProfileChange={setHeatProfile}
+                  profileLoading={heatProfile !== 'diff' && profileHistory.loading}
                 />
               </div>
               <div style={{ flex: '1 1 380px', minWidth: 0 }}>

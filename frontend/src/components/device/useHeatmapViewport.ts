@@ -100,6 +100,12 @@ export const useHeatmapViewport = ({
  * calling `onPlainWheel` (the hint how to zoom). While zooming it must not
  * scroll the page (React's wheel listener is passive, hence addEventListener).
  */
+/** A dragged rectangle (screen pixels): start and current corner. */
+export type AreaRect = [number, number, number, number];
+
+/** How far (px) a drag must go to select an area - less is a click. */
+const MIN_AREA_DRAG = 4;
+
 export const usePanZoomGestures = ({
   enabled,
   view,
@@ -110,6 +116,7 @@ export const usePanZoomGestures = ({
   onTap,
   wheelZoomsAt,
   onPlainWheel,
+  area,
 }: {
   /** Whether the canvas is rendered. */
   enabled: boolean;
@@ -121,12 +128,24 @@ export const usePanZoomGestures = ({
   onTap?: (sx: number, sy: number) => void;
   wheelZoomsAt: (sx: number, sy: number) => boolean;
   onPlainWheel?: () => void;
+  /**
+   * Area selection: a drag that `starts` (e.g. with Shift, or in a select
+   * mode) draws a rectangle instead of moving the plan - `onChange` while
+   * dragging (null when done), `onSelect` with the final one.
+   */
+  area?: {
+    starts: (event: { shiftKey: boolean }) => boolean;
+    onChange: (rect: AreaRect | null) => void;
+    onSelect: (rect: AreaRect) => void;
+  };
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   // Active pointers (mouse, pen, fingers) for dragging and pinching.
   const pointers = useRef(new Map<number, [number, number]>());
   const dragged = useRef(false);
   const [grabbing, setGrabbing] = useState(false);
+  // The area being dragged: the pointer and its start.
+  const areaDrag = useRef<{ pointerId: number; start: [number, number]; rect: AreaRect } | null>(null);
 
   const localPoint = (event: { clientX: number; clientY: number }): [number, number] => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -146,6 +165,13 @@ export const usePanZoomGestures = ({
   };
 
   const onPointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (area && pointers.current.size === 0 && area.starts(event)) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      const start = localPoint(event);
+      areaDrag.current = { pointerId: event.pointerId, start, rect: [...start, ...start] };
+      onLeave();
+      return;
+    }
     event.currentTarget.setPointerCapture(event.pointerId);
     pointers.current.set(event.pointerId, localPoint(event));
     dragged.current = false;
@@ -154,6 +180,12 @@ export const usePanZoomGestures = ({
 
   const onPointerMove = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     const point = localPoint(event);
+    const drag = areaDrag.current;
+    if (drag && drag.pointerId === event.pointerId) {
+      drag.rect = [...drag.start, ...point];
+      area?.onChange(drag.rect);
+      return;
+    }
     const previous = pointers.current.get(event.pointerId);
     if (!previous) {
       onHover(point[0], point[1]);
@@ -179,6 +211,21 @@ export const usePanZoomGestures = ({
   };
 
   const onPointerUp = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    const drag = areaDrag.current;
+    if (drag && drag.pointerId === event.pointerId) {
+      areaDrag.current = null;
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      area?.onChange(null);
+      const [x0, y0, x1, y1] = drag.rect;
+      if (event.type === 'pointerup' && Math.hypot(x1 - x0, y1 - y0) >= MIN_AREA_DRAG) {
+        area?.onSelect(drag.rect);
+      } else if (event.type === 'pointerup') {
+        onTap?.(x1, y1);
+      }
+      return;
+    }
     const tapped = !dragged.current && pointers.current.size === 1 && pointers.current.has(event.pointerId);
     pointers.current.delete(event.pointerId);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {

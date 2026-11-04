@@ -89,8 +89,20 @@ export type SensorHeatmapPoint = {
   label?: string | null;
 };
 
+/**
+ * The value per sensor the heat shows (?profile=, HEAT_PROFILES in the
+ * backend): |WP - EP| (the alarm value, the default), WP, EP or WP + EP.
+ */
+export type HeatProfile = 'diff' | 'wp' | 'ep' | 'sum';
+export const HEAT_PROFILES: HeatProfile[] = ['diff', 'wp', 'ep', 'sum'];
+
+/** The query parameter of a profile ("" for the default). */
+export const heatProfileQuery = (profile: HeatProfile) => (profile === 'diff' ? '' : `&profile=${profile}`);
+
 export type SensorHeatmapResponse = {
   location?: SensorHeatmapLocation | null;
+  /** The value per sensor in `data` (absent: 'diff'). */
+  profile?: HeatProfile;
   limit?: number;
   from?: string | null;
   to?: string | null;

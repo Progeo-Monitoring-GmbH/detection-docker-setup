@@ -8,7 +8,11 @@ import axiosConfig from '../axiosConfig';
 import { downloadResponse, openResponseInNewTab } from '../helper';
 import { showRequestError } from '../components/ui/Snackbar.jsx';
 import SensorHeatmap2D from '../components/device/SensorHeatmap2D.tsx';
-import { type SensorHeatmapResponse } from '../components/device/sensorHeatmapTypes';
+import {
+  type HeatProfile,
+  heatProfileQuery,
+  type SensorHeatmapResponse,
+} from '../components/device/sensorHeatmapTypes';
 import MeasurementSamplesCompareChart, {
   type MeasurementCompareRow,
 } from '../components/device/MeasurementSamplesCompareChart.tsx';
@@ -17,8 +21,7 @@ import { parseTimestamp } from './alarmUtils';
 import type { PortalOutletContext } from './LocationPortalLayout';
 import LocationClimatePanels from './LocationClimatePanels';
 import LocationClimateHeatmap from './LocationClimateHeatmap';
-import LocationDmPlan from './LocationDmPlan';
-import { isLorawanProject, planVisualization } from './projectType';
+import { isLorawanProject } from './projectType';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import {
   availableTimeRanges,
@@ -32,6 +35,11 @@ import useMeasurementRange from './useMeasurementRange';
 import { staffFlags } from './access';
 import PillSelect from '../components/ui/kit/PillSelect';
 import { MEAN_WINDOWS, smoothHeatmap, smoothMeasurements } from './analyseSmoothing';
+import { compareOffsetsFor, heatmapChange } from './analyseCompare';
+import MeasurementComparePlot from '../components/device/MeasurementComparePlot';
+import { XLg } from 'react-bootstrap-icons';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 import {
   type CachedLoad,
   cachedPeriod,
@@ -95,7 +103,6 @@ const LocationAnalyseTab = () => {
   // placed sensors and their charts replace the heatmap and samples chart.
   const isLorawan = isLorawanProject(location?.project_type);
   // smartex® dm: the sensors are band lines on the plan - no heat field.
-  const showsLines = planVisualization(location?.project_type) === 'lines';
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
   const { t } = useTranslation();
@@ -115,6 +122,12 @@ const LocationAnalyseTab = () => {
   // neighbouring ones every value is averaged (1: not) - less noise.
   const [resolution, setResolution] = useState<number>(DEFAULT_RESOLUTION);
   const [meanWindow, setMeanWindow] = useState(1);
+  // Staff: the heatmap's value per sensor (|WP - EP|, WP, EP, WP + EP).
+  const [heatProfile, setHeatProfile] = useState<HeatProfile>('diff');
+  // The comparison with the past: the same period this many days earlier
+  // (null: none) - offered only as far back as the data reaches.
+  const [compareDays, setCompareDays] = useState<number | null>(null);
+  const [openedAt] = useState(() => Date.now());
   // The time (epoch ms) of the page's one frame slider - the heatmap and the
   // measurements show the frame holding it. null: the newest measurement.
   const [frameTime, setFrameTime] = useState<number | null>(null);
@@ -185,7 +198,7 @@ const LocationAnalyseTab = () => {
     if (isLorawan) {
       return;
     }
-    const cacheKey = String(locationId);
+    const cacheKey = `${locationId}:${heatProfile}`;
     const cached = cachedPeriod(heatmapCache.current.get(cacheKey), days, resolution, Date.now(), (value, fromMs) =>
       cutHeatmap(value, fromMs) ?? value,
     );
@@ -199,7 +212,7 @@ const LocationAnalyseTab = () => {
     const isCurrent = () => current === heatmapRequest.current;
     void axiosConfig.perform_get(
       auth,
-      `/v1/location/${locationId}/heatmap/?${query}`,
+      `/v1/location/${locationId}/heatmap/?${query}${heatProfileQuery(heatProfile)}`,
       (response) => {
         const data = (response?.data || null) as SensorHeatmapResponse | null;
         if (data) {
@@ -226,7 +239,7 @@ const LocationAnalyseTab = () => {
         }
       },
     );
-  }, [auth, days, enqueueSnackbar, isLorawan, locationId, query, resolution]);
+  }, [auth, days, enqueueSnackbar, heatProfile, isLorawan, locationId, query, resolution]);
 
   // Switching the device reloads only the measurements.
   const loadMeasurements = useCallback(() => {
@@ -382,10 +395,107 @@ const LocationAnalyseTab = () => {
 
   const loading = heatmapLoading || measurementsLoading;
 
+  // ---------------------------------------------------------------- comparison
+  const compareOptions = useMemo(
+    () => compareOffsetsFor(measurementRange?.first, days, openedAt),
+    [measurementRange, days, openedAt],
+  );
+  const compare = compareOptions.find((offset) => offset.days === compareDays) ?? null;
+  const compareOffsetMs = compare ? compare.days * DAY_MS : 0;
+  // The comparison's loads, for the settings they were loaded with.
+  const compareKey = compare
+    ? `${locationId}:${compare.days}:${days}:${resolution}:${heatProfile}:${shownDevice}`
+    : null;
+  const [compareHeatmap, setCompareHeatmap] = useState<{ key: string; value: SensorHeatmapResponse | null } | null>(null);
+  const [compareRows, setCompareRows] = useState<{ key: string; rows: MeasurementCompareRow[] } | null>(null);
+  const compareRequest = useRef(0);
+  const loadCompare = useCallback(() => {
+    if (!compare || !compareKey || isLorawan) {
+      return;
+    }
+    const current = ++compareRequest.current;
+    const isCurrent = () => current === compareRequest.current;
+    // The same period, ending `compare.days` ago.
+    const to = encodeURIComponent(new Date(Date.now() - compare.days * DAY_MS).toISOString());
+    const period = `days=${days}&limit=${resolution}&to=${to}`;
+    void axiosConfig.perform_get(
+      auth,
+      `/v1/location/${locationId}/heatmap/?${period}${heatProfileQuery(heatProfile)}`,
+      (response) => {
+        if (isCurrent()) {
+          setCompareHeatmap({ key: compareKey, value: (response?.data || null) as SensorHeatmapResponse | null });
+        }
+      },
+      (error) => {
+        if (isCurrent()) {
+          showRequestError(enqueueSnackbar, 'Could not load the comparison', error);
+          setCompareHeatmap({ key: compareKey, value: null });
+        }
+      },
+    );
+    const device = shownDevice != null ? `&device=${shownDevice}` : '';
+    void axiosConfig.perform_get(
+      auth,
+      `/v1/location/${locationId}/measurements/?${period}${device}`,
+      (response) => {
+        if (isCurrent()) {
+          setCompareRows({ key: compareKey, rows: (response?.data?.measurements || []) as MeasurementCompareRow[] });
+        }
+      },
+      (error) => {
+        if (isCurrent()) {
+          showRequestError(enqueueSnackbar, 'Could not load the comparison', error);
+          setCompareRows({ key: compareKey, rows: [] });
+        }
+      },
+    );
+  }, [auth, compare, compareKey, days, enqueueSnackbar, heatProfile, isLorawan, locationId, resolution, shownDevice]);
+
+  useEffect(() => {
+    loadCompare();
+  }, [loadCompare]);
+
+  const compareHeatmapShown = compareHeatmap?.key === compareKey ? compareHeatmap.value : null;
+  const compareRowsShown = useMemo(
+    () => (compareRows?.key === compareKey ? smoothMeasurements(compareRows.rows, meanWindow) : null),
+    [compareRows, compareKey, meanWindow],
+  );
+  const compareLoading =
+    compare != null && (compareHeatmap?.key !== compareKey || compareRows?.key !== compareKey);
+  // The heatmap while comparing: every sensor's change since then.
+  const changeHeatmap = useMemo(
+    () =>
+      compare && compareHeatmapShown
+        ? heatmapChange(shownHeatmap, smoothHeatmap(compareHeatmapShown, meanWindow), compareOffsetMs)
+        : null,
+    [compare, compareHeatmapShown, shownHeatmap, meanWindow, compareOffsetMs],
+  );
+  const compareLabel = compare ? t(`analyse_compare_${compare.key}`) : '';
+
   // A sensor clicked on the plan (pos = sensor_order) is added to the
   // measurements' second plot - as the pair of its device: a location's
   // sensors can be split over devices, each counting its pairs from 1.
   // Shows that device if needed.
+  // An area dragged on the plan: its sensors (of the shown device, else of
+  // the first other one - shown then) become the second plot's selection.
+  const selectPlanArea = (positions: number[]) => {
+    const picked = positions.map((pos) => {
+      const point = heatmap?.sensor_points?.find((candidate) => candidate.pos === pos);
+      return { device: point?.device ?? null, pair: (point?.pair ?? pos) - 1 };
+    });
+    const pairsOf = (entries: typeof picked) => [...new Set(entries.map((entry) => entry.pair))].sort((a, b) => a - b);
+    const ofShown = picked.filter((entry) => entry.device == null || entry.device === shownDevice);
+    if (ofShown.length) {
+      setSensors(pairsOf(ofShown));
+      return;
+    }
+    const other = picked.find((entry) => devices.some((candidate) => candidate.id === entry.device));
+    if (other?.device != null) {
+      setPickedDevice({ locationId, id: other.device });
+      setSensors(pairsOf(picked.filter((entry) => entry.device === other.device)));
+    }
+  };
+
   const selectPlanSensor = (pos: number) => {
     const point = heatmap?.sensor_points?.find((candidate) => candidate.pos === pos);
     const pairIndex = (point?.pair ?? pos) - 1;
@@ -437,6 +547,31 @@ const LocationAnalyseTab = () => {
             value={String(meanWindow)}
             onChange={(value) => setMeanWindow(Number(value))}
           />
+          <PillSelect
+            label={t('analyse_compare')}
+            title={compareOptions.length ? t('analyse_compare_hint') : t('analyse_compare_unavailable')}
+            options={[
+              { value: '', label: t('analyse_compare_none') },
+              ...compareOptions.map((offset) => ({
+                value: String(offset.days),
+                label: t(`analyse_compare_${offset.key}`),
+              })),
+            ]}
+            value={compare ? String(compare.days) : ''}
+            onChange={(value) => setCompareDays(value ? Number(value) : null)}
+          />
+          {compare && (
+            <Button
+              size="sm"
+              variant="outline-secondary"
+              className="d-inline-flex align-items-center gap-1 py-0"
+              style={{ fontSize: 12, borderRadius: 'var(--progeo-radius-pill)' }}
+              onClick={() => setCompareDays(null)}
+            >
+              <XLg size={11} />
+              {t('analyse_compare_end')}
+            </Button>
+          )}
         </>
       )}
       {!isLorawan && loading && (heatmap || measurements.length > 0) && (
@@ -530,6 +665,9 @@ const LocationAnalyseTab = () => {
                 <span className="me-2">{heatmapOpen ? '▾' : '▸'}</span>
                 {t('analyse_heatmap_title')}
               </Button>
+              {compare && (
+                <span className="ms-2 small text-muted">{t('analyse_heatmap_change', { label: compareLabel })}</span>
+              )}
               {heatmapLoading && (
                 <Spinner size="sm" animation="border" className="ms-2 text-muted" />
               )}
@@ -541,27 +679,40 @@ const LocationAnalyseTab = () => {
                     <div className="d-flex justify-content-center align-items-center py-5 text-muted">
                       <Spinner animation="border" className="me-2" /> {t('ui_loading')}
                     </div>
-                  ) : showsLines ? (
-                    <LocationDmPlan
-                      heatmap={shownHeatmap}
-                      time={frameTime}
-                      onSensorClick={selectPlanSensor}
-                    />
                   ) : (
+                    // smartex® dm too: the heat field with its band lines.
                     <SensorHeatmap2D
-                      response={shownHeatmap}
+                      response={changeHeatmap ?? shownHeatmap}
+                      heatTitle={changeHeatmap ? t('heatmap_change') : undefined}
+                      forceNormalize={changeHeatmap != null}
+                      onAreaSelect={selectPlanArea}
                       fitPlan
                       hideChrome
                       time={frameTime}
                       onTimeChange={setFrameTime}
                       hideFrameSlider
                       onSensorClick={selectPlanSensor}
+                      profile={heatProfile}
+                      onProfileChange={setHeatProfile}
+                      profileLoading={heatmapLoading}
                     />
                   )}
                 </Card.Body>
               </div>
             </Collapse>
           </Card>
+
+          {compare && (
+            <MeasurementComparePlot
+              rows={shownMeasurements}
+              pastRows={compareRowsShown ?? []}
+              time={frameTime}
+              offsetMs={compareOffsetMs}
+              label={compareLabel}
+              loading={compareLoading}
+              onClose={() => setCompareDays(null)}
+            />
+          )}
 
           <Card className="border-0 shadow-sm p-2">
             <Card.Body>

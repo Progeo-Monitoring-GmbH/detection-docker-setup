@@ -6,7 +6,8 @@ import { parseTimestamp } from '../../main/alarmUtils';
 import { plotTheme } from '../../styles/plotTheme';
 import { formatDate } from '../../main/dateFormat';
 import FrameSlider, { frameAt } from './FrameSlider';
-import { isZoomWheel, useWheelHint, WheelZoomHint } from '../ui/wheelZoom';
+import { potentialsOf, signedBands } from './measurementBands';
+import { usePlotlyWheelZoom, useWheelHint, WheelZoomHint } from '../ui/wheelZoom';
 import MeasurementCompareTooltip, {
   type CompareTooltipData,
   TOOLTIP_WIDTH,
@@ -32,9 +33,6 @@ type DiffSeries = {
   /** EP / WP by sensor - empty without samples. */
   ep: number[];
   wp: number[];
-  /** WP - EP by sensor, signed (the first plot's mean and bands) - without
-   * samples only the |EP - WP| of `points` there is. */
-  signed: DiffPoint[];
 };
 
 type MeasurementSamplesCompareChartProps = {
@@ -258,20 +256,8 @@ type Frame = {
   wp: number[];
 };
 
-/** EP / WP of the interleaved samples [eigen, wirk, ...]; an unpaired last value is dropped. */
-const toPotentials = (samples: number[] | null | undefined) => {
-  const ep: number[] = [];
-  const wp: number[] = [];
-  if (!Array.isArray(samples)) {
-    return { ep, wp };
-  }
-  const pairCount = Math.floor(samples.length / 2);
-  for (let i = 0; i < pairCount; i += 1) {
-    ep.push(Number(samples[i * 2] || 0));
-    wp.push(Number(samples[i * 2 + 1] || 0));
-  }
-  return { ep, wp };
-};
+/** EP / WP of the interleaved samples (measurementBands). */
+const toPotentials = potentialsOf;
 
 const toPairAbsDiff = (
   samples: number[] | null | undefined,
@@ -307,9 +293,6 @@ const toDiffSeries = (row: MeasurementCompareRow): DiffSeries => {
     points,
     ep,
     wp,
-    signed: ep.length
-      ? wp.map((value, index) => ({ pairIndex: index, value: value - ep[index] }))
-      : points,
   };
 };
 
@@ -422,55 +405,8 @@ const MeasurementSamplesCompareChart = (
     return { start: alarmStartTime, end };
   }, [alarmStartTime, alarmDurationMs]);
 
-  const meanAndDeviationSeries = React.useMemo(() => {
-    const sums: number[] = [];
-    const sumsSquared: number[] = [];
-    const counts: number[] = [];
-    const minimums: number[] = [];
-    const maximums: number[] = [];
-
-    // Signed WP - EP only: the bands reach below zero where it does.
-    series.forEach((entry) => {
-      entry.signed.forEach((point) => {
-        const index = point.pairIndex;
-        minimums[index] = Math.min(minimums[index] ?? point.value, point.value);
-        maximums[index] = Math.max(maximums[index] ?? point.value, point.value);
-        sums[index] = (sums[index] || 0) + point.value;
-        sumsSquared[index] =
-          (sumsSquared[index] || 0) + point.value * point.value;
-        counts[index] = (counts[index] || 0) + 1;
-      });
-    });
-
-    const x: number[] = [];
-    const mean: number[] = [];
-    const upper: number[] = [];
-    const lower: number[] = [];
-    const sigma: number[] = [];
-    const min: number[] = [];
-    const max: number[] = [];
-
-    counts.forEach((count, index) => {
-      if (!count) {
-        return;
-      }
-      const currentSum = sums[index] || 0;
-      const currentSumSq = sumsSquared[index] || 0;
-      const avg = currentSum / count;
-      const variance = Math.max(currentSumSq / count - avg * avg, 0);
-      const stdDev = Math.sqrt(variance);
-
-      x.push(sensorNumber(index));
-      mean.push(avg);
-      sigma.push(stdDev);
-      lower.push(avg - stdDev);
-      upper.push(avg + stdDev);
-      min.push(minimums[index]);
-      max.push(maximums[index]);
-    });
-
-    return { x, mean, upper, lower, sigma, min, max };
-  }, [series]);
+  // Per sensor: mean, deviation and range of WP - EP (measurementBands).
+  const meanAndDeviationSeries = React.useMemo(() => signedBands(rows), [rows]);
 
   const overallMean = React.useMemo(() => {
     if (!meanAndDeviationSeries.mean.length) {
@@ -1119,31 +1055,15 @@ const MeasurementSamplesCompareChart = (
         setHighlighted(null);
       }
     };
-    // Over the plots (their drag areas, every subplot) only Ctrl (or ⌘) +
-    // wheel zooms (isZoomWheel), handed on to Plotly's scrollZoom - neither
-    // the page nor the browser zooms then. The plain wheel is stopped on the
-    // way down, before Plotly's own listener: the page scrolls and the hint
-    // shows how to zoom.
-    const onWheel = (event: WheelEvent) => {
-      if (!(event.target instanceof Element && event.target.closest('.drag'))) {
-        return;
-      }
-      if (isZoomWheel(event)) {
-        event.preventDefault();
-        return;
-      }
-      event.stopPropagation();
-      showWheelHint();
-    };
     graphDiv.addEventListener('mouseover', onOver);
     graphDiv.addEventListener('mouseout', onOut);
-    graphDiv.addEventListener('wheel', onWheel, true);
     return () => {
       graphDiv.removeEventListener('mouseover', onOver);
       graphDiv.removeEventListener('mouseout', onOut);
-      graphDiv.removeEventListener('wheel', onWheel, true);
     };
-  }, [graphDiv, showWheelHint]);
+  }, [graphDiv]);
+  // Over every subplot only Ctrl (or ⌘) + wheel zooms (wheelZoom).
+  usePlotlyWheelZoom(graphDiv, showWheelHint);
 
   // A click on the first plot adds or removes that sensor in the second; one
   // on a time plot moves the slider to that measurement.

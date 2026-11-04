@@ -31,6 +31,11 @@ export type Scene = {
   /** The Lageplan's heat limitations (world coordinates): the heat field is
    * only drawn inside them. Empty: everywhere. */
   limits: Array<Array<[number, number]>>;
+  /** The sensor markers (dots) with their labels - without them only the
+   * hovered / highlighted one. */
+  showSensors: boolean;
+  /** smartex® dm: the sensors' band lines. */
+  showLines: boolean;
 };
 
 export type SceneOverlay = {
@@ -178,8 +183,40 @@ const drawMarkerLabel = (
   ctx.fillText(text, sx, textY);
 };
 
+/** The band lines (smartex® dm) at screen size: white-rimmed, red where the
+ * sensor reads above its threshold, wider when hovered or highlighted. */
+const drawLines = (ctx: CanvasRenderingContext2D, scene: Scene, view: View, overlay: SceneOverlay) => {
+  ctx.save();
+  ctx.lineCap = 'round';
+  scene.layout.sensors.forEach((sensor, index) => {
+    if (sensor.wxEnd == null || sensor.wyEnd == null) {
+      return;
+    }
+    const [x0, y0] = toScreen(view, sensor.wx, sensor.wy);
+    const [x1, y1] = toScreen(view, sensor.wxEnd, sensor.wyEnd);
+    const value = scene.frame.values[index];
+    const over = sensor.threshold != null && value > sensor.threshold;
+    const emphasized = overlay.hovered === index || overlay.highlighted === index;
+    const stroke = (color: string, width: number) => {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x1, y1);
+      ctx.stroke();
+    };
+    stroke('#ffffff', emphasized ? 8 : 5);
+    stroke(
+      overlay.highlighted === index ? plotTheme.brandOrange : over ? OVER_THRESHOLD_COLOR : plotTheme.brandBlue,
+      emphasized ? 5 : 3,
+    );
+  });
+  ctx.restore();
+};
+
 /** Sensor markers (screen size at any zoom) - the highlighted one last, on
- * top of its neighbours' labels; markers off screen are skipped. */
+ * top of its neighbours' labels; markers off screen are skipped. Without
+ * `showSensors` only the hovered and highlighted one. */
 const drawSensors = (
   ctx: CanvasRenderingContext2D,
   scene: Scene,
@@ -204,6 +241,9 @@ const drawSensors = (
     }
     const highlighted = overlay.highlighted === index;
     const hovered = overlay.hovered === index;
+    if (!scene.showSensors && !highlighted && !hovered) {
+      return;
+    }
     const value = scene.frame.values[index];
     const over = sensor.threshold != null && value > sensor.threshold;
     drawMarker(ctx, sx, sy, highlighted ? 'highlighted' : hovered ? 'hovered' : null, over);
@@ -320,6 +360,9 @@ export const drawScene = (
   }
   if (screenReference) {
     drawReference(ctx, screenReference);
+  }
+  if (scene.showLines) {
+    drawLines(ctx, scene, view, overlay);
   }
   drawSensors(ctx, scene, view, size, overlay);
   drawColorBar(ctx, scene, size);

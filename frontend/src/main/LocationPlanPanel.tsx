@@ -4,7 +4,7 @@ import FrameSlider, { type AlarmSpan } from '../components/device/FrameSlider';
 import LageplanZoneOverlay from '../components/device/LageplanZoneOverlay';
 import SensorHeatmap2D from '../components/device/SensorHeatmap2D';
 import SensorListTable from '../components/device/SensorListTable';
-import type { SensorHeatmapResponse } from '../components/device/sensorHeatmapTypes';
+import type { HeatProfile, SensorHeatmapResponse } from '../components/device/sensorHeatmapTypes';
 import PanelCard from '../components/ui/kit/PanelCard';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import {
@@ -29,6 +29,12 @@ type LocationPlanPanelProps = {
   /** No permission to see the location's measurements. */
   denied: boolean;
   alarmSpans: AlarmSpan[];
+  /** Staff: the same frames as another value per sensor (`profile`) - only
+   * the heat shows it; null: the heat shows `heatmap`. */
+  profileHeatmap?: SensorHeatmapResponse | null;
+  profile?: HeatProfile;
+  onProfileChange?: (profile: HeatProfile) => void;
+  profileLoading?: boolean;
 };
 
 const PlanHint = ({ children }: { children: ReactNode }) => (
@@ -47,8 +53,14 @@ const LocationPlanPanel = ({
   threshold,
   denied,
   alarmSpans,
+  profileHeatmap = null,
+  profile = 'diff',
+  onProfileChange,
+  profileLoading = false,
 }: LocationPlanPanelProps) => {
   const { t } = useTranslation();
+  // smartex® dm: the heat field too, with its band lines (SensorHeatmap2D).
+  const withHeat = visualization === 'heatmap' || visualization === 'lines';
   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
   // The frame the plan shows (its slider). The heatmap reports its own; the
   // overlays show the newest whenever the frames change (`picked.heatmap`).
@@ -58,8 +70,7 @@ const LocationPlanPanel = ({
   }>({ heatmap: null, index: null });
   const frameTotal = heatmap?.timestamps.length ?? 0;
   const newestFrame = frameTotal > 0 ? frameTotal - 1 : null;
-  const frameIndex =
-    visualization === 'heatmap' || picked.heatmap === heatmap ? picked.index : newestFrame;
+  const frameIndex = withHeat || picked.heatmap === heatmap ? picked.index : newestFrame;
   // Stable per heatmap: SensorHeatmap2D reports its frame from an effect on it.
   const setFrameIndex = useCallback(
     (index: number | null) =>
@@ -76,9 +87,10 @@ const LocationPlanPanel = ({
     () => viewPointsOf(sensorPoints, planViews, shownPlan),
     [planViews, sensorPoints, shownPlan],
   );
+  // The heat: the picked profile's frames, else the plan's.
   const viewHeatmap = useMemo(
-    () => viewHeatmapOf(heatmap, planViews, shownPlan, viewPoints),
-    [heatmap, planViews, shownPlan, viewPoints],
+    () => viewHeatmapOf(profileHeatmap ?? heatmap, planViews, shownPlan, viewPoints),
+    [heatmap, profileHeatmap, planViews, shownPlan, viewPoints],
   );
   const sensorLines = useMemo(
     () =>
@@ -130,7 +142,7 @@ const LocationPlanPanel = ({
     if (sensorPoints.length === 0) {
       return <SensorListTable rows={sensorRows} />;
     }
-    if (visualization === 'heatmap') {
+    if (withHeat) {
       return (
         <>
           <div
@@ -147,6 +159,9 @@ const LocationPlanPanel = ({
               hideChrome
               onTimestampChange={setFrameIndex}
               alarms={alarmSpans}
+              profile={profile}
+              onProfileChange={onProfileChange}
+              profileLoading={profileLoading}
             />
           </div>
           {sensorTable}

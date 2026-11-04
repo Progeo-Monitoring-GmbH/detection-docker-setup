@@ -14,6 +14,8 @@ import {
   isOverDrawn,
   planLocation,
   plotSensors,
+  sensorsInRect,
+  seriesPeak,
   type FieldRange,
   type ChartSensor,
 } from './heatmapChart';
@@ -30,9 +32,10 @@ import { HeatLimitationBar, HeatLimitationLayer, useHeatLimitationEditor } from 
 import { limitPolygons, toPlanPoint } from './heatLimitations';
 import HeatmapToolbar from './HeatmapToolbar';
 import SensorTooltip from './SensorTooltip';
-import type { SensorHeatmapLocation, SensorHeatmapResponse } from './sensorHeatmapTypes';
+import type { HeatProfile, SensorHeatmapLocation, SensorHeatmapResponse } from './sensorHeatmapTypes';
+import HeatmapDisplayControls from './HeatmapDisplayControls';
 import { useHeatmapFrameExport } from './useHeatmapFrameExport';
-import { useHeatmapViewport, usePanZoomGestures } from './useHeatmapViewport';
+import { type AreaRect, useHeatmapViewport, usePanZoomGestures } from './useHeatmapViewport';
 import { useLageplanImage } from './useLageplanImage';
 import ZoomControls from './ZoomControls';
 import { useWheelHint, WheelZoomHint } from '../ui/wheelZoom';
@@ -82,6 +85,25 @@ type SensorHeatmap2DProps = {
   onHoverDevice?: (device: number | null) => void;
   /** Called with the pos (sensor_order) of a clicked sensor marker. */
   onSensorClick?: (pos: number) => void;
+  /**
+   * Staff: the value per sensor `response` holds (?profile=) - the parent
+   * loads it; picking another one calls `onProfileChange`. Without it the
+   * profile isn't offered.
+   */
+  profile?: HeatProfile;
+  onProfileChange?: (profile: HeatProfile) => void;
+  /** While the picked profile loads. */
+  profileLoading?: boolean;
+  /**
+   * Area selection: a rectangle dragged over the plan (in the select mode of
+   * the controls, or with Shift) reports the pos (sensor_order) of the
+   * sensors in it. Without it there is no area selection.
+   */
+  onAreaSelect?: (positions: number[]) => void;
+  /** Title of the colour scale instead of the profile's (e.g. a change). */
+  heatTitle?: string;
+  /** The heat is always normalized (e.g. a change has no threshold). */
+  forceNormalize?: boolean;
 };
 
 /** What the cursor points at: a sensor (by its pos), else the position in
@@ -148,6 +170,12 @@ const SensorHeatmap2D = ({
   highlightedDevice = null,
   onHoverDevice,
   onSensorClick,
+  profile = 'diff',
+  onProfileChange,
+  profileLoading = false,
+  onAreaSelect,
+  heatTitle,
+  forceNormalize = false,
 }: SensorHeatmap2DProps) => {
   const { t } = useTranslation();
   // Primitives, so a new `field` object per render doesn't recompute.
@@ -156,6 +184,15 @@ const SensorHeatmap2D = ({
   const fieldMode = fieldUnit != null;
   const [sigma, setSigma] = useState<'auto' | number>('auto');
   const [hover, setHover] = useState<Hover | null>(null);
+  // What is drawn (the floating controls): the dots, the dm band lines and -
+  // staff - the heat normalized to the period's highest value.
+  const [showDots, setShowDots] = useState(true);
+  const [showLines, setShowLines] = useState(true);
+  const [normalize, setNormalize] = useState(false);
+  // Area selection: the mode (drag selects instead of moving the plan) and
+  // the rectangle being dragged.
+  const [areaMode, setAreaMode] = useState(false);
+  const [areaRect, setAreaRect] = useState<AreaRect | null>(null);
 
   // ---------------------------------------------------------------- frames
 
@@ -245,17 +282,27 @@ const SensorHeatmap2D = ({
     () => chartLayout({ sensors, resolution, location, imageSize, fitPlan, fieldMode }),
     [sensors, resolution, location, imageSize, fitPlan, fieldMode],
   );
+  // WP, EP and WP + EP have no threshold to scale against: always normalized.
+  const normalizeForced = profile !== 'diff' || forceNormalize;
+  const normalized = !fieldMode && (normalize || normalizeForced);
+  // Normalized: the period's highest reading saturates the field (frames
+  // stay comparable); else a multiple of the alarm threshold.
+  const heatScale = useMemo(
+    () => (normalized ? seriesPeak(sensors) : heatReference(location)),
+    [normalized, sensors, location],
+  );
   const frame = useMemo(
     () =>
       layout && timestamps.length > 0
         ? chartFrame(layout, frameWeights(sensors, frameIndex, fieldMode), {
             sigma,
-            heatReference: heatReference(location),
+            heatReference: heatScale,
             fieldRange: fieldScale?.range ?? null,
           })
         : null,
-    [layout, timestamps.length, sensors, frameIndex, fieldMode, sigma, location, fieldScale],
+    [layout, timestamps.length, sensors, frameIndex, fieldMode, sigma, heatScale, fieldScale],
   );
+  const hasLines = Boolean(layout?.lines.some((line) => line != null));
 
   const colorTable = useMemo(() => heatColorTable(), []);
   const heatCanvas = useMemo(
@@ -283,13 +330,18 @@ const SensorHeatmap2D = ({
               const sensor = layout.sensors[index];
               return fieldMode ? (sensor.label ?? sensor.name ?? String(sensor.pos)) : String(sensor.pos);
             },
-            scaleTitle: fieldScale?.unit ?? t('heatmap_heat'),
+            scaleTitle:
+              fieldScale?.unit ??
+              heatTitle ??
+              (profile === 'diff' ? t('heatmap_heat') : t(`heatmap_profile_${profile}`)),
             tickLabel: (value) =>
               fieldScale ? fieldReading(fieldScale, value).toFixed(fieldScale.decimals) : value.toFixed(1),
             limits,
+            showSensors: showDots,
+            showLines: hasLines && showLines,
           }
         : null,
-    [layout, frame, image, heatCanvas, colorTable, fieldMode, fieldScale, t, limits],
+    [layout, frame, image, heatCanvas, colorTable, fieldMode, fieldScale, t, limits, profile, heatTitle, showDots, hasLines, showLines],
   );
 
   // ---------------------------------------------------------------- viewport
@@ -354,6 +406,17 @@ const SensorHeatmap2D = ({
     },
     wheelZoomsAt: (sx, sy) => Boolean(scene && view && isOverDrawn(scene.layout, view, image != null, sx, sy)),
     onPlainWheel: showWheelHint,
+    area: onAreaSelect
+      ? {
+          starts: (event) => !drawing && (areaMode || event.shiftKey),
+          onChange: setAreaRect,
+          onSelect: (rect) => {
+            if (scene && view) {
+              onAreaSelect(sensorsInRect(scene.layout, view, rect).map((index) => scene.layout.sensors[index].pos));
+            }
+          },
+        }
+      : undefined,
   });
 
   // ---------------------------------------------------------------- drawing
@@ -483,7 +546,7 @@ const SensorHeatmap2D = ({
             width: '100%',
             height: canvasHeight,
             touchAction: 'none',
-            cursor: drawing
+            cursor: drawing || areaMode
               ? 'crosshair'
               : hoveredIndex != null
                 ? 'pointer'
@@ -507,6 +570,36 @@ const SensorHeatmap2D = ({
         )}
 
         <WheelZoomHint visible={wheelHint} radius={0} />
+        {areaRect && (
+          <div
+            data-testid="heatmap-area-rect"
+            style={{
+              position: 'absolute',
+              left: Math.min(areaRect[0], areaRect[2]),
+              top: Math.min(areaRect[1], areaRect[3]),
+              width: Math.abs(areaRect[2] - areaRect[0]),
+              height: Math.abs(areaRect[3] - areaRect[1]),
+              border: '1.5px dashed var(--progeo-blue)',
+              background: 'rgba(9, 75, 129, 0.12)',
+              pointerEvents: 'none',
+            }}
+          />
+        )}
+        <HeatmapDisplayControls
+          dots={{ value: showDots, onChange: setShowDots }}
+          area={onAreaSelect ? { value: areaMode, onChange: setAreaMode } : null}
+          lines={hasLines ? { value: showLines, onChange: setShowLines } : null}
+          normalize={
+            canEditLimits && !fieldMode
+              ? { value: normalize, onChange: setNormalize, forced: normalizeForced }
+              : null
+          }
+          profile={
+            canEditLimits && !fieldMode && onProfileChange
+              ? { value: profile, onChange: onProfileChange, loading: profileLoading }
+              : null
+          }
+        />
         <ZoomControls
           onZoomIn={() => zoomBy(ZOOM_STEP)}
           onZoomOut={() => zoomBy(1 / ZOOM_STEP)}
