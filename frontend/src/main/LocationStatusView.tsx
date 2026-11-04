@@ -19,6 +19,7 @@ import ThresholdTrendChart, {
   type ThresholdTrendSeries,
 } from '../components/device/ThresholdTrendChart';
 import PanelCard from '../components/ui/kit/PanelCard';
+import PlotHelp from '../components/ui/PlotHelp';
 import KpiStrip from '../components/ui/kit/KpiStrip';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import PillSelect from '../components/ui/kit/PillSelect';
@@ -360,7 +361,7 @@ const ZeitreihePanel = ({
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
 
   return (
-    <PanelCard title={t('status_zeitreihe_title')}>
+    <PanelCard title={t('status_zeitreihe_title')} actions={<PlotHelp topic="status_zeitreihe" />}>
       {loading ? (
         <Loading />
       ) : (

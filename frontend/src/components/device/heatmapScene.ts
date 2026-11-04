@@ -13,6 +13,8 @@ const HEAT_OPACITY = 0.7;
 const MARKER_RADIUS = 4.5;
 /** Marker of a sensor reading above its threshold. */
 const OVER_THRESHOLD_COLOR = '#dc2626';
+/** Border of a selected sensor (shown in the measurements' second plot). */
+export const SELECTED_COLOR = '#e6007e';
 const LABEL_FONT = '600 10px system-ui, sans-serif';
 const HIGHLIGHTED_LABEL_FONT = '700 12px system-ui, sans-serif';
 
@@ -43,6 +45,8 @@ export type SceneOverlay = {
   hovered: number | null;
   /** Index of the sensor highlighted from outside (highlightedDevice). */
   highlighted: number | null;
+  /** Indices of the selected sensors - drawn with a pink border. */
+  selected?: ReadonlySet<number>;
   /** Cursor (screen pixels) the reference point's guides lead to. */
   cursor: [number, number] | null;
 };
@@ -141,7 +145,15 @@ const drawMarker = (
   sy: number,
   emphasis: 'highlighted' | 'hovered' | null,
   over: boolean,
+  selected = false,
 ) => {
+  if (selected) {
+    ctx.beginPath();
+    ctx.arc(sx, sy, MARKER_RADIUS + 4, 0, Math.PI * 2);
+    ctx.strokeStyle = SELECTED_COLOR;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  }
   if (emphasis === 'highlighted') {
     ctx.beginPath();
     ctx.arc(sx, sy, MARKER_RADIUS + 7, 0, Math.PI * 2);
@@ -197,6 +209,7 @@ const drawLines = (ctx: CanvasRenderingContext2D, scene: Scene, view: View, over
     const value = scene.frame.values[index];
     const over = sensor.threshold != null && value > sensor.threshold;
     const emphasized = overlay.hovered === index || overlay.highlighted === index;
+    const selected = overlay.selected?.has(index) ?? false;
     const stroke = (color: string, width: number) => {
       ctx.strokeStyle = color;
       ctx.lineWidth = width;
@@ -205,7 +218,8 @@ const drawLines = (ctx: CanvasRenderingContext2D, scene: Scene, view: View, over
       ctx.lineTo(x1, y1);
       ctx.stroke();
     };
-    stroke('#ffffff', emphasized ? 8 : 5);
+    // A selected line: a pink border instead of the white one.
+    stroke(selected ? SELECTED_COLOR : '#ffffff', selected ? 9 : emphasized ? 8 : 5);
     stroke(
       overlay.highlighted === index ? plotTheme.brandOrange : over ? OVER_THRESHOLD_COLOR : plotTheme.brandBlue,
       emphasized ? 5 : 3,
@@ -241,12 +255,14 @@ const drawSensors = (
     }
     const highlighted = overlay.highlighted === index;
     const hovered = overlay.hovered === index;
-    if (!scene.showSensors && !highlighted && !hovered) {
+    const selected = overlay.selected?.has(index) ?? false;
+    // Without the dots: still the hovered, highlighted and selected ones.
+    if (!scene.showSensors && !highlighted && !hovered && !selected) {
       return;
     }
     const value = scene.frame.values[index];
     const over = sensor.threshold != null && value > sensor.threshold;
-    drawMarker(ctx, sx, sy, highlighted ? 'highlighted' : hovered ? 'hovered' : null, over);
+    drawMarker(ctx, sx, sy, highlighted ? 'highlighted' : hovered ? 'hovered' : null, over, selected);
     drawMarkerLabel(ctx, scene.sensorText(index), sx, sy, highlighted);
   });
   ctx.restore();

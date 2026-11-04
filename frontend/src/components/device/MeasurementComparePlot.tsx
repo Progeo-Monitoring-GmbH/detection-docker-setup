@@ -6,9 +6,20 @@ import { XLg } from 'react-bootstrap-icons';
 import { parseTimestamp } from '../../main/alarmUtils';
 import { formatDate } from '../../main/dateFormat';
 import { plotTheme } from '../../styles/plotTheme';
-import { usePlotlyWheelZoom, useWheelHint, WheelZoomHint } from '../ui/wheelZoom';
+import {
+  usePlotlyWheelZoom,
+  useWheelHint,
+  WheelZoomHint,
+} from '../ui/wheelZoom';
 import { frameAt } from './FrameSlider';
-import { nearestRow, potentialsOf, signedBands } from './measurementBands';
+import {
+  nearestRow,
+  potentialsOf,
+  sensorChanges,
+  wpChangeBands,
+} from './measurementBands';
+import SensorChangesPanel from './SensorChangesPanel';
+import PlotHelp from '../ui/PlotHelp';
 import type { MeasurementCompareRow } from './MeasurementSamplesCompareChart';
 
 type MeasurementComparePlotProps = {
@@ -24,6 +35,10 @@ type MeasurementComparePlotProps = {
   loading: boolean;
   /** Ends the comparison. */
   onClose: () => void;
+  /** Sensors (index) of the measurements' second plot - marked in the list. */
+  selectedSensors?: number[];
+  /** A sensor clicked in the list of changes. */
+  onSensorSelect?: (sensor: number) => void;
 };
 
 const MIN_MAX_COLOR = 'rgba(153, 27, 27, 0.25)';
@@ -36,12 +51,25 @@ const PLOT_HEIGHT = 420;
 
 /**
  * The comparison with the past, by sensor like the measurements' first plot:
- * the bands and the mean of the earlier period, EP and WP of the earlier
- * measurement matching the slider's (its time minus the offset), and the
+ * the mean, Abweichung and Spannweite of the WP change over the period (each
+ * measurement minus the one an offset earlier), EP and WP of the earlier
+ * measurement matching the slider's (its time minus the offset), and its
  * change since then - WP (green) and EP (yellow), now minus then.
  */
-const MeasurementComparePlot = ({ rows, pastRows, time, offsetMs, label, loading, onClose }: MeasurementComparePlotProps) => {
+const MeasurementComparePlot = ({
+  rows,
+  pastRows,
+  time,
+  offsetMs,
+  label,
+  loading,
+  onClose,
+  selectedSensors,
+  onSensorSelect,
+}: MeasurementComparePlotProps) => {
   const { t } = useTranslation();
+  // The sensor hovered in the list of changes - marked in the plot.
+  const [hoveredSensor, setHoveredSensor] = React.useState<number | null>(null);
   // The slider's measurement - picked like the measurements chart does.
   const current = React.useMemo(() => {
     const timed = rows
@@ -53,15 +81,27 @@ const MeasurementComparePlot = ({ rows, pastRows, time, offsetMs, label, loading
     if (!timed.length) {
       return null;
     }
-    const index = time == null ? timed.length - 1 : frameAt(timed.map((entry) => entry.ms / 1000), time);
+    const index =
+      time == null
+        ? timed.length - 1
+        : frameAt(
+            timed.map((entry) => entry.ms / 1000),
+            time,
+          );
     return timed[index].row;
   }, [rows, time]);
   const currentMs = parseTimestamp(current?.last_fetched ?? null);
   const past = React.useMemo(
-    () => (currentMs == null ? null : nearestRow(pastRows, currentMs - offsetMs)),
+    () =>
+      currentMs == null ? null : nearestRow(pastRows, currentMs - offsetMs),
     [pastRows, currentMs, offsetMs],
   );
-  const bands = React.useMemo(() => signedBands(pastRows), [pastRows]);
+  // Mean, Abweichung and Spannweite of the WP change over the period.
+  const bands = React.useMemo(() => wpChangeBands(rows, pastRows, offsetMs), [rows, pastRows, offsetMs]);
+  const changes = React.useMemo(
+    () => (past && current ? sensorChanges(current.samples, past.samples) : []),
+    [current, past],
+  );
 
   const data = React.useMemo(() => {
     if (!past) {
@@ -70,7 +110,14 @@ const MeasurementComparePlot = ({ rows, pastRows, time, offsetMs, label, loading
     const then = potentialsOf(past.samples);
     const now = potentialsOf(current?.samples);
     const sensors = then.ep.map((_, index) => index + 1);
-    const line = (name: string, x: number[], y: Array<number | null>, color: string, width: number, dash?: string) => ({
+    const line = (
+      name: string,
+      x: number[],
+      y: Array<number | null>,
+      color: string,
+      width: number,
+      dash?: string,
+    ) => ({
       type: 'scatter' as const,
       mode: 'lines' as const,
       name,
@@ -79,22 +126,65 @@ const MeasurementComparePlot = ({ rows, pastRows, time, offsetMs, label, loading
       line: { color, width, ...(dash ? { dash } : {}) },
     });
     // A band: the transparent upper edge, then the lower edge filling up to it.
-    const band = (name: string, upper: number[], lower: number[], color: string) => [
-      { ...line(name, bands.x, upper, EDGE_COLOR, 1), showlegend: false, hoverinfo: 'skip' as const },
-      { ...line(name, bands.x, lower, EDGE_COLOR, 1), fill: 'tonexty' as const, fillcolor: color },
+    const band = (
+      name: string,
+      upper: number[],
+      lower: number[],
+      color: string,
+    ) => [
+      {
+        ...line(name, bands.x, upper, EDGE_COLOR, 1),
+        showlegend: false,
+        hoverinfo: 'skip' as const,
+      },
+      {
+        ...line(name, bands.x, lower, EDGE_COLOR, 1),
+        fill: 'tonexty' as const,
+        fillcolor: color,
+      },
     ];
     const change = (nowValues: number[], thenValues: number[]) =>
-      thenValues.map((value, index) => (nowValues[index] == null ? null : nowValues[index] - value));
+      thenValues.map((value, index) =>
+        nowValues[index] == null ? null : nowValues[index] - value,
+      );
     return [
-      ...band(t('measurement_compare_min_max_label'), bands.max, bands.min, MIN_MAX_COLOR),
-      ...band(t('measurement_compare_deviation_label'), bands.upper, bands.lower, DEVIATION_COLOR),
-      line(t('measurement_compare_mean_label'), bands.x, bands.mean, plotTheme.brandBlue, 4),
+      ...band(
+        t('analyse_compare_change_range'),
+        bands.max,
+        bands.min,
+        MIN_MAX_COLOR,
+      ),
+      ...band(
+        t('analyse_compare_change_deviation'),
+        bands.upper,
+        bands.lower,
+        DEVIATION_COLOR,
+      ),
+      line(
+        t('analyse_compare_change_mean'),
+        bands.x,
+        bands.mean,
+        plotTheme.brandBlue,
+        4,
+      ),
       line(t('analyse_compare_ep_then'), sensors, then.ep, 'red', 2, 'dot'),
       line(t('analyse_compare_wp_then'), sensors, then.wp, 'blue', 2, 'dot'),
       ...(now.ep.length
         ? [
-            line(t('analyse_compare_wp_change'), sensors, change(now.wp, then.wp), WP_CHANGE_COLOR, 3),
-            line(t('analyse_compare_ep_change'), sensors, change(now.ep, then.ep), EP_CHANGE_COLOR, 3),
+            line(
+              t('analyse_compare_wp_change'),
+              sensors,
+              change(now.wp, then.wp),
+              WP_CHANGE_COLOR,
+              3,
+            ),
+            line(
+              t('analyse_compare_ep_change'),
+              sensors,
+              change(now.ep, then.ep),
+              EP_CHANGE_COLOR,
+              3,
+            ),
           ]
         : []),
     ];
@@ -110,7 +200,10 @@ const MeasurementComparePlot = ({ rows, pastRows, time, offsetMs, label, loading
       <Card.Body>
         <div className="d-flex flex-wrap align-items-center gap-3 mb-1">
           <h5 className="mb-0">{t('analyse_compare_title', { label })}</h5>
-          {loading && <Spinner size="sm" animation="border" className="text-muted" />}
+          <PlotHelp topic="compare" />
+          {loading && (
+            <Spinner size="sm" animation="border" className="text-muted" />
+          )}
           <Button
             size="sm"
             variant="outline-secondary"
@@ -134,45 +227,83 @@ const MeasurementComparePlot = ({ rows, pastRows, time, offsetMs, label, loading
             {loading ? t('ui_loading') : t('analyse_compare_no_data')}
           </div>
         ) : (
-          <div style={{ position: 'relative' }}>
-            <WheelZoomHint visible={wheelHint} radius={0} />
-            <Plot
-              data={data}
-              onInitialized={(_, div) => setGraphDiv(div as HTMLElement)}
-              useResizeHandler
-              style={{ width: '100%', height: `${PLOT_HEIGHT}px` }}
-              config={{ responsive: true, displaylogo: false, scrollZoom: true }}
-              layout={{
-                autosize: true,
-                margin: { l: 64, r: 16, t: 56, b: 52 },
-                font: { color: plotTheme.brandBlue },
-                plot_bgcolor: plotTheme.warmGray1,
-                paper_bgcolor: plotTheme.white,
-                uirevision: `${offsetMs}:${pastRows.length}`,
-                hovermode: 'x unified',
-                xaxis: {
-                  title: { text: t('measurement_compare_pair_index_axis') },
-                  gridcolor: plotTheme.warmGray2,
-                  zeroline: false,
-                },
-                yaxis: {
-                  title: { text: t('measurement_compare_absolute_delta_axis') },
-                  gridcolor: plotTheme.warmGray2,
-                  zeroline: true,
-                  zerolinecolor: '#4a4a4a',
-                  zerolinewidth: 2,
-                },
-                legend: {
-                  orientation: 'h',
-                  x: 0,
-                  y: 1.02,
-                  yanchor: 'bottom',
-                  bgcolor: plotTheme.warmGray1,
-                  bordercolor: plotTheme.warmGray3,
-                  borderwidth: 1,
-                },
-              }}
-            />
+          // The plot, and beside it (below on narrow screens) the biggest changes.
+          <div className="d-flex flex-wrap gap-3 align-items-start">
+            <div
+              style={{ position: 'relative', flex: '1 1 560px', minWidth: 0 }}
+            >
+              <WheelZoomHint visible={wheelHint} radius={0} />
+              <Plot
+                data={data}
+                onInitialized={(_, div) => setGraphDiv(div as HTMLElement)}
+                useResizeHandler
+                style={{ width: '100%', height: `${PLOT_HEIGHT}px` }}
+                config={{
+                  responsive: true,
+                  displaylogo: false,
+                  scrollZoom: true,
+                }}
+                layout={{
+                  autosize: true,
+                  margin: { l: 64, r: 16, t: 56, b: 52 },
+                  font: { color: plotTheme.brandBlue },
+                  plot_bgcolor: plotTheme.warmGray1,
+                  paper_bgcolor: plotTheme.white,
+                  uirevision: `${offsetMs}:${pastRows.length}`,
+                  hovermode: 'x unified',
+                  shapes:
+                    hoveredSensor != null
+                      ? [
+                          {
+                            type: 'rect',
+                            layer: 'below',
+                            xref: 'x',
+                            yref: 'paper',
+                            x0: hoveredSensor + 0.5,
+                            x1: hoveredSensor + 1.5,
+                            y0: 0,
+                            y1: 1,
+                            fillcolor: plotTheme.brandOrange,
+                            opacity: 0.18,
+                            line: { width: 0 },
+                          },
+                        ]
+                      : [],
+                  xaxis: {
+                    gridcolor: plotTheme.warmGray2,
+                    zeroline: false,
+                  },
+                  yaxis: {
+                    title: {
+                      text: t('measurement_compare_absolute_delta_axis'),
+                    },
+                    gridcolor: plotTheme.warmGray2,
+                    zeroline: true,
+                    zerolinecolor: '#4a4a4a',
+                    zerolinewidth: 2,
+                  },
+                  legend: {
+                    orientation: 'h',
+                    x: 0,
+                    y: 1.02,
+                    yanchor: 'bottom',
+                    bgcolor: plotTheme.warmGray1,
+                    bordercolor: plotTheme.warmGray3,
+                    borderwidth: 1,
+                  },
+                }}
+              />
+            </div>
+            <div style={{ flex: '0 1 340px', minWidth: 260 }}>
+              <SensorChangesPanel
+                changes={changes}
+                wpColor={WP_CHANGE_COLOR}
+                epColor={EP_CHANGE_COLOR}
+                selectedSensors={selectedSensors}
+                onSensorSelect={onSensorSelect}
+                onSensorHover={setHoveredSensor}
+              />
+            </div>
           </div>
         )}
       </Card.Body>

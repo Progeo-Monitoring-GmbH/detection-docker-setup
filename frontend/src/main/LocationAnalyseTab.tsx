@@ -15,6 +15,7 @@ import {
 } from '../components/device/sensorHeatmapTypes';
 import MeasurementSamplesCompareChart, {
   type MeasurementCompareRow,
+  toggledSensor,
 } from '../components/device/MeasurementSamplesCompareChart.tsx';
 import FrameSlider, { frameAt } from '../components/device/FrameSlider';
 import { parseTimestamp } from './alarmUtils';
@@ -38,6 +39,7 @@ import { MEAN_WINDOWS, smoothHeatmap, smoothMeasurements } from './analyseSmooth
 import { compareOffsetsFor, heatmapChange } from './analyseCompare';
 import MeasurementComparePlot from '../components/device/MeasurementComparePlot';
 import { XLg } from 'react-bootstrap-icons';
+import PlotHelp from '../components/ui/PlotHelp';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 import {
@@ -476,6 +478,17 @@ const LocationAnalyseTab = () => {
   // measurements' second plot - as the pair of its device: a location's
   // sensors can be split over devices, each counting its pairs from 1.
   // Shows that device if needed.
+  // The plan's sensors (pos) of the second plot's selection: the pairs of
+  // the shown device - drawn with a pink border, in sync with the plot.
+  const selectedPositions = useMemo(
+    () =>
+      (heatmap?.sensor_points ?? []).flatMap((point) => {
+        const ofShown = point.device == null || point.device === shownDevice;
+        return ofShown && sensors.includes((point.pair ?? point.pos) - 1) ? [point.pos] : [];
+      }),
+    [heatmap, sensors, shownDevice],
+  );
+
   // An area dragged on the plan: its sensors (of the shown device, else of
   // the first other one - shown then) become the second plot's selection.
   const selectPlanArea = (positions: number[]) => {
@@ -668,6 +681,7 @@ const LocationAnalyseTab = () => {
               {compare && (
                 <span className="ms-2 small text-muted">{t('analyse_heatmap_change', { label: compareLabel })}</span>
               )}
+              <PlotHelp topic="heatmap" className="ms-2 align-middle" />
               {heatmapLoading && (
                 <Spinner size="sm" animation="border" className="ms-2 text-muted" />
               )}
@@ -686,6 +700,7 @@ const LocationAnalyseTab = () => {
                       heatTitle={changeHeatmap ? t('heatmap_change') : undefined}
                       forceNormalize={changeHeatmap != null}
                       onAreaSelect={selectPlanArea}
+                      selectedPositions={selectedPositions}
                       fitPlan
                       hideChrome
                       time={frameTime}
@@ -711,6 +726,8 @@ const LocationAnalyseTab = () => {
               label={compareLabel}
               loading={compareLoading}
               onClose={() => setCompareDays(null)}
+              selectedSensors={sensors}
+              onSensorSelect={(sensor) => setSensors((selected) => toggledSensor(selected, sensor))}
             />
           )}
 

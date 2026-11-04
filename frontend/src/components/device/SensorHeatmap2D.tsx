@@ -81,6 +81,9 @@ type SensorHeatmap2DProps = {
   /** Device (sensor_points[].device) whose marker is highlighted - e.g. the
    * line hovered in the climate charts. */
   highlightedDevice?: number | null;
+  /** The pos (sensor_order) of the selected sensors - e.g. those of the
+   * measurements' second plot - drawn with a pink border. */
+  selectedPositions?: number[];
   /** Called with the device of the hovered marker, null when it is left. */
   onHoverDevice?: (device: number | null) => void;
   /** Called with the pos (sensor_order) of a clicked sensor marker. */
@@ -168,6 +171,7 @@ const SensorHeatmap2D = ({
   field,
   fitPlan = false,
   highlightedDevice = null,
+  selectedPositions,
   onHoverDevice,
   onSensorClick,
   profile = 'diff',
@@ -428,6 +432,13 @@ const SensorHeatmap2D = ({
   const hoveredIndex = hover?.kind === 'sensor' ? sensorIndex((sensor) => sensor.pos === hover.pos) : null;
   const highlightedIndex =
     highlightedDevice != null ? sensorIndex((sensor) => sensor.device === highlightedDevice) : null;
+  const sceneSensors = scene?.layout.sensors;
+  const selectedIndices = useMemo(() => {
+    const positions = new Set(selectedPositions ?? []);
+    return new Set(
+      (sceneSensors ?? []).flatMap((sensor, index) => (positions.has(sensor.pos) ? [index] : [])),
+    );
+  }, [sceneSensors, selectedPositions]);
   // The guides only lead to a position in meters.
   const guideCursor = hover?.kind === 'cursor' && hover.meters ? hover.cursor : null;
 
@@ -444,11 +455,11 @@ const SensorHeatmap2D = ({
         scene,
         { width, height: canvasHeight, dpr },
         view,
-        { hovered: hoveredIndex, highlighted: highlightedIndex, cursor: guideCursor },
+        { hovered: hoveredIndex, highlighted: highlightedIndex, selected: selectedIndices, cursor: guideCursor },
         null,
       );
     }
-  }, [canvasRef, scene, view, width, canvasHeight, hoveredIndex, highlightedIndex, guideCursor]);
+  }, [canvasRef, scene, view, width, canvasHeight, hoveredIndex, highlightedIndex, selectedIndices, guideCursor]);
 
   // ---------------------------------------------------------------- export
 

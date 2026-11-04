@@ -8,6 +8,10 @@ import { formatDate } from '../../main/dateFormat';
 import FrameSlider, { frameAt } from './FrameSlider';
 import { potentialsOf, signedBands } from './measurementBands';
 import { usePlotlyWheelZoom, useWheelHint, WheelZoomHint } from '../ui/wheelZoom';
+import PlotHelp from '../ui/PlotHelp';
+
+/** The help buttons' distance (px) above a plot's top edge. */
+const HELP_ABOVE_PX = 28;
 import MeasurementCompareTooltip, {
   type CompareTooltipData,
   TOOLTIP_WIDTH,
@@ -123,11 +127,11 @@ const PERIOD_COLOR = 'rgba(0, 0, 0, 0.06)';
 const ACTIVE_SENSOR_COUNT = 2;
 
 /** Heights (px) of the plots and of what lies between them, top to bottom:
- * the first plot, its axis (ticks and title), the second plot's controls
+ * the first plot, its axis (tick labels), the second plot's controls
  * (measured), the second plot, its axis and the third plot's legend, the
  * third plot (its axis title is in the bottom margin). */
 const UPPER_PX = 300;
-const UPPER_AXIS_PX = 58;
+const UPPER_AXIS_PX = 30;
 const SENSORS_PX = 150;
 const SENSORS_AXIS_PX = 64;
 const SUM_PX = 120;
@@ -1176,11 +1180,10 @@ const MeasurementSamplesCompareChart = (
       <div ref={wrapRef} style={{ position: 'relative' }} onMouseMove={onMouseMove}>
         {/* The second plot's controls, right above it in the figure (the plots
             make room for their measured height, however many rows they wrap
-            to): the shown sensors - hover highlights one, ✕ removes it - and
-            the buttons that pick them. */}
+            to): the buttons that pick sensors, below them the shown ones. */}
         <div
           ref={toolbarRef}
-          className="d-flex flex-wrap align-items-center gap-2 pb-2"
+          className="d-flex flex-column gap-1 pb-2"
           data-testid="measurement-compare-sensor-toolbar"
           style={{
             position: 'absolute',
@@ -1190,101 +1193,123 @@ const MeasurementSamplesCompareChart = (
             zIndex: 2,
           }}
         >
-          <small className="text-muted me-1">
-            {t('measurement_compare_selected_sensors', {
-              count: selectedSensors.length,
-            })}
-          </small>
-          {selectedSensors.map((sensor) => (
-            <span
-              key={sensor}
-              className="d-inline-flex align-items-center gap-1 rounded-pill bg-white"
-              data-testid="measurement-compare-sensor-chip"
-              style={{ fontSize: 12, padding: '1px 4px 1px 8px', border: `1px solid ${sensorColor(sensor)}` }}
-              onMouseEnter={() => setHighlighted(`sensor-${sensor}`)}
-              onMouseLeave={() => setHighlighted(null)}
-            >
-              <span style={{ width: 12, height: 3, borderRadius: 2, background: sensorColor(sensor) }} />
-              {t('measurement_compare_pair_label')} {sensorNumber(sensor)}
-              <button
-                type="button"
-                className="btn btn-link p-0 px-1 text-muted text-decoration-none lh-1"
-                style={{ fontSize: 12 }}
-                title={t('measurement_compare_sensor_click_remove', { sensor: sensorNumber(sensor) })}
-                aria-label={t('measurement_compare_sensor_click_remove', { sensor: sensorNumber(sensor) })}
-                onClick={() => {
-                  setHighlighted(null);
-                  toggleSensor(sensor);
-                }}
-              >
-                ✕
-              </button>
-            </span>
-          ))}
-          <Button
-            size="sm"
-            variant="outline-secondary"
-            className="py-0"
-            style={{ fontSize: 12 }}
-            onClick={() => updateSensors([])}
-            disabled={selectedSensors.length === 0}
-          >
-            {t('measurement_compare_clear_sensors')}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline-secondary"
-            className="py-0"
-            style={{ fontSize: 12 }}
-            onClick={addRandomSensor}
-            disabled={randomCandidates.length === 0}
-            title={t('measurement_compare_add_random_hint')}
-          >
-            {t('measurement_compare_add_random')}
-          </Button>
-          {activeSensors.most.length > 0 && (
-            <>
-              {(
-                [
-                  ['most', 'measurement_compare_add_most_active'],
-                  ['least', 'measurement_compare_add_least_active'],
-                ] as const
-              ).map(([group, label]) => {
-                const shown = groupShown(activeSensors[group]);
-                return (
-                  <Button
-                    key={group}
-                    size="sm"
-                    variant={shown ? 'primary' : 'outline-primary'}
-                    aria-pressed={shown}
-                    title={t('measurement_compare_activity_hint')}
-                    className="py-0"
-                    style={{ fontSize: 12 }}
-                    onClick={() => toggleGroup(activeSensors[group])}
-                  >
-                    {t(label, { n: ACTIVE_SENSOR_COUNT })}
-                  </Button>
-                );
-              })}
-            </>
-          )}
-          {onToggleSensorHistory && (
+          {/* The buttons that pick sensors ... */}
+          <div className="d-flex flex-wrap align-items-center gap-2">
             <Button
               size="sm"
-              variant={historySeries ? 'primary' : 'outline-primary'}
-              aria-pressed={historySeries != null}
-              title={t('measurement_compare_sensor_history_hint')}
+              variant="outline-secondary"
               className="py-0"
               style={{ fontSize: 12 }}
-              onClick={onToggleSensorHistory}
-              disabled={isLoadingSensorHistory || (!historySeries && selectedSensors.length === 0)}
+              onClick={() => updateSensors([])}
+              disabled={selectedSensors.length === 0}
             >
-              {isLoadingSensorHistory && <Spinner size="sm" animation="border" className="me-1" />}
-              {t('measurement_compare_sensor_history')}
+              {t('measurement_compare_clear_sensors')}
             </Button>
-          )}
+            <Button
+              size="sm"
+              variant="outline-secondary"
+              className="py-0"
+              style={{ fontSize: 12 }}
+              onClick={addRandomSensor}
+              disabled={randomCandidates.length === 0}
+              title={t('measurement_compare_add_random_hint')}
+            >
+              {t('measurement_compare_add_random')}
+            </Button>
+            {activeSensors.most.length > 0 && (
+              <>
+                {(
+                  [
+                    ['most', 'measurement_compare_add_most_active'],
+                    ['least', 'measurement_compare_add_least_active'],
+                  ] as const
+                ).map(([group, label]) => {
+                  const shown = groupShown(activeSensors[group]);
+                  return (
+                    <Button
+                      key={group}
+                      size="sm"
+                      variant={shown ? 'primary' : 'outline-primary'}
+                      aria-pressed={shown}
+                      title={t('measurement_compare_activity_hint')}
+                      className="py-0"
+                      style={{ fontSize: 12 }}
+                      onClick={() => toggleGroup(activeSensors[group])}
+                    >
+                      {t(label, { n: ACTIVE_SENSOR_COUNT })}
+                    </Button>
+                  );
+                })}
+              </>
+            )}
+            {onToggleSensorHistory && (
+              <Button
+                size="sm"
+                variant={historySeries ? 'primary' : 'outline-primary'}
+                aria-pressed={historySeries != null}
+                title={t('measurement_compare_sensor_history_hint')}
+                className="py-0"
+                style={{ fontSize: 12 }}
+                onClick={onToggleSensorHistory}
+                disabled={isLoadingSensorHistory || (!historySeries && selectedSensors.length === 0)}
+              >
+                {isLoadingSensorHistory && <Spinner size="sm" animation="border" className="me-1" />}
+                {t('measurement_compare_sensor_history')}
+              </Button>
+            )}
+            <PlotHelp topic="sensors_over_time" className="ms-auto" />
+          </div>
+          {/* ... then the shown sensors - hover highlights one, ✕ removes it. */}
+          <div className="d-flex flex-wrap align-items-center gap-2">
+            <small className="text-muted me-1">
+              {t('measurement_compare_selected_sensors', {
+                count: selectedSensors.length,
+              })}
+            </small>
+            {selectedSensors.map((sensor) => (
+              <span
+                key={sensor}
+                className="d-inline-flex align-items-center gap-1 rounded-pill bg-white"
+                data-testid="measurement-compare-sensor-chip"
+                style={{ fontSize: 12, padding: '1px 4px 1px 8px', border: `1px solid ${sensorColor(sensor)}` }}
+                onMouseEnter={() => setHighlighted(`sensor-${sensor}`)}
+                onMouseLeave={() => setHighlighted(null)}
+              >
+                <span style={{ width: 12, height: 3, borderRadius: 2, background: sensorColor(sensor) }} />
+                {t('measurement_compare_pair_label')} {sensorNumber(sensor)}
+                <button
+                  type="button"
+                  className="btn btn-link p-0 px-1 text-muted text-decoration-none lh-1"
+                  style={{ fontSize: 12 }}
+                  title={t('measurement_compare_sensor_click_remove', { sensor: sensorNumber(sensor) })}
+                  aria-label={t('measurement_compare_sensor_click_remove', { sensor: sensorNumber(sensor) })}
+                  onClick={() => {
+                    setHighlighted(null);
+                    toggleSensor(sensor);
+                  }}
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+          </div>
         </div>
         <WheelZoomHint visible={wheelHint} radius={0} />
+        {/* Help of the first and the third plot, right above each (the
+            second's sits in its controls). */}
+        <PlotHelp
+          topic="by_sensor"
+          style={{ position: 'absolute', zIndex: 2, right: margin.r, top: Math.max(0, margin.t - HELP_ABOVE_PX) }}
+        />
+        <PlotHelp
+          topic="sensor_sum"
+          style={{
+            position: 'absolute',
+            zIndex: 2,
+            right: margin.r,
+            top: margin.t + (1 - geometry.sum[1]) * (geometry.height - margin.t - margin.b) - HELP_ABOVE_PX,
+          }}
+        />
         {tooltip && (
           // Top right of the upper plot - top left while the cursor is near.
           <MeasurementCompareTooltip
@@ -1360,7 +1385,6 @@ const MeasurementSamplesCompareChart = (
                   },
                 ],
             xaxis: {
-              title: { text: t('measurement_compare_pair_index_axis') },
               domain: [0, 1],
               anchor: 'y',
               // Sensors are whole numbers: ticks on whole sensors only.

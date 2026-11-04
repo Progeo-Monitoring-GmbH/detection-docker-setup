@@ -6,6 +6,7 @@ import SensorHeatmap2D from '../components/device/SensorHeatmap2D';
 import SensorListTable from '../components/device/SensorListTable';
 import type { HeatProfile, SensorHeatmapResponse } from '../components/device/sensorHeatmapTypes';
 import PanelCard from '../components/ui/kit/PanelCard';
+import PlotHelp from '../components/ui/PlotHelp';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import {
   planViewsOf,
@@ -197,16 +198,19 @@ const LocationPlanPanel = ({
     <PanelCard
       title={t('status_dachansicht_title')}
       actions={
-        planViews.length > 1 ? (
-          <SegmentedControl
-            options={planViews.map((plan, index) => ({
-              value: String(plan.id),
-              label: plan.name || t('status_plan_view', { index: index + 1 }),
-            }))}
-            value={String(shownPlan?.id)}
-            onChange={(value) => setSelectedPlanId(Number(value))}
-          />
-        ) : undefined
+        <>
+          {planViews.length > 1 && (
+            <SegmentedControl
+              options={planViews.map((plan, index) => ({
+                value: String(plan.id),
+                label: plan.name || t('status_plan_view', { index: index + 1 }),
+              }))}
+              value={String(shownPlan?.id)}
+              onChange={(value) => setSelectedPlanId(Number(value))}
+            />
+          )}
+          <PlotHelp topic="status_plan" />
+        </>
       }
     >
       {content()}
