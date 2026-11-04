@@ -7,7 +7,7 @@ import { useFavorites } from './favorites';
 
 /**
  * The staff user's favorite locations as one bar at the top of every page
- * (below the TopBar): each one opens the location's status, the x next to
+ * (below the TopBar): each one opens the location's analysis, the x next to
  * it removes the favorite. Hidden without favorites - the stars pin them.
  */
 const FavoritesBar = ({ style }: { style?: CSSProperties }) => {
@@ -60,7 +60,7 @@ const FavoritesBar = ({ style }: { style?: CSSProperties }) => {
             }}
           >
             <Link
-              to={`/location/${favorite.location}/status`}
+              to={`/location/${favorite.location}/analyse`}
               title={[favorite.project_id, favorite.name, favorite.city].filter(Boolean).join(' · ')}
               style={{
                 color: 'inherit',

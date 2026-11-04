@@ -58,6 +58,8 @@ type SensorHeatmap2DProps = {
    */
   time?: number | null;
   onTimeChange?: (ms: number) => void;
+  /** Leaves out the own slider - the page shows one for everything (with `time`). */
+  hideFrameSlider?: boolean;
   /** Alarm periods, marked on the timestamp slider. */
   alarms?: AlarmSpan[];
   /**
@@ -139,6 +141,7 @@ const SensorHeatmap2D = ({
   onTimestampChange,
   time = null,
   onTimeChange,
+  hideFrameSlider = false,
   alarms,
   field,
   fitPlan = false,
@@ -444,16 +447,18 @@ const SensorHeatmap2D = ({
             enabled: timestamps.length >= 2,
           }}
         />
-        <div className="mt-1 pb-1">
-          <FrameSlider
-            id="heatmap2d-timestamp"
-            timestamps={timestamps}
-            index={frameIndex}
-            onChange={setTimestampIndex}
-            disabled={videoExport.videoExporting}
-            alarms={alarms}
-          />
-        </div>
+        {!hideFrameSlider && (
+          <div className="mt-1 pb-1">
+            <FrameSlider
+              id="heatmap2d-timestamp"
+              timestamps={timestamps}
+              index={frameIndex}
+              onChange={setTimestampIndex}
+              disabled={videoExport.videoExporting}
+              alarms={alarms}
+            />
+          </div>
+        )}
         <HeatLimitationBar editor={limitEditor} />
       </div>
 

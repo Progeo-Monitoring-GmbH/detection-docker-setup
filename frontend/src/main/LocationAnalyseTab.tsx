@@ -13,7 +13,7 @@ import MeasurementSamplesCompareChart, {
   type MeasurementCompareRow,
   toggledSensor,
 } from '../components/device/MeasurementSamplesCompareChart.tsx';
-import { frameAt } from '../components/device/FrameSlider';
+import FrameSlider, { frameAt } from '../components/device/FrameSlider';
 import { parseTimestamp } from './alarmUtils';
 import type { PortalOutletContext } from './LocationPortalLayout';
 import LocationClimatePanels from './LocationClimatePanels';
@@ -41,6 +41,12 @@ const SENSOR_HISTORY_DAYS = TIME_RANGE_DAYS['90d'];
 const MAX_HISTORY_MEASUREMENTS = 2000;
 
 type AnalyseDevice = { id: number; display_name: string };
+
+/** Where the frame slider sticks while the page scrolls (px from the top) -
+ * on mobile below the sticky navigation bar. */
+const STICKY_TOP = 0;
+const STICKY_TOP_MOBILE = 60;
+const MOBILE_WIDTH = 860;
 
 /** Frame steps of the arrow keys: ←/→ one frame, ↑/↓ ten. */
 const FRAME_KEY_STEPS: Record<string, number> = {
@@ -94,12 +100,11 @@ const LocationAnalyseTab = () => {
   );
   const [selectedRange, setSelectedRange] = useState<TimeRange>('7d');
   const range = effectiveTimeRange(selectedRange, rangeOptions);
-  // The time (epoch ms) of the heatmap's and the measurements' coupled
-  // sliders - null: the newest measurement.
+  // The time (epoch ms) of the page's one frame slider - the heatmap and the
+  // measurements show the frame holding it. null: the newest measurement.
   const [frameTime, setFrameTime] = useState<number | null>(null);
-  // Which slider was used last - the arrow keys step through its frames.
-  // Both sliders are coupled through `frameTime`; their frame sets differ.
-  const [activeSlider, setActiveSlider] = useState<'heatmap' | 'chart'>('heatmap');
+  // The measurements' zoomed time span - a band on the slider.
+  const [chartZoom, setChartZoom] = useState<{ from: number; to: number } | null>(null);
   // The sensors (pair index) the measurements' second plot follows - picked
   // there or on the heatmap.
   const [sensors, setSensors] = useState<number[]>([]);
@@ -248,8 +253,8 @@ const LocationAnalyseTab = () => {
     loadMeasurements();
   }, [loadMeasurements]);
 
-  // The frames of the two sliders. They share `frameTime` but sample
-  // differently, so the keys step through the frames of the slider used last.
+  // The slider's frames: the heatmap's - the measurements (sampled a little
+  // differently) show the one nearest to it; without a heatmap theirs.
   const heatmapFrames = useMemo(
     () => [...(heatmap?.timestamps ?? [])].sort((a, b) => a - b),
     [heatmap],
@@ -264,12 +269,10 @@ const LocationAnalyseTab = () => {
         .sort((a, b) => a - b),
     [measurements],
   );
-  const frameSeconds =
-    activeSlider === 'chart' && chartFrames.length
-      ? chartFrames
-      : heatmapFrames.length
-        ? heatmapFrames
-        : chartFrames;
+  const frameSeconds = heatmapFrames.length ? heatmapFrames : chartFrames;
+  const frameIndex =
+    frameTime == null ? frameSeconds.length - 1 : frameAt(frameSeconds, frameTime);
+  const mobile = typeof window !== 'undefined' && window.innerWidth < MOBILE_WIDTH;
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -356,6 +359,31 @@ const LocationAnalyseTab = () => {
         )}
       </div>
 
+      {!isLorawan && frameSeconds.length > 0 && (
+        // One slider for the heatmap and the measurements, kept on top while
+        // the page scrolls down to the charts.
+        <div
+          data-testid="analyse-frame-slider"
+          className="px-3"
+          style={{
+            position: 'sticky',
+            top: mobile ? STICKY_TOP_MOBILE : STICKY_TOP,
+            zIndex: 50,
+            background: 'var(--progeo-panel-bg)',
+            borderRadius: 'var(--progeo-radius-panel)',
+            boxShadow: 'var(--progeo-shadow-panel)',
+          }}
+        >
+          <FrameSlider
+            id="analyse-frame"
+            timestamps={frameSeconds}
+            index={frameIndex}
+            onChange={(index) => setFrameTime(frameSeconds[index] * 1000)}
+            visibleRange={chartZoom}
+          />
+        </div>
+      )}
+
       {isLorawan ? (
         <>
           <LocationClimateHeatmap
@@ -402,10 +430,6 @@ const LocationAnalyseTab = () => {
                     <LocationDmPlan
                       heatmap={heatmap}
                       time={frameTime}
-                      onTimeChange={(ms) => {
-                        setActiveSlider('heatmap');
-                        setFrameTime(ms);
-                      }}
                       onSensorClick={selectPlanSensor}
                     />
                   ) : (
@@ -414,10 +438,8 @@ const LocationAnalyseTab = () => {
                       fitPlan
                       hideChrome
                       time={frameTime}
-                      onTimeChange={(ms) => {
-                        setActiveSlider('heatmap');
-                        setFrameTime(ms);
-                      }}
+                      onTimeChange={setFrameTime}
+                      hideFrameSlider
                       onSensorClick={selectPlanSensor}
                     />
                   )}
@@ -469,13 +491,12 @@ const LocationAnalyseTab = () => {
                 <MeasurementSamplesCompareChart
                   rows={measurements}
                   frameSlider
+                  hideFrameSlider
+                  onVisibleRangeChange={setChartZoom}
                   sliderPlayKey={false}
                   hideChrome
                   time={frameTime}
-                  onTimeChange={(ms) => {
-                    setActiveSlider('chart');
-                    setFrameTime(ms);
-                  }}
+                  onTimeChange={setFrameTime}
                   sensors={sensors}
                   onSensorsChange={setSensors}
                   sensorHistoryRows={offerSensorHistory ? sensorHistoryRows : null}

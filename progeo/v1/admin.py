@@ -22,6 +22,7 @@ from progeo.v1.models import (
     ProgeoAccess,
     ProgeoAlarm,
     ProgeoDevice,
+    ProgeoDeviceCommand,
     ProgeoEscalation,
     ProgeoEscalationEntry,
     ProgeoFavoriteLocation,
@@ -160,6 +161,22 @@ class ProgeoDeviceAdmin(MultiDBModelAdmin):
 
 class ProgeoMeasurementAdmin(MultiDBModelAdmin):
     pass
+
+class ProgeoDeviceCommandAdmin(MultiDBModelAdmin):
+    """Command history: what was sent, whether it worked and when. The
+    encrypted payload/result never show here (customer data)."""
+    list_display = ("created", "device", "command", "status", "sent_at", "finished_at", "created_by", "error")
+    list_filter = ("status", "command")
+    search_fields = ("device__raw_hash", "error")
+    fields = ("device", "command", "status", "created", "sent_at", "finished_at", "created_by", "summary", "error")
+    readonly_fields = fields
+    ordering = ("-pk",)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
 
 class EMailAdmin(MultiDBModelAdmin):
     list_display = ("created", "sent", "location", "sent_to", "subject", "error")
@@ -318,6 +335,7 @@ register_models = [
     {"model": AlarmDailyReport, "admin": ProgeoAlarmReportAdmin, "custom": True},
     {"model": ProgeoLocation, "admin": ProgeoLocationAdmin, "custom": True},
     {"model": ProgeoDevice, "admin": ProgeoDeviceAdmin, "custom": True},
+    {"model": ProgeoDeviceCommand, "admin": ProgeoDeviceCommandAdmin, "custom": True},
     {"model": ProgeoMeasurement, "admin": ProgeoMeasurementAdmin, "custom": True},
     {"model": ProgeoMeasurePoint, "admin": ProgeoMeasurePointAdmin, "custom": True},
     {"model": ProgeoLageplan, "admin": ProgeoLageplanAdmin, "custom": True},

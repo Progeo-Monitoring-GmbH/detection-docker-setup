@@ -529,10 +529,8 @@ class ProgeoDevice(ProgeoModel, auto_prefetch.Model):
     has_internet = models.BooleanField(default=False)
     data_interval = models.IntegerField(default=3600)
     pull_resistance = models.IntegerField(default=Resistance.DEFAULT_100K, choices=Resistance)
-    # Commands for the controller ("measure": take a measurement now), handed
-    # out - and cleared - when it polls GET/POST /v1/device/<project_id>/sample/cc/
-    # (helper/device_commands.py); last_command_poll is when it last did.
-    pending_commands = models.JSONField(default=list, blank=True)
+    # When the controller last polled its commands (ProgeoDeviceCommand,
+    # GET/POST /v1/device/<project_id>/sample/cc/ - helper/device_commands.py).
     last_command_poll = models.DateTimeField(null=True, blank=True)
     # The measure point (sensor_order) of the device's first pair: the sensors
     # of a location can be split over devices (e.g. dm 301-558 on a second
@@ -554,6 +552,65 @@ class ProgeoDevice(ProgeoModel, auto_prefetch.Model):
     def __str__(self):
         _id = f"[{self.pk}] " if DEBUG else ""
         return f"{_id} 🔧 {self.hardware or 'Unknown'} ({self.mac or 'No MAC'}) - {self.raw_hash}"
+
+
+class ProgeoDeviceCommand(auto_prefetch.Model):
+    """A command for a controller: queued in the frontend, handed out on its
+    next poll of sample/cc ({"command": ..., "id": pk, "payload": ...}) and
+    confirmed by the controller with {"results": [{"id": pk, "ok": ...}]}
+    (helper/device_commands.py).
+
+    Payloads and results can hold customer data (wifi credentials, the whole
+    config.lua), so they are never stored in plain text: `payload_encrypted`
+    is kept only until the controller took the command, `result_encrypted`
+    only for RESULT_TTL. `summary` is the redacted payload for the history
+    (set_params: values of SAFE_PARAMS only; update: path, size and hash)."""
+
+    class Command(models.TextChoices):
+        MEASURE = "measure", "measure"
+        IDENTIFY = "identify", "identify"
+        RESTART = "restart", "restart"
+        UPDATE = "update", "update"
+        GET_CONFIG = "get_config", "get_config"
+        SET_PARAMS = "set_params", "set_params"
+        MAINTENANCE = "maintenance", "maintenance"
+        NORMAL = "normal", "normal"
+        LOGS = "logs", "logs"
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "pending"        # queued, not taken yet
+        SENT = "sent", "sent"                 # handed out, no result yet
+        SUCCESS = "success", "success"
+        FAILED = "failed", "failed"
+        TIMEOUT = "timeout", "timeout"        # sent, no result within ANSWER_TIMEOUT
+        EXPIRED = "expired", "expired"        # not taken within PENDING_TTL
+        CANCELLED = "cancelled", "cancelled"
+
+    device = models.ForeignKey(ProgeoDevice, on_delete=models.CASCADE, related_name="commands")
+    command = models.CharField(max_length=20, choices=Command.choices)
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.PENDING)
+    created = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    # Users are mirrored into every project database (project_dbs.mirrored_models).
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    summary = models.JSONField(default=dict, blank=True)
+    payload_encrypted = models.TextField(blank=True, default="")
+    result_encrypted = models.TextField(blank=True, default="")
+    # Short error text of a failed command (cut to ERROR_MAX_LEN).
+    error = models.CharField(max_length=500, blank=True, default="")
+
+    class Meta:
+        base_manager_name = "prefetch_manager"
+        indexes = [models.Index(fields=["device", "status"], name="progeo_devcmd_device_status")]
+
+    @property
+    def has_result(self):
+        return bool(self.result_encrypted)
+
+    def __str__(self):
+        _id = f"[{self.pk}] " if DEBUG else ""
+        return f"{_id} 📡 {self.command} ({self.status}) - device {self.device_id}"
 
 
 class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):

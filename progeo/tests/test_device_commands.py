@@ -6,7 +6,7 @@ import pytest
 
 from progeo.helper import device_commands
 from progeo.tests import factories as f
-from progeo.v1.models import Account, ProgeoAlarm, ProgeoDevice, ProgeoMeasurement
+from progeo.v1.models import Account, ProgeoAlarm, ProgeoDevice, ProgeoDeviceCommand, ProgeoMeasurement
 
 _project_ids = itertools.count(941001)
 
@@ -174,24 +174,28 @@ def test_requested_measurement_is_handed_out_once_on_the_command_poll(api_client
 
     _as_controller(api_client, preview)
     cc = f"/v1/device/{location.project_id}/sample/cc/"
-    assert api_client.get(cc).json()["commands"] == ["measure"]
+    command = ProgeoDeviceCommand.objects.using(f.DB).get(device=device)
+    assert api_client.get(cc).json()["commands"] == [{"command": "measure", "id": command.pk}]
     assert api_client.get(cc).json()["commands"] == []
     assert api_client.post(cc, {}, format="json").json()["commands"] == []
     device.refresh_from_db(using=f.DB)
-    assert device.pending_commands == [] and device.last_command_poll is not None
+    command.refresh_from_db(using=f.DB)
+    assert device.last_command_poll is not None
+    # The staff user who asked is kept on the command.
+    assert command.status == "sent" and command.sent_at is not None and command.created_by_id is not None
 
 
 def test_command_poll_only_hands_out_the_tokens_own_device(api_client, provisioned):
     location, _device, preview = provisioned
-    other = f.make_device(location, raw_hash=f"{location.project_id}-99", pending_commands=["measure"])
+    other = f.make_device(location, raw_hash=f"{location.project_id}-99")
+    device_commands.queue_command(other, f.DB, "measure")
 
     _as_controller(api_client, preview)
     # The token names its device - a device_hash of another one is ignored.
     response = api_client.get(f"/v1/device/{location.project_id}/sample/cc/?device_hash={other.raw_hash}")
 
     assert response.json()["commands"] == []
-    other.refresh_from_db(using=f.DB)
-    assert other.pending_commands == ["measure"]
+    assert device_commands.pending_commands(other, f.DB) == ["measure"]
 
 
 def test_command_poll_needs_a_transfer_token(api_client, provisioned):
@@ -320,3 +324,339 @@ def test_test_measurements_need_the_permission_and_the_device_at_the_location(ap
     api_client.force_authenticate(user=f.make_user())
     denied = api_client.get("/v1/device/provision/test-measurements/", {"location": location.pk, "device": device.pk})
     assert denied.status_code == 403
+
+
+# -- controller commands of the device overview ----------------------------------
+
+WIFI_SECRET = "s3cret-wifi-pass"
+CONFIG = 'return {\n  wifi = {\n    ssid = "MyNet",\n    pwd = "' + WIFI_SECRET + '"\n  }\n}\n'
+
+
+def _commands_url(device, location, suffix=""):
+    return f"/v1/device/{device.pk}/commands/{suffix}?location={location.pk}"
+
+
+def _queue(client, device, location, command, payload=None):
+    body = {"command": command}
+    if payload is not None:
+        body["payload"] = payload
+    return client.post(_commands_url(device, location, "queue/"), body, format="json")
+
+
+def _poll(client, location, results=None):
+    url = f"/v1/device/{location.project_id}/sample/cc/"
+    if results is None:
+        return client.get(url).json()["commands"]
+    return client.post(url, {"results": results}, format="json").json()["commands"]
+
+
+def _stored_text(command_id):
+    """Every stored column of the command as one text - for "no plain secret" checks."""
+    return repr(ProgeoDeviceCommand.objects.using(f.DB).filter(pk=command_id).values().get())
+
+
+def test_commands_are_handed_out_in_order_with_their_payload_once(api_client, provisioned):
+    location, device, preview = provisioned
+    maintenance = _queue(api_client, device, location, "maintenance").json()["command"]
+    params = _queue(api_client, device, location, "set_params", {"pulldown_resistance": 120}).json()["command"]
+
+    _as_controller(api_client, preview)
+
+    assert _poll(api_client, location) == [
+        {"command": "maintenance", "id": maintenance["id"]},
+        {"command": "set_params", "id": params["id"], "payload": {"pulldown_resistance": 120}},
+    ]
+    assert _poll(api_client, location) == []
+    # Taken: the payload is gone, the redacted summary stays.
+    stored = ProgeoDeviceCommand.objects.using(f.DB).get(pk=params["id"])
+    assert (stored.status, stored.payload_encrypted) == ("sent", "")
+    assert stored.summary == {"params": {"pulldown_resistance": 120}}
+
+
+def test_set_params_values_are_only_shown_for_safe_params_and_stored_encrypted(api_client, provisioned):
+    location, device, preview = provisioned
+
+    queued = _queue(api_client, device, location, "set_params", {"interval_sec": 600, "api_key": WIFI_SECRET})
+
+    row = queued.json()["command"]
+    assert row["summary"] == {"params": {"interval_sec": 600, "api_key": "***"}}
+    assert WIFI_SECRET not in _stored_text(row["id"])
+    _as_controller(api_client, preview)
+    assert _poll(api_client, location)[0]["payload"] == {"interval_sec": 600, "api_key": WIFI_SECRET}
+
+
+def test_update_is_superuser_only_and_never_stores_the_content(api_client, provisioned):
+    location, device, preview = provisioned
+    payload = {"path": "config/device_config.lua", "content": CONFIG}
+
+    denied = _queue(api_client, device, location, "update", payload)
+    assert denied.status_code == 400 and denied.json()["reason"] == "Superuser access required"
+
+    api_client.force_authenticate(user=f.make_user(staff=True, is_superuser=True))
+    row = _queue(api_client, device, location, "update", payload).json()["command"]
+
+    assert row["summary"]["path"] == "config/device_config.lua"
+    assert row["summary"]["bytes"] == len(CONFIG.encode())
+    assert WIFI_SECRET not in _stored_text(row["id"])
+    _as_controller(api_client, preview)
+    assert _poll(api_client, location) == [{"command": "update", "id": row["id"], "payload": payload}]
+    assert WIFI_SECRET not in _stored_text(row["id"])
+
+
+@pytest.mark.parametrize("command, payload, reason", [
+    ("reboot", None, "Unknown command 'reboot'"),
+    ("restart", {"now": True}, "restart takes no payload"),
+    ("set_params", {}, "set_params needs at least one parameter"),
+    ("set_params", {"Bad-Key": 1}, "Invalid parameter name 'Bad-Key'"),
+    ("set_params", {"nested": {"a": 1}}, "nested must be a number, text or true/false"),
+])
+def test_invalid_commands_are_refused(api_client, provisioned, command, payload, reason):
+    location, device, _preview = provisioned
+
+    response = _queue(api_client, device, location, command, payload)
+
+    assert response.status_code == 400
+    assert response.json()["reason"] == reason
+    assert not ProgeoDeviceCommand.objects.using(f.DB).filter(device=device).exists()
+
+
+@pytest.mark.parametrize("path", ["../etc/passwd", "/etc/passwd", "config/../../x.lua"])
+def test_update_refuses_paths_outside_the_controller_files(api_client, provisioned, path):
+    location, device, _preview = provisioned
+    api_client.force_authenticate(user=f.make_user(staff=True, is_superuser=True))
+
+    response = _queue(api_client, device, location, "update", {"path": path, "content": CONFIG})
+
+    assert response.json()["reason"] == "path must be a relative file path"
+
+
+def test_results_mark_commands_successful_or_failed(api_client, provisioned):
+    location, device, preview = provisioned
+    restart = _queue(api_client, device, location, "restart").json()["command"]
+    params = _queue(api_client, device, location, "set_params", {"pulldown_resistance": 120}).json()["command"]
+    _as_controller(api_client, preview)
+    _poll(api_client, location)
+
+    _poll(api_client, location, [
+        {"id": restart["id"], "ok": True},
+        {"id": params["id"], "ok": False, "error": "unknown param"},
+        {"id": 999999999, "ok": True},
+        "garbage",
+    ])
+
+    restart_row = ProgeoDeviceCommand.objects.using(f.DB).get(pk=restart["id"])
+    params_row = ProgeoDeviceCommand.objects.using(f.DB).get(pk=params["id"])
+    assert (restart_row.status, restart_row.error) == ("success", "")
+    assert (params_row.status, params_row.error) == ("failed", "unknown param")
+    assert restart_row.finished_at is not None
+
+
+def test_results_of_another_device_are_ignored(api_client, provisioned):
+    location, _device, preview = provisioned
+    other = f.make_device(location, raw_hash=f"{location.project_id}-98")
+    foreign = device_commands.queue_command(other, f.DB, "restart")
+    ProgeoDeviceCommand.objects.using(f.DB).filter(pk=foreign.pk).update(status="sent")
+    _as_controller(api_client, preview)
+
+    _poll(api_client, location, [{"id": foreign.pk, "ok": True}])
+
+    assert ProgeoDeviceCommand.objects.using(f.DB).get(pk=foreign.pk).status == "sent"
+
+
+def test_get_config_result_is_encrypted_and_readable_by_superusers_only(api_client, provisioned):
+    location, device, preview = provisioned
+    staff = f.make_user(staff=True)
+    superuser = f.make_user(staff=True, is_superuser=True)
+    row = _queue(api_client, device, location, "get_config").json()["command"]
+    result = {"path": "config/device_config.lua", "content": CONFIG}
+    _as_controller(api_client, preview)
+    _poll(api_client, location)
+    _poll(api_client, location, [{"id": row["id"], "ok": True, "result": result}])
+    assert WIFI_SECRET not in _stored_text(row["id"])
+
+    api_client.credentials()
+    api_client.force_authenticate(user=staff)
+    history = api_client.get(_commands_url(device, location)).json()
+    assert history["commands"][0]["status"] == "success"
+    assert history["commands"][0]["has_result"] is True
+    assert WIFI_SECRET not in repr(history)
+    denied = api_client.get(_commands_url(device, location, f"{row['id']}/result/"))
+    assert denied.json()["reason"] == "Superuser access required"
+
+    api_client.force_authenticate(user=superuser)
+    assert api_client.get(_commands_url(device, location, f"{row['id']}/result/")).json()["result"] == result
+
+
+def test_the_controllers_commands_answer_on_the_command_url_records_the_results(api_client, provisioned):
+    """The controller's real answer: {"event": "commands", ...} to sample/cc,
+    the get_config data next to id/ok instead of under "result". sample/
+    takes samples only - there the answer records nothing."""
+    location, device, preview = provisioned
+    get_config = device_commands.queue_command(device, f.DB, "get_config")
+    logs = device_commands.queue_command(device, f.DB, "logs", {"hour": 9})
+    _as_controller(api_client, preview)
+    _poll(api_client, location)
+    measurements = ProgeoMeasurement.objects.using(f.DB).filter(device=device).count()
+    answer = {
+        "event": "commands",
+        "results": [
+            {"command": "get_config", "id": get_config.pk, "ok": True,
+             "path": "config/device_config.lua", "content": CONFIG},
+            {"command": "logs", "id": logs.pk, "ok": True, "content": "boot ok\nwifi up\n"},
+        ],
+        "mode": "maintenance",
+        "poll_sec": 15,
+    }
+
+    on_sample = api_client.post(f"/v1/device/{location.project_id}/sample/", answer, format="json")
+    assert on_sample.status_code == 400
+    assert ProgeoDeviceCommand.objects.using(f.DB).get(pk=get_config.pk).status == "sent"
+
+    response = api_client.post(f"/v1/device/{location.project_id}/sample/cc/", answer, format="json")
+
+    assert response.status_code == 200, response.content
+    assert response.json()["commands"] == []
+    # An answer, not a sample.
+    assert ProgeoMeasurement.objects.using(f.DB).filter(device=device).count() == measurements
+    assert WIFI_SECRET not in _stored_text(get_config.pk)
+    stored = ProgeoDeviceCommand.objects.using(f.DB).get(pk=get_config.pk)
+    assert stored.status == "success"
+    assert device_commands.decrypt(stored.result_encrypted) == {"path": "config/device_config.lua", "content": CONFIG}
+    logs.refresh_from_db(using=f.DB)
+    assert device_commands.decrypt(logs.result_encrypted) == {"content": "boot ok\nwifi up\n"}
+
+
+def test_logs_are_requested_per_hour(api_client, provisioned):
+    location, device, preview = provisioned
+
+    row = _queue(api_client, device, location, "logs", {"hour": 9}).json()["command"]
+
+    assert row["summary"] == {"hour": 9}
+    _as_controller(api_client, preview)
+    assert _poll(api_client, location) == [{"command": "logs", "id": row["id"], "payload": {"hour": 9}}]
+
+
+@pytest.mark.parametrize("payload, reason", [
+    (None, "logs needs an hour between 0 and 23"),
+    ({"hour": 24}, "logs needs an hour between 0 and 23"),
+    ({"hour": -1}, "logs needs an hour between 0 and 23"),
+    ({"hour": True}, "logs needs an hour between 0 and 23"),
+    ({"hour": 3, "day": 2}, "logs takes only the hour"),
+])
+def test_logs_need_a_valid_hour(api_client, provisioned, payload, reason):
+    location, device, _preview = provisioned
+
+    assert _queue(api_client, device, location, "logs", payload).json()["reason"] == reason
+
+
+def test_a_whole_day_of_logs_is_queued_with_one_request_and_each_hour_once(api_client, provisioned):
+    location, device, preview = provisioned
+    _queue(api_client, device, location, "logs", {"hour": 5})
+
+    response = api_client.post(
+        _commands_url(device, location, "queue/"),
+        {"command": "logs", "payloads": [{"hour": hour} for hour in range(24)]},
+        format="json",
+    )
+
+    assert response.status_code == 200, response.content
+    assert len(response.json()["commands"]) == 24
+    # Hour 5 was waiting already - asked again, it still runs once.
+    queued = ProgeoDeviceCommand.objects.using(f.DB).filter(device=device, command="logs")
+    assert queued.count() == 24
+    _as_controller(api_client, preview)
+    assert sorted(entry["payload"]["hour"] for entry in _poll(api_client, location)) == list(range(24))
+
+
+def test_a_batch_with_one_invalid_hour_queues_nothing(api_client, provisioned):
+    location, device, _preview = provisioned
+
+    response = api_client.post(
+        _commands_url(device, location, "queue/"),
+        {"command": "logs", "payloads": [{"hour": 1}, {"hour": 99}]},
+        format="json",
+    )
+
+    assert response.json()["reason"] == "logs needs an hour between 0 and 23"
+    assert not ProgeoDeviceCommand.objects.using(f.DB).filter(device=device).exists()
+
+
+def test_a_result_naming_another_command_is_ignored(api_client, provisioned):
+    location, device, preview = provisioned
+    restart = device_commands.queue_command(device, f.DB, "restart")
+    _as_controller(api_client, preview)
+    _poll(api_client, location)
+
+    _poll(api_client, location, [{"command": "normal", "id": restart.pk, "ok": True}])
+    assert ProgeoDeviceCommand.objects.using(f.DB).get(pk=restart.pk).status == "sent"
+
+    _poll(api_client, location, [{"command": "restart", "id": restart.pk, "ok": True}])
+    restart.refresh_from_db(using=f.DB)
+    # Nothing besides id/command/ok - no result stored.
+    assert (restart.status, restart.result_encrypted) == ("success", "")
+
+
+def test_stale_commands_expire_time_out_and_drop_their_results(api_client, provisioned):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    location, device, preview = provisioned
+    now = timezone.now()
+    stale = device_commands.queue_command(device, f.DB, "restart")
+    unanswered = device_commands.queue_command(device, f.DB, "identify")
+    old_result = device_commands.queue_command(device, f.DB, "get_config")
+    commands = ProgeoDeviceCommand.objects.using(f.DB)
+    commands.filter(pk=stale.pk).update(created=now - device_commands.PENDING_TTL - timedelta(minutes=1))
+    commands.filter(pk=unanswered.pk).update(
+        status="sent", sent_at=now - device_commands.ANSWER_TIMEOUT - timedelta(minutes=1)
+    )
+    commands.filter(pk=old_result.pk).update(
+        status="success", finished_at=now - device_commands.RESULT_TTL - timedelta(minutes=1),
+        result_encrypted=device_commands.encrypt({"content": CONFIG}),
+    )
+    _as_controller(api_client, preview)
+
+    # A restart queued a day ago is not sent any more.
+    assert _poll(api_client, location) == []
+
+    assert commands.get(pk=stale.pk).status == "expired"
+    assert commands.get(pk=unanswered.pk).status == "timeout"
+    assert commands.get(pk=old_result.pk).result_encrypted == ""
+    # A late answer still counts.
+    _poll(api_client, location, [{"id": unanswered.pk, "ok": True}])
+    assert commands.get(pk=unanswered.pk).status == "success"
+
+
+def test_idempotent_commands_are_queued_once_ordered_ones_every_time(api_client, provisioned):
+    location, device, _preview = provisioned
+
+    first = _queue(api_client, device, location, "measure").json()["command"]
+    second = _queue(api_client, device, location, "measure").json()["command"]
+    for command in ("maintenance", "normal", "maintenance"):
+        _queue(api_client, device, location, command)
+
+    assert first["id"] == second["id"]
+    assert device_commands.pending_commands(device, f.DB) == ["measure", "maintenance", "normal", "maintenance"]
+
+
+def test_pending_commands_can_be_cancelled(api_client, provisioned):
+    location, device, preview = provisioned
+    row = _queue(api_client, device, location, "set_params", {"api_key": WIFI_SECRET}).json()["command"]
+
+    cancelled = api_client.post(_commands_url(device, location, f"{row['id']}/cancel/"), {}, format="json")
+
+    assert cancelled.json()["command"]["status"] == "cancelled"
+    assert ProgeoDeviceCommand.objects.using(f.DB).get(pk=row["id"]).payload_encrypted == ""
+    again = api_client.post(_commands_url(device, location, f"{row['id']}/cancel/"), {}, format="json")
+    assert again.json()["reason"] == "Only pending commands can be cancelled"
+    _as_controller(api_client, preview)
+    assert _poll(api_client, location) == []
+
+
+def test_commands_are_staff_only(api_client, provisioned):
+    location, device, _preview = provisioned
+    api_client.force_authenticate(user=f.make_user(perms=("module_devices_enabled", "module_devices_edit")))
+
+    assert api_client.get(_commands_url(device, location)).json()["reason"] == "Staff access required"
+    assert _queue(api_client, device, location, "restart").json()["reason"] == "Staff access required"

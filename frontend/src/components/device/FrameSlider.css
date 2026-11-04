@@ -65,7 +65,7 @@
   border-radius: 4px;
 }
 
-/* Alarm periods on the frame slider: translucent red over the track (the
+/* Alarm periods on the frame slider: a light, transparent red over the track (the
    slider stays usable through it) and a clickable strip right below. Both
    inset by half a thumb (0.5 rem), where the thumb's centre travels. */
 .frame-slider__alarms {
@@ -78,9 +78,9 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  background: rgba(220, 38, 38, 0.2);
-  border-left: 1px solid rgba(220, 38, 38, 0.55);
-  border-right: 1px solid rgba(220, 38, 38, 0.55);
+  background: rgba(220, 38, 38, 0.1);
+  border-left: 1px solid rgba(220, 38, 38, 0.3);
+  border-right: 1px solid rgba(220, 38, 38, 0.3);
   border-radius: 2px;
 }
 
@@ -97,13 +97,13 @@
   padding: 0;
   border: none;
   border-radius: 3px;
-  background: rgba(220, 38, 38, 0.65);
+  background: rgba(220, 38, 38, 0.28);
   cursor: pointer;
 }
 
 .frame-slider__alarm-jump:hover,
 .frame-slider__alarm-jump:focus-visible {
-  background: #dc2626;
+  background: rgba(220, 38, 38, 0.55);
   outline: none;
   box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.3);
 }

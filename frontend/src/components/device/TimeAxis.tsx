@@ -1,27 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { dateLocale, PRETTY_LOCALE } from '../../main/dateFormat';
-import { MIN_TIME_TICKS, spacedTicks, timeTicks } from './timeTicks';
+import { frameAxisLabels } from './timeTicks';
 import './TimeAxis.css';
 
 type TimeAxisProps = {
   from: number;
   to: number;
-  /** Where a moment sits on the axis (0..1); linear between from and to by default. */
-  position?: (ms: number) => number;
+  /** The time (ms) at a place on the axis (0..1); linear between from and to by default. */
+  timeAt?: (fraction: number) => number;
 };
 
-/** Room per label (px): decides how fine the marks get. */
-const LABEL_SPACING = 78;
-/** Least distance (px) between two marks' labels ("20.10.", "Okt"). */
-const MIN_LABEL_GAP = 52;
-
 /**
- * Calendar marks under a time slider - hours, days, weeks, months or years,
- * as fine as the width allows (see timeTicks). Midnights, first days of a
- * month and new years are drawn stronger.
+ * The time labels under a frame slider: evenly spread from its first to
+ * its last frame, as many as fit without overlapping (see frameAxisLabels).
  */
-const TimeAxis = ({ from, to, position }: TimeAxisProps) => {
+const TimeAxis = ({ from, to, timeAt }: TimeAxisProps) => {
   const { i18n } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
@@ -40,46 +34,29 @@ const TimeAxis = ({ from, to, position }: TimeAxisProps) => {
     return () => observer.disconnect();
   }, []);
 
-  const ticks = useMemo(
+  const labels = useMemo(
     () =>
-      timeTicks(
+      frameAxisLabels({
         from,
         to,
-        Math.max(MIN_TIME_TICKS, Math.floor((width || 600) / LABEL_SPACING)),
-        dateLocale(i18n.language) ?? PRETTY_LOCALE,
-      ),
-    [from, to, width, i18n.language],
+        width: width || 600,
+        timeAt,
+        locale: dateLocale(i18n.language) ?? PRETTY_LOCALE,
+      }),
+    [from, to, width, timeAt, i18n.language],
   );
-  const at = position ?? ((ms: number) => (ms - from) / (to - from));
-  // Placed by `position`, the marks needn't be evenly spaced (a frame
-  // slider leaves out gaps without data) - those too close are left out.
-  const candidates = ticks.flatMap((tick) => {
-    const fraction = at(tick.ms);
-    return fraction >= 0 && fraction <= 1 ? [{ tick, fraction, x: fraction * (width || 600) }] : [];
-  });
-  let placed = spacedTicks(candidates, MIN_LABEL_GAP);
-  // "Always at least 5 labels": where the labels would run into each other,
-  // keep five of them spread over the axis instead of dropping below that.
-  if (placed.length < MIN_TIME_TICKS && candidates.length >= MIN_TIME_TICKS) {
-    const step = (candidates.length - 1) / (MIN_TIME_TICKS - 1);
-    placed = Array.from({ length: MIN_TIME_TICKS }, (_, index) => candidates[Math.round(index * step)]);
-  }
 
   return (
     <div className="time-axis" ref={ref} aria-hidden="true">
-      {placed.map(({ tick, fraction }) => {
-        // Labels at the very ends stay inside the axis.
-        const align = fraction < 0.04 ? 'start' : fraction > 0.96 ? 'end' : 'center';
-        return (
-          <span
-            key={tick.ms}
-            className={`time-axis__tick time-axis__tick--${align}${tick.major ? ' is-major' : ''}`}
-            style={{ left: `${fraction * 100}%` }}
-          >
-            <span className="time-axis__label">{tick.label}</span>
+      {labels.map(({ fraction, ms, label }) => (
+        <span key={`${fraction}:${ms}`} className="time-axis__tick" style={{ left: `${fraction * 100}%` }}>
+          {/* Anchored at `fraction` of its width: the first label starts at
+              the axis' start, the last ends at its end, all evenly spaced. */}
+          <span className="time-axis__label" style={{ transform: `translateX(${-fraction * 100}%)` }}>
+            {label}
           </span>
-        );
-      })}
+        </span>
+      ))}
     </div>
   );
 };

@@ -69,13 +69,14 @@ def project_models():
         ProgeoAccess,
         ProgeoAlarm,
         ProgeoDevice,
+        ProgeoDeviceCommand,
         ProgeoLageplan,
         ProgeoMeasurement,
         ProgeoMeasurePoint,
     )
 
     return [
-        ProgeoLageplan, ProgeoDevice, ProgeoMeasurePoint, ProgeoAccess, EMail, SMS,
+        ProgeoLageplan, ProgeoDevice, ProgeoDeviceCommand, ProgeoMeasurePoint, ProgeoAccess, EMail, SMS,
         ProgeoMeasurement, ProgeoAlarm,
     ]
 

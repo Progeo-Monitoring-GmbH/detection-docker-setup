@@ -54,10 +54,16 @@ type MeasurementSamplesCompareChartProps = {
   alarmDurationMs?: number | null;
   /**
    * Time slider over the measurements (as on the heatmap): the selected
-   * measurement's EP - WP, EP and WP (optional EP + WP, WP - EP) are drawn
-   * on the upper plot, its time is marked on the lower one. Legend on top.
+   * measurement's WP - EP (the quantity of the mean and the bands), EP and
+   * WP (optional EP + WP) are drawn on the upper plot, its time is marked on
+   * the lower ones. Legend on top.
    */
   frameSlider?: boolean;
+  /** With `frameSlider` and `time`: leaves out the own slider - the page
+   * shows one for everything. */
+  hideFrameSlider?: boolean;
+  /** The time span (ms) the time plots are zoomed to - null: not zoomed. */
+  onVisibleRangeChange?: (range: { from: number; to: number } | null) => void;
   /** Whether the space bar plays the time slider - off next to a heatmap, whose slider has it. */
   sliderPlayKey?: boolean;
   /**
@@ -96,10 +102,10 @@ export const toggledSensor = (selected: number[], sensor: number) =>
 const BAND_TRACES = new Set(['min-max', 'min-max-lower', 'deviation', 'deviation-lower']);
 
 /** Traces a legend click doesn't hide. */
-const FIXED_TRACES = new Set([...BAND_TRACES, 'pair-sum']);
+const FIXED_TRACES = new Set([...BAND_TRACES, 'pair-sum', 'pair-mean']);
 
 /** Lines that start hidden, shown by a legend click. */
-const OPTIONAL_TRACES = new Set(['ep+wp', 'wp-ep', 'pair-sum-diff']);
+const OPTIONAL_TRACES = new Set(['ep+wp', 'pair-sum-diff']);
 
 const MIN_MAX_COLOR = 'rgba(153, 27, 27, 0.25)';
 const DEVIATION_COLOR = 'rgba(252, 122, 46, 0.31)';
@@ -285,6 +291,8 @@ const toTimeSeries = (series: DiffSeries[]) => {
 
   const x: number[] = [];
   const y: number[] = [];
+  // The sum's mean per sensor - the sensor average.
+  const mean: number[] = [];
   const measurementDateTime: string[] = [];
   // Per measurement: its id (a click moves the slider to it), its
   // |EP - WP| by sensor (the selected sensors' plot) and its EP / WP by
@@ -297,8 +305,10 @@ const toTimeSeries = (series: DiffSeries[]) => {
     if (ts == null) {
       return; // cannot be placed on the date axis
     }
+    const sum = entry.points.reduce((acc, point) => acc + point.value, 0);
     x.push(ts);
-    y.push(entry.points.reduce((acc, point) => acc + point.value, 0));
+    y.push(sum);
+    mean.push(entry.points.length ? sum / entry.points.length : 0);
     measurementDateTime.push(formatDate(entry.lastFetched, 'dateTimeSeconds'));
     ids.push(entry.id);
     pairs.push(entry.points.map((point) => point.value));
@@ -307,7 +317,7 @@ const toTimeSeries = (series: DiffSeries[]) => {
   // Change of the sum since the previous measurement (none for the first).
   const diff = y.map((value, index) => (index > 0 ? value - y[index - 1] : null));
 
-  return { x, y, diff, measurementDateTime, ids, pairs, potentials };
+  return { x, y, mean, diff, measurementDateTime, ids, pairs, potentials };
 };
 
 const MeasurementSamplesCompareChart = (
@@ -320,6 +330,8 @@ const MeasurementSamplesCompareChart = (
     alarmStartTime = null,
     alarmDurationMs = null,
     frameSlider = false,
+    hideFrameSlider = false,
+    onVisibleRangeChange,
     sliderPlayKey = true,
     hideChrome = false,
     time = null,
@@ -656,6 +668,25 @@ const MeasurementSamplesCompareChart = (
       {
         type: 'scatter' as const,
         mode: 'lines' as const,
+        uid: 'pair-mean',
+        name: t('measurement_compare_pair_mean_label'),
+        x: pairSumSeries.x,
+        y: pairSumSeries.mean,
+        xaxis: 'x2' as const,
+        // Own axis (right): the sum divided by the sensor count.
+        yaxis: 'y5' as const,
+        legend: 'legend3',
+        // Dashed: with a steady sensor count it runs right on the sum.
+        line: {
+          color: plotTheme.brandOrange,
+          width: 2,
+          dash: 'dash',
+        },
+        hoverinfo: 'none' as const,
+      },
+      {
+        type: 'scatter' as const,
+        mode: 'lines' as const,
         uid: 'pair-sum-diff',
         name: t('measurement_compare_pair_sum_diff_label'),
         x: pairSumSeries.x,
@@ -700,12 +731,13 @@ const MeasurementSamplesCompareChart = (
       hoverinfo: 'none' as const,
       ...(optional ? visibility(shownOptional, uid) : {}),
     });
+    // WP - EP: the quantity of the mean and the bands (Abweichung,
+    // Spannweite), so the measurement lies within them.
     return [
-      line('ep-wp', 'EP − WP', ep.map((value, i) => value - wp[i]), 'orange', 3),
+      line('wp-ep', 'WP − EP', wp.map((value, i) => value - ep[i]), 'orange', 3),
       line('ep', 'EP', ep, 'red', 2),
       line('wp', 'WP', wp, 'blue', 2),
       line('ep+wp', 'EP + WP', ep.map((value, i) => value + wp[i]), plotTheme.contrastViolet, 2, true),
-      line('wp-ep', 'WP − EP', wp.map((value, i) => value - ep[i]), plotTheme.contrastCyan, 2, true),
     ];
   }, [currentFrame, shownOptional]);
 
@@ -730,12 +762,9 @@ const MeasurementSamplesCompareChart = (
       ep.forEach((value, i) => {
         include(value);
         include(wp[i]);
-        include(value - wp[i]);
+        include(wp[i] - value);
         if (shownOptional.has('ep+wp')) {
           include(value + wp[i]);
-        }
-        if (shownOptional.has('wp-ep')) {
-          include(wp[i] - value);
         }
       });
     });
@@ -967,7 +996,8 @@ const MeasurementSamplesCompareChart = (
     setHoveredSensor(null);
   };
 
-  const margin = { l: 64, r: showSumDiff ? 64 : 16, t: frameSlider ? 56 : 16, b: 52 };
+  // Right: the sensor average's axis, the sum difference's beside it.
+  const margin = { l: 64, r: showSumDiff ? 128 : 64, t: frameSlider ? 56 : 16, b: 52 };
 
   // The tooltip sits top right - top left while the cursor comes near it,
   // so it never covers what is hovered. Both follow the cursor without a
@@ -1132,6 +1162,12 @@ const MeasurementSamplesCompareChart = (
         ? { from: frames[0].ms, to: frames[frames.length - 1].ms }
         : null;
   const sensorSpan = sensorZoom?.revision === uiRevision ? sensorZoom.span : lastSensor;
+  // Reported to the page's slider (its band) - only a zoom, as primitives.
+  const zoomFrom = zoom?.revision === uiRevision ? zoom.from : null;
+  const zoomTo = zoom?.revision === uiRevision ? zoom.to : null;
+  React.useEffect(() => {
+    onVisibleRangeChange?.(zoomFrom != null && zoomTo != null ? { from: zoomFrom, to: zoomTo } : null);
+  }, [onVisibleRangeChange, zoomFrom, zoomTo]);
 
   const content = (
     <>
@@ -1161,7 +1197,7 @@ const MeasurementSamplesCompareChart = (
         </small>
       </div>
 
-      {frameSlider && frames.length > 0 && (
+      {frameSlider && !hideFrameSlider && frames.length > 0 && (
         <FrameSlider
           id="measurement-compare-timestamp"
           timestamps={sliderTimestamps}
@@ -1393,12 +1429,24 @@ const MeasurementSamplesCompareChart = (
               gridcolor: plotTheme.warmGray2,
               zeroline: true,
             },
+            // The sensor average - the sum per sensor, on the right.
+            yaxis5: {
+              title: { text: t('measurement_compare_pair_mean_axis') },
+              overlaying: 'y2',
+              side: 'right',
+              anchor: 'x2',
+              showgrid: false,
+              zeroline: false,
+            },
+            // Right of the sensor average's axis (autoshift).
             yaxis3: {
               visible: showSumDiff,
               title: { text: t('measurement_compare_pair_sum_diff_label') },
               overlaying: 'y2',
               side: 'right',
-              anchor: 'x2',
+              anchor: 'free',
+              position: 1,
+              autoshift: true,
               showgrid: false,
               zeroline: true,
               zerolinecolor: plotTheme.warmGray4,

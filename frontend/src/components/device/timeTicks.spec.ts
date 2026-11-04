@@ -1,56 +1,83 @@
 import { describe, expect, it } from 'vitest';
-import { spacedTicks, timeTicks } from './timeTicks';
+import { frameAxisLabels, frameTimeAt, LABEL_CHAR_WIDTH, LABEL_GAP, labelCount } from './timeTicks';
 
-const at = (month: number, day: number, hour = 0) => new Date(2026, month, day, hour).getTime();
+const at = (month: number, day: number, hour = 0, minute = 0) => new Date(2026, month, day, hour, minute).getTime();
 
-describe('timeTicks', () => {
-  it('marks full hours over a day, midnight stronger', () => {
-    const ticks = timeTicks(at(9, 20, 20), at(9, 21, 8), 10, 'de');
-    // 20:00 - 08:00, at most 10 marks: every second hour.
-    expect(ticks.map((tick) => new Date(tick.ms).getHours())).toEqual([20, 22, 0, 2, 4, 6, 8]);
-    const midnight = ticks.find((tick) => new Date(tick.ms).getHours() === 0)!;
-    expect(midnight.major).toBe(true);
-    expect(midnight.label).toBe('21.10.');
+/** The labels' pixel extents on a `width` px axis, as TimeAxis places them. */
+const extents = (labels: { fraction: number; label: string }[], width: number) =>
+  labels.map(({ fraction, label }) => {
+    const labelWidth = label.length * LABEL_CHAR_WIDTH;
+    const left = fraction * width - fraction * labelWidth;
+    return [left, left + labelWidth] as const;
   });
 
-  it('marks days over a week', () => {
-    const ticks = timeTicks(at(9, 14, 15), at(9, 21, 15), 10, 'de');
-    expect(ticks.map((tick) => new Date(tick.ms).getDate())).toEqual([15, 16, 17, 18, 19, 20, 21]);
-    expect(ticks.every((tick) => new Date(tick.ms).getHours() === 0)).toBe(true);
-    expect(ticks[0].label).toBe('15.10.');
+describe('frameAxisLabels', () => {
+  it('starts at the first and ends at the last point, evenly spread', () => {
+    const from = at(9, 14, 15);
+    const to = at(9, 21, 15);
+    const labels = frameAxisLabels({ from, to, width: 800, locale: 'de' });
+    expect(labels[0]).toMatchObject({ fraction: 0, ms: from });
+    expect(labels[labels.length - 1]).toMatchObject({ fraction: 1, ms: to });
+    const steps = labels.slice(1).map((label, index) => label.fraction - labels[index].fraction);
+    steps.forEach((step) => expect(step).toBeCloseTo(steps[0], 9));
   });
 
-  it('marks Mondays over two months, the first of a month stronger', () => {
-    const ticks = timeTicks(at(7, 20), at(9, 21), 10, 'de');
-    expect(ticks.every((tick) => new Date(tick.ms).getDay() === 1)).toBe(true);
+  it.each([
+    ['24 h', at(9, 20, 20), at(9, 21, 20)],
+    ['7 days', at(9, 14), at(9, 21)],
+    ['30 days', at(8, 21), at(9, 21)],
+    ['a year', at(0, 1), at(11, 31)],
+    ['two years', at(0, 1) - 400 * 86_400_000, at(0, 1)],
+  ])('never overlaps (%s)', (_, from, to) => {
+    [120, 240, 375, 600, 1400].forEach((width) => {
+      const boxes = extents(frameAxisLabels({ from, to, width, locale: 'de' }), width);
+      boxes.slice(1).forEach(([left], index) => expect(left - boxes[index][1]).toBeGreaterThanOrEqual(LABEL_GAP - 0.001));
+      expect(boxes[0][0]).toBeGreaterThanOrEqual(0);
+      expect(boxes[boxes.length - 1][1]).toBeLessThanOrEqual(width + 0.001);
+    });
   });
 
-  it('marks months over a year, a new year with its number', () => {
-    const ticks = timeTicks(at(1, 10), at(13, 5), 14, 'de');
-    expect(ticks.every((tick) => new Date(tick.ms).getDate() === 1)).toBe(true);
-    const newYear = ticks.find((tick) => new Date(tick.ms).getMonth() === 0)!;
-    expect(newYear.label).toBe('2027');
-    expect(newYear.major).toBe(true);
+  it('shows times within a day, dates over several days', () => {
+    expect(frameAxisLabels({ from: at(9, 21, 8), to: at(9, 21, 20), width: 600, locale: 'de' })[0].label).toBe('08:00');
+    expect(frameAxisLabels({ from: at(9, 1), to: at(9, 21), width: 600, locale: 'de' })[0].label).toBe('01.10.');
   });
 
-  it('never gives more marks than asked for', () => {
-    for (const days of [1, 3, 10, 45, 200, 800, 4000]) {
-      const ticks = timeTicks(at(0, 1), at(0, 1) + days * 24 * 3600 * 1000, 8, 'de');
-      expect(ticks.length).toBeLessThanOrEqual(9);
-      expect(ticks.length).toBeGreaterThan(0);
-    }
+  it('adds the time where the dates would repeat', () => {
+    const labels = frameAxisLabels({ from: at(9, 20), to: at(9, 22), width: 1400, locale: 'de' });
+    expect(labels[0].label).toBe('20.10., 00:00');
+    expect(new Set(labels.map((entry) => entry.label)).size).toBe(labels.length);
+  });
+
+  it('places the times by `timeAt` (the slider skips gaps)', () => {
+    const timestamps = [0, 3600, 7200, 86_400 * 3].map((seconds) => at(9, 20) / 1000 + seconds);
+    const labels = frameAxisLabels({
+      from: timestamps[0] * 1000,
+      to: timestamps[3] * 1000,
+      width: 400,
+      timeAt: (fraction) => frameTimeAt(timestamps, fraction),
+      locale: 'de',
+    });
+    labels.forEach(({ fraction, ms }) => expect(ms).toBe(frameTimeAt(timestamps, fraction)));
+  });
+
+  it('has no labels without a span', () => {
+    expect(frameAxisLabels({ from: 5, to: 5, width: 600 })).toEqual([]);
   });
 });
 
-describe('spacedTicks', () => {
-  const mark = (x: number, major = false) => ({ tick: { major }, x });
-
-  it('leaves out the marks that fall too close together (a gap without data)', () => {
-    const kept = spacedTicks([mark(0), mark(100), mark(110), mark(115), mark(200)], 50);
-    expect(kept.map((entry) => entry.x)).toEqual([0, 100, 200]);
+describe('labelCount', () => {
+  it('keeps at least the two ends', () => {
+    expect(labelCount(50, 60)).toBe(2);
+    expect(labelCount(300, 50, 10)).toBe(5);
   });
+});
 
-  it('prefers a major mark over a too close minor one', () => {
-    const kept = spacedTicks([mark(0), mark(100), mark(120, true), mark(200)], 50);
-    expect(kept.map((entry) => entry.x)).toEqual([0, 120, 200]);
-  });});
+describe('frameTimeAt', () => {
+  it('interpolates between the frames', () => {
+    const timestamps = [0, 10, 100];
+    expect(frameTimeAt(timestamps, 0)).toBe(0);
+    expect(frameTimeAt(timestamps, 0.25)).toBe(5000);
+    expect(frameTimeAt(timestamps, 0.75)).toBe(55_000);
+    expect(frameTimeAt(timestamps, 1)).toBe(100_000);
+  });
+});

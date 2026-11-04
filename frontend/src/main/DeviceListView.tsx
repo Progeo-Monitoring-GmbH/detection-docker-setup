@@ -9,6 +9,7 @@ import {
   Image,
   Lightbulb,
   Sliders,
+  Terminal,
   Trash,
 } from 'react-bootstrap-icons';
 import { Spinner } from 'react-bootstrap';
@@ -18,6 +19,7 @@ import axiosConfig from '../axiosConfig';
 import { formatDate } from './dateFormat';
 import { showErrorBar, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import LocationPicker, { type PickableLocation } from '../components/location/LocationPicker';
+import DeviceCommandsDialog from '../components/device/DeviceCommandsDialog';
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import KpiStrip from '../components/ui/kit/KpiStrip';
 import PanelCard from '../components/ui/kit/PanelCard';
@@ -177,6 +179,8 @@ const DeviceListView = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   // Identify and ping are staff tools (is_staff_admin in the backend).
   const isStaff = staffFlags(auth?.user).isStaffOrSuperuser;
+  // update (writes a whole file) and command results (the config) are superuser-only.
+  const isSuperuser = staffFlags(auth?.user).isSuperuser;
   const canEdit = hasPermission('module_devices_edit');
   const canDelete = hasPermission('module_devices_delete');
 
@@ -188,6 +192,8 @@ const DeviceListView = () => {
   const [filter, setFilter] = useState<Filter>('all');
   const [deleteTarget, setDeleteTarget] = useState<OverviewDevice | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // Controller commands (sample/cc) of this device - staff only.
+  const [commandsTarget, setCommandsTarget] = useState<OverviewDevice | null>(null);
   // Answers of an older selection are dropped.
   const requestRef = useRef(0);
 
@@ -585,6 +591,16 @@ const DeviceListView = () => {
                                 <Lightbulb size={14} />
                               </button>
                             )}
+                            {isStaff && (
+                              <button
+                                type="button"
+                                title={t('devices_action_commands')}
+                                onClick={() => setCommandsTarget(device)}
+                                style={actionStyle()}
+                              >
+                                <Terminal size={14} />
+                              </button>
+                            )}
                             {canEdit && device.location && (
                               <button
                                 type="button"
@@ -633,6 +649,15 @@ const DeviceListView = () => {
             )}
           </PanelCard>
         </>
+      )}
+
+      {commandsTarget && (
+        <DeviceCommandsDialog
+          device={commandsTarget}
+          isSuperuser={isSuperuser}
+          canEdit={canEdit}
+          onClose={() => setCommandsTarget(null)}
+        />
       )}
 
       <ConfirmDialog

@@ -1,12 +1,32 @@
 """Commands for controllers and the test measurements of a new controller
 (device provisioning, "Test-Messungen").
 
-A controller polls GET/POST /v1/device/<project_id>/sample/cc/ and gets its
-pending commands ({"commands": ["measure"]}), which are cleared by handing
-them out (take_commands). The provisioning page queues "measure"
-(queue_command) and checks the measurements that arrive: a test plug gives
-EXPECTED_RISING sensors with rising values, every other sensor stays empty
-(check_test_pairs) - each measurement is drawn as a small bar chart
+Commands (ProgeoDeviceCommand): the device overview / provisioning page
+queues them (queue_command), the controller polls GET/POST
+/v1/device/<project_id>/sample/cc/ and gets the pending ones, each handed out
+once (take_commands):
+
+    {"commands": [{"command": "maintenance", "id": 41},
+                  {"command": "set_params", "id": 42, "payload": {"pulldown_resistance": 120}}]}
+
+and reports their outcome with a later POST to sample/cc - only there,
+sample/ takes samples only (record_results). Everything of an item besides
+id/command/ok/status/error is its result:
+
+    {"event": "commands", "mode": "maintenance", "poll_sec": 15,
+     "results": [{"command": "maintenance", "id": 41, "ok": true},
+                 {"command": "set_params", "id": 42, "ok": false, "error": "unknown param"},
+                 {"command": "get_config", "id": 50, "ok": true,
+                  "path": "config/device_config.lua", "content": "return {...}"}]}
+
+Payloads and results may hold customer data (wifi credentials, the whole
+config.lua): they are stored encrypted only, the payload until the
+controller took the command, a result for RESULT_TTL. The history shows the
+redacted `summary` (clean_payload). Nothing of them is logged.
+
+The provisioning page also checks the measurements that arrive: a test plug
+gives EXPECTED_RISING sensors with rising values, every other sensor stays
+empty (check_test_pairs) - each measurement is drawn as a small bar chart
 (pairs_png).
 
 "Emulate Measurement" (superusers): emulate_measurement POSTs a sample like
@@ -15,16 +35,57 @@ the controller's to its control.url, with its transfer token - one MUX
 other sensor 0.
 """
 import base64
+import hashlib
+import json
 import math
+import re
+from datetime import timedelta
 from io import BytesIO
 
 import requests
+from django.conf import settings
 from django.db import DEFAULT_DB_ALIAS, transaction
 from django.utils import timezone
 
-from progeo.v1.models import LimitedToken, ProgeoDevice
+from progeo.v1.models import LimitedToken, ProgeoDevice, ProgeoDeviceCommand
 
-COMMANDS = ("measure",)
+Command = ProgeoDeviceCommand.Command
+Status = ProgeoDeviceCommand.Status
+
+COMMANDS = tuple(Command.values)
+# Queued again while one is pending, these still run once.
+IDEMPOTENT_COMMANDS = {Command.MEASURE, Command.IDENTIFY, Command.GET_CONFIG, Command.LOGS}
+# Writes a whole file onto the controller - superusers only.
+SUPERUSER_COMMANDS = {Command.UPDATE}
+
+# set_params values shown in the history; any other parameter is "***".
+SAFE_PARAMS = {"pulldown_resistance", "interval_sec", "sensors", "protective_earth", "poll_sec"}
+REDACTED = "***"
+PARAM_KEY = re.compile(r"^[a-z_][a-z0-9_]{0,63}$")
+PARAM_VALUE_MAX_LEN = 200
+MAX_PARAMS = 32
+# update: a relative path below the controller's file system root.
+UPDATE_PATH = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.\-/]{0,199}$")
+UPDATE_MAX_BYTES = 64 * 1024
+DEFAULT_CONFIG_PATH = "config/device_config.lua"
+
+# Not taken by then (controller offline) - not sent any more: a restart a
+# week later would come as a surprise.
+PENDING_TTL = timedelta(hours=24)
+# Taken but not confirmed by then - "timeout" (a late result still counts).
+ANSWER_TIMEOUT = timedelta(hours=1)
+# Decrypted results (get_config: the whole config) are dropped after this.
+RESULT_TTL = timedelta(days=7)
+RESULT_MAX_BYTES = 256 * 1024
+# Results read per poll.
+MAX_RESULTS = 50
+ERROR_MAX_LEN = 500
+# A whole day of logs alone are 24 rows.
+HISTORY_LIMIT = 100
+# Commands queued with one request (logs: the 24 hours of a day).
+MAX_BATCH = 24
+
+_ENCRYPTED_PREFIX = "fernet:"
 
 # Test measurement: this many consecutive sensors with rising values...
 EXPECTED_RISING = 16
@@ -68,37 +129,356 @@ def device_db(raw_hash):
     return locate_device(raw_hash)
 
 
-def queue_command(device, db_name, command):
-    """Queue `command` for the device's next poll (once - queued twice it
-    still runs once). Returns the pending commands."""
+class CommandError(ValueError):
+    pass
+
+
+# ---------------------------------------------------------------------------- encryption
+
+def _fernet():
+    """Key from DEVICE_COMMAND_ENCRYPTION_KEY, else SECRET_KEY. Changing it
+    only loses what is stored right now (pending payloads, recent results)."""
+    from cryptography.fernet import Fernet
+
+    secret = getattr(settings, "DEVICE_COMMAND_ENCRYPTION_KEY", "") or settings.SECRET_KEY
+    key = base64.urlsafe_b64encode(hashlib.sha256(f"progeo-device-command:{secret}".encode()).digest())
+    return Fernet(key)
+
+
+def encrypt(data) -> str:
+    return _ENCRYPTED_PREFIX + _fernet().encrypt(json.dumps(data).encode()).decode()
+
+
+def decrypt(stored):
+    """The stored value, None if empty or not decryptable (key changed)."""
+    from cryptography.fernet import InvalidToken
+
+    if not stored or not stored.startswith(_ENCRYPTED_PREFIX):
+        return None
+    try:
+        return json.loads(_fernet().decrypt(stored[len(_ENCRYPTED_PREFIX):].encode()))
+    except (InvalidToken, ValueError):
+        return None
+
+
+# ---------------------------------------------------------------------------- payloads
+
+def _clean_params(payload):
+    if not isinstance(payload, dict) or not payload:
+        raise CommandError("set_params needs at least one parameter")
+    if len(payload) > MAX_PARAMS:
+        raise CommandError(f"set_params takes at most {MAX_PARAMS} parameters")
+    params = {}
+    for key, value in payload.items():
+        if not isinstance(key, str) or not PARAM_KEY.match(key):
+            raise CommandError(f"Invalid parameter name {key!r}")
+        if isinstance(value, float) and not math.isfinite(value):
+            raise CommandError(f"{key} must be a finite number")
+        if isinstance(value, str) and len(value) > PARAM_VALUE_MAX_LEN:
+            raise CommandError(f"{key} is limited to {PARAM_VALUE_MAX_LEN} characters")
+        if value is not None and not isinstance(value, (bool, int, float, str)):
+            raise CommandError(f"{key} must be a number, text or true/false")
+        params[key] = value
+    summary = {"params": {key: value if key in SAFE_PARAMS else REDACTED for key, value in params.items()}}
+    return params, summary
+
+
+def _clean_update(payload):
+    if not isinstance(payload, dict):
+        raise CommandError("update needs path and content")
+    path = payload.get("path") or DEFAULT_CONFIG_PATH
+    content = payload.get("content")
+    if not isinstance(path, str) or not UPDATE_PATH.match(path) or ".." in path.split("/"):
+        raise CommandError("path must be a relative file path")
+    if not isinstance(content, str) or not content.strip():
+        raise CommandError("update needs content")
+    encoded = content.encode("utf-8")
+    if len(encoded) > UPDATE_MAX_BYTES:
+        raise CommandError(f"content is limited to {UPDATE_MAX_BYTES // 1024} KB")
+    # Path, size and hash tell which file was sent, not what was in it.
+    summary = {"path": path, "bytes": len(encoded), "sha256": hashlib.sha256(encoded).hexdigest()}
+    return {"path": path, "content": content}, summary
+
+
+def _clean_logs(payload):
+    """logs: {"hour": 0-23} - the controller sends that hour of the day's
+    log (a whole day are 24 commands)."""
+    hour = payload.get("hour") if isinstance(payload, dict) else None
+    if isinstance(hour, str) and hour.strip().isdigit():
+        hour = int(hour.strip())
+    # bool is an int too - true is not hour 1.
+    if isinstance(hour, bool) or not isinstance(hour, int) or not 0 <= hour <= 23:
+        raise CommandError("logs needs an hour between 0 and 23")
+    if set(payload) - {"hour"}:
+        raise CommandError("logs takes only the hour")
+    # The hour is no customer data - shown in the history as is.
+    return {"hour": hour}, {"hour": hour}
+
+
+def clean_payload(command, payload):
+    """(payload to send, redacted summary for the history) of `command`.
+    Commands without parameters take no payload."""
     if command not in COMMANDS:
-        raise ValueError(f"Unknown command {command!r}")
+        raise CommandError(f"Unknown command {command!r}")
+    if command == Command.SET_PARAMS:
+        return _clean_params(payload)
+    if command == Command.UPDATE:
+        return _clean_update(payload)
+    if command == Command.LOGS:
+        return _clean_logs(payload)
+    if payload not in (None, {}, ""):
+        raise CommandError(f"{command} takes no payload")
+    return None, {}
+
+
+# ---------------------------------------------------------------------------- queue
+
+def queue_command(device, db_name, command, payload=None, user=None):
+    """Queue `command` for the device's next poll and return it. A pending
+    command of IDEMPOTENT_COMMANDS is not queued twice (it runs once)."""
+    payload, summary = clean_payload(command, payload)
     with transaction.atomic(using=db_name):
-        locked = ProgeoDevice.objects.using(db_name).select_for_update().get(pk=device.pk)
-        pending = list(locked.pending_commands or [])
-        if command not in pending:
-            pending.append(command)
-            locked.pending_commands = pending
-            locked.save(using=db_name, update_fields=["pending_commands"])
-    device.pending_commands = pending
-    return pending
+        # Locked: two clicks at once still queue one "measure".
+        ProgeoDevice.objects.using(db_name).select_for_update().filter(pk=device.pk).first()
+        if command in IDEMPOTENT_COMMANDS:
+            # The same request (logs: the same hour) waiting already - that one runs.
+            existing = next(
+                (
+                    pending
+                    for pending in ProgeoDeviceCommand.objects.using(db_name)
+                    .filter(device_id=device.pk, command=command, status=Status.PENDING)
+                    .order_by("pk")
+                    if (pending.summary or {}) == summary
+                ),
+                None,
+            )
+            if existing is not None:
+                return existing
+        return ProgeoDeviceCommand.objects.using(db_name).create(
+            device_id=device.pk,
+            command=command,
+            summary=summary,
+            payload_encrypted=encrypt(payload) if payload is not None else "",
+            created_by_id=_mirrored_user_id(user, db_name),
+        )
 
 
-def take_commands(raw_hash):
-    """The pending commands of the device with `raw_hash` - handed out once:
-    they are cleared and the poll is noted. [] for an unknown device."""
+def _mirrored_user_id(user, db_name):
+    """The user's id if the user row exists in `db_name` - users are mirrored
+    into the project databases after commit, a missing mirror must not break
+    queueing with an FK violation."""
+    from django.contrib.auth.models import User
+
+    user_id = getattr(user, "pk", None)
+    if user_id is None or not User.objects.using(db_name).filter(pk=user_id).exists():
+        return None
+    return user_id
+
+
+def queue_commands(device, db_name, command, payloads, user=None):
+    """Queue `command` once per payload (logs of several hours), in order -
+    all or none: every payload is checked before the first is queued."""
+    if not isinstance(payloads, list) or not 1 <= len(payloads) <= MAX_BATCH:
+        raise CommandError(f"payloads must be a list of 1 to {MAX_BATCH} entries")
+    for payload in payloads:
+        clean_payload(command, payload)
+    with transaction.atomic(using=db_name):
+        return [queue_command(device, db_name, command, payload, user=user) for payload in payloads]
+
+
+def pending_commands(device, db_name):
+    """Names of the device's pending commands, oldest first."""
+    return list(
+        ProgeoDeviceCommand.objects.using(db_name)
+        .filter(device_id=device.pk, status=Status.PENDING)
+        .order_by("pk")
+        .values_list("command", flat=True)
+    )
+
+
+def cancel_command(device, db_name, command_id):
+    """Cancel a pending command of the device (its payload is dropped)."""
+    with transaction.atomic(using=db_name):
+        command = (
+            ProgeoDeviceCommand.objects.using(db_name)
+            .select_for_update()
+            .filter(device_id=device.pk, pk=command_id)
+            .first()
+        )
+        if command is None:
+            raise CommandError("Command not found")
+        if command.status != Status.PENDING:
+            raise CommandError("Only pending commands can be cancelled")
+        command.status = Status.CANCELLED
+        command.finished_at = timezone.now()
+        command.payload_encrypted = ""
+        command.save(using=db_name, update_fields=["status", "finished_at", "payload_encrypted"])
+    return command
+
+
+def housekeeping(device_id, db_name, now=None):
+    """Expire stale pending commands, time out unanswered ones and drop old
+    results of the device - on every poll and history read."""
+    now = now or timezone.now()
+    commands = ProgeoDeviceCommand.objects.using(db_name).filter(device_id=device_id)
+    commands.filter(status=Status.PENDING, created__lt=now - PENDING_TTL).update(
+        status=Status.EXPIRED, finished_at=now, payload_encrypted=""
+    )
+    commands.filter(status=Status.SENT, sent_at__lt=now - ANSWER_TIMEOUT).update(
+        status=Status.TIMEOUT, finished_at=now
+    )
+    commands.exclude(result_encrypted="").filter(finished_at__lt=now - RESULT_TTL).update(result_encrypted="")
+
+
+def _result_ok(item):
+    ok = item.get("ok")
+    if isinstance(ok, bool):
+        return ok
+    return str(item.get("status") or "").strip().lower() in {"ok", "success", "done"}
+
+
+# Fields of a result item that describe the outcome - everything else the
+# controller sends along (get_config: path, content) is the result itself.
+RESULT_META_FIELDS = {"id", "command", "ok", "status", "error"}
+
+
+def _result_data(item):
+    """The data of a result item: "result" if the controller nests it, else
+    its other fields ({"id": 50, "ok": true, "path": ..., "content": ...}
+    -> {"path": ..., "content": ...}). None if there is none."""
+    if "result" in item:
+        return item["result"]
+    data = {key: value for key, value in item.items() if key not in RESULT_META_FIELDS}
+    return data or None
+
+
+def record_results(device, db_name, results, now=None):
+    """Store the outcome the controller reports for commands it took
+    ([{"id", "command"?, "ok", "error"?, ...data}]). Unknown ids, other
+    devices' commands, commands not handed out and items naming another
+    command than the one with that id are ignored. Returns the count."""
+    if not isinstance(results, list):
+        return 0
+    now = now or timezone.now()
+    by_id = {}
+    for item in results[:MAX_RESULTS]:
+        try:
+            by_id[int(item.get("id"))] = item
+        except (AttributeError, TypeError, ValueError):
+            continue
+    if not by_id:
+        return 0
+    recorded = 0
+    commands = ProgeoDeviceCommand.objects.using(db_name).select_for_update().filter(
+        device_id=device.pk, pk__in=by_id, status__in=[Status.SENT, Status.TIMEOUT]
+    )
+    for command in commands:
+        item = by_id[command.pk]
+        named = item.get("command")
+        if named not in (None, "") and named != command.command:
+            # An id the controller confused - not this command's outcome.
+            continue
+        ok = _result_ok(item)
+        command.status = Status.SUCCESS if ok else Status.FAILED
+        command.finished_at = now
+        error = item.get("error")
+        command.error = "" if ok or error in (None, "") else str(error)[:ERROR_MAX_LEN]
+        result = _result_data(item)
+        command.result_encrypted = ""
+        if result is not None:
+            if len(json.dumps(result)) <= RESULT_MAX_BYTES:
+                command.result_encrypted = encrypt(result)
+            elif not command.error:
+                command.error = f"Result over {RESULT_MAX_BYTES // 1024} KB - not stored"
+        command.save(using=db_name, update_fields=["status", "finished_at", "error", "result_encrypted"])
+        recorded += 1
+    return recorded
+
+
+def take_commands(raw_hash, results=None):
+    """The controller's poll: record its `results`, then hand out its
+    pending commands ([{"command", "id", "payload"?}], oldest first) - once:
+    they are "sent" from now on and their payload is dropped. [] for an
+    unknown device."""
     db_name = device_db(raw_hash)
     if db_name is None:
         return []
+    now = timezone.now()
+    handed_out = []
     with transaction.atomic(using=db_name):
         device = ProgeoDevice.objects.using(db_name).select_for_update().filter(raw_hash=raw_hash).first()
         if device is None:
             return []
-        commands = list(device.pending_commands or [])
-        device.pending_commands = []
-        device.last_command_poll = timezone.now()
-        device.save(using=db_name, update_fields=["pending_commands", "last_command_poll"])
-    return commands
+        record_results(device, db_name, results, now)
+        housekeeping(device.pk, db_name, now)
+        pending = ProgeoDeviceCommand.objects.using(db_name).filter(
+            device_id=device.pk, status=Status.PENDING
+        ).order_by("pk")
+        for command in pending:
+            entry = {"command": command.command, "id": command.pk}
+            if command.payload_encrypted:
+                payload = decrypt(command.payload_encrypted)
+                if payload is None:
+                    # The key changed since it was queued - sending it empty would be wrong.
+                    command.status, command.finished_at = Status.FAILED, now
+                    command.error = "Payload could not be decrypted (encryption key changed?)"
+                    command.payload_encrypted = ""
+                    command.save(using=db_name, update_fields=["status", "finished_at", "error", "payload_encrypted"])
+                    continue
+                entry["payload"] = payload
+            handed_out.append(entry)
+        ProgeoDeviceCommand.objects.using(db_name).filter(pk__in=[entry["id"] for entry in handed_out]).update(
+            status=Status.SENT, sent_at=now, payload_encrypted=""
+        )
+        device.last_command_poll = now
+        device.save(using=db_name, update_fields=["last_command_poll"])
+    return handed_out
+
+
+# ---------------------------------------------------------------------------- history
+
+def command_row(command):
+    """A command as the frontend lists it - never the payload or result."""
+    def iso(value):
+        return value.isoformat() if value else None
+
+    return {
+        "id": command.pk,
+        "command": command.command,
+        "status": command.status,
+        "created": iso(command.created),
+        "sent_at": iso(command.sent_at),
+        "finished_at": iso(command.finished_at),
+        "created_by": command.created_by.username if command.created_by_id and command.created_by else None,
+        "summary": command.summary or {},
+        "error": command.error or None,
+        "has_result": bool(command.result_encrypted),
+    }
+
+
+def command_history(device, db_name, limit=HISTORY_LIMIT):
+    housekeeping(device.pk, db_name)
+    commands = (
+        ProgeoDeviceCommand.objects.using(db_name)
+        .filter(device_id=device.pk)
+        .select_related("created_by")
+        .order_by("-pk")[:limit]
+    )
+    return [command_row(command) for command in commands]
+
+
+def command_result(device, db_name, command_id):
+    """The decrypted result of one of the device's commands."""
+    housekeeping(device.pk, db_name)
+    command = ProgeoDeviceCommand.objects.using(db_name).filter(device_id=device.pk, pk=command_id).first()
+    if command is None:
+        raise CommandError("Command not found")
+    if not command.result_encrypted:
+        raise CommandError("No result stored (none sent, or older than the retention period)")
+    result = decrypt(command.result_encrypted)
+    if result is None:
+        raise CommandError("Result could not be decrypted (encryption key changed?)")
+    return command, result
 
 
 def check_test_pairs(pairs, expected=EXPECTED_RISING, empty_fraction=EMPTY_FRACTION):

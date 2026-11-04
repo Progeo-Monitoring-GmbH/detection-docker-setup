@@ -4,6 +4,7 @@ import { PauseFill, PlayFill } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
 import { formatDate } from '../../main/dateFormat';
 import TimeAxis from './TimeAxis';
+import { frameTimeAt } from './timeTicks';
 import './FrameSlider.css';
 
 type FrameSliderProps = {
@@ -201,7 +202,7 @@ const useFramePlayback = ({
 
 /**
  * The frame of the heatmap / plan: "3/168: date" above a slider over the
- * frames, calendar marks below it. "Start Animation" (or the space bar)
+ * frames, evenly spread time labels below it. "Start Animation" (or the space bar)
  * steps through the frames - from the start again when it is at the end -
  * and stops at the last one.
  */
@@ -217,7 +218,7 @@ const FrameSlider = ({
 }: FrameSliderProps) => {
   const { t } = useTranslation();
   const count = timestamps.length;
-  const position = useCallback((ms: number) => framePosition(timestamps, ms), [timestamps]);
+  const timeAt = useCallback((fraction: number) => frameTimeAt(timestamps, fraction), [timestamps]);
   const canPlay = count > 1 && !disabled;
   const { playing, toggle } = useFramePlayback({ count, index, onChange, canPlay, playKey });
 
@@ -320,7 +321,7 @@ const FrameSlider = ({
       {count > 1 && (
         // The thumb's centre travels half a thumb (1 rem) inside the input.
         <div style={{ margin: '-4px 0.5rem 0' }}>
-          <TimeAxis from={timestamps[0] * 1000} to={timestamps[count - 1] * 1000} position={position} />
+          <TimeAxis from={timestamps[0] * 1000} to={timestamps[count - 1] * 1000} timeAt={timeAt} />
         </div>
       )}
     </div>

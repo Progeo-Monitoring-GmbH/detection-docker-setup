@@ -288,18 +288,28 @@ class DeviceViewSet(ProgeoModalViewSet):
 
     @action(detail=True, url_path="sample/cc", authentication_classes=[TransferTokenAuthentication], permission_classes=[IsTransferRequest], methods=["GET", "POST"])
     def catch_live_data_c_n_c(self, request, pk, *args, **kwargs):
-        """The controller's command poll: {"commands": [...]} - e.g. "measure"
-        queued by the provisioning page ("Messung anfragen"). Handed out once
-        (helper/device_commands.py). The device is the one of the transfer
-        token (provisioned tokens name it), else ?device_hash= / the body's
-        device_hash, else the project_id (pk), like the samples."""
+        """The controller's command poll: {"commands": [{"command", "id",
+        "payload"?}, ...]}, each handed out once. A POST may report the
+        outcome of commands taken before: {"results": [{"id", "ok",
+        "error"?, "result"?}]} (helper/device_commands.py). The device is
+        the one of the transfer token (provisioned tokens name it), else
+        ?device_hash= / the body's device_hash, else the project_id (pk),
+        like the samples."""
+        body = request.data if isinstance(request.data, dict) else {}
+        raw_hash = self._controller_hash(request, body, pk)
+        return RequestSuccess({"commands": device_commands.take_commands(raw_hash, body.get("results"))})
+
+    @staticmethod
+    def _controller_hash(request, body, default):
+        """The device a controller request is about: the one its transfer
+        token names (provisioned tokens do) - a token never answers for
+        another device - else ?device_hash= / the body's device_hash, else
+        `default` (the project_id)."""
         token = request.auth if isinstance(request.auth, LimitedToken) else None
         raw_data = token.raw_data if token is not None and isinstance(token.raw_data, dict) else {}
-        body = request.data if isinstance(request.data, dict) else {}
-        raw_hash = str(
-            raw_data.get("device") or request.query_params.get("device_hash") or body.get("device_hash") or pk
+        return str(
+            raw_data.get("device") or request.query_params.get("device_hash") or body.get("device_hash") or default
         ).strip()
-        return RequestSuccess({"commands": device_commands.take_commands(raw_hash)})
     
     @action(detail=True, url_path="sample", authentication_classes=[TransferTokenAuthentication], permission_classes=[IsTransferRequest], methods=["POST"])
     def catch_live_data(self, request, pk, *args, **kwargs):
@@ -1006,6 +1016,105 @@ class DeviceViewSet(ProgeoModalViewSet):
         create_MfS_log(request)
         return RequestSuccess({"deleted": True})
 
+    # ------------------------------------------------------------------ controller commands (helper/device_commands.py)
+    # Staff tools of the device overview (?location= names the database).
+    # Payloads and results are never logged and never put into the MfS log
+    # (it stores request.data) - the command row is the audit trail.
+
+    def _command_device(self, request, pk):
+        """(device, None) for staff with the device visible, else (None, error response)."""
+        if not is_staff_admin(request.user):
+            return None, RequestFailed({"reason": "Staff access required"})
+        device = self._visible_device(pk)
+        if device is None:
+            return None, RequestFailed({"reason": "Device not found"})
+        return device, None
+
+    @staticmethod
+    def _command_choices(user):
+        return [
+            {
+                "command": command,
+                "superuser_only": command in device_commands.SUPERUSER_COMMANDS,
+                "allowed": command not in device_commands.SUPERUSER_COMMANDS or bool(user.is_superuser),
+            }
+            for command in device_commands.COMMANDS
+        ]
+
+    @require_module_permissions("module_devices_enabled")
+    @action(detail=True, url_path="commands", methods=["GET"])
+    def list_commands(self, request, pk=None, *args, **kwargs):
+        """The device's command history (newest first, redacted) and the
+        commands the user may queue."""
+        device, error = self._command_device(request, pk)
+        if error:
+            return error
+        db_name = device._state.db
+        return RequestSuccess({
+            "commands": device_commands.command_history(device, db_name),
+            "available": self._command_choices(request.user),
+            "pending_ttl_hours": device_commands.PENDING_TTL.total_seconds() / 3600,
+            "result_ttl_days": device_commands.RESULT_TTL.days,
+            **self._command_state(device, db_name),
+        })
+
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
+    @action(detail=True, url_path="commands/queue", methods=["POST"])
+    def queue_command(self, request, pk=None, *args, **kwargs):
+        """Queue {"command", "payload"?} for the device's next poll - or the
+        command once per entry of {"payloads": [...]} (logs: {"hour": 0}
+        ... {"hour": 23} for a whole day)."""
+        device, error = self._command_device(request, pk)
+        if error:
+            return error
+        command = str(request.data.get("command") or "").strip()
+        if command in device_commands.SUPERUSER_COMMANDS and not request.user.is_superuser:
+            return RequestFailed({"reason": "Superuser access required"})
+        db_name = device._state.db
+        try:
+            if "payloads" in request.data:
+                queued = device_commands.queue_commands(
+                    device, db_name, command, request.data.get("payloads"), user=request.user
+                )
+            else:
+                queued = [device_commands.queue_command(
+                    device, db_name, command, request.data.get("payload"), user=request.user
+                )]
+        except device_commands.CommandError as exc:
+            return RequestFailed({"reason": str(exc)})
+        ilog(f"Queued command {command} {', '.join(f'#{row.pk}' for row in queued)} for device "
+             f"{device.raw_hash} by user {request.user.pk}", tag="[COMMAND]")
+        rows = [device_commands.command_row(row) for row in queued]
+        return RequestSuccess({"command": rows[0], "commands": rows})
+
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
+    @action(detail=True, url_path=r"commands/(?P<command_id>\d+)/cancel", methods=["POST"])
+    def cancel_command(self, request, pk=None, command_id=None, *args, **kwargs):
+        device, error = self._command_device(request, pk)
+        if error:
+            return error
+        try:
+            cancelled = device_commands.cancel_command(device, device._state.db, int(command_id))
+        except device_commands.CommandError as exc:
+            return RequestFailed({"reason": str(exc)})
+        return RequestSuccess({"command": device_commands.command_row(cancelled)})
+
+    @require_module_permissions("module_devices_enabled")
+    @action(detail=True, url_path=r"commands/(?P<command_id>\d+)/result", methods=["GET"])
+    def command_result(self, request, pk=None, command_id=None, *args, **kwargs):
+        """The decrypted result (get_config: the whole config, with wifi
+        credentials) - superusers only."""
+        if not request.user.is_superuser:
+            return RequestFailed({"reason": "Superuser access required"})
+        device, error = self._command_device(request, pk)
+        if error:
+            return error
+        try:
+            command, result = device_commands.command_result(device, device._state.db, int(command_id))
+        except device_commands.CommandError as exc:
+            return RequestFailed({"reason": str(exc)})
+        return RequestSuccess({"command": device_commands.command_row(command), "result": result})
+
     # ------------------------------------------------------------------ provisioning (helper/device_provisioning.py)
 
     @staticmethod
@@ -1167,9 +1276,9 @@ class DeviceViewSet(ProgeoModalViewSet):
         return location, db_name, device
 
     @staticmethod
-    def _command_state(device):
+    def _command_state(device, db_name):
         return {
-            "pending_commands": list(device.pending_commands or []),
+            "pending_commands": device_commands.pending_commands(device, db_name),
             "last_command_poll": device.last_command_poll.isoformat() if device.last_command_poll else None,
         }
 
@@ -1213,7 +1322,7 @@ class DeviceViewSet(ProgeoModalViewSet):
                 "sensor_count": sensor_count,
                 # The MUX choices of "Emulate Measurement".
                 "mux_count": device_commands.mux_count(sensor_count),
-                **self._command_state(device),
+                **self._command_state(device, db_name),
             })
         except provisioning.ProvisionError as exc:
             return RequestFailed({"reason": str(exc)})
@@ -1228,8 +1337,8 @@ class DeviceViewSet(ProgeoModalViewSet):
         db_name = None
         try:
             _location, db_name, device = self._provision_device(request, request.data)
-            device_commands.queue_command(device, db_name, "measure")
-            return RequestSuccess(self._command_state(device))
+            device_commands.queue_command(device, db_name, device_commands.Command.MEASURE, user=request.user)
+            return RequestSuccess(self._command_state(device, db_name))
         except provisioning.ProvisionError as exc:
             return RequestFailed({"reason": str(exc)})
         finally:

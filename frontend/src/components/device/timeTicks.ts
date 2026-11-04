@@ -1,212 +1,110 @@
 /**
- * Marks of a time axis (the heatmap's window and frame sliders): calendar
- * boundaries - full hours, midnights, Mondays, first days of a month or year -
- * at the finest interval that keeps at most `maxTicks` of them. Local time.
+ * Labels of a frame slider's time axis: evenly spread over the axis, from
+ * the first to the last frame, each showing the time at its place (the
+ * slider leaves out gaps without data, so that time is interpolated between
+ * the frames - see `timeAt`). As many as fit without overlapping.
  */
 
-export type TimeTick = {
+export type AxisLabel = {
+  /** Place on the axis, 0..1. */
+  fraction: number;
+  /** The time there (epoch ms). */
   ms: number;
   label: string;
-  /** A coarser boundary (midnight, first of a month, new year): drawn stronger. */
-  major: boolean;
 };
 
-type Interval =
-  | { unit: 'minute'; count: number }
-  | { unit: 'hour'; count: number }
-  | { unit: 'day'; count: number }
-  | { unit: 'week'; count: number }
-  | { unit: 'month'; count: number }
-  | { unit: 'year'; count: number };
-
-const MINUTE = 60 * 1000;
-const HOUR = 60 * MINUTE;
+const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 
-/** The frame pickers never show fewer labels than this. */
-export const MIN_TIME_TICKS = 5;
+/** Approximate width (px) of one character of the 11 px axis font - digits
+ * and separators; a little generous, so labels never touch. */
+export const LABEL_CHAR_WIDTH = 6.6;
+/** Least free space (px) between two labels. */
+export const LABEL_GAP = 14;
 
-const INTERVALS: Array<{ interval: Interval; approxMs: number }> = [
-  ...[5, 10, 15, 30].map((count) => ({ interval: { unit: 'minute', count } as Interval, approxMs: count * MINUTE })),
-  ...[1, 2, 3, 6, 12].map((count) => ({ interval: { unit: 'hour', count } as Interval, approxMs: count * HOUR })),
-  ...[1, 2].map((count) => ({ interval: { unit: 'day', count } as Interval, approxMs: count * DAY })),
-  ...[1, 2].map((count) => ({ interval: { unit: 'week', count } as Interval, approxMs: count * 7 * DAY })),
-  ...[1, 2, 3, 6].map((count) => ({ interval: { unit: 'month', count } as Interval, approxMs: count * 30.4 * DAY })),
-  ...[1, 2, 5, 10].map((count) => ({ interval: { unit: 'year', count } as Interval, approxMs: count * 365 * DAY })),
-];
+const TIME: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
+const TIME_SECONDS: Intl.DateTimeFormatOptions = { ...TIME, second: '2-digit' };
+const DAY_MONTH: Intl.DateTimeFormatOptions = { day: '2-digit', month: '2-digit' };
+const DAY_MONTH_YEAR: Intl.DateTimeFormatOptions = { ...DAY_MONTH, year: '2-digit' };
 
-/** The first boundary of `interval` at or after `ms`. */
-const firstBoundary = (ms: number, interval: Interval) => {
-  const date = new Date(ms);
-  switch (interval.unit) {
-    case 'minute':
-      date.setSeconds(0, 0);
-      while (date.getTime() < ms || date.getMinutes() % interval.count !== 0) {
-        date.setMinutes(date.getMinutes() + 1);
-      }
-      break;
-    case 'hour':
-      date.setMinutes(0, 0, 0);
-      while (date.getTime() < ms || date.getHours() % interval.count !== 0) {
-        date.setHours(date.getHours() + 1);
-      }
-      break;
-    case 'day':
-    case 'week':
-      date.setHours(0, 0, 0, 0);
-      while (date.getTime() < ms || (interval.unit === 'week' && date.getDay() !== 1)) {
-        date.setDate(date.getDate() + 1);
-      }
-      break;
-    case 'month':
-      date.setHours(0, 0, 0, 0);
-      date.setDate(1);
-      while (date.getTime() < ms || date.getMonth() % interval.count !== 0) {
-        date.setMonth(date.getMonth() + 1);
-      }
-      break;
-    case 'year':
-      date.setHours(0, 0, 0, 0);
-      date.setMonth(0, 1);
-      while (date.getTime() < ms || date.getFullYear() % interval.count !== 0) {
-        date.setFullYear(date.getFullYear() + 1);
-      }
-      break;
+/** The label formats for a span, coarse to fine: the first whose labels are
+ * all distinct is used. */
+const formatsFor = (span: number): Intl.DateTimeFormatOptions[] => {
+  if (span < DAY) {
+    return [TIME, TIME_SECONDS];
   }
-  return date;
+  if (span < 300 * DAY) {
+    return [DAY_MONTH, { ...DAY_MONTH, ...TIME }];
+  }
+  return [DAY_MONTH_YEAR, { ...DAY_MONTH_YEAR, ...TIME }];
 };
 
-const advance = (date: Date, interval: Interval) => {
-  switch (interval.unit) {
-    case 'minute':
-      date.setMinutes(date.getMinutes() + interval.count);
-      break;
-    case 'hour':
-      date.setHours(date.getHours() + interval.count);
-      break;
-    case 'day':
-      date.setDate(date.getDate() + interval.count);
-      break;
-    case 'week':
-      date.setDate(date.getDate() + 7 * interval.count);
-      break;
-    case 'month':
-      date.setMonth(date.getMonth() + interval.count);
-      break;
-    case 'year':
-      date.setFullYear(date.getFullYear() + interval.count);
-      break;
-  }
+const formatter = (options: Intl.DateTimeFormatOptions, locale?: string) => {
+  const format = new Intl.DateTimeFormat(locale, options);
+  return (ms: number) => format.format(ms);
 };
 
-const dayLabel = (date: Date, locale?: string) =>
-  date.toLocaleDateString(locale, { day: '2-digit', month: '2-digit' });
-
-const monthLabel = (date: Date, locale?: string) =>
-  date.getMonth() === 0
-    ? String(date.getFullYear())
-    : date.toLocaleDateString(locale, { month: 'short' });
-
-const tickOf = (date: Date, interval: Interval, locale?: string): TimeTick => {
-  const ms = date.getTime();
-  const midnight = date.getHours() === 0 && date.getMinutes() === 0;
-  switch (interval.unit) {
-    case 'minute':
-      return midnight
-        ? { ms, label: dayLabel(date, locale), major: true }
-        : { ms, label: date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }), major: false };
-    case 'hour':
-      return midnight
-        ? { ms, label: dayLabel(date, locale), major: true }
-        : { ms, label: date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }), major: false };
-    case 'day':
-    case 'week':
-      return date.getDate() === 1
-        ? { ms, label: monthLabel(date, locale), major: true }
-        : { ms, label: dayLabel(date, locale), major: false };
-    case 'month':
-      return { ms, label: monthLabel(date, locale), major: date.getMonth() === 0 };
-    case 'year':
-      return { ms, label: String(date.getFullYear()), major: true };
-  }
-};
+/** How many labels of `labelWidth` fit on `width` px. Label i sits at
+ * fraction f = i / (n - 1) and is anchored at f of its own width (the first
+ * left-aligned, the last right-aligned), so they take up `width - labelWidth`
+ * evenly - each needs `labelWidth + gap` of it. */
+export const labelCount = (width: number, labelWidth: number, gap = LABEL_GAP) =>
+  width > labelWidth ? Math.max(2, Math.floor((width - labelWidth) / (labelWidth + gap)) + 1) : 2;
 
 /**
- * The placed marks (`x` in px, ascending) whose labels don't run into each
- * other: each kept at least `minGap` from the one before. Of two too close,
- * the first stays - unless only the second is major.
- * Needed where the axis isn't linear in time: a frame slider leaves out
- * the time without data, so the marks of a gap fall close together.
+ * The labels of an axis from `from` to `to` (ms), `width` px wide. `timeAt`
+ * gives the time at a place on the axis (0..1) - linear between `from` and
+ * `to` by default.
  */
-export const spacedTicks = <T extends { tick: { major: boolean }; x: number }>(
-  placed: T[],
-  minGap: number,
-): T[] => {
-  const kept: T[] = [];
-  placed.forEach((entry) => {
-    const last = kept[kept.length - 1];
-    if (!last || entry.x - last.x >= minGap) {
-      kept.push(entry);
-      return;
-    }
-    // Still far enough from the one before `last`: that one is minGap before `last`.
-    if (entry.tick.major && !last.tick.major) {
-      kept[kept.length - 1] = entry;
-    }
-  });
-  return kept;
-};
-
-/** The marks between `from` and `to` (ms), at most `maxTicks` (at least the
- * coarsest interval's) - but never fewer than MIN_TIME_TICKS: very short or
- * very long spans fall back to evenly spaced labels. */
-export const timeTicks = (from: number, to: number, maxTicks: number, locale?: string): TimeTick[] => {
-  if (!(to > from) || maxTicks < 1) {
+export const frameAxisLabels = ({
+  from,
+  to,
+  width,
+  timeAt,
+  locale,
+}: {
+  from: number;
+  to: number;
+  width: number;
+  timeAt?: (fraction: number) => number;
+  locale?: string;
+}): AxisLabel[] => {
+  if (!(to > from) || !(width > 0)) {
     return [];
   }
-  const span = to - from;
-  const { interval } =
-    INTERVALS.find((candidate) => span / candidate.approxMs <= maxTicks) ?? INTERVALS[INTERVALS.length - 1];
-  const ticks: TimeTick[] = [];
-  const date = firstBoundary(from, interval);
-  // A month/year interval can still give a few more than estimated.
-  while (date.getTime() <= to && ticks.length <= maxTicks * 2) {
-    ticks.push(tickOf(date, interval, locale));
-    advance(date, interval);
+  const at = timeAt ?? ((fraction: number) => from + (to - from) * fraction);
+  const formats = formatsFor(to - from);
+  let labels: AxisLabel[] = [];
+  for (const options of formats) {
+    const format = formatter(options, locale);
+    // Every label of a format is (about) as wide - the longest of the ends.
+    const longest = Math.max(format(from).length, format(to).length);
+    const count = labelCount(width, longest * LABEL_CHAR_WIDTH);
+    labels = Array.from({ length: count }, (_, index) => {
+      const fraction = index / (count - 1);
+      const ms = at(fraction);
+      return { fraction, ms, label: format(ms) };
+    });
+    const distinct = labels.every((entry, index) => index === 0 || entry.label !== labels[index - 1].label);
+    if (distinct) {
+      return labels;
+    }
   }
-  // Calendar boundaries can be rarer than the minimum (a short window, an
-  // interval coarser than the span): spread the labels evenly over the span.
-  return ticks.length >= MIN_TIME_TICKS
-    ? ticks
-    : evenTimeTicks(from, to, MIN_TIME_TICKS, locale);
+  // Even the finest format repeats (frames very close together): drop the
+  // repeats - fewer labels never overlap.
+  return labels.filter((entry, index) => index === 0 || entry.label !== labels[index - 1].label);
 };
 
-/** `count` labels evenly spread over [from, to] - the fallback that keeps the
- * frame pickers at MIN_TIME_TICKS labels. */
-export const evenTimeTicks = (
-  from: number,
-  to: number,
-  count: number,
-  locale?: string,
-): TimeTick[] => {
-  if (!(to > from) || count < 1) {
-    return [];
+/** The time at a place (0..1) of a slider over the frames `timestamps`
+ * (seconds, oldest first, one slider step each): between two frames
+ * interpolated. In ms. */
+export const frameTimeAt = (timestamps: number[], fraction: number) => {
+  const count = timestamps.length;
+  if (count === 0) {
+    return Number.NaN;
   }
-  const span = to - from;
-  const labelOf = (date: Date) =>
-    span >= 2 * DAY
-      ? dayLabel(date, locale)
-      : span >= HOUR
-        ? date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
-        : date.toLocaleTimeString(locale, {
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-          });
-  const ticks: TimeTick[] = [];
-  for (let index = 0; index < count; index += 1) {
-    const ms = from + (span * index) / Math.max(count - 1, 1);
-    ticks.push({ ms, label: labelOf(new Date(ms)), major: false });
-  }
-  return ticks;
+  const position = Math.min(Math.max(fraction, 0), 1) * (count - 1);
+  const low = Math.floor(position);
+  const high = Math.min(low + 1, count - 1);
+  return (timestamps[low] + (timestamps[high] - timestamps[low]) * (position - low)) * 1000;
 };

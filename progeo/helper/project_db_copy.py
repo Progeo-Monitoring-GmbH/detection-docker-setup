@@ -103,6 +103,7 @@ def project_filters(project, source=DEFAULT_DB_ALIAS):
         ProgeoAccess,
         ProgeoAlarm,
         ProgeoDevice,
+        ProgeoDeviceCommand,
         ProgeoLageplan,
         ProgeoMeasurement,
         ProgeoMeasurePoint,
@@ -136,6 +137,9 @@ def project_filters(project, source=DEFAULT_DB_ALIAS):
     return {
         ProgeoLageplan: by_location(ProgeoLageplan),
         ProgeoDevice: (device_where, [ids, orphans]),
+        ProgeoDeviceCommand: (
+            sql.SQL("{} IN ({})").format(_column(ProgeoDeviceCommand, "device"), devices), [ids, orphans]
+        ),
         # A point must not reference a Lageplan of another project, the FK
         # would break in the project database - those stay behind (see
         # find_conflicts).
