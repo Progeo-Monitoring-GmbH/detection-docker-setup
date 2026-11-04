@@ -21,6 +21,10 @@
 #
 # Migrations run while the OLD code still serves: they must stay compatible
 # with it (add columns/tables first, drop or rename in a later release).
+#
+# One deploy at a time per checkout: a second one (other terminal, cron, CI)
+# exits right away - lock logs/deploy.lock (flock, released when the deploy
+# ends or dies, also on kill -9; the file names the running deploy).
 set -euo pipefail
 
 if [[ -t 1 ]]; then
@@ -64,6 +68,13 @@ main() {
     esac
   done
 
+  local project_root
+  project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  cd "${project_root}"
+
+  # Before the pull: a second deploy must not pull underneath the running one.
+  acquire_lock
+
   local head_before
   head_before=$(git rev-parse HEAD)
   git pull
@@ -74,10 +85,6 @@ main() {
     local new_migrations=1
   fi
 
-  local project_root
-  project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-  cd "${project_root}"
-
   compose=(docker compose)
   if ! docker compose version >/dev/null 2>&1; then
     compose=(docker-compose)
@@ -87,7 +94,8 @@ main() {
   # 3/4 keep the terminal for following the backend log at the end.
   mkdir -p logs
   exec 3>&1 4>&2
-  exec > >(tee -a logs/deploy.log) 2>&1
+  # 9>&-: tee must not inherit the lock - it outlives the deploy by a moment.
+  exec > >(tee -a logs/deploy.log 9>&-) 2>&1
   local started
   started=$(date +%s)
   log_info "=== Deploy $(date '+%Y-%m-%d %H:%M:%S') in ${project_root}"
@@ -131,9 +139,32 @@ main() {
   # The images replaced by this build, now untagged - can fill up small devices.
   docker image prune -f >/dev/null || true
 
+  # The deploy is done - following the log must not block the next one.
+  release_lock
+
   if (( follow )); then
     exec tail -n +1 -F logs/backend/backend.log logs/backend/backend.err.log >&3 2>&4
   fi
+}
+
+DEPLOY_LOCK=logs/deploy.lock
+
+# Exclusive lock on fd 9 for the rest of the script (and its child
+# processes, which inherit fd 9). Opened with >> - > would wipe the
+# holder's info before we know whether we get the lock.
+acquire_lock() {
+  command -v flock >/dev/null 2>&1 || fatal "flock not found (package util-linux) - needed to lock the deploy."
+  mkdir -p "$(dirname "${DEPLOY_LOCK}")"
+  exec 9>>"${DEPLOY_LOCK}"
+  if ! flock -n 9; then
+    fatal "Another deploy is running ($(cat "${DEPLOY_LOCK}" 2>/dev/null || echo "unknown")) - nothing done."
+  fi
+  echo "pid $$, $(whoami)@$(hostname), started $(date '+%Y-%m-%d %H:%M:%S')" > "${DEPLOY_LOCK}"
+}
+
+release_lock() {
+  : > "${DEPLOY_LOCK}" 2>/dev/null || true
+  exec 9>&-
 }
 
 # The prepare container needs the database (and redis for the signals) -
