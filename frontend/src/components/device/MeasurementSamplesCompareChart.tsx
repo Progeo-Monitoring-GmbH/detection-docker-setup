@@ -54,9 +54,8 @@ type MeasurementSamplesCompareChartProps = {
   alarmDurationMs?: number | null;
   /**
    * Time slider over the measurements (as on the heatmap): the selected
-   * measurement's WP - EP (the quantity of the mean and the bands), EP and
-   * WP (optional EP + WP) are drawn on the upper plot, its time is marked on
-   * the lower ones. Legend on top.
+   * measurement's EP and WP (optional EP + WP) are drawn on the upper plot,
+   * its time is marked on the lower ones. Legend on top.
    */
   frameSlider?: boolean;
   /** With `frameSlider` and `time`: leaves out the own slider - the page
@@ -116,11 +115,44 @@ const PERIOD_COLOR = 'rgba(0, 0, 0, 0.06)';
 /** How many sensors the "most / least active" buttons add. */
 const ACTIVE_SENSOR_COUNT = 2;
 
-/** Legend suffix of a selected sensor: clicking the entry removes the sensor. */
-const REMOVE_MARK = ' ✕';
+/** Heights (px) of the plots and of what lies between them, top to bottom:
+ * the first plot, its axis (ticks and title), the second plot's controls
+ * (measured), the second plot, its axis and the third plot's legend, the
+ * third plot (its axis title is in the bottom margin). */
+const UPPER_PX = 300;
+const UPPER_AXIS_PX = 58;
+const SENSORS_PX = 150;
+const SENSORS_AXIS_PX = 64;
+const SUM_PX = 120;
+/** The controls' height before they are measured (one row). */
+const TOOLBAR_PX = 34;
 
-/** The plot's height (px). */
-const PLOT_HEIGHT = 800;
+type PlotGeometry = {
+  /** The whole figure's height (px). */
+  height: number;
+  /** Paper heights (0..1) of the three plots. */
+  upper: [number, number];
+  sensors: [number, number];
+  sum: [number, number];
+  /** Where the second plot's controls start (px from the figure's top). */
+  toolbarTop: number;
+};
+
+/** The plots' places for the controls' height and the figure's margins. */
+export const plotGeometry = (toolbarPx: number, top: number, bottom: number): PlotGeometry => {
+  const inner = UPPER_PX + UPPER_AXIS_PX + toolbarPx + SENSORS_PX + SENSORS_AXIS_PX + SUM_PX;
+  const at = (px: number) => px / inner;
+  return {
+    height: inner + top + bottom,
+    upper: [1 - at(UPPER_PX), 1],
+    sensors: [at(SUM_PX + SENSORS_AXIS_PX), at(SUM_PX + SENSORS_AXIS_PX + SENSORS_PX)],
+    sum: [0, at(SUM_PX)],
+    toolbarTop: top + UPPER_PX + UPPER_AXIS_PX,
+  };
+};
+
+/** Sensors are counted from 1 (as on the heatmap); their index from 0. */
+const sensorNumber = (sensor: number) => sensor + 1;
 
 /** About how many ticks the sensor axis shows. */
 const SENSOR_TICKS = 10;
@@ -143,17 +175,6 @@ const visibility = (shown: ReadonlySet<string>, uid: string) => ({
 
 const formatValue = (value: number) => value.toFixed(2);
 const formatSigned = (value: number) => `${value > 0 ? '+' : ''}${value.toFixed(2)}`;
-
-/** Paper heights of the three plots: by sensor, the selected sensors over time, the sensor sum. */
-const UPPER_DOMAIN: [number, number] = [0.6, 1];
-const SENSORS_DOMAIN: [number, number] = [0.27, 0.48];
-const SUM_DOMAIN: [number, number] = [0, 0.17];
-
-/** The two time plots (shared, matched time axis) and their heights. */
-const TIME_PLOTS: [string, [number, number]][] = [
-  ['x3', SENSORS_DOMAIN],
-  ['x2', SUM_DOMAIN],
-];
 
 const SENSOR_COLORS = [
   plotTheme.brandBlue,
@@ -433,7 +454,7 @@ const MeasurementSamplesCompareChart = (
       const variance = Math.max(currentSumSq / count - avg * avg, 0);
       const stdDev = Math.sqrt(variance);
 
-      x.push(index);
+      x.push(sensorNumber(index));
       mean.push(avg);
       sigma.push(stdDev);
       lower.push(avg - stdDev);
@@ -562,15 +583,13 @@ const MeasurementSamplesCompareChart = (
       type: 'scatter' as const,
       mode: 'lines' as const,
       uid: `sensor-${sensor}`,
-      // The trailing ✕ is the legend's remove control: clicking the entry
-      // removes the sensor from the second plot.
-      name: `${t('measurement_compare_pair_label')} ${sensor}${REMOVE_MARK}`,
+      name: `${t('measurement_compare_pair_label')} ${sensorNumber(sensor)}`,
       x: sensorSeries.x,
       y: sensorSeries.pairs.map((values) => values[sensor] ?? null),
       xaxis: 'x3' as const,
       yaxis: 'y4' as const,
-      // Their own legend, at the second plot.
-      legend: 'legend2',
+      // Listed (and removed) in the controls above the plot instead.
+      showlegend: false,
       line: { color: sensorColor(sensor), width: 2 },
       hoverinfo: 'none' as const,
     }));
@@ -589,6 +608,25 @@ const MeasurementSamplesCompareChart = (
       return next;
     });
   const showSumDiff = shownOptional.has('pair-sum-diff');
+
+  const margin = { l: 64, r: showSumDiff ? 64 : 16, t: frameSlider ? 56 : 16, b: 52 };
+  // The second plot's controls sit in the figure, right above that plot -
+  // the plots make room for their (measured) height.
+  const toolbarRef = React.useRef<HTMLDivElement | null>(null);
+  const [toolbarPx, setToolbarPx] = React.useState(TOOLBAR_PX);
+  React.useLayoutEffect(() => {
+    const toolbar = toolbarRef.current;
+    if (!toolbar || typeof ResizeObserver === 'undefined') {
+      return undefined;
+    }
+    const observer = new ResizeObserver(() => setToolbarPx(Math.ceil(toolbar.offsetHeight) || TOOLBAR_PX));
+    observer.observe(toolbar);
+    return () => observer.disconnect();
+  }, []);
+  const geometry = React.useMemo(
+    () => plotGeometry(toolbarPx, margin.t, margin.b),
+    [toolbarPx, margin.t, margin.b],
+  );
 
   // All plain scatter (not scattergl): a highlight (width, opacity) then
   // only restyles. No Plotly hover labels - the values go to the tooltip.
@@ -673,14 +711,13 @@ const MeasurementSamplesCompareChart = (
         x: pairSumSeries.x,
         y: pairSumSeries.mean,
         xaxis: 'x2' as const,
-        // Own axis (right): the sum divided by the sensor count.
-        yaxis: 'y5' as const,
+        // The sum's axis: the sum divided by the sensor count - read as
+        // the actual (smaller) value next to it.
+        yaxis: 'y2' as const,
         legend: 'legend3',
-        // Dashed: with a steady sensor count it runs right on the sum.
         line: {
           color: plotTheme.brandOrange,
           width: 2,
-          dash: 'dash',
         },
         hoverinfo: 'none' as const,
       },
@@ -712,7 +749,7 @@ const MeasurementSamplesCompareChart = (
       return [];
     }
     const { ep, wp } = currentFrame;
-    const x = ep.map((_, index) => index);
+    const x = ep.map((_, index) => sensorNumber(index));
     const line = (
       uid: string,
       name: string,
@@ -731,10 +768,7 @@ const MeasurementSamplesCompareChart = (
       hoverinfo: 'none' as const,
       ...(optional ? visibility(shownOptional, uid) : {}),
     });
-    // WP - EP: the quantity of the mean and the bands (Abweichung,
-    // Spannweite), so the measurement lies within them.
     return [
-      line('wp-ep', 'WP − EP', wp.map((value, i) => value - ep[i]), 'orange', 3),
       line('ep', 'EP', ep, 'red', 2),
       line('wp', 'WP', wp, 'blue', 2),
       line('ep+wp', 'EP + WP', ep.map((value, i) => value + wp[i]), plotTheme.contrastViolet, 2, true),
@@ -762,7 +796,6 @@ const MeasurementSamplesCompareChart = (
       ep.forEach((value, i) => {
         include(value);
         include(wp[i]);
-        include(wp[i] - value);
         if (shownOptional.has('ep+wp')) {
           include(value + wp[i]);
         }
@@ -775,10 +808,10 @@ const MeasurementSamplesCompareChart = (
     return [low < 0 ? low - padding : 0, high + padding];
   }, [frames, meanAndDeviationSeries, shownOptional]);
 
-  // The highest sensor index on the first plot.
+  // The highest sensor number on the first plot.
   const lastSensor = Math.max(
-    meanAndDeviationSeries.x[meanAndDeviationSeries.x.length - 1] ?? 0,
-    (currentFrame?.ep.length ?? 0) - 1,
+    meanAndDeviationSeries.x[meanAndDeviationSeries.x.length - 1] ?? 1,
+    currentFrame?.ep.length ?? 1,
   );
 
   const shapes = React.useMemo(() => {
@@ -791,10 +824,10 @@ const MeasurementSamplesCompareChart = (
         layer: 'below',
         xref: 'x',
         yref: 'paper',
-        x0: Math.max(sensor - 0.5, 0),
-        x1: Math.min(sensor + 0.5, lastSensor),
-        y0: UPPER_DOMAIN[0],
-        y1: UPPER_DOMAIN[1],
+        x0: Math.max(sensorNumber(sensor) - 0.5, 1),
+        x1: Math.min(sensorNumber(sensor) + 0.5, lastSensor),
+        y0: geometry.upper[0],
+        y1: geometry.upper[1],
         fillcolor: sensorColor(sensor),
         opacity: 0.18,
         line: { width: 0 },
@@ -809,14 +842,18 @@ const MeasurementSamplesCompareChart = (
         yref: 'paper',
         x0: frames[0].ms,
         x1: frames[frames.length - 1].ms,
-        y0: SENSORS_DOMAIN[0],
-        y1: SENSORS_DOMAIN[1],
+        y0: geometry.sensors[0],
+        y1: geometry.sensors[1],
         fillcolor: PERIOD_COLOR,
         line: { width: 0 },
       });
     }
     // The alarm and the slider's time on both time plots.
-    TIME_PLOTS.forEach(([xref, [y0, y1]]) => {
+    const timePlots: [string, [number, number]][] = [
+      ['x3', geometry.sensors],
+      ['x2', geometry.sum],
+    ];
+    timePlots.forEach(([xref, [y0, y1]]) => {
       const onPlot = { xref: xref as Plotly.XAxisName, yref: 'paper' as const, y0, y1 };
       if (alarmBandX != null) {
         result.push(
@@ -852,7 +889,7 @@ const MeasurementSamplesCompareChart = (
       }
     });
     return result;
-  }, [alarmBandX, currentFrame, selectedSensors, lastSensor, historySeries, frames]);
+  }, [alarmBandX, currentFrame, selectedSensors, lastSensor, historySeries, frames, geometry]);
 
   // The line under the cursor or its legend entry is highlighted: wider,
   // the other lines of its plot faded. The bands stay as they are.
@@ -927,7 +964,7 @@ const MeasurementSamplesCompareChart = (
       if (ep[sensor] == null || wp[sensor] == null) {
         return [];
       }
-      const of = `(${t('measurement_compare_pair_label')} ${sensor})`;
+      const of = `(${t('measurement_compare_pair_label')} ${sensorNumber(sensor)})`;
       return [
         { key: `${uid}-ep`, name: `EP ${of}`, color: 'red', value: formatValue(ep[sensor]) },
         { key: `${uid}-wp`, name: `WP ${of}`, color: 'blue', value: formatValue(wp[sensor]) },
@@ -939,8 +976,7 @@ const MeasurementSamplesCompareChart = (
       const index = point.pointIndex;
       const row = {
         key: uid,
-        // The legend's ✕ is a remove control, not part of the sensor name.
-        name: String(trace.name ?? '').replace(REMOVE_MARK, ''),
+        name: String(trace.name ?? ''),
         color: String(trace.line?.color ?? ''),
       };
       if (uid === 'min-max-lower' || uid === 'deviation-lower') {
@@ -988,7 +1024,8 @@ const MeasurementSamplesCompareChart = (
     setTooltip(tooltipOf(event, nearest));
     const first = event.points[0];
     const onFirstPlot = first && !(first.data as HoverTrace).xaxis;
-    setHoveredSensor(onFirstPlot && typeof first.x === 'number' ? first.x : null);
+    // The index - the first plot's x is the sensor number.
+    setHoveredSensor(onFirstPlot && typeof first.x === 'number' ? first.x - 1 : null);
   };
   const onUnhover = () => {
     setHighlighted(null);
@@ -996,8 +1033,6 @@ const MeasurementSamplesCompareChart = (
     setHoveredSensor(null);
   };
 
-  // Right: the sensor average's axis, the sum difference's beside it.
-  const margin = { l: 64, r: showSumDiff ? 128 : 64, t: frameSlider ? 56 : 16, b: 52 };
 
   // The tooltip sits top right - top left while the cursor comes near it,
   // so it never covers what is hovered. Both follow the cursor without a
@@ -1028,7 +1063,8 @@ const MeasurementSamplesCompareChart = (
   // Placed as soon as it appears, not only with the next move.
   React.useLayoutEffect(() => placeHint(hintRef.current, cursorRef.current), [hoveredSensor]);
 
-  // The second and third plot's legends: right above each, on the left.
+  // The third plot's legend: right above it, on the left (the second
+  // plot's sensors are listed in its controls).
   // Spread into the layout - the typings know only one legend.
   const plotLegend = (top: number) => ({
     orientation: 'h' as const,
@@ -1042,8 +1078,7 @@ const MeasurementSamplesCompareChart = (
     borderwidth: 1,
   });
   const plotLegends = {
-    legend2: plotLegend(SENSORS_DOMAIN[1]),
-    legend3: plotLegend(SUM_DOMAIN[1]),
+    legend3: plotLegend(geometry.sum[1]),
   };
 
   // Plotly has no legend hover event: listen on the legend items (g.traces,
@@ -1057,7 +1092,7 @@ const MeasurementSamplesCompareChart = (
     const legendTrace = (target: EventTarget | null) => {
       const item =
         target instanceof Element
-          ? target.closest('.legend .traces, .legend2 .traces, .legend3 .traces')
+          ? target.closest('.legend .traces, .legend3 .traces')
           : null;
       const uid = (item as { __data__?: [{ trace?: { uid?: string } }] } | null)?.__data__?.[0]
         ?.trace?.uid;
@@ -1120,7 +1155,7 @@ const MeasurementSamplesCompareChart = (
       return;
     }
     if (typeof point.x === 'number') {
-      toggleSensor(point.x);
+      toggleSensor(point.x - 1);
     }
   };
 
@@ -1208,82 +1243,117 @@ const MeasurementSamplesCompareChart = (
         />
       )}
 
-      {/* The second plot's controls, in normal flow above the chart: they can
-          never overlap its legend, however many sensors are selected. */}
-      <div
-        className="d-flex flex-wrap align-items-center gap-2 mb-2"
-        data-testid="measurement-compare-sensor-toolbar"
-      >
-        <small className="text-muted me-1">
-          {t('measurement_compare_selected_sensors', {
-            count: selectedSensors.length,
-          })}
-        </small>
-        <Button
-          size="sm"
-          variant="outline-secondary"
-          className="py-0"
-          style={{ fontSize: 12 }}
-          onClick={() => updateSensors([])}
-          disabled={selectedSensors.length === 0}
+      <div ref={wrapRef} style={{ position: 'relative' }} onMouseMove={onMouseMove}>
+        {/* The second plot's controls, right above it in the figure (the plots
+            make room for their measured height, however many rows they wrap
+            to): the shown sensors - hover highlights one, ✕ removes it - and
+            the buttons that pick them. */}
+        <div
+          ref={toolbarRef}
+          className="d-flex flex-wrap align-items-center gap-2 pb-2"
+          data-testid="measurement-compare-sensor-toolbar"
+          style={{
+            position: 'absolute',
+            top: geometry.toolbarTop,
+            left: margin.l,
+            right: margin.r,
+            zIndex: 2,
+          }}
         >
-          {t('measurement_compare_clear_sensors')}
-        </Button>
-        <Button
-          size="sm"
-          variant="outline-secondary"
-          className="py-0"
-          style={{ fontSize: 12 }}
-          onClick={addRandomSensor}
-          disabled={randomCandidates.length === 0}
-          title={t('measurement_compare_add_random_hint')}
-        >
-          {t('measurement_compare_add_random')}
-        </Button>
-        {activeSensors.most.length > 0 && (
-          <>
-            {(
-              [
-                ['most', 'measurement_compare_add_most_active'],
-                ['least', 'measurement_compare_add_least_active'],
-              ] as const
-            ).map(([group, label]) => {
-              const shown = groupShown(activeSensors[group]);
-              return (
-                <Button
-                  key={group}
-                  size="sm"
-                  variant={shown ? 'primary' : 'outline-primary'}
-                  aria-pressed={shown}
-                  title={t('measurement_compare_activity_hint')}
-                  className="py-0"
-                  style={{ fontSize: 12 }}
-                  onClick={() => toggleGroup(activeSensors[group])}
-                >
-                  {t(label, { n: ACTIVE_SENSOR_COUNT })}
-                </Button>
-              );
+          <small className="text-muted me-1">
+            {t('measurement_compare_selected_sensors', {
+              count: selectedSensors.length,
             })}
-          </>
-        )}
-        {onToggleSensorHistory && (
+          </small>
+          {selectedSensors.map((sensor) => (
+            <span
+              key={sensor}
+              className="d-inline-flex align-items-center gap-1 rounded-pill bg-white"
+              data-testid="measurement-compare-sensor-chip"
+              style={{ fontSize: 12, padding: '1px 4px 1px 8px', border: `1px solid ${sensorColor(sensor)}` }}
+              onMouseEnter={() => setHighlighted(`sensor-${sensor}`)}
+              onMouseLeave={() => setHighlighted(null)}
+            >
+              <span style={{ width: 12, height: 3, borderRadius: 2, background: sensorColor(sensor) }} />
+              {t('measurement_compare_pair_label')} {sensorNumber(sensor)}
+              <button
+                type="button"
+                className="btn btn-link p-0 px-1 text-muted text-decoration-none lh-1"
+                style={{ fontSize: 12 }}
+                title={t('measurement_compare_sensor_click_remove', { sensor: sensorNumber(sensor) })}
+                aria-label={t('measurement_compare_sensor_click_remove', { sensor: sensorNumber(sensor) })}
+                onClick={() => {
+                  setHighlighted(null);
+                  toggleSensor(sensor);
+                }}
+              >
+                ✕
+              </button>
+            </span>
+          ))}
           <Button
             size="sm"
-            variant={historySeries ? 'primary' : 'outline-primary'}
-            aria-pressed={historySeries != null}
-            title={t('measurement_compare_sensor_history_hint')}
+            variant="outline-secondary"
             className="py-0"
             style={{ fontSize: 12 }}
-            onClick={onToggleSensorHistory}
-            disabled={isLoadingSensorHistory || (!historySeries && selectedSensors.length === 0)}
+            onClick={() => updateSensors([])}
+            disabled={selectedSensors.length === 0}
           >
-            {isLoadingSensorHistory && <Spinner size="sm" animation="border" className="me-1" />}
-            {t('measurement_compare_sensor_history')}
+            {t('measurement_compare_clear_sensors')}
           </Button>
-        )}
-      </div>
-
-      <div ref={wrapRef} style={{ position: 'relative' }} onMouseMove={onMouseMove}>
+          <Button
+            size="sm"
+            variant="outline-secondary"
+            className="py-0"
+            style={{ fontSize: 12 }}
+            onClick={addRandomSensor}
+            disabled={randomCandidates.length === 0}
+            title={t('measurement_compare_add_random_hint')}
+          >
+            {t('measurement_compare_add_random')}
+          </Button>
+          {activeSensors.most.length > 0 && (
+            <>
+              {(
+                [
+                  ['most', 'measurement_compare_add_most_active'],
+                  ['least', 'measurement_compare_add_least_active'],
+                ] as const
+              ).map(([group, label]) => {
+                const shown = groupShown(activeSensors[group]);
+                return (
+                  <Button
+                    key={group}
+                    size="sm"
+                    variant={shown ? 'primary' : 'outline-primary'}
+                    aria-pressed={shown}
+                    title={t('measurement_compare_activity_hint')}
+                    className="py-0"
+                    style={{ fontSize: 12 }}
+                    onClick={() => toggleGroup(activeSensors[group])}
+                  >
+                    {t(label, { n: ACTIVE_SENSOR_COUNT })}
+                  </Button>
+                );
+              })}
+            </>
+          )}
+          {onToggleSensorHistory && (
+            <Button
+              size="sm"
+              variant={historySeries ? 'primary' : 'outline-primary'}
+              aria-pressed={historySeries != null}
+              title={t('measurement_compare_sensor_history_hint')}
+              className="py-0"
+              style={{ fontSize: 12 }}
+              onClick={onToggleSensorHistory}
+              disabled={isLoadingSensorHistory || (!historySeries && selectedSensors.length === 0)}
+            >
+              {isLoadingSensorHistory && <Spinner size="sm" animation="border" className="me-1" />}
+              {t('measurement_compare_sensor_history')}
+            </Button>
+          )}
+        </div>
         <WheelZoomHint visible={wheelHint} radius={0} />
         {tooltip && (
           // Top right of the upper plot - top left while the cursor is near.
@@ -1308,7 +1378,7 @@ const MeasurementSamplesCompareChart = (
               selectedSensors.includes(hoveredSensor)
                 ? 'measurement_compare_sensor_click_remove'
                 : 'measurement_compare_sensor_click_add',
-              { sensor: hoveredSensor },
+              { sensor: sensorNumber(hoveredSensor) },
             )}
           </div>
         )}
@@ -1321,11 +1391,6 @@ const MeasurementSamplesCompareChart = (
           onRelayout={onRelayout}
           onLegendClick={(event) => {
             const uid = event.data[event.curveNumber]?.uid ?? '';
-            if (uid.startsWith('sensor-')) {
-              // A selected sensor's entry removes it from the second plot.
-              toggleSensor(Number(uid.slice('sensor-'.length)));
-              return false;
-            }
             if (OPTIONAL_TRACES.has(uid)) {
               toggleOptional(uid);
               return false;
@@ -1333,7 +1398,7 @@ const MeasurementSamplesCompareChart = (
             return !FIXED_TRACES.has(uid);
           }}
           useResizeHandler
-          style={{ width: '100%', height: `${PLOT_HEIGHT}px` }}
+          style={{ width: '100%', height: `${geometry.height}px` }}
           config={{
             responsive: true,
             displaylogo: false,
@@ -1354,7 +1419,7 @@ const MeasurementSamplesCompareChart = (
                     xref: 'paper',
                     yref: 'paper',
                     x: 0.5,
-                    y: (SENSORS_DOMAIN[0] + SENSORS_DOMAIN[1]) / 2,
+                    y: (geometry.sensors[0] + geometry.sensors[1]) / 2,
                     text: t('measurement_compare_sensor_hint'),
                     showarrow: false,
                     opacity: 0.7,
@@ -1375,7 +1440,7 @@ const MeasurementSamplesCompareChart = (
             },
             yaxis: {
               title: { text: t('measurement_compare_absolute_delta_axis') },
-              domain: UPPER_DOMAIN,
+              domain: geometry.upper,
               rangemode: 'tozero',
               // Also after a double click / autoscale, which turns autorange
               // back on: it then still spans all measurements.
@@ -1401,7 +1466,7 @@ const MeasurementSamplesCompareChart = (
             },
             yaxis2: {
               title: { text: t('measurement_compare_pair_sum_axis') },
-              domain: SUM_DOMAIN,
+              domain: geometry.sum,
               side: 'left',
               showgrid: true,
               gridcolor: plotTheme.warmGray2,
@@ -1422,31 +1487,19 @@ const MeasurementSamplesCompareChart = (
             },
             yaxis4: {
               title: { text: t('measurement_compare_absolute_delta_axis') },
-              domain: SENSORS_DOMAIN,
+              domain: geometry.sensors,
               anchor: 'x3',
               rangemode: 'tozero',
               showgrid: true,
               gridcolor: plotTheme.warmGray2,
               zeroline: true,
             },
-            // The sensor average - the sum per sensor, on the right.
-            yaxis5: {
-              title: { text: t('measurement_compare_pair_mean_axis') },
-              overlaying: 'y2',
-              side: 'right',
-              anchor: 'x2',
-              showgrid: false,
-              zeroline: false,
-            },
-            // Right of the sensor average's axis (autoshift).
             yaxis3: {
               visible: showSumDiff,
               title: { text: t('measurement_compare_pair_sum_diff_label') },
               overlaying: 'y2',
               side: 'right',
-              anchor: 'free',
-              position: 1,
-              autoshift: true,
+              anchor: 'x2',
               showgrid: false,
               zeroline: true,
               zerolinecolor: plotTheme.warmGray4,

@@ -333,8 +333,8 @@ const StatusKpis = ({
 
 // Zeitreihe ("Letzte 24 h" ... "Letzte 3 Jahre", see timeRanges.ts): the
 // measured value of every sensor over the range, cut out of the loaded
-// history like the heatmap's frames. Sensors with a Verdachtsstelle are
-// highlighted, the others drawn as muted lines.
+// history like the heatmap's frames. The most active sensors and those above
+// their threshold in colour, the others as faint "Weitere Sensoren".
 const ZeitreihePanel = ({
   loading,
   series,
@@ -466,11 +466,10 @@ const LocationStatusView = ({
     () =>
       zeitreiheSeriesOf(
         zeitreihe,
-        clusters,
         sensorLabel,
         (sensorId) => measurePointOf(sensorId)?.threshold ?? thresholdValue,
       ),
-    [clusters, measurePointOf, sensorLabel, thresholdValue, zeitreihe],
+    [measurePointOf, sensorLabel, thresholdValue, zeitreihe],
   );
 
   const alarmSpans = useMemo(

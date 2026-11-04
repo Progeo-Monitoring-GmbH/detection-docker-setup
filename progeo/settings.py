@@ -391,6 +391,10 @@ PROJECT_DB_STRICT = parse_boolean(os.getenv("PROJECT_DB_STRICT", "False"))
 # Threads for views spanning many project databases (project_dbs.map_databases);
 # each holds its own connection while it runs.
 PROJECT_DB_WORKERS = parse_int(os.getenv("PROJECT_DB_WORKERS"), 8)
+# Processes migrating the databases in parallel (prepare_databases on every
+# deploy/start, adv_migrate); unset = the CPU count, at most 8. Each holds a
+# connection to its database (+ "default") and is a full Django process (RAM).
+PROJECT_DB_MIGRATE_WORKERS = parse_int(os.getenv("PROJECT_DB_MIGRATE_WORKERS"), None)
 
 DATABASE_ROUTERS = [
     #"progeo.router.DjangoRouter",

@@ -26,6 +26,7 @@ or nothing at all: saving a location with a new project_id queues it.
 
 import contextvars
 import copy
+import os
 import re
 import time
 from contextlib import contextmanager
@@ -352,14 +353,20 @@ def _register_database(alias):
 _applied_cache = {}
 
 
-def pending_migrations(alias):
-    """Migrations of the code that `alias` hasn't applied - one query against
-    django_migrations instead of a full `migrate` run per database."""
+def _graph_nodes():
+    """Every migration of the code (built once per process)."""
     from django.db.migrations.loader import MigrationLoader
 
     if "graph_nodes" not in _applied_cache:
         loader = MigrationLoader(None, ignore_no_migrations=True)
         _applied_cache["graph_nodes"] = set(loader.graph.nodes)
+    return _applied_cache["graph_nodes"]
+
+
+def pending_migrations(alias):
+    """Migrations of the code that `alias` hasn't applied - one query against
+    django_migrations instead of a full `migrate` run per database."""
+    _graph_nodes()
     with connections[alias].cursor() as cursor:
         cursor.execute(
             "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'django_migrations')"
@@ -379,6 +386,72 @@ def migrate_if_needed(alias):
         return False
     call_command("migrate", database=alias, interactive=False, verbosity=0)
     return True
+
+
+def _migrate_one(alias):
+    """(alias, migrated, error) - migrate_if_needed for migrate_databases. A
+    failure is returned as its repr, not raised: the other databases still
+    get their turn, and an exception from a worker process may not pickle."""
+    try:
+        return alias, migrate_if_needed(alias), None
+    except Exception as exc:  # noqa: BLE001 - see docstring
+        return alias, False, repr(exc)
+    finally:
+        # ~1000 project databases: an open connection each exceeds Postgres' max_connections.
+        if alias != DEFAULT_DB_ALIAS:
+            connections[alias].close()
+
+
+def _migrate_one_in_thread(alias):
+    try:
+        return _migrate_one(alias)
+    finally:
+        connections.close_all()  # this worker thread's connections only
+
+
+def migrate_workers(workers=None):
+    """Processes for migrate_databases: `workers`, else
+    PROJECT_DB_MIGRATE_WORKERS, else the CPU count (at most 8)."""
+    return max(1, workers or getattr(settings, "PROJECT_DB_MIGRATE_WORKERS", None) or min(os.cpu_count() or 1, 8))
+
+
+def migrate_databases(aliases, workers=None):
+    """Yields (alias, migrated, error) of migrate_if_needed for every alias,
+    in the order they finish; error is the repr of the exception, None if it
+    went through.
+
+    `migrate` is mostly Python - loading the graph, building and rendering
+    the migration state, seconds per database - and a new migration has to
+    go into ~1000 project databases on the next deploy. Threads would queue
+    on the GIL, so it runs in `workers` forked processes (migrate_workers),
+    each with its own connections. Where fork doesn't exist (Windows) in
+    threads; with one worker or alias sequentially, in this process (the
+    tests: PROJECT_DB_MIGRATE_WORKERS = 1)."""
+    import multiprocessing
+    from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+
+    aliases = list(aliases)
+    workers = min(migrate_workers(workers), len(aliases))
+    if workers <= 1:
+        for alias in aliases:
+            yield _migrate_one(alias)
+        return
+
+    if "fork" in multiprocessing.get_all_start_methods():
+        # Inherited by the workers instead of built in each: the imported
+        # migration modules and the graph (plus the registered project databases).
+        _graph_nodes()
+        # A connection open at the fork would be shared by this process and the workers.
+        connections.close_all()
+        pool = ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context("fork"))
+        work = _migrate_one
+    else:
+        pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="migrate")
+        work = _migrate_one_in_thread
+    with pool:
+        futures = [pool.submit(work, alias) for alias in aliases]
+        for future in as_completed(futures):
+            yield future.result()
 
 
 def prepare_template():

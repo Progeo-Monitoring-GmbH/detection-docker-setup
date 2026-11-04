@@ -8,7 +8,9 @@ from progeo.helper.project_dbs import (
     ensure_project_db,
     existing_project_aliases,
     is_project_alias,
+    migrate_databases,
     migrate_if_needed,
+    migrate_workers,
     prepare_template,
     project_alias,
     project_keys_in_use,
@@ -71,9 +73,19 @@ class Command(BaseCommand):
                     elog(f"creating {name} failed: {exc!r}", tag="[PREPARE_DBS]")
                     failed.append(db)
 
-        for db in list(DATABASES):
-            if db != DEFAULT_DB_ALIAS:
-                migrated += self._migrate(db, failed)
+        # The others in parallel processes - independent of each other, and
+        # with a new migration ~1000 project databases in a row were most of
+        # the deploy (migrate_databases).
+        others = [db for db in DATABASES if db != DEFAULT_DB_ALIAS]
+        ilog(f"checking {len(others)} databases with {min(migrate_workers(), len(others))} workers",
+             tag="[PREPARE_DBS]")
+        for db, done, error in migrate_databases(others):
+            if error is not None:
+                elog(f"migrate failed for {db}: {error}", tag="[PREPARE_DBS]")
+                failed.append(db)
+            elif done:
+                migrated += 1
+                ilog(f"migrated {db}", tag="[PREPARE_DBS]")
 
         ilog(f"{migrated} of {len(DATABASES)} databases needed migrations", tag="[PREPARE_DBS]")
 

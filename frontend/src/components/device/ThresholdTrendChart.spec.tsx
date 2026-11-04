@@ -192,20 +192,16 @@ describe('ThresholdTrendChart rendering', () => {
 });
 
 describe('ThresholdTrendChart clustering', () => {
-  it('merges near-simultaneous points into one larger mean dot', () => {
+  it('merges near-simultaneous points into one mean point - a line, no dots', () => {
     // range = 90 min -> merge window = 1 min; the first two points are 10s apart.
     renderChart([makeSeries('a', [[0, 100], [10 * 1000, 300], [90 * MIN, 100]])]);
-    const circles = Array.from(plotSvg().querySelectorAll('circle'));
-    expect(circles).toHaveLength(2);
-    expect(circles.map((circle) => circle.getAttribute('r'))).toEqual(['3.4', '2.6']);
     expect(polylines()[0].getAttribute('points')!.split(' ')).toHaveLength(2);
+    expect(plotSvg().querySelectorAll('circle')).toHaveLength(0);
   });
 
   it('keeps points further apart than the merge window separate', () => {
     renderChart([makeSeries('a', [[0, 100], [30 * MIN, 120], [60 * MIN, 140], [90 * MIN, 100]])]);
-    const circles = plotSvg().querySelectorAll('circle');
-    expect(circles).toHaveLength(4);
-    circles.forEach((circle) => expect(circle.getAttribute('r')).toBe('2.6'));
+    expect(polylines()[0].getAttribute('points')!.split(' ')).toHaveLength(4);
   });
 
   it('sorts points by time before drawing', () => {

@@ -207,7 +207,6 @@ i18n
           measurement_compare_pair_index_axis: 'Sensor position',
           measurement_compare_absolute_delta_axis: 'Absolute Delta',
           measurement_compare_pair_sum_axis: 'Sensor Sum',
-          measurement_compare_pair_mean_axis: 'Sensor Average',
           heatmap_video_export: 'Export video',
           heatmap_video_export_title:
             'Export video: capture the heatmap animation and download a ZIP with the MP4 video and its PNG frames',
@@ -663,6 +662,15 @@ i18n
           analyse_measurements_title: 'Measurements',
           analyse_heatmap_title: 'Heatmap',
           analyse_device: 'Device',
+          analyse_resolution: 'Resolution',
+          analyse_resolution_option: '{{count}} measurements',
+          analyse_resolution_hint:
+            'At most this many measurements per period, spread evenly over it - more show finer detail but load longer.',
+          analyse_mean: 'Smoothing',
+          analyse_mean_off: 'Off',
+          analyse_mean_option: 'Mean of {{count}}',
+          analyse_mean_hint:
+            'Every value as the mean of this many neighbouring loaded measurements - reduces noise.',
           analyse_spread:
             '{{count}} of {{total}} measurements, evenly spread over the period',
           analyse_no_measurements: 'No measurements in this period.',
@@ -1477,7 +1485,6 @@ i18n
           measurement_compare_pair_index_axis: 'Sensor-Position',
           measurement_compare_absolute_delta_axis: 'Absolutes Delta',
           measurement_compare_pair_sum_axis: 'Sensor-Summe',
-          measurement_compare_pair_mean_axis: 'Sensor-Durchschnitt',
           heatmap_video_export: 'Video exportieren',
           heatmap_video_export_title:
             'Video exportieren: Heatmap-Animation aufnehmen und ein ZIP mit dem MP4-Video und den PNG-Frames herunterladen',
@@ -1942,6 +1949,15 @@ i18n
           analyse_measurements_title: 'Messungen',
           analyse_heatmap_title: 'Heatmap',
           analyse_device: 'Gerät',
+          analyse_resolution: 'Auflösung',
+          analyse_resolution_option: '{{count}} Messungen',
+          analyse_resolution_hint:
+            'Höchstens so viele Messungen je Zeitraum, gleichmäßig darüber verteilt - mehr zeigen feinere Details, laden aber länger.',
+          analyse_mean: 'Glättung',
+          analyse_mean_off: 'Aus',
+          analyse_mean_option: 'Mittel aus {{count}}',
+          analyse_mean_hint:
+            'Jeder Wert als Mittelwert aus so vielen benachbarten geladenen Messungen - reduziert Rauschen.',
           analyse_spread:
             '{{count}} von {{total}} Messungen, gleichmäßig über den Zeitraum verteilt',
           analyse_no_measurements: 'Keine Messungen in diesem Zeitraum.',

@@ -16,8 +16,8 @@ export type ThresholdTrendSeries = {
    * sensors with different thresholds stay comparable on one shared scale. */
   threshold: number | null;
   points: ThresholdTrendPoint[];
-  /** Background series (e.g. sensors without a Verdachtsstelle): a thin
-   * grey line behind the others, sharing one legend toggle (MUTED_GROUP). */
+  /** Background series (e.g. the less active sensors): a thin, faint grey
+   * line behind the others, sharing one legend toggle (MUTED_GROUP). */
   muted?: boolean;
 };
 
@@ -45,6 +45,9 @@ type ThresholdTrendChartProps = {
 const COLORS = ['#2a78d6', '#eda100', '#1a9bb5', '#4a3aa7', '#e87ba4'];
 const REPEAT_DASH = '6 4';
 const MUTED_COLOR = '#AEB7C1';
+/** The muted lines: barely visible behind the highlighted ones. */
+const MUTED_OPACITY = 0.35;
+const MUTED_WIDTH = 0.8;
 
 const THRESHOLD_COLOR = 'var(--progeo-orange)';
 const THRESHOLD_DASH = '2 4';
@@ -293,20 +296,20 @@ const ThresholdTrendChart = ({
                 fill="none"
                 stroke={entry.color}
                 strokeDasharray={entry.dash}
-                strokeWidth={entry.muted ? 1.1 : 1.8}
+                strokeWidth={entry.muted ? MUTED_WIDTH : 1.8}
+                strokeOpacity={entry.muted ? MUTED_OPACITY : 1}
                 strokeLinejoin="round"
               />
-              {!entry.muted && entry.display.map((point) => (
+              {/* Lines only - a single point (no line) as a dot. */}
+              {entry.display.length === 1 && (
                 <circle
-                  key={point.key}
-                  cx={toX(point.time)}
-                  cy={toY(point.ratio)}
-                  r={point.count > 1 ? 3.4 : 2.6}
+                  cx={toX(entry.display[0].time)}
+                  cy={toY(entry.display[0].ratio)}
+                  r={entry.muted ? 1.6 : 2.6}
                   fill={entry.color}
-                  stroke="#fff"
-                  strokeWidth={1}
+                  fillOpacity={entry.muted ? MUTED_OPACITY : 1}
                 />
-              ))}
+              )}
             </g>
           ))}
 
@@ -395,7 +398,7 @@ const ThresholdTrendChart = ({
               color: mutedHidden ? '#B8B0B0' : '#6E6868',
             }}
           >
-            <LegendSwatch color={mutedHidden ? '#D6D0D0' : MUTED_COLOR} width={1.5} />
+            <LegendSwatch color={mutedHidden ? '#D6D0D0' : MUTED_COLOR} width={1.2} />
             {mutedLabel(mutedCount)}
           </button>
         )}

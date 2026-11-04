@@ -19,6 +19,7 @@ import {
   viewPointsOf,
   worstSeverityOf,
   zeitreiheSeriesOf,
+  ZEITREIHE_ACTIVE_SENSORS,
   zonePointsOf,
   type VerdachtsstelleCluster,
 } from './locationStatusData';
@@ -278,33 +279,46 @@ describe('sensorStatsOf / sensorRowsOf', () => {
 });
 
 describe('zeitreiheSeriesOf', () => {
-  const zeitreihe = { timestamps: [0, 60], data: { '2': [1, 2], '1': [3, null] } };
-
-  it('puts the sensors with a Verdachtsstelle first, the others muted', () => {
-    const series = zeitreiheSeriesOf(
-      zeitreihe,
-      [cluster({ sensor_id: 2 })],
-      (id) => `S${id}`,
-      (id) => id * 10,
-    );
+  it('shows the most active sensors first, relative to their threshold', () => {
+    const zeitreihe = { timestamps: [0, 60], data: { '2': [1, 2], '1': [3, null] } };
+    const series = zeitreiheSeriesOf(zeitreihe, (id) => `S${id}`, (id) => id * 10);
+    // S1: 3 / 10 = 0.3x, S2: 1.5 / 20 = 0.075x.
     expect(series.map((entry) => [entry.id, entry.label, entry.threshold, entry.muted])).toEqual([
+      ['sensor-1', 'S1', 10, false],
       ['sensor-2', 'S2', 20, false],
-      ['sensor-1', 'S1', 10, true],
     ]);
-    expect(series[0].points[1]).toEqual({
+    expect(series[1].points[1]).toEqual({
       id: '2:1',
       triggered_at: new Date(60_000).toISOString(),
       value: 2,
     });
+    expect(zeitreiheSeriesOf(null, String, () => null)).toEqual([]);
   });
 
-  it('mutes nothing without Verdachtsstellen', () => {
-    const series = zeitreiheSeriesOf(zeitreihe, [], String, () => null);
-    expect(series.map((entry) => [entry.id, entry.muted])).toEqual([
-      ['sensor-1', false],
-      ['sensor-2', false],
-    ]);
-    expect(zeitreiheSeriesOf(null, [], String, () => null)).toEqual([]);
+  it(`mutes all but the ${ZEITREIHE_ACTIVE_SENSORS} most active - and those above the threshold`, () => {
+    // Sensor n measures n (threshold 100); sensor 1 once goes above it.
+    const data = Object.fromEntries(
+      Array.from({ length: 10 }, (_, index) => {
+        const sensor = index + 1;
+        return [String(sensor), sensor === 1 ? [1, 150] : [sensor, sensor]];
+      }),
+    );
+    const series = zeitreiheSeriesOf({ timestamps: [0, 60], data }, String, () => 100);
+    const shown = series.filter((entry) => !entry.muted).map((entry) => entry.label);
+    // Sensor 1 (mean 75.5) is the most active as well as above the threshold.
+    expect(shown).toEqual(['1', '10', '9', '8', '7']);
+    expect(series.filter((entry) => entry.muted).map((entry) => entry.label)).toEqual(['2', '3', '4', '5', '6']);
+  });
+
+  it('shows every sensor above its threshold, also beyond the most active', () => {
+    const data = Object.fromEntries(
+      Array.from({ length: 8 }, (_, index) => [String(index + 1), [80, 80]]),
+    );
+    data['8'] = [0, 101]; // the lowest mean, but above 100
+    const series = zeitreiheSeriesOf({ timestamps: [0, 60], data }, String, () => 100);
+    const shown = series.filter((entry) => !entry.muted).map((entry) => entry.label);
+    expect(shown).toHaveLength(ZEITREIHE_ACTIVE_SENSORS + 1);
+    expect(shown).toContain('8');
   });
 });
 

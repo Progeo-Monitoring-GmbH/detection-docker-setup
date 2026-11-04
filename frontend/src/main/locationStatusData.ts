@@ -368,39 +368,72 @@ export const sensorRowsOf = ({
     }));
 };
 
+/** How many of the most active sensors the Zeitreihe draws in colour -
+ * besides every sensor above its threshold. */
+export const ZEITREIHE_ACTIVE_SENSORS = 5;
+
 /**
- * Every sensor's measured values in the Zeitreihe; the sensors with a
- * Verdachtsstelle (resolved ones too) first and in colour, the others muted -
- * unless there is none, then all of them in colour.
+ * Every sensor's measured values in the Zeitreihe. In colour (first, most
+ * active first): the ZEITREIHE_ACTIVE_SENSORS most active sensors - highest
+ * mean value as a multiple of their threshold, as the chart plots them - and
+ * every sensor above its threshold in the period. The others are muted
+ * (drawn faintly, one legend entry "Weitere Sensoren"), in sensor order.
  */
 export const zeitreiheSeriesOf = (
   zeitreihe: Pick<SensorHeatmapResponse, 'timestamps' | 'data'> | null,
-  clusters: VerdachtsstelleCluster[],
   labelOf: (sensorId: number) => string,
   thresholdOf: (sensorId: number) => number | null,
 ): ThresholdTrendSeries[] => {
   if (!zeitreihe) {
     return [];
   }
-  const suspected = new Set(clusters.map((cluster) => cluster.sensor_id));
-  const series = Object.keys(zeitreihe.data)
+  const sensors = Object.keys(zeitreihe.data)
     .map(Number)
     .sort((a, b) => a - b)
-    .map((sensorId) => ({
-      id: `sensor-${sensorId}`,
-      label: labelOf(sensorId),
-      threshold: thresholdOf(sensorId),
-      muted: suspected.size > 0 && !suspected.has(sensorId),
-      points: (zeitreihe.data[sensorId] || []).map((value, index) => {
-        const timestamp = zeitreihe.timestamps[index];
-        return {
-          id: `${sensorId}:${index}`,
-          triggered_at: timestamp != null ? new Date(timestamp * 1000).toISOString() : null,
-          value,
-        };
-      }),
-    }));
-  return [...series.filter((entry) => !entry.muted), ...series.filter((entry) => entry.muted)];
+    .map((sensorId) => {
+      const raw = zeitreihe.data[sensorId] || [];
+      const threshold = thresholdOf(sensorId);
+      const values = raw.flatMap((value) => {
+        const finite = finiteValue(value);
+        return finite == null ? [] : [finite];
+      });
+      // Relative to the threshold, as the chart draws them (1 without one).
+      const scale = threshold != null && threshold > 0 ? threshold : 1;
+      const activity = values.length
+        ? values.reduce((sum, value) => sum + Math.abs(value), 0) / values.length / scale
+        : 0;
+      return {
+        activity,
+        above: threshold != null && threshold > 0 && values.some((value) => value > threshold),
+        series: {
+          id: `sensor-${sensorId}`,
+          label: labelOf(sensorId),
+          threshold,
+          points: raw.map((value, index) => {
+            const timestamp = zeitreihe.timestamps[index];
+            return {
+              id: `${sensorId}:${index}`,
+              triggered_at: timestamp != null ? new Date(timestamp * 1000).toISOString() : null,
+              value,
+            };
+          }),
+        },
+      };
+    });
+  const mostActive = new Set(
+    [...sensors]
+      .filter((sensor) => sensor.activity > 0)
+      .sort((a, b) => b.activity - a.activity)
+      .slice(0, ZEITREIHE_ACTIVE_SENSORS),
+  );
+  const shown = sensors
+    .filter((sensor) => sensor.above || mostActive.has(sensor))
+    .sort((a, b) => b.activity - a.activity);
+  const muted = sensors.filter((sensor) => !shown.includes(sensor));
+  return [
+    ...shown.map((sensor) => ({ ...sensor.series, muted: false })),
+    ...muted.map((sensor) => ({ ...sensor.series, muted: true })),
+  ];
 };
 
 /** The Verdachtsstellen' latest alarm periods (until `now` while active),

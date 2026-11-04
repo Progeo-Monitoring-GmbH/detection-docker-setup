@@ -1,4 +1,4 @@
-import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { type CSSProperties, type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Button } from 'react-bootstrap';
 import { PauseFill, PlayFill } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
@@ -20,6 +20,8 @@ type FrameSliderProps = {
   playKey?: boolean;
   /** The time span (ms) shown elsewhere, e.g. a chart's zoomed time axis - a band on the track. */
   visibleRange?: { from: number; to: number } | null;
+  /** Controls shown in the slider's top row, e.g. the period it covers. */
+  toolbar?: ReactNode;
 };
 
 /** An alarm's period (ms); `to` is now while it is still active. */
@@ -215,6 +217,7 @@ const FrameSlider = ({
   alarms = [],
   playKey = true,
   visibleRange = null,
+  toolbar = null,
 }: FrameSliderProps) => {
   const { t } = useTranslation();
   const count = timestamps.length;
@@ -253,6 +256,7 @@ const FrameSlider = ({
         <label htmlFor={id} className="form-label small text-muted mb-0">
           {count ? `${index + 1}/${count}` : 'Timestamp'}
         </label>
+        {toolbar}
         {count > 0 && (
           // The frame's time, large - readable at a glance while it plays.
           <div

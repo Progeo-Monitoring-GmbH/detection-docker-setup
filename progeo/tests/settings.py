@@ -276,6 +276,7 @@ PROJECT_DB_SPLIT = False
 PROJECT_DB_STRICT = False
 # The test rows only exist inside this thread's test transaction.
 PROJECT_DB_WORKERS = 1
+PROJECT_DB_MIGRATE_WORKERS = 1
 
 DATABASE_ROUTERS = [
     "progeo.router.DemoRouter",

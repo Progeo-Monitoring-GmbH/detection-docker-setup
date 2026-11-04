@@ -11,7 +11,6 @@ import SensorHeatmap2D from '../components/device/SensorHeatmap2D.tsx';
 import { type SensorHeatmapResponse } from '../components/device/sensorHeatmapTypes';
 import MeasurementSamplesCompareChart, {
   type MeasurementCompareRow,
-  toggledSensor,
 } from '../components/device/MeasurementSamplesCompareChart.tsx';
 import FrameSlider, { frameAt } from '../components/device/FrameSlider';
 import { parseTimestamp } from './alarmUtils';
@@ -31,9 +30,21 @@ import {
 } from './timeRanges';
 import useMeasurementRange from './useMeasurementRange';
 import { staffFlags } from './access';
+import PillSelect from '../components/ui/kit/PillSelect';
+import { MEAN_WINDOWS, smoothHeatmap, smoothMeasurements } from './analyseSmoothing';
+import {
+  type CachedLoad,
+  cachedPeriod,
+  cutHeatmap,
+  cutMeasurements,
+  type MeasurementsLoad,
+  withLoad,
+} from './analyseCache';
 
-/** Most measurements per period - spread evenly over it by the backend (?days=). */
-const MAX_MEASUREMENTS = 300;
+/** The resolutions offered: most measurements per period, spread evenly
+ * over it by the backend (?days=&limit=, at most 2000). */
+const RESOLUTIONS = [300, 600, 1000, 2000] as const;
+const DEFAULT_RESOLUTION = RESOLUTIONS[0];
 
 /** Staff: the selected sensors' history (second plot) - the last 3 months,
  * in as many measurements as the backend gives (its limit). */
@@ -100,6 +111,10 @@ const LocationAnalyseTab = () => {
   );
   const [selectedRange, setSelectedRange] = useState<TimeRange>('7d');
   const range = effectiveTimeRange(selectedRange, rangeOptions);
+  // How many measurements a period is loaded with, and over how many
+  // neighbouring ones every value is averaged (1: not) - less noise.
+  const [resolution, setResolution] = useState<number>(DEFAULT_RESOLUTION);
+  const [meanWindow, setMeanWindow] = useState(1);
   // The time (epoch ms) of the page's one frame slider - the heatmap and the
   // measurements show the frame holding it. null: the newest measurement.
   const [frameTime, setFrameTime] = useState<number | null>(null);
@@ -159,21 +174,48 @@ const LocationAnalyseTab = () => {
     });
   };
 
-  const query = `days=${TIME_RANGE_DAYS[range]}&limit=${MAX_MEASUREMENTS}`;
+  const days = TIME_RANGE_DAYS[range];
+  const query = `days=${days}&limit=${resolution}`;
+  // The loads by period - switching back, or to a shorter period inside a
+  // complete longer load, needs no request (analyseCache).
+  const heatmapCache = useRef(new Map<string, CachedLoad<SensorHeatmapResponse>[]>());
+  const measurementsCache = useRef(new Map<string, CachedLoad<MeasurementsLoad>[]>());
 
   const loadHeatmap = useCallback(() => {
     if (isLorawan) {
       return;
     }
-    setHeatmapLoading(true);
+    const cacheKey = String(locationId);
+    const cached = cachedPeriod(heatmapCache.current.get(cacheKey), days, resolution, Date.now(), (value, fromMs) =>
+      cutHeatmap(value, fromMs) ?? value,
+    );
     const current = ++heatmapRequest.current;
+    if (cached) {
+      setHeatmap(cached);
+      setHeatmapLoading(false);
+      return;
+    }
+    setHeatmapLoading(true);
     const isCurrent = () => current === heatmapRequest.current;
     void axiosConfig.perform_get(
       auth,
       `/v1/location/${locationId}/heatmap/?${query}`,
       (response) => {
+        const data = (response?.data || null) as SensorHeatmapResponse | null;
+        if (data) {
+          const frames = data.timestamps?.length ?? 0;
+          const now = Date.now();
+          heatmapCache.current.set(
+            cacheKey,
+            withLoad(
+              heatmapCache.current.get(cacheKey),
+              { days, limit: resolution, complete: (data.total ?? frames) <= frames, loadedAt: now, value: data },
+              now,
+            ),
+          );
+        }
         if (isCurrent()) {
-          setHeatmap((response?.data || null) as SensorHeatmapResponse | null);
+          setHeatmap(data);
           setHeatmapLoading(false);
         }
       },
@@ -184,29 +226,52 @@ const LocationAnalyseTab = () => {
         }
       },
     );
-  }, [auth, enqueueSnackbar, isLorawan, locationId, query]);
+  }, [auth, days, enqueueSnackbar, isLorawan, locationId, query, resolution]);
 
   // Switching the device reloads only the measurements.
   const loadMeasurements = useCallback(() => {
     if (isLorawan) {
       return;
     }
-    setMeasurementsLoading(true);
+    const show = (load: MeasurementsLoad) => {
+      setMeasurements(load.rows);
+      setMeasurementTotal(load.total);
+      setDevices(load.devices);
+      setShownDevice(load.device);
+      setMeasurementsLoading(false);
+    };
+    const cacheKey = `${locationId}:${deviceId ?? 'default'}`;
+    const cached = cachedPeriod(measurementsCache.current.get(cacheKey), days, resolution, Date.now(), cutMeasurements);
     const current = ++measurementsRequest.current;
+    if (cached) {
+      show(cached);
+      return;
+    }
+    setMeasurementsLoading(true);
     const isCurrent = () => current === measurementsRequest.current;
     const device = deviceId != null ? `&device=${deviceId}` : '';
     void axiosConfig.perform_get(
       auth,
       `/v1/location/${locationId}/measurements/?${query}${device}`,
       (response) => {
+        const rows = (response?.data?.measurements || []) as MeasurementCompareRow[];
+        const load: MeasurementsLoad = {
+          rows,
+          total: Number(response?.data?.total ?? rows.length),
+          devices: (response?.data?.devices || []) as AnalyseDevice[],
+          device: (response?.data?.device ?? null) as number | null,
+        };
+        const now = Date.now();
+        measurementsCache.current.set(
+          cacheKey,
+          withLoad(
+            measurementsCache.current.get(cacheKey),
+            { days, limit: resolution, complete: load.total <= rows.length, loadedAt: now, value: load },
+            now,
+          ),
+        );
         if (isCurrent()) {
-          const rows = (response?.data?.measurements ||
-            []) as MeasurementCompareRow[];
-          setMeasurements(rows);
-          setMeasurementTotal(Number(response?.data?.total ?? rows.length));
-          setDevices((response?.data?.devices || []) as AnalyseDevice[]);
-          setShownDevice((response?.data?.device ?? null) as number | null);
-          setMeasurementsLoading(false);
+          show(load);
         }
       },
       (error) => {
@@ -216,7 +281,7 @@ const LocationAnalyseTab = () => {
         }
       },
     );
-  }, [auth, deviceId, enqueueSnackbar, isLorawan, locationId, query]);
+  }, [auth, days, deviceId, enqueueSnackbar, isLorawan, locationId, query, resolution]);
 
   const toggleSensorHistory = () => {
     if (sensorHistoryRows) {
@@ -252,6 +317,18 @@ const LocationAnalyseTab = () => {
   useEffect(() => {
     loadMeasurements();
   }, [loadMeasurements]);
+
+  // What the heatmap and the charts show: the loads, averaged over
+  // `meanWindow` neighbouring measurements.
+  const shownHeatmap = useMemo(() => smoothHeatmap(heatmap, meanWindow), [heatmap, meanWindow]);
+  const shownMeasurements = useMemo(
+    () => smoothMeasurements(measurements, meanWindow),
+    [measurements, meanWindow],
+  );
+  const shownSensorHistory = useMemo(
+    () => (sensorHistoryRows ? smoothMeasurements(sensorHistoryRows, meanWindow) : null),
+    [sensorHistoryRows, meanWindow],
+  );
 
   // The slider's frames: the heatmap's - the measurements (sampled a little
   // differently) show the one nearest to it; without a heatmap theirs.
@@ -305,9 +382,10 @@ const LocationAnalyseTab = () => {
 
   const loading = heatmapLoading || measurementsLoading;
 
-  // A sensor clicked on the plan (pos = sensor_order) -> the pair of its
-  // device in the samples chart: a location's sensors can be split over
-  // devices, each counting its pairs from 1. Shows that device if needed.
+  // A sensor clicked on the plan (pos = sensor_order) is added to the
+  // measurements' second plot - as the pair of its device: a location's
+  // sensors can be split over devices, each counting its pairs from 1.
+  // Shows that device if needed.
   const selectPlanSensor = (pos: number) => {
     const point = heatmap?.sensor_points?.find((candidate) => candidate.pos === pos);
     const pairIndex = (point?.pair ?? pos) - 1;
@@ -317,8 +395,55 @@ const LocationAnalyseTab = () => {
       setSensors([pairIndex]);
       return;
     }
-    setSensors((selected) => toggledSensor(selected, pairIndex));
+    setSensors((selected) =>
+      selected.includes(pairIndex) ? selected : [...selected, pairIndex].sort((a, b) => a - b),
+    );
   };
+
+  // The period, its resolution and the averaging - in the frame slider
+  // (LoRaWAN: only the period, on its own).
+  const rangeControl = (
+    <div className="d-flex flex-wrap align-items-center gap-2">
+      <SegmentedControl
+        options={rangeOptions.map((value) => ({
+          value,
+          label: t(timeRangeLabelKey(value)),
+        }))}
+        value={range}
+        onChange={(value) => {
+          setSelectedRange(value as TimeRange);
+          setFrameTime(null);
+        }}
+      />
+      {!isLorawan && (
+        <>
+          <PillSelect
+            label={t('analyse_resolution')}
+            title={t('analyse_resolution_hint')}
+            options={RESOLUTIONS.map((value) => ({
+              value: String(value),
+              label: t('analyse_resolution_option', { count: value }),
+            }))}
+            value={String(resolution)}
+            onChange={(value) => setResolution(Number(value))}
+          />
+          <PillSelect
+            label={t('analyse_mean')}
+            title={t('analyse_mean_hint')}
+            options={MEAN_WINDOWS.map((value) => ({
+              value: String(value),
+              label: value === 1 ? t('analyse_mean_off') : t('analyse_mean_option', { count: value }),
+            }))}
+            value={String(meanWindow)}
+            onChange={(value) => setMeanWindow(Number(value))}
+          />
+        </>
+      )}
+      {!isLorawan && loading && (heatmap || measurements.length > 0) && (
+        <Spinner size="sm" animation="border" className="text-muted" />
+      )}
+    </div>
+  );
 
   return (
     <div className="d-flex flex-column gap-4">
@@ -342,26 +467,11 @@ const LocationAnalyseTab = () => {
         {exportMsg && <span className="text-success small">{exportMsg}</span>}
       </div>
 
-      <div className="d-flex flex-wrap align-items-center gap-3">
-        <SegmentedControl
-          options={rangeOptions.map((value) => ({
-            value,
-            label: t(timeRangeLabelKey(value)),
-          }))}
-          value={range}
-          onChange={(value) => {
-            setSelectedRange(value as TimeRange);
-            setFrameTime(null);
-          }}
-        />
-        {!isLorawan && loading && (heatmap || measurements.length > 0) && (
-          <Spinner size="sm" animation="border" className="text-muted" />
-        )}
-      </div>
-
-      {!isLorawan && frameSeconds.length > 0 && (
-        // One slider for the heatmap and the measurements, kept on top while
-        // the page scrolls down to the charts.
+      {isLorawan ? (
+        <div className="d-flex flex-wrap align-items-center gap-3">{rangeControl}</div>
+      ) : (
+        // One slider for the heatmap and the measurements, with the period
+        // it covers - kept on top while the page scrolls down to the charts.
         <div
           data-testid="analyse-frame-slider"
           className="px-3"
@@ -374,13 +484,18 @@ const LocationAnalyseTab = () => {
             boxShadow: 'var(--progeo-shadow-panel)',
           }}
         >
-          <FrameSlider
-            id="analyse-frame"
-            timestamps={frameSeconds}
-            index={frameIndex}
-            onChange={(index) => setFrameTime(frameSeconds[index] * 1000)}
-            visibleRange={chartZoom}
-          />
+          {frameSeconds.length > 0 ? (
+            <FrameSlider
+              id="analyse-frame"
+              timestamps={frameSeconds}
+              index={frameIndex}
+              onChange={(index) => setFrameTime(frameSeconds[index] * 1000)}
+              visibleRange={chartZoom}
+              toolbar={rangeControl}
+            />
+          ) : (
+            <div className="d-flex flex-wrap align-items-center gap-2 py-3">{rangeControl}</div>
+          )}
         </div>
       )}
 
@@ -422,19 +537,19 @@ const LocationAnalyseTab = () => {
             <Collapse in={heatmapOpen}>
               <div id="analyse-heatmap">
                 <Card.Body className="pt-1">
-                  {heatmapLoading && !heatmap ? (
-                    <div className="d-flex align-items-center gap-2 text-muted py-4">
-                      <Spinner size="sm" animation="border" /> Loading heatmap...
+                  {heatmapLoading && !shownHeatmap ? (
+                    <div className="d-flex justify-content-center align-items-center py-5 text-muted">
+                      <Spinner animation="border" className="me-2" /> {t('ui_loading')}
                     </div>
                   ) : showsLines ? (
                     <LocationDmPlan
-                      heatmap={heatmap}
+                      heatmap={shownHeatmap}
                       time={frameTime}
                       onSensorClick={selectPlanSensor}
                     />
                   ) : (
                     <SensorHeatmap2D
-                      response={heatmap}
+                      response={shownHeatmap}
                       fitPlan
                       hideChrome
                       time={frameTime}
@@ -480,8 +595,8 @@ const LocationAnalyseTab = () => {
                 </div>
               )}
               {measurementsLoading && measurements.length === 0 ? (
-                <div className="d-flex align-items-center gap-2 text-muted py-4">
-                  <Spinner size="sm" animation="border" /> Loading measurements...
+                <div className="d-flex justify-content-center align-items-center py-5 text-muted">
+                  <Spinner animation="border" className="me-2" /> {t('ui_loading')}
                 </div>
               ) : measurements.length === 0 ? (
                 <div className="text-muted py-4 text-center">
@@ -489,7 +604,7 @@ const LocationAnalyseTab = () => {
                 </div>
               ) : (
                 <MeasurementSamplesCompareChart
-                  rows={measurements}
+                  rows={shownMeasurements}
                   frameSlider
                   hideFrameSlider
                   onVisibleRangeChange={setChartZoom}
@@ -499,7 +614,7 @@ const LocationAnalyseTab = () => {
                   onTimeChange={setFrameTime}
                   sensors={sensors}
                   onSensorsChange={setSensors}
-                  sensorHistoryRows={offerSensorHistory ? sensorHistoryRows : null}
+                  sensorHistoryRows={offerSensorHistory ? shownSensorHistory : null}
                   onToggleSensorHistory={offerSensorHistory ? toggleSensorHistory : null}
                   isLoadingSensorHistory={sensorHistoryLoading}
                 />
