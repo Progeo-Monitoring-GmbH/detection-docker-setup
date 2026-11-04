@@ -100,6 +100,52 @@ def store_channel(channel, content, signature):
     return {"channel": channel, "bundles": len(bundles), "latest": data.get("latest")}
 
 
+def list_bundles():
+    """The bundles the server holds, as its channel files list them (the
+    same data nginx serves at /firmware/versions/<channel>): one entry per
+    bundle id, newest first - {"id", "release", "firmware", "created",
+    "channels": [...], "latest_in": [channels it is "latest" of]}. Entries
+    whose zip is gone are skipped; a broken channel file is ignored."""
+    directory = os.path.join(settings.FIRMWARE_DIR, "channels")
+    try:
+        names = sorted(os.listdir(directory))
+    except OSError:
+        return []
+    bundles = {}
+    for file_name in names:
+        channel = file_name.removesuffix(".json")
+        if not file_name.endswith(".json") or not CHANNEL_NAME.fullmatch(channel):
+            continue
+        try:
+            with open(os.path.join(directory, file_name), "rb") as file:
+                data = json.loads(file.read(MAX_CHANNEL_SIZE + 1))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(data, dict) or not isinstance(data.get("bundles"), list):
+            continue
+        for entry in data["bundles"]:
+            if not isinstance(entry, dict) or not isinstance(entry.get("id"), str):
+                continue
+            url = entry.get("url")
+            name = url.removeprefix("bundles/") if isinstance(url, str) else ""
+            if not BUNDLE_NAME.fullmatch(name) or not os.path.isfile(
+                os.path.join(settings.FIRMWARE_DIR, "bundles", name)
+            ):
+                continue
+            bundle = bundles.setdefault(entry["id"], {
+                "id": entry["id"],
+                "release": entry.get("release"),
+                "firmware": entry.get("firmware"),
+                "created": entry.get("created"),
+                "channels": [],
+                "latest_in": [],
+            })
+            bundle["channels"].append(channel)
+            if data.get("latest") == entry["id"]:
+                bundle["latest_in"].append(channel)
+    return sorted(bundles.values(), key=lambda bundle: str(bundle["created"] or ""), reverse=True)
+
+
 def _check_listed_bundle(entry):
     """The id of a channel file's bundle entry whose files are stored."""
     if not isinstance(entry, dict):

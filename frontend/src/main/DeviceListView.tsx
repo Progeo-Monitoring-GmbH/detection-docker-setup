@@ -497,7 +497,6 @@ const DeviceListView = () => {
       <Chip>{t(`devices_hash_short_${device.hash_kind}`)}</Chip>
     );
 
-  const locationQuery = (device: OverviewDevice) => (device.location ? `?location=${device.location}` : '');
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -722,12 +721,12 @@ const DeviceListView = () => {
                                 <Sliders size={14} />
                               </button>
                             )}
-                            {/* The editor route is superuser-only. */}
-                            {canEdit && isSuperuser && (
+                            {/* Sensors are placed in the Lageplan wizard (superuser-only). */}
+                            {canEdit && isSuperuser && device.location && (
                               <button
                                 type="button"
                                 title={t('devices_action_editor')}
-                                onClick={() => navigate(`/device/${device.id}/editor/${locationQuery(device)}`)}
+                                onClick={() => navigate(`/lageplan/wizard/?location=${device.location}`)}
                                 style={actionStyle()}
                               >
                                 <Image size={14} />

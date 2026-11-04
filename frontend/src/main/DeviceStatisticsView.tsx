@@ -26,6 +26,7 @@ import {
 import { formatDate, formatRelativeTime } from './dateFormat';
 import { plotTheme } from '../styles/plotTheme';
 import { staffFlags } from './access';
+import { getProjectTypeLabel } from './projectType';
 
 /** A row of GET /v1/status/device_statistics/ - devices.* and by_type values. */
 type StatisticsDevice = {
@@ -507,7 +508,7 @@ const LocationList = ({
     />
   );
 };
-const TYPE_PIE_COLORS = [
+const PIE_COLORS = [
   plotTheme.brandBlue,
   plotTheme.brandOrange,
   plotTheme.contrastGreen,
@@ -517,156 +518,123 @@ const TYPE_PIE_COLORS = [
   '#6b6b6b',
 ];
 
-/** Device types as a clickable donut - each slice/legend entry opens its table. */
-const TypePieChart = ({
-  rows,
+type DonutSlice = { key: string; label: string; count: number; color: string };
+
+/** A compact donut with its legend beside it; slices/legend entries are clickable. */
+const DonutChart = ({
+  slices,
+  centerLabel,
+  ariaLabel,
   onSelect,
+  selectTitle,
 }: {
-  rows: StatisticsTypeRow[];
-  onSelect: (type: string) => void;
+  slices: DonutSlice[];
+  centerLabel: string;
+  ariaLabel: string;
+  onSelect?: (key: string) => void;
+  selectTitle?: string;
 }) => {
   const { t } = useTranslation();
-  const total = rows.reduce((sum, row) => sum + row.count, 0);
-  if (!rows.length || total <= 0) {
+  const shown = slices.filter((slice) => slice.count > 0);
+  const total = shown.reduce((sum, slice) => sum + slice.count, 0);
+  if (total <= 0) {
     return <div className="small text-muted py-2">{t('device_stats_empty')}</div>;
   }
 
-  const center = 100;
-  const radius = 78;
-  let angle = -Math.PI / 2;
-  const segments = rows.map((row, index) => {
-    const start = angle;
-    const sweep = (row.count / total) * Math.PI * 2;
-    angle += sweep;
-    const end = angle;
-    const point = (value: number) =>
-      [
-        center + radius * Math.cos(value),
-        center + radius * Math.sin(value),
-      ] as const;
-    const [x1, y1] = point(start);
-    const [x2, y2] = point(end);
+  const center = 60;
+  const radius = 54;
+  const point = (value: number) => [center + radius * Math.cos(value), center + radius * Math.sin(value)] as const;
+  // Start angle of each slice: the sum of the ones before, from 12 o'clock.
+  const starts = shown.map(
+    (_, index) => -Math.PI / 2 + (shown.slice(0, index).reduce((sum, slice) => sum + slice.count, 0) / total) * Math.PI * 2,
+  );
+  const segments = shown.map((slice, index) => {
+    const sweep = (slice.count / total) * Math.PI * 2;
+    const [x1, y1] = point(starts[index]);
+    const [x2, y2] = point(starts[index] + sweep);
     return {
-      row,
-      color: TYPE_PIE_COLORS[index % TYPE_PIE_COLORS.length],
-      percent: Math.round((row.count / total) * 100),
-      // A single type is a full circle; otherwise a pie slice per type.
+      slice,
+      percent: Math.round((slice.count / total) * 100),
+      // A single slice is a full circle.
       path:
-        rows.length === 1
+        shown.length === 1
           ? null
-          : `M ${center} ${center} L ${x1} ${y1} A ${radius} ${radius} 0 ${
-              sweep > Math.PI ? 1 : 0
-            } 1 ${x2} ${y2} Z`,
+          : `M ${center} ${center} L ${x1} ${y1} A ${radius} ${radius} 0 ${sweep > Math.PI ? 1 : 0} 1 ${x2} ${y2} Z`,
     };
   });
+  const clickable = onSelect ? { cursor: 'pointer' } : undefined;
 
   return (
-    <div className="d-flex flex-wrap align-items-center gap-4">
-      <svg
-        width={210}
-        height={210}
-        viewBox="0 0 200 200"
-        role="img"
-        aria-label={t('device_stats_by_type_title')}
-        style={{ flexShrink: 0 }}
-      >
-        {segments.map((segment) =>
-          segment.path ? (
+    <div className="d-flex align-items-center gap-3">
+      <svg width={130} height={130} viewBox="0 0 120 120" role="img" aria-label={ariaLabel} style={{ flexShrink: 0 }}>
+        {segments.map(({ slice, percent, path }) => {
+          const title = (
+            <title>
+              {slice.label}: {slice.count} · {percent}%
+            </title>
+          );
+          return path ? (
             <path
-              key={segment.row.type}
-              d={segment.path}
-              fill={segment.color}
+              key={slice.key}
+              d={path}
+              fill={slice.color}
               stroke="var(--progeo-panel-bg)"
               strokeWidth={1.5}
-              style={{ cursor: 'pointer' }}
-              onClick={() => onSelect(segment.row.type)}
+              style={clickable}
+              onClick={() => onSelect?.(slice.key)}
             >
-              <title>
-                {segment.row.label}: {segment.row.count} · {segment.percent}%
-              </title>
+              {title}
             </path>
           ) : (
             <circle
-              key={segment.row.type}
+              key={slice.key}
               cx={center}
               cy={center}
               r={radius}
-              fill={segment.color}
-              style={{ cursor: 'pointer' }}
-              onClick={() => onSelect(segment.row.type)}
+              fill={slice.color}
+              style={clickable}
+              onClick={() => onSelect?.(slice.key)}
             >
-              <title>
-                {segment.row.label}: {segment.row.count} · {segment.percent}%
-              </title>
+              {title}
             </circle>
-          ),
-        )}
-        <circle
-          cx={center}
-          cy={center}
-          r={46}
-          fill="var(--progeo-panel-bg)"
-          pointerEvents="none"
-        />
-        <text
-          x={center}
-          y={center - 2}
-          textAnchor="middle"
-          style={{
-            fontSize: 24,
-            fontWeight: 600,
-            fill: 'var(--progeo-blue)',
-          }}
-        >
+          );
+        })}
+        <circle cx={center} cy={center} r={31} fill="var(--progeo-panel-bg)" pointerEvents="none" />
+        <text x={center} y={center + 1} textAnchor="middle" style={{ fontSize: 18, fontWeight: 600, fill: 'var(--progeo-blue)' }}>
           {total}
         </text>
-        <text
-          x={center}
-          y={center + 16}
-          textAnchor="middle"
-          style={{ fontSize: 10, fill: MUTED }}
-        >
-          {t('device_stats_kpi_devices')}
+        <text x={center} y={center + 14} textAnchor="middle" style={{ fontSize: 8, fill: MUTED }}>
+          {centerLabel}
         </text>
       </svg>
-      <div
-        className="d-flex flex-column gap-1"
-        style={{ minWidth: 210, flex: '1 1 210px' }}
-      >
-        {segments.map((segment) => (
+      <div className="d-flex flex-column" style={{ minWidth: 0, flex: 1 }}>
+        {segments.map(({ slice, percent }) => (
           <button
-            key={segment.row.type}
+            key={slice.key}
             type="button"
-            onClick={() => onSelect(segment.row.type)}
-            title={t('device_stats_type_open')}
+            disabled={!onSelect}
+            onClick={() => onSelect?.(slice.key)}
+            title={selectTitle}
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 8,
+              gap: 7,
               width: '100%',
-              padding: '3px 4px',
+              padding: '2px 4px',
               border: 'none',
               borderRadius: 6,
               background: 'transparent',
               color: 'var(--progeo-blue)',
               fontFamily: 'inherit',
-              fontSize: 12.5,
+              fontSize: 12,
               textAlign: 'left',
-              cursor: 'pointer',
+              cursor: onSelect ? 'pointer' : 'default',
             }}
           >
-            <span
-              style={{
-                width: 9,
-                height: 9,
-                borderRadius: 2,
-                background: segment.color,
-                flexShrink: 0,
-              }}
-            />
-            <span>{segment.row.label}</span>
-            <span className="ms-auto text-muted">
-              {segment.row.count} · {segment.percent}%
+            <span style={{ width: 8, height: 8, borderRadius: 2, background: slice.color, flexShrink: 0 }} />
+            <span className="text-truncate">{slice.label}</span>
+            <span className="ms-auto text-muted" style={{ whiteSpace: 'nowrap' }}>
+              {slice.count} · {percent}%
             </span>
           </button>
         ))}
@@ -963,17 +931,42 @@ const DeviceStatisticsView = () => {
     { value: 'dead_locations', label: t('device_stats_dead_locations') },
   ];
 
+  // by_type is keyed by the locations' project type (PROJECT_TYPE_CHOICES
+  // value as text, "unknown" without one) - shown with the brand labels.
   const typeLabel = (type: string) =>
-    typeRows.find((row) => row.type === type)?.label ||
-    (type === 'unset' ? t('devices_type_unset') : type);
+    getProjectTypeLabel(
+      t,
+      type === 'unknown' ? 0 : Number(type),
+      typeRows.find((row) => row.type === type)?.label,
+    );
 
   const typeGroups = typeRows
     .map((row) => ({
       type: row.type,
-      label: row.label || typeLabel(row.type),
+      label: typeLabel(row.type),
       rows: overview?.devices.by_type[row.type] ?? [],
     }))
     .filter((group) => group.rows.length > 0);
+
+  const typeSlices = typeRows.map((row, index) => ({
+    key: row.type,
+    label: typeLabel(row.type),
+    count: row.count,
+    color: PIE_COLORS[index % PIE_COLORS.length],
+  }));
+
+  // Every device is exactly one of these: measured within 24 h, measured
+  // within 30 days (offline), or dead (older or never - device_inventory).
+  const statusSlices = [
+    { key: 'online', label: t('device_stats_status_online'), count: totals.measured_24h, color: plotTheme.contrastGreen },
+    {
+      key: 'offline',
+      label: t('device_stats_status_offline'),
+      count: Math.max(0, totals.devices - totals.measured_24h - totals.dead),
+      color: plotTheme.contrastYellow,
+    },
+    { key: 'dead', label: t('device_stats_status_dead'), count: totals.dead, color: RED },
+  ];
 
   const waiting = (
     <div className="d-flex align-items-center gap-2 text-muted py-3">
@@ -1188,15 +1181,35 @@ const DeviceStatisticsView = () => {
 
       <KpiStrip tiles={kpiTiles} />
 
-      <PanelCard title={t('device_stats_by_type_title')}>
-        {!overview ? (
-          loading ? waiting : <div className="small text-muted py-2">{t('device_stats_empty')}</div>
-        ) : typeRows.length === 0 ? (
-          <div className="small text-muted py-2">{t('device_stats_empty')}</div>
-        ) : (
-          <TypePieChart rows={typeRows} onSelect={openTypeTable} />
-        )}
-      </PanelCard>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 14 }}>
+        <PanelCard title={t('device_stats_by_type_title')}>
+          {!overview ? (
+            loading ? waiting : <div className="small text-muted py-2">{t('device_stats_empty')}</div>
+          ) : (
+            <DonutChart
+              slices={typeSlices}
+              centerLabel={t('device_stats_kpi_devices')}
+              ariaLabel={t('device_stats_by_type_title')}
+              onSelect={openTypeTable}
+              selectTitle={t('device_stats_type_open')}
+            />
+          )}
+        </PanelCard>
+        <PanelCard title={t('device_stats_status_title')}>
+          {!overview ? (
+            loading ? waiting : <div className="small text-muted py-2">{t('device_stats_empty')}</div>
+          ) : (
+            <DonutChart
+              slices={statusSlices}
+              centerLabel={t('device_stats_kpi_devices')}
+              ariaLabel={t('device_stats_status_title')}
+              // Online/offline: the 24 h lists, dead: the dead devices.
+              onSelect={(key) => chooseSection(key === 'dead' ? 'dead' : 'measured')}
+              selectTitle={t('device_stats_status_open')}
+            />
+          )}
+        </PanelCard>
+      </div>
 
       <PanelCard
         title={t('device_stats_lists_title')}

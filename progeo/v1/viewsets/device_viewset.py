@@ -34,6 +34,7 @@ from progeo.helper.alarm_evaluation import evaluate_measurement_instantly
 from progeo.helper.basics import RequestFailed, RequestSuccess, elog, ilog
 from progeo.helper.controller_wifi import parse_lua_wifi, request_controller_wifi_update
 from progeo.helper.creator import create_MfS_log
+from progeo.helper.firmware import list_bundles as list_firmware_bundles
 from progeo.helper.location_access import (
     can_see_location,
     configured_accounts,
@@ -1147,6 +1148,8 @@ class DeviceViewSet(ProgeoModalViewSet):
     @action(detail=False, url_path="provision/locations", methods=["GET"])
     def provision_locations(self, request, *args, **kwargs):
         """The locations a new controller can be filed under, with the defaults of the form."""
+        bundles = list_firmware_bundles()
+        default_bundle = provisioning.default_bundle(bundles)
         return RequestSuccess({
             "locations": [
                 # The address fields make the frontend's LocationPicker searchable.
@@ -1164,7 +1167,12 @@ class DeviceViewSet(ProgeoModalViewSet):
                 "interval_sec": provisioning.DEFAULT_INTERVAL_SEC,
                 "pulldown_resistance": ProgeoDevice.Resistance.DEFAULT_100K,
                 "protective_earth": 0,
+                "firmware": default_bundle["id"] if default_bundle else None,
             },
+            # The flash bundles the server holds (/firmware/versions/<channel>),
+            # newest first; empty: the config gets FIRMWARE_VERSION.
+            "firmware_bundles": bundles,
+            "firmware_fallback": provisioning.FIRMWARE_VERSION,
             "pulldown_resistances": [
                 {"value": value, "label": label} for value, label in ProgeoDevice.Resistance.choices
             ],

@@ -1,5 +1,6 @@
 import React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router';
 import { Badge, Button, Spinner } from 'react-bootstrap';
 import { CheckLg, FileEarmarkPdf, PlusLg } from 'react-bootstrap-icons';
 import CadUploadDropbox from '../components/form/CadUploadDropbox.tsx';
@@ -410,8 +411,26 @@ const LageplanWizardView = () => {
   // each with its sensors (a plan's sensors can be split over devices).
   const [deviceRanges, setDeviceRanges] = useState<DeviceRange[]>([]);
 
+  // ?location=<location pk> (as everywhere else, e.g. from the device
+  // overview) preselects the location; the selection is kept there.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedLocation = Number(searchParams.get('location'));
+  const appliedRequest = useRef(false);
+
   // Everything below step 1 belongs to the selected location.
   const selectLocation = (next: WizardLocation | null) => {
+    setSearchParams(
+      (current) => {
+        const params = new URLSearchParams(current);
+        if (next?.id != null) {
+          params.set('location', String(next.id));
+        } else {
+          params.delete('location');
+        }
+        return params;
+      },
+      { replace: true },
+    );
     setSelectedLocationId(next ? next.project_id : null);
     setPointSource(
       next && isLorawanProject(next.project_type) ? 'manual' : 'cad',
@@ -465,6 +484,20 @@ const LageplanWizardView = () => {
 
     void fetchLocations();
   }, [auth]);
+
+  // Once the locations are there: select the one ?location= names.
+  useEffect(() => {
+    if (appliedRequest.current || !locations.length) {
+      return;
+    }
+    appliedRequest.current = true;
+    const requested = locations.find((loc) => loc.id === requestedLocation);
+    if (requested) {
+      selectLocation(requested);
+    }
+    // Only for the first list - later the user picks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locations]);
 
   useEffect(() => {
     if (selectedLocationId === null) {

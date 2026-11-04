@@ -2,6 +2,7 @@
 DeviceViewSet provision/*): preview -> config with device_hash and token,
 confirm -> device + transfer token, then the controller's samples arrive."""
 import itertools
+import json
 
 import pytest
 
@@ -27,6 +28,27 @@ def _sample_base_url(settings):
     settings.DEVICE_SAMPLE_BASE_URL = "https://api.progeo.com"
 
 
+@pytest.fixture(autouse=True)
+def firmware_dir(settings, tmp_path):
+    # No flash bundles unless a test stores some - not the local media dir's.
+    settings.FIRMWARE_DIR = str(tmp_path / "firmware")
+    return tmp_path / "firmware"
+
+
+def _store_channel(firmware_dir, channel, latest, *bundles):
+    """channels/<channel>.json listing `bundles` ((id, firmware, created)), their zips stored."""
+    (firmware_dir / "bundles").mkdir(parents=True, exist_ok=True)
+    (firmware_dir / "channels").mkdir(parents=True, exist_ok=True)
+    entries = []
+    for bundle_id, firmware, created in bundles:
+        name = f"lua-wlan-{bundle_id}.zip"
+        (firmware_dir / "bundles" / name).write_bytes(b"zip")
+        entries.append({"id": bundle_id, "release": bundle_id.split("_")[0], "firmware": firmware,
+                        "url": f"bundles/{name}", "created": created})
+    (firmware_dir / "channels" / f"{channel}.json").write_text(
+        json.dumps({"channel": channel, "latest": latest, "bundles": entries}), encoding="utf-8")
+
+
 @pytest.fixture
 def staff_client(api_client):
     api_client.force_authenticate(user=f.make_user(staff=True))
@@ -43,6 +65,8 @@ def test_parse_settings_validates_and_defaults():
     assert provisioning.parse_settings({}) == {
         "model": "smartex mx", "sensors": 32, "interval_sec": 1800, "pulldown_resistance": 136, "protective_earth": 0,
         "wifi_ssid": "", "wifi_pwd": "",
+        # No bundle on the server: the built-in firmware version.
+        "firmware_bundle": None, "firmware_version": provisioning.FIRMWARE_VERSION,
     }
     assert provisioning.parse_settings({"sensors": 1000})["sensors"] == 1000
     for bad in ({"sensors": 0}, {"sensors": "x"}, {"interval_sec": 1}, {"pulldown_resistance": 99},
@@ -75,6 +99,33 @@ def test_the_chosen_model_goes_into_config_and_device(staff_client, location):
 
     assert response.status_code == 200, response.content
     assert ProgeoDevice.objects.using(f.DB).get(raw_hash=preview["device_hash"]).hardware == "smartex vt"
+
+
+def test_the_firmware_is_one_of_the_servers_bundles(staff_client, location, firmware_dir):
+    _store_channel(firmware_dir, "beta", "2026.11.2_fw-v1.3.0",
+                   ("2026.11.1_fw-v1.2.0", "v1.2.0", "2026-11-01T10:00:00Z"),
+                   ("2026.11.2_fw-v1.3.0", "v1.3.0", "2026-11-03T10:00:00Z"))
+    _store_channel(firmware_dir, "stable", "2026.11.1_fw-v1.2.0",
+                   ("2026.11.1_fw-v1.2.0", "v1.2.0", "2026-11-01T10:00:00Z"))
+    # Listed, but its zip is gone - not offered.
+    channel = json.loads((firmware_dir / "channels" / "beta.json").read_text(encoding="utf-8"))
+    channel["bundles"].append({"id": "gone", "firmware": "v0", "url": "bundles/lua-wlan-gone.zip"})
+    (firmware_dir / "channels" / "beta.json").write_text(json.dumps(channel), encoding="utf-8")
+
+    listed = staff_client.get("/v1/device/provision/locations/").json()
+    assert [bundle["id"] for bundle in listed["firmware_bundles"]] == ["2026.11.2_fw-v1.3.0", "2026.11.1_fw-v1.2.0"]
+    assert listed["firmware_bundles"][1]["channels"] == ["beta", "stable"]
+    # Default: the latest of "stable", not the newest bundle.
+    assert listed["defaults"]["firmware"] == "2026.11.1_fw-v1.2.0"
+
+    config = _preview(staff_client, location, firmware="2026.11.2_fw-v1.3.0")["config"]
+    assert 'version = "v1.3.0",' in config
+    assert 'bundle = "2026.11.2_fw-v1.3.0",' in config
+    assert 'version = "v1.2.0",' in _preview(staff_client, location)["config"]
+
+    refused = staff_client.post("/v1/device/provision/preview/",
+                                {"location": location.pk, "firmware": "gone"}, format="json")
+    assert "not on the server" in refused.json()["reason"]
 
 
 def test_render_config_escapes_lua_strings():

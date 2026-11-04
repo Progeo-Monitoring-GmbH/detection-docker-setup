@@ -18,6 +18,7 @@ from django.core import signing
 from django.db import DEFAULT_DB_ALIAS, transaction
 
 from progeo.authentication import TRANSFER_TOKEN_PURPOSE
+from progeo.helper.firmware import list_bundles
 from progeo.v1.models import LimitedToken, ProgeoDevice, ProgeoLocation
 
 # Below settings.DEVICE_SAMPLE_BASE_URL (default DEFAULT_SAMPLE_BASE_URL).
@@ -27,7 +28,10 @@ SAMPLE_PATH = "/v1/device/{project_id}/sample/"
 # device.model of the config if the location's type names no device.
 DEVICE_MODEL = "smartex mx"
 CONFIG_VERSION = "2026.11"
+# firmware.version of the config while the server holds no flash bundle.
 FIRMWARE_VERSION = "v1.2.0-tls-lua53"
+# Without a choice: the latest bundle of this channel (else of any channel).
+DEFAULT_FIRMWARE_CHANNEL = "stable"
 PORTAL = {"ssid": "MicroBoxInstallHelper", "pwd": "microWord", "timeout_sec": 60}
 # The controller's own address inside its setup network.
 PORTAL_URL = "http://192.168.16.1"
@@ -68,6 +72,33 @@ MODELS = list(dict.fromkeys(
     [DEVICE_MODEL]
     + [ascii_model(label) for value, label in _LOCATION_TYPES.choices if value not in _NO_MODEL_TYPES]
 ))
+
+
+def default_bundle(bundles):
+    """The bundle a new config gets without a choice: the latest of
+    DEFAULT_FIRMWARE_CHANNEL, else the latest of any channel, else the newest
+    (bundles: firmware.list_bundles, newest first). None without bundles."""
+    return (
+        next((bundle for bundle in bundles if DEFAULT_FIRMWARE_CHANNEL in bundle["latest_in"]), None)
+        or next((bundle for bundle in bundles if bundle["latest_in"]), None)
+        or next(iter(bundles), None)
+    )
+
+
+def resolve_firmware(bundle_id) -> dict:
+    """{"firmware_bundle", "firmware_version"} of the chosen flash bundle
+    (one the server holds - firmware.list_bundles), the default bundle
+    without a choice, FIRMWARE_VERSION while the server holds none."""
+    bundles = list_bundles()
+    if bundle_id:
+        bundle = next((entry for entry in bundles if entry["id"] == bundle_id), None)
+        if bundle is None:
+            raise ProvisionError(f"firmware bundle {bundle_id!r} is not on the server")
+    else:
+        bundle = default_bundle(bundles)
+    if bundle is None:
+        return {"firmware_bundle": None, "firmware_version": FIRMWARE_VERSION}
+    return {"firmware_bundle": bundle["id"], "firmware_version": bundle["firmware"] or FIRMWARE_VERSION}
 
 
 def default_model(location) -> str:
@@ -114,6 +145,7 @@ def parse_settings(data) -> dict:
         "protective_earth": _int_field(data, "protective_earth", 0, (0, 1)),
         "wifi_ssid": str(data.get("wifi_ssid") or "").strip(),
         "wifi_pwd": str(data.get("wifi_pwd") or ""),
+        **resolve_firmware(str(data.get("firmware") or "").strip()),
     }
 
 
@@ -200,7 +232,10 @@ def render_config(plan) -> str:
         f"    timeout_sec = {PORTAL['timeout_sec']}",
         "  },",
         "  firmware = {",
-        f"    version = {lua_string(FIRMWARE_VERSION)}",
+        # A preview signed before bundles existed: FIRMWARE_VERSION.
+        f"    version = {lua_string(plan.get('firmware_version') or FIRMWARE_VERSION)},",
+        *([f"    bundle = {lua_string(plan['firmware_bundle'])}, -- flash bundle on the server"]
+          if plan.get("firmware_bundle") else []),
         "  }",
         "}",
         "",

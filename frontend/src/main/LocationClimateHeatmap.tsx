@@ -109,7 +109,7 @@ const LocationClimateHeatmap = ({
             {t('climate_heatmap_no_points')}
             {can(routeRule('/lageplan/wizard/')) && (
               <div className="mt-2">
-                <Link to="/lageplan/wizard/">{t('climate_heatmap_open_wizard')}</Link>
+                <Link to={`/lageplan/wizard/?location=${locationId}`}>{t('climate_heatmap_open_wizard')}</Link>
               </div>
             )}
           </div>

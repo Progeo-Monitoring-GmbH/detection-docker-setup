@@ -1,14 +1,18 @@
-import { useState } from 'react';
-import { Button } from 'react-bootstrap';
+import { useMemo } from 'react';
+import DataTable, { type TableColumn } from 'react-data-table-component';
 import { CheckLg } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
 import type { SensorChange } from './measurementBands';
 
-/** How many changes show at first, and how many more each click shows. */
+/** Rows per page of the table. */
 export const CHANGES_PAGE = 10;
 
+const UP_COLOR = '#3F7A1C';
+const DOWN_COLOR = '#C44D26';
+const MUTED = '#8B8383';
+
 type SensorChangesPanelProps = {
-  /** Biggest first (sensorChanges). */
+  /** Biggest first (sensorChanges) - the order until a column is sorted. */
   changes: SensorChange[];
   /** Colours of the change lines in the plot. */
   wpColor: string;
@@ -21,8 +25,44 @@ type SensorChangesPanelProps = {
   onSensorHover?: (sensor: number | null) => void;
 };
 
-const formatChange = (value: number) =>
-  `${value > 0 ? '+' : ''}${value.toFixed(2)}`;
+/** Change in percent of the old value; null when there was none (0). */
+export const percentChange = (then: number, now: number): number | null =>
+  then === 0 ? null : ((now - then) / Math.abs(then)) * 100;
+
+const formatPercent = (value: number) =>
+  `${value > 0 ? '+' : value < 0 ? '−' : '±'}${Math.abs(value).toFixed(1)} %`;
+
+/** Ascending, a missing percentage after every number (also when DataTable reverses it). */
+const byPercent =
+  (pick: (change: SensorChange) => number | null) => (a: SensorChange, b: SensorChange) => {
+    const left = pick(a);
+    const right = pick(b);
+    if (left == null || right == null) {
+      return left == null && right == null ? 0 : left == null ? 1 : -1;
+    }
+    return left - right;
+  };
+
+const wpPercent = (change: SensorChange) => percentChange(change.wpThen, change.wpNow);
+const epPercent = (change: SensorChange) => percentChange(change.epThen, change.epNow);
+
+/** The percentage, plus green and minus red; without an old value the absolute change as a hint. */
+const PercentCell = ({ percent, change }: { percent: number | null; change: number }) =>
+  percent == null ? (
+    <span style={{ color: MUTED }} title={`${change > 0 ? '+' : ''}${change.toFixed(2)}`}>
+      –
+    </span>
+  ) : (
+    <span
+      style={{
+        color: percent > 0 ? UP_COLOR : percent < 0 ? DOWN_COLOR : MUTED,
+        fontVariantNumeric: 'tabular-nums',
+        fontWeight: 600,
+      }}
+    >
+      {formatPercent(percent)}
+    </span>
+  );
 
 const Swatch = ({ color }: { color: string }) => (
   <span
@@ -39,10 +79,18 @@ const Swatch = ({ color }: { color: string }) => (
   />
 );
 
+const tableStyles = {
+  table: { style: { backgroundColor: 'transparent' } },
+  headRow: { style: { minHeight: '32px', backgroundColor: 'transparent' } },
+  headCells: { style: { fontSize: '11.5px', color: MUTED, fontWeight: 500 } },
+  rows: { style: { minHeight: '32px', fontSize: '12.5px', backgroundColor: 'transparent' } },
+  pagination: { style: { backgroundColor: 'transparent', minHeight: '40px', fontSize: '12px' } },
+};
+
 /**
  * The comparison's biggest changes: per sensor the change of WP and EP since
- * then, CHANGES_PAGE at a time ("show more"). A click shows the sensor in the
- * measurements' second plot.
+ * then in percent of the old value, sortable, CHANGES_PAGE per page. A click
+ * shows the sensor in the measurements' second plot.
  */
 const SensorChangesPanel = ({
   changes,
@@ -53,9 +101,52 @@ const SensorChangesPanel = ({
   onSensorHover,
 }: SensorChangesPanelProps) => {
   const { t } = useTranslation();
-  const [shownCount, setShownCount] = useState(CHANGES_PAGE);
-  const shown = changes.slice(0, shownCount);
-  const remaining = changes.length - shown.length;
+
+  const columns = useMemo<TableColumn<SensorChange>[]>(
+    () => [
+      {
+        id: 'sensor',
+        name: t('measurement_compare_pair_label'),
+        selector: (change) => change.sensor,
+        sortable: true,
+        cell: (change) => (
+          <span>
+            {t('measurement_compare_pair_label')} {change.sensor + 1}
+            {selectedSensors.includes(change.sensor) && <CheckLg className="ms-1 text-primary" size={12} />}
+          </span>
+        ),
+      },
+      {
+        id: 'wp',
+        name: (
+          <span>
+            <Swatch color={wpColor} />
+            {t('analyse_compare_col_wp')}
+          </span>
+        ),
+        selector: (change) => wpPercent(change) ?? 0,
+        sortable: true,
+        sortFunction: byPercent(wpPercent),
+        cell: (change) => <PercentCell percent={wpPercent(change)} change={change.wpChange} />,
+        right: true,
+      },
+      {
+        id: 'ep',
+        name: (
+          <span>
+            <Swatch color={epColor} />
+            {t('analyse_compare_col_ep')}
+          </span>
+        ),
+        selector: (change) => epPercent(change) ?? 0,
+        sortable: true,
+        sortFunction: byPercent(epPercent),
+        cell: (change) => <PercentCell percent={epPercent(change)} change={change.epChange} />,
+        right: true,
+      },
+    ],
+    [t, wpColor, epColor, selectedSensors],
+  );
 
   return (
     <div data-testid="sensor-changes" style={{ fontSize: 12.5 }}>
@@ -68,82 +159,27 @@ const SensorChangesPanel = ({
       {changes.length === 0 ? (
         <div className="text-muted">{t('analyse_compare_changes_empty')}</div>
       ) : (
-        <table
-          className="table table-sm table-hover mb-2"
-          style={{ fontSize: 12.5 }}
-        >
-          <thead>
-            <tr className="text-muted">
-              <th scope="col" className="fw-normal">
-                {t('measurement_compare_pair_label')}
-              </th>
-              <th scope="col" className="fw-normal text-end">
-                <Swatch color={wpColor} />
-                {t('analyse_compare_col_wp')}
-              </th>
-              <th scope="col" className="fw-normal text-end">
-                <Swatch color={epColor} />
-                {t('analyse_compare_col_ep')}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {shown.map((change) => {
-              const selected = selectedSensors.includes(change.sensor);
-              return (
-                <tr
-                  key={change.sensor}
-                  style={{ cursor: onSensorSelect ? 'pointer' : undefined }}
-                  title={t(
-                    selected
-                      ? 'analyse_compare_row_remove'
-                      : 'analyse_compare_row_add',
-                    {
-                      sensor: change.sensor + 1,
-                    },
-                  )}
-                  aria-selected={selected}
-                  onClick={() => onSensorSelect?.(change.sensor)}
-                  onMouseEnter={() => onSensorHover?.(change.sensor)}
-                  onMouseLeave={() => onSensorHover?.(null)}
-                >
-                  <td>
-                    {t('measurement_compare_pair_label')} {change.sensor + 1}
-                    {selected && (
-                      <CheckLg className="ms-1 text-primary" size={12} />
-                    )}
-                  </td>
-                  <td
-                    className="text-end"
-                    style={{ fontVariantNumeric: 'tabular-nums' }}
-                  >
-                    {formatChange(change.wpChange)}
-                  </td>
-                  <td
-                    className="text-end"
-                    style={{ fontVariantNumeric: 'tabular-nums' }}
-                  >
-                    {formatChange(change.epChange)}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      )}
-      {remaining > 0 && (
-        <Button
-          size="sm"
-          variant="outline-primary"
-          className="py-0"
-          style={{ fontSize: 12 }}
-          onClick={() => setShownCount((count) => count + CHANGES_PAGE)}
-        >
-          {t('analyse_compare_more', {
-            count: Math.min(CHANGES_PAGE, remaining),
-            total: remaining,
-          })}
-        </Button>
+        <DataTable
+          columns={columns}
+          data={changes}
+          keyField="sensor"
+          customStyles={tableStyles}
+          dense
+          highlightOnHover
+          pointerOnHover={Boolean(onSensorSelect)}
+          pagination={changes.length > CHANGES_PAGE}
+          paginationPerPage={CHANGES_PAGE}
+          paginationRowsPerPageOptions={[CHANGES_PAGE, 25, 50, 100]}
+          conditionalRowStyles={[
+            {
+              when: (change) => selectedSensors.includes(change.sensor),
+              style: { backgroundColor: 'rgba(11, 54, 89, .06)' },
+            },
+          ]}
+          onRowClicked={(change) => onSensorSelect?.(change.sensor)}
+          onRowMouseEnter={(change) => onSensorHover?.(change.sensor)}
+          onRowMouseLeave={() => onSensorHover?.(null)}
+        />
       )}
     </div>
   );

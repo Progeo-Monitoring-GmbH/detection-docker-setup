@@ -63,7 +63,6 @@ export const APP_ROUTE_ACCESS = {
   // Only redirects - its targets are guarded.
   '/device/:id/update/': ANY_USER,
   // Opened from the device overview.
-  '/device/:id/editor/': SUPERUSER,
   '/device/statistics/': allOf(STAFF, permission('module_devices_enabled')),
   '/admin/panel/': SUPERUSER,
   '/staff/': STAFF,

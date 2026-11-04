@@ -109,7 +109,6 @@ const PORTAL_NAV_COMPONENTS = {
 const DeviceSettingsRedirect = React.lazy(
   () => import('./main/DeviceSettingsRedirect.tsx'),
 );
-const DeviceEditorView = React.lazy(() => import('./main/DeviceEditorView'));
 const AdminPanel = React.lazy(() => import('./main/AdminPanel.tsx'));
 const StaffAdmin = React.lazy(() => import('./main/StaffAdmin.tsx'));
 const EscalationsView = React.lazy(() => import('./main/EscalationsView.tsx'));
@@ -262,10 +261,6 @@ const CoreRoutes = () => {
           <Route
             path="/device/:id/update/"
             element={guard('/device/:id/update/', <DeviceSettingsRedirect />)}
-          />
-          <Route
-            path="/device/:id/editor/"
-            element={guard('/device/:id/editor/', <DeviceEditorView />)}
           />
           {/* Retired: the device setup is part of the device overview. */}
           <Route

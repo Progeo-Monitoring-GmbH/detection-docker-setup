@@ -1,7 +1,8 @@
 """Inventory statistics for devices and locations (staff overview).
 
 One pass over the locations of the request's account answers the questions the
-"Geräte-Statistik" screen asks: which devices exist per type, which have a
+"Geräte-Statistik" screen asks: which devices exist per project type (their
+location's PROJECT_TYPE_CHOICES - the product, e.g. smartex® dm), which have a
 chip_id, which measured in the last 24 hours, which locations have no active
 Lageplan, and which devices/locations look dead or unused.
 
@@ -94,7 +95,7 @@ def _collect_locations(accounts):
         locations = (
             ProgeoLocation.objects.using(account.db_name)
             .filter(account=account)
-            .only("id", "name", "project_id", "account_id")
+            .only("id", "name", "project_id", "project_type", "account_id")
         )
         for database, group in locations_by_db(locations, account).items():
             entries = grouped.setdefault(database, {})
@@ -151,6 +152,13 @@ def _rows_of_database(database, locations):
         release_connection(database)
 
 
+def project_type_key(location) -> str:
+    """The by_type key of a device: its location's project type
+    (PROJECT_TYPE_CHOICES value as text), UNKNOWN_TYPE without one."""
+    project_type = getattr(location, "project_type", None)
+    return UNKNOWN_TYPE if project_type is None else str(project_type)
+
+
 def _device_row(device, location, now, database):
     last = device.last_measurement_at
     return {
@@ -161,6 +169,9 @@ def _device_row(device, location, now, database):
         "raw_hash": device.raw_hash,
         "display_name": device.display_name,
         "type": device.type or UNKNOWN_TYPE,
+        # by_type groups by the product (the location's project type), not
+        # by the technical device type above.
+        "project_type": project_type_key(location),
         "hardware": device.hardware,
         "chip_id": device.chip_id,
         "device_ip": device.device_ip,
@@ -240,8 +251,9 @@ def build_device_statistics(accounts, now=None):
     device_rows.sort(key=lambda row: (row["location_id"], row["id"]))
     location_rows.sort(key=lambda row: ((row["name"] or "").casefold(), row["id"]))
 
-    type_labels = dict(ProgeoDevice.DeviceType.choices)
-    by_type_counts = Counter(row["type"] for row in device_rows)
+    # By project type (PROJECT_TYPE_CHOICES): "1" -> "smartex® dm".
+    type_labels = {str(value): label for value, label in ProgeoLocation.PROJECT_TYPE_CHOICES.choices}
+    by_type_counts = Counter(row["project_type"] for row in device_rows)
     by_type = [
         {
             "type": type_key,
@@ -253,7 +265,7 @@ def build_device_statistics(accounts, now=None):
 
     rows_by_type = {}
     for row in device_rows:
-        rows_by_type.setdefault(row["type"], []).append(row)
+        rows_by_type.setdefault(row["project_type"], []).append(row)
 
     devices = {
         "by_type": rows_by_type,

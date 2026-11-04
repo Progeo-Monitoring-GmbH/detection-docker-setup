@@ -20,8 +20,21 @@ type ProvisionLocation = {
 
 type Option = { value: number; label: string };
 
+/** A flash bundle the server holds (firmware.list_bundles, newest first). */
+type FirmwareBundle = {
+  id: string;
+  release: string | null;
+  firmware: string | null;
+  created: string | null;
+  channels: string[];
+  /** Channels whose "latest" it is. */
+  latest_in: string[];
+};
+
 type ProvisionSettings = {
   model: string;
+  /** Bundle id; '' while the server holds none (the config gets the fallback version). */
+  firmware: string;
   sensors: string;
   interval_sec: string;
   pulldown_resistance: string;
@@ -36,6 +49,8 @@ type ProvisionPreview = {
   device_hash: string;
   project_id: number;
   model: string;
+  firmware_version: string;
+  firmware_bundle: string | null;
   token: string;
   url: string;
   config: string;
@@ -50,6 +65,7 @@ export type ProvisionedDevice = { id: number; location: number; raw_hash: string
 
 const EMPTY_SETTINGS: ProvisionSettings = {
   model: '',
+  firmware: '',
   sensors: '32',
   interval_sec: '1800',
   pulldown_resistance: '136',
@@ -90,6 +106,8 @@ const DeviceProvisionPanel = ({
   const [locations, setLocations] = useState<ProvisionLocation[] | null>(null);
   const [resistances, setResistances] = useState<Option[]>([]);
   const [models, setModels] = useState<string[]>([]);
+  const [bundles, setBundles] = useState<FirmwareBundle[]>([]);
+  const [firmwareFallback, setFirmwareFallback] = useState('');
   const [settings, setSettings] = useState<ProvisionSettings>(EMPTY_SETTINGS);
   const [preview, setPreview] = useState<ProvisionPreview | null>(null);
   const [confirmed, setConfirmed] = useState(false);
@@ -104,9 +122,12 @@ const DeviceProvisionPanel = ({
         setLocations((data.locations || []) as ProvisionLocation[]);
         setResistances((data.pulldown_resistances || []) as Option[]);
         setModels(((data.models || []) as string[]).map(asciiModel));
+        setBundles((data.firmware_bundles || []) as FirmwareBundle[]);
+        setFirmwareFallback(String(data.firmware_fallback || ''));
         const defaults = data.defaults || {};
         setSettings((current) => ({
           ...current,
+          firmware: String(defaults.firmware ?? ''),
           sensors: String(defaults.sensors ?? current.sensors),
           interval_sec: String(defaults.interval_sec ?? current.interval_sec),
           pulldown_resistance: String(defaults.pulldown_resistance ?? current.pulldown_resistance),
@@ -150,6 +171,8 @@ const DeviceProvisionPanel = ({
       {
         location: locationId,
         model: asciiModel(settings.model),
+        // '': the backend's default bundle (or its fallback version without any).
+        firmware: settings.firmware,
         sensors: Number(settings.sensors),
         interval_sec: Number(settings.interval_sec),
         pulldown_resistance: Number(settings.pulldown_resistance),
@@ -262,6 +285,36 @@ const DeviceProvisionPanel = ({
                 </Form.Select>
               </Form.Group>
             </Col>
+            <Col md={4}>
+              <Form.Group controlId="provision-firmware">
+                <Form.Label className="text-muted small mb-1">{t('provision_firmware')}</Form.Label>
+                {bundles.length === 0 ? (
+                  // No bundle on the server: the config gets the built-in version.
+                  <Form.Select disabled value="">
+                    <option value="">{t('provision_firmware_none', { version: firmwareFallback })}</option>
+                  </Form.Select>
+                ) : (
+                  <Form.Select
+                    value={settings.firmware}
+                    onChange={(event) => updateSetting('firmware', event.target.value)}
+                  >
+                    {bundles.map((bundle) => (
+                      <option key={bundle.id} value={bundle.id}>
+                        {[
+                          bundle.id,
+                          bundle.firmware,
+                          bundle.latest_in.length
+                            ? t('provision_firmware_latest', { channels: bundle.latest_in.join(', ') })
+                            : bundle.channels.join(', '),
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </option>
+                    ))}
+                  </Form.Select>
+                )}
+              </Form.Group>
+            </Col>
             <Col sm={4} md={2}>
               <Form.Group controlId="provision-sensors">
                 <Form.Label className="text-muted small mb-1">Sensors</Form.Label>
@@ -285,7 +338,7 @@ const DeviceProvisionPanel = ({
                 />
               </Form.Group>
             </Col>
-            <Col sm={4} md={4}>
+            <Col md={4}>
               <Form.Group controlId="provision-resistance">
                 <Form.Label className="text-muted small mb-1">Pull-down resistance</Form.Label>
                 <Form.Select
@@ -351,6 +404,13 @@ const DeviceProvisionPanel = ({
                 <dt className="col-sm-2">{t('provision_model')}</dt>
                 <dd className="col-sm-10">
                   <code>{preview.model}</code>
+                </dd>
+                <dt className="col-sm-2">{t('provision_firmware')}</dt>
+                <dd className="col-sm-10">
+                  <code>{preview.firmware_version}</code>
+                  {preview.firmware_bundle && (
+                    <span className="text-muted small ms-2">({preview.firmware_bundle})</span>
+                  )}
                 </dd>
                 <dt className="col-sm-2">Location</dt>
                 <dd className="col-sm-10">

@@ -26,8 +26,8 @@ def world(bound_account):
     40-day-old device; one without a Lageplan and with a never-measured node
     (no chip_id)."""
     now = timezone.now()
-    with_plan = f.make_location(bound_account, name="Halle mit Plan", project_id=940001)
-    without_plan = f.make_location(bound_account, name="Halle ohne Plan", project_id=940002)
+    with_plan = f.make_location(bound_account, name="Halle mit Plan", project_id=940001, project_type=1)
+    without_plan = f.make_location(bound_account, name="Halle ohne Plan", project_id=940002, project_type=3)
     ProgeoLageplan.objects.using(f.DB).create(
         location=with_plan, lageplan="uploads/halle-plan.png", is_active=True
     )
@@ -117,10 +117,10 @@ def test_overview_has_totals_and_type_breakdown(api_client, world):
         "unused_locations": 1,
         "locations_missing_lageplan": 1,
     }
+    # By the locations' project type, not the technical device type.
     assert body["by_type"] == [
-        {"type": "imei", "label": "imei", "count": 1},
-        {"type": "node", "label": "node", "count": 1},
-        {"type": "smartbox", "label": "smartbox", "count": 1},
+        {"type": "1", "label": "smartex® dm", "count": 2},
+        {"type": "3", "label": "smartex® is", "count": 1},
     ]
     assert "devices" not in body
     assert "truncated" not in body
@@ -130,11 +130,12 @@ def test_by_type_section_lists_every_type(api_client, world):
     body = _get(api_client, f.make_user(staff=True), "by_type", refresh=True)
 
     rows = body["devices"]["by_type"]
-    assert [row["id"] for row in rows["smartbox"]] == [world["smartbox"].id]
-    assert [row["id"] for row in rows["node"]] == [world["never"].id]
-    assert [row["id"] for row in rows["imei"]] == [world["old"].id]
+    assert [row["id"] for row in rows["1"]] == [world["smartbox"].id, world["old"].id]
+    assert [row["id"] for row in rows["3"]] == [world["never"].id]
 
-    row = rows["smartbox"][0]
+    row = rows["1"][0]
+    assert row["type"] == "smartbox"
+    assert row["project_type"] == "1"
     assert row["database"] == f.DB
     assert row["chip_id"] == "chip-1"
     assert row["location_id"] == world["with_plan"].id
@@ -194,8 +195,8 @@ def test_selected_devices_and_empty_locations_can_be_deleted(api_client, world):
         f"{URL}delete/",
         {
             "devices": [
-                {"id": world["old"].id, "database": by_type["devices"]["by_type"]["imei"][0]["database"]},
-                {"id": world["never"].id, "database": by_type["devices"]["by_type"]["node"][0]["database"]},
+                {"id": world["old"].id, "database": by_type["devices"]["by_type"]["1"][1]["database"]},
+                {"id": world["never"].id, "database": by_type["devices"]["by_type"]["3"][0]["database"]},
             ],
             "locations": [
                 {"id": location_row["id"], "database": location_row["database"]},
