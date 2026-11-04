@@ -43,6 +43,8 @@ import {
 } from './timeRanges';
 import {
   alarmSpansOf,
+  anlageStatusOf,
+  type AnlageState,
   highestOf,
   historySpecFor,
   measurePointMeters,
@@ -56,7 +58,7 @@ import { useAlarmClusters } from './useAlarmClusters';
 import { useLocationHistory } from './useLocationHistory';
 import { useMeasurementRangeState } from './useMeasurementRange';
 import { isDemoUser } from './demo';
-import { formatDate } from './dateFormat';
+import { formatDate, formatRelativeTime } from './dateFormat';
 import { staffFlags } from './access';
 
 type LocationStatusViewProps = {
@@ -276,15 +278,18 @@ const LocationStatusHeader = ({
 };
 
 /** Object status, open Verdachtsstellen, highest reading and whether the
- * installation reports. */
+ * installation reports (a measurement in the last 24 h) - with the time
+ * since its newest measurement. */
 const StatusKpis = ({
   clusters,
   threshold,
-  online,
+  anlage,
+  now,
 }: {
   clusters: VerdachtsstelleCluster[];
   threshold: number | null;
-  online: boolean;
+  anlage: { state: AnlageState; last: number | null };
+  now: number;
 }) => {
   const { t } = useTranslation();
   const openClusters = clusters.filter((cluster) => cluster.state !== 'geloest');
@@ -321,10 +326,18 @@ const StatusKpis = ({
         },
         {
           label: t('status_kpi_anlage'),
-          value: online
-            ? t('status_kpi_anlage_online')
-            : t('status_kpi_anlage_offline'),
-          valueColor: online ? '#3F7A1C' : '#8B8383',
+          value:
+            anlage.state === 'loading'
+              ? '–'
+              : t(`status_kpi_anlage_${anlage.state}` as const),
+          note:
+            anlage.state === 'loading'
+              ? undefined
+              : anlage.last != null
+                ? t('status_kpi_anlage_last', { time: formatRelativeTime(anlage.last, now) })
+                : t('status_kpi_anlage_last_unknown'),
+          valueColor:
+            anlage.state === 'online' ? '#3F7A1C' : anlage.state === 'offline' ? '#C44D26' : '#8B8383',
         },
       ]}
     />
@@ -508,7 +521,8 @@ const LocationStatusView = ({
               <StatusKpis
                 clusters={clusters}
                 threshold={thresholdValue}
-                online={(history?.timestamps?.length ?? 0) > 0}
+                anlage={anlageStatusOf(measurementRange, measurementRangeFailed, now)}
+                now={now}
               />
             )
           )}

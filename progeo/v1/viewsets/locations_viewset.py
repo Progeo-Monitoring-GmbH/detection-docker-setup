@@ -208,11 +208,30 @@ def _device_starts(location, db_name):
     )
 
 
-def _sensor_values(measurement, starts):
-    """{sensor_order: value} of a measurement's pairs: pair i of its device is
-    sensor first_sensor_order + i (ProgeoDevice.sensor_order_of)."""
+#: The heatmap's value per sensor (?profile=): |WP - EP| (the alarm value,
+#: get_pairs - the default), WP, EP or WP + EP.
+HEAT_PROFILES = ("diff", "wp", "ep", "sum")
+
+
+def _profile_values(measurement, profile):
+    """The values of a measurement's pairs for a heat profile (HEAT_PROFILES)."""
+    if profile == "diff":
+        return measurement.get_pairs()
+    values = measurement.get_sample_values()
+    eigen, wirk = values[0::2], values[1::2]
+    if profile == "wp":
+        return wirk
+    if profile == "ep":
+        return eigen[: len(wirk)]
+    return [e + w for e, w in zip(eigen, wirk, strict=False)]
+
+
+def _sensor_values(measurement, starts, profile="diff"):
+    """{sensor_order: value} of a measurement's pairs (by `profile`, see
+    HEAT_PROFILES): pair i of its device is sensor first_sensor_order + i
+    (ProgeoDevice.sensor_order_of)."""
     first = starts.get(measurement.device_id) or 1
-    return {first + index: value for index, value in enumerate(measurement.get_pairs())}
+    return {first + index: value for index, value in enumerate(_profile_values(measurement, profile))}
 
 
 def _aligned_series(frames, carry=True):
@@ -234,10 +253,11 @@ def _aligned_series(frames, carry=True):
     return data
 
 
-def _step_frames(queryset, time_from, time_to, step, starts):
+def _step_frames(queryset, time_from, time_to, step, starts, profile="diff"):
     """The measurements of [time_from, time_to] grouped into frames of `step`
     seconds (counted from time_from): per frame - at its start time - and
-    sensor the highest value, so a short spike can't fall between two frames.
+    sensor the value farthest from zero (`profile`, see HEAT_PROFILES), so a
+    short spike can't fall between two frames.
     Frames without measurements are left out. Sensors are keyed by
     sensor_order (_sensor_values, `starts`: _device_starts). Returns
     (timestamps, {sensor: values aligned with timestamps}, number of measurements)."""
@@ -250,8 +270,8 @@ def _step_frames(queryset, time_from, time_to, step, starts):
         total += 1
         index = int((measurement.last_fetched - time_from).total_seconds() // step)
         frame = frames.setdefault(index, {})
-        for sensor, value in _sensor_values(measurement, starts).items():
-            if sensor not in frame or value > frame[sensor]:
+        for sensor, value in _sensor_values(measurement, starts, profile).items():
+            if sensor not in frame or abs(value) > abs(frame[sensor]):
                 frame[sensor] = value
     order = sorted(frames)
     timestamps = [(time_from + timedelta(seconds=index * step)).timestamp() for index in order]
@@ -1913,6 +1933,11 @@ class LocationViewSet(ProgeoModalViewSet):
             return RequestFailed({"reason": "limit must be an integer"})
         limit = max(1, min(limit, 2000))
 
+        # ?profile=: which value of a sensor the heat shows (HEAT_PROFILES).
+        profile = request.query_params.get("profile") or "diff"
+        if profile not in HEAT_PROFILES:
+            return RequestFailed({"reason": f"profile must be one of {', '.join(HEAT_PROFILES)}"})
+
         # Optional time window (ISO-8601) so the frontend can scope the heatmap
         # to a selected alarm's active range instead of the newest N measurements.
         time_from = request.query_params.get("from")
@@ -1967,7 +1992,7 @@ class LocationViewSet(ProgeoModalViewSet):
         starts = _device_starts(location, db_name)
         stepped = None
         if step:
-            stepped = _step_frames(queryset, time_from, time_to, step, starts)
+            stepped = _step_frames(queryset, time_from, time_to, step, starts, profile)
             queryset = []
         elif time_from:
             queryset = queryset.filter(last_fetched__gte=time_from)
@@ -1994,7 +2019,7 @@ class LocationViewSet(ProgeoModalViewSet):
             timestamps.append(ts)
             # Keyed by ProgeoMeasurePoint.sensor_order (the device's pair 1 is
             # its first_sensor_order), so sensor_points[].pos looks up its own series.
-            frames.append(_sensor_values(measurement, starts))
+            frames.append(_sensor_values(measurement, starts, profile))
         _map = _aligned_series(frames)
 
         if stepped:
@@ -2008,6 +2033,7 @@ class LocationViewSet(ProgeoModalViewSet):
             "days": days,
             # Seconds per frame (?step=); None: one frame per measurement.
             "step": step,
+            "profile": profile,
             # Measurements in the window, of which len(timestamps) are frames.
             "total": total,
             "data": _map,

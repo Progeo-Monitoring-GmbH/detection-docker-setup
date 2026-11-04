@@ -130,6 +130,31 @@ def test_heatmap_series_are_keyed_by_one_based_sensor(api_client, location_with_
     assert sorted(response.json()["data"]) == ["1", "2", "3"]
 
 
+@pytest.mark.parametrize(("profile", "expected"), [
+    ("diff", {"1": [7], "2": [2]}),
+    ("wp", {"1": [10], "2": [5]}),
+    ("ep", {"1": [3], "2": [7]}),
+    ("sum", {"1": [13], "2": [12]}),
+])
+def test_heatmap_profiles_choose_the_value_per_sensor(api_client, profile, expected):
+    account = f.make_account()
+    location = f.make_location(account, project_id=4344)
+    device = f.make_device(location)
+    f.make_measurement(device, eigenpotenzial=[3, 7], wirkpotenzial=[10, 5])
+    api_client.force_authenticate(f.make_user(perms=PERMS, accounts=[account]))
+
+    body = api_client.get(f"/v1/location/{location.id}/heatmap/?limit=10&profile={profile}").json()
+
+    assert body["profile"] == profile
+    assert body["data"] == expected
+
+
+def test_heatmap_refuses_an_unknown_profile(api_client, location_with_data):
+    body = api_client.get(f"/v1/location/{location_with_data.id}/heatmap/?profile=nope").json()
+
+    assert body["success"] is False and "profile" in body["reason"]
+
+
 # -- heatmap in steps (?step=) ----------------------------------------------
 
 
@@ -167,6 +192,15 @@ def test_steps_keep_each_sensors_highest_value_per_frame(api_client, stepped_loc
     assert body["data"] == {"1": [40, 15, 99], "2": [50, 15, 1]}
     expected = [start + timedelta(hours=hours) for hours in (0, 1, 3)]
     assert body["timestamps"] == [moment.timestamp() for moment in expected]
+
+
+def test_steps_keep_the_value_farthest_from_zero_of_a_profile(api_client, stepped_location):
+    location, start = stepped_location
+    # EP is 0 in the fixture: the WP + EP profile equals |WP - EP| here.
+    body = _stepped(api_client, location, start, 240, 3600, profile="sum").json()
+
+    assert body["profile"] == "sum"
+    assert body["data"] == {"1": [40, 15, 99], "2": [50, 15, 1]}
 
 
 def test_steps_need_a_window_and_a_sane_frame_count(api_client, stepped_location):

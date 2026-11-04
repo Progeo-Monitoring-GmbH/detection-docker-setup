@@ -19,6 +19,7 @@ import {
   viewPointsOf,
   worstSeverityOf,
   zeitreiheSeriesOf,
+  anlageStatusOf,
   ZEITREIHE_ACTIVE_SENSORS,
   zonePointsOf,
   type VerdachtsstelleCluster,
@@ -319,6 +320,27 @@ describe('zeitreiheSeriesOf', () => {
     const shown = series.filter((entry) => !entry.muted).map((entry) => entry.label);
     expect(shown).toHaveLength(ZEITREIHE_ACTIVE_SENSORS + 1);
     expect(shown).toContain('8');
+  });
+});
+
+describe('anlageStatusOf', () => {
+  const now = Date.parse('2026-11-04T12:00:00Z');
+
+  it('is online with a measurement in the last 24 h', () => {
+    expect(anlageStatusOf({ last: '2026-11-03T12:30:00Z' }, false, now)).toEqual({
+      state: 'online',
+      last: Date.parse('2026-11-03T12:30:00Z'),
+    });
+  });
+
+  it('is offline when the newest measurement is older', () => {
+    expect(anlageStatusOf({ last: '2026-11-03T11:59:00Z' }, false, now).state).toBe('offline');
+  });
+
+  it('is unknown without measurements or when the range failed, loading before', () => {
+    expect(anlageStatusOf({ last: null }, false, now)).toEqual({ state: 'unknown', last: null });
+    expect(anlageStatusOf(null, true, now).state).toBe('unknown');
+    expect(anlageStatusOf(null, false, now).state).toBe('loading');
   });
 });
 

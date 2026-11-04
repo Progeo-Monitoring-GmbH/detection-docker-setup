@@ -101,10 +101,19 @@ export const toggledSensor = (selected: number[], sensor: number) =>
 const BAND_TRACES = new Set(['min-max', 'min-max-lower', 'deviation', 'deviation-lower']);
 
 /** Traces a legend click doesn't hide. */
-const FIXED_TRACES = new Set([...BAND_TRACES, 'pair-sum', 'pair-mean']);
+const FIXED_TRACES = new Set([...BAND_TRACES]);
+
+/** The third plot shows one of these: the sensor sum or the sensor average
+ * (the sum per sensor) - a legend click on the other switches. */
+type SumMode = 'sum' | 'mean';
+const SUM_MODE_TRACES: Record<string, SumMode> = { 'pair-sum': 'sum', 'pair-mean': 'mean' };
+
+/** The change of each value since the one before (none for the first). */
+const stepChanges = (values: number[]) =>
+  values.map((value, index) => (index > 0 ? value - values[index - 1] : null));
 
 /** Lines that start hidden, shown by a legend click. */
-const OPTIONAL_TRACES = new Set(['ep+wp', 'pair-sum-diff']);
+const OPTIONAL_TRACES = new Set(['wp+ep', 'pair-sum-diff']);
 
 const MIN_MAX_COLOR = 'rgba(153, 27, 27, 0.25)';
 const DEVIATION_COLOR = 'rgba(252, 122, 46, 0.31)';
@@ -335,10 +344,7 @@ const toTimeSeries = (series: DiffSeries[]) => {
     pairs.push(entry.points.map((point) => point.value));
     potentials.push({ ep: entry.ep, wp: entry.wp });
   });
-  // Change of the sum since the previous measurement (none for the first).
-  const diff = y.map((value, index) => (index > 0 ? value - y[index - 1] : null));
-
-  return { x, y, mean, diff, measurementDateTime, ids, pairs, potentials };
+  return { x, y, mean, measurementDateTime, ids, pairs, potentials };
 };
 
 const MeasurementSamplesCompareChart = (
@@ -608,6 +614,8 @@ const MeasurementSamplesCompareChart = (
       return next;
     });
   const showSumDiff = shownOptional.has('pair-sum-diff');
+  // The third plot's quantity: the sensor sum or the sensor average.
+  const [sumMode, setSumMode] = React.useState<SumMode>('sum');
 
   const margin = { l: 64, r: showSumDiff ? 64 : 16, t: frameSlider ? 56 : 16, b: 52 };
   // The second plot's controls sit in the figure, right above that plot -
@@ -702,6 +710,8 @@ const MeasurementSamplesCompareChart = (
           width: 3,
         },
         hoverinfo: 'none' as const,
+        // Either the sum or the average - the other only in the legend.
+        visible: sumMode === 'sum' ? (true as const) : ('legendonly' as const),
       },
       {
         type: 'scatter' as const,
@@ -711,23 +721,23 @@ const MeasurementSamplesCompareChart = (
         x: pairSumSeries.x,
         y: pairSumSeries.mean,
         xaxis: 'x2' as const,
-        // The sum's axis: the sum divided by the sensor count - read as
-        // the actual (smaller) value next to it.
         yaxis: 'y2' as const,
         legend: 'legend3',
         line: {
           color: plotTheme.brandOrange,
-          width: 2,
+          width: 3,
         },
         hoverinfo: 'none' as const,
+        visible: sumMode === 'mean' ? (true as const) : ('legendonly' as const),
       },
       {
         type: 'scatter' as const,
         mode: 'lines' as const,
         uid: 'pair-sum-diff',
-        name: t('measurement_compare_pair_sum_diff_label'),
+        // The change of the shown quantity since the measurement before.
+        name: t(sumMode === 'sum' ? 'measurement_compare_pair_sum_diff_label' : 'measurement_compare_pair_mean_diff_label'),
         x: pairSumSeries.x,
-        y: pairSumSeries.diff,
+        y: stepChanges(sumMode === 'sum' ? pairSumSeries.y : pairSumSeries.mean),
         xaxis: 'x2' as const,
         legend: 'legend3',
         // Own axis (right): far smaller than the sum and signed.
@@ -740,7 +750,7 @@ const MeasurementSamplesCompareChart = (
         ...visibility(shownOptional, 'pair-sum-diff'),
       },
     ];
-  }, [meanAndDeviationSeries, pairSumSeries, shownOptional, t]);
+  }, [meanAndDeviationSeries, pairSumSeries, shownOptional, sumMode, t]);
 
   // The slider's measurement on the upper plot. Fixed uids keep the legend
   // toggles while sliding.
@@ -771,7 +781,7 @@ const MeasurementSamplesCompareChart = (
     return [
       line('ep', 'EP', ep, 'red', 2),
       line('wp', 'WP', wp, 'blue', 2),
-      line('ep+wp', 'EP + WP', ep.map((value, i) => value + wp[i]), plotTheme.contrastViolet, 2, true),
+      line('wp+ep', 'WP + EP', ep.map((value, i) => value + wp[i]), plotTheme.contrastViolet, 2, true),
     ];
   }, [currentFrame, shownOptional]);
 
@@ -796,7 +806,7 @@ const MeasurementSamplesCompareChart = (
       ep.forEach((value, i) => {
         include(value);
         include(wp[i]);
-        if (shownOptional.has('ep+wp')) {
+        if (shownOptional.has('wp+ep')) {
           include(value + wp[i]);
         }
       });
@@ -1391,6 +1401,10 @@ const MeasurementSamplesCompareChart = (
           onRelayout={onRelayout}
           onLegendClick={(event) => {
             const uid = event.data[event.curveNumber]?.uid ?? '';
+            if (SUM_MODE_TRACES[uid]) {
+              setSumMode(SUM_MODE_TRACES[uid]);
+              return false;
+            }
             if (OPTIONAL_TRACES.has(uid)) {
               toggleOptional(uid);
               return false;
@@ -1465,7 +1479,9 @@ const MeasurementSamplesCompareChart = (
               ...SPIKE,
             },
             yaxis2: {
-              title: { text: t('measurement_compare_pair_sum_axis') },
+              title: {
+                text: t(sumMode === 'sum' ? 'measurement_compare_pair_sum_axis' : 'measurement_compare_pair_mean_label'),
+              },
               domain: geometry.sum,
               side: 'left',
               showgrid: true,
@@ -1496,7 +1512,11 @@ const MeasurementSamplesCompareChart = (
             },
             yaxis3: {
               visible: showSumDiff,
-              title: { text: t('measurement_compare_pair_sum_diff_label') },
+              title: {
+                text: t(
+                  sumMode === 'sum' ? 'measurement_compare_pair_sum_diff_label' : 'measurement_compare_pair_mean_diff_label',
+                ),
+              },
               overlaying: 'y2',
               side: 'right',
               anchor: 'x2',

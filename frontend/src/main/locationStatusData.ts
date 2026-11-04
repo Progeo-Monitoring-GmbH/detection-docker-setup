@@ -368,6 +368,32 @@ export const sensorRowsOf = ({
     }));
 };
 
+/** The installation counts as online with a measurement this recent. */
+export const ONLINE_WITHIN_MS = 24 * 60 * 60 * 1000;
+
+export type AnlageState = 'loading' | 'online' | 'offline' | 'unknown';
+
+/**
+ * Whether the installation reports: online with a measurement in the last
+ * ONLINE_WITHIN_MS, offline with an older one, unknown without any (or when
+ * the newest measurement couldn't be loaded) - and that measurement's time
+ * (epoch ms), if known.
+ */
+export const anlageStatusOf = (
+  range: { last: string | null } | null,
+  failed: boolean,
+  now: number,
+): { state: AnlageState; last: number | null } => {
+  if (!range) {
+    return { state: failed ? 'unknown' : 'loading', last: null };
+  }
+  const last = range.last ? Date.parse(range.last) : Number.NaN;
+  if (!Number.isFinite(last)) {
+    return { state: 'unknown', last: null };
+  }
+  return { state: now - last <= ONLINE_WITHIN_MS ? 'online' : 'offline', last };
+};
+
 /** How many of the most active sensors the Zeitreihe draws in colour -
  * besides every sensor above its threshold. */
 export const ZEITREIHE_ACTIVE_SENSORS = 5;

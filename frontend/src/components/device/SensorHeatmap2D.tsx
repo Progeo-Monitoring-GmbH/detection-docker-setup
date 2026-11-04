@@ -163,7 +163,10 @@ const SensorHeatmap2D = ({
     () => (Array.isArray(response?.timestamps) ? response.timestamps : []),
     [response],
   );
-  const [ownIndex, setOwnIndex] = useState(0);
+  // The frame picked on the own slider - for these timestamps only: new
+  // data (another period or step) starts at the newest frame again.
+  const [ownPick, setOwnPick] = useState<{ timestamps: number[]; index: number } | null>(null);
+  const ownIndex = ownPick?.timestamps === timestamps ? ownPick.index : timestamps.length - 1;
   // Coupled (onTimeChange): the frame holding `time`.
   const timestampIndex = !onTimeChange
     ? ownIndex
@@ -173,7 +176,7 @@ const SensorHeatmap2D = ({
   const setTimestampIndex = useCallback(
     (index: number) => {
       if (!onTimeChange) {
-        setOwnIndex(index);
+        setOwnPick({ timestamps, index });
       } else if (index >= 0 && index < timestamps.length) {
         onTimeChange(timestamps[index] * 1000);
       }
