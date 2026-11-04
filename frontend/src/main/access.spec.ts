@@ -42,7 +42,7 @@ describe('APP_ROUTE_ACCESS', () => {
         '*',
         '/backup/:account/overview/',
         '/device/:id/update/',
-        '/device/provision/',
+        '/device/overview',
         '/location/:id/alarms',
         '/location/:id/heatmap2d',
         '/location/:id/heatplot',
@@ -57,9 +57,8 @@ describe('APP_ROUTE_ACCESS', () => {
     expect(allowed(STAFF_WITHOUT_PERMISSIONS)).toEqual(
       [
         '*',
-        '/device/:id/detail',
         '/device/:id/update/',
-        '/device/provision/',
+        '/device/overview',
         '/escalations/',
         '/escalations/:id',
         '/staff/',

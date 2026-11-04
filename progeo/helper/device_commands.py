@@ -342,21 +342,50 @@ def _result_ok(item):
 RESULT_META_FIELDS = {"id", "command", "ok", "status", "error"}
 
 
-def _result_data(item):
+def _result_error(item, ok):
+    """Why a command failed: "error", else the firmware's "detail"
+    (main.lua reports {"ok": false, "detail": "..."}). None if it succeeded."""
+    if ok:
+        return None
+    for key in ("error", "detail"):
+        if item.get(key) not in (None, ""):
+            return str(item[key])[:ERROR_MAX_LEN]
+    return None
+
+
+def _result_data(item, ok=True):
     """The data of a result item: "result" if the controller nests it, else
     its other fields ({"id": 50, "ok": true, "path": ..., "content": ...}
-    -> {"path": ..., "content": ...}). None if there is none."""
+    -> {"path": ..., "content": ...}). A failed item's "detail" is its error,
+    not data. None if there is none."""
     if "result" in item:
         return item["result"]
-    data = {key: value for key, value in item.items() if key not in RESULT_META_FIELDS}
+    meta = RESULT_META_FIELDS if ok else RESULT_META_FIELDS | {"detail"}
+    data = {key: value for key, value in item.items() if key not in meta}
     return data or None
 
 
-def record_results(device, db_name, results, now=None):
+# Fields of the controller's "commands" message that tell who it is
+# (control.lua body(): webserver.identify plus mode and poll_sec) - the
+# result of "identify", whose result item itself carries no data.
+IDENTITY_FIELDS = ("device_hash", "project_id", "chip_id", "mac", "ip", "heap", "mode", "poll_sec")
+
+
+def message_identity(message):
+    """The IDENTITY_FIELDS of a "commands" message, None without any."""
+    if not isinstance(message, dict):
+        return None
+    identity = {key: message[key] for key in IDENTITY_FIELDS if message.get(key) not in (None, "")}
+    return identity or None
+
+
+def record_results(device, db_name, results, now=None, identity=None):
     """Store the outcome the controller reports for commands it took
     ([{"id", "command"?, "ok", "error"?, ...data}]). Unknown ids, other
     devices' commands, commands not handed out and items naming another
-    command than the one with that id are ignored. Returns the count."""
+    command than the one with that id are ignored. A successful "identify"
+    without data gets `identity` (message_identity) as its result. Returns
+    the count."""
     if not isinstance(results, list):
         return 0
     now = now or timezone.now()
@@ -381,9 +410,10 @@ def record_results(device, db_name, results, now=None):
         ok = _result_ok(item)
         command.status = Status.SUCCESS if ok else Status.FAILED
         command.finished_at = now
-        error = item.get("error")
-        command.error = "" if ok or error in (None, "") else str(error)[:ERROR_MAX_LEN]
-        result = _result_data(item)
+        command.error = _result_error(item, ok) or ""
+        result = _result_data(item, ok)
+        if result is None and ok and command.command == Command.IDENTIFY:
+            result = identity
         command.result_encrypted = ""
         if result is not None:
             if len(json.dumps(result)) <= RESULT_MAX_BYTES:
@@ -395,11 +425,12 @@ def record_results(device, db_name, results, now=None):
     return recorded
 
 
-def take_commands(raw_hash, results=None):
-    """The controller's poll: record its `results`, then hand out its
-    pending commands ([{"command", "id", "payload"?}], oldest first) - once:
-    they are "sent" from now on and their payload is dropped. [] for an
-    unknown device."""
+def take_commands(raw_hash, results=None, message=None):
+    """The controller's poll: record its `results` (`message`: the whole
+    request body, for the identity of "identify"), then hand out its pending
+    commands ([{"command", "id", "payload"?}], oldest first) - once: they
+    are "sent" from now on and their payload is dropped. [] for an unknown
+    device."""
     db_name = device_db(raw_hash)
     if db_name is None:
         return []
@@ -409,7 +440,7 @@ def take_commands(raw_hash, results=None):
         device = ProgeoDevice.objects.using(db_name).select_for_update().filter(raw_hash=raw_hash).first()
         if device is None:
             return []
-        record_results(device, db_name, results, now)
+        record_results(device, db_name, results, now, identity=message_identity(message))
         housekeeping(device.pk, db_name, now)
         pending = ProgeoDeviceCommand.objects.using(db_name).filter(
             device_id=device.pk, status=Status.PENDING

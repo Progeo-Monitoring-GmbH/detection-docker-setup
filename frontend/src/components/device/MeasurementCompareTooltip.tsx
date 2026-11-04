@@ -1,6 +1,6 @@
 import { type CSSProperties, Fragment, type Ref } from 'react';
 
-export type CompareTooltipRow = {
+type CompareTooltipRow = {
   /** The trace's uid. */
   key: string;
   name: string;

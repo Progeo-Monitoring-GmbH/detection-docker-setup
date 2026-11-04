@@ -194,7 +194,7 @@ export const viewHeatmapOf = (
 };
 
 /** smartex® dm sensor with its band line (from the CAD import): x/y -> x_end/y_end. */
-export const hasBand = (point: SensorHeatmapPoint) =>
+const hasBand = (point: SensorHeatmapPoint) =>
   point.x_end != null && point.y_end != null && Number.isFinite(point.x_end) && Number.isFinite(point.y_end);
 
 /** Group key of a sensor drawn as its own band line. */
@@ -369,7 +369,7 @@ export const sensorRowsOf = ({
 };
 
 /** The installation counts as online with a measurement this recent. */
-export const ONLINE_WITHIN_MS = 24 * 60 * 60 * 1000;
+const ONLINE_WITHIN_MS = 24 * 60 * 60 * 1000;
 
 export type AnlageState = 'loading' | 'online' | 'offline' | 'unknown';
 

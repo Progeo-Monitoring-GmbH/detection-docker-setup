@@ -125,7 +125,7 @@ const VIEW_BORDER = 0.02;
 /** fitPlan: the tallest canvas, relative to its width (very tall plans). */
 const FIT_PLAN_MAX_ASPECT = 2;
 /** No card needs a canvas taller than this; fitPlan stops growing here. */
-export const MAX_CANVAS_HEIGHT = 900;
+const MAX_CANVAS_HEIGHT = 900;
 /** Hover radius around a sensor marker (screen pixels). */
 const SENSOR_HIT_RADIUS = 11;
 

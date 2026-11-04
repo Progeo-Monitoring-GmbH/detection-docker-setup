@@ -13,7 +13,7 @@ import { staffFlags } from './access';
  * login (token).
  */
 
-export type FavoriteLocation = {
+type FavoriteLocation = {
   location: number;
   name: string | null;
   project_id: number | null;

@@ -7,7 +7,7 @@
 
 export type EscalationStatus = 'open' | 'in_progress' | 'waiting' | 'closed';
 
-export type EscalationEntryKind = 'created' | 'comment' | 'status' | 'assigned' | 'closed';
+type EscalationEntryKind = 'created' | 'comment' | 'status' | 'assigned' | 'closed';
 
 export type EscalationEntry = {
   id: number;

@@ -3,11 +3,13 @@ import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router';
 import {
+  Activity,
   ArrowClockwise,
+  ArrowRepeat,
   Broadcast,
-  GraphUp,
   Image,
   Lightbulb,
+  PlusCircle,
   Sliders,
   Terminal,
   Trash,
@@ -20,6 +22,9 @@ import { formatDate } from './dateFormat';
 import { showErrorBar, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import LocationPicker, { type PickableLocation } from '../components/location/LocationPicker';
 import DeviceCommandsDialog from '../components/device/DeviceCommandsDialog';
+import AirtableSyncPanel, { type AirtableSync } from '../components/device/AirtableSyncPanel';
+import DeviceProvisionPanel, { type ProvisionedDevice } from '../components/device/DeviceProvisionPanel';
+import ProvisionTestMeasurements from '../components/device/ProvisionTestMeasurements';
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import KpiStrip from '../components/ui/kit/KpiStrip';
 import PanelCard from '../components/ui/kit/PanelCard';
@@ -169,6 +174,11 @@ const tdStyle: CSSProperties = {
  * KPIs and breakdowns come with the list; staff also get the devices
  * pinged (a second request, so the list shows without waiting for it).
  * The picked location is kept in ?location= (bookmarkable).
+ *
+ * Also the device setup (formerly /device/provision/, staff or
+ * module_devices_provision): "Gerät hinzufügen" provisions a new controller
+ * for the location (DeviceProvisionPanel), each device's "Test-Messungen"
+ * follow its test measurements, staff can sync the locations with Airtable.
  */
 const DeviceListView = () => {
   const auth = useAuth();
@@ -183,6 +193,11 @@ const DeviceListView = () => {
   const isSuperuser = staffFlags(auth?.user).isSuperuser;
   const canEdit = hasPermission('module_devices_edit');
   const canDelete = hasPermission('module_devices_delete');
+  // Device setup: staff always, like the backend's require_module_permissions.
+  const canProvision = isStaff || hasPermission('module_devices_provision');
+  // The list (location_devices) needs module_devices_enabled - a user with
+  // only the setup permission gets the setup alone.
+  const canList = isStaff || hasPermission('module_devices_enabled');
 
   const [locations, setLocations] = useState<PickableLocation[]>([]);
   const [locationsLoading, setLocationsLoading] = useState(true);
@@ -194,14 +209,20 @@ const DeviceListView = () => {
   const [deleting, setDeleting] = useState(false);
   // Controller commands (sample/cc) of this device - staff only.
   const [commandsTarget, setCommandsTarget] = useState<OverviewDevice | null>(null);
+  // "Gerät hinzufügen" is open.
+  const [adding, setAdding] = useState(false);
+  // The device whose test measurements are shown (new or picked in the list).
+  const [testDevice, setTestDevice] = useState<ProvisionedDevice | null>(null);
+  const [airtable, setAirtable] = useState<AirtableSync | null>(null);
+  const [syncing, setSyncing] = useState(false);
   // Answers of an older selection are dropped.
   const requestRef = useRef(0);
 
   const locationParam = Number(searchParams.get('location'));
   const locationId = Number.isInteger(locationParam) && locationParam > 0 ? locationParam : null;
 
-  useEffect(() => {
-    void axiosConfig.perform_get(
+  const loadLocations = () =>
+    axiosConfig.perform_get(
       auth,
       '/v1/location/min/',
       (response) => {
@@ -213,10 +234,16 @@ const DeviceListView = () => {
         setLocationsLoading(false);
       },
     );
+
+  useEffect(() => {
+    void loadLocations();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadOverview = (id: number, ping: boolean) => {
+    if (!canList) {
+      return Promise.resolve();
+    }
     // A new request replaces a running one (its answer is dropped).
     const request = ++requestRef.current;
     setLoading(!ping);
@@ -251,6 +278,9 @@ const DeviceListView = () => {
   useEffect(() => {
     setOverview(null);
     setFilter('all');
+    // Setup and test measurements belong to the previous location.
+    setAdding(false);
+    setTestDevice(null);
     if (locationId === null) {
       requestRef.current += 1;
       setLoading(false);
@@ -337,6 +367,37 @@ const DeviceListView = () => {
         setDeleteTarget(null);
       },
     );
+  };
+
+  // -- setup -------------------------------------------------------------------
+
+  const syncAirtable = () => {
+    setSyncing(true);
+    void axiosConfig.perform_post(
+      auth,
+      '/v1/device/provision/airtable/sync/',
+      {},
+      (response) => {
+        const data = (response?.data || null) as AirtableSync | null;
+        setAirtable(data);
+        setSyncing(false);
+        if (data?.updated.length) {
+          // Names may have changed.
+          void loadLocations();
+        }
+      },
+      (error) => {
+        showRequestError(enqueueSnackbar, 'Could not sync with Airtable', error);
+        setSyncing(false);
+      },
+    );
+  };
+
+  const deviceCreated = (device: ProvisionedDevice) => {
+    setTestDevice(device);
+    if (locationId !== null) {
+      void loadOverview(locationId, false);
+    }
   };
 
   // -- rendering ---------------------------------------------------------------
@@ -443,17 +504,26 @@ const DeviceListView = () => {
       <PanelCard
         title={t('devices_title')}
         actions={
-          locationId !== null && (
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              {isStaff && (
-                <PillButton
-                  variant="ghost"
-                  icon={pinging ? <Spinner animation="border" size="sm" /> : <Broadcast size={14} />}
-                  label={pinging ? t('devices_pinging') : t('devices_ping')}
-                  disabled={pinging || loading}
-                  onClick={() => void loadOverview(locationId, true)}
-                />
-              )}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            {isStaff && (
+              <PillButton
+                variant="ghost"
+                icon={syncing ? <Spinner animation="border" size="sm" /> : <ArrowRepeat size={14} />}
+                label={t('devices_airtable_sync')}
+                disabled={syncing}
+                onClick={syncAirtable}
+              />
+            )}
+            {locationId !== null && isStaff && canList && (
+              <PillButton
+                variant="ghost"
+                icon={pinging ? <Spinner animation="border" size="sm" /> : <Broadcast size={14} />}
+                label={pinging ? t('devices_pinging') : t('devices_ping')}
+                disabled={pinging || loading}
+                onClick={() => void loadOverview(locationId, true)}
+              />
+            )}
+            {locationId !== null && canList && (
               <PillButton
                 variant="ghost"
                 icon={loading ? <Spinner animation="border" size="sm" /> : <ArrowClockwise size={14} />}
@@ -461,8 +531,17 @@ const DeviceListView = () => {
                 disabled={loading}
                 onClick={() => void loadOverview(locationId, false)}
               />
-            </div>
-          )
+            )}
+            {locationId !== null && canProvision && (
+              <PillButton
+                variant="accent"
+                icon={<PlusCircle size={14} />}
+                label={t('devices_add')}
+                disabled={adding}
+                onClick={() => setAdding(true)}
+              />
+            )}
+          </div>
         }
       >
         <div style={{ maxWidth: 560 }}>
@@ -478,6 +557,37 @@ const DeviceListView = () => {
           <div style={{ fontSize: 12.5, color: MUTED, marginTop: 10 }}>{t('devices_pick_location')}</div>
         )}
       </PanelCard>
+
+      {airtable && (
+        <AirtableSyncPanel
+          // A new sync starts a fresh selection.
+          key={airtable.signed}
+          initial={airtable}
+          onClose={() => setAirtable(null)}
+          onLocationsChanged={() => void loadLocations()}
+        />
+      )}
+
+      {locationId !== null && adding && (
+        <DeviceProvisionPanel
+          key={locationId}
+          locationId={locationId}
+          onCreated={deviceCreated}
+          onClose={() => setAdding(false)}
+        />
+      )}
+
+      {testDevice && (
+        <ProvisionTestMeasurements
+          // A fresh instance per device: its polls merge new rows into the
+          // shown ones, so a reused instance mixed the devices' measurements.
+          key={`${testDevice.location}-${testDevice.id}`}
+          locationId={testDevice.location}
+          deviceId={testDevice.id}
+          deviceHash={testDevice.raw_hash}
+          onClose={() => setTestDevice(null)}
+        />
+      )}
 
       {locationId !== null && loading && !overview && (
         <div style={{ display: 'flex', justifyContent: 'center', padding: 30 }}>
@@ -601,7 +711,8 @@ const DeviceListView = () => {
                                 <Terminal size={14} />
                               </button>
                             )}
-                            {canEdit && device.location && (
+                            {/* "Einstellungen" is a superuser-only portal page. */}
+                            {canEdit && isSuperuser && device.location && (
                               <button
                                 type="button"
                                 title={t('devices_action_settings')}
@@ -611,7 +722,8 @@ const DeviceListView = () => {
                                 <Sliders size={14} />
                               </button>
                             )}
-                            {canEdit && (
+                            {/* The editor route is superuser-only. */}
+                            {canEdit && isSuperuser && (
                               <button
                                 type="button"
                                 title={t('devices_action_editor')}
@@ -621,14 +733,18 @@ const DeviceListView = () => {
                                 <Image size={14} />
                               </button>
                             )}
-                            <button
-                              type="button"
-                              title={t('devices_action_details')}
-                              onClick={() => navigate(`/device/${device.id}/detail${locationQuery(device)}`)}
-                              style={actionStyle()}
-                            >
-                              <GraphUp size={14} />
-                            </button>
+                            {canProvision && device.location && (
+                              <button
+                                type="button"
+                                title={t('devices_action_test_measurements')}
+                                onClick={() =>
+                                  setTestDevice({ id: device.id, location: device.location!, raw_hash: device.raw_hash })
+                                }
+                                style={actionStyle()}
+                              >
+                                <Activity size={14} />
+                              </button>
+                            )}
                             {canDelete && (
                               <button
                                 type="button"

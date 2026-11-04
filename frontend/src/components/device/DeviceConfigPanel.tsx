@@ -7,6 +7,7 @@ import { showRequestError, showSuccessBar } from '../ui/Snackbar.jsx';
 import PillButton from '../ui/kit/PillButton';
 import LabeledInput from '../ui/kit/LabeledInput';
 import SegmentedControl from '../ui/kit/SegmentedControl';
+import { INTERVAL_OPTIONS, RESISTANCE_OPTIONS } from './deviceParams';
 
 /** The ProgeoDevice fields the config file is seeded from. */
 export type ConfigDevice = {
@@ -36,28 +37,6 @@ const CONFIG_PATH = 'config/device_config.lua';
 // The backend middleware currently resolves every request to account 1
 // (progeo/middlewares.py), and the frontend has no account id of its own.
 const QR_ACCOUNT_ID = 1;
-
-const INTERVAL_OPTIONS = [
-  { value: 300, label: '5min' },
-  { value: 600, label: '10min' },
-  { value: 900, label: '15min' },
-  { value: 1800, label: '30min' },
-  { value: 3600, label: '1h' },
-  { value: 7200, label: '2h' },
-  { value: 14400, label: '4h' },
-  { value: 28800, label: '8h' },
-  { value: 43200, label: '12h' },
-  { value: 86400, label: '24h' },
-];
-
-/** ProgeoDevice.Resistance choices (pulldown_resistance in the file). */
-const RESISTANCE_OPTIONS = [
-  { value: 136, labelKey: 'einstell_resistance_100k' },
-  { value: 72, labelKey: 'einstell_resistance_10k' },
-  { value: 40, labelKey: 'einstell_resistance_1k' },
-  { value: 24, labelKey: 'einstell_resistance_100' },
-  { value: 8, labelKey: 'einstell_resistance_off' },
-];
 
 const initialForm = (
   device: ConfigDevice,

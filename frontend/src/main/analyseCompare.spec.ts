@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { COMPARE_OFFSETS, compareOffsetsFor, heatmapChange, nearestIndex } from './analyseCompare';
-import { nearestRow, sensorChanges, signedBands, wpChangeBands } from '../components/device/measurementBands';
+import { barWidthFor, nearestRow, sensorChanges, signedBands, wpChangeBands } from '../components/device/measurementBands';
 
 const DAY = 24 * 60 * 60 * 1000;
 const NOW = Date.UTC(2026, 10, 4, 12);
@@ -97,5 +97,15 @@ describe('sensorChanges', () => {
     ]);
     expect(changes[0]).toMatchObject({ epThen: 5, epNow: 2, wpThen: 5, wpNow: 5 });
     expect(sensorChanges([1, 2], null)).toEqual([]);
+  });
+});
+
+describe('barWidthFor', () => {
+  it('sizes the bars by the typical spacing - a gap or a close pair does not change it', () => {
+    // Hourly, one pair a minute apart, one 5 hour gap.
+    const hour = 3_600_000;
+    const times = [0, hour, hour + 60_000, 2 * hour, 7 * hour, 8 * hour];
+    expect(barWidthFor(times)).toBe(0.8 * hour);
+    expect(barWidthFor([5])).toBeUndefined();
   });
 });

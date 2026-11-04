@@ -12,8 +12,8 @@ import { getBackendBaseUrl } from './backendUrl';
  * out on the next refresh.
  */
 
-export const ACCESS_TOKEN_KEY = 'authToken';
-export const REFRESH_TOKEN_KEY = 'refreshToken';
+const ACCESS_TOKEN_KEY = 'authToken';
+const REFRESH_TOKEN_KEY = 'refreshToken';
 const REFRESH_URL = `${getBackendBaseUrl()}/api/token/refresh/`;
 
 type TokenListener = (access: string, refresh: string) => void;

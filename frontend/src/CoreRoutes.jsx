@@ -110,9 +110,6 @@ const DeviceSettingsRedirect = React.lazy(
   () => import('./main/DeviceSettingsRedirect.tsx'),
 );
 const DeviceEditorView = React.lazy(() => import('./main/DeviceEditorView'));
-const MeasurementDetailView = React.lazy(
-  () => import('./main/MeasurementDetailView'),
-);
 const AdminPanel = React.lazy(() => import('./main/AdminPanel.tsx'));
 const StaffAdmin = React.lazy(() => import('./main/StaffAdmin.tsx'));
 const EscalationsView = React.lazy(() => import('./main/EscalationsView.tsx'));
@@ -125,9 +122,6 @@ const LocationsMapView = React.lazy(
 );
 const LegacyImportView = React.lazy(
   () => import('./main/LegacyImportView.tsx'),
-);
-const DeviceProvisionView = React.lazy(
-  () => import('./main/DeviceProvisionView.tsx'),
 );
 const DeviceStatisticsView = React.lazy(
   () => import('./main/DeviceStatisticsView.tsx'),
@@ -273,17 +267,14 @@ const CoreRoutes = () => {
             path="/device/:id/editor/"
             element={guard('/device/:id/editor/', <DeviceEditorView />)}
           />
+          {/* Retired: the device setup is part of the device overview. */}
           <Route
             path="/device/provision/"
-            element={guard('/device/provision/', <DeviceProvisionView />)}
+            element={<Navigate to="/device/overview" replace />}
           />
           <Route
             path="/device/statistics/"
             element={guard('/device/statistics/', <DeviceStatisticsView />)}
-          />
-          <Route
-            path="/device/:id/detail"
-            element={guard('/device/:id/detail', <MeasurementDetailView />)}
           />
           {/* The panel opens its own log-stream socket (admin/useLogStream). */}
           <Route

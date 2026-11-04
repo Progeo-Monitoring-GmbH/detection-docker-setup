@@ -6,7 +6,7 @@ import { plotTheme } from '../../styles/plotTheme';
 import { formatDate } from '../../main/dateFormat';
 
 /** One device of GET /v1/location/<pk>/climate/ - aligned series, oldest first. */
-export type ClimateDeviceSeries = {
+type ClimateDeviceSeries = {
   id: number;
   label: string;
   type: string | null;

@@ -14,7 +14,7 @@ const MARKER_RADIUS = 4.5;
 /** Marker of a sensor reading above its threshold. */
 const OVER_THRESHOLD_COLOR = '#dc2626';
 /** Border of a selected sensor (shown in the measurements' second plot). */
-export const SELECTED_COLOR = '#e6007e';
+const SELECTED_COLOR = '#e6007e';
 const LABEL_FONT = '600 10px system-ui, sans-serif';
 const HIGHLIGHTED_LABEL_FONT = '700 12px system-ui, sans-serif';
 

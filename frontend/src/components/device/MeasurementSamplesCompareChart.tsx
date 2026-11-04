@@ -6,9 +6,10 @@ import { parseTimestamp } from '../../main/alarmUtils';
 import { plotTheme } from '../../styles/plotTheme';
 import { formatDate } from '../../main/dateFormat';
 import FrameSlider, { frameAt } from './FrameSlider';
-import { potentialsOf, signedBands } from './measurementBands';
+import { barWidthFor, potentialsOf, signedBands } from './measurementBands';
 import { usePlotlyWheelZoom, useWheelHint, WheelZoomHint } from '../ui/wheelZoom';
 import PlotHelp from '../ui/PlotHelp';
+import { assignSlots, dashArray, type SensorStyle, sensorStyle } from './sensorPalette';
 
 /** The help buttons' distance (px) above a plot's top edge. */
 const HELP_ABOVE_PX = 28;
@@ -150,7 +151,7 @@ type PlotGeometry = {
 };
 
 /** The plots' places for the controls' height and the figure's margins. */
-export const plotGeometry = (toolbarPx: number, top: number, bottom: number): PlotGeometry => {
+const plotGeometry = (toolbarPx: number, top: number, bottom: number): PlotGeometry => {
   const inner = UPPER_PX + UPPER_AXIS_PX + toolbarPx + SENSORS_PX + SENSORS_AXIS_PX + SUM_PX;
   const at = (px: number) => px / inner;
   return {
@@ -187,18 +188,21 @@ const visibility = (shown: ReadonlySet<string>, uid: string) => ({
 const formatValue = (value: number) => value.toFixed(2);
 const formatSigned = (value: number) => `${value > 0 ? '+' : ''}${value.toFixed(2)}`;
 
-const SENSOR_COLORS = [
-  plotTheme.brandBlue,
-  plotTheme.brandOrange,
-  plotTheme.contrastGreen,
-  plotTheme.contrastViolet,
-  plotTheme.contrastCyan,
-  plotTheme.contrastYellow,
-  '#6b6b6b',
-];
-
-/** A selected sensor's colour - by its index, so it keeps it while others come and go. */
-const sensorColor = (sensor: number) => SENSOR_COLORS[sensor % SENSOR_COLORS.length];
+/** A legend swatch of a sensor's line - its colour and line style. */
+const LineSwatch = ({ style }: { style: SensorStyle }) => (
+  <svg width={18} height={6} aria-hidden="true" style={{ flexShrink: 0 }}>
+    <line
+      x1={1}
+      x2={17}
+      y1={3}
+      y2={3}
+      stroke={style.color}
+      strokeWidth={2.5}
+      strokeDasharray={dashArray(style.dash)}
+      strokeLinecap="round"
+    />
+  </svg>
+);
 
 /** A dotted line across the plot at the hovered x. */
 const SPIKE = {
@@ -216,6 +220,7 @@ type HoverTrace = {
   name?: string;
   xaxis?: string;
   line?: { color?: string };
+  marker?: { color?: string };
   fillcolor?: string;
 };
 
@@ -435,6 +440,7 @@ const MeasurementSamplesCompareChart = (
   }, [meanAndDeviationSeries]);
 
   const pairSumSeries = React.useMemo(() => toTimeSeries(series), [series]);
+  const barWidth = React.useMemo(() => barWidthFor(pairSumSeries.x), [pairSumSeries]);
   // The second plot's measurements: the loaded history, else the chart's.
   const historySeries = React.useMemo(
     () => (sensorHistoryRows ? toTimeSeries(sensorHistoryRows.map(toDiffSeries)) : null),
@@ -447,6 +453,20 @@ const MeasurementSamplesCompareChart = (
   // onSensorsChange (shared with the heatmap).
   const [ownSensors, setOwnSensors] = React.useState<number[]>([]);
   const selectedSensors = sensors ?? ownSensors;
+  // Each selected sensor's colour slot (sensorPalette): kept while it stays
+  // selected - adding or removing others never repaints it.
+  const [slotState, setSlotState] = React.useState(() => ({
+    selected: selectedSensors,
+    slots: assignSlots(new Map(), selectedSensors),
+  }));
+  const sensorSlots =
+    slotState.selected === selectedSensors ? slotState.slots : assignSlots(slotState.slots, selectedSensors);
+  if (sensorSlots !== slotState.slots) {
+    // A new selection: remember its slots for the next one (React's
+    // "information from previous renders").
+    setSlotState({ selected: selectedSensors, slots: sensorSlots });
+  }
+  const styleOf = (sensor: number) => sensorStyle(sensorSlots.get(sensor) ?? 0);
   const updateSensors = (next: number[]) =>
     (onSensorsChange ?? setOwnSensors)(next);
   const toggleSensor = (sensor: number) =>
@@ -536,10 +556,10 @@ const MeasurementSamplesCompareChart = (
       yaxis: 'y4' as const,
       // Listed (and removed) in the controls above the plot instead.
       showlegend: false,
-      line: { color: sensorColor(sensor), width: 2 },
+      line: { ...sensorStyle(sensorSlots.get(sensor) ?? 0), width: 2 },
       hoverinfo: 'none' as const,
     }));
-  }, [selectedSensors, sensorSeries, t]);
+  }, [selectedSensors, sensorSeries, sensorSlots, t]);
 
   // EP + WP, WP - EP and the sum difference start hidden; a legend click
   // shows them. Kept here, not by Plotly: they widen the locked y-axis or
@@ -634,39 +654,35 @@ const MeasurementSamplesCompareChart = (
         },
         hoverinfo: 'none' as const,
       },
+      // Bars, one per measurement: where none were taken there is no bar,
+      // so gaps in the data show (a line would bridge them).
       {
-        type: 'scatter' as const,
-        mode: 'lines' as const,
+        type: 'bar' as const,
         uid: 'pair-sum',
         name: t('measurement_compare_pair_sum_label'),
         x: pairSumSeries.x,
         y: pairSumSeries.y,
+        width: barWidth,
         xaxis: 'x2' as const,
         yaxis: 'y2' as const,
         // Their own legend, at the third plot.
         legend: 'legend3',
-        line: {
-          color: 'rgba(44, 160, 44, 0.95)',
-          width: 3,
-        },
+        marker: { color: 'rgba(44, 160, 44, 0.95)' },
         hoverinfo: 'none' as const,
         // Either the sum or the average - the other only in the legend.
         visible: sumMode === 'sum' ? (true as const) : ('legendonly' as const),
       },
       {
-        type: 'scatter' as const,
-        mode: 'lines' as const,
+        type: 'bar' as const,
         uid: 'pair-mean',
         name: t('measurement_compare_pair_mean_label'),
         x: pairSumSeries.x,
         y: pairSumSeries.mean,
+        width: barWidth,
         xaxis: 'x2' as const,
         yaxis: 'y2' as const,
         legend: 'legend3',
-        line: {
-          color: plotTheme.brandOrange,
-          width: 3,
-        },
+        marker: { color: plotTheme.brandOrange },
         hoverinfo: 'none' as const,
         visible: sumMode === 'mean' ? (true as const) : ('legendonly' as const),
       },
@@ -690,7 +706,7 @@ const MeasurementSamplesCompareChart = (
         ...visibility(shownOptional, 'pair-sum-diff'),
       },
     ];
-  }, [meanAndDeviationSeries, pairSumSeries, shownOptional, sumMode, t]);
+  }, [meanAndDeviationSeries, pairSumSeries, barWidth, shownOptional, sumMode, t]);
 
   // The slider's measurement on the upper plot. Fixed uids keep the legend
   // toggles while sliding.
@@ -778,7 +794,7 @@ const MeasurementSamplesCompareChart = (
         x1: Math.min(sensorNumber(sensor) + 0.5, lastSensor),
         y0: geometry.upper[0],
         y1: geometry.upper[1],
-        fillcolor: sensorColor(sensor),
+        fillcolor: sensorStyle(sensorSlots.get(sensor) ?? 0).color,
         opacity: 0.18,
         line: { width: 0 },
       });
@@ -839,7 +855,7 @@ const MeasurementSamplesCompareChart = (
       }
     });
     return result;
-  }, [alarmBandX, currentFrame, selectedSensors, lastSensor, historySeries, frames, geometry]);
+  }, [alarmBandX, currentFrame, selectedSensors, sensorSlots, lastSensor, historySeries, frames, geometry]);
 
   // The line under the cursor or its legend entry is highlighted: wider,
   // the other lines of its plot faded. The bands stay as they are.
@@ -856,9 +872,11 @@ const MeasurementSamplesCompareChart = (
       if (BAND_TRACES.has(trace.uid) || subplot(trace) !== subplot(highlightedTrace)) {
         return trace;
       }
-      return trace === highlightedTrace
-        ? { ...trace, line: { ...trace.line, width: trace.line.width + 2 } }
-        : { ...trace, opacity: 0.3 };
+      if (trace !== highlightedTrace) {
+        return { ...trace, opacity: 0.3 };
+      }
+      // A line gets wider; a bar trace stays as it is (the others fade).
+      return 'line' in trace && trace.line ? { ...trace, line: { ...trace.line, width: trace.line.width + 2 } } : trace;
     });
   }, [traces, currentTraces, sensorTraces, highlighted]);
 
@@ -927,7 +945,7 @@ const MeasurementSamplesCompareChart = (
       const row = {
         key: uid,
         name: String(trace.name ?? ''),
-        color: String(trace.line?.color ?? ''),
+        color: String(trace.line?.color ?? trace.marker?.color ?? ''),
       };
       if (uid === 'min-max-lower' || uid === 'deviation-lower') {
         const [low, high] =
@@ -1271,11 +1289,11 @@ const MeasurementSamplesCompareChart = (
                 key={sensor}
                 className="d-inline-flex align-items-center gap-1 rounded-pill bg-white"
                 data-testid="measurement-compare-sensor-chip"
-                style={{ fontSize: 12, padding: '1px 4px 1px 8px', border: `1px solid ${sensorColor(sensor)}` }}
+                style={{ fontSize: 12, padding: '1px 4px 1px 8px', border: `1px solid ${styleOf(sensor).color}` }}
                 onMouseEnter={() => setHighlighted(`sensor-${sensor}`)}
                 onMouseLeave={() => setHighlighted(null)}
               >
-                <span style={{ width: 12, height: 3, borderRadius: 2, background: sensorColor(sensor) }} />
+                <LineSwatch style={styleOf(sensor)} />
                 {t('measurement_compare_pair_label')} {sensorNumber(sensor)}
                 <button
                   type="button"
@@ -1482,6 +1500,8 @@ const MeasurementSamplesCompareChart = (
             },
             ...plotLegends,
             hovermode: 'x unified',
+            // The third plot shows one bar trace at a time (sum or average).
+            barmode: 'overlay',
           }}
         />
       </div>

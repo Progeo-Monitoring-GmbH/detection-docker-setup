@@ -9,15 +9,15 @@ import { showSuccessBar } from '../components/ui/Snackbar.jsx';
 import PillButton from '../components/ui/kit/PillButton';
 import { formatDate } from './dateFormat';
 
-export type ChatApp = 'element_x' | 'fluffychat';
+type ChatApp = 'element_x' | 'fluffychat';
 
 /** The chat apps users can sign in with - named with their logos everywhere. */
-export const CHAT_APPS: Record<ChatApp, { name: string; logo: string }> = {
+const CHAT_APPS: Record<ChatApp, { name: string; logo: string }> = {
   element_x: { name: 'Element X', logo: '/assets/chat-apps/element-x.png' },
   fluffychat: { name: 'FluffyChat', logo: '/assets/chat-apps/fluffychat.svg' },
 };
 
-export const ChatAppLabel = ({ app, size = 18 }: { app: ChatApp; size?: number }) => (
+const ChatAppLabel = ({ app, size = 18 }: { app: ChatApp; size?: number }) => (
   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
     <img
       src={CHAT_APPS[app].logo}

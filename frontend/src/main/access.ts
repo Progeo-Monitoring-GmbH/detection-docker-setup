@@ -25,20 +25,20 @@ export type AccessContext = {
 
 export type AccessRule = (access: AccessContext) => boolean;
 
-export const ANY_USER: AccessRule = () => true;
-export const SUPERUSER: AccessRule = ({ isSuperuser }) => isSuperuser;
+const ANY_USER: AccessRule = () => true;
+const SUPERUSER: AccessRule = ({ isSuperuser }) => isSuperuser;
 /** Staff or superuser - the backend's is_staff_admin. */
-export const STAFF: AccessRule = ({ isStaff, isSuperuser }) =>
+const STAFF: AccessRule = ({ isStaff, isSuperuser }) =>
   isStaff || isSuperuser;
-export const permission =
+const permission =
   (code: string): AccessRule =>
   ({ hasPermission }) =>
     hasPermission(code);
-export const allOf =
+const allOf =
   (...rules: AccessRule[]): AccessRule =>
   (access) =>
     rules.every((rule) => rule(access));
-export const anyOf =
+const anyOf =
   (...rules: AccessRule[]): AccessRule =>
   (access) =>
     rules.some((rule) => rule(access));
@@ -51,7 +51,9 @@ export const anyOf =
 export const APP_ROUTE_ACCESS = {
   '/location/overview/': permission('module_locations_enabled'),
   '/developer': SUPERUSER,
-  '/device/overview': SUPERUSER,
+  // Also the device setup (formerly /device/provision/): staff always (like
+  // the backend's require_module_permissions), users with the permission.
+  '/device/overview': anyOf(STAFF, permission('module_devices_provision')),
   '/alarms/': SUPERUSER,
   '/alarms/report/': SUPERUSER,
   '/location/:id/heatplot': permission('module_measurements_enabled'),
@@ -62,11 +64,7 @@ export const APP_ROUTE_ACCESS = {
   '/device/:id/update/': ANY_USER,
   // Opened from the device overview.
   '/device/:id/editor/': SUPERUSER,
-  // Staff always (like the backend's require_module_permissions), users with the permission.
-  '/device/provision/': anyOf(STAFF, permission('module_devices_provision')),
   '/device/statistics/': allOf(STAFF, permission('module_devices_enabled')),
-  // Opened from the device overview and the device statistics.
-  '/device/:id/detail': STAFF,
   '/admin/panel/': SUPERUSER,
   '/staff/': STAFF,
   // System-wide interface config; the cards check module_interface_* themselves.
@@ -108,7 +106,7 @@ export const staffFlags = (user: unknown) => {
  * the portal as a normal user (viewAsUser). Enough where no module
  * permission is involved.
  */
-export const useStaffFlags = () => staffFlags(useAuth()?.user);
+const useStaffFlags = () => staffFlags(useAuth()?.user);
 
 /** Staff flags, module permissions and `can(rule)` for the current user. */
 export const useAccess = () => {

@@ -42,7 +42,7 @@ interface AuthCredentials {
 }
 
 /** How a login ended: an OtpReason asks the form for the 2FA code. */
-export type LoginOutcome = 'ok' | 'failed' | OtpReason;
+type LoginOutcome = 'ok' | 'failed' | OtpReason;
 
 interface AuthRefresh {
   isSuccess: boolean;

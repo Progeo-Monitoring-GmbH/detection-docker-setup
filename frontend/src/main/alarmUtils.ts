@@ -6,7 +6,7 @@ export type AlarmLocationLite = {
   name?: string | null;
 };
 
-export type AlarmDeviceLite = {
+type AlarmDeviceLite = {
   id?: number | null;
   mac?: string | null;
   raw_hash?: string | null;

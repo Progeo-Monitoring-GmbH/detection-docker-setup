@@ -8,9 +8,10 @@ import axiosConfig from '../../axiosConfig';
 import { formatDate } from '../../main/dateFormat';
 import { showRequestError, showSuccessBar } from '../ui/Snackbar.jsx';
 import PillButton from '../ui/kit/PillButton';
+import { type ParamOption, SET_PARAMS } from './deviceParams';
 
 /** A row of /v1/device/<id>/commands/ - payload and result are never listed. */
-export type DeviceCommand = {
+type DeviceCommand = {
   id: number;
   command: string;
   status: 'pending' | 'sent' | 'success' | 'failed' | 'timeout' | 'expired' | 'cancelled';
@@ -35,7 +36,11 @@ type CommandsResponse = {
 
 type CommandDevice = { id: number; location: number | null; raw_hash: string; display_name?: string };
 
-type ParamRow = { key: string; value: string };
+/** A set_params row: one of SET_PARAMS and one of its option values. */
+type ParamRow = { key: string; value: number };
+
+const paramSpec = (key: string) => SET_PARAMS.find((spec) => spec.key === key) ?? SET_PARAMS[0];
+const paramRow = (key: string): ParamRow => ({ key, value: paramSpec(key).options[0].value });
 
 // One click queues these; set_params and update have their own forms.
 const SIMPLE_COMMANDS = ['identify', 'measure', 'get_config', 'maintenance', 'normal', 'restart'];
@@ -98,16 +103,16 @@ const sectionTitle: CSSProperties = {
   marginBottom: 8,
 };
 
-/** "120" -> 120, "true" -> true, anything else stays text. */
-const parseParamValue = (value: string): string | number | boolean => {
-  const trimmed = value.trim();
-  if (trimmed === 'true' || trimmed === 'false') {
-    return trimmed === 'true';
+/** A result that is a flat object of plain values (identify: chip id, IP, ...). */
+const flatEntries = (value: unknown): [string, string][] | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
   }
-  if (trimmed !== '' && Number.isFinite(Number(trimmed))) {
-    return Number(trimmed);
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (!entries.length || entries.some(([, item]) => item !== null && typeof item === 'object')) {
+    return null;
   }
-  return value;
+  return entries.map(([key, item]) => [key, item === null ? '–' : String(item)]);
 };
 
 const time = (value: string | null) => (value ? formatDate(value, 'dateTimeSeconds') : '–');
@@ -136,7 +141,7 @@ const DeviceCommandsDialog = ({
   const [data, setData] = useState<CommandsResponse | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
-  const [params, setParams] = useState<ParamRow[]>([{ key: 'pulldown_resistance', value: '' }]);
+  const [params, setParams] = useState<ParamRow[]>([paramRow(SET_PARAMS[0].key)]);
   const [updatePath, setUpdatePath] = useState(DEFAULT_CONFIG_PATH);
   const [updateContent, setUpdateContent] = useState('');
   const [logHour, setLogHour] = useState(() => new Date().getHours());
@@ -225,14 +230,18 @@ const DeviceCommandsDialog = ({
   };
 
   const sendParams = () => {
-    const payload: Record<string, string | number | boolean> = {};
+    const payload: Record<string, number> = {};
     params.forEach(({ key, value }) => {
-      if (key.trim()) {
-        payload[key.trim()] = parseParamValue(value);
-      }
+      payload[key] = value;
     });
     queue('set_params', payload);
   };
+
+  const optionLabel = (option: ParamOption) =>
+    option.labelKey ? t(option.labelKey) : `${option.label} (${option.value})`;
+  // Each parameter once: a row offers its own key and the unused ones.
+  const unusedKeys = (except?: string) =>
+    SET_PARAMS.filter((spec) => spec.key === except || !params.some((row) => row.key === spec.key));
 
   const sendUpdate = () =>
     queue('update', { path: updatePath.trim() || DEFAULT_CONFIG_PATH, content: updateContent }, () => {
@@ -289,6 +298,7 @@ const DeviceCommandsDialog = ({
   // Text results (config, logs) are shown as text; only a config can be sent back as update.
   const resultText = result ? configContent(result.value) : null;
   const resultConfig = result?.command === 'get_config' ? resultText : null;
+  const resultEntries = result && !resultText ? flatEntries(result.value) : null;
 
   return (
     <div
@@ -360,7 +370,8 @@ const DeviceCommandsDialog = ({
                     return (
                       <PillButton
                         key={command}
-                        variant={asking ? 'solid' : 'ghost'}
+                        // Asking to confirm: no longer orange, the label asks.
+                        variant={asking ? 'solid' : 'accent'}
                         icon={busy === command ? <Spinner animation="border" size="sm" /> : undefined}
                         label={asking ? t('device_commands_confirm', { command: commandLabel(command) }) : commandLabel(command)}
                         title={t(`device_command_${command}_hint`)}
@@ -392,13 +403,14 @@ const DeviceCommandsDialog = ({
                     ))}
                   </select>
                   <PillButton
+                    variant="accent"
                     label={t('device_commands_logs_get')}
                     icon={busy === 'logs' ? <Spinner animation="border" size="sm" /> : undefined}
                     disabled={busy !== null}
                     onClick={() => queue('logs', { hour: logHour })}
                   />
                   <PillButton
-                    variant="ghost"
+                    variant="accent"
                     label={t('device_commands_logs_day')}
                     disabled={busy !== null}
                     onClick={() => queue('logs', undefined, undefined, HOURS.map((hour) => ({ hour })))}
@@ -413,26 +425,36 @@ const DeviceCommandsDialog = ({
                 <div style={sectionTitle}>{t('device_command_set_params')}</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {params.map((row, index) => (
-                    <div key={index} style={{ display: 'flex', gap: 6 }}>
-                      <input
+                    <div key={row.key} style={{ display: 'flex', gap: 6 }}>
+                      <select
                         aria-label={t('device_commands_param_key')}
-                        placeholder={t('device_commands_param_key')}
                         value={row.key}
                         onChange={(event) =>
-                          setParams(params.map((p, i) => (i === index ? { ...p, key: event.target.value } : p)))
+                          // Another parameter - its own first valid value.
+                          setParams(params.map((p, i) => (i === index ? paramRow(event.target.value) : p)))
                         }
                         style={{ ...inputStyle, flex: 1 }}
-                        className="font-monospace"
-                      />
-                      <input
+                      >
+                        {unusedKeys(row.key).map((spec) => (
+                          <option key={spec.key} value={spec.key}>
+                            {t(spec.labelKey)} ({spec.key})
+                          </option>
+                        ))}
+                      </select>
+                      <select
                         aria-label={t('device_commands_param_value')}
-                        placeholder={t('device_commands_param_value')}
                         value={row.value}
                         onChange={(event) =>
-                          setParams(params.map((p, i) => (i === index ? { ...p, value: event.target.value } : p)))
+                          setParams(params.map((p, i) => (i === index ? { ...p, value: Number(event.target.value) } : p)))
                         }
                         style={{ ...inputStyle, flex: 1 }}
-                      />
+                      >
+                        {paramSpec(row.key).options.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {optionLabel(option)}
+                          </option>
+                        ))}
+                      </select>
                       <button
                         type="button"
                         title={t('device_commands_param_remove')}
@@ -449,12 +471,19 @@ const DeviceCommandsDialog = ({
                       variant="ghost"
                       icon={<Plus size={14} />}
                       label={t('device_commands_param_add')}
-                      onClick={() => setParams([...params, { key: '', value: '' }])}
+                      disabled={unusedKeys().length === 0}
+                      onClick={() => {
+                        const [next] = unusedKeys();
+                        if (next) {
+                          setParams([...params, paramRow(next.key)]);
+                        }
+                      }}
                     />
                     <PillButton
+                      variant="accent"
                       label={t('device_commands_send_params')}
                       icon={busy === 'set_params' ? <Spinner animation="border" size="sm" /> : undefined}
-                      disabled={busy !== null || !params.some((row) => row.key.trim())}
+                      disabled={busy !== null || params.length === 0}
                       onClick={sendParams}
                     />
                     <span style={{ fontSize: 11.5, color: MUTED }}>{t('device_commands_params_hint')}</span>
@@ -487,6 +516,7 @@ const DeviceCommandsDialog = ({
                   />
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     <PillButton
+                      variant="accent"
                       label={t('device_commands_send_update')}
                       icon={busy === 'update' ? <Spinner animation="border" size="sm" /> : undefined}
                       disabled={busy !== null || !updateContent.trim()}
@@ -517,20 +547,40 @@ const DeviceCommandsDialog = ({
                     <PillButton variant="ghost" label={t('device_commands_result_hide')} onClick={() => setResult(null)} />
                   </span>
                 </div>
-                <pre
-                  style={{
-                    margin: 0,
-                    padding: 12,
-                    borderRadius: 10,
-                    background: 'var(--progeo-surface)',
-                    fontSize: 12,
-                    maxHeight: 280,
-                    overflow: 'auto',
-                    whiteSpace: 'pre-wrap',
-                  }}
-                >
-                  {resultText ? resultText.content : JSON.stringify(result.value, null, 2)}
-                </pre>
+                {resultEntries ? (
+                  // identify: chip id, IP, MAC, ... as a small table.
+                  <table
+                    style={{ borderCollapse: 'collapse', background: 'var(--progeo-surface)', borderRadius: 10 }}
+                  >
+                    <tbody>
+                      {resultEntries.map(([key, value]) => (
+                        <tr key={key}>
+                          <td style={{ ...tdStyle, color: MUTED, borderTop: 'none', paddingRight: 24 }}>
+                            {t(`device_commands_identity_${key}`, { defaultValue: key })}
+                          </td>
+                          <td style={{ ...tdStyle, borderTop: 'none' }} className="font-monospace">
+                            {value}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <pre
+                    style={{
+                      margin: 0,
+                      padding: 12,
+                      borderRadius: 10,
+                      background: 'var(--progeo-surface)',
+                      fontSize: 12,
+                      maxHeight: 280,
+                      overflow: 'auto',
+                      whiteSpace: 'pre-wrap',
+                    }}
+                  >
+                    {resultText ? resultText.content : JSON.stringify(result.value, null, 2)}
+                  </pre>
+                )}
               </div>
             )}
 

@@ -11,18 +11,20 @@ samples to /v1/device/<project_id>/sample/ (DeviceViewSet.catch_live_data).
 import re
 import secrets
 import string
+import unicodedata
 
 from django.conf import settings
 from django.core import signing
 from django.db import DEFAULT_DB_ALIAS, transaction
 
 from progeo.authentication import TRANSFER_TOKEN_PURPOSE
-from progeo.v1.models import LimitedToken, ProgeoDevice
+from progeo.v1.models import LimitedToken, ProgeoDevice, ProgeoLocation
 
 # Below settings.DEVICE_SAMPLE_BASE_URL (default DEFAULT_SAMPLE_BASE_URL).
 DEFAULT_SAMPLE_BASE_URL = "https://api.progeo.com"
 SAMPLE_PATH = "/v1/device/{project_id}/sample/"
 
+# device.model of the config if the location's type names no device.
 DEVICE_MODEL = "smartex mx"
 CONFIG_VERSION = "2026.11"
 FIRMWARE_VERSION = "v1.2.0-tls-lua53"
@@ -50,6 +52,32 @@ class ProvisionError(ValueError):
     pass
 
 
+def ascii_model(label) -> str:
+    """A model name the controller can show and log: ASCII only, "®" and
+    the like dropped ("smartex® mx-va" -> "smartex mx-va", "ü" -> "u")."""
+    text = unicodedata.normalize("NFKD", str(label or "")).encode("ascii", "ignore").decode("ascii")
+    return " ".join(text.split())
+
+
+_LOCATION_TYPES = ProgeoLocation.PROJECT_TYPE_CHOICES
+# Location types that are no device (no model to flash).
+_NO_MODEL_TYPES = {_LOCATION_TYPES.UNKNOWN, _LOCATION_TYPES.DEVELOPMENT, _LOCATION_TYPES.VERSUCH,
+                   _LOCATION_TYPES.SONSTIGE}
+# device.model choices: the device types of the locations, plus DEVICE_MODEL.
+MODELS = list(dict.fromkeys(
+    [DEVICE_MODEL]
+    + [ascii_model(label) for value, label in _LOCATION_TYPES.choices if value not in _NO_MODEL_TYPES]
+))
+
+
+def default_model(location) -> str:
+    """The model of the location's type, DEVICE_MODEL if it names no device."""
+    project_type = getattr(location, "project_type", None)
+    if project_type in _NO_MODEL_TYPES or project_type not in _LOCATION_TYPES.values:
+        return DEVICE_MODEL
+    return ascii_model(_LOCATION_TYPES(project_type).label)
+
+
 def _int_field(data, key, default=None, bounds=None):
     value = data.get(key)
     if value in (None, ""):
@@ -74,7 +102,12 @@ def parse_settings(data) -> dict:
     pulldown = _int_field(data, "pulldown_resistance", ProgeoDevice.Resistance.DEFAULT_100K)
     if pulldown not in ProgeoDevice.Resistance.values:
         raise ProvisionError(f"pulldown_resistance must be one of {ProgeoDevice.Resistance.values}")
+    # Cleaned before the check: "smartex® mx-va" is "smartex mx-va".
+    model = ascii_model(data.get("model")) or DEVICE_MODEL
+    if model not in MODELS:
+        raise ProvisionError(f"model must be one of {MODELS}")
     return {
+        "model": model,
         "sensors": _int_field(data, "sensors", DEFAULT_SENSORS, SENSORS_RANGE),
         "interval_sec": _int_field(data, "interval_sec", DEFAULT_INTERVAL_SEC, INTERVAL_RANGE),
         "pulldown_resistance": pulldown,
@@ -131,6 +164,11 @@ def lua_string(value) -> str:
     return f'"{escaped}"'
 
 
+def plan_model(plan) -> str:
+    """The plan's model (a preview signed before models existed: DEVICE_MODEL)."""
+    return ascii_model(plan.get("model")) or DEVICE_MODEL
+
+
 def render_config(plan) -> str:
     """The controller's config.lua (plan: build_plan)."""
     return "\n".join([
@@ -140,7 +178,7 @@ def render_config(plan) -> str:
         f"    pwd = {lua_string(plan['wifi_pwd'])},",
         "  },",
         "  device = {",
-        f"    model = {lua_string(DEVICE_MODEL)},",
+        f"    model = {lua_string(plan_model(plan))},",
         f"    version = {lua_string(CONFIG_VERSION)},",
         f"    project_id = {lua_string(plan['project_id'])},",
         f"    device_hash = {lua_string(plan['device_hash'])}",
@@ -210,7 +248,7 @@ def create_device(plan, location, db_name, token_account, user=None):
             location=location,
             project_id=plan["project_id"],
             type=ProgeoDevice.DeviceType.SMARTBOX,
-            hardware=DEVICE_MODEL,
+            hardware=plan_model(plan),
             version=CONFIG_VERSION,
             data_interval=plan["interval_sec"],
             pull_resistance=plan["pulldown_resistance"],
@@ -218,7 +256,7 @@ def create_device(plan, location, db_name, token_account, user=None):
         token = LimitedToken.objects.using(DEFAULT_DB_ALIAS).create(
             raw_hash=plan["token"],
             raw_data={
-                "label": f"{DEVICE_MODEL} {plan['device_hash']}",
+                "label": f"{plan_model(plan)} {plan['device_hash']}",
                 "device": plan["device_hash"],
                 "project_id": plan["project_id"],
                 "sensors": plan["sensors"],

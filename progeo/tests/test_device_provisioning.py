@@ -41,7 +41,7 @@ def _preview(client, location, **settings):
 
 def test_parse_settings_validates_and_defaults():
     assert provisioning.parse_settings({}) == {
-        "sensors": 32, "interval_sec": 1800, "pulldown_resistance": 136, "protective_earth": 0,
+        "model": "smartex mx", "sensors": 32, "interval_sec": 1800, "pulldown_resistance": 136, "protective_earth": 0,
         "wifi_ssid": "", "wifi_pwd": "",
     }
     assert provisioning.parse_settings({"sensors": 1000})["sensors"] == 1000
@@ -49,6 +49,32 @@ def test_parse_settings_validates_and_defaults():
                 {"protective_earth": 2}):
         with pytest.raises(provisioning.ProvisionError):
             provisioning.parse_settings(bad)
+
+
+def test_models_are_ascii_and_the_locations_type_is_the_default():
+    assert provisioning.ascii_model("smartex® mx-va") == "smartex mx-va"
+    assert provisioning.ascii_model(" Küche  ®  1 ") == "Kuche 1"
+    assert all(model.isascii() for model in provisioning.MODELS)
+    assert "smartex mx" in provisioning.MODELS and "smartex mx-va" in provisioning.MODELS
+    assert "Sonstige" not in provisioning.MODELS
+
+    types = provisioning.ProgeoLocation.PROJECT_TYPE_CHOICES
+    assert provisioning.default_model(type("L", (), {"project_type": types.SMARTEX_MX_AL})) == "smartex mx-al"
+    assert provisioning.default_model(type("L", (), {"project_type": types.SONSTIGE})) == "smartex mx"
+    # The label as the frontend may still send it is cleaned, not refused.
+    assert provisioning.parse_settings({"model": "smartex® io"})["model"] == "smartex io"
+    with pytest.raises(provisioning.ProvisionError):
+        provisioning.parse_settings({"model": "toaster"})
+
+
+def test_the_chosen_model_goes_into_config_and_device(staff_client, location):
+    preview = _preview(staff_client, location, model="smartex® vt")
+    assert 'model = "smartex vt",' in preview["config"]
+
+    response = staff_client.post("/v1/device/provision/confirm/", {"signed": preview["signed"]}, format="json")
+
+    assert response.status_code == 200, response.content
+    assert ProgeoDevice.objects.using(f.DB).get(raw_hash=preview["device_hash"]).hardware == "smartex vt"
 
 
 def test_render_config_escapes_lua_strings():

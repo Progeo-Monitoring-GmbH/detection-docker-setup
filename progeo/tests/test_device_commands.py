@@ -532,6 +532,46 @@ def test_the_controllers_commands_answer_on_the_command_url_records_the_results(
     assert device_commands.decrypt(logs.result_encrypted) == {"content": "boot ok\nwifi up\n"}
 
 
+def test_a_failed_commands_detail_is_its_error_not_its_result(api_client, provisioned):
+    """main.lua reports a failure as {"ok": false, "detail": "..."} - the
+    detail is the error, not a stored result."""
+    location, device, preview = provisioned
+    update = device_commands.queue_command(device, f.DB, "update", {"path": "config/device_config.lua", "content": CONFIG})
+    _as_controller(api_client, preview)
+    _poll(api_client, location)
+
+    _poll(api_client, location, [{"command": "update", "id": update.pk, "ok": False, "detail": "invalid config: x"}])
+
+    stored = ProgeoDeviceCommand.objects.using(f.DB).get(pk=update.pk)
+    assert stored.status == "failed"
+    assert stored.error == "invalid config: x"
+    assert stored.result_encrypted == ""
+
+
+def test_identify_stores_the_identity_of_the_message_as_its_result(api_client, provisioned):
+    """The firmware's identify item has no data - the identity fields of
+    the "commands" message it came with are its result."""
+    location, device, preview = provisioned
+    identify = device_commands.queue_command(device, f.DB, "identify")
+    _as_controller(api_client, preview)
+    _poll(api_client, location)
+    answer = {
+        "event": "commands", "mode": "normal", "poll_sec": 14400, "chip_id": 4242, "heap": 21000,
+        "ip": "192.168.0.50", "mac": "aa:bb:cc:dd:ee:ff", "device_hash": device.raw_hash,
+        "results": [{"command": "identify", "id": identify.pk, "ok": True}],
+    }
+
+    response = api_client.post(f"/v1/device/{location.project_id}/sample/cc/", answer, format="json")
+
+    assert response.status_code == 200, response.content
+    stored = ProgeoDeviceCommand.objects.using(f.DB).get(pk=identify.pk)
+    assert stored.status == "success"
+    assert device_commands.decrypt(stored.result_encrypted) == {
+        "device_hash": device.raw_hash, "chip_id": 4242, "mac": "aa:bb:cc:dd:ee:ff", "ip": "192.168.0.50",
+        "heap": 21000, "mode": "normal", "poll_sec": 14400,
+    }
+
+
 def test_logs_are_requested_per_hour(api_client, provisioned):
     location, device, preview = provisioned
 

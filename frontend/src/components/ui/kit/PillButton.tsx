@@ -4,7 +4,7 @@ type PillButtonProps = {
   label: ReactNode;
   onClick: () => void;
   active?: boolean;
-  variant?: 'solid' | 'ghost';
+  variant?: 'solid' | 'ghost' | 'accent';
   icon?: ReactNode;
   disabled?: boolean;
   title?: string;
@@ -15,6 +15,8 @@ type PillButtonProps = {
  * switcher, roof-view toggle, sequence controls, ...). `active` styles it as
  * the selected option inside a SegmentedControl track; `variant="solid"`
  * (default) is a standalone pill button on its own (e.g. "Alle ansehen").
+ * `variant="accent"` is a filled ProGeo-orange action button - for actions
+ * that must stand out on a panel (the device commands).
  */
 const PillButton = ({
   label,
@@ -26,6 +28,7 @@ const PillButton = ({
   title,
 }: PillButtonProps) => {
   const isGhost = variant === 'ghost' && !active;
+  const isAccent = variant === 'accent' && !active;
   return (
     <button
       type="button"
@@ -37,17 +40,22 @@ const PillButton = ({
         padding: '0 14px',
         border: 'none',
         borderRadius: 'var(--progeo-radius-pill)',
-        background: active ? 'var(--progeo-surface)' : 'transparent',
-        boxShadow: active ? 'var(--progeo-shadow-chrome)' : 'none',
-        color: isGhost ? '#6E6868' : 'var(--progeo-blue)',
+        background: active
+          ? 'var(--progeo-surface)'
+          : isAccent
+            ? 'var(--progeo-orange)'
+            : 'transparent',
+        boxShadow: active || isAccent ? 'var(--progeo-shadow-chrome)' : 'none',
+        color: isAccent ? 'var(--progeo-white)' : isGhost ? '#6E6868' : 'var(--progeo-blue)',
         fontFamily: 'inherit',
         fontSize: 12.5,
-        fontWeight: 500,
+        fontWeight: isAccent ? 600 : 500,
         cursor: disabled ? 'default' : 'pointer',
         display: 'flex',
         alignItems: 'center',
         gap: 7,
         opacity: disabled ? 0.5 : 1,
+        ...(isAccent ? { whiteSpace: 'nowrap' as const } : {}),
       }}
     >
       {icon}

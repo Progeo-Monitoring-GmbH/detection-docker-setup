@@ -22,7 +22,7 @@ import './i18n';
  * Production builds default to VITE_SERVER_ENV=production, so the staging
  * overlay below stays off and the production UI is unchanged.
  */
-export const isStagingServer = (): boolean =>
+const isStagingServer = (): boolean =>
   import.meta.env.VITE_SERVER_ENV === 'staging' ||
   (typeof window !== 'undefined' &&
     window.location.hostname.toLowerCase().includes('staging'));

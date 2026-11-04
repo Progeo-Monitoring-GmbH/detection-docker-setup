@@ -6,14 +6,18 @@ import {
   Clipboard,
   Cpu,
   DashLg,
+  Terminal,
   Trash,
   X,
 } from 'react-bootstrap-icons';
 import DataTable, { type TableColumn } from 'react-data-table-component';
 import { useSnackbar } from 'notistack';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
+import usePermissions from '../../../hooks/usePermissions';
 import axiosConfig from '../../axiosConfig';
 import ConfirmDialog from '../ui/kit/ConfirmDialog';
+import DeviceCommandsDialog from './DeviceCommandsDialog';
 import {
   showErrorBar,
   showRequestError,
@@ -260,6 +264,8 @@ type ProvisionTestMeasurementsProps = {
   locationId: number;
   deviceId: number;
   deviceHash: string;
+  /** Shows a close button (the device overview hides the panel). */
+  onClose?: () => void;
 };
 
 /**
@@ -275,9 +281,15 @@ const ProvisionTestMeasurements = ({
   locationId,
   deviceId,
   deviceHash,
+  onClose,
 }: ProvisionTestMeasurementsProps) => {
   const auth = useAuth();
+  const { t } = useTranslation();
   const { enqueueSnackbar } = useSnackbar();
+  const { hasPermission } = usePermissions();
+  // Controller commands (sample/cc) - staff only, like the device overview.
+  const [showCommands, setShowCommands] = useState(false);
+  const { isStaffOrSuperuser } = staffFlags(auth?.user);
   const [state, setState] = useState<TestState | null>(null);
   const [requesting, setRequesting] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
@@ -662,6 +674,12 @@ const ProvisionTestMeasurements = ({
             )}
             Messung anfragen
           </Button>
+          {isStaffOrSuperuser && (
+            <Button variant="outline-primary" onClick={() => setShowCommands(true)}>
+              <Terminal className="me-2" />
+              {t('devices_action_commands')}
+            </Button>
+          )}
           {isSuperuser && (
             <Button
               variant="outline-danger"
@@ -670,6 +688,11 @@ const ProvisionTestMeasurements = ({
             >
               <Trash className="me-2" />
               Test-Messungen bereinigen
+            </Button>
+          )}
+          {onClose && (
+            <Button variant="link" size="sm" className="p-0 ms-1" onClick={onClose}>
+              {t('provision_add_close')}
             </Button>
           )}
         </div>
@@ -716,6 +739,14 @@ const ProvisionTestMeasurements = ({
         />
         </Card.Body>
       </Card>
+      {showCommands && (
+        <DeviceCommandsDialog
+          device={{ id: deviceId, location: locationId, raw_hash: deviceHash }}
+          isSuperuser={isSuperuser}
+          canEdit={hasPermission('module_devices_edit')}
+          onClose={() => setShowCommands(false)}
+        />
+      )}
     </>
   );
 };

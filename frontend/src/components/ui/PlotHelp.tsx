@@ -4,7 +4,7 @@ import { QuestionLg } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
 
 /** The plots with a help text: i18n plot_help_<topic>_title / _what / _how. */
-export type PlotHelpTopic =
+type PlotHelpTopic =
   | 'heatmap'
   | 'by_sensor'
   | 'sensors_over_time'

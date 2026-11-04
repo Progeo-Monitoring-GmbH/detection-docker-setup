@@ -224,8 +224,10 @@ const useNow = (intervalMs = 30_000) => {
   return now;
 };
 
+// The device's location in the device overview (the old /device/:id/detail
+// view is retired).
 const deviceDetailUrl = (row: StatisticsDevice) =>
-  `/device/${row.id}/detail${row.location_id != null ? `?location=${row.location_id}` : ''}`;
+  `/device/overview${row.location_id != null ? `?location=${row.location_id}` : ''}`;
 
 const locationDetailUrl = (row: Pick<StatisticsLocation, 'id'>) =>
   `/location/${row.id}/status`;

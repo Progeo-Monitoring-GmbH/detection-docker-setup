@@ -25,7 +25,7 @@ export const potentialsOf = (samples: number[] | null | undefined) => {
 
 /** A measurement's WP - EP by sensor (index from 0) - without samples its
  * |WP - EP| (pair_abs_values). */
-export const signedValuesOf = (row: BandRow): number[] => {
+const signedValuesOf = (row: BandRow): number[] => {
   const { ep, wp } = potentialsOf(row.samples);
   if (ep.length) {
     return wp.map((value, index) => value - ep[index]);
@@ -50,7 +50,7 @@ export type SignedBands = {
  * Per sensor (index in each list) over the lists: the mean, ± the standard
  * deviation and the range of its values - the bands of the "by sensor" plots.
  */
-export const bandsOf = (lists: number[][]): SignedBands => {
+const bandsOf = (lists: number[][]): SignedBands => {
   const sums: number[] = [];
   const squares: number[] = [];
   const counts: number[] = [];
@@ -168,4 +168,22 @@ export const sensorChanges = (
       Math.max(Math.abs(b.wpChange), Math.abs(b.epChange)) - Math.max(Math.abs(a.wpChange), Math.abs(a.epChange)) ||
       a.sensor - b.sensor,
   );
+};
+
+/** Width of the third plot's bars, of the measurements' typical spacing. */
+const BAR_FILL = 0.8;
+
+/**
+ * The bar width (ms) for measurements at `times` (ascending): BAR_FILL of
+ * their median spacing - not of the smallest one, as Plotly would take: two
+ * measurements close together would make every bar a sliver. Longer gaps
+ * stay empty, so missing data shows. Undefined with fewer than two.
+ */
+export const barWidthFor = (times: number[]) => {
+  const steps = times
+    .slice(1)
+    .map((time, index) => time - times[index])
+    .filter((step) => step > 0)
+    .sort((a, b) => a - b);
+  return steps.length ? steps[Math.floor(steps.length / 2)] * BAR_FILL : undefined;
 };

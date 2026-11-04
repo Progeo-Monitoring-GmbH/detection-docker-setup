@@ -12,7 +12,7 @@ const DAY_MONTH = { day: '2-digit', month: '2-digit' } as const;
 const DATE = { ...DAY_MONTH, year: 'numeric' } as const;
 const TIME = { hour: '2-digit', minute: '2-digit' } as const;
 
-export const DATE_FORMATS = {
+const DATE_FORMATS = {
   dateTime: { ...DATE, ...TIME },
   dateTimeSeconds: { ...DATE, ...TIME, second: '2-digit' },
   date: DATE,
@@ -31,7 +31,7 @@ export type DateFormat = keyof typeof DATE_FORMATS;
 export const PRETTY_LOCALE = 'de-DE';
 
 /** Placeholder for a missing or unparseable date (never "Invalid Date"). */
-export const NO_DATE = '–';
+const NO_DATE = '–';
 
 /** The user's language for dates, null when Intl doesn't know it. */
 export const dateLocale = (

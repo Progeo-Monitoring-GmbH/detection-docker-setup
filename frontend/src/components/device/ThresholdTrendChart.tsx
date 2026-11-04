@@ -1,7 +1,7 @@
 import { useState, type MouseEvent } from 'react';
 import { formatDate } from '../../main/dateFormat';
 
-export type ThresholdTrendPoint = {
+type ThresholdTrendPoint = {
   id: number | string;
   triggered_at: string | null;
   value: number | null;

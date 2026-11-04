@@ -13,7 +13,6 @@ import {
   Layers,
   People,
   Plug,
-  PlusSquare,
   Terminal,
 } from 'react-bootstrap-icons';
 import { useAuth } from '../../../hooks/CoreAuthProvider.tsx';
@@ -136,13 +135,6 @@ const LocationSidebar = ({
       icon: Hdd,
       to: '/device/overview',
       visible: can(routeRule('/device/overview')),
-    },
-    {
-      key: 'device-provision',
-      label: t('sidebar_device_provision'),
-      icon: PlusSquare,
-      to: '/device/provision/',
-      visible: can(routeRule('/device/provision/')),
     },
     {
       // Staff tool: devices/locations in need of attention (type, chip ID,

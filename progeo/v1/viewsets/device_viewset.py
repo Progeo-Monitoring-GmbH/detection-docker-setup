@@ -297,7 +297,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         like the samples."""
         body = request.data if isinstance(request.data, dict) else {}
         raw_hash = self._controller_hash(request, body, pk)
-        return RequestSuccess({"commands": device_commands.take_commands(raw_hash, body.get("results"))})
+        return RequestSuccess({"commands": device_commands.take_commands(raw_hash, body.get("results"), body)})
 
     @staticmethod
     def _controller_hash(request, body, default):
@@ -329,11 +329,13 @@ class DeviceViewSet(ProgeoModalViewSet):
         except (TypeError, ValueError):
             return RequestFailed({"reason": "project_id must be an integer"})
 
-        values = ProgeoMeasurement.normalize_samples(payload.get("samples"))
+        
         try:
             sensors = int(payload.get("sensors"))
         except (TypeError, ValueError):
             sensors = None
+            
+        values = ProgeoMeasurement.normalize_samples(payload.get("samples"))
         if sensors:
             values = values[: 2 * sensors]
         if len(values) < 2:
@@ -1151,9 +1153,12 @@ class DeviceViewSet(ProgeoModalViewSet):
                 {"id": location.pk, "project_id": location.project_id, "name": location.name,
                  "project_type": location.get_project_type_display(),
                  "address": location.address, "plz": location.plz, "city": location.city,
-                 "country": location.country, "manager": location.manager}
+                 "country": location.country, "manager": location.manager,
+                 "model": provisioning.default_model(location)}
                 for location, _ in self._provision_locations(request)
             ],
+            # device.model choices (ASCII only - the controller shows and logs it).
+            "models": provisioning.MODELS,
             "defaults": {
                 "sensors": provisioning.DEFAULT_SENSORS,
                 "interval_sec": provisioning.DEFAULT_INTERVAL_SEC,

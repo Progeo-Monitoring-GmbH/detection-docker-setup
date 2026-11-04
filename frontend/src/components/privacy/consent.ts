@@ -16,7 +16,7 @@ export const CONSENT_MAX_AGE_MS = 365 * 24 * 60 * 60 * 1000;
 // recorded an unspecific "accepted", which is not valid for the new categories.
 const LEGACY_CONSENT_COOKIE = 'progeo_cookie_consent';
 
-export type ConsentCategories = {
+type ConsentCategories = {
   necessary: true;
   externalMaps: boolean;
   /** Usage statistics of the public demo: its activity heartbeat (useDemoHeartbeat). */
