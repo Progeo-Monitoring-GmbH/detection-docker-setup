@@ -23,7 +23,7 @@
 # with it (add columns/tables first, drop or rename in a later release).
 #
 # One deploy at a time per checkout: a second one (other terminal, cron, CI)
-# exits right away - lock logs/deploy.lock (flock, released when the deploy
+# exits right away - lock logs/deploy/.lock (flock, released when the deploy
 # ends or dies, also on kill -9; the file names the running deploy).
 set -euo pipefail
 
@@ -73,6 +73,7 @@ main() {
   cd "${project_root}"
 
   # Before the pull: a second deploy must not pull underneath the running one.
+  ensure_deploy_dir
   acquire_lock
 
   local head_before
@@ -90,12 +91,11 @@ main() {
     compose=(docker-compose)
   fi
 
-  # Everything also goes to logs/deploy.log - the backend logs are rotated on its start.
+  # Everything also goes to logs/deploy/deploy.log - the backend logs are rotated on its start.
   # 3/4 keep the terminal for following the backend log at the end.
-  mkdir -p logs
   exec 3>&1 4>&2
   # 9>&-: tee must not inherit the lock - it outlives the deploy by a moment.
-  exec > >(tee -a logs/deploy.log 9>&-) 2>&1
+  exec > >(tee -a "${DEPLOY_DIR}/deploy.log" 9>&-) 2>&1
   local started
   started=$(date +%s)
   log_info "=== Deploy $(date '+%Y-%m-%d %H:%M:%S') in ${project_root}"
@@ -147,14 +147,30 @@ main() {
   fi
 }
 
-DEPLOY_LOCK=logs/deploy.lock
+# Own folder for the deploy lock and log: logs/ itself belongs to root
+# (created by docker for the container logs), so the deploying user
+# (progeo) can't write there. Created once - with sudo if that works
+# without a password - and handed to the deploying user.
+DEPLOY_DIR=logs/deploy
+DEPLOY_LOCK="${DEPLOY_DIR}/.lock"
+
+ensure_deploy_dir() {
+  [[ -d "${DEPLOY_DIR}" && -w "${DEPLOY_DIR}" ]] && return 0
+  if mkdir -p "${DEPLOY_DIR}" 2>/dev/null && [[ -w "${DEPLOY_DIR}" ]]; then
+    return 0
+  fi
+  local fix="sudo install -d -o $(id -un) -g $(id -gn) ${project_root}/${DEPLOY_DIR}"
+  if sudo -n true 2>/dev/null && ${fix} 2>/dev/null; then
+    return 0
+  fi
+  fatal "${DEPLOY_DIR} is not writable (deploy lock + log) - nothing done. Once: ${fix}"
+}
 
 # Exclusive lock on fd 9 for the rest of the script (and its child
 # processes, which inherit fd 9). Opened with >> - > would wipe the
 # holder's info before we know whether we get the lock.
 acquire_lock() {
   command -v flock >/dev/null 2>&1 || fatal "flock not found (package util-linux) - needed to lock the deploy."
-  mkdir -p "$(dirname "${DEPLOY_LOCK}")"
   exec 9>>"${DEPLOY_LOCK}"
   if ! flock -n 9; then
     fatal "Another deploy is running ($(cat "${DEPLOY_LOCK}" 2>/dev/null || echo "unknown")) - nothing done."
