@@ -1,6 +1,5 @@
 from collections import defaultdict
-from datetime import datetime, timedelta
-from datetime import timezone as dt_timezone
+from datetime import UTC, datetime, timedelta
 
 from django.db.models import Count, F, Q
 from django.utils import timezone
@@ -179,7 +178,7 @@ class AlarmViewSet(ProgeoModalViewSet):
 
         rows = [row for chunk in map_databases(active_rows, groups) for row in chunk]
         # Newest first over all databases; untriggered rows by their fetch time.
-        oldest = datetime.min.replace(tzinfo=dt_timezone.utc)
+        oldest = datetime.min.replace(tzinfo=UTC)
         rows.sort(key=lambda row: (row["triggered_at"] or row["last_fetched"] or oldest, row["id"]), reverse=True)
 
         def iso(value):

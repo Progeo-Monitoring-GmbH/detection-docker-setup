@@ -4,8 +4,16 @@ from django.db import DatabaseError, connections, transaction
 from rest_framework.authtoken.models import Token
 
 from progeo.helper.basics import dlog, elog, okaylog
-from progeo.helper.project_db_copy import expected_mirrors, mirror_shared, outdated_mirrors
-from progeo.helper.project_dbs import map_databases, project_key_from_alias, register_all_project_dbs
+from progeo.helper.project_db_copy import (
+    expected_mirrors,
+    mirror_shared,
+    outdated_mirrors,
+)
+from progeo.helper.project_dbs import (
+    map_databases,
+    project_key_from_alias,
+    register_all_project_dbs,
+)
 from progeo.management.commands._base import BaseCommand
 from progeo.sets import DJANGO_MODELS
 from progeo.settings import DJANGO_DATABASES

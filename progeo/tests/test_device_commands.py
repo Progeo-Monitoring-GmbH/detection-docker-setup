@@ -6,7 +6,13 @@ import pytest
 
 from progeo.helper import device_commands
 from progeo.tests import factories as f
-from progeo.v1.models import Account, ProgeoAlarm, ProgeoDevice, ProgeoDeviceCommand, ProgeoMeasurement
+from progeo.v1.models import (
+    Account,
+    ProgeoAlarm,
+    ProgeoDevice,
+    ProgeoDeviceCommand,
+    ProgeoMeasurement,
+)
 
 _project_ids = itertools.count(941001)
 
