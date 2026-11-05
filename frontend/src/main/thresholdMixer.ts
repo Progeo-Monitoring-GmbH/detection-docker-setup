@@ -45,6 +45,42 @@ export const isOver = (sensor: MixerSensor, savedObject: number | null, drafts: 
   return sensor.max != null && threshold != null && sensor.max > threshold;
 };
 
+/** Above the object's threshold but not its own (higher) one: its own
+ * threshold protects it from the alarm - drawn striped. */
+export const isProtected = (sensor: MixerSensor, savedObject: number | null, drafts: ThresholdDrafts) => {
+  const object = objectThresholdOf(savedObject, drafts);
+  return (
+    overrideOf(sensor, drafts) != null &&
+    sensor.max != null &&
+    object != null &&
+    sensor.max > object &&
+    !isOver(sensor, savedObject, drafts)
+  );
+};
+
+/** "Quiet": its period's maximum stays below `share` of its threshold (or it
+ * has none) - the sensors the plot can hide to make room. */
+export const QUIET_SHARE = 0.05;
+export const isQuiet = (sensor: MixerSensor, savedObject: number | null, drafts: ThresholdDrafts) => {
+  const threshold = effectiveThresholdOf(sensor, savedObject, drafts);
+  return sensor.max == null || (threshold != null && threshold > 0 && sensor.max < threshold * QUIET_SHARE);
+};
+
+/** Round grid values up to `max` - about four lines, 1/2/2.5/5 x 10^n apart. */
+export const gridValuesOf = (max: number) => {
+  if (!(max > 0)) {
+    return [0];
+  }
+  const raw = max / 4;
+  const power = 10 ** Math.floor(Math.log10(raw));
+  const step = ([1, 2, 2.5, 5, 10].find((factor) => factor * power >= raw) ?? 10) * power;
+  const values: number[] = [];
+  for (let value = 0; value <= max + step * 1e-9; value += step) {
+    values.push(Number(value.toFixed(6)));
+  }
+  return values;
+};
+
 /**
  * Only what really changes: the object threshold if it differs from the
  * saved one, and each sensor whose override differs from its saved one. A

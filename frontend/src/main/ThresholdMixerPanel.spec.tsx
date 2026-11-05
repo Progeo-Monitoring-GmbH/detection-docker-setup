@@ -54,11 +54,15 @@ beforeEach(() => {
   api.get.mockClear();
   api.patch.mockClear();
   api.post.mockClear();
-  // Sensor 2 has its own threshold (150); the object's is 100.
+  // The object's threshold is 100. Sensor 2 has its own 150 (and is above
+  // it), sensor 4 its own 150 below its maximum 120 - protected; sensor 5
+  // stays below 5 % of 100 - quiet.
   api.sensors = [
     { sensor_order: 1, id: null, name: null, threshold: null, max: 50 },
     { sensor_order: 2, id: 20, name: 'Dach', threshold: 150, max: 200 },
     { sensor_order: 3, id: null, name: null, threshold: null, max: 80 },
+    { sensor_order: 4, id: 40, name: null, threshold: 150, max: 120 },
+    { sensor_order: 5, id: null, name: null, threshold: null, max: 3 },
   ];
 });
 
@@ -73,48 +77,79 @@ const render = (canEdit = true) =>
     root.render(<ThresholdMixerPanel locationId={7} initialObjectThreshold={100} canEdit={canEdit} />);
   });
 
-// jsdom has no layout: the scroller counts as 800 px wide -> 3 sensors get
-// 64 px columns; scale = 200 * 1.15 = 230 over 230 px, so y = 240 - value.
-const plot = () => {
-  const svg = container.querySelector<SVGSVGElement>('[data-testid="threshold-mixer-plot"]')!;
-  vi.spyOn(svg, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 192, height: 266 } as DOMRect);
-  return svg;
-};
-const pointer = (type: string, x: number, y: number, extra: MouseEventInit = {}) =>
+// jsdom has no layout: everything sits at 0/0 and the scroller counts as
+// 800 px wide -> 5 sensors get 64 px columns (sensor n: x 64(n-1)..64n);
+// scale = 200 * 1.15 = 230 over 230 px, so y = 240 - value.
+const noLayout = () =>
+  vi
+    .spyOn(Element.prototype, 'getBoundingClientRect')
+    .mockReturnValue({ left: 0, top: 0, width: 320, height: 266 } as DOMRect);
+const plot = () => container.querySelector<SVGSVGElement>('[data-testid="threshold-mixer-plot"]')!;
+const fire = (target: Element, type: string, x: number, y: number, extra: MouseEventInit = {}) =>
   act(() => {
-    plot().dispatchEvent(new MouseEvent(type, { bubbles: true, clientX: x, clientY: y, ...extra }));
+    noLayout();
+    target.dispatchEvent(new MouseEvent(type, { bubbles: true, clientX: x, clientY: y, ...extra }));
   });
+const pointer = (type: string, x: number, y: number, extra: MouseEventInit = {}) => fire(plot(), type, x, y, extra);
 const drag = (x: number, fromY: number, toY: number) => {
   pointer('pointerdown', x, fromY);
   pointer('pointermove', x, toY);
   pointer('pointerup', x, toY);
 };
+/** The object line: by its grip on the y-axis. */
+const dragObject = (fromY: number, toY: number) => {
+  const grip = container.querySelector('[role="slider"]')!;
+  fire(grip, 'pointerdown', 20, fromY);
+  fire(grip, 'pointermove', 20, toY);
+  fire(grip, 'pointerup', 20, toY);
+};
 const changesText = () => container.querySelector('[data-testid="threshold-changes"]')!.textContent;
 const button = (prefix: string) =>
   [...container.querySelectorAll('button')].find((element) => element.textContent?.startsWith(prefix))!;
+const bar = (order: number) => container.querySelector(`[data-sensor="${order}"] [data-bar]`)!;
 
 describe('ThresholdMixerPanel', () => {
-  it('loads the maxima of the period and marks sensors above their threshold', () => {
+  it('loads the maxima of 3 days and marks over, protected and plain bars', () => {
     render();
-    expect(api.get).toHaveBeenCalledWith('/v1/location/7/measurepoints/?days=30');
-    const bar = (order: number) => container.querySelector(`[data-sensor="${order}"] rect`)!.getAttribute('fill');
-    expect(bar(2)).toBe('#C44D26'); // 200 > its own 150
-    expect(bar(1)).toBe('#A9BCCF'); // 50 < the object's 100
-    // Only sensors with an own threshold have a handle.
-    expect(container.querySelectorAll('[data-handle]')).toHaveLength(1);
+    expect(api.get).toHaveBeenCalledWith('/v1/location/7/measurepoints/?days=3');
+    expect(bar(2).getAttribute('fill')).toBe('#C44D26'); // 200 > its own 150
+    expect(bar(1).getAttribute('fill')).toBe('#A9BCCF'); // 50 < the object's 100
+    // 120 > the object's 100, but its own 150 protects it: striped.
+    expect(bar(4).getAttribute('fill')).toMatch(/^url\(#mixer-protected-/);
+    // Only sensors with an own threshold have a marker.
+    expect(container.querySelectorAll('[data-handle]')).toHaveLength(2);
     expect(changesText()).toContain('einstell_mixer_no_changes');
   });
 
-  it('drags the object line', () => {
+  it('draws a light grid at round values', () => {
     render();
-    drag(10, 140, 116);
+    const labels = [...container.querySelectorAll('svg')[0].querySelectorAll('text')].map((text) => text.textContent);
+    expect(labels).toEqual(expect.arrayContaining(['0', '50', '100', '150', '200']));
+  });
+
+  it('drags the object line by its grip', () => {
+    render();
+    dragObject(140, 116);
     expect(changesText()).toContain('einstell_mixer_object');
     expect(changesText()).toContain('100 mV → 124 mV');
   });
 
-  it('drags a sensor handle and removes the change again', () => {
+  it('places a marker where the plot is clicked - not the object line', () => {
     render();
-    drag(70, 90, 60);
+    // Sensor 3 inherits; the click is right on the object line (y 140 = 100).
+    pointer('pointerdown', 150, 120);
+    pointer('pointermove', 150, 100);
+    pointer('pointerup', 150, 100);
+    expect(changesText()).toContain('einstell_mixer_changes:{"count":1}');
+    expect(changesText()).toContain('einstell_mixer_inherits');
+    expect(changesText()).toContain('→ 140 mV');
+    expect(changesText()).not.toContain('einstell_mixer_object');
+  });
+
+  it('grabs a marker before placing a new one - with a larger grab area', () => {
+    render();
+    // Sensor 2's marker sits at y 90 (150); 10 px off still grabs it.
+    drag(70, 100, 60);
     expect(changesText()).toContain('Dach');
     expect(changesText()).toContain('150 mV → 180 mV');
     act(() => (container.querySelector('[aria-label="einstell_mixer_undo"]') as HTMLButtonElement).click());
@@ -123,18 +158,46 @@ describe('ThresholdMixerPanel', () => {
 
   it('moves every selected sensor together', () => {
     render();
-    pointer('pointerdown', 10, 200); // select sensor 1
+    pointer('pointerdown', 10, 200, { ctrlKey: true }); // select sensor 1
     pointer('pointerdown', 150, 200, { ctrlKey: true }); // add sensor 3
     expect(container.textContent).toContain('einstell_mixer_selected:{"count":2}');
+    expect(changesText()).toContain('einstell_mixer_no_changes');
     // Sensor 1 is selected: its spot on the object line grabs the selection.
     drag(10, 140, 100);
     expect(changesText()).toContain('einstell_mixer_changes:{"count":2}');
     expect(changesText()).toContain('140 mV');
   });
 
+  it('outlines the hovered bar', () => {
+    render();
+    pointer('pointermove', 10, 200);
+    expect(bar(1).getAttribute('stroke')).toBe('#0b3659');
+    expect(bar(3).getAttribute('stroke')).toBe('none');
+  });
+
+  it('hides the quiet sensors on request', () => {
+    render();
+    expect(container.querySelector('[data-sensor="5"]')).not.toBeNull();
+    act(() => button('einstell_mixer_hide_quiet').click());
+    expect(container.querySelector('[data-sensor="5"]')).toBeNull();
+    expect(container.textContent).toContain('einstell_mixer_quiet_hidden:{"count":1}');
+  });
+
+  it('scrolls with the arrow keys', () => {
+    render();
+    const scroller = plot().parentElement!;
+    const scrollBy = vi.fn();
+    Object.defineProperty(scroller, 'scrollBy', { value: scrollBy, configurable: true });
+    act(() => {
+      scroller.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    });
+    // Five 64 px columns.
+    expect(scrollBy).toHaveBeenCalledWith({ left: 320, behavior: 'smooth' });
+  });
+
   it('saves only the changes', async () => {
     render();
-    drag(10, 140, 116); // object 100 -> 124
+    dragObject(140, 116); // object 100 -> 124
     drag(70, 90, 60); // sensor 2: 150 -> 180
     await act(async () => {
       button('einstell_mixer_save').click();
@@ -150,7 +213,7 @@ describe('ThresholdMixerPanel', () => {
 
   it('removes the own thresholds of the selection', async () => {
     render();
-    pointer('pointerdown', 70, 220); // select sensor 2
+    pointer('pointerdown', 70, 220, { ctrlKey: true }); // select sensor 2
     act(() => button('einstell_mixer_remove_selected').click());
     expect(changesText()).toContain('150 mV → einstell_mixer_inherits');
     await act(async () => {
@@ -164,7 +227,8 @@ describe('ThresholdMixerPanel', () => {
 
   it('is read-only without the edit permission', () => {
     render(false);
-    drag(10, 140, 116);
+    drag(150, 120, 100);
+    dragObject(140, 116);
     expect(container.querySelector('[data-testid="threshold-changes"]')).toBeNull();
     expect(container.textContent).not.toContain('einstell_mixer_selected');
   });

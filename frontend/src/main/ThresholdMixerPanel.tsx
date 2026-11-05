@@ -4,13 +4,14 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from 'react';
 import { Spinner } from 'react-bootstrap';
-import { ArrowCounterclockwise, XLg } from 'react-bootstrap-icons';
+import { ArrowCounterclockwise, ChevronLeft, ChevronRight, XLg } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
@@ -22,7 +23,10 @@ import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import { useWheelHint, useZoomWheel, WheelZoomHint } from '../components/ui/wheelZoom';
 import {
   effectiveThresholdOf,
+  gridValuesOf,
   isOver,
+  isProtected,
+  isQuiet,
   labelEveryOf,
   type MixerSensor,
   NO_DRAFTS,
@@ -39,8 +43,9 @@ import {
   withoutChange,
 } from './thresholdMixer';
 
-const PERIODS = [1, 7, 30, 90, 365];
-const DEFAULT_PERIOD = 30;
+const PERIODS = [1, 3, 7, 30, 90, 365];
+/** Short by default - the maxima of long periods take a while. */
+const DEFAULT_PERIOD = 3;
 
 const MUTED = '#8B8383';
 const BAR = '#A9BCCF';
@@ -48,6 +53,8 @@ const BAR_OVER = '#C44D26';
 const OBJECT_LINE = 'var(--progeo-orange)';
 const OWN = '#2a78d6';
 const SELECTED_BG = 'rgba(42, 120, 214, .10)';
+const HOVER_OUTLINE = '#0b3659';
+const GRID = 'rgba(11, 54, 89, .08)';
 
 // Geometry (px): the plot area, the y-axis gutter left of the scroller.
 const PLOT_TOP = 10;
@@ -60,8 +67,12 @@ const MIN_COLUMN = 14;
 const MAX_COLUMN = 64;
 /** Zoomed all the way out a column may get this narrow (all sensors visible). */
 const MIN_ZOOM_COLUMN = 3;
-/** How close (px) to a handle or the object line a press grabs it. */
-const GRAB_PX = 7;
+/** How close (px) to a marker (or the object line) a press grabs it. */
+const GRAB_PX = 11;
+/** Room under the plot for the horizontal scrollbar - it must not cover the labels. */
+const SCROLLBAR_ROOM = 14;
+/** ←/→ scroll this many columns (Shift: a page). */
+const KEY_SCROLL_COLUMNS = 5;
 
 type Drag = { kind: 'object' } | { kind: 'sensors'; orders: number[] };
 
@@ -107,6 +118,10 @@ const ThresholdMixerPanel = ({
   const [zoomColumn, setZoomColumn] = useState<number | null>(null);
   const [width, setWidth] = useState(800);
   const [wheelHint, showWheelHint] = useWheelHint();
+  // Hide the sensors that stay far below their threshold (isQuiet).
+  const [hideQuiet, setHideQuiet] = useState(false);
+  const [scroll, setScroll] = useState({ left: 0, client: 0, total: 0 });
+  const stripesId = `mixer-protected-${useId().replace(/:/g, '')}`;
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const requestRef = useRef(0);
 
@@ -153,12 +168,47 @@ const ThresholdMixerPanel = ({
     return () => observer.disconnect();
   }, [loading]);
 
-  const orders = useMemo(() => sensors.map((sensor) => sensor.sensor_order), [sensors]);
-  const count = Math.max(sensors.length, 1);
+  // Quiet by the saved thresholds - the columns don't jump while dragging.
+  // Sensors with unsaved changes or selected stay, whatever their values.
+  const quietOrders = useMemo(
+    () => new Set(sensors.filter((sensor) => isQuiet(sensor, savedObject, NO_DRAFTS)).map((s) => s.sensor_order)),
+    [sensors, savedObject],
+  );
+  const columns = hideQuiet
+    ? sensors.filter(
+        (sensor) =>
+          !quietOrders.has(sensor.sensor_order) ||
+          sensor.sensor_order in drafts.sensors ||
+          selected.has(sensor.sensor_order),
+      )
+    : sensors;
+  const orders = columns.map((sensor) => sensor.sensor_order);
+  const count = Math.max(columns.length, 1);
   const fitColumn = Math.max(MIN_ZOOM_COLUMN, width / count);
   const defaultColumn = Math.min(MAX_COLUMN, Math.max(MIN_COLUMN, fitColumn));
   const column = zoomColumn != null ? Math.min(MAX_COLUMN, Math.max(Math.min(fitColumn, MIN_COLUMN), zoomColumn)) : defaultColumn;
-  const plotWidth = Math.max(width, column * sensors.length);
+  const plotWidth = Math.max(width, column * columns.length);
+
+  // Where the scroller stands - for the "Sensoren x-y von n" line and the edge arrows.
+  const measureScroll = useCallback(() => {
+    const element = scrollerRef.current;
+    if (element) {
+      setScroll({ left: element.scrollLeft, client: element.clientWidth, total: element.scrollWidth });
+    }
+  }, []);
+  useLayoutEffect(measureScroll, [measureScroll, plotWidth, loading]);
+
+  const scrollBy = (pixels: number) => {
+    const element = scrollerRef.current;
+    if (!element) {
+      return;
+    }
+    if (typeof element.scrollBy === 'function') {
+      element.scrollBy({ left: pixels, behavior: 'smooth' });
+    } else {
+      element.scrollLeft += pixels;
+    }
+  };
 
   useZoomWheel(
     scrollerRef,
@@ -193,7 +243,7 @@ const ThresholdMixerPanel = ({
     const rect = event.currentTarget.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const index = Math.floor(x / column);
-    return { index, y: event.clientY - rect.top, sensor: sensors[index] ?? null };
+    return { index, y: event.clientY - rect.top, sensor: columns[index] ?? null };
   };
 
   const grabAt = (sensor: MixerSensor | null, y: number): Drag | null => {
@@ -204,11 +254,14 @@ const ThresholdMixerPanel = ({
       const own = overrideOf(sensor, drafts);
       const isSelected = selected.has(sensor.sensor_order);
       const effective = effectiveThresholdOf(sensor, savedObject, drafts);
-      // Its own handle - or, while selected, its spot on the object line.
+      // Its own marker - or, while selected, its spot on the object line.
+      // Markers come first: the object line is dragged by its grip.
       if ((own != null || isSelected) && effective != null && Math.abs(y - toY(effective)) <= GRAB_PX) {
         return { kind: 'sensors', orders: isSelected ? [...selected] : [sensor.sensor_order] };
       }
+      return null;
     }
+    // Right of the last sensor the object line itself can be grabbed.
     if (objectThreshold != null && Math.abs(y - toY(objectThreshold)) <= GRAB_PX) {
       return { kind: 'object' };
     }
@@ -234,6 +287,8 @@ const ThresholdMixerPanel = ({
   };
 
   const onPointerDown = (event: PointerEvent<SVGSVGElement>) => {
+    // The arrow keys scroll the focused plot.
+    scrollerRef.current?.focus({ preventScroll: true });
     const { sensor, y } = pointerAt(event);
     const next = grabAt(sensor, y);
     if (next) {
@@ -244,23 +299,30 @@ const ThresholdMixerPanel = ({
     if (!sensor || !canEdit) {
       return;
     }
-    // A click selects: alone, with Ctrl/⌘ added/removed, with Shift a range.
     const order = sensor.sensor_order;
+    // Shift: select a range, Ctrl/⌘: add or remove one.
     if (event.shiftKey && anchor != null) {
       setSelected((prev) => new Set([...prev, ...rangeBetween(orders, anchor, order)]));
-    } else if (event.ctrlKey || event.metaKey) {
+      return;
+    }
+    if (event.ctrlKey || event.metaKey) {
       setSelected((prev) => {
-        const next = new Set(prev);
-        if (!next.delete(order)) {
-          next.add(order);
+        const toggled = new Set(prev);
+        if (!toggled.delete(order)) {
+          toggled.add(order);
         }
-        return next;
+        return toggled;
       });
       setAnchor(order);
-    } else {
-      setSelected((prev) => (prev.size === 1 && prev.has(order) ? new Set() : new Set([order])));
-      setAnchor(order);
+      return;
     }
+    // A plain click sets the marker at the click's height (for the whole
+    // selection if it holds this sensor) - and keeps dragging it.
+    const targets = selected.has(order) ? [...selected] : [order];
+    event.preventDefault();
+    setDrafts((prev) => withOverrides(prev, targets, valueAt(y)));
+    setAnchor(order);
+    startDrag({ kind: 'sensors', orders: targets }, event.currentTarget, event.pointerId);
   };
 
   const onPointerMove = (event: PointerEvent<SVGSVGElement>) => {
@@ -270,7 +332,7 @@ const ThresholdMixerPanel = ({
       return;
     }
     setHovered(sensor?.sensor_order ?? null);
-    event.currentTarget.style.cursor = grabAt(sensor, y) ? 'ns-resize' : canEdit && sensor ? 'pointer' : 'default';
+    event.currentTarget.style.cursor = grabAt(sensor, y) ? 'ns-resize' : canEdit && sensor ? 'crosshair' : 'default';
   };
 
   const endDrag = () => {
@@ -300,6 +362,15 @@ const ThresholdMixerPanel = ({
       event.preventDefault();
       set(snapped((current ?? 0) + (event.key === 'ArrowUp' ? by : -by), step));
     }
+  };
+
+  const onScrollerKey = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
+      return;
+    }
+    event.preventDefault();
+    const distance = event.shiftKey ? scroll.client * 0.9 : column * KEY_SCROLL_COLUMNS;
+    scrollBy(event.key === 'ArrowLeft' ? -distance : distance);
   };
 
   // -- selection tools ---------------------------------------------------------
@@ -365,13 +436,46 @@ const ThresholdMixerPanel = ({
 
   const every = labelEveryOf(column);
   const hoveredSensor = sensors.find((sensor) => sensor.sensor_order === hovered) ?? null;
-  const yTicks = [0, scale / 1.15 / 2, scale / 1.15].map((value) => Math.round(value));
+  const gridValues = gridValuesOf(scale / 1.15).filter((value) => value <= scale);
+  const scrollable = scroll.total > scroll.client + 1;
+  const atStart = scroll.left <= 1;
+  const atEnd = scroll.left + scroll.client >= scroll.total - 1;
+  const firstShown = Math.min(columns.length, Math.floor(scroll.left / column) + 1);
+  const lastShown = Math.min(columns.length, Math.ceil((scroll.left + scroll.client) / column));
+  const quietHidden = sensors.length - columns.length;
+
+  const edge = (side: 'left' | 'right') => (
+    <button
+      type="button"
+      aria-label={t(side === 'left' ? 'einstell_mixer_scroll_left' : 'einstell_mixer_scroll_right')}
+      title={t(side === 'left' ? 'einstell_mixer_scroll_left' : 'einstell_mixer_scroll_right')}
+      onClick={() => scrollBy((side === 'left' ? -1 : 1) * scroll.client * 0.9)}
+      style={{
+        position: 'absolute',
+        top: 0,
+        bottom: SCROLLBAR_ROOM,
+        [side]: 0,
+        width: 36,
+        border: 'none',
+        padding: 0,
+        cursor: 'pointer',
+        color: 'var(--progeo-blue)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: side === 'left' ? 'flex-start' : 'flex-end',
+        background: `linear-gradient(to ${side === 'left' ? 'right' : 'left'}, var(--progeo-panel-bg, #fff) 25%, rgba(255,255,255,0))`,
+        zIndex: 2,
+      }}
+    >
+      {side === 'left' ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
+    </button>
+  );
 
   const chart = (
     <div style={{ display: 'flex', position: 'relative' }}>
       {/* The y-axis with the object grip stays put while the columns scroll. */}
       <svg width={GUTTER} height={SVG_H} style={{ flexShrink: 0, overflow: 'visible' }} aria-hidden={!canEdit}>
-        {yTicks.map((tick) => (
+        {gridValues.map((tick) => (
           <text key={tick} x={GUTTER - 8} y={toY(tick) + 3} textAnchor="end" fontSize={10} fill={MUTED}>
             {tick}
           </text>
@@ -400,7 +504,22 @@ const ThresholdMixerPanel = ({
         )}
       </svg>
 
-      <div ref={scrollerRef} style={{ overflowX: 'auto', overflowY: 'hidden', flex: 1, minWidth: 0, position: 'relative' }}>
+      <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+      <div
+        ref={scrollerRef}
+        tabIndex={0}
+        role="group"
+        aria-label={t('einstell_mixer_plot_label')}
+        onKeyDown={onScrollerKey}
+        onScroll={measureScroll}
+        style={{
+          overflowX: 'auto',
+          overflowY: 'hidden',
+          paddingBottom: SCROLLBAR_ROOM,
+          outline: 'none',
+          scrollbarColor: `${MUTED} var(--progeo-track-soft)`,
+        }}
+      >
         <svg
           width={plotWidth}
           height={SVG_H}
@@ -412,8 +531,18 @@ const ThresholdMixerPanel = ({
           onPointerLeave={() => !drag && setHovered(null)}
           data-testid="threshold-mixer-plot"
         >
+          <defs>
+            {/* Protected by its own threshold, but above the object's: blue-red. */}
+            <pattern id={stripesId} width={6} height={6} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+              <rect width={3} height={6} fill={OWN} />
+              <rect x={3} width={3} height={6} fill={BAR_OVER} />
+            </pattern>
+          </defs>
+          {gridValues.map((value) => (
+            <line key={value} x1={0} x2={plotWidth} y1={toY(value)} y2={toY(value)} stroke={GRID} />
+          ))}
           <line x1={0} x2={plotWidth} y1={PLOT_TOP + PLOT_H} y2={PLOT_TOP + PLOT_H} stroke="var(--progeo-track)" />
-          {sensors.map((sensor, index) => {
+          {columns.map((sensor, index) => {
             const x = index * column;
             const order = sensor.sensor_order;
             const own = overrideOf(sensor, drafts);
@@ -433,22 +562,31 @@ const ThresholdMixerPanel = ({
                 )}
                 {sensor.max != null && (
                   <rect
+                    data-bar
                     x={x + (column - barWidth) / 2}
                     y={toY(sensor.max)}
                     width={barWidth}
                     height={Math.max(1, PLOT_TOP + PLOT_H - toY(sensor.max))}
                     rx={Math.min(3, barWidth / 3)}
-                    fill={isOver(sensor, savedObject, drafts) ? BAR_OVER : BAR}
+                    fill={
+                      isOver(sensor, savedObject, drafts)
+                        ? BAR_OVER
+                        : isProtected(sensor, savedObject, drafts)
+                          ? `url(#${stripesId})`
+                          : BAR
+                    }
+                    stroke={hovered === order ? HOVER_OUTLINE : 'none'}
+                    strokeWidth={hovered === order ? 1.5 : 0}
                   />
                 )}
                 {effective != null && (own != null || isSelected) && (
                   <rect
                     data-handle={order}
                     x={x + column * 0.05}
-                    y={toY(effective) - 2}
+                    y={toY(effective) - 3}
                     width={column * 0.9}
-                    height={4}
-                    rx={2}
+                    height={6}
+                    rx={3}
                     fill={own != null ? OWN : '#fff'}
                     stroke={OWN}
                     strokeWidth={own != null ? 0 : 1.5}
@@ -476,6 +614,9 @@ const ThresholdMixerPanel = ({
           )}
         </svg>
         <WheelZoomHint visible={wheelHint} radius={0} />
+      </div>
+      {scrollable && !atStart && edge('left')}
+      {scrollable && !atEnd && edge('right')}
       </div>
 
       {hoveredSensor && !drag && (
@@ -573,6 +714,17 @@ const ThresholdMixerPanel = ({
         <div className="d-flex align-items-center gap-3 flex-wrap" style={{ fontSize: 12, color: '#6E6868' }}>
           {legendItem(<span style={{ width: 10, height: 12, borderRadius: 2, background: BAR }} />, t('einstell_mixer_max_legend'))}
           {legendItem(<span style={{ width: 10, height: 12, borderRadius: 2, background: BAR_OVER }} />, t('einstell_mixer_over_legend', { count: overCount }))}
+          {legendItem(
+            <span
+              style={{
+                width: 10,
+                height: 12,
+                borderRadius: 2,
+                background: `repeating-linear-gradient(45deg, ${OWN} 0 3px, ${BAR_OVER} 3px 6px)`,
+              }}
+            />,
+            t('einstell_mixer_protected_legend'),
+          )}
           {legendItem(<span style={{ width: 16, height: 3, background: OBJECT_LINE }} />, t('einstell_mixer_object'))}
           {legendItem(<span style={{ width: 16, height: 4, borderRadius: 2, background: OWN }} />, t('einstell_mixer_own_legend', { count: ownCount }))}
           <span style={{ marginLeft: 'auto', color: MUTED }}>{canEdit ? t('einstell_mixer_usage') : null}</span>
@@ -585,7 +737,25 @@ const ThresholdMixerPanel = ({
         ) : sensors.length === 0 ? (
           <div style={{ fontSize: 13, color: MUTED }}>{t('einstell_points_empty')}</div>
         ) : (
-          <div style={{ opacity: loading ? 0.5 : 1 }}>{chart}</div>
+          <div style={{ opacity: loading ? 0.5 : 1 }}>
+            <div className="d-flex align-items-center gap-2 flex-wrap mb-1" style={{ fontSize: 12, color: MUTED }}>
+              <span data-testid="threshold-mixer-range">
+                {scrollable
+                  ? t('einstell_mixer_range', { first: firstShown, last: lastShown, total: columns.length })
+                  : t('einstell_mixer_all_shown', { total: columns.length })}
+                {quietHidden > 0 && ` · ${t('einstell_mixer_quiet_hidden', { count: quietHidden })}`}
+              </span>
+              <span style={{ flex: 1 }} />
+              <PillButton
+                variant={hideQuiet ? 'accent' : 'ghost'}
+                label={t('einstell_mixer_hide_quiet', { count: quietOrders.size })}
+                title={t('einstell_mixer_hide_quiet_hint', { percent: 5 })}
+                disabled={quietOrders.size === 0 && !hideQuiet}
+                onClick={() => setHideQuiet((hide) => !hide)}
+              />
+            </div>
+            {chart}
+          </div>
         )}
 
         {canEdit && sensors.length > 0 && (

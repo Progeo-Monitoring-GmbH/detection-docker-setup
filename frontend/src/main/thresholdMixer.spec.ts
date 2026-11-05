@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   effectiveThresholdOf,
+  gridValuesOf,
   isOver,
+  isProtected,
+  isQuiet,
+  QUIET_SHARE,
   labelEveryOf,
   type MixerSensor,
   NO_DRAFTS,
@@ -33,6 +37,35 @@ describe('effective threshold', () => {
     expect(isOver(inherits, 100, NO_DRAFTS)).toBe(true);
     expect(isOver(own, 100, NO_DRAFTS)).toBe(false);
     expect(isOver(sensor(3), 100, NO_DRAFTS)).toBe(false);
+  });
+});
+
+describe('protected and quiet sensors', () => {
+  it('is protected above the object threshold but below its own', () => {
+    expect(isProtected(sensor(1, 150, 120), 100, NO_DRAFTS)).toBe(true);
+    // Above its own as well: over, not protected.
+    expect(isProtected(sensor(2, 110, 120), 100, NO_DRAFTS)).toBe(false);
+    // Below the object threshold: nothing to protect.
+    expect(isProtected(sensor(3, 150, 80), 100, NO_DRAFTS)).toBe(false);
+    // Without an own threshold: inherits, never protected.
+    expect(isProtected(sensor(4, null, 120), 100, NO_DRAFTS)).toBe(false);
+    // Drafts count: the own threshold dragged below the maximum.
+    expect(isProtected(sensor(1, 150, 120), 100, { sensors: { 1: 110 } })).toBe(false);
+  });
+
+  it(`is quiet below ${QUIET_SHARE * 100} % of its threshold or without values`, () => {
+    expect(isQuiet(sensor(1, null, 4), 100, NO_DRAFTS)).toBe(true);
+    expect(isQuiet(sensor(2, null, 5), 100, NO_DRAFTS)).toBe(false);
+    expect(isQuiet(sensor(3, 20, 4), 100, NO_DRAFTS)).toBe(false); // 4 of its own 20
+    expect(isQuiet(sensor(4, null, null), 100, NO_DRAFTS)).toBe(true);
+    expect(isQuiet(sensor(5, null, 1), null, NO_DRAFTS)).toBe(false); // no threshold to compare
+  });
+
+  it('draws about four grid lines at round values', () => {
+    expect(gridValuesOf(200)).toEqual([0, 50, 100, 150, 200]);
+    expect(gridValuesOf(700)).toEqual([0, 200, 400, 600]);
+    expect(gridValuesOf(9)).toEqual([0, 2.5, 5, 7.5]);
+    expect(gridValuesOf(0)).toEqual([0]);
   });
 });
 
