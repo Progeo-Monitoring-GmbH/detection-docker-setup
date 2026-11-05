@@ -1,0 +1,7 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  // Used through resolve.alias in vite.config.ts, which knip does not follow:
+  // react-plotly.js's "plotly.js/dist/plotly" -> src/plotly.ts, "buffer" -> "buffer/".
+  "ignore": ["src/plotly.ts"],
+  "ignoreDependencies": ["buffer"]
+}
