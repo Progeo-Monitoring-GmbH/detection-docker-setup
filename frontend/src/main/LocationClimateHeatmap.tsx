@@ -9,6 +9,7 @@ import { showRequestError } from '../components/ui/Snackbar.jsx';
 import SensorHeatmap2D from '../components/device/SensorHeatmap2D.tsx';
 import type { SensorHeatmapResponse } from '../components/device/sensorHeatmapTypes';
 import PanelCard from '../components/ui/kit/PanelCard';
+import PlotHelp from '../components/ui/PlotHelp';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import { routeRule, useAccess } from './access';
 import { TIME_RANGE_DAYS, type TimeRange } from './timeRanges';
@@ -40,13 +41,25 @@ type LocationClimateHeatmapProps = {
   hoveredDeviceId?: number | null;
   /** Called with the device of the hovered marker (null when left). */
   onHoverDevice?: (deviceId: number | null) => void;
+  /** The page's frame slider (epoch ms; null: the newest frame) - the
+   * heatmap shows the frame holding it and has no slider of its own. */
+  time: number | null;
+  onTimeChange: (ms: number) => void;
+  /** Reports the loaded frames (Unix seconds, oldest first) - the page's
+   * slider runs over them. */
+  onFramesChange: (timestamps: number[]) => void;
 };
+
+const NO_FRAMES: number[] = [];
 
 const LocationClimateHeatmap = ({
   locationId,
   range,
   hoveredDeviceId = null,
   onHoverDevice,
+  time,
+  onTimeChange,
+  onFramesChange,
 }: LocationClimateHeatmapProps) => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
@@ -82,6 +95,11 @@ const LocationClimateHeatmap = ({
   }, [auth, enqueueSnackbar, locationId, request]);
 
   const hasPoints = Boolean(response?.sensor_points?.length);
+  // Without placed sensors there is no heatmap - and no frames of it.
+  const frames = hasPoints ? (response?.timestamps ?? NO_FRAMES) : NO_FRAMES;
+  useEffect(() => {
+    onFramesChange(frames);
+  }, [frames, onFramesChange]);
 
   return (
     <PanelCard>
@@ -95,6 +113,7 @@ const LocationClimateHeatmap = ({
             value={metric}
             onChange={(value) => setMetric(value as ClimateMetric)}
           />
+          <PlotHelp topic="climate_heatmap" />
           {loading && response && (
             <Spinner size="sm" animation="border" className="text-muted" />
           )}
@@ -122,6 +141,9 @@ const LocationClimateHeatmap = ({
               field={{ unit: response?.unit ?? '', decimals: 1 }}
               highlightedDevice={hoveredDeviceId}
               onHoverDevice={onHoverDevice}
+              time={time}
+              onTimeChange={onTimeChange}
+              hideFrameSlider
             />
             {response?.step != null && (
               <div className="small text-muted">

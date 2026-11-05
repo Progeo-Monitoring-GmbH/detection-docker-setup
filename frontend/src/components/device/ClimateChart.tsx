@@ -119,7 +119,13 @@ type ClimateChartProps = {
    * without, the chart keeps its own. */
   referenceTime?: number | null;
   onReferenceChange?: (time: number | null) => void;
+  /** The page's frame slider (epoch ms): a vertical line - as on the other
+   * projects' time plots. null: none. */
+  frameTime?: number | null;
 };
+
+/** The frame slider's line - the same as on MeasurementSamplesCompareChart. */
+const FRAME_LINE = { color: 'orange', width: 2, dash: 'dot' as const };
 
 const GAIN_COLOR = '#3F7A1C';
 const LOSS_COLOR = '#C44D26';
@@ -169,6 +175,7 @@ const ClimateChart = ({
   bucketSeconds = null,
   referenceTime: controlledReference,
   onReferenceChange,
+  frameTime = null,
 }: ClimateChartProps) => {
   const { t } = useTranslation();
   const [ownReference, setOwnReference] = useState<number | null>(null);
@@ -466,22 +473,38 @@ const ClimateChart = ({
           font: { size: 12, color: '#3A3535' },
           align: 'left',
         },
-        // The reference time: a dotted vertical line across the plot.
-        shapes:
-          referenceTime != null
+        // The reference time (dashed) and the frame slider's time (dotted):
+        // vertical lines across the plot.
+        shapes: [
+          ...(referenceTime != null
             ? [
                 {
-                  type: 'line',
-                  xref: 'x',
-                  yref: 'paper',
+                  type: 'line' as const,
+                  xref: 'x' as const,
+                  yref: 'paper' as const,
                   x0: new Date(referenceTime),
                   x1: new Date(referenceTime),
                   y0: 0,
                   y1: 1,
-                  line: { color: 'rgba(235, 99, 59, .7)', width: 1.5, dash: 'dot' },
+                  line: { color: 'rgba(235, 99, 59, .7)', width: 1.5, dash: 'dash' as const },
                 },
               ]
-            : [],
+            : []),
+          ...(frameTime != null
+            ? [
+                {
+                  type: 'line' as const,
+                  xref: 'x' as const,
+                  yref: 'paper' as const,
+                  x0: new Date(frameTime),
+                  x1: new Date(frameTime),
+                  y0: 0,
+                  y1: 1,
+                  line: FRAME_LINE,
+                },
+              ]
+            : []),
+        ],
         xaxis: {
           type: 'date',
           automargin: true,

@@ -13,6 +13,7 @@ import ClimateChart, {
   type ClimateResponse,
 } from '../components/device/ClimateChart';
 import PanelCard from '../components/ui/kit/PanelCard';
+import PlotHelp from '../components/ui/PlotHelp';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import {
   availableTimeRanges,
@@ -39,6 +40,11 @@ type LocationClimatePanelsProps = {
   /** The range, picked by the parent (Analyse tab: one toggle for the
    * heatmap and the charts) - without, the panels offer their own toggle. */
   range?: TimeRange;
+  /** The page's frame slider (epoch ms): a line on every chart. */
+  frameTime?: number | null;
+  /** Reports the times (Unix seconds, oldest first) of all readings - the
+   * page's slider runs over them when there is no heatmap. */
+  onFramesChange?: (timestamps: number[]) => void;
 };
 
 /**
@@ -53,6 +59,8 @@ const LocationClimatePanels = ({
   hoveredDeviceId: controlledHoveredDevice,
   onHoverDevice,
   range: controlledRange,
+  frameTime = null,
+  onFramesChange,
 }: LocationClimatePanelsProps) => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
@@ -123,6 +131,13 @@ const LocationClimatePanels = ({
   }, [loadClimate]);
 
   const devices = climate?.devices ?? [];
+  const frames = useMemo(
+    () => [...new Set((climate?.devices ?? []).flatMap((device) => device.timestamps))].sort((a, b) => a - b),
+    [climate],
+  );
+  useEffect(() => {
+    onFramesChange?.(frames);
+  }, [frames, onFramesChange]);
   // Long ranges come back averaged per bucket (null/absent for raw data).
   const bucketSeconds = climate?.bucket_seconds ?? null;
   const bucket = bucketLabel(bucketSeconds);
@@ -234,6 +249,7 @@ const LocationClimatePanels = ({
         bucketSeconds={bucketSeconds}
         referenceTime={referenceTime}
         onReferenceChange={setReferenceTime}
+        frameTime={frameTime}
       />
     );
 
@@ -296,14 +312,14 @@ const LocationClimatePanels = ({
           )}
         </div>
       )}
-      <PanelCard title={t('climate_humidity_title')}>
+      <PanelCard title={t('climate_humidity_title')} actions={<PlotHelp topic="climate_chart" />}>
         {body('humidity', t('climate_humidity_axis'), '%')}
       </PanelCard>
-      <PanelCard title={t('climate_temperature_title')}>
+      <PanelCard title={t('climate_temperature_title')} actions={<PlotHelp topic="climate_chart" />}>
         {body('temperature', t('climate_temperature_axis'), '°C')}
       </PanelCard>
       {showBattery && (
-        <PanelCard title={t('climate_battery_title')}>
+        <PanelCard title={t('climate_battery_title')} actions={<PlotHelp topic="climate_chart" />}>
           {body('battery', t('climate_battery_axis'), '%')}
         </PanelCard>
       )}

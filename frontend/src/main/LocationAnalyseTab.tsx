@@ -361,7 +361,16 @@ const LocationAnalyseTab = () => {
         .sort((a, b) => a - b),
     [measurements],
   );
-  const frameSeconds = heatmapFrames.length ? heatmapFrames : chartFrames;
+  // LoRaWAN: the climate heatmap's frames, without one the charts' readings.
+  const [climateHeatmapFrames, setClimateHeatmapFrames] = useState<number[]>([]);
+  const [climateChartFrames, setClimateChartFrames] = useState<number[]>([]);
+  const frameSeconds = isLorawan
+    ? climateHeatmapFrames.length
+      ? climateHeatmapFrames
+      : climateChartFrames
+    : heatmapFrames.length
+      ? heatmapFrames
+      : chartFrames;
   const frameIndex =
     frameTime == null ? frameSeconds.length - 1 : frameAt(frameSeconds, frameTime);
   const mobile = typeof window !== 'undefined' && window.innerWidth < MOBILE_WIDTH;
@@ -489,6 +498,20 @@ const LocationAnalyseTab = () => {
     [heatmap, sensors, shownDevice],
   );
 
+  // The alarm thresholds on the first measurement plot: the location's, and
+  // the own ones of the shown device's sensors (pair index).
+  const alarmThreshold = heatmap?.location?.alarm_threshold ?? location?.alarm_threshold ?? null;
+  const sensorThresholds = useMemo(
+    () =>
+      new Map(
+        (heatmap?.sensor_points ?? []).flatMap((point) => {
+          const ofShown = point.device == null || point.device === shownDevice;
+          return ofShown && point.threshold != null ? [[(point.pair ?? point.pos) - 1, point.threshold] as const] : [];
+        }),
+      ),
+    [heatmap, shownDevice],
+  );
+
   // An area dragged on the plan: its sensors (of the shown device, else of
   // the first other one - shown then) become the second plot's selection.
   const selectPlanArea = (positions: number[]) => {
@@ -524,7 +547,7 @@ const LocationAnalyseTab = () => {
   };
 
   // The period, its resolution and the averaging - in the frame slider
-  // (LoRaWAN: only the period, on its own).
+  // (LoRaWAN: only the period).
   const rangeControl = (
     <div className="d-flex flex-wrap align-items-center gap-2">
       <SegmentedControl
@@ -615,37 +638,33 @@ const LocationAnalyseTab = () => {
         {exportMsg && <span className="text-success small">{exportMsg}</span>}
       </div>
 
-      {isLorawan ? (
-        <div className="d-flex flex-wrap align-items-center gap-3">{rangeControl}</div>
-      ) : (
-        // One slider for the heatmap and the measurements, with the period
-        // it covers - kept on top while the page scrolls down to the charts.
-        <div
-          data-testid="analyse-frame-slider"
-          className="px-3"
-          style={{
-            position: 'sticky',
-            top: mobile ? STICKY_TOP_MOBILE : STICKY_TOP,
-            zIndex: 50,
-            background: 'var(--progeo-panel-bg)',
-            borderRadius: 'var(--progeo-radius-panel)',
-            boxShadow: 'var(--progeo-shadow-panel)',
-          }}
-        >
-          {frameSeconds.length > 0 ? (
-            <FrameSlider
-              id="analyse-frame"
-              timestamps={frameSeconds}
-              index={frameIndex}
-              onChange={(index) => setFrameTime(frameSeconds[index] * 1000)}
-              visibleRange={chartZoom}
-              toolbar={rangeControl}
-            />
-          ) : (
-            <div className="d-flex flex-wrap align-items-center gap-2 py-3">{rangeControl}</div>
-          )}
-        </div>
-      )}
+      {/* One slider for the heatmap and the charts (also LoRaWAN's), with
+          the period it covers - kept on top while the page scrolls down. */}
+      <div
+        data-testid="analyse-frame-slider"
+        className="px-3"
+        style={{
+          position: 'sticky',
+          top: mobile ? STICKY_TOP_MOBILE : STICKY_TOP,
+          zIndex: 50,
+          background: 'var(--progeo-panel-bg)',
+          borderRadius: 'var(--progeo-radius-panel)',
+          boxShadow: 'var(--progeo-shadow-panel)',
+        }}
+      >
+        {frameSeconds.length > 0 ? (
+          <FrameSlider
+            id="analyse-frame"
+            timestamps={frameSeconds}
+            index={frameIndex}
+            onChange={(index) => setFrameTime(frameSeconds[index] * 1000)}
+            visibleRange={isLorawan ? null : chartZoom}
+            toolbar={rangeControl}
+          />
+        ) : (
+          <div className="d-flex flex-wrap align-items-center gap-2 py-3">{rangeControl}</div>
+        )}
+      </div>
 
       {isLorawan ? (
         <>
@@ -654,6 +673,9 @@ const LocationAnalyseTab = () => {
             range={range}
             hoveredDeviceId={hoveredDeviceId}
             onHoverDevice={setHoveredDeviceId}
+            time={frameTime}
+            onTimeChange={setFrameTime}
+            onFramesChange={setClimateHeatmapFrames}
           />
           <LocationClimatePanels
             locationId={locationId}
@@ -661,6 +683,8 @@ const LocationAnalyseTab = () => {
             showBattery={isStaff}
             hoveredDeviceId={hoveredDeviceId}
             onHoverDevice={setHoveredDeviceId}
+            frameTime={frameSeconds.length ? frameSeconds[frameIndex] * 1000 : null}
+            onFramesChange={setClimateChartFrames}
           />
         </>
       ) : (
@@ -785,6 +809,8 @@ const LocationAnalyseTab = () => {
                   sensorHistoryRows={offerSensorHistory ? shownSensorHistory : null}
                   onToggleSensorHistory={offerSensorHistory ? toggleSensorHistory : null}
                   isLoadingSensorHistory={sensorHistoryLoading}
+                  threshold={alarmThreshold}
+                  sensorThresholds={sensorThresholds}
                 />
               )}
             </Card.Body>

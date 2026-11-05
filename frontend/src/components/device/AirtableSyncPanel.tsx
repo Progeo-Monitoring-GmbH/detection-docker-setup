@@ -1,11 +1,12 @@
-import { useState } from 'react';
-import { Alert, Button, Col, Form, Row, Spinner, Table } from 'react-bootstrap';
+import { useMemo, useState } from 'react';
+import { Alert, Button, Col, Form, Row, Spinner } from 'react-bootstrap';
 import { CheckCircle, PlusCircle } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import axiosConfig from '../../axiosConfig';
 import { showErrorBar, showRequestError, showSuccessBar } from '../ui/Snackbar.jsx';
 import PanelCard from '../ui/kit/PanelCard';
+import SearchableDataTable, { ROW_CLICK, type SearchableColumn } from '../ui/kit/SearchableDataTable';
 
 type AirtableProject = {
   project_id: number;
@@ -24,6 +25,90 @@ export type AirtableSync = {
   signed: string;
   accounts: { id: number; name: string }[];
 };
+
+/** Text order with numbers in their natural order, empty values last
+ * (DataTable reverses it for descending). */
+const byText = (pick: (project: AirtableProject) => string) => (a: AirtableProject, b: AirtableProject) => {
+  const left = pick(a);
+  const right = pick(b);
+  if (!left || !right) {
+    return !left && !right ? 0 : !left ? 1 : -1;
+  }
+  return left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' });
+};
+
+const typeText = (project: AirtableProject) => [project.project_type_label, ...project.product_sheets].join(' ');
+
+const projectKey = (project: AirtableProject) => project.project_id;
+
+const COLUMNS: SearchableColumn<AirtableProject>[] = [
+  {
+    id: 'project_id',
+    name: 'Project ID',
+    selector: (project) => project.project_id,
+    sortable: true,
+    sortFunction: (a, b) => a.project_id - b.project_id,
+    cell: (project) => <code {...ROW_CLICK}>{project.project_id}</code>,
+    width: '110px',
+  },
+  {
+    id: 'name',
+    name: 'Name',
+    selector: (project) => project.name ?? '',
+    sortable: true,
+    sortFunction: byText((project) => project.name ?? ''),
+    cell: (project) => <span {...ROW_CLICK}>{project.name || '-'}</span>,
+    wrap: true,
+    grow: 1.5,
+  },
+  {
+    id: 'type',
+    name: 'Type',
+    selector: typeText,
+    sortable: true,
+    sortFunction: byText(typeText),
+    // The product sheets are part of the cell, so they are searchable too.
+    searchText: typeText,
+    cell: (project) => (
+      <div {...ROW_CLICK}>
+        {project.project_type_label}
+        {project.product_sheets.length > 0 && (
+          <small {...ROW_CLICK} className="d-block text-muted">
+            {project.product_sheets.join(', ')}
+          </small>
+        )}
+      </div>
+    ),
+    wrap: true,
+    grow: 1.5,
+  },
+  {
+    id: 'address',
+    name: 'Address',
+    selector: (project) => project.raw_address,
+    sortable: true,
+    sortFunction: byText((project) => project.raw_address),
+    cell: (project) => (
+      <div {...ROW_CLICK} className="small text-muted" style={{ whiteSpace: 'pre-line', padding: '4px 0' }}>
+        {project.raw_address || '-'}
+      </div>
+    ),
+    grow: 2,
+  },
+  {
+    id: 'airtable',
+    name: '',
+    cell: (project) =>
+      project.airtable_url && (
+        <a href={project.airtable_url} target="_blank" rel="noreferrer">
+          Airtable
+        </a>
+      ),
+    // Opening the link must not toggle the row.
+    ignoreRowClick: true,
+    width: '90px',
+  },
+];
 
 /**
  * Result of "Sync with Airtable" (staff, device overview): the projects in
@@ -48,24 +133,9 @@ const AirtableSyncPanel = ({
   const [importAccount, setImportAccount] = useState('');
   const [importing, setImporting] = useState(false);
 
-  const toggleProject = (projectId: number) => {
-    setSelected((current) => {
-      const next = new Set(current);
-      if (next.has(projectId)) {
-        next.delete(projectId);
-      } else {
-        next.add(projectId);
-      }
-      return next;
-    });
-  };
-
-  const toggleAllProjects = () =>
-    setSelected(
-      selected.size === airtable.available.length
-        ? new Set()
-        : new Set(airtable.available.map((project) => project.project_id)),
-    );
+  // Selection is kept by project ID, so it survives sorting and the search;
+  // "select all" (re)selects the rows the search shows.
+  const selection = useMemo(() => ({ rowKey: projectKey, selected, onChange: setSelected }), [selected]);
 
   const importProjects = () => {
     if (!selected.size) {
@@ -128,68 +198,16 @@ const AirtableSyncPanel = ({
         </Alert>
       ) : (
         <>
-          <Table responsive hover size="sm" className="align-middle">
-            <thead>
-              <tr>
-                <th>
-                  <Form.Check
-                    aria-label="Select all"
-                    checked={selected.size === airtable.available.length}
-                    onChange={toggleAllProjects}
-                  />
-                </th>
-                <th>Project ID</th>
-                <th>Name</th>
-                <th>Type</th>
-                <th>Address</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {airtable.available.map((project) => (
-                <tr
-                  key={project.project_id}
-                  onClick={() => toggleProject(project.project_id)}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <td>
-                    <Form.Check
-                      aria-label={`Select ${project.project_id}`}
-                      checked={selected.has(project.project_id)}
-                      onChange={() => toggleProject(project.project_id)}
-                      onClick={(event) => event.stopPropagation()}
-                    />
-                  </td>
-                  <td>
-                    <code>{project.project_id}</code>
-                  </td>
-                  <td>{project.name || '-'}</td>
-                  <td>
-                    {project.project_type_label}
-                    {project.product_sheets.length > 0 && (
-                      <small className="d-block text-muted">{project.product_sheets.join(', ')}</small>
-                    )}
-                  </td>
-                  <td className="small text-muted" style={{ whiteSpace: 'pre-line' }}>
-                    {project.raw_address || '-'}
-                  </td>
-                  <td>
-                    {project.airtable_url && (
-                      <a
-                        href={project.airtable_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        Airtable
-                      </a>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-          <Row className="g-2 align-items-end">
+          <SearchableDataTable
+            columns={COLUMNS}
+            data={airtable.available}
+            keyField="project_id"
+            defaultSortFieldId="project_id"
+            selection={selection}
+            highlightOnHover
+            dense
+          />
+          <Row className="g-2 align-items-end mt-2">
             <Col md={4}>
               <Form.Label className="text-muted small mb-1">Account of the new locations</Form.Label>
               <Form.Select value={importAccount} onChange={(event) => setImportAccount(event.target.value)}>

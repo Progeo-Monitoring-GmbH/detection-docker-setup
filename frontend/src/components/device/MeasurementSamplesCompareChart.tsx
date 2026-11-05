@@ -92,7 +92,16 @@ type MeasurementSamplesCompareChartProps = {
   /** Shows the history button: loads the history, or drops it while shown. */
   onToggleSensorHistory?: (() => void) | null;
   isLoadingSensorHistory?: boolean;
+  /** The location's alarm threshold (for |WP − EP|): the first plot shows
+   * ±it as a green band - inside it a sensor raises no alarm. */
+  threshold?: number | null;
+  /** Sensors (pair index) with an own threshold: a green bar ±it at each. */
+  sensorThresholds?: ReadonlyMap<number, number> | null;
 };
+
+const THRESHOLD_BAND_COLOR = 'rgba(44, 160, 44, 0.13)';
+const SENSOR_THRESHOLD_COLOR = 'rgba(44, 160, 44, 0.3)';
+const SENSOR_THRESHOLD_EDGE = 'rgba(30, 120, 30, 0.75)';
 
 /** `selected` with `sensor` added (sorted) or, if it was in there, removed. */
 export const toggledSensor = (selected: number[], sensor: number) =>
@@ -229,7 +238,12 @@ type PlotlyFullAxis = {
   range?: [unknown, unknown];
   r2l?: (value: unknown) => number;
   autorange?: boolean | string;
+  /** The axis' length (px). */
+  _length?: number;
 };
+
+/** The time plots' bars are never narrower (px) - thinner ones fade out. */
+const MIN_BAR_PX = 2;
 
 /** The full axis Plotly passes with hover points (the typings lack l2p). */
 type PixelAxis = { l2p?: (value: number) => number };
@@ -360,6 +374,8 @@ const MeasurementSamplesCompareChart = (
     sensorHistoryRows = null,
     onToggleSensorHistory = null,
     isLoadingSensorHistory = false,
+    threshold = null,
+    sensorThresholds = null,
   } = props;
   const { t } = useTranslation();
   const currentYear = new Date().getFullYear();
@@ -440,7 +456,24 @@ const MeasurementSamplesCompareChart = (
   }, [meanAndDeviationSeries]);
 
   const pairSumSeries = React.useMemo(() => toTimeSeries(series), [series]);
-  const barWidth = React.useMemo(() => barWidthFor(pairSumSeries.x), [pairSumSeries]);
+  // Keeps zoom and legend toggles while the slider redraws the plot; new
+  // rows reset them.
+  const uiRevision = `${rows.length}:${rows[0]?.id}:${rows[rows.length - 1]?.id}`;
+  // The time span the time plots show (zoomed, else all frames) - a band on
+  // the slider. Read from Plotly's own axis: its range in ms, whichever of
+  // the matched time axes was zoomed.
+  const [zoom, setZoom] = React.useState<{ revision: string; from: number; to: number } | null>(null);
+  // The time plots' width (px) - for the bars' minimum width.
+  const [timeAxisPx, setTimeAxisPx] = React.useState<number | null>(null);
+  const zoomSpan = zoom?.revision === uiRevision ? zoom.to - zoom.from : null;
+  const barWidth = React.useMemo(() => {
+    const width = barWidthFor(pairSumSeries.x);
+    const { x } = pairSumSeries;
+    const span = zoomSpan ?? (x.length > 1 ? x[x.length - 1] - x[0] : 0);
+    // Zoomed out over many measurements the bars would shrink below a
+    // pixel and fade out: never narrower than MIN_BAR_PX (they may touch).
+    return width != null && timeAxisPx && span > 0 ? Math.max(width, (MIN_BAR_PX * span) / timeAxisPx) : width;
+  }, [pairSumSeries, zoomSpan, timeAxisPx]);
   // The second plot's measurements: the loaded history, else the chart's.
   const historySeries = React.useMemo(
     () => (sensorHistoryRows ? toTimeSeries(sensorHistoryRows.map(toDiffSeries)) : null),
@@ -782,6 +815,39 @@ const MeasurementSamplesCompareChart = (
 
   const shapes = React.useMemo(() => {
     const result: Partial<Plotly.Shape>[] = [];
+    // The alarm threshold: |WP − EP| inside ±it raises no alarm - a band
+    // over all sensors; a sensor with an own threshold gets a bar of ±that.
+    if (threshold != null && threshold > 0) {
+      result.push({
+        type: 'rect',
+        layer: 'below',
+        xref: 'x domain' as Plotly.XAxisName,
+        yref: 'y',
+        x0: 0,
+        x1: 1,
+        y0: -threshold,
+        y1: threshold,
+        fillcolor: THRESHOLD_BAND_COLOR,
+        line: { width: 0 },
+      });
+    }
+    sensorThresholds?.forEach((own, sensor) => {
+      if (!(own > 0)) {
+        return;
+      }
+      result.push({
+        type: 'rect',
+        layer: 'below',
+        xref: 'x',
+        yref: 'y',
+        x0: sensorNumber(sensor) - 0.3,
+        x1: sensorNumber(sensor) + 0.3,
+        y0: -own,
+        y1: own,
+        fillcolor: SENSOR_THRESHOLD_COLOR,
+        line: { color: SENSOR_THRESHOLD_EDGE, width: 1 },
+      });
+    });
     // The selected sensors, marked on the first plot in their colour - cut
     // at the first and last sensor, so the axis doesn't widen for them.
     selectedSensors.forEach((sensor) => {
@@ -855,7 +921,18 @@ const MeasurementSamplesCompareChart = (
       }
     });
     return result;
-  }, [alarmBandX, currentFrame, selectedSensors, sensorSlots, lastSensor, historySeries, frames, geometry]);
+  }, [
+    alarmBandX,
+    currentFrame,
+    selectedSensors,
+    sensorSlots,
+    lastSensor,
+    historySeries,
+    frames,
+    geometry,
+    threshold,
+    sensorThresholds,
+  ]);
 
   // The line under the cursor or its legend entry is highlighted: wider,
   // the other lines of its plot faded. The bands stay as they are.
@@ -1111,14 +1188,6 @@ const MeasurementSamplesCompareChart = (
     }
   };
 
-  // Keeps zoom and legend toggles while the slider redraws the plot; new
-  // rows reset them.
-  const uiRevision = `${rows.length}:${rows[0]?.id}:${rows[rows.length - 1]?.id}`;
-
-  // The time span the time plots show (zoomed, else all frames) - a band on
-  // the slider. Read from Plotly's own axis: its range in ms, whichever of
-  // the matched time axes was zoomed.
-  const [zoom, setZoom] = React.useState<{ revision: string; from: number; to: number } | null>(null);
   // How many sensors the first plot shows (zoomed) - its tick step.
   const [sensorZoom, setSensorZoom] = React.useState<{ revision: string; span: number } | null>(null);
   const onRelayout = () => {
@@ -1133,6 +1202,9 @@ const MeasurementSamplesCompareChart = (
       );
     }
     const axis = fullLayout?.xaxis2;
+    if (axis?._length) {
+      setTimeAxisPx(axis._length);
+    }
     if (!axis?.r2l || !axis.range) {
       return;
     }
@@ -1357,7 +1429,13 @@ const MeasurementSamplesCompareChart = (
         )}
         <Plot
           data={data}
-          onInitialized={(_, graphDiv) => setGraphDiv(graphDiv as HTMLElement)}
+          onInitialized={(_, graphDiv) => {
+            setGraphDiv(graphDiv as HTMLElement);
+            const length = (graphDiv as { _fullLayout?: { xaxis2?: PlotlyFullAxis } })._fullLayout?.xaxis2?._length;
+            if (length) {
+              setTimeAxisPx(length);
+            }
+          }}
           onHover={onHover}
           onUnhover={onUnhover}
           onClick={onClick}

@@ -14,7 +14,7 @@ RUN sed -i -r "s|SERVER_ENV-TEMPLATE|${VITE_SERVER_ENV}|g" ./.env
 RUN npm ci
 
 COPY ./frontend .
-RUN npm audit fix --dry-run --json 2>&1 | tee npm-audit.log
+RUN npm audit fix --omit=dev --dry-run --json 2>&1 | tee npm-audit.log
 ENV PATH=/home/progeo-frontend/node_modules/.bin:$PATH
 #CMD ["tail", "-f", "/dev/null"]
 
