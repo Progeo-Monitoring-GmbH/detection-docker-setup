@@ -6,7 +6,7 @@ import os
 import re
 import secrets
 import string
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 from charset_normalizer import from_path
 from django.core.serializers.json import DjangoJSONEncoder
@@ -118,29 +118,6 @@ def get_frontend_url():
             elog("CONFIG-ERROR! FRONTEND_PORT is not set")
         return f"{proto}://{url}:{port}"
     return f"{proto}://{url}"
-
-def get_weekdays_until_today(start_date: date) -> list[str]:
-    """
-    Given a start date string in the format "YYYY-MM-DD",
-    return a list of all dates from the start date up to
-    (but not including) today's date.
-    """
-    # Get today's date
-    today = datetime.today().date()
-
-    # If start_date is already today or in the future, return an empty list
-    if start_date >= today:
-        return []
-
-    # Build the list of dates
-    dates = []
-    current_date = start_date
-    while current_date <= today:
-        if current_date.weekday() < 5:  # 0–4 correspond to Monday–Friday
-            dates.append(current_date.strftime("%Y-%m-%d"))
-        current_date += timedelta(days=1)
-
-    return dates
 
 
 def parse_date(_date):

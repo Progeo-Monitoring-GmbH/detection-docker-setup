@@ -410,7 +410,7 @@ class DeviceViewSet(ProgeoModalViewSet):
 
         try:
             report = fetch_and_import_legacy_project(project_id, dry_run=dry_run)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - the failure is answered as the reason
             elog(f"[legacy/fetch] project_id={project_id} failed: {exc}")
             return RequestFailed({"reason": f"Import failed: {exc}"})
         
@@ -755,7 +755,7 @@ class DeviceViewSet(ProgeoModalViewSet):
             result = task.get(timeout=20)
         except TimeoutError:
             return RequestFailed({"reason": "Timed out waiting for device response", "task_id": task.id})
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - the failure is answered as the reason
             return RequestFailed({"reason": str(exc), "task_id": task.id})
 
         if not result.get("ok"):
@@ -826,7 +826,7 @@ class DeviceViewSet(ProgeoModalViewSet):
             result = task.get(timeout=20)
         except TimeoutError:
             return RequestFailed({"reason": "Timed out waiting for device response", "task_id": task.id})
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - the failure is answered as the reason
             return RequestFailed({"reason": str(exc), "task_id": task.id})
 
         if not result.get("ok"):

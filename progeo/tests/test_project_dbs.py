@@ -586,16 +586,15 @@ def test_one_transaction_is_mirrored_in_one_pass(django_capture_on_commit_callba
 
     monkeypatch.delenv("TESTS_ACTIVE", raising=False)  # memberships are written to "default", as on the server
 
-    with django_capture_on_commit_callbacks(execute=True) as callbacks:
-        with transaction.atomic(using=DEFAULT_DB_ALIAS):
-            account = Account.objects.using(DEFAULT_DB_ALIAS).create(raw_hash="mirror-batch", name="Batch")
-            users = [
-                User.objects.using(DEFAULT_DB_ALIAS).create(username=f"mirror-batch-{n}") for n in range(3)
-            ]
-            for user in users:
-                UserProfile.objects.using(DEFAULT_DB_ALIAS).create(user_id=user.pk, mobile=f"+49{user.pk}")
-                account.users.add(user)
-            account.users.remove(users[0])
+    with django_capture_on_commit_callbacks(execute=True) as callbacks, transaction.atomic(using=DEFAULT_DB_ALIAS):
+        account = Account.objects.using(DEFAULT_DB_ALIAS).create(raw_hash="mirror-batch", name="Batch")
+        users = [
+            User.objects.using(DEFAULT_DB_ALIAS).create(username=f"mirror-batch-{n}") for n in range(3)
+        ]
+        for user in users:
+            UserProfile.objects.using(DEFAULT_DB_ALIAS).create(user_id=user.pk, mobile=f"+49{user.pk}")
+            account.users.add(user)
+        account.users.remove(users[0])
 
     assert len(callbacks) == 1
     for alias in (ALIAS, UNKNOWN):
@@ -611,12 +610,11 @@ def test_one_transaction_is_mirrored_in_one_pass(django_capture_on_commit_callba
 def test_a_rolled_back_savepoint_does_not_swallow_later_mirrors(django_capture_on_commit_callbacks):
     from django.db import transaction
 
-    with django_capture_on_commit_callbacks(execute=True) as callbacks:
-        with transaction.atomic(using=DEFAULT_DB_ALIAS):
-            with pytest.raises(RuntimeError), transaction.atomic(using=DEFAULT_DB_ALIAS):
-                User.objects.using(DEFAULT_DB_ALIAS).create(username="mirror-rolled-back")
-                raise RuntimeError
-            kept = User.objects.using(DEFAULT_DB_ALIAS).create(username="mirror-kept")
+    with django_capture_on_commit_callbacks(execute=True) as callbacks, transaction.atomic(using=DEFAULT_DB_ALIAS):
+        with pytest.raises(RuntimeError), transaction.atomic(using=DEFAULT_DB_ALIAS):
+            User.objects.using(DEFAULT_DB_ALIAS).create(username="mirror-rolled-back")
+            raise RuntimeError
+        kept = User.objects.using(DEFAULT_DB_ALIAS).create(username="mirror-kept")
 
     assert len(callbacks) == 1
     assert User.objects.using(ALIAS).filter(pk=kept.pk).exists()

@@ -317,7 +317,7 @@ def evaluate_measurement_instantly(measurement, db: str = "default") -> bool:
         if location is None:
             return False
         return _evaluate_measurement(measurement, location, db, WeatherHelper())
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - the instant check must never break storing the measurement
         elog(f"[evaluate_measurement_instantly] measurement={measurement.pk} db={db} failed: {exc}")
         return False
 

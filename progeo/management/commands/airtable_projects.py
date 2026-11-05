@@ -72,17 +72,17 @@ class Command(BaseCommand):
         if options["list_tables"]:
             try:
                 tables = helper.list_tables()
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - diagnostics only - any failure is part of the report
                 # Diagnose access problems: the token may be stale (PAT secrets
                 # are only shown once) or its Access list may be empty.
                 try:
                     whoami = helper.api.whoami()
                     identity = f"{whoami.get('email')} ({whoami.get('id')})"
-                except Exception:
+                except Exception:  # noqa: BLE001 - diagnostics only - any failure is part of the report
                     identity = "unknown"
                 try:
                     accessible_bases = [base.id for base in helper.api.bases()]
-                except Exception:
+                except Exception:  # noqa: BLE001 - diagnostics only - any failure is part of the report
                     accessible_bases = None
                 raise CommandError(
                     f"Could not list tables of base '{helper._base_id}': {exc}\n\n"

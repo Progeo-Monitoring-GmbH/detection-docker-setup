@@ -128,7 +128,8 @@ describe('DockerStatusView', () => {
     });
     render();
     click(byLabel('docker_action_stop'));
-    const [message, options] = hooks.snackbar.enqueueSnackbar.mock.calls.at(-1)!;
+    const calls = hooks.snackbar.enqueueSnackbar.mock.calls;
+    const [message, options] = calls[calls.length - 1];
     expect(message).toContain('Container not found');
     expect(options).toMatchObject({ variant: 'error' });
   });

@@ -44,6 +44,12 @@ from progeo.helper.project_dbs import (
     release_connection,
     split_enabled,
 )
+from progeo.helper.safe_cache import (
+    cache_delete,
+    cache_delete_many,
+    cache_get,
+    cache_set,
+)
 from progeo.v1.models import (
     ProgeoDevice,
     ProgeoLageplan,
@@ -355,10 +361,7 @@ def _cache_key(accounts) -> str:
 
 def invalidate_statistics(accounts):
     """Drop the cached snapshot after rows were deleted (or devices changed)."""
-    try:
-        cache.delete(_cache_key(accounts))
-    except Exception:  # noqa: BLE001 - cache unavailable: TTL handles it
-        pass
+    cache_delete(_cache_key(accounts))
 
 
 def statistics_snapshot(accounts, refresh=False):
@@ -370,10 +373,7 @@ def statistics_snapshot(accounts, refresh=False):
     """
     key = _cache_key(accounts)
     if not refresh:
-        try:
-            cached = cache.get(key)
-        except Exception:  # noqa: BLE001 - cache unavailable: build it
-            cached = None
+        cached = cache_get(key)
         if cached:
             return cached
     import time
@@ -386,19 +386,13 @@ def statistics_snapshot(accounts, refresh=False):
         f"[device_statistics] built {payload['totals']['devices']} devices / "
         f"{payload['totals']['locations']} locations in {time.monotonic() - started:.1f}s"
     )
-    try:
-        cache.set(key, payload, CACHE_SECONDS)
-    except Exception:  # noqa: BLE001 - cache unavailable: still answer
-        pass
+    cache_set(key, payload, CACHE_SECONDS)
     return payload
 
 
 def cached_snapshot(accounts):
     """The cached payload, None without one (or without a cache)."""
-    try:
-        return cache.get(_cache_key(accounts)) or None
-    except Exception:  # noqa: BLE001 - cache unavailable: nothing cached
-        return None
+    return cache_get(_cache_key(accounts)) or None
 
 
 # -- chunked build -----------------------------------------------------------
@@ -516,14 +510,12 @@ def finish_build(accounts, build):
     device_rows = [row for key in keys for row in stored[key]["devices"]]
     location_rows = [row for key in keys for row in stored[key]["locations"]]
     payload = _aggregate(device_rows, location_rows, datetime.fromisoformat(plan["now"]))
-    try:
-        cache.set(_cache_key(accounts), payload, CACHE_SECONDS)
-        cache.delete_many([*keys, _build_key(accounts, build)])
-    except Exception as exc:  # noqa: BLE001 - cache unavailable: still answer
+    if not cache_set(_cache_key(accounts), payload, CACHE_SECONDS):
         from progeo.helper.basics import elog
 
         # The tabs then build their section in one go (statistics_snapshot).
-        elog(f"[device_statistics] could not cache the merged snapshot: {exc}")
+        elog("[device_statistics] could not cache the merged snapshot")
+    cache_delete_many([*keys, _build_key(accounts, build)])
     return payload
 
 

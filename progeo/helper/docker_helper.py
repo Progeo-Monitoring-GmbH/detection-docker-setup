@@ -1,9 +1,7 @@
 import os
 import threading
-from datetime import datetime
 from uuid import uuid4
 
-from django.utils import timezone
 from docker.errors import DockerException, NotFound
 
 import docker
@@ -187,24 +185,6 @@ def get_docker_status() -> list:
                      "health": (state.get("Health") or {}).get("Status"),
                      })
     return cons
-
-
-def get_hash_from_docker(client, docker_name) -> tuple:
-    dock_db = client.containers.get(docker_name)
-    if dock_db.status == "exited":
-        dlog(f"{docker_name} has exited! Starting it...")
-        dock_db.start()
-
-    result, output = dock_db.exec_run(["/bin/sh", "-c",
-                                       "cat /usr/share/git/current.hash ; stat -c %Z /usr/share/git/current.hash"])
-
-    if result == 0:
-        _data = output.split(b"\n")
-        build_date = datetime.utcfromtimestamp(int(_data[1].decode("utf-8")))
-        return _data[0].decode("utf-8"), timezone.make_aware(build_date)
-
-    elog(result, output, tag="[HASH]")
-    return None, None
 
 
 def restart_nginx(tag=None, *args):

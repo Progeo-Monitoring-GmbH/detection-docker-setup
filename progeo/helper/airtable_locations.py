@@ -129,7 +129,7 @@ def fetch_rows(helper):
         raise AirtableSyncError("Airtable is not configured: AIRTABLE_API_KEY / AIRTABLE_BASE_ID are missing")
     try:
         records = helper.fetch_all_auftraege(fields=FIELDS)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - any Airtable client failure becomes an AirtableSyncError
         raise AirtableSyncError(f"Could not fetch the Airtable projects: {exc}") from None
     return project_rows(records)
 

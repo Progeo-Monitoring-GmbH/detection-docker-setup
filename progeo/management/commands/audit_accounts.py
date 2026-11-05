@@ -191,7 +191,7 @@ class Command(BaseCommand):
                     .values_list("account_id", flat=True)
                     .distinct()
                 )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - one failing database must not stop the others
                 elog(f"[audit_accounts] db={db_name} failed: {exc}")
                 continue
 

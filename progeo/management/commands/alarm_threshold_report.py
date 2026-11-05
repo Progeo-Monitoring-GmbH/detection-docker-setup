@@ -58,7 +58,7 @@ class Command(BaseCommand):
                     ProgeoLocation.objects.using(db_name)
                     .values_list("id", "project_id", "alarm_threshold")
                 )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - one failing database must not stop the others
                 elog(f"[alarm_threshold_report] db={db_name} failed: {exc}")
                 continue
 

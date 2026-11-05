@@ -83,7 +83,7 @@ class Command(BaseCommand):
 
         try:
             result = send_json_over_modbus_tcp(payload, cfg=cfg)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - reported as CommandError
             raise CommandError(f"Send failed: {type(exc).__name__}: {exc}")
         okaylog(f"Wrote {result['payload_size_bytes']} bytes into {result['registers_written']} "
                 f"registers from {result['start_address']}.", tag="[MODBUS]")
@@ -92,7 +92,7 @@ class Command(BaseCommand):
             expected = json.loads(payload) if isinstance(payload, str) else payload
             try:
                 actual = receive_json_over_modbus_tcp(cfg=cfg)["data"]
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - reported as CommandError
                 raise CommandError(f"Read-back failed: {type(exc).__name__}: {exc}")
             if actual != expected:
                 raise CommandError(f"Read-back differs from what was sent:\n  sent: {expected}\n  read: {actual}")
@@ -103,7 +103,7 @@ class Command(BaseCommand):
 
         try:
             result = receive_json_over_modbus_tcp(cfg=cfg)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - reported as CommandError
             raise CommandError(f"Receive failed: {type(exc).__name__}: {exc}")
         print(json.dumps(result["data"], indent=2, ensure_ascii=False))
         okaylog(f"Read {result['payload_size_bytes']} bytes from {result['registers_read']} registers.",
@@ -151,7 +151,7 @@ class Command(BaseCommand):
             sim.serve_forever()
         except KeyboardInterrupt:
             pass
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - reported as CommandError
             elog(exc, tag="[GLT]")
             raise CommandError(str(exc))
 

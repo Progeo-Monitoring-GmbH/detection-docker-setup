@@ -206,14 +206,14 @@ class Command(BaseCommand):
                         with lageplan.lageplan.open("rb") as file_obj:
                             image = Image.open(file_obj)
                             image.load()
-                    except Exception as exc:
+                    except Exception as exc:  # noqa: BLE001 - one failing Lageplan must not stop the others
                         elog(
                             f"[parse_lageplan_labels] db={db_name} location={location.pk} "
                             f"could not open Lageplan image (tried '{image_path}' and the "
                             f"field's own storage): {exc}"
                         )
                         continue
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - one failing Lageplan must not stop the others
                     elog(
                         f"[parse_lageplan_labels] db={db_name} location={location.pk} "
                         f"could not open Lageplan image: {exc}"
@@ -224,7 +224,7 @@ class Command(BaseCommand):
 
                 try:
                     labels = extract_ordered_labels(image)
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - one failing Lageplan must not stop the others
                     elog(f"[parse_lageplan_labels] db={db_name} location={location.pk} OCR failed: {exc}")
                     continue
 

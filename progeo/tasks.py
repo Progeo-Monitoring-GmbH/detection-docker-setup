@@ -375,7 +375,7 @@ def evaluate_measurements(db: str | None = None, lookback_hours: int = 1, days: 
     for db_name in visit:
         try:
             locations, triggered = evaluate_measurements_db(db_name, start, end, project_id=project_id)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - one failing database must not stop the others
             elog(f"[evaluate_measurements] db={db_name} failed: {exc}")
             failed.append(db_name)
             continue
@@ -444,7 +444,7 @@ def check_existing_alarms(db: str | None = None, silence_hours: int = 24):
     for db_name in visit:
         try:
             checked, normalized = check_existing_alarms_db(db_name, silence_hours=silence_hours)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - one failing database must not stop the others
             elog(f"[check_existing_alarms] db={db_name} failed: {exc}")
             failed.append(db_name)
             continue
@@ -510,7 +510,7 @@ def generate_daily_alarm_report(db: str | None = None, report_date=None):
     for db_name in db_names:
         try:
             generated = generate_daily_report_db(db_name, report_date)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - one failing database must not stop the others
             elog(f"[generate_daily_alarm_report] db={db_name} failed: {exc}")
             continue
         finally:

@@ -53,7 +53,7 @@ class Command(BaseCommand):
         for report_date in dates:
             try:
                 result = generate_daily_alarm_report(db=options.get("db"), report_date=report_date)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - one failing date must not stop the others
                 self.stderr.write(
                     self.style.ERROR(f"Failed for {report_date}: {exc}")
                 )

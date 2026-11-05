@@ -126,7 +126,7 @@ def test_modbus_connection(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
 		registers = getattr(response, "registers", None) or []
 		steps.append(f"Read holding register {address} (unit {unit_id}): {registers[0] if registers else 'empty'}")
 		return {"ok": True, "steps": steps, "error": None}
-	except Exception as exc:
+	except Exception as exc:  # noqa: BLE001 - the connection test reports every failure; closing is best effort
 		elog(exc, tag="[MODBUS]")
 		return {
 			"ok": False,
@@ -137,7 +137,7 @@ def test_modbus_connection(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
 		if client is not None:
 			try:
 				client.close()
-			except Exception:
+			except Exception:  # noqa: BLE001, S110 - the connection test reports every failure; closing is best effort
 				pass
 
 

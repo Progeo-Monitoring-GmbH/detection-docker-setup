@@ -74,7 +74,7 @@ class Command(BaseCommand):
                 db_started = time.monotonic()
                 try:
                     call_command(*_cmds)
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - retried without compression, then reported
                     elog(f"Error running command: {exc}, retrying without compress/uncompress")
                     try:
                         call_command(*_cmds[:-1])

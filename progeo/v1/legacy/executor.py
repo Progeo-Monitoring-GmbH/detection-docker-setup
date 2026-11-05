@@ -7,7 +7,6 @@ from datetime import datetime
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from django.conf import settings
-from django.core.cache import cache
 from django.db import DEFAULT_DB_ALIAS, IntegrityError, transaction
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
@@ -17,6 +16,7 @@ from rest_framework.parsers import BaseParser
 from progeo.consumer import GRP_NAME
 from progeo.helper.alarm_evaluation import evaluate_measurement_instantly
 from progeo.helper.basics import elog, ilog, wlog
+from progeo.helper.safe_cache import cache_delete, cache_get, cache_set
 from progeo.v1.legacy.helper_resistance import MAX_JSON_SAFE_RESISTANCE_OHM
 from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurement
 from progeo.v1.viewsets.setup_viewset import _get_controller_account
@@ -142,7 +142,7 @@ def parse_sample_timestamp(timestamp_value):
 
         if parsed is None:
             try:
-                parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+                parsed = datetime.fromisoformat(text)
             except ValueError:
                 return None
     else:
@@ -261,10 +261,7 @@ def _device_cache_key(db_name, raw_hash):
 
 @receiver(post_delete, sender=ProgeoDevice)
 def _forget_deleted_device(sender, instance, using, **kwargs):
-    try:
-        cache.delete(_device_cache_key(using, instance.raw_hash))
-    except Exception:  # cache unavailable - entries expire on their own
-        pass
+    cache_delete(_device_cache_key(using, instance.raw_hash))
 
 
 def _next_sensor_name(project_id, db_name):
@@ -294,10 +291,7 @@ def _ingest_db_cache_key(raw_hash):
 
 
 def forget_ingest_db(raw_hash):
-    try:
-        cache.delete(_ingest_db_cache_key(raw_hash))
-    except Exception:  # cache unavailable - nothing cached either
-        pass
+    cache_delete(_ingest_db_cache_key(raw_hash))
 
 
 def ingest_db(project_id, raw_hash=None, account=None, project_type=None):
@@ -316,10 +310,7 @@ def ingest_db(project_id, raw_hash=None, account=None, project_type=None):
         return DEFAULT_DB_ALIAS
     raw_hash = raw_hash or str(project_id)
     key = _ingest_db_cache_key(raw_hash)
-    try:
-        cached = cache.get(key)
-    except Exception:  # cache unavailable - look it up
-        cached = None
+    cached = cache_get(key)
     if cached:
         return cached
 
@@ -341,10 +332,7 @@ def ingest_db(project_id, raw_hash=None, account=None, project_type=None):
             name=raw_hash, project_type=project_type,
         )
         db_name = location_db(location)
-    try:
-        cache.set(key, db_name, INGEST_DB_CACHE_TIMEOUT)
-    except Exception:  # cache unavailable - looked up again next time
-        pass
+    cache_set(key, db_name, INGEST_DB_CACHE_TIMEOUT)
     return db_name
 
 
@@ -356,10 +344,7 @@ def get_device_id(project_id, raw_hash=None, numbered_sensor=False, device_type=
         raise ValueError("A device needs a project_id or a raw_hash")
     raw_hash = raw_hash or str(project_id)
     key = _device_cache_key(db_name, raw_hash)
-    try:
-        device_id = cache.get(key)
-    except Exception:  # cache unavailable - fall back to the database
-        device_id = None
+    device_id = cache_get(key)
     if device_id is not None:
         return device_id
 
@@ -368,10 +353,7 @@ def get_device_id(project_id, raw_hash=None, numbered_sensor=False, device_type=
                                      db_name=db_name).pk
 
     def _remember():
-        try:
-            cache.set(key, device_id, DEVICE_CACHE_TIMEOUT)
-        except Exception:
-            pass
+        cache_set(key, device_id, DEVICE_CACHE_TIMEOUT)
 
     # Only cache committed devices: a rolled-back create must not leave a
     # dangling pk behind.
@@ -475,10 +457,7 @@ def save_measurement_from_legacy_data(measurement, project_id, raw_hash=None, nu
 
 
 def _forget_device(db_name, raw_hash):
-    try:
-        cache.delete(_device_cache_key(db_name, raw_hash))
-    except Exception:  # cache unavailable - entries expire on their own
-        pass
+    cache_delete(_device_cache_key(db_name, raw_hash))
 
 
 def _store_legacy_measurement(measurement, project_id, raw_hash, numbered_sensor, device_type,
@@ -541,7 +520,7 @@ def _store_legacy_measurement(measurement, project_id, raw_hash, numbered_sensor
                 measure.resistance_idc = sample.get("r_idc_ohm", MAX_JSON_SAFE_RESISTANCE_OHM)
 
         else:
-            raise ValueError("Measurement must be a DataMeasurement instance or a dict | measurement:", measurement)
+            raise TypeError("Measurement must be a DataMeasurement instance or a dict | measurement:", measurement)
 
 
         measure.save(using=db_name)
@@ -923,7 +902,7 @@ def fetch_and_import_legacy_project(project_id: int, dry_run: bool = False) -> d
                     project_id=project_id,
                 )
                 report["created"] += 1
-            except Exception as exc:  # pragma: no cover
+            except Exception as exc:  # noqa: BLE001 - a failing measurement is reported, the import goes on
                 report["errors"].append(f"save error: {exc}")
         _broadcast_legacy_location(project_id)
         return report
@@ -938,7 +917,7 @@ def fetch_and_import_legacy_project(project_id: int, dry_run: bool = False) -> d
                 report["created"] += 1
             else:
                 report["skipped_duplicates"] += 1
-        except Exception as exc:  # pragma: no cover
+        except Exception as exc:  # noqa: BLE001 - a failing measurement is reported, the import goes on
             report["errors"].append(f"save error: {exc}")
 
     # Every measurement of the file already existed -> the whole file is done.
@@ -1015,7 +994,7 @@ def fetch_legacy_data(target_dir=None, dry_run=True):
                                         project_id=measurement.project_id,
                                     )
                                     report["saved_total"] += 1
-                                except Exception as exc:  # pragma: no cover
+                                except Exception as exc:  # noqa: BLE001 - a failing measurement is reported, the import goes on
                                     report["save_errors"] += 1
                                     if len(report["error_examples"]) < 5:
                                         report["error_examples"].append(f"save {path}:{line_index} -> {exc}")

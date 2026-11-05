@@ -207,7 +207,7 @@ def test_long_active_stretch_is_galloped_and_normalizes_at_the_exact_calm_row(wi
 
     assert location_count == 1
     # 41 rows, but the gallop only needs a probe chain plus the calm row.
-    assert 0 < len(evaluated) <= 12 < 40
+    assert 0 < len(evaluated) <= 12
     assert len(set(evaluated)) == len(evaluated)  # nothing is evaluated twice
     [alarm] = _alarms(device)
     assert alarm.normalized_at == calm.last_fetched

@@ -214,7 +214,7 @@ def email_disconnected_projects(db: str, report_date, projects, previous_report,
                     ilog(f"[generate_daily_alarm_report] Disconnect mail sent to {recipient} for location {location_id}")
                 else:
                     elog(f"[generate_daily_alarm_report] Disconnect mail to {recipient} not sent for location {location_id}")
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - one failing recipient must not stop the other mails
                 elog(f"[generate_daily_alarm_report] Failed to send disconnect mail for location {location_id}: {exc}")
         if sent_any:
             projects[str(location_id)]["emailed_disconnect"] = True

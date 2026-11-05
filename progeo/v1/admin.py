@@ -106,7 +106,7 @@ class MultiDBModelAdmin(admin.ModelAdmin):
             qs = self.model.objects.using(db_name).all()
             okaylog(f"get_queryset | db={db_name}, model={self.model}", tag="[MultiDB]")
             return qs
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - an unreachable database shows an empty list
             elog(f"get_queryset | db={db_name}, model={self.model}", e, tag="[MultiDB-Error]")
             return self.model.objects.none()
 

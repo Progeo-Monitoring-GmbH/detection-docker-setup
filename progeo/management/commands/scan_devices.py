@@ -190,5 +190,5 @@ class Command(BaseCommand):
                             f"Root server rejected forwarded measurement {measurement.pk}: "
                             f"{root_response.status_code} {root_response.text[:200]}"
                         )
-                except Exception as exc:
+                except requests.RequestException as exc:
                     elog(f"Failed to send measurement to root server for {device.raw_hash}: {exc}")

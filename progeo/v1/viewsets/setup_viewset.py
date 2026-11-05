@@ -39,21 +39,25 @@ from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 # ######################################################################################################################
 
 
+class ControllerAccountError(RuntimeError):
+    """CONTROLLER_DEFAULT_ACCOUNT is missing or names no single account."""
+
+
 def _get_controller_account():
         # Accounts are created manually (admin/management command), never by this
         # code path, so this only looks one up — it never creates one.
         account_name = (os.getenv("CONTROLLER_DEFAULT_ACCOUNT") or "").strip()
         if not account_name:
-            raise Exception("CONTROLLER_DEFAULT_ACCOUNT is not set")
+            raise ControllerAccountError("CONTROLLER_DEFAULT_ACCOUNT is not set")
 
         accounts = list(Account.objects.using("default").filter(name=account_name))
         if not accounts:
-            raise Exception(
+            raise ControllerAccountError(
                 f"Controller account '{account_name}' not found in the 'default' database. "
                 "Create it manually first, e.g. via `python manage.py create_controller_account`."
             )
         if len(accounts) > 1:
-            raise Exception(f"Multiple accounts named '{account_name}' found in 'default'; expected exactly one.")
+            raise ControllerAccountError(f"Multiple accounts named '{account_name}' found in 'default'; expected exactly one.")
 
         return accounts[0]
 
@@ -146,7 +150,7 @@ def ping_host_quick(ip_address, timeout_seconds=1):
     try:
         result = subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
         return result.returncode == 0
-    except Exception:
+    except (OSError, subprocess.SubprocessError):  # no ping binary, not executable, ...
         return False
 
 
@@ -167,7 +171,7 @@ class SetupViewSet(viewsets.ViewSet):
             result = ping.delay()
             pong = result.get(timeout=2)
             return RequestSuccess({"celery": "ok", "result": pong})
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - any broker/worker failure is the status
             return RequestFailed({"celery": "error", "error": str(e)})
 
     @require_module_permissions("module_admin_enabled")

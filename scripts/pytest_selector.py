@@ -183,7 +183,7 @@ def main() -> int:
 
     try:
         collection = collect_tests(repo_root)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - shown in the dialog
         message_dialog(title="Pytest Selector", text=str(exc)).run()
         return 1
 

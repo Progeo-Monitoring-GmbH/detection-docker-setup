@@ -143,7 +143,7 @@ class DataTransferViewSet(viewsets.ViewSet):
                 try:
                     instances = model.objects.using(db_name).all()
                     rows.extend(_serialize_instance(model_name, fields, instance) for instance in instances)
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - a failing row/database is reported, the transfer goes on
                     elog(f"[data_transfer] export model={model_name} db={db_name} failed: {exc}")
                 finally:
                     # DATABASES includes every registered project database - one open
@@ -194,7 +194,7 @@ class DataTransferViewSet(viewsets.ViewSet):
                 else:
                     model.objects.using(db_name).create(**row_kwargs)
                     was_created = True
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - a failing row/database is reported, the transfer goes on
                 errors.append({"index": index, "clazz": model_name, "id": pk_value, "reason": str(exc)})
                 continue
 

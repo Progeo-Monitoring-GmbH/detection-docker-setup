@@ -45,7 +45,7 @@ class Command(BaseCommand):
         for db_name in db_names:
             try:
                 merged, deleted = self._cleanup_db(db_name, dry_run=dry_run)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - one failing database must not stop the others
                 elog(f"[cleanup_alarms] db={db_name} failed: {exc}")
                 continue
 

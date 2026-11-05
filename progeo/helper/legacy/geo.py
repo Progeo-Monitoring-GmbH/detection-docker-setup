@@ -68,7 +68,8 @@ class GeoHelper:
         try:
             with urlopen(request, timeout=30) as response:
                 data = json.loads(response.read().decode("utf-8", errors="replace"))
-        except Exception as error:
+        # urlopen: URLError/HTTPError/timeout are OSErrors; bad JSON a ValueError.
+        except (OSError, ValueError) as error:
             self._log(f"Geocoding failed for project {project_id}: {error}")
             self._last_call = time.time()
             self._cache[key] = (None, None)

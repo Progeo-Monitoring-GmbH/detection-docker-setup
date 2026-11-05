@@ -287,7 +287,7 @@ class LocationSerializer(ProgeoBaseSerializer):
                 lageplans = obj.lageplans.order_by(*LAGEPLAN_ORDER)
             data = ProgeoLageplanSerializer(lageplans, many=True).data
             return data if data else None
-        except Exception:
+        except Exception:  # noqa: BLE001 - a broken Lageplan must not break the location
             return None
 
     @staticmethod

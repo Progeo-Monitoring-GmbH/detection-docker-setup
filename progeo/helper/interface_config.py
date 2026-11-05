@@ -110,7 +110,7 @@ def _stored(key: str) -> dict | None:
         row = SystemConfig.objects.filter(key=key).first()
         if row and isinstance(row.value, dict):
             return row.value
-    except Exception:  # pragma: no cover - DB not ready / router issue
+    except Exception:  # noqa: BLE001, S110 - DB not ready / router issue: no stored config
         pass
     return None
 

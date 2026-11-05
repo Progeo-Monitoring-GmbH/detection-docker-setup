@@ -1,5 +1,4 @@
 from django.contrib.auth.models import User
-from django.core.cache import cache
 from django.db import transaction
 from rest_framework import viewsets
 from rest_framework.authentication import SessionAuthentication
@@ -9,6 +8,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.authentication import ExpiringTokenAuthentication
 from progeo.helper.basics import RequestFailed, RequestSuccess, ilog
+from progeo.helper.safe_cache import cache_delete, cache_get, cache_set
 from progeo.v1.models import ProgeoFavoriteLocation, ProgeoLocation
 
 # Favorites, like the locations they point to, live in "default".
@@ -41,10 +41,7 @@ class FavoriteViewSet(viewsets.ViewSet):
 
     @classmethod
     def _forget(cls, user_id):
-        try:
-            cache.delete(cls._cache_key(user_id))
-        except Exception:  # noqa: BLE001 - cache unavailable: TTL handles it
-            pass
+        cache_delete(cls._cache_key(user_id))
 
     @classmethod
     def _favorite_data(cls, user):
@@ -54,10 +51,7 @@ class FavoriteViewSet(viewsets.ViewSet):
         rows), and a warm cache makes the per-page request a pure cache hit.
         """
         key = cls._cache_key(user.pk)
-        try:
-            cached = cache.get(key)
-        except Exception:  # noqa: BLE001 - cache unavailable: query it
-            cached = None
+        cached = cache_get(key)
         if cached is not None:
             return cached
 
@@ -77,10 +71,7 @@ class FavoriteViewSet(viewsets.ViewSet):
             ],
             "max": FAVORITES_MAX,
         }
-        try:
-            cache.set(key, data, FAVORITES_CACHE_SECONDS)
-        except Exception:  # noqa: BLE001 - cache unavailable: still answer
-            pass
+        cache_set(key, data, FAVORITES_CACHE_SECONDS)
         ilog(
             f"[favorites] built user={user.pk} rows={len(data['favorites'])} "
             f"in {time.monotonic() - started:.3f}s"

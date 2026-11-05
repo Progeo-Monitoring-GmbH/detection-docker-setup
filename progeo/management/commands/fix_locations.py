@@ -52,7 +52,7 @@ class Command(BaseCommand):
         for db_name in db_names:
             try:
                 missing_address, invalid, fixed = self._fix_db(db_name, geo_helper, dry_run=dry_run)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - one failing database must not stop the others
                 elog(f"[fix_locations] db={db_name} failed: {exc}")
                 continue
 

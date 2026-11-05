@@ -33,7 +33,7 @@ def _safe_get_or_create(model, db: str, lookup: dict, defaults: dict | None = No
 		action = "CREATED" if created else "EXISTING"
 		okaylog(f"{model.__name__}: {action}", tag="[CREATOR]")
 		return obj, created
-	except Exception as exc:
+	except Exception as exc:  # noqa: BLE001 - logged; the caller handles the missing object
 		elog(f"Failed to create {model.__name__}", tag="[CREATOR]")
 		elog(exc)
 		return None, False

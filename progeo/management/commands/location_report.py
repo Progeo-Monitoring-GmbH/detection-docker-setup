@@ -93,7 +93,7 @@ class Command(BaseCommand):
                     ProgeoLocation.objects.using(db_name)
                     .only("id", "project_id", "name", *ADDRESS_FIELDS, "latitude", "longitude")
                 )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - one failing database must not stop the others
                 elog(f"[location_report] db={db_name} failed: {exc}")
                 continue
 

@@ -5,11 +5,12 @@ import posixpath
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
+from itertools import pairwise
 from uuid import uuid4
 
 from django.db import transaction
 from django.db.models import OuterRef, Subquery
-from django.http import FileResponse, JsonResponse
+from django.http import FileResponse, JsonResponse, RawPostDataException
 from django.utils import timezone
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action
@@ -184,7 +185,7 @@ def _point_devices(request, location, db_name):
     if len({device_pk for device_pk, _first, _last in ranges}) != len(ranges):
         return None, RequestFailed({"reason": "One range per device - its pair 1 is the first sensor of it"})
     ordered = sorted(ranges, key=lambda entry: entry[1])
-    for (_pk, _first, last), (next_pk, next_first, _next_last) in zip(ordered, ordered[1:]):
+    for (_pk, _first, last), (next_pk, next_first, _next_last) in pairwise(ordered):
         if last is None or last >= next_first:
             return None, RequestFailed({"reason": f"The sensors of device {next_pk} overlap another device's"})
     return ranges, None
@@ -314,7 +315,7 @@ class StatusViewSet(ProgeoModalViewSet):
                 details = read_log_file(requested_file, lines)
                 if not details:
                     return RequestFailed({"reason": "Unknown or disallowed log file | admin_log_files"})
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - the failure is answered as the reason
                 return RequestFailed({"reason": f"Could not read log file: {exc}"})
 
             return RequestSuccess(details)
@@ -664,7 +665,7 @@ class StatusViewSet(ProgeoModalViewSet):
             if not text_data:
                 try:
                     text_data = request.body.decode("utf-8", errors="replace")
-                except Exception:
+                except RawPostDataException:  # the stream was read already (request.data)
                     text_data = ""
 
             if not text_data.strip():

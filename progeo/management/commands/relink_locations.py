@@ -104,7 +104,7 @@ class Command(BaseCommand):
                     unlink_unresolved=options["unlink_unresolved"],
                     remove_empty_duplicates=options["remove_empty_duplicates"],
                 )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - one failing database must not stop the others
                 elog(f"[relink_locations] db={db_name} failed: {exc}")
                 continue
             for key, value in stats.items():

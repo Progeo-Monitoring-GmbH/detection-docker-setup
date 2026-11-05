@@ -325,7 +325,7 @@ def koords_to_points(apply=False):
             totals["created"] += len(created)
             totals["completed"] += len(completed)
             totals["kept"] += len(kept)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - one failing project must not stop the others
             elog(f"project {project_id}: {exc}")
             failed.append(project_id)
         finally:

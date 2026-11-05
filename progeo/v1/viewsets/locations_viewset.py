@@ -988,7 +988,7 @@ class LocationViewSet(ProgeoModalViewSet):
                 else:
                     ProgeoMeasurement.objects.using(db_name).create(**row_kwargs)
                     was_created = True
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - a failing row is reported, the import goes on
                 errors.append({"index": index, "id": pk_value, "reason": str(exc)})
                 continue
             created += int(was_created)

@@ -27,7 +27,7 @@ def _rational_to_float(x):
     try:
         # Pillow IFDRational has numerator/denominator attributes
         return float(x)
-    except Exception:
+    except (TypeError, ValueError):
         # Fallback for tuple or list
         return x[0] / x[1]
 

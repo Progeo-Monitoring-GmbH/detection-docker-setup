@@ -153,14 +153,17 @@ def test_controller_account_is_looked_up_in_default(monkeypatch):
 
 @pytest.mark.django_db(databases=["unit_tests", "default"])
 def test_controller_account_requires_configuration(monkeypatch):
-    from progeo.v1.viewsets.setup_viewset import _get_controller_account
+    from progeo.v1.viewsets.setup_viewset import (
+        ControllerAccountError,
+        _get_controller_account,
+    )
 
     monkeypatch.setenv("CONTROLLER_DEFAULT_ACCOUNT", "")
-    with pytest.raises(Exception, match="CONTROLLER_DEFAULT_ACCOUNT is not set"):
+    with pytest.raises(ControllerAccountError, match="CONTROLLER_DEFAULT_ACCOUNT is not set"):
         _get_controller_account()
 
     monkeypatch.setenv("CONTROLLER_DEFAULT_ACCOUNT", "no-such-controller-account")
-    with pytest.raises(Exception, match="not found in the 'default' database"):
+    with pytest.raises(ControllerAccountError, match="not found in the 'default' database"):
         _get_controller_account()
 
 

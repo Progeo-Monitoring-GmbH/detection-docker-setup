@@ -51,6 +51,6 @@ def create_MfS_log(request):
             url=url,
             data=data,
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - the MfS log must never break the request it logs
         elog("Failed Creating MfS-Log")
         elog(e)

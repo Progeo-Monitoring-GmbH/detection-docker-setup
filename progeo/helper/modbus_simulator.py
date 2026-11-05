@@ -132,7 +132,7 @@ class ModbusSimulator:
 
 		try:
 			self._loop.run_until_complete(main())
-		except BaseException as exc:  # surfaced by start()
+		except BaseException as exc:  # noqa: BLE001 - surfaced by start(), also KeyboardInterrupt/SystemExit of the loop
 			self._error = exc
 		finally:
 			self._loop.close()

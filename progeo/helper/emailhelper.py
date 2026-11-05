@@ -1,3 +1,4 @@
+import contextlib
 import html as html_lib
 import os
 import re
@@ -208,7 +209,7 @@ def test_smtp_connection(cfg: dict | None = None) -> dict:
         smtp.quit()
         smtp = None
         return {"ok": True, "steps": steps, "error": None}
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - the connection test reports every failure
         elog(f"[emailhelper] SMTP connection test failed for {server}:{port}: {exc}")
         return {
             "ok": False,
@@ -217,10 +218,9 @@ def test_smtp_connection(cfg: dict | None = None) -> dict:
         }
     finally:
         if smtp is not None:
-            try:
+            # Best effort - the connection may already be gone.
+            with contextlib.suppress(OSError, smtplib.SMTPException):
                 smtp.close()
-            except Exception:
-                pass
 
 
 def envelope_sender(cfg: dict) -> str:

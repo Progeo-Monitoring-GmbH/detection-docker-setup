@@ -57,8 +57,8 @@ def _run(*args):
 def test_dry_run_reports_and_changes_nothing(duplicates):
     output = _run()
 
-    assert "keep   #%d 'Wohnhaus Witschel'" % duplicates["real"].pk in output
-    assert "merge  #%d '(no name)'" % duplicates["unknown"].pk in output
+    assert f"keep   #{duplicates['real'].pk} 'Wohnhaus Witschel'" in output
+    assert f"merge  #{duplicates['unknown'].pk} '(no name)'" in output
     assert ProgeoLocation.objects.using(f.DB).filter(project_id=PROJECT).count() == 2
 
 

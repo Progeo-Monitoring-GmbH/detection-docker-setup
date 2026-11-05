@@ -143,7 +143,8 @@ class WeatherHelper:
                 response = requests.get(OPEN_METEO_FORECAST_URL, params=params, timeout=self.timeout)
                 response.raise_for_status()
                 data = response.json()
-            except Exception as error:
+            # requests' JSONDecodeError is a RequestException and a ValueError.
+            except (requests.RequestException, ValueError) as error:
                 logger.warning(f"Fetching rain data failed: {error}")
                 return None
 
