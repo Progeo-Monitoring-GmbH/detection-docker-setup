@@ -6,6 +6,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from progeo.helper.basics import read_env, save_check_dir
+from progeo.oauth2_bcp import OAUTH2_RFC9700
 from progeo.v1.helper import parse_boolean, parse_int, parse_split_str
 
 BASE_DIR = Path(__file__).resolve(strict=True).parent.parent.parent
@@ -84,6 +85,7 @@ OAUTH2_PROVIDER = {
     "ALLOWED_REDIRECT_URI_SCHEMES": ["https"],
     "AUTHORIZATION_CODE_EXPIRE_SECONDS": 60,
     "ACCESS_TOKEN_EXPIRE_SECONDS": 300,
+    **OAUTH2_RFC9700,
 }
 ACCESS_REQUEST_NOTIFY = "kontakt@progeo.com"
 PASSWORD_RESET_MINUTES = 30

@@ -106,6 +106,8 @@ def test_code_flow_with_pkce_signs_the_user_in(client, mas_client):
     assert f"{redirect.scheme}://{redirect.netloc}{redirect.path}" == REDIRECT
     query = parse_qs(redirect.query)
     assert query["state"] == ["st4te"]
+    # RFC 9207: the issuer of the discovery document (RFC 9700 §4.4).
+    assert query["iss"] == [ISSUER]
 
     client.logout()  # MAS calls the token endpoint itself, without a session
     basic = base64.b64encode(f"progeo-matrix:{SECRET}".encode()).decode()
@@ -124,6 +126,21 @@ def test_code_flow_with_pkce_signs_the_user_in(client, mas_client):
     assert claims["preferred_username"] == "kai.mueller"
     assert claims["name"] == "Kai Müller"
 
+    # RFC 9700 §4: only a checksum of the tokens is stored, not the tokens.
+    from oauth2_provider.models import AccessToken, RefreshToken
+
+    access = token.json()["access_token"]
+    stored = AccessToken.objects.get(user=user)
+    assert (stored.token, stored.token_checksum) == ("", hashlib.sha256(access.encode()).hexdigest())
+    assert RefreshToken.objects.get(user=user).token == ""
+    # ... and they still work - in the header, never in the query string (§4.3.2).
+    assert client.get("/auth/oidc/userinfo/", HTTP_AUTHORIZATION=f"Bearer {access}").status_code == 200
+    in_query = client.get("/auth/oidc/userinfo/", {"access_token": access})
+    assert (in_query.status_code, in_query.json()["error"]) == (400, "invalid_request")
+    assert client.get("/auth/oidc/.well-known/openid-configuration").json()["userinfo_endpoint"] == (
+        "https://dashboard.progeo.com/auth/oidc/userinfo/"
+    )
+
 
 def test_pkce_is_required(client, mas_client):
     client.force_login(f.make_user())
@@ -132,6 +149,18 @@ def test_pkce_is_required(client, mas_client):
 
     assert response.status_code == 302
     assert "error=invalid_request" in response["Location"]
+
+
+def test_pkce_plain_is_refused(client, mas_client):
+    """RFC 9700 §2.1.1: S256 only - a "plain" challenge is the verifier itself."""
+    client.force_login(f.make_user())
+    verifier, _challenge = _pkce()
+
+    response = _authorize(client, code_challenge=verifier, code_challenge_method="plain")
+
+    assert response.status_code == 302
+    assert "error=invalid_request" in response["Location"]
+    assert "code=" not in response["Location"]
 
 
 def test_wrong_secret_gets_no_token(client, mas_client):

@@ -7,6 +7,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from progeo.helper.basics import flog, read_env
+from progeo.oauth2_bcp import OAUTH2_RFC9700
 from progeo.sentry import init_sentry
 from progeo.v1.helper import parse_boolean, parse_int, parse_split_str
 
@@ -309,6 +310,8 @@ OAUTH2_PROVIDER = {
     "ALLOWED_REDIRECT_URI_SCHEMES": ["https"],
     "AUTHORIZATION_CODE_EXPIRE_SECONDS": 60,
     "ACCESS_TOKEN_EXPIRE_SECONDS": 300,
+    # RFC 9700 (OAuth 2.0 Security BCP): see progeo/oauth2_bcp.py.
+    **OAUTH2_RFC9700,
 }
 
 ROOT_URLCONF = "progeo.urls"
@@ -588,8 +591,10 @@ SECURE_REDIRECT_EXEMPT = [r"^gprs_\d+\.php$"]
 
 SECURE_REFERRER_POLICY = os.getenv("SECURE_REFERRER_POLICY")
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-SESSION_COOKIE_SECURE = parse_boolean(os.getenv("SESSION_COOKIE_SECURE", "False"))
-CSRF_COOKIE_SECURE = parse_boolean(os.getenv("CSRF_COOKIE_SECURE", "False"))
+# Secure-only cookies whenever the portal runs on https (PROTOCOL); a value in
+# django.env wins - 0 only for a setup served over plain http.
+SESSION_COOKIE_SECURE = parse_boolean(os.getenv("SESSION_COOKIE_SECURE", str(PROTOCOL == "https")))
+CSRF_COOKIE_SECURE = parse_boolean(os.getenv("CSRF_COOKIE_SECURE", str(PROTOCOL == "https")))
 SECURE_HSTS_SECONDS = parse_int(os.getenv("SECURE_HSTS_SECONDS", "0"))
 SECURE_HSTS_PRELOAD = parse_boolean(os.getenv("SECURE_HSTS_PRELOAD", "False"))
 SECURE_SSL_REDIRECT = parse_boolean(os.getenv("SECURE_SSL_REDIRECT", "False"))

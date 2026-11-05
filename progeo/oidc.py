@@ -7,16 +7,18 @@ login, MAS creates their Matrix account on the first login.
   /auth/oidc/authorize/   MatrixAuthorizationView: needs the portal session
                           (created by the portal login, after 2FA); without
                           one -> /login?forward=<this request>
-  /auth/oidc/token/, /userinfo/, /.well-known/jwks.json, ...
+  /auth/oidc/userinfo/    HeaderOnlyUserInfoView: the access token only in the
+                          Authorization header (RFC 9700 §4.3.2)
+  /auth/oidc/token/, /.well-known/jwks.json, ...
 
 The client is registered by `manage.py matrix_oidc_client`; DOT's
 application management pages are deliberately not routed.
 """
-from django.http import HttpResponseForbidden
+from django.http import HttpResponseForbidden, JsonResponse
 from django.urls import path
 from oauth2_provider import urls as oauth2_urls
 from oauth2_provider.oauth2_validators import OAuth2Validator
-from oauth2_provider.views import AuthorizationView
+from oauth2_provider.views import AuthorizationView, UserInfoView
 
 from progeo.helper.matrix_accounts import matrix_localpart, may_use_matrix
 
@@ -44,12 +46,31 @@ class MatrixAuthorizationView(AuthorizationView):
         return super().dispatch(request, *args, **kwargs)
 
 
+class HeaderOnlyUserInfoView(UserInfoView):
+    """RFC 9700 §4.3.2 / RFC 6750 §5.3: the access token never in the URL -
+    there it ends up in access logs, proxies and the browser history. DOT's
+    COMPLIANT_BCP_RFC9700_ACCESS_TOKEN_TRANSPORT (progeo/oauth2_bcp.py) only
+    guards protected resources (verify_request) - not this OIDC endpoint, the
+    only one here that takes access tokens."""
+
+    def dispatch(self, request, *args, **kwargs):
+        if "access_token" in request.GET:
+            response = JsonResponse(
+                {"error": "invalid_request", "error_description": "Send the access token in the Authorization header."},
+                status=400,
+            )
+            response["WWW-Authenticate"] = 'Bearer error="invalid_request"'
+            return response
+        return super().dispatch(request, *args, **kwargs)
+
+
 def urlpatterns():
     """Authorization endpoint (ours first), token/introspection and the OIDC
     endpoints - not DOT's management views (any logged-in user could
-    register OAuth applications there)."""
+    register OAuth applications there). Userinfo is ours as well."""
     return [
         path("authorize/", MatrixAuthorizationView.as_view(), name="authorize"),
+        path("userinfo/", HeaderOnlyUserInfoView.as_view(), name="user-info"),
         *oauth2_urls.base_urlpatterns,
-        *oauth2_urls.oidc_urlpatterns,
+        *(pattern for pattern in oauth2_urls.oidc_urlpatterns if pattern.name != "user-info"),
     ]
