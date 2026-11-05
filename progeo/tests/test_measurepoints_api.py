@@ -128,3 +128,49 @@ def test_post_requires_edit_permission(api_client, setup):
 
     assert response.status_code == 403
     assert _points(location) == {}
+
+
+# -- ?days=N: the highest alarm value per sensor (Schwellwerte plot) ---------------
+
+def test_days_adds_each_sensors_highest_alarm_value_in_the_window(api_client, setup):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    location, _user = setup
+    device = f.make_device(location)
+    now = timezone.now()
+    f.make_measurement(device, pairs=[50, 5, 70], fetched_at=now - timedelta(days=2))
+    f.make_measurement(device, pairs=[40, 90, 60], fetched_at=now - timedelta(hours=1))
+    # Older than the window: ignored.
+    f.make_measurement(device, pairs=[999, 999, 999], fetched_at=now - timedelta(days=10))
+
+    body = api_client.get(_url(location), {"days": 7}).json()
+
+    assert body["days"] == 7
+    # The setup's measurement (now) counts too: 10, 20, 30.
+    assert {sensor["sensor_order"]: sensor["max"] for sensor in body["sensors"]} == {1: 50, 2: 90, 3: 70}
+
+
+def test_days_maps_the_pairs_of_each_device_to_its_sensors(api_client):
+    account = f.make_account()
+    location = f.make_location(account)
+    first = f.make_device(location, raw_hash=f.unique("first"))
+    second = f.make_device(location, raw_hash=f.unique("second"), first_sensor_order=3)
+    f.make_measurement(first, pairs=[11, 12])
+    f.make_measurement(second, pairs=[33, 44])
+    api_client.force_authenticate(user=f.make_user(perms=PERMS, accounts=[account]))
+
+    sensors = api_client.get(_url(location), {"days": 1}).json()["sensors"]
+
+    assert [(sensor["sensor_order"], sensor["max"]) for sensor in sensors] == [(1, 11), (2, 12), (3, 33), (4, 44)]
+
+
+def test_without_days_there_are_no_maxima(api_client, setup):
+    location, _user = setup
+
+    body = api_client.get(_url(location)).json()
+
+    assert "days" not in body
+    assert all("max" not in sensor for sensor in body["sensors"])
+    assert api_client.get(_url(location), {"days": "x"}).json()["reason"] == "days must be an integer"

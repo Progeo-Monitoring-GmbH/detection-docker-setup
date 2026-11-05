@@ -17,29 +17,10 @@ import DeviceConfigPanel, {
   type ConfigDevice,
 } from '../components/device/DeviceConfigPanel';
 import type { PortalOutletContext } from './LocationPortalLayout';
+import ThresholdMixerPanel from './ThresholdMixerPanel';
 import { getProjectTypeLabel } from './projectType';
 import { useProgeoRole } from './roleModel';
 import { staffFlags } from './access';
-
-/** One sensor of the object; `id` is null while it has no ProgeoMeasurePoint. */
-type SensorThreshold = {
-  sensor_order: number;
-  id: number | null;
-  name: string | null;
-  threshold: number | null;
-};
-
-const thresholdInputStyle = {
-  width: 120,
-  height: 30,
-  border: 'none',
-  borderRadius: 8,
-  background: 'var(--progeo-surface)',
-  padding: '0 8px',
-  fontFamily: 'inherit',
-  fontSize: 12.5,
-  color: 'var(--progeo-blue)',
-};
 
 type Device = ConfigDevice & {
   hardware: string | null;
@@ -104,7 +85,8 @@ const gridStyle = {
 };
 
 /**
- * Einstellungen: object-level + per-measurement-point thresholds,
+ * Einstellungen: object-level + per-measurement-point thresholds (the
+ * ThresholdMixerPanel),
  * per-device system config (+ the new "PE geschaltet" flag), and
  * Objektleitung (responsible ProGeo staff, reusing ProgeoAccess/the same
  * access endpoints as Rechte, filtered to staff users - no separate
@@ -131,87 +113,6 @@ const LocationEinstellungenTab = () => {
   const canRemoveStaff = hasPermission('module_notifications_edit');
   // Same rule as the Objekt tab's product field.
   const canEditProduct = role === 'progeo-admin';
-
-  // -- Schwellwerte ---------------------------------------------------
-  const [threshold, setThreshold] = useState(
-    String(location?.alarm_threshold ?? ''),
-  );
-  const [savingThreshold, setSavingThreshold] = useState(false);
-  const [sensors, setSensors] = useState<SensorThreshold[]>([]);
-  // Edited-but-unsaved inputs, keyed by sensor_order ('' = clear override).
-  const [drafts, setDrafts] = useState<Record<number, string>>({});
-  const [pointsOpen, setPointsOpen] = useState(false);
-  const [pointsLoading, setPointsLoading] = useState(true);
-  const [savingPoints, setSavingPoints] = useState(false);
-
-  const loadPoints = useCallback(() => {
-    setPointsLoading(true);
-    void axiosConfig.perform_get(
-      auth,
-      `/v1/location/${locationId}/measurepoints/`,
-      (response) => {
-        setSensors((response?.data?.sensors || []) as SensorThreshold[]);
-        setDrafts({});
-        setPointsLoading(false);
-      },
-      () => setPointsLoading(false),
-    );
-  }, [auth, locationId]);
-
-  useEffect(() => {
-    loadPoints();
-  }, [loadPoints]);
-
-  const saveObjectThreshold = () => {
-    setSavingThreshold(true);
-    void axiosConfig.perform_patch(
-      auth,
-      `/v1/location/${locationId}/`,
-      { alarm_threshold: threshold ? Number(threshold) : null },
-      () => {
-        showSuccessBar(enqueueSnackbar, t('einstell_saved'));
-        setSavingThreshold(false);
-      },
-      (error) => {
-        showRequestError(enqueueSnackbar, 'Could not save', error);
-        setSavingThreshold(false);
-      },
-    );
-  };
-
-  const changedSensors = sensors.filter(
-    (sensor) =>
-      sensor.sensor_order in drafts &&
-      drafts[sensor.sensor_order] !== String(sensor.threshold ?? ''),
-  );
-
-  // Saves every edited sensor at once; the backend updates its
-  // ProgeoMeasurePoint or creates one if the sensor has none yet.
-  const savePointThresholds = () => {
-    setSavingPoints(true);
-    void axiosConfig.perform_post(
-      auth,
-      `/v1/location/${locationId}/measurepoints/`,
-      {
-        points: changedSensors.map((sensor) => {
-          const value = drafts[sensor.sensor_order].trim();
-          return {
-            sensor_order: sensor.sensor_order,
-            threshold: value === '' ? null : Number(value),
-          };
-        }),
-      },
-      () => {
-        showSuccessBar(enqueueSnackbar, t('einstell_saved'));
-        setSavingPoints(false);
-        loadPoints();
-      },
-      (error) => {
-        showRequestError(enqueueSnackbar, 'Could not save thresholds', error);
-        setSavingPoints(false);
-      },
-    );
-  };
 
   // -- Systemeinstellungen ---------------------------------------------
   const [devices, setDevices] = useState<Device[]>([]);
@@ -397,198 +298,15 @@ const LocationEinstellungenTab = () => {
         display: 'flex',
         flexDirection: 'column',
         gap: 14,
-        maxWidth: 900,
       }}
     >
-      <PanelCard title={t('einstell_section_thresholds')}>
-        <div
-          style={{
-            background: 'var(--progeo-surface)',
-            borderRadius: 13,
-            padding: '14px 16px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 12,
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 16,
-              flexWrap: 'wrap',
-            }}
-          >
-            <div style={{ flex: 1, minWidth: 180 }}>
-              <div style={{ fontSize: 13.5, fontWeight: 500 }}>
-                {t('einstell_alarm_threshold')}
-              </div>
-              <div style={{ fontSize: 12, color: '#8B8383', marginTop: 2 }}>
-                {t('einstell_alarm_threshold_hint')}
-              </div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                type="number"
-                value={threshold}
-                readOnly={!canEdit}
-                onChange={(event) => setThreshold(event.target.value)}
-                style={{
-                  height: 38,
-                  width: 110,
-                  border: 'none',
-                  borderRadius: 10,
-                  background: 'var(--progeo-track-soft)',
-                  padding: '0 12px',
-                  fontFamily: 'inherit',
-                  fontSize: 14,
-                  color: 'var(--progeo-blue)',
-                }}
-              />
-              <span style={{ fontSize: 13, color: '#8B8383' }}>mV</span>
-              {canEdit && (
-                <PillButton
-                  label={t('einstell_save')}
-                  onClick={saveObjectThreshold}
-                  disabled={savingThreshold}
-                />
-              )}
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setPointsOpen((open) => !open)}
-            aria-expanded={pointsOpen}
-            style={{
-              alignSelf: 'flex-start',
-              background: 'none',
-              border: 'none',
-              padding: 0,
-              fontFamily: 'inherit',
-              fontSize: 12.5,
-              fontWeight: 500,
-              color: 'var(--progeo-orange)',
-              cursor: 'pointer',
-            }}
-          >
-            {pointsOpen ? t('einstell_points_hide') : t('einstell_points_show')}
-          </button>
-
-          {pointsOpen && (
-            <div
-              style={{
-                background: 'var(--progeo-track-soft)',
-                borderRadius: 11,
-                overflow: 'hidden',
-              }}
-            >
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 1fr',
-                  gap: 10,
-                  padding: '9px 12px',
-                  fontSize: 10.5,
-                  letterSpacing: '.06em',
-                  textTransform: 'uppercase',
-                  color: '#8B8383',
-                  fontWeight: 500,
-                }}
-              >
-                <span>{t('status_col_mp')}</span>
-                <span>{t('einstell_points_threshold')}</span>
-              </div>
-              {pointsLoading ? (
-                <div className="d-flex justify-content-center py-3 text-muted">
-                  <Spinner animation="border" size="sm" />
-                </div>
-              ) : sensors.length === 0 ? (
-                <div
-                  style={{
-                    padding: '10px 12px',
-                    fontSize: 12.5,
-                    color: '#8B8383',
-                    borderTop: '1px solid #E4E0E0',
-                  }}
-                >
-                  {t('einstell_points_empty')}
-                </div>
-              ) : (
-                sensors.map((sensor) => (
-                  <div
-                    key={sensor.sensor_order}
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '1fr 1fr',
-                      gap: 10,
-                      padding: '8px 12px',
-                      fontSize: 12.5,
-                      borderTop: '1px solid #E4E0E0',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <span style={{ fontWeight: 600 }}>
-                      {sensor.name ||
-                        t('einstell_points_sensor', {
-                          sensor: sensor.sensor_order,
-                        })}
-                    </span>
-                    <span
-                      style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-                    >
-                      <input
-                        type="number"
-                        value={
-                          drafts[sensor.sensor_order] ??
-                          String(sensor.threshold ?? '')
-                        }
-                        readOnly={!canEdit}
-                        placeholder={
-                          location?.alarm_threshold != null
-                            ? `${t('einstell_points_inherited')} (${location.alarm_threshold})`
-                            : t('einstell_points_inherited')
-                        }
-                        onChange={(event) =>
-                          setDrafts((prev) => ({
-                            ...prev,
-                            [sensor.sensor_order]: event.target.value,
-                          }))
-                        }
-                        style={thresholdInputStyle}
-                      />
-                      <span style={{ fontSize: 11.5, color: '#8B8383' }}>
-                        mV
-                      </span>
-                    </span>
-                  </div>
-                ))
-              )}
-              {canEdit && sensors.length > 0 && (
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 12,
-                    padding: '10px 12px',
-                    borderTop: '1px solid #E4E0E0',
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  <PillButton
-                    label={t('einstell_save')}
-                    onClick={savePointThresholds}
-                    disabled={savingPoints || changedSensors.length === 0}
-                  />
-                  <span style={{ fontSize: 11.5, color: '#8B8383' }}>
-                    {t('einstell_points_hint')}
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </PanelCard>
+      <ThresholdMixerPanel
+        // A fresh panel (drafts, selection) per object.
+        key={locationId}
+        locationId={locationId}
+        initialObjectThreshold={location?.alarm_threshold ?? null}
+        canEdit={canEdit}
+      />
 
       <PanelCard title={t('einstell_section_system')}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

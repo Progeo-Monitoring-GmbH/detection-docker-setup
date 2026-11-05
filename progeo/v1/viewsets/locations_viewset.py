@@ -1095,6 +1095,9 @@ class LocationViewSet(ProgeoModalViewSet):
                 ProgeoMeasurePoint plus every sensor reporting measurements
                 (1-based, see _sensor_count) - so thresholds can be set for
                 sensors that have no measure point yet (id null).
+                ?days=N (1..MAX_HISTORY_DAYS) adds "max" per sensor: its
+                highest alarm value |WP - EP| (get_pairs) of the last N days,
+                null without a measurement - the Schwellwerte plot.
         POST -> set thresholds (module_locations_edit): body
                 {"points": [{"sensor_order": n, "threshold": <number|null>}]}
                 (or a single {"sensor_order"|"id", "threshold"}). Updates the
@@ -1109,9 +1112,16 @@ class LocationViewSet(ProgeoModalViewSet):
         points_qs = ProgeoMeasurePoint.objects.using(db_name).filter(location=location)
 
         if request.method == "GET":
+            try:
+                days = _window_days(request)
+            except ValueError:
+                return RequestFailed({"reason": "days must be an integer"})
             points = list(points_qs.order_by("sensor_order"))
             by_order = {point.sensor_order: point for point in points}
-            sensor_orders = sorted(set(by_order) | set(range(1, self._sensor_count(location, db_name) + 1)))
+            maxima = self._sensor_maxima(request, location, account, db_name, days) if days else {}
+            sensor_orders = sorted(
+                set(by_order) | set(maxima) | set(range(1, self._sensor_count(location, db_name) + 1))
+            )
             return RequestSuccess({
                 "measurepoints": ProgeoMeasurePointSerializer(points, many=True).data,
                 "sensors": [
@@ -1120,9 +1130,11 @@ class LocationViewSet(ProgeoModalViewSet):
                         "id": by_order[order].pk if order in by_order else None,
                         "name": by_order[order].name if order in by_order else None,
                         "threshold": by_order[order].threshold if order in by_order else None,
+                        **({"max": maxima.get(order)} if days else {}),
                     }
                     for order in sensor_orders
                 ],
+                **({"days": days} if days else {}),
             })
 
         if not has_module_permissions(request.user, "module_locations_edit"):
@@ -1192,6 +1204,25 @@ class LocationViewSet(ProgeoModalViewSet):
             # Single-entry callers read the one saved point here.
             "measurepoint": serialized[0] if len(serialized) == 1 else None,
         })
+
+    @staticmethod
+    def _sensor_maxima(request, location, account, db_name, days):
+        """{sensor_order: highest alarm value |WP - EP|} over the last `days`
+        days - by sensor_order like the heatmap (a device's pair 1 is its
+        first_sensor_order)."""
+        since, _until = _days_window(days, None)
+        starts = _device_starts(location, db_name)
+        measurements = (
+            ProgeoMeasurement.for_account(account, using=db_name, user=request.user)
+            .filter(device__location=location, last_fetched__gte=_db_datetime(since))
+            .order_by()
+        )
+        maxima = {}
+        for measurement in measurements.iterator(chunk_size=500):
+            for sensor, value in _sensor_values(measurement, starts).items():
+                if value is not None and (sensor not in maxima or value > maxima[sensor]):
+                    maxima[sensor] = value
+        return maxima
 
     @staticmethod
     def _sensor_count(location, db_name, sample=50):
