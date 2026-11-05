@@ -47,6 +47,9 @@ export type MeasurementRange = {
   /** Newest measurement time (ISO), null without measurements. */
   last: string | null;
   count: number;
+  /** When the next measurement is expected (ISO; per device newest + send
+   * interval, the earliest) - may be past (overdue); null if unknown. */
+  next?: string | null;
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;

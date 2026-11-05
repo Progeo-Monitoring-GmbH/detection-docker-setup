@@ -304,9 +304,9 @@ const LocationEinstellungenTab = () => {
       `/v1/location/${locationId}/access/`,
       (response) => {
         const rules = (response?.data?.access || []) as AccessRule[];
-        setStaffRules(
-          rules.filter((rule) => rule.is_staff || rule.objektleitung),
-        );
+        // Only assigned Objektleitung - a staff member's own notification
+        // rule (set on the Rechte tab) is no assignment.
+        setStaffRules(rules.filter((rule) => rule.objektleitung));
         setStaffCandidates((response?.data?.staff_users || []) as StaffUser[]);
         setStaffLoading(false);
       },

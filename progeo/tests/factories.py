@@ -103,9 +103,10 @@ def make_measure_point(location, sensor_order, name=None, threshold=None, **fiel
     )
 
 
-def make_access(location, user, transport=ProgeoAccess.NotifiTrans.EMAIL, type=ProgeoAccess.NotifiTypes.ALARM):
+def make_access(location, user, transport=ProgeoAccess.NotifiTrans.EMAIL, type=ProgeoAccess.NotifiTypes.ALARM,
+                **fields):
     return ProgeoAccess.objects.using(DB).create(
-        location=location, user_id=user.id, transport=transport, type=type
+        location=location, user_id=user.id, transport=transport, type=type, **fields
     )
 
 

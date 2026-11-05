@@ -16,13 +16,12 @@ export type ThresholdTrendSeries = {
    * sensors with different thresholds stay comparable on one shared scale. */
   threshold: number | null;
   points: ThresholdTrendPoint[];
-  /** Background series (e.g. the less active sensors): a thin, faint grey
-   * line behind the others, sharing one legend toggle (MUTED_GROUP). */
-  muted?: boolean;
+  /** Line colour - default: TREND_COLORS in series order. */
+  color?: string;
+  /** Drawn (highlighted) but not listed in the legend - e.g. a sensor
+   * hovered in a table that isn't plotted yet. */
+  preview?: boolean;
 };
-
-/** hiddenSeries/onToggleSeries id of all muted series together. */
-export const MUTED_GROUP = '__muted__';
 
 type ThresholdTrendChartProps = {
   series: ThresholdTrendSeries[];
@@ -30,27 +29,35 @@ type ThresholdTrendChartProps = {
   onToggleSeries: (id: string) => void;
   emptyLabel: string;
   meanOfLabel: (count: number) => string;
-  /** Legend text for the dotted 1x threshold line. */
+  /** Legend text for the 1x threshold line. */
   thresholdLabel: string;
-  /** Legend text of the muted series' shared toggle. */
-  mutedLabel?: (count: number) => string;
+  /** The series to highlight (the others fade) - e.g. hovered in a table. */
+  highlightedId?: string | null;
+  /** A line or legend entry is hovered (null when left). */
+  onHighlight?: (id: string | null) => void;
 };
 
 // Series hues deliberately avoid red/orange/green: those already mean
 // "over / under threshold" in the background bands and the orange threshold
-// line. Order validated for colour-vision deficiency (dataviz palette check:
-// worst adjacent CVD ΔE 20.4, normal-vision ≥ 15). Assigned in fixed order;
-// beyond the pool, series repeat a hue with a dashed line instead of
-// generating new colours.
-const COLORS = ['#2a78d6', '#eda100', '#1a9bb5', '#4a3aa7', '#e87ba4'];
-const REPEAT_DASH = '6 4';
-const MUTED_COLOR = '#AEB7C1';
-/** The muted lines: barely visible behind the highlighted ones. */
-const MUTED_OPACITY = 0.35;
-const MUTED_WIDTH = 0.8;
+// line. The first five validated for colour-vision deficiency (dataviz
+// palette check: worst adjacent CVD dE 20.4, normal-vision >= 15); beyond
+// the pool the hues repeat - always solid lines, never dashed.
+export const TREND_COLORS = [
+  '#2a78d6',
+  '#eda100',
+  '#1a9bb5',
+  '#4a3aa7',
+  '#e87ba4',
+  '#8d6e63',
+  '#0b3659',
+  '#b07cc6',
+  '#6d8a96',
+  '#c9a227',
+];
+/** The not highlighted lines while one is. */
+const FADED_OPACITY = 0.18;
 
 const THRESHOLD_COLOR = 'var(--progeo-orange)';
-const THRESHOLD_DASH = '2 4';
 
 // Compact plot area - a short, wide strip instead of a mostly-empty square.
 const VB_W = 1000;
@@ -73,6 +80,7 @@ type DisplayPoint = { key: string; time: number; ratio: number; count: number };
 type HoverInfo = {
   x: number;
   y: number;
+  id: string;
   label: string;
   color: string;
   time: number;
@@ -80,19 +88,10 @@ type HoverInfo = {
   count: number;
 };
 
-/** Legend sample of a series/threshold line, dashed like the line itself. */
-const LegendSwatch = ({ color, dash, width = 2.5 }: { color: string; dash?: string; width?: number }) => (
+/** Legend sample of a series/threshold line. */
+const LegendSwatch = ({ color, width = 2.5 }: { color: string; width?: number }) => (
   <svg width={18} height={6} style={{ flexShrink: 0 }} aria-hidden="true">
-    <line
-      x1={0}
-      x2={18}
-      y1={3}
-      y2={3}
-      stroke={color}
-      strokeWidth={width}
-      strokeDasharray={dash}
-      strokeLinecap="round"
-    />
+    <line x1={0} x2={18} y1={3} y2={3} stroke={color} strokeWidth={width} strokeLinecap="round" />
   </svg>
 );
 
@@ -137,7 +136,8 @@ const clusterPoints = (points: RawPoint[], minGapTime: number): DisplayPoint[] =
  * of an absolute value, with a shared green/red background band below/above
  * that line - so sensors with different thresholds stay visually
  * comparable. Merges near-simultaneous points per series to keep the x-axis
- * readable, and shows a hover tooltip snapped to the nearest point. No
+ * readable, and shows a hover tooltip snapped to the nearest point - whose
+ * line is highlighted, like a hovered legend entry (`onHighlight`). No
  * charting library - a small self-contained SVG (see LageplanZoneOverlay
  * for the same convention).
  */
@@ -148,22 +148,19 @@ const ThresholdTrendChart = ({
   emptyLabel,
   meanOfLabel,
   thresholdLabel,
-  mutedLabel = (count) => `+${count}`,
+  highlightedId = null,
+  onHighlight,
 }: ThresholdTrendChartProps) => {
   const [hover, setHover] = useState<HoverInfo | null>(null);
 
-  // Colours go to the highlighted series only, in their order.
-  let colorIndex = 0;
   const ratioSeries = series
-    .map((entry) => {
+    .map((entry, index) => {
       const threshold = entry.threshold && entry.threshold > 0 ? entry.threshold : 1;
-      const index = entry.muted ? -1 : colorIndex++;
       return {
         id: entry.id,
         label: entry.label,
-        muted: Boolean(entry.muted),
-        color: entry.muted ? MUTED_COLOR : COLORS[index % COLORS.length],
-        dash: !entry.muted && index >= COLORS.length ? REPEAT_DASH : undefined,
+        preview: Boolean(entry.preview),
+        color: entry.color ?? TREND_COLORS[index % TREND_COLORS.length],
         points: entry.points
           .filter((point) => point.triggered_at && point.value != null)
           .map((point) => ({
@@ -191,15 +188,16 @@ const ThresholdTrendChart = ({
     );
   }
 
-  const isHidden = (entry: { id: string; muted: boolean }) =>
-    hiddenSeries.has(entry.id) || (entry.muted && hiddenSeries.has(MUTED_GROUP));
-  // Muted first, so the highlighted lines are drawn on top of them.
+  // A highlighted series fades the others - only while it is plotted.
+  const highlight =
+    highlightedId != null && ratioSeries.some((entry) => entry.id === highlightedId && !hiddenSeries.has(entry.id))
+      ? highlightedId
+      : null;
+  // The highlighted line last, so it is drawn on top.
   const visibleSeries = ratioSeries
-    .filter((entry) => !isHidden(entry))
-    .sort((a, b) => Number(b.muted) - Number(a.muted));
-  const highlighted = ratioSeries.filter((entry) => !entry.muted);
-  const mutedCount = ratioSeries.length - highlighted.length;
-  const mutedHidden = hiddenSeries.has(MUTED_GROUP);
+    .filter((entry) => !hiddenSeries.has(entry.id))
+    .sort((a, b) => Number(a.id === highlight) - Number(b.id === highlight));
+  const legendSeries = ratioSeries.filter((entry) => !entry.preview);
 
   const allTimes = ratioSeries.flatMap((entry) => entry.points.map((point) => point.time));
   const allRatios = ratioSeries.flatMap((entry) => entry.points.map((point) => point.ratio));
@@ -230,6 +228,7 @@ const ThresholdTrendChart = ({
     const vby = ((event.clientY - rect.top) / rect.height) * VB_H;
     if (vbx < X0 || vbx > X1) {
       setHover(null);
+      onHighlight?.(null);
       return;
     }
 
@@ -245,6 +244,7 @@ const ThresholdTrendChart = ({
           best = {
             x: toX(point.time),
             y: toY(point.ratio),
+            id: entry.id,
             label: entry.label,
             color: entry.color,
             time: point.time,
@@ -255,6 +255,8 @@ const ThresholdTrendChart = ({
       });
     });
     setHover(best);
+    // The line under the cursor is highlighted (the others fade).
+    onHighlight?.((best as HoverInfo | null)?.id ?? null);
   };
 
   return (
@@ -264,7 +266,10 @@ const ThresholdTrendChart = ({
           viewBox={`0 0 ${VB_W} ${VB_H}`}
           style={{ display: 'block', width: '100%', height: 'auto', cursor: 'crosshair' }}
           onMouseMove={handleMouseMove}
-          onMouseLeave={() => setHover(null)}
+          onMouseLeave={() => {
+            setHover(null);
+            onHighlight?.(null);
+          }}
         >
           {/* Below the threshold (0x-1x) vs. above it (1x-max), so every
               series - regardless of its own absolute threshold - reads
@@ -280,7 +285,7 @@ const ThresholdTrendChart = ({
               </text>
             </g>
           ))}
-          <line x1={X0} x2={X1} y1={thresholdY} y2={thresholdY} stroke={THRESHOLD_COLOR} strokeWidth={1.3} strokeDasharray={THRESHOLD_DASH} opacity={0.75} />
+          <line x1={X0} x2={X1} y1={thresholdY} y2={thresholdY} stroke={THRESHOLD_COLOR} strokeWidth={1.3} opacity={0.75} />
 
           <text x={X0} y={VB_H - 2} textAnchor="start" fontSize={9} fill="#8B8383">
             {formatTime(minTime, withYear)}
@@ -289,29 +294,32 @@ const ThresholdTrendChart = ({
             {formatTime(maxTime, withYear)}
           </text>
 
-          {displaySeries.map((entry) => (
-            <g key={entry.id}>
-              <polyline
-                points={entry.display.map((point) => `${toX(point.time)},${toY(point.ratio)}`).join(' ')}
-                fill="none"
-                stroke={entry.color}
-                strokeDasharray={entry.dash}
-                strokeWidth={entry.muted ? MUTED_WIDTH : 1.8}
-                strokeOpacity={entry.muted ? MUTED_OPACITY : 1}
-                strokeLinejoin="round"
-              />
-              {/* Lines only - a single point (no line) as a dot. */}
-              {entry.display.length === 1 && (
-                <circle
-                  cx={toX(entry.display[0].time)}
-                  cy={toY(entry.display[0].ratio)}
-                  r={entry.muted ? 1.6 : 2.6}
-                  fill={entry.color}
-                  fillOpacity={entry.muted ? MUTED_OPACITY : 1}
+          {displaySeries.map((entry) => {
+            const emphasized = entry.id === highlight;
+            const opacity = highlight == null || emphasized ? 1 : FADED_OPACITY;
+            return (
+              <g key={entry.id} data-series={entry.id}>
+                <polyline
+                  points={entry.display.map((point) => `${toX(point.time)},${toY(point.ratio)}`).join(' ')}
+                  fill="none"
+                  stroke={entry.color}
+                  strokeWidth={emphasized ? 3.2 : 1.8}
+                  strokeOpacity={opacity}
+                  strokeLinejoin="round"
                 />
-              )}
-            </g>
-          ))}
+                {/* Lines only - a single point (no line) as a dot. */}
+                {entry.display.length === 1 && (
+                  <circle
+                    cx={toX(entry.display[0].time)}
+                    cy={toY(entry.display[0].ratio)}
+                    r={emphasized ? 3.6 : 2.6}
+                    fill={entry.color}
+                    fillOpacity={opacity}
+                  />
+                )}
+              </g>
+            );
+          })}
 
           {hover && (
             <g>
@@ -354,11 +362,15 @@ const ThresholdTrendChart = ({
       </div>
 
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-        {highlighted.map((entry) => (
+        {legendSeries.map((entry) => (
           <button
             key={entry.id}
             type="button"
             onClick={() => onToggleSeries(entry.id)}
+            onMouseEnter={() => onHighlight?.(entry.id)}
+            onMouseLeave={() => onHighlight?.(null)}
+            onFocus={() => onHighlight?.(entry.id)}
+            onBlur={() => onHighlight?.(null)}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -369,39 +381,14 @@ const ThresholdTrendChart = ({
               padding: 0,
               fontFamily: 'inherit',
               fontSize: 12.5,
-              fontWeight: 400,
+              fontWeight: entry.id === highlight ? 600 : 400,
               color: hiddenSeries.has(entry.id) ? '#B8B0B0' : '#6E6868',
             }}
           >
-            <LegendSwatch
-              color={hiddenSeries.has(entry.id) ? '#B8B0B0' : entry.color}
-              dash={entry.dash}
-            />
+            <LegendSwatch color={hiddenSeries.has(entry.id) ? '#B8B0B0' : entry.color} />
             {entry.label}
           </button>
         ))}
-        {mutedCount > 0 && (
-          <button
-            type="button"
-            onClick={() => onToggleSeries(MUTED_GROUP)}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              padding: 0,
-              fontFamily: 'inherit',
-              fontSize: 12.5,
-              fontWeight: 400,
-              color: mutedHidden ? '#B8B0B0' : '#6E6868',
-            }}
-          >
-            <LegendSwatch color={mutedHidden ? '#D6D0D0' : MUTED_COLOR} width={1.2} />
-            {mutedLabel(mutedCount)}
-          </button>
-        )}
         <span
           style={{
             display: 'inline-flex',
@@ -412,7 +399,7 @@ const ThresholdTrendChart = ({
             marginLeft: 'auto',
           }}
         >
-          <LegendSwatch color={THRESHOLD_COLOR} dash={THRESHOLD_DASH} width={1.3} />
+          <LegendSwatch color={THRESHOLD_COLOR} width={1.3} />
           {thresholdLabel}
         </span>
       </div>

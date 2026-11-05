@@ -15,11 +15,6 @@ import {
   defaultStepForRange,
   stepsForRange,
 } from '../components/device/heatmapSteps';
-import ThresholdTrendChart, {
-  type ThresholdTrendSeries,
-} from '../components/device/ThresholdTrendChart';
-import PanelCard from '../components/ui/kit/PanelCard';
-import PlotHelp from '../components/ui/PlotHelp';
 import KpiStrip from '../components/ui/kit/KpiStrip';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import PillSelect from '../components/ui/kit/PillSelect';
@@ -47,15 +42,17 @@ import {
   alarmSpansOf,
   anlageStatusOf,
   type AnlageState,
+  formatMinutes,
   highestOf,
   historySpecFor,
   measurePointMeters,
+  nextMeasurementOf,
   severityColor,
-  toggledSet,
   worstSeverityOf,
-  zeitreiheSeriesOf,
   type VerdachtsstelleCluster,
 } from './locationStatusData';
+import { zeitreiheSensorsOf } from './zeitreiheSensors';
+import ZeitreihePanel from './ZeitreihePanel';
 import { useAlarmClusters } from './useAlarmClusters';
 import { useLocationHistory } from './useLocationHistory';
 import { useMeasurementRangeState } from './useMeasurementRange';
@@ -290,10 +287,34 @@ const StatusKpis = ({
 }: {
   clusters: VerdachtsstelleCluster[];
   threshold: number | null;
-  anlage: { state: AnlageState; last: number | null };
+  anlage: { state: AnlageState; last: number | null; next: number | null };
   now: number;
 }) => {
   const { t } = useTranslation();
+  // The Anlage tile counts down to the next measurement: its own clock,
+  // so the rest of the page doesn't re-render every 30 s.
+  const [clock, setClock] = useState(() => Date.now());
+  const ticking = anlage.state === 'online' && anlage.next != null;
+  useEffect(() => {
+    if (!ticking) {
+      return undefined;
+    }
+    const timer = window.setInterval(() => setClock(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, [ticking]);
+  const tileNow = Math.max(now, clock);
+  const upcoming = anlage.state === 'online' ? nextMeasurementOf(anlage.next, tileNow) : null;
+  const anlageNote = [
+    anlage.last != null
+      ? t('status_kpi_anlage_last', { time: formatRelativeTime(anlage.last, tileNow) })
+      : t('status_kpi_anlage_last_unknown'),
+    upcoming &&
+      (upcoming.overdue
+        ? t('status_kpi_anlage_next_overdue', { time: formatMinutes(upcoming.minutes) })
+        : t('status_kpi_anlage_next', { time: formatMinutes(upcoming.minutes) })),
+  ]
+    .filter(Boolean)
+    .join(' · ');
   const openClusters = clusters.filter((cluster) => cluster.state !== 'geloest');
   const worstSeverity = worstSeverityOf(openClusters);
   const highestReading = highestOf(clusters.map((cluster) => cluster.max_value));
@@ -332,12 +353,7 @@ const StatusKpis = ({
             anlage.state === 'loading'
               ? '–'
               : t(`status_kpi_anlage_${anlage.state}` as const),
-          note:
-            anlage.state === 'loading'
-              ? undefined
-              : anlage.last != null
-                ? t('status_kpi_anlage_last', { time: formatRelativeTime(anlage.last, now) })
-                : t('status_kpi_anlage_last_unknown'),
+          note: anlage.state === 'loading' ? undefined : anlageNote,
           valueColor:
             anlage.state === 'online' ? '#3F7A1C' : anlage.state === 'offline' ? '#C44D26' : '#8B8383',
         },
@@ -346,38 +362,6 @@ const StatusKpis = ({
   );
 };
 
-// Zeitreihe ("Letzte 24 h" ... "Letzte 3 Jahre", see timeRanges.ts): the
-// measured value of every sensor over the range, cut out of the loaded
-// history like the heatmap's frames. The most active sensors and those above
-// their threshold in colour, the others as faint "Weitere Sensoren".
-const ZeitreihePanel = ({
-  loading,
-  series,
-}: {
-  loading: boolean;
-  series: ThresholdTrendSeries[];
-}) => {
-  const { t } = useTranslation();
-  const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
-
-  return (
-    <PanelCard title={t('status_zeitreihe_title')} actions={<PlotHelp topic="status_zeitreihe" />}>
-      {loading ? (
-        <Loading />
-      ) : (
-        <ThresholdTrendChart
-          series={series}
-          hiddenSeries={hiddenSeries}
-          onToggleSeries={(id) => setHiddenSeries((prev) => toggledSet(prev, id))}
-          emptyLabel={t('status_zeitreihe_empty')}
-          meanOfLabel={(count) => t('status_zeitreihe_mean_of', { count })}
-          thresholdLabel={t('status_zeitreihe_threshold_legend')}
-          mutedLabel={(count) => t('status_zeitreihe_other_sensors', { count })}
-        />
-      )}
-    </PanelCard>
-  );
-};
 
 const LocationStatusView = ({
   location,
@@ -496,9 +480,12 @@ const LocationStatusView = ({
     [measurePointOf],
   );
 
-  const zeitreiheSeries = useMemo(
+  // Zeitreihe ("Letzte 24 h" ... "Letzte 3 Jahre", see timeRanges.ts): the
+  // measured value of every sensor over the range, cut out of the loaded
+  // history like the heatmap's frames - classified for ZeitreihePanel.
+  const zeitreiheSensors = useMemo(
     () =>
-      zeitreiheSeriesOf(
+      zeitreiheSensorsOf(
         zeitreihe,
         sensorLabel,
         (sensorId) => measurePointOf(sensorId)?.threshold ?? thresholdValue,
@@ -591,7 +578,7 @@ const LocationStatusView = ({
 
           {statusView === 'zeitreihe' ? (
             <>
-              <ZeitreihePanel loading={historyLoading} series={zeitreiheSeries} />
+              <ZeitreihePanel loading={historyLoading} sensors={zeitreiheSensors} />
               {isStaff && (
                 <LocationBatteryVoltagePanel
                   locationId={locationId}

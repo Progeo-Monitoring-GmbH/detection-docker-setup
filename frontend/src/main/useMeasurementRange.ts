@@ -39,6 +39,7 @@ export const useMeasurementRangeState = (
             first: data?.first ?? null,
             last: data?.last ?? null,
             count: Number(data?.count ?? 0),
+            next: data?.next ?? null,
           },
         });
       },

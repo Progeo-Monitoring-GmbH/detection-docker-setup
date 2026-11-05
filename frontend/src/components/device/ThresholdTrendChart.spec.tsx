@@ -2,11 +2,11 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import ThresholdTrendChart, { MUTED_GROUP, type ThresholdTrendSeries } from './ThresholdTrendChart';
+import ThresholdTrendChart, { TREND_COLORS, type ThresholdTrendSeries } from './ThresholdTrendChart';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const COLORS = ['#2a78d6', '#eda100', '#1a9bb5', '#4a3aa7', '#e87ba4'];
+const COLORS = TREND_COLORS;
 const BASE = Date.UTC(2026, 7, 1, 0, 0, 0);
 const iso = (offsetMs: number) => new Date(BASE + offsetMs).toISOString();
 const MIN = 60 * 1000;
@@ -47,12 +47,16 @@ const renderChart = (
     hiddenSeries: Set<string>;
     onToggleSeries: (id: string) => void;
     meanOfLabel: (count: number) => string;
+    highlightedId: string | null;
+    onHighlight: (id: string | null) => void;
   }> = {},
 ) => {
   const props = {
     hiddenSeries: new Set<string>(),
     onToggleSeries: vi.fn(),
     meanOfLabel: (count: number) => `mean of ${count}`,
+    highlightedId: null as string | null,
+    onHighlight: vi.fn(),
     ...overrides,
   };
   act(() => {
@@ -64,6 +68,8 @@ const renderChart = (
         emptyLabel="No data"
         meanOfLabel={props.meanOfLabel}
         thresholdLabel="Threshold (1x)"
+        highlightedId={props.highlightedId}
+        onHighlight={props.onHighlight}
       />,
     );
   });
@@ -127,30 +133,25 @@ describe('ThresholdTrendChart rendering', () => {
     expect(legendButtons().map((button) => button.textContent)).toEqual(['Sensor a']);
   });
 
-  it('repeats the colour pool with a dashed line beyond five series', () => {
-    const series = Array.from({ length: 7 }, (_, index) => makeSeries(`s${index}`, [[0, 50 + index]]));
+  it('repeats the colour pool beyond its size - never dashed', () => {
+    const count = COLORS.length + 2;
+    const series = Array.from({ length: count }, (_, index) => makeSeries(`s${index}`, [[0, 50 + index]]));
     renderChart(series);
     const lines = polylines();
-    expect(lines).toHaveLength(7);
-    expect(lines[5].getAttribute('stroke')).toBe(COLORS[0]);
-    expect(lines[6].getAttribute('stroke')).toBe(COLORS[1]);
-    expect(lines[5].getAttribute('stroke-dasharray')).toBe('6 4');
-    expect(lines[6].getAttribute('stroke-dasharray')).toBe('6 4');
-    lines.slice(0, 5).forEach((line) => expect(line.hasAttribute('stroke-dasharray')).toBe(false));
+    expect(lines).toHaveLength(count);
+    expect(lines[COLORS.length].getAttribute('stroke')).toBe(COLORS[0]);
+    expect(lines[COLORS.length + 1].getAttribute('stroke')).toBe(COLORS[1]);
+    expect(container.querySelectorAll('[stroke-dasharray]')).toHaveLength(0);
   });
 
-  it('dashes the legend swatch of repeated-colour series too', () => {
-    const series = Array.from({ length: 6 }, (_, index) => makeSeries(`s${index}`, [[0, 50]]));
-    renderChart(series);
-    const swatch = legendButtons()[5].querySelector('line')!;
-    expect(swatch.getAttribute('stroke-dasharray')).toBe('6 4');
-    expect(legendButtons()[0].querySelector('line')!.hasAttribute('stroke-dasharray')).toBe(false);
+  it('takes a colour given with the series', () => {
+    renderChart([{ ...makeSeries('a', [[0, 50]]), color: '#123456' }]);
+    expect(polylines()[0].getAttribute('stroke')).toBe('#123456');
   });
 
-  it('draws the dotted 1x threshold line', () => {
+  it('draws the 1x threshold line solid', () => {
     renderChart([makeSeries('a', [[0, 50]])]);
-    const dotted = plotSvg().querySelectorAll('line[stroke-dasharray="2 4"]');
-    expect(dotted).toHaveLength(1);
+    expect(plotSvg().querySelectorAll('line[stroke-dasharray]')).toHaveLength(0);
   });
 
   it('labels the y axis with 0x, 1x and 1.15x the max ratio', () => {
@@ -280,37 +281,47 @@ describe('ThresholdTrendChart hover tooltip', () => {
   });
 });
 
-describe('ThresholdTrendChart muted series', () => {
-  const muted = (series: ThresholdTrendSeries) => ({ ...series, muted: true });
+describe('ThresholdTrendChart highlighting', () => {
+  const opacityOf = (id: string) =>
+    container.querySelector(`[data-series="${id}"] polyline`)!.getAttribute('stroke-opacity');
 
-  it('draws muted series grey, behind the others, without taking a colour', () => {
-    renderChart([muted(makeSeries('m', [[0, 10], [MIN, 12]])), makeSeries('a', [[0, 300], [MIN, 200]])]);
-    const strokes = polylines().map((line) => line.getAttribute('stroke'));
-    expect(strokes).toEqual(['#AEB7C1', COLORS[0]]);
+  it('fades every other line while one is highlighted', () => {
+    renderChart([makeSeries('a', [[0, 50], [MIN, 60]]), makeSeries('b', [[0, 80], [MIN, 90]])], {
+      highlightedId: 'b',
+    });
+    expect(opacityOf('b')).toBe('1');
+    expect(opacityOf('a')).toBe('0.18');
+    expect(container.querySelector('[data-series="b"] polyline')!.getAttribute('stroke-width')).toBe('3.2');
+    // Drawn last: on top of the others.
+    expect(polylines()[1].getAttribute('stroke')).toBe(COLORS[1]);
   });
 
-  it('shares one legend toggle for all muted series', () => {
-    const { onToggleSeries } = renderChart([
-      makeSeries('a', [[0, 300]]),
-      muted(makeSeries('m1', [[0, 10]])),
-      muted(makeSeries('m2', [[0, 12]])),
-    ]);
-    expect(legendButtons().map((button) => button.textContent)).toEqual(['Sensor a', '+2']);
-    act(() => legendButtons()[1].click());
-    expect(onToggleSeries).toHaveBeenCalledWith(MUTED_GROUP);
+  it('ignores a highlight of a series it does not plot', () => {
+    renderChart([makeSeries('a', [[0, 50], [MIN, 60]])], { highlightedId: 'nope' });
+    expect(opacityOf('a')).toBe('1');
   });
 
-  it('hides every muted series with the group toggle', () => {
-    renderChart(
-      [makeSeries('a', [[0, 300]]), muted(makeSeries('m1', [[0, 10]])), muted(makeSeries('m2', [[0, 12]]))],
-      { hiddenSeries: new Set([MUTED_GROUP]) },
-    );
-    expect(polylines()).toHaveLength(1);
+  it('draws a preview series without a legend entry', () => {
+    renderChart([makeSeries('a', [[0, 50]]), { ...makeSeries('p', [[0, 80]]), preview: true }]);
+    expect(polylines()).toHaveLength(2);
+    expect(legendButtons().map((button) => button.textContent)).toEqual(['Sensor a']);
   });
 
-  it('hovers the series nearest to the cursor in height, not the first one', () => {
-    renderChart([
-      muted(makeSeries('low', [[0, 10], [90 * MIN, 10]])),
+  it('reports the hovered legend entry', () => {
+    const { onHighlight } = renderChart([makeSeries('a', [[0, 50]]), makeSeries('b', [[0, 80]])]);
+    act(() => {
+      legendButtons()[1].dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    });
+    expect(onHighlight).toHaveBeenLastCalledWith('b');
+    act(() => {
+      legendButtons()[1].dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }));
+    });
+    expect(onHighlight).toHaveBeenLastCalledWith(null);
+  });
+
+  it('reports the line nearest to the cursor in height, not the first one', () => {
+    const { onHighlight } = renderChart([
+      makeSeries('low', [[0, 10], [90 * MIN, 10]]),
       makeSeries('high', [[0, 300], [90 * MIN, 300]]),
     ]);
     const svg = plotSvg();
@@ -319,9 +330,11 @@ describe('ThresholdTrendChart muted series', () => {
       svg.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 980, clientY: 20 }));
     });
     expect(container.textContent).toContain('Sensor high');
+    expect(onHighlight).toHaveBeenLastCalledWith('high');
     act(() => {
       svg.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 980, clientY: 145 }));
     });
     expect(container.textContent).toContain('Sensor low');
+    expect(onHighlight).toHaveBeenLastCalledWith('low');
   });
 });

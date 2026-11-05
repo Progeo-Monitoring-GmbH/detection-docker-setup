@@ -37,7 +37,7 @@ def test_members_list_account_single_and_staff(api_client, setup):
     rule = f.make_access(location, single)
     staff = f.make_user(username=f.unique("staff"), staff=True)
     objektleitung = f.make_user(username=f.unique("ol"), staff=True)
-    f.make_access(location, objektleitung)
+    f.make_access(location, objektleitung, objektleitung=True)
     api_client.force_authenticate(user=admin)
 
     body = _access(api_client, location)
@@ -65,7 +65,7 @@ def test_access_without_manage_rights_shows_only_own_rule_and_objektleitung(api_
     colleague = f.make_user(accounts=[account])
     f.make_access(location, colleague)
     objektleitung = f.make_user(staff=True)
-    ol_rule = f.make_access(location, objektleitung)
+    ol_rule = f.make_access(location, objektleitung, objektleitung=True)
     api_client.force_authenticate(user=viewer)
 
     body = _access(api_client, location)
@@ -257,3 +257,75 @@ def test_objektleitung_by_email_rejects_invalid_addresses(api_client, setup):
     response = _assign_by_email(api_client, location, "not-an-email")
 
     assert response.json() == {"reason": "invalid email address", "success": False}
+
+
+# -- staff notifications (set by staff, hidden from customers) ---------------------
+
+def test_staff_set_notifications_for_staff_and_superusers(api_client, setup):
+    _account, location, _admin = setup
+    staff = f.make_user(staff=True)
+    colleague = f.make_user(username=f.unique("colleague"), staff=True)
+    superuser = User.objects.create_user(username=f.unique("super"), is_superuser=True)
+    api_client.force_authenticate(user=staff)
+
+    for user in (staff, colleague, superuser):
+        response = api_client.post(
+            f"/v1/location/{location.id}/access/", {"user_id": user.id, "transport": 1, "type": 1}, format="json"
+        )
+        assert response.status_code == 200, response.content
+        assert response.json()["access"]["objektleitung"] is False
+
+    members = _members_by_name(_access(api_client, location))
+    assert members[colleague.username]["rule"]["transport"] == 1
+    assert members[superuser.username]["rule"]["type"] == 1
+
+
+def test_customers_see_staff_only_as_objektleitung(api_client, setup):
+    _account, location, admin = setup
+    notified = f.make_user(username=f.unique("notified"), staff=True)
+    notified_rule = f.make_access(location, notified)
+    # Before the objektleitung flag existed staff rules had none - hidden now too.
+    objektleitung = f.make_user(username=f.unique("ol"), staff=True)
+    ol_rule = f.make_access(location, objektleitung, objektleitung=True)
+    api_client.force_authenticate(user=admin)
+
+    body = _access(api_client, location)
+
+    assert notified.username not in _members_by_name(body)
+    assert objektleitung.username in _members_by_name(body)
+    assert notified_rule.id not in {rule["id"] for rule in body["access"]}
+    assert ol_rule.id in {rule["id"] for rule in body["access"]}
+
+
+def test_customers_cannot_change_or_delete_staff_rules(api_client, setup):
+    _account, location, admin = setup
+    staff = f.make_user(staff=True)
+    rule = f.make_access(location, staff)
+    api_client.force_authenticate(user=admin)
+    url = f"/v1/location/{location.id}/access/"
+
+    updated = api_client.post(url, {"id": rule.id, "transport": 0, "type": 0}, format="json")
+    created = api_client.post(url, {"user_id": staff.id, "transport": 0, "type": 0}, format="json")
+    deleted = api_client.post(f"{url}delete/", {"id": rule.id}, format="json")
+
+    assert updated.json()["reason"] == "Access rule not found"
+    assert created.json()["reason"] == "User not found"
+    assert deleted.json()["reason"] == "Access rule not found"
+    rule.refresh_from_db(using=f.DB)
+    assert (rule.transport, rule.type) == (1, 1)
+
+
+def test_customers_cannot_point_their_rule_at_a_staff_member(api_client, setup):
+    _account, location, admin = setup
+    customer = f.make_user(username=f.unique("customer"))
+    rule = f.make_access(location, customer)
+    staff = f.make_user(staff=True)
+    api_client.force_authenticate(user=admin)
+
+    response = api_client.post(
+        f"/v1/location/{location.id}/access/", {"id": rule.id, "user_id": staff.id, "transport": 1}, format="json"
+    )
+
+    assert response.status_code == 400
+    rule.refresh_from_db(using=f.DB)
+    assert rule.user_id == customer.id

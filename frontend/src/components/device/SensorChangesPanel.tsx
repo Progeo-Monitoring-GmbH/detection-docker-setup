@@ -47,7 +47,7 @@ const wpPercent = (change: SensorChange) => percentChange(change.wpThen, change.
 const epPercent = (change: SensorChange) => percentChange(change.epThen, change.epNow);
 
 /** The percentage, plus green and minus red; without an old value the absolute change as a hint. */
-const PercentCell = ({ percent, change }: { percent: number | null; change: number }) =>
+export const PercentCell = ({ percent, change }: { percent: number | null; change: number }) =>
   percent == null ? (
     <span style={{ color: MUTED }} title={`${change > 0 ? '+' : ''}${change.toFixed(2)}`}>
       –

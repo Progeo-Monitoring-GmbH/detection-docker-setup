@@ -18,9 +18,9 @@ import {
   viewHeatmapOf,
   viewPointsOf,
   worstSeverityOf,
-  zeitreiheSeriesOf,
   anlageStatusOf,
-  ZEITREIHE_ACTIVE_SENSORS,
+  formatMinutes,
+  nextMeasurementOf,
   zonePointsOf,
   type VerdachtsstelleCluster,
 } from './locationStatusData';
@@ -279,50 +279,6 @@ describe('sensorStatsOf / sensorRowsOf', () => {
   });
 });
 
-describe('zeitreiheSeriesOf', () => {
-  it('shows the most active sensors first, relative to their threshold', () => {
-    const zeitreihe = { timestamps: [0, 60], data: { '2': [1, 2], '1': [3, null] } };
-    const series = zeitreiheSeriesOf(zeitreihe, (id) => `S${id}`, (id) => id * 10);
-    // S1: 3 / 10 = 0.3x, S2: 1.5 / 20 = 0.075x.
-    expect(series.map((entry) => [entry.id, entry.label, entry.threshold, entry.muted])).toEqual([
-      ['sensor-1', 'S1', 10, false],
-      ['sensor-2', 'S2', 20, false],
-    ]);
-    expect(series[1].points[1]).toEqual({
-      id: '2:1',
-      triggered_at: new Date(60_000).toISOString(),
-      value: 2,
-    });
-    expect(zeitreiheSeriesOf(null, String, () => null)).toEqual([]);
-  });
-
-  it(`mutes all but the ${ZEITREIHE_ACTIVE_SENSORS} most active - and those above the threshold`, () => {
-    // Sensor n measures n (threshold 100); sensor 1 once goes above it.
-    const data = Object.fromEntries(
-      Array.from({ length: 10 }, (_, index) => {
-        const sensor = index + 1;
-        return [String(sensor), sensor === 1 ? [1, 150] : [sensor, sensor]];
-      }),
-    );
-    const series = zeitreiheSeriesOf({ timestamps: [0, 60], data }, String, () => 100);
-    const shown = series.filter((entry) => !entry.muted).map((entry) => entry.label);
-    // Sensor 1 (mean 75.5) is the most active as well as above the threshold.
-    expect(shown).toEqual(['1', '10', '9', '8', '7']);
-    expect(series.filter((entry) => entry.muted).map((entry) => entry.label)).toEqual(['2', '3', '4', '5', '6']);
-  });
-
-  it('shows every sensor above its threshold, also beyond the most active', () => {
-    const data = Object.fromEntries(
-      Array.from({ length: 8 }, (_, index) => [String(index + 1), [80, 80]]),
-    );
-    data['8'] = [0, 101]; // the lowest mean, but above 100
-    const series = zeitreiheSeriesOf({ timestamps: [0, 60], data }, String, () => 100);
-    const shown = series.filter((entry) => !entry.muted).map((entry) => entry.label);
-    expect(shown).toHaveLength(ZEITREIHE_ACTIVE_SENSORS + 1);
-    expect(shown).toContain('8');
-  });
-});
-
 describe('anlageStatusOf', () => {
   const now = Date.parse('2026-11-04T12:00:00Z');
 
@@ -330,6 +286,7 @@ describe('anlageStatusOf', () => {
     expect(anlageStatusOf({ last: '2026-11-03T12:30:00Z' }, false, now)).toEqual({
       state: 'online',
       last: Date.parse('2026-11-03T12:30:00Z'),
+      next: null,
     });
   });
 
@@ -338,7 +295,7 @@ describe('anlageStatusOf', () => {
   });
 
   it('is unknown without measurements or when the range failed, loading before', () => {
-    expect(anlageStatusOf({ last: null }, false, now)).toEqual({ state: 'unknown', last: null });
+    expect(anlageStatusOf({ last: null }, false, now)).toEqual({ state: 'unknown', last: null, next: null });
     expect(anlageStatusOf(null, true, now).state).toBe('unknown');
     expect(anlageStatusOf(null, false, now).state).toBe('loading');
   });
@@ -376,5 +333,35 @@ describe('worstSeverityOf / severityColor', () => {
     ).toBe('kritisch');
     expect(severityColor(null)).toBe('#3F7A1C');
     expect(severityColor('kritisch')).toBe('#C44D26');
+  });
+});
+
+describe('next measurement', () => {
+  const now = Date.parse('2026-11-04T12:00:00Z');
+
+  it('passes the expected next measurement through', () => {
+    expect(anlageStatusOf({ last: '2026-11-04T11:50:00Z', next: '2026-11-04T12:20:00Z' }, false, now).next).toBe(
+      Date.parse('2026-11-04T12:20:00Z'),
+    );
+  });
+
+  it('counts the minutes up to it, rounded up', () => {
+    expect(nextMeasurementOf(now + 90_000, now)).toEqual({ minutes: 2, overdue: false });
+    expect(nextMeasurementOf(now + 1_000, now)).toEqual({ minutes: 1, overdue: false });
+  });
+
+  it('counts the minutes since it is overdue, rounded down', () => {
+    expect(nextMeasurementOf(now - 150_000, now)).toEqual({ minutes: 2, overdue: true });
+    expect(nextMeasurementOf(now, now)).toEqual({ minutes: 0, overdue: true });
+  });
+
+  it('is null without an expected measurement', () => {
+    expect(nextMeasurementOf(null, now)).toBeNull();
+  });
+
+  it('formats whole minutes', () => {
+    expect(formatMinutes(2)).toBe('2 min');
+    expect(formatMinutes(80)).toBe('1 h 20 min');
+    expect(formatMinutes(120)).toBe('2 h');
   });
 });

@@ -14,12 +14,15 @@ import LabeledInput from '../components/ui/kit/LabeledInput';
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import type { PortalOutletContext } from './LocationPortalLayout';
 import { formatDate } from './dateFormat';
+import { staffFlags } from './access';
 
 type AccessRule = {
   id: number;
   user?: number | null;
   transport?: number | null;
   type?: number | null;
+  /** Assigned as Objektleitung (Einstellungen) - the only staff customers see. */
+  objektleitung?: boolean;
 };
 
 type UserContact = {
@@ -149,6 +152,9 @@ const LocationRechteTab = () => {
 
   const canEdit = hasPermission('module_notifications_edit');
   const canAdd = hasPermission('module_notifications_add');
+  // Staff set their own and other staff's notifications here; customers
+  // only ever see staff assigned as Objektleitung (read-only for them).
+  const viewerIsStaff = staffFlags(auth?.user).isStaffOrSuperuser;
 
   const [members, setMembers] = useState<Member[]>([]);
   const [candidates, setCandidates] = useState<UserContact[]>([]);
@@ -354,12 +360,14 @@ const LocationRechteTab = () => {
     };
     const type = member.rule?.type ?? 0;
     // Only single-access can be revoked here; account/staff access is
-    // broader than this object. Staff notification rules are their
-    // Objektleitung assignment (Einstellungen tab), so read-only here.
+    // broader than this object. A staff member's notifications only staff
+    // can change (customers see staff only as Objektleitung).
     const revokeLocked = member.access !== 'single';
     const isStaff = member.access === 'staff';
-    const canEditRule = canEdit && !isStaff;
-    const lockedHint = isStaff ? t('rechte_staff_hint') : t('rechte_account_revoke_hint');
+    const canEditRule = canEdit && (!isStaff || viewerIsStaff);
+    const lockedHint = isStaff
+      ? t(viewerIsStaff ? 'rechte_staff_hint_staff' : 'rechte_staff_hint')
+      : t('rechte_account_revoke_hint');
     return (
       <div
         key={member.user_id}
@@ -397,6 +405,9 @@ const LocationRechteTab = () => {
                 scope={member.access}
                 label={t(ACCESS_LABEL_KEYS[member.access])}
               />
+              {isStaff && member.rule?.objektleitung && (
+                <ScopeBadge scope="account" label={t('rechte_objektleitung')} />
+              )}
             </div>
             <div style={{ fontSize: 12, color: '#8B8383' }}>{member.email || '–'}</div>
           </div>

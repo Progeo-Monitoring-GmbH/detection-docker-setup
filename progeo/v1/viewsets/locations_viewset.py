@@ -20,7 +20,9 @@ from django.db.models import (
     F,
     Max,
     Min,
+    OuterRef,
     Q,
+    Subquery,
 )
 from django.db.models.functions import TruncDay
 from django.http import HttpResponse
@@ -84,6 +86,13 @@ from progeo.v1.serializers import (
 from progeo.v1.viewsets.alarm_viewset import MAX_HISTORY_DAYS
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.v1.viewsets.setup_viewset import _get_controller_account
+
+
+def _staff_user_ids(user_ids) -> set:
+    """The ids among `user_ids` of ProGeo staff - is_staff or is_superuser."""
+    return set(
+        User.objects.filter(Q(is_staff=True) | Q(is_superuser=True), pk__in=set(user_ids)).values_list("pk", flat=True)
+    )
 
 
 def _as_bool(value) -> bool:
@@ -157,18 +166,44 @@ def _rounded(value, digits=2):
     return round(value, digits) if value is not None else None
 
 
+def next_measurement_of(location, account, user):
+    """When the location's next measurement is expected: per device its
+    newest measurement plus its send interval (data_interval), the earliest
+    of them. None without a measured device with an interval. May lie in the
+    past (overdue)."""
+    db_name = location_db(location, account)
+    newest = (
+        ProgeoMeasurement.for_account(account, using=db_name, user=user)
+        .filter(device=OuterRef("pk"))
+        # pk is chronological - no index on last_fetched needed.
+        .order_by("-pk")
+        .values("last_fetched")[:1]
+    )
+    devices = (
+        ProgeoDevice.objects.using(db_name)
+        .filter(location=location, data_interval__gt=0)
+        .annotate(newest=Subquery(newest))
+        .values_list("newest", "data_interval")
+    )
+    expected = [newest + timedelta(seconds=interval) for newest, interval in devices if newest is not None]
+    return min(expected, default=None)
+
+
 def measurement_range_of(location, account, user):
-    """{"first", "last", "count"} of a location's measurements (measurement time)."""
+    """{"first", "last", "count", "next"} of a location's measurements
+    (measurement time); "next" is the expected next one (next_measurement_of)."""
     stats = (
         ProgeoMeasurement.for_account(account, using=location_db(location, account), user=user)
         .filter(device__location=location)
         .annotate(measured=MEASURED_TIME)
         .aggregate(first=Min("measured"), last=Max("measured"), count=Count("id"))
     )
+    upcoming = next_measurement_of(location, account, user) if stats["last"] else None
     return {
         "first": stats["first"].isoformat() if stats["first"] else None,
         "last": stats["last"].isoformat() if stats["last"] else None,
         "count": stats["count"],
+        "next": upcoming.isoformat() if upcoming else None,
     }
 
 
@@ -538,11 +573,14 @@ class LocationViewSet(ProgeoModalViewSet):
                 .select_related("user")
                 .order_by("id")
             )
+            if not is_staff:
+                # ProGeo staff are hidden from customers - except the staff
+                # assigned as Objektleitung (their contact for the object).
+                # A staff member's own notification rule stays staff-only.
+                staff_ids = _staff_user_ids({rule.user_id for rule in rows if rule.user_id})
+                rows = [rule for rule in rows if rule.user_id not in staff_ids or rule.objektleitung]
             if not manages:
-                rows = [
-                    rule for rule in rows
-                    if rule.user_id == viewer.pk or rule.objektleitung or (rule.user is not None and rule.user.is_staff)
-                ]
+                rows = [rule for rule in rows if rule.user_id == viewer.pk or rule.objektleitung]
             users = []
             if account and manages:
                 for user in account.users.all().order_by("username"):
@@ -563,8 +601,11 @@ class LocationViewSet(ProgeoModalViewSet):
             ] if is_staff else []
             members = self._access_members(location, account, rows, include_staff=include_staff)
             if not is_staff:
-                # Staff without a rule here are no contact of this location.
-                members = [member for member in members if member["access"] != "staff" or member["rule"]]
+                # Customers see only the staff assigned as Objektleitung.
+                members = [
+                    member for member in members
+                    if member["access"] != "staff" or (member["rule"] or {}).get("objektleitung")
+                ]
             if not manages:
                 members = [
                     member for member in members
@@ -609,9 +650,14 @@ class LocationViewSet(ProgeoModalViewSet):
             rule = ProgeoAccess.objects.using(db_name).filter(pk=access_id, location=location).first()
             if not rule:
                 return RequestFailed({"reason": "Access rule not found"})
+            # Staff rules are hidden from customers - and not theirs to change.
+            if not _is_staff_admin(request.user) and _staff_user_ids({rule.user_id, user_id or rule.user_id}):
+                return RequestFailed({"reason": "Access rule not found"})
         else:
             if not user_id:
                 return RequestFailed({"reason": "user_id required to create an access rule"})
+            if not _is_staff_admin(request.user) and _staff_user_ids({user_id}):
+                return RequestFailed({"reason": "User not found"})
             rule = (
                 ProgeoAccess.objects.using(db_name)
                 .filter(location=location, user_id=user_id)
@@ -730,8 +776,9 @@ class LocationViewSet(ProgeoModalViewSet):
             return True
         if ProgeoAccess.objects.using(location_db(location, account)).filter(location=location, user_id=user_id).exists():
             return True
-        # ProGeo staff (Objektleitung, Einstellungen tab) - assignable by staff only.
-        if _is_staff_admin(request.user) and User.objects.filter(pk=user_id, is_staff=True).exists():
+        # ProGeo staff and superusers (Objektleitung, their own notifications) -
+        # assignable by staff only.
+        if _is_staff_admin(request.user) and _staff_user_ids({user_id}):
             return True
         return user_id in {candidate["user_id"] for candidate in cls._access_candidates(request, set())}
 
@@ -783,7 +830,13 @@ class LocationViewSet(ProgeoModalViewSet):
             access_id = int(request.data.get("id"))
         except (TypeError, ValueError):
             return RequestFailed({"reason": "id required"})
-        deleted, _ = ProgeoAccess.objects.using(db_name).filter(pk=access_id, location=location).delete()
+        rules = ProgeoAccess.objects.using(db_name).filter(pk=access_id, location=location)
+        if not _is_staff_admin(request.user):
+            # Staff rules are hidden from customers - and not theirs to delete.
+            rule = rules.first()
+            if rule is not None and _staff_user_ids({rule.user_id}):
+                return RequestFailed({"reason": "Access rule not found"})
+        deleted, _ = rules.delete()
         if not deleted:
             return RequestFailed({"reason": "Access rule not found"})
         return RequestSuccess({"deleted": access_id})

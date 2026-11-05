@@ -184,3 +184,33 @@ def test_measurement_range_reports_the_data_span(api_client, climate_location):
     assert body["count"] == 3
     assert datetime.datetime.fromisoformat(body["first"]) == day - timedelta(hours=2)
     assert datetime.datetime.fromisoformat(body["last"]) > datetime.datetime.fromisoformat(body["first"])
+
+
+def test_measurement_range_expects_the_next_measurement_after_the_send_interval(api_client):
+    account = f.make_account()
+    location = f.make_location(account, project_id=4345)
+    now = timezone.now().replace(microsecond=0)
+    hourly = f.make_device(location, raw_hash=f.unique("hourly"), data_interval=3600)
+    quick = f.make_device(location, raw_hash=f.unique("quick"), data_interval=1800)
+    f.make_device(location, raw_hash=f.unique("silent"), data_interval=600)  # never measured
+    f.make_measurement(hourly, pairs=[1], fetched_at=now - timedelta(minutes=50))
+    f.make_measurement(quick, pairs=[1], fetched_at=now - timedelta(hours=3))
+    f.make_measurement(quick, pairs=[1], fetched_at=now - timedelta(minutes=10))
+    api_client.force_authenticate(user=f.make_user(perms=PERMS, accounts=[account]))
+
+    body = api_client.get(f"/v1/location/{location.id}/measurement-range/").json()
+
+    # hourly: 50 min ago + 60 min -> in 10 min; quick: 10 min ago + 30 min -> in 20 min.
+    # The earliest expected measurement counts.
+    assert datetime.datetime.fromisoformat(body["next"]) == now + timedelta(minutes=10)
+
+
+def test_measurement_range_has_no_next_measurement_without_measurements(api_client):
+    account = f.make_account()
+    location = f.make_location(account, project_id=4346)
+    f.make_device(location, raw_hash=f.unique("unused"))
+    api_client.force_authenticate(user=f.make_user(perms=PERMS, accounts=[account]))
+
+    body = api_client.get(f"/v1/location/{location.id}/measurement-range/").json()
+
+    assert (body["last"], body["next"]) == (None, None)

@@ -12,7 +12,6 @@ import type {
   SensorHeatmapPoint,
   SensorHeatmapResponse,
 } from '../components/device/sensorHeatmapTypes';
-import type { ThresholdTrendSeries } from '../components/device/ThresholdTrendChart';
 import type { Severity } from '../components/ui/kit/SeverityBadge';
 import type { AlarmState } from '../components/ui/kit/StateBadge';
 import type { MeasurementRange } from './timeRanges';
@@ -377,89 +376,53 @@ export type AnlageState = 'loading' | 'online' | 'offline' | 'unknown';
  * Whether the installation reports: online with a measurement in the last
  * ONLINE_WITHIN_MS, offline with an older one, unknown without any (or when
  * the newest measurement couldn't be loaded) - and that measurement's time
- * (epoch ms), if known.
+ * and the expected next one (epoch ms), if known.
  */
 export const anlageStatusOf = (
-  range: { last: string | null } | null,
+  range: { last: string | null; next?: string | null } | null,
   failed: boolean,
   now: number,
-): { state: AnlageState; last: number | null } => {
+): { state: AnlageState; last: number | null; next: number | null } => {
   if (!range) {
-    return { state: failed ? 'unknown' : 'loading', last: null };
+    return { state: failed ? 'unknown' : 'loading', last: null, next: null };
   }
   const last = range.last ? Date.parse(range.last) : Number.NaN;
   if (!Number.isFinite(last)) {
-    return { state: 'unknown', last: null };
+    return { state: 'unknown', last: null, next: null };
   }
-  return { state: now - last <= ONLINE_WITHIN_MS ? 'online' : 'offline', last };
+  const next = range.next ? Date.parse(range.next) : Number.NaN;
+  return {
+    state: now - last <= ONLINE_WITHIN_MS ? 'online' : 'offline',
+    last,
+    next: Number.isFinite(next) ? next : null,
+  };
 };
 
-/** How many of the most active sensors the Zeitreihe draws in colour -
- * besides every sensor above its threshold. */
-export const ZEITREIHE_ACTIVE_SENSORS = 5;
-
 /**
- * Every sensor's measured values in the Zeitreihe. In colour (first, most
- * active first): the ZEITREIHE_ACTIVE_SENSORS most active sensors - highest
- * mean value as a multiple of their threshold, as the chart plots them - and
- * every sensor above its threshold in the period. The others are muted
- * (drawn faintly, one legend entry "Weitere Sensoren"), in sensor order.
+ * Minutes until the expected next measurement (rounded up - "in 1 min" until
+ * it is due), or since it is overdue (rounded down). Minute precision.
  */
-export const zeitreiheSeriesOf = (
-  zeitreihe: Pick<SensorHeatmapResponse, 'timestamps' | 'data'> | null,
-  labelOf: (sensorId: number) => string,
-  thresholdOf: (sensorId: number) => number | null,
-): ThresholdTrendSeries[] => {
-  if (!zeitreihe) {
-    return [];
+export const nextMeasurementOf = (
+  next: number | null,
+  now: number,
+): { minutes: number; overdue: boolean } | null => {
+  if (next == null) {
+    return null;
   }
-  const sensors = Object.keys(zeitreihe.data)
-    .map(Number)
-    .sort((a, b) => a - b)
-    .map((sensorId) => {
-      const raw = zeitreihe.data[sensorId] || [];
-      const threshold = thresholdOf(sensorId);
-      const values = raw.flatMap((value) => {
-        const finite = finiteValue(value);
-        return finite == null ? [] : [finite];
-      });
-      // Relative to the threshold, as the chart draws them (1 without one).
-      const scale = threshold != null && threshold > 0 ? threshold : 1;
-      const activity = values.length
-        ? values.reduce((sum, value) => sum + Math.abs(value), 0) / values.length / scale
-        : 0;
-      return {
-        activity,
-        above: threshold != null && threshold > 0 && values.some((value) => value > threshold),
-        series: {
-          id: `sensor-${sensorId}`,
-          label: labelOf(sensorId),
-          threshold,
-          points: raw.map((value, index) => {
-            const timestamp = zeitreihe.timestamps[index];
-            return {
-              id: `${sensorId}:${index}`,
-              triggered_at: timestamp != null ? new Date(timestamp * 1000).toISOString() : null,
-              value,
-            };
-          }),
-        },
-      };
-    });
-  const mostActive = new Set(
-    [...sensors]
-      .filter((sensor) => sensor.activity > 0)
-      .sort((a, b) => b.activity - a.activity)
-      .slice(0, ZEITREIHE_ACTIVE_SENSORS),
-  );
-  const shown = sensors
-    .filter((sensor) => sensor.above || mostActive.has(sensor))
-    .sort((a, b) => b.activity - a.activity);
-  const muted = sensors.filter((sensor) => !shown.includes(sensor));
-  return [
-    ...shown.map((sensor) => ({ ...sensor.series, muted: false })),
-    ...muted.map((sensor) => ({ ...sensor.series, muted: true })),
-  ];
+  const ms = next - now;
+  return ms > 0
+    ? { minutes: Math.ceil(ms / 60_000), overdue: false }
+    : { minutes: Math.floor((now - next) / 60_000), overdue: true };
+};
+
+/** "25 min", "1 h 20 min", "2 h" - a duration in whole minutes. */
+export const formatMinutes = (minutes: number) => {
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (!hours) {
+    return `${rest} min`;
+  }
+  return rest ? `${hours} h ${rest} min` : `${hours} h`;
 };
 
 /** The Verdachtsstellen' latest alarm periods (until `now` while active),
