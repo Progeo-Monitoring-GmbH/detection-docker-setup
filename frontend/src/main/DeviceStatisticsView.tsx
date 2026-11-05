@@ -5,7 +5,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { Alert, Badge, Button, Spinner } from 'react-bootstrap';
+import { Alert, Badge, Button, ProgressBar, Spinner } from 'react-bootstrap';
 import { ArrowRepeat, PencilSquare } from 'react-bootstrap-icons';
 import DataTable, { type TableColumn } from 'react-data-table-component';
 import { useTranslation } from 'react-i18next';
@@ -27,6 +27,7 @@ import { formatDate, formatRelativeTime } from './dateFormat';
 import { plotTheme } from '../styles/plotTheme';
 import { staffFlags } from './access';
 import { getProjectTypeLabel } from './projectType';
+import { addCounts, mergeTypeCounts, runChunks } from './deviceStatisticsBuild';
 
 /** A row of GET /v1/status/device_statistics/ - devices.* and by_type values. */
 type StatisticsDevice = {
@@ -162,9 +163,9 @@ const normalizeSection = (raw: unknown): DeviceStatisticsSection => {
   };
 };
 
-/** The API section a tab needs; the by-type tab doubles as the overview. */
+/** The API section a tab needs (the overview - totals, type counts - comes with the build). */
 const REQUEST_SECTION: Record<StatsSection, StatisticsRequestSection> = {
-  by_type: 'overview',
+  by_type: 'by_type',
   chip_id: 'chip_id',
   measured: 'measured',
   lageplan: 'lageplan',
@@ -172,6 +173,20 @@ const REQUEST_SECTION: Record<StatsSection, StatisticsRequestSection> = {
   unused_locations: 'unused_locations',
   locations_missing_lageplan: 'locations_missing_lageplan',
   dead_locations: 'dead_locations',
+};
+
+const STATISTICS_URL = '/v1/status/device_statistics/';
+// Chunk requests at a time - each already queries its databases in parallel.
+const CHUNK_CONCURRENCY = 2;
+
+/** The chunked build while it runs: chunks/databases done, the counts so far. */
+type BuildProgress = {
+  chunks: number;
+  chunksDone: number;
+  databases: number;
+  databasesDone: number;
+  totals: StatisticsTotals;
+  byType: StatisticsTypeRow[];
 };
 
 const RED = '#B42318';
@@ -676,8 +691,103 @@ const DeviceStatisticsView = () => {
   const authRef = useRef(auth);
   authRef.current = auth;
 
+  // The running chunked build (null otherwise): progress and counts so far.
+  const [progress, setProgress] = useState<BuildProgress | null>(null);
+
+  const get = useCallback(
+    (query: string) =>
+      new Promise<Record<string, unknown>>((resolve, reject) => {
+        void axiosConfig.perform_get(
+          authRef.current,
+          `${STATISTICS_URL}?${query}`,
+          (response) => resolve((response?.data ?? {}) as Record<string, unknown>),
+          reject,
+        );
+      }),
+    [],
+  );
+
+  /**
+   * The overview: from the server's cached snapshot, else built chunk by
+   * chunk (a few project databases per request) - the KPI tiles and the
+   * charts fill up with every chunk, the lists follow when all are scanned.
+   */
+  const loadSnapshot = useCallback(
+    async (refresh = false) => {
+      if (!isStaff || inFlight.current) {
+        return;
+      }
+      inFlight.current = true;
+      const request = ++requestRef.current;
+      const stale = () => request !== requestRef.current;
+      setLoading(true);
+      setError(null);
+      setProgress(null);
+      try {
+        const plan = await get(`plan=1${refresh ? '&refresh=1' : ''}`);
+        if (stale()) {
+          return;
+        }
+        if (plan.cached) {
+          setSections({ overview: normalizeSection(plan) });
+          return;
+        }
+        const build = String(plan.build);
+        const chunks = Number(plan.chunks) || 0;
+        setProgress({
+          chunks,
+          chunksDone: 0,
+          databases: Number(plan.databases) || 0,
+          databasesDone: 0,
+          totals: EMPTY_TOTALS,
+          byType: [],
+        });
+        await runChunks(
+          chunks,
+          CHUNK_CONCURRENCY,
+          async (index) => {
+            const chunk = await get(`build=${build}&chunk=${index}`);
+            if (stale()) {
+              return;
+            }
+            setProgress(
+              (current) =>
+                current && {
+                  ...current,
+                  chunksDone: current.chunksDone + 1,
+                  databasesDone: current.databasesDone + (Number(chunk.databases) || 0),
+                  totals: addCounts(current.totals, (chunk.totals ?? {}) as Partial<StatisticsTotals>),
+                  byType: mergeTypeCounts(current.byType, (chunk.by_type ?? []) as StatisticsTypeRow[]),
+                },
+            );
+          },
+          stale,
+        );
+        if (stale()) {
+          return;
+        }
+        const overview = await get(`build=${build}&finish=1`);
+        if (!stale()) {
+          setSections({ overview: normalizeSection(overview) });
+        }
+      } catch (requestError) {
+        if (!stale()) {
+          setError(errorReason(requestError) || 'Unknown error');
+        }
+      } finally {
+        if (!stale()) {
+          inFlight.current = false;
+          setLoading(false);
+          setProgress(null);
+        }
+      }
+    },
+    [isStaff, get],
+  );
+
+  /** One tab's lists - from the cached snapshot; expired: build it again. */
   const loadSection = useCallback(
-    (key: StatisticsRequestSection, refresh = false) => {
+    async (key: StatisticsRequestSection) => {
       if (!isStaff || inFlight.current) {
         return;
       }
@@ -685,57 +795,63 @@ const DeviceStatisticsView = () => {
       const request = ++requestRef.current;
       setLoading(true);
       setError(null);
-      void axiosConfig.perform_get(
-        authRef.current,
-        `/v1/status/device_statistics/?section=${key}${refresh ? '&refresh=1' : ''}`,
-        (response) => {
-          if (request !== requestRef.current) {
-            return;
-          }
-          const data = normalizeSection(response?.data);
-          setSections((current) => ({ ...current, [key]: data }));
-          inFlight.current = false;
-          setLoading(false);
-        },
-        (requestError) => {
-          if (request !== requestRef.current) {
-            return;
-          }
+      let expired = false;
+      try {
+        const data = await get(`section=${key}&cached_only=1`);
+        if (request !== requestRef.current) {
+          return;
+        }
+        if (data.missing) {
+          expired = true;
+        } else {
+          setSections((current) => ({ ...current, [key]: normalizeSection(data) }));
+        }
+      } catch (requestError) {
+        if (request === requestRef.current) {
           setError(errorReason(requestError) || 'Unknown error');
+        }
+      } finally {
+        if (request === requestRef.current) {
           inFlight.current = false;
           setLoading(false);
-        },
-      );
+        }
+      }
+      if (expired) {
+        // The snapshot expired on the server: rebuild it (with progress);
+        // the tab effect then asks for this section again.
+        setSections({});
+        void loadSnapshot(false);
+      }
     },
-    [isStaff],
+    [isStaff, get, loadSnapshot],
   );
 
   useEffect(() => {
     if (!isStaff) {
       return;
     }
-    // The shell is already on screen; this is the first (warming) section.
-    loadSection('overview');
+    // The shell is already on screen; this builds (or reuses) the snapshot.
+    void loadSnapshot(false);
     // Once per staff state / auth context.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isStaff, loadSection]);
+  }, [isStaff, loadSnapshot]);
 
   const requestKey = REQUEST_SECTION[section];
   const hasCurrent = Boolean(sections[requestKey]);
 
-  // Every tab request waits until the overview (which warms the server cache)
-  // is there, so switching tabs early cannot start two expensive scans.
+  // Every tab request waits until the overview (the snapshot is built) is
+  // there, so switching tabs early cannot start two expensive scans.
   useEffect(() => {
     if (!isStaff || !sections.overview || hasCurrent) {
       return;
     }
-    loadSection(requestKey);
+    void loadSection(requestKey);
     // Runs when the overview arrives or the tab changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isStaff, sections.overview, hasCurrent, requestKey, loadSection]);
 
   useEffect(() => {
-    if (!isStaff || !scrollToType || section !== 'by_type' || !sections.overview) {
+    if (!isStaff || !scrollToType || section !== 'by_type' || !sections.by_type) {
       return;
     }
     document
@@ -744,7 +860,7 @@ const DeviceStatisticsView = () => {
     setScrollToType(null);
     // Scroll once, when the target table is actually rendered.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isStaff, scrollToType, section, sections.overview]);
+  }, [isStaff, scrollToType, section, sections.by_type]);
 
   if (!isStaff) {
     return (
@@ -783,11 +899,11 @@ const DeviceStatisticsView = () => {
     if (loading || inFlight.current || deleting) {
       return;
     }
-    // The overview rebuilds (and re-caches) the full snapshot; the tab effect
-    // then fetches the current section from that fresh cache.
+    // A new chunked build replaces the cached snapshot; the tab effect then
+    // fetches the current section from it.
     clearSelection();
     setSections({});
-    loadSection('overview', true);
+    void loadSnapshot(true);
   };
 
   const selectionHandler =
@@ -848,7 +964,7 @@ const DeviceStatisticsView = () => {
         }
         // Drop the cached snapshot and reload the current tab.
         setSections({});
-        loadSection('overview', true);
+        void loadSnapshot(true);
       },
       (requestError) => {
         setDeleting(false);
@@ -863,10 +979,13 @@ const DeviceStatisticsView = () => {
 
   const current = sections[requestKey] ?? null;
   const overview = sections.overview ?? null;
-  const totals = current?.totals ?? overview?.totals ?? EMPTY_TOTALS;
-  const hasTotals = current != null || overview != null;
+  // While a build runs: the counts of the chunks scanned so far.
+  const live = progress && progress.chunksDone > 0 ? progress : null;
+  const totals = current?.totals ?? overview?.totals ?? live?.totals ?? EMPTY_TOTALS;
+  const hasTotals = current != null || overview != null || live != null;
   const generatedAt = current?.generated_at ?? overview?.generated_at ?? null;
-  const typeRows = overview?.by_type ?? [];
+  const typeRows = overview?.by_type ?? live?.byType ?? [];
+  const hasCounts = overview != null || live != null;
 
   const header = (
     <PanelCard
@@ -909,6 +1028,32 @@ const DeviceStatisticsView = () => {
       <div className="small" style={{ color: MUTED }}>
         {t('device_stats_hint')}
       </div>
+      {progress && (
+        <div className="mt-2" aria-live="polite">
+          <div className="d-flex justify-content-between small mb-1" style={{ color: MUTED }}>
+            <span>
+              {t('device_stats_scanning', {
+                done: progress.databasesDone,
+                total: progress.databases,
+              })}
+            </span>
+            <span>
+              {progress.databases ? Math.round((progress.databasesDone / progress.databases) * 100) : 0} %
+            </span>
+          </div>
+          <ProgressBar
+            now={progress.databasesDone}
+            max={Math.max(progress.databases, 1)}
+            animated={progress.databasesDone < progress.databases}
+            style={{ height: 6 }}
+          />
+          {progress.chunksDone === progress.chunks && (
+            <div className="small mt-1" style={{ color: MUTED }}>
+              {t('device_stats_merging')}
+            </div>
+          )}
+        </div>
+      )}
       {error && (
         <Alert variant="danger" className="mt-2 mb-0">
           {t('device_stats_load_failed')}: {error}
@@ -944,7 +1089,7 @@ const DeviceStatisticsView = () => {
     .map((row) => ({
       type: row.type,
       label: typeLabel(row.type),
-      rows: overview?.devices.by_type[row.type] ?? [],
+      rows: sections.by_type?.devices.by_type[row.type] ?? [],
     }))
     .filter((group) => group.rows.length > 0);
 
@@ -977,7 +1122,17 @@ const DeviceStatisticsView = () => {
 
   const renderSection = () => {
     if (!current) {
-      // The overview warms the cache; its arrival immediately starts the
+      // The lists are sorted and capped over all databases - they come once
+      // the build is through.
+      if (progress) {
+        return (
+          <div className="d-flex align-items-center gap-2 text-muted py-3">
+            <Spinner animation="border" size="sm" />
+            {t('device_stats_lists_after_scan')}
+          </div>
+        );
+      }
+      // The overview arrives first; its arrival immediately starts the
       // current tab, so show the spinner instead of a one-frame empty state.
       if (loading || (!error && sections.overview)) {
         return waiting;
@@ -1183,7 +1338,7 @@ const DeviceStatisticsView = () => {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 14 }}>
         <PanelCard title={t('device_stats_by_type_title')}>
-          {!overview ? (
+          {!hasCounts ? (
             loading ? waiting : <div className="small text-muted py-2">{t('device_stats_empty')}</div>
           ) : (
             <DonutChart
@@ -1196,7 +1351,7 @@ const DeviceStatisticsView = () => {
           )}
         </PanelCard>
         <PanelCard title={t('device_stats_status_title')}>
-          {!overview ? (
+          {!hasCounts ? (
             loading ? waiting : <div className="small text-muted py-2">{t('device_stats_empty')}</div>
           ) : (
             <DonutChart

@@ -25,8 +25,12 @@ Definitions
 - ``missing_lageplan``: the location has no active (``is_active=True``)
   ``ProgeoLageplan``.
 """
+import math
+import re
+import secrets
 from collections import Counter
-from datetime import timedelta
+from datetime import datetime, timedelta
+from types import SimpleNamespace
 
 from django.core.cache import cache
 from django.db.models import Exists, OuterRef, Subquery
@@ -58,7 +62,12 @@ UNKNOWN_TYPE = "unknown"
 # The full inventory is expensive on servers with many project databases. It
 # is built once per account set and reused by the per-section requests, so a
 # page with several tabs scans the databases only once.
-CACHE_SECONDS = 180
+CACHE_SECONDS = 900
+# The page builds the snapshot in chunks of this many project databases (one
+# short request each, with progress) instead of one request scanning them all.
+CHUNK_DATABASES = 40
+# How long a started chunked build (its plan and finished chunks) is kept.
+BUILD_SECONDS = 900
 CACHE_PREFIX = "progeo:device-statistics:"
 # The sections the frontend requests one by one (the first also warms the
 # cache for all following ones, which are then served from it).
@@ -205,14 +214,10 @@ def _capped(rows):
     return rows[:MAX_LIST_ROWS], len(rows) > MAX_LIST_ROWS
 
 
-def build_device_statistics(accounts, now=None):
-    """The device-statistics payload for ``accounts`` (see module docstring)."""
-    now = now or timezone.now()
-    location_groups = _collect_locations(accounts)
-
+def _scan_databases(location_groups, databases, now):
+    """(device rows, location rows) of these databases - unsorted, uncapped."""
     device_rows = []
     location_rows = []
-    databases = list(location_groups)
     # ~1000 project databases: query them in parallel (PROJECT_DB_WORKERS)
     # instead of one round trip after the other - the main cost of the page.
     rows_by_database = map_databases(
@@ -248,13 +253,14 @@ def build_device_statistics(accounts, now=None):
                 )
             )
 
-    device_rows.sort(key=lambda row: (row["location_id"], row["id"]))
-    location_rows.sort(key=lambda row: ((row["name"] or "").casefold(), row["id"]))
+    return device_rows, location_rows
 
-    # By project type (PROJECT_TYPE_CHOICES): "1" -> "smartex® dm".
+
+def _by_type(device_rows):
+    """Device counts by project type (PROJECT_TYPE_CHOICES): "1" -> "smartex® dm"."""
     type_labels = {str(value): label for value, label in ProgeoLocation.PROJECT_TYPE_CHOICES.choices}
     by_type_counts = Counter(row["project_type"] for row in device_rows)
-    by_type = [
+    return [
         {
             "type": type_key,
             "label": type_labels.get(type_key, type_key),
@@ -262,6 +268,28 @@ def build_device_statistics(accounts, now=None):
         }
         for type_key, count in sorted(by_type_counts.items(), key=lambda item: (-item[1], item[0]))
     ]
+
+
+def _totals(device_rows, location_rows):
+    """The KPI counts - sums, so the chunks' counts add up to the snapshot's."""
+    return {
+        "devices": len(device_rows),
+        "locations": len(location_rows),
+        "with_chip_id": sum(1 for row in device_rows if row["chip_id"]),
+        "without_chip_id": sum(1 for row in device_rows if not row["chip_id"]),
+        "measured_24h": sum(1 for row in device_rows if row["measured_24h"]),
+        "not_measured_24h": sum(1 for row in device_rows if not row["measured_24h"]),
+        "missing_lageplan": sum(1 for row in device_rows if row["missing_lageplan"]),
+        "dead": sum(1 for row in device_rows if row["dead"]),
+        "unused_locations": sum(1 for row in location_rows if row["unused"]),
+        "locations_missing_lageplan": sum(1 for row in location_rows if not row["has_lageplan"]),
+    }
+
+
+def _aggregate(device_rows, location_rows, now):
+    """The payload of all scanned rows: sorted, split into the lists, capped."""
+    device_rows = sorted(device_rows, key=lambda row: (row["location_id"], row["id"]))
+    location_rows = sorted(location_rows, key=lambda row: ((row["name"] or "").casefold(), row["id"]))
 
     rows_by_type = {}
     for row in device_rows:
@@ -302,25 +330,22 @@ def build_device_statistics(accounts, now=None):
 
     payload = {
         "generated_at": now.isoformat(),
-        "totals": {
-            "devices": len(device_rows),
-            "locations": len(location_rows),
-            "with_chip_id": sum(1 for row in device_rows if row["chip_id"]),
-            "without_chip_id": sum(1 for row in device_rows if not row["chip_id"]),
-            "measured_24h": sum(1 for row in device_rows if row["measured_24h"]),
-            "not_measured_24h": sum(1 for row in device_rows if not row["measured_24h"]),
-            "missing_lageplan": sum(1 for row in device_rows if row["missing_lageplan"]),
-            "dead": sum(1 for row in device_rows if row["dead"]),
-            "unused_locations": len(unused_locations),
-            "locations_missing_lageplan": len(locations_missing_lageplan),
-        },
-        "by_type": by_type,
+        "totals": _totals(device_rows, location_rows),
+        "by_type": _by_type(device_rows),
         "devices": devices,
         "locations": locations,
     }
     if truncated:
         payload["truncated"] = True
     return payload
+
+
+def build_device_statistics(accounts, now=None):
+    """The device-statistics payload for ``accounts`` (see module docstring)."""
+    now = now or timezone.now()
+    location_groups = _collect_locations(accounts)
+    device_rows, location_rows = _scan_databases(location_groups, list(location_groups), now)
+    return _aggregate(device_rows, location_rows, now)
 
 
 def _cache_key(accounts) -> str:
@@ -365,6 +390,140 @@ def statistics_snapshot(accounts, refresh=False):
         cache.set(key, payload, CACHE_SECONDS)
     except Exception:  # noqa: BLE001 - cache unavailable: still answer
         pass
+    return payload
+
+
+def cached_snapshot(accounts):
+    """The cached payload, None without one (or without a cache)."""
+    try:
+        return cache.get(_cache_key(accounts)) or None
+    except Exception:  # noqa: BLE001 - cache unavailable: nothing cached
+        return None
+
+
+# -- chunked build -----------------------------------------------------------
+# The page scans the project databases in chunks - one short request each -
+# and shows the progress (and the counts so far) instead of waiting for one
+# request that scans them all:
+#   start_build     -> the plan: which databases, in how many chunks
+#   build_chunk(k)  -> scans chunk k, keeps its rows; answers its counts
+#   finish_build    -> merges the chunks into the cached snapshot
+# The sections are then served from that snapshot as before.
+
+BUILD_ID = re.compile(r"[0-9a-f]{16}")
+
+
+class BuildMissing(LookupError):
+    """The build (or one of its chunks) is unknown or expired."""
+
+
+class InvalidChunk(ValueError):
+    """A chunk index outside the build's chunks."""
+
+
+def _build_key(accounts, build, suffix="plan"):
+    return f"{_cache_key(accounts)}:build:{build}:{suffix}"
+
+
+def start_build(accounts, chunk_size=None):
+    """Plan a chunked build of the accounts' snapshot (one cheap query per
+    account database): {"build", "databases", "chunks", "chunk_size"}."""
+    chunk_size = chunk_size or CHUNK_DATABASES
+    now = timezone.now()
+    location_groups = _collect_locations(accounts)
+    databases = list(location_groups)
+    build = secrets.token_hex(8)
+    plan = {
+        "now": now.isoformat(),
+        "chunk_size": chunk_size,
+        "databases": databases,
+        # Only what the rows need - the plan lives in the cache.
+        "locations": {
+            database: [
+                {
+                    "id": location.pk,
+                    "name": location.name,
+                    "project_id": location.project_id,
+                    "project_type": location.project_type,
+                }
+                for location in group.values()
+            ]
+            for database, group in location_groups.items()
+        },
+    }
+    cache.set(_build_key(accounts, build), plan, BUILD_SECONDS)
+    return {
+        "build": build,
+        "databases": len(databases),
+        "chunks": math.ceil(len(databases) / chunk_size),
+        "chunk_size": chunk_size,
+    }
+
+
+def _plan(accounts, build):
+    # The id comes from the request and ends up in a cache key.
+    plan = cache.get(_build_key(accounts, build)) if BUILD_ID.fullmatch(build or "") else None
+    if not plan:
+        raise BuildMissing("Unknown or expired build - start again")
+    return plan
+
+
+def _chunk_count(plan):
+    return math.ceil(len(plan["databases"]) / plan["chunk_size"])
+
+
+def build_chunk(accounts, build, index):
+    """Scan chunk `index` of the build and keep its rows: answers the
+    chunk's counts (totals, by_type) - the page adds them up as they come."""
+    plan = _plan(accounts, build)
+    chunks = _chunk_count(plan)
+    if not 0 <= index < chunks:
+        raise InvalidChunk(f"Invalid chunk: {index} (the build has {chunks})")
+    size = plan["chunk_size"]
+    databases = plan["databases"][index * size:(index + 1) * size]
+    location_groups = {
+        database: {
+            row["id"]: SimpleNamespace(pk=row["id"], **{key: value for key, value in row.items() if key != "id"})
+            for row in plan["locations"][database]
+        }
+        for database in databases
+    }
+    now = datetime.fromisoformat(plan["now"])
+    device_rows, location_rows = _scan_databases(location_groups, databases, now)
+    cache.set(
+        _build_key(accounts, build, f"chunk:{index}"),
+        {"devices": device_rows, "locations": location_rows},
+        BUILD_SECONDS,
+    )
+    return {
+        "chunk": index,
+        "chunks": chunks,
+        "databases": len(databases),
+        "totals": _totals(device_rows, location_rows),
+        "by_type": _by_type(device_rows),
+    }
+
+
+def finish_build(accounts, build):
+    """Merge the build's chunks into the cached snapshot and return it.
+    Raises BuildMissing while a chunk is missing (not scanned, expired)."""
+    plan = _plan(accounts, build)
+    keys = [_build_key(accounts, build, f"chunk:{index}") for index in range(_chunk_count(plan))]
+    stored = cache.get_many(keys) if keys else {}
+    missing = [index for index, key in enumerate(keys) if key not in stored]
+    if missing:
+        raise BuildMissing(f"Chunks not scanned yet: {missing[:10]}")
+    device_rows = [row for key in keys for row in stored[key]["devices"]]
+    location_rows = [row for key in keys for row in stored[key]["locations"]]
+    payload = _aggregate(device_rows, location_rows, datetime.fromisoformat(plan["now"]))
+    try:
+        cache.set(_cache_key(accounts), payload, CACHE_SECONDS)
+        cache.delete_many([*keys, _build_key(accounts, build)])
+    except Exception as exc:  # noqa: BLE001 - cache unavailable: still answer
+        from progeo.helper.basics import elog
+
+        # The tabs then build their section in one go (statistics_snapshot).
+        elog(f"[device_statistics] could not cache the merged snapshot: {exc}")
     return payload
 
 

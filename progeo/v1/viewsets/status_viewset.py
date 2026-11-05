@@ -23,7 +23,13 @@ from progeo.helper.basics import RequestFailed, RequestSuccess, ilog, save_check
 from progeo.helper.creator import create_MfS_log
 from progeo.helper.device_inventory import (
     SECTION_NAMES,
+    BuildMissing,
+    InvalidChunk,
+    build_chunk,
+    cached_snapshot,
+    finish_build,
     invalidate_statistics,
+    start_build,
     statistics_base,
     statistics_section,
     statistics_snapshot,
@@ -905,26 +911,60 @@ class StatusViewSet(ProgeoModalViewSet):
         locations (helper/device_inventory.py): per type, chip_id, measurement
         in the last 24h, missing Lageplan, dead/unused.
 
-        Without `section` this returns only the page shell (no database work).
-        The frontend then requests the sections one by one (`?section=...`);
-        the first builds the full snapshot, the rest hit its short cache.
-        `refresh=1` rebuilds the snapshot.
+        Without parameters this returns only the page shell (no database work).
+
+        The page builds the snapshot in chunks, with progress:
+        `plan=1` answers the cached overview (`cached`) or plans a build
+        (`build`, `chunks`); `build=<id>&chunk=<k>` scans chunk k and answers
+        its counts; `build=<id>&finish=1` merges the chunks into the cached
+        snapshot and answers its overview. `refresh=1` (with `plan`) ignores
+        the cached snapshot.
+
+        `section=...` answers one section of the snapshot - with
+        `cached_only=1` {"missing": true} instead of building it in this
+        request when it expired; without, it is built here in one go.
         """
         if not is_staff_admin(request.user):
             return RequestFailed({"reason": "Staff access required"})
-        section = (request.query_params.get("section") or "").strip()
-        if not section:
+        params = request.query_params
+
+        def flag(name):
+            return (params.get(name) or "").strip().lower() in {"1", "true", "yes", "on"}
+
+        section = (params.get("section") or "").strip()
+        build = (params.get("build") or "").strip()
+        if not section and not build and not flag("plan"):
             return RequestSuccess(statistics_base())
-        if section not in SECTION_NAMES:
+        if section and section not in SECTION_NAMES:
             return RequestFailed({"reason": f"Unknown section: {section}"})
         accounts = [account for account in _request_accounts(request) if account]
-        refresh = (request.query_params.get("refresh") or "").strip().lower() in {
-            "1",
-            "true",
-            "yes",
-            "on",
-        }
-        payload = statistics_snapshot(accounts, refresh=refresh)
+
+        if flag("plan"):
+            cached = None if flag("refresh") else cached_snapshot(accounts)
+            if cached:
+                return RequestSuccess({"cached": True, **statistics_section(cached, "overview")})
+            return RequestSuccess({"cached": False, **start_build(accounts)})
+        if build:
+            try:
+                if flag("finish"):
+                    return RequestSuccess(statistics_section(finish_build(accounts, build), "overview"))
+                try:
+                    chunk = int(params.get("chunk", ""))
+                except ValueError:
+                    return RequestFailed({"reason": "Invalid chunk"})
+                return RequestSuccess(build_chunk(accounts, build, chunk))
+            except BuildMissing as exc:
+                # The page then starts a new build.
+                return RequestFailed({"reason": str(exc), "build_missing": True})
+            except InvalidChunk as exc:
+                return RequestFailed({"reason": str(exc)})
+
+        if flag("cached_only"):
+            cached = cached_snapshot(accounts)
+            if not cached:
+                return RequestSuccess({"missing": True})
+            return RequestSuccess(statistics_section(cached, section))
+        payload = statistics_snapshot(accounts, refresh=flag("refresh"))
         return RequestSuccess(statistics_section(payload, section))
 
     @calc_runtime

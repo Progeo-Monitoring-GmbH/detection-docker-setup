@@ -228,3 +228,117 @@ def test_bulk_delete_is_staff_only(api_client, world):
 
     assert response.status_code == 400
     assert response.json()["reason"] == "Staff access required"
+
+
+# -- chunked build (the page's progress) -------------------------------------------
+
+@pytest.fixture
+def two_databases(world, monkeypatch):
+    """The two locations as if in two project databases: "default" and
+    "unit_tests" share one connection in the tests (conftest), so each chunk
+    of one database really scans its location's rows."""
+    from progeo.helper import device_inventory
+
+    groups = {
+        "default": {world["with_plan"].pk: world["with_plan"]},
+        "unit_tests": {world["without_plan"].pk: world["without_plan"]},
+    }
+    monkeypatch.setattr(device_inventory, "_collect_locations", lambda accounts: groups)
+    monkeypatch.setattr(device_inventory, "CHUNK_DATABASES", 1)
+    return world
+
+
+def _call(api_client, **params):
+    response = api_client.get(URL, params)
+    return response.status_code, response.json()
+
+
+def _chunked(api_client, refresh=True):
+    """Plan, scan every chunk, finish - as the page does."""
+    status, plan = _call(api_client, plan=1, **({"refresh": 1} if refresh else {}))
+    assert status == 200 and plan["cached"] is False
+    chunks = [_call(api_client, build=plan["build"], chunk=index)[1] for index in range(plan["chunks"])]
+    status, overview = _call(api_client, build=plan["build"], finish=1)
+    assert status == 200
+    return plan, chunks, overview
+
+
+def test_chunked_build_adds_up_to_the_one_shot_snapshot(api_client, two_databases):
+    from progeo.helper.device_inventory import build_device_statistics
+
+    api_client.force_authenticate(user=f.make_user(staff=True))
+    plan, chunks, overview = _chunked(api_client)
+
+    assert (plan["databases"], plan["chunks"]) == (2, 2)
+    # The chunks' counts are what the page sums up while it waits.
+    assert [chunk["totals"]["devices"] for chunk in chunks] == [2, 1]
+    summed = {key: sum(chunk["totals"][key] for chunk in chunks) for key in chunks[0]["totals"]}
+    one_shot = build_device_statistics([Account.objects.using(f.DB).get(pk=1)])
+    assert summed == overview["totals"] == one_shot["totals"]
+    assert overview["by_type"] == one_shot["by_type"]
+    # The merged snapshot is cached: the sections are served from it.
+    status, dead = _call(api_client, section="dead", cached_only=1)
+    assert status == 200
+    assert {row["id"] for row in dead["devices"]["dead"]} == {two_databases["old"].id, two_databases["never"].id}
+
+
+def test_a_fresh_snapshot_skips_the_build(api_client, two_databases):
+    api_client.force_authenticate(user=f.make_user(staff=True))
+    _chunked(api_client)
+
+    status, body = _call(api_client, plan=1)
+
+    assert status == 200 and body["cached"] is True
+    assert body["totals"]["devices"] == 3
+    assert "build" not in body
+
+
+def test_cached_only_reports_a_missing_snapshot_instead_of_building(api_client, world):
+    from progeo.helper.device_inventory import invalidate_statistics
+
+    invalidate_statistics([Account.objects.using(f.DB).get(pk=1)])
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    status, body = _call(api_client, section="dead", cached_only=1)
+
+    assert (status, body["missing"]) == (200, True)
+    assert "devices" not in body and "totals" not in body
+
+
+def test_finish_needs_every_chunk(api_client, two_databases):
+    api_client.force_authenticate(user=f.make_user(staff=True))
+    _status, plan = _call(api_client, plan=1, refresh=1)
+    _call(api_client, build=plan["build"], chunk=0)
+
+    status, body = _call(api_client, build=plan["build"], finish=1)
+
+    assert status == 400 and body["build_missing"] is True
+    assert "[1]" in body["reason"]
+
+
+@pytest.mark.parametrize("build, chunk, reason", [
+    ("0123456789abcdef", 0, "Unknown or expired build - start again"),
+    ("../../not-an-id", 0, "Unknown or expired build - start again"),
+])
+def test_unknown_builds_are_refused(api_client, world, build, chunk, reason):
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    status, body = _call(api_client, build=build, chunk=chunk)
+
+    assert (status, body["reason"], body["build_missing"]) == (400, reason, True)
+
+
+def test_chunk_index_outside_the_build_is_refused(api_client, two_databases):
+    api_client.force_authenticate(user=f.make_user(staff=True))
+    _status, plan = _call(api_client, plan=1, refresh=1)
+
+    assert _call(api_client, build=plan["build"], chunk=2)[1]["reason"] == "Invalid chunk: 2 (the build has 2)"
+    assert _call(api_client, build=plan["build"], chunk="x")[1]["reason"] == "Invalid chunk"
+
+
+def test_chunked_build_is_staff_only(api_client, world):
+    api_client.force_authenticate(user=f.make_user(perms=("module_devices_enabled",)))
+
+    status, body = _call(api_client, plan=1)
+
+    assert (status, body["reason"]) == (400, "Staff access required")
