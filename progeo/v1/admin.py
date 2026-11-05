@@ -30,6 +30,7 @@ from progeo.v1.models import (
     ProgeoLocation,
     ProgeoMeasurement,
     ProgeoMeasurePoint,
+    ProgeoNoiseProfile,
     UserModulePermissions,
 )
 
@@ -135,6 +136,27 @@ class DemoSessionAdmin(admin.ModelAdmin):
     )
     list_filter = ("token",)
     readonly_fields = [field.name for field in DemoSession._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+class ProgeoNoiseProfileAdmin(MultiDBModelAdmin):
+    """Störungsprofile - read only: they are edited and switched on the
+    Analyse tab, which also refreshes the cached active masks
+    (helper/noise_profiles.changed)."""
+    list_display = ("name", "device", "is_active", "activated_at", "sum_e", "sum_w", "source_count", "created_by")
+    list_filter = ("is_active",)
+    search_fields = ("name", "device__raw_hash")
+    fields = (
+        "device", "name", "is_active", "activated_at", "sum_e", "sum_w", "source_from", "source_to",
+        "source_count", "created", "updated", "created_by", "mask_e", "mask_w",
+    )
+    readonly_fields = fields
+    ordering = ("-pk",)
 
     def has_add_permission(self, request):
         return False
@@ -336,6 +358,7 @@ register_models = [
     {"model": ProgeoLocation, "admin": ProgeoLocationAdmin, "custom": True},
     {"model": ProgeoDevice, "admin": ProgeoDeviceAdmin, "custom": True},
     {"model": ProgeoDeviceCommand, "admin": ProgeoDeviceCommandAdmin, "custom": True},
+    {"model": ProgeoNoiseProfile, "admin": ProgeoNoiseProfileAdmin, "custom": True},
     {"model": ProgeoMeasurement, "admin": ProgeoMeasurementAdmin, "custom": True},
     {"model": ProgeoMeasurePoint, "admin": ProgeoMeasurePointAdmin, "custom": True},
     {"model": ProgeoLageplan, "admin": ProgeoLageplanAdmin, "custom": True},

@@ -102,6 +102,11 @@ type MeasurementSamplesCompareChartProps = {
   threshold?: number | null;
   /** Sensors (pair index) with an own threshold: the threshold area spans ±it there. */
   sensorThresholds?: ReadonlyMap<number, number> | null;
+  /** Controls in a row above the first plot's legend, on the right (the
+   * Analyse tab's Störungsprofil). */
+  upperControls?: React.ReactNode;
+  /** A Störungsprofil's masks (per sensor) as dashed EP / WP lines on the first plot. */
+  maskLines?: { ep: number[]; wp: number[] } | null;
 };
 
 const THRESHOLD_BAND_COLOR = 'rgba(44, 160, 44, 0.13)';
@@ -153,6 +158,8 @@ const SENSORS_AXIS_PX = 64;
 const SUM_PX = 120;
 /** The controls' height before they are measured (one row). */
 const TOOLBAR_PX = 34;
+/** The same for the controls above the first plot's legend. */
+const UPPER_CONTROLS_PX = 40;
 
 type PlotGeometry = {
   /** The whole figure's height (px). */
@@ -379,6 +386,8 @@ const MeasurementSamplesCompareChart = (
     isLoadingSensorHistory = false,
     threshold = null,
     sensorThresholds = null,
+    upperControls = null,
+    maskLines = null,
   } = props;
   const { t } = useTranslation();
   const currentYear = new Date().getFullYear();
@@ -618,7 +627,26 @@ const MeasurementSamplesCompareChart = (
   // The third plot's quantity: the sensor sum or the sensor average.
   const [sumMode, setSumMode] = React.useState<SumMode>('sum');
 
-  const margin = { l: 64, r: showSumDiff ? 64 : 16, t: frameSlider ? 56 : 16, b: 52 };
+  // The controls above the first plot's legend: the top margin makes room
+  // for their measured height.
+  const upperControlsRef = React.useRef<HTMLDivElement | null>(null);
+  const [upperControlsPx, setUpperControlsPx] = React.useState(UPPER_CONTROLS_PX);
+  const hasUpperControls = upperControls != null && upperControls !== false;
+  React.useLayoutEffect(() => {
+    const controls = upperControlsRef.current;
+    if (!hasUpperControls || !controls || typeof ResizeObserver === 'undefined') {
+      return undefined;
+    }
+    const observer = new ResizeObserver(() => setUpperControlsPx(Math.ceil(controls.offsetHeight) || UPPER_CONTROLS_PX));
+    observer.observe(controls);
+    return () => observer.disconnect();
+  }, [hasUpperControls]);
+  const margin = {
+    l: 64,
+    r: showSumDiff ? 64 : 16,
+    t: (frameSlider ? 56 : 16) + (hasUpperControls ? upperControlsPx : 0),
+    b: 52,
+  };
   // The second plot's controls sit in the figure, right above that plot -
   // the plots make room for their (measured) height.
   const toolbarRef = React.useRef<HTMLDivElement | null>(null);
@@ -796,12 +824,24 @@ const MeasurementSamplesCompareChart = (
       hoverinfo: 'none' as const,
       ...(optional ? visibility(shownOptional, uid) : {}),
     });
+    // A Störungsprofil's masks: dashed, over the sensors they cover.
+    const maskLine = (uid: string, name: string, y: number[], color: string) => ({
+      ...line(uid, name, y, color, 1.5),
+      x: y.map((_, index) => sensorNumber(index)),
+      line: { color, width: 1.5, dash: 'dash' as const },
+    });
     return [
       line('ep', 'EP', ep, 'red', 2),
       line('wp', 'WP', wp, 'blue', 2),
       line('wp+ep', 'WP + EP', ep.map((value, i) => value + wp[i]), plotTheme.contrastViolet, 2, true),
+      ...(maskLines
+        ? [
+            maskLine('mask-ep', t('noise_profile_mask_ep'), maskLines.ep, 'red'),
+            maskLine('mask-wp', t('noise_profile_mask_wp'), maskLines.wp, 'blue'),
+          ]
+        : []),
     ];
-  }, [currentFrame, shownOptional]);
+  }, [currentFrame, shownOptional, maskLines, t]);
 
   // The upper y-axis is locked to the lines of all measurements of the
   // slider - low (negative) as well as high - autorange would rescale
@@ -829,12 +869,14 @@ const MeasurementSamplesCompareChart = (
         }
       });
     });
+    maskLines?.ep.forEach(include);
+    maskLines?.wp.forEach(include);
     if (high <= low) {
       return null;
     }
     const padding = (high - low) * 0.05;
     return [low < 0 ? low - padding : 0, high + padding];
-  }, [frames, meanAndDeviationSeries, shownOptional]);
+  }, [frames, meanAndDeviationSeries, shownOptional, maskLines]);
 
   // The highest sensor number on the first plot.
   const lastSensor = Math.max(
@@ -1395,6 +1437,16 @@ const MeasurementSamplesCompareChart = (
             ))}
           </div>
         </div>
+        {hasUpperControls && (
+          <div
+            ref={upperControlsRef}
+            data-testid="measurement-compare-upper-controls"
+            className="d-flex flex-wrap justify-content-end align-items-center gap-2 pb-2"
+            style={{ position: 'absolute', top: 0, left: margin.l, right: margin.r, zIndex: 2 }}
+          >
+            {upperControls}
+          </div>
+        )}
         <WheelZoomHint visible={wheelHint} radius={0} />
         {/* Help of the first and the third plot, right above each (the
             second's sits in its controls). */}

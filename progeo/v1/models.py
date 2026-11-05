@@ -613,6 +613,59 @@ class ProgeoDeviceCommand(auto_prefetch.Model):
         return f"{_id} 📡 {self.command} ({self.status}) - device {self.device_id}"
 
 
+class ProgeoNoiseProfile(auto_prefetch.Model):
+    """A Störungsprofil of a device: per sensor (index = sensor_order - 1,
+    like eigenpotenzial / wirkpotenzial) the noise floor of EP and WP. Cleaned
+    values are max(0, value - mask) (helper/noise_profiles.NoiseMask); the
+    measurements themselves are never changed.
+
+    Staff create a profile on the Analyse tab from the minimum EP / WP of a
+    period (mask values editable by hand) and switch it active. Only one
+    profile per device is active - the last one activated (activated_at); it
+    cleans every display and the alarm evaluation from then on (no
+    re-evaluation of the past)."""
+
+    device = models.ForeignKey(ProgeoDevice, on_delete=models.CASCADE, related_name="noise_profiles")
+    name = models.CharField(max_length=100)
+    mask_e = ArrayField(models.IntegerField(), default=list, blank=True)
+    mask_w = ArrayField(models.IntegerField(), default=list, blank=True)
+    # sum(mask_e) / sum(mask_w) - kept with the masks (save).
+    sum_e = models.BigIntegerField(default=0)
+    sum_w = models.BigIntegerField(default=0)
+    # The period the masks were computed from, and how many measurements it held.
+    source_from = models.DateTimeField(null=True, blank=True)
+    source_to = models.DateTimeField(null=True, blank=True)
+    source_count = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=False)
+    activated_at = models.DateTimeField(null=True, blank=True)
+    created = models.DateTimeField(auto_now_add=True)
+    updated = models.DateTimeField(auto_now=True)
+    # Users are mirrored into every project database (project_dbs.mirrored_models).
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+
+    class Meta:
+        base_manager_name = "prefetch_manager"
+        indexes = [models.Index(fields=["device", "is_active"], name="progeo_noise_device_active")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["device"], condition=models.Q(is_active=True), name="progeo_noise_one_active_per_device"
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        self.sum_e = sum(self.mask_e or [])
+        self.sum_w = sum(self.mask_w or [])
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None and {"mask_e", "mask_w"} & set(update_fields):
+            kwargs["update_fields"] = {*update_fields, "sum_e", "sum_w"}
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        _id = f"[{self.pk}] " if DEBUG else ""
+        active = " (aktiv)" if self.is_active else ""
+        return f"{_id} 🔇 {self.name}{active} - device {self.device_id}"
+
+
 class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
     @classmethod
     def for_account(cls, account, using=None, user=None):
@@ -748,9 +801,9 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
                     break
         return result
 
-    def get_pairs(self, samples=None):
+    def get_pairs(self, samples=None, raw=False):
         if samples is None:
-            samples = self.get_sample_values()
+            samples = self.get_sample_values(raw=raw)
         result = []
         for i in range(0, len(samples) - 1, 2):
             result.append(abs(samples[i + 1] - samples[i]))
@@ -765,11 +818,12 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
         self.eigenpotenzial = paired[0::2]
         self.wirkpotenzial = paired[1::2]
 
-    def get_potentials(self):
+    def get_potentials(self, raw=False):
         """Per sensor: "eigenpotenzial", "wirkpotenzial" (the stored lists, or
-        split from the samples in raw_data) and "pairs" = |wirk - eigen| (the
-        alarm values, get_pairs)."""
-        values = self.get_sample_values()
+        split from the samples in raw_data; cleaned unless `raw`, see
+        get_sample_values) and "pairs" = |wirk - eigen| (the alarm values,
+        get_pairs)."""
+        values = self.get_sample_values(raw=raw)
         paired = values[: len(values) - len(values) % 2]
         return {
             "eigenpotenzial": paired[0::2],
@@ -777,9 +831,20 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
             "pairs": self.get_pairs(values),
         }
 
-    def get_sample_values(self):
+    def get_sample_values(self, raw=False):
         """The interleaved pair values [eigen, wirk, ...]: from eigenpotenzial /
-        wirkpotenzial, else the samples the payload carried (raw_data)."""
+        wirkpotenzial, else the samples the payload carried (raw_data) -
+        cleaned by the device's active Störungsprofil (or the one the request
+        views, helper/noise_profiles.noise_view) unless `raw`."""
+        values = self._stored_sample_values()
+        if raw or not values:
+            return values
+        from progeo.helper.noise_profiles import mask_for
+
+        mask = mask_for(self._state.db, self.device_id)
+        return mask.apply(values) if mask is not None else values
+
+    def _stored_sample_values(self):
         if self.eigenpotenzial is not None and self.wirkpotenzial is not None:
             return [value for pair in zip(self.eigenpotenzial, self.wirkpotenzial, strict=False) for value in pair]
 
@@ -814,7 +879,7 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
     def __str__(self):
         _id = f"[{self.pk}] "
         _device = f"Device {self.device.mac}" if self.device else "Unknown Device"
-        _samples = self.get_sample_values() if self.eigenpotenzial is None else f"E{self.eigenpotenzial} W{self.wirkpotenzial}"
+        _samples = self.get_sample_values(raw=True) if self.eigenpotenzial is None else f"E{self.eigenpotenzial} W{self.wirkpotenzial}"
 
         return f"{_id} 📊 {_device} - {self.project_id} | {self.last_fetched}: {_samples}"
 

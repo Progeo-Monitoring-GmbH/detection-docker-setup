@@ -40,6 +40,17 @@ import { compareOffsetsFor, heatmapChange } from './analyseCompare';
 import MeasurementComparePlot from '../components/device/MeasurementComparePlot';
 import { XLg } from 'react-bootstrap-icons';
 import PlotHelp from '../components/ui/PlotHelp';
+import { downloadBlob } from '../download';
+import NoiseProfileControls, { type NoiseViewState } from './NoiseProfileControls';
+import NoiseProfileEditor from './NoiseProfileEditor';
+import {
+  cleanRows,
+  type NoiseProfile,
+  type NoiseProfileDraft,
+  noiseMaskOf,
+  noiseProfileCsv,
+  rateNoiseProfile,
+} from './noiseProfiles';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 import {
@@ -170,6 +181,24 @@ const LocationAnalyseTab = () => {
   // Not while the period itself already reaches as far back.
   const offerSensorHistory = isStaff && TIME_RANGE_DAYS[range] < SENSOR_HISTORY_DAYS;
 
+  // Staff: the Störungsprofile of the location's devices (noiseProfiles.ts).
+  // Their measurements are loaded raw (?raw=1) and cleaned here - by the
+  // active profile, the one tried out ("Anwenden"), the draft being edited
+  // or none ("Rohdaten"); everyone else gets them cleaned by the backend.
+  const offerNoiseProfiles = isStaff && !isLorawan;
+  const rawQuery = offerNoiseProfiles ? '&raw=1' : '';
+  const [noiseProfileLoad, setNoiseProfileLoad] = useState<{ locationId: unknown; profiles: NoiseProfile[] } | null>(
+    null,
+  );
+  const [selectedProfileId, setSelectedProfileId] = useState<number | null>(null);
+  const [testedProfileId, setTestedProfileId] = useState<number | null>(null);
+  const [rawView, setRawView] = useState(false);
+  const [draft, setDraft] = useState<NoiseProfileDraft | null>(null);
+  const [draftPreview, setDraftPreview] = useState(true);
+  const [noiseBusy, setNoiseBusy] = useState(false);
+  // Bumped when a profile changed: the heatmap (cleaned by the backend) reloads.
+  const [noiseRevision, setNoiseRevision] = useState(0);
+
   const exportCsv = () => {
     void openResponseInNewTab(auth, `/v1/location/${locationId}/export_csv/`);
     setExportMsg(t('analyse_export_csv_done'));
@@ -196,11 +225,65 @@ const LocationAnalyseTab = () => {
   const heatmapCache = useRef(new Map<string, CachedLoad<SensorHeatmapResponse>[]>());
   const measurementsCache = useRef(new Map<string, CachedLoad<MeasurementsLoad>[]>());
 
+  // ------------------------------------------------------------- Störungsprofile
+  const noiseProfiles = useMemo(
+    () => (noiseProfileLoad?.locationId === locationId ? noiseProfileLoad.profiles : []),
+    [noiseProfileLoad, locationId],
+  );
+  // Those of the shown device - a profile belongs to one device.
+  const deviceProfiles = useMemo(
+    () => noiseProfiles.filter((profile) => profile.device === shownDevice),
+    [noiseProfiles, shownDevice],
+  );
+  const activeProfile = deviceProfiles.find((profile) => profile.is_active) ?? null;
+  const testedProfile = deviceProfiles.find((profile) => profile.id === testedProfileId) ?? null;
+  // The picked profile, else the active one.
+  const selectedProfile = deviceProfiles.find((profile) => profile.id === selectedProfileId) ?? activeProfile;
+  const shownDraft = draft && draft.device === shownDevice ? draft : null;
+  const noiseView: NoiseViewState = shownDraft
+    ? draftPreview
+      ? 'draft'
+      : 'raw'
+    : rawView
+      ? 'raw'
+      : testedProfile
+        ? 'test'
+        : activeProfile
+          ? 'active'
+          : 'none';
+  // The mask the measurements are cleaned with here (staff load them raw).
+  const displayMask = useMemo(() => {
+    if (!offerNoiseProfiles) {
+      return null;
+    }
+    if (noiseView === 'draft') {
+      return noiseMaskOf(shownDraft);
+    }
+    if (noiseView === 'test') {
+      return noiseMaskOf(testedProfile);
+    }
+    return noiseView === 'active' ? noiseMaskOf(activeProfile) : null;
+  }, [offerNoiseProfiles, noiseView, shownDraft, testedProfile, activeProfile]);
+  // Showing raw values: the masks of the draft / picked profile as lines.
+  const maskLines = useMemo(() => {
+    const focus = shownDraft ?? selectedProfile;
+    return offerNoiseProfiles && noiseView === 'raw' && focus ? { ep: focus.mask_e, wp: focus.mask_w } : null;
+  }, [offerNoiseProfiles, noiseView, shownDraft, selectedProfile]);
+  // The heatmap is cleaned by the backend: the raw values, the tried-out
+  // profile, else (also for a draft - not saved yet) the active ones.
+  const heatNoiseQuery = !offerNoiseProfiles
+    ? ''
+    : noiseView === 'raw'
+      ? '&raw=1'
+      : noiseView === 'test' && testedProfile
+        ? `&noise_profile=${testedProfile.id}`
+        : '';
+
   const loadHeatmap = useCallback(() => {
     if (isLorawan) {
       return;
     }
-    const cacheKey = `${locationId}:${heatProfile}`;
+    const cacheKey = `${locationId}:${heatProfile}:${heatNoiseQuery}`;
     const cached = cachedPeriod(heatmapCache.current.get(cacheKey), days, resolution, Date.now(), (value, fromMs) =>
       cutHeatmap(value, fromMs) ?? value,
     );
@@ -214,7 +297,7 @@ const LocationAnalyseTab = () => {
     const isCurrent = () => current === heatmapRequest.current;
     void axiosConfig.perform_get(
       auth,
-      `/v1/location/${locationId}/heatmap/?${query}${heatProfileQuery(heatProfile)}`,
+      `/v1/location/${locationId}/heatmap/?${query}${heatProfileQuery(heatProfile)}${heatNoiseQuery}`,
       (response) => {
         const data = (response?.data || null) as SensorHeatmapResponse | null;
         if (data) {
@@ -241,7 +324,8 @@ const LocationAnalyseTab = () => {
         }
       },
     );
-  }, [auth, days, enqueueSnackbar, heatProfile, isLorawan, locationId, query, resolution]);
+    // noiseRevision: a changed profile - the cache was cleared, load again.
+  }, [auth, days, enqueueSnackbar, heatProfile, heatNoiseQuery, isLorawan, locationId, noiseRevision, query, resolution]);
 
   // Switching the device reloads only the measurements.
   const loadMeasurements = useCallback(() => {
@@ -267,7 +351,7 @@ const LocationAnalyseTab = () => {
     const device = deviceId != null ? `&device=${deviceId}` : '';
     void axiosConfig.perform_get(
       auth,
-      `/v1/location/${locationId}/measurements/?${query}${device}`,
+      `/v1/location/${locationId}/measurements/?${query}${device}${rawQuery}`,
       (response) => {
         const rows = (response?.data?.measurements || []) as MeasurementCompareRow[];
         const load: MeasurementsLoad = {
@@ -296,7 +380,7 @@ const LocationAnalyseTab = () => {
         }
       },
     );
-  }, [auth, days, deviceId, enqueueSnackbar, isLorawan, locationId, query, resolution]);
+  }, [auth, days, deviceId, enqueueSnackbar, isLorawan, locationId, query, rawQuery, resolution]);
 
   const toggleSensorHistory = () => {
     if (sensorHistoryRows) {
@@ -309,7 +393,7 @@ const LocationAnalyseTab = () => {
     const device = shownDevice != null ? `&device=${shownDevice}` : '';
     void axiosConfig.perform_get(
       auth,
-      `/v1/location/${locationId}/measurements/?days=${SENSOR_HISTORY_DAYS}&limit=${MAX_HISTORY_MEASUREMENTS}${device}`,
+      `/v1/location/${locationId}/measurements/?days=${SENSOR_HISTORY_DAYS}&limit=${MAX_HISTORY_MEASUREMENTS}${device}${rawQuery}`,
       (response) => {
         if (current === sensorHistoryRequest.current) {
           setSensorHistory({ key, rows: (response?.data?.measurements || []) as MeasurementCompareRow[] });
@@ -336,13 +420,14 @@ const LocationAnalyseTab = () => {
   // What the heatmap and the charts show: the loads, averaged over
   // `meanWindow` neighbouring measurements.
   const shownHeatmap = useMemo(() => smoothHeatmap(heatmap, meanWindow), [heatmap, meanWindow]);
+  // Cleaned first (staff: by displayMask), then smoothed.
   const shownMeasurements = useMemo(
-    () => smoothMeasurements(measurements, meanWindow),
-    [measurements, meanWindow],
+    () => smoothMeasurements(cleanRows(measurements, displayMask), meanWindow),
+    [measurements, displayMask, meanWindow],
   );
   const shownSensorHistory = useMemo(
-    () => (sensorHistoryRows ? smoothMeasurements(sensorHistoryRows, meanWindow) : null),
-    [sensorHistoryRows, meanWindow],
+    () => (sensorHistoryRows ? smoothMeasurements(cleanRows(sensorHistoryRows, displayMask), meanWindow) : null),
+    [sensorHistoryRows, displayMask, meanWindow],
   );
 
   // The slider's frames: the heatmap's - the measurements (sampled a little
@@ -415,7 +500,7 @@ const LocationAnalyseTab = () => {
   const compareOffsetMs = compare ? compare.days * DAY_MS : 0;
   // The comparison's loads, for the settings they were loaded with.
   const compareKey = compare
-    ? `${locationId}:${compare.days}:${days}:${resolution}:${heatProfile}:${shownDevice}`
+    ? `${locationId}:${compare.days}:${days}:${resolution}:${heatProfile}:${shownDevice}:${heatNoiseQuery}:${noiseRevision}`
     : null;
   const [compareHeatmap, setCompareHeatmap] = useState<{ key: string; value: SensorHeatmapResponse | null } | null>(null);
   const [compareRows, setCompareRows] = useState<{ key: string; rows: MeasurementCompareRow[] } | null>(null);
@@ -431,7 +516,7 @@ const LocationAnalyseTab = () => {
     const period = `days=${days}&limit=${resolution}&to=${to}`;
     void axiosConfig.perform_get(
       auth,
-      `/v1/location/${locationId}/heatmap/?${period}${heatProfileQuery(heatProfile)}`,
+      `/v1/location/${locationId}/heatmap/?${period}${heatProfileQuery(heatProfile)}${heatNoiseQuery}`,
       (response) => {
         if (isCurrent()) {
           setCompareHeatmap({ key: compareKey, value: (response?.data || null) as SensorHeatmapResponse | null });
@@ -447,7 +532,7 @@ const LocationAnalyseTab = () => {
     const device = shownDevice != null ? `&device=${shownDevice}` : '';
     void axiosConfig.perform_get(
       auth,
-      `/v1/location/${locationId}/measurements/?${period}${device}`,
+      `/v1/location/${locationId}/measurements/?${period}${device}${rawQuery}`,
       (response) => {
         if (isCurrent()) {
           setCompareRows({ key: compareKey, rows: (response?.data?.measurements || []) as MeasurementCompareRow[] });
@@ -460,7 +545,20 @@ const LocationAnalyseTab = () => {
         }
       },
     );
-  }, [auth, compare, compareKey, days, enqueueSnackbar, heatProfile, isLorawan, locationId, resolution, shownDevice]);
+  }, [
+    auth,
+    compare,
+    compareKey,
+    days,
+    enqueueSnackbar,
+    heatNoiseQuery,
+    heatProfile,
+    isLorawan,
+    locationId,
+    rawQuery,
+    resolution,
+    shownDevice,
+  ]);
 
   useEffect(() => {
     loadCompare();
@@ -468,8 +566,9 @@ const LocationAnalyseTab = () => {
 
   const compareHeatmapShown = compareHeatmap?.key === compareKey ? compareHeatmap.value : null;
   const compareRowsShown = useMemo(
-    () => (compareRows?.key === compareKey ? smoothMeasurements(compareRows.rows, meanWindow) : null),
-    [compareRows, compareKey, meanWindow],
+    () =>
+      compareRows?.key === compareKey ? smoothMeasurements(cleanRows(compareRows.rows, displayMask), meanWindow) : null,
+    [compareRows, compareKey, displayMask, meanWindow],
   );
   const compareLoading =
     compare != null && (compareHeatmap?.key !== compareKey || compareRows?.key !== compareKey);
@@ -511,6 +610,172 @@ const LocationAnalyseTab = () => {
       ),
     [heatmap, shownDevice],
   );
+
+  // ------------------------------------------------------------- Störungsprofile
+  const loadNoiseProfiles = useCallback(() => {
+    if (!offerNoiseProfiles) {
+      return;
+    }
+    const forLocation = locationId;
+    void axiosConfig.perform_get(
+      auth,
+      `/v1/location/${locationId}/noise-profiles/`,
+      (response) =>
+        setNoiseProfileLoad({ locationId: forLocation, profiles: (response?.data?.profiles || []) as NoiseProfile[] }),
+      (error) => showRequestError(enqueueSnackbar, t('noise_profile_error'), error),
+    );
+  }, [auth, enqueueSnackbar, locationId, offerNoiseProfiles, t]);
+
+  useEffect(() => {
+    loadNoiseProfiles();
+  }, [loadNoiseProfiles]);
+
+  // Every profile of the shown device (and the draft) rated for the loaded
+  // raw measurements - against the alarm thresholds of their sensors.
+  const thresholdOf = useCallback(
+    (pair: number) => sensorThresholds.get(pair) ?? alarmThreshold ?? null,
+    [sensorThresholds, alarmThreshold],
+  );
+  const noiseRatings = useMemo(
+    () =>
+      new Map(
+        offerNoiseProfiles
+          ? deviceProfiles.map((profile) => [profile.id, rateNoiseProfile(measurements, noiseMaskOf(profile), thresholdOf)])
+          : [],
+      ),
+    [offerNoiseProfiles, deviceProfiles, measurements, thresholdOf],
+  );
+  const draftRating = useMemo(
+    () => (offerNoiseProfiles && shownDraft ? rateNoiseProfile(measurements, noiseMaskOf(shownDraft), thresholdOf) : null),
+    [offerNoiseProfiles, shownDraft, measurements, thresholdOf],
+  );
+
+  /** POST noise-profiles/<path>/ - then the profiles and the heatmap load again. */
+  const noiseRequest = (path: string, data: object, done?: (response: { data?: { profile?: NoiseProfile } }) => void) => {
+    setNoiseBusy(true);
+    void axiosConfig.perform_post(
+      auth,
+      `/v1/location/${locationId}/noise-profiles/${path}/`,
+      data,
+      (response) => {
+        setNoiseBusy(false);
+        heatmapCache.current.clear();
+        setNoiseRevision((revision) => revision + 1);
+        loadNoiseProfiles();
+        done?.(response);
+      },
+      (error) => {
+        setNoiseBusy(false);
+        showRequestError(enqueueSnackbar, t('noise_profile_error'), error);
+      },
+    );
+  };
+
+  // A new draft: per sensor the minimum EP / WP of every measurement (not
+  // only the loaded ones) of the zoomed span, else of the period.
+  const createNoiseProfile = () => {
+    if (shownDevice == null) {
+      return;
+    }
+    const iso = (ms: number) => encodeURIComponent(new Date(ms).toISOString());
+    const span = chartZoom ? `from=${iso(chartZoom.from)}&to=${iso(chartZoom.to)}` : `days=${days}`;
+    setNoiseBusy(true);
+    void axiosConfig.perform_get(
+      auth,
+      `/v1/location/${locationId}/noise-profiles/suggest/?device=${shownDevice}&${span}`,
+      (response) => {
+        setNoiseBusy(false);
+        const data = response?.data ?? {};
+        setDraft({
+          id: null,
+          device: shownDevice,
+          name: t('noise_profile_default_name', { date: new Date().toLocaleDateString() }),
+          mask_e: (data.mask_e || []) as number[],
+          mask_w: (data.mask_w || []) as number[],
+          source_from: data.source_from ?? null,
+          source_to: data.source_to ?? null,
+          source_count: Number(data.source_count ?? 0),
+        });
+        setDraftPreview(true);
+      },
+      (error) => {
+        setNoiseBusy(false);
+        showRequestError(enqueueSnackbar, t('noise_profile_error'), error);
+      },
+    );
+  };
+
+  const editNoiseProfile = (profile: NoiseProfile) => {
+    setDraft({
+      id: profile.id,
+      device: profile.device,
+      name: profile.name,
+      mask_e: [...profile.mask_e],
+      mask_w: [...profile.mask_w],
+      source_from: profile.source_from,
+      source_to: profile.source_to,
+      source_count: profile.source_count,
+    });
+    setDraftPreview(true);
+  };
+
+  const saveNoiseProfile = () => {
+    if (!draft) {
+      return;
+    }
+    noiseRequest('save', { ...draft, name: draft.name.trim() }, (response) => {
+      setDraft(null);
+      setSelectedProfileId(response?.data?.profile?.id ?? null);
+      enqueueSnackbar(t('noise_profile_saved'), { variant: 'success' });
+    });
+  };
+
+  const downloadNoiseProfile = (profile: NoiseProfile) =>
+    downloadBlob(
+      new Blob([noiseProfileCsv(profile)], { type: 'text/csv' }),
+      `${location?.project_id ?? locationId}-stoerungsprofil-${profile.id}.csv`,
+    );
+
+  const noiseControls = offerNoiseProfiles ? (
+    <NoiseProfileControls
+      profiles={deviceProfiles}
+      ratings={noiseRatings}
+      selectedId={selectedProfile?.id ?? null}
+      onSelect={setSelectedProfileId}
+      testedId={testedProfile?.id ?? null}
+      onTest={(id) => {
+        setTestedProfileId(id);
+        if (id != null) {
+          setRawView(false);
+        }
+      }}
+      rawView={rawView}
+      onRawViewChange={setRawView}
+      view={noiseView}
+      busy={noiseBusy}
+      editing={shownDraft != null}
+      onCreate={createNoiseProfile}
+      onEdit={editNoiseProfile}
+      onActivate={(profile) =>
+        noiseRequest('activate', { id: profile.id }, () => {
+          setTestedProfileId(null);
+          enqueueSnackbar(t('noise_profile_activated', { name: profile.name }), { variant: 'success' });
+        })
+      }
+      onDeactivate={() =>
+        noiseRequest('deactivate', { device: shownDevice }, () =>
+          enqueueSnackbar(t('noise_profile_deactivated'), { variant: 'success' }),
+        )
+      }
+      onDelete={(profile) =>
+        noiseRequest('delete', { id: profile.id }, () => {
+          setSelectedProfileId((id) => (id === profile.id ? null : id));
+          setTestedProfileId((id) => (id === profile.id ? null : id));
+        })
+      }
+      onDownload={downloadNoiseProfile}
+    />
+  ) : null;
 
   // An area dragged on the plan: its sensors (of the shown device, else of
   // the first other one - shown then) become the second plot's selection.
@@ -626,6 +891,19 @@ const LocationAnalyseTab = () => {
         >
           {t('analyse_export_csv')}
         </button>
+        {offerNoiseProfiles && (
+          <button
+            type="button"
+            className="btn btn-outline-secondary btn-sm"
+            title={t('analyse_export_csv_raw_hint')}
+            onClick={() => {
+              void openResponseInNewTab(auth, `/v1/location/${locationId}/export_csv/?raw=1`);
+              setExportMsg(t('analyse_export_csv_done'));
+            }}
+          >
+            {t('analyse_export_csv_raw')}
+          </button>
+        )}
         <button
           type="button"
           className="btn btn-outline-secondary btn-sm"
@@ -786,6 +1064,18 @@ const LocationAnalyseTab = () => {
                   })}
                 </div>
               )}
+              {shownDraft && (
+                <NoiseProfileEditor
+                  draft={shownDraft}
+                  onChange={setDraft}
+                  onSave={saveNoiseProfile}
+                  onCancel={() => setDraft(null)}
+                  saving={noiseBusy}
+                  preview={draftPreview}
+                  onPreviewChange={setDraftPreview}
+                  rating={draftRating}
+                />
+              )}
               {measurementsLoading && measurements.length === 0 ? (
                 <div className="d-flex justify-content-center align-items-center py-5 text-muted">
                   <Spinner animation="border" className="me-2" /> {t('ui_loading')}
@@ -811,6 +1101,8 @@ const LocationAnalyseTab = () => {
                   isLoadingSensorHistory={sensorHistoryLoading}
                   threshold={alarmThreshold}
                   sensorThresholds={sensorThresholds}
+                  upperControls={noiseControls}
+                  maskLines={maskLines}
                 />
               )}
             </Card.Body>

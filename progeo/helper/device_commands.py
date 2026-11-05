@@ -970,8 +970,9 @@ def emulate_measurement(device, mux, sensors=None, location=None, user=None):
 
 
 def measurement_row(measurement, threshold=None):
-    """A test measurement as the provisioning page lists it."""
-    pairs = [round(value, 2) for value in measurement.get_pairs()]
+    """A test measurement as the provisioning page lists it - raw: the check
+    tests the hardware, a Störungsprofil must not hide anything."""
+    pairs = [round(value, 2) for value in measurement.get_pairs(raw=True)]
     check = check_test_pairs(pairs)
     raw = measurement.raw_data if isinstance(measurement.raw_data, dict) else {}
     return {

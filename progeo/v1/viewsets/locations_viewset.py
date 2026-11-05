@@ -84,6 +84,7 @@ from progeo.v1.serializers import (
     with_measurement_stats,
 )
 from progeo.v1.viewsets.alarm_viewset import MAX_HISTORY_DAYS
+from progeo.v1.viewsets.noise_profiles_mixin import NoiseProfilesMixin, noise_view_of
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.v1.viewsets.setup_viewset import _get_controller_account
 
@@ -397,7 +398,7 @@ def _location_data(location, account):
     return LocationSerializer(location).data
 
 
-class LocationViewSet(ProgeoModalViewSet):
+class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
     serializer_class = LocationSerializer
     authentication_classes = [JWTAuthentication, ExpiringTokenAuthentication, SessionAuthentication]
     permission_classes = [IsAuthenticated]
@@ -1863,6 +1864,10 @@ class LocationViewSet(ProgeoModalViewSet):
         if not location:
             return RequestFailed({"reason": "Location not found"})
         db_name = location_db(location, account)
+        # Staff: ?raw=1 / ?noise_profile=<id> instead of the active Störungsprofile.
+        view, error = noise_view_of(request, location, db_name)
+        if error:
+            return error
 
         queryset = ProgeoMeasurement.for_account(account, using=db_name, user=request.user).filter(device__location=location)
         # One device at a time (?device=) - measurements of several devices don't
@@ -1889,7 +1894,8 @@ class LocationViewSet(ProgeoModalViewSet):
         else:
             queryset = queryset.select_related("device").order_by("-id")[:limit]
 
-        serialized = ProgeoMeasurementSerializer(queryset, many=True).data
+        with view:
+            serialized = ProgeoMeasurementSerializer(queryset, many=True).data
         return RequestSuccess(
             {
                 "location": _location_data(location, account),
@@ -2093,6 +2099,15 @@ class LocationViewSet(ProgeoModalViewSet):
             return RequestFailed({"reason": "Location not found"})
         db_name = location_db(location, account)
 
+        view, error = noise_view_of(request, location, db_name)
+        if error:
+            return error
+        with view:
+            return self._heatmap_response(
+                request, location, account, db_name, limit, profile, time_from, time_to, days, step
+            )
+
+    def _heatmap_response(self, request, location, account, db_name, limit, profile, time_from, time_to, days, step):
         points = ProgeoMeasurePoint.objects.using(db_name).filter(location=location)
         queryset = ProgeoMeasurement.for_account(account, using=db_name, user=request.user).filter(device__location=location)
         starts = _device_starts(location, db_name)
@@ -2468,14 +2483,20 @@ class LocationViewSet(ProgeoModalViewSet):
         if not location:
             return RequestFailed({"reason": "Location not found"})
         db_name = location_db(location, account)
+        # Staff: ?raw=1 - the raw values instead of the cleaned ones.
+        view, error = noise_view_of(request, location, db_name)
+        if error:
+            return error
         try:
-            points, timestamps, series = self._measurement_series(location, account, db_name, request)
+            with view:
+                points, timestamps, series = self._measurement_series(location, account, db_name, request)
         except (TypeError, ValueError):
             return RequestFailed({"reason": "from/to must be ISO-8601 timestamps"})
 
+        raw = _is_staff_admin(request.user) and request.query_params.get("raw") in ("1", "true")
         response = HttpResponse(content_type="text/csv")
         response["Content-Disposition"] = (
-            f'attachment; filename="{location.project_id or location.id}-messwerte.csv"'
+            f'attachment; filename="{location.project_id or location.id}-messwerte{"-roh" if raw else ""}.csv"'
         )
         columns = self._sensor_columns(points, series)
         writer = csv.writer(response)
