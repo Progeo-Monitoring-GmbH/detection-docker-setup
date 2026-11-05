@@ -171,12 +171,20 @@ def run_cad_factory(cad_input: str, coord_margin: float = 0.2, timeout_seconds: 
 
 
 def get_docker_status() -> list:
+    """Every container of the host (also stopped ones): id, name, status
+    (running/exited/paused/...), image, started_at and health (None without
+    a healthcheck) - from the attrs docker-py already fetched."""
     client = docker.from_env()
     cons = []
     for container in client.containers.list(all=True):
+        attrs = container.attrs or {}
+        state = attrs.get("State") or {}
         cons.append({"id": container.id,
                      "name": container.name,
                      "status": container.status,
+                     "image": (attrs.get("Config") or {}).get("Image"),
+                     "started_at": state.get("StartedAt"),
+                     "health": (state.get("Health") or {}).get("Status"),
                      })
     return cons
 
