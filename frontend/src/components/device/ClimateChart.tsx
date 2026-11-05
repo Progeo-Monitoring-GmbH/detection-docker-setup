@@ -4,6 +4,7 @@ import Plot from 'react-plotly.js';
 import Plotly from 'plotly.js/dist/plotly';
 import { plotTheme } from '../../styles/plotTheme';
 import { formatDate } from '../../main/dateFormat';
+import PlotResetButton, { PLOT_CONFIG_NO_MODEBAR } from '../ui/PlotResetButton';
 
 /** One device of GET /v1/location/<pk>/climate/ - aligned series, oldest first. */
 type ClimateDeviceSeries = {
@@ -305,6 +306,8 @@ const ClimateChart = ({
   // never goes through the data props: re-feeding data on every hover made
   // Plotly redraw, flicker and re-fit the axes.
   const graphRef = useRef<HTMLElement | null>(null);
+  // The same div for the reset button, which must re-render once it exists.
+  const [graphDiv, setGraphDiv] = useState<HTMLElement | null>(null);
   const highlightRef = useRef<number | null>(hoveredDeviceId);
 
   const applyHighlight = useCallback(() => {
@@ -413,13 +416,15 @@ const ClimateChart = ({
           t('climate_reference_hint')
         )}
       </span>
+      <PlotResetButton graphDiv={graphDiv} />
     </div>
     <Plot
       key={`${axisTitle}|${height}`}
       data={plotTraces.map(({ deviceId: _id, kind: _kind, ...trace }) => trace)}
       revision={revision}
-      onInitialized={(_figure, graphDiv) => {
-        graphRef.current = graphDiv;
+      onInitialized={(_figure, div) => {
+        graphRef.current = div;
+        setGraphDiv(div);
         applyHighlight();
       }}
       // Must not restyle here: react-plotly fires onUpdate on every
@@ -433,6 +438,7 @@ const ClimateChart = ({
       // effect still runs for the new (empty) traces.
       onPurge={() => {
         graphRef.current = null;
+        setGraphDiv(null);
       }}
       onHover={(event) => {
         const curve = event.points?.[0]?.curveNumber;
@@ -455,7 +461,7 @@ const ClimateChart = ({
       }}
       useResizeHandler
       style={{ width: '100%', height: `${height}px` }}
-      config={{ responsive: true, displaylogo: false }}
+      config={PLOT_CONFIG_NO_MODEBAR}
       layout={{
         autosize: true,
         // Keep zoom/pan when only the highlight changes.

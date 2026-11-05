@@ -25,12 +25,12 @@ describe('assignSlots', () => {
 });
 
 describe('sensorStyle', () => {
-  it('uses every hue before repeating one with another line style', () => {
+  it('uses every hue before repeating one with markers', () => {
     const styles = Array.from({ length: 16 }, (_, slot) => sensorStyle(slot));
     expect(styles.slice(0, 4).map((style) => style.color)).toEqual([...SENSOR_HUES]);
-    expect(styles.slice(0, 4).every((style) => style.dash === 'solid')).toBe(true);
-    expect(sensorStyle(4)).toEqual({ color: SENSOR_HUES[0], dash: 'dash' });
+    expect(styles.slice(0, 4).every((style) => style.marker === null)).toBe(true);
+    expect(sensorStyle(4)).toEqual({ color: SENSOR_HUES[0], marker: 'circle' });
     // 16 distinct combinations.
-    expect(new Set(styles.map((style) => `${style.color}:${style.dash}`)).size).toBe(16);
+    expect(new Set(styles.map((style) => `${style.color}:${style.marker}`)).size).toBe(16);
   });
 });

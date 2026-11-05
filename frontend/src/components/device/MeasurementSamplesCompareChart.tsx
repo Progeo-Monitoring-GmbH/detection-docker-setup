@@ -9,7 +9,11 @@ import FrameSlider, { frameAt } from './FrameSlider';
 import { barWidthFor, potentialsOf, signedBands } from './measurementBands';
 import { usePlotlyWheelZoom, useWheelHint, WheelZoomHint } from '../ui/wheelZoom';
 import PlotHelp from '../ui/PlotHelp';
-import { assignSlots, dashArray, type SensorStyle, sensorStyle } from './sensorPalette';
+import PlotResetButton, { PLOT_CONFIG_NO_MODEBAR } from '../ui/PlotResetButton';
+
+/** No mode bar - only PlotResetButton; Ctrl + wheel zooms (wheelZoom). */
+const PLOT_CONFIG = { ...PLOT_CONFIG_NO_MODEBAR, scrollZoom: true };
+import { assignSlots, type SensorStyle, sensorStyle } from './sensorPalette';
 
 /** The help buttons' distance (px) above a plot's top edge. */
 const HELP_ABOVE_PX = 28;
@@ -197,21 +201,18 @@ const visibility = (shown: ReadonlySet<string>, uid: string) => ({
 const formatValue = (value: number) => value.toFixed(2);
 const formatSigned = (value: number) => `${value > 0 ? '+' : ''}${value.toFixed(2)}`;
 
-/** A legend swatch of a sensor's line - its colour and line style. */
+/** A legend swatch of a sensor's line - its colour and its marker. */
 const LineSwatch = ({ style }: { style: SensorStyle }) => (
-  <svg width={18} height={6} aria-hidden="true" style={{ flexShrink: 0 }}>
-    <line
-      x1={1}
-      x2={17}
-      y1={3}
-      y2={3}
-      stroke={style.color}
-      strokeWidth={2.5}
-      strokeDasharray={dashArray(style.dash)}
-      strokeLinecap="round"
-    />
+  <svg width={18} height={10} aria-hidden="true" style={{ flexShrink: 0 }}>
+    <line x1={1} x2={17} y1={5} y2={5} stroke={style.color} strokeWidth={2.5} strokeLinecap="round" />
+    {style.marker === 'circle' && <circle cx={9} cy={5} r={3.5} fill={style.color} />}
+    {style.marker === 'square' && <rect x={5.5} y={1.5} width={7} height={7} fill={style.color} />}
+    {style.marker === 'diamond' && <polygon points="9,0.5 13.5,5 9,9.5 4.5,5" fill={style.color} />}
   </svg>
 );
+
+/** Markers on a line (sensors past the 4th): this many, evenly spread. */
+const MARKERS_PER_LINE = 14;
 
 /** A dotted line across the plot at the hovered x. */
 const SPIKE = {
@@ -578,20 +579,25 @@ const MeasurementSamplesCompareChart = (
         },
       ];
     }
-    return selectedSensors.map((sensor) => ({
-      type: 'scatter' as const,
-      mode: 'lines' as const,
-      uid: `sensor-${sensor}`,
-      name: `${t('measurement_compare_pair_label')} ${sensorNumber(sensor)}`,
-      x: sensorSeries.x,
-      y: sensorSeries.pairs.map((values) => values[sensor] ?? null),
-      xaxis: 'x3' as const,
-      yaxis: 'y4' as const,
-      // Listed (and removed) in the controls above the plot instead.
-      showlegend: false,
-      line: { ...sensorStyle(sensorSlots.get(sensor) ?? 0), width: 2 },
-      hoverinfo: 'none' as const,
-    }));
+    return selectedSensors.map((sensor) => {
+      const { color, marker } = sensorStyle(sensorSlots.get(sensor) ?? 0);
+      return {
+        type: 'scatter' as const,
+        // Always solid lines; past the 4 hues a few markers tell them apart.
+        mode: marker ? ('lines+markers' as const) : ('lines' as const),
+        uid: `sensor-${sensor}`,
+        name: `${t('measurement_compare_pair_label')} ${sensorNumber(sensor)}`,
+        x: sensorSeries.x,
+        y: sensorSeries.pairs.map((values) => values[sensor] ?? null),
+        xaxis: 'x3' as const,
+        yaxis: 'y4' as const,
+        // Listed (and removed) in the controls above the plot instead.
+        showlegend: false,
+        line: { color, width: 2, dash: 'solid' as const },
+        ...(marker ? { marker: { symbol: marker, size: 7, color, maxdisplayed: MARKERS_PER_LINE } } : {}),
+        hoverinfo: 'none' as const,
+      };
+    });
   }, [selectedSensors, sensorSeries, sensorSlots, t]);
 
   // EP + WP, WP - EP and the sum difference start hidden; a legend click
@@ -1235,6 +1241,7 @@ const MeasurementSamplesCompareChart = (
           <small className="text-muted">
             {t('measurement_compare_measurements_included')}: {series.length}
           </small>
+          <PlotResetButton graphDiv={graphDiv} />
           {onLoadCurrentYear && (
             <Button
               size="sm"
@@ -1454,11 +1461,7 @@ const MeasurementSamplesCompareChart = (
           }}
           useResizeHandler
           style={{ width: '100%', height: `${geometry.height}px` }}
-          config={{
-            responsive: true,
-            displaylogo: false,
-            scrollZoom: true,
-          }}
+          config={PLOT_CONFIG}
           layout={{
             autosize: true,
             margin,

@@ -20,6 +20,10 @@ import {
 } from './measurementBands';
 import SensorChangesPanel from './SensorChangesPanel';
 import PlotHelp from '../ui/PlotHelp';
+import PlotResetButton, { PLOT_CONFIG_NO_MODEBAR } from '../ui/PlotResetButton';
+
+/** No mode bar - only PlotResetButton; Ctrl + wheel zooms (wheelZoom). */
+const PLOT_CONFIG = { ...PLOT_CONFIG_NO_MODEBAR, scrollZoom: true };
 import type { MeasurementCompareRow } from './MeasurementSamplesCompareChart';
 
 type MeasurementComparePlotProps = {
@@ -201,6 +205,7 @@ const MeasurementComparePlot = ({
         <div className="d-flex flex-wrap align-items-center gap-3 mb-1">
           <h5 className="mb-0">{t('analyse_compare_title', { label })}</h5>
           <PlotHelp topic="compare" />
+          <PlotResetButton graphDiv={graphDiv} />
           {loading && (
             <Spinner size="sm" animation="border" className="text-muted" />
           )}
@@ -238,11 +243,7 @@ const MeasurementComparePlot = ({
                 onInitialized={(_, div) => setGraphDiv(div as HTMLElement)}
                 useResizeHandler
                 style={{ width: '100%', height: `${PLOT_HEIGHT}px` }}
-                config={{
-                  responsive: true,
-                  displaylogo: false,
-                  scrollZoom: true,
-                }}
+                config={PLOT_CONFIG}
                 layout={{
                   autosize: true,
                   margin: { l: 64, r: 16, t: 56, b: 52 },

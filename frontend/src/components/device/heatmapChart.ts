@@ -625,6 +625,22 @@ export const hoverTarget = (
           : null,
     };
   }
+  return cursorTarget(layout, frame, view, location, sx, sy);
+};
+
+/**
+ * The plan under the screen point (sx, sy) itself - also over a sensor: the
+ * position in meters (inside a calibrated plan) and the heat there. Null
+ * when there is neither.
+ */
+export const cursorTarget = (
+  layout: ChartLayout,
+  frame: ChartFrame,
+  view: View,
+  location: SensorHeatmapLocation | null,
+  sx: number,
+  sy: number,
+): Extract<HoverTarget, { kind: 'cursor' }> | null => {
   const { world, xAxis, yAxis } = layout;
   const [wx, wy] = toWorld(view, sx, sy);
   const insidePlan = wx >= 0 && wy >= 0 && wx <= world.width && wy <= world.height;

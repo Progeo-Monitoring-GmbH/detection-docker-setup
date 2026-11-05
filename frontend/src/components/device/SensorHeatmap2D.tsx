@@ -8,6 +8,7 @@ import { heatColorAt, heatColorTable } from './heatmapCanvas';
 import {
   chartFrame,
   chartLayout,
+  cursorTarget,
   frameWeights,
   heatReference,
   hoverTarget,
@@ -109,16 +110,26 @@ type SensorHeatmap2DProps = {
   forceNormalize?: boolean;
 };
 
-/** What the cursor points at: a sensor (by its pos), else the position in
- * meters and the heat there (with the cursor, for the reference guides). */
+/** The plan under the cursor: the position in meters and the heat there
+ * (with the cursor, for the reference guides). */
+type CursorHover = {
+  kind: 'cursor';
+  meters: [number, number] | null;
+  heat: number | null;
+  cursor: [number, number];
+};
+
+/** What the cursor points at: a sensor (by its pos) - with the plan under
+ * the cursor too, so the position still shows - else only the plan. */
 type Hover =
-  | { kind: 'sensor'; pos: number; screen: [number, number]; meters: [number, number] | null }
   | {
-      kind: 'cursor';
+      kind: 'sensor';
+      pos: number;
+      screen: [number, number];
       meters: [number, number] | null;
-      heat: number | null;
-      cursor: [number, number];
-    };
+      under: CursorHover | null;
+    }
+  | CursorHover;
 
 /** Field mode: the colour scale (over all frames) and how readings show. */
 type FieldScale = { range: FieldRange; unit: string; decimals: number };
@@ -373,7 +384,14 @@ const SensorHeatmap2D = ({
     if (target?.kind === 'sensor') {
       const sensor = scene.layout.sensors[target.index];
       reportHoveredDevice(sensor.device);
-      setHover({ kind: 'sensor', pos: sensor.pos, screen: target.screen, meters: target.meters });
+      const under = cursorTarget(scene.layout, scene.frame, view, location, sx, sy);
+      setHover({
+        kind: 'sensor',
+        pos: sensor.pos,
+        screen: target.screen,
+        meters: target.meters,
+        under: under ? { ...under, cursor: [sx, sy] } : null,
+      });
       return;
     }
     reportHoveredDevice(null);
@@ -439,8 +457,10 @@ const SensorHeatmap2D = ({
       (sceneSensors ?? []).flatMap((sensor, index) => (positions.has(sensor.pos) ? [index] : [])),
     );
   }, [sceneSensors, selectedPositions]);
+  // The plan under the cursor - also while it is over a sensor.
+  const underCursor = hover?.kind === 'sensor' ? hover.under : hover;
   // The guides only lead to a position in meters.
-  const guideCursor = hover?.kind === 'cursor' && hover.meters ? hover.cursor : null;
+  const guideCursor = underCursor?.meters ? underCursor.cursor : null;
 
   useLayoutEffect(() => {
     const canvas = canvasRef.current;
@@ -631,8 +651,8 @@ const SensorHeatmap2D = ({
           />
         )}
 
-        {hover?.kind === 'cursor' && (
-          <CursorReadout meters={hover.meters} heat={hover.heat} fieldScale={fieldScale} />
+        {underCursor && (
+          <CursorReadout meters={underCursor.meters} heat={underCursor.heat} fieldScale={fieldScale} />
         )}
       </div>
     </>

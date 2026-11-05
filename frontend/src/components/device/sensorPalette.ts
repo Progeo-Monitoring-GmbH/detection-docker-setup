@@ -8,18 +8,19 @@
  * plot's time marker is orange, alarm periods are red.
  *
  * No more hues than these four - more would put indistinguishable pairs on
- * screen. A 5th sensor and beyond repeat them with another line style
- * (dash, dot, dash-dot): 16 distinct lines.
+ * screen (no 5th hue passes the validator against them). The lines are
+ * always solid: a 5th sensor and beyond repeat the hues with a few markers
+ * on the line (circle, square, diamond) - 16 distinct lines.
  */
 export const SENSOR_HUES = ['#2a78d6', '#d55181', '#008300', '#4a3aa7'] as const;
-const SENSOR_DASHES = ['solid', 'dash', 'dot', 'dashdot'] as const;
+const SENSOR_MARKERS = [null, 'circle', 'square', 'diamond'] as const;
 
-export type SensorStyle = { color: string; dash: (typeof SENSOR_DASHES)[number] };
+export type SensorStyle = { color: string; marker: (typeof SENSOR_MARKERS)[number] };
 
-/** The style of a colour slot: hue first, then line style. */
+/** The style of a colour slot: hue first, then the marker. */
 export const sensorStyle = (slot: number): SensorStyle => ({
   color: SENSOR_HUES[slot % SENSOR_HUES.length],
-  dash: SENSOR_DASHES[Math.floor(slot / SENSOR_HUES.length) % SENSOR_DASHES.length],
+  marker: SENSOR_MARKERS[Math.floor(slot / SENSOR_HUES.length) % SENSOR_MARKERS.length],
 });
 
 /**
@@ -49,7 +50,3 @@ export const assignSlots = (previous: ReadonlyMap<number, number>, selected: num
   });
   return slots;
 };
-
-/** SVG stroke-dasharray of a line style (legend swatches). */
-export const dashArray = (dash: SensorStyle['dash']) =>
-  ({ solid: undefined, dash: '6 3', dot: '1.5 3', dashdot: '6 3 1.5 3' })[dash];
