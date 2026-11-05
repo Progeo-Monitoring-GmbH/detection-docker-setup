@@ -28,6 +28,16 @@ def hash_kind(raw_hash) -> str:
     return "legacy"
 
 
+def device_model(hardware):
+    """The precise model of a device ("smartex dm"): provisioning stores it
+    in device.hardware. None if hardware names no known model (e.g. the
+    "7067_S1" of a LoRaWAN sensor) - the overview then shows device.type."""
+    from progeo.helper.device_provisioning import MODELS, ascii_model
+
+    model = ascii_model(hardware).lower()
+    return next((known for known in MODELS if known.lower() == model), None) if model else None
+
+
 def is_online(last_seen, data_interval, now) -> bool:
     if last_seen is None:
         return False
@@ -35,18 +45,13 @@ def is_online(last_seen, data_interval, now) -> bool:
     return now - last_seen <= timedelta(seconds=2 * interval) + ONLINE_GRACE
 
 
-def device_stats(rows, device_types, pinged) -> dict:
-    """Counts over the overview's device rows (each with type, hash_kind,
-    online, last_seen_at and ping). Every device type is listed, also with
-    0; "unset" counts devices without one. `ping` is None unless `pinged`."""
-    by_type = {device_type: 0 for device_type in device_types}
-    by_type["unset"] = 0
+def device_stats(rows, pinged) -> dict:
+    """Counts over the overview's device rows (each with hash_kind, online,
+    last_seen_at and ping). `ping` is None unless `pinged`."""
     hash_kinds = dict.fromkeys(HASH_KINDS, 0)
     online = never_seen = 0
     ping = {"reachable": 0, "unreachable": 0, "no_ip": 0} if pinged else None
     for row in rows:
-        device_type = row.get("type")
-        by_type[device_type if device_type in by_type else "unset"] += 1
         hash_kinds[row["hash_kind"]] += 1
         online += bool(row["online"])
         never_seen += row["last_seen_at"] is None
@@ -55,7 +60,6 @@ def device_stats(rows, device_types, pinged) -> dict:
             ping["no_ip" if row["ping"] is None else "reachable" if row["ping"] else "unreachable"] += 1
     return {
         "total": len(rows),
-        "by_type": by_type,
         "online": online,
         "offline": len(rows) - online,
         "never_seen": never_seen,

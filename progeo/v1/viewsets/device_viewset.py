@@ -34,6 +34,7 @@ from progeo.helper.alarm_evaluation import evaluate_measurement_instantly
 from progeo.helper.basics import RequestFailed, RequestSuccess, elog, ilog
 from progeo.helper.controller_wifi import parse_lua_wifi, request_controller_wifi_update
 from progeo.helper.creator import create_MfS_log
+from progeo.helper.device_overview import hash_kind
 from progeo.helper.firmware import list_bundles as list_firmware_bundles
 from progeo.helper.location_access import (
     can_see_location,
@@ -1070,6 +1071,9 @@ class DeviceViewSet(ProgeoModalViewSet):
         device, error = self._command_device(request, pk)
         if error:
             return error
+        # Only controllers on the new hash schema ("<project_id>-<nn>") poll for commands.
+        if hash_kind(device.raw_hash) != "project":
+            return RequestFailed({"reason": "Commands need a device on the new hash schema (<project_id>-<nn>)"})
         command = str(request.data.get("command") or "").strip()
         if command in device_commands.SUPERUSER_COMMANDS and not request.user.is_superuser:
             return RequestFailed({"reason": "Superuser access required"})

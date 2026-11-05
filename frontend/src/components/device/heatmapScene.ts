@@ -10,7 +10,8 @@ import type { ChartFrame, ChartLayout } from './heatmapChart';
 
 /** Opacity of the heat field over the plan. */
 const HEAT_OPACITY = 0.7;
-const MARKER_RADIUS = 4.5;
+// 30% smaller than the former 4.5 px - the dots covered too much of the heat.
+const MARKER_RADIUS = 3.15;
 /** Marker of a sensor reading above its threshold. */
 const OVER_THRESHOLD_COLOR = '#dc2626';
 /** Border of a selected sensor (shown in the measurements' second plot). */

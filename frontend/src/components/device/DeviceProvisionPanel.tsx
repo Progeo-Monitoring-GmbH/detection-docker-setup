@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { Alert, Button, Col, Form, Row, Spinner } from 'react-bootstrap';
 import { CheckCircle, Clipboard, Download, FileEarmarkCode } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
@@ -8,6 +8,7 @@ import axiosConfig from '../../axiosConfig';
 import { downloadBlob } from '../../download';
 import { showErrorBar, showRequestError, showSuccessBar } from '../ui/Snackbar.jsx';
 import PanelCard from '../ui/kit/PanelCard';
+import { bundleVersionLabel, type FirmwareBundle } from './firmwareBundle';
 
 /** A location of /v1/device/provision/locations/ (model: its default device.model). */
 type ProvisionLocation = {
@@ -19,17 +20,6 @@ type ProvisionLocation = {
 };
 
 type Option = { value: number; label: string };
-
-/** A flash bundle the server holds (firmware.list_bundles, newest first). */
-type FirmwareBundle = {
-  id: string;
-  release: string | null;
-  firmware: string | null;
-  created: string | null;
-  channels: string[];
-  /** Channels whose "latest" it is. */
-  latest_in: string[];
-};
 
 type ProvisionSettings = {
   model: string;
@@ -238,14 +228,53 @@ const DeviceProvisionPanel = ({
 
   const portalQrCode = (title: string, caption: string, code: QrCode) => (
     <figure className="m-0 text-center">
-      <img src={code.image} alt={title} width={180} height={180} style={{ imageRendering: 'pixelated' }} />
-      <figcaption className="small">
+      <img src={code.image} alt={title} width={130} height={130} style={{ imageRendering: 'pixelated' }} />
+      <figcaption style={{ fontSize: 11.5 }}>
         <strong>{title}</strong>
         <br />
         <code>{caption}</code>
       </figcaption>
     </figure>
   );
+
+  const label = (text: string) => (
+    <Form.Label className="text-muted mb-0" style={{ fontSize: 11.5 }}>
+      {text}
+    </Form.Label>
+  );
+
+  // "v1.0.0 (FW: v1.6.1) · latest in stable" - the full bundle id on hover.
+  const bundleOption = (bundle: FirmwareBundle) =>
+    [
+      bundleVersionLabel(bundle),
+      bundle.latest_in.length
+        ? t('provision_firmware_latest', { channels: bundle.latest_in.join(', ') })
+        : bundle.channels.join(', '),
+    ]
+      .filter(Boolean)
+      .join(' · ');
+
+  const facts: [string, ReactNode][] = preview
+    ? [
+        ['Device hash', <code key="hash">{preview.device_hash}</code>],
+        [t('provision_model'), <code key="model">{preview.model}</code>],
+        [
+          t('provision_firmware'),
+          <span key="firmware">
+            <code>{preview.firmware_version}</code>
+            {preview.firmware_bundle && <span className="text-muted ms-1">({preview.firmware_bundle})</span>}
+          </span>,
+        ],
+        ['Location', `${location?.name || '-'} (project ${preview.project_id})`],
+        [
+          'URL',
+          <code key="url" className="text-break">
+            {preview.url}
+          </code>,
+        ],
+        ['Token', <code key="token">{preview.token}</code>],
+      ]
+    : [];
 
   return (
     <PanelCard
@@ -256,7 +285,9 @@ const DeviceProvisionPanel = ({
         </Button>
       }
     >
-      <div className="small text-muted mb-3">{t('provision_add_hint')}</div>
+      <div className="text-muted mb-2" style={{ fontSize: 12 }}>
+        {t('provision_add_hint')}
+      </div>
 
       {locations === null ? (
         <div className="d-flex align-items-center gap-2 text-muted py-2">
@@ -268,11 +299,15 @@ const DeviceProvisionPanel = ({
         </Alert>
       ) : (
         <>
-          <Row className="g-3">
-            <Col md={4}>
+          <Row className="g-2 align-items-end">
+            <Col sm={6} lg={3}>
               <Form.Group controlId="provision-model">
-                <Form.Label className="text-muted small mb-1">{t('provision_model')}</Form.Label>
-                <Form.Select value={settings.model} onChange={(event) => updateSetting('model', event.target.value)}>
+                {label(t('provision_model'))}
+                <Form.Select
+                  size="sm"
+                  value={settings.model}
+                  onChange={(event) => updateSetting('model', event.target.value)}
+                >
                   {/* A default the list lacks stays selectable. */}
                   {settings.model && !models.includes(settings.model) && (
                     <option value={settings.model}>{settings.model}</option>
@@ -285,40 +320,35 @@ const DeviceProvisionPanel = ({
                 </Form.Select>
               </Form.Group>
             </Col>
-            <Col md={4}>
+            <Col sm={6} lg={3}>
               <Form.Group controlId="provision-firmware">
-                <Form.Label className="text-muted small mb-1">{t('provision_firmware')}</Form.Label>
+                {label(t('provision_firmware'))}
                 {bundles.length === 0 ? (
                   // No bundle on the server: the config gets the built-in version.
-                  <Form.Select disabled value="">
+                  <Form.Select size="sm" disabled value="">
                     <option value="">{t('provision_firmware_none', { version: firmwareFallback })}</option>
                   </Form.Select>
                 ) : (
                   <Form.Select
+                    size="sm"
                     value={settings.firmware}
+                    title={settings.firmware || undefined}
                     onChange={(event) => updateSetting('firmware', event.target.value)}
                   >
                     {bundles.map((bundle) => (
-                      <option key={bundle.id} value={bundle.id}>
-                        {[
-                          bundle.id,
-                          bundle.firmware,
-                          bundle.latest_in.length
-                            ? t('provision_firmware_latest', { channels: bundle.latest_in.join(', ') })
-                            : bundle.channels.join(', '),
-                        ]
-                          .filter(Boolean)
-                          .join(' · ')}
+                      <option key={bundle.id} value={bundle.id} title={bundle.id}>
+                        {bundleOption(bundle)}
                       </option>
                     ))}
                   </Form.Select>
                 )}
               </Form.Group>
             </Col>
-            <Col sm={4} md={2}>
+            <Col xs={6} sm={3} lg={2}>
               <Form.Group controlId="provision-sensors">
-                <Form.Label className="text-muted small mb-1">Sensors</Form.Label>
+                {label('Sensors')}
                 <Form.Control
+                  size="sm"
                   type="number"
                   min={1}
                   value={settings.sensors}
@@ -326,10 +356,11 @@ const DeviceProvisionPanel = ({
                 />
               </Form.Group>
             </Col>
-            <Col sm={4} md={2}>
+            <Col xs={6} sm={3} lg={2}>
               <Form.Group controlId="provision-interval">
-                <Form.Label className="text-muted small mb-1">Interval (sec)</Form.Label>
+                {label('Interval (sec)')}
                 <Form.Control
+                  size="sm"
                   type="number"
                   min={10}
                   max={86400}
@@ -338,10 +369,11 @@ const DeviceProvisionPanel = ({
                 />
               </Form.Group>
             </Col>
-            <Col md={4}>
+            <Col sm={6} lg={2}>
               <Form.Group controlId="provision-resistance">
-                <Form.Label className="text-muted small mb-1">Pull-down resistance</Form.Label>
+                {label('Pull-down')}
                 <Form.Select
+                  size="sm"
                   value={settings.pulldown_resistance}
                   onChange={(event) => updateSetting('pulldown_resistance', event.target.value)}
                 >
@@ -353,19 +385,21 @@ const DeviceProvisionPanel = ({
                 </Form.Select>
               </Form.Group>
             </Col>
-            <Col md={4}>
+            <Col sm={6} lg={3}>
               <Form.Group controlId="provision-ssid">
-                <Form.Label className="text-muted small mb-1">WiFi SSID (optional)</Form.Label>
+                {label('WiFi SSID (optional)')}
                 <Form.Control
+                  size="sm"
                   value={settings.wifi_ssid}
                   onChange={(event) => updateSetting('wifi_ssid', event.target.value)}
                 />
               </Form.Group>
             </Col>
-            <Col md={4}>
+            <Col sm={6} lg={3}>
               <Form.Group controlId="provision-pwd">
-                <Form.Label className="text-muted small mb-1">WiFi password (optional)</Form.Label>
+                {label('WiFi password (optional)')}
                 <Form.Control
+                  size="sm"
                   type="password"
                   autoComplete="new-password"
                   value={settings.wifi_pwd}
@@ -373,100 +407,77 @@ const DeviceProvisionPanel = ({
                 />
               </Form.Group>
             </Col>
-            <Col md={4} className="d-flex align-items-end">
+            <Col xs="auto" className="pb-1">
               <Form.Check
                 type="switch"
                 id="provision-protective-earth"
                 label="Protective earth"
+                className="small mb-0"
                 checked={settings.protective_earth}
                 onChange={(event) => updateSetting('protective_earth', event.target.checked)}
               />
             </Col>
+            <Col xs="auto" className="ms-lg-auto">
+              <Button size="sm" variant="primary" onClick={generate} disabled={loading || !settings.model}>
+                {loading && !preview ? (
+                  <Spinner size="sm" animation="border" className="me-2" />
+                ) : (
+                  <FileEarmarkCode className="me-2" />
+                )}
+                Generate config
+              </Button>
+            </Col>
           </Row>
-          <div className="mt-3">
-            <Button variant="primary" onClick={generate} disabled={loading || !settings.model}>
-              {loading && !preview ? (
-                <Spinner size="sm" animation="border" className="me-2" />
-              ) : (
-                <FileEarmarkCode className="me-2" />
-              )}
-              Generate config
-            </Button>
-          </div>
 
           {preview && (
-            <div className="mt-4">
-              <dl className="row mb-3">
-                <dt className="col-sm-2">Device hash</dt>
-                <dd className="col-sm-10">
-                  <code>{preview.device_hash}</code>
-                </dd>
-                <dt className="col-sm-2">{t('provision_model')}</dt>
-                <dd className="col-sm-10">
-                  <code>{preview.model}</code>
-                </dd>
-                <dt className="col-sm-2">{t('provision_firmware')}</dt>
-                <dd className="col-sm-10">
-                  <code>{preview.firmware_version}</code>
-                  {preview.firmware_bundle && (
-                    <span className="text-muted small ms-2">({preview.firmware_bundle})</span>
-                  )}
-                </dd>
-                <dt className="col-sm-2">Location</dt>
-                <dd className="col-sm-10">
-                  {location.name || '-'} (project {preview.project_id})
-                </dd>
-                <dt className="col-sm-2">URL</dt>
-                <dd className="col-sm-10 text-break">
-                  <code>{preview.url}</code>
-                </dd>
-                <dt className="col-sm-2">Token</dt>
-                <dd className="col-sm-10">
-                  <code>{preview.token}</code>
-                </dd>
-              </dl>
+            <div className="mt-3">
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+                  gap: '4px 16px',
+                  fontSize: 12.5,
+                  marginBottom: 10,
+                }}
+              >
+                {facts.map(([name, value]) => (
+                  <div key={name} style={{ minWidth: 0 }}>
+                    <span className="text-muted me-2">{name}</span>
+                    {value}
+                  </div>
+                ))}
+              </div>
 
-              <Row className="g-3 mb-3">
-                <Col lg={8}>
+              <Row className="g-2 mb-2">
+                <Col lg={9}>
                   <Form.Control
                     as="textarea"
                     readOnly
-                    rows={36}
+                    rows={14}
                     value={preview.config}
-                    className="font-monospace small"
+                    className="font-monospace"
+                    style={{ fontSize: 11.5 }}
                     onFocus={(event) => event.target.select()}
                   />
                 </Col>
-                <Col lg={4}>
-                  <div className="d-flex flex-wrap flex-lg-column align-items-center gap-4">
+                <Col lg={3}>
+                  <div className="d-flex flex-wrap flex-lg-column align-items-center gap-2">
                     {portalQrCode('Setup portal Wi-Fi', preview.portal.wifi.ssid, preview.portal.wifi)}
                     {portalQrCode('Controller', preview.portal.frontend.url, preview.portal.frontend)}
                   </div>
                 </Col>
               </Row>
 
-              {confirmed ? (
-                <Alert variant="success" className="mb-3">
-                  <CheckCircle className="me-2" />
-                  Device <code>{preview.device_hash}</code> is created and linked to its location - it is ready to
-                  send its data.
-                </Alert>
-              ) : (
-                <Alert variant="warning" className="mb-3">
-                  Nothing is saved yet: the token only works once you confirm.
-                </Alert>
-              )}
-
-              <div className="d-flex flex-wrap gap-2">
-                <Button variant="outline-secondary" onClick={copyConfig}>
+              <div className="d-flex flex-wrap align-items-center gap-2">
+                <Button size="sm" variant="outline-secondary" onClick={copyConfig}>
                   <Clipboard className="me-2" />
                   Copy
                 </Button>
-                <Button variant="outline-secondary" onClick={downloadConfig}>
+                <Button size="sm" variant="outline-secondary" onClick={downloadConfig}>
                   <Download className="me-2" />
                   Download
                 </Button>
-                <Button variant="success" onClick={confirm} disabled={loading || confirmed}>
+                <Button size="sm" variant="success" onClick={confirm} disabled={loading || confirmed}>
                   {loading ? (
                     <Spinner size="sm" animation="border" className="me-2" />
                   ) : (
@@ -474,6 +485,15 @@ const DeviceProvisionPanel = ({
                   )}
                   Confirm
                 </Button>
+                {confirmed ? (
+                  <span className="small" style={{ color: '#3F7A1C' }}>
+                    <CheckCircle className="me-1" />
+                    Device <code>{preview.device_hash}</code> is created and linked to its location - it is ready to
+                    send its data.
+                  </span>
+                ) : (
+                  <span className="small text-muted">Nothing is saved yet: the token only works once you confirm.</span>
+                )}
               </div>
             </div>
           )}

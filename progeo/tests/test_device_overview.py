@@ -31,6 +31,19 @@ def test_hash_kind(raw_hash, kind):
     assert device_overview.hash_kind(raw_hash) == kind
 
 
+@pytest.mark.parametrize("hardware, model", [
+    ("smartex dm", "smartex dm"),
+    ("smartex® dm", "smartex dm"),
+    ("SMARTEX MX-peel", "smartex mx-PEEL"),
+    ("smartex mx", "smartex mx"),
+    ("7067_S1", None),
+    ("", None),
+    (None, None),
+])
+def test_device_model_names_only_known_models(hardware, model):
+    assert device_overview.device_model(hardware) == model
+
+
 def test_is_online_allows_two_intervals_and_the_grace():
     now = timezone.now()
     limit = timedelta(seconds=2 * 600) + device_overview.ONLINE_GRACE
@@ -42,25 +55,24 @@ def test_is_online_allows_two_intervals_and_the_grace():
     assert device_overview.is_online(now - timedelta(hours=2), 0, now) is True
 
 
-def test_device_stats_counts_every_type_and_ping_result():
+def test_device_stats_counts_hash_kinds_and_ping_results():
     rows = [
         {"type": "imei", "hash_kind": "project", "online": True, "last_seen_at": 1, "ping": True},
         {"type": "imei", "hash_kind": "legacy", "online": False, "last_seen_at": None, "ping": None},
         {"type": None, "hash_kind": "mac", "online": False, "last_seen_at": 1, "ping": False},
     ]
 
-    stats = device_overview.device_stats(rows, ["imei", "lorawan"], pinged=True)
+    stats = device_overview.device_stats(rows, pinged=True)
 
     assert stats == {
         "total": 3,
-        "by_type": {"imei": 2, "lorawan": 0, "unset": 1},
         "online": 1,
         "offline": 2,
         "never_seen": 1,
         "hash_kinds": {"project": 1, "mac": 1, "legacy": 1},
         "ping": {"reachable": 1, "unreachable": 1, "no_ip": 1},
     }
-    assert device_overview.device_stats(rows, ["imei"], pinged=False)["ping"] is None
+    assert device_overview.device_stats(rows, pinged=False)["ping"] is None
 
 
 # -- API ---------------------------------------------------------------------
@@ -99,7 +111,8 @@ def test_location_devices_lists_only_the_locations_devices(api_client, overview_
     stats = body["stats"]
     assert (stats["total"], stats["online"], stats["offline"], stats["never_seen"]) == (3, 1, 2, 1)
     assert stats["hash_kinds"] == {"project": 1, "mac": 1, "legacy": 1}
-    assert stats["by_type"] == {**dict.fromkeys(ProgeoDevice.DeviceType.values, 0), "imei": 1, "lorawan": 1, "unset": 1}
+    # Without a known model in hardware, the overview shows device.type.
+    assert [rows[device.id]["model"] for device in (fresh, stale, silent)] == [None, None, None]
     assert stats["ping"] is None
 
 

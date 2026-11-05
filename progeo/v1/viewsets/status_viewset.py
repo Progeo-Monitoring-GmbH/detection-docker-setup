@@ -7,7 +7,6 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from uuid import uuid4
 
-from celery.result import AsyncResult
 from django.db import transaction
 from django.db.models import OuterRef, Subquery
 from django.http import FileResponse, JsonResponse
@@ -29,7 +28,12 @@ from progeo.helper.device_inventory import (
     statistics_section,
     statistics_snapshot,
 )
-from progeo.helper.device_overview import device_stats, hash_kind, is_online
+from progeo.helper.device_overview import (
+    device_model,
+    device_stats,
+    hash_kind,
+    is_online,
+)
 from progeo.helper.lageplan_export import (
     archive_name,
     recent_lageplans,
@@ -53,7 +57,6 @@ from progeo.helper.project_dbs import (
 )
 from progeo.settings import SETUP_DIR, UPLOAD_DIR
 from progeo.tasks import collect_host_storage_info, run_cad_import
-from progeo.tasks import identify_device as identify_device_task
 from progeo.v1.creator import create_progeo_measure_point_safe, save_lageplan_upload
 from progeo.v1.helper import dlog
 from progeo.v1.log_files_helper import (
@@ -869,59 +872,6 @@ class StatusViewSet(ProgeoModalViewSet):
 
     @calc_runtime
     @require_module_permissions("module_devices_enabled")
-    @action(detail=False, url_path="identify_device", methods=["GET"])
-    def identify_device(self, request, *args, **kwargs):
-        if not is_staff_admin(request.user):
-            return RequestFailed({"reason": "Staff access required"})
-        ip = (request.query_params.get("ip") or "").strip()
-        if not ip:
-            return RequestFailed({"reason": "Missing query parameter: ip"})
-
-        try:
-            parsed_ip = ipaddress.ip_address(ip)
-        except ValueError:
-            return RequestFailed({"reason": "Invalid IP address"})
-
-        if parsed_ip.version != 4 or not parsed_ip.is_private:
-            return RequestFailed({"reason": "Only private IPv4 addresses are allowed"})
-
-        task = identify_device_task.delay(str(parsed_ip))
-        return RequestSuccess({
-            "queued": True,
-            "task_id": task.id,
-            "ip": str(parsed_ip),
-        })
-
-    @calc_runtime
-    @require_module_permissions("module_devices_enabled")
-    @action(detail=False, url_path="identify_device_result", methods=["GET"])
-    def identify_device_result(self, request, *args, **kwargs):
-        if not is_staff_admin(request.user):
-            return RequestFailed({"reason": "Staff access required"})
-        task_id = (request.query_params.get("task_id") or "").strip()
-        if not task_id:
-            return RequestFailed({"reason": "Missing query parameter: task_id"})
-
-        async_result = AsyncResult(task_id)
-        state = async_result.state
-
-        payload = {
-            "task_id": task_id,
-            "state": state,
-            "ready": async_result.ready(),
-            "successful": async_result.successful() if async_result.ready() else False,
-            "failed": async_result.failed() if async_result.ready() else False,
-        }
-
-        if async_result.ready():
-            if async_result.successful():
-                payload["result"] = async_result.result
-            else:
-                payload["error"] = str(async_result.result)
-
-        return RequestSuccess(payload)
-    @calc_runtime
-    @require_module_permissions("module_devices_enabled")
     @action(detail=False, url_path="devices", methods=["GET"])
     def list_device_status(self, request, *args, **kwargs):
         db_name = "default"
@@ -1146,7 +1096,7 @@ class StatusViewSet(ProgeoModalViewSet):
                     parsed = ipaddress.ip_address(ip) if ip else None
                 except ValueError:
                     parsed = None
-                # Only the private IPv4 network (like identify_device).
+                # Only the private IPv4 network.
                 if parsed is None or parsed.version != 4 or not parsed.is_private:
                     return None
                 return ping_host_quick(str(parsed), timeout_seconds=1)
@@ -1164,6 +1114,7 @@ class StatusViewSet(ProgeoModalViewSet):
                 "last_seen_at": last_seen,
                 "online": is_online(last_seen, device.data_interval, now),
                 "hash_kind": hash_kind(device.raw_hash),
+                "model": device_model(device.hardware),
                 "ip": address(device),
                 "ping": pings.get(device.pk),
             })
@@ -1171,7 +1122,7 @@ class StatusViewSet(ProgeoModalViewSet):
         return RequestSuccess({
             "location": {"id": location.pk, "project_id": location.project_id, "name": location.name},
             "devices": rows,
-            "stats": device_stats(rows, ProgeoDevice.DeviceType.values, pinged),
+            "stats": device_stats(rows, pinged),
             "pinged": pinged,
         })
 

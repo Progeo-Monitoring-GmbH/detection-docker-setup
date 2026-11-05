@@ -10,6 +10,7 @@ import { errorReason, showErrorBar, showSuccessBar } from '../components/ui/Snac
 import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
+import DeleteIconButton from '../components/ui/kit/DeleteIconButton';
 import { formatDate } from './dateFormat';
 import {
   type BackupProject,
@@ -474,18 +475,11 @@ const BackupView = () => {
             {t('backup_restore')}
           </button>
           {canDelete && (
-            <button
-              type="button"
+            <DeleteIconButton
+              label={t('backup_delete')}
               onClick={() => deleteBackup(row)}
               disabled={isBulkBusy || busyAction === `delete-${row.id}`}
-              style={{
-                ...smallActionButtonStyle(isBulkBusy || busyAction === `delete-${row.id}`),
-                background: '#FBEAE4',
-                color: '#C44D26',
-              }}
-            >
-              {t('backup_delete')}
-            </button>
+            />
           )}
         </div>
       ),

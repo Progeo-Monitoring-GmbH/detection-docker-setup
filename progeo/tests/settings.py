@@ -281,7 +281,6 @@ PROJECT_DB_MIGRATE_WORKERS = 1
 DATABASE_ROUTERS = [
     "progeo.router.DemoRouter",
     "progeo.router.ProjectRouter",
-    "progeo.router.DjangoRouter",
     "progeo.router.AccountRouter",
 ]
 

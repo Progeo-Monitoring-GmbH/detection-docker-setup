@@ -12,6 +12,7 @@ import ImageCanvasStage, {
   type PlacedSensor,
   type PlanScaleValues,
 } from '../components/ui/ImageCanvasStage.tsx';
+import DeleteIconButton from '../components/ui/kit/DeleteIconButton';
 import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
@@ -39,7 +40,7 @@ type WizardDevice = {
   first_sensor_order?: number | null;
 };
 
-/** Step 3: the sensors from..to (sensor_order, '' = open) of one device. */
+/** Step 2: the sensors from..to (sensor_order, '' = open) of one device. */
 type DeviceRange = { deviceId: number | null; from: string; to: string };
 
 /** A Lageplan of the location (ProgeoLageplanSerializer). */
@@ -394,20 +395,21 @@ const LageplanWizardView = () => {
   // Bumped to reload the measure points (e.g. after a JSON import).
   const [reloadKey, setReloadKey] = useState(0);
 
-  // Step 2: the location's Lageplans (active ones first, as the backend
+  // Step 3: the location's Lageplans (active ones first, as the backend
   // orders them) and the one the next steps work on.
   const [lageplans, setLageplans] = useState<WizardLageplan[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
   const [addingPlan, setAddingPlan] = useState(false);
 
-  // Step 3, "Manually set sensors": the location's devices and the points
+  // Step 4, "Manually set sensors": the location's devices and the points
   // placed on the plans - stored only with "Save manual sensors".
   const [pointSource, setPointSource] = useState<PointSource>('cad');
   const [devices, setDevices] = useState<WizardDevice[]>([]);
   const [placedSensors, setPlacedSensors] = useState<WizardSensor[]>([]);
   const [activeDeviceId, setActiveDeviceId] = useState<number | null>(null);
   const [placementDirty, setPlacementDirty] = useState(false);
-  // Step 3, CAD/JSON/TXT: the devices the imported points are connected to,
+  // Step 2 (for the CAD/JSON/TXT import of step 4): the devices the
+  // imported points are connected to,
   // each with its sensors (a plan's sensors can be split over devices).
   const [deviceRanges, setDeviceRanges] = useState<DeviceRange[]>([]);
 
@@ -1018,7 +1020,7 @@ const LageplanWizardView = () => {
 
   const renderStepTwo = () => (
     <StepCard
-      number={2}
+      number={3}
       title="Lageplan"
       done={!!sourceMeta?.imageUrl}
       actions={
@@ -1098,7 +1100,7 @@ const LageplanWizardView = () => {
   const renderManualSensors = () => (
     <div className="d-flex flex-column gap-3">
       <div style={{ fontSize: 12.5, color: MUTED }}>
-        Select a sensor, then click its position on the plan in step 4. Placed
+        Select a sensor, then click its position on the plan in step 5. Placed
         points can be dragged. Nothing is stored until you save.
       </div>
 
@@ -1167,14 +1169,10 @@ const LageplanWizardView = () => {
           {placementDirty && ' · unsaved changes'}
         </span>
         {activeDevice && placedIds.has(activeDevice.id) && (
-          <Button
-            size="sm"
-            variant="outline-danger"
-            style={{ borderRadius: 'var(--progeo-radius-pill)' }}
+          <DeleteIconButton
+            label={`Remove ${deviceLabel(activeDevice)} from the plan`}
             onClick={removeActiveSensor}
-          >
-            Remove {deviceLabel(activeDevice)}
-          </Button>
+          />
         )}
         <div className="ms-auto d-flex gap-2">
           <PillButton
@@ -1206,7 +1204,7 @@ const LageplanWizardView = () => {
         </Notice>
       )}
       {!sourceMeta?.imageUrl && (
-        <Notice>Select or add a Lageplan in step 2 to place the sensors.</Notice>
+        <Notice>Select or add a Lageplan in step 3 to place the sensors.</Notice>
       )}
     </div>
   );
@@ -1220,17 +1218,11 @@ const LageplanWizardView = () => {
       <span style={{ fontSize: 12, color: MUTED }}>{text}</span>
     );
     return (
-      <div
-        className="d-flex flex-column gap-2"
-        style={{ background: 'var(--progeo-surface)', borderRadius: 13, padding: 14 }}
-      >
-        <div>
-          <div style={{ fontSize: 13.5, fontWeight: 500 }}>Devices</div>
-          <div style={{ fontSize: 12, color: MUTED }}>
-            {devices.length === 0
-              ? 'No devices are connected to this location - the points are imported without device.'
-              : 'The imported sensors are connected to these devices. Each device counts its pairs from 1: pair 1 is the first sensor of its range. Leave "to" empty for all sensors from "from" on.'}
-          </div>
+      <div className="d-flex flex-column gap-2">
+        <div style={{ fontSize: 12, color: MUTED }}>
+          {devices.length === 0
+            ? 'No devices are connected to this location - the points are imported without device.'
+            : 'The sensors imported in step 4 (CAD/JSON/TXT) are connected to these devices. Each device counts its pairs from 1: pair 1 is the first sensor of its range. Leave "to" empty for all sensors from "from" on. Placing sensors manually picks the device per sensor in step 4.'}
         </div>
         {deviceRanges.map((range, index) => (
           // Rows have no id of their own.
@@ -1251,8 +1243,8 @@ const LageplanWizardView = () => {
                 const connected = connectedCount(device.id);
                 return (
                   <option key={device.id} value={device.id}>
-                    {deviceLabel(device)}
-                    {device.hardware && device.mac ? ` · ${device.hardware}` : ''}
+                    {device.raw_hash}
+                    {device.hardware ? ` · ${device.hardware}` : ''}
                     {connected ? ` · ${connected} point(s) now` : ''}
                   </option>
                 );
@@ -1280,9 +1272,8 @@ const LageplanWizardView = () => {
               value={range.to}
               onChange={(event) => updateRange(index, { to: event.target.value })}
             />
-            <PillButton
-              variant="ghost"
-              label="Remove"
+            <DeleteIconButton
+              label="Remove this device"
               onClick={() =>
                 setDeviceRanges((current) => current.filter((_range, position) => position !== index))
               }
@@ -1311,9 +1302,30 @@ const LageplanWizardView = () => {
     );
   };
 
+  const renderStepDevice = () => (
+    <StepCard
+      number={2}
+      title="Device"
+      done={usedRanges.length > 0 && !deviceRangesProblem}
+      actions={
+        selectedLocationId !== null && (
+          <span style={{ fontSize: 12.5, color: MUTED }}>
+            {devices.length} device(s) at this location
+          </span>
+        )
+      }
+    >
+      {selectedLocationId === null ? (
+        <Notice tone="warning">Select a location in step 1 first.</Notice>
+      ) : (
+        renderDeviceRanges()
+      )}
+    </StepCard>
+  );
+
   const renderStepThree = () => (
     <StepCard
-      number={3}
+      number={4}
       title="Measure points"
       done={measurePoints.length > 0 && !placementDirty}
       actions={
@@ -1338,7 +1350,9 @@ const LageplanWizardView = () => {
             </div>
           </div>
 
-          {pointSource !== 'manual' && renderDeviceRanges()}
+          {pointSource !== 'manual' && deviceRangesProblem && (
+            <Notice tone="warning">Fix the device ranges in step 2 before importing.</Notice>
+          )}
           {/* No import while the device ranges don't fit (see the notice). */}
           {!deviceRangesProblem && pointSource === 'cad' && (
             <CadUploadDropbox
@@ -1401,10 +1415,10 @@ const LageplanWizardView = () => {
     pointSource === 'manual' && selectedLocationId !== null;
 
   const renderStepFour = () => (
-    <StepCard number={4} title="Align and inspect">
+    <StepCard number={5} title="Align and inspect">
       {!sourceMeta?.imageUrl ? (
         <Notice tone="warning">
-          Select or add a Lageplan in step 2 before using the canvas editor.
+          Select or add a Lageplan in step 3 before using the canvas editor.
         </Notice>
       ) : (
         <ImageCanvasStage
@@ -1505,6 +1519,7 @@ const LageplanWizardView = () => {
       {error && <Notice tone="danger">{error}</Notice>}
 
       {renderStepOne()}
+      {renderStepDevice()}
       {renderStepTwo()}
       {renderStepThree()}
       {renderStepFour()}

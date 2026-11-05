@@ -397,7 +397,6 @@ PROJECT_DB_WORKERS = parse_int(os.getenv("PROJECT_DB_WORKERS"), 8)
 PROJECT_DB_MIGRATE_WORKERS = parse_int(os.getenv("PROJECT_DB_MIGRATE_WORKERS"), None)
 
 DATABASE_ROUTERS = [
-    #"progeo.router.DjangoRouter",
     "progeo.router.DemoRouter",
     "progeo.router.ProjectRouter",
     "progeo.router.AccountRouter",

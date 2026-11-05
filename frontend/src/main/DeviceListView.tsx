@@ -1,4 +1,4 @@
-import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router';
@@ -8,27 +8,27 @@ import {
   ArrowRepeat,
   Broadcast,
   Image,
-  Lightbulb,
   PlusCircle,
   Sliders,
   Terminal,
-  Trash,
 } from 'react-bootstrap-icons';
 import { Spinner } from 'react-bootstrap';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
 import { formatDate } from './dateFormat';
-import { showErrorBar, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import { showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import LocationPicker, { type PickableLocation } from '../components/location/LocationPicker';
 import DeviceCommandsDialog from '../components/device/DeviceCommandsDialog';
 import AirtableSyncPanel, { type AirtableSync } from '../components/device/AirtableSyncPanel';
 import DeviceProvisionPanel, { type ProvisionedDevice } from '../components/device/DeviceProvisionPanel';
 import ProvisionTestMeasurements from '../components/device/ProvisionTestMeasurements';
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
+import DeleteIconButton from '../components/ui/kit/DeleteIconButton';
 import KpiStrip from '../components/ui/kit/KpiStrip';
 import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
+import SearchableDataTable, { type SearchableColumn } from '../components/ui/kit/SearchableDataTable';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import { staffFlags } from './access';
 
@@ -40,7 +40,10 @@ type OverviewDevice = {
   location: number | null;
   raw_hash: string;
   display_name?: string;
+  /** Technical class (smartbox, node, lorawan, ...). */
   type?: string | null;
+  /** The precise model ("smartex dm") - null if hardware names no known one. */
+  model: string | null;
   hardware?: string | null;
   version?: string | null;
   mac?: string | null;
@@ -56,7 +59,6 @@ type OverviewDevice = {
 
 type OverviewStats = {
   total: number;
-  by_type: Record<string, number>;
   online: number;
   offline: number;
   never_seen: number;
@@ -133,14 +135,14 @@ const CountBar = ({ label, count, total, hint }: { label: string; count: number;
   </div>
 );
 
-const actionStyle = (disabled = false, danger = false): CSSProperties => ({
+const actionStyle = (disabled = false): CSSProperties => ({
   width: 30,
   height: 30,
   border: 'none',
   borderRadius: 9,
   background: 'var(--progeo-surface)',
   boxShadow: '0 2px 8px rgba(11, 54, 89, .12)',
-  color: danger ? RED : 'var(--progeo-blue)',
+  color: 'var(--progeo-blue)',
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
@@ -149,23 +151,7 @@ const actionStyle = (disabled = false, danger = false): CSSProperties => ({
   padding: 0,
 });
 
-const thStyle: CSSProperties = {
-  fontSize: 11,
-  letterSpacing: '.07em',
-  textTransform: 'uppercase',
-  color: MUTED,
-  fontWeight: 500,
-  padding: '0 12px 10px',
-  whiteSpace: 'nowrap',
-  textAlign: 'left',
-};
-
-const tdStyle: CSSProperties = {
-  padding: '11px 12px',
-  borderTop: '1px solid var(--progeo-track)',
-  fontSize: 13,
-  verticalAlign: 'middle',
-};
+const muted = <span style={{ color: MUTED }}>–</span>;
 
 /**
  * Device overview of ONE location: pick it with the LocationPicker, then
@@ -187,7 +173,7 @@ const DeviceListView = () => {
   const { enqueueSnackbar } = useSnackbar();
   const { hasPermission } = usePermissions();
   const [searchParams, setSearchParams] = useSearchParams();
-  // Identify and ping are staff tools (is_staff_admin in the backend).
+  // Ping and controller commands are staff tools (is_staff_admin in the backend).
   const isStaff = staffFlags(auth?.user).isStaffOrSuperuser;
   // update (writes a whole file) and command results (the config) are superuser-only.
   const isSuperuser = staffFlags(auth?.user).isSuperuser;
@@ -299,46 +285,6 @@ const DeviceListView = () => {
       next.delete('location');
     }
     setSearchParams(next, { replace: true });
-  };
-
-  // -- identify (blink) --------------------------------------------------------
-
-  const pollIdentifyResult = (taskId: string, ip: string, attempt = 0) => {
-    void axiosConfig.perform_get(
-      auth,
-      `/v1/status/identify_device_result/?task_id=${encodeURIComponent(taskId)}`,
-      (response) => {
-        const state = response?.data?.state;
-        if (state === 'SUCCESS') {
-          showSuccessBar(enqueueSnackbar, t('devices_identify_ok', { ip }));
-        } else if (state === 'FAILURE') {
-          showErrorBar(enqueueSnackbar, t('devices_identify_failed', { ip }));
-        } else if (attempt + 1 >= 15) {
-          showErrorBar(enqueueSnackbar, t('devices_identify_timeout', { ip }));
-        } else {
-          setTimeout(() => pollIdentifyResult(taskId, ip, attempt + 1), 1000);
-        }
-      },
-      () => showErrorBar(enqueueSnackbar, t('devices_identify_failed', { ip })),
-    );
-  };
-
-  const identify = (device: OverviewDevice) => {
-    if (!device.ip) {
-      return;
-    }
-    const ip = device.ip;
-    void axiosConfig.perform_get(
-      auth,
-      `/v1/status/identify_device/?ip=${encodeURIComponent(ip)}`,
-      (response) => {
-        showSuccessBar(enqueueSnackbar, t('devices_identify_queued', { ip }));
-        if (response?.data?.task_id) {
-          pollIdentifyResult(response.data.task_id, ip);
-        }
-      },
-      (error) => showRequestError(enqueueSnackbar, t('devices_identify_failed', { ip }), error),
-    );
   };
 
   // -- delete ------------------------------------------------------------------
@@ -497,6 +443,163 @@ const DeviceListView = () => {
       <Chip>{t(`devices_hash_short_${device.hash_kind}`)}</Chip>
     );
 
+  // Commands are polled only by controllers on the new hash schema
+  // ("<project_id>-<nn>"); the backend refuses the others.
+  const commandsButton = (device: OverviewDevice) =>
+    device.hash_kind === 'project' ? (
+      <button
+        type="button"
+        title={t('devices_action_commands')}
+        aria-label={t('devices_action_commands')}
+        onClick={() => setCommandsTarget(device)}
+        style={actionStyle()}
+      >
+        <Terminal size={14} />
+      </button>
+    ) : (
+      // A disabled button shows no tooltip in every browser - the span does.
+      <span title={t('devices_action_commands_project_only', { example: projectExample })}>
+        <button type="button" disabled aria-label={t('devices_action_commands')} style={actionStyle(true)}>
+          <Terminal size={14} />
+        </button>
+      </span>
+    );
+
+  // Stable between renders - DataTable keeps its sorting, the search its texts.
+  const columns = useMemo<SearchableColumn<OverviewDevice>[]>(() => [
+    {
+      id: 'device',
+      name: t('devices_col_device'),
+      sortable: true,
+      grow: 2,
+      selector: (device) => device.display_name || device.raw_hash,
+      searchText: (device) => `${device.display_name ?? ''} ${device.raw_hash} #${device.id}`,
+      cell: (device) => (
+        <div style={{ padding: '6px 0', minWidth: 0 }}>
+          <div style={{ fontWeight: 500 }}>{device.display_name || device.raw_hash}</div>
+          <div className="font-monospace" style={{ fontSize: 11.5, color: MUTED }}>
+            {device.raw_hash} · #{device.id}
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: 'type',
+      name: t('devices_col_type'),
+      sortable: true,
+      // The precise model ("smartex dm"); without one the technical class.
+      selector: (device) => device.model || device.type || '',
+      searchText: (device) => `${device.model ?? ''} ${device.type ?? ''}`,
+      cell: (device) =>
+        device.model || device.type ? (
+          <div>
+            <div style={{ fontWeight: 500 }}>{device.model || device.type}</div>
+            {device.model && device.type && <div style={{ fontSize: 11.5, color: MUTED }}>{device.type}</div>}
+          </div>
+        ) : (
+          muted
+        ),
+    },
+    {
+      id: 'hash',
+      name: t('devices_col_hash'),
+      sortable: true,
+      selector: (device) => device.hash_kind,
+      searchText: (device) => t(`devices_hash_short_${device.hash_kind}`),
+      cell: hashChip,
+    },
+    {
+      id: 'status',
+      name: t('devices_col_status'),
+      sortable: true,
+      selector: (device) => (device.online ? 2 : device.last_seen_at ? 1 : 0),
+      searchText: (device) =>
+        t(device.online ? 'devices_status_online' : device.last_seen_at ? 'devices_status_offline' : 'devices_status_never'),
+      cell: statusChip,
+    },
+    {
+      id: 'last_seen',
+      name: t('devices_col_last_seen'),
+      sortable: true,
+      selector: (device) => device.last_seen_at ?? '',
+      searchText: (device) => (device.last_seen_at ? formatDate(device.last_seen_at, 'dateTimeSeconds') : ''),
+      cell: (device) => (
+        <span style={{ whiteSpace: 'nowrap' }}>
+          {device.last_seen_at ? formatDate(device.last_seen_at, 'dateTimeSeconds') : muted}
+        </span>
+      ),
+    },
+    {
+      id: 'ip',
+      name: t('devices_col_ip'),
+      sortable: true,
+      selector: (device) => device.ip ?? '',
+      cell: (device) => <span className="font-monospace">{device.ip || muted}</span>,
+    },
+    ...(isStaff
+      ? [
+          {
+            id: 'ping',
+            name: t('devices_col_ping'),
+            selector: (device: OverviewDevice) => (device.ping === null ? -1 : Number(device.ping)),
+            sortable: true,
+            cell: pingChip,
+          },
+        ]
+      : []),
+    {
+      id: 'actions',
+      name: '',
+      right: true,
+      grow: 0,
+      width: '210px',
+      ignoreRowClick: true,
+      cell: (device) => (
+        <div style={{ display: 'inline-flex', gap: 6 }}>
+          {isStaff && commandsButton(device)}
+          {/* "Einstellungen" is a superuser-only portal page. */}
+          {canEdit && isSuperuser && device.location && (
+            <button
+              type="button"
+              title={t('devices_action_settings')}
+              aria-label={t('devices_action_settings')}
+              onClick={() => navigate(`/location/${device.location}/einstellungen`)}
+              style={actionStyle()}
+            >
+              <Sliders size={14} />
+            </button>
+          )}
+          {/* Sensors are placed in the Lageplan wizard (superuser-only). */}
+          {canEdit && isSuperuser && device.location && (
+            <button
+              type="button"
+              title={t('devices_action_editor')}
+              aria-label={t('devices_action_editor')}
+              onClick={() => navigate(`/lageplan/wizard/?location=${device.location}`)}
+              style={actionStyle()}
+            >
+              <Image size={14} />
+            </button>
+          )}
+          {canProvision && device.location && (
+            <button
+              type="button"
+              title={t('devices_action_test_measurements')}
+              aria-label={t('devices_action_test_measurements')}
+              onClick={() => setTestDevice({ id: device.id, location: device.location!, raw_hash: device.raw_hash })}
+              style={actionStyle()}
+            >
+              <Activity size={14} />
+            </button>
+          )}
+          {canDelete && <DeleteIconButton label={t('devices_action_delete')} onClick={() => setDeleteTarget(device)} />}
+        </div>
+      ),
+    },
+    // The chips and buttons only read these.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [t, isStaff, isSuperuser, canEdit, canDelete, canProvision, overview?.pinged, pinging, projectExample]);
+
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -598,41 +701,25 @@ const DeviceListView = () => {
         <>
           <KpiStrip tiles={kpiTiles} />
 
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-              gap: 14,
-            }}
-          >
-            <PanelCard title={t('devices_types')}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {Object.entries(stats.by_type)
-                  .filter(([type, count]) => type !== 'unset' || count > 0)
-                  .map(([type, count]) => (
-                    <CountBar
-                      key={type}
-                      label={type === 'unset' ? t('devices_type_unset') : type}
-                      count={count}
-                      total={stats.total}
-                    />
-                  ))}
-              </div>
-            </PanelCard>
-            <PanelCard title={t('devices_hashes')}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {HASH_KINDS.map((kind) => (
-                  <CountBar
-                    key={kind}
-                    label={t(`devices_hash_${kind}`, { example: projectExample })}
-                    count={stats.hash_kinds[kind]}
-                    total={stats.total}
-                  />
-                ))}
-              </div>
-              <div style={{ fontSize: 12, color: MUTED, marginTop: 12 }}>{t('devices_online_hint')}</div>
-            </PanelCard>
-          </div>
+          <PanelCard title={t('devices_hashes')}>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                gap: '10px 24px',
+              }}
+            >
+              {HASH_KINDS.map((kind) => (
+                <CountBar
+                  key={kind}
+                  label={t(`devices_hash_${kind}`, { example: projectExample })}
+                  count={stats.hash_kinds[kind]}
+                  total={stats.total}
+                />
+              ))}
+            </div>
+            <div style={{ fontSize: 12, color: MUTED, marginTop: 12 }}>{t('devices_online_hint')}</div>
+          </PanelCard>
 
           <PanelCard
             title={t('devices_list', { name: overview?.location.name || `#${overview?.location.id}` })}
@@ -654,113 +741,17 @@ const DeviceListView = () => {
                 {devices.length === 0 ? t('devices_none') : t('devices_none_filtered')}
               </div>
             ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', color: 'var(--progeo-blue)' }}>
-                  <thead>
-                    <tr>
-                      <th style={thStyle}>{t('devices_col_device')}</th>
-                      <th style={thStyle}>{t('devices_col_type')}</th>
-                      <th style={thStyle}>{t('devices_col_hash')}</th>
-                      <th style={thStyle}>{t('devices_col_status')}</th>
-                      <th style={thStyle}>{t('devices_col_last_seen')}</th>
-                      <th style={thStyle}>{t('devices_col_ip')}</th>
-                      {isStaff && <th style={thStyle}>{t('devices_col_ping')}</th>}
-                      <th style={thStyle} />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {shown.map((device) => (
-                      <tr key={device.id}>
-                        <td style={tdStyle}>
-                          <div style={{ fontWeight: 500 }}>{device.display_name || device.raw_hash}</div>
-                          <div className="font-monospace" style={{ fontSize: 11.5, color: MUTED }}>
-                            {device.raw_hash} · #{device.id}
-                          </div>
-                        </td>
-                        <td style={tdStyle}>{device.type || <span style={{ color: MUTED }}>–</span>}</td>
-                        <td style={tdStyle}>{hashChip(device)}</td>
-                        <td style={tdStyle}>{statusChip(device)}</td>
-                        <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                          {device.last_seen_at ? formatDate(device.last_seen_at, 'dateTimeSeconds') : <span style={{ color: MUTED }}>–</span>}
-                        </td>
-                        <td style={tdStyle} className="font-monospace">
-                          {device.ip || <span style={{ color: MUTED }}>–</span>}
-                        </td>
-                        {isStaff && <td style={tdStyle}>{pingChip(device)}</td>}
-                        <td style={{ ...tdStyle, whiteSpace: 'nowrap', textAlign: 'right' }}>
-                          <div style={{ display: 'inline-flex', gap: 6 }}>
-                            {isStaff && (
-                              <button
-                                type="button"
-                                title={t('devices_action_identify')}
-                                disabled={!device.ip}
-                                onClick={() => identify(device)}
-                                style={actionStyle(!device.ip)}
-                              >
-                                <Lightbulb size={14} />
-                              </button>
-                            )}
-                            {isStaff && (
-                              <button
-                                type="button"
-                                title={t('devices_action_commands')}
-                                onClick={() => setCommandsTarget(device)}
-                                style={actionStyle()}
-                              >
-                                <Terminal size={14} />
-                              </button>
-                            )}
-                            {/* "Einstellungen" is a superuser-only portal page. */}
-                            {canEdit && isSuperuser && device.location && (
-                              <button
-                                type="button"
-                                title={t('devices_action_settings')}
-                                onClick={() => navigate(`/location/${device.location}/einstellungen`)}
-                                style={actionStyle()}
-                              >
-                                <Sliders size={14} />
-                              </button>
-                            )}
-                            {/* Sensors are placed in the Lageplan wizard (superuser-only). */}
-                            {canEdit && isSuperuser && device.location && (
-                              <button
-                                type="button"
-                                title={t('devices_action_editor')}
-                                onClick={() => navigate(`/lageplan/wizard/?location=${device.location}`)}
-                                style={actionStyle()}
-                              >
-                                <Image size={14} />
-                              </button>
-                            )}
-                            {canProvision && device.location && (
-                              <button
-                                type="button"
-                                title={t('devices_action_test_measurements')}
-                                onClick={() =>
-                                  setTestDevice({ id: device.id, location: device.location!, raw_hash: device.raw_hash })
-                                }
-                                style={actionStyle()}
-                              >
-                                <Activity size={14} />
-                              </button>
-                            )}
-                            {canDelete && (
-                              <button
-                                type="button"
-                                title={t('devices_action_delete')}
-                                onClick={() => setDeleteTarget(device)}
-                                style={actionStyle(false, true)}
-                              >
-                                <Trash size={14} />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <SearchableDataTable
+                columns={columns}
+                data={shown}
+                keyField="id"
+                defaultSortFieldId="device"
+                highlightOnHover
+                labels={{
+                  placeholder: t('devices_search'),
+                  count: (count, total) => t('devices_search_count', { count, total }),
+                }}
+              />
             )}
           </PanelCard>
         </>

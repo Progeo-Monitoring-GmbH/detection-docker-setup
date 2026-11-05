@@ -379,6 +379,18 @@ def test_commands_are_handed_out_in_order_with_their_payload_once(api_client, pr
     assert stored.summary == {"params": {"pulldown_resistance": 120}}
 
 
+@pytest.mark.parametrize("raw_hash", ["legacy-free-form-hash", "mac:aa:bb:cc:dd:ee:ff"])
+def test_only_devices_on_the_new_hash_schema_get_commands(api_client, provisioned, raw_hash):
+    location, _device, _preview = provisioned
+    legacy = f.make_device(location, raw_hash=raw_hash)
+
+    refused = _queue(api_client, legacy, location, "measure")
+
+    assert refused.status_code == 400
+    assert "new hash schema" in refused.json()["reason"]
+    assert not ProgeoDeviceCommand.objects.using(f.DB).filter(device_id=legacy.pk).exists()
+
+
 def test_set_params_values_are_only_shown_for_safe_params_and_stored_encrypted(api_client, provisioned):
     location, device, preview = provisioned
 

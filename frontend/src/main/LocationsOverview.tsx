@@ -12,6 +12,7 @@ import axiosConfig from '../axiosConfig';
 import { matchesLocationSearch } from '../components/location/locationSearch';
 import { getBackendUrl } from '../backendUrl';
 import { showRequestError } from '../components/ui/Snackbar.jsx';
+import DeleteIconButton from '../components/ui/kit/DeleteIconButton';
 import FavoriteStar from './FavoriteStar';
 import LocationEditModal, {
   type LocationEditRow,
@@ -254,17 +255,12 @@ const LocationActions = ({
       </Button>
     )}
     {canDelete && (
-      <Button
-        size="sm"
-        variant="outline-danger"
-        title="Open in Django admin for delete"
+      <DeleteIconButton
+        label="Delete in the Django admin"
         href={getBackendUrl(`/aadmin/progeo/progeolocation/${row.id}/delete/`)}
         target="_blank"
-        rel="noopener noreferrer"
         onClick={(event) => event.stopPropagation()}
-      >
-        Delete
-      </Button>
+      />
     )}
   </div>
 );

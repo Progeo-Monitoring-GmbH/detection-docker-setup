@@ -14,6 +14,7 @@ import PlotResetButton, { PLOT_CONFIG_NO_MODEBAR } from '../ui/PlotResetButton';
 /** No mode bar - only PlotResetButton; Ctrl + wheel zooms (wheelZoom). */
 const PLOT_CONFIG = { ...PLOT_CONFIG_NO_MODEBAR, scrollZoom: true };
 import { assignSlots, type SensorStyle, sensorStyle } from './sensorPalette';
+import { thresholdAreaPath } from './thresholdArea';
 
 /** The help buttons' distance (px) above a plot's top edge. */
 const HELP_ABOVE_PX = 28;
@@ -99,13 +100,11 @@ type MeasurementSamplesCompareChartProps = {
   /** The location's alarm threshold (for |WP − EP|): the first plot shows
    * ±it as a green band - inside it a sensor raises no alarm. */
   threshold?: number | null;
-  /** Sensors (pair index) with an own threshold: a green bar ±it at each. */
+  /** Sensors (pair index) with an own threshold: the threshold area spans ±it there. */
   sensorThresholds?: ReadonlyMap<number, number> | null;
 };
 
 const THRESHOLD_BAND_COLOR = 'rgba(44, 160, 44, 0.13)';
-const SENSOR_THRESHOLD_COLOR = 'rgba(44, 160, 44, 0.3)';
-const SENSOR_THRESHOLD_EDGE = 'rgba(30, 120, 30, 0.75)';
 
 /** `selected` with `sensor` added (sorted) or, if it was in there, removed. */
 export const toggledSensor = (selected: number[], sensor: number) =>
@@ -113,8 +112,11 @@ export const toggledSensor = (selected: number[], sensor: number) =>
     ? selected.filter((entry) => entry !== sensor)
     : [...selected, sensor].sort((a, b) => a - b);
 
-/** The bands: never highlighted. */
-const BAND_TRACES = new Set(['min-max', 'min-max-lower', 'deviation', 'deviation-lower']);
+/** Only the legend entry of the threshold area (a layout shape). */
+const THRESHOLD_LEGEND_TRACE = 'threshold-area';
+
+/** The bands (and the threshold area's entry): never highlighted. */
+const BAND_TRACES = new Set(['min-max', 'min-max-lower', 'deviation', 'deviation-lower', THRESHOLD_LEGEND_TRACE]);
 
 /** Traces a legend click doesn't hide. */
 const FIXED_TRACES = new Set([...BAND_TRACES]);
@@ -635,6 +637,9 @@ const MeasurementSamplesCompareChart = (
     [toolbarPx, margin.t, margin.b],
   );
 
+  const hasThresholdArea =
+    (threshold != null && threshold > 0) || [...(sensorThresholds?.values() ?? [])].some((own) => own > 0);
+
   // All plain scatter (not scattergl): a highlight (width, opacity) then
   // only restyles. No Plotly hover labels - the values go to the tooltip.
   const traces = React.useMemo(() => {
@@ -680,6 +685,24 @@ const MeasurementSamplesCompareChart = (
         meanAndDeviationSeries.lower,
         DEVIATION_COLOR,
       ),
+      // The threshold area is a layout shape - this empty trace only puts
+      // its colour into the legend.
+      ...(hasThresholdArea
+        ? [
+            {
+              type: 'scatter' as const,
+              mode: 'lines' as const,
+              uid: THRESHOLD_LEGEND_TRACE,
+              name: t('measurement_compare_threshold_label'),
+              x: [null],
+              y: [null],
+              fill: 'toself' as const,
+              fillcolor: THRESHOLD_BAND_COLOR,
+              line: { width: 0 },
+              hoverinfo: 'skip' as const,
+            },
+          ]
+        : []),
       {
         type: 'scatter' as const,
         mode: 'lines' as const,
@@ -745,7 +768,7 @@ const MeasurementSamplesCompareChart = (
         ...visibility(shownOptional, 'pair-sum-diff'),
       },
     ];
-  }, [meanAndDeviationSeries, pairSumSeries, barWidth, shownOptional, sumMode, t]);
+  }, [meanAndDeviationSeries, pairSumSeries, barWidth, shownOptional, sumMode, hasThresholdArea, t]);
 
   // The slider's measurement on the upper plot. Fixed uids keep the legend
   // toggles while sliding.
@@ -821,39 +844,20 @@ const MeasurementSamplesCompareChart = (
 
   const shapes = React.useMemo(() => {
     const result: Partial<Plotly.Shape>[] = [];
-    // The alarm threshold: |WP − EP| inside ±it raises no alarm - a band
-    // over all sensors; a sensor with an own threshold gets a bar of ±that.
-    if (threshold != null && threshold > 0) {
+    // The alarm threshold: |WP − EP| inside ±it raises no alarm. One area
+    // over all sensors, at a sensor with an own threshold ±that instead.
+    const thresholdPath = thresholdAreaPath(threshold, sensorThresholds, lastSensor);
+    if (thresholdPath) {
       result.push({
-        type: 'rect',
+        type: 'path',
         layer: 'below',
-        xref: 'x domain' as Plotly.XAxisName,
+        xref: 'x',
         yref: 'y',
-        x0: 0,
-        x1: 1,
-        y0: -threshold,
-        y1: threshold,
+        path: thresholdPath,
         fillcolor: THRESHOLD_BAND_COLOR,
         line: { width: 0 },
       });
     }
-    sensorThresholds?.forEach((own, sensor) => {
-      if (!(own > 0)) {
-        return;
-      }
-      result.push({
-        type: 'rect',
-        layer: 'below',
-        xref: 'x',
-        yref: 'y',
-        x0: sensorNumber(sensor) - 0.3,
-        x1: sensorNumber(sensor) + 0.3,
-        y0: -own,
-        y1: own,
-        fillcolor: SENSOR_THRESHOLD_COLOR,
-        line: { color: SENSOR_THRESHOLD_EDGE, width: 1 },
-      });
-    });
     // The selected sensors, marked on the first plot in their colour - cut
     // at the first and last sensor, so the axis doesn't widen for them.
     selectedSensors.forEach((sensor) => {
