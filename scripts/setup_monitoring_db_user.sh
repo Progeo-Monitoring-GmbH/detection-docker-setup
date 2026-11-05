@@ -1,4 +1,8 @@
 #!/bin/bash
+# The role is also created automatically by progeo-monitoring-db-init
+# (docker/monitoring/postgres/monitoring_role.sh) on every `docker compose
+# up` - this script is still needed once for pg_stat_statements (restart).
+#
 # Creates (or updates the password of) the read-only PostgreSQL role that
 # progeo-postgres-exporter logs in with: POSTGRES_MONITOR_USER /
 # POSTGRES_MONITOR_PASSWORD from .env, member of pg_monitor only - it can read

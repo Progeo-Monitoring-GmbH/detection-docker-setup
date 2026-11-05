@@ -36,7 +36,13 @@ The backend exposes its own metrics at `/metrics` ([progeo/metrics.py](../../pro
    ```bash
    docker compose build progeo-backend progeo-nginx && docker compose up -d
    ```
-4. Create the read-only database role and enable `pg_stat_statements`:
+4. The read-only database role (`POSTGRES_MONITOR_USER`) is created by
+   `progeo-monitoring-db-init` on every `docker compose up -d`. It fails, with
+   the reason in its log, while `POSTGRES_MONITOR_PASSWORD` is empty:
+   ```bash
+   docker logs progeo-monitoring-db-init
+   ```
+   Then enable `pg_stat_statements` once:
    ```bash
    bash scripts/setup_monitoring_db_user.sh
    ```

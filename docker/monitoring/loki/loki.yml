@@ -35,6 +35,11 @@ limits_config:
   # few older ones.
   reject_old_samples: true
   reject_old_samples_max_age: 1w
+  # One small Loki: no automatic stream sharding - it only polled its own
+  # ingester for stream rates every few seconds ("unable to get stream rates
+  # from ingester 127.0.0.1:9096 ... DeadlineExceeded").
+  shard_streams:
+    enabled: false
 
 # Deletes chunks older than retention_period.
 compactor:

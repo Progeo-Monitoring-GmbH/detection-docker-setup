@@ -565,7 +565,32 @@ services:
       monitoring_net:
       redis_net:
 
-  # Logs in as the read-only role from scripts/setup_monitoring_db_user.sh.
+  # Creates the read-only role the two postgres exporters log in with
+  # (POSTGRES_MONITOR_USER / _PASSWORD) - on every `up`, idempotent; exits
+  # after it. Without it the exporters only log "password authentication
+  # failed". The exporters don't wait for it: they log in anew per scrape.
+  progeo-monitoring-db-init:
+    image: postgres:17-alpine
+    container_name: progeo-monitoring-db-init
+    restart: 'no'
+    profiles: ['monitoring']
+    entrypoint: ['/bin/sh', '/init/monitoring_role.sh']
+    environment:
+      PGHOST: ${POSTGRES_HOST}
+      PGPORT: ${POSTGRES_PORT}
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+      MONITOR_USER: ${POSTGRES_MONITOR_USER:-progeo_monitor}
+      MONITOR_PASSWORD: ${POSTGRES_MONITOR_PASSWORD:-}
+    volumes:
+      - ./docker/monitoring/postgres/monitoring_role.sh:/init/monitoring_role.sh:ro
+    depends_on:
+      - progeo-database
+    networks:
+      database_net:
+
+  # Logs in as the read-only role of progeo-monitoring-db-init.
   progeo-postgres-exporter:
     image: prometheuscommunity/postgres-exporter:v0.20.1
     container_name: progeo-postgres-exporter
