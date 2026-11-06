@@ -55,6 +55,7 @@ def evaluate_measurements_db(db: str, start, end, project_id: int | None = None)
     """
     from django.db.models import Q
 
+    from progeo.helper.alarm_thresholds import load_sensor_thresholds
     from progeo.helper.basics import dlog
     from progeo.helper.weather import WeatherHelper
     from progeo.v1.models import ProgeoMeasurement
@@ -87,17 +88,20 @@ def evaluate_measurements_db(db: str, start, end, project_id: int | None = None)
     # measurement below the threshold only has something to normalize for those.
     alarms = _AlarmBatch(db, start)
     alarmed_devices = alarms.active_devices()
-    # Per device: each measurement row carries its own device instance, so a
-    # location attached by _resolve_location would be looked up again per row.
+    # Resolve each device once before fetching its location's overrides.
     locations = {}
+    measurements = list(measurements)
+    for measurement in measurements:
+        if measurement.device_id not in locations:
+            locations[measurement.device_id] = _resolve_location(measurement, db)
+    location_ids = {location.pk for location in locations.values() if location is not None}
+    sensor_thresholds = load_sensor_thresholds(db, location_ids)
     project_ids = set()
 
     found = evaluated = triggered = normalized = 0
     for device_id, device_measurements in itertools.groupby(measurements, key=lambda m: m.device_id):
         rows = list(device_measurements)
         found += len(rows)
-        if device_id not in locations:
-            locations[device_id] = _resolve_location(rows[0], db)
         location = locations[device_id]
         if location is None:
             continue
@@ -105,7 +109,8 @@ def evaluate_measurements_db(db: str, start, end, project_id: int | None = None)
             project_ids.add(location.project_id)
 
         group_triggered, group_evaluated, group_normalized = _evaluate_device_rows(
-            rows, location, db, weather_helper, alarmed_devices, alarms
+            rows, location, db, weather_helper, alarmed_devices, alarms,
+            sensor_thresholds.get(location.pk, {}),
         )
         triggered += group_triggered
         evaluated += group_evaluated
@@ -124,24 +129,28 @@ def evaluate_measurements_db(db: str, start, end, project_id: int | None = None)
     return len(project_ids), triggered
 
 
-def _evaluate_device_rows(rows, location, db: str, weather_helper, alarmed_devices, alarms):
+def _evaluate_device_rows(rows, location, db: str, weather_helper, alarmed_devices, alarms, sensor_thresholds):
     """Evaluate one device's measurements in time order, galloping over active alarms.
 
     Returns (triggered, evaluated, normalized); `evaluated` counts the rows that
     went through the normal `_evaluate_measurement` path (probes included).
     """
-    threshold = location.alarm_threshold
+    from progeo.helper.alarm_thresholds import evaluate_sensor_thresholds
+
+    def evaluate(measurement):
+        return evaluate_sensor_thresholds(measurement, location.alarm_threshold, sensor_thresholds)
+
     device_id = rows[0].device_id
     triggered = evaluated = normalized = 0
     index, total = 0, len(rows)
     while index < total:
         measurement = rows[index]
-        over_threshold = measurement.evaluate_all(threshold)
+        over_threshold = evaluate(measurement)
         was_alarmed = alarmed_devices is not None and device_id in alarmed_devices
         evaluated += 1
         if _evaluate_measurement(
             measurement, location, db, weather_helper, alarmed_devices, alarms,
-            over_threshold=over_threshold,
+            over_threshold=over_threshold, sensor_thresholds=sensor_thresholds,
         ):
             triggered += 1
         elif not over_threshold and was_alarmed:
@@ -167,12 +176,12 @@ def _evaluate_device_rows(rows, location, db: str, weather_helper, alarmed_devic
                 # Never miss a trailing calm row after an all-over stretch.
                 probe = total - 1
 
-            probe_over = rows[probe].evaluate_all(threshold)
+            probe_over = evaluate(rows[probe])
             if probe_over:
                 evaluated += 1
                 if _evaluate_measurement(
                     rows[probe], location, db, weather_helper, alarmed_devices, alarms,
-                    over_threshold=probe_over,
+                    over_threshold=probe_over, sensor_thresholds=sensor_thresholds,
                 ):
                     triggered += 1
                 if probe == total - 1:
@@ -182,7 +191,7 @@ def _evaluate_device_rows(rows, location, db: str, weather_helper, alarmed_devic
                 step *= 2
                 continue
 
-            first_below = _first_below_threshold(rows, previous_over, probe, threshold)
+            first_below = _first_below_threshold(rows, previous_over, probe, evaluate)
             # best-effort: the last over-threshold row before the calm one ended
             # the active stretch, so keep the alarm's still_active_at exact-ish.
             _extend_still_active(alarms, device_id, rows[first_below - 1].last_fetched)
@@ -202,7 +211,7 @@ def _evaluate_device_rows(rows, location, db: str, weather_helper, alarmed_devic
     return triggered, evaluated, normalized
 
 
-def _first_below_threshold(rows, previous_over: int, probe: int, threshold) -> int:
+def _first_below_threshold(rows, previous_over: int, probe: int, evaluate) -> int:
     """First calm index in (previous_over, probe]; rows[probe] is known calm.
 
     Only the pure `evaluate_all` check is used, so the search costs no database
@@ -212,7 +221,7 @@ def _first_below_threshold(rows, previous_over: int, probe: int, threshold) -> i
     low, high = previous_over, probe
     while low + 1 < high:
         mid = (low + high) // 2
-        if rows[mid].evaluate_all(threshold):
+        if evaluate(rows[mid]):
             low = mid
         else:
             high = mid
@@ -350,7 +359,7 @@ def _resolve_location(measurement, db: str):
 
 
 def _evaluate_measurement(measurement, location, db: str, weather_helper, alarmed_devices=None,
-                          alarms: _AlarmBatch | None = None, over_threshold=None) -> bool:
+                          alarms: _AlarmBatch | None = None, over_threshold=None, sensor_thresholds=None) -> bool:
     """Raise/prolong an alarm for an over-threshold measurement, else normalize active alarms.
 
     `alarmed_devices` (a batch run's set of device ids with an active alarm,
@@ -368,7 +377,13 @@ def _evaluate_measurement(measurement, location, db: str, weather_helper, alarme
     # All sensors above the threshold (up to 10) — the alarm records every
     # over-threshold sensor as a (sensor_id, max_value) pair.
     if over_threshold is None:
-        over_threshold = measurement.evaluate_all(threshold)
+        from progeo.helper.alarm_thresholds import (
+            evaluate_sensor_thresholds,
+            load_sensor_thresholds,
+        )
+
+        sensor_thresholds = load_sensor_thresholds(db, [location.pk]).get(location.pk, {})
+        over_threshold = evaluate_sensor_thresholds(measurement, threshold, sensor_thresholds)
     if not over_threshold:
         if alarmed_devices is not None:
             if measurement.device_id not in alarmed_devices:
@@ -410,6 +425,7 @@ def _evaluate_measurement(measurement, location, db: str, weather_helper, alarme
         for idx, value in over_threshold
     ]
     peak_idx, peak_value = max(over_threshold, key=lambda pair: pair[1])
+    threshold = (sensor_thresholds or {}).get(sensor_order_of(peak_idx), threshold)
     overlapping = None if alarms is None else alarms.overlapping(measurement.device_id, measurement.last_fetched)
     alarm, created = create_progeo_alarm_safe(
         measurement=measurement,

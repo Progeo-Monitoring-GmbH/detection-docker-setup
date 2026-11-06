@@ -332,11 +332,11 @@ def _spread_over_window(queryset, limit):
     in it). A time window can hold far more measurements than a chart shows:
     instead of only the newest `limit`, they are spread evenly over the whole
     window - the oldest and the newest always included."""
-    ids = list(queryset.order_by("pk").values_list("pk", flat=True))
+    ids = list(queryset.order_by("last_fetched", "pk").values_list("pk", flat=True))
     total = len(ids)
     if total > limit:
         ids = [ids[-1]] if limit == 1 else [ids[round(i * (total - 1) / (limit - 1))] for i in range(limit)]
-    return list(queryset.filter(pk__in=ids).order_by("pk")), total
+    return list(queryset.filter(pk__in=ids).order_by("last_fetched", "pk")), total
 
 
 def _sensor_points_data(points, location, db_name, names=None):

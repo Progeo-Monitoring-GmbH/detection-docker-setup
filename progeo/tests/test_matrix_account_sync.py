@@ -67,7 +67,7 @@ def test_deactivating_the_portal_user_deactivates_the_chat_account(mas, django_c
 
     with django_capture_on_commit_callbacks(execute=True):
         user.is_active = False
-        user.save()
+        user.save(using=f.DB)
 
     assert _actions(mas) == [(f"/ID-{user.username}/deactivate", {"skip_erase": True})]
     # Comes the user back, Mein Konto shows the codes again.
@@ -80,7 +80,7 @@ def test_reactivating_reactivates(mas, django_capture_on_commit_callbacks):
 
     with django_capture_on_commit_callbacks(execute=True):
         user.is_active = True
-        user.save()
+        user.save(using=f.DB)
 
     assert _actions(mas) == [(f"/ID-{user.username}/reactivate", None)]
 
@@ -91,7 +91,7 @@ def test_deleting_the_portal_user_erases_the_chat_account(mas, django_capture_on
     mas.users[name] = False
 
     with django_capture_on_commit_callbacks(execute=True):
-        user.delete()
+        user.delete(using=f.DB)
 
     assert _actions(mas) == [(f"/ID-{name}/deactivate", {"skip_erase": False})]
 
@@ -100,14 +100,14 @@ def test_other_saves_and_users_without_chat_do_nothing(mas, django_capture_on_co
     user = f.make_user()
     with django_capture_on_commit_callbacks(execute=True):
         user.first_name = "Kai"
-        user.save()
-        user.save(update_fields=["last_login"])
+        user.save(using=f.DB)
+        user.save(using=f.DB, update_fields=["last_login"])
     assert mas.calls == []
 
     # Never used the chat: looked up, nothing to deactivate.
     with django_capture_on_commit_callbacks(execute=True):
         user.is_active = False
-        user.save()
+        user.save(using=f.DB)
     assert _actions(mas) == []
     assert any("/by-username/" in url for _method, url, _body in mas.calls)
 
@@ -126,8 +126,8 @@ def test_without_admin_secret_nothing_is_sent(monkeypatch, django_capture_on_com
 
     with django_capture_on_commit_callbacks(execute=True):
         user.is_active = False
-        user.save()
-        user.delete()
+        user.save(using=f.DB)
+        user.delete(using=f.DB)
 
 
 def test_mas_errors_are_reported(monkeypatch, settings):

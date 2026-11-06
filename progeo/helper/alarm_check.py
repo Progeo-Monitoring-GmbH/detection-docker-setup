@@ -10,6 +10,10 @@ BULK_BATCH_SIZE = 500
 
 def check_existing_alarms_db(db: str, silence_hours: int = 24) -> tuple[int, int]:
     """Check all unnormalized alarms of one database against the latest measurements."""
+    from progeo.helper.alarm_thresholds import (
+        evaluate_sensor_thresholds,
+        load_sensor_thresholds,
+    )
     from progeo.v1.models import ProgeoAlarm, ProgeoMeasurement
 
     alarms = list(
@@ -20,6 +24,11 @@ def check_existing_alarms_db(db: str, silence_hours: int = 24) -> tuple[int, int
     )
     if not alarms:
         return 0, 0
+    location_ids = {
+        alarm.measurement.device.location_id
+        for alarm in alarms if alarm.measurement.device and alarm.measurement.device.location_id
+    }
+    sensor_thresholds = load_sensor_thresholds(db, location_ids)
 
     # Fetch the newest measurement per involved device in ONE query, so the
     # per-alarm check below never triggers an N+1 lookup.
@@ -62,8 +71,8 @@ def check_existing_alarms_db(db: str, silence_hours: int = 24) -> tuple[int, int
         location = device.location
         threshold = location.alarm_threshold if location else None
         over_threshold = []
-        if threshold is not None:
-            over_threshold = latest.evaluate_all(threshold)
+        if location:
+            over_threshold = evaluate_sensor_thresholds(latest, threshold, sensor_thresholds.get(location.pk, {}))
 
         still_exceeding = len(over_threshold) > 0
         silent = latest_at < silence_cutoff
@@ -96,7 +105,7 @@ def check_existing_alarms_db(db: str, silence_hours: int = 24) -> tuple[int, int
                     }]
             # Refresh the strongest sensor + the full set of over-threshold pairs.
             sensor_pairs = [
-                {"sensor_id": idx + 1, "max_value": float(value)}
+                {"sensor_id": device.sensor_order_of(idx), "max_value": float(value)}
                 for idx, value in over_threshold
             ]
             from progeo.v1.creator import merge_sensor_max_values

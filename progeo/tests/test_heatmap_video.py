@@ -8,10 +8,10 @@ import shutil
 import time
 import zipfile
 
-import cv2
 import numpy as np
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
+from PIL import Image
 
 from progeo.helper import heatmap_video
 from progeo.tests import factories as f
@@ -28,9 +28,11 @@ def jobs_dir(tmp_path, monkeypatch):
 
 
 def _png(width, height, value):
-    ok, data = cv2.imencode(".png", np.full((height, width, 3), value, np.uint8))
-    assert ok
-    return data.tobytes()
+    """A one-colour PNG frame (grey `value`) - Pillow, a real dependency,
+    instead of OpenCV, which requirements.txt doesn't install."""
+    buffer = io.BytesIO()
+    Image.fromarray(np.full((height, width, 3), value, np.uint8)).save(buffer, format="PNG")
+    return buffer.getvalue()
 
 
 def _frames_zip(entries):

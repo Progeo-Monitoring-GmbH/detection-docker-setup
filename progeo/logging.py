@@ -155,6 +155,9 @@ class SharedRotatingFileHandler(WatchedFileHandler):
                 fcntl.flock(lock, fcntl.LOCK_EX)
             if not self._too_big():
                 return  # another process rotated while we waited for the lock
+            if os.name == "nt" and self.stream:
+                self.stream.close()
+                self.stream = None
             for i in range(self.backup_count - 1, 0, -1):
                 src = f"{self.baseFilename}.{i}"
                 if os.path.exists(src):

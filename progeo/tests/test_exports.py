@@ -164,8 +164,27 @@ def test_days_count_back_from_to_for_a_period_in_the_past(api_client):
     measurements = api_client.get(f"/v1/location/{location.id}/measurements/", {"days": 7, "to": to}).json()
 
     assert heatmap["data"] == {"1": [12, 8]}
+    assert heatmap["timestamps"] == [(now - timedelta(days=days)).timestamp() for days in (12, 8)]
     assert [row["pair_abs_values"] for row in measurements["measurements"]] == [[8], [12]]
     assert measurements["total"] == 2
+
+
+def test_window_sampling_uses_measurement_time_not_insertion_order(api_client):
+    account = f.make_account()
+    location = f.make_location(account)
+    device = f.make_device(location)
+    now = timezone.now().replace(microsecond=0)
+    for days_ago in (2, 4, 1, 3):
+        f.make_measurement(device, pairs=[days_ago], fetched_at=now - timedelta(days=days_ago))
+    api_client.force_authenticate(f.make_user(perms=PERMS, accounts=[account]))
+
+    heatmap = api_client.get(f"/v1/location/{location.id}/heatmap/", {"days": 5, "limit": 2}).json()
+    measurements = api_client.get(f"/v1/location/{location.id}/measurements/", {"days": 5, "limit": 2}).json()
+
+    assert heatmap["data"] == {"1": [4, 1]}
+    assert heatmap["timestamps"] == [(now - timedelta(days=days)).timestamp() for days in (4, 1)]
+    assert [row["pair_abs_values"] for row in measurements["measurements"]] == [[1], [4]]
+    assert heatmap["total"] == measurements["total"] == 4
 
 
 def test_heatmap_refuses_an_unknown_profile(api_client, location_with_data):

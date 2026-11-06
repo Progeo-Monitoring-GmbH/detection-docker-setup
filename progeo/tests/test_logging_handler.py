@@ -20,7 +20,6 @@ def _logger(path, **options):
     return logger, handler
 
 
-@pytest.mark.skipif(os.name != "posix", reason="Windows can't rename the open file")
 def test_writes_and_rotates(tmp_path):
     path = tmp_path / "errors.jsonl"
     logger, handler = _logger(path, max_bytes=50, backup_count=2)

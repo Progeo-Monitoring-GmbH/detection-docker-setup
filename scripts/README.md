@@ -144,3 +144,66 @@ cd scripts && run_celery.bat
 ```
 
 The unit tests need the Postgres container on port 5435 (see `.env`).
+
+The backend image includes `setup.cfg` and `conftest.py`, so pytest can load
+`progeo.tests.settings` and the shared fixtures when run from the project root.
+After rebuilding and recreating the backend, run e.g.
+`docker exec -it progeo-backend pytest progeo/tests/test_access_scoping_api.py`.
+The test settings use the `unit_tests` and `unit_tests_demo` databases and the
+`unit_tests_project_` prefix on the configured Postgres server; ensure those
+test databases are available and do not contain production data. The suite
+seeds and migrates them and some tests create or modify additional test
+databases. Test reports are written inside the container unless mounted.
+
+With coverage enabled, pytest writes the detailed HTML report to
+`coverage_html_report/index.html`.
+
+To run the CAD reader tests on the host as well, install the optional test
+dependencies with `python -m pip install -r requirements-cad-test.txt`. The
+production CAD container builds its patched ezdwg separately; the host wheel
+does not validate that patch.
+
+### Selecting tests
+
+Each test module has a functional-area marker: `access`, `alarms`, `backups`,
+`databases`, `demo`, `devices`, `exports`, `integrations`, `locations`,
+`measurements`, `notifications` or `operations`. The area mapping is maintained
+in `progeo/tests/pytest_selection.py`; update it when adding a test module.
+The `http_client` usage marker selects tests using Django or DRF test-client
+fixtures. Existing markers such as `modbus` are also available. List markers
+with `pytest --markers` and combine them with pytest's marker expressions:
+
+```bash
+pytest -m alarms
+pytest -m "measurements and http_client"
+pytest -m "integrations or devices"
+pytest --lf
+```
+
+`--lf` reruns failures recorded by pytest in `.pytest_cache` (including setup
+and collection errors). With no recorded failures pytest normally runs all
+tests; use `--last-failed-no-failures=none` to run none instead.
+
+To additionally rerun **explicit downstream dependents**, declare exact pytest
+node IDs on the dependent tests:
+
+```python
+@pytest.mark.depends_on("progeo/tests/test_example.py::test_prerequisite")
+def test_dependent():
+    ...
+```
+
+Then run `pytest --failed-dependents`. It selects the cached failures and
+transitive downstream dependents; tests with no such declarations stay
+independent. The marker is only a selection relationship: it does not order
+tests, run prerequisites of a failed dependent, or skip a dependent when a
+prerequisite fails. Parameterized cases need their exact collected node IDs
+(`pytest --collect-only -q`). A failed collection selects that whole module.
+Run from the repository root with the full suite collected for a complete graph;
+paths, `-m` and `-k` can narrow the result and exclude a failure or dependent.
+The option reports an error if no cached failure is collected, and cannot be
+combined with `--lf` or `--ff`.
+
+Pytest's `setup.cfg` registers markers and default options but does not define
+command aliases. Use these pytest options directly, the argument-forwarding
+scripts above, or aliases in your shell.

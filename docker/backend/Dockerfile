@@ -22,6 +22,10 @@ RUN pip install -r requirements.txt --use-feature=fast-deps
 COPY ./docker/backend/ .
 COPY ./progeo ./progeo
 COPY ./manage.py ./manage.py
+# pytest-django must see the root configuration before it imports test models;
+# the shared conftest also supplies the test database setup and fixtures.
+COPY ./setup.cfg ./conftest.py ./
+COPY ./docker/cad_factory/cad_reader.py ./docker/cad_factory/cad_reader.py
 # No .env / django.env in here - the images are public on Docker Hub. The
 # container builds django.env at start from the host's files (start-supervisord.sh).
 
@@ -59,6 +63,11 @@ RUN chmod +x ./*.sh
 RUN echo "alias dbbackup='python manage.py clear_token && python manage.py sync_default && python manage.py handle_all_dbs --command=dbbackup'" >> /etc/profile
 RUN echo "alias dbrestore='python manage.py handle_all_dbs --command=dbrestore'" >> /etc/profile
 RUN echo "alias venv='. $VENV_ROOT/bin/activate'" >> /etc/profile
+# docker exec ... bash starts an interactive non-login shell, which reads
+# ~/.bashrc rather than /etc/profile. Cover both root and the app user.
+RUN for bashrc in /root/.bashrc "${PROJECT_ROOT}/.bashrc"; do \
+        printf '\n[ -r /etc/profile ] && . /etc/profile\n' >> "$bashrc"; \
+    done
 
 RUN mkdir -p ${PROJECT_ROOT}/static && chown -R progeo:progeo ${PROJECT_ROOT}/static
 RUN mkdir -p ${PROJECT_ROOT}/tmp && chown -R progeo:progeo ${PROJECT_ROOT}/tmp

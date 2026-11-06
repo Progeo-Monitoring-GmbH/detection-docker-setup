@@ -11,7 +11,7 @@ from conftest import TEST_DATABASES
 from progeo.helper.demo import DEMO_TOKEN_PURPOSE
 from progeo.v1.models import LimitedToken, ProgeoLocation
 
-pytestmark = pytest.mark.django_db(databases=[*TEST_DATABASES, settings.DEMO_DATABASE])
+pytestmark = pytest.mark.django_db(databases=TEST_DATABASES)
 
 
 @pytest.fixture(autouse=True)

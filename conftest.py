@@ -11,6 +11,8 @@ from rest_framework.test import APIClient
 
 from progeo.helper.basics import elog, ilog
 
+pytest_plugins = ("progeo.tests.pytest_selection",)
+
 _FAILED_TESTS = []
 
 if sys.platform.startswith("win"):
@@ -74,6 +76,7 @@ def django_db_setup(django_db_blocker):
         seed_baseline("default")
         _reset_sequences("unit_tests")
         _ensure_permissions("default")
+        ensure_migrated_database(settings.DEMO_DATABASE)
     yield
 
 
@@ -91,18 +94,13 @@ def ensure_migrated_database(alias):
 
 
 @pytest.fixture(scope="session")
-def demo_db(django_db_setup, django_db_blocker):
-    with django_db_blocker.unblock():
-        ensure_migrated_database(settings.DEMO_DATABASE)
+def demo_db(django_db_setup):
     return settings.DEMO_DATABASE
 
 
-# Both aliases share one connection (see django_db_setup), so every test must
-# be allowed to use both - otherwise Django's per-test database allow-list
-# blocks the shared connection for the alias a test didn't declare. A blocked
-# alias also blocks the other one, and the teardown then fails before the block
-# is lifted, which breaks every following test with DatabaseOperationForbidden.
-TEST_DATABASES = ["default", "unit_tests"]
+# Both aliases share one connection, so every test must allow both. Account
+# scans can also reach the demo database, which must have its own transaction.
+TEST_DATABASES = ["default", "unit_tests", settings.DEMO_DATABASE]
 
 
 def pytest_collection_modifyitems(items):
@@ -114,10 +112,11 @@ def pytest_collection_modifyitems(items):
         databases = marker.kwargs.get("databases")
         if databases == "__all__" or (databases and set(TEST_DATABASES) <= set(databases)):
             continue
-        # Keep the test's other options (transaction, reset_sequences, ...) and
-        # prepend so this marker is the closest one pytest-django picks up.
+        # Keep the test's additional databases and other options, and prepend
+        # so this marker is the closest one pytest-django picks up.
+        all_databases = list(dict.fromkeys([*TEST_DATABASES, *(databases or ())]))
         item.add_marker(
-            pytest.mark.django_db(*marker.args, **{**marker.kwargs, "databases": TEST_DATABASES}),
+            pytest.mark.django_db(*marker.args, **{**marker.kwargs, "databases": all_databases}),
             append=False,
         )
 
@@ -204,7 +203,8 @@ def pytest_sessionfinish(session, exitstatus):
         return
 
     if _FAILED_TESTS:
-        elog(f"Failed tests: {sorted(set(_FAILED_TESTS))}")
+        for test in sorted(set(_FAILED_TESTS)):
+            elog(f"Failed test: {test}")
 
 
 @pytest.hookimpl(hookwrapper=True)

@@ -352,12 +352,6 @@ def test_orphan_device_without_project_id_does_not_abort_the_pass(window, site):
 
 # -- per-measure-point threshold overrides ---------------------------------------
 
-@pytest.mark.xfail(
-    reason="BUG: per-sensor thresholds (ProgeoMeasurePoint.threshold, edited via /location/<id>/measurepoints/) "
-           "are ignored - evaluate_measurements_db only compares against location.alarm_threshold "
-           "(alarm_evaluation.py:93); a sensor with override 500 still alarms at 150",
-    strict=True,
-)
 def test_raised_sensor_threshold_suppresses_the_alarm(window, site):
     location, device = site
     f.make_measure_point(location, 1, threshold=500)
@@ -368,11 +362,6 @@ def test_raised_sensor_threshold_suppresses_the_alarm(window, site):
     assert _alarms(device) == []
 
 
-@pytest.mark.xfail(
-    reason="BUG: per-sensor thresholds are ignored by evaluate_measurements_db (alarm_evaluation.py:93); "
-           "a sensor with override 50 reading 80 under a location threshold of 100 never alarms",
-    strict=True,
-)
 def test_lowered_sensor_threshold_triggers_the_alarm(window, site):
     location, device = site
     f.make_measure_point(location, 2, threshold=50)
@@ -382,6 +371,7 @@ def test_lowered_sensor_threshold_triggers_the_alarm(window, site):
 
     [alarm] = _alarms(device)
     assert alarm.sensor_id == 2
+    assert alarm.threshold == 50
 
 
 def test_cleared_sensor_threshold_falls_back_to_the_location(window, site):
@@ -392,6 +382,24 @@ def test_cleared_sensor_threshold_falls_back_to_the_location(window, site):
     _evaluate(window)
 
     assert len(_alarms(device)) == 1
+
+
+def test_sensor_overrides_follow_device_sensor_offset_and_gallop(window, site):
+    location, device = site
+    device.first_sensor_order = 10
+    device.save(using=f.DB, update_fields=["first_sensor_order"])
+    f.make_measure_point(location, 10, threshold=500)
+    f.make_measure_point(location, 11, threshold=50)
+    for minute in range(20):
+        f.make_measurement(device, pairs=[150, 80], fetched_at=window[1](minute))
+    calm = f.make_measurement(device, pairs=[150, 40], fetched_at=window[1](20))
+
+    _evaluate(window)
+
+    [alarm] = _alarms(device)
+    assert (alarm.sensor_id, alarm.threshold) == (11, 50)
+    assert alarm.normalized_at == calm.last_fetched
+    assert alarm.sensor_max_values == [{"sensor_id": 11, "max_value": 80.0}]
 
 
 # -- check_existing_alarms_db ------------------------------------------------
@@ -501,12 +509,6 @@ def test_already_normalized_alarms_are_left_alone(site):
     assert (alarm.normalized_at, alarm.max_values) == (normalized_at, [])
 
 
-@pytest.mark.xfail(
-    reason="BUG: check_existing_alarms_db also ignores ProgeoMeasurePoint.threshold overrides "
-           "(alarm_check.py:54 uses location.alarm_threshold only), so a sensor whose override is above "
-           "its reading keeps the alarm open",
-    strict=True,
-)
 def test_check_respects_sensor_threshold_override(site):
     location, device = site
     f.make_measure_point(location, 1, threshold=500)
@@ -516,6 +518,23 @@ def test_check_respects_sensor_threshold_override(site):
     check_existing_alarms_db(f.DB)
 
     assert _reload(alarm).normalized_at is not None
+
+
+def test_check_uses_offset_sensor_ids_and_thresholds(site):
+    location, device = site
+    device.first_sensor_order = 10
+    device.save(using=f.DB, update_fields=["first_sensor_order"])
+    f.make_measure_point(location, 10, threshold=500)
+    f.make_measure_point(location, 11, threshold=50)
+    alarm = _open_alarm(device)
+    f.make_measurement(device, pairs=[150, 80], fetched_at=timezone.now() - f.minutes(1))
+
+    check_existing_alarms_db(f.DB)
+
+    alarm = _reload(alarm)
+    assert alarm.normalized_at is None
+    assert alarm.max_values[-1]["sensor_id"] == 11
+    assert {"sensor_id": 11, "max_value": 80.0} in alarm.sensor_max_values
 
 
 # -- evaluate_measurement_instantly ----------------------------------------------
@@ -544,6 +563,22 @@ def test_instant_evaluation_triggers_and_normalizes(settings, window, site):
     alarm.refresh_from_db(using=f.DB)
     assert alarm.normalized_at == below.last_fetched
     assert alarm.status == ProgeoAlarm.Status.GELOEST
+
+
+def test_instant_evaluation_uses_sensor_threshold_overrides(settings, window, site):
+    settings.PROGEO_CONFIG_EVALUATE_INSTANTLY = True
+    location, device = site
+    f.make_measure_point(location, 1, threshold=500)
+    f.make_measure_point(location, 2, threshold=50)
+    over = f.make_measurement(device, pairs=[150, 80], fetched_at=window[1](10))
+
+    assert evaluate_measurement_instantly(over, f.DB) is True
+    [alarm] = _alarms(device)
+    assert (alarm.sensor_id, alarm.threshold) == (2, 50)
+
+    calm = f.make_measurement(device, pairs=[150, 40], fetched_at=window[1](20))
+    assert evaluate_measurement_instantly(calm, f.DB) is False
+    assert _reload(alarm).normalized_at == calm.last_fetched
 
 
 def test_instant_evaluation_never_raises(settings, monkeypatch, window, site):

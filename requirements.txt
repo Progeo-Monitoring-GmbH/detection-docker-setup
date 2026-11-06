@@ -82,6 +82,7 @@ pytz~=2026.6
 pytest~=9.2.0
 pytest-cov~=7.1.0
 pytest-django~=4.14.0
+pytest-html~=4.1.1
 #pytest-playwright~=0.5.2
 pyzipper~=0.4.0
 qrcode~=8.2

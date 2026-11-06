@@ -784,18 +784,19 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
                 _idx, _value = idx, value
         return _idx, _value
 
-    def evaluate_all(self, alarm_threshold, limit: int = 10):
+    def evaluate_all(self, alarm_threshold, limit: int = 10, *, thresholds=None):
         """Return (idx, value) for every sensor whose pair value exceeds the threshold.
 
-        `idx` is the 0-based pair index (= sensor_order - 1); callers convert to
-        1-based sensor ids. Limited to `limit` sensors (default 10) so a single
-        measurement can only claim the strongest over-threshold sensors.
+        `idx` is the 0-based pair index; callers convert it to a sensor order.
+        `thresholds` optionally overrides the threshold by pair index. At most
+        `limit` over-threshold sensors are returned in pair order.
         """
         pairs = self.get_pairs()
         result = []
         for idx, sample in enumerate(pairs):
             value = int(sample)
-            if value > alarm_threshold:
+            threshold = thresholds.get(idx, alarm_threshold) if thresholds else alarm_threshold
+            if threshold is not None and value > threshold:
                 result.append((idx, value))
                 if len(result) >= limit:
                     break

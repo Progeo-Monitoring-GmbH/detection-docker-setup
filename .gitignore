@@ -12,8 +12,6 @@ frontend/public/assets/hidden/**
 frontend/dist/
 frontend/stats.html
 
-package-lock.json
-
 static/**
 media/**
 
@@ -25,8 +23,6 @@ media/**
 !media/uploads
 !media/pdf-factory
 !docker/nginx/conf.d
-
-/seafile/
 
 docker/nginx/backup
 docker/nginx/conf.d/**
@@ -52,4 +48,7 @@ png_output/
 
 # SSH key of the backup transfer (docker-compose: /etc/progeo/backup)
 secrets/
+progeo/tests/pytest-of-info/
+progeo/tests/progeo/tests/_pytest.log
 pytest-of-info/
+pytest_report.html

@@ -59,6 +59,13 @@ docker compose up -d
 
 ## 3) Useful commands
 
+The backend image loads `/etc/profile` from `.bashrc` for interactive Bash
+sessions, so its `dbbackup`, `dbrestore` and `venv` aliases are available to
+root and the `progeo` user. Rebuild and recreate the backend container after
+changing the image. For an existing container, use `bash -l` to load the
+profile without rebuilding. Aliases are for interactive shells, not direct
+`docker exec` commands.
+
 ```bash
 # Follow backend logs
 docker logs -f progeo-backend
