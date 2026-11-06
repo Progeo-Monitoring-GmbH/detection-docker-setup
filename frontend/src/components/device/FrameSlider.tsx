@@ -13,6 +13,7 @@ import { Button } from 'react-bootstrap';
 import { PauseFill, PlayFill } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
 import { formatDate } from '../../main/dateFormat';
+import { announceKey } from '../ui/KeyHints';
 import TimeAxis from './TimeAxis';
 import { frameTimeAt } from './timeTicks';
 import './FrameSlider.css';
@@ -214,6 +215,7 @@ const useFramePlayback = ({
       if (isPlayToggleKey(event)) {
         event.preventDefault(); // no page scroll
         toggle();
+        announceKey('play');
       }
     };
     window.addEventListener('keydown', onKey);

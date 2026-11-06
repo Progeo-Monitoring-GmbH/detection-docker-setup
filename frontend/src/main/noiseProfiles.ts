@@ -232,6 +232,82 @@ export const ratingLevel = (measure: RatingMeasure, value: number): RatingLevel 
   return value >= good ? 'good' : value >= fair ? 'fair' : 'poor';
 };
 
+export type SpanUnit = 'day' | 'hour' | 'minute';
+
+/**
+ * A time span in at most two units, the larger first, zero units left out:
+ * 7 d 5 h -> [day 7, hour 5]; 3 d -> [day 3]; 4 h 20 min -> [hour 4,
+ * minute 20]. Minutes are rounded, never more precise than that.
+ */
+export const spanParts = (ms: number): { unit: SpanUnit; count: number }[] => {
+  const minutes = Math.max(0, Math.round(ms / 60000));
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor((minutes % 1440) / 60);
+  const rest = minutes % 60;
+  const parts =
+    days > 0
+      ? [
+          { unit: 'day' as const, count: days },
+          { unit: 'hour' as const, count: hours },
+        ]
+      : [
+          { unit: 'hour' as const, count: hours },
+          { unit: 'minute' as const, count: rest },
+        ];
+  const shown = parts.filter((part) => part.count > 0);
+  return shown.length ? shown : [{ unit: 'minute', count: 0 }];
+};
+
+/** One manual change of a draft's masks, as the editor lists it. */
+export type MaskChange = {
+  /** The masks changed: EP, WP or both. */
+  series: 'ep' | 'wp' | 'both';
+  /** The sensors changed (1-based, inclusive) and how many. */
+  first: number;
+  last: number;
+  count: number;
+  /** The value before / after - for one sensor its own, for several their mean. */
+  before: number;
+  after: number;
+};
+
+const changedSensors = (before: ReadonlyArray<number>, after: ReadonlyArray<number>) => {
+  const indexes: number[] = [];
+  for (let index = 0; index < Math.max(before.length, after.length); index += 1) {
+    if ((before[index] ?? 0) !== (after[index] ?? 0)) {
+      indexes.push(index);
+    }
+  }
+  return indexes;
+};
+
+const meanAt = (values: ReadonlyArray<number>, indexes: number[]) =>
+  Math.round(indexes.reduce((sum, index) => sum + (values[index] ?? 0), 0) / indexes.length);
+
+/** What a manual edit changed (null: nothing). */
+export const describeMaskChange = (
+  before: Pick<NoiseProfileDraft, 'mask_e' | 'mask_w'>,
+  after: Pick<NoiseProfileDraft, 'mask_e' | 'mask_w'>,
+): MaskChange | null => {
+  const ep = changedSensors(before.mask_e, after.mask_e);
+  const wp = changedSensors(before.mask_w, after.mask_w);
+  if (!ep.length && !wp.length) {
+    return null;
+  }
+  const series = ep.length && wp.length ? 'both' : ep.length ? 'ep' : 'wp';
+  const indexes = [...new Set([...ep, ...wp])].sort((a, b) => a - b);
+  // Both: the EP values stand for the change (they move together with Shift).
+  const [from, to, sensors] = series === 'wp' ? [before.mask_w, after.mask_w, wp] : [before.mask_e, after.mask_e, ep];
+  return {
+    series,
+    first: indexes[0] + 1,
+    last: indexes[indexes.length - 1] + 1,
+    count: indexes.length,
+    before: meanAt(from, sensors),
+    after: meanAt(to, sensors),
+  };
+};
+
 /** A time span's length, short: "45 min", "4 h 20 min", "3 d 2 h". */
 export const formatSpan = (ms: number): string => {
   const minutes = Math.max(0, Math.round(ms / 60000));

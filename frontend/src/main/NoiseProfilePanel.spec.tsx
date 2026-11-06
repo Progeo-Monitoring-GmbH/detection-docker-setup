@@ -34,31 +34,42 @@ const PROFILE: NoiseProfile = {
 const RATING: NoiseRating = { score: 72, fit: 0.8, effect: 0.1, exceedBefore: 5, exceedAfter: 1, measurements: 300 };
 const HOUR = 3_600_000;
 
-const render = (props: { range?: { from: number; to: number } | null; selectedId?: number | null } = {}) => {
+const panelProps = {
+  deviceName: 'smartex dm',
+  profiles: [PROFILE],
+  ratings: new Map([[PROFILE.id, RATING]]),
+  selectedId: PROFILE.id,
+  onSelect: () => {},
+  testedId: null,
+  onTest: () => {},
+  view: 'none' as const,
+  busy: false,
+  range: null,
+  onClearRange: () => {},
+  onPickRange: () => {},
+  onCreate: () => {},
+  onEdit: () => {},
+  onActivate: () => {},
+  onDeactivate: () => {},
+  onDelete: () => {},
+  onDownload: () => {},
+  draftName: null,
+  draftRating: null,
+  editor: null,
+};
+
+const render = (
+  props: { range?: { from: number; to: number } | null; selectedId?: number | null; active?: boolean } = {},
+) => {
   const onCreate = vi.fn();
   act(() =>
     root.render(
       <NoiseProfilePanel
-        deviceName="smartex dm"
-        profiles={[PROFILE]}
-        ratings={new Map([[PROFILE.id, RATING]])}
+        {...panelProps}
+        profiles={[{ ...PROFILE, is_active: props.active ?? false }]}
         selectedId={props.selectedId === undefined ? PROFILE.id : props.selectedId}
-        onSelect={() => {}}
-        testedId={null}
-        onTest={() => {}}
-        view="none"
-        busy={false}
         range={props.range ?? null}
-        onClearRange={() => {}}
         onCreate={onCreate}
-        onEdit={() => {}}
-        onActivate={() => {}}
-        onDeactivate={() => {}}
-        onDelete={() => {}}
-        onDownload={() => {}}
-        draftName={null}
-        draftRating={null}
-        editor={null}
       />,
     ),
   );
@@ -77,6 +88,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+  vi.restoreAllMocks();
 });
 
 describe('NoiseProfilePanel', () => {
@@ -88,10 +100,14 @@ describe('NoiseProfilePanel', () => {
     expect(tile('effect').dataset.level).toBe('poor');
   });
 
-  it('has neutral tiles without a picked profile', () => {
+  it('shows no rating without a picked or active profile', () => {
     render({ selectedId: null });
-    expect(tile('score').dataset.level).toBe('none');
-    expect(tile('score').textContent).toContain('–');
+    expect(container.querySelector('[data-testid="noise-profile-rating"]')).toBeNull();
+  });
+
+  it('rates the active profile while none is picked', () => {
+    render({ selectedId: null, active: true });
+    expect(tile('score').textContent).toContain('72 %');
   });
 
   it('makes a new profile only from a selected period - and tells its length', () => {
@@ -102,5 +118,26 @@ describe('NoiseProfilePanel', () => {
     expect(container.querySelector('[data-testid="noise-profile-range-length"]')!.textContent).toBe('4 h 30 min');
     act(() => createButton().click());
     expect(onCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('picks the last 7 / 30 days up to now as the span - and marks the picked one', () => {
+    const now = Date.UTC(2026, 10, 6, 12);
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    const picked: { from: number; to: number }[] = [];
+    act(() =>
+      root.render(
+        <NoiseProfilePanel
+          {...panelProps}
+          range={{ from: now - 30 * 24 * HOUR, to: now }}
+          onPickRange={(range) => picked.push(range)}
+        />,
+      ),
+    );
+    const quick = (days: number) => container.querySelector<HTMLButtonElement>(`[data-testid="noise-profile-range-last-${days}"]`)!;
+
+    expect(quick(30).getAttribute('aria-pressed')).toBe('true');
+    expect(quick(7).getAttribute('aria-pressed')).toBe('false');
+    act(() => quick(7).click());
+    expect(picked).toEqual([{ from: now - 7 * 24 * HOUR, to: now }]);
   });
 });

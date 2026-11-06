@@ -5,6 +5,9 @@ type PanelCardProps = {
   actions?: ReactNode;
   children: ReactNode;
   bodyClassName?: string;
+  /** Inside another panel: no background, shadow or padding of its own - the
+   * outer panel's would double them. */
+  flat?: boolean;
 };
 
 /**
@@ -12,15 +15,19 @@ type PanelCardProps = {
  * panel in the Portal v2 mockup (KPI strip, Dachansicht, Verdachtsstellen,
  * Objekt sections, ...).
  */
-const PanelCard = ({ title, actions, children, bodyClassName }: PanelCardProps) => {
+const PanelCard = ({ title, actions, children, bodyClassName, flat = false }: PanelCardProps) => {
   return (
     <section
-      style={{
-        background: 'var(--progeo-panel-bg)',
-        borderRadius: 'var(--progeo-radius-panel)',
-        boxShadow: 'var(--progeo-shadow-panel)',
-        overflow: 'hidden',
-      }}
+      style={
+        flat
+          ? {}
+          : {
+              background: 'var(--progeo-panel-bg)',
+              borderRadius: 'var(--progeo-radius-panel)',
+              boxShadow: 'var(--progeo-shadow-panel)',
+              overflow: 'hidden',
+            }
+      }
     >
       {(title || actions) && (
         <div
@@ -28,7 +35,7 @@ const PanelCard = ({ title, actions, children, bodyClassName }: PanelCardProps) 
             display: 'flex',
             alignItems: 'center',
             gap: 12,
-            padding: '18px 20px 12px',
+            padding: flat ? '0 0 12px' : '18px 20px 12px',
             flexWrap: 'wrap',
           }}
         >
@@ -37,7 +44,7 @@ const PanelCard = ({ title, actions, children, bodyClassName }: PanelCardProps) 
           {actions}
         </div>
       )}
-      <div className={bodyClassName} style={{ padding: title || actions ? '0 20px 18px' : 20 }}>
+      <div className={bodyClassName} style={{ padding: flat ? 0 : title || actions ? '0 20px 18px' : 20 }}>
         {children}
       </div>
     </section>

@@ -36,6 +36,8 @@ type NoiseProfilePanelProps = {
   /** The selected span (2nd / 3rd plot with S, or under the frame slider). */
   range: ProfileRange | null;
   onClearRange: () => void;
+  /** A quick span ("Letzte 7 Tage"): the last `days` days up to now. */
+  onPickRange: (range: ProfileRange) => void;
   onCreate: () => void;
   onEdit: (profile: NoiseProfile) => void;
   onActivate: (profile: NoiseProfile) => void;
@@ -50,7 +52,19 @@ type NoiseProfilePanelProps = {
   thresholds?: ReactNode;
 };
 
-const SMALL = { fontSize: 12 } as const;
+/** The panel's buttons: as high as its pill select (32 px), text centred. */
+const SMALL = { fontSize: 12.5, height: 32 } as const;
+const BUTTON_CLASS = 'd-inline-flex align-items-center';
+/** The panel's inner blocks: one surface, radius and padding. */
+const SURFACE = { background: 'var(--progeo-surface)', borderRadius: 12, padding: '10px 14px' } as const;
+
+/** The quick spans next to "Neu aus Zeitraum" (days up to now). */
+export const QUICK_RANGE_DAYS = [7, 30] as const;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Whether `range` is the quick span of `days` (it ends about now: within a minute of its length). */
+const isQuickRange = (range: ProfileRange | null, days: number) =>
+  range != null && Math.abs(range.to - range.from - days * DAY_MS) < 60_000;
 
 /** The traffic light's colours: text, background, border. */
 const LEVEL_COLORS: Record<RatingLevel, { text: string; background: string; border: string }> = {
@@ -178,6 +192,7 @@ const NoiseProfilePanel = ({
   busy,
   range,
   onClearRange,
+  onPickRange,
   onCreate,
   onEdit,
   onActivate,
@@ -195,9 +210,12 @@ const NoiseProfilePanel = ({
   const selected = profiles.find((profile) => profile.id === selectedId) ?? null;
   const active = profiles.find((profile) => profile.is_active) ?? null;
   const tested = profiles.find((profile) => profile.id === testedId) ?? null;
-  // The draft's rating while editing, else the picked profile's.
-  const rating = editing ? draftRating : selected ? (ratings.get(selected.id) ?? null) : null;
-  const ratedName = editing ? draftName : (selected?.name ?? null);
+  // The draft's rating while editing, else the picked (or active) profile's -
+  // without any of them there is nothing to rate, and no rating is shown.
+  const rated = selected ?? active;
+  const showRating = editing || rated != null;
+  const rating = editing ? draftRating : rated ? (ratings.get(rated.id) ?? null) : null;
+  const ratedName = editing ? draftName : (rated?.name ?? null);
 
   const optionLabel = (profile: NoiseProfile) => {
     const score = ratings.get(profile.id)?.score;
@@ -222,7 +240,7 @@ const NoiseProfilePanel = ({
 
   return (
     <Card className="border-0 shadow-sm" data-testid="noise-profile-panel">
-      <Card.Header className="bg-transparent border-0 pt-2 pb-1 d-flex flex-wrap align-items-center gap-2">
+      <Card.Header className="bg-transparent border-0 px-3 pt-3 pb-2 d-flex flex-wrap align-items-center gap-2">
         <Button
           variant="link"
           className="p-0 text-decoration-none fw-semibold"
@@ -255,7 +273,7 @@ const NoiseProfilePanel = ({
       </Card.Header>
       <Collapse in={open}>
         <div id="analyse-noise-profile">
-          <Card.Body className="pt-1 d-flex flex-column gap-3">
+          <Card.Body className="px-3 pt-1 pb-3 d-flex flex-column gap-3">
             {/* Pick, try, switch active, edit, download, delete. */}
             <div className="d-flex flex-wrap align-items-center gap-2" data-testid="noise-profile-controls">
               <PillSelect
@@ -274,7 +292,7 @@ const NoiseProfilePanel = ({
                     size="sm"
                     variant={testedId === selected.id ? 'primary' : 'outline-primary'}
                     aria-pressed={testedId === selected.id}
-                    className="py-0"
+                    className={BUTTON_CLASS}
                     style={SMALL}
                     title={t('noise_profile_apply_hint')}
                     disabled={busy || editing}
@@ -286,7 +304,7 @@ const NoiseProfilePanel = ({
                     <Button
                       size="sm"
                       variant="outline-success"
-                      className="py-0"
+                      className={BUTTON_CLASS}
                       style={SMALL}
                       title={t('noise_profile_activate_hint')}
                       disabled={busy || editing}
@@ -298,7 +316,7 @@ const NoiseProfilePanel = ({
                   <Button
                     size="sm"
                     variant="outline-secondary"
-                    className="py-0"
+                    className={BUTTON_CLASS}
                     style={SMALL}
                     disabled={busy || editing}
                     onClick={() => onEdit(selected)}
@@ -308,7 +326,7 @@ const NoiseProfilePanel = ({
                   <Button
                     size="sm"
                     variant="outline-secondary"
-                    className="py-0"
+                    className={BUTTON_CLASS}
                     style={SMALL}
                     title={t('noise_profile_csv_hint')}
                     onClick={() => onDownload(selected)}
@@ -318,7 +336,7 @@ const NoiseProfilePanel = ({
                   <Button
                     size="sm"
                     variant="outline-danger"
-                    className="py-0"
+                    className={BUTTON_CLASS}
                     style={SMALL}
                     disabled={busy || editing}
                     onClick={() => {
@@ -335,7 +353,7 @@ const NoiseProfilePanel = ({
                 <Button
                   size="sm"
                   variant="outline-warning"
-                  className="py-0"
+                  className={BUTTON_CLASS}
                   style={SMALL}
                   title={t('noise_profile_deactivate_hint', { name: active.name })}
                   disabled={busy || editing}
@@ -348,8 +366,8 @@ const NoiseProfilePanel = ({
 
             {/* The span a new profile is made from - and how long it is. */}
             <div
-              className="d-flex flex-wrap align-items-center gap-2 rounded-3 px-3 py-2 small"
-              style={{ background: 'var(--progeo-surface)' }}
+              className="d-flex flex-wrap align-items-center gap-2 small"
+              style={SURFACE}
               data-testid="noise-profile-range"
             >
               {range ? (
@@ -378,29 +396,54 @@ const NoiseProfilePanel = ({
               ) : (
                 <span className="text-muted">{t('noise_profile_range_none')}</span>
               )}
-              <Button
-                size="sm"
-                variant="primary"
-                className="py-0 ms-auto"
-                style={SMALL}
-                title={t('noise_profile_new_hint')}
-                disabled={busy || editing || !range}
-                onClick={onCreate}
-              >
-                {t('noise_profile_new')}
-              </Button>
+              <div className="d-flex flex-wrap gap-2 ms-auto">
+                {QUICK_RANGE_DAYS.map((days) => {
+                  const picked = isQuickRange(range, days);
+                  return (
+                    <Button
+                      key={days}
+                      size="sm"
+                      variant={picked ? 'primary' : 'outline-primary'}
+                      aria-pressed={picked}
+                      className={BUTTON_CLASS}
+                      style={SMALL}
+                      title={t('noise_profile_range_last_days_hint', { count: days })}
+                      disabled={busy || editing}
+                      data-testid={`noise-profile-range-last-${days}`}
+                      onClick={() => {
+                        const to = Date.now();
+                        onPickRange({ from: to - days * DAY_MS, to });
+                      }}
+                    >
+                      {t('noise_profile_range_last_days', { count: days })}
+                    </Button>
+                  );
+                })}
+                <Button
+                  size="sm"
+                  variant="primary"
+                  className={BUTTON_CLASS}
+                  style={SMALL}
+                  title={t('noise_profile_new_hint')}
+                  disabled={busy || editing || !range}
+                  onClick={onCreate}
+                >
+                  {t('noise_profile_new')}
+                </Button>
+              </div>
             </div>
 
-            <div>
-              <div className="small text-muted mb-1">
-                {ratedName ? t('noise_profile_rating_of', { name: ratedName }) : t('noise_profile_rating_none')}
+            {showRating && (
+              <div data-testid="noise-profile-rating">
+                <div className="small text-muted mb-2">{t('noise_profile_rating_of', { name: ratedName ?? '' })}</div>
+                <NoiseRatingTiles rating={rating} />
               </div>
-              <NoiseRatingTiles rating={rating} />
-            </div>
+            )}
+
+            {/* The thresholds the rating counts against - right below it. */}
+            {thresholds}
 
             {editor}
-
-            {thresholds}
           </Card.Body>
         </div>
       </Collapse>

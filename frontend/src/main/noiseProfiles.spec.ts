@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   applyNoiseMask,
   cleanRows,
+  describeMaskChange,
   formatSpan,
   noiseMaskOf,
   noiseProfileCsv,
   paintMask,
   rateNoiseProfile,
   ratingLevel,
+  spanParts,
 } from './noiseProfiles';
 
 const row = (id: number, samples: number[]) => ({
@@ -98,6 +100,50 @@ describe('ratingLevel', () => {
     expect(ratingLevel('score', 39)).toBe('poor');
     expect(ratingLevel('fit', 0.95)).toBe('good');
     expect(ratingLevel('effect', -0.2)).toBe('poor');
+  });
+});
+
+describe('spanParts', () => {
+  const MIN = 60000;
+  const HOUR = 60 * MIN;
+  const DAY = 24 * HOUR;
+
+  it('keeps at most two units, the larger first, and drops zero ones', () => {
+    expect(spanParts(7 * DAY + 5 * HOUR + 40 * MIN)).toEqual([
+      { unit: 'day', count: 7 },
+      { unit: 'hour', count: 5 },
+    ]);
+    expect(spanParts(3 * DAY + 20 * MIN)).toEqual([{ unit: 'day', count: 3 }]);
+    expect(spanParts(4 * HOUR + 20 * MIN)).toEqual([
+      { unit: 'hour', count: 4 },
+      { unit: 'minute', count: 20 },
+    ]);
+    expect(spanParts(45 * MIN)).toEqual([{ unit: 'minute', count: 45 }]);
+    expect(spanParts(0)).toEqual([{ unit: 'minute', count: 0 }]);
+  });
+});
+
+describe('describeMaskChange', () => {
+  const base = { mask_e: [10, 20, 30, 40], mask_w: [5, 5, 5, 5] };
+
+  it('tells one sensor with its values', () => {
+    expect(describeMaskChange(base, { ...base, mask_e: [10, 25, 30, 40] })).toEqual({
+      series: 'ep', first: 2, last: 2, count: 1, before: 20, after: 25,
+    });
+  });
+
+  it('tells a painted range with its means', () => {
+    expect(describeMaskChange(base, { ...base, mask_w: [5, 9, 11, 13] })).toEqual({
+      series: 'wp', first: 2, last: 4, count: 3, before: 5, after: 11,
+    });
+  });
+
+  it('tells EP and WP moved together', () => {
+    expect(describeMaskChange(base, { mask_e: [10, 20, 0, 40], mask_w: [5, 5, 0, 5] })?.series).toBe('both');
+  });
+
+  it('is nothing for no change', () => {
+    expect(describeMaskChange(base, { ...base })).toBeNull();
   });
 });
 

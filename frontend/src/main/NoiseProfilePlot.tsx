@@ -1,12 +1,19 @@
 import {
   type KeyboardEvent,
   type PointerEvent,
+  type ReactNode,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
+import MeasurementCompareTooltip, {
+  type CompareTooltipData,
+  TOOLTIP_WIDTH,
+} from '../components/device/MeasurementCompareTooltip';
+import KeyHints, { announceKey, type KeyHint } from '../components/ui/KeyHints';
+import PlotHelp from '../components/ui/PlotHelp';
 import { gridValuesOf, labelEveryOf } from './thresholdMixer';
 import { paintMask } from './noiseProfiles';
 
@@ -17,8 +24,10 @@ type NoiseProfilePlotProps = {
   mask_w: number[];
   /** Called once a drag (or a key press) ends - the plots reclean only then. */
   onChange: (masks: Masks) => void;
-  /** A raw measurement's EP / WP, drawn faintly for orientation. */
+  /** A raw measurement's EP / WP, drawn dashed for orientation. */
   reference?: { ep: number[]; wp: number[] } | null;
+  /** Keys the surrounding editor handles too (Strg + Z) - listed with the plot's. */
+  extraKeyHints?: KeyHint[];
 };
 
 const EP_COLOR = '#d62728';
@@ -35,20 +44,36 @@ const GUTTER = 48;
 const MIN_COLUMN = 4;
 /** Points are drawn from this column width on. */
 const POINT_COLUMN = 8;
+/** How close (px) the cursor must be to a line to highlight it - as in the measurement plot. */
+const HIGHLIGHT_DISTANCE_PX = 12;
+/** The tooltip's distance (px) from the plot's corner, and how near the cursor may come before it flips. */
+const TOOLTIP_INSET_PX = 8;
+const TOOLTIP_FLIP_DISTANCE_PX = 24;
+
+/** The line widths: masks, the raw measurement - a highlighted line is wider by this. */
+const MASK_WIDTH = 2;
+const REFERENCE_WIDTH = 2.5;
+const HIGHLIGHT_EXTRA = 2;
+const FADED = 0.3;
 
 type Series = 'ep' | 'wp' | 'both';
 type Drag = { series: Series; index: number; value: number };
+/** A line of the plot: the masks, or the raw measurement (both its lines). */
+type Line = 'ep' | 'wp' | 'ref';
 
 const KEY: Record<Exclude<Series, 'both'>, keyof Masks> = { ep: 'mask_e', wp: 'mask_w' };
 
 /**
  * A Störungsprofil as a plot: per sensor the EP mask (red) and the WP mask
- * (blue). Press on a sensor near a line and drag up / down - across sensors
- * it paints them; Shift moves EP and WP together. ↑/↓ nudge the last touched
- * value (Shift: by 10), ←/→ step to the next sensor.
+ * (blue), a raw measurement dashed behind them. Press on a sensor near a line
+ * and drag up / down - across sensors it paints them; Shift moves EP and WP
+ * together. ↑/↓ nudge the last touched value (Shift: by 10), ←/→ step to the
+ * next sensor. Hovering shows the sensor's values (tooltip, as in the
+ * measurement plot) and highlights the nearest line - its legend entry too.
  */
-const NoiseProfilePlot = ({ mask_e, mask_w, onChange, reference = null }: NoiseProfilePlotProps) => {
+const NoiseProfilePlot = ({ mask_e, mask_w, onChange, reference = null, extraKeyHints = [] }: NoiseProfilePlotProps) => {
   const { t } = useTranslation();
+  const wrapRef = useRef<HTMLDivElement | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const [width, setWidth] = useState(800);
   // The masks while dragging - committed with the drag's end.
@@ -57,6 +82,12 @@ const NoiseProfilePlot = ({ mask_e, mask_w, onChange, reference = null }: NoiseP
   const [frozenScale, setFrozenScale] = useState<number | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
   const [focus, setFocus] = useState<{ series: Series; index: number } | null>(null);
+  const [focused, setFocused] = useState(false);
+  // The line under the cursor, or whose legend entry is hovered.
+  const [highlighted, setHighlighted] = useState<Line | null>(null);
+  const [legendHover, setLegendHover] = useState<Line | null>(null);
+  // The tooltip flips to the left while the cursor is near its corner.
+  const [tooltipLeft, setTooltipLeft] = useState(false);
 
   const masks = live ?? { mask_e, mask_w };
   const sensors = Math.max(masks.mask_e.length, masks.mask_w.length);
@@ -90,6 +121,37 @@ const NoiseProfilePlot = ({ mask_e, mask_w, onChange, reference = null }: NoiseP
     return { index, y: event.clientY - rect.top };
   };
 
+  /** The line nearest to `y` at sensor `index` - within HIGHLIGHT_DISTANCE_PX. */
+  const nearestLine = (index: number, y: number): Line | null => {
+    const candidates: [Line, number | undefined][] = [
+      ['ep', masks.mask_e[index]],
+      ['wp', masks.mask_w[index]],
+      ['ref', reference?.ep[index]],
+      ['ref', reference?.wp[index]],
+    ];
+    let best: Line | null = null;
+    let distance = HIGHLIGHT_DISTANCE_PX;
+    candidates.forEach(([line, value]) => {
+      if (value != null && Number.isFinite(value) && Math.abs(toY(value) - y) <= distance) {
+        best = line;
+        distance = Math.abs(toY(value) - y);
+      }
+    });
+    return best;
+  };
+
+  /** Where the cursor is over the visible plot - for the tooltip's side. */
+  const placeTooltip = (clientX: number, clientY: number) => {
+    const box = wrapRef.current?.getBoundingClientRect();
+    if (!box) {
+      return;
+    }
+    const x = clientX - box.left;
+    const y = clientY - box.top;
+    const right = box.width - TOOLTIP_INSET_PX;
+    setTooltipLeft(x >= right - TOOLTIP_WIDTH - TOOLTIP_FLIP_DISTANCE_PX && y <= PLOT_TOP + 120 + TOOLTIP_FLIP_DISTANCE_PX);
+  };
+
   /** The masks with `series` painted from `from` to `to`. */
   const painted = (base: Masks, series: Series, from: number, to: number, fromValue: number, toValue: number) => {
     const next = { ...base };
@@ -115,6 +177,7 @@ const NoiseProfilePlot = ({ mask_e, mask_w, onChange, reference = null }: NoiseP
     setLive(painted(masks, series, index, index, value, value));
     setDrag({ series, index, value });
     setFocus({ series, index });
+    setHighlighted(series === 'both' ? null : series);
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
     } catch {
@@ -124,8 +187,10 @@ const NoiseProfilePlot = ({ mask_e, mask_w, onChange, reference = null }: NoiseP
 
   const onPointerMove = (event: PointerEvent<SVGSVGElement>) => {
     const { index, y } = pointerAt(event);
+    placeTooltip(event.clientX, event.clientY);
     if (!drag) {
       setHovered(index);
+      setHighlighted(nearestLine(index, y));
       return;
     }
     const value = valueAt(y);
@@ -150,6 +215,7 @@ const NoiseProfilePlot = ({ mask_e, mask_w, onChange, reference = null }: NoiseP
     }
     if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
       event.preventDefault();
+      announceKey('plot-sensor');
       const index = Math.min(sensors - 1, Math.max(0, focus.index + (event.key === 'ArrowLeft' ? -1 : 1)));
       setFocus({ ...focus, index });
       setHovered(index);
@@ -157,6 +223,7 @@ const NoiseProfilePlot = ({ mask_e, mask_w, onChange, reference = null }: NoiseP
     }
     if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
       event.preventDefault();
+      announceKey('plot-value');
       const by = (event.shiftKey ? 10 : 1) * (event.key === 'ArrowUp' ? 1 : -1);
       const next = { ...masks };
       (focus.series === 'both' ? (['ep', 'wp'] as const) : [focus.series]).forEach((one) => {
@@ -173,32 +240,77 @@ const NoiseProfilePlot = ({ mask_e, mask_w, onChange, reference = null }: NoiseP
   const gridValues = gridValuesOf(scale / 1.2).filter((value) => value <= scale);
   const every = labelEveryOf(column);
   const shown = hovered ?? focus?.index ?? null;
+  // A hovered legend entry wins over the line under the cursor.
+  const lit = legendHover ?? highlighted;
+  const lineStyle = (line: Line, width: number) => ({
+    strokeWidth: lit === line ? width + HIGHLIGHT_EXTRA : width,
+    opacity: lit && lit !== line ? FADED : 1,
+  });
+
+  // The tooltip: the sensor's masks and the raw measurement, as in the
+  // first measurement plot (fixed corner, the highlighted row bold).
+  const tooltip: CompareTooltipData | null =
+    hovered != null && !drag
+      ? {
+          title: t('noise_profile_plot_tooltip_title', { sensor: hovered + 1 }),
+          subtitle: reference ? t('noise_profile_plot_tooltip_subtitle') : null,
+          rows: [
+            { key: 'ep', name: t('noise_profile_mask_ep'), value: String(masks.mask_e[hovered] ?? 0), color: EP_COLOR },
+            { key: 'wp', name: t('noise_profile_mask_wp'), value: String(masks.mask_w[hovered] ?? 0), color: WP_COLOR },
+            ...(reference
+              ? [
+                  {
+                    key: 'ref',
+                    name: `${t('noise_profile_plot_reference')} EP`,
+                    value: String(reference.ep[hovered] ?? '–'),
+                    color: EP_COLOR,
+                  },
+                  {
+                    key: 'ref-wp',
+                    name: `${t('noise_profile_plot_reference')} WP`,
+                    value: String(reference.wp[hovered] ?? '–'),
+                    color: WP_COLOR,
+                  },
+                ]
+              : []),
+          ],
+        }
+      : null;
+
+  const legendEntry = (line: Line, swatch: ReactNode, label: string) => (
+    <span
+      className={`d-inline-flex align-items-center gap-1 ${lit === line ? 'fw-semibold text-body' : ''}`}
+      style={{ cursor: 'default' }}
+      data-testid={`noise-profile-legend-${line}`}
+      onMouseEnter={() => setLegendHover(line)}
+      onMouseLeave={() => setLegendHover(null)}
+    >
+      {swatch} {label}
+    </span>
+  );
+
+  const keyHints: KeyHint[] = [
+    { keys: [t('key_drag')], label: t('key_hint_plot_drag') },
+    { keys: ['Shift', t('key_drag')], label: t('key_hint_plot_both') },
+    { id: 'plot-sensor', keys: ['← / →'], label: t('key_hint_plot_sensor') },
+    { id: 'plot-value', keys: ['↑ / ↓'], label: t('key_hint_plot_value') },
+    ...extraKeyHints,
+  ];
 
   return (
     <div data-testid="noise-profile-plot">
-      <div className="d-flex flex-wrap align-items-center gap-3 mb-1 small text-muted">
-        <span className="d-inline-flex align-items-center gap-1">
-          <span style={{ width: 16, height: 3, background: EP_COLOR }} /> {t('noise_profile_mask_ep')}
-        </span>
-        <span className="d-inline-flex align-items-center gap-1">
-          <span style={{ width: 16, height: 3, background: WP_COLOR }} /> {t('noise_profile_mask_wp')}
-        </span>
-        {reference && (
-          <span className="d-inline-flex align-items-center gap-1">
-            <span style={{ width: 16, height: 0, borderTop: `2px dotted ${MUTED}` }} /> {t('noise_profile_plot_reference')}
-          </span>
-        )}
-        <span className="ms-auto" data-testid="noise-profile-plot-readout" style={{ fontVariantNumeric: 'tabular-nums' }}>
-          {shown != null
-            ? t('noise_profile_plot_readout', {
-                sensor: shown + 1,
-                ep: masks.mask_e[shown] ?? 0,
-                wp: masks.mask_w[shown] ?? 0,
-              })
-            : t('noise_profile_plot_usage')}
-        </span>
+      <div className="d-flex flex-wrap align-items-center gap-3 mb-2 small text-muted">
+        {legendEntry('ep', <span style={{ width: 18, height: 3, background: EP_COLOR }} />, t('noise_profile_mask_ep'))}
+        {legendEntry('wp', <span style={{ width: 18, height: 3, background: WP_COLOR }} />, t('noise_profile_mask_wp'))}
+        {reference &&
+          legendEntry(
+            'ref',
+            <span style={{ width: 22, height: 0, borderTop: `3px dashed ${MUTED}` }} />,
+            t('noise_profile_plot_reference'),
+          )}
+        <PlotHelp topic="noise_profile" className="ms-auto" />
       </div>
-      <div className="d-flex">
+      <div ref={wrapRef} className="d-flex" style={{ position: 'relative' }}>
         <svg width={GUTTER} height={SVG_H} style={{ flexShrink: 0 }} aria-hidden="true">
           {gridValues.map((tick) => (
             <text key={tick} x={GUTTER - 6} y={toY(tick) + 3} textAnchor="end" fontSize={10} fill={MUTED}>
@@ -212,7 +324,17 @@ const NoiseProfilePlot = ({ mask_e, mask_w, onChange, reference = null }: NoiseP
           role="group"
           aria-label={t('noise_profile_plot_label')}
           onKeyDown={onKeyDown}
-          style={{ flex: 1, minWidth: 0, overflowX: 'auto', overflowY: 'hidden', outline: 'none' }}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            overflowX: 'auto',
+            overflowY: 'hidden',
+            outline: 'none',
+            borderRadius: 6,
+            boxShadow: focused ? '0 0 0 2px rgba(31, 95, 191, 0.35)' : 'none',
+          }}
         >
           <svg
             width={plotWidth}
@@ -222,7 +344,12 @@ const NoiseProfilePlot = ({ mask_e, mask_w, onChange, reference = null }: NoiseP
             onPointerMove={onPointerMove}
             onPointerUp={endDrag}
             onPointerCancel={endDrag}
-            onPointerLeave={() => !drag && setHovered(null)}
+            onPointerLeave={() => {
+              if (!drag) {
+                setHovered(null);
+                setHighlighted(null);
+              }
+            }}
             data-testid="noise-profile-plot-area"
           >
             {gridValues.map((value) => (
@@ -233,13 +360,25 @@ const NoiseProfilePlot = ({ mask_e, mask_w, onChange, reference = null }: NoiseP
               <rect x={shown * column} y={PLOT_TOP} width={column} height={PLOT_H} fill="rgba(11, 54, 89, .06)" />
             )}
             {reference && (
-              <>
-                <path d={path(reference.ep)} fill="none" stroke={EP_COLOR} strokeOpacity={0.35} strokeDasharray="2 3" />
-                <path d={path(reference.wp)} fill="none" stroke={WP_COLOR} strokeOpacity={0.35} strokeDasharray="2 3" />
-              </>
+              <g data-testid="noise-profile-reference" {...lineStyle('ref', REFERENCE_WIDTH)}>
+                <path d={path(reference.ep)} fill="none" stroke={EP_COLOR} strokeOpacity={0.6} strokeDasharray="6 4" />
+                <path d={path(reference.wp)} fill="none" stroke={WP_COLOR} strokeOpacity={0.6} strokeDasharray="6 4" />
+              </g>
             )}
-            <path d={path(masks.mask_e)} fill="none" stroke={EP_COLOR} strokeWidth={2} />
-            <path d={path(masks.mask_w)} fill="none" stroke={WP_COLOR} strokeWidth={2} />
+            <path
+              d={path(masks.mask_e)}
+              fill="none"
+              stroke={EP_COLOR}
+              data-testid="noise-profile-line-ep"
+              {...lineStyle('ep', MASK_WIDTH)}
+            />
+            <path
+              d={path(masks.mask_w)}
+              fill="none"
+              stroke={WP_COLOR}
+              data-testid="noise-profile-line-wp"
+              {...lineStyle('wp', MASK_WIDTH)}
+            />
             {column >= POINT_COLUMN &&
               (['mask_e', 'mask_w'] as const).map((key) =>
                 masks[key].map((value, index) => (
@@ -249,6 +388,7 @@ const NoiseProfilePlot = ({ mask_e, mask_w, onChange, reference = null }: NoiseP
                     cy={toY(value)}
                     r={Math.min(4, column / 4)}
                     fill={key === 'mask_e' ? EP_COLOR : WP_COLOR}
+                    opacity={lit && lit !== (key === 'mask_e' ? 'ep' : 'wp') ? FADED : 1}
                   />
                 )),
               )}
@@ -261,7 +401,25 @@ const NoiseProfilePlot = ({ mask_e, mask_w, onChange, reference = null }: NoiseP
             )}
           </svg>
         </div>
+        {tooltip && (
+          <MeasurementCompareTooltip
+            tooltip={tooltip}
+            activeKey={lit === 'ref' ? 'ref' : lit}
+            style={
+              tooltipLeft
+                ? { top: PLOT_TOP + TOOLTIP_INSET_PX, left: GUTTER + TOOLTIP_INSET_PX }
+                : { top: PLOT_TOP + TOOLTIP_INSET_PX, right: TOOLTIP_INSET_PX }
+            }
+          />
+        )}
       </div>
+      <KeyHints
+        className="mt-2"
+        title={t('key_hints_title')}
+        hints={keyHints}
+        active={focused}
+        inactiveNote={t('key_hints_plot_inactive')}
+      />
     </div>
   );
 };

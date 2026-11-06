@@ -14,7 +14,8 @@ type PlotHelpTopic =
   | 'status_plan'
   | 'status_zeitreihe'
   | 'climate_heatmap'
-  | 'climate_chart';
+  | 'climate_chart'
+  | 'noise_profile';
 
 type PlotHelpProps = {
   topic: PlotHelpTopic;

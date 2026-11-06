@@ -10,6 +10,7 @@ import { barWidthFor, potentialsOf, signedBands } from './measurementBands';
 import { usePlotlyWheelZoom, useWheelHint, WheelZoomHint } from '../ui/wheelZoom';
 import PlotHelp from '../ui/PlotHelp';
 import PlotResetButton, { PLOT_CONFIG_NO_MODEBAR } from '../ui/PlotResetButton';
+import { announceKey } from '../ui/KeyHints';
 
 /** No mode bar - only PlotResetButton; Ctrl + wheel zooms (wheelZoom). */
 const PLOT_CONFIG = { ...PLOT_CONFIG_NO_MODEBAR, scrollZoom: true };
@@ -1310,6 +1311,7 @@ const MeasurementSamplesCompareChart = (
     const onDown = (event: KeyboardEvent) => {
       if (isKey(event) && !event.ctrlKey && !event.altKey && !event.metaKey && !typesText(event.target)) {
         setRangeKeyHeld(true);
+        announceKey('range-select');
       }
     };
     const onUp = (event: KeyboardEvent) => {

@@ -74,4 +74,43 @@ describe('NoiseProfilePlot', () => {
     // The plot still shows the props (the parent keeps the draft): +10 on 50.
     expect(changes[1].mask_w).toEqual([50, 50, 60, 50]);
   });
+
+  const line = (series: string) => container.querySelector<SVGPathElement>(`[data-testid="noise-profile-line-${series}"]`)!;
+
+  it('shows the hovered sensor\'s values in a tooltip and highlights the nearest line', () => {
+    fire('pointermove', 300, 193); // sensor 2, on EP (10 -> y 193)
+
+    expect(container.textContent).toContain('noise_profile_plot_tooltip_title {"sensor":2}');
+    expect(line('ep').getAttribute('stroke-width')).toBe('4');
+    expect(line('wp').getAttribute('opacity')).toBe('0.3');
+
+    fire('pointermove', 300, 140); // between the lines: nothing highlighted
+    expect(line('ep').getAttribute('stroke-width')).toBe('2');
+    expect(line('wp').getAttribute('opacity')).toBe('1');
+  });
+
+  it('highlights a line while its legend entry is hovered', () => {
+    const legend = container.querySelector('[data-testid="noise-profile-legend-wp"]')!;
+    act(() => {
+      legend.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    });
+    expect(line('wp').getAttribute('stroke-width')).toBe('4');
+    expect(line('ep').getAttribute('opacity')).toBe('0.3');
+  });
+
+  it('draws the raw measurement wider than the masks', () => {
+    act(() =>
+      root.render(
+        <NoiseProfilePlot mask_e={MASK_E} mask_w={MASK_W} reference={{ ep: [5, 5, 5, 5], wp: [40, 40, 40, 40] }} onChange={() => {}} />,
+      ),
+    );
+    expect(container.querySelector('[data-testid="noise-profile-reference"]')!.getAttribute('stroke-width')).toBe('2.5');
+  });
+
+  it('lists its keys - dimmed until the plot has the focus', () => {
+    const hints = () => container.querySelector<HTMLElement>('[data-testid="key-hints"]')!;
+    expect(hints().textContent).toContain('key_hints_plot_inactive');
+    act(() => container.querySelector<HTMLElement>('[role="group"]')!.focus());
+    expect(hints().textContent).not.toContain('key_hints_plot_inactive');
+  });
 });

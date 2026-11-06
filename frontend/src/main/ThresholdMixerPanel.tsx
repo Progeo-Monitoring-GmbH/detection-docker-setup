@@ -95,11 +95,14 @@ const ThresholdMixerPanel = ({
   initialObjectThreshold,
   canEdit,
   onSaved,
+  embedded = false,
 }: {
   locationId: number | string;
   initialObjectThreshold: number | null;
   canEdit: boolean;
   onSaved?: () => void;
+  /** Inside another panel (the Analyse tab's Störungsprofil): no card of its own. */
+  embedded?: boolean;
 }) => {
   const auth = useAuth();
   const { t } = useTranslation();
@@ -664,6 +667,7 @@ const ThresholdMixerPanel = ({
 
   return (
     <PanelCard
+      flat={embedded}
       title={t('einstell_section_thresholds')}
       actions={
         <SegmentedControl

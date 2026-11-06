@@ -40,6 +40,7 @@ import { compareOffsetsFor, heatmapChange } from './analyseCompare';
 import MeasurementComparePlot from '../components/device/MeasurementComparePlot';
 import { XLg } from 'react-bootstrap-icons';
 import PlotHelp from '../components/ui/PlotHelp';
+import KeyHints, { announceKey, type KeyHint } from '../components/ui/KeyHints';
 import { downloadBlob } from '../download';
 import NoiseProfilePanel, { type NoiseViewState, type ProfileRange } from './NoiseProfilePanel';
 import NoiseProfileEditor from './NoiseProfileEditor';
@@ -51,6 +52,7 @@ import {
   noiseMaskOf,
   noiseProfileCsv,
   rateNoiseProfile,
+  spanParts,
 } from './noiseProfiles';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -465,6 +467,16 @@ const LocationAnalyseTab = () => {
   const frameIndex =
     frameTime == null ? frameSeconds.length - 1 : frameAt(frameSeconds, frameTime);
   const mobile = typeof window !== 'undefined' && window.innerWidth < MOBILE_WIDTH;
+  // The keys of the whole page (the profile plot lists its own).
+  const pageKeyHints: KeyHint[] = [
+    { id: 'play', keys: [t('key_space')], label: t('key_hint_play') },
+    { id: 'frame-step', keys: ['← / →'], label: t('key_hint_frame_step') },
+    { id: 'frame-jump', keys: ['↑ / ↓'], label: t('key_hint_frame_jump') },
+    ...(offerNoiseProfiles
+      ? [{ id: 'range-select', keys: ['S', t('key_drag')], label: t('key_hint_range_select') }]
+      : []),
+    { keys: [t('key_ctrl'), t('key_wheel')], label: t('key_hint_zoom') },
+  ];
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -483,6 +495,7 @@ const LocationAnalyseTab = () => {
         return;
       }
       event.preventDefault();
+      announceKey(Math.abs(step) === 1 ? 'frame-step' : 'frame-jump');
       const last = frameSeconds.length - 1;
       const current =
         frameTime == null ? last : frameAt(frameSeconds, frameTime);
@@ -694,7 +707,13 @@ const LocationAnalyseTab = () => {
         setDraft({
           id: null,
           device: shownDevice,
-          name: t('noise_profile_default_name', { date: new Date().toLocaleDateString() }),
+          // With the span it was made from: "Profil 06.11.2026 · 7 Tage, 5 Std."
+          name: t('noise_profile_default_name', {
+            date: new Date().toLocaleDateString(),
+            span: spanParts(profileRange.to - profileRange.from)
+              .map(({ unit, count }) => t(`span_${unit}`, { count }))
+              .join(', '),
+          }),
           mask_e: (data.mask_e || []) as number[],
           mask_w: (data.mask_w || []) as number[],
           source_from: data.source_from ?? null,
@@ -783,6 +802,7 @@ const LocationAnalyseTab = () => {
       busy={noiseBusy}
       range={profileRange}
       onClearRange={() => setProfileRange(null)}
+      onPickRange={setProfileRange}
       onCreate={createNoiseProfile}
       onEdit={editNoiseProfile}
       onActivate={(profile) =>
@@ -996,6 +1016,10 @@ const LocationAnalyseTab = () => {
           />
         ) : (
           <div className="d-flex flex-wrap align-items-center gap-2 py-3">{rangeControl}</div>
+        )}
+        {/* The keys the page reacts to - a processed press lights its chip. */}
+        {frameSeconds.length > 0 && (
+          <KeyHints title={t('key_hints_title')} hints={pageKeyHints} className="pb-2" />
         )}
       </div>
 
