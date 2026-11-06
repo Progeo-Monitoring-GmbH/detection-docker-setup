@@ -89,6 +89,23 @@ const LocationPortalLayout = () => {
           // Staff: the big star pins the location; superusers: its escalation.
           <div className="d-flex align-items-center gap-3">
             <FavoriteStar locationId={locationId} size={40} />
+            {/* Which object this is - next to its star, on every tab. */}
+            <div style={{ minWidth: 0, flexShrink: 1 }} data-testid="portal-location-title">
+              <div
+                className="fw-semibold text-truncate"
+                style={{ fontSize: 20, lineHeight: 1.2, color: 'var(--progeo-blue)' }}
+                title={location.name ?? undefined}
+              >
+                {location.name || location.project_id || locationId}
+              </div>
+              {(location.project_id != null || location.city) && (
+                <div className="small text-muted text-truncate">
+                  {[location.project_id, [location.plz, location.city].filter(Boolean).join(' ')]
+                    .filter((part) => part != null && part !== '')
+                    .join(' · ')}
+                </div>
+              )}
+            </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <EscalationBanner locationId={locationId} />
             </div>

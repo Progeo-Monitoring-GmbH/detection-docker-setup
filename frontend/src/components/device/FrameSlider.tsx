@@ -88,6 +88,12 @@ export const frameAt = (timestamps: number[], ms: number) => {
 /** Narrowest mark (px): an alarm within one frame stays visible. */
 const MIN_ALARM_WIDTH = 4;
 
+/** The alarm tooltip above its mark's centre (0..1 of the track) - kept inside the slider at the edges. */
+const tooltipPlace = (center: number): CSSProperties => ({
+  left: `calc(0.5rem + (100% - 1rem) * ${center})`,
+  transform: center < 0.15 ? 'translateX(-8px)' : center > 0.85 ? 'translateX(calc(-100% + 8px))' : 'translateX(-50%)',
+});
+
 /** Time per frame while the animation runs. */
 export const ANIMATION_FRAME_MS = 200;
 
@@ -298,6 +304,21 @@ const FrameSlider = ({
   const [draggedAt, setDraggedAt] = useState<{ left: number; right: number } | null>(null);
   const selectionAt =
     draggedAt ?? (selection ? alarmPosition(timestamps, { key: 'selection', label: '', ...selection }) : null);
+  // The alarm under the pointer (or the focused jump) - its tooltip.
+  const alarmLayerRef = useRef<HTMLDivElement | null>(null);
+  const [hoveredAlarm, setHoveredAlarm] = useState<string | null>(null);
+  const hoveredMark = marks.find(({ alarm }) => alarm.key === hoveredAlarm) ?? null;
+  const onBodyMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const layer = alarmLayerRef.current?.getBoundingClientRect();
+    if (!layer || layer.width <= 0) {
+      return;
+    }
+    const fraction = (event.clientX - layer.left) / layer.width;
+    // A narrow mark is drawn MIN_ALARM_WIDTH wide - it is hovered as wide.
+    const slack = MIN_ALARM_WIDTH / 2 / layer.width;
+    const hit = [...marks].reverse().find(({ at }) => fraction >= at.left - slack && fraction <= at.right + slack);
+    setHoveredAlarm(hit?.alarm.key ?? null);
+  };
   const minSelection = count > 1 ? 1 / (count - 1) : 1;
   const spanOf = (at: { left: number; right: number }): TimeSpan => ({ from: timeAt(at.left), to: timeAt(at.right) });
   const stripFraction = (clientX: number) => {
@@ -386,7 +407,26 @@ const FrameSlider = ({
           </div>
         )}
       </div>
-      <div style={{ position: 'relative' }}>
+      {/* The slider's body: the alarms as a transparent layer behind
+          everything (track, selection, time labels stay readable over them);
+          hovering one tells it, a click below the track jumps to its start. */}
+      <div
+        className="frame-slider__body"
+        onPointerMove={marks.length ? onBodyMove : undefined}
+        onPointerLeave={() => setHoveredAlarm(null)}
+      >
+        {marks.length > 0 && (
+          <div ref={alarmLayerRef} className="frame-slider__alarm-layer" aria-hidden="true">
+            {marks.map(({ alarm, at }) => (
+              <span
+                key={alarm.key}
+                className={`frame-slider__alarm${alarm.key === hoveredAlarm ? ' frame-slider__alarm--hovered' : ''}`}
+                style={markStyle(at)}
+              />
+            ))}
+          </div>
+        )}
+      <div className="frame-slider__layer">
         <input
           id={id}
           type="range"
@@ -422,31 +462,7 @@ const FrameSlider = ({
             />
           </div>
         )}
-        {marks.length > 0 && (
-          // Over the track, in the thumb's travel (1 rem inside the input);
-          // the slider stays usable through it.
-          <div className="frame-slider__alarms" aria-hidden="true">
-            {marks.map(({ alarm, at }) => (
-              <span key={alarm.key} className="frame-slider__alarm" style={markStyle(at)} />
-            ))}
-          </div>
-        )}
       </div>
-      {marks.length > 0 && (
-        <div className="frame-slider__alarm-strip">
-          {marks.map(({ alarm, at }) => (
-            <button
-              key={alarm.key}
-              type="button"
-              className="frame-slider__alarm-jump"
-              style={markStyle(at)}
-              title={alarm.label}
-              aria-label={alarm.label}
-              onClick={() => onChange(frameAt(timestamps, alarm.from))}
-            />
-          ))}
-        </div>
-      )}
       {onSelectionChange && count > 1 && (
         // The selection: a band to drag (move) with grips at its edges
         // (resize); on the empty strip a drag draws a new one.
@@ -491,10 +507,43 @@ const FrameSlider = ({
       )}
       {count > 1 && (
         // The thumb's centre travels half a thumb (1 rem) inside the input.
-        <div style={{ margin: '-4px 0.5rem 0' }}>
+        <div className="frame-slider__layer" style={{ margin: '-4px 0.5rem 0' }}>
           <TimeAxis from={timestamps[0] * 1000} to={timestamps[count - 1] * 1000} timeAt={timeAt} />
+          {marks.length > 0 && (
+            // Under the track the alarms are buttons: a click jumps to their
+            // start. Transparent - the time labels show through.
+            <div className="frame-slider__alarm-jumps">
+              {marks.map(({ alarm, at }) => (
+                <button
+                  key={alarm.key}
+                  type="button"
+                  className="frame-slider__alarm-jump"
+                  style={markStyle(at)}
+                  aria-label={alarm.label}
+                  onClick={() => onChange(frameAt(timestamps, alarm.from))}
+                  onFocus={() => setHoveredAlarm(alarm.key)}
+                  onBlur={() => setHoveredAlarm(null)}
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
+      {hoveredMark && (
+        <div
+          className="frame-slider__alarm-tooltip"
+          role="tooltip"
+          data-testid="frame-slider-alarm-tooltip"
+          style={tooltipPlace((hoveredMark.at.left + hoveredMark.at.right) / 2)}
+        >
+          <div className="fw-semibold">{hoveredMark.alarm.label}</div>
+          <div style={{ fontVariantNumeric: 'tabular-nums' }}>
+            {formatDate(hoveredMark.alarm.from, 'dateTime')} – {formatDate(hoveredMark.alarm.to, 'dateTime')}
+          </div>
+          <div className="frame-slider__alarm-tooltip-hint">{t('frame_slider_alarm_jump')}</div>
+        </div>
+      )}
+      </div>
     </div>
   );
 };

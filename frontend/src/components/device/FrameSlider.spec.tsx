@@ -132,6 +132,49 @@ describe('FrameSlider alarms', () => {
     act(() => container.querySelector<HTMLButtonElement>('.frame-slider__alarm-jump')!.click());
     expect(current()).toBe(2);
   });
+
+  it('draws the alarms behind the track and the time labels - no strip over them', () => {
+    render(0, [alarm(2, 3)]);
+    const layer = container.querySelector('.frame-slider__alarm-layer')!;
+    const input = container.querySelector('input[type="range"]')!;
+    const labels = container.querySelector('.time-axis')!;
+    // Earlier in the body: painted first, the other layers lie over it.
+    expect(layer.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(layer.compareDocumentPosition(labels) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(input.closest('.frame-slider__layer')).not.toBeNull();
+    expect(labels.closest('.frame-slider__layer')).not.toBeNull();
+    expect(container.querySelector('.frame-slider__alarm-strip')).toBeNull();
+  });
+
+  it('tells the hovered alarm in a tooltip', () => {
+    render(0, [alarm(2, 3)]);
+    const body = container.querySelector('.frame-slider__body')!;
+    const tooltip = () => container.querySelector('[data-testid="frame-slider-alarm-tooltip"]');
+    // jsdom has no layout: the alarm layer counts as 400 px from x 0 - the
+    // alarm covers 50 %..75 % (200..300 px).
+    const hover = (x: number) =>
+      act(() => {
+        vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 400 } as DOMRect);
+        body.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX: x }));
+      });
+
+    hover(100);
+    expect(tooltip()).toBeNull();
+    hover(250);
+    expect(tooltip()!.textContent).toContain('Alarm');
+    expect(container.querySelector('.frame-slider__alarm--hovered')).not.toBeNull();
+    act(() => {
+      body.dispatchEvent(new MouseEvent('pointerout', { bubbles: true, relatedTarget: document.body }));
+    });
+    expect(tooltip()).toBeNull();
+    vi.restoreAllMocks();
+  });
+
+  it('tells a focused alarm too (keyboard)', () => {
+    render(0, [alarm(2, 3)]);
+    act(() => container.querySelector<HTMLButtonElement>('.frame-slider__alarm-jump')!.focus());
+    expect(container.querySelector('[data-testid="frame-slider-alarm-tooltip"]')!.textContent).toContain('Alarm');
+  });
 });
 
 describe('FrameSlider visible range', () => {

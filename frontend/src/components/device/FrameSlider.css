@@ -65,47 +65,85 @@
   border-radius: 4px;
 }
 
-/* Alarm periods on the frame slider: a light, transparent red over the track (the
-   slider stays usable through it) and a clickable strip right below. Both
-   inset by half a thumb (0.5 rem), where the thumb's centre travels. */
-.frame-slider__alarms {
+/* Alarm periods on the frame slider: a transparent red layer behind the
+   track, the selection and the time labels - they stay readable over it.
+   Inset by half a thumb (0.5 rem), where the thumb's centre travels. */
+.frame-slider__body {
+  position: relative;
+}
+
+.frame-slider__alarm-layer {
   position: absolute;
-  inset: 0 0.5rem;
+  top: 0;
+  bottom: 0;
+  left: 0.5rem;
+  right: 0.5rem;
+  z-index: 0;
   pointer-events: none;
+}
+
+/* Everything else of the body lies over the alarms. */
+.frame-slider__layer {
+  position: relative;
+  z-index: 1;
 }
 
 .frame-slider__alarm {
   position: absolute;
   top: 0;
   bottom: 0;
-  background: rgba(220, 38, 38, 0.1);
-  border-left: 1px solid rgba(220, 38, 38, 0.3);
-  border-right: 1px solid rgba(220, 38, 38, 0.3);
-  border-radius: 2px;
+  background: rgba(220, 38, 38, 0.07);
+  border-left: 1px solid rgba(220, 38, 38, 0.25);
+  border-right: 1px solid rgba(220, 38, 38, 0.25);
+  border-radius: 3px;
+  transition: background 120ms, border-color 120ms;
 }
 
-.frame-slider__alarm-strip {
-  position: relative;
-  height: 6px;
-  margin: -3px 0.5rem 2px;
+.frame-slider__alarm--hovered {
+  background: rgba(220, 38, 38, 0.15);
+  border-color: rgba(220, 38, 38, 0.55);
+}
+
+/* Under the track (over the time labels) the alarms are invisible buttons:
+   a click jumps to the alarm's start, the labels show through. */
+.frame-slider__alarm-jumps {
+  position: absolute;
+  inset: 0;
 }
 
 .frame-slider__alarm-jump {
   position: absolute;
   top: 0;
-  height: 6px;
+  bottom: 0;
   padding: 0;
   border: none;
-  border-radius: 3px;
-  background: rgba(220, 38, 38, 0.28);
+  background: transparent;
   cursor: pointer;
 }
 
-.frame-slider__alarm-jump:hover,
 .frame-slider__alarm-jump:focus-visible {
-  background: rgba(220, 38, 38, 0.55);
-  outline: none;
-  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.3);
+  outline: 2px solid rgba(220, 38, 38, 0.55);
+  outline-offset: -2px;
+  border-radius: 3px;
+}
+
+.frame-slider__alarm-tooltip {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  z-index: 5;
+  max-width: 320px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #07223a;
+  color: #fff;
+  font-size: 11.5px;
+  line-height: 1.45;
+  pointer-events: none;
+  box-shadow: 0 6px 18px rgba(11, 54, 89, 0.3);
+}
+
+.frame-slider__alarm-tooltip-hint {
+  opacity: 0.7;
 }
 
 /* A selected time span: shaded over the track (the slider stays usable
@@ -122,6 +160,7 @@
 
 .frame-slider__selection-strip {
   position: relative;
+  z-index: 1;
   height: 12px;
   margin: 0 0.5rem 4px;
   border-radius: 6px;
