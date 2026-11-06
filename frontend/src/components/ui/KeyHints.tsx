@@ -69,16 +69,25 @@ type KeyHintsProps = {
   /** Off: dimmed, with `inactiveNote` - the keys only work once e.g. the plot has the focus. */
   active?: boolean;
   inactiveNote?: string;
+  /** One hint per line, the chips in a column (the usage help's popover). */
+  vertical?: boolean;
   className?: string;
   style?: CSSProperties;
 };
 
-const KeyHints = ({ hints, title, active = true, inactiveNote, className, style }: KeyHintsProps) => {
+const KeyHints = ({ hints, title, active = true, inactiveNote, vertical = false, className, style }: KeyHintsProps) => {
   const flashed = useFlashedKey();
   return (
     <div
-      className={`d-flex flex-wrap align-items-center ${className ?? ''}`}
-      style={{ columnGap: 14, rowGap: 4, fontSize: 11.5, color: '#6E6868', opacity: active ? 1 : 0.6, ...style }}
+      className={`d-flex ${vertical ? 'flex-column align-items-start' : 'flex-wrap align-items-center'} ${className ?? ''}`}
+      style={{
+        columnGap: 14,
+        rowGap: vertical ? 6 : 4,
+        fontSize: 11.5,
+        color: '#6E6868',
+        opacity: active ? 1 : 0.6,
+        ...style,
+      }}
       data-testid="key-hints"
     >
       {title && <span className="fw-semibold">{title}</span>}

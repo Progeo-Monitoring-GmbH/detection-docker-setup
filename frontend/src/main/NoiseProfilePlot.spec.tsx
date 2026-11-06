@@ -107,10 +107,21 @@ describe('NoiseProfilePlot', () => {
     expect(container.querySelector('[data-testid="noise-profile-reference"]')!.getAttribute('stroke-width')).toBe('2.5');
   });
 
-  it('lists its keys - dimmed until the plot has the focus', () => {
-    const hints = () => container.querySelector<HTMLElement>('[data-testid="key-hints"]')!;
-    expect(hints().textContent).toContain('key_hints_plot_inactive');
-    act(() => container.querySelector<HTMLElement>('[role="group"]')!.focus());
-    expect(hints().textContent).not.toContain('key_hints_plot_inactive');
+  it('keeps its keys in the usage help - nothing permanently on screen', () => {
+    expect(container.querySelector('[data-testid="key-hints"]')).toBeNull();
+    expect(container.querySelector('[data-testid="usage-help"]')).not.toBeNull();
+  });
+
+  it('tells a processed key next to the usage help', () => {
+    fire('pointerdown', 500, 65); // a point: the arrow keys work on it
+    fire('pointerup', 500, 65);
+    const group = container.querySelector<HTMLElement>('[role="group"]')!;
+    act(() => group.focus());
+    act(() => {
+      group.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    });
+    expect(container.querySelector('[data-testid="usage-help-feedback"]')!.textContent).toBe(
+      '← / → · key_hint_plot_sensor',
+    );
   });
 });

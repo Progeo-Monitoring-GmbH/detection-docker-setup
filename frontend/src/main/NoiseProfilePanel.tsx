@@ -273,7 +273,7 @@ const NoiseProfilePanel = ({
       </Card.Header>
       <Collapse in={open}>
         <div id="analyse-noise-profile">
-          <Card.Body className="px-3 pt-1 pb-3 d-flex flex-column gap-3">
+          <Card.Body className="px-3 pt-1 pb-3 mx-3 d-flex flex-column gap-3">
             {/* Pick, try, switch active, edit, download, delete. */}
             <div className="d-flex flex-wrap align-items-center gap-2" data-testid="noise-profile-controls">
               <PillSelect

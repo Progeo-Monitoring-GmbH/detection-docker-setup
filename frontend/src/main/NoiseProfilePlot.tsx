@@ -12,7 +12,8 @@ import MeasurementCompareTooltip, {
   type CompareTooltipData,
   TOOLTIP_WIDTH,
 } from '../components/device/MeasurementCompareTooltip';
-import KeyHints, { announceKey, type KeyHint } from '../components/ui/KeyHints';
+import { announceKey, type KeyHint } from '../components/ui/KeyHints';
+import UsageHelp from '../components/ui/UsageHelp';
 import PlotHelp from '../components/ui/PlotHelp';
 import { gridValuesOf, labelEveryOf } from './thresholdMixer';
 import { paintMask } from './noiseProfiles';
@@ -296,6 +297,17 @@ const NoiseProfilePlot = ({ mask_e, mask_w, onChange, reference = null, extraKey
     { id: 'plot-value', keys: ['↑ / ↓'], label: t('key_hint_plot_value') },
     ...extraKeyHints,
   ];
+  // What is useful right now - the usage help's first lines.
+  const tips = !focused
+    ? [t('usage_tip_plot_click')]
+    : focus
+      ? [
+          t('usage_tip_plot_point', {
+            sensor: focus.index + 1,
+            series: focus.series === 'both' ? 'EP + WP' : focus.series.toUpperCase(),
+          }),
+        ]
+      : [t('usage_tip_plot_pick')];
 
   return (
     <div data-testid="noise-profile-plot">
@@ -308,7 +320,16 @@ const NoiseProfilePlot = ({ mask_e, mask_w, onChange, reference = null, extraKey
             <span style={{ width: 22, height: 0, borderTop: `3px dashed ${MUTED}` }} />,
             t('noise_profile_plot_reference'),
           )}
-        <PlotHelp topic="noise_profile" className="ms-auto" />
+        <span className="ms-auto d-inline-flex align-items-center gap-2">
+          <UsageHelp
+            id="noise-profile-plot-usage"
+            hints={keyHints}
+            tips={tips}
+            active={focused}
+            inactiveNote={t('key_hints_plot_inactive')}
+          />
+          <PlotHelp topic="noise_profile" />
+        </span>
       </div>
       <div ref={wrapRef} className="d-flex" style={{ position: 'relative' }}>
         <svg width={GUTTER} height={SVG_H} style={{ flexShrink: 0 }} aria-hidden="true">
@@ -413,13 +434,6 @@ const NoiseProfilePlot = ({ mask_e, mask_w, onChange, reference = null, extraKey
           />
         )}
       </div>
-      <KeyHints
-        className="mt-2"
-        title={t('key_hints_title')}
-        hints={keyHints}
-        active={focused}
-        inactiveNote={t('key_hints_plot_inactive')}
-      />
     </div>
   );
 };

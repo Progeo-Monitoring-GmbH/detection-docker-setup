@@ -38,9 +38,10 @@ import PillSelect from '../components/ui/kit/PillSelect';
 import { MEAN_WINDOWS, smoothHeatmap, smoothMeasurements } from './analyseSmoothing';
 import { compareOffsetsFor, heatmapChange } from './analyseCompare';
 import MeasurementComparePlot from '../components/device/MeasurementComparePlot';
-import { XLg } from 'react-bootstrap-icons';
+import { Funnel, XLg } from 'react-bootstrap-icons';
 import PlotHelp from '../components/ui/PlotHelp';
-import KeyHints, { announceKey, type KeyHint } from '../components/ui/KeyHints';
+import { announceKey, type KeyHint } from '../components/ui/KeyHints';
+import UsageHelp from '../components/ui/UsageHelp';
 import { downloadBlob } from '../download';
 import NoiseProfilePanel, { type NoiseViewState, type ProfileRange } from './NoiseProfilePanel';
 import NoiseProfileEditor from './NoiseProfileEditor';
@@ -473,7 +474,10 @@ const LocationAnalyseTab = () => {
     { id: 'frame-step', keys: ['← / →'], label: t('key_hint_frame_step') },
     { id: 'frame-jump', keys: ['↑ / ↓'], label: t('key_hint_frame_jump') },
     ...(offerNoiseProfiles
-      ? [{ id: 'range-select', keys: ['S', t('key_drag')], label: t('key_hint_range_select') }]
+      ? [
+          { id: 'range-select', keys: ['S', t('key_drag')], label: t('key_hint_range_select') },
+          { id: 'range-clear', keys: ['C'], label: t('key_hint_range_clear') },
+        ]
       : []),
     { keys: [t('key_ctrl'), t('key_wheel')], label: t('key_hint_zoom') },
   ];
@@ -507,6 +511,32 @@ const LocationAnalyseTab = () => {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [frameSeconds, frameTime]);
+
+  // C: the span picked for a new profile is cleared (not with Ctrl - copy).
+  useEffect(() => {
+    if (!offerNoiseProfiles || !profileRange) {
+      return undefined;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.key.toLowerCase() !== 'c' ||
+        event.repeat ||
+        event.defaultPrevented ||
+        event.isComposing ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.metaKey ||
+        isFormTarget(event.target)
+      ) {
+        return;
+      }
+      event.preventDefault();
+      setProfileRange(null);
+      announceKey('range-clear');
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [offerNoiseProfiles, profileRange, setProfileRange]);
 
   const loading = heatmapLoading || measurementsLoading;
 
@@ -692,15 +722,15 @@ const LocationAnalyseTab = () => {
 
   // A new draft: per sensor the minimum EP / WP of every measurement (not
   // only the loaded ones) of the selected span.
-  const createNoiseProfile = () => {
-    if (shownDevice == null || !profileRange) {
+  const createNoiseProfile = (span: ProfileRange | null = profileRange) => {
+    if (shownDevice == null || !span) {
       return;
     }
     const iso = (ms: number) => encodeURIComponent(new Date(ms).toISOString());
     setNoiseBusy(true);
     void axiosConfig.perform_get(
       auth,
-      `/v1/location/${locationId}/noise-profiles/suggest/?device=${shownDevice}&from=${iso(profileRange.from)}&to=${iso(profileRange.to)}`,
+      `/v1/location/${locationId}/noise-profiles/suggest/?device=${shownDevice}&from=${iso(span.from)}&to=${iso(span.to)}`,
       (response) => {
         setNoiseBusy(false);
         const data = response?.data ?? {};
@@ -710,7 +740,7 @@ const LocationAnalyseTab = () => {
           // With the span it was made from: "Profil 06.11.2026 · 7 Tage, 5 Std."
           name: t('noise_profile_default_name', {
             date: new Date().toLocaleDateString(),
-            span: spanParts(profileRange.to - profileRange.from)
+            span: spanParts(span.to - span.from)
               .map(({ unit, count }) => t(`span_${unit}`, { count }))
               .join(', '),
           }),
@@ -802,8 +832,12 @@ const LocationAnalyseTab = () => {
       busy={noiseBusy}
       range={profileRange}
       onClearRange={() => setProfileRange(null)}
-      onPickRange={setProfileRange}
-      onCreate={createNoiseProfile}
+      // "Letzte 7 Tage": the span, and its draft right away.
+      onPickRange={(span) => {
+        setProfileRange(span);
+        createNoiseProfile(span);
+      }}
+      onCreate={() => createNoiseProfile()}
       onEdit={editNoiseProfile}
       onActivate={(profile) =>
         noiseRequest('activate', { id: profile.id }, () => {
@@ -883,6 +917,78 @@ const LocationAnalyseTab = () => {
     );
   };
 
+  // Staff: which Störungsprofil the shown values are cleaned with - right in
+  // the frame picker; a click scrolls to the profile panel.
+  const noiseBadgeOf = (): { text: string; hint: string; color: string; background: string } | null => {
+    if (!offerNoiseProfiles) {
+      return null;
+    }
+    if (noiseView === 'active' && activeProfile) {
+      return {
+        text: t('noise_badge_active', { name: activeProfile.name }),
+        hint: t('noise_badge_active_hint', { name: activeProfile.name }),
+        color: '#1e7b34',
+        background: 'rgba(141, 193, 96, 0.2)',
+      };
+    }
+    if (noiseView === 'test' && testedProfile) {
+      return {
+        text: t('noise_badge_test', { name: testedProfile.name }),
+        hint: t('noise_badge_test_hint'),
+        color: '#8a5a00',
+        background: 'rgba(251, 188, 21, 0.25)',
+      };
+    }
+    if (noiseView === 'draft') {
+      return {
+        text: t('noise_badge_draft'),
+        hint: t('noise_badge_draft_hint'),
+        color: '#a3401f',
+        background: 'rgba(235, 99, 59, 0.15)',
+      };
+    }
+    return null;
+  };
+  const badge = noiseBadgeOf();
+  const noiseBadge = badge ? (
+    <button
+      type="button"
+      className="btn btn-sm d-inline-flex align-items-center gap-1 py-0 fw-semibold text-truncate"
+      style={{
+        fontSize: 12,
+        height: 26,
+        maxWidth: 320,
+        borderRadius: 'var(--progeo-radius-pill)',
+        color: badge.color,
+        background: badge.background,
+        border: `1px solid ${badge.color}`,
+      }}
+      title={badge.hint}
+      data-testid="noise-profile-badge"
+      onClick={() =>
+        document.querySelector('[data-testid="noise-profile-panel"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+    >
+      <Funnel size={11} aria-hidden="true" />
+      <span className="text-truncate">{badge.text}</span>
+    </button>
+  ) : null;
+
+  // The usage help's tips: what is useful in the page's current state.
+  const pageTips = [
+    ...(offerNoiseProfiles
+      ? [
+          shownDraft
+            ? t('usage_tip_draft')
+            : profileRange
+              ? t('usage_tip_range_selected')
+              : t('usage_tip_range_pick'),
+          ...(noiseView === 'active' && activeProfile ? [t('usage_tip_active', { name: activeProfile.name })] : []),
+        ]
+      : []),
+    t('usage_tip_frames'),
+  ];
+
   // The period, its resolution and the averaging - in the frame slider
   // (LoRaWAN: only the period).
   const rangeControl = (
@@ -950,6 +1056,12 @@ const LocationAnalyseTab = () => {
       {!isLorawan && loading && (heatmap || measurements.length > 0) && (
         <Spinner size="sm" animation="border" className="text-muted" />
       )}
+      {noiseBadge}
+      {frameSeconds.length > 0 && (
+        <span className="ms-auto">
+          <UsageHelp id="analyse-usage-help" hints={pageKeyHints} tips={pageTips} />
+        </span>
+      )}
     </div>
   );
 
@@ -1016,10 +1128,6 @@ const LocationAnalyseTab = () => {
           />
         ) : (
           <div className="d-flex flex-wrap align-items-center gap-2 py-3">{rangeControl}</div>
-        )}
-        {/* The keys the page reacts to - a processed press lights its chip. */}
-        {frameSeconds.length > 0 && (
-          <KeyHints title={t('key_hints_title')} hints={pageKeyHints} className="pb-2" />
         )}
       </div>
 
