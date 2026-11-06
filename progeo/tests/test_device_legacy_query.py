@@ -1,13 +1,19 @@
+from datetime import UTC, datetime
+from types import SimpleNamespace
+
 import pytest
 from django.contrib.auth.models import User
 from django.core.cache import cache
+from django.test import override_settings
 from django.utils import timezone
 
 from progeo.tests.factories import unique
 from progeo.v1.creator import create_progeo_alarm_safe
+from progeo.v1.legacy import executor
 from progeo.v1.legacy.executor import (
     DataMeasurement,
     _device_cache_key,
+    _legacy_measurement_datetime,
     get_device_id,
     parse_legacy_data_measurement,
     parse_sample_timestamp,
@@ -25,6 +31,37 @@ LEGACY_SAMPLE_Y = (
     "138,49,51,80,87,114,215,84,94,77,84,47,58,50,423,49,66,51,423,122,421,73,449,215,272,51,99,49,"
     "128,65,425,92,100,49,50,593"
 )
+
+
+@pytest.mark.parametrize("use_tz", [False, True])
+def test_legacy_measurement_datetime_matches_database_timezone_mode(use_tz):
+    epoch = 1792500000
+    with override_settings(USE_TZ=use_tz, TIME_ZONE="Europe/Berlin"):
+        with timezone.override("Asia/Tokyo"):
+            result = _legacy_measurement_datetime(SimpleNamespace(m_date=epoch))
+
+        assert result is not None
+        expected = datetime.fromtimestamp(epoch)
+        if use_tz:
+            assert result == timezone.make_aware(expected, timezone.get_default_timezone())
+            assert timezone.is_aware(result)
+        else:
+            assert result == expected
+            assert timezone.is_naive(result)
+
+
+@override_settings(USE_TZ=True)
+def test_legacy_measurement_datetime_matches_database_values_for_deduplication(monkeypatch):
+    measurement = SimpleNamespace(m_date=1792500000, project_id=5709)
+    result = _legacy_measurement_datetime(measurement)
+    assert result is not None
+    database_value = result.astimezone(UTC)
+    saved = []
+    monkeypatch.setattr(executor, "ingest_db", lambda project_id: "default")
+    monkeypatch.setattr(executor, "save_measurement_from_legacy_data", lambda **kwargs: saved.append(kwargs))
+
+    assert executor.save_legacy_measurement_dedup(measurement, {database_value}) is False
+    assert saved == []
 
 
 def test_parse_sample_timestamp_parses_slash_format_as_aware_datetime():

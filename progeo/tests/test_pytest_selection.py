@@ -30,7 +30,10 @@ def test_every_test_module_has_one_registered_area():
     test_files = {path.name for path in Path(__file__).parent.glob("test_*.py")}
 
     assert len(module_names) == len(set(module_names))
-    assert set(module_names) == test_files
+    assert set(module_names) == test_files, (
+        f"Unregistered test modules: {sorted(test_files - set(module_names))}; "
+        f"registered modules missing from disk: {sorted(set(module_names) - test_files)}"
+    )
     assert set(_MODULE_AREAS) == test_files
 
 

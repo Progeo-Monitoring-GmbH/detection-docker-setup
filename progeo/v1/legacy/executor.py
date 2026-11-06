@@ -160,14 +160,17 @@ def is_imei(value):
 
 
 def _legacy_measurement_datetime(measurement):
-    """The measurement's own datetime (naive local) from the legacy m_date epoch, or None."""
+    """The measurement's local device time, in Django's configured timezone mode."""
     m_date = getattr(measurement, "m_date", None)
     if not isinstance(m_date, int) or m_date <= 0:
         return None
     try:
-        return datetime.fromtimestamp(m_date)
+        local_time = datetime.fromtimestamp(m_date)
     except (OverflowError, OSError, ValueError):
         return None
+    if settings.USE_TZ:
+        return timezone.make_aware(local_time, timezone.get_default_timezone())
+    return local_time
 
 def legacy_measurement_fields(measurement):
     """ProgeoMeasurement fields of a parsed legacy measurement, without
@@ -1063,7 +1066,6 @@ class SafeLuaUploadParser(BaseParser):
             return {"content": text}
 
         return {"content": text}
-
 
 
 

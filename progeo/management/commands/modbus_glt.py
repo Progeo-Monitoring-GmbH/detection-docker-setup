@@ -105,7 +105,7 @@ class Command(BaseCommand):
             result = receive_json_over_modbus_tcp(cfg=cfg)
         except Exception as exc:  # noqa: BLE001 - reported as CommandError
             raise CommandError(f"Receive failed: {type(exc).__name__}: {exc}")
-        print(json.dumps(result["data"], indent=2, ensure_ascii=False))
+        self.stdout.write(json.dumps(result["data"], indent=2, ensure_ascii=False))
         okaylog(f"Read {result['payload_size_bytes']} bytes from {result['registers_read']} registers.",
                 tag="[MODBUS]")
 

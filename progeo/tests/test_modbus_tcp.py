@@ -8,6 +8,7 @@ fake can't: pymodbus API changes, register addressing, unit ids, chunking.
 Run only these:  pytest -m modbus --ds=progeo.tests.settings
 """
 import json
+from io import StringIO
 
 import pytest
 from django.core.management import CommandError, call_command
@@ -242,12 +243,13 @@ def test_command_check_fails_on_closed_port(glt):
         call_command("modbus_glt", "check", "--port", str(free_port()), "--timeout", "1")
 
 
-def test_command_send_with_verify_and_receive(glt, capsys):
+def test_command_send_with_verify_and_receive(glt):
+    output = StringIO()
     call_command("modbus_glt", "send", '{"ping": "GLT", "n": 1}', "--verify")
-    call_command("modbus_glt", "receive")
+    call_command("modbus_glt", "receive", stdout=output)
 
     assert _decode(glt, START) == {"ping": "GLT", "n": 1}
-    assert '"ping": "GLT"' in capsys.readouterr().out
+    assert json.loads(output.getvalue()) == {"ping": "GLT", "n": 1}
 
 
 def test_command_options_override_the_saved_config(glt):
