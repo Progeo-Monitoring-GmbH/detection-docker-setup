@@ -87,16 +87,19 @@ const formatValue = (value: number | null) => (value == null ? '–' : String(Ma
  * can be set to a value or lose its individual thresholds at once. Built for
  * 4 as for 500 sensors: columns keep a minimum width and scroll, Ctrl/⌘ +
  * wheel zooms them. Edits stay drafts - the panel next to "Speichern" lists
- * them, each undoable - and only real changes are saved.
+ * them, each undoable - and only real changes are saved. `onSaved` follows
+ * every save (e.g. the Analyse tab reloads what depends on the thresholds).
  */
 const ThresholdMixerPanel = ({
   locationId,
   initialObjectThreshold,
   canEdit,
+  onSaved,
 }: {
   locationId: number | string;
   initialObjectThreshold: number | null;
   canEdit: boolean;
+  onSaved?: () => void;
 }) => {
   const auth = useAuth();
   const { t } = useTranslation();
@@ -411,6 +414,7 @@ const ThresholdMixerPanel = ({
       setDrafts(NO_DRAFTS);
       setLoading(true);
       load(days);
+      onSaved?.();
     } catch (error) {
       showRequestError(enqueueSnackbar, t('einstell_mixer_save_failed'), error as never);
       // A saved object threshold is no draft any more.

@@ -1,4 +1,14 @@
-import { type CSSProperties, type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import {
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { Button } from 'react-bootstrap';
 import { PauseFill, PlayFill } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
@@ -22,7 +32,18 @@ type FrameSliderProps = {
   visibleRange?: { from: number; to: number } | null;
   /** Controls shown in the slider's top row, e.g. the period it covers. */
   toolbar?: ReactNode;
+  /**
+   * A selected time span (ms) - a band in a strip below the track: dragged
+   * it moves, its edges resize it, dragging on the empty strip makes a new
+   * one. Without `onSelectionChange` there is no strip.
+   */
+  selection?: TimeSpan | null;
+  onSelectionChange?: (selection: TimeSpan) => void;
+  /** The selection band's tooltip, e.g. what it is for. */
+  selectionLabel?: string;
 };
+
+type TimeSpan = { from: number; to: number };
 
 /** An alarm's period (ms); `to` is now while it is still active. */
 export type AlarmSpan = { key: string; from: number; to: number; label: string };
@@ -202,6 +223,40 @@ const useFramePlayback = ({
   return { playing, toggle };
 };
 
+/** A selection band dragged on the strip: moved, resized at one edge, or drawn new. */
+type SelectionDrag = {
+  mode: 'move' | 'start' | 'end' | 'create';
+  /** The pointer's start (px) and the band's (0..1) when the drag began. */
+  startX: number;
+  left: number;
+  right: number;
+};
+
+/**
+ * The band (0..1 of the strip) after dragging it by `delta` (0..1): moved
+ * whole and kept inside, or one edge moved - never closer than `minWidth`
+ * to the other. 'create' spans from where it started to the pointer.
+ */
+export const draggedSelection = (
+  drag: Pick<SelectionDrag, 'mode' | 'left' | 'right'>,
+  delta: number,
+  minWidth: number,
+): { left: number; right: number } => {
+  const clamp = (value: number) => Math.min(Math.max(value, 0), 1);
+  if (drag.mode === 'move') {
+    const shift = Math.min(Math.max(delta, -drag.left), 1 - drag.right);
+    return { left: drag.left + shift, right: drag.right + shift };
+  }
+  if (drag.mode === 'start') {
+    return { left: Math.min(clamp(drag.left + delta), drag.right - minWidth), right: drag.right };
+  }
+  if (drag.mode === 'end') {
+    return { left: drag.left, right: Math.max(clamp(drag.right + delta), drag.left + minWidth) };
+  }
+  const end = clamp(drag.left + delta);
+  return { left: Math.min(drag.left, end), right: Math.max(drag.left, end) };
+};
+
 /**
  * The frame of the heatmap / plan: "3/168: date" above a slider over the
  * frames, evenly spread time labels below it. "Start Animation" (or the space bar)
@@ -218,6 +273,9 @@ const FrameSlider = ({
   playKey = true,
   visibleRange = null,
   toolbar = null,
+  selection = null,
+  onSelectionChange,
+  selectionLabel,
 }: FrameSliderProps) => {
   const { t } = useTranslation();
   const count = timestamps.length;
@@ -232,6 +290,60 @@ const FrameSlider = ({
   const visibleAt = visibleRange
     ? alarmPosition(timestamps, { key: 'visible', label: '', ...visibleRange })
     : null;
+  // The selection while it is dragged (0..1) - reported when it is let go.
+  const stripRef = useRef<HTMLDivElement | null>(null);
+  const [selectionDrag, setSelectionDrag] = useState<SelectionDrag | null>(null);
+  const [draggedAt, setDraggedAt] = useState<{ left: number; right: number } | null>(null);
+  const selectionAt =
+    draggedAt ?? (selection ? alarmPosition(timestamps, { key: 'selection', label: '', ...selection }) : null);
+  const minSelection = count > 1 ? 1 / (count - 1) : 1;
+  const spanOf = (at: { left: number; right: number }): TimeSpan => ({ from: timeAt(at.left), to: timeAt(at.right) });
+  const stripFraction = (clientX: number) => {
+    const rect = stripRef.current?.getBoundingClientRect();
+    return rect && rect.width > 0 ? Math.min(Math.max((clientX - rect.left) / rect.width, 0), 1) : 0;
+  };
+  const startSelectionDrag = (event: ReactPointerEvent<HTMLElement>, mode: SelectionDrag['mode']) => {
+    if (!onSelectionChange || count < 2 || disabled) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const at = mode === 'create' ? null : selectionAt;
+    const start = stripFraction(event.clientX);
+    setSelectionDrag({ mode: at ? mode : 'create', startX: event.clientX, left: at?.left ?? start, right: at?.right ?? start });
+    setDraggedAt(at ?? { left: start, right: start });
+    try {
+      stripRef.current?.setPointerCapture(event.pointerId);
+    } catch {
+      // jsdom / old browsers: the drag still works while over the strip.
+    }
+  };
+  const moveSelectionDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!selectionDrag) {
+      return;
+    }
+    const width = stripRef.current?.getBoundingClientRect().width || 1;
+    setDraggedAt(draggedSelection(selectionDrag, (event.clientX - selectionDrag.startX) / width, minSelection));
+  };
+  const endSelectionDrag = () => {
+    // A mere click on the empty strip draws nothing.
+    if (selectionDrag && draggedAt && draggedAt.right - draggedAt.left >= minSelection / 2) {
+      onSelectionChange?.(spanOf(draggedAt));
+    }
+    setSelectionDrag(null);
+    setDraggedAt(null);
+  };
+  // ←/→ move the focused band by a frame, Shift + ←/→ its end.
+  const onSelectionKey = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (!selectionAt || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')) {
+      return;
+    }
+    event.preventDefault();
+    const delta = (event.key === 'ArrowLeft' ? -1 : 1) * minSelection;
+    onSelectionChange?.(
+      spanOf(draggedSelection({ mode: event.shiftKey ? 'end' : 'move', ...selectionAt }, delta, minSelection)),
+    );
+  };
   const markStyle = (at: { left: number; right: number }) => ({
     left: `${at.left * 100}%`,
     width: `max(${(at.right - at.left) * 100}%, ${MIN_ALARM_WIDTH}px)`,
@@ -297,6 +409,17 @@ const FrameSlider = ({
             />
           </div>
         )}
+        {selectionAt && (
+          <div className="frame-slider__visible-layer" aria-hidden="true">
+            <span
+              className="frame-slider__selection-shade"
+              style={{
+                left: `${selectionAt.left * 100}%`,
+                width: `${(selectionAt.right - selectionAt.left) * 100}%`,
+              }}
+            />
+          </div>
+        )}
         {marks.length > 0 && (
           // Over the track, in the thumb's travel (1 rem inside the input);
           // the slider stays usable through it.
@@ -320,6 +443,48 @@ const FrameSlider = ({
               onClick={() => onChange(frameAt(timestamps, alarm.from))}
             />
           ))}
+        </div>
+      )}
+      {onSelectionChange && count > 1 && (
+        // The selection: a band to drag (move) with grips at its edges
+        // (resize); on the empty strip a drag draws a new one.
+        <div
+          ref={stripRef}
+          className="frame-slider__selection-strip"
+          data-testid="frame-slider-selection-strip"
+          title={selectionAt ? undefined : selectionLabel}
+          onPointerDown={(event) => startSelectionDrag(event, 'create')}
+          onPointerMove={moveSelectionDrag}
+          onPointerUp={endSelectionDrag}
+          onPointerCancel={endSelectionDrag}
+        >
+          {selectionAt && (
+            <div
+              role="slider"
+              tabIndex={0}
+              aria-label={selectionLabel}
+              aria-valuetext={
+                selection ? `${formatDate(selection.from, 'dateTime')} - ${formatDate(selection.to, 'dateTime')}` : undefined
+              }
+              className={`frame-slider__selection${selectionDrag ? ' frame-slider__selection--dragging' : ''}`}
+              data-testid="frame-slider-selection"
+              title={selectionLabel}
+              style={{ left: `${selectionAt.left * 100}%`, width: `${(selectionAt.right - selectionAt.left) * 100}%` }}
+              onPointerDown={(event) => startSelectionDrag(event, 'move')}
+              onKeyDown={onSelectionKey}
+            >
+              <span
+                className="frame-slider__selection-grip frame-slider__selection-grip--start"
+                data-testid="frame-slider-selection-start"
+                onPointerDown={(event) => startSelectionDrag(event, 'start')}
+              />
+              <span
+                className="frame-slider__selection-grip frame-slider__selection-grip--end"
+                data-testid="frame-slider-selection-end"
+                onPointerDown={(event) => startSelectionDrag(event, 'end')}
+              />
+            </div>
+          )}
         </div>
       )}
       {count > 1 && (

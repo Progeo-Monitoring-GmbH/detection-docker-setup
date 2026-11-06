@@ -41,8 +41,9 @@ import MeasurementComparePlot from '../components/device/MeasurementComparePlot'
 import { XLg } from 'react-bootstrap-icons';
 import PlotHelp from '../components/ui/PlotHelp';
 import { downloadBlob } from '../download';
-import NoiseProfileControls, { type NoiseViewState } from './NoiseProfileControls';
+import NoiseProfilePanel, { type NoiseViewState, type ProfileRange } from './NoiseProfilePanel';
 import NoiseProfileEditor from './NoiseProfileEditor';
+import ThresholdMixerToggle from './ThresholdMixerToggle';
 import {
   cleanRows,
   type NoiseProfile,
@@ -183,8 +184,8 @@ const LocationAnalyseTab = () => {
 
   // Staff: the Störungsprofile of the location's devices (noiseProfiles.ts).
   // Their measurements are loaded raw (?raw=1) and cleaned here - by the
-  // active profile, the one tried out ("Anwenden"), the draft being edited
-  // or none ("Rohdaten"); everyone else gets them cleaned by the backend.
+  // active profile, the one tried out ("Anwenden") or the draft being
+  // edited; everyone else gets them cleaned by the backend.
   const offerNoiseProfiles = isStaff && !isLorawan;
   const rawQuery = offerNoiseProfiles ? '&raw=1' : '';
   const [noiseProfileLoad, setNoiseProfileLoad] = useState<{ locationId: unknown; profiles: NoiseProfile[] } | null>(
@@ -192,7 +193,14 @@ const LocationAnalyseTab = () => {
   );
   const [selectedProfileId, setSelectedProfileId] = useState<number | null>(null);
   const [testedProfileId, setTestedProfileId] = useState<number | null>(null);
-  const [rawView, setRawView] = useState(false);
+  // The span a new profile is made from - picked with S + drag on the
+  // measurements' time plots, moved / resized under the frame slider.
+  const [rangeLoad, setRangeLoad] = useState<{ locationId: unknown; range: ProfileRange } | null>(null);
+  const profileRange = rangeLoad?.locationId === locationId ? rangeLoad.range : null;
+  const setProfileRange = useCallback(
+    (range: ProfileRange | null) => setRangeLoad(range ? { locationId, range } : null),
+    [locationId],
+  );
   const [draft, setDraft] = useState<NoiseProfileDraft | null>(null);
   const [draftPreview, setDraftPreview] = useState(true);
   const [noiseBusy, setNoiseBusy] = useState(false);
@@ -244,13 +252,11 @@ const LocationAnalyseTab = () => {
     ? draftPreview
       ? 'draft'
       : 'raw'
-    : rawView
-      ? 'raw'
-      : testedProfile
-        ? 'test'
-        : activeProfile
-          ? 'active'
-          : 'none';
+    : testedProfile
+      ? 'test'
+      : activeProfile
+        ? 'active'
+        : 'none';
   // The mask the measurements are cleaned with here (staff load them raw).
   const displayMask = useMemo(() => {
     if (!offerNoiseProfiles) {
@@ -264,11 +270,11 @@ const LocationAnalyseTab = () => {
     }
     return noiseView === 'active' ? noiseMaskOf(activeProfile) : null;
   }, [offerNoiseProfiles, noiseView, shownDraft, testedProfile, activeProfile]);
-  // Showing raw values: the masks of the draft / picked profile as lines.
-  const maskLines = useMemo(() => {
-    const focus = shownDraft ?? selectedProfile;
-    return offerNoiseProfiles && noiseView === 'raw' && focus ? { ep: focus.mask_e, wp: focus.mask_w } : null;
-  }, [offerNoiseProfiles, noiseView, shownDraft, selectedProfile]);
+  // The draft without its preview: the raw values with its masks as lines.
+  const maskLines = useMemo(
+    () => (offerNoiseProfiles && noiseView === 'raw' && shownDraft ? { ep: shownDraft.mask_e, wp: shownDraft.mask_w } : null),
+    [offerNoiseProfiles, noiseView, shownDraft],
+  );
   // The heatmap is cleaned by the backend: the raw values, the tried-out
   // profile, else (also for a draft - not saved yet) the active ones.
   const heatNoiseQuery = !offerNoiseProfiles
@@ -672,17 +678,16 @@ const LocationAnalyseTab = () => {
   };
 
   // A new draft: per sensor the minimum EP / WP of every measurement (not
-  // only the loaded ones) of the zoomed span, else of the period.
+  // only the loaded ones) of the selected span.
   const createNoiseProfile = () => {
-    if (shownDevice == null) {
+    if (shownDevice == null || !profileRange) {
       return;
     }
     const iso = (ms: number) => encodeURIComponent(new Date(ms).toISOString());
-    const span = chartZoom ? `from=${iso(chartZoom.from)}&to=${iso(chartZoom.to)}` : `days=${days}`;
     setNoiseBusy(true);
     void axiosConfig.perform_get(
       auth,
-      `/v1/location/${locationId}/noise-profiles/suggest/?device=${shownDevice}&${span}`,
+      `/v1/location/${locationId}/noise-profiles/suggest/?device=${shownDevice}&from=${iso(profileRange.from)}&to=${iso(profileRange.to)}`,
       (response) => {
         setNoiseBusy(false);
         const data = response?.data ?? {};
@@ -736,24 +741,48 @@ const LocationAnalyseTab = () => {
       `${location?.project_id ?? locationId}-stoerungsprofil-${profile.id}.csv`,
     );
 
-  const noiseControls = offerNoiseProfiles ? (
-    <NoiseProfileControls
+  // The raw measurement of the slider's frame - faint lines in the profile plot.
+  const referenceSamples = useMemo(() => {
+    if (!shownDraft || !measurements.length) {
+      return null;
+    }
+    // The one nearest to the frame - no frame picked: the newest one.
+    const rank = (ms: number) => (frameTime == null ? -ms : Math.abs(ms - frameTime));
+    let samples: number[] = [];
+    let best = Number.POSITIVE_INFINITY;
+    for (const row of measurements) {
+      const ms = parseTimestamp(row.last_fetched);
+      if (ms != null && Array.isArray(row.samples) && rank(ms) < best) {
+        samples = row.samples;
+        best = rank(ms);
+      }
+    }
+    return {
+      ep: samples.filter((_, index) => index % 2 === 0).map(Number),
+      wp: samples.filter((_, index) => index % 2 === 1).map(Number),
+    };
+  }, [shownDraft, measurements, frameTime]);
+
+  // Thresholds saved in the panel: the heatmap brings the new ones (and the
+  // ratings count against them).
+  const onThresholdsSaved = useCallback(() => {
+    heatmapCache.current.clear();
+    setNoiseRevision((revision) => revision + 1);
+  }, []);
+
+  const noisePanel = offerNoiseProfiles ? (
+    <NoiseProfilePanel
+      deviceName={devices.find((device) => device.id === shownDevice)?.display_name ?? null}
       profiles={deviceProfiles}
       ratings={noiseRatings}
       selectedId={selectedProfile?.id ?? null}
       onSelect={setSelectedProfileId}
       testedId={testedProfile?.id ?? null}
-      onTest={(id) => {
-        setTestedProfileId(id);
-        if (id != null) {
-          setRawView(false);
-        }
-      }}
-      rawView={rawView}
-      onRawViewChange={setRawView}
+      onTest={setTestedProfileId}
       view={noiseView}
       busy={noiseBusy}
-      editing={shownDraft != null}
+      range={profileRange}
+      onClearRange={() => setProfileRange(null)}
       onCreate={createNoiseProfile}
       onEdit={editNoiseProfile}
       onActivate={(profile) =>
@@ -774,6 +803,29 @@ const LocationAnalyseTab = () => {
         })
       }
       onDownload={downloadNoiseProfile}
+      draftName={shownDraft ? shownDraft.name : null}
+      draftRating={draftRating}
+      editor={
+        shownDraft ? (
+          <NoiseProfileEditor
+            draft={shownDraft}
+            onChange={setDraft}
+            onSave={saveNoiseProfile}
+            onCancel={() => setDraft(null)}
+            saving={noiseBusy}
+            preview={draftPreview}
+            onPreviewChange={setDraftPreview}
+            reference={referenceSamples}
+          />
+        ) : null
+      }
+      thresholds={
+        <ThresholdMixerToggle
+          locationId={locationId}
+          initialObjectThreshold={alarmThreshold}
+          onSaved={onThresholdsSaved}
+        />
+      }
     />
   ) : null;
 
@@ -938,6 +990,9 @@ const LocationAnalyseTab = () => {
             onChange={(index) => setFrameTime(frameSeconds[index] * 1000)}
             visibleRange={isLorawan ? null : chartZoom}
             toolbar={rangeControl}
+            selection={offerNoiseProfiles ? profileRange : null}
+            onSelectionChange={offerNoiseProfiles ? setProfileRange : undefined}
+            selectionLabel={t('noise_profile_range_band')}
           />
         ) : (
           <div className="d-flex flex-wrap align-items-center gap-2 py-3">{rangeControl}</div>
@@ -1033,6 +1088,8 @@ const LocationAnalyseTab = () => {
             />
           )}
 
+          {noisePanel}
+
           <Card className="border-0 shadow-sm p-2">
             <Card.Body>
               <div className="d-flex flex-wrap align-items-center gap-3 mb-1">
@@ -1064,18 +1121,6 @@ const LocationAnalyseTab = () => {
                   })}
                 </div>
               )}
-              {shownDraft && (
-                <NoiseProfileEditor
-                  draft={shownDraft}
-                  onChange={setDraft}
-                  onSave={saveNoiseProfile}
-                  onCancel={() => setDraft(null)}
-                  saving={noiseBusy}
-                  preview={draftPreview}
-                  onPreviewChange={setDraftPreview}
-                  rating={draftRating}
-                />
-              )}
               {measurementsLoading && measurements.length === 0 ? (
                 <div className="d-flex justify-content-center align-items-center py-5 text-muted">
                   <Spinner animation="border" className="me-2" /> {t('ui_loading')}
@@ -1101,8 +1146,9 @@ const LocationAnalyseTab = () => {
                   isLoadingSensorHistory={sensorHistoryLoading}
                   threshold={alarmThreshold}
                   sensorThresholds={sensorThresholds}
-                  upperControls={noiseControls}
                   maskLines={maskLines}
+                  selectedRange={offerNoiseProfiles ? profileRange : null}
+                  onRangeSelect={offerNoiseProfiles ? setProfileRange : null}
                 />
               )}
             </Card.Body>

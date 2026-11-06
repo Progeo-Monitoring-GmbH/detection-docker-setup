@@ -2,7 +2,13 @@
 import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import FrameSlider, { alarmPosition, ANIMATION_FRAME_MS, type AlarmSpan, frameAt } from './FrameSlider';
+import FrameSlider, {
+  alarmPosition,
+  ANIMATION_FRAME_MS,
+  type AlarmSpan,
+  draggedSelection,
+  frameAt,
+} from './FrameSlider';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -152,5 +158,89 @@ describe('FrameSlider visible range', () => {
     expect(band()).toBeNull();
     renderRange({ from: at(10), to: at(12) });
     expect(band()).toBeNull();
+  });
+});
+
+describe('FrameSlider selection', () => {
+  // jsdom has no layout: the strip counts as 400 px wide from x 0 - over the
+  // 5 frames one frame is 100 px (25 %).
+  const strip = () => container.querySelector<HTMLElement>('[data-testid="frame-slider-selection-strip"]')!;
+  const band = () => container.querySelector<HTMLElement>('[data-testid="frame-slider-selection"]');
+  const fire = (target: Element, type: string, x: number) =>
+    act(() => {
+      vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 400 } as DOMRect);
+      target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x }));
+    });
+  const drag = (target: Element, from: number, to: number) => {
+    fire(target, 'pointerdown', from);
+    fire(strip(), 'pointermove', to);
+    fire(strip(), 'pointerup', to);
+  };
+  let picked: { from: number; to: number }[];
+  const renderSelection = (selection: { from: number; to: number } | null) =>
+    act(() =>
+      root.render(
+        <FrameSlider
+          id="frames"
+          timestamps={TIMESTAMPS}
+          index={0}
+          onChange={() => {}}
+          selection={selection}
+          onSelectionChange={(next) => picked.push(next)}
+        />,
+      ),
+    );
+
+  beforeEach(() => {
+    picked = [];
+  });
+
+  it('moves a band whole and keeps it inside, resizes one edge down to a frame', () => {
+    expect(draggedSelection({ mode: 'move', left: 0.25, right: 0.5 }, 0.25, 0.25)).toEqual({ left: 0.5, right: 0.75 });
+    expect(draggedSelection({ mode: 'move', left: 0.25, right: 0.5 }, 0.9, 0.25)).toEqual({ left: 0.75, right: 1 });
+    expect(draggedSelection({ mode: 'start', left: 0.25, right: 0.5 }, 0.5, 0.25)).toEqual({ left: 0.25, right: 0.5 });
+    expect(draggedSelection({ mode: 'end', left: 0.25, right: 0.5 }, 0.25, 0.25)).toEqual({ left: 0.25, right: 0.75 });
+    expect(draggedSelection({ mode: 'create', left: 0.5, right: 0.5 }, -0.25, 0.25)).toEqual({ left: 0.25, right: 0.5 });
+  });
+
+  it('shows the selection as a band below the track', () => {
+    renderSelection({ from: at(1), to: at(2) });
+    expect(band()!.style.left).toBe('25%');
+    expect(band()!.style.width).toBe('25%');
+    expect(container.querySelector('.frame-slider__selection-shade')).not.toBeNull();
+  });
+
+  it('drags the band to another time, keeping its length', () => {
+    renderSelection({ from: at(1), to: at(2) });
+    drag(band()!, 150, 250);
+    expect(picked).toEqual([{ from: at(2), to: at(3) }]);
+  });
+
+  it('changes the length at a grip', () => {
+    renderSelection({ from: at(1), to: at(2) });
+    drag(container.querySelector('[data-testid="frame-slider-selection-end"]')!, 200, 400);
+    expect(picked).toEqual([{ from: at(1), to: at(4) }]);
+  });
+
+  it('draws a new selection on the empty strip - a click alone draws none', () => {
+    renderSelection(null);
+    expect(band()).toBeNull();
+    drag(strip(), 300, 100);
+    expect(picked).toEqual([{ from: at(1), to: at(3) }]);
+    drag(strip(), 200, 200);
+    expect(picked).toHaveLength(1);
+  });
+
+  it('moves the focused band a frame with the arrow keys', () => {
+    renderSelection({ from: at(1), to: at(2) });
+    act(() => {
+      band()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+    });
+    expect(picked).toEqual([{ from: at(2), to: at(3) }]);
+  });
+
+  it('has no strip without onSelectionChange', () => {
+    act(() => root.render(<FrameSlider id="frames" timestamps={TIMESTAMPS} index={0} onChange={() => {}} />));
+    expect(container.querySelector('[data-testid="frame-slider-selection-strip"]')).toBeNull();
   });
 });

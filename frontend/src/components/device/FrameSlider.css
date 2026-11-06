@@ -107,3 +107,63 @@
   outline: none;
   box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.3);
 }
+
+/* A selected time span: shaded over the track (the slider stays usable
+   through it) and a band in a strip right below - dragged it moves, its
+   grips resize it; a drag on the empty strip draws a new one. */
+.frame-slider__selection-shade {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  background: rgba(235, 99, 59, 0.16);
+  border-left: 2px solid rgba(235, 99, 59, 0.7);
+  border-right: 2px solid rgba(235, 99, 59, 0.7);
+}
+
+.frame-slider__selection-strip {
+  position: relative;
+  height: 12px;
+  margin: 0 0.5rem 4px;
+  border-radius: 6px;
+  background: var(--progeo-track-soft);
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.frame-slider__selection {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 8px;
+  border-radius: 6px;
+  background: rgba(235, 99, 59, 0.55);
+  cursor: grab;
+}
+
+.frame-slider__selection--dragging {
+  cursor: grabbing;
+  background: rgba(235, 99, 59, 0.75);
+}
+
+.frame-slider__selection:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(235, 99, 59, 0.4);
+}
+
+.frame-slider__selection-grip {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 8px;
+  border-radius: 3px;
+  background: var(--progeo-orange);
+  cursor: ew-resize;
+}
+
+.frame-slider__selection-grip--start {
+  left: -4px;
+}
+
+.frame-slider__selection-grip--end {
+  right: -4px;
+}

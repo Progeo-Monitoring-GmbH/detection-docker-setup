@@ -102,12 +102,31 @@ type MeasurementSamplesCompareChartProps = {
   threshold?: number | null;
   /** Sensors (pair index) with an own threshold: the threshold area spans ±it there. */
   sensorThresholds?: ReadonlyMap<number, number> | null;
-  /** Controls in a row above the first plot's legend, on the right (the
-   * Analyse tab's Störungsprofil). */
-  upperControls?: React.ReactNode;
   /** A Störungsprofil's masks (per sensor) as dashed EP / WP lines on the first plot. */
   maskLines?: { ep: number[]; wp: number[] } | null;
+  /**
+   * A time span picked on the time plots: holding `s` and dragging over the
+   * second or third plot reports it (instead of zooming) - shaded on both.
+   */
+  selectedRange?: { from: number; to: number } | null;
+  onRangeSelect?: ((range: { from: number; to: number }) => void) | null;
 };
+
+/** Held down, this key turns a drag over the time plots into a range selection. */
+const RANGE_SELECT_KEY = 's';
+
+const RANGE_FILL = 'rgba(235, 99, 59, 0.14)';
+const RANGE_LINE = 'rgba(235, 99, 59, 0.75)';
+/** A shorter drag (px) is a click, no selection. */
+const MIN_RANGE_DRAG_PX = 4;
+
+/** Keys typed into these are text, not the selection key. */
+const typesText = (target: EventTarget | null) =>
+  target instanceof HTMLElement &&
+  (target.isContentEditable ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement ||
+    (target instanceof HTMLInputElement && !['range', 'checkbox', 'radio', 'button'].includes(target.type)));
 
 const THRESHOLD_BAND_COLOR = 'rgba(44, 160, 44, 0.13)';
 
@@ -158,8 +177,6 @@ const SENSORS_AXIS_PX = 64;
 const SUM_PX = 120;
 /** The controls' height before they are measured (one row). */
 const TOOLBAR_PX = 34;
-/** The same for the controls above the first plot's legend. */
-const UPPER_CONTROLS_PX = 40;
 
 type PlotGeometry = {
   /** The whole figure's height (px). */
@@ -386,8 +403,9 @@ const MeasurementSamplesCompareChart = (
     isLoadingSensorHistory = false,
     threshold = null,
     sensorThresholds = null,
-    upperControls = null,
     maskLines = null,
+    selectedRange = null,
+    onRangeSelect = null,
   } = props;
   const { t } = useTranslation();
   const currentYear = new Date().getFullYear();
@@ -627,24 +645,10 @@ const MeasurementSamplesCompareChart = (
   // The third plot's quantity: the sensor sum or the sensor average.
   const [sumMode, setSumMode] = React.useState<SumMode>('sum');
 
-  // The controls above the first plot's legend: the top margin makes room
-  // for their measured height.
-  const upperControlsRef = React.useRef<HTMLDivElement | null>(null);
-  const [upperControlsPx, setUpperControlsPx] = React.useState(UPPER_CONTROLS_PX);
-  const hasUpperControls = upperControls != null && upperControls !== false;
-  React.useLayoutEffect(() => {
-    const controls = upperControlsRef.current;
-    if (!hasUpperControls || !controls || typeof ResizeObserver === 'undefined') {
-      return undefined;
-    }
-    const observer = new ResizeObserver(() => setUpperControlsPx(Math.ceil(controls.offsetHeight) || UPPER_CONTROLS_PX));
-    observer.observe(controls);
-    return () => observer.disconnect();
-  }, [hasUpperControls]);
   const margin = {
     l: 64,
     r: showSumDiff ? 64 : 16,
-    t: (frameSlider ? 56 : 16) + (hasUpperControls ? upperControlsPx : 0),
+    t: frameSlider ? 56 : 16,
     b: 52,
   };
   // The second plot's controls sit in the figure, right above that plot -
@@ -939,6 +943,17 @@ const MeasurementSamplesCompareChart = (
     ];
     timePlots.forEach(([xref, [y0, y1]]) => {
       const onPlot = { xref: xref as Plotly.XAxisName, yref: 'paper' as const, y0, y1 };
+      if (selectedRange) {
+        result.push({
+          ...onPlot,
+          type: 'rect',
+          layer: 'below',
+          x0: selectedRange.from,
+          x1: selectedRange.to,
+          fillcolor: RANGE_FILL,
+          line: { color: RANGE_LINE, width: 1.5, dash: 'dash' },
+        });
+      }
       if (alarmBandX != null) {
         result.push(
           alarmBandX.end > alarmBandX.start
@@ -984,6 +999,7 @@ const MeasurementSamplesCompareChart = (
     geometry,
     threshold,
     sensorThresholds,
+    selectedRange,
   ]);
 
   // The line under the cursor or its legend entry is highlighted: wider,
@@ -1280,6 +1296,87 @@ const MeasurementSamplesCompareChart = (
     onVisibleRangeChange?.(zoomFrom != null && zoomTo != null ? { from: zoomFrom, to: zoomTo } : null);
   }, [onVisibleRangeChange, zoomFrom, zoomTo]);
 
+  // Range selection: while `s` is held an overlay over the two time plots
+  // takes the drag (Plotly would zoom) - the span is reported on release.
+  const [rangeKeyHeld, setRangeKeyHeld] = React.useState(false);
+  const [rangeDrag, setRangeDrag] = React.useState<{ axis: 'xaxis2' | 'xaxis3'; start: number; end: number } | null>(
+    null,
+  );
+  React.useEffect(() => {
+    if (!onRangeSelect) {
+      return undefined;
+    }
+    const isKey = (event: KeyboardEvent) => event.key.toLowerCase() === RANGE_SELECT_KEY;
+    const onDown = (event: KeyboardEvent) => {
+      if (isKey(event) && !event.ctrlKey && !event.altKey && !event.metaKey && !typesText(event.target)) {
+        setRangeKeyHeld(true);
+      }
+    };
+    const onUp = (event: KeyboardEvent) => {
+      if (isKey(event)) {
+        setRangeKeyHeld(false);
+      }
+    };
+    const release = () => setRangeKeyHeld(false);
+    window.addEventListener('keydown', onDown);
+    window.addEventListener('keyup', onUp);
+    window.addEventListener('blur', release);
+    return () => {
+      window.removeEventListener('keydown', onDown);
+      window.removeEventListener('keyup', onUp);
+      window.removeEventListener('blur', release);
+    };
+  }, [onRangeSelect]);
+  // The time plots' place (px within the figure): from the second plot's
+  // top to the third's bottom.
+  const plotPx = geometry.height - margin.t - margin.b;
+  const paperTop = (fraction: number) => margin.t + (1 - fraction) * plotPx;
+  const rangeOverlayTop = paperTop(geometry.sensors[1]);
+  const rangeOverlayBottom = paperTop(geometry.sum[0]);
+  /** The time (ms) at `px` from the time axis' start. */
+  const timeAtPx = (axisName: 'xaxis2' | 'xaxis3', px: number) => {
+    const axis = (graphDiv as { _fullLayout?: Record<string, PlotlyFullAxis | undefined> } | null)?._fullLayout?.[
+      axisName
+    ];
+    if (!axis?.range || !axis.r2l || !axis._length) {
+      return null;
+    }
+    const from = axis.r2l(axis.range[0]);
+    const to = axis.r2l(axis.range[1]);
+    return from + (Math.min(Math.max(px, 0), axis._length) / axis._length) * (to - from);
+  };
+  const onRangePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    const box = event.currentTarget.getBoundingClientRect();
+    const y = event.clientY - box.top + rangeOverlayTop;
+    // Over the second plot its own axis (the history), else the sum's.
+    const axis = y <= paperTop(geometry.sensors[0]) ? 'xaxis3' : 'xaxis2';
+    const x = event.clientX - box.left;
+    event.preventDefault();
+    setRangeDrag({ axis, start: x, end: x });
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // jsdom / old browsers: the drag still works while over the overlay.
+    }
+  };
+  const onRangePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (rangeDrag) {
+      const box = event.currentTarget.getBoundingClientRect();
+      setRangeDrag({ ...rangeDrag, end: Math.min(Math.max(event.clientX - box.left, 0), box.width) });
+    }
+  };
+  const onRangePointerUp = () => {
+    if (rangeDrag && Math.abs(rangeDrag.end - rangeDrag.start) >= MIN_RANGE_DRAG_PX) {
+      const from = timeAtPx(rangeDrag.axis, Math.min(rangeDrag.start, rangeDrag.end));
+      const to = timeAtPx(rangeDrag.axis, Math.max(rangeDrag.start, rangeDrag.end));
+      if (from != null && to != null && to > from) {
+        onRangeSelect?.({ from, to });
+      }
+    }
+    setRangeDrag(null);
+  };
+  const showRangeOverlay = onRangeSelect != null && (rangeKeyHeld || rangeDrag != null);
+
   const content = (
     <>
       <div className="d-flex flex-wrap justify-content-between align-items-center mb-2">
@@ -1437,16 +1534,6 @@ const MeasurementSamplesCompareChart = (
             ))}
           </div>
         </div>
-        {hasUpperControls && (
-          <div
-            ref={upperControlsRef}
-            data-testid="measurement-compare-upper-controls"
-            className="d-flex flex-wrap justify-content-end align-items-center gap-2 pb-2"
-            style={{ position: 'absolute', top: 0, left: margin.l, right: margin.r, zIndex: 2 }}
-          >
-            {upperControls}
-          </div>
-        )}
         <WheelZoomHint visible={wheelHint} radius={0} />
         {/* Help of the first and the third plot, right above each (the
             second's sits in its controls). */}
@@ -1487,6 +1574,49 @@ const MeasurementSamplesCompareChart = (
                 ? 'measurement_compare_sensor_click_remove'
                 : 'measurement_compare_sensor_click_add',
               { sensor: sensorNumber(hoveredSensor) },
+            )}
+          </div>
+        )}
+        {showRangeOverlay && (
+          <div
+            data-testid="measurement-compare-range-overlay"
+            onPointerDown={onRangePointerDown}
+            onPointerMove={onRangePointerMove}
+            onPointerUp={onRangePointerUp}
+            onPointerCancel={() => setRangeDrag(null)}
+            style={{
+              position: 'absolute',
+              zIndex: 4,
+              left: margin.l,
+              right: margin.r,
+              top: rangeOverlayTop,
+              height: rangeOverlayBottom - rangeOverlayTop,
+              cursor: 'col-resize',
+              touchAction: 'none',
+              background: 'rgba(235, 99, 59, 0.04)',
+              outline: `1px dashed ${RANGE_LINE}`,
+            }}
+          >
+            <span
+              className="position-absolute bg-dark text-white rounded px-2 py-1 text-nowrap"
+              style={{ top: 4, left: 4, fontSize: 11, opacity: 0.85, pointerEvents: 'none' }}
+            >
+              {t('measurement_compare_range_select_hint')}
+            </span>
+            {rangeDrag && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  bottom: 0,
+                  left: Math.min(rangeDrag.start, rangeDrag.end),
+                  width: Math.abs(rangeDrag.end - rangeDrag.start),
+                  background: 'rgba(235, 99, 59, 0.22)',
+                  borderLeft: `2px solid ${RANGE_LINE}`,
+                  borderRight: `2px solid ${RANGE_LINE}`,
+                  pointerEvents: 'none',
+                }}
+              />
             )}
           </div>
         )}

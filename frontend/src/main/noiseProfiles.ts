@@ -186,33 +186,64 @@ export const noiseProfileCsv = (profile: Pick<NoiseProfile, 'name' | 'mask_e' | 
   return `${lines.join('\n')}\n`;
 };
 
-export type MaskTarget = 'both' | 'ep' | 'wp';
-export type MaskOperation = 'add' | 'multiply' | 'set';
-
 /**
- * The editor's bulk change: `operation` with `value` on the EP and/or WP
- * mask of sensors `from`..`to` (1-based, inclusive) - whole numbers, never
- * below 0.
+ * The profile plot's painting: `mask` with the sensors `from`..`to` (0-based,
+ * either order, inclusive) set along a straight line from `fromValue` to
+ * `toValue` - so a fast drag across sensors leaves no gaps. Whole numbers,
+ * never below 0; the mask grows (with 0) if needed.
  */
-export const editMask = (
-  draft: Pick<NoiseProfileDraft, 'mask_e' | 'mask_w'>,
-  target: MaskTarget,
-  operation: MaskOperation,
-  value: number,
+export const paintMask = (
+  mask: ReadonlyArray<number>,
   from: number,
   to: number,
-): Pick<NoiseProfileDraft, 'mask_e' | 'mask_w'> => {
-  const change = (mask: number[]) =>
-    mask.map((current, index) => {
-      const sensor = index + 1;
-      if (sensor < from || sensor > to) {
-        return current;
-      }
-      const next = operation === 'add' ? current + value : operation === 'multiply' ? current * value : value;
-      return Math.max(0, Math.round(next));
-    });
-  return {
-    mask_e: target === 'wp' ? draft.mask_e : change(draft.mask_e),
-    mask_w: target === 'ep' ? draft.mask_w : change(draft.mask_w),
-  };
+  fromValue: number,
+  toValue: number,
+): number[] => {
+  const next = [...mask];
+  const steps = Math.abs(to - from);
+  const direction = to >= from ? 1 : -1;
+  for (let step = 0; step <= steps; step += 1) {
+    const index = from + step * direction;
+    if (index < 0) {
+      continue;
+    }
+    while (next.length <= index) {
+      next.push(0);
+    }
+    const value = steps ? fromValue + ((toValue - fromValue) * step) / steps : toValue;
+    next[index] = Math.max(0, Math.round(value));
+  }
+  return next;
+};
+
+/** A rating's traffic light. */
+export type RatingLevel = 'good' | 'fair' | 'poor';
+export type RatingMeasure = 'score' | 'fit' | 'effect';
+
+/** From these on (score in %, fit / effect 0..1) a measure is good / fair. */
+const RATING_LEVELS: Record<RatingMeasure, { good: number; fair: number }> = {
+  score: { good: 70, fair: 40 },
+  fit: { good: 0.9, fair: 0.75 },
+  effect: { good: 0.5, fair: 0.25 },
+};
+
+export const ratingLevel = (measure: RatingMeasure, value: number): RatingLevel => {
+  const { good, fair } = RATING_LEVELS[measure];
+  return value >= good ? 'good' : value >= fair ? 'fair' : 'poor';
+};
+
+/** A time span's length, short: "45 min", "4 h 20 min", "3 d 2 h". */
+export const formatSpan = (ms: number): string => {
+  const minutes = Math.max(0, Math.round(ms / 60000));
+  if (minutes < 60) {
+    return `${minutes} min`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    const rest = minutes % 60;
+    return rest ? `${hours} h ${rest} min` : `${hours} h`;
+  }
+  const days = Math.floor(hours / 24);
+  const rest = hours % 24;
+  return rest ? `${days} d ${rest} h` : `${days} d`;
 };
