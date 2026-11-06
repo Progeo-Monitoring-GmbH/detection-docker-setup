@@ -173,3 +173,83 @@ export const rangeBetween = (orders: number[], anchor: number, order: number) =>
   }
   return orders.slice(Math.min(from, to), Math.max(from, to) + 1);
 };
+
+/** What mixerSensorsFromLoaded reads of a page's loaded data. */
+export type LoadedThresholdData = {
+  /** The heatmap's sensor_points: order (pos), name, threshold, device and pair. */
+  points: ReadonlyArray<{
+    pos: number;
+    name?: string | null;
+    threshold?: number | null;
+    device?: number | null;
+    pair?: number | null;
+  }>;
+  /** The heatmap's |WP - EP| per sensor (pos) - null if it shows another value (WP, EP, ...). */
+  heatData: Record<string, ReadonlyArray<number | null>> | null;
+  /** The shown device's loaded measurements, cleaned by the profile in use. */
+  rows: ReadonlyArray<{ samples?: number[] | null; pair_abs_values?: number[] | null }>;
+  /** Their device; its sensors take their maxima from `rows`. */
+  shownDevice: number | null;
+};
+
+const highest = (values: Iterable<number | null | undefined>) => {
+  let max: number | null = null;
+  for (const value of values) {
+    if (value != null && Number.isFinite(value) && (max == null || Math.abs(value) > max)) {
+      max = Math.abs(value);
+    }
+  }
+  return max;
+};
+
+/**
+ * The mixer's sensors from data a page already loaded (the Analyse tab) - no
+ * request of its own: every measure point with its name and threshold, and
+ * per sensor the highest |WP - EP| of the loaded measurements. The shown
+ * device's sensors are read from `rows` (cleaned by the profile in use),
+ * the other devices' from the heatmap. Sensors the shown device measures
+ * without a measure point are listed too (inheriting the object's threshold).
+ */
+export const mixerSensorsFromLoaded = ({ points, heatData, rows, shownDevice }: LoadedThresholdData): MixerSensor[] => {
+  // Per pair (0-based) of the shown device: its highest value.
+  const shownMax: Array<number | null> = [];
+  rows.forEach((row) => {
+    const samples = row.samples ?? [];
+    const pairs =
+      row.pair_abs_values ??
+      Array.from({ length: Math.floor(samples.length / 2) }, (_, pair) =>
+        Math.abs(Number(samples[pair * 2 + 1]) - Number(samples[pair * 2])),
+      );
+    pairs.forEach((value, pair) => {
+      shownMax[pair] = highest([shownMax[pair], value]);
+    });
+  });
+  const ofShown = (point: LoadedThresholdData['points'][number]) =>
+    point.device == null || point.device === shownDevice;
+  // The shown device's pair 1 is this sensor (ProgeoDevice.first_sensor_order).
+  const placed = points.find((point) => point.device != null && point.device === shownDevice && point.pair != null);
+  const start = placed ? placed.pos - (placed.pair as number) + 1 : 1;
+
+  const sensors = new Map<number, MixerSensor>();
+  points.forEach((point) => {
+    const max = ofShown(point)
+      ? (shownMax[(point.pair ?? point.pos) - 1] ?? null)
+      : heatData
+        ? highest(heatData[String(point.pos)] ?? [])
+        : null;
+    sensors.set(point.pos, {
+      sensor_order: point.pos,
+      id: null,
+      name: point.name ?? null,
+      threshold: point.threshold ?? null,
+      max,
+    });
+  });
+  shownMax.forEach((max, pair) => {
+    const order = start + pair;
+    if (!sensors.has(order)) {
+      sensors.set(order, { sensor_order: order, id: null, name: null, threshold: null, max: max ?? null });
+    }
+  });
+  return [...sensors.values()].sort((a, b) => a.sensor_order - b.sensor_order);
+};

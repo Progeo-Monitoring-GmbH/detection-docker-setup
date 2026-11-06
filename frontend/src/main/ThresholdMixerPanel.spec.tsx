@@ -225,6 +225,75 @@ describe('ThresholdMixerPanel', () => {
     });
   });
 
+  it('removes a marker that is clicked - a slight jitter still counts as a click', () => {
+    render();
+    // Sensor 2's marker at y 90 (150): pressed and released 2 px lower.
+    pointer('pointerdown', 70, 90);
+    pointer('pointermove', 70, 92);
+    pointer('pointerup', 70, 92);
+    expect(changesText()).toContain('Dach');
+    expect(changesText()).toContain('150 mV → einstell_mixer_inherits');
+    expect(container.querySelector('[data-handle="2"]')).toBeNull();
+  });
+
+  it('grabs the object line over a sensor without a marker', () => {
+    render();
+    // Sensor 3 inherits; y 140 is the line (100).
+    drag(150, 140, 116);
+    expect(changesText()).toContain('einstell_mixer_changes:{"count":1}');
+    expect(changesText()).toContain('einstell_mixer_object');
+    expect(changesText()).toContain('100 mV → 124 mV');
+  });
+
+  it('leaves the line alone where a marker is - the marker wins', () => {
+    // Sensor 1's own 105 sits right above the line (100): y 135 vs 140.
+    api.sensors = [
+      { sensor_order: 1, id: 10, name: 'Keller', threshold: 105, max: 50 },
+      { sensor_order: 2, id: null, name: null, threshold: null, max: 200 },
+    ];
+    render();
+    drag(10, 138, 100);
+    expect(changesText()).toContain('Keller');
+    expect(changesText()).not.toContain('einstell_mixer_object');
+  });
+
+  it('works on the page\'s loaded data - no request, no period to pick', async () => {
+    const sensors: MixerSensor[] = [
+      { sensor_order: 1, id: null, name: null, threshold: null, max: 50 },
+      { sensor_order: 2, id: null, name: 'Dach', threshold: 150, max: 200 },
+    ];
+    act(() => {
+      root.render(
+        <ThresholdMixerPanel
+          locationId={7}
+          initialObjectThreshold={100}
+          canEdit
+          loaded={{ sensors, note: 'aus den geladenen Messungen' }}
+        />,
+      );
+    });
+    expect(api.get).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-testid="threshold-mixer-source"]')!.textContent).toBe(
+      'aus den geladenen Messungen',
+    );
+    expect(container.textContent).not.toContain('einstell_mixer_24h');
+    expect(bar(2).getAttribute('fill')).toBe('#C44D26');
+
+    // Sensor 2's marker (150 -> y 90 on the 230 scale) is moved up and saved:
+    // still no request - the page reloads its data, the panel keeps the value.
+    drag(70, 90, 60);
+    await act(async () => {
+      button('einstell_mixer_save').click();
+    });
+    expect(api.post).toHaveBeenCalledWith('/v1/location/7/measurepoints/', {
+      points: [{ sensor_order: 2, threshold: 180 }],
+    });
+    expect(api.get).not.toHaveBeenCalled();
+    expect(changesText()).toContain('einstell_mixer_no_changes');
+    // The saved 180 stays until the page's data has it (y = 240 - 180, the handle 3 px above).
+    expect(Number(container.querySelector('[data-handle="2"]')!.getAttribute('y'))).toBeCloseTo(240 - 180 - 3);
+  });
+
   it('is read-only without the edit permission', () => {
     render(false);
     drag(150, 120, 100);

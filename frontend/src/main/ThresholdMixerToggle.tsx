@@ -4,12 +4,15 @@ import { useTranslation } from 'react-i18next';
 import usePermissions from '../../hooks/usePermissions';
 import PillButton from '../components/ui/kit/PillButton';
 import ThresholdMixerPanel from './ThresholdMixerPanel';
+import type { MixerSensor } from './thresholdMixer';
 
 type ThresholdMixerToggleProps = {
   locationId: number | string;
   initialObjectThreshold: number | null;
   /** After the thresholds were saved - reload what depends on them. */
   onSaved?: () => void;
+  /** The sensors from the page's loaded data - the mixer requests nothing itself (see ThresholdMixerPanel). */
+  loaded?: { sensors: MixerSensor[]; note: string } | null;
 };
 
 /**
@@ -18,7 +21,7 @@ type ThresholdMixerToggleProps = {
  * loads them right below it - editable with the same permission as there -
  * and hides them again.
  */
-const ThresholdMixerToggle = ({ locationId, initialObjectThreshold, onSaved }: ThresholdMixerToggleProps) => {
+const ThresholdMixerToggle = ({ locationId, initialObjectThreshold, onSaved, loaded = null }: ThresholdMixerToggleProps) => {
   const { t } = useTranslation();
   const { hasPermission } = usePermissions();
   const [open, setOpen] = useState(false);
@@ -77,6 +80,7 @@ const ThresholdMixerToggle = ({ locationId, initialObjectThreshold, onSaved }: T
             canEdit={hasPermission('module_locations_edit')}
             onSaved={onSaved}
             embedded
+            loaded={loaded}
           />
         </div>
       )}

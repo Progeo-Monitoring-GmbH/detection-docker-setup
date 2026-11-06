@@ -69,12 +69,15 @@ const MAX_COLUMN = 64;
 const MIN_ZOOM_COLUMN = 3;
 /** How close (px) to a marker (or the object line) a press grabs it. */
 const GRAB_PX = 11;
+/** A press on a marker that moves less than this (px) is a click: it removes the marker. */
+const CLICK_PX = 4;
 /** Room under the plot for the horizontal scrollbar - it must not cover the labels. */
 const SCROLLBAR_ROOM = 14;
 /** ←/→ scroll this many columns (Shift: a page). */
 const KEY_SCROLL_COLUMNS = 5;
 
-type Drag = { kind: 'object' } | { kind: 'sensors'; orders: number[] };
+/** `clicked`: the sensor whose own marker was pressed - a click without moving removes it. */
+type Drag = { kind: 'object' } | { kind: 'sensors'; orders: number[]; clicked?: number };
 
 const formatValue = (value: number | null) => (value == null ? '–' : String(Math.round(value * 10) / 10));
 
@@ -96,6 +99,7 @@ const ThresholdMixerPanel = ({
   canEdit,
   onSaved,
   embedded = false,
+  loaded = null,
 }: {
   locationId: number | string;
   initialObjectThreshold: number | null;
@@ -103,14 +107,47 @@ const ThresholdMixerPanel = ({
   onSaved?: () => void;
   /** Inside another panel (the Analyse tab's Störungsprofil): no card of its own. */
   embedded?: boolean;
+  /**
+   * The sensors from data the page already loaded (mixerSensorsFromLoaded) -
+   * then nothing is requested and there is no period to pick; `note` says
+   * where the maxima come from. Without: the panel loads GET measurepoints
+   * with the period's maxima itself (the Einstellungen tab).
+   */
+  loaded?: { sensors: MixerSensor[]; note: string } | null;
 }) => {
   const auth = useAuth();
   const { t } = useTranslation();
   const { enqueueSnackbar } = useSnackbar();
 
   const [days, setDays] = useState(DEFAULT_PERIOD);
-  const [sensors, setSensors] = useState<MixerSensor[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [fetched, setFetched] = useState<MixerSensor[]>([]);
+  const [loading, setLoading] = useState(loaded == null);
+  // With `loaded`: the thresholds just saved, until the page's data has them.
+  const [savedPatch, setSavedPatch] = useState<Record<number, number | null>>({});
+  const loadedSensors = loaded?.sensors ?? null;
+  const sensors = useMemo(
+    () =>
+      loadedSensors
+        ? loadedSensors.map((sensor) =>
+            sensor.sensor_order in savedPatch ? { ...sensor, threshold: savedPatch[sensor.sensor_order] } : sensor,
+          )
+        : fetched,
+    [loadedSensors, savedPatch, fetched],
+  );
+  useEffect(() => {
+    // The page reloaded its data: what it has now needs no patch any more.
+    if (!loadedSensors) {
+      return;
+    }
+    setSavedPatch((patch) => {
+      const kept = Object.entries(patch).filter(
+        ([order, value]) => loadedSensors.find((sensor) => sensor.sensor_order === Number(order))?.threshold !== value,
+      );
+      return kept.length === Object.keys(patch).length ? patch : Object.fromEntries(kept);
+    });
+  }, [loadedSensors]);
+  // The press of a marker or the line: where it started and whether it moved.
+  const pressRef = useRef<{ y: number; moved: boolean } | null>(null);
   const [savedObject, setSavedObject] = useState<number | null>(initialObjectThreshold);
   const [drafts, setDrafts] = useState<ThresholdDrafts>(NO_DRAFTS);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -142,7 +179,7 @@ const ThresholdMixerPanel = ({
           if (request !== requestRef.current) {
             return;
           }
-          setSensors(((response?.data?.sensors || []) as MixerSensor[]).map((sensor) => ({
+          setFetched(((response?.data?.sensors || []) as MixerSensor[]).map((sensor) => ({
             ...sensor,
             max: sensor.max ?? null,
           })));
@@ -159,9 +196,13 @@ const ThresholdMixerPanel = ({
     [auth, enqueueSnackbar, locationId, t],
   );
 
+  // Only without the page's data the panel loads its own.
+  const fetchOwn = loaded == null;
   useEffect(() => {
-    load(days);
-  }, [load, days]);
+    if (fetchOwn) {
+      load(days);
+    }
+  }, [load, days, fetchOwn]);
 
   // The scroller's width decides the column width.
   useLayoutEffect(() => {
@@ -261,13 +302,16 @@ const ThresholdMixerPanel = ({
       const isSelected = selected.has(sensor.sensor_order);
       const effective = effectiveThresholdOf(sensor, savedObject, drafts);
       // Its own marker - or, while selected, its spot on the object line.
-      // Markers come first: the object line is dragged by its grip.
+      // Markers come first: where one is, the line is not grabbed.
       if ((own != null || isSelected) && effective != null && Math.abs(y - toY(effective)) <= GRAB_PX) {
-        return { kind: 'sensors', orders: isSelected ? [...selected] : [sensor.sensor_order] };
+        return {
+          kind: 'sensors',
+          orders: isSelected ? [...selected] : [sensor.sensor_order],
+          ...(own != null ? { clicked: sensor.sensor_order } : {}),
+        };
       }
-      return null;
     }
-    // Right of the last sensor the object line itself can be grabbed.
+    // The object line itself - over the sensors as right of the last one.
     if (objectThreshold != null && Math.abs(y - toY(objectThreshold)) <= GRAB_PX) {
       return { kind: 'object' };
     }
@@ -299,6 +343,8 @@ const ThresholdMixerPanel = ({
     const next = grabAt(sensor, y);
     if (next) {
       event.preventDefault();
+      // Nothing moves until the pointer does - a click on a marker removes it.
+      pressRef.current = { y, moved: false };
       startDrag(next, event.currentTarget, event.pointerId);
       return;
     }
@@ -328,12 +374,20 @@ const ThresholdMixerPanel = ({
     event.preventDefault();
     setDrafts((prev) => withOverrides(prev, targets, valueAt(y)));
     setAnchor(order);
+    pressRef.current = { y, moved: true };
     startDrag({ kind: 'sensors', orders: targets }, event.currentTarget, event.pointerId);
   };
 
   const onPointerMove = (event: PointerEvent<SVGSVGElement>) => {
     const { sensor, y } = pointerAt(event);
     if (drag) {
+      const press = pressRef.current;
+      if (press && !press.moved) {
+        if (Math.abs(y - press.y) < CLICK_PX) {
+          return;
+        }
+        press.moved = true;
+      }
       applyDrag(drag, valueAt(y));
       return;
     }
@@ -342,6 +396,14 @@ const ThresholdMixerPanel = ({
   };
 
   const endDrag = () => {
+    // A click on an own marker (pressed, not moved): it goes - the sensor
+    // inherits the object's threshold again.
+    const press = pressRef.current;
+    if (drag?.kind === 'sensors' && drag.clicked != null && press && !press.moved) {
+      const order = drag.clicked;
+      setDrafts((prev) => withOverrides(prev, [order], null));
+    }
+    pressRef.current = null;
     setDrag(null);
     setFrozenScale(null);
   };
@@ -352,6 +414,7 @@ const ThresholdMixerPanel = ({
       return;
     }
     event.preventDefault();
+    pressRef.current = null;
     startDrag({ kind: 'object' }, event.currentTarget, event.pointerId);
   };
   const onGripMove = (event: PointerEvent<SVGElement>) => {
@@ -415,8 +478,15 @@ const ThresholdMixerPanel = ({
       }
       showSuccessBar(enqueueSnackbar, t('einstell_mixer_saved', { count: changes.length }));
       setDrafts(NO_DRAFTS);
-      setLoading(true);
-      load(days);
+      if (loaded) {
+        setSavedPatch((patch) => ({
+          ...patch,
+          ...Object.fromEntries(payload.points.map((point) => [point.sensor_order, point.threshold])),
+        }));
+      } else {
+        setLoading(true);
+        load(days);
+      }
       onSaved?.();
     } catch (error) {
       showRequestError(enqueueSnackbar, t('einstell_mixer_save_failed'), error as never);
@@ -653,6 +723,9 @@ const ThresholdMixerPanel = ({
               ({overrideOf(hoveredSensor, drafts) != null ? t('einstell_mixer_own') : t('einstell_mixer_object')})
             </span>
           </div>
+          {canEdit && overrideOf(hoveredSensor, drafts) != null && (
+            <div style={{ opacity: 0.7 }}>{t('einstell_mixer_marker_hint')}</div>
+          )}
         </div>
       )}
     </div>
@@ -670,17 +743,24 @@ const ThresholdMixerPanel = ({
       flat={embedded}
       title={t('einstell_section_thresholds')}
       actions={
-        <SegmentedControl
-          options={PERIODS.map((period) => ({
-            value: String(period),
-            label: period === 1 ? t('einstell_mixer_24h') : t('einstell_mixer_days', { count: period }),
-          }))}
-          value={String(days)}
-          onChange={(value) => {
-            setLoading(true);
-            setDays(Number(value));
-          }}
-        />
+        loaded ? (
+          // The page's own data - no period of its own to pick.
+          <span style={{ fontSize: 12, color: MUTED }} data-testid="threshold-mixer-source">
+            {loaded.note}
+          </span>
+        ) : (
+          <SegmentedControl
+            options={PERIODS.map((period) => ({
+              value: String(period),
+              label: period === 1 ? t('einstell_mixer_24h') : t('einstell_mixer_days', { count: period }),
+            }))}
+            value={String(days)}
+            onChange={(value) => {
+              setLoading(true);
+              setDays(Number(value));
+            }}
+          />
+        )
       }
     >
       <div className="d-flex flex-column gap-3">

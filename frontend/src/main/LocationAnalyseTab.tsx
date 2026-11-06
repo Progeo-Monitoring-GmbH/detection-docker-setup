@@ -46,6 +46,7 @@ import { downloadBlob } from '../download';
 import NoiseProfilePanel, { type NoiseViewState, type ProfileRange } from './NoiseProfilePanel';
 import NoiseProfileEditor from './NoiseProfileEditor';
 import ThresholdMixerToggle from './ThresholdMixerToggle';
+import { mixerSensorsFromLoaded } from './thresholdMixer';
 import {
   cleanRows,
   type NoiseProfile,
@@ -812,6 +813,31 @@ const LocationAnalyseTab = () => {
     };
   }, [shownDraft, measurements, frameTime]);
 
+  // The thresholds panel works on the data loaded here - no request, no
+  // period of its own: the heatmap's points and thresholds, the maxima of the
+  // shown device's measurements cleaned by the profile being rated (the
+  // draft, else the picked or active one), the other devices' from the heatmap.
+  const ratedProfile = shownDraft ?? selectedProfile;
+  const thresholdData = useMemo(() => {
+    if (!offerNoiseProfiles || !heatmap) {
+      return null;
+    }
+    const rows = cleanRows(measurements, noiseMaskOf(ratedProfile));
+    return {
+      sensors: mixerSensorsFromLoaded({
+        points: heatmap.sensor_points ?? [],
+        heatData: !heatmap.profile || heatmap.profile === 'diff' ? heatmap.data : null,
+        rows,
+        shownDevice,
+      }),
+      note: t(ratedProfile ? 'thresholds_source_profile' : 'thresholds_source_raw', {
+        name: ratedProfile?.name ?? '',
+        period: t(timeRangeLabelKey(range)),
+        count: measurements.length,
+      }),
+    };
+  }, [offerNoiseProfiles, heatmap, measurements, ratedProfile, shownDevice, range, t]);
+
   // Thresholds saved in the panel: the heatmap brings the new ones (and the
   // ratings count against them).
   const onThresholdsSaved = useCallback(() => {
@@ -878,6 +904,7 @@ const LocationAnalyseTab = () => {
           locationId={locationId}
           initialObjectThreshold={alarmThreshold}
           onSaved={onThresholdsSaved}
+          loaded={thresholdData}
         />
       }
     />

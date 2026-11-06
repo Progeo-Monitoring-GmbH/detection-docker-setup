@@ -8,6 +8,7 @@ import {
   QUIET_SHARE,
   labelEveryOf,
   type MixerSensor,
+  mixerSensorsFromLoaded,
   NO_DRAFTS,
   rangeBetween,
   savePayloadOf,
@@ -136,5 +137,43 @@ describe('snapping and axis', () => {
   it('selects a range in plot order (Shift+click)', () => {
     expect(rangeBetween([1, 2, 3, 5, 8], 8, 2)).toEqual([2, 3, 5, 8]);
     expect(rangeBetween([1, 2], 9, 2)).toEqual([2]);
+  });
+});
+
+describe('mixerSensorsFromLoaded', () => {
+  // Device 1 (shown) holds sensors 1-2 (pairs 1-2) and measures a third pair
+  // without a point; device 2 holds sensor 10.
+  const points = [
+    { pos: 1, name: 'Keller', threshold: null, device: 1, pair: 1 },
+    { pos: 2, name: null, threshold: 150, device: 1, pair: 2 },
+    { pos: 10, name: 'Dach', threshold: null, device: 2, pair: 1 },
+  ];
+  const rows = [{ pair_abs_values: [40, 90, 7] }, { pair_abs_values: [55, 60, 3] }];
+
+  it("takes the shown device's maxima from its measurements, the others' from the heatmap", () => {
+    const sensors = mixerSensorsFromLoaded({ points, heatData: { '10': [12, -30, null] }, rows, shownDevice: 1 });
+
+    expect(sensors).toEqual([
+      { sensor_order: 1, id: null, name: 'Keller', threshold: null, max: 55 },
+      { sensor_order: 2, id: null, name: null, threshold: 150, max: 90 },
+      // The third pair has no point - listed, inheriting the object's threshold.
+      { sensor_order: 3, id: null, name: null, threshold: null, max: 7 },
+      { sensor_order: 10, id: null, name: 'Dach', threshold: null, max: 30 },
+    ]);
+  });
+
+  it('reads |WP - EP| from the samples where a row has no pair values', () => {
+    const [first] = mixerSensorsFromLoaded({
+      points: [points[0]],
+      heatData: null,
+      rows: [{ samples: [100, 160] }],
+      shownDevice: 1,
+    });
+    expect(first.max).toBe(60);
+  });
+
+  it('has no maxima for other devices without |WP - EP| in the heatmap', () => {
+    const sensors = mixerSensorsFromLoaded({ points, heatData: null, rows, shownDevice: 1 });
+    expect(sensors.find((sensor) => sensor.sensor_order === 10)!.max).toBeNull();
   });
 });
