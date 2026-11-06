@@ -157,9 +157,12 @@ MIDDLEWARE = [
 ]
 
 
+# Never shown in tests: with DEBUG on (env) it instrumented every request of
+# the test client (127.0.0.1) - all default panels, the profiler (cProfile)
+# and a stack trace per SQL query included. That made query-heavy tests
+# minutes slow (the demo measurement import: 150 s instead of a few).
 DEBUG_TOOLBAR_CONFIG = {
-    "SHOW_TOOLBAR_CALLBACK": "progeo.debug.show_toolbar",
-    "DISABLE_PANELS": {}
+    "SHOW_TOOLBAR_CALLBACK": "progeo.debug.hide_toolbar",
 }
 
 REST_FRAMEWORK = {
