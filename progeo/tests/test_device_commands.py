@@ -712,9 +712,122 @@ def test_pending_commands_can_be_cancelled(api_client, provisioned):
     assert _poll(api_client, location) == []
 
 
-def test_commands_are_staff_only(api_client, provisioned):
-    location, device, _preview = provisioned
-    api_client.force_authenticate(user=f.make_user(perms=("module_devices_enabled", "module_devices_edit")))
+def _commands_user(location, *perms):
+    """A non-staff member of the location's account with `perms`."""
+    return f.make_user(perms=("module_devices_enabled", *perms), accounts=(location.account,))
 
-    assert api_client.get(_commands_url(device, location)).json()["reason"] == "Staff access required"
-    assert _queue(api_client, device, location, "restart").json()["reason"] == "Staff access required"
+
+def test_commands_need_staff_or_the_commands_permission(api_client, provisioned):
+    location, device, _preview = provisioned
+    api_client.force_authenticate(user=_commands_user(location, "module_devices_edit"))
+
+    for response in (
+        api_client.get(_commands_url(device, location)),
+        _queue(api_client, device, location, "restart"),
+        api_client.get(_config_url(device, location)),
+        api_client.post(_config_url(device, location, "request/"), {}, format="json"),
+        api_client.post(_config_url(device, location, "params/"), {"interval_sec": 3600}, format="json"),
+    ):
+        assert response.status_code == 403
+        assert response.json()["missing_permissions"] == ["module_devices_commands"]
+
+
+def test_the_commands_permission_lists_and_queues_but_not_superuser_commands(api_client, provisioned):
+    location, device, _preview = provisioned
+    api_client.force_authenticate(user=_commands_user(location, "module_devices_commands"))
+
+    queued = _queue(api_client, device, location, "restart")
+    assert queued.status_code == 200, queued.content
+    history = api_client.get(_commands_url(device, location)).json()
+    assert [row["command"] for row in history["commands"]] == ["restart"]
+    assert _queue(api_client, device, location, "update", {"content": "return {}"}).json()["reason"] == (
+        "Superuser access required"
+    )
+    result = api_client.get(_commands_url(device, location, f"{queued.json()['command']['id']}/result/"))
+    assert result.json()["reason"] == "Superuser access required"
+
+
+def test_the_commands_permission_needs_the_location(api_client, provisioned):
+    location, device, _preview = provisioned
+    # The permission, but no access to the device's location.
+    api_client.force_authenticate(user=f.make_user(perms=("module_devices_enabled", "module_devices_commands")))
+
+    assert api_client.get(_config_url(device, location)).json()["reason"] == "Device not found"
+
+
+# -- config file (mobile app) ---------------------------------------------------
+
+DEVICE_CONFIG = (
+    'return {\n  wifi = {\n    ssid = "MyNet",\n    pwd = "' + WIFI_SECRET + '",\n  },\n'
+    "  measurement = {\n    pulldown_resistance = 136,\n    interval_sec = 1800,\n  },\n"
+    "  control = {\n    poll_sec = 14400,\n  },\n}\n"
+)
+
+
+def _config_url(device, location, suffix=""):
+    return f"/v1/device/{device.pk}/config/{suffix}?location={location.pk}"
+
+
+def test_the_config_is_requested_read_and_edited(api_client, provisioned):
+    location, device, preview = provisioned
+    user = _commands_user(location, "module_devices_commands")
+    api_client.force_authenticate(user=user)
+
+    empty = api_client.get(_config_url(device, location)).json()
+    assert (empty["config"], empty["params"], empty["requested"]) == (None, None, None)
+    assert empty["device"]["raw_hash"] == device.raw_hash
+    assert set(empty["editable"]) == {"pulldown_resistance", "interval_sec", "poll_sec"}
+
+    requested = api_client.post(_config_url(device, location, "request/"), {}, format="json").json()["command"]
+    # Asked twice while open - the controller answers once.
+    again = api_client.post(_config_url(device, location, "request/"), {}, format="json").json()["command"]
+    assert again["id"] == requested["id"]
+    assert api_client.get(_config_url(device, location)).json()["requested"]["id"] == requested["id"]
+
+    _as_controller(api_client, preview)
+    assert _poll(api_client, location) == [{"command": "get_config", "id": requested["id"]}]
+    result = {"path": "config/device_config.lua", "content": DEVICE_CONFIG}
+    _poll(api_client, location, [{"id": requested["id"], "ok": True, "result": result}])
+
+    api_client.credentials()
+    api_client.force_authenticate(user=user)
+    body = api_client.get(_config_url(device, location)).json()
+    assert body["config"]["content"] == DEVICE_CONFIG
+    assert (body["config"]["command_id"], body["config"]["path"]) == (requested["id"], "config/device_config.lua")
+    assert body["params"] == {"pulldown_resistance": 136, "interval_sec": 1800, "poll_sec": 14400}
+    assert body["requested"] is None
+
+    # "location" in the body names the database, it is no parameter.
+    edited = api_client.post(
+        _config_url(device, location, "params/"), {"interval_sec": "3600", "location": location.pk}, format="json"
+    )
+    assert edited.status_code == 200, edited.content
+    assert edited.json()["command"]["summary"] == {"params": {"interval_sec": 3600}}
+    _as_controller(api_client, preview)
+    assert _poll(api_client, location) == [
+        {"command": "set_params", "id": edited.json()["command"]["id"], "payload": {"interval_sec": 3600}}
+    ]
+
+
+@pytest.mark.parametrize("params, reason", [
+    ({}, "Send at least one of"),
+    ({"wifi_pwd": "x"}, "Not editable: wifi_pwd"),
+    ({"interval_sec": 10}, "interval_sec must be between 60 and 86400"),
+    ({"poll_sec": 0}, "poll_sec must be between 60 and 86400"),
+    ({"interval_sec": True}, "interval_sec must be an integer"),
+    ({"pulldown_resistance": 120}, "pulldown_resistance must be one of"),
+])
+def test_config_params_are_validated(api_client, provisioned, params, reason):
+    location, device, _preview = provisioned
+
+    response = api_client.post(_config_url(device, location, "params/"), params, format="json")
+
+    assert reason in response.json()["reason"]
+    assert device_commands.pending_commands(device, f.DB) == []
+
+
+def test_config_params_parse_a_config_file():
+    assert device_commands.config_params(DEVICE_CONFIG) == {
+        "pulldown_resistance": 136, "interval_sec": 1800, "poll_sec": 14400,
+    }
+    assert device_commands.config_params("return {}") == dict.fromkeys(device_commands.CONFIG_PARAMS)

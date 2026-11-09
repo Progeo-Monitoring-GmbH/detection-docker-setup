@@ -34,7 +34,7 @@ from progeo.helper.alarm_evaluation import evaluate_measurement_instantly
 from progeo.helper.basics import RequestFailed, RequestSuccess, elog, ilog
 from progeo.helper.controller_wifi import parse_lua_wifi, request_controller_wifi_update
 from progeo.helper.creator import create_MfS_log
-from progeo.helper.device_overview import hash_kind
+from progeo.helper.device_overview import device_model, hash_kind
 from progeo.helper.firmware import list_bundles as list_firmware_bundles
 from progeo.helper.location_access import (
     can_see_location,
@@ -84,6 +84,9 @@ LORAWAN_MEASUREMENT_FIELDS = {
     4097: "temperature",
     4098: "humidity",
 }
+
+# Controller commands and the config file without staff (mobile app installers).
+COMMANDS_PERMISSION = "module_devices_commands"
 
 
 class DeviceViewSet(ProgeoModalViewSet):
@@ -1026,13 +1029,22 @@ class DeviceViewSet(ProgeoModalViewSet):
     # (it stores request.data) - the command row is the audit trail.
 
     def _command_device(self, request, pk):
-        """(device, None) for staff with the device visible, else (None, error response)."""
-        if not is_staff_admin(request.user):
-            return None, RequestFailed({"reason": "Staff access required"})
+        """(device, None) for staff or a user with module_devices_commands
+        who sees the device, else (None, error response)."""
+        if not has_module_permissions(request.user, COMMANDS_PERMISSION):
+            return None, permission_denied_response([COMMANDS_PERMISSION])
         device = self._visible_device(pk)
         if device is None:
             return None, RequestFailed({"reason": "Device not found"})
         return device, None
+
+    def _queueable_device(self, request, pk):
+        """_command_device, refused for devices that never poll for commands."""
+        device, error = self._command_device(request, pk)
+        # Only controllers on the new hash schema ("<project_id>-<nn>") poll for commands.
+        if device is not None and hash_kind(device.raw_hash) != "project":
+            return None, RequestFailed({"reason": "Commands need a device on the new hash schema (<project_id>-<nn>)"})
+        return device, error
 
     @staticmethod
     def _command_choices(user):
@@ -1045,7 +1057,7 @@ class DeviceViewSet(ProgeoModalViewSet):
             for command in device_commands.COMMANDS
         ]
 
-    @require_module_permissions("module_devices_enabled")
+    @require_module_permissions("module_devices_enabled", COMMANDS_PERMISSION)
     @action(detail=True, url_path="commands", methods=["GET"])
     def list_commands(self, request, pk=None, *args, **kwargs):
         """The device's command history (newest first, redacted) and the
@@ -1062,18 +1074,15 @@ class DeviceViewSet(ProgeoModalViewSet):
             **self._command_state(device, db_name),
         })
 
-    @require_module_permissions("module_devices_enabled", "module_devices_edit")
+    @require_module_permissions("module_devices_enabled", COMMANDS_PERMISSION)
     @action(detail=True, url_path="commands/queue", methods=["POST"])
     def queue_command(self, request, pk=None, *args, **kwargs):
         """Queue {"command", "payload"?} for the device's next poll - or the
         command once per entry of {"payloads": [...]} (logs: {"hour": 0}
         ... {"hour": 23} for a whole day)."""
-        device, error = self._command_device(request, pk)
+        device, error = self._queueable_device(request, pk)
         if error:
             return error
-        # Only controllers on the new hash schema ("<project_id>-<nn>") poll for commands.
-        if hash_kind(device.raw_hash) != "project":
-            return RequestFailed({"reason": "Commands need a device on the new hash schema (<project_id>-<nn>)"})
         command = str(request.data.get("command") or "").strip()
         if command in device_commands.SUPERUSER_COMMANDS and not request.user.is_superuser:
             return RequestFailed({"reason": "Superuser access required"})
@@ -1094,7 +1103,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         rows = [device_commands.command_row(row) for row in queued]
         return RequestSuccess({"command": rows[0], "commands": rows})
 
-    @require_module_permissions("module_devices_enabled", "module_devices_edit")
+    @require_module_permissions("module_devices_enabled", COMMANDS_PERMISSION)
     @action(detail=True, url_path=r"commands/(?P<command_id>\d+)/cancel", methods=["POST"])
     def cancel_command(self, request, pk=None, command_id=None, *args, **kwargs):
         device, error = self._command_device(request, pk)
@@ -1121,6 +1130,78 @@ class DeviceViewSet(ProgeoModalViewSet):
         except device_commands.CommandError as exc:
             return RequestFailed({"reason": str(exc)})
         return RequestSuccess({"command": device_commands.command_row(command), "result": result})
+
+    # ------------------------------------------------------------------ config file (mobile app)
+
+    @require_module_permissions("module_devices_enabled", COMMANDS_PERMISSION)
+    @action(detail=True, url_path="config", methods=["GET"])
+    def device_config(self, request, pk=None, *args, **kwargs):
+        """The device's config file as the controller sent it last (the
+        newest stored "get_config" result, kept RESULT_TTL) - with the wifi
+        credentials -, its editable values and a config request still open.
+        config is null until the controller answered a config/request."""
+        device, error = self._command_device(request, pk)
+        if error:
+            return error
+        db_name = device._state.db
+        config = device_commands.latest_config(device, db_name)
+        requested = device_commands.open_command(device, db_name, device_commands.Command.GET_CONFIG)
+        if config is not None:
+            # Who read the wifi credentials - never the content itself.
+            ilog(f"Config of device {device.raw_hash} (#{config['command_id']}) read by user {request.user.pk}",
+                 tag="[COMMAND]")
+        return RequestSuccess({
+            "device": {
+                "id": device.pk,
+                "raw_hash": device.raw_hash,
+                "project_id": device.project_id,
+                "model": device_model(device.hardware),
+            },
+            "config": config,
+            "params": device_commands.config_params(config["content"]) if config else None,
+            "editable": device_commands.editable_config_params(),
+            "requested": device_commands.command_row(requested) if requested else None,
+            "result_ttl_days": device_commands.RESULT_TTL.days,
+            **self._command_state(device, db_name),
+        })
+
+    @require_module_permissions("module_devices_enabled", COMMANDS_PERMISSION)
+    @action(detail=True, url_path="config/request", methods=["POST"])
+    def request_config(self, request, pk=None, *args, **kwargs):
+        """Ask the controller for its config file ("get_config", queued once
+        while open) - GET config/ has it after the controller's next poll."""
+        device, error = self._queueable_device(request, pk)
+        if error:
+            return error
+        db_name = device._state.db
+        command = device_commands.queue_command(device, db_name, device_commands.Command.GET_CONFIG, user=request.user)
+        ilog(f"Queued command get_config #{command.pk} for device {device.raw_hash} by user {request.user.pk}",
+             tag="[COMMAND]")
+        return RequestSuccess({"command": device_commands.command_row(command), **self._command_state(device, db_name)})
+
+    @require_module_permissions("module_devices_enabled", COMMANDS_PERMISSION)
+    @action(detail=True, url_path="config/params", methods=["POST"])
+    def set_config_params(self, request, pk=None, *args, **kwargs):
+        """The minimal config edit: {"interval_sec"?, "pulldown_resistance"?,
+        "poll_sec"?} (device_commands.CONFIG_PARAMS, validated) - sent to the
+        controller as "set_params" with its next poll."""
+        device, error = self._queueable_device(request, pk)
+        if error:
+            return error
+        # "location" may name the database in the body (request_location_id).
+        data = {key: value for key, value in request.data.items() if key != "location"} \
+            if hasattr(request.data, "items") else None
+        db_name = device._state.db
+        try:
+            params = device_commands.clean_config_params(data)
+            command = device_commands.queue_command(
+                device, db_name, device_commands.Command.SET_PARAMS, params, user=request.user
+            )
+        except device_commands.CommandError as exc:
+            return RequestFailed({"reason": str(exc)})
+        ilog(f"Queued command set_params #{command.pk} ({', '.join(sorted(params))}) for device "
+             f"{device.raw_hash} by user {request.user.pk}", tag="[COMMAND]")
+        return RequestSuccess({"command": device_commands.command_row(command), **self._command_state(device, db_name)})
 
     # ------------------------------------------------------------------ provisioning (helper/device_provisioning.py)
 

@@ -113,6 +113,9 @@ LOGIN_MAX_FAILURES_PER_NAME = parse_int(os.getenv("LOGIN_MAX_FAILURES_PER_NAME")
 LOGIN_MAX_FAILURES_PER_IP = parse_int(os.getenv("LOGIN_MAX_FAILURES_PER_IP"), 50)
 # DRF tokens of /auth/login/ (ExpiringTokenAuthentication); 0 = no expiry.
 DRF_TOKEN_MAX_AGE_DAYS = parse_int(os.getenv("DRF_TOKEN_MAX_AGE_DAYS"), 30)
+# JWT refresh tokens of /api/token/ (rotated on every refresh): how long a
+# client - the mobile app above all - stays logged in without being used.
+JWT_REFRESH_TOKEN_DAYS = max(1, parse_int(os.getenv("JWT_REFRESH_TOKEN_DAYS"), 1))
 # Two-factor authentication (helper/two_factor.py): the name authenticator
 # apps show, and whether staff/superusers must set it up before they can use
 # the portal (TwoFactorRequiredMiddleware) - switch on once staff know.
@@ -245,7 +248,7 @@ REST_FRAMEWORK = {
 
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=JWT_REFRESH_TOKEN_DAYS),
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
     "UPDATE_LAST_LOGIN": True,

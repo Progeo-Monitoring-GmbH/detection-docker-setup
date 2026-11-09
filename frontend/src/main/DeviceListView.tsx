@@ -173,8 +173,10 @@ const DeviceListView = () => {
   const { enqueueSnackbar } = useSnackbar();
   const { hasPermission } = usePermissions();
   const [searchParams, setSearchParams] = useSearchParams();
-  // Ping and controller commands are staff tools (is_staff_admin in the backend).
+  // Ping is a staff tool (is_staff_admin in the backend).
   const isStaff = staffFlags(auth?.user).isStaffOrSuperuser;
+  // Controller commands: staff or module_devices_commands (also queueing them).
+  const canCommands = isStaff || hasPermission('module_devices_commands');
   // update (writes a whole file) and command results (the config) are superuser-only.
   const isSuperuser = staffFlags(auth?.user).isSuperuser;
   const canEdit = hasPermission('module_devices_edit');
@@ -556,7 +558,7 @@ const DeviceListView = () => {
       ignoreRowClick: true,
       cell: (device) => (
         <div style={{ display: 'inline-flex', gap: 6 }}>
-          {isStaff && commandsButton(device)}
+          {canCommands && commandsButton(device)}
           {/* "Einstellungen" is a superuser-only portal page. */}
           {canEdit && isSuperuser && device.location && (
             <button
@@ -598,7 +600,7 @@ const DeviceListView = () => {
     },
     // The chips and buttons only read these.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [t, isStaff, isSuperuser, canEdit, canDelete, canProvision, overview?.pinged, pinging, projectExample]);
+  ], [t, isStaff, isSuperuser, canEdit, canDelete, canProvision, canCommands, overview?.pinged, pinging, projectExample]);
 
 
   return (
@@ -761,7 +763,7 @@ const DeviceListView = () => {
         <DeviceCommandsDialog
           device={commandsTarget}
           isSuperuser={isSuperuser}
-          canEdit={canEdit}
+          canEdit={canCommands}
           onClose={() => setCommandsTarget(null)}
         />
       )}

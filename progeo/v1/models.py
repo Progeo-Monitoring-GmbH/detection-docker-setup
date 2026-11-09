@@ -36,6 +36,7 @@ MODULE_PERMISSION_DEFINITIONS = (
     ("module_devices_edit", "Can edit devices module"),
     ("module_devices_delete", "Can delete devices module"),
     ("module_devices_provision", "Can provision new devices"),
+    ("module_devices_commands", "Can send device commands and read device configs"),
     ("module_measurements_enabled", "Can access measurements module"),
     ("module_imei_enabled", "Can access IMEI module"),
     ("module_backup_enabled", "Can access backup module"),
@@ -917,6 +918,7 @@ class ProgeoMeasurePoint(ProgeoModel, auto_prefetch.Model):
     ny_end = models.FloatField(null=True, blank=True)
     last_value = models.FloatField(null=True, blank=True)
     threshold = models.FloatField(null=True, blank=True)
+    disabled = models.BooleanField(default=False)
 
     def from_device(self, location, data):
         self.location = location

@@ -512,6 +512,102 @@ def command_result(device, db_name, command_id):
     return command, result
 
 
+# ---------------------------------------------------------------------------- config (mobile app)
+
+# The values of device_config.lua the config endpoint may change - each sent
+# as "set_params", which the firmware takes for exactly these (LUA_WLAN
+# params.lua PARAMS, frontend deviceParams.ts). poll_sec 0 ("never poll")
+# is left out: the controller could not be reached by any command again.
+CONFIG_PARAM_RANGES = {
+    "interval_sec": (60, 86400),
+    "poll_sec": (60, 86400),
+}
+CONFIG_PARAMS = ("pulldown_resistance", *CONFIG_PARAM_RANGES)
+
+
+def _resistance_values():
+    return list(ProgeoDevice.Resistance.values)
+
+
+def editable_config_params():
+    """What clean_config_params accepts, for the app's form."""
+    return {
+        "pulldown_resistance": {"choices": _resistance_values()},
+        **{key: {"min": low, "max": high} for key, (low, high) in CONFIG_PARAM_RANGES.items()},
+    }
+
+
+def clean_config_params(data):
+    """The CONFIG_PARAMS of `data`, validated (CommandError) - at least one,
+    no other keys."""
+    if not isinstance(data, dict) or not data:
+        raise CommandError(f"Send at least one of {', '.join(CONFIG_PARAMS)}")
+    unknown = sorted(set(data) - set(CONFIG_PARAMS))
+    if unknown:
+        raise CommandError(f"Not editable: {', '.join(unknown)} (only {', '.join(CONFIG_PARAMS)})")
+    params = {}
+    for key, value in data.items():
+        if isinstance(value, str) and value.strip().isdigit():
+            value = int(value.strip())
+        # bool is an int too - true is not 1 second.
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise CommandError(f"{key} must be an integer")
+        if key == "pulldown_resistance":
+            if value not in _resistance_values():
+                raise CommandError(f"pulldown_resistance must be one of {_resistance_values()}")
+        else:
+            low, high = CONFIG_PARAM_RANGES[key]
+            if not low <= value <= high:
+                raise CommandError(f"{key} must be between {low} and {high}")
+        params[key] = value
+    return params
+
+
+def config_params(content):
+    """The CONFIG_PARAMS set in a device_config.lua (`key = <integer>`),
+    None for those it does not set."""
+    values = {}
+    for key in CONFIG_PARAMS:
+        match = re.search(rf"\b{key}\s*=\s*(\d+)", content or "")
+        values[key] = int(match.group(1)) if match else None
+    return values
+
+
+def latest_config(device, db_name):
+    """The newest config file the controller sent ("get_config" result still
+    stored, RESULT_TTL): {"command_id", "path", "content", "fetched_at"},
+    None without one."""
+    housekeeping(device.pk, db_name)
+    commands = (
+        ProgeoDeviceCommand.objects.using(db_name)
+        .filter(device_id=device.pk, command=Command.GET_CONFIG, status=Status.SUCCESS)
+        .exclude(result_encrypted="")
+        .order_by("-pk")
+    )
+    for command in commands:
+        result = decrypt(command.result_encrypted)
+        if isinstance(result, dict) and isinstance(result.get("content"), str):
+            return {
+                "command_id": command.pk,
+                "path": result.get("path") or DEFAULT_CONFIG_PATH,
+                "content": result["content"],
+                "fetched_at": command.finished_at.isoformat() if command.finished_at else None,
+            }
+    return None
+
+
+def open_command(device, db_name, command):
+    """The newest `command` of the device not answered yet (pending or
+    sent), None if there is none."""
+    return (
+        ProgeoDeviceCommand.objects.using(db_name)
+        .filter(device_id=device.pk, command=command, status__in=[Status.PENDING, Status.SENT])
+        .select_related("created_by")
+        .order_by("-pk")
+        .first()
+    )
+
+
 def check_test_pairs(pairs, expected=EXPECTED_RISING, empty_fraction=EMPTY_FRACTION):
     """Check the pairs of a test measurement: the longest run of consecutive
     sensors with rising, non-empty values must be at least `expected` long.

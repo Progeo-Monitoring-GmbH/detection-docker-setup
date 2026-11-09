@@ -287,9 +287,10 @@ const ProvisionTestMeasurements = ({
   const { t } = useTranslation();
   const { enqueueSnackbar } = useSnackbar();
   const { hasPermission } = usePermissions();
-  // Controller commands (sample/cc) - staff only, like the device overview.
+  // Controller commands (sample/cc) - staff or module_devices_commands, like the device overview.
   const [showCommands, setShowCommands] = useState(false);
   const { isStaffOrSuperuser } = staffFlags(auth?.user);
+  const canCommands = isStaffOrSuperuser || hasPermission('module_devices_commands');
   const [state, setState] = useState<TestState | null>(null);
   const [requesting, setRequesting] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
@@ -674,7 +675,7 @@ const ProvisionTestMeasurements = ({
             )}
             Messung anfragen
           </Button>
-          {isStaffOrSuperuser && (
+          {canCommands && (
             <Button variant="outline-primary" onClick={() => setShowCommands(true)}>
               <Terminal className="me-2" />
               {t('devices_action_commands')}
@@ -743,7 +744,7 @@ const ProvisionTestMeasurements = ({
         <DeviceCommandsDialog
           device={{ id: deviceId, location: locationId, raw_hash: deviceHash }}
           isSuperuser={isSuperuser}
-          canEdit={hasPermission('module_devices_edit')}
+          canEdit={canCommands}
           onClose={() => setShowCommands(false)}
         />
       )}
