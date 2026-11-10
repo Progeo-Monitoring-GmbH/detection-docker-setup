@@ -13,6 +13,9 @@ BASE_DIR = Path(__file__).resolve(strict=True).parent.parent.parent
 
 ENV_FILE_PATH = os.path.join(BASE_DIR, "django.env")
 read_env(ENV_FILE_PATH)
+# CI has no django.env: seed.py (recreate_test_db) creates this account and the
+# alarm/legacy views fall back to it ("CONTROLLER_DEFAULT_ACCOUNT is not set").
+os.environ.setdefault("CONTROLLER_DEFAULT_ACCOUNT", "unit_tests_controller")
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv("SECRET_KEY")
