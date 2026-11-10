@@ -1,10 +1,10 @@
 from collections import defaultdict
 
+from django.conf import settings
 from django.db import transaction
 
 from progeo.helper.basics import elog, ilog, wlog
 from progeo.management.commands._base import BaseCommand
-from progeo.settings import DATABASES
 from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurement
 
 PROJECT_ID_MAX = 2**31 - 1
@@ -94,7 +94,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        db_names = [options["db"]] if options.get("db") else list(DATABASES.keys())
+        db_names = [options["db"]] if options.get("db") else list(settings.DATABASES.keys())
         totals = defaultdict(int)
         for db_name in db_names:
             try:

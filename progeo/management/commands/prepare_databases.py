@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.core.management.base import CommandError
 from django.db import DEFAULT_DB_ALIAS, connections
 
@@ -20,7 +21,6 @@ from progeo.helper.project_dbs import (
     template_alias,
 )
 from progeo.management.commands._base import BaseCommand
-from progeo.settings import DATABASES
 
 
 class Command(BaseCommand):
@@ -63,8 +63,8 @@ class Command(BaseCommand):
 
         # Configured databases that don't exist yet (DJANGO_DATABASES
         # entries) - "default" itself comes from Postgres.
-        for db in list(DATABASES):
-            name = DATABASES[db]["NAME"]
+        for db in list(settings.DATABASES):
+            name = settings.DATABASES[db]["NAME"]
             if db != DEFAULT_DB_ALIAS and not is_project_alias(db) and not database_exists(name):
                 try:
                     create_database(name)
@@ -76,7 +76,7 @@ class Command(BaseCommand):
         # The others in parallel processes - independent of each other, and
         # with a new migration ~1000 project databases in a row were most of
         # the deploy (migrate_databases).
-        others = [db for db in DATABASES if db != DEFAULT_DB_ALIAS]
+        others = [db for db in settings.DATABASES if db != DEFAULT_DB_ALIAS]
         ilog(f"checking {len(others)} databases with {min(migrate_workers(), len(others))} workers",
              tag="[PREPARE_DBS]")
         for db, done, error in migrate_databases(others):
@@ -87,7 +87,7 @@ class Command(BaseCommand):
                 migrated += 1
                 ilog(f"migrated {db}", tag="[PREPARE_DBS]")
 
-        ilog(f"{migrated} of {len(DATABASES)} databases needed migrations", tag="[PREPARE_DBS]")
+        ilog(f"{migrated} of {len(settings.DATABASES)} databases needed migrations", tag="[PREPARE_DBS]")
 
         # New project databases are cloned from the template - keep it current.
         try:
@@ -113,7 +113,7 @@ class Command(BaseCommand):
         if failed:
             raise CommandError(f"Databases not ready: {failed}")
         self.stdout.write(self.style.SUCCESS(
-            f"Databases ready: {len(DATABASES)} ({len(existing_project_aliases(refresh=True))} project databases)"
+            f"Databases ready: {len(settings.DATABASES)} ({len(existing_project_aliases(refresh=True))} project databases)"
         ))
 
     @staticmethod
@@ -147,7 +147,7 @@ class Command(BaseCommand):
         return [project for project in project_keys_in_use() if project_alias(project) not in existing]
 
     def _report(self, missing):
-        for db in DATABASES:
+        for db in settings.DATABASES:
             self.stdout.write(f"  {db}")
         for project in missing:
             self.stdout.write(self.style.WARNING(f"  missing: {project_alias(project)}"))

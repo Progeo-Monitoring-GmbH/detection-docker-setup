@@ -1,18 +1,18 @@
 ﻿import os
 import time
 
+from django.conf import settings
 from django.core.management import call_command
 
 from progeo.helper.backup_transfer import clean_old_dumps
 from progeo.helper.basics import dlog, elog, ilog
 from progeo.helper.project_dbs import register_all_project_dbs, release_connection
 from progeo.management.commands._base import BaseCommand
-from progeo.settings import BACKUP_DIR, DATABASES, DBBACKUP_CLEANUP_KEEP
 from progeo.v1.helper import convert_backup_date_to_timestamp
 
 
 def check_db_exists_for(db):
-    _files = os.listdir(BACKUP_DIR)
+    _files = os.listdir(settings.BACKUP_DIR)
     if len(db) < 2:
         elog("Min-Length for db is 3!")
         return False
@@ -50,14 +50,14 @@ class Command(BaseCommand):
         cmd = options.get("command")
         if cmd in ["dbbackup", "dbrestore"]:
             register_all_project_dbs()
-            dbs = options["dbs"] or list(DATABASES)
-            unknown = [db for db in dbs if db not in DATABASES]
+            dbs = options["dbs"] or list(settings.DATABASES)
+            unknown = [db for db in dbs if db not in settings.DATABASES]
             if unknown:
                 elog(f"Unknown database aliases skipped: {unknown}")
             files_before = self._backup_files()
             started = time.monotonic()
             durations, failed = {}, []
-            for db in (db for db in dbs if db in DATABASES):
+            for db in (db for db in dbs if db in settings.DATABASES):
                 if cmd == "dbrestore" and not check_db_exists_for(db):
                     ilog(f"Skipping for db={db}")
                     continue
@@ -86,11 +86,11 @@ class Command(BaseCommand):
                     # ~1000 project databases: an open connection each exceeds Postgres' max_connections.
                     release_connection(db)
                 if cmd == "dbbackup" and db not in failed:
-                    clean_old_dumps(BACKUP_DIR, db, DBBACKUP_CLEANUP_KEEP)
+                    clean_old_dumps(settings.BACKUP_DIR, db, settings.DBBACKUP_CLEANUP_KEEP)
             self._report(cmd, files_before, durations, failed, time.monotonic() - started)
 
         elif cmd in ["dbclean"]:
-            _files = os.listdir(BACKUP_DIR)
+            _files = os.listdir(settings.BACKUP_DIR)
             for _f in _files:
                 if not _f.endswith(".psql"):
                     continue
@@ -107,10 +107,10 @@ class Command(BaseCommand):
     @staticmethod
     def _backup_files():
         """{name: size} of the dump files in BACKUP_DIR."""
-        if not os.path.isdir(BACKUP_DIR):
+        if not os.path.isdir(settings.BACKUP_DIR):
             return {}
         return {
-            entry.name: entry.stat().st_size for entry in os.scandir(BACKUP_DIR)
+            entry.name: entry.stat().st_size for entry in os.scandir(settings.BACKUP_DIR)
             if entry.is_file() and entry.name.endswith((".psql", ".psql.gz"))
         }
 
@@ -131,7 +131,7 @@ class Command(BaseCommand):
             lines += [
                 (f"new files: {len(new_files)}, {sum(new_files.values()) / 1024 / 1024:.1f} MB "
                  f"(largest: {', '.join(f'{name} {size / 1024 / 1024:.1f} MB' for name, size in largest) or '-'})"),
-                (f"removed by cleanup: {removed}; {BACKUP_DIR} now holds {len(files_after)} files, "
+                (f"removed by cleanup: {removed}; {settings.BACKUP_DIR} now holds {len(files_after)} files, "
                  f"{sum(files_after.values()) / 1024 / 1024 / 1024:.2f} GB"),
             ]
         if failed:

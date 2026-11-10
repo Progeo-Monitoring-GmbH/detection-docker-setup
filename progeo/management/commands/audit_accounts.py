@@ -3,9 +3,10 @@ import os
 from collections import defaultdict
 from datetime import datetime
 
+from django.conf import settings
+
 from progeo.helper.basics import elog, ilog, save_check_dir
 from progeo.management.commands._base import BaseCommand
-from progeo.settings import DATABASES, EXPORT_DIR
 from progeo.v1.models import Account, ProgeoDevice, ProgeoLocation, ProgeoMeasurement
 
 
@@ -40,7 +41,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         generated_at = datetime.now().isoformat(timespec="seconds")
         accounts = list(Account.objects.using("default").order_by("id"))
-        db_aliases = list(DATABASES.keys())
+        db_aliases = list(settings.DATABASES.keys())
         accounts_by_pk = {account.pk: account for account in accounts}
 
         accounts_by_db_name = defaultdict(list)
@@ -69,7 +70,7 @@ class Command(BaseCommand):
         if options["output"]:
             output_path = options["output"]
         else:
-            output_dir = save_check_dir(EXPORT_DIR, datetime.now().strftime("%Y-%m-%d"))
+            output_dir = save_check_dir(settings.EXPORT_DIR, datetime.now().strftime("%Y-%m-%d"))
             output_path = os.path.join(output_dir, "audit_accounts.json")
 
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)

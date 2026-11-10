@@ -1,5 +1,6 @@
 import os
 
+from django.conf import settings
 from django.core.management.base import CommandError
 
 from progeo.helper.lageplan_export import (
@@ -8,7 +9,6 @@ from progeo.helper.lageplan_export import (
     write_lageplan_tar,
 )
 from progeo.management.commands._base import BaseCommand
-from progeo.settings import MEDIA_ROOT
 
 
 class Command(BaseCommand):
@@ -37,7 +37,7 @@ class Command(BaseCommand):
         if days != options["days"]:
             self.stdout.write(f"No Lageplan in the last {options['days']} day(s) - widened to {days} days.")
 
-        output = options["output"] or os.path.join(MEDIA_ROOT, "exports", archive_name(days))
+        output = options["output"] or os.path.join(settings.MEDIA_ROOT, "exports", archive_name(days))
         os.makedirs(os.path.dirname(os.path.abspath(output)), exist_ok=True)
         write_lageplan_tar(files, output)
         self.stdout.write(self.style.SUCCESS(f"{len(files)} Lageplan(s) of the last {days} days -> {output}"))

@@ -56,7 +56,6 @@ from progeo.helper.location_access import (
 )
 from progeo.helper.project_db_partitions import PARTITION_TIME_ZONE
 from progeo.helper.project_dbs import location_db, map_databases, split_enabled
-from progeo.settings import UPLOAD_DIR
 from progeo.tasks import render_heatmap_video
 from progeo.v1.creator import save_lageplan_upload
 from progeo.v1.models import (
@@ -2685,12 +2684,12 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         (same UPLOAD_DIR convention) but deliberately NOT auto-processed
         into ProgeoMeasurePoint rows - that stays parse_lageplan_labels.py's
         explicit, separate step, so this doesn't quietly expand its scope."""
-        save_check_dir(UPLOAD_DIR, "coordinates")
+        save_check_dir(settings.UPLOAD_DIR, "coordinates")
         suffix = os.path.splitext(uploaded_file.name)[1] or ".csv"
         filename = os.path.join(
             "coordinates", f"{location.id}_{int(time.time())}{suffix}"
         ).replace(os.sep, "/")
-        fs = FileSystemStorage(location=UPLOAD_DIR)
+        fs = FileSystemStorage(location=settings.UPLOAD_DIR)
         return fs.save(filename, uploaded_file)
 
     @action(detail=False, url_path="create_object", methods=["POST"])

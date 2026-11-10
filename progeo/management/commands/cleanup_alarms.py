@@ -1,10 +1,10 @@
 ﻿import datetime
 
+from django.conf import settings
 from django.utils import timezone
 
 from progeo.helper.basics import elog, ilog
 from progeo.management.commands._base import BaseCommand
-from progeo.settings import DATABASES
 from progeo.v1.creator import _alarm_start, _alarm_window_end, merge_alarm_into
 from progeo.v1.models import ProgeoAlarm
 
@@ -36,7 +36,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        db_names = [options["db"]] if options.get("db") else list(DATABASES.keys())
+        db_names = [options["db"]] if options.get("db") else list(settings.DATABASES.keys())
         dry_run = options["dry_run"]
 
         total_merged = 0

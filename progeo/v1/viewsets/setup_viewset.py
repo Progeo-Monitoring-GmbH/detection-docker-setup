@@ -7,6 +7,7 @@ import re
 import subprocess
 
 import qrcode
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.http import HttpResponse
 from rest_framework import viewsets
@@ -17,10 +18,10 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.decorator import calc_runtime, require_module_permissions
 from progeo.helper.basics import (
-        RequestFailed,
-        RequestSuccess,
-        delete_file,
-        save_check_dir,
+    RequestFailed,
+    RequestSuccess,
+    delete_file,
+    save_check_dir,
 )
 from progeo.helper.cacher import search_clear_cache
 from progeo.helper.controller_wifi import get_controller_wifi
@@ -29,7 +30,6 @@ from progeo.helper.emails import send_info_mail
 from progeo.helper.location_access import is_staff_admin
 from progeo.helper.tokens import revoke_user_tokens
 from progeo.security import safe_join
-from progeo.settings import UPLOAD_DIR
 from progeo.tasks import ping
 from progeo.v1.helper import generate_hash
 from progeo.v1.models import Account, ProgeoMeasurement
@@ -218,7 +218,7 @@ class SetupViewSet(viewsets.ViewSet):
         _path = str(request.data.get("path") or "")
         if _path.startswith("tmp"):  # TODO hardcoded
             # Only files inside UPLOAD_DIR/tmp - "tmp/../.." must not reach anything else.
-            _full_path = safe_join(os.path.join(UPLOAD_DIR, "tmp"), _path[len("tmp"):].lstrip("/\\"))
+            _full_path = safe_join(os.path.join(settings.UPLOAD_DIR, "tmp"), _path[len("tmp"):].lstrip("/\\"))
             if _full_path is None or not os.path.isfile(_full_path):
                 return RequestFailed({"reason": "Invalid path"})
             delete_file(_full_path, acknowledge=True)
@@ -234,7 +234,7 @@ class SetupViewSet(viewsets.ViewSet):
         if not re.fullmatch(r"[\w.\- ]{1,100}\.csv", filename) or not isinstance(header, list) or not isinstance(lines, list):
             return RequestFailed({"reason": "Invalid filename, header or lines"})
         _account_id = str(request.account.pk)
-        _dir = save_check_dir(os.path.join(UPLOAD_DIR, _account_id, "tmp"))  # TODO hardcoded
+        _dir = save_check_dir(os.path.join(settings.UPLOAD_DIR, _account_id, "tmp"))  # TODO hardcoded
         _path = safe_join(_dir, filename)
         if _path is None:
             return RequestFailed({"reason": "Invalid filename"})

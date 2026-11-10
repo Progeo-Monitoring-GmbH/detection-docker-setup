@@ -1,5 +1,6 @@
 import os
 
+from django.conf import settings
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.db import DEFAULT_DB_ALIAS, connections
@@ -11,26 +12,25 @@ from progeo.helper.project_dbs import (
     prepare_template,
 )
 from progeo.management.commands._base import BaseCommand
-from progeo.settings import BACKUP_DIR
 
 BACKUP_SUFFIXES = (".psql", ".psql.gz")
 
 
 def find_legacy_backup(min_mb):
     """Newest "default-*.psql[.gz]" in BACKUP_DIR of at least `min_mb` MB, or None."""
-    if not os.path.isdir(BACKUP_DIR):
+    if not os.path.isdir(settings.BACKUP_DIR):
         return None
     candidates = [
-        name for name in os.listdir(BACKUP_DIR)
+        name for name in os.listdir(settings.BACKUP_DIR)
         if name.startswith("default-") and name.endswith(BACKUP_SUFFIXES)
-        and os.path.getsize(os.path.join(BACKUP_DIR, name)) >= min_mb * 1024 * 1024
+        and os.path.getsize(os.path.join(settings.BACKUP_DIR, name)) >= min_mb * 1024 * 1024
     ]
     # dbbackup names end in the date ("default-<server>-2026-10-07-015303"), so mtime decides.
-    return max(candidates, key=lambda name: os.path.getmtime(os.path.join(BACKUP_DIR, name)), default=None)
+    return max(candidates, key=lambda name: os.path.getmtime(os.path.join(settings.BACKUP_DIR, name)), default=None)
 
 
 def marker_path(name):
-    return os.path.join(BACKUP_DIR, f".imported-{name}")
+    return os.path.join(settings.BACKUP_DIR, f".imported-{name}")
 
 
 class Command(BaseCommand):
@@ -71,8 +71,8 @@ class Command(BaseCommand):
 
         name = options["file"] or find_legacy_backup(options["min_mb"])
         if not name:
-            raise CommandError(f"No default-*.psql[.gz] of at least {options['min_mb']} MB in {BACKUP_DIR}.")
-        path = os.path.join(BACKUP_DIR, name)
+            raise CommandError(f"No default-*.psql[.gz] of at least {options['min_mb']} MB in {settings.BACKUP_DIR}.")
+        path = os.path.join(settings.BACKUP_DIR, name)
         if not os.path.isfile(path):
             raise CommandError(f"{path} does not exist.")
         if os.path.exists(marker_path(name)):
@@ -137,7 +137,7 @@ class Command(BaseCommand):
 
         self.stdout.write("[4/4] measuring the project databases ...")
         stats = refresh_project_db_stats()
-        if os.path.isfile(os.path.join(BACKUP_DIR, name)):
+        if os.path.isfile(os.path.join(settings.BACKUP_DIR, name)):
             with open(marker_path(name), "w", encoding="utf-8") as marker:
                 marker.write(f"{len(stats)} project databases\n")
         self.stdout.write(self.style.SUCCESS(

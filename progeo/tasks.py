@@ -528,10 +528,11 @@ def generate_daily_alarm_report(db: str | None = None, report_date=None):
 @shared_task
 def collect_host_storage_info():
     """Collect host storage info into SETUP_DIR/<date>/storage_info.json."""
-    from progeo.helper.storage_utils import collect_storage_info_to_file
-    from progeo.settings import BASE_DIR, SETUP_DIR
+    from django.conf import settings
 
-    return collect_storage_info_to_file(SETUP_DIR, BASE_DIR)
+    from progeo.helper.storage_utils import collect_storage_info_to_file
+
+    return collect_storage_info_to_file(settings.SETUP_DIR, settings.BASE_DIR)
 
 
 @shared_task
@@ -614,6 +615,7 @@ def create_database_backup(database: str, account_db: str, account_id: int, user
     Backup of the account."""
     import os
 
+    from django.conf import settings
     from django.core.management import call_command
 
     from progeo.helper.project_dbs import (
@@ -621,17 +623,16 @@ def create_database_backup(database: str, account_db: str, account_id: int, user
         register_project_db,
         release_connection,
     )
-    from progeo.settings import BACKUP_DIR
     from progeo.v1.models import Backup
 
     if is_project_alias(database):
         register_project_db(database)
-    before = set(os.listdir(BACKUP_DIR)) if os.path.isdir(BACKUP_DIR) else set()
+    before = set(os.listdir(settings.BACKUP_DIR)) if os.path.isdir(settings.BACKUP_DIR) else set()
     try:
         call_command("dbbackup", "--noinput", "--compress", f"--database={database}")
     finally:
         release_connection(database)
-    created = sorted(set(os.listdir(BACKUP_DIR)) - before)
+    created = sorted(set(os.listdir(settings.BACKUP_DIR)) - before)
     for name in created:
         backup, new = Backup.objects.using(account_db).get_or_create(name=name, account_id=account_id)
         if new and user_id:

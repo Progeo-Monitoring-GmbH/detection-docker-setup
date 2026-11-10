@@ -10,6 +10,7 @@ import {
   Activity,
 } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
 import { showErrorBar, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
@@ -100,15 +101,17 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * through datetime.fromisoformat on the server.
  */
 
-const STATUS_LABELS: Record<number, { label: string; variant: string }> = {
-  0: { label: 'Neu', variant: 'warning' },
-  1: { label: 'Quittiert', variant: 'secondary' },
-  2: { label: 'Stoerung', variant: 'danger' },
+// ProgeoAlarm.Status -> i18n key and badge colour.
+const STATUS_LABELS: Record<number, { labelKey: string; variant: string }> = {
+  0: { labelKey: 'alarm_status_new', variant: 'warning' },
+  1: { labelKey: 'alarm_status_acknowledged', variant: 'secondary' },
+  2: { labelKey: 'alarm_status_fault', variant: 'danger' },
 };
 
 const AlarmsOverview = () => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
+  const { t } = useTranslation();
   const [rows, setRows] = useState<AlarmRow[]>([]);
   const [loading, setLoading] = useState(false);
   // Select-box value: the step size for "Load more" and the initial window.
@@ -180,12 +183,12 @@ const AlarmsOverview = () => {
           onSuccess?.();
         },
         (error) => {
-          showRequestError(enqueueSnackbar, 'Could not load alarms', error);
+          showRequestError(enqueueSnackbar, t('alarm_detail_load_alarms_failed'), error);
           setLoading(false);
         },
       );
     },
-    [auth, enqueueSnackbar],
+    [auth, enqueueSnackbar, t],
   );
 
   // Grow the covered window to `targetDays` by fetching only the missing,
@@ -245,10 +248,7 @@ const AlarmsOverview = () => {
     (alarm: AlarmRow, profile: HeatProfile = heatProfile, profileSwitch = false) => {
       const locationId = alarm.location?.id;
       if (locationId == null) {
-        showErrorBar(
-          enqueueSnackbar,
-          'Alarm has no location to render a heatmap for.',
-        );
+        showErrorBar(enqueueSnackbar, t('alarms_overview_no_location'));
         return;
       }
 
@@ -290,7 +290,7 @@ const AlarmsOverview = () => {
           setProfileLoading(false);
         },
         (error) => {
-          showRequestError(enqueueSnackbar, 'Could not load alarm heatmap', error);
+          showRequestError(enqueueSnackbar, t('alarms_overview_heatmap_failed'), error);
           setHeatmapResponse(null);
           setHeatmapLoading(false);
           setProfileLoading(false);
@@ -308,7 +308,7 @@ const AlarmsOverview = () => {
         });
       }, 50);
     },
-    [auth, enqueueSnackbar, heatProfile, now],
+    [auth, enqueueSnackbar, heatProfile, now, t],
   );
 
   const acknowledgeAlarm = useCallback(
@@ -328,16 +328,16 @@ const AlarmsOverview = () => {
               ),
             );
           }
-          showSuccessBar(enqueueSnackbar, `Alarm #${alarm.id} acknowledged.`);
+          showSuccessBar(enqueueSnackbar, t('alarms_overview_acknowledged_done', { id: alarm.id }));
           setAcknowledgingId(null);
         },
         (error) => {
-          showRequestError(enqueueSnackbar, 'Could not acknowledge alarm', error);
+          showRequestError(enqueueSnackbar, t('alarms_overview_acknowledge_failed'), error);
           setAcknowledgingId(null);
         },
       );
     },
-    [auth, enqueueSnackbar],
+    [auth, enqueueSnackbar, t],
   );
 
   const alarmActiveDuration = useCallback(
@@ -385,7 +385,8 @@ const AlarmsOverview = () => {
           .map((pair) => String(pair.sensor_id ?? ''))
           .join(' '),
         isAlarmActive(row) ? 'active' : 'normalized',
-        STATUS_LABELS[row.status ?? 0]?.label,
+        isAlarmActive(row) ? t('alarm_state_active') : t('alarm_state_normalized'),
+        t((STATUS_LABELS[row.status ?? 0] || STATUS_LABELS[0]).labelKey),
         row.status === 1 ? 'acknowledged' : '',
         row.evaluated_by?.username,
       ]
@@ -395,7 +396,7 @@ const AlarmsOverview = () => {
 
       return haystack.includes(needle);
     });
-  }, [rows, filterText, onlyActive, onlyLastHour, now]);
+  }, [rows, filterText, onlyActive, onlyLastHour, now, t]);
 
   const tableRows = useMemo(
     () => filteredRows.map((row) => ({ ...row, _key: alarmKey(row) })),
@@ -404,17 +405,17 @@ const AlarmsOverview = () => {
 
   const columns: TableColumn<AlarmRow>[] = [
     {
-      name: 'ID',
+      name: t('alarms_overview_col_id'),
       selector: (row) => row.id,
       sortable: true,
       width: '90px',
     },
     {
-      name: 'Location',
+      name: t('alarm_detail_location'),
       cell: (row) => {
         const loc = row.location;
         return loc
-          ? `${loc.name || 'Unnamed'} (${loc.project_id ?? loc.id})`
+          ? `${loc.name || t('alarms_overview_unnamed')} (${loc.project_id ?? loc.id})`
           : '-';
       },
       sortable: true,
@@ -422,14 +423,14 @@ const AlarmsOverview = () => {
       wrap: true,
     },
     {
-      name: 'Device',
+      name: t('alarm_field_device'),
       cell: (row) => row.device?.display_name || row.device?.raw_hash || '-',
       sortable: true,
       grow: 1.2,
       wrap: true,
     },
     {
-      name: 'Sensors',
+      name: t('alarm_field_sensors'),
       cell: (row) => {
         const pairs = Array.isArray(row.sensor_max_values)
           ? row.sensor_max_values
@@ -443,17 +444,17 @@ const AlarmsOverview = () => {
       wrap: true,
     },
     {
-      name: 'Threshold',
+      name: t('alarm_field_threshold'),
       selector: (row) => row.threshold ?? '-',
       width: '110px',
     },
     {
-      name: 'Max Value',
+      name: t('alarm_field_max_value'),
       selector: (row) => row.max_value ?? '-',
       width: '110px',
     },
     {
-      name: 'Triggered At',
+      name: t('alarm_field_triggered'),
       cell: (row) => {
         const ms = alarmStartTime(row);
         return ms != null
@@ -465,13 +466,13 @@ const AlarmsOverview = () => {
       wrap: true,
     },
     {
-      name: 'Active For',
+      name: t('alarm_field_active_for'),
       cell: (row) => formatDuration(alarmActiveDuration(row)),
       sortable: true,
       width: '140px',
     },
     {
-      name: 'Status',
+      name: t('alarm_field_status'),
       cell: (row) => {
         const status = STATUS_LABELS[row.status ?? 0] || STATUS_LABELS[0];
         const active = isAlarmActive(row);
@@ -480,13 +481,16 @@ const AlarmsOverview = () => {
           <div className="d-flex flex-column gap-1">
             <div className="d-flex align-items-center gap-2">
               <Badge bg={active ? 'danger' : 'success'}>
-                {active ? 'ACTIVE' : 'NORMALIZED'}
+                {active ? t('alarm_state_active') : t('alarm_state_normalized')}
               </Badge>
-              <Badge bg={status.variant}>{status.label}</Badge>
+              <Badge bg={status.variant}>{t(status.labelKey)}</Badge>
             </div>
             {acknowledged && (
               <small className="text-muted">
-                by {row.evaluated_by?.username || 'unknown'} ·{' '}
+                {t('alarms_overview_acknowledged_by', {
+                  user: row.evaluated_by?.username || t('alarm_unknown_user'),
+                })}{' '}
+                ·{' '}
                 {row.evaluated_at
                   ? (() => {
                       const ms = parseTimestamp(row.evaluated_at);
@@ -503,7 +507,7 @@ const AlarmsOverview = () => {
       width: '260px',
     },
     {
-      name: 'Actions',
+      name: t('alarms_overview_col_actions'),
       width: '150px',
       cell: (row) => {
         const acknowledged = row.status === 1;
@@ -514,8 +518,8 @@ const AlarmsOverview = () => {
             disabled={acknowledged || acknowledgingId === alarmKey(row)}
             title={
               acknowledged
-                ? 'Alarm already acknowledged'
-                : 'Acknowledge this alarm'
+                ? t('alarms_overview_already_acknowledged')
+                : t('alarms_overview_acknowledge_hint')
             }
             onClick={(event) => {
               event.stopPropagation();
@@ -527,7 +531,7 @@ const AlarmsOverview = () => {
             ) : (
               <Check2Circle className="me-1" />
             )}
-            {acknowledged ? 'Acknowledged' : 'Acknowledge'}
+            {acknowledged ? t('ui_quittiert') : t('ui_quittieren')}
           </Button>
         );
       },
@@ -546,12 +550,12 @@ const AlarmsOverview = () => {
 
   const heatmapTitle = useMemo(() => {
     if (!selectedAlarm) {
-      return 'Alarm heatmap';
+      return t('alarms_overview_heatmap');
     }
     const loc = selectedAlarm.location;
     const where = loc
-      ? `${loc.name || 'Unnamed location'} (${loc.project_id ?? loc.id})`
-      : 'unknown location';
+      ? `${loc.name || t('alarms_overview_unnamed')} (${loc.project_id ?? loc.id})`
+      : t('alarms_overview_unknown_location');
     const startMs = alarmStartTime(selectedAlarm);
     const normalizedMs = parseTimestamp(selectedAlarm.normalized_at);
     const endMs =
@@ -564,8 +568,8 @@ const AlarmsOverview = () => {
       startMs != null && endMs != null
         ? `${formatDate(startMs)} → ${formatDate(endMs)}`
         : '';
-    return `Alarm #${selectedAlarm.id} - ${where}${range ? ` (${range})` : ''}`;
-  }, [selectedAlarm, now]);
+    return `${t('alarm_tooltip_title', { id: selectedAlarm.id })} - ${where}${range ? ` (${range})` : ''}`;
+  }, [selectedAlarm, now, t]);
 
   const handleClearFilter = () => setFilterText('');
 
@@ -573,28 +577,31 @@ const AlarmsOverview = () => {
     <Container fluid className="py-4">
       <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
         <div>
-          <h2 className="mb-0">Alarms</h2>
+          <h2 className="mb-0">{t('alarms_overview_title')}</h2>
           <small className="text-muted">
-            {filteredRows.length} of {rows.length} alarm(s) · last{' '}
-            {loadedDays > 0 ? loadedDays : days} day(s)
+            {t('alarms_overview_count', {
+              shown: filteredRows.length,
+              total: rows.length,
+              days: loadedDays > 0 ? loadedDays : days,
+            })}
           </small>
         </div>
         <div className="d-flex flex-wrap align-items-center gap-2">
           <Form.Check
             type="switch"
             id="alarms-only-active"
-            label="Only with active alarms"
+            label={t('alarms_overview_only_active')}
             checked={onlyActive}
             onChange={(event) => setOnlyActive(event.target.checked)}
-            title="Show only alarms that are currently active"
+            title={t('alarms_overview_only_active_hint')}
           />
           <Form.Check
             type="switch"
             id="alarms-only-last-hour"
-            label="Only show last hour"
+            label={t('alarms_overview_last_hour')}
             checked={onlyLastHour}
             onChange={(event) => setOnlyLastHour(event.target.checked)}
-            title="Show only alarms triggered within the last hour"
+            title={t('alarms_overview_last_hour_hint')}
           />
           <FilterComponent
             filterText={filterText}
@@ -604,14 +611,14 @@ const AlarmsOverview = () => {
           <Form.Select
             size="sm"
             style={{ width: 'auto' }}
-            aria-label="Alarm window (days)"
+            aria-label={t('alarms_overview_window')}
             value={days}
             disabled={loading}
             onChange={(event) => handleDaysChange(Number(event.target.value))}
           >
             {DAY_OPTIONS.map((option) => (
               <option key={option} value={option}>
-                {option} days
+                {t('alarms_overview_days', { count: option })}
               </option>
             ))}
           </Form.Select>
@@ -619,9 +626,9 @@ const AlarmsOverview = () => {
             variant="outline-secondary"
             onClick={loadMore}
             disabled={loading || loadedDays >= 365}
-            title="Load older alarms (fetch only the missing days)"
+            title={t('alarms_overview_load_more_hint')}
           >
-            <PlusLg className="me-2" />+{days} days
+            <PlusLg className="me-2" />+{t('alarms_overview_days', { count: days })}
           </Button>
           <Button
             variant="outline-primary"
@@ -629,7 +636,7 @@ const AlarmsOverview = () => {
             disabled={loading}
           >
             <ArrowClockwise className="me-2" />
-            Refresh
+            {t('alarms_overview_refresh')}
           </Button>
         </div>
       </div>
@@ -637,10 +644,9 @@ const AlarmsOverview = () => {
       <Card className="border-0 shadow-sm mb-3 p-2">
         <Card.Body>
           <div className="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
-            <h5 className="mb-0">Alarm Timeline</h5>
+            <h5 className="mb-0">{t('alarm_detail_timeline')}</h5>
             <small className="text-muted">
-              Grouped by location — hover a bar for details, click to load the
-              heatmap
+              {t('alarms_overview_timeline_hint')}
             </small>
           </div>
           <AlarmTimeline
@@ -660,18 +666,18 @@ const AlarmsOverview = () => {
               {heatmapTitle}
             </h5>
             <small className="text-muted">
-              Click an alarm row or timeline bar to load its location heatmap
+              {t('alarms_overview_heatmap_hint')}
             </small>
           </div>
 
           {heatmapLoading ? (
             <div className="d-flex align-items-center gap-2 text-muted py-5 justify-content-center">
               <Spinner size="sm" animation="border" />
-              Loading alarm heatmap...
+              {t('alarms_overview_heatmap_loading')}
             </div>
           ) : !selectedAlarm ? (
             <div className="text-muted py-5 text-center">
-              Select an alarm to display its location heatmap.
+              {t('alarms_overview_heatmap_select')}
             </div>
           ) : (
             <>
@@ -687,15 +693,15 @@ const AlarmsOverview = () => {
               <div className="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
                 <h5 className="mb-0">
                   <Activity className="me-2 text-primary" />
-                  Measurements
+                  {t('alarms_overview_measurements')}
                 </h5>
-                <small className="text-muted">±6h around the alarm start</small>
+                <small className="text-muted">{t('alarms_overview_measurements_hint')}</small>
               </div>
               {selectedAlarm ? (
                 <AlarmMeasurementCompareChart alarm={selectedAlarm} />
               ) : (
                 <div className="text-muted py-5 text-center">
-                  Select an alarm to compare its measurements.
+                  {t('alarms_overview_measurements_select')}
                 </div>
               )}
             </>

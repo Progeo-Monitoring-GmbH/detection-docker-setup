@@ -1,11 +1,11 @@
 import os
 import re
 
+from django.conf import settings
 from django.core.management.base import CommandError
 
 from progeo.helper.basics import dlog, elog, ilog
 from progeo.management.commands._base import BaseCommand
-from progeo.settings import DATABASES, UPLOAD_DIR
 from progeo.v1.models import ProgeoLageplan, ProgeoMeasurePoint
 
 # Below this OCR confidence (0-100, -1 for non-text regions) a token is
@@ -157,7 +157,7 @@ class Command(BaseCommand):
                 "the deu language pack is also required)."
             ) from exc
 
-        db_names = [options["db"]] if options.get("db") else list(DATABASES.keys())
+        db_names = [options["db"]] if options.get("db") else list(settings.DATABASES.keys())
         location_id = options.get("location_id")
         force = options["force"]
         dry_run = options["dry_run"]
@@ -196,7 +196,7 @@ class Command(BaseCommand):
                 # resolves against MEDIA_ROOT directly and drops the "uploads"
                 # segment, so try the real convention first and only fall back
                 # to the field's own resolution for a row that doesn't follow it.
-                image_path = os.path.join(UPLOAD_DIR, lageplan.lageplan.name)
+                image_path = os.path.join(settings.UPLOAD_DIR, lageplan.lageplan.name)
                 try:
                     with open(image_path, "rb") as file_obj:
                         image = Image.open(file_obj)

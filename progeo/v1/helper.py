@@ -297,10 +297,10 @@ def pretty_sizeof(num, suffix="b"):
 
 
 def pretty_date(_date: datetime):
-    from progeo.settings import PRETTY_DATE_FORMAT
+    from django.conf import settings
     if not _date:
         return "???"
-    return str(_date.strftime(PRETTY_DATE_FORMAT))
+    return str(_date.strftime(settings.PRETTY_DATE_FORMAT))
 
 
 def pretty_now():

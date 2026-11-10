@@ -1,11 +1,11 @@
 ﻿import random
 
+from django.conf import settings
 from django.db.models import Q
 
 from progeo.helper.basics import dlog, elog, ilog, wlog
 from progeo.helper.legacy.geo import GeoHelper
 from progeo.management.commands._base import BaseCommand
-from progeo.settings import DATABASES
 from progeo.v1.models import ProgeoLocation
 
 DRY_RUN_SAMPLE_SIZE = 30
@@ -40,7 +40,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        db_names = [options["db"]] if options.get("db") else list(DATABASES.keys())
+        db_names = [options["db"]] if options.get("db") else list(settings.DATABASES.keys())
         dry_run = options["dry_run"]
 
         geo_helper = GeoHelper(logger=dlog)

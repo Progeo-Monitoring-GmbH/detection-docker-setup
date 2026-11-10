@@ -284,6 +284,7 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
                 size="sm"
                 variant="outline-success"
                 title={t('staff_requests_approve')}
+                aria-label={t('staff_requests_approve')}
                 onClick={() => openDecision(row, 'approve')}
               >
                 <CheckLg size={14} />
@@ -292,6 +293,7 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
                 size="sm"
                 variant="outline-danger"
                 title={t('staff_requests_reject')}
+                aria-label={t('staff_requests_reject')}
                 onClick={() => openDecision(row, 'reject')}
               >
                 <XLg size={14} />

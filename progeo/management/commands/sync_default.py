@@ -1,4 +1,5 @@
-﻿from django.core.management.base import CommandError
+﻿from django.conf import settings
+from django.core.management.base import CommandError
 from django.core.management.color import no_style
 from django.db import DatabaseError, connections, transaction
 from rest_framework.authtoken.models import Token
@@ -16,7 +17,6 @@ from progeo.helper.project_dbs import (
 )
 from progeo.management.commands._base import BaseCommand
 from progeo.sets import DJANGO_MODELS
-from progeo.settings import DJANGO_DATABASES
 
 # Models whose rows are removed from the target DB when they no longer exist in
 # the source DB. Token is one-to-one with User: a rotated token would otherwise
@@ -133,7 +133,7 @@ class Command(BaseCommand):
         models = [_model for _model, _table in DJANGO_MODELS if _model]
         failed = []
 
-        for db in DJANGO_DATABASES:
+        for db in settings.DJANGO_DATABASES:
             if db == "default":
                 continue
             try:
@@ -154,6 +154,6 @@ class Command(BaseCommand):
         failed += mirror_failed
         okaylog(f"mirrored {len(mirrored)} of {len(aliases)} project databases")
 
-        dlog("DONE!", DJANGO_DATABASES)
+        dlog("DONE!", settings.DJANGO_DATABASES)
         if failed:
             raise CommandError(f"sync_default failed for: {failed}")

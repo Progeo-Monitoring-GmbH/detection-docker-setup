@@ -2,13 +2,13 @@ import datetime
 import os
 import os.path
 
+from django.conf import settings
 from django.db.models import QuerySet, Sum
 from django.http import HttpResponse
 from plotly.offline import plot
 from psycopg2 import errors
 
 from progeo.helper.basics import dlog, get_today
-from progeo.settings import EXPORT_DIR
 
 UniqueViolation = errors.lookup("23505")
 
@@ -83,7 +83,7 @@ def _get_marker_text(infos):
 
 
 def _plot_figure(fig, name):
-    _plot_path = os.path.join(EXPORT_DIR, f"{name}.html")
+    _plot_path = os.path.join(settings.EXPORT_DIR, f"{name}.html")
     plot(fig, filename=_plot_path)
 
     _filename = _plot_path.replace("\\", "/")

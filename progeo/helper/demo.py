@@ -3,7 +3,7 @@ progeo/v1/viewsets/demo_viewset.py and DemoReadOnlyMiddleware)."""
 
 import os
 
-from progeo.settings import MEDIA_ROOT, UPLOAD_DIR
+from django.conf import settings
 
 DEMO_ACCOUNT_HASH = "demo-account"
 DEMO_ACCOUNT_NAME = "Demo"
@@ -38,7 +38,7 @@ DEMO_USER_PERMISSIONS = (
 # Lageplan file name (relative to UPLOAD_DIR) of the demo locations.
 DEMO_LAGEPLAN_PREFIX_REL = "lageplan/demo_"
 # The same as media path; the media view lets demo-only users fetch nothing else.
-DEMO_LAGEPLAN_PREFIX = os.path.relpath(UPLOAD_DIR, MEDIA_ROOT).replace(os.sep, "/") + "/" + DEMO_LAGEPLAN_PREFIX_REL
+DEMO_LAGEPLAN_PREFIX = os.path.relpath(settings.UPLOAD_DIR, settings.MEDIA_ROOT).replace(os.sep, "/") + "/" + DEMO_LAGEPLAN_PREFIX_REL
 
 
 # Writes the demo user may make after all: exports, which change no data

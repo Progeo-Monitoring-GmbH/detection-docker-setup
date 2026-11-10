@@ -24,9 +24,9 @@ import time
 import uuid
 import zipfile
 
-from progeo.settings import EXPORT_DIR, MEDIA_ROOT
+from django.conf import settings
 
-JOBS_DIR = os.path.join(EXPORT_DIR, "heatmap_videos")
+JOBS_DIR = os.path.join(settings.EXPORT_DIR, "heatmap_videos")
 FRAMES_ZIP_NAME = "frames.zip"
 RESULT_ZIP_NAME = "sensor-heatmap.zip"
 TASK_ID_NAME = "task_id"
@@ -79,7 +79,7 @@ def finished_result(job_id: str) -> str | None:
     if not os.path.isfile(path):
         return None
     os.utime(directory)
-    return os.path.relpath(path, MEDIA_ROOT).replace(os.sep, "/")
+    return os.path.relpath(path, settings.MEDIA_ROOT).replace(os.sep, "/")
 
 
 def running_task(job_id: str) -> str | None:
@@ -103,7 +103,7 @@ def remember_task(job_id: str, task_id: str) -> None:
 def is_result_media_path(path: str) -> bool:
     """Whether a (normalized) media path is the result ZIP of a job - the
     only export files the demo user may download."""
-    prefix = os.path.relpath(JOBS_DIR, MEDIA_ROOT).replace(os.sep, "/") + "/"
+    prefix = os.path.relpath(JOBS_DIR, settings.MEDIA_ROOT).replace(os.sep, "/") + "/"
     if not path.startswith(prefix):
         return False
     parts = path[len(prefix):].split("/")
@@ -207,4 +207,4 @@ def render_job(job_id: str, framerate: int = 2) -> str:
                 result.write(path, f"frames/{os.path.basename(path)}")
 
     os.remove(frames_zip_path)
-    return os.path.relpath(result_path, MEDIA_ROOT).replace(os.sep, "/")
+    return os.path.relpath(result_path, settings.MEDIA_ROOT).replace(os.sep, "/")

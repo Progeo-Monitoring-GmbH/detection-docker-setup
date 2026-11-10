@@ -608,7 +608,7 @@ def test_demo_user_may_export_the_heatmap_video(api_client, demo, monkeypatch, t
 
     # The result ZIP may be downloaded (missing here: 404), other export files not.
     monkeypatch.setattr(heatmap_video, "JOBS_DIR", jobs)
-    prefix = os.path.relpath(jobs, heatmap_video.MEDIA_ROOT).replace(os.sep, "/")
+    prefix = os.path.relpath(jobs, settings.MEDIA_ROOT).replace(os.sep, "/")
     job = "b" * 32
     assert api_client.get(f"/media/{prefix}/{job}/sensor-heatmap.zip").status_code == 404
     assert api_client.get(f"/media/{prefix}/{job}/frames.zip").status_code == 403

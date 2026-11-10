@@ -10,6 +10,7 @@ import zipfile
 
 import numpy as np
 import pytest
+from django.conf import settings as django_settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 from PIL import Image
 
@@ -23,7 +24,7 @@ PERMS = ("module_locations_enabled", "module_measurements_enabled")
 @pytest.fixture
 def jobs_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(heatmap_video, "JOBS_DIR", str(tmp_path / "export" / "heatmap_videos"))
-    monkeypatch.setattr(heatmap_video, "MEDIA_ROOT", str(tmp_path))
+    monkeypatch.setattr(django_settings, "MEDIA_ROOT", str(tmp_path))
     return tmp_path
 
 

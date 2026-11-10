@@ -14,7 +14,7 @@ both in sync.
 """
 import os
 
-from progeo.settings import UPLOAD_DIR
+from django.conf import settings
 
 # Mirrors ImageCanvasStage.tsx: the wizard canvas (900x600, 32px padding)
 # fits the plan at this scale, and the stored offsets are canvas pixels at it.
@@ -50,7 +50,7 @@ def image_size(plan) -> tuple[int, int] | None:
     name = getattr(getattr(plan, "lageplan", None), "name", None)
     if not name:
         return None
-    path = os.path.join(UPLOAD_DIR, name)
+    path = os.path.join(settings.UPLOAD_DIR, name)
     try:
         key = (path, os.path.getmtime(path))
     except OSError:

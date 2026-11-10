@@ -1,6 +1,7 @@
 import datetime
 import os.path
 
+from django.conf import settings
 from django.core import signing
 from django.core.management import call_command
 from django.db import DEFAULT_DB_ALIAS, connections
@@ -26,7 +27,6 @@ from progeo.helper.project_dbs import (
     project_key_from_alias,
     register_project_db,
 )
-from progeo.settings import BACKUP_DIR
 from progeo.tasks import create_database_backup
 from progeo.v1.models import Backup, ProgeoLocation
 from progeo.v1.serializers import BackupSerializer
@@ -41,7 +41,7 @@ def _backup_path(backup):
     """Absolute path of the backup's file, or None if it's missing or its
     name (from the DB) would point outside BACKUP_DIR."""
     path = os.path.realpath(backup.get_file_path())
-    if os.path.dirname(path) != os.path.realpath(BACKUP_DIR) or not os.path.isfile(path):
+    if os.path.dirname(path) != os.path.realpath(settings.BACKUP_DIR) or not os.path.isfile(path):
         return None
     return path
 
@@ -174,7 +174,7 @@ class BackupViewSet(ProgeoModalViewSet):
     @require_module_permissions("module_backup_enabled")
     @action(detail=False, url_path="parse", methods=["POST"])
     def parse_backups(self, request, *args, **kwargs):
-        _files = os.listdir(BACKUP_DIR)
+        _files = os.listdir(settings.BACKUP_DIR)
         for _f in _files:
             is_backup_file = _f.endswith((".psql", f".psql{Backup.COMPRESSED_SUFFIX}"))
             database = database_of_backup(_f)

@@ -3,9 +3,10 @@ import os
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
+from django.conf import settings
+
 from progeo.helper.basics import dlog, elog, ilog
 from progeo.management.commands._base import BaseCommand
-from progeo.settings import SETUP_DIR, UPLOAD_DIR
 from progeo.v1.creator import save_lageplan_upload
 from progeo.v1.legacy.executor import fetch_legacy_data, parse_sample_timestamp
 from progeo.v1.legacy.helper_resistance import MAX_JSON_SAFE_RESISTANCE_OHM
@@ -47,7 +48,7 @@ def fetch_device_locations():
 def fetch_koords():
     """Stores the koordinate table of every project from data-progeo.net
     (admin/bad.php?project_id=...) as media/setup/koords/<project_id>.json."""
-    target_dir = os.path.join(SETUP_DIR, "koords")
+    target_dir = os.path.join(settings.SETUP_DIR, "koords")
     os.makedirs(target_dir, exist_ok=True)
     project_ids = sorted(set(
         ProgeoLocation.objects.exclude(project_id__isnull=True).values_list("project_id", flat=True)
@@ -223,7 +224,7 @@ def koords_to_points(apply=False):
     from progeo.helper import plan_meters
     from progeo.helper.project_dbs import location_db, release_connection
 
-    source_dir = os.path.join(SETUP_DIR, "koords")
+    source_dir = os.path.join(settings.SETUP_DIR, "koords")
     project_ids = sorted(
         int(name[:-5]) for name in os.listdir(source_dir) if name.endswith(".json") and name[:-5].isdigit()
     ) if os.path.isdir(source_dir) else []
@@ -350,7 +351,7 @@ def _lageplan_digest(lageplan):
     if not lageplan.lageplan:
         return None
     try:
-        with FileSystemStorage(location=UPLOAD_DIR).open(lageplan.lageplan.name, "rb") as file:
+        with FileSystemStorage(location=settings.UPLOAD_DIR).open(lageplan.lageplan.name, "rb") as file:
             return hashlib.sha256(file.read()).hexdigest()
     except OSError:
         return None

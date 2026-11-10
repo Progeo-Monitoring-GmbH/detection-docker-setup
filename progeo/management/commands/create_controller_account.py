@@ -1,9 +1,9 @@
 ﻿import os
 
+from django.conf import settings
 from django.core.management.base import CommandError
 
 from progeo.management.commands._base import BaseCommand
-from progeo.settings import DATABASES
 from progeo.v1.creator import create_account_safe
 
 
@@ -21,10 +21,10 @@ class Command(BaseCommand):
         if not account_name:
             raise CommandError("CONTROLLER_DEFAULT_ACCOUNT is not set")
 
-        if not DATABASES:
+        if not settings.DATABASES:
             raise CommandError("DATABASES is empty")
 
-        db_name = next(iter(DATABASES.keys()))
+        db_name = next(iter(settings.DATABASES.keys()))
         account, created = create_account_safe(name=account_name, db_name=db_name)
         if not account:
             raise CommandError("Failed to create controller account")

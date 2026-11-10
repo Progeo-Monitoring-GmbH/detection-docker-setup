@@ -74,10 +74,10 @@ export const formatDuration = (seconds: number): string => {
   const secs = total % 60;
 
   const parts: string[] = [];
-  if (days > 0) parts.push(`${days}d`);
-  if (hours > 0) parts.push(`${hours}h`);
-  if (minutes > 0) parts.push(`${minutes}m`);
-  if (parts.length === 0 || secs > 0) parts.push(`${secs}s`);
+  if (days > 0) {parts.push(`${days}d`);}
+  if (hours > 0) {parts.push(`${hours}h`);}
+  if (minutes > 0) {parts.push(`${minutes}m`);}
+  if (parts.length === 0 || secs > 0) {parts.push(`${secs}s`);}
   return parts.join(' ');
 };
 

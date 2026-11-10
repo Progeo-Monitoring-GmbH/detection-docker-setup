@@ -1,9 +1,9 @@
 import os
 
+from django.conf import settings
 from rest_framework.routers import DynamicRoute, Route, SimpleRouter
 
 from progeo.helper.basics import wlog
-from progeo.settings import DEBUG
 
 
 class CoreRouter(SimpleRouter):
@@ -45,7 +45,7 @@ class CoreRouter(SimpleRouter):
     ]
 
 
-ACTIVE = DEBUG
+ACTIVE = settings.DEBUG
 
 
 def check_class_module(model, module):

@@ -3,6 +3,7 @@ endpoint and the meter positions in the heatmap's sensor_points."""
 from types import SimpleNamespace
 
 import pytest
+from django.conf import settings as django_settings
 from PIL import Image
 
 from progeo.helper import plan_meters
@@ -55,7 +56,7 @@ def test_uncalibrated_plans_have_no_meter_positions(missing):
 
 
 def test_image_size_reads_the_file(tmp_path, monkeypatch):
-    monkeypatch.setattr(plan_meters, "UPLOAD_DIR", str(tmp_path))
+    monkeypatch.setattr(django_settings, "UPLOAD_DIR", str(tmp_path))
     (tmp_path / "lageplan").mkdir()
     Image.new("RGB", (40, 30)).save(tmp_path / "lageplan" / "plan.png")
 
@@ -67,7 +68,7 @@ def test_image_size_reads_the_file(tmp_path, monkeypatch):
 
 @pytest.fixture
 def plan_world(tmp_path, monkeypatch):
-    monkeypatch.setattr(plan_meters, "UPLOAD_DIR", str(tmp_path))
+    monkeypatch.setattr(django_settings, "UPLOAD_DIR", str(tmp_path))
     (tmp_path / "lageplan").mkdir()
     Image.new("RGB", (1000, 500)).save(tmp_path / "lageplan" / "plan.png")
 

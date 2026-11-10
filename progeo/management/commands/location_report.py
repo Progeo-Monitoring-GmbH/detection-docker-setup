@@ -2,9 +2,10 @@
 import os
 from datetime import datetime
 
+from django.conf import settings
+
 from progeo.helper.basics import elog, ilog, save_check_dir
 from progeo.management.commands._base import BaseCommand
-from progeo.settings import DATABASES, EXPORT_DIR
 from progeo.v1.models import ProgeoLocation
 
 # A location counts as having an address only when the core address fields
@@ -73,7 +74,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        db_names = [options["db"]] if options.get("db") else list(DATABASES.keys())
+        db_names = [options["db"]] if options.get("db") else list(settings.DATABASES.keys())
         generated_at = datetime.now().isoformat(timespec="seconds")
 
         report = {
@@ -119,7 +120,7 @@ class Command(BaseCommand):
         if options["output"]:
             output_path = options["output"]
         else:
-            output_dir = save_check_dir(EXPORT_DIR, datetime.now().strftime("%Y-%m-%d"))
+            output_dir = save_check_dir(settings.EXPORT_DIR, datetime.now().strftime("%Y-%m-%d"))
             output_path = os.path.join(output_dir, "location_report.json")
 
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)

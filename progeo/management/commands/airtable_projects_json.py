@@ -2,17 +2,17 @@ import json
 import os
 import re
 
+from django.conf import settings
 from django.core.management.base import CommandError
 
 from progeo.helper.basics import dlog, elog, ilog, okaylog
 from progeo.management.commands._base import BaseCommand
-from progeo.settings import EXPORT_DIR
 from progeo.v1.models import ProgeoLocation
 
 # Where `airtable_projects --json/--csv` writes and this command reads: the
 # records hold customer data, so never the repository - media/export is
 # git-ignored.
-AIRTABLE_EXPORT_DIR = os.path.join(EXPORT_DIR, "airtable")
+AIRTABLE_EXPORT_DIR = os.path.join(settings.EXPORT_DIR, "airtable")
 
 
 def is_broken_address(address):

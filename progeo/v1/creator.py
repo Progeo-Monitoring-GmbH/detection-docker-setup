@@ -2,6 +2,7 @@ import os
 import time
 from typing import Any
 
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.files.base import ContentFile
 from django.core.files.storage import FileSystemStorage
@@ -9,7 +10,6 @@ from django.db.models import Q
 from django.utils import timezone
 
 from progeo.helper.basics import elog, okaylog, save_check_dir
-from progeo.settings import UPLOAD_DIR
 from progeo.v1.helper import calc_hash_from_dict
 from progeo.v1.models import (
 	Account,
@@ -129,14 +129,14 @@ def save_lageplan_upload(location: ProgeoLocation, source: bytes | Any, original
 	UPLOAD_DIR/lageplan/ and ProgeoLageplan.lageplan.name is stored relative to
 	UPLOAD_DIR (see parse_lageplan_labels.py for why that convention matters).
 	"""
-	save_check_dir(UPLOAD_DIR, "lageplan")
+	save_check_dir(settings.UPLOAD_DIR, "lageplan")
 	suffix = os.path.splitext(original_name)[1] or ".png"
 	filename = os.path.join("lageplan", f"{location.id}_{location.project_id or ''}_{int(time.time())}{suffix}").replace(os.sep, "/")
 
 	if isinstance(source, (bytes, bytearray)):
 		source = ContentFile(bytes(source), name=original_name)
 
-	fs = FileSystemStorage(location=UPLOAD_DIR)
+	fs = FileSystemStorage(location=settings.UPLOAD_DIR)
 	saved_name = fs.save(filename, source)
 	# Vertically flipped by default: CAD/measure point y runs up, image y down
 	# (the Lageplan wizard's alignment starts from there).

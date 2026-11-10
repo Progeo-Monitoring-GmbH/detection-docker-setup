@@ -10,6 +10,7 @@ from io import StringIO
 
 import pytest
 from asgiref.sync import async_to_sync
+from django.conf import settings as django_settings
 from django.contrib.auth.models import AnonymousUser, User
 from django.core.management import call_command
 from django.utils import timezone
@@ -98,7 +99,6 @@ def _link_token(path):
 # -- step 1: scoping ------------------------------------------------------------
 
 def test_upload_delete_stays_inside_the_tmp_folder(client, tmp_path, monkeypatch):
-    from progeo.v1.viewsets import setup_viewset
 
     uploads = tmp_path / "uploads"
     (uploads / "tmp").mkdir(parents=True)
@@ -106,7 +106,7 @@ def test_upload_delete_stays_inside_the_tmp_folder(client, tmp_path, monkeypatch
     victim.write_text("keep me")
     inside = uploads / "tmp" / "file.csv"
     inside.write_text("x")
-    monkeypatch.setattr(setup_viewset, "UPLOAD_DIR", str(uploads))
+    monkeypatch.setattr(django_settings, "UPLOAD_DIR", str(uploads))
     client.force_authenticate(user=f.make_user())
 
     for path in ("tmp/../../victim.txt", "tmp/../tmp/../../victim.txt", f"tmp/{victim}"):
@@ -119,11 +119,10 @@ def test_upload_delete_stays_inside_the_tmp_folder(client, tmp_path, monkeypatch
 
 
 def test_generate_csv_keeps_the_file_in_the_tmp_folder(client, tmp_path, monkeypatch):
-    from progeo.v1.viewsets import setup_viewset
 
     uploads = tmp_path / "uploads"
     uploads.mkdir()
-    monkeypatch.setattr(setup_viewset, "UPLOAD_DIR", str(uploads))
+    monkeypatch.setattr(django_settings, "UPLOAD_DIR", str(uploads))
     client.force_authenticate(user=f.make_user())
 
     def generate(name):
@@ -272,10 +271,9 @@ def test_objektleitung_flag_is_staff_only(client):
 
 
 def test_media_only_serves_customers_their_lageplaene(client, tmp_path, monkeypatch):
-    from progeo.v1.viewsets import base_viewsets
 
-    monkeypatch.setattr(base_viewsets, "MEDIA_ROOT", str(tmp_path))
-    monkeypatch.setattr(base_viewsets, "MEDIA_X_ACCEL", "")
+    monkeypatch.setattr(django_settings, "MEDIA_ROOT", str(tmp_path))
+    monkeypatch.setattr(django_settings, "MEDIA_X_ACCEL", "")
     (tmp_path / "uploads" / "lageplan").mkdir(parents=True)
     for name in ("own.png", "foreign.png"):
         (tmp_path / "uploads" / "lageplan" / name).write_bytes(b"\x89PNG")

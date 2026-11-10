@@ -16,7 +16,6 @@ from polymorphic.models import PolymorphicModel
 from progeo.decorator import has_test_coverage
 from progeo.helper.basics import get_templates
 from progeo.helper.cacher import search_clear_cache
-from progeo.settings import BACKUP_DIR, DEBUG, UPLOAD_REL_DIR
 from progeo.v1.helper import calc_hash_from_dict
 
 # ==============================================================================================
@@ -294,7 +293,7 @@ class Account(ProgeoModel, auto_prefetch.Model):
         return get_templates(self.pk, regex)
 
     def __str__(self):
-        _id = f"[{self.pk}] " if DEBUG else ""
+        _id = f"[{self.pk}] " if settings.DEBUG else ""
         return f"{_id}| 👤 {self.name}"
 
 
@@ -406,7 +405,7 @@ class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
         return connected
 
     def __str__(self):
-        _id = f"[{self.pk}] " if DEBUG else ""
+        _id = f"[{self.pk}] " if settings.DEBUG else ""
         parent_info = f" (Parent of {self.child_locations.count()} locations)" if self.child_locations.exists() else ""
         return f"{_id} 📍 {self.project_id or 'XXXX'} - {self.name or 'Unknown'}{parent_info}"
 
@@ -420,7 +419,7 @@ class ProgeoLageplan(ProgeoModel, auto_prefetch.Model):
     location = models.ForeignKey(ProgeoLocation, on_delete=models.CASCADE, related_name='lageplans')
     
     # File and naming
-    lageplan = models.FileField(upload_to=UPLOAD_REL_DIR, max_length=255, null=True, blank=True)
+    lageplan = models.FileField(upload_to=settings.UPLOAD_REL_DIR, max_length=255, null=True, blank=True)
     name = models.CharField(max_length=255, null=True, blank=True, help_text="Optional name/version of this lageplan")
     
     # Positioning offsets
@@ -491,7 +490,7 @@ class ProgeoLageplan(ProgeoModel, auto_prefetch.Model):
         return {"name": name, "points": points}, None
 
     def __str__(self):
-        _id = f"[{self.pk}] " if DEBUG else ""
+        _id = f"[{self.pk}] " if settings.DEBUG else ""
         name_part = f" - {self.name}" if self.name else ""
         active_marker = " ✓" if self.is_active else ""
         return f"{_id} 📐 Location {self.location.name}{name_part}{active_marker}"
@@ -550,7 +549,7 @@ class ProgeoDevice(ProgeoModel, auto_prefetch.Model):
         return self.mac or self.hardware or self.raw_hash or str(self.pk)
 
     def __str__(self):
-        _id = f"[{self.pk}] " if DEBUG else ""
+        _id = f"[{self.pk}] " if settings.DEBUG else ""
         return f"{_id} 🔧 {self.hardware or 'Unknown'} ({self.mac or 'No MAC'}) - {self.raw_hash}"
 
 
@@ -609,7 +608,7 @@ class ProgeoDeviceCommand(auto_prefetch.Model):
         return bool(self.result_encrypted)
 
     def __str__(self):
-        _id = f"[{self.pk}] " if DEBUG else ""
+        _id = f"[{self.pk}] " if settings.DEBUG else ""
         return f"{_id} 📡 {self.command} ({self.status}) - device {self.device_id}"
 
 
@@ -661,7 +660,7 @@ class ProgeoNoiseProfile(auto_prefetch.Model):
         return super().save(*args, **kwargs)
 
     def __str__(self):
-        _id = f"[{self.pk}] " if DEBUG else ""
+        _id = f"[{self.pk}] " if settings.DEBUG else ""
         active = " (aktiv)" if self.is_active else ""
         return f"{_id} 🔇 {self.name}{active} - device {self.device_id}"
 
@@ -931,7 +930,7 @@ class ProgeoMeasurePoint(ProgeoModel, auto_prefetch.Model):
         self.save() #TODO using=db
 
     def __str__(self):
-        _id = f"[{self.pk}] " if DEBUG else ""
+        _id = f"[{self.pk}] " if settings.DEBUG else ""
         _location = f"Location {self.location.address}" if self.location else "Unknown Location"
         return f"{_id} 📍 {_location} - Sensor #{self.sensor_order} ({self.nx}, {self.ny})"
 
@@ -1042,7 +1041,7 @@ class ProgeoAlarm(ProgeoModel, auto_prefetch.Model):
         return self.Severity.KRITISCH
 
     def __str__(self):
-        _id = f"[{self.pk}] " if DEBUG else ""
+        _id = f"[{self.pk}] " if settings.DEBUG else ""
         if self.normalized_at:
             normalized = f"✅ NORMALIZED after {self.normalized_at - self.triggered_at}s" if self.triggered_at else "✅ NORMALIZED"
         else:
@@ -1243,7 +1242,7 @@ class ProgeoAccess(ProgeoModel, auto_prefetch.Model):
         return result
 
     def __str__(self):
-        _id = f"[{self.pk}] " if DEBUG else ""
+        _id = f"[{self.pk}] " if settings.DEBUG else ""
         return f"{_id} ProgeoAccess: User={self.user}, Location={self.location}, Transport={self.return_active(self.unpack_transport())}, Type={self.return_active(self.unpack_type())}"
 
 
@@ -1314,7 +1313,7 @@ class EMail(ProgeoModel, auto_prefetch.Model):
     error = models.TextField(null=True, blank=True)
 
     def __str__(self):
-        _id = f"[{self.pk}] " if DEBUG else ""
+        _id = f"[{self.pk}] " if settings.DEBUG else ""
         status = "✅" if self.sent else "⚠️"
         return f"{_id} {status} 📧 {self.created.strftime('%d.%m.%y %H:%M')} => {self.sent_to[:50]}, Length={len(self.message)}, Files={self.files}"
 
@@ -1353,7 +1352,7 @@ class SMS(ProgeoModel, auto_prefetch.Model):
     error = models.TextField(null=True, blank=True)
 
     def __str__(self):
-        _id = f"[{self.pk}] " if DEBUG else ""
+        _id = f"[{self.pk}] " if settings.DEBUG else ""
         status = "✅" if self.sent else "⚠️"
         return f"{_id} {status} 📱 {self.created.strftime('%d.%m.%y %H:%M')} => {self.sent_to}, Length={len(self.message)}"
 
@@ -1630,7 +1629,7 @@ class LimitedToken(ProgeoPolyModel, PolymorphicModel):
         self.save(clear_cache=clear_cache, using=using)
 
     def __str__(self):
-        _id = f"[{self.pk}] " if DEBUG else ""
+        _id = f"[{self.pk}] " if settings.DEBUG else ""
         return f"{_id} 🔑 [{self.account.get_short()}] valid={self.is_valid(False)}, check_counter={self.check_counter}, key={self.raw_hash}"
 
 
@@ -1682,7 +1681,7 @@ class Backup(ProgeoModel, auto_prefetch.Model):
         return self.name.endswith(self.COMPRESSED_SUFFIX)
 
     def get_file_path(self):
-        return os.path.join(BACKUP_DIR, str(self.name))
+        return os.path.join(settings.BACKUP_DIR, str(self.name))
 
     def get_size(self):
         """Human-readable file size, or None if the file isn't on disk."""
@@ -1748,7 +1747,7 @@ class SystemConfig(ProgeoModel, auto_prefetch.Model):
     value = models.JSONField(default=dict, blank=True)
 
     def __str__(self):
-        _id = f"[{self.pk}] " if DEBUG else ""
+        _id = f"[{self.pk}] " if settings.DEBUG else ""
         return f"{_id} ⚙️ {self.key}"
 
 

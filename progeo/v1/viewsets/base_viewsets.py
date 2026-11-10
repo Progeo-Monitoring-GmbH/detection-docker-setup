@@ -3,6 +3,7 @@ import os
 import posixpath
 from urllib.parse import quote
 
+from django.conf import settings
 from django.contrib.auth import login
 from django.contrib.auth.models import Permission, User
 from django.http import HttpResponse, JsonResponse
@@ -23,7 +24,6 @@ from progeo.helper import heatmap_video
 from progeo.helper.basics import RequestFailed, RequestSuccess
 from progeo.helper.creator import create_MfS_log
 from progeo.helper.demo import DEMO_LAGEPLAN_PREFIX, is_demo_user
-from progeo.settings import MEDIA_ROOT, MEDIA_X_ACCEL, UPLOAD_DIR
 from progeo.v1.models import DEFAULT_USER_PERMISSIONS, MODULE_PERMISSION_CODES
 from progeo.v1.serializers import ProgeoTokenObtainPairSerializer
 
@@ -111,20 +111,20 @@ class AuthenticatedMediaView(View):
         if content_type is None:
             content_type = "application/octet-stream"
 
-        if MEDIA_X_ACCEL:
+        if settings.MEDIA_X_ACCEL:
             # Hand the file to nginx (internal redirect); no body is streamed
             # through Python. nginx serves Range requests and sets its own
             # Content-Length / Last-Modified / Accept-Ranges.
             response = HttpResponse()
-            response["X-Accel-Redirect"] = f"{MEDIA_X_ACCEL.rstrip('/')}/{quote(path)}"
+            response["X-Accel-Redirect"] = f"{settings.MEDIA_X_ACCEL.rstrip('/')}/{quote(path)}"
             response["Content-Type"] = content_type
             response["Cache-Control"] = "private, no-store"
             return response
 
         # Fallback: stream through Django (dev / non-nginx deployments).
-        return serve_media(request, path, document_root=MEDIA_ROOT)
+        return serve_media(request, path, document_root=settings.MEDIA_ROOT)
 
-    UPLOAD_PREFIX = os.path.relpath(UPLOAD_DIR, MEDIA_ROOT).replace(os.sep, "/") + "/"
+    UPLOAD_PREFIX = os.path.relpath(settings.UPLOAD_DIR, settings.MEDIA_ROOT).replace(os.sep, "/") + "/"
     VISIBLE_LAGEPLAN_CACHE_SECONDS = 300
 
     @classmethod
@@ -161,7 +161,7 @@ class AuthenticatedMediaView(View):
     @staticmethod
     def _resolve_media_path(path):
         """Resolve ``path`` inside MEDIA_ROOT, rejecting any traversal."""
-        media_root = os.path.realpath(MEDIA_ROOT)
+        media_root = os.path.realpath(settings.MEDIA_ROOT)
         candidate = os.path.realpath(os.path.join(media_root, path))
         if candidate != media_root and not candidate.startswith(media_root + os.sep):
             return None

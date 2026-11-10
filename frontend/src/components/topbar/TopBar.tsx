@@ -134,6 +134,7 @@ const TopBar = () => {
             setLangOpen(false);
           }}
           title={t('topbar_info_title')}
+          aria-label={t('topbar_info_title')}
           style={pillButtonStyle(false)}
         >
           <InfoCircle size={16} />
@@ -300,6 +301,7 @@ const TopBar = () => {
         type="button"
         onClick={() => auth.logoutAction()}
         title={t('topbar_logout')}
+        aria-label={t('topbar_logout')}
         style={pillButtonStyle(false)}
       >
         <DoorOpen size={16} />

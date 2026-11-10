@@ -348,6 +348,7 @@ const DeviceCommandsDialog = ({
           <button
             type="button"
             title={t('devices_cancel')}
+            aria-label={t('devices_cancel')}
             onClick={onClose}
             style={{ border: 'none', background: 'transparent', color: MUTED, cursor: 'pointer', padding: 4 }}
           >
@@ -458,6 +459,7 @@ const DeviceCommandsDialog = ({
                       <button
                         type="button"
                         title={t('device_commands_param_remove')}
+                        aria-label={t('device_commands_param_remove')}
                         disabled={params.length === 1}
                         onClick={() => setParams(params.filter((_, i) => i !== index))}
                         style={{ border: 'none', background: 'transparent', color: MUTED, cursor: 'pointer' }}

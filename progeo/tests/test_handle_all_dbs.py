@@ -2,13 +2,15 @@
 and ends with a summary of databases, files, size and time."""
 from io import StringIO
 
+from django.conf import settings as django_settings
+
 from progeo.management.commands import handle_all_dbs
 
 
 def test_backup_summary_counts_new_files_and_failed_databases(monkeypatch, tmp_path):
     (tmp_path / "old-host-2026-10-19-015300.psql.gz").write_bytes(b"x" * 10)
-    monkeypatch.setattr(handle_all_dbs, "BACKUP_DIR", str(tmp_path))
-    monkeypatch.setattr(handle_all_dbs, "DATABASES", {"default": {}, "one": {}, "broken": {}})
+    monkeypatch.setattr(django_settings, "BACKUP_DIR", str(tmp_path))
+    monkeypatch.setattr(django_settings, "DATABASES", {"default": {}, "one": {}, "broken": {}})
     monkeypatch.setattr(handle_all_dbs, "register_all_project_dbs", list)
 
     def fake_dbbackup(*args):

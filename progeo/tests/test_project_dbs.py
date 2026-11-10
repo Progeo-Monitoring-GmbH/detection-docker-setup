@@ -10,6 +10,7 @@ import datetime
 from zoneinfo import ZoneInfo
 
 import pytest
+from django.conf import settings as django_settings
 from django.contrib.auth.models import User
 from django.db import DEFAULT_DB_ALIAS, connections
 from django.test import override_settings
@@ -652,8 +653,7 @@ def test_stats_land_on_every_location_of_the_project(project_dbs):
 
 @pytest.fixture
 def backups(tmp_path, monkeypatch):
-    monkeypatch.setattr(backup_viewset, "BACKUP_DIR", str(tmp_path))
-    monkeypatch.setattr("progeo.v1.models.BACKUP_DIR", str(tmp_path))
+    monkeypatch.setattr(django_settings, "BACKUP_DIR", str(tmp_path))
     account = Account.objects.using(f.DB).get(pk=1)  # the request's account (middleware)
     location = f.make_location(account, project_id=PROJECT, name="Halle Nord")
     names = [

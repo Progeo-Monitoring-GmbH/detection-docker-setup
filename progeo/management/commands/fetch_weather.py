@@ -1,7 +1,8 @@
-﻿from progeo.helper.basics import ilog, okaylog
+﻿from django.conf import settings
+
+from progeo.helper.basics import ilog, okaylog
 from progeo.helper.weather import WeatherHelper
 from progeo.management.commands._base import BaseCommand
-from progeo.settings import DATABASES
 from progeo.v1.models import ProgeoAlarm
 
 
@@ -31,7 +32,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        db_names = [options["db"]] if options.get("db") else list(DATABASES.keys())
+        db_names = [options["db"]] if options.get("db") else list(settings.DATABASES.keys())
         helper = WeatherHelper()
 
         total_checked = 0

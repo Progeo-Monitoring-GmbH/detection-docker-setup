@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 from asgiref.sync import async_to_sync
+from django.conf import settings as django_settings
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
@@ -435,14 +436,14 @@ def _fake_run(monkeypatch, lines, png=None, **outcome):
         for line in lines:
             on_line(line)
         if png is not None:
-            Path(cad_import.UPLOAD_DIR, cad_import.IMPORT_DIR, png_out).write_bytes(png)
+            Path(django_settings.UPLOAD_DIR, cad_import.IMPORT_DIR, png_out).write_bytes(png)
         return {"exit_code": 0, "stdout": "", "stderr": "", "oom_killed": False, "timed_out": False, **outcome}
 
     monkeypatch.setattr(docker_helper, "run_cad_factory", run)
 
 
 def test_upload_of_a_dxf_starts_a_job(api_client, location, tmp_path, monkeypatch):
-    monkeypatch.setattr(status_viewset, "UPLOAD_DIR", str(tmp_path))
+    monkeypatch.setattr(django_settings, "UPLOAD_DIR", str(tmp_path))
     queued = []
     monkeypatch.setattr(status_viewset.run_cad_import, "delay", queued.append)
     # Staff: the account lookup of other users also reads the demo database.
@@ -473,7 +474,7 @@ def test_upload_of_a_dxf_starts_a_job(api_client, location, tmp_path, monkeypatc
 
 
 def test_upload_of_a_pdf_starts_a_lageplan_job(api_client, location, tmp_path, monkeypatch):
-    monkeypatch.setattr(status_viewset, "UPLOAD_DIR", str(tmp_path))
+    monkeypatch.setattr(django_settings, "UPLOAD_DIR", str(tmp_path))
     queued = []
     monkeypatch.setattr(status_viewset.run_cad_import, "delay", queued.append)
     api_client.force_authenticate(user=f.make_user(staff=True))
@@ -496,10 +497,8 @@ def test_upload_of_a_pdf_starts_a_lageplan_job(api_client, location, tmp_path, m
 
 
 def test_lageplan_job_stores_the_rendered_plan(location, events, tmp_path, monkeypatch):
-    from progeo.v1 import creator
 
-    for module in (cad_import, creator):
-        monkeypatch.setattr(module, "UPLOAD_DIR", str(tmp_path))
+    monkeypatch.setattr(django_settings, "UPLOAD_DIR", str(tmp_path))
     (tmp_path / cad_import.IMPORT_DIR).mkdir()
     _fake_run(monkeypatch, ["[10:00:01 +0.9s 74 MB] Done: Lageplan from page 1 of 1"], png=b"\x89PNG plan")
     job_id = cad_import.create_job(
@@ -523,7 +522,7 @@ def test_lageplan_job_stores_the_rendered_plan(location, events, tmp_path, monke
 
 
 def test_lageplan_job_without_a_png_fails(location, events, tmp_path, monkeypatch):
-    monkeypatch.setattr(cad_import, "UPLOAD_DIR", str(tmp_path))
+    monkeypatch.setattr(django_settings, "UPLOAD_DIR", str(tmp_path))
     _fake_run(monkeypatch, [], stderr="[10:00:01 +0.9s 74 MB] Reading the PDF (0.2 MB)\n")
     job_id = cad_import.create_job(
         user_id=1, location_pk=location.pk, db_name=f.DB, cad_input="media/uploads/cad_imports/x.pdf",

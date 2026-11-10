@@ -1,9 +1,9 @@
 from django.apps import apps
+from django.conf import settings
 from django.core.management.base import CommandError
 from django.db import transaction
 
 from progeo.management.commands._base import BaseCommand
-from progeo.settings import DATABASES
 from progeo.v1.models import Account
 
 
@@ -32,7 +32,7 @@ def _connection_signature(alias):
     value as one of the DJANGO_DATABASES entries, "default" and that entry
     are literally the same database.
     """
-    cfg = DATABASES.get(alias)
+    cfg = settings.DATABASES.get(alias)
     if not cfg:
         return None
     return (cfg.get("HOST"), cfg.get("PORT"), cfg.get("NAME"), cfg.get("USER"))
@@ -129,7 +129,7 @@ class Command(BaseCommand):
 
         db_override = options.get("db")
         if db_override:
-            if db_override not in DATABASES:
+            if db_override not in settings.DATABASES:
                 raise CommandError(f"--db='{db_override}' is not a configured database alias")
             db_name = db_override
             self.stdout.write(self.style.WARNING(
@@ -159,7 +159,7 @@ class Command(BaseCommand):
                     f"or pass --db to force a specific alias if you know the db_name fields are wrong."
                 )
 
-        if db_name not in DATABASES:
+        if db_name not in settings.DATABASES:
             raise CommandError(f"db_name='{db_name}' is not a configured database alias")
 
         prefix = "[dry-run] " if dry_run else ""

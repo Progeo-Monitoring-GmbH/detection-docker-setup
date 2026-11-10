@@ -47,11 +47,6 @@ export default ({ mode }) => {
                 priority: 30,
               },
               {
-                name: 'vendor-mui',
-                test: /node_modules[\\/](@mui|@emotion)[\\/]/,
-                priority: 20,
-              },
-              {
                 name: 'vendor-i18n',
                 test: /node_modules[\\/](i18next|react-i18next|i18next-[^\\/]+)[\\/]/,
                 priority: 20,

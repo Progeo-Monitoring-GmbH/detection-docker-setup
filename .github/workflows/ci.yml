@@ -116,9 +116,9 @@ jobs:
       - name: Type check
         run: npx tsc --noEmit -p .
 
-      # 82 findings in the current code (React refs read during render,
-      # setState in effects, hook deps, missing braces): reported, not
-      # blocking, until they are fixed - then drop continue-on-error.
+      # 66 findings in the current code (setState in effects, refs read
+      # during render, hook deps, impure render): reported, not blocking,
+      # until they are fixed - then drop continue-on-error.
       - name: Lint (oxlint)
         continue-on-error: true
         run: npm run lint

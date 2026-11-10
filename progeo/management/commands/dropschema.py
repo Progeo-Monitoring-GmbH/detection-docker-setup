@@ -1,8 +1,8 @@
-﻿from django.db import connections
+﻿from django.conf import settings
+from django.db import connections
 
 from progeo.helper.basics import okaylog
 from progeo.management.commands._base import BaseCommand
-from progeo.settings import DATABASES
 
 
 class Command(BaseCommand):
@@ -15,7 +15,7 @@ class Command(BaseCommand):
     )
 
     def handle(self, *args, **options):
-        for db in DATABASES:
+        for db in settings.DATABASES:
             with connections[db].cursor() as cursor:
                 cursor.execute("DROP SCHEMA public CASCADE;")
                 cursor.execute("CREATE SCHEMA public;")

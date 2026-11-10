@@ -8,9 +8,9 @@ which reconfigures hostapd with the new credentials.
 import os
 import re
 
-from progeo.settings import SETUP_DIR
+from django.conf import settings
 
-CONTROLLER_WIFI_FILE = os.path.join(SETUP_DIR, "controller_wifi.env")
+CONTROLLER_WIFI_FILE = os.path.join(settings.SETUP_DIR, "controller_wifi.env")
 
 _LUA_WIFI_SECTION = re.compile(r"wifi\s*=\s*\{([\s\S]*?)\}", re.IGNORECASE)
 

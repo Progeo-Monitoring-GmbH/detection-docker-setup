@@ -9,9 +9,9 @@ import os
 import tarfile
 import time
 
-from progeo.settings import UPLOAD_DIR
+from django.conf import settings
 
-LAGEPLAN_DIR = os.path.join(UPLOAD_DIR, "lageplan")
+LAGEPLAN_DIR = os.path.join(settings.UPLOAD_DIR, "lageplan")
 # The window grows by this factor until it holds a Lageplan - up to the
 # newest one, however old.
 WIDEN_FACTOR = 2

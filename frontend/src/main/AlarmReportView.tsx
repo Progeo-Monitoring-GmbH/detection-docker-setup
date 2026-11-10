@@ -88,7 +88,7 @@ const formatCount = (value: number | null | undefined): string =>
   value == null ? '-' : String(value);
 
 const toMs = (iso?: string | null): number | null => {
-  if (!iso) return null;
+  if (!iso) {return null;}
   const ms = Date.parse(iso);
   return Number.isNaN(ms) ? null : ms;
 };
@@ -328,7 +328,7 @@ const AlarmReportView = () => {
 
   const fetchReport = useCallback(
     (date: string) => {
-      if (!date) return;
+      if (!date) {return;}
       setReportLoading(true);
       void axiosConfig.perform_get(
         auth,
@@ -355,7 +355,7 @@ const AlarmReportView = () => {
 
   const runCompare = useCallback(
     (dateA: string, dateB: string) => {
-      if (!dateA || !dateB) return;
+      if (!dateA || !dateB) {return;}
       setCompareLoading(true);
       void axiosConfig.perform_get(
         auth,
@@ -406,7 +406,7 @@ const AlarmReportView = () => {
   };
 
   const moveDate = (offset: number) => {
-    if (!selectedDate) return;
+    if (!selectedDate) {return;}
     const current = new Date(`${selectedDate}T00:00:00`);
     current.setDate(current.getDate() + offset);
     const iso = current.toISOString().slice(0, 10);
@@ -517,7 +517,7 @@ const AlarmReportView = () => {
                   onClick={(event) => {
                     const point = event?.points?.[0];
                     const date = point?.x as string | undefined;
-                    if (date) setSelectedDate(date);
+                    if (date) {setSelectedDate(date);}
                   }}
                 />
               )}
@@ -533,6 +533,7 @@ const AlarmReportView = () => {
                   size="sm"
                   onClick={() => moveDate(-1)}
                   title="Previous day"
+                  aria-label="Previous day"
                 >
                   <ArrowLeft />
                 </Button>
@@ -556,6 +557,7 @@ const AlarmReportView = () => {
                   size="sm"
                   onClick={() => moveDate(1)}
                   title="Next day"
+                  aria-label="Next day"
                 >
                   <ArrowRight />
                 </Button>

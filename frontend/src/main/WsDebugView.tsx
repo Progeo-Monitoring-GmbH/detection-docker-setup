@@ -114,7 +114,7 @@ function ContextPanel() {
   const prevMsg = useRef<unknown>(null);
 
   useEffect(() => {
-    if (!ctx) return;
+    if (!ctx) {return;}
     if (ctx.wsMessage !== prevMsg.current) {
       prevMsg.current = ctx.wsMessage;
       if (ctx.wsMessage !== null) {

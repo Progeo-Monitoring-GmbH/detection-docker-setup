@@ -1,4 +1,5 @@
-﻿from django.core.management.base import CommandError
+﻿from django.conf import settings
+from django.core.management.base import CommandError
 from django.db import DEFAULT_DB_ALIAS
 
 from progeo.helper.basics import dlog, elog, ilog
@@ -8,7 +9,6 @@ from progeo.helper.project_dbs import (
     register_demo_db,
 )
 from progeo.management.commands._base import BaseCommand
-from progeo.settings import DATABASES
 
 
 class Command(BaseCommand):
@@ -33,7 +33,7 @@ class Command(BaseCommand):
         # "default" alone first: everything else is read from its locations,
         # content types and permissions.
         results = list(migrate_databases([DEFAULT_DB_ALIAS], workers=1))
-        others = [db for db in DATABASES if db != DEFAULT_DB_ALIAS]
+        others = [db for db in settings.DATABASES if db != DEFAULT_DB_ALIAS]
         results += migrate_databases(others, workers=options["workers"])
 
         failed = []

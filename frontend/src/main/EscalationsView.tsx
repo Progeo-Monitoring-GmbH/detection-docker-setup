@@ -120,7 +120,7 @@ const EscalationsView = () => {
                 value={filter}
                 onChange={(value) => setFilter(value as StateFilter)}
               />
-              <Button size="sm" variant="link" onClick={loadList} title={t('escalation_refresh')}>
+              <Button size="sm" variant="link" onClick={loadList} title={t('escalation_refresh')} aria-label={t('escalation_refresh')}>
                 <ArrowRepeat />
               </Button>
             </div>

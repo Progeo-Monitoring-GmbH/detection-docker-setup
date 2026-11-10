@@ -24,9 +24,12 @@ const WebSocketProvider = ({ children, url }) => {
   const attemptsRef = useRef(0);
   const unmountedRef = useRef(false);
   const reconnectTimerRef = useRef(null);
+  // The reconnect timer calls the current connect() through this ref - the
+  // callback can't refer to itself while it is being created.
+  const connectRef = useRef(null);
 
   const connect = useCallback(() => {
-    if (unmountedRef.current) return;
+    if (unmountedRef.current) {return;}
 
     const ws = new WebSocket(fullUrl);
     wsRef.current = ws;
@@ -47,12 +50,12 @@ const WebSocketProvider = ({ children, url }) => {
 
     ws.onclose = () => {
       setReadyState(ReadyState.CLOSED);
-      if (unmountedRef.current) return;
+      if (unmountedRef.current) {return;}
       // A dropped socket is often the first sign of a backend restart.
       void checkBackend();
       if (attemptsRef.current < RECONNECT_ATTEMPTS) {
         attemptsRef.current += 1;
-        reconnectTimerRef.current = setTimeout(connect, RECONNECT_INTERVAL_MS);
+        reconnectTimerRef.current = setTimeout(() => connectRef.current?.(), RECONNECT_INTERVAL_MS);
       }
     };
 
@@ -61,6 +64,10 @@ const WebSocketProvider = ({ children, url }) => {
       setReadyState(ReadyState.CLOSED);
     };
   }, [fullUrl]);
+
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   useEffect(() => {
     connect();

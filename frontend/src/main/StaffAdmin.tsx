@@ -810,6 +810,7 @@ const StaffAdmin = () => {
               size="sm"
               variant="outline-primary"
               title={t('staff_edit_user')}
+              aria-label={t('staff_edit_user')}
               disabled={busyId === row.id}
               onClick={() => setEditUser(row)}
             >
@@ -819,6 +820,7 @@ const StaffAdmin = () => {
               size="sm"
               variant="outline-warning"
               title={`${t('staff_generate_new_password')} - ${t('staff_password_invite_hint')}`}
+              aria-label={`${t('staff_generate_new_password')} - ${t('staff_password_invite_hint')}`}
               disabled={busyId === row.id}
               onClick={() => handleGeneratePassword(row)}
             >
@@ -828,6 +830,11 @@ const StaffAdmin = () => {
               size="sm"
               variant="outline-secondary"
               title={
+                row.email
+                  ? t('staff_send_invite')
+                  : t('staff_send_invite_no_email')
+              }
+              aria-label={
                 row.email
                   ? t('staff_send_invite')
                   : t('staff_send_invite_no_email')
@@ -842,6 +849,7 @@ const StaffAdmin = () => {
                 size="sm"
                 variant="outline-secondary"
                 title={t('staff_reset_two_factor')}
+                aria-label={t('staff_reset_two_factor')}
                 disabled={busyId === row.id}
                 onClick={() => handleResetTwoFactor(row)}
               >
@@ -853,6 +861,7 @@ const StaffAdmin = () => {
                 size="sm"
                 variant="outline-dark"
                 title={t('staff_impersonate')}
+                aria-label={t('staff_impersonate')}
                 disabled={busyId === row.id}
                 onClick={() => handleImpersonate(row)}
               >
@@ -863,6 +872,7 @@ const StaffAdmin = () => {
               size="sm"
               variant="outline-danger"
               title={t('staff_delete_user')}
+              aria-label={t('staff_delete_user')}
               disabled={busyId === row.id}
               onClick={() => handleDelete(row)}
             >

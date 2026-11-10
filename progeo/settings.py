@@ -462,9 +462,9 @@ REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = os.getenv("REDIS_PORT", "6379")
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
 REDIS_AUTH = f":{REDIS_PASSWORD}@" if REDIS_PASSWORD else ""
-# Redis databases: 0 Celery (progeo/celery.py), 1 the Django cache, 2 the
-# channel layer - cache.clear() (manage.py clear_cache) is FLUSHDB and must
-# not drop the websocket groups.
+# Redis databases: 0 Celery broker, 1 the Django cache, 2 the channel layer,
+# 3 Celery results (progeo/celery.py). cache.clear() (manage.py clear_cache)
+# is FLUSHDB of database 1 and must drop nothing but cached answers.
 REDIS_URL = f"redis://{REDIS_AUTH}{REDIS_HOST}:{REDIS_PORT}/1"
 CHANNEL_LAYER_REDIS_URL = f"redis://{REDIS_AUTH}{REDIS_HOST}:{REDIS_PORT}/2"
 

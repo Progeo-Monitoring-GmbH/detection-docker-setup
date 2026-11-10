@@ -36,7 +36,9 @@ celery_instance.conf.update(
     task_soft_time_limit=3600,  # 60*60s = 1h
     task_acks_on_failure_or_timeout=True,
     result_extended=True,
-    result_backend=f"{_redis}/1",
+    # Own database: cache.clear() (FLUSHDB of the cache, database 1) would
+    # drop the results of tasks still running (settings.py: Redis databases).
+    result_backend=f"{_redis}/3",
     broker_url=f"{_redis}/0",
 )
 celery_instance.conf.beat_schedule = {

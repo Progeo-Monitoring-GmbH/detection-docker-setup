@@ -707,8 +707,9 @@ const AlarmTimeline = ({
                           {showLabel && (
                             <span className="alarm-timeline-bar-label">
                               {formatDuration((span.end - span.start) / 1000)}
-                              {span.alarm.max_value != null
-                                ? ` · ${span.alarm.max_value / span.alarm.threshold! >= 1.5 ? '🔥 ' : ''}${Math.round((span.alarm.max_value / span.alarm?.threshold!) * 100) / 100}x`
+                              {/* Without a threshold there is no ratio (it showed "NaNx" / "Infinityx"). */}
+                              {span.alarm.max_value != null && span.alarm.threshold
+                                ? ` · ${span.alarm.max_value / span.alarm.threshold >= 1.5 ? '🔥 ' : ''}${Math.round((span.alarm.max_value / span.alarm.threshold) * 100) / 100}x`
                                 : ''}
                             </span>
                           )}

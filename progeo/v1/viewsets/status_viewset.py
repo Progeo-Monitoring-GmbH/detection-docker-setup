@@ -8,6 +8,7 @@ from datetime import timedelta
 from itertools import pairwise
 from uuid import uuid4
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import OuterRef, Subquery
 from django.http import FileResponse, JsonResponse, RawPostDataException
@@ -62,7 +63,6 @@ from progeo.helper.project_dbs import (
     release_connection,
     split_enabled,
 )
-from progeo.settings import SETUP_DIR, UPLOAD_DIR
 from progeo.tasks import collect_host_storage_info, run_cad_import
 from progeo.v1.creator import create_progeo_measure_point_safe, save_lageplan_upload
 from progeo.v1.helper import dlog
@@ -226,7 +226,7 @@ class StatusViewSet(ProgeoModalViewSet):
     @staticmethod
     def _storage_info_path() -> str:
         """Get path to the latest storage_info.json file in date-based folders."""
-        setup_dir = SETUP_DIR
+        setup_dir = settings.SETUP_DIR
         if not os.path.isdir(setup_dir):
             return os.path.join(setup_dir, "latest", "storage_info.json")
         
@@ -530,7 +530,7 @@ class StatusViewSet(ProgeoModalViewSet):
     def _queue_cad_job(request, location, db_name, upload, suffix, **job_options):
         """Stores the upload in UPLOAD_DIR/cad_imports and queues a progeo-cad_factory
         job for it (helper/cad_import.py); the answer is {job_id}."""
-        import_dir = save_check_dir(UPLOAD_DIR, cad_import.IMPORT_DIR)
+        import_dir = save_check_dir(settings.UPLOAD_DIR, cad_import.IMPORT_DIR)
         target_name = f"{uuid4().hex}{suffix}"
         with open(os.path.join(import_dir, target_name), "wb") as handle:
             handle.writelines(upload.chunks())

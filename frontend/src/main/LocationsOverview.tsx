@@ -246,6 +246,7 @@ const LocationActions = ({
         size="sm"
         variant="outline-primary"
         title="Edit location"
+        aria-label="Edit location"
         onClick={(event) => {
           event.stopPropagation();
           onEdit(row);

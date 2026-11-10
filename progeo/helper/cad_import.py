@@ -31,11 +31,11 @@ from uuid import uuid4
 
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
+from django.conf import settings
 from django.core.cache import cache
 from django.utils import timezone
 
 from progeo.helper.basics import dlog, elog
-from progeo.settings import UPLOAD_DIR
 
 # Below UPLOAD_DIR: the uploaded plans and the PNGs rendered from PDFs.
 IMPORT_DIR = "cad_imports"
@@ -257,7 +257,7 @@ def run_job(job_id: str) -> None:
     _append_log(job, f"Starting progeo-cad_factory for {job['source_name']}")
     is_lageplan = job.get("kind") == "lageplan"
     png_name = f"{job_id}.png" if is_lageplan else None
-    png_path = os.path.join(UPLOAD_DIR, IMPORT_DIR, png_name) if png_name else None
+    png_path = os.path.join(settings.UPLOAD_DIR, IMPORT_DIR, png_name) if png_name else None
 
     def on_line(line: str) -> None:
         if line.strip() and not _is_points_output(line):

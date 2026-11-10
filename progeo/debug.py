@@ -1,10 +1,10 @@
-from progeo.settings import DEBUG
+from django.conf import settings
 
 
 def show_toolbar(request):
     if request.path.endswith("all/qrcodes/"):
         return False
-    return DEBUG
+    return settings.DEBUG
 
 
 def hide_toolbar(request):

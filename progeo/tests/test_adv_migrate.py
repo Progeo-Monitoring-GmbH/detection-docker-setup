@@ -4,6 +4,7 @@ database in parallel (forked processes, threads without fork), a full
 import threading
 
 import pytest
+from django.conf import settings as django_settings
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
@@ -30,7 +31,7 @@ def calls(monkeypatch):
             calls.append(db)
         return _fake_migrate_if_needed(db)
 
-    monkeypatch.setattr(adv_migrate, "DATABASES", DATABASES)
+    monkeypatch.setattr(django_settings, "DATABASES", DATABASES)
     monkeypatch.setattr(adv_migrate, "register_demo_db", lambda create: None)
     monkeypatch.setattr(adv_migrate, "register_all_project_dbs", lambda: None)
     monkeypatch.setattr(project_dbs, "migrate_if_needed", migrate_if_needed)

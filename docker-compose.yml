@@ -190,7 +190,6 @@ services:
     container_name: progeo-nginx
     environment:
       - ENABLE_SSL=${ENABLE_SSL:-false}
-      - NGINX_ALWAYS_TLS_REDIRECT="on"
       - DNS_FRONT_NAMES=${DNS_FRONT_NAMES}
       - DNS_BACK_NAMES=${DNS_BACK_NAMES}
       - MATRIX_DOMAIN=${MATRIX_DOMAIN:-}

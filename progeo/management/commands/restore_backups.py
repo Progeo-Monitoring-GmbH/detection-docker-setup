@@ -3,6 +3,7 @@ import time
 from contextlib import contextmanager
 
 import psycopg2
+from django.conf import settings
 from django.core.management.base import CommandError
 from django.db import DEFAULT_DB_ALIAS, connections
 from psycopg2 import sql
@@ -17,14 +18,13 @@ from progeo.helper.project_dbs import (
     register_project_db,
 )
 from progeo.management.commands._base import BaseCommand
-from progeo.settings import BACKUP_DIR
 
 # Never replaced: the test databases are recreated by recreate_test_db, not from dumps.
 PROTECTED_PREFIX = "unit_tests"
 DUMP_SUFFIXES = (".psql", ".psql.gz")
 
 
-def newest_dumps(backup_dir=BACKUP_DIR):
+def newest_dumps(backup_dir=settings.BACKUP_DIR):
     """{database: newest dump file name} of the dbbackup files in `backup_dir`
     ("<database>-<server>-<YYYY-MM-DD-HHMMSS>.psql[.gz]" - the name sorts by date)."""
     newest = {}
@@ -79,7 +79,7 @@ class Command(BaseCommand):
         )
         server = connections.settings[DEFAULT_DB_ALIAS]
 
-        self.stdout.write(f"Server {server['HOST'] or 'localhost'}:{server['PORT']} - backups in {BACKUP_DIR}")
+        self.stdout.write(f"Server {server['HOST'] or 'localhost'}:{server['PORT']} - backups in {settings.BACKUP_DIR}")
         if DEFAULT_DB_ALIAS not in restore and not options["databases"]:
             self.stdout.write(self.style.WARNING(
                 "  ! no dump of 'default' (users, accounts, locations) - it is kept as it is"
@@ -161,14 +161,14 @@ class Command(BaseCommand):
 
     @staticmethod
     def _size(dump):
-        return os.path.getsize(os.path.join(BACKUP_DIR, dump))
+        return os.path.getsize(os.path.join(settings.BACKUP_DIR, dump))
 
     def _restore(self, alias, dump):
         """psql the dump into the (new, empty) database; True if it worked."""
         name = self._name(alias)
         started = time.monotonic()
         try:
-            restore_file(alias, os.path.join(BACKUP_DIR, dump))
+            restore_file(alias, os.path.join(settings.BACKUP_DIR, dump))
             self.stdout.write(f"restored {name} <- {dump} in {time.monotonic() - started:.1f}s")
             return True
         except Exception as exc:  # noqa: BLE001 - one broken dump must not stop the others

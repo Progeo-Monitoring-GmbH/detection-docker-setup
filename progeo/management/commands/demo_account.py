@@ -5,6 +5,7 @@ import random
 import secrets
 import uuid
 
+from django.conf import settings
 from django.contrib.auth.models import Permission, User
 from django.core.files.storage import FileSystemStorage
 from django.core.management.base import CommandError
@@ -22,7 +23,6 @@ from progeo.helper.demo import (
 )
 from progeo.helper.project_dbs import demo_alias, is_project_alias, register_demo_db
 from progeo.management.commands._base import BaseCommand
-from progeo.settings import DEMO_DATABASE, UPLOAD_DIR
 from progeo.v1.models import (
     Account,
     LimitedToken,
@@ -36,7 +36,7 @@ from progeo.v1.models import (
     UserProfile,
 )
 
-DEFAULT_DB = DEMO_DATABASE
+DEFAULT_DB = settings.DEMO_DATABASE
 TOKEN_LIFETIME = datetime.timedelta(days=3650)
 
 HISTORY_DAYS = 90  # measurements of the last ~3 months, hourly, ending now
@@ -529,7 +529,7 @@ class Command(BaseCommand):
         ]
         ProgeoLocation.objects.using(db).filter(account_id=account.pk).delete()
         for name in files:
-            path = os.path.join(UPLOAD_DIR, name)
+            path = os.path.join(settings.UPLOAD_DIR, name)
             try:
                 if os.path.isfile(path):
                     os.remove(path)
@@ -976,9 +976,9 @@ class Command(BaseCommand):
         buffer = BytesIO()
         plan.image.save(buffer, format="PNG", optimize=True)
 
-        os.makedirs(os.path.join(UPLOAD_DIR, os.path.dirname(DEMO_LAGEPLAN_PREFIX_REL)), exist_ok=True)
+        os.makedirs(os.path.join(settings.UPLOAD_DIR, os.path.dirname(DEMO_LAGEPLAN_PREFIX_REL)), exist_ok=True)
         file_name = f"{spec['kind']}_{plan_spec['suffix']}.png" if plan_spec.get("suffix") else f"{spec['kind']}.png"
-        stored = FileSystemStorage(location=UPLOAD_DIR).save(
+        stored = FileSystemStorage(location=settings.UPLOAD_DIR).save(
             f"{DEMO_LAGEPLAN_PREFIX_REL}{file_name}", ContentFile(buffer.getvalue(), name=file_name)
         )
         heat_limitations = [

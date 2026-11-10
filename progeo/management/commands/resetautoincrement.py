@@ -1,11 +1,11 @@
 ﻿from django.apps import apps
+from django.conf import settings
 from django.core.exceptions import FieldError
 from django.db import ProgrammingError, connections
 
 from progeo.helper.basics import dlog, elog, okaylog
 from progeo.management.commands._base import BaseCommand
 from progeo.sets import DJANGO_MODELS
-from progeo.settings import DATABASES
 
 
 class Command(BaseCommand):
@@ -19,7 +19,7 @@ class Command(BaseCommand):
     @staticmethod
     def handle_model(_models_list):
         _models = list(_models_list)
-        for db in DATABASES:
+        for db in settings.DATABASES:
             dlog(f"db={db: <20} | models={_models}")
             for _model in _models:
                 if not _model:

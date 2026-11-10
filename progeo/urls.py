@@ -23,7 +23,7 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView,
 )
 
-from progeo import settings, views
+from progeo import views
 from progeo.routers import CustomRouter
 from progeo.v1.legacy.gprs import gprs_php
 from progeo.v1.viewsets.access_viewset import (
@@ -111,7 +111,7 @@ urlpatterns = [
     re_path(r"^auth/monitoring/$", views.monitoring_auth_view, name="monitoring_auth"),
 
     re_path(r"^media/(?P<path>.*)$", AuthenticatedMediaView.as_view(), name="authenticated-media"),
-    re_path(r"^static/(?P<path>.*)$", serve, {"document_root": settings.STATIC_ROOT}),
+    re_path(r"^static/(?P<path>.*)$", serve, {"document_root": django_settings.STATIC_ROOT}),
     re_path(r"^favicon.ico", empty_favicon),
 
     # Legacy GPRS controllers: the old PHP endpoint of data-progeo.net (see

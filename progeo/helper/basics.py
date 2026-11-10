@@ -221,8 +221,8 @@ def clear_dir(_dir):
 
 
 def build_abs_path(path_list: list) -> str:
-    from progeo.settings import MEDIA_ROOT
-    abs_path = os.path.abspath(MEDIA_ROOT)
+    from django.conf import settings
+    abs_path = os.path.abspath(settings.MEDIA_ROOT)
     return os.path.join(abs_path, *path_list)
 
 
@@ -305,7 +305,7 @@ def get_pdf_attachments(account, ids: list):
 
 
 def get_attachments(account, ids: list, regex=None):
-    from progeo.settings import BASE_DIR
+    from django.conf import settings
     _path = build_abs_path(["pdf-factory", "target", str(account)])
     files = _get_files_from_path(_path, regex)
     dlog("Raw ATTACHMENT-FILES:", files, ids)
@@ -319,7 +319,7 @@ def get_attachments(account, ids: list, regex=None):
         success = True
         for _id in ids:
 
-            attachment_path = os.path.join(BASE_DIR, f"{attachment}-{_id:04d}.pdf")
+            attachment_path = os.path.join(settings.BASE_DIR, f"{attachment}-{_id:04d}.pdf")
             if not os.path.exists(attachment_path):
                 elog(f"attachment_path='{attachment_path}' for id={_id:04d}", tag="[MISSING]")
                 success = False

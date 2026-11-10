@@ -26,7 +26,7 @@ export const defaultErrorCallback = (error) => {
 };
 
 const normalizeBackendUrl = (rawUrl?: string) => {
-  if (!rawUrl) return rawUrl;
+  if (!rawUrl) {return rawUrl;}
   if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
     return rawUrl.replace(/^http:\/\//i, 'https://');
   }

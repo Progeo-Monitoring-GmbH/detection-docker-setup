@@ -1,4 +1,4 @@
-import { LinearProgress } from '@mui/material';
+import { ProgressBar } from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
 import { type ComponentProps, useEffect, useRef } from 'react';
 import { showErrorBar, showSuccessBar } from '../ui/Snackbar.jsx';
@@ -69,7 +69,8 @@ const CadUploadDropbox = ({ callBackProcessing = () => {}, ...props }: Props) =>
             {STATUS_TEXT[job.status]}
             {job.source_name ? ` - ${job.source_name}` : ''}
           </div>
-          {running && <LinearProgress style={{ height: 4, borderRadius: 2, marginBottom: 4 }} />}
+          {/* Indeterminate: the import reports no percentage. */}
+          {running && <ProgressBar animated striped now={100} style={{ height: 4, marginBottom: 4 }} />}
           <pre
             ref={logRef}
             style={{

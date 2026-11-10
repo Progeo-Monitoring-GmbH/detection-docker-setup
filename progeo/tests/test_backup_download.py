@@ -2,6 +2,7 @@
 import os
 
 import pytest
+from django.conf import settings as django_settings
 from django.core import signing
 
 from progeo.tests import factories as f
@@ -12,8 +13,7 @@ from progeo.v1.viewsets import backup_viewset
 @pytest.fixture
 def backup_file(tmp_path, monkeypatch):
     """A real dump file in an isolated BACKUP_DIR plus its Backup row."""
-    monkeypatch.setattr(backup_viewset, "BACKUP_DIR", str(tmp_path))
-    monkeypatch.setattr("progeo.v1.models.BACKUP_DIR", str(tmp_path))
+    monkeypatch.setattr(django_settings, "BACKUP_DIR", str(tmp_path))
     name = "default-test-2026-01-01.psql.gz"
     (tmp_path / name).write_bytes(b"dump-bytes")
     account = f.Account.objects.using(f.DB).get(pk=1)  # the request's account (middleware)

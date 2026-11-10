@@ -287,7 +287,12 @@ class LocationSerializer(ProgeoBaseSerializer):
                 lageplans = obj.lageplans.order_by(*LAGEPLAN_ORDER)
             data = ProgeoLageplanSerializer(lageplans, many=True).data
             return data if data else None
-        except Exception:  # noqa: BLE001 - a broken Lageplan must not break the location
+        except Exception as exc:  # noqa: BLE001 - a broken Lageplan must not break the location
+            # ...but must not vanish without a trace either: the location
+            # then simply shows no plan.
+            from progeo.helper.basics import elog
+
+            elog(f"Lageplans of location {obj.pk} could not be serialized: {exc!r}", tag="[LAGEPLAN]")
             return None
 
     @staticmethod

@@ -399,6 +399,7 @@ const StaffMessaging = () => {
                       size="sm"
                       variant="outline-danger"
                       title={t('staff_messaging_suppression_delete')}
+                      aria-label={t('staff_messaging_suppression_delete')}
                       disabled={busy}
                       onClick={() => deleteSuppression(suppression)}
                     >

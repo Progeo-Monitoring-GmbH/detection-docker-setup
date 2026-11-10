@@ -1,10 +1,10 @@
 import os
 from datetime import datetime
 
+from django.conf import settings
 from docker.errors import DockerException, NotFound
 
 import docker
-from progeo.settings import BASE_DIR
 
 _TAIL_BLOCK = 64 * 1024
 
@@ -12,7 +12,7 @@ _TAIL_BLOCK = 64 * 1024
 def allowed_log_roots() -> dict[str, str]:
     return {
         "progeo": os.path.join("/var", "log", "progeo"),
-        "workspace": os.path.join(BASE_DIR, "logs", "backend"),
+        "workspace": os.path.join(settings.BASE_DIR, "logs", "backend"),
     }
 
 

@@ -1,6 +1,7 @@
 import datetime
 import json
 
+from django.conf import settings
 from django.http import HttpResponse
 from rest_framework import viewsets
 from rest_framework.authentication import SessionAuthentication
@@ -11,7 +12,6 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from progeo.authentication import ExpiringTokenAuthentication
 from progeo.helper.basics import RequestFailed, RequestSuccess, elog
 from progeo.helper.project_dbs import release_connection
-from progeo.settings import DATABASES
 from progeo.v1.models import (
     SMS,
     AlarmDailyReport,
@@ -129,11 +129,11 @@ class DataTransferViewSet(viewsets.ViewSet):
 
         db_param = request.query_params.get("db")
         if db_param:
-            if db_param not in DATABASES:
+            if db_param not in settings.DATABASES:
                 return RequestFailed({"reason": f"db='{db_param}' is not a configured database alias"})
             db_names = [db_param]
         else:
-            db_names = list(DATABASES.keys())
+            db_names = list(settings.DATABASES.keys())
 
         rows = []
         for model_name in requested:
@@ -162,7 +162,7 @@ class DataTransferViewSet(viewsets.ViewSet):
             return RequestFailed({"reason": "Staff access required"})
 
         db_name = request.query_params.get("db") or "default"
-        if db_name not in DATABASES:
+        if db_name not in settings.DATABASES:
             return RequestFailed({"reason": f"db='{db_name}' is not a configured database alias"})
 
         payload = request.data

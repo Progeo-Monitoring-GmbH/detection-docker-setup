@@ -11,6 +11,7 @@ import {
 import { ArrowLeft, Bell, Building, Geo } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
 import { useNavigate, useParams } from 'react-router';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
 import { showRequestError } from '../components/ui/Snackbar.jsx';
@@ -42,10 +43,11 @@ type LocationDetail = {
 
 const TICK_MS = 30_000;
 
-const STATUS_LABELS: Record<number, { label: string; variant: string }> = {
-  0: { label: 'Neu', variant: 'warning' },
-  1: { label: 'Quittiert', variant: 'secondary' },
-  2: { label: 'Stoerung', variant: 'danger' },
+// ProgeoAlarm.Status -> i18n key and badge colour.
+const STATUS_LABELS: Record<number, { labelKey: string; variant: string }> = {
+  0: { labelKey: 'alarm_status_new', variant: 'warning' },
+  1: { labelKey: 'alarm_status_acknowledged', variant: 'secondary' },
+  2: { labelKey: 'alarm_status_fault', variant: 'danger' },
 };
 
 type LocationAlarmDetailProps = {
@@ -66,6 +68,7 @@ const LocationAlarmDetail = ({
   const navigate = useNavigate();
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
+  const { t } = useTranslation();
 
   const [location, setLocation] = useState<LocationDetail | null>(null);
   const [alarms, setAlarms] = useState<TimelineAlarm[]>([]);
@@ -106,10 +109,10 @@ const LocationAlarmDetail = ({
         setLocation((response?.data || null) as LocationDetail | null);
       },
       (error) => {
-        showRequestError(enqueueSnackbar, 'Could not load location', error);
+        showRequestError(enqueueSnackbar, t('alarm_detail_load_location_failed'), error);
       },
     );
-  }, [auth, enqueueSnackbar, id, preloaded]);
+  }, [auth, enqueueSnackbar, id, preloaded, t]);
 
   const loadAlarms = useCallback(() => {
     if (!id) {
@@ -124,11 +127,11 @@ const LocationAlarmDetail = ({
         setLoading(false);
       },
       (error) => {
-        showRequestError(enqueueSnackbar, 'Could not load alarms', error);
+        showRequestError(enqueueSnackbar, t('alarm_detail_load_alarms_failed'), error);
         setLoading(false);
       },
     );
-  }, [auth, enqueueSnackbar, id]);
+  }, [auth, enqueueSnackbar, id, t]);
 
   useEffect(() => {
     setSelectedAlarm(null);
@@ -156,7 +159,7 @@ const LocationAlarmDetail = ({
 
   const locationLabel = location?.name
     ? `${location.name}${location.project_id != null ? ` (${location.project_id})` : ''}`
-    : `Location ${id}`;
+    : t('alarm_detail_location_fallback', { id });
 
   return (
     <Container fluid className="py-4">
@@ -167,7 +170,7 @@ const LocationAlarmDetail = ({
             {locationLabel}
           </h2>
           <small className="text-muted">
-            {alarms.length} alarm(s) for this location
+            {t('alarm_detail_count', { count: alarms.length })}
           </small>
         </div>
         <Button
@@ -175,7 +178,7 @@ const LocationAlarmDetail = ({
           onClick={() => navigate('/location/overview/')}
         >
           <ArrowLeft className="me-2" />
-          Back to Locations
+          {t('alarm_detail_back')}
         </Button>
       </div>
 
@@ -185,16 +188,16 @@ const LocationAlarmDetail = ({
           <div className="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
             <h5 className="mb-0">
               <Bell className="me-2 text-danger" />
-              Alarm Timeline
+              {t('alarm_detail_timeline')}
             </h5>
             <small className="text-muted">
-              Select an alarm bar to show its details
+              {t('alarm_detail_timeline_hint')}
             </small>
           </div>
           {loading ? (
             <div className="d-flex align-items-center gap-2 text-muted py-5 justify-content-center">
               <Spinner size="sm" animation="border" />
-              Loading alarms...
+              {t('alarm_detail_loading')}
             </div>
           ) : (
             <AlarmTimeline
@@ -215,31 +218,31 @@ const LocationAlarmDetail = ({
         <Card.Body>
           <h5 className="mb-3">
             <Building className="me-2 text-primary" />
-            Alarm & Location Details
+            {t('alarm_detail_title')}
           </h5>
           <Row className="g-4">
             <Col md={6}>
-              <h6 className="text-muted text-uppercase small mb-2">Location</h6>
+              <h6 className="text-muted text-uppercase small mb-2">{t('alarm_detail_location')}</h6>
               <dl className="row mb-0">
-                <dt className="col-sm-4">Name</dt>
+                <dt className="col-sm-4">{t('objekt_field_project_name')}</dt>
                 <dd className="col-sm-8">{location?.name || '-'}</dd>
-                <dt className="col-sm-4">Project</dt>
+                <dt className="col-sm-4">{t('objekt_field_project_nr')}</dt>
                 <dd className="col-sm-8">{location?.project_id ?? '-'}</dd>
-                <dt className="col-sm-4">Address</dt>
+                <dt className="col-sm-4">{t('alarm_field_address')}</dt>
                 <dd className="col-sm-8">
                   {[location?.address, location?.plz, location?.city]
                     .filter(Boolean)
                     .join(', ') || '-'}
                 </dd>
-                <dt className="col-sm-4">Manager</dt>
+                <dt className="col-sm-4">{t('objekt_field_manager')}</dt>
                 <dd className="col-sm-8">{location?.manager || '-'}</dd>
-                <dt className="col-sm-4">Mail</dt>
+                <dt className="col-sm-4">{t('objekt_field_email')}</dt>
                 <dd className="col-sm-8">{location?.mail || '-'}</dd>
-                <dt className="col-sm-4">Phone</dt>
+                <dt className="col-sm-4">{t('objekt_field_phone')}</dt>
                 <dd className="col-sm-8">{location?.telefon || '-'}</dd>
-                <dt className="col-sm-4">Alarm Threshold</dt>
+                <dt className="col-sm-4">{t('objekt_field_alarm_threshold')}</dt>
                 <dd className="col-sm-8">{location?.alarm_threshold ?? '-'}</dd>
-                <dt className="col-sm-4">Coordinates</dt>
+                <dt className="col-sm-4">{t('alarm_field_coordinates')}</dt>
                 <dd className="col-sm-8">
                   {location?.latitude != null && location?.longitude != null
                     ? `${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}`
@@ -249,22 +252,22 @@ const LocationAlarmDetail = ({
             </Col>
 
             <Col md={6}>
-              <h6 className="text-muted text-uppercase small mb-2">Alarm</h6>
+              <h6 className="text-muted text-uppercase small mb-2">{t('alarm_detail_alarm')}</h6>
               {!selectedAlarm ? (
                 <div className="text-muted">
-                  Select an alarm to see its details.
+                  {t('alarm_detail_select_hint')}
                 </div>
               ) : (
                 <dl className="row mb-0">
-                  <dt className="col-sm-4">Alarm ID</dt>
+                  <dt className="col-sm-4">{t('alarm_field_alarm_id')}</dt>
                   <dd className="col-sm-8">#{selectedAlarm.id}</dd>
-                  <dt className="col-sm-4">Device</dt>
+                  <dt className="col-sm-4">{t('alarm_field_device')}</dt>
                   <dd className="col-sm-8">
                     {selectedAlarm.device?.display_name ||
                       selectedAlarm.device?.raw_hash ||
                       '-'}
                   </dd>
-                  <dt className="col-sm-4">Sensors</dt>
+                  <dt className="col-sm-4">{t('alarm_field_sensors')}</dt>
                   <dd className="col-sm-8">
                     {(() => {
                       const pairs = Array.isArray(
@@ -287,33 +290,33 @@ const LocationAlarmDetail = ({
                         .join(', ');
                     })()}
                   </dd>
-                  <dt className="col-sm-4">Threshold</dt>
+                  <dt className="col-sm-4">{t('alarm_field_threshold')}</dt>
                   <dd className="col-sm-8">{selectedAlarm.threshold ?? '-'}</dd>
-                  <dt className="col-sm-4">Max Value</dt>
+                  <dt className="col-sm-4">{t('alarm_field_max_value')}</dt>
                   <dd className="col-sm-8">{selectedAlarm.max_value ?? '-'}</dd>
-                  <dt className="col-sm-4">Triggered</dt>
+                  <dt className="col-sm-4">{t('alarm_field_triggered')}</dt>
                   <dd className="col-sm-8">
                     {selectedAlarm.triggered_at
                       ? formatDate(alarmStartTime(selectedAlarm))
                       : '-'}
                   </dd>
-                  <dt className="col-sm-4">Normalized</dt>
+                  <dt className="col-sm-4">{t('alarm_field_normalized')}</dt>
                   <dd className="col-sm-8">
                     {selectedAlarm.normalized_at
                       ? formatDate(selectedAlarm.normalized_at)
                       : '-'}
                   </dd>
-                  <dt className="col-sm-4">Active For</dt>
+                  <dt className="col-sm-4">{t('alarm_field_active_for')}</dt>
                   <dd className="col-sm-8">
                     {formatDuration(alarmDuration(selectedAlarm))}
                   </dd>
-                  <dt className="col-sm-4">Status</dt>
+                  <dt className="col-sm-4">{t('alarm_field_status')}</dt>
                   <dd className="col-sm-8">
                     <div className="d-flex align-items-center gap-2">
                       <Badge
                         bg={isAlarmActive(selectedAlarm) ? 'danger' : 'success'}
                       >
-                        {isAlarmActive(selectedAlarm) ? 'ACTIVE' : 'NORMALIZED'}
+                        {isAlarmActive(selectedAlarm) ? t('alarm_state_active') : t('alarm_state_normalized')}
                       </Badge>
                       <Badge
                         bg={
@@ -323,22 +326,22 @@ const LocationAlarmDetail = ({
                           ).variant
                         }
                       >
-                        {
+                        {t(
                           (
                             STATUS_LABELS[selectedAlarm.status ?? 0] ||
                             STATUS_LABELS[0]
-                          ).label
-                        }
+                          ).labelKey,
+                        )}
                       </Badge>
                     </div>
                   </dd>
                   {selectedAlarm.status === 1 && (
                     <>
-                      <dt className="col-sm-4">Acknowledged By</dt>
+                      <dt className="col-sm-4">{t('alarm_field_acknowledged_by')}</dt>
                       <dd className="col-sm-8">
-                        {selectedAlarm.evaluated_by?.username || 'unknown'}
+                        {selectedAlarm.evaluated_by?.username || t('alarm_unknown_user')}
                       </dd>
-                      <dt className="col-sm-4">Acknowledged At</dt>
+                      <dt className="col-sm-4">{t('alarm_field_acknowledged_at')}</dt>
                       <dd className="col-sm-8">
                         {selectedAlarm.evaluated_at
                           ? formatDate(selectedAlarm.evaluated_at)

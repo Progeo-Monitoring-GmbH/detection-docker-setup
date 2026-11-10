@@ -1,6 +1,5 @@
-import { LinearProgress } from '@mui/material';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Col, Form, Row } from 'react-bootstrap';
+import { Col, Form, ProgressBar, Row } from 'react-bootstrap';
 import axiosConfig, { defaultErrorCallback } from '../../axiosConfig';
 import { useDropzone, type Accept } from 'react-dropzone';
 import { IPreview, Thumbnail } from '../ui/GalleryHelper.tsx';
@@ -317,12 +316,7 @@ const RedDropbox = ({
           </div>
           {/* Only while a file is on its way - no empty bar under the box. */}
           {progress > 0 && (
-            <LinearProgress
-              style={{ height: 6, borderRadius: 3, marginTop: 6 }}
-              variant="determinate"
-              value={progress}
-              color={'success'}
-            />
+            <ProgressBar now={progress} variant="success" style={{ height: 6, marginTop: 6 }} />
           )}
         </Col>
       </Row>
@@ -334,6 +328,7 @@ const RedDropbox = ({
               previews.length > 0 &&
               previews.map((preview: IPreview, i) => (
                 <Thumbnail
+                  key={`${i}-${preview.src}`}
                   src={preview.src}
                   width={'250px'}
                   alt={`preview-${i}`}

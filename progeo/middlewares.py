@@ -1,9 +1,9 @@
+from django.conf import settings
 from django.db import DEFAULT_DB_ALIAS, connections
 from django.utils.functional import SimpleLazyObject
 
 from progeo.decorator import calc_runtime
 from progeo.helper.basics import dlog
-from progeo.settings import DEBUG
 from progeo.v1.models import Account
 
 ADMIN_DB_SESSION_KEY = "admin_db"
@@ -39,7 +39,7 @@ class AdminGetParamMiddleware:
     def __call__(self, request):
         if request.path.startswith("/aadmin/"):
             request.using_db = self._admin_db(request)
-            dlog(f"AdminGetParamMiddleware using_db={request.using_db}", tag="[MIDDLE]", active=DEBUG)
+            dlog(f"AdminGetParamMiddleware using_db={request.using_db}", tag="[MIDDLE]", active=settings.DEBUG)
         return self.get_response(request)
 
     @staticmethod

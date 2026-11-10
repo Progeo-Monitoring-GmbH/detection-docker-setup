@@ -104,6 +104,9 @@ BOUNCE_IMAP_PASSWORD = ""
 BOUNCE_IMAP_FOLDER = "INBOX"
 BOUNCE_IMAP_PROCESSED_FOLDER = "progeo-bounces"
 PROGEO_CONFIG_ENABLE_MAILING = False
+# Read through django.conf.settings (scan_devices) - production's defaults.
+PROGEO_CONFIG_ENABLE_MEASUREMENTS = False
+PROGEO_CONFIG_HAS_ROOT_SERVER = ""
 
 # Application definition
 INSTALLED_APPS = [
@@ -368,6 +371,9 @@ EXPORT_DIR = os.path.join(MEDIA_ROOT, os.getenv("EXPORT_DIR", "export"))
 # Tests point it at tmp_path (test_firmware_upload.py).
 FIRMWARE_DIR = os.path.join(MEDIA_ROOT, "firmware")
 FIRMWARE_UPLOAD_TOKEN = ""
+# Read through django.conf.settings (base_viewsets, handle_all_dbs) - production's defaults.
+MEDIA_X_ACCEL = ""
+DBBACKUP_CLEANUP_KEEP = 10
 
 dyn_backups = {}
 for db in DJANGO_DATABASES:

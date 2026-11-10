@@ -23,7 +23,7 @@ SECRET = "client-secret-for-tests"
 @pytest.fixture(autouse=True)
 def no_debug_toolbar(monkeypatch):
     """With DEBUG the toolbar's redirect panel replaces every 302 by a page."""
-    monkeypatch.setattr("progeo.debug.DEBUG", False)
+    monkeypatch.setattr("progeo.debug.show_toolbar", lambda request: False)
 
 
 @pytest.fixture

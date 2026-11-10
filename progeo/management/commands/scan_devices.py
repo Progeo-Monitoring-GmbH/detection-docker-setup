@@ -2,16 +2,13 @@
 from typing import Any
 
 import requests
+from django.conf import settings
 from django.core.management.base import CommandError
 from django.utils import timezone
 
 from progeo.helper.alarm_evaluation import evaluate_measurement_instantly
 from progeo.helper.basics import dlog, elog, ilog
 from progeo.management.commands._base import BaseCommand
-from progeo.settings import (
-    PROGEO_CONFIG_ENABLE_MEASUREMENTS,
-    PROGEO_CONFIG_HAS_ROOT_SERVER,
-)
 from progeo.v1.creator import create_progeo_measurement_safe
 from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurement
 from progeo.v1.serializers import ProgeoMeasurementSerializer
@@ -80,7 +77,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
 
-        if not PROGEO_CONFIG_ENABLE_MEASUREMENTS:
+        if not settings.PROGEO_CONFIG_ENABLE_MEASUREMENTS:
             ilog("by PROGEO_CONFIG_ENABLE_MEASUREMENTS", tag="[DISABLED]")
             return
         
@@ -177,14 +174,14 @@ class Command(BaseCommand):
             measurement.save()
             evaluate_measurement_instantly(measurement, account.db_name)
 
-            if PROGEO_CONFIG_HAS_ROOT_SERVER:
+            if settings.PROGEO_CONFIG_HAS_ROOT_SERVER:
                 try:
                     root_response = requests.post(
-                        f"{PROGEO_CONFIG_HAS_ROOT_SERVER}/api/v1/device/forward/measurement/",
+                        f"{settings.PROGEO_CONFIG_HAS_ROOT_SERVER}/api/v1/device/forward/measurement/",
                         json={"data": ProgeoMeasurementSerializer(measurement).data},
                     )
                     if root_response.ok:
-                        ilog(f"Forwarded measurement {measurement.pk} to root server {PROGEO_CONFIG_HAS_ROOT_SERVER} ({status})")
+                        ilog(f"Forwarded measurement {measurement.pk} to root server {settings.PROGEO_CONFIG_HAS_ROOT_SERVER} ({status})")
                     else:
                         elog(
                             f"Root server rejected forwarded measurement {measurement.pk}: "

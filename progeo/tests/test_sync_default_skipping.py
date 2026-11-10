@@ -1,6 +1,7 @@
 """sync_default only mirrors the tables of the project databases that differ
 from "default" (progeo/management/commands/sync_default.py)."""
 import pytest
+from django.conf import settings as django_settings
 from django.contrib.auth.models import User
 from django.core.management import call_command
 from django.core.management.base import CommandError
@@ -27,7 +28,7 @@ def world(monkeypatch):
             raise DatabaseError("unreachable")
         state["mirrored"][alias] = models
 
-    monkeypatch.setattr(sync_default, "DJANGO_DATABASES", ["default"])
+    monkeypatch.setattr(django_settings, "DJANGO_DATABASES", ["default"])
     monkeypatch.setattr(sync_default, "register_all_project_dbs", lambda: list(state["aliases"]))
     monkeypatch.setattr(sync_default, "project_key_from_alias", lambda alias: alias)
     monkeypatch.setattr(sync_default, "expected_mirrors", expected)

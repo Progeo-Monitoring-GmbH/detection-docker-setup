@@ -4,8 +4,8 @@ spot the legacy heatmap drew them."""
 import json
 
 import pytest
+from django.conf import settings as django_settings
 
-from progeo.management.commands import patch_live
 from progeo.management.commands.patch_live import (
     DEFAULT_KOORDSYS,
     _koord_position,
@@ -80,7 +80,7 @@ def test_position_on_a_larger_plan_stays_where_the_legacy_frame_put_it():
 
 @pytest.mark.django_db
 def test_koords_to_points_creates_and_completes(tmp_path, monkeypatch):
-    monkeypatch.setattr(patch_live, "SETUP_DIR", str(tmp_path))
+    monkeypatch.setattr(django_settings, "SETUP_DIR", str(tmp_path))
     (tmp_path / "koords").mkdir()
     rows = [
         koord(1, 201, 282, line=2, index=5),
@@ -124,7 +124,7 @@ def test_koords_to_points_creates_and_completes(tmp_path, monkeypatch):
 @pytest.mark.django_db
 def test_rerun_moves_points_of_an_earlier_run_to_the_koordsys(tmp_path, monkeypatch):
     # Project 8097: UTM koords, imported first without its koordsys.txt (default -> far off the plan)
-    monkeypatch.setattr(patch_live, "SETUP_DIR", str(tmp_path))
+    monkeypatch.setattr(django_settings, "SETUP_DIR", str(tmp_path))
     (tmp_path / "koords").mkdir()
     (tmp_path / "koords" / f"{PROJECT}.json").write_text(
         json.dumps([koord(1, 613182, 4381460), koord(2, 0.5, 0.5)]), encoding="utf-8",

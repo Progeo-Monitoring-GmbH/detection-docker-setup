@@ -1,6 +1,8 @@
 import { Button } from 'react-bootstrap';
 import { ArrowRightCircle } from 'react-bootstrap-icons';
 import { useNavigate } from 'react-router';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import {
   alarmHeatColor,
   alarmPeakValue,
@@ -44,12 +46,12 @@ const sensorsText = (sensors: ReturnType<typeof alarmSensors>) =>
     : null;
 
 /** Who acknowledged the alarm, and when; null while it isn't. */
-const acknowledgedText = (alarm: TimelineAlarm) => {
+const acknowledgedText = (alarm: TimelineAlarm, t: TFunction) => {
   if (alarm.status !== 1) {
     return null;
   }
   const at = parseTimestamp(alarm.evaluated_at);
-  return `${alarm.evaluated_by?.username || 'unknown'}${at != null ? ` · ${formatClock(at)}` : ''}`;
+  return `${alarm.evaluated_by?.username || t('alarm_unknown_user')}${at != null ? ` · ${formatClock(at)}` : ''}`;
 };
 
 const AlarmTooltip = ({
@@ -65,6 +67,7 @@ const AlarmTooltip = ({
   onMouseLeave,
 }: AlarmTooltipProps) => {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const active = isAlarmActive(alarm);
   const locationId = alarm.location?.id ?? alarm.location?.project_id ?? null;
 
@@ -83,10 +86,10 @@ const AlarmTooltip = ({
       fallbackWidth={260}
       dotColor={alarmHeatColor(alarm)}
       dotBorderColor={active ? '#dc3545' : '#198754'}
-      title={`Alarm #${alarm.id}`}
+      title={t('alarm_tooltip_title', { id: alarm.id })}
       headExtra={
         <span className={['badge', active ? 'text-bg-danger' : 'text-bg-success'].join(' ')}>
-          {active ? 'Still active' : 'Normalized'}
+          {active ? t('alarm_tooltip_still_active') : t('alarm_tooltip_normalized')}
         </span>
       }
       footer={
@@ -94,7 +97,7 @@ const AlarmTooltip = ({
           <div className="alarm-tooltip-actions">
             <Button size="sm" variant="primary" onClick={openDetails} className="w-100">
               <ArrowRightCircle className="me-1" />
-              Open alarm details
+              {t('alarm_tooltip_open_details')}
             </Button>
           </div>
         )
@@ -102,20 +105,22 @@ const AlarmTooltip = ({
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
-      <OptionalRow label="Location">{alarm.location?.name}</OptionalRow>
-      <OptionalRow label="Device">{alarm.device?.display_name || alarm.device?.raw_hash}</OptionalRow>
-      <OptionalRow label="Sensors">{sensorsText(alarmSensors(alarm))}</OptionalRow>
-      <OptionalRow label="Max value">{alarmPeakValue(alarm)}</OptionalRow>
-      <TooltipRow label="Triggered">{formatClock(start)}</TooltipRow>
-      <TooltipRow label={active ? 'Running for' : 'Active for'}>
+      <OptionalRow label={t('alarm_detail_location')}>{alarm.location?.name}</OptionalRow>
+      <OptionalRow label={t('alarm_field_device')}>{alarm.device?.display_name || alarm.device?.raw_hash}</OptionalRow>
+      <OptionalRow label={t('alarm_field_sensors')}>{sensorsText(alarmSensors(alarm))}</OptionalRow>
+      <OptionalRow label={t('alarm_field_max_value')}>{alarmPeakValue(alarm)}</OptionalRow>
+      <TooltipRow label={t('alarm_field_triggered')}>{formatClock(start)}</TooltipRow>
+      <TooltipRow label={active ? t('alarm_tooltip_running_for') : t('alarm_field_active_for')}>
         {formatDuration((end - start) / 1000)}
       </TooltipRow>
       {active ? (
-        <TooltipRow label="Last activity">{formatDuration((now - start) / 1000)} ago</TooltipRow>
+        <TooltipRow label={t('alarm_tooltip_last_activity')}>
+          {t('alarm_tooltip_ago', { duration: formatDuration((now - start) / 1000) })}
+        </TooltipRow>
       ) : (
-        <TooltipRow label="Normalized">{formatClock(end)}</TooltipRow>
+        <TooltipRow label={t('alarm_field_normalized')}>{formatClock(end)}</TooltipRow>
       )}
-      <OptionalRow label="Acknowledged">{acknowledgedText(alarm)}</OptionalRow>
+      <OptionalRow label={t('alarm_tooltip_acknowledged')}>{acknowledgedText(alarm, t)}</OptionalRow>
     </CursorTooltip>
   );
 };

@@ -52,3 +52,6 @@ progeo/tests/pytest-of-info/
 pytest-of-info/
 pytest_report.html
 progeo/tests/progeo/tests/_pytest.log
+# Coverage reports (pytest --cov, CI)
+coverage_html_report/
+coverage.xml
