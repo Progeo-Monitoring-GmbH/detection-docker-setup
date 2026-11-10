@@ -14,7 +14,8 @@ import { getBackendBaseUrl } from './backendUrl';
 
 const ACCESS_TOKEN_KEY = 'authToken';
 const REFRESH_TOKEN_KEY = 'refreshToken';
-const REFRESH_URL = `${getBackendBaseUrl()}/api/token/refresh/`;
+// At call time, not import: node-environment tests import this module without `window`.
+const refreshUrl = () => `${getBackendBaseUrl()}/api/token/refresh/`;
 
 type TokenListener = (access: string, refresh: string) => void;
 const listeners = new Set<TokenListener>();
@@ -102,7 +103,7 @@ export const refreshAccessToken = async (
     try {
       let response;
       try {
-        response = await axios.post(REFRESH_URL, { refresh });
+        response = await axios.post(refreshUrl(), { refresh });
       } catch (error) {
         // Another tab may have rotated the refresh token a moment ago (the
         // old one is blacklisted then). Try the newly stored one once; this
@@ -111,7 +112,7 @@ export const refreshAccessToken = async (
         if (!latest || latest === refresh) {
           return null;
         }
-        response = await axios.post(REFRESH_URL, { refresh: latest });
+        response = await axios.post(refreshUrl(), { refresh: latest });
       }
       const access = String(response?.data?.access || '');
       if (!access) {

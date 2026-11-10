@@ -113,7 +113,8 @@ const AuthContext = createContext<AuthContextType>(
   defaultAuthContextValue,
 );
 
-const API_URL = getBackendBaseUrl();
+// At call time, not import: node-environment tests import this module without `window`.
+const apiUrl = () => getBackendBaseUrl();
 
 const CoreAuthProvider = ({ children }) => {
   const [token, setToken] = useState(() => readStoredTokens().access);
@@ -181,7 +182,7 @@ const CoreAuthProvider = ({ children }) => {
   const logoutAction = useCallback(
     async (forward?: string) => {
       try {
-        await axios.post(`${API_URL}/api/token/logout/`, {
+        await axios.post(`${apiUrl()}/api/token/logout/`, {
           refresh: refreshToken,
         });
       } catch (error) {
@@ -213,7 +214,7 @@ const CoreAuthProvider = ({ children }) => {
   const loginAction = useCallback(
     async (data: AuthCredentials, forward?: string): Promise<LoginOutcome> => {
       try {
-        const response = await axios.post(`${API_URL}/api/token/`, data);
+        const response = await axios.post(`${apiUrl()}/api/token/`, data);
         const newToken = response.data.access;
         // Persist the refresh token too - without it a reload (or the next
         // access-token expiry) leaves an active session unable to renew.

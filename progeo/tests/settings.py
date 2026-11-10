@@ -200,7 +200,9 @@ SIMPLE_JWT = {
     "UPDATE_LAST_LOGIN": True,
 
     "ALGORITHM": "HS256",
-    "SIGNING_KEY": os.getenv("SIGNING_KEY", None),
+    # As progeo/settings.py: CI has no django.env, so no SIGNING_KEY
+    # ("HMAC key must not be empty" on every token that is issued).
+    "SIGNING_KEY": os.getenv("SIGNING_KEY") or SECRET_KEY,
     "VERIFYING_KEY": os.getenv("VERIFYING_KEY", None),
     "AUDIENCE": None,
     "ISSUER": None,

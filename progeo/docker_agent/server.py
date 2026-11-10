@@ -93,8 +93,10 @@ class AgentHandler(BaseHTTPRequestHandler):
         self._send_json(error.status, {"error": type(error).__name__, "reason": error.reason})
 
     def _authorized(self):
-        supplied = self.headers.get("Authorization", "").removeprefix("Bearer ").strip()
-        if supplied and hmac.compare_digest(supplied.encode(), self.server.token.encode()):
+        # Only "Bearer <token>": removeprefix() let the bare token through as well.
+        scheme, _, supplied = self.headers.get("Authorization", "").partition(" ")
+        supplied = supplied.strip()
+        if scheme == "Bearer" and supplied and hmac.compare_digest(supplied.encode(), self.server.token.encode()):
             return True
         self._send_json(HTTPStatus.UNAUTHORIZED, {"error": "Unauthorized", "reason": "Invalid agent token"})
         return False
