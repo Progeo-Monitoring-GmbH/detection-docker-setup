@@ -10,9 +10,12 @@ measurements -> alarms).
 
 import threading
 
+from django.apps import apps
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.signals import request_started
 from django.db import DEFAULT_DB_ALIAS, connections, transaction
+from django.db.models.deletion import Collector
 from django.db.models.signals import m2m_changed, post_delete, post_save, pre_save
 from django.dispatch import receiver
 from psycopg2 import sql
@@ -26,8 +29,8 @@ from progeo.helper.project_dbs import (
     mirrored_models,
     project_alias,
     project_key,
+    project_models,
     register_project_db,
-    release_connection,
     split_enabled,
 )
 from progeo.v1.models import Account, ProgeoDevice, ProgeoLocation, UserProfile
@@ -61,23 +64,70 @@ class _MirrorBatch:
 
     def __init__(self):
         self.rows = {}  # model -> {pk: set of aliases, or None = every project database}
+        self.deletes = {}  # the same for rows deleted in "default"
         self.accounts = set()  # accounts whose Account.users rows are replaced
 
+    def payload(self):
+        """JSON for mirror_project_rows_task (celery)."""
+        def encode(target):
+            return {model._meta.label: [[pk, None if aliases is None else sorted(aliases)]
+                                        for pk, aliases in rows.items()]
+                    for model, rows in target.items()}
+
+        return {"rows": encode(self.rows), "deletes": encode(self.deletes), "accounts": sorted(self.accounts)}
+
+    @classmethod
+    def from_payload(cls, payload):
+        batch = cls()
+        for key, add in (("rows", batch.add), ("deletes", batch.add_delete)):
+            for label, rows in payload.get(key, {}).items():
+                model = apps.get_model(label)
+                for pk, aliases in rows:
+                    add(model, pk, aliases)
+        batch.accounts = set(payload.get("accounts", ()))
+        return batch
+
+    def dispatch(self):
+        """After the commit: flush in celery (PROJECT_DB_MIRROR_ASYNC) - copying
+        (or deleting) a user in ~1000 project databases kept staff_user_update
+        waiting ~1 min.
+        Inline inside celery tasks, with the switch off or when the broker is down."""
+        from progeo.helper.outbound import _inside_celery_task
+
+        if getattr(settings, "PROJECT_DB_MIRROR_ASYNC", False) and not _inside_celery_task():
+            from progeo.tasks import mirror_project_rows_task
+
+            try:
+                mirror_project_rows_task.apply_async([self.payload()], retry=False)
+                return
+            except Exception as exc:  # noqa: BLE001 - the mirror must not get lost
+                wlog(f"Could not queue the mirror ({exc!r}) - copying inline", tag="[PROJECT_DB]")
+        self.flush()
+
     def add(self, model, pk, aliases=None):
-        rows = self.rows.setdefault(model, {})
+        self._add(self.rows, model, pk, aliases)
+
+    def add_delete(self, model, pk, aliases=None):
+        self._add(self.deletes, model, pk, aliases)
+
+    @staticmethod
+    def _add(target, model, pk, aliases):
+        rows = target.setdefault(model, {})
         if aliases is None or (pk in rows and rows[pk] is None):
             rows[pk] = None
         else:
             rows[pk] = rows.get(pk, set()) | set(aliases)
 
     def _targets(self):
-        """{alias: {model: [pks]}} - aliases registered (see _existing)."""
+        """{alias: {"rows"|"deletes": {model: [pks]}}} - aliases registered (see _existing)."""
         every = _existing(existing_project_aliases())
-        targets = {alias: {} for alias in every} if self.accounts else {}
-        for model, rows in self.rows.items():
-            for pk, aliases in rows.items():
-                for alias in every if aliases is None else _existing(aliases):
-                    targets.setdefault(alias, {}).setdefault(model, []).append(pk)
+        targets = {alias: {"rows": {}, "deletes": {}} for alias in every} if self.accounts else {}
+        for key, source in (("rows", self.rows), ("deletes", self.deletes)):
+            for model, rows in source.items():
+                for pk, aliases in rows.items():
+                    for alias in every if aliases is None else _existing(aliases):
+                        target = targets.setdefault(alias, {"rows": {}, "deletes": {}})
+                        target[key].setdefault(model, []).append(pk)
         return targets
 
     def flush(self):
@@ -93,9 +143,13 @@ class _MirrorBatch:
         )
 
         def mirror(alias):
-            rows = targets[alias]
+            rows, deletes = targets[alias]["rows"], targets[alias]["deletes"]
             try:
                 with transaction.atomic(using=alias):
+                    for model in reversed(mirrored_models()):  # children first
+                        pks = sorted(deletes.get(model, ()))
+                        if pks:
+                            _delete_in_project_db(model, pks, alias)
                     for model in mirrored_models():  # parents first
                         if model is through:
                             if self.accounts:
@@ -111,12 +165,40 @@ class _MirrorBatch:
                         where = sql.SQL("{} = ANY(%s)").format(sql.Identifier(model._meta.pk.column))
                         transfer_rows(model, where, [pks], alias, upsert=True)
             except Exception as exc:  # noqa: BLE001 - the next sync_default / split run repairs the mirror
-                touched = ", ".join(f"{model.__name__}{sorted(pks)}" for model, pks in rows.items())
+                touched = ", ".join([*(f"{model.__name__}{sorted(pks)}" for model, pks in rows.items()),
+                                     *(f"delete {model.__name__}{sorted(pks)}" for model, pks in deletes.items())])
                 if self.accounts:
                     touched = ", ".join(filter(None, [touched, f"Account.users{sorted(self.accounts)}"]))
                 elog(f"mirror {touched} -> {alias} failed: {exc!r}", tag="[PROJECT_DB]")
 
         map_databases(mirror, sorted(targets))
+
+
+class _ProjectDbCollector(Collector):
+    """Django's delete collector, limited to the tables a project database has
+    (project + mirrored models). The plain one also follows User to the
+    "default"-only tables (oauth2, tokens, sessions, ...) - in a project
+    database that failed ("relation oauth2_provider_application does not
+    exist") and the user was never deleted there."""
+
+    def __init__(self, using):
+        super().__init__(using=using)
+        self._tables = {model._meta.concrete_model for model in (*project_models(), *mirrored_models())}
+
+    def related_objects(self, related_model, related_fields, objs):
+        if related_model._meta.concrete_model not in self._tables:
+            return related_model._base_manager.using(self.using).none()
+        return super().related_objects(related_model, related_fields, objs)
+
+
+def _delete_in_project_db(model, pks, alias):
+    """Delete the rows like the ORM in "default": cascades over the project rows
+    (location -> devices -> measurements -> alarms, user -> access rules)."""
+    objs = list(model._base_manager.using(alias).filter(pk__in=pks))
+    if objs:
+        collector = _ProjectDbCollector(alias)
+        collector.collect(objs)
+        collector.delete()
 
 
 def _drop_clashing_profiles(alias, profiles):
@@ -139,12 +221,12 @@ def _queue(add):
     transaction on_commit runs it at once (every save its own batch)."""
     batch = getattr(_local, "batch", None)
     pending = connections[DEFAULT_DB_ALIAS].run_on_commit
-    fresh = batch is None or not any(batch.flush in callback for callback in pending)
+    fresh = batch is None or not any(batch.dispatch in callback for callback in pending)
     if fresh:
         batch = _local.batch = _MirrorBatch()
     add(batch)
     if fresh:
-        transaction.on_commit(batch.flush, using=DEFAULT_DB_ALIAS)
+        transaction.on_commit(batch.dispatch, using=DEFAULT_DB_ALIAS)
 
 
 def _mirror_row(model, pk, aliases=None):
@@ -152,17 +234,9 @@ def _mirror_row(model, pk, aliases=None):
     _queue(lambda batch: batch.add(model, pk, aliases))
 
 
-def _delete_row(model, pk, aliases):
-    def run():
-        for alias in _existing(aliases):
-            try:
-                model.objects.using(alias).filter(pk=pk).delete()
-            except Exception as exc:  # noqa: BLE001 - must not break the default write
-                elog(f"delete mirror {model.__name__}#{pk} in {alias} failed: {exc!r}", tag="[PROJECT_DB]")
-            finally:
-                release_connection(alias)
-
-    transaction.on_commit(run, using=DEFAULT_DB_ALIAS)
+def _delete_row(model, pk, aliases=None):
+    """Delete one row in `aliases` (None: every project database) after commit."""
+    _queue(lambda batch: batch.add_delete(model, pk, aliases))
 
 
 # ---------------------------------------------------------------------------- users / accounts
@@ -205,19 +279,19 @@ def _mirror_account_users(sender, instance, action, using, pk_set=None, **kwargs
 @receiver(post_delete, sender=User)
 def _delete_user(sender, instance, using, **kwargs):
     if _active(using):
-        _delete_row(User, instance.pk, existing_project_aliases())
+        _delete_row(User, instance.pk)
 
 
 @receiver(post_delete, sender=UserProfile)
 def _delete_user_profile(sender, instance, using, **kwargs):
     if _active(using):
-        _delete_row(UserProfile, instance.pk, existing_project_aliases())
+        _delete_row(UserProfile, instance.pk)
 
 
 @receiver(post_delete, sender=Account)
 def _delete_account(sender, instance, using, **kwargs):
     if _active(using):
-        _delete_row(Account, instance.pk, existing_project_aliases())
+        _delete_row(Account, instance.pk)
 
 
 # ---------------------------------------------------------------------------- locations

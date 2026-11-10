@@ -107,6 +107,9 @@ OUTBOUND_LIMITS = {
 # requests, login links) are handed to celery so the request never waits on
 # SMTP; inside celery tasks they are sent right away.
 OUTBOUND_ASYNC = parse_boolean(os.getenv("OUTBOUND_ASYNC", "1"))
+# Users/profiles/accounts are copied into every project database after a save
+# (helper/project_db_signals.py) - in celery, not in the request.
+PROJECT_DB_MIRROR_ASYNC = parse_boolean(os.getenv("PROJECT_DB_MIRROR_ASYNC", "1"))
 # Alarm notifications: one per location and channel within the cooldown;
 # alarms older than MAX_AGE (backfills, re-evaluations) notify nobody.
 ALARM_NOTIFY_COOLDOWN_MINUTES = parse_int(os.getenv("ALARM_NOTIFY_COOLDOWN_MINUTES"), 60)

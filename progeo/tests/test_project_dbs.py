@@ -606,6 +606,106 @@ def test_one_transaction_is_mirrored_in_one_pass(django_capture_on_commit_callba
         )) == {users[1].pk, users[2].pk}
 
 
+def test_the_mirror_batch_survives_the_trip_through_celery():
+    from progeo.helper.project_db_signals import _MirrorBatch
+
+    batch = _MirrorBatch()
+    batch.add(User, 7)
+    batch.add(UserProfile, 3, [ALIAS])
+    batch.add(UserProfile, 3, [UNKNOWN])
+    batch.add_delete(Account, 9)
+    batch.accounts = {5}
+
+    again = _MirrorBatch.from_payload(batch.payload())
+
+    assert again.rows == {User: {7: None}, UserProfile: {3: {ALIAS, UNKNOWN}}}
+    assert again.deletes == {Account: {9: None}}
+    assert again.accounts == {5}
+
+
+@pytest.mark.parametrize("queue_fails", [False, True])
+def test_the_mirror_goes_to_celery_and_inline_if_the_broker_is_down(monkeypatch, settings, queue_fails):
+    # staff_user_update took ~1 min on the server: a user saved in the request
+    # was copied into every one of ~1000 project databases right there.
+    from progeo import tasks
+    from progeo.helper.project_db_signals import _MirrorBatch
+
+    settings.PROJECT_DB_MIRROR_ASYNC = True
+    queued, flushed = [], []
+
+    def apply_async(args, retry=True):
+        if queue_fails:
+            raise ConnectionError("broker down")
+        queued.append(args)
+
+    monkeypatch.setattr(tasks.mirror_project_rows_task, "apply_async", apply_async)
+    monkeypatch.setattr(_MirrorBatch, "flush", lambda self: flushed.append(self))
+    batch = _MirrorBatch()
+    batch.add(User, 7)
+
+    batch.dispatch()
+
+    assert queued == ([] if queue_fails else [[batch.payload()]])
+    assert flushed == ([batch] if queue_fails else [])
+
+
+def test_saving_the_own_settings_leaves_the_mirror_to_celery(api_client, monkeypatch, settings,
+                                                             django_capture_on_commit_callbacks):
+    # /v1/user/settings/ saves the user (and the profile): the copy into every
+    # project database kept the "Mein Konto" form waiting like staff_user_update.
+    from progeo import tasks
+    from progeo.helper.project_db_signals import _MirrorBatch
+
+    # Before the split is on: its callback would stay queued in the test
+    # transaction (never committed) and take the request's rows along.
+    user = f.make_user(email="vorher@progeo.com")
+    api_client.force_authenticate(user=user)
+    monkeypatch.delenv("TESTS_ACTIVE", raising=False)  # the view writes to "default", as on the server
+    settings.PROJECT_DB_SPLIT = True
+    settings.PROJECT_DB_MIRROR_ASYNC = True
+    queued = []
+    monkeypatch.setattr(tasks.mirror_project_rows_task, "apply_async", lambda args, retry=True: queued.append(args[0]))
+    monkeypatch.setattr(_MirrorBatch, "flush", lambda self: pytest.fail("mirrored inside the request"))
+
+    with django_capture_on_commit_callbacks(execute=True):
+        response = api_client.post("/v1/user/settings/", {"email": "nachher@progeo.com", "mobile": "+49 151 2"},
+                                   format="json")
+
+    assert response.status_code == 200, response.content
+    mirrored = {(label, row[0]) for payload in queued for label, rows in payload["rows"].items() for row in rows}
+    profile = UserProfile.objects.using(f.DB).get(user=user)
+    assert {("auth.User", user.pk), (UserProfile._meta.label, profile.pk)} <= mirrored
+
+
+@WITH_PROJECT_DBS
+@pytest.mark.usefixtures("project_dbs", "mirror_into_project_dbs")
+def test_a_deleted_user_goes_from_every_project_database_in_one_pass(django_capture_on_commit_callbacks):
+    # Deletes ran per row, one project database after the other, in the request.
+    from django.db import transaction
+
+    # Set up without the mirror signals: the callbacks a capture ran stay
+    # queued in the test transaction and would take the delete into their batch.
+    with override_settings(PROJECT_DB_SPLIT=False):
+        s = _scenario()  # the user has an access rule and evaluated the alarms
+        _copy()
+    user, access = s["user"], s["access"]
+    assert User.objects.using(ALIAS).filter(pk=user.pk).exists()
+    assert ProgeoAlarm.objects.using(ALIAS).filter(evaluated_by_id=user.pk).count() == 2
+
+    with django_capture_on_commit_callbacks(execute=True) as callbacks, transaction.atomic(using=DEFAULT_DB_ALIAS):
+        User.objects.using(DEFAULT_DB_ALIAS).filter(pk=user.pk).delete()  # and its profile (cascade)
+
+    assert len(callbacks) == 1
+    for alias in (ALIAS, UNKNOWN):
+        assert not User.objects.using(alias).filter(pk=user.pk).exists()
+        assert not UserProfile.objects.using(alias).filter(user_id=user.pk).exists()
+    # Cascades in the project database as in "default" - and nothing reaches
+    # for the "default"-only tables (oauth2, tokens, ...): that failed before.
+    assert not ProgeoAccess.objects.using(ALIAS).filter(pk=access.pk).exists()
+    assert not ProgeoAlarm.objects.using(ALIAS).filter(evaluated_by_id=user.pk).exists()
+    assert ProgeoAlarm.objects.using(ALIAS).filter(measurement__device=s["device"]).count() == 2  # kept, evaluated_by NULL
+
+
 @WITH_PROJECT_DBS
 @pytest.mark.usefixtures("project_dbs", "mirror_into_project_dbs")
 def test_a_rolled_back_savepoint_does_not_swallow_later_mirrors(django_capture_on_commit_callbacks):

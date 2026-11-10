@@ -51,6 +51,7 @@ OUTBOUND_LIMITS = {
     "messenger_global_day": 200,
 }
 OUTBOUND_ASYNC = False
+PROJECT_DB_MIRROR_ASYNC = False  # mirrored at the commit, as the tests expect
 ALARM_NOTIFY_COOLDOWN_MINUTES = 60
 ALARM_NOTIFY_MAX_AGE_HOURS = 6
 MAGIC_LINK_LOGIN_MINUTES = 15

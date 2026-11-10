@@ -775,3 +775,12 @@ def matrix_account_task(localpart: str, action: str):
         return {"error": str(exc)}
     ilog(f"[matrix_account] {action} {localpart}: {result}")
     return {"result": result}
+
+
+@shared_task
+def mirror_project_rows_task(payload: dict):
+    """Copies the users/profiles/accounts one "default" transaction changed into
+    the project databases (helper/project_db_signals.py, _MirrorBatch.dispatch)."""
+    from progeo.helper.project_db_signals import _MirrorBatch
+
+    _MirrorBatch.from_payload(payload).flush()
