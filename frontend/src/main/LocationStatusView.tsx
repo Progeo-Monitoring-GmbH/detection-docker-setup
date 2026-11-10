@@ -20,12 +20,7 @@ import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import PillSelect from '../components/ui/kit/PillSelect';
 import type { LocationDetail } from './locationTypes';
 import type { HeatProfile } from '../components/device/sensorHeatmapTypes';
-import {
-  getProjectTypeLabel,
-  isLorawanProject,
-  planVisualization,
-  showsSensorTable,
-} from './projectType';
+import { isLorawanProject, planVisualization, showsSensorTable } from './projectType';
 import LocationClimatePanels from './LocationClimatePanels';
 import LocationBatteryVoltagePanel from './LocationBatteryVoltagePanel';
 import LocationPlanPanel from './LocationPlanPanel';
@@ -93,13 +88,11 @@ type RequestableDevice = {
   device_ip: string | null;
 };
 
-/** Name, project and address of the location, and "request measurement". */
+/** "Request measurement" (the location's name and address are in the portal's title). */
 const LocationStatusHeader = ({
-  location,
   locationId,
   canRequestMeasurement,
 }: {
-  location: LocationDetail | null;
   locationId: number;
   canRequestMeasurement: boolean;
 }) => {
@@ -178,48 +171,22 @@ const LocationStatusHeader = ({
     );
   };
 
-  const projectLine = [
-    location?.project_id != null ? `#${location.project_id}` : null,
-    getProjectTypeLabel(t, location?.project_type),
-  ]
-    .filter(Boolean)
-    .join(' · ');
-  const addressLine = [
-    location?.address,
-    [location?.plz, location?.city].filter(Boolean).join(' '),
-  ]
-    .filter(Boolean)
-    .join(', ');
+  // Name, project, product and address are in the portal's title
+  // (LocationPortalLayout) - here only "request measurement".
+  if (!canRequestMeasurement || devices.length === 0) {
+    return null;
+  }
 
   return (
     <div
       style={{
         display: 'flex',
         alignItems: 'flex-start',
-        justifyContent: 'space-between',
+        justifyContent: 'flex-end',
         gap: 14,
         flexWrap: 'wrap',
       }}
     >
-      <div style={{ minWidth: 0 }}>
-        <div
-          style={{
-            fontSize: 28,
-            fontWeight: 600,
-            color: 'var(--progeo-blue)',
-          }}
-        >
-          {location?.name || '–'}
-        </div>
-        <div style={{ fontSize: 12.5, color: '#8B8383', marginTop: 2 }}>
-          {projectLine}
-        </div>
-        {addressLine && (
-          <div style={{ fontSize: 12.5, color: '#8B8383', marginTop: 1 }}>
-            {addressLine}
-          </div>
-        )}
-      </div>
       {canRequestMeasurement && devices.length > 0 && (
         <div
           style={{
@@ -513,7 +480,6 @@ const LocationStatusView = ({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <LocationStatusHeader
-        location={location}
         locationId={locationId}
         canRequestMeasurement={!isLorawan && !readOnlyDemo}
       />

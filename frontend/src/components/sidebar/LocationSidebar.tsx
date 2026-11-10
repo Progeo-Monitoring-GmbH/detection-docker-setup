@@ -1,4 +1,4 @@
-import { type CSSProperties, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useLocation as useRouterLocation } from 'react-router';
 import {
@@ -234,10 +234,11 @@ const LocationSidebar = ({
     );
   };
 
-  const itemStyle = (active: boolean, global: boolean): CSSProperties => ({
+  const itemStyle = (active: boolean, global: boolean, collapsed: boolean): CSSProperties => ({
     ...sidebarItemBaseStyle,
-    justifyContent: 'space-between',
+    justifyContent: collapsed ? 'center' : 'space-between',
     gap: 8,
+    ...(collapsed ? { padding: '11px 0', position: 'relative' } : {}),
     color: global ? '#4F6B85' : 'var(--progeo-blue)',
     background: active
       ? global
@@ -267,26 +268,46 @@ const LocationSidebar = ({
     </svg>
   );
 
-  const renderModuleItem = (item: ModuleItem) => {
-    if (!item.visible) {
-      return null;
-    }
-    const Icon = item.icon;
-    return (
-      <Link
-        key={item.key}
-        to={item.to}
-        style={itemStyle(isActivePrefix(item.to), true)}
+  /**
+   * A nav link: icon and label - folded only the icon, the label as its
+   * tooltip and accessible name; a badge becomes a dot on the icon.
+   */
+  const renderLink = ({
+    key,
+    to,
+    active,
+    global,
+    icon,
+    label,
+    badge,
+    collapsed,
+  }: {
+    key: string;
+    to: string;
+    active: boolean;
+    global: boolean;
+    icon: ReactNode;
+    label: string;
+    badge?: number | null;
+    collapsed: boolean;
+  }) => (
+    <Link
+      key={key}
+      to={to}
+      style={itemStyle(active, global, collapsed)}
+      title={collapsed ? label : undefined}
+      aria-label={collapsed ? label : undefined}
+    >
+      <span
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 11,
+          minWidth: 0,
+        }}
       >
-        <span
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 11,
-            minWidth: 0,
-          }}
-        >
-          <Icon size={17} style={{ flexShrink: 0 }} />
+        {icon}
+        {!collapsed && (
           <span
             style={{
               whiteSpace: 'nowrap',
@@ -294,110 +315,119 @@ const LocationSidebar = ({
               textOverflow: 'ellipsis',
             }}
           >
-            {item.label}
+            {label}
           </span>
-        </span>
-      </Link>
-    );
+        )}
+      </span>
+      {badge != null && badge > 0 && (
+        collapsed ? (
+          <span
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              top: 6,
+              right: 10,
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              background: 'var(--progeo-orange)',
+            }}
+          />
+        ) : (
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: '#fff',
+              background: 'var(--progeo-orange)',
+              borderRadius: 'var(--progeo-radius-pill)',
+              padding: '2px 7px',
+            }}
+          >
+            {badge}
+          </span>
+        )
+      )}
+    </Link>
+  );
+
+  const renderModuleItem = (item: ModuleItem, collapsed: boolean) => {
+    if (!item.visible) {
+      return null;
+    }
+    const Icon = item.icon;
+    return renderLink({
+      key: item.key,
+      to: item.to,
+      active: isActivePrefix(item.to),
+      global: true,
+      icon: <Icon size={17} style={{ flexShrink: 0 }} />,
+      label: item.label,
+      collapsed,
+    });
   };
 
-  const renderModuleGroup = (label: string, items: ModuleItem[]) =>
+  /** A group caption - folded a plain divider. */
+  const renderGroupLabel = (label: string, separated: boolean, collapsed: boolean) =>
+    collapsed ? (
+      separated && <div aria-hidden="true" style={{ margin: '8px 6px', borderTop: '1px solid #D9D4D4' }} />
+    ) : (
+      <div style={sidebarGroupLabelStyle(separated)}>{label}</div>
+    );
+
+  const renderModuleGroup = (label: string, items: ModuleItem[], collapsed: boolean) =>
     items.some((item) => item.visible) && (
       <>
-        <div style={sidebarGroupLabelStyle(true)}>{label}</div>
-        {items.map(renderModuleItem)}
+        {renderGroupLabel(label, true, collapsed)}
+        {items.map((item) => renderModuleItem(item, collapsed))}
       </>
     );
 
-  const navContent = (
+  const renderNav = (collapsed: boolean) => (
     <nav style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
       {location && (
         <>
-          <div style={sidebarGroupLabelStyle(false)}>{location.name}</div>
+          {renderGroupLabel(location.name ?? '', false, collapsed)}
           {visibleItems.map((item) => {
             const path = portalNavPath(item, locationId as number);
-            const active = routerLocation.pathname === path;
-            const badge = item.key === 'status' ? openClusterCount : null;
-            return (
-              <Link key={item.key} to={path} style={itemStyle(active, false)}>
-                <span
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 11,
-                    minWidth: 0,
-                  }}
-                >
-                  {renderIcon(item.icon)}
-                  <span
-                    style={{
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                    }}
-                  >
-                    {t(item.labelKey)}
-                  </span>
-                </span>
-                {badge != null && badge > 0 && (
-                  <span
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 600,
-                      color: '#fff',
-                      background: 'var(--progeo-orange)',
-                      borderRadius: 'var(--progeo-radius-pill)',
-                      padding: '2px 7px',
-                    }}
-                  >
-                    {badge}
-                  </span>
-                )}
-              </Link>
-            );
+            return renderLink({
+              key: item.key,
+              to: path,
+              active: routerLocation.pathname === path,
+              global: false,
+              icon: renderIcon(item.icon),
+              label: t(item.labelKey),
+              badge: item.key === 'status' ? openClusterCount : null,
+              collapsed,
+            });
           })}
         </>
       )}
 
-      <div style={sidebarGroupLabelStyle(true)}>{t('nav_alle_objekte')}</div>
-      <Link
-        to={verwaltungPath}
-        style={itemStyle(routerLocation.pathname === verwaltungPath, true)}
-      >
-        <span
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 11,
-            minWidth: 0,
-          }}
-        >
-          {renderIcon('M4 6h16M4 12h16M4 18h16')}
-          <span>{t('nav_verwaltung')}</span>
-        </span>
-      </Link>
-      {canCreateLocation && (
-        <Link
-          to="/anlegen/"
-          style={itemStyle(routerLocation.pathname === '/anlegen/', true)}
-        >
-          <span
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 11,
-              minWidth: 0,
-            }}
-          >
-            {renderIcon('M12 5v14M5 12h14')}
-            <span>{t('nav_anlegen')}</span>
-          </span>
-        </Link>
-      )}
-      {objectItems.map(renderModuleItem)}
+      {renderGroupLabel(t('nav_alle_objekte'), true, collapsed)}
+      {renderLink({
+        key: 'verwaltung',
+        to: verwaltungPath,
+        active: routerLocation.pathname === verwaltungPath,
+        global: true,
+        icon: renderIcon('M4 6h16M4 12h16M4 18h16'),
+        label: t('nav_verwaltung'),
+        collapsed,
+      })}
+      {canCreateLocation &&
+        renderLink({
+          key: 'anlegen',
+          to: '/anlegen/',
+          active: routerLocation.pathname === '/anlegen/',
+          global: true,
+          icon: renderIcon('M12 5v14M5 12h14'),
+          label: t('nav_anlegen'),
+          collapsed,
+        })}
+      {objectItems.map((item) => renderModuleItem(item, collapsed))}
 
-      {renderModuleGroup(t('sidebar_group_admin'), adminItems)}
-      {renderModuleGroup(t('sidebar_group_tools'), toolItems)}
+      {renderModuleGroup(t('sidebar_group_admin'), adminItems, collapsed)}
+      {renderModuleGroup(t('sidebar_group_tools'), toolItems, collapsed)}
     </nav>
   );
 
@@ -407,8 +437,10 @@ const LocationSidebar = ({
       subtitle={t('nav_portal_title')}
       toggleLabel={t('nav_menu_toggle')}
       closeLabel={t('nav_menu_close')}
+      collapseLabel={t('nav_sidebar_collapse')}
+      expandLabel={t('nav_sidebar_expand')}
     >
-      {navContent}
+      {({ collapsed }) => renderNav(collapsed)}
     </SidebarShell>
   );
 };

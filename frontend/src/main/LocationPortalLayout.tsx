@@ -2,6 +2,7 @@ import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 import { Outlet, useParams } from 'react-router';
 import { Spinner } from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
 import { showRequestError } from '../components/ui/Snackbar.jsx';
@@ -13,6 +14,7 @@ import FavoritesBar from './FavoritesBar';
 import ImpersonationBanner from './ImpersonationBanner';
 import { isStaffUser } from './favorites';
 import type { LocationDetail } from './locationTypes';
+import { getProjectTypeLabel } from './projectType';
 
 export type PortalOutletContext = {
   location: LocationDetail | null;
@@ -31,6 +33,7 @@ const LocationPortalLayout = () => {
   const { id } = useParams();
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
+  const { t } = useTranslation();
 
   const [location, setLocation] = useState<LocationDetail | null>(null);
   const [loading, setLoading] = useState(Boolean(id));
@@ -60,6 +63,17 @@ const LocationPortalLayout = () => {
 
   const locationId = location?.id ?? Number(id);
   const mobile = typeof window !== 'undefined' && window.innerWidth < 860;
+  const staff = isStaffUser(auth?.user);
+  // "#4711 · smartex® dm" and "Street 1, 12345 City" under the name.
+  const projectLine = [
+    location?.project_id != null ? `#${location.project_id}` : null,
+    location?.project_type != null ? getProjectTypeLabel(t, location.project_type) : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const addressLine = [location?.address, [location?.plz, location?.city].filter(Boolean).join(' ')]
+    .filter(Boolean)
+    .join(', ');
 
   return (
     <div
@@ -85,11 +99,11 @@ const LocationPortalLayout = () => {
         <TopBar />
         <ImpersonationBanner />
         <FavoritesBar />
-        {id && !loading && location && isStaffUser(auth?.user) && (
+        {id && !loading && location && (
           // Staff: the big star pins the location; superusers: its escalation.
           <div className="d-flex align-items-center gap-3">
-            <FavoriteStar locationId={locationId} size={40} />
-            {/* Which object this is - next to its star, on every tab. */}
+            {staff && <FavoriteStar locationId={locationId} size={40} />}
+            {/* Which object this is - on every tab, for everyone (the tabs show no name of their own). */}
             <div style={{ minWidth: 0, flexShrink: 1 }} data-testid="portal-location-title">
               <div
                 className="fw-semibold text-truncate"
@@ -98,17 +112,18 @@ const LocationPortalLayout = () => {
               >
                 {location.name || location.project_id || locationId}
               </div>
-              {(location.project_id != null || location.city) && (
-                <div className="small text-muted text-truncate">
-                  {[location.project_id, [location.plz, location.city].filter(Boolean).join(' ')]
-                    .filter((part) => part != null && part !== '')
-                    .join(' · ')}
+              {projectLine && <div className="small text-muted text-truncate">{projectLine}</div>}
+              {addressLine && (
+                <div className="small text-muted text-truncate" title={addressLine}>
+                  {addressLine}
                 </div>
               )}
             </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <EscalationBanner locationId={locationId} />
-            </div>
+            {staff && (
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <EscalationBanner locationId={locationId} />
+              </div>
+            )}
           </div>
         )}
         {loading ? (

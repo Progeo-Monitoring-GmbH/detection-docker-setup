@@ -4,8 +4,10 @@ restore_file are replaced)."""
 import io
 from contextlib import nullcontext
 
+import pytest
+from dbbackup.db.exceptions import CommandConnectorError
 from django.conf import settings
-from django.core.management import call_command
+from django.core.management import CommandError, call_command
 from django.db import connections
 from django.test import override_settings
 
@@ -22,6 +24,7 @@ def patch_database_access(monkeypatch, restore, dropped=None, sizes=None):
                         (dropped if dropped is not None else []).append((alias, create)))
     monkeypatch.setattr(rb, "existing_project_aliases", lambda refresh=False: [])
     monkeypatch.setattr(rb.Command, "_size", staticmethod(lambda dump: (sizes or {}).get(dump, 0)))
+    monkeypatch.setattr(rb.Command, "_wait_for_server", classmethod(lambda cls: None))
 
 
 # The test prefix "unit_tests_project_" is one restore_backups never touches.
@@ -72,3 +75,55 @@ def test_all_databases_are_recreated_first_then_restored_largest_first(monkeypat
 
     assert sorted(dropped) == [(alias, True) for alias in aliases]
     assert events == [(aliases[1], 4), (aliases[3], 4), (aliases[2], 4), (aliases[0], 4)]
+
+
+CRASH = ("psql failed (exit 2) restoring x.psql.gz: WARNING:  terminating connection because of crash of "
+         "another server process")
+
+
+@override_settings(PROJECT_DB_PREFIX="restore_test_")
+def test_restores_broken_by_a_server_crash_are_repeated_one_at_a_time(monkeypatch):
+    # The OOM killer took postgres down on staging: every running and queued
+    # restore failed ("crash of another server process", "in recovery mode").
+    aliases = [project_alias(990300 + index) for index in range(3)]
+    dumps = {alias: f"{alias}-srv-2026-10-29-235301.psql.gz" for alias in aliases}
+    dropped, calls = [], []
+
+    def restore(alias, path):
+        calls.append(alias)
+        if calls.count(alias) == 1 and alias != aliases[0]:
+            raise CommandConnectorError(CRASH)
+
+    patch_database_access(monkeypatch, restore, dropped)
+    out = io.StringIO()
+    try:
+        call_command("restore_backups", apply=True, noinput=True, dumps=dumps, workers=1, stdout=out)
+    finally:
+        for alias in aliases:
+            connections.settings.pop(alias, None)
+            settings.DBBACKUP_CONNECTORS.pop(alias, None)
+
+    assert sorted(calls) == sorted([*aliases, aliases[1], aliases[2]])
+    assert sorted(dropped) == sorted([(alias, True) for alias in [*aliases, aliases[1], aliases[2]]])
+    assert "Restored 3 of 3" in out.getvalue()
+
+
+@override_settings(PROJECT_DB_PREFIX="restore_test_")
+def test_a_broken_dump_is_not_repeated(monkeypatch):
+    alias = project_alias(990400)
+    calls = []
+
+    def restore(alias, path):
+        calls.append(alias)
+        raise CommandConnectorError("psql failed (exit 3) restoring x.psql.gz: ERROR:  syntax error")
+
+    patch_database_access(monkeypatch, restore)
+    try:
+        with pytest.raises(CommandError, match="Restore failed"):
+            call_command("restore_backups", apply=True, noinput=True, workers=1, stdout=io.StringIO(),
+                         dumps={alias: f"{alias}-srv-2026-10-29-235301.psql.gz"})
+    finally:
+        connections.settings.pop(alias, None)
+        settings.DBBACKUP_CONNECTORS.pop(alias, None)
+
+    assert calls == [alias]

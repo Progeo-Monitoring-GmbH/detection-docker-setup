@@ -504,7 +504,8 @@ const LocationRechteTab = () => {
           <span style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
             {t('rechte_title')}
             <span style={{ fontSize: 12.5, color: '#8B8383', fontWeight: 400 }}>
-              {t('rechte_summary', {
+              {/* ProGeo staff are listed (and counted) for staff only - the backend sends them to nobody else. */}
+              {t(viewerIsStaff ? 'rechte_summary' : 'rechte_summary_customer', {
                 account: countOf('account'),
                 single: countOf('single'),
                 staff: countOf('staff'),

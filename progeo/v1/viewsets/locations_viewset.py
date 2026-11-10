@@ -599,18 +599,14 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
                 {"id": user.id, "username": user.username, "email": user.email}
                 for user in User.objects.filter(is_staff=True).order_by("username")
             ] if is_staff else []
-            members = self._access_members(location, account, rows, include_staff=include_staff)
-            if not is_staff:
-                # Customers see only the staff assigned as Objektleitung.
-                members = [
-                    member for member in members
-                    if member["access"] != "staff" or (member["rule"] or {}).get("objektleitung")
-                ]
+            # Only staff see ProGeo staff in the Rechte tab - customers not even
+            # the Objektleitung (their contact stays in "access" for the
+            # Einstellungen tab).
+            members = self._access_members(location, account, rows, include_staff=include_staff and is_staff)
             if not manages:
                 members = [
                     member for member in members
                     if member["user_id"] == viewer.pk or member["access"] == "staff"
-                    or (member["rule"] or {}).get("objektleitung")
                 ]
             return RequestSuccess({
                 "access": ProgeoAccessSerializer(rows, many=True).data,

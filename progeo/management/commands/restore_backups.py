@@ -22,6 +22,21 @@ from progeo.management.commands._base import BaseCommand
 # Never replaced: the test databases are recreated by recreate_test_db, not from dumps.
 PROTECTED_PREFIX = "unit_tests"
 DUMP_SUFFIXES = (".psql", ".psql.gz")
+# Parallel psql restores by default: each builds indexes with its own
+# maintenance_work_mem next to shared_buffers - more ran staging out of memory.
+DEFAULT_WORKERS = min(os.cpu_count() or 4, 4)
+# psql errors of a server that crashed (e.g. a process killed by the OOM killer:
+# postgres then ends every connection and replays its WAL) - not of the dump.
+SERVER_CRASH_MARKERS = (
+    "crash of another server process",
+    "the database system is in recovery mode",
+    "the database system is starting up",
+    "the database system is shutting down",
+    "server closed the connection unexpectedly",
+    "connection to server was lost",
+    "connection refused",
+)
+SERVER_WAIT_SECONDS = 15 * 60  # WAL replay after a crash (max_wal_size up to 8GB)
 
 
 def newest_dumps(backup_dir=settings.BACKUP_DIR):
@@ -65,8 +80,9 @@ class Command(BaseCommand):
         parser.add_argument("--apply", action="store_true", help="Drop and restore (default: only report).")
         parser.add_argument("--noinput", action="store_true", help="Do not ask for confirmation.")
         parser.add_argument("--db", action="append", dest="databases", help="Only this database (repeatable).")
-        parser.add_argument("--workers", type=int, default=os.cpu_count() or 4,
-                            help=f"Databases restored in parallel (default: the CPU count, {os.cpu_count() or 4} here).")
+        parser.add_argument("--workers", type=int, default=DEFAULT_WORKERS,
+                            help=f"Databases restored in parallel (default: the CPU count up to 4, "
+                                 f"{DEFAULT_WORKERS} here).")
 
     def handle(self, *args, **options):
         dumps = options.get("dumps") or newest_dumps()
@@ -105,6 +121,8 @@ class Command(BaseCommand):
                 raise CommandError("Aborted.")
 
         started = time.monotonic()
+        self._crashed = set()  # restores that failed because the server went down
+        self._server_back = False
         connections.close_all()
         # Here, not in the worker threads: registering adds to settings.DATABASES,
         # which the other workers iterate when they close their connections
@@ -144,6 +162,7 @@ class Command(BaseCommand):
         failed += [db for db, ok in zip(others, map_databases(
             lambda db: self._restore(db, restore[db]), others, workers=max(1, options["workers"])
         ), strict=True) if not ok]
+        failed = [db for db in failed if not self._retry_crashed(db, restore[db])]
 
         self.stdout.write(self.style.SUCCESS(
             f"Restored {len(restore) - len(failed)} of {len(restore)} databases in {time.monotonic() - started:.0f}s."
@@ -172,8 +191,49 @@ class Command(BaseCommand):
             self.stdout.write(f"restored {name} <- {dump} in {time.monotonic() - started:.1f}s")
             return True
         except Exception as exc:  # noqa: BLE001 - one broken dump must not stop the others
-            self.stdout.write(self.style.ERROR(f"{name}: restore failed: {exc!r}"))
+            message = str(exc).lower()
+            if any(marker in message for marker in SERVER_CRASH_MARKERS):
+                self._crashed.add(alias)
+                self.stdout.write(self.style.WARNING(f"{name}: database server down, restored again later"))
+            else:
+                self.stdout.write(self.style.ERROR(f"{name}: restore failed: {exc!r}"))
             return False
+
+    def _retry_crashed(self, alias, dump):
+        """Once more, alone, for a restore the server crash broke - True if it
+        worked now. The first of them waits until the server is back; each is
+        dropped and created again (psql may have died after CREATE TABLE)."""
+        if alias not in self._crashed:
+            return False
+        if not self._server_back:
+            self.stdout.write(self.style.WARNING(
+                f"The database server crashed (out of memory? check POSTGRES_SHARED_BUFFERS) - "
+                f"{len(self._crashed)} restores are repeated one at a time"
+            ))
+            self._wait_for_server()
+            self._server_back = True
+        self._crashed.discard(alias)
+        try:
+            with self._maintenance() as cursor:
+                self._drop(cursor, alias, create=True)
+        except psycopg2.Error as exc:
+            self.stdout.write(self.style.ERROR(f"{self._name(alias)}: drop/create failed: {exc!r}"))
+            return False
+        return self._restore(alias, dump)
+
+    @classmethod
+    def _wait_for_server(cls):
+        """Until the server accepts connections again (WAL replay after a crash)."""
+        deadline = time.monotonic() + SERVER_WAIT_SECONDS
+        while True:
+            try:
+                with cls._maintenance() as cursor:
+                    cursor.execute("SELECT 1")
+                return
+            except psycopg2.OperationalError as exc:
+                if time.monotonic() > deadline:
+                    raise CommandError(f"The database server is not back after {SERVER_WAIT_SECONDS}s: {exc}") from exc
+                time.sleep(5)
 
     @staticmethod
     @contextmanager

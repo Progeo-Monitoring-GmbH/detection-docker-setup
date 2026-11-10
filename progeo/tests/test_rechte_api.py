@@ -47,18 +47,19 @@ def test_members_list_account_single_and_staff(api_client, setup):
     assert members[admin.username]["rule"] is None
     assert members[single.username]["access"] == "single"
     assert members[single.username]["rule"]["id"] == rule.id
-    # Customers see the staff assigned to the location, not all of ProGeo's staff.
-    assert members[objektleitung.username]["access"] == "staff"
-    assert staff.username not in members
+    # Customers see no ProGeo staff at all - not even the Objektleitung.
+    assert not {staff.username, objektleitung.username} & set(members)
+    assert all(member["access"] != "staff" for member in body["members"])
     assert body["staff_users"] == []
 
     api_client.force_authenticate(user=f.make_user(staff=True))
     staff_view = _access(api_client, location)
     assert _members_by_name(staff_view)[staff.username]["access"] == "staff"
+    assert _members_by_name(staff_view)[objektleitung.username]["access"] == "staff"
     assert staff.username in {user["username"] for user in staff_view["staff_users"]}
 
 
-def test_access_without_manage_rights_shows_only_own_rule_and_objektleitung(api_client, setup):
+def test_access_without_manage_rights_shows_only_own_member_and_rule_and_objektleitung(api_client, setup):
     account, location, _admin = setup
     viewer = f.make_user(perms=("module_notifications_enabled",), accounts=[account])
     own_rule = f.make_access(location, viewer)
@@ -70,8 +71,9 @@ def test_access_without_manage_rights_shows_only_own_rule_and_objektleitung(api_
 
     body = _access(api_client, location)
 
+    # The Objektleitung's rule (Einstellungen) - but in the Rechte tab only the viewer.
     assert {rule["id"] for rule in body["access"]} == {own_rule.id, ol_rule.id}
-    assert set(_members_by_name(body)) == {viewer.username, objektleitung.username}
+    assert set(_members_by_name(body)) == {viewer.username}
     assert body["users"] == []
     assert body["candidates"] == []
 
@@ -280,7 +282,7 @@ def test_staff_set_notifications_for_staff_and_superusers(api_client, setup):
     assert members[superuser.username]["rule"]["type"] == 1
 
 
-def test_customers_see_staff_only_as_objektleitung(api_client, setup):
+def test_customers_see_staff_only_as_objektleitung_rule_never_as_member(api_client, setup):
     _account, location, admin = setup
     notified = f.make_user(username=f.unique("notified"), staff=True)
     notified_rule = f.make_access(location, notified)
@@ -292,7 +294,7 @@ def test_customers_see_staff_only_as_objektleitung(api_client, setup):
     body = _access(api_client, location)
 
     assert notified.username not in _members_by_name(body)
-    assert objektleitung.username in _members_by_name(body)
+    assert objektleitung.username not in _members_by_name(body)
     assert notified_rule.id not in {rule["id"] for rule in body["access"]}
     assert ol_rule.id in {rule["id"] for rule in body["access"]}
 

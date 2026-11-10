@@ -1,9 +1,29 @@
 import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useLocation as useRouterLocation } from 'react-router';
-import { List, X } from 'react-bootstrap-icons';
+import { ChevronDoubleLeft, ChevronDoubleRight, List, X } from 'react-bootstrap-icons';
 
 const MOBILE_BREAKPOINT = 860;
+/** Width of the folded desktop sidebar: the nav icons only. */
+const SIDEBAR_COLLAPSED_WIDTH = 64;
+// Per browser - a convenience, so storage failures (private mode) are ignored.
+const COLLAPSED_STORAGE_KEY = 'progeo.sidebar.collapsed';
+
+const readCollapsed = () => {
+  try {
+    return window.localStorage.getItem(COLLAPSED_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
+
+const storeCollapsed = (collapsed: boolean) => {
+  try {
+    window.localStorage.setItem(COLLAPSED_STORAGE_KEY, collapsed ? '1' : '0');
+  } catch {
+    // Not remembered - it still folds.
+  }
+};
 
 /** Uppercase section caption; `separated` adds the divider above a group. */
 export const sidebarGroupLabelStyle = (separated: boolean): CSSProperties => ({
@@ -41,8 +61,14 @@ type SidebarShellProps = {
   subtitle?: string;
   toggleLabel: string;
   closeLabel: string;
-  /** The navigation - shown in the sidebar, or in the dropdown on mobile. */
-  children: ReactNode;
+  /** Labels of the fold button (desktop). */
+  collapseLabel: string;
+  expandLabel: string;
+  /**
+   * The navigation - shown in the sidebar, or in the dropdown on mobile. A
+   * function gets whether the desktop sidebar is folded (icons only).
+   */
+  children: ReactNode | ((state: { collapsed: boolean }) => ReactNode);
 };
 
 const Brand = ({
@@ -82,14 +108,17 @@ const Brand = ({
 
 /**
  * Chrome of LocationSidebar (the app's sidebar): a fixed-width sidebar on
- * desktop, and a sticky top bar with a burger dropdown below
- * MOBILE_BREAKPOINT (closed again on every route change).
+ * desktop - foldable to its icons (remembered per browser) - and a sticky
+ * top bar with a burger dropdown below MOBILE_BREAKPOINT (closed again on
+ * every route change).
  */
 const SidebarShell = ({
   width,
   subtitle,
   toggleLabel,
   closeLabel,
+  collapseLabel,
+  expandLabel,
   children,
 }: SidebarShellProps) => {
   const routerLocation = useRouterLocation();
@@ -97,6 +126,13 @@ const SidebarShell = ({
     typeof window !== 'undefined' && window.innerWidth < MOBILE_BREAKPOINT,
   );
   const [menuOpen, setMenuOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+  const content = (folded: boolean) => (typeof children === 'function' ? children({ collapsed: folded }) : children);
+  const toggleCollapsed = () =>
+    setCollapsed((current) => {
+      storeCollapsed(!current);
+      return !current;
+    });
 
   useEffect(() => {
     const onResize = () => setMobile(window.innerWidth < MOBILE_BREAKPOINT);
@@ -109,21 +145,55 @@ const SidebarShell = ({
   }, [routerLocation.pathname]);
 
   if (!mobile) {
+    const foldLabel = collapsed ? expandLabel : collapseLabel;
     return (
       <aside
+        data-collapsed={collapsed ? 'true' : 'false'}
         style={{
-          width,
+          width: collapsed ? SIDEBAR_COLLAPSED_WIDTH : width,
           flexShrink: 0,
           display: 'flex',
           flexDirection: 'column',
-          padding: '20px 14px 18px 18px',
+          padding: collapsed ? '20px 8px 18px' : '20px 14px 18px 18px',
           gap: 22,
+          transition: 'width .18s ease, padding .18s ease',
+          overflow: 'hidden',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-          <Brand subtitle={subtitle} mobile={false} />
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: collapsed ? 'center' : 'flex-start',
+            gap: 11,
+          }}
+        >
+          {!collapsed && <Brand subtitle={subtitle} mobile={false} />}
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            aria-label={foldLabel}
+            title={foldLabel}
+            aria-expanded={!collapsed}
+            style={{
+              marginLeft: collapsed ? 0 : 'auto',
+              width: 32,
+              height: 32,
+              flexShrink: 0,
+              border: 'none',
+              borderRadius: 10,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'var(--progeo-blue)',
+              background: 'transparent',
+            }}
+          >
+            {collapsed ? <ChevronDoubleRight size={15} /> : <ChevronDoubleLeft size={15} />}
+          </button>
         </div>
-        {children}
+        {content(collapsed)}
       </aside>
     );
   }
@@ -198,7 +268,7 @@ const SidebarShell = ({
               zIndex: 62,
             }}
           >
-            {children}
+            {content(false)}
           </div>
         </>
       )}

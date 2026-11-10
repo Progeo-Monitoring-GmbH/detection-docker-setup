@@ -6,10 +6,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const state = vi.hoisted(() => ({
-  location: { id: 5, project_id: 4711, name: 'Parkhaus Nord', plz: '12345', city: 'Musterstadt' } as Record<
-    string,
-    unknown
-  >,
+  location: {
+    id: 5,
+    project_id: 4711,
+    name: 'Parkhaus Nord',
+    address: 'Hauptstraße 1',
+    plz: '12345',
+    city: 'Musterstadt',
+    project_type: 10,
+  } as Record<string, unknown>,
   staff: true,
 }));
 
@@ -48,16 +53,25 @@ afterEach(() => {
 const title = () => container.querySelector('[data-testid="portal-location-title"]');
 
 describe('LocationPortalLayout', () => {
-  it('names the object next to its star - with project number and place', () => {
+  it('names the object next to its star - with project number, product and address', () => {
     act(() => root.render(<LocationPortalLayout />));
     expect(container.querySelector('[data-testid="favorite-star"]')).not.toBeNull();
-    expect(title()!.textContent).toContain('Parkhaus Nord');
-    expect(title()!.textContent).toContain('4711 · 12345 Musterstadt');
+    const lines = [...title()!.children].map((line) => line.textContent);
+    expect(lines[0]).toBe('Parkhaus Nord');
+    expect(lines[1]).toMatch(/^#4711 · \S/);
+    expect(lines[2]).toBe('Hauptstraße 1, 12345 Musterstadt');
   });
 
-  it('falls back to the project number without a name', () => {
+  it('names the object for customers too - without the star', () => {
+    state.staff = false;
+    act(() => root.render(<LocationPortalLayout />));
+    expect(container.querySelector('[data-testid="favorite-star"]')).toBeNull();
+    expect(title()!.textContent).toContain('Parkhaus Nord');
+  });
+
+  it('falls back to the project number without a name, and leaves out what is missing', () => {
     state.location = { id: 5, project_id: 4711, name: null };
     act(() => root.render(<LocationPortalLayout />));
-    expect(title()!.textContent).toContain('4711');
+    expect([...title()!.children].map((line) => line.textContent)).toEqual(['4711', '#4711']);
   });
 });

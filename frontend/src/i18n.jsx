@@ -730,6 +730,8 @@ i18n
           staff_messaging_suppression_delete_confirm: 'Allow mails to {{address}} again?',
           staff_messaging_suppression_deleted: 'Block removed.',
           nav_menu_toggle: 'Menu',
+          nav_sidebar_collapse: 'Collapse sidebar',
+          nav_sidebar_expand: 'Expand sidebar',
           nav_menu_close: 'Close menu',
           staging_banner:
             "Staging Server - It's okay to press any button! Try to break it!",
@@ -1017,6 +1019,7 @@ i18n
             '{{name}} loses access to this object and no longer receives notifications for it.',
           rechte_summary:
             '{{account}} via account · {{single}} individually · {{staff}} ProGeo team',
+          rechte_summary_customer: '{{account}} via account · {{single}} individually',
           rechte_scope_staff: 'ProGeo team (all objects)',
           rechte_staff_hint: 'ProGeo staff can access every object. The Objektleitung is assigned by ProGeo in the settings tab.',
           rechte_staff_hint_staff:
@@ -2411,6 +2414,8 @@ i18n
           staff_messaging_suppression_delete_confirm: 'Mails an {{address}} wieder zulassen?',
           staff_messaging_suppression_deleted: 'Sperre aufgehoben.',
           nav_menu_toggle: 'Menü',
+          nav_sidebar_collapse: 'Seitenleiste einklappen',
+          nav_sidebar_expand: 'Seitenleiste ausklappen',
           nav_menu_close: 'Menü schließen',
           staging_banner:
             "Staging Server - It's okay to press any button! Try to break it!",
@@ -2700,6 +2705,7 @@ i18n
             '{{name}} verliert den Zugriff auf dieses Objekt und erhält keine Benachrichtigungen mehr dazu.',
           rechte_summary:
             '{{account}} über das Konto · {{single}} einzeln · {{staff}} ProGeo-Team',
+          rechte_summary_customer: '{{account}} über das Konto · {{single}} einzeln',
           rechte_scope_staff: 'ProGeo-Team (alle Objekte)',
           rechte_staff_hint: 'ProGeo-Mitarbeitende haben Zugriff auf alle Objekte. Die Objektleitung legt ProGeo in den Einstellungen fest.',
           rechte_staff_hint_staff:

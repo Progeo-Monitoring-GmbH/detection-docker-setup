@@ -2,12 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { Spinner } from 'react-bootstrap';
 import DataTable, { type TableColumn } from 'react-data-table-component';
 import { useTranslation } from 'react-i18next';
+import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import ThresholdTrendChart, { TREND_COLORS } from '../components/device/ThresholdTrendChart';
 import { PercentCell } from '../components/device/SensorChangesPanel';
 import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import PlotHelp from '../components/ui/PlotHelp';
 import { progeoTableStyles } from '../components/ui/kit/SearchableDataTable';
+import { staffFlags } from './access';
 import {
   ACTIVE_RANGE,
   byPeak,
@@ -63,6 +65,12 @@ const SensorSwatch = ({ color }: { color: string | null }) => (
  */
 const ZeitreihePanel = ({ loading, sensors }: { loading: boolean; sensors: ZeitreiheSensor[] }) => {
   const { t } = useTranslation();
+  const auth = useAuth();
+  // "Aktive" and "Ruhige Sensoren" are an analysis aid for ProGeo staff;
+  // customers get the triggered sensors only.
+  const tables = staffFlags(auth?.user).isStaffOrSuperuser
+    ? TABLES
+    : TABLES.filter(({ kind }) => kind === 'triggered');
   // null: the default selection (it follows the data, e.g. another period).
   const [picked, setPicked] = useState<string[] | null>(null);
   const [onlyTriggered, setOnlyTriggered] = useState(false);
@@ -221,7 +229,7 @@ const ZeitreihePanel = ({ loading, sensors }: { loading: boolean; sensors: Zeitr
               style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 14 }}
               onMouseLeave={() => setHighlighted(null)}
             >
-              {TABLES.map(({ kind, rows }) => {
+              {tables.map(({ kind, rows }) => {
                 const data = rows(sensors);
                 return (
                   <div key={kind} data-testid={`zeitreihe-${kind}`} style={{ minWidth: 0 }}>
