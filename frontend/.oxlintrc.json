@@ -11,6 +11,9 @@
   },
   "rules": {
     "no-unused-vars": "warn",
+    "react/set-state-in-effect": "warn",
+    "react/refs": "warn",
+    "react/purity": "warn",
     "typescript/no-empty-function": "off",
     "curly": ["error", "all"]
   },

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, useState } from 'react';
+import { act, useEffect, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import NoiseProfileEditor from './NoiseProfileEditor';
@@ -31,7 +31,10 @@ const DRAFT: NoiseProfileDraft = {
 /** The editor with the draft kept outside, as the Analyse tab does. */
 const Host = () => {
   const [draft, setDraft] = useState(DRAFT);
-  latest = draft;
+  // In an effect, not during render (react/globals); act() flushes it.
+  useEffect(() => {
+    latest = draft;
+  }, [draft]);
   return (
     <NoiseProfileEditor
       draft={draft}

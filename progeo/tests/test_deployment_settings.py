@@ -29,7 +29,8 @@ def _production_settings(**env):
         "import json, progeo.settings as s; print(json.dumps({"
         "'apps': s.INSTALLED_APPS, 'middleware': s.MIDDLEWARE,"
         "'cors_regexes': s.CORS_ALLOWED_ORIGIN_REGEXES, 'csrf': s.CSRF_TRUSTED_ORIGINS,"
-        "'signing_is_secret': s.SIMPLE_JWT['SIGNING_KEY'] == s.SECRET_KEY}))"
+        "'signing_is_secret': s.SIMPLE_JWT['SIGNING_KEY'] == s.SECRET_KEY,"
+        "'hosts': s.ALLOWED_HOSTS}))"
     )
     result = subprocess.run(
         [sys.executable, "-c", script], cwd=ROOT, capture_output=True, text=True, timeout=120, check=True,
@@ -66,6 +67,17 @@ def test_csrf_trusts_the_listed_origins_only():
 
     # No regexes: Django compares CSRF_TRUSTED_ORIGINS as plain strings.
     assert trusted == ["https://dashboard.progeo.com"]
+
+
+def test_listed_hosts_get_the_internal_and_legacy_names():
+    # prometheus scrapes progeo-backend:8383 - a list of the public names alone
+    # answered it with 400 (DisallowedHost).
+    hosts = _production_settings(DJANGO_ALLOWED_HOSTS="dashboard.progeo.com, localhost")["hosts"]
+
+    assert hosts[0] == "dashboard.progeo.com"
+    assert {"progeo-backend", "localhost", "127.0.0.1", "data-progeo.net"} <= set(hosts)
+    assert hosts.count("localhost") == 1
+    assert _production_settings(DJANGO_ALLOWED_HOSTS="*")["hosts"] == ["*"]
 
 
 def test_the_jwt_signing_key_falls_back_to_the_secret_key():

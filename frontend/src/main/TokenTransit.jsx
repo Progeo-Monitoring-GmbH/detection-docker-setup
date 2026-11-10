@@ -46,6 +46,8 @@ const TokenTransit = () => {
     if (token) {
       fetchData();
     }
+    // Once per token: fetchData is a new function on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   if (isLoading) {

@@ -459,6 +459,8 @@ const LocationsOverview = () => {
 
   useEffect(() => {
     fetchLocations(searchText, onlyConnected);
+    // Per filter switch only: typing in the search filters the loaded rows.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onlyConnected]);
 
   // Batch-load the full fields (device/measurement counts) for ids that
@@ -533,6 +535,9 @@ const LocationsOverview = () => {
     if (missingAlarmIds.length > 0) {
       fetchAlarmSummary(missingAlarmIds);
     }
+    // Per visible page: the fetch functions are new on every render, the
+    // loaded*Ids refs keep ids from being requested twice.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredRows, currentPage, rowsPerPage]);
 
   const columns = locationColumns({

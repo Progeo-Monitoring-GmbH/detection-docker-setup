@@ -44,6 +44,8 @@ export const useLocationHeatmap = (id: string | undefined, profile: HeatProfile 
       );
     }, RELOAD_DEBOUNCE_MS);
     return () => window.clearTimeout(timeoutId);
+    // Not per token refresh (auth) - only when what is shown changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, limit, profile, reloadVersion]);
 
   const refresh = () => setReloadVersion((version) => version + 1);

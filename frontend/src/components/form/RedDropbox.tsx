@@ -10,6 +10,67 @@ import {
 } from '../ui/Snackbar.jsx';
 import { useSnackbar } from 'notistack';
 
+// Typed as Accept: the inferred union of the literals gives every branch
+// the other branches' keys as `?: undefined`, which useDropzone rejects.
+const getAcceptesTypes = (kind: string): Accept => {
+  const key = (kind || '').toLowerCase();
+  if (key === 'cad') {
+    return {
+      'image/vnd.dwg': ['.dwg'],
+      'application/octet-stream': ['.dwg', '.dxf'],
+      'application/x-autocad': ['.dwg'],
+      'application/acad': ['.dwg'],
+      'application/dxf': ['.dxf'],
+      'application/x-dxf': ['.dxf'],
+    };
+  }
+  if (key === 'image') {
+    return { 'image/*': [] };
+  }
+  if (key === 'pdf') {
+    return { 'application/pdf': ['.pdf'] };
+  }
+  if (key === 'json') {
+    return { 'application/json': ['.json'] };
+  }
+  return { '*/*': [] };
+};
+
+// Static: outside the component, so `style` below depends on the drag state only.
+const baseStyle = {
+  flex: 1,
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  minHeight: 84,
+  padding: '18px 16px',
+  borderWidth: 1.5,
+  borderRadius: 13,
+  borderColor: 'var(--progeo-warm-gray-3)',
+  borderStyle: 'dashed',
+  backgroundColor: 'var(--progeo-surface)',
+  color: '#8B8383',
+  fontSize: 13,
+  fontWeight: 500,
+  textAlign: 'center',
+  cursor: 'pointer',
+  outline: 'none',
+  transition: 'border .24s ease-in-out',
+};
+
+const focusedStyle = {
+  borderColor: 'var(--progeo-blue)',
+};
+
+const acceptStyle = {
+  borderColor: '#00e676',
+};
+
+const rejectStyle = {
+  borderColor: '#ff1744',
+};
+
 const RedDropbox = ({
   auth,
   url,
@@ -23,33 +84,7 @@ const RedDropbox = ({
   payload = {},
   hint = 'Drag & drop some files here, or click to select files',
 }) => {
-  // Typed as Accept: the inferred union of the literals gives every branch
-  // the other branches' keys as `?: undefined`, which useDropzone rejects.
-  const getAcceptesTypes = (kind: string): Accept => {
-    const key = (kind || '').toLowerCase();
-    if (key === 'cad') {
-      return {
-        'image/vnd.dwg': ['.dwg'],
-        'application/octet-stream': ['.dwg', '.dxf'],
-        'application/x-autocad': ['.dwg'],
-        'application/acad': ['.dwg'],
-        'application/dxf': ['.dxf'],
-        'application/x-dxf': ['.dxf'],
-      };
-    }
-    if (key === 'image') {
-      return { 'image/*': [] };
-    }
-    if (key === 'pdf') {
-      return { 'application/pdf': ['.pdf'] };
-    }
-    if (key === 'json') {
-      return { 'application/json': ['.json'] };
-    }
-    return { '*/*': [] };
-  };
-
-  const _types = getAcceptesTypes(accept);
+  const _types = useMemo(() => getAcceptesTypes(accept), [accept]);
   const [progress, setProgress] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
   const [previews, setPreviews] = useState<IPreview[]>([]);
@@ -93,40 +128,6 @@ const RedDropbox = ({
     isDragAccept,
     isDragReject,
   } = useDropzone(dropzoneOptions));
-
-  const baseStyle = {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 84,
-    padding: '18px 16px',
-    borderWidth: 1.5,
-    borderRadius: 13,
-    borderColor: 'var(--progeo-warm-gray-3)',
-    borderStyle: 'dashed',
-    backgroundColor: 'var(--progeo-surface)',
-    color: '#8B8383',
-    fontSize: 13,
-    fontWeight: 500,
-    textAlign: 'center',
-    cursor: 'pointer',
-    outline: 'none',
-    transition: 'border .24s ease-in-out',
-  };
-
-  const focusedStyle = {
-    borderColor: 'var(--progeo-blue)',
-  };
-
-  const acceptStyle = {
-    borderColor: '#00e676',
-  };
-
-  const rejectStyle = {
-    borderColor: '#ff1744',
-  };
 
   const style = useMemo(
     () => ({
@@ -176,7 +177,7 @@ const RedDropbox = ({
         setPreviews(urls);
       }
     },
-    [accept],
+    [accept, _types, maxBytes, maxSizeMB],
   );
 
   const appendPayloadToFormData = (formData: FormData) => {
@@ -254,6 +255,9 @@ const RedDropbox = ({
     } else {
       callBackProcessing(formData);
     }
+    // Per new files/payload only (processedUploadRef guards repeats): the
+    // callbacks and url are new on every parent render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [acceptedFiles, payload]);
 
   useEffect(() => {

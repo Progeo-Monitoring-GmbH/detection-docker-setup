@@ -124,6 +124,8 @@ function ContextPanel() {
         ]);
       }
     }
+    // Per message only - the rest of ctx (readyState, ...) is not logged here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctx?.wsMessage]);
 
   if (!ctx) {

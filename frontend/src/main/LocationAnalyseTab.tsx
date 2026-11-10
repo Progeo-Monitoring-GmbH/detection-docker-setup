@@ -335,6 +335,7 @@ const LocationAnalyseTab = () => {
       },
     );
     // noiseRevision: a changed profile - the cache was cleared, load again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth, days, enqueueSnackbar, heatProfile, heatNoiseQuery, isLorawan, locationId, noiseRevision, query, resolution]);
 
   // Switching the device reloads only the measurements.

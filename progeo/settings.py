@@ -28,8 +28,13 @@ ALLOWED_HOSTS = [host.strip() for host in _raw_allowed_hosts if host.strip()]
 # Hosts the legacy GPRS controllers send to (GET /gprs_<project>.php, see
 # progeo/v1/legacy/gprs.py). Their firmware is fixed, so they are always allowed.
 LEGACY_GPRS_HOSTS = parse_split_str(os.getenv("LEGACY_GPRS_HOSTS", "data-progeo.net,www.data-progeo.net"), ",")
+# Requests from inside the compose network / the container itself: prometheus
+# scrapes http://progeo-backend:8383/metrics, tools in the container call
+# localhost:8383. So DJANGO_ALLOWED_HOSTS only needs the public names.
+INTERNAL_HOSTS = ["progeo-backend", "localhost", "127.0.0.1"]
 if ALLOWED_HOSTS and "*" not in ALLOWED_HOSTS:
     ALLOWED_HOSTS += [host.strip() for host in LEGACY_GPRS_HOSTS if host.strip()]
+    ALLOWED_HOSTS += [host for host in INTERNAL_HOSTS if host not in ALLOWED_HOSTS]
 
 # ########################################################################
 # Server role / feature flags (see django.env.template)

@@ -84,8 +84,9 @@ const LocationVerwaltungView = () => {
         }
         setLoading(false);
       },
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     );
+    // Once on mount: auth changes with every token refresh.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const filtered = useMemo(() => {
