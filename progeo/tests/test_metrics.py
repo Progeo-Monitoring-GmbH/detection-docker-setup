@@ -188,8 +188,11 @@ def test_several_workers_are_added_up_in_one_scrape(tmp_path):
     for _worker in range(2):
         _run_python(count, env)
 
-    scrape = "import sys; from progeo import metrics; sys.stdout.write(metrics.exposition(collectors=()).decode())"
-    families = {family.name: family for family in text_string_to_metric_families(_run_python(scrape, env))}
+    # Into a file, not stdout: the settings import may log there (CI: no django.env).
+    out = tmp_path / "scrape.txt"
+    scrape = f"from pathlib import Path; from progeo import metrics; Path({str(out)!r}).write_bytes(metrics.exposition(collectors=()))"
+    _run_python(scrape, env)
+    families = {family.name: family for family in text_string_to_metric_families(out.read_text())}
 
     samples = [
         sample for sample in families["progeo_http_requests"].samples

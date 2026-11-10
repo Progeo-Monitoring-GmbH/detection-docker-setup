@@ -124,6 +124,7 @@ def test_database_list_ignores_empty_entries():
     assert parse_split_str("main_db;;dev_null;", ";") == ["main_db", "dev_null"]
     assert parse_split_str(" main_db ; dev_null", ";") == ["main_db", "dev_null"]
     assert parse_split_str(";", ";") == []
+    assert parse_split_str("", ";") == [] and parse_split_str(None, ";") == []
 
 
 @override_settings(USE_TZ=False)

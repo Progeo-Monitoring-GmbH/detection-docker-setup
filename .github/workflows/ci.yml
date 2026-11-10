@@ -53,9 +53,9 @@ jobs:
       REDIS_PASSWORD: ''
       SENTRY_DSN: ''
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           # The version of the backend image (docker/backend-base/Dockerfile).
           python-version: '3.13.7'
@@ -89,7 +89,7 @@ jobs:
 
       - name: Coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: backend-coverage
           path: coverage.xml
@@ -102,9 +102,9 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           # The version of the frontend image (docker/frontend/Dockerfile).
           node-version: '24.22.1'
@@ -133,9 +133,9 @@ jobs:
     timeout-minutes: 15
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.13.7'
 
@@ -144,7 +144,7 @@ jobs:
           python -m pip install --upgrade pip pip-audit
           pip-audit -r requirements.txt
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '24.22.1'
 

@@ -206,8 +206,9 @@ def parse_int(value, default=None):
 
 
 def parse_split_str(value: str, split_char) -> list:
+    # Empty is a valid setting (no extra hosts/origins/databases) - logging it
+    # wrote an error into every settings import, e.g. into a metrics scrape.
     if not value:
-        elog("Invalid Value for function 'parse_split_str'!")
         return []
     # Empty pieces ("a;b;", "a;;b") would become e.g. a database named "".
     return [part.strip() for part in value.split(split_char) if part.strip()]
