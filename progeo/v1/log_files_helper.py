@@ -2,9 +2,8 @@ import os
 from datetime import datetime
 
 from django.conf import settings
-from docker.errors import DockerException, NotFound
 
-import docker
+from progeo.helper import docker_access
 
 _TAIL_BLOCK = 64 * 1024
 
@@ -19,18 +18,11 @@ def allowed_log_roots() -> dict[str, str]:
 def _docker_log_sources() -> dict[str, str]:
     # Keep key stable for UI while tolerating alternate container names.
     candidates = ["progeo-nginx", "nginx-reverse-proxy", "detection-docker-setup_progeo-nginx"]
-    try:
-        client = docker.from_env()
-    except DockerException:
-        return {}
-
     for name in candidates:
         try:
-            client.containers.get(name)
-            return {"docker/nginx": f"docker://{name}"}
-        except NotFound:
-            continue
-        except DockerException:
+            if docker_access.container_state(name) is not None:
+                return {"docker/nginx": f"docker://{name}"}
+        except docker_access.DockerOpsError:
             break
     return {}
 
@@ -63,11 +55,9 @@ def allowed_log_files() -> dict[str, str]:
 
 
 def _tail_docker_logs(container_name: str, lines: int) -> tuple[str, int, str]:
-    client = docker.from_env()
-    container = client.containers.get(container_name)
-    logs = container.logs(tail=lines, stdout=True, stderr=True)
-    content = (logs or b"").decode("utf-8", errors="replace")
-    size_bytes = len(logs or b"")
+    lines = max(1, min(int(lines), docker_access.ops.LOG_TAIL_MAX))
+    _name, content = docker_access.container_logs(container_name, lines)
+    size_bytes = len(content.encode("utf-8"))
     modified_at = datetime.now().isoformat()
     return content, size_bytes, modified_at
 
@@ -113,7 +103,7 @@ def summarize_log_files() -> list[dict]:
             container_name = file_path.split("://", 1)[1]
             try:
                 _, size_bytes, modified_at = _tail_docker_logs(container_name, 500)
-            except DockerException:
+            except docker_access.DockerOpsError:
                 continue
             if size_bytes <= 0:
                 continue

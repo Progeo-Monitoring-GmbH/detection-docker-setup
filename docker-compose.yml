@@ -81,8 +81,9 @@ services:
     volumes:
       - ./media:/home/progeo/detection-docker-setup/media:rw
       - ./logs/backend:/var/log/progeo:rw
-      - /var/run/docker.sock:/var/run/docker.sock:rw
       - /var/lib/misc:/var/lib/misc:rw
+      # The Docker agent's token (it creates it; progeo-docker-agent).
+      - docker_agent_token:/run/progeo-docker-agent:ro
       # SSH key for the daily backup transfer (BACKUP_REMOTE_KEY_FILE, default
       # /etc/progeo/backup/id_ed25519) - outside media/, which the API serves.
       - ./secrets/backup:/etc/progeo/backup:ro
@@ -125,8 +126,9 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       DOCKER_UID: ${DOCKER_UID:-1000}
       DOCKER_GID: ${DOCKER_GID:-1001}
-      DOCKER_SOCKET_GID: ${DOCKER_SOCKET_GID:-1001}
-      DOCKER_HOST: unix:///var/run/docker.sock
+      # Docker only through progeo-docker-agent - the backend has no socket.
+      DOCKER_AGENT_URL: http://progeo-docker-agent:8390
+      DOCKER_AGENT_TOKEN: ${DOCKER_AGENT_TOKEN:-}
       # Hand large media downloads (backups > 1GB) to nginx via X-Accel-Redirect.
       MEDIA_X_ACCEL: /protected-media
       # Periodic celery tasks beat must not start, e.g. "all" during the migration.
@@ -143,8 +145,6 @@ services:
       METRICS_TOKEN: ${METRICS_TOKEN:-}
       # Web processes (docker/backend/run-server.sh): 1 = Daphne, more = uvicorn workers.
       WEB_WORKERS: ${WEB_WORKERS:-1}
-    group_add:
-      - '${DOCKER_SOCKET_GID:-1001}'
     cap_add:
       - NET_ADMIN
     security_opt:
@@ -156,6 +156,53 @@ services:
           - progeo-backend
       database_net:
       redis_net:
+      docker_agent_net:
+
+  # The only container with the Docker socket (progeo/docker_agent/). The
+  # backend asks it for the few Docker operations it needs - container
+  # status, start/stop/restart/remove, logs, the CAD factory run - over
+  # docker_agent_net, with the token it writes to the shared volume. A
+  # compromised backend can no longer create containers (= mount the host's
+  # disk): the CAD factory run's image, mounts and user are fixed here.
+  progeo-docker-agent:
+    build:
+      context: .
+      dockerfile: docker/backend/Dockerfile
+      args:
+        BACKEND_PORT: ${BACKEND_PORT}
+        DB_HOST: ${POSTGRES_HOST}
+        DB_PORT: ${POSTGRES_PORT}
+        DOCKER_UID: ${DOCKER_UID:-1000}
+        DOCKER_GID: ${DOCKER_GID:-1000}
+        DOCKER_SOCKET_GID: ${DOCKER_SOCKET_GID:-1001}
+    container_name: progeo-docker-agent
+    restart: unless-stopped
+    # The backend image, but only this script - no supervisord, no Django.
+    command: ['/opt/venv/bin/python', '-u', '/home/progeo/detection-docker-setup/progeo/docker_agent/server.py']
+    # Root like anyone with the socket - and nothing more: no capabilities but
+    # CHOWN (it hands the token file to the backend's user).
+    user: root
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    environment:
+      DOCKER_UID: ${DOCKER_UID:-1000}
+      DOCKER_GID: ${DOCKER_GID:-1001}
+      # Empty: a random token, created once in the volume below.
+      DOCKER_AGENT_TOKEN: ${DOCKER_AGENT_TOKEN:-}
+      # Whose media mount and compose project the CAD factory run uses.
+      DOCKER_BACKEND_CONTAINER: progeo-backend
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+      - docker_agent_token:/run/progeo-docker-agent
+    healthcheck:
+      test: ['CMD', '/opt/venv/bin/python', '-c', "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8390/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      docker_agent_net:
 
   progeo-frontend:
     container_name: progeo-frontend
@@ -716,6 +763,9 @@ networks:
     internal: true
   database_net:
   redis_net:
+  # progeo-backend <-> progeo-docker-agent only, no way out.
+  docker_agent_net:
+    internal: true
   # Fixed subnet: progeo-node-exporter listens on its gateway (MONITORING_GATEWAY),
   # the bridge gets a fixed name for host firewall rules (docker/monitoring/README.md).
   monitoring_net:
@@ -737,3 +787,4 @@ volumes:
   mas_data:
   matrix_data:
   matrix_db_data:
+  docker_agent_token:

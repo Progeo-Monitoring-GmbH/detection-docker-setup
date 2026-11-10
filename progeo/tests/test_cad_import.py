@@ -17,6 +17,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 
 from progeo import consumer
+from progeo.docker_agent import ops
 from progeo.helper import cad_import, docker_helper
 from progeo.tests import factories as f
 from progeo.v1.models import Account, ProgeoMeasurePoint
@@ -323,7 +324,7 @@ class FakeClient:
             @staticmethod
             def get(name):
                 if known.get(name) is None:
-                    raise docker_helper.NotFound(name)
+                    raise ops.NotFound(name)
                 return known[name]
 
             @staticmethod
@@ -345,7 +346,7 @@ class FakeClient:
 def docker_client(monkeypatch):
     def install(container, **kwargs):
         client = FakeClient(container, **kwargs)
-        monkeypatch.setattr(docker_helper.docker, "from_env", lambda: client)
+        monkeypatch.setattr(ops.docker, "from_env", lambda: client)
         return client
 
     monkeypatch.setenv("DOCKER_MEDIA_SOURCE", "/media")

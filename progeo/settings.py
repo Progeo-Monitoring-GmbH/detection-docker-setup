@@ -55,6 +55,13 @@ PROGEO_CONFIG_EVALUATE_INSTANTLY = parse_boolean(os.getenv("PROGEO_CONFIG_EVALUA
 # separated: schedule names ("check-existing-alarms-quarter-hourly"), task
 # names ("check_existing_alarms") or "all" - e.g. while split_project_dbs runs.
 CELERY_DISABLED_TASKS = [name.strip() for name in os.getenv("CELERY_DISABLED_TASKS", "").split(",") if name.strip()]
+# progeo-docker-agent (progeo/docker_agent/): the only container with the
+# Docker socket. Empty URL = the backend talks to the local Docker directly
+# (development without the agent). The token is DOCKER_AGENT_TOKEN or, as the
+# agent creates it, the shared file.
+DOCKER_AGENT_URL = (os.getenv("DOCKER_AGENT_URL") or "").strip()
+DOCKER_AGENT_TOKEN = (os.getenv("DOCKER_AGENT_TOKEN") or "").strip()
+DOCKER_AGENT_TOKEN_FILE = (os.getenv("DOCKER_AGENT_TOKEN_FILE") or "").strip() or "/run/progeo-docker-agent/token"
 # Bearer token Prometheus scrapes /metrics with (progeo/metrics.py); empty = /metrics answers 404.
 METRICS_TOKEN = (os.getenv("METRICS_TOKEN") or "").strip()
 

@@ -44,7 +44,7 @@ AREA_MODULES = {
     """,
     "notifications": "bounces_and_notifications email_and_sms_helpers messenger outbound test_mail_command",
     "operations": """
-        celery_schedule clear_logs deployment_settings docker_api health logging_handler log_stream metrics
+        celery_schedule clear_logs deployment_settings docker_agent docker_api health logging_handler log_stream metrics
         periodic_task_skipping sentry_shutdown task_config_errors
     """,
 }

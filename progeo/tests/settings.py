@@ -374,6 +374,10 @@ FIRMWARE_UPLOAD_TOKEN = ""
 # Read through django.conf.settings (base_viewsets, handle_all_dbs) - production's defaults.
 MEDIA_X_ACCEL = ""
 DBBACKUP_CLEANUP_KEEP = 10
+# No agent in tests: helper/docker_access.py calls progeo/docker_agent/ops.py directly.
+DOCKER_AGENT_URL = ""
+DOCKER_AGENT_TOKEN = ""
+DOCKER_AGENT_TOKEN_FILE = ""
 
 dyn_backups = {}
 for db in DJANGO_DATABASES:

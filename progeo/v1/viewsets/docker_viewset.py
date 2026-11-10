@@ -1,4 +1,3 @@
-from docker.errors import DockerException, NotFound
 from rest_framework import viewsets
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action
@@ -7,23 +6,25 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
-import docker
 from progeo.authentication import ExpiringTokenAuthentication
 from progeo.decorator import require_module_permissions
+from progeo.helper import docker_access
 from progeo.helper.basics import RequestFailed, RequestSuccess, ilog
-from progeo.helper.docker_helper import get_docker_status, is_container_running
 
 # Logs: the last this many lines by default - a long-running container's
 # whole log can be megabytes. ?tail= (body "tail") up to LOG_TAIL_MAX.
 LOG_TAIL_DEFAULT = 1000
-LOG_TAIL_MAX = 20000
+LOG_TAIL_MAX = docker_access.ops.LOG_TAIL_MAX
 
 
 class DockerViewSet(viewsets.ViewSet):
     """The host's containers (Developer -> Docker, /api/docker/...): list,
     start, stop, restart, remove and read logs. Staff with
     module_docker_enabled only. Every action takes {"container_id": <id or
-    name>} and answers {"success": true, "name"} or 400 {"reason"}."""
+    name>} and answers {"success": true, "name"} or 400 {"reason"}.
+
+    Docker itself is reached through helper/docker_access.py - in production
+    the progeo-docker-agent, the only container with the Docker socket."""
 
     authentication_classes = [JWTAuthentication, ExpiringTokenAuthentication, SessionAuthentication]
     permission_classes = [IsAuthenticated]
@@ -40,72 +41,46 @@ class DockerViewSet(viewsets.ViewSet):
             raise PermissionDenied("Staff access required")
 
     @staticmethod
-    def _get_client_or_error():
-        try:
-            return docker.from_env(), None
-        except (DockerException, PermissionError) as exc:
-            return None, RequestFailed({"reason": f"Docker client unavailable: {exc}"})
-
-    def _container(self, request):
-        """(container, None) for the body's container_id, else (None, error response)."""
+    def _container_id(request):
         container_id = request.data.get("container_id")
-        if not isinstance(container_id, str) or not container_id.strip():
-            return None, RequestFailed({"reason": "container_id required"})
-        client, error = self._get_client_or_error()
-        if error:
-            return None, error
-        try:
-            return client.containers.get(container_id.strip()), None
-        except NotFound:
-            return None, RequestFailed({"reason": "Container not found"})
-        except (DockerException, PermissionError) as exc:
-            return None, RequestFailed({"reason": f"Docker unavailable: {exc}"})
+        return container_id.strip() if isinstance(container_id, str) else ""
 
-    def _run(self, request, verb, operation, container=None):
-        if container is None:
-            container, error = self._container(request)
-            if error:
-                return error
+    def _run(self, request, verb):
         try:
-            operation(container)
-        except (DockerException, PermissionError) as exc:
-            return RequestFailed({"reason": f"Failed to {verb} container: {exc}"})
-        ilog(f"{verb} container {container.name} by user {request.user.pk}", tag="[DOCKER]")
-        return RequestSuccess({"name": container.name})
+            name = docker_access.container_action(self._container_id(request), verb)
+        except docker_access.DockerOpsError as error:
+            return RequestFailed({"reason": error.reason})
+        ilog(f"{verb} container {name} by user {request.user.pk}", tag="[DOCKER]")
+        return RequestSuccess({"name": name})
 
     @action(detail=False, url_path="status", methods=["GET"])
     @require_module_permissions("module_docker_enabled")
     def docker_status(self, request: Request, *args, **kwargs):
         try:
-            return Response({"container": get_docker_status()})
-        except (DockerException, PermissionError) as exc:
-            return RequestFailed({"reason": f"Could not read docker status: {exc}"})
+            return Response({"container": docker_access.status()})
+        except docker_access.DockerOpsError as error:
+            return RequestFailed({"reason": error.reason})
 
     @action(detail=False, url_path="start", methods=["POST"])
     @require_module_permissions("module_docker_enabled")
     def start_docker_container(self, request: Request, *args, **kwargs):
-        return self._run(request, "start", lambda container: container.start())
+        return self._run(request, "start")
 
     @action(detail=False, url_path="stop", methods=["POST"])
     @require_module_permissions("module_docker_enabled")
     def stop_docker_container(self, request: Request, *args, **kwargs):
-        return self._run(request, "stop", lambda container: container.stop())
+        return self._run(request, "stop")
 
     @action(detail=False, url_path="restart", methods=["POST"])
     @require_module_permissions("module_docker_enabled")
     def restart_docker_container(self, request: Request, *args, **kwargs):
-        return self._run(request, "restart", lambda container: container.restart())
+        return self._run(request, "restart")
 
     @action(detail=False, url_path="remove", methods=["POST"])
     @require_module_permissions("module_docker_enabled")
     def remove_docker_container(self, request: Request, *args, **kwargs):
-        container, error = self._container(request)
-        if error:
-            return error
-        # A running container is stopped first in the UI - never removed by force here.
-        if is_container_running(container):
-            return RequestFailed({"reason": "Stop the container before removing it"})
-        return self._run(request, "remove", lambda target: target.remove(), container)
+        # A running container is refused (stop it first) - never removed by force.
+        return self._run(request, "remove")
 
     @action(detail=False, url_path="logs", methods=["POST"])
     @require_module_permissions("module_docker_enabled")
@@ -117,27 +92,20 @@ class DockerViewSet(viewsets.ViewSet):
         except (TypeError, ValueError):
             return RequestFailed({"reason": "tail must be an integer"})
         tail = max(1, min(tail, LOG_TAIL_MAX))
-        container, error = self._container(request)
-        if error:
-            return error
         try:
-            logs = container.logs(tail=tail, timestamps=True).decode("utf-8", errors="replace")
-        except (DockerException, PermissionError) as exc:
-            return RequestFailed({"reason": f"Failed to read container logs: {exc}"})
-        return RequestSuccess({"logs": logs, "name": container.name, "tail": tail})
+            name, logs = docker_access.container_logs(self._container_id(request), tail, timestamps=True)
+        except docker_access.DockerOpsError as error:
+            return RequestFailed({"reason": error.reason})
+        return RequestSuccess({"logs": logs, "name": name, "tail": tail})
 
     @action(detail=False, url_path="ping", methods=["POST"])
     @require_module_permissions("module_docker_enabled")
     def ping_docker(self, request: Request, *args, **kwargs):
         name = request.data.get("name")
-        if name:
-            client, error_response = self._get_client_or_error()
-            if error_response:
-                return Response({"running": False})
-            try:
-                container = client.containers.get(name)
-                if container:
-                    return Response({"running": is_container_running(container)})
-            except (NotFound, DockerException, PermissionError):
-                pass
-        return Response({"running": False})
+        if not isinstance(name, str) or not name.strip():
+            return Response({"running": False})
+        try:
+            state = docker_access.container_state(name.strip())
+        except docker_access.DockerOpsError:
+            state = None
+        return Response({"running": bool(state and state["running"])})
