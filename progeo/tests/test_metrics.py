@@ -161,3 +161,46 @@ def test_websocket_gauge_follows_the_open_connection():
     assert seen_while_open == [1]
     assert _sample("progeo_websocket_connections", route="test") == 0
     assert _sample("progeo_websocket_connections_opened_total", route="test") == opened_before + 1
+
+
+# -- several web processes (WEB_WORKERS > 1, docker/backend/run-server.sh) -------
+
+def _run_python(code, env):
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    return subprocess.run(
+        [sys.executable, "-c", code], cwd=Path(__file__).resolve().parents[2],
+        env=env, capture_output=True, text=True, timeout=120, check=True,
+    ).stdout
+
+
+def test_several_workers_are_added_up_in_one_scrape(tmp_path):
+    """Each uvicorn worker counts in its own process; whichever one answers
+    the scrape reports the sum over all of them."""
+    import os
+
+    from prometheus_client.parser import text_string_to_metric_families
+
+    env = {**os.environ, "PROMETHEUS_MULTIPROC_DIR": str(tmp_path), "SENTRY_DSN": ""}
+    count = "from progeo import metrics; metrics.HTTP_REQUESTS.labels('device-list', 'GET', '200').inc()"
+    for _worker in range(2):
+        _run_python(count, env)
+
+    scrape = "import sys; from progeo import metrics; sys.stdout.write(metrics.exposition(collectors=()).decode())"
+    families = {family.name: family for family in text_string_to_metric_families(_run_python(scrape, env))}
+
+    samples = [
+        sample for sample in families["progeo_http_requests"].samples
+        if sample.name == "progeo_http_requests_total" and sample.labels.get("view") == "device-list"
+    ]
+    assert [sample.value for sample in samples] == [2.0]
+
+
+def test_one_web_process_scrapes_the_default_registry(monkeypatch):
+    from progeo import metrics
+
+    monkeypatch.delenv(metrics.MULTIPROC_DIR_ENV, raising=False)
+
+    assert b"progeo_http_requests_in_progress" in metrics.exposition()

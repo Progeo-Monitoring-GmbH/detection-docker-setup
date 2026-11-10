@@ -35,6 +35,7 @@ from progeo.helper.basics import RequestFailed, RequestSuccess, elog, ilog
 from progeo.helper.controller_wifi import parse_lua_wifi, request_controller_wifi_update
 from progeo.helper.creator import create_MfS_log
 from progeo.helper.device_overview import device_model, hash_kind
+from progeo.helper.device_utils import CONFIG_TASK_WAIT_SECONDS
 from progeo.helper.firmware import list_bundles as list_firmware_bundles
 from progeo.helper.location_access import (
     can_see_location,
@@ -168,8 +169,6 @@ class DeviceViewSet(ProgeoModalViewSet):
 
     def get_queryset(self):
         account = self._resolve_request_account(self.request)
-        ilog("DeviceViewSet: get_queryset called | account:", account)
-
         if not account:
             return ProgeoDevice.objects.none()
         # ?location= names the database (device ids are only unique per database with the split on).
@@ -755,7 +754,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         task = download_device_config_task.delay(device.device_ip or "", path)
 
         try:
-            result = task.get(timeout=20)
+            result = task.get(timeout=CONFIG_TASK_WAIT_SECONDS)
         except TimeoutError:
             return RequestFailed({"reason": "Timed out waiting for device response", "task_id": task.id})
         except Exception as exc:  # noqa: BLE001 - the failure is answered as the reason
@@ -826,7 +825,7 @@ class DeviceViewSet(ProgeoModalViewSet):
         task = upload_device_config_task.delay(device.device_ip or "", content, path)
 
         try:
-            result = task.get(timeout=20)
+            result = task.get(timeout=CONFIG_TASK_WAIT_SECONDS)
         except TimeoutError:
             return RequestFailed({"reason": "Timed out waiting for device response", "task_id": task.id})
         except Exception as exc:  # noqa: BLE001 - the failure is answered as the reason

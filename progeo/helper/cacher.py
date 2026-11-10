@@ -32,11 +32,12 @@ def clear_cache(_key):
 
 
 def search_clear_cache(_key):
-    keys = cache.keys(_key)
-    dlog("search_clear_cache", _key, "<=", keys, tag="[CACHE]", active=DEBUG)
-    for key in keys:
-        okaylog("Clear Cache", key)
-        cache.delete(key)
+    """Deletes the cached answers matching the glob `_key`. SCAN, not KEYS:
+    KEYS walks the whole Redis database at once and blocks every other
+    client (sessions, channel layer, Celery results) meanwhile."""
+    deleted = cache.delete_pattern(_key)
+    okaylog("Clear Cache", _key, deleted, active=DEBUG)
+    return deleted
 
 
 def clear_cache_pattern(pattern):

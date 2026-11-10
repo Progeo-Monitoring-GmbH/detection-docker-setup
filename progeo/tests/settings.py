@@ -319,12 +319,14 @@ REDIS_PORT = os.getenv("REDIS_PORT", "6379")
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
 REDIS_AUTH = f":{REDIS_PASSWORD}@" if REDIS_PASSWORD else ""
 REDIS_URL = f"redis://{REDIS_AUTH}{REDIS_HOST}:{REDIS_PORT}/1"
+# Like progeo/settings.py: the channel layer in its own Redis database.
+CHANNEL_LAYER_REDIS_URL = f"redis://{REDIS_AUTH}{REDIS_HOST}:{REDIS_PORT}/2"
 
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [REDIS_URL],
+            "hosts": [CHANNEL_LAYER_REDIS_URL],
         },
     },
 }

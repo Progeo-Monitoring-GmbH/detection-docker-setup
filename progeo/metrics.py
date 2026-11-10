@@ -1,11 +1,14 @@
 """Prometheus metrics of the backend, scraped by progeo-prometheus (compose
 profile "monitoring", docker/monitoring/).
 
-Daphne serves everything from one process, so prometheus_client's default
-registry is complete - no multiprocess mode. Celery workers import this module
-too but never export it; Flower covers celery.
+One web process (Daphne, WEB_WORKERS=1): prometheus_client's default
+registry is complete. Several (uvicorn, WEB_WORKERS>1, run-server.sh): every
+worker writes its values to PROMETHEUS_MULTIPROC_DIR and /metrics - answered
+by whichever worker gets the scrape - adds them up (exposition()). Celery
+workers import this module too but never export it; Flower covers celery.
 """
 import hmac
+import os
 import time
 
 from django.conf import settings
@@ -13,12 +16,15 @@ from django.http import HttpResponse
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
     REGISTRY,
+    CollectorRegistry,
     Counter,
     Gauge,
     Histogram,
     generate_latest,
 )
 from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily
+
+MULTIPROC_DIR_ENV = "PROMETHEUS_MULTIPROC_DIR"
 
 HTTP_REQUESTS = Counter(
     "progeo_http_requests", "HTTP requests by view, method and status code", ["view", "method", "status"]
@@ -29,13 +35,19 @@ HTTP_DURATION = Histogram(
     ["view", "method"],
     buckets=(0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60),
 )
-HTTP_IN_PROGRESS = Gauge("progeo_http_requests_in_progress", "HTTP requests being handled right now")
+# "livesum": with several workers, the sum over the running ones (ignored
+# with a single process).
+HTTP_IN_PROGRESS = Gauge(
+    "progeo_http_requests_in_progress", "HTTP requests being handled right now", multiprocess_mode="livesum"
+)
 HTTP_WRITE_REQUESTS = Counter(
     "progeo_http_write_requests",
     "Write HTTP requests by account database, method and status",
     ["database", "method", "status"],
 )
-WEBSOCKET_CONNECTIONS = Gauge("progeo_websocket_connections", "Open websocket connections by route", ["route"])
+WEBSOCKET_CONNECTIONS = Gauge(
+    "progeo_websocket_connections", "Open websocket connections by route", ["route"], multiprocess_mode="livesum"
+)
 WEBSOCKET_OPENED = Counter("progeo_websocket_connections_opened", "Websocket connections opened by route", ["route"])
 
 METRICS_PATH = "/metrics"
@@ -214,9 +226,24 @@ class OutboundCollector:
         yield last
 
 
-REGISTRY.register(BackupTransferCollector())
-REGISTRY.register(CronJobCollector())
-REGISTRY.register(OutboundCollector())
+# Read at scrape time from files / Redis - the same in every worker.
+CUSTOM_COLLECTORS = (BackupTransferCollector(), CronJobCollector(), OutboundCollector())
+for _collector in CUSTOM_COLLECTORS:
+    REGISTRY.register(_collector)
+
+
+def exposition(collectors=CUSTOM_COLLECTORS):
+    """The metrics text: the default registry with one web process, else the
+    values of every worker (PROMETHEUS_MULTIPROC_DIR) plus `collectors`."""
+    if not os.environ.get(MULTIPROC_DIR_ENV):
+        return generate_latest(REGISTRY)
+    from prometheus_client import multiprocess
+
+    registry = CollectorRegistry()
+    multiprocess.MultiProcessCollector(registry)
+    for collector in collectors:
+        registry.register(collector)
+    return generate_latest(registry)
 
 
 def _view_label(request):
@@ -277,7 +304,7 @@ def metrics_response(request):
     supplied = request.headers.get("Authorization", "").removeprefix("Bearer ")
     if not hmac.compare_digest(supplied.encode(), token.encode()):
         return HttpResponse(status=401)
-    return HttpResponse(generate_latest(), content_type=CONTENT_TYPE_LATEST)
+    return HttpResponse(exposition(), content_type=CONTENT_TYPE_LATEST)
 
 
 def track_websocket(route, app):

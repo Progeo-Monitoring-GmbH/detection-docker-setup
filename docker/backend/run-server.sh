@@ -113,6 +113,32 @@ else
   fi
 fi
 
+# Web processes (WEB_WORKERS, default 1). One: Daphne, as always. More:
+# uvicorn with that many worker processes - each a full Django process with
+# its own memory and database connections. Sessions, caches, the access
+# index and the websocket groups live in Redis/Postgres, so any worker can
+# answer any request; the Prometheus values are summed over the workers
+# (progeo/metrics.py, PROMETHEUS_MULTIPROC_DIR).
+WEB_WORKERS="${WEB_WORKERS:-1}"
+case "${WEB_WORKERS}" in
+  ''|*[!0-9]*) pprint "[WARN] WEB_WORKERS='${WEB_WORKERS}' is no number - using 1"; WEB_WORKERS=1 ;;
+esac
+
+# Replace the shell with the server so Supervisor tracks and captures the real server process logs.
+if [ "${WEB_WORKERS}" -gt 1 ]; then
+  pprint "### Starting Webserver: 0.0.0.0:${1} (uvicorn, ${WEB_WORKERS} workers)"
+  # Emptied on every start: files of earlier processes would be counted again.
+  export PROMETHEUS_MULTIPROC_DIR="${PROMETHEUS_MULTIPROC_DIR:-/tmp/progeo-prometheus}"
+  rm -rf "${PROMETHEUS_MULTIPROC_DIR}"
+  mkdir -p "${PROMETHEUS_MULTIPROC_DIR}"
+  # Like Daphne: no access log (it would carry ?token= query strings), no
+  # X-Forwarded-* rewriting (Django reads them itself), no lifespan events
+  # (Django doesn't use them).
+  exec python -u -m uvicorn progeo.asgi:application \
+    --host 0.0.0.0 --port "${1}" --workers "${WEB_WORKERS}" \
+    --lifespan off --no-access-log --no-proxy-headers \
+    --timeout-graceful-shutdown 30
+fi
+
 pprint "### Starting Webserver: 0.0.0.0:${1}"
-# Replace the shell with Daphne so Supervisor tracks and captures the real server process logs.
 exec python -u -m daphne -b 0.0.0.0 -p "${1}" progeo.asgi:application

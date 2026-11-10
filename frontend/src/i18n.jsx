@@ -17,7 +17,9 @@ i18n
   // init i18next
   // for all options read: https://www.i18next.com/overview/configuration-options
   .init({
-    debug: true,
+    // Development only: in production it logged every language change and
+    // missing key to the browser console on every page.
+    debug: import.meta.env.DEV,
     fallbackLng: 'en',
     interpolation: {
       escapeValue: false, // not needed for react as it escapes by default

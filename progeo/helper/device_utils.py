@@ -5,6 +5,12 @@ import socket
 from urllib.parse import quote, unquote, urlparse
 
 ALLOWED_DEVICE_CONFIG_PATH = "config/device_config.lua"
+# How long the config download/upload tasks wait for the device...
+DEVICE_HTTP_TIMEOUT = 15
+# ...and the view for the task: longer, or a slow device always looked like
+# a timeout (the view gave up after 20 s, the device had 25). The margin
+# covers the task's time in the Celery queue.
+CONFIG_TASK_WAIT_SECONDS = DEVICE_HTTP_TIMEOUT + 5
 
 
 def normalize_device_base_url(device_ip: str) -> str:

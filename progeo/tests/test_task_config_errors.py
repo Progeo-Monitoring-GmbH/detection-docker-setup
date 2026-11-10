@@ -36,3 +36,11 @@ def test_upload_refuses_an_unsupported_path_without_raising():
     assert result["ok"] is False
     assert result["status_code"] is None
     assert "Unsupported config path" in result["reason"]
+
+
+def test_the_config_view_waits_longer_than_the_device_may_take():
+    """The view used to give up after 20 s while the task gave the device 25 s:
+    a slow device always looked like a timeout."""
+    from progeo.helper.device_utils import CONFIG_TASK_WAIT_SECONDS, DEVICE_HTTP_TIMEOUT
+
+    assert CONFIG_TASK_WAIT_SECONDS > DEVICE_HTTP_TIMEOUT

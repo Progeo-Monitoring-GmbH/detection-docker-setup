@@ -462,13 +462,17 @@ REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = os.getenv("REDIS_PORT", "6379")
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
 REDIS_AUTH = f":{REDIS_PASSWORD}@" if REDIS_PASSWORD else ""
+# Redis databases: 0 Celery (progeo/celery.py), 1 the Django cache, 2 the
+# channel layer - cache.clear() (manage.py clear_cache) is FLUSHDB and must
+# not drop the websocket groups.
 REDIS_URL = f"redis://{REDIS_AUTH}{REDIS_HOST}:{REDIS_PORT}/1"
+CHANNEL_LAYER_REDIS_URL = f"redis://{REDIS_AUTH}{REDIS_HOST}:{REDIS_PORT}/2"
 
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [REDIS_URL],
+            "hosts": [CHANNEL_LAYER_REDIS_URL],
         },
     },
 }
@@ -548,7 +552,6 @@ SETUP_DIR = os.path.join(MEDIA_ROOT, os.getenv("SETUP_DIR", "setup"))
 UPLOAD_DIR = os.path.join(MEDIA_ROOT, os.getenv("UPLOAD_DIR", "uploads"))
 UPLOAD_REL_DIR = os.path.join(MEDIA_URL, os.getenv("UPLOAD_DIR", "uploads"))[1:]
 EXPORT_DIR = os.path.join(MEDIA_ROOT, os.getenv("EXPORT_DIR", "export"))
-STONKS_DIR = os.path.join(MEDIA_ROOT, os.getenv("STONKS_DIR", "stonks"))
 # Flash bundles for the field app (helper/firmware.py). nginx serves this
 # directory publicly at /firmware/ (docker/nginx/snippets/firmware.conf), so
 # the name is fixed.

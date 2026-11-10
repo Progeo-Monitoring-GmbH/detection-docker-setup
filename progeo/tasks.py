@@ -19,6 +19,7 @@ def download_device_config(device_ip: str, path: str | None = None):
     from progeo.helper.basics import dlog as _dlog
     from progeo.helper.device_utils import (
         ALLOWED_DEVICE_CONFIG_PATH,
+        DEVICE_HTTP_TIMEOUT,
         normalize_config_path,
         normalize_device_base_url,
     )
@@ -33,7 +34,7 @@ def download_device_config(device_ip: str, path: str | None = None):
         logger.info(f"[CELERY] {msg}")
         _dlog(msg, tag="[CELERY]")
 
-        response = requests.get(f"{base_url}/download?path={encoded_path}", timeout=25)
+        response = requests.get(f"{base_url}/download?path={encoded_path}", timeout=DEVICE_HTTP_TIMEOUT)
     except (ValueError, OSError) as exc:
         # A missing/invalid device IP or an unreachable device is a normal
         # failure of this task - return it like an HTTP failure, don't crash.
@@ -60,6 +61,7 @@ def upload_device_config(device_ip: str, content: str, path: str | None = None):
     from progeo.helper.basics import dlog as _dlog
     from progeo.helper.device_utils import (
         ALLOWED_DEVICE_CONFIG_PATH,
+        DEVICE_HTTP_TIMEOUT,
         normalize_config_path,
         normalize_device_base_url,
         socket_upload,
@@ -76,7 +78,7 @@ def upload_device_config(device_ip: str, content: str, path: str | None = None):
         _dlog(msg, tag="[CELERY]")
 
         body = (content or "").encode("utf-8")
-        ok, status_code, response_content = socket_upload(base_url, encoded_path, body, timeout=25)
+        ok, status_code, response_content = socket_upload(base_url, encoded_path, body, timeout=DEVICE_HTTP_TIMEOUT)
     except (ValueError, OSError) as exc:
         # Same as download_device_config: report a missing/invalid IP or an
         # unreachable device instead of letting the task crash.

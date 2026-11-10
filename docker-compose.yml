@@ -141,6 +141,8 @@ services:
       SENTRY_SERVER_NAME: ${SENTRY_SERVER_NAME:-}
       # Bearer token of GET /metrics (progeo/metrics.py); empty = endpoint off.
       METRICS_TOKEN: ${METRICS_TOKEN:-}
+      # Web processes (docker/backend/run-server.sh): 1 = Daphne, more = uvicorn workers.
+      WEB_WORKERS: ${WEB_WORKERS:-1}
     group_add:
       - '${DOCKER_SOCKET_GID:-1001}'
     cap_add:
