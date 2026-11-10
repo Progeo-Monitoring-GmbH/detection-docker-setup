@@ -50,14 +50,16 @@ services:
 
   # Used for django websocket connections
   progeo-redis:
-    image: redis:latest
+    # Pinned like every other image: :latest changed under a running setup.
+    image: redis:8.10.1
     container_name: progeo-redis
     restart: always
     command: ['redis-server', '--requirepass', '${REDIS_PASSWORD}']
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
+    # Only the containers (and this machine) need Redis - never the LAN.
     ports:
-      - '${LIMITED_ACCESS}${REDIS_PORT}:6379'
+      - '${LIMITED_ACCESS:-127.0.0.1:}${REDIS_PORT}:6379'
     networks:
       redis_net:
         aliases:

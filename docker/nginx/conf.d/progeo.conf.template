@@ -1,3 +1,6 @@
+# Login endpoints (snippets/login_rate_limit.conf): 30 per minute and client address.
+limit_req_zone $binary_remote_addr zone=login:10m rate=30r/m;
+
 server {
     listen 443 ssl;
     listen [::]:443 ssl;
@@ -23,6 +26,8 @@ server {
 
     # Public flash bundles for the field app (https://api.progeo.com/firmware/).
     include /etc/nginx/snippets/firmware.conf;
+
+    include /etc/nginx/snippets/login_rate_limit.conf;
 
     # Prometheus scrapes the backend directly (docker network); never public.
     location = /metrics {
@@ -112,10 +117,28 @@ server {
         proxy_pass http://$frontend_upstream;
         add_header Content-Security-Policy "upgrade-insecure-requests" always;
         add_header X-Progeo-Route "dashboard-root" always;
+        # add_header here drops the server's lines - without these the
+        # dashboard itself went out without HSTS / frame protection. The
+        # frontend container sends its own copies (hotspot access): hidden,
+        # so each header goes out once.
+        proxy_hide_header X-Content-Type-Options;
+        proxy_hide_header X-Frame-Options;
+        proxy_hide_header Referrer-Policy;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        # Report-only: browsers list violations in the console, nothing is
+        # blocked. Switch to Content-Security-Policy once the console is clean
+        # on every page (maps, plots, plan editor).
+        add_header Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https: wss:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" always;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
+
+    # Before the backend regex location below (first matching regex wins).
+    include /etc/nginx/snippets/login_rate_limit.conf;
 
     # Backend on the dashboard's own origin: the frontend is built without a
     # backend URL and calls these paths same-origin (no CORS, no extra DNS

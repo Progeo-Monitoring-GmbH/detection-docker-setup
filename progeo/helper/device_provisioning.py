@@ -29,7 +29,7 @@ SAMPLE_PATH = "/v1/device/{project_id}/sample/"
 DEVICE_MODEL = "smartex mx"
 CONFIG_VERSION = "2026.11"
 # firmware.version of the config while the server holds no flash bundle.
-FIRMWARE_VERSION = "v1.2.0-tls-lua53"
+FIRMWARE_VERSION = "v1.6.1-tls-lua53"
 # Without a choice: the latest bundle of this channel (else of any channel).
 DEFAULT_FIRMWARE_CHANNEL = "stable"
 PORTAL = {"ssid": "MicroBoxInstallHelper", "pwd": "microWord", "timeout_sec": 60}

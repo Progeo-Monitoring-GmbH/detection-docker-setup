@@ -157,13 +157,12 @@ def build_filter(**kwargs):
                 }
                 filtr.update(switcher.get(type(value)))
 
+        # value is truthy here (skipped above).
         elif key == "amount":
-            if value:
-                filtr.update({"amount__gt": 0})
+            filtr.update({"amount__gt": 0})
 
         elif key == "ignore_source":
-            if value:
-                filtr.update({"ignore_source": False})
+            filtr.update({"ignore_source": False})
 
     # if len(filtr):
     #     dlog("Filtr:", filtr)

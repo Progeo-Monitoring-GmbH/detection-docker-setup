@@ -117,11 +117,14 @@ urlpatterns = [
     # Legacy GPRS controllers: the old PHP endpoint of data-progeo.net (see
     # progeo/v1/legacy/gprs.py; nginx passes it through on plain http).
     re_path(r"^gprs_(?P<project>\d+)\.php$", gprs_php, name="legacy_gprs"),
-    re_path(r"^__debug__/", include("debug_toolbar.urls")),
 
     ###re_path(r"^silk/", include("silk.urls", namespace="silk")),
 
 ]
+
+# Debug toolbar: only routed where it is installed (settings: DEBUG on).
+if "debug_toolbar" in django_settings.INSTALLED_APPS:
+    urlpatterns.append(re_path(r"^__debug__/", include("debug_toolbar.urls")))
 
 # The portal as OpenID Connect provider for our Matrix server (progeo/oidc.py),
 # only with a signing key and issuer (PORTAL_OIDC_KEY_FILE / PORTAL_OIDC_ISSUER).

@@ -178,6 +178,9 @@ INSTALLED_APPS = [
     "colorfield",
     "progeo",
 ]
+# The debug toolbar shows SQL, settings and headers: only with DEBUG on.
+if not DEBUG:
+    INSTALLED_APPS.remove("debug_toolbar")
 
 MIDDLEWARE = [
     # First: the measured duration covers every other middleware, and it
@@ -200,6 +203,8 @@ MIDDLEWARE = [
     "progeo.middlewares.ImpersonationMiddleware",
     "progeo.middlewares.TwoFactorRequiredMiddleware",
 ]
+if not DEBUG:
+    MIDDLEWARE.remove("debug_toolbar.middleware.DebugToolbarMiddleware")
 
 DEBUG_TOOLBAR_CONFIG = {
     "SHOW_TOOLBAR_CALLBACK": "progeo.debug.show_toolbar",
@@ -254,7 +259,8 @@ SIMPLE_JWT = {
     "UPDATE_LAST_LOGIN": True,
 
     "ALGORITHM": "HS256",
-    "SIGNING_KEY": os.getenv("SIGNING_KEY", None),
+    # Unset: SECRET_KEY, like simplejwt's own default (None would fail on every login).
+    "SIGNING_KEY": os.getenv("SIGNING_KEY") or SECRET_KEY,
     "VERIFYING_KEY": os.getenv("VERIFYING_KEY", None),
     "AUDIENCE": None,
     "ISSUER": None,
@@ -432,15 +438,21 @@ CORS_ALLOWED_ORIGINS = [
     for origin in _raw_allowed_origins
     if origin.strip() and "@" not in origin
 ]
+# Any origin on this machine or the LAN may send credentialed requests - for
+# the Vite dev server (another port than the backend). The docker frontend
+# calls the backend same-origin and needs none of this, so it is off unless
+# DEBUG; CORS_ALLOW_LOCAL_ORIGINS=1 forces it on.
+CORS_ALLOW_LOCAL_ORIGINS = parse_boolean(os.getenv("CORS_ALLOW_LOCAL_ORIGINS", str(DEBUG)))
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https?://localhost(?::\d+)?$",
     r"^https?://127\.0\.0\.1(?::\d+)?$",
     r"^https?://0\.0\.0\.0(?::\d+)?$",
     r"^https?://192\.168\.\d{1,3}\.\d{1,3}(?::\d+)?$"
-]
+] if CORS_ALLOW_LOCAL_ORIGINS else []
 
 CSRF_COOKIE_NAME = "csrftoken"
-CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS +CORS_ALLOWED_ORIGIN_REGEXES
+# Exact origins only: Django compares these as strings, regexes never match.
+CSRF_TRUSTED_ORIGINS = list(CORS_ALLOWED_ORIGINS)
 CORS_ALLOW_CREDENTIALS = True
 # CSRF_USE_SESSIONS = True
 
@@ -585,14 +597,14 @@ DBBACKUP_CONNECTORS = {
 # Security
 # python manage.py check --deploy
 
-if os.getenv("SECURE_PROXY_SSL_HEADER"):
-    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-
 # The legacy GPRS controllers speak plain HTTP and follow no redirects, so
 # their endpoint must never be redirected to https (SECURE_SSL_REDIRECT).
 SECURE_REDIRECT_EXEMPT = [r"^gprs_\d+\.php$"]
 
 SECURE_REFERRER_POLICY = os.getenv("SECURE_REFERRER_POLICY")
+# nginx sets X-Forwarded-Proto on every proxied request. Trusting it is only
+# safe while the backend port is not reachable around nginx
+# (LIMITED_ACCESS=127.0.0.1: in .env).
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 # Secure-only cookies whenever the portal runs on https (PROTOCOL); a value in
 # django.env wins - 0 only for a setup served over plain http.

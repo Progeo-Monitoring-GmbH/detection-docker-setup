@@ -55,6 +55,62 @@ def _ensure_permissions(db_alias):
         )
 
 
+RECREATE_HINT = "python manage.py recreate_test_db --settings=progeo.tests.settings"
+# Shown at the end of the run (pytest_terminal_summary).
+_SCHEMA_NOTES = []
+
+
+def _check_test_database(db_alias):
+    """Stop the run with one clear message instead of hundreds of errors: the
+    test database must be reachable and migrated. Model changes without a
+    migration only warn - tests that don't touch the table still count."""
+    from django.db import OperationalError, connections
+    from django.db.migrations.executor import MigrationExecutor
+
+    connection = connections[db_alias]
+    server = f"{connection.settings_dict.get('HOST')}:{connection.settings_dict.get('PORT')}"
+    try:
+        connection.ensure_connection()
+    except OperationalError as exc:
+        pytest.exit(
+            f"Test database '{connection.settings_dict.get('NAME')}' on {server} is not reachable - "
+            f"is the database container running (docker start progeo-database)?\n{exc}",
+            returncode=2,
+        )
+    executor = MigrationExecutor(connection)
+    pending = executor.migration_plan(executor.loader.graph.leaf_nodes())
+    if pending:
+        names = ", ".join(f"{migration.app_label}.{migration.name}" for migration, _backwards in pending[:5])
+        more = f" (+{len(pending) - 5} more)" if len(pending) > 5 else ""
+        pytest.exit(
+            f"The test database is behind the migrations ({names}{more}). Rebuild it:\n  {RECREATE_HINT}",
+            returncode=2,
+        )
+    _SCHEMA_NOTES.extend(_models_without_migration())
+
+
+def _models_without_migration():
+    """Apps whose models changed without a migration - their new columns are
+    missing in the test database, and so on every server."""
+    from django.apps import apps
+    from django.db.migrations.autodetector import MigrationAutodetector
+    from django.db.migrations.loader import MigrationLoader
+    from django.db.migrations.state import ProjectState
+
+    loader = MigrationLoader(None, ignore_no_migrations=True)
+    changes = MigrationAutodetector(loader.project_state(), ProjectState.from_apps(apps)).changes(graph=loader.graph)
+    return [
+        f"Models of '{app_label}' changed without a migration - tests touching them fail. "
+        f"Run makemigrations, then {RECREATE_HINT}"
+        for app_label in sorted(changes)
+    ]
+
+
+def pytest_terminal_summary(terminalreporter):
+    for note in _SCHEMA_NOTES:
+        terminalreporter.write_line(f"WARNING: {note}", yellow=True, bold=True)
+
+
 # OVERWRITE DEFAULT FIXTURE SO DB WILL STAY INTACT: the unit_tests database is
 # never created, dropped or restored by the suite. Isolation comes from
 # pytest-django's per-test transaction rollback (the `db` fixture), so tests
@@ -73,6 +129,7 @@ def django_db_setup(django_db_blocker):
     # invisible to the other (FK violations, router errors). Share one.
     connections["unit_tests"] = connections["default"]
     with django_db_blocker.unblock():
+        _check_test_database("default")
         seed_baseline("default")
         _reset_sequences("unit_tests")
         _ensure_permissions("default")
