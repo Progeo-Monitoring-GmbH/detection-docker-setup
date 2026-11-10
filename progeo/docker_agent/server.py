@@ -47,10 +47,12 @@ def load_token(env=os.environ):
         return token
     path = env.get("DOCKER_AGENT_TOKEN_FILE") or DEFAULT_TOKEN_FILE
     try:
-        with open(path, encoding="utf-8") as handle:
-            token = handle.read().strip()
-    except FileNotFoundError:
-        token = ""
+        token = _read_token(path)
+    except PermissionError:
+        # A file of an older agent (group DOCKER_GID): root without
+        # CAP_DAC_OVERRIDE can't read it - take the group, then read.
+        _share_with_backend(path, env)
+        token = _read_token(path)
     if token:
         return token
     token = secrets.token_urlsafe(32)
@@ -58,10 +60,24 @@ def load_token(env=os.environ):
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(token + "\n")
     os.chmod(path, 0o640)
-    if hasattr(os, "chown") and os.geteuid() == 0:
-        # The backend runs as DOCKER_UID:DOCKER_GID and reads it.
-        os.chown(path, int(env.get("DOCKER_UID", "1000")), int(env.get("DOCKER_GID", "1001")))
+    _share_with_backend(path, env)
     return token
+
+
+def _read_token(path):
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return handle.read().strip()
+    except FileNotFoundError:
+        return ""
+
+
+def _share_with_backend(path, env):
+    """Owner: the backend's user (DOCKER_UID) - it reads the token. Group: the
+    agent's own - with cap_drop ALL even root needs the group bit to read it
+    again after a restart."""
+    if hasattr(os, "chown") and os.geteuid() == 0:
+        os.chown(path, int(env.get("DOCKER_UID", "1000")), os.getgid())
 
 
 class AgentHandler(BaseHTTPRequestHandler):

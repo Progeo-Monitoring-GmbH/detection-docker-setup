@@ -200,6 +200,33 @@ def test_the_token_is_created_once_and_kept(tmp_path):
         assert stat.S_IMODE(os.stat(path).st_mode) == 0o640
 
 
+def test_a_restarted_agent_takes_the_group_of_an_unreadable_token(tmp_path, monkeypatch):
+    # The agent (root, cap_drop ALL) gave the file DOCKER_UID:DOCKER_GID 0640 -
+    # after a restart it couldn't read it and crashed in a loop
+    # ("Permission denied: '/run/progeo-docker-agent/token'").
+    path = tmp_path / "token"
+    path.write_text("kept-token\n")
+    chowned, reads = [], []
+    real_read = server._read_token
+
+    def read(name):
+        reads.append(name)
+        if not chowned:
+            raise PermissionError(13, "Permission denied", name)
+        return real_read(name)
+
+    monkeypatch.setattr(server, "_read_token", read)
+    monkeypatch.setattr(server.os, "geteuid", lambda: 0, raising=False)
+    monkeypatch.setattr(server.os, "getgid", lambda: 0, raising=False)
+    monkeypatch.setattr(server.os, "chown", lambda name, uid, gid: chowned.append((uid, gid)), raising=False)
+
+    token = server.load_token({"DOCKER_AGENT_TOKEN_FILE": str(path), "DOCKER_UID": "1000", "DOCKER_GID": "1001"})
+
+    assert token == "kept-token"
+    assert chowned == [(1000, 0)]  # the backend's user, the agent's group
+    assert len(reads) == 2
+
+
 def test_the_token_from_the_environment_wins(tmp_path):
     env = {"DOCKER_AGENT_TOKEN": "from-env", "DOCKER_AGENT_TOKEN_FILE": str(tmp_path / "token")}
 
