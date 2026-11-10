@@ -39,7 +39,7 @@ import { useHeatmapFrameExport } from './useHeatmapFrameExport';
 import { type AreaRect, useHeatmapViewport, usePanZoomGestures } from './useHeatmapViewport';
 import { useLageplanImage } from './useLageplanImage';
 import ZoomControls from './ZoomControls';
-import { useWheelHint, WheelZoomHint } from '../ui/wheelZoom';
+import { TWO_FINGER_TOUCH_ACTION, useWheelHint, WheelZoomHint } from '../ui/wheelZoom';
 import { getBackendUrl } from '../../backendUrl';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import { staffFlags } from '../../main/access';
@@ -405,6 +405,7 @@ const SensorHeatmap2D = ({
 
   // Ctrl + wheel zooms; the plain wheel over the plan shows how (wheelZoom).
   const [wheelHint, showWheelHint] = useWheelHint();
+  const oneFingerTool = drawing || areaMode;
   const { canvasRef, grabbing, handlers } = usePanZoomGestures({
     enabled: scene != null,
     view,
@@ -428,6 +429,10 @@ const SensorHeatmap2D = ({
     },
     wheelZoomsAt: (sx, sy) => Boolean(scene && view && isOverDrawn(scene.layout, view, image != null, sx, sy)),
     onPlainWheel: showWheelHint,
+    // Drawing a limitation or selecting an area: one finger is the tool.
+    // Otherwise one finger scrolls the page, two move the plan.
+    oneFingerPans: oneFingerTool,
+    onOneFingerTouch: () => showWheelHint('touch'),
     area: onAreaSelect
       ? {
           starts: (event) => !drawing && (areaMode || event.shiftKey),
@@ -576,7 +581,7 @@ const SensorHeatmap2D = ({
             display: 'block',
             width: '100%',
             height: canvasHeight,
-            touchAction: 'none',
+            touchAction: oneFingerTool ? 'none' : TWO_FINGER_TOUCH_ACTION,
             cursor: drawing || areaMode
               ? 'crosshair'
               : hoveredIndex != null

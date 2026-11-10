@@ -17,6 +17,7 @@ import {
   XCircle,
 } from 'react-bootstrap-icons';
 import Plot from 'react-plotly.js';
+import { PlotlyTouchScroll } from '../components/ui/wheelZoom';
 import { useSnackbar } from 'notistack';
 
 import { useAuth } from '../../hooks/CoreAuthProvider';
@@ -486,40 +487,42 @@ const AlarmReportView = () => {
                   celery task.
                 </div>
               ) : (
-                <Plot
-                  data={[
-                    {
-                      x: dailyCounts.map((item) => item.date),
-                      y: dailyCounts.map((item) => item.count),
-                      type: 'bar',
-                      marker: {
-                        color: dailyCounts.map((item) =>
-                          item.date === selectedDate
-                            ? plotTheme.brandOrange
-                            : plotTheme.brandBlue,
-                        ),
+                <PlotlyTouchScroll>
+                  <Plot
+                    data={[
+                      {
+                        x: dailyCounts.map((item) => item.date),
+                        y: dailyCounts.map((item) => item.count),
+                        type: 'bar',
+                        marker: {
+                          color: dailyCounts.map((item) =>
+                            item.date === selectedDate
+                              ? plotTheme.brandOrange
+                              : plotTheme.brandBlue,
+                          ),
+                        },
+                        hovertemplate: '%{x}<br>%{y} alarms<extra></extra>',
                       },
-                      hovertemplate: '%{x}<br>%{y} alarms<extra></extra>',
-                    },
-                  ]}
-                  layout={{
-                    height: 260,
-                    margin: { l: 48, r: 16, t: 12, b: 44 },
-                    xaxis: { title: 'Date' },
-                    yaxis: { title: 'Alarms' },
-                    paper_bgcolor: 'transparent',
-                    plot_bgcolor: 'transparent',
-                    font: { family: 'inherit', color: plotTheme.brandBlue },
-                  }}
-                  config={{ responsive: true, displaylogo: false }}
-                  style={{ width: '100%' }}
-                  useResizeHandler
-                  onClick={(event) => {
-                    const point = event?.points?.[0];
-                    const date = point?.x as string | undefined;
-                    if (date) {setSelectedDate(date);}
-                  }}
-                />
+                    ]}
+                    layout={{
+                      height: 260,
+                      margin: { l: 48, r: 16, t: 12, b: 44 },
+                      xaxis: { title: 'Date' },
+                      yaxis: { title: 'Alarms' },
+                      paper_bgcolor: 'transparent',
+                      plot_bgcolor: 'transparent',
+                      font: { family: 'inherit', color: plotTheme.brandBlue },
+                    }}
+                    config={{ responsive: true, displaylogo: false }}
+                    style={{ width: '100%' }}
+                    useResizeHandler
+                    onClick={(event) => {
+                      const point = event?.points?.[0];
+                      const date = point?.x as string | undefined;
+                      if (date) {setSelectedDate(date);}
+                    }}
+                  />
+                </PlotlyTouchScroll>
               )}
             </Card.Body>
           </Card>
@@ -629,41 +632,43 @@ const AlarmReportView = () => {
                       <h6 className="text-muted text-uppercase small mb-2">
                         Hourly distribution
                       </h6>
-                      <Plot
-                        data={[
-                          hourlyTrace(
-                            comparison.report_a,
-                            formatReportDay(compareA),
-                          ),
-                          hourlyTrace(
-                            comparison.report_b,
-                            formatReportDay(compareB),
-                          ),
-                        ]}
-                        layout={{
-                          height: 280,
-                          barmode: 'group',
-                          margin: { l: 48, r: 16, t: 12, b: 44 },
-                          xaxis: { title: 'Hour' },
-                          yaxis: { title: 'Alarms' },
-                          paper_bgcolor: 'transparent',
-                          plot_bgcolor: 'transparent',
-                          font: {
-                            family: 'inherit',
-                            color: plotTheme.brandBlue,
-                          },
-                          legend: {
-                            orientation: 'h',
-                            y: 1.12,
-                          },
-                        }}
-                        config={{
-                          responsive: true,
-                          displaylogo: false,
-                        }}
-                        style={{ width: '100%' }}
-                        useResizeHandler
-                      />
+                      <PlotlyTouchScroll>
+                        <Plot
+                          data={[
+                            hourlyTrace(
+                              comparison.report_a,
+                              formatReportDay(compareA),
+                            ),
+                            hourlyTrace(
+                              comparison.report_b,
+                              formatReportDay(compareB),
+                            ),
+                          ]}
+                          layout={{
+                            height: 280,
+                            barmode: 'group',
+                            margin: { l: 48, r: 16, t: 12, b: 44 },
+                            xaxis: { title: 'Hour' },
+                            yaxis: { title: 'Alarms' },
+                            paper_bgcolor: 'transparent',
+                            plot_bgcolor: 'transparent',
+                            font: {
+                              family: 'inherit',
+                              color: plotTheme.brandBlue,
+                            },
+                            legend: {
+                              orientation: 'h',
+                              y: 1.12,
+                            },
+                          }}
+                          config={{
+                            responsive: true,
+                            displaylogo: false,
+                          }}
+                          style={{ width: '100%' }}
+                          useResizeHandler
+                        />
+                      </PlotlyTouchScroll>
                     </Card.Body>
                   </Card>
 

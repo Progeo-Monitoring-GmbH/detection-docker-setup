@@ -1685,6 +1685,9 @@ i18n
           alarms_overview_acknowledge_hint: 'Acknowledge this alarm',
           alarms_overview_acknowledged_done: 'Alarm #{{id}} acknowledged.',
           alarms_overview_acknowledge_failed: 'Could not acknowledge alarm',
+          // Over plans and plots (components/ui/wheelZoom.tsx).
+          zoom_hint_wheel: 'Ctrl + scroll to zoom',
+          zoom_hint_touch: 'Use two fingers to move and zoom',
         },
       },
       de: {
@@ -3372,6 +3375,9 @@ i18n
           alarms_overview_acknowledge_hint: 'Diesen Alarm quittieren',
           alarms_overview_acknowledged_done: 'Alarm #{{id}} quittiert.',
           alarms_overview_acknowledge_failed: 'Alarm konnte nicht quittiert werden',
+          // Over plans and plots (components/ui/wheelZoom.tsx).
+          zoom_hint_wheel: 'Strg + Mausrad zum Zoomen',
+          zoom_hint_touch: 'Mit zwei Fingern verschieben und zoomen',
         },
       },
     },

@@ -6,7 +6,13 @@ import { getBackendUrl } from '../../backendUrl';
 import { alarmHeatColor } from '../../main/alarmUtils';
 import CursorTooltip, { TooltipRow } from '../ui/CursorTooltip';
 import { alignmentBaseScale } from '../ui/ImageCanvasStage';
-import { isZoomWheel, useWheelHint, WheelZoomHint } from '../ui/wheelZoom';
+import {
+  isZoomWheel,
+  TWO_FINGER_TOUCH_ACTION,
+  useTwoFingerTouch,
+  useWheelHint,
+  WheelZoomHint,
+} from '../ui/wheelZoom';
 import { fullBox, isFull, panBox, type ViewBox, viewBoxAttribute, zoomBox } from './planViewBox';
 import SensorTooltip from './SensorTooltip';
 import ZoomControls from './ZoomControls';
@@ -268,6 +274,9 @@ const LageplanZoneOverlay = ({
     return () => svg.removeEventListener('wheel', onWheel);
   }, [showWheelHint]);
 
+  // Two fingers never scroll the page over the plan; one does (and shows the hint).
+  useTwoFingerTouch(svgRef, () => showWheelHint('touch'));
+
   const onPointerDown = (event: PointerEvent<SVGSVGElement>) => {
     if (event.pointerType === 'mouse' && event.button !== 0) {
       return;
@@ -282,6 +291,10 @@ const LageplanZoneOverlay = ({
       return;
     }
     const others = [...pointers.current.entries()].filter(([id]) => id !== event.pointerId);
+    if (event.pointerType === 'touch' && others.length === 0) {
+      // One finger scrolls the page (touch-action); two move and zoom the plan.
+      return;
+    }
     if (
       !dragging &&
       others.length === 0 &&
@@ -306,8 +319,15 @@ const LageplanZoneOverlay = ({
       }
       return;
     }
-    // Pinch: zoom by the change of the fingers' distance, around their middle.
+    // Two fingers: move with their middle (half of this finger's step), zoom
+    // by the change of their distance, around their middle.
     const [, other] = others[0];
+    const scale = toPlan(event.clientX, event.clientY)?.pixelsPerUnit;
+    if (scale) {
+      const dx = (event.clientX - previous.x) / 2 / scale;
+      const dy = (event.clientY - previous.y) / 2 / scale;
+      setUserBox((current) => (current ? panBox(current, dx, dy, full) : current));
+    }
     const before = Math.hypot(previous.x - other.x, previous.y - other.y);
     const after = Math.hypot(event.clientX - other.x, event.clientY - other.y);
     if (before > 0 && after > 0) {
@@ -393,7 +413,7 @@ const LageplanZoneOverlay = ({
           inset: 0,
           width: '100%',
           height: '100%',
-          touchAction: 'none',
+          touchAction: TWO_FINGER_TOUCH_ACTION,
           cursor: dragging ? 'grabbing' : userBox ? 'grab' : 'default',
         }}
         onPointerDown={onPointerDown}

@@ -9,7 +9,7 @@ import {
 } from 'react';
 import { fitView, MAX_ZOOM, MIN_ZOOM, panBy, zoomAt, type View, type WorldRect } from './heatmapCanvas';
 import { canvasHeightFor, COLORBAR_SPACE } from './heatmapChart';
-import { isZoomWheel } from '../ui/wheelZoom';
+import { isZoomWheel, useTwoFingerTouch } from '../ui/wheelZoom';
 
 /**
  * Size and view of the heatmap canvas: its width follows the wrapper
@@ -68,15 +68,17 @@ export const useHeatmapViewport = ({
     [boundsKey],
   );
 
+  /** Zooms by `factor` around (sx, sy) - from `from` (e.g. a just-panned view), else the current one. */
   const zoomBy = useCallback(
-    (factor: number, sx?: number, sy?: number) => {
-      if (!view) {
+    (factor: number, sx?: number, sy?: number, from?: View) => {
+      const start = from ?? view;
+      if (!start) {
         return;
       }
       const fittedScale = fitted?.scale ?? 1;
       setView(
         zoomAt(
-          view,
+          start,
           factor,
           sx ?? width / 2,
           sy ?? canvasHeight / 2,
@@ -92,9 +94,10 @@ export const useHeatmapViewport = ({
 };
 
 /**
- * Pointer input of the heatmap canvas: drag to move, pinch to zoom (around
- * the fingers' middle), hover reports to `onHover`, leaving or dragging to
- * `onLeave`, a click (no drag, one pointer) to `onTap`. Ctrl (or ⌘) + wheel
+ * Pointer input of the heatmap canvas: drag to move (touch: with two
+ * fingers - one scrolls the page, unless `oneFingerPans`), two fingers also
+ * pinch to zoom (around their middle), hover reports to `onHover`, leaving
+ * or dragging to `onLeave`, a click (no drag, one pointer) to `onTap`. Ctrl (or ⌘) + wheel
  * (isZoomWheel) zooms around the cursor - but only where `wheelZoomsAt` says
  * so (over the drawn plan); the plain wheel scrolls the page, over the plan
  * calling `onPlainWheel` (the hint how to zoom). While zooming it must not
@@ -117,12 +120,21 @@ export const usePanZoomGestures = ({
   wheelZoomsAt,
   onPlainWheel,
   area,
+  oneFingerPans = false,
+  onOneFingerTouch,
 }: {
   /** Whether the canvas is rendered. */
   enabled: boolean;
   view: View | null;
   setView: (view: View) => void;
-  zoomBy: (factor: number, sx?: number, sy?: number) => void;
+  zoomBy: (factor: number, sx?: number, sy?: number, from?: View) => void;
+  /**
+   * Whether one finger moves the plan (a one-finger tool is active - the
+   * canvas then has touch-action none); otherwise one finger scrolls the
+   * page and calls `onOneFingerTouch` (the hint), two fingers move the plan.
+   */
+  oneFingerPans?: boolean;
+  onOneFingerTouch?: () => void;
   onHover: (sx: number, sy: number) => void;
   onLeave: () => void;
   onTap?: (sx: number, sy: number) => void;
@@ -152,16 +164,23 @@ export const usePanZoomGestures = ({
     return rect ? [event.clientX - rect.left, event.clientY - rect.top] : [0, 0];
   };
 
-  /** Pinch: zoom by the change of the finger distance, around their middle. */
-  const pinch = (pointerId: number, point: [number, number], previous: [number, number]) => {
+  /**
+   * Two fingers: move with their middle (half of this finger's step), zoom
+   * by the change of their distance, around their middle - in one step.
+   */
+  const twoFingers = (pointerId: number, point: [number, number], previous: [number, number], from: View) => {
     const [, other] = [...pointers.current.entries()].find(([id]) => id !== pointerId)!;
     const before = Math.hypot(previous[0] - other[0], previous[1] - other[1]);
     const after = Math.hypot(point[0] - other[0], point[1] - other[1]);
     pointers.current.set(pointerId, point);
+    const moved = panBy(from, (point[0] - previous[0]) / 2, (point[1] - previous[1]) / 2);
     if (before > 0) {
-      zoomBy(after / before, (point[0] + other[0]) / 2, (point[1] + other[1]) / 2);
+      zoomBy(after / before, (point[0] + other[0]) / 2, (point[1] + other[1]) / 2, moved);
+    } else {
+      setView(moved);
     }
     dragged.current = true;
+    onLeave();
   };
 
   const onPointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
@@ -195,7 +214,11 @@ export const usePanZoomGestures = ({
       return;
     }
     if (pointers.current.size >= 2) {
-      pinch(event.pointerId, point, previous);
+      twoFingers(event.pointerId, point, previous, view);
+      return;
+    }
+    if (event.pointerType === 'touch' && !oneFingerPans) {
+      // One finger scrolls the page (touch-action); the browser cancels the pointer.
       return;
     }
     const dx = point[0] - previous[0];
@@ -272,6 +295,9 @@ export const usePanZoomGestures = ({
     canvas.addEventListener('wheel', onWheel, { passive: false });
     return () => canvas.removeEventListener('wheel', onWheel);
   }, [enabled]);
+
+  // Two fingers never scroll the page here; one does (and shows the hint).
+  useTwoFingerTouch(canvasRef, onOneFingerTouch, enabled && !oneFingerPans);
 
   return {
     canvasRef,

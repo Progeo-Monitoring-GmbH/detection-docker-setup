@@ -7,6 +7,7 @@ import { parseTimestamp } from '../../main/alarmUtils';
 import { formatDate } from '../../main/dateFormat';
 import { plotTheme } from '../../styles/plotTheme';
 import {
+  usePlotlyTouchScroll,
   usePlotlyWheelZoom,
   useWheelHint,
   WheelZoomHint,
@@ -198,6 +199,7 @@ const MeasurementComparePlot = ({
   const [graphDiv, setGraphDiv] = React.useState<HTMLElement | null>(null);
   const [wheelHint, showWheelHint] = useWheelHint();
   usePlotlyWheelZoom(graphDiv, showWheelHint);
+  usePlotlyTouchScroll(graphDiv);
 
   return (
     <Card className="border-0 shadow-sm p-2" data-testid="analyse-compare">

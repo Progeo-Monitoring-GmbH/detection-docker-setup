@@ -7,7 +7,7 @@ import { plotTheme } from '../../styles/plotTheme';
 import { formatDate } from '../../main/dateFormat';
 import FrameSlider, { frameAt } from './FrameSlider';
 import { barWidthFor, potentialsOf, signedBands } from './measurementBands';
-import { usePlotlyWheelZoom, useWheelHint, WheelZoomHint } from '../ui/wheelZoom';
+import { usePlotlyTouchScroll, usePlotlyWheelZoom, useWheelHint, WheelZoomHint } from '../ui/wheelZoom';
 import PlotHelp from '../ui/PlotHelp';
 import PlotResetButton, { PLOT_CONFIG_NO_MODEBAR } from '../ui/PlotResetButton';
 import { announceKey } from '../ui/KeyHints';
@@ -1232,6 +1232,7 @@ const MeasurementSamplesCompareChart = (
   }, [graphDiv]);
   // Over every subplot only Ctrl (or ⌘) + wheel zooms (wheelZoom).
   usePlotlyWheelZoom(graphDiv, showWheelHint);
+  usePlotlyTouchScroll(graphDiv);
 
   // A click on the first plot adds or removes that sensor in the second; one
   // on a time plot moves the slider to that measurement.

@@ -5,6 +5,7 @@ import Plotly from 'plotly.js/dist/plotly';
 import { plotTheme } from '../../styles/plotTheme';
 import { formatDate } from '../../main/dateFormat';
 import PlotResetButton, { PLOT_CONFIG_NO_MODEBAR } from '../ui/PlotResetButton';
+import { usePlotlyTouchScroll } from '../ui/wheelZoom';
 
 /** One device of GET /v1/location/<pk>/climate/ - aligned series, oldest first. */
 type ClimateDeviceSeries = {
@@ -308,6 +309,8 @@ const ClimateChart = ({
   const graphRef = useRef<HTMLElement | null>(null);
   // The same div for the reset button, which must re-render once it exists.
   const [graphDiv, setGraphDiv] = useState<HTMLElement | null>(null);
+  // One finger scrolls the page over the chart (Plotly would swallow it).
+  usePlotlyTouchScroll(graphDiv);
   const highlightRef = useRef<number | null>(hoveredDeviceId);
 
   const applyHighlight = useCallback(() => {

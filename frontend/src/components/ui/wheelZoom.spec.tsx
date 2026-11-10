@@ -2,7 +2,14 @@
 import { act, useRef } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useWheelHint, useZoomWheel, WheelZoomHint } from './wheelZoom';
+import {
+  PlotlyTouchScroll,
+  TWO_FINGER_TOUCH_ACTION,
+  useTwoFingerTouch,
+  useWheelHint,
+  useZoomWheel,
+  WheelZoomHint,
+} from './wheelZoom';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -59,5 +66,68 @@ describe('useZoomWheel', () => {
       vi.advanceTimersByTime(2000);
     });
     expect(container.textContent).toBe('');
+  });
+});
+
+/** A touch event with `count` fingers (jsdom has no Touch constructor). */
+const touch = (type: string, count: number, target: Element) => {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperty(event, 'touches', { value: Array.from({ length: count }, () => ({})) });
+  act(() => {
+    target.dispatchEvent(event);
+  });
+  return event;
+};
+
+describe('useTwoFingerTouch', () => {
+  const Plan = () => {
+    const ref = useRef<HTMLDivElement | null>(null);
+    const [hint, showHint] = useWheelHint();
+    useTwoFingerTouch(ref, () => showHint('touch'));
+    return (
+      <div ref={ref} style={{ position: 'relative', touchAction: TWO_FINGER_TOUCH_ACTION }}>
+        <WheelZoomHint visible={hint} />
+      </div>
+    );
+  };
+
+  beforeEach(() => {
+    act(() => root.render(<Plan />));
+  });
+
+  it('keeps two fingers from scrolling the page - they move the plan', () => {
+    expect(touch('touchmove', 2, container.firstElementChild!).defaultPrevented).toBe(true);
+    expect(container.textContent).toBe('');
+  });
+
+  it('lets one finger scroll the page and shows how to move the plan', () => {
+    expect(touch('touchmove', 1, container.firstElementChild!).defaultPrevented).toBe(false);
+    expect(container.textContent).toBe('Use two fingers to move and zoom');
+  });
+});
+
+describe('usePlotlyTouchScroll', () => {
+  it('keeps one-finger touches from Plotly (it would stop the page scroll), two reach it', () => {
+    const reached: number[] = [];
+    act(() =>
+      root.render(
+        <PlotlyTouchScroll>
+          <div className="drag" />
+        </PlotlyTouchScroll>,
+      ),
+    );
+    // Like Plotly's drag layer: a touchstart listener that prevents the default.
+    const dragLayer = container.querySelector('.drag')!;
+    dragLayer.addEventListener('touchstart', (event) => {
+      reached.push((event as TouchEvent).touches.length);
+      event.preventDefault();
+    });
+
+    const oneFinger = touch('touchstart', 1, dragLayer);
+    const twoFingers = touch('touchstart', 2, dragLayer);
+
+    expect(reached).toEqual([2]);
+    expect(oneFinger.defaultPrevented).toBe(false);
+    expect(twoFingers.defaultPrevented).toBe(true);
   });
 });
