@@ -1,0 +1,68 @@
+# Dependabot version updates.
+# Docs: https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+#
+# Minor/patch bumps are grouped into one PR per ecosystem to keep the noise
+# down; major bumps arrive as separate PRs so each can be tested on its own.
+# CI (.github/workflows/ci.yml) runs on every PR, so these get tested.
+
+version: 2
+updates:
+  # Backend: requirements.txt and requirements-cad-test.txt.
+  # requirements-cad-test.txt must stay aligned with the pins in
+  # docker/cad_factory/Dockerfile (ezdxf, pymupdf, ezdwg) - Dependabot does not
+  # see those, so update the Dockerfile by hand when it bumps them.
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      python-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # Frontend (package.json + package-lock.json).
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+    groups:
+      npm-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # Base images in the Dockerfiles (python, node, nginx, postgres).
+  - package-ecosystem: "docker"
+    directories:
+      - "/docker/*"
+    schedule:
+      interval: "weekly"
+    ignore:
+      # Our own image (backend-base), built and tagged by us.
+      - dependency-name: "progeomonitoring/detection-docker-setup"
+      # A Postgres major needs a data migration (pg_upgrade/dump+restore).
+      - dependency-name: "postgres"
+        update-types: ["version-update:semver-major"]
+    groups:
+      docker-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # Third-party images in docker-compose.yml / docker-compose.prod.yml
+  # (redis, synapse, grafana, prometheus, ...).
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    ignore:
+      - dependency-name: "progeomonitoring/detection-docker-setup"
+      - dependency-name: "postgres"
+        update-types: ["version-update:semver-major"]
+    groups:
+      compose-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # Actions used in .github/workflows.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions:
+        patterns: ["*"]
