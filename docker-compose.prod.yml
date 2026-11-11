@@ -51,7 +51,7 @@ services:
   # Used for django websocket connections
   progeo-redis:
     # Pinned like every other image: :latest changed under a running setup.
-    image: redis:8.10.1
+    image: redis:8.10.3
     container_name: progeo-redis
     restart: always
     command: ['redis-server', '--requirepass', '${REDIS_PASSWORD}']
@@ -292,7 +292,7 @@ services:
   # mas_init.py, in the Synapse image - the MAS image has no shell) and the
   # Signal bridge's config and appservice registration.
   progeo-matrix-init:
-    image: matrixdotorg/synapse:v1.162.0
+    image: matrixdotorg/synapse:v1.164.2
     container_name: progeo-matrix-init
     restart: 'no'
     profiles: ['messenger']
@@ -341,7 +341,7 @@ services:
   # of the Matrix server. Its only login is the ProGeo portal (OpenID Connect,
   # progeo/oidc.py) - every portal user gets an account on the first login.
   progeo-mas:
-    image: ghcr.io/element-hq/matrix-authentication-service:1.27.0
+    image: ghcr.io/element-hq/matrix-authentication-service:1.29.0
     container_name: progeo-mas
     restart: unless-stopped
     profiles: ['messenger']
@@ -362,7 +362,7 @@ services:
   # Matrix homeserver (Synapse) on MATRIX_DOMAIN. progeo-nginx terminates TLS;
   # the backend talks to http://progeo-matrix:8008. Logins: progeo-mas.
   progeo-matrix:
-    image: matrixdotorg/synapse:v1.162.0
+    image: matrixdotorg/synapse:v1.164.2
     container_name: progeo-matrix
     restart: unless-stopped
     profiles: ['messenger']
@@ -446,7 +446,7 @@ services:
   # superusers only) and listen on MONITORING_BIND (127.0.0.1 = SSH tunnel).
   # ---------------------------------------------------------------------------
   progeo-prometheus:
-    image: prom/prometheus:v3.13.4
+    image: prom/prometheus:v3.16.0
     container_name: progeo-prometheus
     restart: unless-stopped
     profiles: ['monitoring']
@@ -477,7 +477,7 @@ services:
       default_net:
 
   progeo-alertmanager:
-    image: prom/alertmanager:v0.34.1
+    image: prom/alertmanager:v0.34.2
     container_name: progeo-alertmanager
     restart: unless-stopped
     profiles: ['monitoring']
@@ -684,7 +684,7 @@ services:
       database_net:
 
   progeo-redis-exporter:
-    image: oliver006/redis_exporter:v1.93.0
+    image: oliver006/redis_exporter:v1.97.0
     container_name: progeo-redis-exporter
     restart: unless-stopped
     profiles: ['monitoring']
