@@ -10,7 +10,7 @@ from uuid import uuid4
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import OuterRef, Subquery
+from django.db.models import OuterRef, Q, Subquery
 from django.http import FileResponse, JsonResponse, RawPostDataException
 from django.utils import timezone
 from rest_framework.authentication import SessionAuthentication
@@ -616,6 +616,54 @@ class StatusViewSet(ProgeoModalViewSet):
         lageplan = save_lageplan_upload(location, upload, upload.name, db=db_name)
         dlog(f"Lageplan uploaded for location {location.id} at {lageplan.lageplan.name}")
         return RequestSuccess(cad_import.lageplan_answer(lageplan))
+
+    @calc_runtime
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
+    @action(detail=False, url_path="measure_points/delete_lageplan", methods=["POST"])
+    def delete_lageplan(self, request, *args, **kwargs):
+        """Removes a Lageplan of a location (Lageplan wizard): POST
+        {location_id (project id), lageplan_id}. The measure points on it go
+        with it - those tied to it, and for the main plan (the first of
+        measure_points ?with_lageplan=1) also those without a plan, which are
+        shown on the main plan. Its file is deleted unless another plan uses it."""
+        from progeo.helper.demo import DEMO_LAGEPLAN_PREFIX_REL
+
+        location, db_name, error = _measure_point_location(request, {"location_id": request.data.get("location_id")})
+        if error:
+            return error
+        try:
+            lageplan_id = int(request.data.get("lageplan_id"))
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "lageplan_id required"})
+        plans = ProgeoLageplan.objects.using(db_name).filter(location=location)
+        lageplan = plans.filter(pk=lageplan_id).first()
+        if lageplan is None:
+            return RequestFailed({"reason": f"Lageplan {lageplan_id} is not at this location"})
+
+        on_plan = ProgeoMeasurePoint.objects.using(db_name).filter(location=location, lageplan=lageplan)
+        if plans.order_by("-is_active", "-id").values_list("pk", flat=True).first() == lageplan.pk:
+            on_plan = ProgeoMeasurePoint.objects.using(db_name).filter(location=location).filter(
+                Q(lageplan=lageplan) | Q(lageplan__isnull=True)
+            )
+        file_name = lageplan.lageplan.name if lageplan.lageplan else ""
+        with transaction.atomic(using=db_name):
+            removed_points, _ = on_plan.delete()
+            lageplan.delete(using=db_name)
+
+        # Demo plans share their files with other databases' demos.
+        if (
+            file_name
+            and not file_name.startswith(DEMO_LAGEPLAN_PREFIX_REL)
+            and not ProgeoLageplan.objects.using(db_name).filter(lageplan=file_name).exists()
+        ):
+            path = os.path.realpath(os.path.join(settings.UPLOAD_DIR, file_name))
+            if path.startswith(os.path.realpath(settings.UPLOAD_DIR) + os.sep) and os.path.isfile(path):
+                try:
+                    os.remove(path)
+                except OSError as exc:  # e.g. held open (Windows) - the row is gone anyway
+                    dlog(f"Could not remove the Lageplan file {path}: {exc}")
+        ilog(f"Lageplan {lageplan_id} of location {location.id} deleted with {removed_points} measure point(s)")
+        return RequestSuccess({"location_id": location.id, "lageplan_id": lageplan_id, "removed_points": removed_points})
 
     @calc_runtime
     @require_module_permissions("module_devices_enabled", "module_devices_edit")

@@ -62,10 +62,10 @@ describe('LocationPortalLayout', () => {
     expect(lines[2]).toBe('Hauptstraße 1, 12345 Musterstadt');
   });
 
-  it('names the object for customers too - without the star', () => {
+  it('names the object for customers too - with their own star', () => {
     state.staff = false;
     act(() => root.render(<LocationPortalLayout />));
-    expect(container.querySelector('[data-testid="favorite-star"]')).toBeNull();
+    expect(container.querySelector('[data-testid="favorite-star"]')).not.toBeNull();
     expect(title()!.textContent).toContain('Parkhaus Nord');
   });
 

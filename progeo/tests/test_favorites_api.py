@@ -1,5 +1,5 @@
-"""Favorite locations of staff users: /v1/favorite/ - at most 10, in the
-order they were pinned."""
+"""Favorite locations of users: /v1/favorite/ - at most 10, in the order
+they were pinned. Staff pin any location, customers the ones they see."""
 import pytest
 
 from progeo.tests import factories as f
@@ -68,13 +68,43 @@ def test_favorites_are_per_user(api_client, staff):
     assert api_client.get(URL).json()["favorites"] == []
 
 
-def test_customers_have_no_favorites(api_client):
+def test_customers_pin_the_locations_they_see(api_client):
+    account = f.make_account()
+    location = f.make_location(account, name="Halle Ost")
+    user = f.make_user(accounts=[account])
+    api_client.force_authenticate(user=user)
+
+    response = _pin(api_client, location)
+
+    assert response.status_code == 200, response.content
+    assert [row["location"] for row in response.json()["favorites"]] == [location.pk]
+    assert [row["location"] for row in _pin(api_client, location, favorite=False).json()["favorites"]] == []
+
+
+def test_customers_cannot_pin_other_locations(api_client):
+    foreign = f.make_location(f.make_account())
+    user = f.make_user(accounts=[f.make_account()])
+    api_client.force_authenticate(user=user)
+
+    assert _pin(api_client, foreign).status_code == 404
+    assert not ProgeoFavoriteLocation.objects.using(f.DB).filter(user_id=user.pk).exists()
+
+
+def test_favorites_of_lost_locations_are_hidden_but_can_be_removed(api_client):
+    from progeo.v1.viewsets.favorite_viewset import forget_favorites
+
     account = f.make_account()
     location = f.make_location(account)
-    api_client.force_authenticate(user=f.make_user(accounts=[account]))
+    user = f.make_user(accounts=[account])
+    api_client.force_authenticate(user=user)
+    _pin(api_client, location)
 
-    assert api_client.get(URL).status_code == 403
-    assert _pin(api_client, location).status_code == 403
+    account.users.remove(user)
+    forget_favorites(user.pk)
+
+    assert api_client.get(URL).json()["favorites"] == []
+    assert _pin(api_client, location, favorite=False).status_code == 200
+    assert not ProgeoFavoriteLocation.objects.using(f.DB).filter(user_id=user.pk).exists()
 
 
 def test_invalid_requests_are_refused(api_client, staff):

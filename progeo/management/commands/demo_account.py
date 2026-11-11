@@ -35,6 +35,7 @@ from progeo.v1.models import (
     ProgeoMeasurePoint,
     UserProfile,
 )
+from progeo.v1.viewsets.favorite_viewset import forget_favorites
 
 DEFAULT_DB = settings.DEMO_DATABASE
 TOKEN_LIFETIME = datetime.timedelta(days=3650)
@@ -504,6 +505,9 @@ class Command(BaseCommand):
             hours = options["days"] * 24
             created = [self._create_location(account, db, spec, rng, now, hours) for spec in LOCATIONS]
             self._ensure_people(account, user, db, dict(zip((spec["kind"] for spec in LOCATIONS), created)))
+        # The demo projects are the demo user's favorites (FavoriteViewSet) -
+        # recreated under new ids, so the cached favorites bar is stale.
+        forget_favorites(user.pk)
 
         summary = ", ".join(f"{spec['kind']}={location.pk}" for spec, location in zip(LOCATIONS, created))
         self.stdout.write(

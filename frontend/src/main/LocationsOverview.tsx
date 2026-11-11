@@ -286,7 +286,7 @@ const locationColumns = ({
   {
     name: 'Name',
     selector: (row) => row.name || '-',
-    // The star pins the location as favorite (staff only).
+    // The star pins the location as favorite.
     cell: (row) => (
       <span className="d-flex align-items-center gap-2" style={{ minWidth: 0 }}>
         <FavoriteStar locationId={row.id} size={26} />

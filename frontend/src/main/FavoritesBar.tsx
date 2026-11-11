@@ -6,7 +6,7 @@ import { FAVORITE_COLOR } from './FavoriteStar';
 import { useFavorites } from './favorites';
 
 /**
- * The staff user's favorite locations as one bar at the top of every page
+ * The user's favorite locations as one bar at the top of every page
  * (below the TopBar): each one opens the location's analysis, the x next to
  * it removes the favorite. Hidden without favorites - the stars pin them.
  */

@@ -26,6 +26,9 @@ export type AirtableSync = {
   accounts: { id: number; name: string }[];
 };
 
+/** Account preselected for the new locations: the main account. */
+const DEFAULT_IMPORT_ACCOUNT = 1;
+
 /** Text order with numbers in their natural order, empty values last
  * (DataTable reverses it for descending). */
 const byText = (pick: (project: AirtableProject) => string) => (a: AirtableProject, b: AirtableProject) => {
@@ -130,7 +133,10 @@ const AirtableSyncPanel = ({
   const { enqueueSnackbar } = useSnackbar();
   const [airtable, setAirtable] = useState<AirtableSync>(initial);
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [importAccount, setImportAccount] = useState('');
+  // New locations go to the main account (pk 1) unless another one is picked.
+  const [importAccount, setImportAccount] = useState(() =>
+    initial.accounts.some((account) => account.id === DEFAULT_IMPORT_ACCOUNT) ? String(DEFAULT_IMPORT_ACCOUNT) : '',
+  );
   const [importing, setImporting] = useState(false);
 
   // Selection is kept by project ID, so it survives sorting and the search;

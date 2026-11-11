@@ -12,6 +12,7 @@ import ImageCanvasStage, {
   type PlacedSensor,
   type PlanScaleValues,
 } from '../components/ui/ImageCanvasStage.tsx';
+import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import DeleteIconButton from '../components/ui/kit/DeleteIconButton';
 import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
@@ -400,6 +401,11 @@ const LageplanWizardView = () => {
   const [lageplans, setLageplans] = useState<WizardLageplan[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
   const [addingPlan, setAddingPlan] = useState(false);
+  // What the confirm dialog asks about: removing a Lageplan, or clearing
+  // every measure point of the location.
+  const [confirmAction, setConfirmAction] = useState<
+    { kind: 'plan'; plan: WizardLageplan } | { kind: 'points' } | null
+  >(null);
 
   // Step 4, "Manually set sensors": the location's devices and the points
   // placed on the plans - stored only with "Save manual sensors".
@@ -864,6 +870,64 @@ const LageplanWizardView = () => {
     );
   };
 
+  // -- removing ---------------------------------------------------------------
+
+  // Removes a Lageplan with the measure points on it
+  // (StatusViewSet.delete_lageplan), then reloads the location's points.
+  const deletePlan = (plan: WizardLageplan) => {
+    if (selectedLocationId === null) {
+      return;
+    }
+    setIsProcessing(true);
+    setError('');
+    void axiosConfig.perform_post(
+      auth,
+      '/v1/status/measure_points/delete_lageplan/',
+      { location_id: selectedLocationId, lageplan_id: plan.id },
+      () => {
+        setConfirmAction(null);
+        setLageplans((current) => current.filter((existing) => existing.id !== plan.id));
+        setReloadKey((key) => key + 1);
+      },
+      (deleteError) => {
+        setConfirmAction(null);
+        setError(`Could not remove the Lageplan: ${requestReason(deleteError)}`);
+        setIsProcessing(false);
+      },
+    );
+  };
+
+  // Removes every measure point of the location (an empty replace).
+  const clearMeasurePoints = () => {
+    if (selectedLocationId === null) {
+      return;
+    }
+    setIsProcessing(true);
+    setError('');
+    void axiosConfig.perform_post(
+      auth,
+      '/v1/status/measure_points/',
+      { location_id: selectedLocationId, points: [] },
+      () => {
+        setConfirmAction(null);
+        setMeasurePoints([]);
+        setPlacedSensors([]);
+        setActiveDeviceId(null);
+        setPlacementDirty(false);
+        setCadPayload(null);
+        setIsProcessing(false);
+      },
+      (clearError) => {
+        setConfirmAction(null);
+        setError(`Could not clear the measure points: ${requestReason(clearError)}`);
+        setIsProcessing(false);
+      },
+    );
+  };
+
+  const pointsOnPlan = (planId: number) =>
+    measurePoints.filter((point) => belongsTo(point.lageplan, planId)).length;
+
   // -- steps ------------------------------------------------------------------
 
   const renderStepOne = () => (
@@ -889,71 +953,78 @@ const LageplanWizardView = () => {
 
   const renderPlanTile = (plan: WizardLageplan) => {
     const selected = plan.id === selectedPlanId;
-    const pointCount = measurePoints.filter((point) =>
-      belongsTo(point.lageplan, plan.id),
-    ).length;
+    const pointCount = pointsOnPlan(plan.id);
     const updated = plan.last_updated ? new Date(plan.last_updated) : null;
     return (
-      <button
-        key={plan.id}
-        type="button"
-        onClick={() => selectPlan(plan.id)}
-        aria-pressed={selected}
-        style={tileStyle(selected)}
-      >
-        <LageplanThumb key={plan.url ?? ''} url={plan.url} />
-        {selected && (
-          <span
-            style={{
-              position: 'absolute',
-              top: 14,
-              right: 14,
-              width: 24,
-              height: 24,
-              borderRadius: '50%',
-              background: 'var(--progeo-blue)',
-              color: '#fff',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <CheckLg size={13} />
-          </span>
-        )}
-        <div style={{ padding: '0 4px 4px', minWidth: 0 }}>
-          <div
-            title={planLabel(plan)}
-            style={{
-              fontSize: 13,
-              fontWeight: 500,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-          >
-            {planLabel(plan)}
+      // The remove button sits next to (not inside) the tile's button.
+      <div key={plan.id} style={{ position: 'relative', display: 'grid', minWidth: 0 }}>
+        <button
+          type="button"
+          onClick={() => selectPlan(plan.id)}
+          aria-pressed={selected}
+          style={tileStyle(selected)}
+        >
+          <LageplanThumb key={plan.url ?? ''} url={plan.url} />
+          {selected && (
+            <span
+              style={{
+                position: 'absolute',
+                top: 14,
+                right: 14,
+                width: 24,
+                height: 24,
+                borderRadius: '50%',
+                background: 'var(--progeo-blue)',
+                color: '#fff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <CheckLg size={13} />
+            </span>
+          )}
+          <div style={{ padding: '0 4px 4px', minWidth: 0 }}>
+            <div
+              title={planLabel(plan)}
+              style={{
+                fontSize: 13,
+                fontWeight: 500,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {planLabel(plan)}
+            </div>
+            <div style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>
+              #{plan.id}
+              {updated && !Number.isNaN(updated.getTime())
+                ? ` · ${formatDate(updated, 'date')}`
+                : ''}
+              {` · ${pointCount} point(s)`}
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 7 }}>
+              {plan.is_active ? (
+                <Chip color="#3F7A1C" background="#EBF4E3">
+                  Active
+                </Chip>
+              ) : (
+                <Chip>Inactive</Chip>
+              )}
+              {isAligned(plan) && <Chip>Aligned</Chip>}
+              {plan.meters_per_pixel ? <Chip>Scale set</Chip> : null}
+            </div>
           </div>
-          <div style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>
-            #{plan.id}
-            {updated && !Number.isNaN(updated.getTime())
-              ? ` · ${formatDate(updated, 'date')}`
-              : ''}
-            {` · ${pointCount} point(s)`}
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 7 }}>
-            {plan.is_active ? (
-              <Chip color="#3F7A1C" background="#EBF4E3">
-                Active
-              </Chip>
-            ) : (
-              <Chip>Inactive</Chip>
-            )}
-            {isAligned(plan) && <Chip>Aligned</Chip>}
-            {plan.meters_per_pixel ? <Chip>Scale set</Chip> : null}
-          </div>
-        </div>
-      </button>
+        </button>
+        <span style={{ position: 'absolute', right: 10, bottom: 10 }}>
+          <DeleteIconButton
+            label="Remove Lageplan"
+            disabled={isProcessing}
+            onClick={() => setConfirmAction({ kind: 'plan', plan })}
+          />
+        </span>
+      </div>
     );
   };
 
@@ -1330,8 +1401,18 @@ const LageplanWizardView = () => {
       done={measurePoints.length > 0 && !placementDirty}
       actions={
         selectedLocationId !== null && (
-          <span style={{ fontSize: 12.5, color: MUTED }}>
-            {measurePoints.length} measure point(s) stored
+          <span className="d-flex align-items-center gap-2">
+            <span style={{ fontSize: 12.5, color: MUTED }}>
+              {measurePoints.length} measure point(s) stored
+            </span>
+            {measurePoints.length > 0 && (
+              <PillButton
+                variant="ghost"
+                label="Clear measure points"
+                disabled={isProcessing}
+                onClick={() => setConfirmAction({ kind: 'points' })}
+              />
+            )}
           </span>
         )
       }
@@ -1465,7 +1546,7 @@ const LageplanWizardView = () => {
 
   if (!permissionsLoading && !canEditDevices) {
     return (
-      <div style={{ maxWidth: 1180 }}>
+      <div>
         <Notice tone="warning">
           You do not have permission to edit measure points.
         </Notice>
@@ -1479,7 +1560,8 @@ const LageplanWizardView = () => {
         display: 'flex',
         flexDirection: 'column',
         gap: 14,
-        maxWidth: 1180,
+        width: '100%',
+        minWidth: 0,
       }}
     >
       <div
@@ -1523,6 +1605,31 @@ const LageplanWizardView = () => {
       {renderStepTwo()}
       {renderStepThree()}
       {renderStepFour()}
+
+      <ConfirmDialog
+        show={confirmAction !== null}
+        title={confirmAction?.kind === 'plan' ? 'Remove Lageplan?' : 'Clear measure points?'}
+        message={
+          confirmAction?.kind === 'plan'
+            ? `“${planLabel(confirmAction.plan)}” is removed${
+                pointsOnPlan(confirmAction.plan.id)
+                  ? ` together with its ${pointsOnPlan(confirmAction.plan.id)} measure point(s)`
+                  : ''
+              }. This cannot be undone.`
+            : `All ${measurePoints.length} measure point(s) of this location are removed - on every Lageplan. This cannot be undone.`
+        }
+        confirmLabel={confirmAction?.kind === 'plan' ? 'Remove' : 'Clear'}
+        cancelLabel="Cancel"
+        confirming={isProcessing}
+        onCancel={() => setConfirmAction(null)}
+        onConfirm={() => {
+          if (confirmAction?.kind === 'plan') {
+            deletePlan(confirmAction.plan);
+          } else if (confirmAction?.kind === 'points') {
+            clearMeasurePoints();
+          }
+        }}
+      />
     </div>
   );
 };

@@ -205,6 +205,28 @@ def test_demo_user_cannot_change_anything(api_client, demo):
     assert alarm.status == status
 
 
+def test_the_demo_projects_are_the_demo_users_favorites(api_client, demo):
+    _login(api_client, demo)
+    projects = set(
+        ProgeoLocation.objects.using(settings.DEMO_DATABASE).filter(account=demo.account).values_list("id", flat=True)
+    )
+
+    favorites = api_client.get("/v1/favorite/").json()["favorites"]
+    assert {row["location"] for row in favorites} == projects
+    assert all(row["name"] for row in favorites)
+
+    # Recreated under new ids: the favorites follow (no stale cache).
+    call_command("demo_account", "--skip-checks", *HISTORY)
+    projects = set(
+        ProgeoLocation.objects.using(settings.DEMO_DATABASE).filter(account=demo.account).values_list("id", flat=True)
+    )
+    assert {row["location"] for row in api_client.get("/v1/favorite/").json()["favorites"]} == projects
+
+    response = api_client.post("/v1/favorite/", {"location": next(iter(projects)), "favorite": False}, format="json")
+    assert response.status_code == 403
+    assert response.json()["demo_read_only"] is True
+
+
 def test_demo_user_does_not_see_staff_contacts(api_client, demo):
     from django.contrib.auth.models import User
 

@@ -114,7 +114,7 @@ function PortalFrame({ children }: { children: React.ReactNode }) {
   return (
     <Container
       fluid={true}
-      style={{ minWidth: '750px', margin: '0', padding: '0 clamp(8px, 1.5vw, 32px)' }}
+      style={{ minWidth: '750px', margin: '0', padding: '0' }}
     >
       {children}
     </Container>

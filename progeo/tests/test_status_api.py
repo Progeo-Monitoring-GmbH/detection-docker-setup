@@ -436,3 +436,82 @@ def test_measure_points_post_validates_devices(api_client, world, device, reason
     assert response.status_code == 400
     assert reason in response.json()["reason"]
     assert list(ProgeoMeasurePoint.objects.using(f.DB).filter(location=location)) == [existing]
+
+
+# -- delete_lageplan ---------------------------------------------------------
+
+def _delete_plan(api_client, location, lageplan_id):
+    return api_client.post(
+        "/v1/status/measure_points/delete_lageplan/",
+        {"location_id": location.project_id, "lageplan_id": lageplan_id},
+        format="json",
+    )
+
+
+def test_delete_lageplan_removes_the_plan_its_points_and_its_file(api_client, world, settings, tmp_path):
+    from progeo.v1.models import ProgeoLageplan
+
+    settings.UPLOAD_DIR = str(tmp_path)
+    (tmp_path / "lageplan").mkdir()
+    (tmp_path / "lageplan" / "second.png").write_bytes(b"png")
+    location = world[0]
+    main = ProgeoLageplan.objects.using(f.DB).create(location=location, lageplan="lageplan/main.png", is_active=True)
+    second = ProgeoLageplan.objects.using(f.DB).create(location=location, lageplan="lageplan/second.png", is_active=False)
+    on_main = f.make_measure_point(location, 1, lageplan=main)
+    unplaced = f.make_measure_point(location, 2)
+    on_second = f.make_measure_point(location, 3, lageplan=second)
+    api_client.force_authenticate(user=world[5])
+
+    response = _delete_plan(api_client, location, second.pk)
+
+    assert response.status_code == 200, response.content
+    assert response.json()["removed_points"] == 1
+    assert not ProgeoLageplan.objects.using(f.DB).filter(pk=second.pk).exists()
+    assert not (tmp_path / "lageplan" / "second.png").exists()
+    remaining = set(ProgeoMeasurePoint.objects.using(f.DB).filter(location=location).values_list("pk", flat=True))
+    assert remaining == {on_main.pk, unplaced.pk}
+    assert on_second.pk not in remaining
+
+
+def test_deleting_the_main_plan_also_removes_the_points_without_a_plan(api_client, world):
+    from progeo.v1.models import ProgeoLageplan
+
+    location = world[0]
+    other = ProgeoLageplan.objects.using(f.DB).create(location=location, lageplan="lageplan/old.png", is_active=False)
+    main = ProgeoLageplan.objects.using(f.DB).create(location=location, lageplan="lageplan/main.png", is_active=True)
+    f.make_measure_point(location, 1)
+    f.make_measure_point(location, 2, lageplan=main)
+    on_other = f.make_measure_point(location, 3, lageplan=other)
+    api_client.force_authenticate(user=world[5])
+
+    assert _delete_plan(api_client, location, main.pk).json()["removed_points"] == 2
+    assert list(ProgeoMeasurePoint.objects.using(f.DB).filter(location=location).values_list("pk", flat=True)) == [
+        on_other.pk
+    ]
+
+
+def test_delete_lageplan_only_at_its_location(api_client, world):
+    from progeo.v1.models import ProgeoLageplan
+
+    location, hidden_location = world[0], world[1]
+    foreign = ProgeoLageplan.objects.using(f.DB).create(location=hidden_location, lageplan="lageplan/f.png")
+    api_client.force_authenticate(user=world[5])
+
+    assert _delete_plan(api_client, location, foreign.pk).status_code == 400
+    assert _delete_plan(api_client, hidden_location, foreign.pk).status_code == 400
+    assert _delete_plan(api_client, location, "x").status_code == 400
+    assert ProgeoLageplan.objects.using(f.DB).filter(pk=foreign.pk).exists()
+
+
+def test_clearing_the_measure_points(api_client, world):
+    location = world[0]
+    f.make_measure_point(location, 1)
+    f.make_measure_point(location, 2)
+    api_client.force_authenticate(user=world[5])
+
+    body = api_client.post(
+        "/v1/status/measure_points/", {"location_id": location.project_id, "points": []}, format="json"
+    ).json()
+
+    assert body["stored"] == 0
+    assert not ProgeoMeasurePoint.objects.using(f.DB).filter(location=location).exists()

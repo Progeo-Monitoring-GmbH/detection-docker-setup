@@ -100,9 +100,9 @@ const LocationPortalLayout = () => {
         <ImpersonationBanner />
         <FavoritesBar />
         {id && !loading && location && (
-          // Staff: the big star pins the location; superusers: its escalation.
+          // The big star pins the location; staff also see its escalation.
           <div className="d-flex align-items-center gap-3">
-            {staff && <FavoriteStar locationId={locationId} size={40} />}
+            <FavoriteStar locationId={locationId} size={40} />
             {/* Which object this is - on every tab, for everyone (the tabs show no name of their own). */}
             <div style={{ minWidth: 0, flexShrink: 1 }} data-testid="portal-location-title">
               <div

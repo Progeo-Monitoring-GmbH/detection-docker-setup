@@ -178,7 +178,10 @@ const LocationRechteTab = () => {
       auth,
       `/v1/location/${locationId}/access/`,
       (response) => {
-        setMembers((response?.data?.members || []) as Member[]);
+        const loaded = (response?.data?.members || []) as Member[];
+        // ProGeo staff are for staff eyes only (the backend sends them to
+        // nobody else - this keeps it so with an older backend, too).
+        setMembers(viewerIsStaff ? loaded : loaded.filter((member) => member.access !== 'staff'));
         setCandidates((response?.data?.candidates || []) as UserContact[]);
         setCanGrantAccount(Boolean(response?.data?.can_grant_account));
         setLoading(false);
@@ -188,7 +191,7 @@ const LocationRechteTab = () => {
         setLoading(false);
       },
     );
-  }, [auth, enqueueSnackbar, locationId]);
+  }, [auth, enqueueSnackbar, locationId, viewerIsStaff]);
 
   useEffect(() => {
     load();

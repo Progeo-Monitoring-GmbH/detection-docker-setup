@@ -6,8 +6,7 @@ import { useFavorites } from './favorites';
 export const FAVORITE_COLOR = '#F2B705';
 
 /**
- * The big star that pins a location as favorite of the staff user (or
- * unpins it) - nothing for everyone else.
+ * The big star that pins a location as favorite of the user (or unpins it).
  */
 const FavoriteStar = ({ locationId, size = 40 }: { locationId: number; size?: number }) => {
   const { t } = useTranslation();

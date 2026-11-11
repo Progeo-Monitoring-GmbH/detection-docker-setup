@@ -5,9 +5,10 @@ import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
 import { showErrorBar, showRequestError } from '../components/ui/Snackbar.jsx';
 import { staffFlags } from './access';
+import { isDemoUser } from './demo';
 
 /**
- * Favorite locations of a staff user (/v1/favorite/, FavoriteViewSet) - the
+ * Favorite locations of the user (/v1/favorite/, FavoriteViewSet) - the
  * favorites bar at the top and every star toggle share this one store, so
  * pinning a location anywhere shows up everywhere at once. Loaded once per
  * login (token).
@@ -51,7 +52,7 @@ type FavoritesResponse = { data?: { favorites?: FavoriteLocation[]; max?: number
 const adopt = (response: FavoritesResponse) =>
   setState({ favorites: response?.data?.favorites ?? [], max: response?.data?.max ?? state.max });
 
-/** Whether the user is staff - only staff have favorites. */
+/** Whether the user is staff. */
 export const isStaffUser = (user: unknown) =>
   staffFlags(user).isStaffOrSuperuser;
 
@@ -59,7 +60,9 @@ export const useFavorites = () => {
   const { t } = useTranslation();
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
-  const enabled = isStaffUser(auth?.user);
+  // Every logged-in user has favorites; the demo user's are its projects (read-only).
+  const enabled = Boolean(auth?.user);
+  const readOnly = isDemoUser(auth?.user);
   const token = auth?.token || null;
   const current = useSyncExternalStore(subscribe, getState);
 
@@ -78,6 +81,10 @@ export const useFavorites = () => {
 
   const toggle = (locationId: number) => {
     if (!enabled || state.pending.includes(locationId)) {
+      return;
+    }
+    if (readOnly) {
+      enqueueSnackbar(t('demo_read_only'), { variant: 'info' });
       return;
     }
     const favorite = !isFavorite(locationId);
