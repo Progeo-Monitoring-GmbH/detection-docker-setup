@@ -81,6 +81,12 @@ celery_instance.conf.beat_schedule = {
         # Unconfirmed access requests expire, rejected ones are deleted (GDPR).
         "schedule": crontab(hour=4, minute=12),
     },
+    "fetch-rain-events-hourly": {
+        "task": "progeo.tasks.fetch_rain_events",
+        # Precipitation of the locations with rain_check_enabled (Open-Meteo)
+        # -> ProgeoRainEvent; at :40, clear of the alarm runs (:05, :10, :20).
+        "schedule": crontab(minute=40),
+    },
     "refresh-demo-account-every-3-days": {
         "task": "progeo.tasks.refresh_demo_account",
         # The demo's measurements end at the time of the last run - regenerate

@@ -1130,6 +1130,11 @@ i18n
           qrprint_frontend: 'Controller frontend',
           qrprint_load_failed: 'Could not load the QR codes.',
           einstell_pe_geschaltet: 'PE switched',
+          einstell_rain_check: 'Rain check',
+          einstell_rain_check_hint:
+            'Fetches the rain at the object hourly and shows it on the alarm timeline',
+          einstell_rain_check_no_coordinates:
+            'The object has no coordinates yet - the rain check starts once they are set',
           einstell_pe_geschaltet_hint:
             'Potential equalization switched into the measuring circuit',
           einstell_yes: 'Yes',
@@ -2819,6 +2824,11 @@ i18n
           qrprint_frontend: 'Controller-Oberfläche',
           qrprint_load_failed: 'QR-Codes konnten nicht geladen werden.',
           einstell_pe_geschaltet: 'PE geschaltet',
+          einstell_rain_check: 'Regenabgleich',
+          einstell_rain_check_hint:
+            'Ruft stündlich den Regen am Objekt ab und zeigt ihn in der Alarm-Zeitleiste',
+          einstell_rain_check_no_coordinates:
+            'Das Objekt hat noch keine Koordinaten - der Regenabgleich startet, sobald sie gesetzt sind',
           einstell_pe_geschaltet_hint:
             'Potentialausgleich am Messkreis geschaltet',
           einstell_yes: 'Ja',

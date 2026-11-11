@@ -57,14 +57,7 @@ def evaluate_measurements_db(db: str, start, end, project_id: int | None = None)
 
     from progeo.helper.alarm_thresholds import load_sensor_thresholds
     from progeo.helper.basics import dlog
-    from progeo.helper.weather import WeatherHelper
     from progeo.v1.models import ProgeoMeasurement
-
-    # One shared helper for the whole pass: alarms of the same location share a
-    # single API call, and rain is only attributed to the earliest alarm that
-    # catches a rain event (later overlapping alarms are marked checked without
-    # rain data).
-    weather_helper = WeatherHelper()
 
     # One query for all locations: every measurement in the window with its
     # device+location already joined. `last_fetched` is set on every save and is
@@ -109,7 +102,7 @@ def evaluate_measurements_db(db: str, start, end, project_id: int | None = None)
             project_ids.add(location.project_id)
 
         group_triggered, group_evaluated, group_normalized = _evaluate_device_rows(
-            rows, location, db, weather_helper, alarmed_devices, alarms,
+            rows, location, db, alarmed_devices, alarms,
             sensor_thresholds.get(location.pk, {}),
         )
         triggered += group_triggered
@@ -129,7 +122,7 @@ def evaluate_measurements_db(db: str, start, end, project_id: int | None = None)
     return len(project_ids), triggered
 
 
-def _evaluate_device_rows(rows, location, db: str, weather_helper, alarmed_devices, alarms, sensor_thresholds):
+def _evaluate_device_rows(rows, location, db: str, alarmed_devices, alarms, sensor_thresholds):
     """Evaluate one device's measurements in time order, galloping over active alarms.
 
     Returns (triggered, evaluated, normalized); `evaluated` counts the rows that
@@ -149,7 +142,7 @@ def _evaluate_device_rows(rows, location, db: str, weather_helper, alarmed_devic
         was_alarmed = alarmed_devices is not None and device_id in alarmed_devices
         evaluated += 1
         if _evaluate_measurement(
-            measurement, location, db, weather_helper, alarmed_devices, alarms,
+            measurement, location, db, alarmed_devices, alarms,
             over_threshold=over_threshold, sensor_thresholds=sensor_thresholds,
         ):
             triggered += 1
@@ -180,7 +173,7 @@ def _evaluate_device_rows(rows, location, db: str, weather_helper, alarmed_devic
             if probe_over:
                 evaluated += 1
                 if _evaluate_measurement(
-                    rows[probe], location, db, weather_helper, alarmed_devices, alarms,
+                    rows[probe], location, db, alarmed_devices, alarms,
                     over_threshold=probe_over, sensor_thresholds=sensor_thresholds,
                 ):
                     triggered += 1
@@ -199,7 +192,7 @@ def _evaluate_device_rows(rows, location, db: str, weather_helper, alarmed_devic
             evaluated += 1
             # The normal path so the alarm normalizes at the exact calm row.
             _evaluate_measurement(
-                rows[first_below], location, db, weather_helper, alarmed_devices, alarms,
+                rows[first_below], location, db, alarmed_devices, alarms,
                 over_threshold=[],
             )
             if was_alarmed:
@@ -314,7 +307,6 @@ def evaluate_measurement_instantly(measurement, db: str = "default") -> bool:
     from django.conf import settings
 
     from progeo.helper.basics import elog
-    from progeo.helper.weather import WeatherHelper
 
     if not getattr(settings, "PROGEO_CONFIG_EVALUATE_INSTANTLY", False):
         return False
@@ -325,7 +317,7 @@ def evaluate_measurement_instantly(measurement, db: str = "default") -> bool:
         location = _resolve_location(measurement, db)
         if location is None:
             return False
-        return _evaluate_measurement(measurement, location, db, WeatherHelper())
+        return _evaluate_measurement(measurement, location, db)
     except Exception as exc:  # noqa: BLE001 - the instant check must never break storing the measurement
         elog(f"[evaluate_measurement_instantly] measurement={measurement.pk} db={db} failed: {exc}")
         return False
@@ -358,7 +350,7 @@ def _resolve_location(measurement, db: str):
     return location
 
 
-def _evaluate_measurement(measurement, location, db: str, weather_helper, alarmed_devices=None,
+def _evaluate_measurement(measurement, location, db: str, alarmed_devices=None,
                           alarms: _AlarmBatch | None = None, over_threshold=None, sensor_thresholds=None) -> bool:
     """Raise/prolong an alarm for an over-threshold measurement, else normalize active alarms.
 
@@ -390,18 +382,13 @@ def _evaluate_measurement(measurement, location, db: str, weather_helper, alarme
                 return False
             alarmed_devices.discard(measurement.device_id)  # normalized below
         if alarms is not None:
-            alarms.flush()  # the weather check below reads the alarm as stored
-        active_alarms = (
-            ProgeoAlarm.objects.using(db)
-            .filter(measurement__device=measurement.device, normalized_at__isnull=True)
-            .select_related("measurement__device__location")
-            .order_by("triggered_at", "id")
+            alarms.flush()  # the update below must see the batch's pending alarms
+        active_alarms = ProgeoAlarm.objects.using(db).filter(
+            measurement__device=measurement.device, normalized_at__isnull=True
         )
-        alarm = active_alarms.first()
-        if alarm:
-            # Normalize every still-active alarm of this device and check the
-            # earliest one for rain (later overlapping alarms are marked
-            # checked without rain data by the shared WeatherHelper).
+        if active_alarms.exists():
+            # Normalize every still-active alarm of this device (rain is
+            # fetched per location by the fetch_rain_events task, not here).
             # Alarms nobody ever acknowledged (still NEU) become GELOEST
             # (resolved) here; already-acknowledged/stoerung alarms keep
             # their status - only normalized_at changes for those.
@@ -412,8 +399,6 @@ def _evaluate_measurement(measurement, location, db: str, weather_helper, alarme
             active_alarms.exclude(status=ProgeoAlarm.Status.NEU).update(
                 normalized_at=measurement.last_fetched,
             )
-            alarm.normalized_at = measurement.last_fetched
-            alarm.fetch_weather(weather_helper)
             if alarms is not None:
                 alarms.reload(measurement.device_id)
         return False

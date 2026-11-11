@@ -728,6 +728,22 @@ def cleanup_access_requests():
 
 
 @shared_task
+def fetch_rain_events(location_id=None, hours=None):
+    """Hourly: the rain of every location with rain_check_enabled
+    (helper/weather.py) - the last RAIN_LOOKBACK hours are read again and
+    replace the stored ProgeoRainEvents. `hours` reads further back
+    (backfill, e.g. `manage.py fetch_weather --days 30`)."""
+    import datetime
+
+    from django.utils import timezone
+
+    from progeo.helper.weather import sync_all_rain_events
+
+    since = timezone.now() - datetime.timedelta(hours=hours) if hours else None
+    return sync_all_rain_events(location_id=location_id, since=since)
+
+
+@shared_task
 def refresh_demo_account():
     """`manage.py demo_account`: regenerates the demo locations with
     measurements up to now, so the public demo never looks stale. Account,

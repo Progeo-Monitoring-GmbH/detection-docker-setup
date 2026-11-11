@@ -4,7 +4,8 @@ alarms from a measurement window) and check_existing_alarms_db (the
 
 Measurements are tiny synthetic pair lists (sensor n = pair n, 1-based).
 evaluate_measurements_db only sees the given window, so its tests work in a
-far-future window no real data reaches. Weather lookups are faked.
+far-future window no real data reaches. Rain is not part of it any more
+(ProgeoRainEvent, fetched per location by the fetch_rain_events task).
 """
 import datetime
 import itertools
@@ -12,7 +13,7 @@ import itertools
 import pytest
 from django.utils import timezone
 
-from progeo.helper import alarm_evaluation, weather
+from progeo.helper import alarm_evaluation
 from progeo.helper.alarm_check import check_existing_alarms_db
 from progeo.helper.alarm_evaluation import (
     evaluate_measurement_instantly,
@@ -23,24 +24,6 @@ from progeo.tests import factories as f
 from progeo.v1.models import ProgeoAlarm, ProgeoDevice, ProgeoLocation
 
 _windows = itertools.count()
-
-
-class FakeWeather:
-    instances = []
-
-    def __init__(self, *args, **kwargs):
-        self.checked = []
-        FakeWeather.instances.append(self)
-
-    def check_rain_for_alarm(self, alarm, save=True):
-        self.checked.append(alarm.pk)
-
-
-@pytest.fixture(autouse=True)
-def fake_weather(monkeypatch):
-    FakeWeather.instances = []
-    monkeypatch.setattr(weather, "WeatherHelper", FakeWeather)
-    return FakeWeather
 
 
 @pytest.fixture
@@ -220,7 +203,13 @@ def test_long_active_stretch_is_galloped_and_normalizes_at_the_exact_calm_row(wi
 
 # -- evaluate_measurements_db: normalizing --------------------------------------
 
-def test_drop_below_threshold_normalizes_and_checks_weather_once(window, site, fake_weather):
+def test_drop_below_threshold_normalizes_without_a_weather_lookup(window, site, monkeypatch):
+    import requests
+
+    def no_requests(*args, **kwargs):
+        raise AssertionError("the alarm evaluation must not ask the weather service")
+
+    monkeypatch.setattr(requests, "get", no_requests)
     _location, device = site
     f.make_measurement(device, pairs=[150], fetched_at=window[1](10))
     calm = f.make_measurement(device, pairs=[20], fetched_at=window[1](40))
@@ -231,9 +220,6 @@ def test_drop_below_threshold_normalizes_and_checks_weather_once(window, site, f
     [alarm] = _alarms(device)
     assert alarm.normalized_at == calm.last_fetched
     assert alarm.status == ProgeoAlarm.Status.GELOEST
-    # One shared helper for the whole pass; the later calm measurement finds no open alarm.
-    [helper] = fake_weather.instances
-    assert helper.checked == [alarm.id]
 
 
 def test_normalizing_keeps_acknowledged_status(window, site):

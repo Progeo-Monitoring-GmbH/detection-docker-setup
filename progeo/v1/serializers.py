@@ -37,6 +37,7 @@ from progeo.v1.models import (
     ProgeoLocation,
     ProgeoMeasurement,
     ProgeoMeasurePoint,
+    ProgeoRainEvent,
 )
 
 
@@ -533,6 +534,19 @@ class ProgeoMeasurementSerializer(ProgeoBaseSerializer):
         return len([value for value in samples if value != 0])
 
 
+class ProgeoRainEventSerializer(serializers.ModelSerializer):
+    """A rain event of a location (ProgeoRainEvent) - ISO datetimes, like the
+    alarms the timeline draws it next to."""
+
+    start = serializers.DateTimeField(format=None, read_only=True)
+    end = serializers.DateTimeField(format=None, read_only=True)
+    duration_hours = serializers.FloatField(read_only=True)
+
+    class Meta:
+        model = ProgeoRainEvent
+        fields = ["id", "location", "start", "end", "duration_hours", "amount"]
+
+
 class ProgeoAlarmSerializer(ProgeoBaseSerializer):
     clazz = serializers.SerializerMethodField("get_clazz_name")
     device = serializers.SerializerMethodField("get_device")
@@ -545,8 +559,7 @@ class ProgeoAlarmSerializer(ProgeoBaseSerializer):
     # The third-party jsonfield.fields.JSONField is not recognized by DRF's
     # ModelSerializer, which would emit these as raw JSON *strings*. Declare
     # explicit JSON fields so the frontend receives real arrays/objects
-    # (required e.g. for the rain overlay and sensor pair list).
-    rain_events = serializers.JSONField(read_only=True)
+    # (required e.g. for the sensor pair list).
     max_values = serializers.JSONField(read_only=True)
     sensor_max_values = serializers.JSONField(read_only=True)
 

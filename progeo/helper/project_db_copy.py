@@ -108,6 +108,7 @@ def project_filters(project, source=DEFAULT_DB_ALIAS):
         ProgeoMeasurement,
         ProgeoMeasurePoint,
         ProgeoNoiseProfile,
+        ProgeoRainEvent,
     )
 
     ids = project_location_ids(project, source)
@@ -162,6 +163,7 @@ def project_filters(project, source=DEFAULT_DB_ALIAS):
             sql.SQL("{} IN ({})").format(_column(ProgeoMeasurement, "device"), devices), [ids, orphans]
         ),
         ProgeoAlarm: (sql.SQL("{} IN ({})").format(_column(ProgeoAlarm, "measurement"), measurements), [ids, orphans]),
+        ProgeoRainEvent: by_location(ProgeoRainEvent),
     }
 
 

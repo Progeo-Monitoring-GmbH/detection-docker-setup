@@ -7,11 +7,12 @@ import {
   alarmHeatColor,
   alarmKey,
   alarmPeakValue,
-  alarmRainSpans,
   alarmStartTime,
   formatDuration,
   isAlarmActive,
   parseTimestamp,
+  rainSpans,
+  type RainEvent,
   type TimelineAlarm,
 } from './alarmUtils';
 import './AlarmTimeline.css';
@@ -33,6 +34,8 @@ type AlarmTimelineProps = {
   /** alarmKey() of the selected alarm (ids repeat across project databases). */
   selectedAlarmKey?: string | null;
   onSelectAlarm?: (alarm: TimelineAlarm) => void;
+  /** Rain events of the alarms' locations - drawn on each location's lane. */
+  rainEvents?: RainEvent[];
 };
 
 /** Close delay for the floating alarm tooltip after the mouse left it (ms). */
@@ -93,6 +96,7 @@ const AlarmTimeline = ({
   now,
   selectedAlarmKey = null,
   onSelectAlarm,
+  rainEvents,
 }: AlarmTimelineProps) => {
   const [sortBy, setSortBy] = useState<'label' | 'duration' | 'max_value'>(
     'duration',
@@ -641,19 +645,17 @@ const AlarmTimeline = ({
                   onMouseMove={handleTrackMouseMove}
                   onMouseLeave={handleTrackMouseLeave}
                 >
-                  {group.spans
-                    .slice()
+                  {rainSpans(
+                    (rainEvents ?? []).filter(
+                      (event) =>
+                        event.location != null &&
+                        `loc-${event.location}` === group.key,
+                    ),
+                  )
                     .sort((a, b) => a.start - b.start)
-                    .flatMap((span) =>
-                      alarmRainSpans(span.alarm).map((rain, index) => ({
-                        span,
-                        rain,
-                        index,
-                      })),
-                    )
-                    .map(({ span, rain, index }) => (
+                    .map((rain) => (
                       <div
-                        key={`rain-${alarmKey(span.alarm)}-${index}`}
+                        key={`rain-${group.key}-${rain.start}`}
                         className="alarm-timeline-rain"
                         style={{
                           left: `${toLeft(rain.start)}%`,

@@ -33,6 +33,7 @@ from progeo.v1.models import (
     ProgeoLocation,
     ProgeoMeasurement,
     ProgeoMeasurePoint,
+    ProgeoRainEvent,
     UserProfile,
 )
 from progeo.v1.viewsets.favorite_viewset import forget_favorites
@@ -862,6 +863,18 @@ class Command(BaseCommand):
             elif event["normalized_at"] is not None and status == ProgeoAlarm.Status.NEU:
                 status = ProgeoAlarm.Status.GELOEST  # normalized, never acknowledged
             rain = leak.get("rain")
+            if rain:
+                # The rain before the leak showed: a rain event of the
+                # location (the demo never asks the weather service).
+                rain_start = first.last_fetched - datetime.timedelta(hours=rain["before_h"])
+                ProgeoRainEvent.objects.using(db).update_or_create(
+                    location=location,
+                    start=rain_start,
+                    defaults={
+                        "end": rain_start + datetime.timedelta(hours=rain["duration"]),
+                        "amount": rain["amount"],
+                    },
+                )
             ProgeoAlarm.objects.using(db).create(
                 measurement=last,
                 triggered_at=first.last_fetched,
@@ -879,13 +892,6 @@ class Command(BaseCommand):
                     if status == ProgeoAlarm.Status.QUITTIERT else None
                 ),
                 status=status,
-                rain_events=[{
-                    "start": (first.last_fetched - datetime.timedelta(hours=rain["before_h"])).isoformat(),
-                    "duration": rain["duration"],
-                    "amount": rain["amount"],
-                }] if rain else [],
-                # Checked already, so no weather lookup is ever made for demo alarms.
-                rain_checked=True,
             )
 
     # ------------------------------------------------------------ climate data

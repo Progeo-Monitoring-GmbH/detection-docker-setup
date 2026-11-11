@@ -4,7 +4,7 @@ import {
   alarmHeatColor,
   alarmKey,
   alarmPeakValue,
-  alarmRainSpans,
+  rainSpans,
   alarmSensors,
   alarmStartTime,
   formatDuration,
@@ -136,66 +136,51 @@ describe('isAlarmActive', () => {
   });
 });
 
-describe('alarmRainSpans', () => {
+describe('rainSpans', () => {
   const start = '2026-08-19T10:00:00Z';
   const startMs = Date.parse(start);
+  const end = (hours: number) => new Date(startMs + hours * HOUR_MS).toISOString();
 
-  it('returns [] when there are no rain events', () => {
-    expect(alarmRainSpans({})).toEqual([]);
-    expect(alarmRainSpans({ rain_events: null })).toEqual([]);
-    expect(alarmRainSpans({ rain_events: [] })).toEqual([]);
+  it('returns [] without rain events', () => {
+    expect(rainSpans(undefined)).toEqual([]);
+    expect(rainSpans(null)).toEqual([]);
+    expect(rainSpans([])).toEqual([]);
   });
 
-  it('converts the duration in hours into an end time', () => {
-    expect(alarmRainSpans({ rain_events: [{ start, duration: 2, amount: 4.5 }] })).toEqual([
+  it('turns start and end into a span with its amount', () => {
+    expect(rainSpans([{ start, end: end(2), amount: 4.5 }])).toEqual([
       { start: startMs, end: startMs + 2 * HOUR_MS, amount: 4.5 },
     ]);
   });
 
-  it('supports fractional durations', () => {
-    const [span] = alarmRainSpans({ rain_events: [{ start, duration: 0.5, amount: 1 }] });
-    expect(span.end - span.start).toBe(HOUR_MS / 2);
-  });
-
   it('returns one span per valid event, in input order', () => {
     const later = '2026-08-20T10:00:00Z';
-    const spans = alarmRainSpans({
-      rain_events: [
-        { start, duration: 1, amount: 1 },
-        { start: later, duration: 3, amount: 2 },
-      ],
-    });
+    const spans = rainSpans([
+      { start, end: end(1), amount: 1 },
+      { start: later, end: new Date(Date.parse(later) + 3 * HOUR_MS).toISOString(), amount: 2 },
+    ]);
     expect(spans).toHaveLength(2);
     expect(spans[1]).toEqual({ start: Date.parse(later), end: Date.parse(later) + 3 * HOUR_MS, amount: 2 });
   });
 
-  it('skips events with a missing/invalid start or a non-positive/invalid duration', () => {
+  it('skips events with a missing/invalid start or end, or an end not after the start', () => {
     expect(
-      alarmRainSpans({
-        rain_events: [
-          { start: null, duration: 1, amount: 1 },
-          { start: 'garbage', duration: 1, amount: 1 },
-          { start, duration: 0, amount: 1 },
-          { start, duration: -2, amount: 1 },
-          { start, duration: null, amount: 1 },
-        ],
-      }),
+      rainSpans([
+        { start: null, end: end(1), amount: 1 },
+        { start: 'garbage', end: end(1), amount: 1 },
+        { start, end: null, amount: 1 },
+        { start, end: start, amount: 1 },
+        { start, end: end(-2), amount: 1 },
+      ]),
     ).toEqual([]);
   });
 
-  it('keeps the span but nulls a non-numeric amount', () => {
-    const [span] = alarmRainSpans({
-      rain_events: [{ start, duration: 1, amount: Number.NaN }],
-    });
-    expect(span.amount).toBeNull();
-    expect(span.start).toBe(startMs);
-  });
-
-  // BUG: Number(null) === 0, so a missing amount is reported as 0 mm instead
-  // of null (alarmUtils.ts:157).
-  it('nulls a missing amount', () => {
-    const [span] = alarmRainSpans({ rain_events: [{ start, duration: 1, amount: null }] });
-    expect(span.amount).toBeNull();
+  it('keeps the span but nulls a missing or non-numeric amount', () => {
+    const [nan] = rainSpans([{ start, end: end(1), amount: Number.NaN }]);
+    const [missing] = rainSpans([{ start, end: end(1), amount: null }]);
+    expect(nan.amount).toBeNull();
+    expect(missing.amount).toBeNull();
+    expect(nan.start).toBe(startMs);
   });
 });
 

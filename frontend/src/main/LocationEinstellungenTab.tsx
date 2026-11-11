@@ -11,6 +11,7 @@ import {
   showSuccessBar,
 } from '../components/ui/Snackbar.jsx';
 import PanelCard from '../components/ui/kit/PanelCard';
+import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import PillButton from '../components/ui/kit/PillButton';
 import LabeledInput from '../components/ui/kit/LabeledInput';
 import DeviceConfigPanel, {
@@ -190,6 +191,35 @@ const LocationEinstellungenTab = () => {
     );
   };
 
+  // -- Rain check (ProgeoLocation.rain_check_enabled) --------------------
+  // Like the product: the last choice made here wins over the outlet's
+  // location, keyed by locationId so switching objects drops it.
+  const [rainCheckDraft, setRainCheckDraft] = useState<{
+    locationId: typeof locationId;
+    value: boolean;
+  } | null>(null);
+  const rainCheck =
+    rainCheckDraft?.locationId === locationId
+      ? rainCheckDraft.value
+      : Boolean(location?.rain_check_enabled);
+  const hasCoordinates =
+    location?.latitude != null && location?.longitude != null;
+
+  const saveRainCheck = (value: boolean) => {
+    const previous = rainCheck;
+    setRainCheckDraft({ locationId, value });
+    void axiosConfig.perform_patch(
+      auth,
+      `/v1/location/${locationId}/`,
+      { rain_check_enabled: value },
+      () => showSuccessBar(enqueueSnackbar, t('einstell_saved')),
+      (error) => {
+        setRainCheckDraft({ locationId, value: previous });
+        showRequestError(enqueueSnackbar, 'Could not save', error);
+      },
+    );
+  };
+
   // -- Objektleitung (staff access, reuses ProgeoAccess/access endpoints) --
   const [staffRules, setStaffRules] = useState<AccessRule[]>([]);
   const [staffCandidates, setStaffCandidates] = useState<StaffUser[]>([]);
@@ -346,6 +376,44 @@ const LocationEinstellungenTab = () => {
                 />
               )}
             </div>
+          </div>
+
+          <div
+            style={{
+              background: 'var(--progeo-surface)',
+              borderRadius: 13,
+              padding: '13px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 16,
+              flexWrap: 'wrap',
+            }}
+          >
+            <div style={{ flex: 1, minWidth: 180 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 500 }}>
+                {t('einstell_rain_check')}
+              </div>
+              <div style={{ fontSize: 12, color: '#8B8383', marginTop: 2 }}>
+                {t(
+                  rainCheck && !hasCoordinates
+                    ? 'einstell_rain_check_no_coordinates'
+                    : 'einstell_rain_check_hint',
+                )}
+              </div>
+            </div>
+            <SegmentedControl
+              options={[
+                { value: 'ja', label: t('einstell_yes') },
+                { value: 'nein', label: t('einstell_no') },
+              ]}
+              value={rainCheck ? 'ja' : 'nein'}
+              disabled={!canEdit}
+              onChange={(value) => {
+                if (canEdit && (value === 'ja') !== rainCheck) {
+                  saveRainCheck(value === 'ja');
+                }
+              }}
+            />
           </div>
 
           {devicesLoading ? (

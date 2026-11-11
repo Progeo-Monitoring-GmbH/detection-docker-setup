@@ -25,12 +25,22 @@ export type AlarmSensorMaxValue = {
   max_value?: number | null;
 };
 
-/** One rain event matched to an alarm: start (iso), duration in hours, amount in mm. */
-export type AlarmRainEvent = {
+/**
+ * A rain event of a location (ProgeoRainEvent, /v1/alarm/ `rain_events`):
+ * [start, end) as ISO datetimes, amount in mm.
+ */
+export type RainEvent = {
+  id?: number;
+  location?: number | null;
   start?: string | null;
-  duration?: number | null;
+  end?: string | null;
+  duration_hours?: number | null;
   amount?: number | null;
 };
+
+/** Identity of a rain event across loads: ids repeat across project databases. */
+export const rainEventKey = (event: RainEvent): string =>
+  `${event.location ?? ''}:${event.start ?? ''}`;
 
 /**
  * Identity of an alarm across locations: alarm ids are only unique within one
@@ -58,8 +68,6 @@ export type TimelineAlarm = {
   max_values?: AlarmMaxValueEntry[];
   /** Every sensor above the alarm threshold: (sensor_id, max_value) pairs. */
   sensor_max_values?: AlarmSensorMaxValue[];
-  /** Rain events matched to this alarm (see progeo.helper.weather). */
-  rain_events?: AlarmRainEvent[];
 };
 
 /** Format a duration in seconds as "1d 2h 3m 4s" (skips empty units). */
@@ -157,31 +165,22 @@ export const isAlarmActive = (alarm: {
 };
 
 /**
- * Rain events of the alarm as (start/end in ms, amount) spans, or [] when no
- * rain was recorded. One span per rain event (an alarm can carry several).
- * Falls back to the legacy single-event scalar fields so stale cached
- * payloads (pre-`rain_events`) still render.
+ * Rain events as (start/end in ms, amount) spans, in input order - events
+ * without a valid start or with an end not after the start are skipped.
  */
-export const alarmRainSpans = (alarm: {
-  rain_events?: AlarmRainEvent[] | null;
-}): Array<{ start: number; end: number; amount: number | null }> => {
+export const rainSpans = (
+  events: RainEvent[] | null | undefined,
+): Array<{ start: number; end: number; amount: number | null }> => {
   const spans: Array<{ start: number; end: number; amount: number | null }> =
     [];
-
-  const events = Array.isArray(alarm.rain_events) ? alarm.rain_events : [];
-  for (const event of events) {
+  for (const event of Array.isArray(events) ? events : []) {
     const start = parseTimestamp(event.start);
-    const duration = Number(event.duration);
-    if (start == null || !Number.isFinite(duration) || duration <= 0) {
+    const end = parseTimestamp(event.end);
+    if (start == null || end == null || end <= start) {
       continue;
     }
-    spans.push({
-      start,
-      end: Math.max(start + duration * 60 * 60 * 1000, start),
-      amount: finiteOrNull(event.amount),
-    });
+    spans.push({ start, end, amount: finiteOrNull(event.amount) });
   }
-
   return spans;
 };
 

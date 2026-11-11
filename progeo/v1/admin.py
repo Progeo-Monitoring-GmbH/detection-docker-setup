@@ -31,6 +31,7 @@ from progeo.v1.models import (
     ProgeoMeasurement,
     ProgeoMeasurePoint,
     ProgeoNoiseProfile,
+    ProgeoRainEvent,
     UserModulePermissions,
 )
 
@@ -136,6 +137,22 @@ class DemoSessionAdmin(admin.ModelAdmin):
     )
     list_filter = ("token",)
     readonly_fields = [field.name for field in DemoSession._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+class ProgeoRainEventAdmin(MultiDBModelAdmin):
+    """Rain events - read only: the hourly fetch_rain_events task replaces
+    them from the weather service (helper/weather.py)."""
+    list_display = ("location", "start", "end", "amount", "updated")
+    search_fields = ("location__name", "location__project_id")
+    fields = ("location", "start", "end", "amount", "created", "updated")
+    readonly_fields = fields
+    ordering = ("-start",)
 
     def has_add_permission(self, request):
         return False
@@ -359,6 +376,7 @@ register_models = [
     {"model": ProgeoDevice, "admin": ProgeoDeviceAdmin, "custom": True},
     {"model": ProgeoDeviceCommand, "admin": ProgeoDeviceCommandAdmin, "custom": True},
     {"model": ProgeoNoiseProfile, "admin": ProgeoNoiseProfileAdmin, "custom": True},
+    {"model": ProgeoRainEvent, "admin": ProgeoRainEventAdmin, "custom": True},
     {"model": ProgeoMeasurement, "admin": ProgeoMeasurementAdmin, "custom": True},
     {"model": ProgeoMeasurePoint, "admin": ProgeoMeasurePointAdmin, "custom": True},
     {"model": ProgeoLageplan, "admin": ProgeoLageplanAdmin, "custom": True},

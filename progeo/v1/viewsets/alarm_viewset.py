@@ -23,8 +23,8 @@ from progeo.helper.location_access import (
     visible_locations_by_db,
 )
 from progeo.helper.project_dbs import map_databases, split_enabled
-from progeo.v1.models import ProgeoAlarm
-from progeo.v1.serializers import ProgeoAlarmSerializer
+from progeo.v1.models import ProgeoAlarm, ProgeoRainEvent
+from progeo.v1.serializers import ProgeoAlarmSerializer, ProgeoRainEventSerializer
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.v1.viewsets.setup_viewset import _get_controller_account
 
@@ -69,17 +69,37 @@ class AlarmViewSet(ProgeoModalViewSet):
 
             def alarms_of(db_name):
                 # Serialized here: lazy relations use this database's connection before it closes.
-                return self.get_serializer(self.get_queryset(db_name=db_name).filter(
+                alarms = self.get_serializer(self.get_queryset(db_name=db_name).filter(
                     measurement__device__location_id__in=groups[db_name]
                 ), many=True).data
+                return alarms, self._rain_events(db_name, alarms)
 
-            data = [alarm for chunk in map_databases(alarms_of, groups) for alarm in chunk]
+            chunks = list(map_databases(alarms_of, groups))
+            data = [alarm for alarms, _rain in chunks for alarm in alarms]
+            rain = [event for _alarms, events in chunks for event in events]
             # Like order_by("-triggered_at", "-id") - Postgres puts NULL first when descending.
             data.sort(key=lambda alarm: (alarm.get("triggered_at") is None, alarm.get("triggered_at") or "",
                                          alarm.get("id") or 0), reverse=True)
-            return cache_save_and_return(cache_key, {"alarms": data})
+            return cache_save_and_return(cache_key, {"alarms": data, "rain_events": rain})
         data = self.get_serializer(self.get_queryset(), many=True).data
-        return cache_save_and_return(cache_key, {"alarms": data})
+        account_db = self._db_for(account, self._location_id(request)) if account else None
+        rain = self._rain_events(account_db, data) if account_db else []
+        return cache_save_and_return(cache_key, {"alarms": data, "rain_events": rain})
+
+    def _rain_events(self, db_name, alarms):
+        """The rain events (ProgeoRainEvent) of the serialized `alarms`'
+        locations in the list's time window - the timeline draws them on each
+        location's lane. Rain events live in the database of the alarms."""
+        location_ids = {alarm["location"]["id"] for alarm in alarms if alarm.get("location")}
+        if not location_ids:
+            return []
+        window_start, window_end = self._window()
+        events = (
+            ProgeoRainEvent.objects.using(db_name)
+            .filter(location_id__in=location_ids, end__gte=window_start, start__lte=window_end)
+            .order_by("location_id", "start")
+        )
+        return ProgeoRainEventSerializer(events, many=True).data
 
     @require_module_permissions("module_measurements_enabled")
     @action(detail=False, url_path="location_summary", methods=["GET"])
@@ -557,14 +577,9 @@ class AlarmViewSet(ProgeoModalViewSet):
         serializer = ProgeoAlarmSerializer(alarm)
         return RequestSuccess(serializer.data)
 
-    def get_queryset(self, db_name=None):
-        """Alarms in the window - in `db_name`, else in the database of
-        ?location= (retrieve: alarm ids are only unique per database with the
-        split on), else the account's."""
-        account = self._resolve_request_account(self.request)
-        if not account:
-            return ProgeoAlarm.objects.none()
-
+    def _window_params(self):
+        """(from, to, cutoff) of the list: the explicit ?from= / ?to= window
+        (ISO-8601, each None if missing or invalid) and the ?days= cutoff."""
         # Default window: last two weeks. Overridable via ?days=.
         try:
             days = int(self.request.query_params.get("days", DEFAULT_ALARM_DAYS))
@@ -587,6 +602,22 @@ class AlarmViewSet(ProgeoModalViewSet):
         except (TypeError, ValueError):
             # Invalid window params: ignore them and fall back to ?days=.
             time_from = time_to = None
+        return time_from or None, time_to or None, cutoff
+
+    def _window(self):
+        """[start, end] the list covers: ?from=/?to=, else ?days= up to now."""
+        time_from, time_to, cutoff = self._window_params()
+        return (time_from if time_from is not None else cutoff), (time_to if time_to is not None else timezone.now())
+
+    def get_queryset(self, db_name=None):
+        """Alarms in the window - in `db_name`, else in the database of
+        ?location= (retrieve: alarm ids are only unique per database with the
+        split on), else the account's."""
+        account = self._resolve_request_account(self.request)
+        if not account:
+            return ProgeoAlarm.objects.none()
+
+        time_from, time_to, cutoff = self._window_params()
 
         # Optional location filter (?location=<pk>) for the per-location view.
         location_raw = self.request.query_params.get("location")

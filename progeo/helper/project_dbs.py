@@ -75,11 +75,12 @@ def project_models():
         ProgeoMeasurement,
         ProgeoMeasurePoint,
         ProgeoNoiseProfile,
+        ProgeoRainEvent,
     )
 
     return [
         ProgeoLageplan, ProgeoDevice, ProgeoDeviceCommand, ProgeoNoiseProfile, ProgeoMeasurePoint, ProgeoAccess,
-        EMail, SMS, ProgeoMeasurement, ProgeoAlarm,
+        EMail, SMS, ProgeoMeasurement, ProgeoAlarm, ProgeoRainEvent,
     ]
 
 

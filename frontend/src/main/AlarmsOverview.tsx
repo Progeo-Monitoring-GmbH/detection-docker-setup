@@ -29,6 +29,7 @@ import AlarmTimeline, {
   isAlarmActive,
   parseTimestamp,
 } from './AlarmTimeline.tsx';
+import { type RainEvent, rainEventKey } from './alarmUtils';
 import { formatDate, toLocalIso } from './dateFormat';
 
 type AlarmDevice = {
@@ -113,6 +114,8 @@ const AlarmsOverview = () => {
   const { enqueueSnackbar } = useSnackbar();
   const { t } = useTranslation();
   const [rows, setRows] = useState<AlarmRow[]>([]);
+  // Rain events of the alarms' locations (ProgeoRainEvent) - timeline only.
+  const [rainEvents, setRainEvents] = useState<RainEvent[]>([]);
   const [loading, setLoading] = useState(false);
   // Select-box value: the step size for "Load more" and the initial window.
   const [days, setDays] = useState(DEFAULT_ALARM_DAYS);
@@ -166,6 +169,18 @@ const AlarmsOverview = () => {
         `/v1/alarm/?${params.toString()}`,
         (response) => {
           const incoming = (response?.data?.alarms || []) as AlarmRow[];
+          const incomingRain = (response?.data?.rain_events || []) as RainEvent[];
+          setRainEvents((prev) => {
+            if (!merge) {
+              return incomingRain;
+            }
+            // A rain event can span both loaded windows: keep it once.
+            const map = new Map(prev.map((event) => [rainEventKey(event), event]));
+            for (const event of incomingRain) {
+              map.set(rainEventKey(event), event);
+            }
+            return [...map.values()];
+          });
           setRows((prev) => {
             if (!merge) {
               return incoming;
@@ -651,6 +666,7 @@ const AlarmsOverview = () => {
           </div>
           <AlarmTimeline
             alarms={filteredRows}
+            rainEvents={rainEvents}
             now={now}
             selectedAlarmKey={selectedAlarm ? alarmKey(selectedAlarm) : null}
             onSelectAlarm={(alarm) => fetchHeatmap(alarm)}

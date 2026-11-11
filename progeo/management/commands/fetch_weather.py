@@ -1,68 +1,37 @@
-﻿from django.conf import settings
+﻿from django.core.management.base import CommandError
 
-from progeo.helper.basics import ilog, okaylog
-from progeo.helper.weather import WeatherHelper
 from progeo.management.commands._base import BaseCommand
-from progeo.v1.models import ProgeoAlarm
+
+# Open-Meteo's forecast API serves at most ~3 months of the past.
+MAX_DAYS = 92
 
 
 class Command(BaseCommand):
     help = (
-        "Fetch rain data for all alarms that have not been checked yet. One shared "
-        "WeatherHelper is used for the whole run, so alarms of the same location "
-        "share a single API call and the rain window is only attributed to the "
-        "earliest alarm that catches it (later overlapping alarms are marked "
-        "checked without rain data).\n\n"
+        "Fetch the rain events of the locations with rain_check_enabled now - "
+        "what the hourly fetch_rain_events task does (helper/weather.py). "
+        "--days reads further back than the task's 48 hours, e.g. right after "
+        "the rain check was enabled for a location.\n\n"
         "Examples:\n"
         "  python manage.py fetch_weather\n"
-        "  python manage.py fetch_weather --db default"
-        "  python manage.py fetch_weather --db default --recheck True"
+        "  python manage.py fetch_weather --days 30\n"
+        "  python manage.py fetch_weather --location 42 --days 90"
     )
 
     def add_arguments(self, parser):
+        parser.add_argument("--location", type=int, default=None, help="Only this location (pk).")
         parser.add_argument(
-            "--db",
-            default=None,
-            help="Only process a single database (defaults to all configured databases).",
-        )
-        parser.add_argument(
-            "--recheck",
-            default=False,
-            help="Recheck alarms even if they were already checked.",
+            "--days", type=int, default=None, help=f"Read the last N days again (at most {MAX_DAYS})."
         )
 
     def handle(self, *args, **options):
-        db_names = [options["db"]] if options.get("db") else list(settings.DATABASES.keys())
-        helper = WeatherHelper()
+        from progeo.tasks import fetch_rain_events
 
-        total_checked = 0
-        total_rain = 0
-
-        for db in db_names:
-            # Only alarms that were never checked yet; process earliest first so
-            # the first alarm of a rain event claims it deterministically.
-            alarms = (
-                ProgeoAlarm.objects.using(db)
-                .filter(rain_checked=options.get("recheck", False))
-                .select_related("measurement__device__location")
-                .order_by("triggered_at", "id")
-            )
-
-            checked = 0
-            rain = 0
-            for alarm in alarms:
-                result = helper.check_rain_for_alarm(alarm, save=True)
-                checked += 1
-                if result and result.get("rain_events"):
-                    rain += 1
-
-            total_checked += checked
-            total_rain += rain
-            okaylog(f"[fetch_weather] db={db} checked={checked} rain={rain}")
-
-        ilog(f"[fetch_weather] total checked={total_checked} rain={total_rain}")
-        self.stdout.write(
-            self.style.SUCCESS(
-                f"Checked rain for {total_checked} alarms, rain attributed to {total_rain}."
-            )
-        )
+        days = options["days"]
+        if days is not None and not 1 <= days <= MAX_DAYS:
+            raise CommandError(f"--days must be between 1 and {MAX_DAYS}.")
+        result = fetch_rain_events(location_id=options["location"], hours=days * 24 if days else None)
+        self.stdout.write(self.style.SUCCESS(
+            f"Rain checked for {result['locations']} location(s): {result['events']} rain event(s) stored"
+            + (f", failed: {result['failed']}" if result["failed"] else ".")
+        ))

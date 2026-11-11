@@ -21,4 +21,6 @@ export type LocationDetail = {
   last_measurement_at?: string | null;
   last_updated?: string | null;
   pe_geschaltet?: boolean | null;
+  /** The hourly rain check (ProgeoRainEvent) runs for this location. */
+  rain_check_enabled?: boolean | null;
 };

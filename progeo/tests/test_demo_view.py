@@ -205,6 +205,22 @@ def test_demo_user_cannot_change_anything(api_client, demo):
     assert alarm.status == status
 
 
+def test_demo_rain_is_stored_as_rain_events_of_the_locations(api_client, demo):
+    from progeo.v1.models import ProgeoRainEvent
+
+    db = settings.DEMO_DATABASE
+    events = ProgeoRainEvent.objects.using(db).filter(location__account=demo.account)
+    # One per leak with rain (a leak can show more than once).
+    assert events.count() >= 5
+    # The demo never asks the weather service for them.
+    assert not ProgeoLocation.objects.using(db).filter(account=demo.account, rain_check_enabled=True).exists()
+
+    _login(api_client, demo)
+    location = events.first().location_id
+    body = api_client.get(f"/v1/alarm/?location={location}&days=30").json()
+    assert body["rain_events"] and all(event["location"] == location for event in body["rain_events"])
+
+
 def test_the_demo_projects_are_the_demo_users_favorites(api_client, demo):
     _login(api_client, demo)
     projects = set(

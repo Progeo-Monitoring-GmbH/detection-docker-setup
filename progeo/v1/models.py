@@ -354,6 +354,11 @@ class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
     # depends on this yet.
     pe_geschaltet = models.BooleanField(default=False, blank=True)
 
+    # Rain check: the hourly fetch_rain_events task reads the precipitation
+    # at the location's coordinates and stores it as ProgeoRainEvent rows
+    # (helper/weather.py) - shown next to the alarms on the alarm timeline.
+    rain_check_enabled = models.BooleanField(default=False, blank=True)
+
     # Statistics of the project's own database (all locations of a project
     # share it, so they carry the same values) - refreshed daily by
     # refresh_project_db_stats (helper/project_db_stats.py).
@@ -935,6 +940,34 @@ class ProgeoMeasurePoint(ProgeoModel, auto_prefetch.Model):
         return f"{_id} 📍 {_location} - Sensor #{self.sensor_order} ({self.nx}, {self.ny})"
 
 
+class ProgeoRainEvent(models.Model):
+    """A continuous stretch of rain at a location: [start, end) in whole
+    hours with the precipitation summed over it (mm). Stored by the hourly
+    fetch_rain_events task for locations with rain_check_enabled
+    (helper/weather.py) - in the location's project database, next to its
+    alarms, which the alarm timeline shows it with."""
+
+    location = models.ForeignKey(ProgeoLocation, on_delete=models.CASCADE, related_name="rain_events")
+    start = models.DateTimeField()
+    end = models.DateTimeField()
+    amount = models.FloatField(help_text="Precipitation over the event in mm")
+    created = models.DateTimeField(auto_now_add=True)
+    updated = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["location", "start"]
+        constraints = [
+            models.UniqueConstraint(fields=["location", "start"], name="progeo_rain_event_location_start"),
+        ]
+
+    @property
+    def duration_hours(self):
+        return round((self.end - self.start).total_seconds() / 3600, 2)
+
+    def __str__(self):
+        return f"🌧 Location={self.location_id} {self.start:%Y-%m-%d %H:%M} {self.duration_hours}h {self.amount:.1f}mm"
+
+
 class ProgeoAlarm(ProgeoModel, auto_prefetch.Model):
     class Status(models.IntegerChoices):
         NEU = 0, "neu"
@@ -985,23 +1018,9 @@ class ProgeoAlarm(ProgeoModel, auto_prefetch.Model):
 
     status = models.IntegerField(choices=Status.choices, default=Status.NEU)
 
-    # Rain events matched to this alarm: one entry per continuous rain window.
-    # Each entry: {"start": iso, "duration": hours, "amount": mm}
-    rain_events = JSONField(default=list, blank=True)
-    rain_checked = models.BooleanField(default=False, blank=True, help_text="Whether rain check has been performed for this alarm")
-
     def prolong_until_now(self):
         self.still_active_at = timezone.now()
         self.save()
-
-    def fetch_weather(self, helper=None):
-        from progeo.helper.weather import WeatherHelper
-
-        # A shared helper lets a batch run reuse the per-location caches (one API
-        # call + one alarm lookup per location) and keeps rain attribution to the
-        # earliest alarm deterministic across the whole run.
-        wh = helper or WeatherHelper()
-        wh.check_rain_for_alarm(self, save=True)
 
     @property
     def peak_value(self):

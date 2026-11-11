@@ -23,6 +23,7 @@ import AlarmTimeline, {
   parseTimestamp,
   type TimelineAlarm,
 } from './AlarmTimeline.tsx';
+import type { RainEvent } from './alarmUtils';
 import AlarmsOverview from './AlarmsOverview.tsx';
 import { formatDate } from './dateFormat';
 
@@ -72,6 +73,7 @@ const LocationAlarmDetail = ({
 
   const [location, setLocation] = useState<LocationDetail | null>(null);
   const [alarms, setAlarms] = useState<TimelineAlarm[]>([]);
+  const [rainEvents, setRainEvents] = useState<RainEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedAlarm, setSelectedAlarm] = useState<TimelineAlarm | null>(
     null,
@@ -124,6 +126,7 @@ const LocationAlarmDetail = ({
       `/v1/alarm/?location=${id}&days=365`,
       (response) => {
         setAlarms((response?.data?.alarms || []) as TimelineAlarm[]);
+        setRainEvents((response?.data?.rain_events || []) as RainEvent[]);
         setLoading(false);
       },
       (error) => {
@@ -202,6 +205,7 @@ const LocationAlarmDetail = ({
           ) : (
             <AlarmTimeline
               alarms={alarms}
+              rainEvents={rainEvents}
               now={now}
               selectedAlarmKey={selectedAlarm ? alarmKey(selectedAlarm) : null}
               onSelectAlarm={() => {}}
