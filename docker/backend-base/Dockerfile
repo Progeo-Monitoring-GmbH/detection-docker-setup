@@ -4,7 +4,7 @@
 #     -t progeomonitoring/detection-docker-setup:backend-base-py3.13.7-alpine3.21-cv4.12.0.88 docker/backend-base
 #   docker push progeomonitoring/detection-docker-setup:backend-base-py3.13.7-alpine3.21-cv4.12.0.88
 # Host-specific users/groups (DOCKER_UID etc.) must NOT go here, they are created in docker/backend/Dockerfile.
-FROM python:3.13.7-alpine3.21
+FROM python:3.14.1-alpine3.21
 
 RUN apk update && apk add --no-cache  \
                       ffmpeg \

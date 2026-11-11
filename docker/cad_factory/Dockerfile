@@ -6,7 +6,7 @@
 # decompressor misreads back-references beyond 32 KiB, so it can't open DWGs
 # with ~2200+ pages (e.g. the 31 MB Data Center plans) - drop the patch (and
 # install the ezdwg wheel from PyPI) once ezdwg fixes that.
-FROM python:3.13.7-slim-bookworm AS ezdwg-wheel
+FROM python:3.15.0-slim-bookworm AS ezdwg-wheel
 ARG EZDWG_VERSION=0.19.0
 ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
@@ -30,7 +30,7 @@ open('/tmp/ezdwg.tar.gz', 'wb').write(data)" "${EZDWG_VERSION}" \
     && patch -d /tmp/ezdwg -p1 < /tmp/ezdwg.patch \
     && pip wheel --no-deps -w /wheels /tmp/ezdwg
 
-FROM python:3.13.7-slim-bookworm
+FROM python:3.15.0-slim-bookworm
 
 # The container runs as DOCKER_UID:DOCKER_GID without a home directory, so
 # ezdxf couldn't write its font cache to ~/.cache/ezdxf ("Cannot create cache
