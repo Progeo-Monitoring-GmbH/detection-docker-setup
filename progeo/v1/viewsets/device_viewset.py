@@ -25,7 +25,7 @@ from progeo.decorator import (
     permission_denied_response,
     require_module_permissions,
 )
-from progeo.helper import device_commands
+from progeo.helper import device_commands, firmware_update
 from progeo.helper.alarm_evaluation import evaluate_measurement_instantly
 from progeo.helper.basics import RequestFailed, RequestSuccess, elog, ilog
 from progeo.helper.controller_wifi import parse_lua_wifi, request_controller_wifi_update
@@ -292,6 +292,44 @@ class DeviceViewSet(DeviceCommandsMixin, DeviceProvisioningMixin, ProgeoModalVie
         raw_hash = self._controller_hash(request, body, pk)
         return RequestSuccess({"commands": device_commands.take_commands(raw_hash, body.get("results"), body)})
 
+    @action(detail=True, url_path=r"sample/cc/file/(?P<command_id>\d+)/(?P<index>\d+)",
+            authentication_classes=[TransferTokenAuthentication], permission_classes=[IsTransferRequest],
+            methods=["GET"])
+    def firmware_update_file(self, request, pk, command_id=None, index=None, *args, **kwargs):
+        """A file of a firmware update step ("upgrade" command, helper/
+        firmware_update.py) for the controller that took it: GET
+        <control.url>cc/file/<command id>/<n>/ with its token. "Range:
+        bytes=<from>-<to>" gives that part (206) - the controller downloads
+        in pieces and goes on after a restart."""
+        from django.http import HttpResponse
+
+        raw_hash = self._controller_hash(request, {}, pk)
+        try:
+            path, data = firmware_update.download_file(raw_hash, int(command_id), int(index))
+        except firmware_update.UpdateError as exc:
+            return HttpResponse(str(exc), status=404, content_type="text/plain")
+        total = len(data)
+        response_status, start, end = 200, 0, total - 1
+        match = re.fullmatch(r"bytes=(\d*)-(\d*)", request.headers.get("Range", "").strip())
+        if match and (match.group(1) or match.group(2)):
+            if match.group(1):
+                start = int(match.group(1))
+                end = min(int(match.group(2)), total - 1) if match.group(2) else total - 1
+            else:  # "bytes=-500": the last 500
+                start = max(0, total - int(match.group(2)))
+            if start >= total or start > end:
+                response = HttpResponse(status=416)
+                response["Content-Range"] = f"bytes */{total}"
+                return response
+            response_status = 206
+        response = HttpResponse(data[start:end + 1], status=response_status, content_type="application/octet-stream")
+        response["Accept-Ranges"] = "bytes"
+        if response_status == 206:
+            response["Content-Range"] = f"bytes {start}-{end}/{total}"
+        ilog(f"Firmware update file {path} [{start}-{end}/{total}] of command #{command_id} to {raw_hash}",
+             tag="[FIRMWARE]")
+        return response
+
     @staticmethod
     def _controller_hash(request, body, default):
         """The device a controller request is about: the one its transfer
@@ -351,6 +389,10 @@ class DeviceViewSet(DeviceCommandsMixin, DeviceProvisioningMixin, ProgeoModalVie
 
         # device.mac is the custom name shown in the frontend - the MAC stays in raw_data.
         device_info = {"chip_id": payload.get("chip_id"), "device_ip": payload.get("ip")}
+        # The flash bundle it runs - where a remote update starts (helper/firmware_update.py).
+        bundle = payload.get("bundle")
+        if isinstance(bundle, str) and firmware_update.BUNDLE_ID.fullmatch(bundle):
+            device_info["firmware_bundle"] = bundle
         device_info = {field: str(value) for field, value in device_info.items() if value not in (None, "")}
         if device_info:
             # Only written when something changed (exclude: all fields already equal).

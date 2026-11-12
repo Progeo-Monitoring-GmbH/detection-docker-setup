@@ -536,6 +536,9 @@ class ProgeoDevice(ProgeoModel, auto_prefetch.Model):
     # When the controller last polled its commands (ProgeoDeviceCommand,
     # GET/POST /v1/device/<project_id>/sample/cc/ - helper/device_commands.py).
     last_command_poll = models.DateTimeField(null=True, blank=True)
+    # The flash bundle the controller runs, as it reports it ("bundle" in its
+    # messages) - where a remote update starts (helper/firmware_update.py).
+    firmware_bundle = models.CharField(max_length=100, null=True, blank=True)
     # The measure point (sensor_order) of the device's first pair: the sensors
     # of a location can be split over devices (e.g. dm 301-558 on a second
     # one), each counting its pairs from 1 - see sensor_order_of. Set by the
@@ -580,6 +583,8 @@ class ProgeoDeviceCommand(auto_prefetch.Model):
         MAINTENANCE = "maintenance", "maintenance"
         NORMAL = "normal", "normal"
         LOGS = "logs", "logs"
+        # A step of a remote firmware update (helper/firmware_update.py).
+        UPGRADE = "upgrade", "upgrade"
 
     class Status(models.TextChoices):
         PENDING = "pending", "pending"        # queued, not taken yet
@@ -601,6 +606,10 @@ class ProgeoDeviceCommand(auto_prefetch.Model):
     summary = models.JSONField(default=dict, blank=True)
     payload_encrypted = models.TextField(blank=True, default="")
     result_encrypted = models.TextField(blank=True, default="")
+    # "upgrade": the files the server made for the controller (its migrated
+    # device_config.lua) - downloaded after the command was taken, so kept
+    # longer than the payload: until the update finished.
+    files_encrypted = models.TextField(blank=True, default="")
     # Short error text of a failed command (cut to ERROR_MAX_LEN).
     error = models.CharField(max_length=500, blank=True, default="")
 

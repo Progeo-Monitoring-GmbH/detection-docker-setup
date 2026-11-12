@@ -52,7 +52,9 @@ from progeo.v1.models import LimitedToken, ProgeoDevice, ProgeoDeviceCommand
 Command = ProgeoDeviceCommand.Command
 Status = ProgeoDeviceCommand.Status
 
-COMMANDS = tuple(Command.values)
+# What can be queued by hand - "upgrade" only comes from a firmware update
+# (helper/firmware_update.py), which knows the files it needs.
+COMMANDS = tuple(command for command in Command.values if command != Command.UPGRADE)
 # Queued again while one is pending, these still run once.
 IDEMPOTENT_COMMANDS = {Command.MEASURE, Command.IDENTIFY, Command.GET_CONFIG, Command.LOGS}
 # Writes a whole file onto the controller - superusers only.
@@ -328,6 +330,9 @@ def housekeeping(device_id, db_name, now=None):
         status=Status.TIMEOUT, finished_at=now
     )
     commands.exclude(result_encrypted="").filter(finished_at__lt=now - RESULT_TTL).update(result_encrypted="")
+    from progeo.helper import firmware_update
+
+    firmware_update.housekeeping(commands)
 
 
 def _result_ok(item):
@@ -368,7 +373,7 @@ def _result_data(item, ok=True):
 # Fields of the controller's "commands" message that tell who it is
 # (control.lua body(): webserver.identify plus mode and poll_sec) - the
 # result of "identify", whose result item itself carries no data.
-IDENTITY_FIELDS = ("device_hash", "project_id", "chip_id", "mac", "ip", "heap", "mode", "poll_sec")
+IDENTITY_FIELDS = ("device_hash", "project_id", "chip_id", "mac", "ip", "heap", "mode", "poll_sec", "bundle")
 
 
 def message_identity(message):
@@ -397,7 +402,7 @@ def record_results(device, db_name, results, now=None, identity=None):
             continue
     if not by_id:
         return 0
-    recorded = 0
+    recorded = []
     commands = ProgeoDeviceCommand.objects.using(db_name).select_for_update().filter(
         device_id=device.pk, pk__in=by_id, status__in=[Status.SENT, Status.TIMEOUT]
     )
@@ -421,8 +426,12 @@ def record_results(device, db_name, results, now=None, identity=None):
             elif not command.error:
                 command.error = f"Result over {RESULT_MAX_BYTES // 1024} KB - not stored"
         command.save(using=db_name, update_fields=["status", "finished_at", "error", "result_encrypted"])
-        recorded += 1
-    return recorded
+        recorded.append(command)
+    # A firmware update goes on with the config it read / the step that finished.
+    from progeo.helper import firmware_update
+
+    firmware_update.after_results(device, db_name, recorded)
+    return len(recorded)
 
 
 def take_commands(raw_hash, results=None, message=None):
@@ -440,6 +449,10 @@ def take_commands(raw_hash, results=None, message=None):
         device = ProgeoDevice.objects.using(db_name).select_for_update().filter(raw_hash=raw_hash).first()
         if device is None:
             return []
+        from progeo.helper import firmware_update
+
+        # First: an "upgrade" result comes from the new bundle, which reports itself.
+        firmware_update.note_bundle(device, db_name, message)
         record_results(device, db_name, results, now, identity=message_identity(message))
         housekeeping(device.pk, db_name, now)
         pending = ProgeoDeviceCommand.objects.using(db_name).filter(

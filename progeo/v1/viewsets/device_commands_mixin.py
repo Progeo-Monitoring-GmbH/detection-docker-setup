@@ -8,9 +8,11 @@ from progeo.decorator import (
     permission_denied_response,
     require_module_permissions,
 )
-from progeo.helper import device_commands
+from progeo.helper import device_commands, firmware_update
 from progeo.helper.basics import RequestFailed, RequestSuccess, ilog
 from progeo.helper.device_overview import device_model, hash_kind
+from progeo.helper.firmware import list_bundles as list_firmware_bundles
+from progeo.helper.location_access import is_staff_admin
 
 # Controller commands and the config file without staff (mobile app installers).
 COMMANDS_PERMISSION = "module_devices_commands"
@@ -199,6 +201,66 @@ class DeviceCommandsMixin:
              f"{device.raw_hash} by user {request.user.pk}", tag="[COMMAND]")
         return RequestSuccess({"command": device_commands.command_row(command), **self._command_state(device, db_name)})
 
+
+    # ------------------------------------------------------------------ remote firmware update (helper/firmware_update.py)
+    # Staff only (staff or superuser): installs a release on a controller.
+
+    def _firmware_device(self, request, pk, queueable=False):
+        if not is_staff_admin(request.user):
+            return None, RequestFailed({"reason": "Staff access required"})
+        return (self._queueable_device if queueable else self._command_device)(request, pk)
+
+    @require_module_permissions("module_devices_enabled")
+    @action(detail=True, url_path="firmware", methods=["GET"])
+    def firmware_state(self, request, pk=None, *args, **kwargs):
+        """The bundle the controller runs (as it reports it), the bundles the
+        server lists - each with whether it can be installed remotely and
+        why not - and the newest update step."""
+        device, error = self._firmware_device(request, pk)
+        if error:
+            return error
+        db_name = device._state.db
+        current = device.firmware_bundle
+        bundles = []
+        for bundle in list_firmware_bundles():
+            reason = None
+            if not current:
+                reason = "The device does not report its bundle"
+            elif bundle["id"] == current:
+                reason = "Runs on the device"
+            else:
+                try:
+                    firmware_update.plan_hop(current, bundle["id"])
+                except firmware_update.UpdateError as exc:
+                    reason = str(exc)
+            bundles.append({**bundle, "remote": reason is None, "reason": reason})
+        return RequestSuccess({
+            "current": current,
+            "bundles": bundles,
+            "update": firmware_update.update_state(device, db_name),
+            **self._command_state(device, db_name),
+        })
+
+    @require_module_permissions("module_devices_enabled")
+    @action(detail=True, url_path="firmware/update", methods=["POST"])
+    def start_firmware_update(self, request, pk=None, *args, **kwargs):
+        """Take the controller to {"bundle": <id>} - step by step over its
+        command poll (helper/firmware_update.py)."""
+        device, error = self._firmware_device(request, pk, queueable=True)
+        if error:
+            return error
+        db_name = device._state.db
+        target = str(request.data.get("bundle") or "").strip()
+        try:
+            command = firmware_update.start_update(device, db_name, target, user=request.user)
+        except firmware_update.UpdateError as exc:
+            return RequestFailed({"reason": str(exc)})
+        ilog(f"Firmware update of device {device.raw_hash} to {target} started (#{command.pk} {command.command}) "
+             f"by user {request.user.pk}", tag="[FIRMWARE]")
+        return RequestSuccess({
+            "update": firmware_update.update_state(device, db_name),
+            **self._command_state(device, db_name),
+        })
 
     @staticmethod
     def _command_state(device, db_name):

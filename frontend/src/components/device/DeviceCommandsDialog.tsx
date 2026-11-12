@@ -5,9 +5,11 @@ import { Spinner } from 'react-bootstrap';
 import { Plus, X } from 'react-bootstrap-icons';
 import { useAuth } from '../../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../../axiosConfig';
+import { staffFlags } from '../../main/access';
 import { formatDate } from '../../main/dateFormat';
 import { showRequestError, showSuccessBar } from '../ui/Snackbar.jsx';
 import PillButton from '../ui/kit/PillButton';
+import DeviceFirmwareUpdate from './DeviceFirmwareUpdate';
 import { type ParamOption, SET_PARAMS } from './deviceParams';
 
 /** A row of /v1/device/<id>/commands/ - payload and result are never listed. */
@@ -19,7 +21,15 @@ type DeviceCommand = {
   sent_at: string | null;
   finished_at: string | null;
   created_by: string | null;
-  summary: { params?: Record<string, unknown>; path?: string; bytes?: number; sha256?: string; hour?: number };
+  summary: {
+    params?: Record<string, unknown>;
+    path?: string;
+    bytes?: number;
+    sha256?: string;
+    hour?: number;
+    /** A step of a firmware update ("upgrade", or the "get_config" before it). */
+    upgrade?: { from: string; to: string; target: string };
+  };
   error: string | null;
   has_result: boolean;
 };
@@ -138,6 +148,8 @@ const DeviceCommandsDialog = ({
   const auth = useAuth();
   const { t } = useTranslation();
   const { enqueueSnackbar } = useSnackbar();
+  // Firmware updates: staff only (the backend's is_staff_admin).
+  const { isStaffOrSuperuser: isStaff } = staffFlags(auth?.user);
   const [data, setData] = useState<CommandsResponse | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
@@ -259,6 +271,9 @@ const DeviceCommandsDialog = ({
 
   const summaryText = (command: DeviceCommand) => {
     const { summary } = command;
+    if (summary.upgrade) {
+      return t('device_firmware_step', { from: summary.upgrade.from, to: summary.upgrade.to });
+    }
     if (summary.params) {
       return Object.entries(summary.params)
         .map(([key, value]) => `${key}=${String(value)}`)
@@ -385,6 +400,10 @@ const DeviceCommandsDialog = ({
                   })}
                 </div>
               </div>
+            )}
+
+            {canEdit && isStaff && (
+              <DeviceFirmwareUpdate deviceId={device.id} query={query} onChanged={load} />
             )}
 
             {allowed('logs') && (

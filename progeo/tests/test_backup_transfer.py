@@ -2,7 +2,11 @@
 dump per database as one OpenPGP-encrypted tar on the backup server, checksum
 next to it, retention, and the status file the BackupTransfer* alerts read.
 The SFTP server is a directory here (FakeSFTP); gpg is the real one, with a
-key pair made for this module."""
+key pair made for this module.
+
+Runs in a container (the backend image has a working gpg) and in CI (which
+installs gnupg); skipped on a developer machine, whose gpg - if any - can't be
+relied on (e.g. gpg on Windows failing to start under pytest)."""
 import datetime
 import hashlib
 import io
@@ -18,7 +22,22 @@ from prometheus_client import generate_latest
 
 from progeo.helper import backup_transfer as bt
 
-NOW = datetime.datetime(2026, 10, 27, 1, 30)
+
+def _in_container_or_ci():
+    """Docker (/.dockerenv), Podman (/run/.containerenv), or CI (GitHub
+    Actions sets CI=true)."""
+    return (
+        os.path.exists("/.dockerenv")
+        or os.path.exists("/run/.containerenv")
+        or os.environ.get("CI", "").lower() in {"1", "true", "yes"}
+    )
+
+
+pytestmark = pytest.mark.skipif(
+    not _in_container_or_ci(), reason="backup transfer tests run only in Docker or CI (real gpg needed)"
+)
+
+NOW =datetime.datetime(2026, 10, 27, 1, 30)
 REMOTE = "backups/progeo"
 REMOTE_SETTINGS = override_settings(
     BACKUP_REMOTE_HOST="backup.progeo.com", BACKUP_REMOTE_PATH=REMOTE, BACKUP_REMOTE_KEEP=14,
