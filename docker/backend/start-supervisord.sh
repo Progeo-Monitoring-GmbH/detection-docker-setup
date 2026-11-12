@@ -79,7 +79,7 @@ if [ "${1:-}" = "prepare" ]; then
 fi
 
 # CRON_DISABLED_JOBS (comma separated): cron jobs that must not run, by script
-# name - half-hour, measure, daily, weekly - or "all", e.g. while
+# name - half-hour, measure, daily, weekly, staging-import - or "all", e.g. while
 # split_project_dbs runs. Applied here, before crond starts: the jobs are
 # commented out of the crontab, rebuilt from the image's original on every
 # start, so an emptied variable brings them back with the next restart.
@@ -97,10 +97,10 @@ apply_cron_disabled_jobs() {
     case "$job" in
       all)
         sed -i "/^[^#].*cronjobs\//s/^/${marker}/" "$crontab_file" ;;
-      half-hour|measure|daily|weekly)
+      half-hour|measure|daily|weekly|staging-import)
         sed -i "/^[^#].*cronjobs\/${job}\.sh/s/^/${marker}/" "$crontab_file" ;;
       *)
-        echo "CRON_DISABLED_JOBS: unknown job '${job}' ignored (half-hour, measure, daily, weekly, all)" ;;
+        echo "CRON_DISABLED_JOBS: unknown job '${job}' ignored (half-hour, measure, daily, weekly, staging-import, all)" ;;
     esac
   done
   if grep -q "^${marker}" "$crontab_file"; then

@@ -253,7 +253,7 @@ docker compose restart progeo-backend
 - The restore replaces **all** databases of the staging server, including users and test data made there. Project databases that live doesn't have are dropped.
 - If the staging code is newer than live, run `migrate` afterwards.
 
-**Every night, automatically:** set `STAGING_AUTO_IMPORT=1` in the staging server's `.env` (never on live) and restart the backend. At 05:30, the cron job `staging-import` (`docker/backend/cronjobs/staging-import.sh`) checks for a bundle it hasn't imported yet. If there is one, it stops the backend and celery, runs `import_live_backup --apply --noinput`, then starts them again. The backend start runs the migrations and the sync steps. Nights without a new bundle change nothing.
+**Every night, automatically:** set `STAGING_AUTO_IMPORT=1` in the staging server's `.env` (never on live) and restart the backend. `CRON_DISABLED_JOBS` must not contain `all` or `staging-import`; to switch off only the other jobs, use `CRON_DISABLED_JOBS=half-hour,measure,daily,weekly`. At 03:00, the cron job `staging-import` (`docker/backend/cronjobs/staging-import.sh`) checks for a bundle it hasn't imported yet. If there is one, it stops the backend and celery, runs `import_live_backup --apply --noinput --workers 2`, then starts them again. The backend start runs the migrations and the sync steps. Nights without a new bundle change nothing.
 
 - Result: `logs/backend/staging-import.log`, and `logs/backend/staging_import.json` (last run, bundle, error). A failed run raises the `CronJobFailed` alert. A failed import is retried the next night.
 - `import_live_backup --apply` refuses to run while `STAGING_REMOTE_HOST` is set: that server is the live server.

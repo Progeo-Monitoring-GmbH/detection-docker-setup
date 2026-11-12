@@ -86,7 +86,8 @@ const requestErrorMessage = (error: unknown, fallback: string) => {
 };
 
 type Auth = ReturnType<typeof useAuth>;
-type Translate = (key: string, options?: Record<string, unknown>) => string;
+/** Only plain keys are translated here; i18next's `t` and a test fake both fit. */
+type Translate = (key: string) => string;
 
 /** A GET as a promise of its data; a failure rejects with the backend's
  * reason, else `fallback`. */

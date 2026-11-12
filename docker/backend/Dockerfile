@@ -44,8 +44,8 @@ RUN echo "*/30 * * * * /bin/sh -c '${PROJECT_ROOT}/cronjobs/run_job.sh half-hour
 RUN echo "*/5 * * * * /bin/sh -c '${PROJECT_ROOT}/cronjobs/run_job.sh measure ${PROJECT_ROOT}/cronjobs/measure.sh >> /var/log/progeo/measure.log 2>&1'" >> /etc/crontabs/root
 RUN echo "53 23 * * * /bin/sh -c '${PROJECT_ROOT}/cronjobs/run_job.sh daily ${PROJECT_ROOT}/cronjobs/daily.sh >> /var/log/progeo/daily.log 2>&1'" >> /etc/crontabs/root
 RUN echo "53 23 * * 0 /bin/sh -c '${PROJECT_ROOT}/cronjobs/run_job.sh weekly ${PROJECT_ROOT}/cronjobs/weekly.sh >> /var/log/progeo/weekly.log 2>&1'" >> /etc/crontabs/root
-# Staging server only (STAGING_AUTO_IMPORT=1), after live's nightly dumps arrived
-RUN echo "30 5 * * * /bin/sh -c '${PROJECT_ROOT}/cronjobs/run_job.sh staging-import ${PROJECT_ROOT}/cronjobs/staging-import.sh >> /var/log/progeo/staging-import.log 2>&1'" >> /etc/crontabs/root
+# Staging server only (STAGING_AUTO_IMPORT=1), after live's nightly dumps (23:53) arrived
+RUN echo "0 3 * * * /bin/sh -c '${PROJECT_ROOT}/cronjobs/run_job.sh staging-import ${PROJECT_ROOT}/cronjobs/staging-import.sh >> /var/log/progeo/staging-import.log 2>&1'" >> /etc/crontabs/root
 
 RUN chmod 600 /etc/crontabs/root && chown root:root /etc/crontabs/root
 RUN mkdir -p /var/spool/cron/crontabs && chown -R root:root /var/spool/cron

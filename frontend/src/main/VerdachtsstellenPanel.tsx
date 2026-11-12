@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Spinner } from 'react-bootstrap';
 import { ChevronDown, ChevronRight, CheckLg } from 'react-bootstrap-icons';
+import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { formatMeters } from '../components/device/planMeters';
 import PanelCard from '../components/ui/kit/PanelCard';
@@ -110,7 +111,7 @@ type VerdachtsstelleRowProps = {
   acknowledging: boolean;
   /** Demo view: no write actions. */
   readOnly?: boolean;
-  t: (key: string, options?: Record<string, unknown>) => string;
+  t: TFunction;
 };
 
 const VerdachtsstelleRow = ({

@@ -30,7 +30,7 @@ SUPERVISORCTL="supervisorctl -c $PROJECT_ROOT/supervisord.conf"
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] staging import started, stopping $SERVICES"
 if $SUPERVISORCTL stop $SERVICES; then
-  python manage.py import_live_backup --apply --noinput
+  python manage.py import_live_backup --apply --noinput --workers 2
   rc=$?
 else
   echo "Stopping $SERVICES failed - nothing imported"

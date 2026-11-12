@@ -70,7 +70,8 @@ export const backupListQuery = (
   return params.toString();
 };
 
-type Translate = (key: string, options?: Record<string, unknown>) => string;
+/** Only plain keys are translated here; i18next's `t` and a test fake both fit. */
+type Translate = (key: string) => string;
 
 export const projectLabel = (
   t: Translate,
