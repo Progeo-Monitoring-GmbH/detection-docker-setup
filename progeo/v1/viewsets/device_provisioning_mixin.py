@@ -154,9 +154,12 @@ class DeviceProvisioningMixin:
             release_connection(db_name)
         # QR codes for the setup portal: join its network, then open the controller.
         portal_wifi = build_wifi_payload(provisioning.PORTAL["ssid"], provisioning.PORTAL["pwd"])
+        config = provisioning.render_config(plan)
         return RequestSuccess({
             **plan,
-            "config": provisioning.render_config(plan),
+            "config": config,
+            # The whole config.lua as a QR code (~1 KB - fits into one code).
+            "config_qr": qr_code_data_uri(config),
             "signed": provisioning.sign_plan(plan),
             "portal": {
                 "wifi": {"ssid": provisioning.PORTAL["ssid"], "payload": portal_wifi, "image": qr_code_data_uri(portal_wifi)},

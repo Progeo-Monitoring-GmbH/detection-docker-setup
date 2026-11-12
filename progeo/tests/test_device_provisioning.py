@@ -163,6 +163,7 @@ def test_preview_saves_nothing_and_numbers_after_existing_devices(staff_client, 
     assert portal["wifi"]["payload"] == "WIFI:T:WPA;S:MicroBoxInstallHelper;P:microWord;;"
     assert portal["frontend"]["payload"] == "http://192.168.16.1"
     assert all(code["image"].startswith("data:image/png;base64,") for code in portal.values())
+    assert body["config_qr"].startswith("data:image/png;base64,")
     assert not ProgeoDevice.objects.using(f.DB).filter(raw_hash=body["device_hash"]).exists()
     assert not LimitedToken.objects.using(f.DB).filter(raw_hash=body["token"]).exists()
 

@@ -27,6 +27,7 @@ class Command(BaseCommand):
         "Examples:\n"
         "  python manage.py airtable_projects --list-tables\n"
         "  python manage.py airtable_projects\n"
+        "  python manage.py airtable_projects --table Kunden\n"
         "  python manage.py airtable_projects --fields Name,Project_ID\n"
         "  python manage.py airtable_projects --limit 10\n"
         "  python manage.py airtable_projects --json\n"
@@ -38,6 +39,14 @@ class Command(BaseCommand):
             "--list-tables",
             action="store_true",
             help="List all tables of the base (id + name) and exit.",
+        )
+        parser.add_argument(
+            "--table",
+            default=None,
+            help=(
+                "Table name or id to fetch from (default: AIRTABLE_PROJECTS_TABLE). "
+                "Use --list-tables to see the available tables."
+            ),
         )
         parser.add_argument(
             "--fields",
@@ -62,7 +71,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        helper = AirtableHelper()
+        helper = AirtableHelper(projects_table=options["table"] or None)
         if not helper.configured:
             raise CommandError(
                 "Airtable is not configured: set AIRTABLE_API_KEY and "
@@ -103,7 +112,7 @@ class Command(BaseCommand):
                 self.style.SUCCESS(f"Base {helper._base_id} has {len(tables)} table(s):")
             )
             for table_id, table_name in tables:
-                marker = " <-- configured AIRTABLE_PROJECTS_TABLE" if table_name == helper._projects_table else ""
+                marker = " <-- selected table" if helper._projects_table in (table_name, table_id) else ""
                 self.stdout.write(f"  {table_id}  {table_name}{marker}")
             return
 

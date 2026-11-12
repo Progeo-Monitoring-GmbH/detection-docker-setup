@@ -1,11 +1,10 @@
 import { type ReactNode, useEffect, useState } from 'react';
 import { Alert, Button, Col, Form, Row, Spinner } from 'react-bootstrap';
-import { CheckCircle, Clipboard, Download, FileEarmarkCode } from 'react-bootstrap-icons';
+import { CheckCircle, Clipboard, FileEarmarkCode, QrCode as QrCodeIcon } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import axiosConfig from '../../axiosConfig';
-import { downloadBlob } from '../../download';
 import { showErrorBar, showRequestError, showSuccessBar } from '../ui/Snackbar.jsx';
 import PanelCard from '../ui/kit/PanelCard';
 import { bundleVersionLabel, type FirmwareBundle } from './firmwareBundle';
@@ -44,6 +43,8 @@ type ProvisionPreview = {
   token: string;
   url: string;
   config: string;
+  /** The config as a PNG QR code (data URI). */
+  config_qr: string;
   signed: string;
   portal: {
     wifi: QrCode & { ssid: string };
@@ -101,7 +102,11 @@ const DeviceProvisionPanel = ({
   const [settings, setSettings] = useState<ProvisionSettings>(EMPTY_SETTINGS);
   const [preview, setPreview] = useState<ProvisionPreview | null>(null);
   const [confirmed, setConfirmed] = useState(false);
+  const [showConfigQr, setShowConfigQr] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // A new (or no) config: its QR code is generated again on request.
+  useEffect(() => setShowConfigQr(false), [preview]);
 
   useEffect(() => {
     void axiosConfig.perform_get(
@@ -218,12 +223,6 @@ const DeviceProvisionPanel = ({
       .writeText(preview.config)
       .then(() => showSuccessBar(enqueueSnackbar, 'Config copied.'))
       .catch(() => showErrorBar(enqueueSnackbar, 'Could not copy the config.'));
-  };
-
-  const downloadConfig = () => {
-    if (preview) {
-      downloadBlob(new Blob([preview.config], { type: 'text/plain' }), `device_config_${preview.device_hash}.lua`);
-    }
   };
 
   const portalQrCode = (title: string, caption: string, code: QrCode) => (
@@ -473,9 +472,14 @@ const DeviceProvisionPanel = ({
                   <Clipboard className="me-2" />
                   Copy
                 </Button>
-                <Button size="sm" variant="outline-secondary" onClick={downloadConfig}>
-                  <Download className="me-2" />
-                  Download
+                <Button
+                  size="sm"
+                  variant="outline-secondary"
+                  onClick={() => setShowConfigQr(true)}
+                  disabled={showConfigQr}
+                >
+                  <QrCodeIcon className="me-2" />
+                  Generate QR-Code
                 </Button>
                 <Button size="sm" variant="success" onClick={confirm} disabled={loading || confirmed}>
                   {loading ? (
@@ -495,6 +499,19 @@ const DeviceProvisionPanel = ({
                   <span className="small text-muted">Nothing is saved yet: the token only works once you confirm.</span>
                 )}
               </div>
+
+              {showConfigQr && (
+                <figure className="mt-3 mb-0 text-center">
+                  <img
+                    src={preview.config_qr}
+                    alt={`Config ${preview.device_hash}`}
+                    style={{ width: '100%', maxWidth: 440, height: 'auto', imageRendering: 'pixelated' }}
+                  />
+                  <figcaption style={{ fontSize: 11.5 }}>
+                    <strong>Config</strong> <code>{preview.device_hash}</code>
+                  </figcaption>
+                </figure>
+              )}
             </div>
           )}
         </>
