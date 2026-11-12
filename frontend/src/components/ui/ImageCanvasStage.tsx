@@ -3,6 +3,7 @@ import axiosConfig from '../../axiosConfig';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import ZoomControls from '../device/ZoomControls';
 import { ALIGN_PINS, fitAlignment, type AlignPin } from './alignmentFit';
+import CanvasKeyLegend, { KEY_BADGE } from './CanvasKeyLegend';
 import { isZoomWheel, useWheelHint, WheelZoomHint } from './wheelZoom';
 
 const clamp = (value: number, min: number, max: number) =>
@@ -167,22 +168,6 @@ const PILL_BUTTON: React.CSSProperties = {
   fontWeight: 500,
 };
 const FIELD: React.CSSProperties = { borderRadius: 10, height: 32 };
-/** A keyboard key in a hint. */
-const KEY_BADGE: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  minWidth: 24,
-  height: 24,
-  padding: '0 6px',
-  borderRadius: 6,
-  background: '#ffffff',
-  color: 'var(--progeo-blue)',
-  border: '1px solid #cfd4da',
-  boxShadow: 'inset 0 -2px 0 #cfd4da',
-  fontSize: 12,
-  fontWeight: 700,
-};
 /** Mouse travel (px) up to which a press on the plan still counts as a click. */
 const CLICK_TOLERANCE = 4;
 
@@ -1663,16 +1648,64 @@ const ImageCanvasStage = ({
               )}
             </span>
           )}
-          <span>
-            {editing
-              ? `Drag to select${selectionRect ? ' again' : ''} · Shift + drag to pan · nothing changes before "Apply"`
-              : placement
-              ? placement.activeDeviceId != null
-                ? `Click on the plan to place ${placement.activeLabel ?? 'the selected sensor'} · drag points to move them`
-                : 'Select a sensor in step 3 · drag points to move them'
-              : `Drag to pan · Ctrl + scroll or the buttons to zoom · hover a sensor for details${canAlign ? ' · hold A + drag a sensor to align' : ''}${canScale ? ' · hold R + click: reference point · hold M + click: calibrate' : ''}${canEditImage ? ' · C: clear an area · X: crop the plan' : ''}`}
-          </span>
         </div>
+
+        <CanvasKeyLegend
+          groups={[
+            {
+              title: 'View',
+              entries: [
+                { keys: editing ? ['Shift', 'Drag'] : ['Drag'], label: 'Move the plan' },
+                { keys: ['Ctrl', 'Scroll'], label: 'Zoom - or the buttons on the plan' },
+                !placement && { keys: ['Hover'], label: 'Details of a sensor' },
+              ],
+            },
+            placement && {
+              title: 'Place sensors',
+              entries: [
+                {
+                  keys: ['Click'],
+                  label:
+                    placement.activeDeviceId != null
+                      ? `Place ${placement.activeLabel ?? 'the selected sensor'}`
+                      : 'Place the sensor selected in step 3',
+                  active: placement.activeDeviceId != null && !editing,
+                },
+                { keys: ['Drag'], label: 'Move a placed sensor (drag the dot)' },
+              ],
+            },
+            (canAlign || canScale) && {
+              title: 'Align and scale',
+              entries: [
+                canAlign && {
+                  keys: ['A', 'Drag'],
+                  label: `Hold A, drag a ${lineMode ? 'dm line' : 'sensor'} onto its place`,
+                  active: alignKey || aligning,
+                },
+                canScale && {
+                  keys: ['R', 'Click'],
+                  label: 'Hold R, click the reference point',
+                  active: heldKey === 'r' || tool === 'reference',
+                },
+                canScale && {
+                  keys: ['M', 'Click'],
+                  label: 'Hold M, click two points of a known distance',
+                  active: heldKey === 'm',
+                },
+              ],
+            },
+            canEditImage && {
+              title: 'Edit the image',
+              entries: [
+                { keys: ['C'], label: 'Clear an area - fill it white', active: editMode === 'clear' },
+                { keys: ['X'], label: 'Crop the plan to an area', active: editMode === 'crop' },
+                editing && { keys: ['Drag'], label: selectionRect ? 'Select the area again' : 'Select the area', active: !selectionRect },
+                { keys: ['Esc'], label: 'Cancel' },
+              ],
+              note: 'Nothing changes before "Apply" - the sensors keep their place.',
+            },
+          ]}
+        />
 
         {!placement && lineSensors && items.length > 0 && lineCount === 0 && (
           <div

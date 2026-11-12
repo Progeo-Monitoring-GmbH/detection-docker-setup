@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router';
 import { Badge, Button, Spinner } from 'react-bootstrap';
 import { CheckLg, FileEarmarkPdf, PlusLg } from 'react-bootstrap-icons';
 import CadUploadDropbox from '../components/form/CadUploadDropbox.tsx';
+import { enqueueSnackbar } from 'notistack';
 import RedDropbox from '../components/form/RedDropbox.tsx';
 import LocationPicker, {
   type PickableLocation,
@@ -181,6 +182,12 @@ const rangesProblem = (ranges: DeviceRange[]): string | null => {
 const requestReason = (requestError: unknown) =>
   (requestError as { response?: { data?: { reason?: string } } })?.response
     ?.data?.reason ?? (requestError as Error).message;
+
+/** A toast once something is stored - failures stay in the wizard's notice.
+ * The same message twice at once (the alignment, stored by itself while
+ * the sliders move) shows once. */
+const toastSaved = (message: string) =>
+  enqueueSnackbar(message, { variant: 'success', preventDuplicate: true });
 
 // -- building blocks ----------------------------------------------------------
 
@@ -618,10 +625,12 @@ const LageplanWizardView = () => {
     setAddingPlan(false);
   };
 
-  const handleJsonUpload = () => {
+  const handleJsonUpload = (response?: Record<string, unknown>) => {
     // The JSON import answers with the uploaded file, not the stored points.
     setError('');
     setReloadKey((key) => key + 1);
+    const count = Array.isArray(response?.data) ? response.data.length : null;
+    toastSaved(count === null ? 'Measure points imported and saved.' : `${count} measure point(s) imported and saved.`);
   };
 
   // DWG/DXF and TXT both go through upload_cad, which returns the stored points.
@@ -637,6 +646,7 @@ const LageplanWizardView = () => {
     setPlacedSensors(placedFromPoints(valid.points, devices));
     setPlacementDirty(false);
     setError('');
+    toastSaved(`${valid.points.length} measure point(s) imported and saved.`);
   };
 
   const handleSaveSliders = async (values: {
@@ -675,6 +685,7 @@ const LageplanWizardView = () => {
           flip_y: values.flipY,
         });
         setIsProcessing(false);
+        toastSaved('Alignment saved.');
       },
       (saveError) => {
         setError(`Could not store alignment: ${requestReason(saveError)}`);
@@ -705,6 +716,11 @@ const LageplanWizardView = () => {
           meters_per_pixel: stored.meters_per_pixel ?? null,
         });
         setIsProcessing(false);
+        toastSaved(
+          values.meters_per_pixel != null
+            ? `Scale saved (${Number(values.meters_per_pixel.toPrecision(4))} m per pixel).`
+            : 'Reference point saved.',
+        );
       },
       (saveError) => {
         setError(`Could not store the scale: ${requestReason(saveError)}`);
@@ -721,6 +737,11 @@ const LageplanWizardView = () => {
     if (plan?.id) {
       updatePlan(plan.id, plan);
     }
+    toastSaved(
+      response?.message === 'Lageplan cropped.'
+        ? 'Lageplan cropped and saved - the sensors kept their place.'
+        : 'Area cleared and saved.',
+    );
   };
 
   // RedDropbox (instantFileUpload) passes the upload response, which carries
@@ -739,6 +760,7 @@ const LageplanWizardView = () => {
       ...current.filter((existing) => existing.id !== plan.id),
     ]);
     selectPlan(plan.id);
+    toastSaved(`Lageplan "${planLabel(plan)}" uploaded and selected.`);
   };
 
   // -- manual placement -------------------------------------------------------
@@ -872,6 +894,7 @@ const LageplanWizardView = () => {
         setActiveDeviceId(null);
         setPlacementDirty(false);
         setIsProcessing(false);
+        toastSaved(`${stored.length} sensor(s) saved.`);
       },
       (saveError) => {
         setError(`Could not store the sensors: ${requestReason(saveError)}`);
@@ -894,10 +917,14 @@ const LageplanWizardView = () => {
       auth,
       '/v1/status/measure_points/delete_lageplan/',
       { location_id: selectedLocationId, lageplan_id: plan.id },
-      () => {
+      (response: { data?: { removed_points?: number } }) => {
         setConfirmAction(null);
         setLageplans((current) => current.filter((existing) => existing.id !== plan.id));
         setReloadKey((key) => key + 1);
+        const removed = response?.data?.removed_points ?? 0;
+        toastSaved(
+          `Lageplan "${planLabel(plan)}" removed${removed ? ` with ${removed} measure point(s)` : ''}.`,
+        );
       },
       (deleteError) => {
         setConfirmAction(null);
@@ -926,6 +953,7 @@ const LageplanWizardView = () => {
         setPlacementDirty(false);
         setCadPayload(null);
         setIsProcessing(false);
+        toastSaved('All measure points of the location removed.');
       },
       (clearError) => {
         setConfirmAction(null);

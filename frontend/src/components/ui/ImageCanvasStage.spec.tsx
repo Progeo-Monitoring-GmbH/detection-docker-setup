@@ -198,6 +198,7 @@ describe('ImageCanvasStage alignment and scale', () => {
       const post = answer({ id: 7, url: 'media/uploads/lageplan/new.png' });
       const props = editProps();
       mount(props);
+      expect(container.textContent).toContain('Clear an area - fill it white');
       key('keydown', 'c');
       expect(container.textContent).toContain('Clear: drag over the area');
       select([300, 200], [500, 400]);
@@ -253,7 +254,7 @@ describe('ImageCanvasStage alignment and scale', () => {
       mount({ onSaveScale: vi.fn() });
       key('keydown', 'c');
       expect(container.textContent).not.toContain('Clear: drag over the area');
-      expect(container.textContent).not.toContain('C: clear an area');
+      expect(container.textContent).not.toContain('Edit the image');
     });
 
     it('shows why an edit failed and keeps the selection', () => {
