@@ -271,4 +271,149 @@ describe('ImageCanvasStage alignment and scale', () => {
       expect(button('Apply')).toBeDefined();
     });
   });
+
+  describe('removing measure points', () => {
+    // As in 'image edits': image pixel (x, y) is drawn at (16 + 0.868 x, 83 + 0.868 y);
+    // flipped (the default), ny = 0.6 is image y = 200.
+    const points = [
+      { id: 11, sensor_order: 1, nx: 0.3, ny: 0.6 }, // canvas (276, 257)
+      { id: 12, sensor_order: 2, nx: 0.8, ny: 0.2 }, // canvas (710, 430)
+      { id: 13, sensor_order: 3, nx: 0.35, ny: 0.55 }, // canvas (320, 278)
+    ];
+    const select = (from: [number, number], to: [number, number]) =>
+      act(() => {
+        container
+          .querySelector('canvas')!
+          .dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: from[0], clientY: from[1] }));
+        window.dispatchEvent(new MouseEvent('mousemove', { clientX: to[0], clientY: to[1] }));
+        window.dispatchEvent(new MouseEvent('mouseup'));
+      });
+
+    it('removes the points in the area dragged with D held, only on "Remove"', () => {
+      const post = vi
+        .spyOn(axiosConfig, 'perform_post')
+        .mockImplementation(async (_auth, _url, _data, onSuccess) => onSuccess({ data: { point_ids: [11, 13] } }));
+      const onPointsRemoved = vi.fn();
+      mount({ locationId: 5, measurePoints: points, onPointsRemoved });
+      expect(container.textContent).toContain('Hold D, drag over measure points to remove them');
+
+      key('keydown', 'd');
+      select([250, 230], [350, 300]);
+      key('keyup', 'd');
+      expect(container.textContent).toContain('Remove: 2 measure point(s) selected');
+      expect(post).not.toHaveBeenCalled();
+
+      act(() => button('Remove 2').click());
+
+      expect(post).toHaveBeenCalledTimes(1);
+      const [, url, data] = post.mock.calls[0];
+      expect(url).toBe('/v1/status/measure_points/remove/');
+      expect(data).toEqual({ location_id: 5, point_ids: [11, 13] });
+      expect(onPointsRemoved).toHaveBeenCalledWith({ point_ids: [11, 13] });
+      expect(container.textContent).not.toContain('Remove: ');
+    });
+
+    it('offers nothing to remove for an empty area, and a plain drag still pans', () => {
+      const post = vi.spyOn(axiosConfig, 'perform_post');
+      mount({ locationId: 5, measurePoints: points, onPointsRemoved: vi.fn() });
+
+      select([100, 100], [150, 150]);
+      expect(button('Remove 0')).toBeUndefined();
+
+      key('keydown', 'd');
+      select([100, 100], [150, 150]);
+      key('keyup', 'd');
+      expect(button('Remove 0').disabled).toBe(true);
+      key('keydown', 'Escape');
+      expect(button('Remove 0')).toBeUndefined();
+      expect(post).not.toHaveBeenCalled();
+    });
+
+    it('is not offered without onPointsRemoved', () => {
+      mount({ locationId: 5, measurePoints: points });
+      expect(container.textContent).not.toContain('Hold D');
+    });
+
+    // One event per act: the handlers read the state the last one left.
+    const canvasEvent = (type: string, clientX: number, clientY: number) =>
+      act(() => {
+        container.querySelector('canvas')!.dispatchEvent(new MouseEvent(type, { bubbles: true, clientX, clientY }));
+      });
+    const placed = () =>
+      vi
+        .spyOn(axiosConfig, 'perform_post')
+        .mockImplementation(async (_auth, _url, data, onSuccess) =>
+          onSuccess({ data: { points: (data as { points: unknown[] }).points } }),
+        );
+
+    it('cuts out the points dragged over with O held - nothing is stored', () => {
+      const post = vi.spyOn(axiosConfig, 'perform_post');
+      const onCut = vi.fn();
+      mount({ locationId: 5, lageplanId: 7, measurePoints: points, onCut });
+
+      key('keydown', 'o');
+      select([250, 230], [350, 300]);
+      key('keyup', 'o');
+      act(() => button('Cut 2').click());
+
+      expect(onCut).toHaveBeenCalledWith([points[0], points[2]]);
+      expect(post).not.toHaveBeenCalled();
+    });
+
+    it('inserts the cut points with I + click, their middle at the click', () => {
+      const post = placed();
+      const onPointsPlaced = vi.fn();
+      mount({ locationId: 5, lageplanId: 7, cutPoints: [points[0], points[2]], onPointsPlaced });
+      expect(container.textContent).toContain('2 measure point(s) cut out');
+
+      key('keydown', 'i');
+      // The plan's middle: image pixel (500, 250) - nx 0.5, ny 0.5 (flipped).
+      canvasEvent('mousemove', 450, 300);
+      expect(container.textContent).toContain('Insert 2 cut measure point(s)');
+      canvasEvent('mousedown', 450, 300);
+      key('keyup', 'i');
+
+      const [, url, data] = post.mock.calls[0];
+      expect(url).toBe('/v1/status/measure_points/place/');
+      const sent = data as { location_id: number; lageplan_id: number; points: Array<Record<string, number>> };
+      expect([sent.location_id, sent.lageplan_id]).toEqual([5, 7]);
+      // Their middle (0.325, 0.575) went to (0.5, 0.5).
+      expect(sent.points.map((point) => point.id)).toEqual([11, 13]);
+      expect(sent.points[0].nx).toBeCloseTo(0.475);
+      expect(sent.points[0].ny).toBeCloseTo(0.525);
+      expect(sent.points[1].nx).toBeCloseTo(0.525);
+      expect(sent.points[1].ny).toBeCloseTo(0.475);
+      expect(onPointsPlaced).toHaveBeenCalledWith({ points: sent.points }, 'insert');
+    });
+
+    it('aligns the points selected with L by themselves', () => {
+      const post = placed();
+      const onPointsPlaced = vi.fn();
+      mount({ locationId: 5, lageplanId: 7, measurePoints: points, onPointsPlaced });
+
+      key('keydown', 'l');
+      select([250, 230], [350, 300]);
+      key('keyup', 'l');
+      act(() => button('Align 2').click());
+      expect(container.textContent).toContain('Aligning 2 measure point(s) by themselves · 0 pinned');
+
+      // Point 11 (canvas 276.4, 256.6) dragged 100 canvas units to the right.
+      canvasEvent('mousedown', 276.4, 256.6);
+      canvasEvent('mousemove', 376.4, 256.6);
+      canvasEvent('mouseup', 376.4, 256.6);
+      expect(container.textContent).toContain('1 pinned');
+      act(() => button('Apply').click());
+
+      const [, url, data] = post.mock.calls[0];
+      expect(url).toBe('/v1/status/measure_points/place/');
+      const sent = (data as { points: Array<Record<string, number>> }).points;
+      // Both moved by 100 / 868 of the plan's width, point 12 not at all.
+      expect(sent.map((point) => point.id)).toEqual([11, 13]);
+      expect(sent[0].nx).toBeCloseTo(0.3 + 100 / 868);
+      expect(sent[0].ny).toBeCloseTo(0.6);
+      expect(sent[1].nx).toBeCloseTo(0.35 + 100 / 868);
+      expect(onPointsPlaced).toHaveBeenCalledWith({ points: sent }, 'align');
+      expect(container.textContent).not.toContain('by themselves');
+    });
+  });
 });

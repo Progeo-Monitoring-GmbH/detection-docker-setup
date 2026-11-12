@@ -20,7 +20,7 @@ from progeo import consumer
 from progeo.docker_agent import ops
 from progeo.helper import cad_import, docker_helper
 from progeo.tests import factories as f
-from progeo.v1.models import Account, ProgeoMeasurePoint
+from progeo.v1.models import Account, ProgeoLageplan, ProgeoMeasurePoint
 from progeo.v1.viewsets import status_viewset
 
 DEVICES = ("module_devices_enabled", "module_devices_edit")
@@ -686,6 +686,119 @@ def test_stored_points_keep_their_numbers(location):
     result = cad_import.store_measure_points(location, f.DB, points)
 
     assert [p["sensor_order"] for p in result["points"]] == [1, 4]
+
+
+def _plans(location):
+    """(main plan, second plan) - the main one is the active one."""
+    main = ProgeoLageplan.objects.using(f.DB).create(location=location, lageplan="lageplan/main.png")
+    second = ProgeoLageplan.objects.using(f.DB).create(location=location, lageplan="lageplan/second.png",
+                                                       is_active=False)
+    return main, second
+
+
+def _on(location, lageplan):
+    points = ProgeoMeasurePoint.objects.using(f.DB).filter(location=location, lageplan=lageplan)
+    return sorted(points.values_list("sensor_order", flat=True))
+
+
+def test_an_import_goes_onto_its_plan_and_keeps_the_points_on_the_others(location):
+    main, second = _plans(location)
+    f.make_measure_point(location, 1, lageplan=main)
+    f.make_measure_point(location, 2)  # no plan: shown on the main plan
+
+    result = cad_import.store_measure_points(
+        location, f.DB, [{**POINTS[0], "pos": 301}, {**POINTS[1], "pos": 302}], lageplan_id=second.pk
+    )
+
+    assert (result["lageplan_id"], result["stored"], result["warning"]) == (second.pk, 2, None)
+    assert [p["sensor_order"] for p in result["points"]] == [1, 2, 301, 302]
+    assert (_on(location, main), _on(location, None), _on(location, second)) == ([1], [2], [301, 302])
+
+    # Imported again onto it: only its own points are replaced.
+    cad_import.store_measure_points(location, f.DB, [{**POINTS[0], "pos": 303}], lageplan_id=second.pk)
+    assert (_on(location, main), _on(location, None), _on(location, second)) == ([1], [2], [303])
+
+
+def test_an_import_without_a_plan_goes_onto_the_main_plan(location):
+    main, second = _plans(location)
+    f.make_measure_point(location, 1, lageplan=main)
+    f.make_measure_point(location, 2)
+    f.make_measure_point(location, 301, lageplan=second)
+
+    result = cad_import.store_measure_points(location, f.DB, [{**POINTS[0], "pos": 5}])
+
+    assert result["lageplan_id"] == main.pk
+    # The main plan's points - also those without a plan - are replaced.
+    assert (_on(location, main), _on(location, None), _on(location, second)) == ([5], [], [301])
+
+
+def test_sensor_numbers_used_on_another_plan_are_named(location):
+    main, second = _plans(location)
+    for order in (1, 2, 3, 7):
+        f.make_measure_point(location, order, lageplan=main)
+
+    result = cad_import.store_measure_points(
+        location, f.DB, [{**POINTS[0], "pos": order} for order in (1, 2, 3, 5, 7)], lageplan_id=second.pk
+    )
+
+    assert result["warning"].startswith("Sensor number(s) 1-3, 7 are on another Lageplan of this location")
+    assert _on(location, second) == [1, 2, 3, 5, 7]
+
+
+def test_upload_takes_only_a_plan_of_the_location(api_client, location):
+    main, second = _plans(location)
+    foreign = ProgeoLageplan.objects.using(f.DB).create(
+        location=f.make_location(Account.objects.using(f.DB).get(pk=1), project_id=931002), lageplan="lageplan/x.png"
+    )
+    api_client.force_authenticate(user=f.make_user(staff=True))
+    rows = b"1;0;0;0;931001;10;20\n"
+
+    response = api_client.post("/v1/status/measure_points/upload_cad/", {
+        "location_id": location.project_id, "lageplan_id": foreign.pk, "files0": SimpleUploadedFile("p.txt", rows),
+    })
+    assert (response.status_code, response.json()["reason"]) == (400, f"Lageplan {foreign.pk} is not at this location")
+
+    response = api_client.post("/v1/status/measure_points/upload_cad/", {
+        "location_id": location.project_id, "lageplan_id": second.pk, "files0": SimpleUploadedFile("p.txt", rows),
+    })
+    assert response.status_code == 200, response.content
+    assert (response.json()["lageplan_id"], _on(location, second), _on(location, main)) == (second.pk, [1], [])
+
+
+def test_json_import_goes_onto_the_picked_plan(api_client, location):
+    _main, second = _plans(location)
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    response = api_client.post("/v1/status/measure_points/from_json/", {
+        "location_id": location.project_id, "lageplan_id": second.pk,
+        "files0": SimpleUploadedFile("points.json", json.dumps(POINTS).encode()),
+    })
+
+    assert response.status_code == 200, response.content
+    assert _on(location, second) == sorted(point["pos"] for point in POINTS)
+
+
+def test_dwg_job_stores_onto_its_plan_and_fails_once_the_plan_is_gone(location, events, monkeypatch):
+    _main, second = _plans(location)
+    _fake_run(monkeypatch, [], stdout=json.dumps(POINTS) + "\n")
+    create = {"user_id": 1, "location_pk": location.pk, "db_name": f.DB,
+              "cad_input": "media/uploads/cad_imports/x.dwg", "source_name": "plan.dwg", "lageplan_id": second.pk}
+
+    job_id = cad_import.create_job(**create)
+    cad_import.run_job(job_id)
+
+    assert cad_import.get_job(job_id)["log"][-1] == f"Stored 2 measure points on Lageplan #{second.pk}"
+    assert _on(location, second) == sorted(point["pos"] for point in POINTS)
+
+    job_id = cad_import.create_job(**create)
+    gone = second.pk
+    second.delete(using=f.DB)
+    cad_import.run_job(job_id)
+
+    job = cad_import.get_job(job_id)
+    assert (job["status"], job["error"]) == (
+        "failed", f"Lageplan {gone} is not at this location - it was removed during the import."
+    )
 
 
 def test_job_passes_on_why_a_plan_has_no_points_and_keeps_the_old_ones(location, events, monkeypatch):

@@ -28,8 +28,13 @@ import { formatDate } from './dateFormat';
 
 type ImportedCad = {
   location_id: number;
+  /** The plan the points went onto. */
+  lageplan_id?: number | null;
+  /** Points imported - `points` lists all of the location. */
   stored: number;
   points: Array<Record<string, unknown>>;
+  /** Sensor numbers also used on another plan. */
+  warning?: string | null;
 };
 
 type WizardDevice = {
@@ -425,6 +430,10 @@ const LageplanWizardView = () => {
   // imported points are connected to,
   // each with its sensors (a plan's sensors can be split over devices).
   const [deviceRanges, setDeviceRanges] = useState<DeviceRange[]>([]);
+  // Step 5: measure points cut out (O + drag) - left off every plan until
+  // inserted on one (I + click); nothing is stored before.
+  const [cutPoints, setCutPoints] = useState<Array<Record<string, unknown>>>([]);
+  const cutIds = useMemo(() => new Set(cutPoints.map((point) => Number(point.id))), [cutPoints]);
 
   // ?location=<location pk> (as everywhere else, e.g. from the device
   // overview) preselects the location; the selection is kept there.
@@ -460,6 +469,7 @@ const LageplanWizardView = () => {
     setActiveDeviceId(null);
     setPlacementDirty(false);
     setDeviceRanges([]);
+    setCutPoints([]);
     setError('');
   };
 
@@ -540,6 +550,10 @@ const LageplanWizardView = () => {
             : [];
           const placed = placedFromPoints(points, loadedDevices);
           setMeasurePoints(points);
+          // Cut points as stored now - gone ones leave the clipboard.
+          setCutPoints((current) =>
+            current.flatMap((cut) => points.filter((point) => Number(point.id) === Number(cut.id))),
+          );
           setDevices(loadedDevices);
           setPlacedSensors(placed);
           setActiveDeviceId(null);
@@ -744,6 +758,44 @@ const LageplanWizardView = () => {
     );
   };
 
+  // Step 5 removed measure points (D + drag, measure_points/remove): they
+  // leave the list; the rest keep their sensor_order.
+  const handlePointsRemoved = (response: Record<string, unknown>) => {
+    const removed = new Set(
+      (Array.isArray(response?.point_ids) ? response.point_ids : []).map(Number),
+    );
+    const remaining = measurePoints.filter((point) => !removed.has(Number(point.id)));
+    setMeasurePoints(remaining);
+    if (!placementDirty) {
+      setPlacedSensors(placedFromPoints(remaining, devices));
+    }
+    toastSaved(`${removed.size} measure point(s) removed.`);
+  };
+
+  // Step 5 cut points out (O + drag): kept here, on every plan, until inserted.
+  const handleCut = (points: Array<Record<string, unknown>>) => {
+    const ids = new Set(points.map((point) => Number(point.id)));
+    setCutPoints((current) => [...current.filter((point) => !ids.has(Number(point.id))), ...points]);
+    enqueueSnackbar(
+      `${points.length} measure point(s) cut out - hold I and click on a plan to insert them.`,
+      { variant: 'info', preventDuplicate: true },
+    );
+  };
+
+  // Step 5 inserted the cut points (I + click) or aligned a group (L) -
+  // measure_points/place answers with the moved points, now on this plan.
+  const handlePointsPlaced = (response: Record<string, unknown>, action: 'insert' | 'align') => {
+    const moved = (Array.isArray(response?.points) ? response.points : []) as Array<Record<string, unknown>>;
+    const byId = new Map(moved.map((point) => [Number(point.id), point]));
+    setMeasurePoints((current) => current.map((point) => byId.get(Number(point.id)) ?? point));
+    setCutPoints((current) => current.filter((point) => !byId.has(Number(point.id))));
+    toastSaved(
+      action === 'insert'
+        ? `${moved.length} measure point(s) inserted on “${planNameOf(selectedPlanId)}” and saved.`
+        : `${moved.length} measure point(s) aligned and saved.`,
+    );
+  };
+
   // RedDropbox (instantFileUpload) passes the upload response, which carries
   // the stored Lageplan - see StatusViewSet.upload_measure_points_from_png.
   // The new plan is active and the newest, so it heads the list.
@@ -777,8 +829,11 @@ const LageplanWizardView = () => {
   // Imported points (CAD/JSON/TXT) are connected to these devices
   // (StatusViewSet._point_devices).
   const usedRanges = deviceRanges.filter((range) => range.deviceId != null);
+  // ... and go onto the picked Lageplan, replacing only the points on it
+  // (cad_import.store_measure_points) - without one, onto the main plan.
   const importPayload = {
     location_id: selectedLocationId,
+    ...(selectedPlanId !== null ? { lageplan_id: selectedPlanId } : {}),
     point_devices: JSON.stringify(
       usedRanges.map((range) => ({
         device_id: range.deviceId,
@@ -803,8 +858,8 @@ const LageplanWizardView = () => {
   const connectedCount = (deviceId: number) =>
     measurePoints.filter((point) => Number(point.device) === deviceId).length;
   // What the canvas shows: the points / sensors of the picked plan.
-  const planPoints = measurePoints.filter((point) =>
-    belongsTo(point.lageplan, selectedPlanId),
+  const planPoints = measurePoints.filter(
+    (point) => belongsTo(point.lageplan, selectedPlanId) && !cutIds.has(Number(point.id)),
   );
   const planSensors = placedSensors.filter((sensor) =>
     belongsTo(sensor.lageplanId, selectedPlanId),
@@ -1512,18 +1567,21 @@ const LageplanWizardView = () => {
           )}
           {pointSource === 'manual' && renderManualSensors()}
 
-          {pointSource !== 'manual' &&
-            lageplans.length > 1 &&
-            selectedPlanId !== mainPlanId && (
-              <Notice>
-                Imported points are not tied to a Lageplan - they show on the
-                main plan “{planNameOf(mainPlanId)}”.
-              </Notice>
-            )}
+          {pointSource !== 'manual' && lageplans.length > 1 && selectedPlanId !== null && (
+            <Notice>
+              Imported points go onto “{planNameOf(selectedPlanId)}” and replace
+              the {pointsOnPlan(selectedPlanId)} point(s) on it - the points on
+              the other plans stay.
+            </Notice>
+          )}
           {cadPayload && pointSource !== 'manual' && (
             <Notice tone="success">
-              Import complete: {cadPayload.stored} points stored.
+              Import complete: {cadPayload.stored} points stored
+              {cadPayload.lageplan_id != null ? ` on “${planNameOf(cadPayload.lageplan_id)}”` : ''}.
             </Notice>
+          )}
+          {cadPayload?.warning && pointSource !== 'manual' && (
+            <Notice tone="warning">{cadPayload.warning}</Notice>
           )}
         </div>
       )}
@@ -1564,6 +1622,11 @@ const LageplanWizardView = () => {
           onSaveSliders={canEditLocation ? handleSaveSliders : undefined}
           onSaveScale={canEditLocation ? handleSaveScale : undefined}
           onImageEdited={canEditLocation ? handleImageEdited : undefined}
+          onPointsRemoved={canEditLocation ? handlePointsRemoved : undefined}
+          cutPoints={cutPoints}
+          onCut={canEditLocation ? handleCut : undefined}
+          onDiscardCut={() => setCutPoints([])}
+          onPointsPlaced={canEditLocation ? handlePointsPlaced : undefined}
           placement={
             manualPlacement
               ? {

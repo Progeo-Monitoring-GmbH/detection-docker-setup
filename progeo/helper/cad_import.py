@@ -62,10 +62,11 @@ def _key(job_id: str) -> str:
 
 
 def create_job(*, user_id, location_pk, db_name, cad_input, source_name, coord_margin=0.2, kind="points",
-               device_ranges=None) -> str:
+               device_ranges=None, lageplan_id=None) -> str:
     """cad_input: the uploaded plan, relative to the project root (media/uploads/...);
     kind: "points" (DWG/DXF) or "lageplan" (PDF); device_ranges: the devices of
-    the location the imported points are connected to (store_measure_points)."""
+    the location the imported points are connected to, lageplan_id: the plan
+    they go onto (store_measure_points)."""
     job_id = uuid4().hex
     _save(job_id, {
         "job_id": job_id,
@@ -75,6 +76,7 @@ def create_job(*, user_id, location_pk, db_name, cad_input, source_name, coord_m
         "location_pk": location_pk,
         "db_name": db_name,
         "device_ranges": device_ranges,
+        "lageplan_id": lageplan_id,
         "cad_input": cad_input,
         "source_name": source_name,
         "coord_margin": coord_margin,
@@ -129,9 +131,72 @@ def device_of(device_ranges, sensor_order: int):
     return None
 
 
-def store_measure_points(location, db_name: str, points: list, device_ranges=None) -> dict:
-    """Replaces the location's measure points with the imported ones (one
-    bulk insert); returns upload_cad's answer {"location_id", "stored", "points"}.
+class LageplanGone(LookupError):
+    """The Lageplan an import was meant for is not at the location (any more)."""
+
+
+def main_lageplan(location, db_name: str):
+    """The location's main Lageplan - the first of measure_points
+    ?with_lageplan=1 (active, else newest). Points without a plan show on it."""
+    from progeo.v1.models import ProgeoLageplan
+
+    return ProgeoLageplan.objects.using(db_name).filter(location=location).order_by("-is_active", "-id").first()
+
+
+def points_on_plan(location, db_name: str, lageplan):
+    """The measure points shown on `lageplan`: those tied to it - and, for the
+    main plan (or no plan at all), those without a plan."""
+    from django.db.models import Q
+
+    from progeo.v1.models import ProgeoMeasurePoint
+
+    points = ProgeoMeasurePoint.objects.using(db_name).filter(location=location)
+    if lageplan is None:
+        return points.filter(lageplan__isnull=True)
+    main = main_lageplan(location, db_name)
+    if main is not None and main.pk == lageplan.pk:
+        return points.filter(Q(lageplan__isnull=True) | Q(lageplan=lageplan))
+    return points.filter(lageplan=lageplan)
+
+
+def import_lageplan(location, db_name: str, lageplan_id=None):
+    """The Lageplan imported points go onto: `lageplan_id` (LageplanGone unless
+    it is at the location), else the main plan - None while there is none."""
+    from progeo.v1.models import ProgeoLageplan
+
+    if lageplan_id in (None, ""):
+        return main_lageplan(location, db_name)
+    try:
+        lageplan_id = int(lageplan_id)
+    except (TypeError, ValueError):
+        raise LageplanGone(f"Invalid lageplan_id: {lageplan_id!r}") from None
+    lageplan = ProgeoLageplan.objects.using(db_name).filter(location=location, pk=lageplan_id).first()
+    if lageplan is None:
+        raise LageplanGone(f"Lageplan {lageplan_id} is not at this location")
+    return lageplan
+
+
+def _number_ranges(numbers) -> str:
+    """1, 86, 87, 88 -> "1, 86-88"."""
+    runs = []
+    for number in sorted(set(numbers)):
+        if runs and number == runs[-1][1] + 1:
+            runs[-1][1] = number
+        else:
+            runs.append([number, number])
+    return ", ".join(str(a) if a == b else f"{a}-{b}" for a, b in runs)
+
+
+def store_measure_points(location, db_name: str, points: list, device_ranges=None, lageplan_id=None) -> dict:
+    """Replaces the measure points on one Lageplan with the imported ones (one
+    bulk insert), tied to it: `lageplan_id`, else the main plan (import_lageplan
+    - LageplanGone if it is not at the location). The points on the other
+    plans stay. Returns upload_cad's answer {"location_id", "lageplan_id",
+    "stored" (imported), "points" (all of the location), "warning"}.
+
+    sensor_order is unique per location, not per plan - it addresses the
+    sensor on its device (alarms, thresholds, device ranges). Numbers also used
+    on another plan are stored anyway and named in "warning".
 
     device_ranges: [(device pk, first, last), ...] - the sensors (sensor_order)
     first..last (None: all from first on) are connected to that device, and
@@ -141,6 +206,7 @@ def store_measure_points(location, db_name: str, points: list, device_ranges=Non
     from progeo.v1.models import ProgeoDevice, ProgeoMeasurePoint
     from progeo.v1.serializers import ProgeoMeasurePointSerializer
 
+    lageplan = import_lageplan(location, db_name, lageplan_id)
     bulk_points = []
     reference_sensor_order = None
     # bulk_create skips save(), which sets last_fetched.
@@ -156,6 +222,7 @@ def store_measure_points(location, db_name: str, points: list, device_ranges=Non
         bulk_points.append(ProgeoMeasurePoint(
             last_fetched=now,
             location=location,
+            lageplan=lageplan,
             device_id=device_of(device_ranges, sensor_order),
             sensor_order=sensor_order,
             x=point.get("x"),
@@ -167,21 +234,43 @@ def store_measure_points(location, db_name: str, points: list, device_ranges=Non
             **{field: point.get(field) for field in END_FIELDS},
         ))
 
+    replaced = points_on_plan(location, db_name, lageplan)
     with transaction.atomic(using=db_name):
-        ProgeoMeasurePoint.objects.using(db_name).filter(location=location).delete()
+        replaced.delete()
         ProgeoMeasurePoint.objects.using(db_name).bulk_create(bulk_points)
         for device_pk, first, _last in device_ranges or ():
             ProgeoDevice.objects.using(db_name).filter(pk=device_pk, location=location).update(
                 first_sensor_order=first
             )
 
-    stored_qs = ProgeoMeasurePoint.objects.using(db_name).filter(location=location).order_by("sensor_order")
+    # Sensor numbers the other plans of the location use as well.
+    imported_orders = {point.sensor_order for point in bulk_points}
+    elsewhere = (
+        ProgeoMeasurePoint.objects.using(db_name)
+        .filter(location=location, sensor_order__in=imported_orders)
+        .exclude(pk__in=points_on_plan(location, db_name, lageplan).values("pk"))
+        .values_list("sensor_order", flat=True)
+    )
+    clashes = set(elsewhere)
+    warning = (
+        f"Sensor number(s) {_number_ranges(clashes)} are on another Lageplan of this location as well - "
+        "sensor numbers address the sensors on their devices, so they must differ between the plans."
+        if clashes else None
+    )
+
+    stored_qs = ProgeoMeasurePoint.objects.using(db_name).filter(location=location).order_by("sensor_order", "id")
     stored = ProgeoMeasurePointSerializer(
         stored_qs,
         many=True,
         context={"reference_sensor_order": reference_sensor_order},
     ).data
-    return {"location_id": location.id, "stored": len(stored), "points": stored}
+    return {
+        "location_id": location.id,
+        "lageplan_id": lageplan.pk if lageplan else None,
+        "stored": len(bulk_points),
+        "points": stored,
+        "warning": warning,
+    }
 
 
 def lageplan_answer(lageplan) -> dict:
@@ -291,8 +380,17 @@ def run_job(job_id: str) -> None:
             _append_log(job, f"Stored Lageplan #{lageplan.pk}")
             _finish(job, "done", result=lageplan_answer(lageplan))
             return
-        result = store_measure_points(location, job["db_name"], points, job.get("device_ranges"))
-        _append_log(job, f"Stored {result['stored']} measure points")
+        try:
+            result = store_measure_points(
+                location, job["db_name"], points, job.get("device_ranges"), lageplan_id=job.get("lageplan_id")
+            )
+        except LageplanGone as exc:
+            _finish(job, "failed", error=f"{exc} - it was removed during the import.")
+            return
+        plan = f" on Lageplan #{result['lageplan_id']}" if result["lageplan_id"] else ""
+        _append_log(job, f"Stored {result['stored']} measure points{plan}")
+        if result["warning"]:
+            _append_log(job, f"Warning: {result['warning']}")
         _finish(job, "done", result=result)
     except Exception as exc:  # noqa: BLE001 - reported to the user
         elog(f"CAD import {job_id} failed", exc, tag="[CAD-FACTORY]")

@@ -4,6 +4,7 @@ import { useAuth } from '../../../hooks/CoreAuthProvider';
 import ZoomControls from '../device/ZoomControls';
 import { ALIGN_PINS, fitAlignment, type AlignPin } from './alignmentFit';
 import CanvasKeyLegend, { KEY_BADGE } from './CanvasKeyLegend';
+import { applyGroup, fitGroup, toFraction, toNormalized, type GroupPin } from './groupAlign';
 import { isZoomWheel, useWheelHint, WheelZoomHint } from './wheelZoom';
 
 const clamp = (value: number, min: number, max: number) =>
@@ -48,6 +49,21 @@ const segmentDistance = (
 };
 
 const finite = (value: unknown) => (value == null || value === '' ? NaN : Number(value));
+
+/** Image pixel of a normalized point (nx/ny) under the point alignment -
+ * where the canvas draws it, independent of zoom and pan. */
+const normalizedToImage = (
+  [nx, ny]: [number, number],
+  alignment: { offsetX: number; offsetY: number; scaleX: number; scaleY: number; flipY: boolean },
+  width: number,
+  height: number,
+): [number, number] => {
+  const base = alignmentBaseScale(width, height);
+  return [
+    alignment.offsetX / base + nx * width * alignment.scaleX,
+    alignment.offsetY / base + (alignment.flipY ? 1 - ny : ny) * height * alignment.scaleY,
+  ];
+};
 
 /**
  * Scale at which the alignment canvas fits a Lageplan of the given size (at
@@ -119,6 +135,22 @@ const canvasToNormalized = (
   ];
 };
 
+type CutItem = { id: number; start: ImagePoint; end: ImagePoint | null };
+
+/** Cut points inserted at a normalized point: their middle (of the box around
+ * them) goes there, their shape stays - null without any. */
+const cutPlacedAt = (cuts: CutItem[], [atX, atY]: ImagePoint): CutItem[] | null => {
+  const corners = cuts.flatMap((cut) => (cut.end ? [cut.start, cut.end] : [cut.start]));
+  if (!corners.length) {
+    return null;
+  }
+  const middle = (axis: 0 | 1) =>
+    (Math.min(...corners.map((corner) => corner[axis])) + Math.max(...corners.map((corner) => corner[axis]))) / 2;
+  const [dx, dy] = [atX - middle(0), atY - middle(1)];
+  const shift = ([x, y]: ImagePoint): ImagePoint => [x + dx, y + dy];
+  return cuts.map((cut) => ({ id: cut.id, start: shift(cut.start), end: cut.end ? shift(cut.end) : null }));
+};
+
 /** A sensor placed by hand (Lageplan wizard), normalized like nx/ny. */
 export type PlacedSensor = {
   deviceId: number;
@@ -160,6 +192,8 @@ const SUB_PANEL: React.CSSProperties = {
   flexDirection: 'column',
   gap: 12,
 };
+/** The panels of a running action under the canvas (group alignment, cut points). */
+const ACTION_PANEL: React.CSSProperties = { borderRadius: 12, padding: '10px 14px', fontSize: 12.5 };
 const PILL_BUTTON: React.CSSProperties = {
   borderRadius: 'var(--progeo-radius-pill)',
   height: 32,
@@ -179,13 +213,24 @@ const ALIGN_STORE_DELAY = 600;
  * (picked only while M is held - plain presses still pan). */
 type CanvasTool = 'pan' | 'reference' | 'calibrate';
 /** Held keys that change what a press on the plan does: A drags sensors to
- * align, R sets the reference point, M picks a calibration point. */
-type HeldKey = 'a' | 'r' | 'm';
-const HELD_KEYS: HeldKey[] = ['a', 'r', 'm'];
+ * align, R sets the reference point, M picks a calibration point; D / O / L
+ * + drag select measure points to remove / cut out / align as a group, and
+ * I + click inserts the cut ones. */
+type HeldKey = 'a' | 'r' | 'm' | 'd' | 'o' | 'l' | 'i';
+const HELD_KEYS: HeldKey[] = ['a', 'r', 'm', 'd', 'o', 'l', 'i'];
 /** Edits of the plan image, switched on by a key press: C fills the selected
  * area white, X crops the plan to it - each only once "Apply" is pressed. */
 type ImageEdit = 'clear' | 'crop';
 const EDIT_KEYS: Record<string, ImageEdit> = { c: 'clear', x: 'crop' };
+/** What measure points selected with a held key + drag are for. */
+type PointSelect = 'remove' | 'cut' | 'group';
+const SELECT_KEYS: Partial<Record<HeldKey, PointSelect>> = { d: 'remove', o: 'cut', l: 'group' };
+/** What a selected area is for: an image edit, or the measure points in it. */
+type SelectMode = ImageEdit | PointSelect;
+/** Colours of the point actions: remove, cut out / insert, group alignment. */
+const REMOVE_COLOR = '#C44D26';
+const CUT_COLOR = '#B7791F';
+const GROUP_COLOR = '#6f42c1';
 /** Image pixels a selection needs at least (both sides) to be applied. */
 const MIN_SELECTION = 2;
 
@@ -248,6 +293,21 @@ type ImageCanvasStageProps = {
    * (measure_points/edit_lageplan) - called with its answer, which carries
    * the stored plan ("lageplan": new url, a crop's moved alignment). */
   onImageEdited?: (response: Record<string, unknown>) => void;
+  /** Enables removing measure points (hold D, drag over them, "Remove"),
+   * done on the server (measure_points/remove) - called with its answer,
+   * which lists the removed ids ("point_ids"). */
+  onPointsRemoved?: (response: Record<string, unknown>) => void;
+  /** Measure points cut out (O + drag) - kept by the caller, on any plan, until
+   * inserted (I + click) or discarded. */
+  cutPoints?: Array<Record<string, unknown>>;
+  /** Enables cutting out (O + drag, "Cut"): the selected points' records - the
+   * caller keeps them and leaves them out of measurePoints. Nothing is stored. */
+  onCut?: (points: Array<Record<string, unknown>>) => void;
+  onDiscardCut?: () => void;
+  /** Enables inserting the cut points (I + click) and aligning a group of
+   * points (L + drag), stored on the server (measure_points/place) - called
+   * with its answer, which carries the moved points ("points"). */
+  onPointsPlaced?: (response: Record<string, unknown>, action: 'insert' | 'align') => void;
 };
 
 const ImageCanvasStage = ({
@@ -266,6 +326,11 @@ const ImageCanvasStage = ({
   onSaveScale,
   placement,
   onImageEdited,
+  onPointsRemoved,
+  cutPoints = [],
+  onCut,
+  onDiscardCut,
+  onPointsPlaced,
 }: ImageCanvasStageProps) => {
   const auth = useAuth();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -320,15 +385,25 @@ const ImageCanvasStage = ({
   const [alignDrag, setAlignDrag] = useState<{ index: number; source: ImagePoint; at: ImagePoint } | null>(null);
   const aligning = pins.length > 0 || alignDrag != null;
   const [alignBefore, setAlignBefore] = useState<AlignmentValues | null>(null);
-  // Image edit (C / X): the mode, the selected area (two corners in image
-  // pixels), whether it is being dragged, and the request applying it.
-  const [editMode, setEditMode] = useState<ImageEdit | null>(null);
+  // Image edit (C / X) or removing points (D): the mode, the selected area
+  // (two corners in image pixels), whether it is being dragged, and the
+  // request applying it.
+  const [editMode, setEditMode] = useState<SelectMode | null>(null);
   const editModeRef = useRef(editMode);
   editModeRef.current = editMode;
   const [selection, setSelection] = useState<[ImagePoint, ImagePoint] | null>(null);
   const [selecting, setSelecting] = useState(false);
+  // Set at once on the press: the mouse may move before the next render.
+  const selectingRef = useRef(false);
   const [editBusy, setEditBusy] = useState(false);
   const [editError, setEditError] = useState('');
+  // Group alignment (L): the points (ids), their pins (where a grabbed point
+  // is now -> where it belongs, fractions of the image) and the one being
+  // dragged (the grabbed point now, the mouse in canvas units).
+  const [group, setGroup] = useState<{ ids: Set<number>; pins: Array<GroupPin & { id: number }> } | null>(null);
+  const [groupDrag, setGroupDrag] = useState<{ id: number; source: ImagePoint; at: ImagePoint } | null>(null);
+  // Insert (I held): the normalized point under the mouse - the cut points' middle goes there.
+  const [insertAt, setInsertAt] = useState<ImagePoint | null>(null);
 
   // Shown width of the canvas (CSS pixels): it is drawn at that size times
   // the device pixel ratio; sizes of markers and labels are screen pixels.
@@ -391,9 +466,93 @@ const ImageCanvasStage = ({
     withSliders && onImageEdited != null && image != null && locationId != null && lageplanId != null;
   const canEditImageRef = useRef(false);
   canEditImageRef.current = canEditImage && !aligning;
+  // Editing stored measure points (D / O / L / I) - not while placing by hand.
+  const pointsEditable = withSliders && !placement && image != null && locationId != null;
+  const canRemovePoints = pointsEditable && onPointsRemoved != null && items.length > 0;
+  const canCut = pointsEditable && onCut != null && items.length > 0;
+  const canPlace = pointsEditable && onPointsPlaced != null && lageplanId != null;
+  const canGroup = canPlace && items.length > 0;
+  const canSelectFor = (mode: SelectMode) =>
+    mode === 'remove' ? canRemovePoints : mode === 'cut' ? canCut : mode === 'group' ? canGroup : canEditImage;
+
+  // The plan's point alignment, and how a normalized point moves with the
+  // group alignment (L) - into the plan's frame and back.
+  const planAlignment = useMemo<AlignmentValues>(
+    () => ({
+      offsetX: pointOffsetX,
+      offsetY: pointOffsetY,
+      scaleX: pointScaleX,
+      scaleY: pointScaleY,
+      flipY: isVerticallyFlipped,
+    }),
+    [pointOffsetX, pointOffsetY, pointScaleX, pointScaleY, isVerticallyFlipped],
+  );
+  const groupFit = group ? fitGroup(group.pins) : null;
+  const groupTransform = groupFit && 'transform' in groupFit ? groupFit.transform : null;
+  // What the canvas shows: the points - a group being aligned where its pins put it.
+  const shownItems = useMemo<MarkerItem[]>(() => {
+    if (!group || !groupTransform || !image) {
+      return items;
+    }
+    const size = [image.naturalWidth, image.naturalHeight] as const;
+    const base = alignmentBaseScale(...size);
+    const move = (point: ImagePoint): ImagePoint =>
+      toNormalized(applyGroup(toFraction(point, planAlignment, ...size, base), groupTransform), planAlignment, ...size, base);
+    return items.map((item) =>
+      group.ids.has(Number(item.point.id))
+        ? { ...item, start: move(item.start), end: item.end ? move(item.end) : null }
+        : item,
+    );
+  }, [items, group, groupTransform, image, planAlignment]);
+
+  // The measure points a held key + drag has selected (D / O / L): a point
+  // inside the area, a dm band with its start or end inside it.
+  const pointSelect = editMode === 'remove' || editMode === 'cut' || editMode === 'group' ? editMode : null;
+  const selectedItems = useMemo(() => {
+    if (!pointSelect || !selection || !image) {
+      return new Set<MarkerItem>();
+    }
+    const [[ax, ay], [bx, by]] = selection;
+    const [left, top, right, bottom] = [Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by)];
+    const inside = (point: ImagePoint) => {
+      const [x, y] = normalizedToImage(point, planAlignment, image.naturalWidth, image.naturalHeight);
+      return x >= left && x <= right && y >= top && y <= bottom;
+    };
+    return new Set(shownItems.filter((item) => inside(item.start) || (item.end != null && inside(item.end))));
+  }, [pointSelect, selection, image, shownItems, planAlignment]);
+  const selectedIds = [...selectedItems]
+    .map((item) => Number(item.point.id))
+    .filter((id) => Number.isInteger(id));
+
+  // The cut points (O), and where I + click would insert them: their middle
+  // at the mouse, the shape kept (normalized, as on the plan they came from).
+  const cutItems = useMemo<CutItem[]>(
+    () =>
+      cutPoints
+        .map((point) => ({
+          id: Number(point.id),
+          start: [finite(point.nx), finite(point.ny)] as ImagePoint,
+          end: [finite(point.nx_end), finite(point.ny_end)] as ImagePoint,
+        }))
+        .filter((cut) => Number.isInteger(cut.id) && cut.start.every(Number.isFinite))
+        .map((cut) => ({ ...cut, end: cut.end.every(Number.isFinite) ? cut.end : null })),
+    [cutPoints],
+  );
+  const canInsert = canPlace && cutItems.length > 0;
+  const insertPlan = useMemo(() => (insertAt ? cutPlacedAt(cutItems, insertAt) : null), [insertAt, cutItems]);
+
+  const insertGhost = heldKey === 'i' && canInsert ? insertPlan : null;
+  // The colour of a selection (outline, marks): clear and remove red.
+  const selectColor = editMode === 'cut' ? CUT_COLOR : editMode === 'group' ? GROUP_COLOR : REMOVE_COLOR;
+
+  const leaveGroup = () => {
+    setGroup(null);
+    setGroupDrag(null);
+  };
   const leaveEdit = () => {
     setEditMode(null);
     setSelection(null);
+    selectingRef.current = false;
     setSelecting(false);
     setEditError('');
   };
@@ -411,6 +570,7 @@ const ImageCanvasStage = ({
       const key = event.key.toLowerCase();
       if (key === 'escape') {
         leaveEdit();
+        leaveGroup();
         return;
       }
       const edit = EDIT_KEYS[key];
@@ -578,13 +738,19 @@ const ImageCanvasStage = ({
         ctx.rect(left, top, right - left, bottom - top);
         ctx.fillStyle = 'rgba(16, 20, 25, 0.45)';
         ctx.fill('evenodd');
+      } else if (pointSelect) {
+        ctx.save();
+        ctx.globalAlpha = 0.12;
+        ctx.fillStyle = selectColor;
+        ctx.fillRect(left, top, right - left, bottom - top);
+        ctx.restore();
       } else {
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(left, top, right - left, bottom - top);
       }
       ctx.setLineDash([6 * px, 4 * px]);
       ctx.lineWidth = 1.5 * px;
-      ctx.strokeStyle = editMode === 'crop' ? '#0d6efd' : '#C44D26';
+      ctx.strokeStyle = editMode === 'crop' ? '#0d6efd' : selectColor;
       ctx.strokeRect(left, top, right - left, bottom - top);
       ctx.setLineDash([]);
     }
@@ -600,6 +766,30 @@ const ImageCanvasStage = ({
       ctx.strokeText(text, x, y);
       ctx.fillStyle = color;
       ctx.fillText(text, x, y);
+    };
+    // Pins (A, L): a fraction of the image on the canvas, the dashed line from
+    // a point to where it is dragged / pinned, and a pin's numbered crosshair.
+    const fractionToCanvas = ([fx, fy]: ImagePoint): ImagePoint => [drawX + fx * drawWidth, drawY + fy * drawHeight];
+    const pinLine = (from: ImagePoint, to: ImagePoint, color: string) => {
+      ctx.beginPath();
+      ctx.moveTo(from[0], from[1]);
+      ctx.lineTo(to[0], to[1]);
+      ctx.setLineDash([5 * px, 4 * px]);
+      ctx.lineWidth = 2 * px;
+      ctx.strokeStyle = color;
+      ctx.stroke();
+      ctx.setLineDash([]);
+    };
+    const pinMark = ([tx, ty]: ImagePoint, number: number, color: string) => {
+      ctx.beginPath();
+      ctx.moveTo(tx - 10 * px, ty);
+      ctx.lineTo(tx + 10 * px, ty);
+      ctx.moveTo(tx, ty - 10 * px);
+      ctx.lineTo(tx, ty + 10 * px);
+      ctx.lineWidth = 2.5 * px;
+      ctx.strokeStyle = color;
+      ctx.stroke();
+      drawLabel(String(number + 1), tx + 8 * px, ty - 10 * px, color, 13);
     };
 
     // Sensors placed by hand: numbered dots with their label (MAC) beside.
@@ -630,8 +820,8 @@ const ImageCanvasStage = ({
     // Measure points, rainbow-coloured in sensor order; a smartex dm sensor
     // is its band line from the point (start) to its end. The hovered one is
     // drawn last, on top. Sizes are screen pixels (px) at any zoom.
-    const hovered = hover ? (items[hover.index] ?? null) : null;
-    const shown = placement ? [] : items;
+    const hovered = hover ? (shownItems[hover.index] ?? null) : null;
+    const shown = placement ? [] : shownItems;
     const positioned = shown.map((item) => ({
       item,
       start: normalizedToCanvas(item.start, transform),
@@ -668,6 +858,85 @@ const ImageCanvasStage = ({
       ctx.setLineDash([]);
     });
 
+    // D + drag: the points to remove, crossed out in red; O / L + drag: the
+    // points to cut out / align, ringed.
+    positioned
+      .filter(({ item }) => selectedItems.has(item))
+      .forEach(({ start, end }) => {
+        if (end) {
+          ctx.beginPath();
+          ctx.moveTo(start[0], start[1]);
+          ctx.lineTo(end[0], end[1]);
+          ctx.setLineDash([4 * px, 3 * px]);
+          ctx.lineWidth = 2 * px;
+          ctx.strokeStyle = '#ffffff';
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+        ctx.strokeStyle = selectColor;
+        ctx.lineWidth = 2.5 * px;
+        [start, ...(end ? [end] : [])].forEach(([x, y]) => {
+          const arm = 6 * px;
+          ctx.beginPath();
+          if (pointSelect === 'remove') {
+            ctx.moveTo(x - arm, y - arm);
+            ctx.lineTo(x + arm, y + arm);
+            ctx.moveTo(x + arm, y - arm);
+            ctx.lineTo(x - arm, y + arm);
+          } else {
+            ctx.arc(x, y, 10 * px, 0, Math.PI * 2);
+          }
+          ctx.stroke();
+        });
+      });
+
+    // Group alignment (L): its points haloed, each pin's target a crosshair,
+    // the point being dragged follows the mouse.
+    if (group) {
+      ctx.strokeStyle = GROUP_COLOR;
+      ctx.lineWidth = 2 * px;
+      positioned
+        .filter(({ item }) => group.ids.has(Number(item.point.id)))
+        .forEach(({ start, end }) => {
+          [start, ...(end ? [end] : [])].forEach(([x, y]) => {
+            ctx.beginPath();
+            ctx.arc(x, y, 9 * px, 0, Math.PI * 2);
+            ctx.stroke();
+          });
+        });
+      group.pins.forEach((pin, number) => pinMark(fractionToCanvas(pin.target), number, GROUP_COLOR));
+      if (groupDrag) {
+        pinLine(fractionToCanvas(groupDrag.source), groupDrag.at, GROUP_COLOR);
+        ctx.beginPath();
+        ctx.arc(groupDrag.at[0], groupDrag.at[1], 7 * px, 0, Math.PI * 2);
+        ctx.fillStyle = GROUP_COLOR;
+        ctx.fill();
+      }
+    }
+
+    // I held: the cut points where a click inserts them, dashed.
+    if (insertGhost) {
+      ctx.strokeStyle = CUT_COLOR;
+      ctx.fillStyle = 'rgba(183, 121, 31, 0.25)';
+      ctx.lineWidth = 2 * px;
+      ctx.setLineDash([4 * px, 3 * px]);
+      insertGhost.forEach((ghost) => {
+        const start = normalizedToCanvas(ghost.start, transform);
+        ctx.beginPath();
+        if (ghost.end) {
+          const end = normalizedToCanvas(ghost.end, transform);
+          ctx.moveTo(start[0], start[1]);
+          ctx.lineTo(end[0], end[1]);
+          ctx.stroke();
+        } else {
+          ctx.arc(start[0], start[1], 6.5 * px, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        }
+      });
+      ctx.setLineDash([]);
+    }
+
     // Numbers where there is room for them (average distance on screen),
     // the hovered one always.
     const planArea = drawWidth * pointScaleX * drawHeight * pointScaleY;
@@ -692,37 +961,17 @@ const ImageCanvasStage = ({
     // where its sensor point lies now - the lines vanish once it fits; the
     // sensor being dragged follows the mouse.
     if (aligning) {
-      const fractionToCanvas = ([fx, fy]: ImagePoint): ImagePoint => [drawX + fx * drawWidth, drawY + fy * drawHeight];
-      const pinLine = (from: ImagePoint, to: ImagePoint) => {
-        ctx.beginPath();
-        ctx.moveTo(from[0], from[1]);
-        ctx.lineTo(to[0], to[1]);
-        ctx.setLineDash([5 * px, 4 * px]);
-        ctx.lineWidth = 2 * px;
-        ctx.strokeStyle = '#0d6efd';
-        ctx.stroke();
-        ctx.setLineDash([]);
-      };
       pins.forEach((pin, number) => {
-        const from = normalizedToCanvas(pin.source, transform);
-        const [tx, ty] = fractionToCanvas(pin.target);
-        pinLine(from, [tx, ty]);
-        ctx.beginPath();
-        ctx.moveTo(tx - 10 * px, ty);
-        ctx.lineTo(tx + 10 * px, ty);
-        ctx.moveTo(tx, ty - 10 * px);
-        ctx.lineTo(tx, ty + 10 * px);
-        ctx.lineWidth = 2.5 * px;
-        ctx.strokeStyle = '#0d6efd';
-        ctx.stroke();
-        drawLabel(String(number + 1), tx + 8 * px, ty - 10 * px, '#0d6efd', 13);
+        const target = fractionToCanvas(pin.target);
+        pinLine(normalizedToCanvas(pin.source, transform), target, '#0d6efd');
+        pinMark(target, number, '#0d6efd');
       });
       if (alignDrag) {
         const from = normalizedToCanvas(alignDrag.source, transform);
-        pinLine(from, alignDrag.at);
+        pinLine(from, alignDrag.at, '#0d6efd');
         ctx.beginPath();
         ctx.arc(alignDrag.at[0], alignDrag.at[1], 7 * px, 0, Math.PI * 2);
-        ctx.fillStyle = items[alignDrag.index]?.color ?? '#0d6efd';
+        ctx.fillStyle = shownItems[alignDrag.index]?.color ?? '#0d6efd';
         ctx.fill();
         ctx.lineWidth = 2 * px;
         ctx.strokeStyle = '#ffffff';
@@ -767,10 +1016,16 @@ const ImageCanvasStage = ({
   }, [
     editMode,
     selection,
+    pointSelect,
+    selectColor,
+    selectedItems,
+    group,
+    groupDrag,
+    insertGhost,
     referencePoint,
     calibrationPoints,
     image,
-    items,
+    shownItems,
     hover,
     aligning,
     pins,
@@ -812,8 +1067,7 @@ const ImageCanvasStage = ({
 
   useEffect(() => {
     const handleMouseMove = (event: MouseEvent) => {
-      if (selectMoveRef.current) {
-        selectMoveRef.current(event);
+      if (selectMoveRef.current?.(event)) {
         return;
       }
       if (!dragRef.current) {
@@ -829,10 +1083,12 @@ const ImageCanvasStage = ({
 
     const handleMouseUp = () => {
       dragRef.current = null;
+      selectingRef.current = false;
       setSelecting(false);
       // Released off the canvas: the "Align" drag is dropped (on it, the
       // canvas pins it first - see handleCanvasMouseUp).
       setAlignDrag(null);
+      setGroupDrag(null);
       sensorDragRef.current = null;
     };
 
@@ -947,16 +1203,18 @@ const ImageCanvasStage = ({
     ];
   };
   // While a selection is dragged, the mouse anywhere on the page moves its
-  // second corner (the window's mousemove, see above).
-  const selectMoveRef = useRef<((event: MouseEvent) => void) | null>(null);
-  selectMoveRef.current = selecting
-    ? (event) => {
-        const point = imagePointOnPlan(event);
-        if (point) {
-          setSelection((current) => (current ? [current[0], point] : current));
-        }
-      }
-    : null;
+  // second corner (the window's mousemove, see above) - true if it did.
+  const selectMoveRef = useRef<(event: MouseEvent) => boolean>(() => false);
+  selectMoveRef.current = (event) => {
+    if (!selectingRef.current) {
+      return false;
+    }
+    const point = imagePointOnPlan(event);
+    if (point) {
+      setSelection((current) => (current ? [current[0], point] : current));
+    }
+    return true;
+  };
 
   const pointTransform = (): PointTransform | null => {
     const canvas = canvasRef.current;
@@ -1013,7 +1271,7 @@ const ImageCanvasStage = ({
     }
     let best: number | null = null;
     let bestDistance = HOVER_TOLERANCE * px;
-    for (const [index, item] of items.entries()) {
+    for (const [index, item] of shownItems.entries()) {
       const start = normalizedToCanvas(item.start, transform);
       const distance = item.end
         ? segmentDistance(canvasPoint, start, normalizedToCanvas(item.end, transform))
@@ -1026,8 +1284,9 @@ const ImageCanvasStage = ({
     return best;
   };
 
-  /** "Align": the sensor under the mouse and the grabbed point on it
-   * (normalized - on a dm line where it was grabbed), or null. */
+  /** "Align" (A, L): the sensor under the mouse (as shown) and the grabbed
+   * point on it - normalized, as stored (not where a group alignment shows
+   * it); on a dm line where it was grabbed - or null. */
   const grabAt = (event: React.MouseEvent<HTMLCanvasElement>) => {
     const index = itemAt(event);
     const transform = pointTransform();
@@ -1036,11 +1295,12 @@ const ImageCanvasStage = ({
       return null;
     }
     const item = items[index];
-    if (!item.end) {
+    const shownItem = shownItems[index];
+    if (!item.end || !shownItem.end) {
       return { index, source: item.start, at };
     }
-    const [ax, ay] = normalizedToCanvas(item.start, transform);
-    const [bx, by] = normalizedToCanvas(item.end, transform);
+    const [ax, ay] = normalizedToCanvas(shownItem.start, transform);
+    const [bx, by] = normalizedToCanvas(shownItem.end, transform);
     const lengthSq = (bx - ax) ** 2 + (by - ay) ** 2;
     const t = lengthSq ? clamp(((at[0] - ax) * (bx - ax) + (at[1] - ay) * (by - ay)) / lengthSq, 0, 1) : 0;
     const source: ImagePoint = [
@@ -1061,6 +1321,17 @@ const ImageCanvasStage = ({
 
   // A dragged sensor dropped on the plan: pinned there (again, if it was).
   const handleCanvasMouseUp = () => {
+    if (groupDrag) {
+      const target = imageFractionAt(groupDrag.at);
+      if (target && target.every((value) => value >= -0.05 && value <= 1.05)) {
+        const pin = { id: groupDrag.id, source: groupDrag.source, target };
+        setGroup((current) =>
+          current ? { ...current, pins: [...current.pins.filter((existing) => existing.id !== pin.id), pin] } : current,
+        );
+      }
+      setGroupDrag(null);
+      return;
+    }
     if (!alignDrag) {
       return;
     }
@@ -1087,7 +1358,17 @@ const ImageCanvasStage = ({
   };
 
   const handleMouseMove = (event: React.MouseEvent<HTMLCanvasElement>) => {
-    if (selecting) {
+    if (selectingRef.current) {
+      return;
+    }
+    if (heldKey === 'i' && canInsert) {
+      setInsertAt(normalizedPointAt(event));
+    }
+    if (groupDrag) {
+      const at = canvasPointAt(event);
+      if (at) {
+        setGroupDrag({ ...groupDrag, at });
+      }
       return;
     }
     if (alignDrag) {
@@ -1145,12 +1426,40 @@ const ImageCanvasStage = ({
 
   const handleMouseDown = (event: React.MouseEvent<HTMLCanvasElement>) => {
     pressRef.current = null;
-    // Image edit (C / X): a drag selects the area - a new one replaces it,
-    // Shift + drag still pans.
-    if (editMode && canEditImage && !editBusy && !event.shiftKey) {
+    // I held: a click inserts the cut points there.
+    if (heldKey === 'i' && canInsert) {
+      const point = normalizedPointAt(event);
+      if (point && !editBusy) {
+        setInsertAt(point);
+        insertCut(point);
+      }
+      return;
+    }
+    // Group alignment (L): a press on one of its points drags it to its
+    // place (elsewhere, or with Shift, it pans).
+    if (group && !event.shiftKey) {
+      const grabbed = grabAt(event);
+      const id = grabbed ? Number(items[grabbed.index].point.id) : NaN;
+      if (grabbed && image && group.ids.has(id)) {
+        const size = [image.naturalWidth, image.naturalHeight] as const;
+        const source = toFraction(grabbed.source, planAlignment, ...size, alignmentBaseScale(...size));
+        setGroupDrag({ id, source, at: grabbed.at });
+        setHover(null);
+        return;
+      }
+    }
+    // Image edit (C / X) or a point selection (D / O / L held, then on until
+    // its button, Cancel or Esc): a drag selects the area - a new one
+    // replaces it, Shift + drag still pans.
+    const heldSelect = heldKey ? SELECT_KEYS[heldKey] : undefined;
+    const startHeld = heldSelect != null && canSelectFor(heldSelect) && !aligning && !group;
+    const mode: SelectMode | null = startHeld ? heldSelect : group ? null : editMode;
+    if (mode && canSelectFor(mode) && !editBusy && !event.shiftKey) {
       const point = imagePointOnPlan(event);
       if (point) {
+        setEditMode(mode);
         setSelection([point, point]);
+        selectingRef.current = true;
         setSelecting(true);
         setEditError('');
         setHover(null);
@@ -1159,7 +1468,7 @@ const ImageCanvasStage = ({
     }
     // A held: a press on a sensor drags it to its place (elsewhere it pans);
     // the first one remembers the alignment before, for "Cancel".
-    if (alignKey && canAlign && tool !== 'reference') {
+    if (alignKey && canAlign && !group && tool !== 'reference') {
       const grabbed = grabAt(event);
       if (grabbed) {
         if (!aligning) {
@@ -1288,6 +1597,18 @@ const ImageCanvasStage = ({
    * shown with it (a crop moves it onto the cropped image); the new image
    * is loaded in place. */
   const applyEdit = () => {
+    if (editMode === 'remove') {
+      removePoints();
+      return;
+    }
+    if (editMode === 'cut') {
+      cutSelected();
+      return;
+    }
+    if (editMode === 'group') {
+      startGroup();
+      return;
+    }
     if (!editMode || !selectionRect || locationId == null || lageplanId == null) {
       return;
     }
@@ -1355,6 +1676,115 @@ const ImageCanvasStage = ({
           `Could not ${action === 'crop' ? 'crop the plan' : 'clear the area'}: ${requestReason(editFailure)}`,
         );
       },
+    );
+  };
+
+  /** "Remove": the server deletes the selected measure points; the caller
+   * drops them from what it shows (onPointsRemoved). */
+  const removePoints = () => {
+    if (!selectedIds.length || locationId == null) {
+      return;
+    }
+    setEditBusy(true);
+    setEditError('');
+    void axiosConfig.perform_post(
+      auth,
+      '/v1/status/measure_points/remove/',
+      { location_id: locationId, point_ids: selectedIds },
+      (response: { data?: Record<string, unknown> }) => {
+        setEditBusy(false);
+        leaveEdit();
+        setHover(null);
+        onPointsRemoved?.(response?.data ?? {});
+      },
+      (removeFailure: unknown) => {
+        setEditBusy(false);
+        setEditError(`Could not remove the measure points: ${requestReason(removeFailure)}`);
+      },
+    );
+  };
+
+  /** "Cut": the selected points go to the caller's clipboard (onCut) -
+   * nothing is stored before they are inserted (I + click). */
+  const cutSelected = () => {
+    const points = [...selectedItems].map((item) => item.point).filter((point) => Number.isInteger(Number(point.id)));
+    if (!points.length) {
+      return;
+    }
+    leaveEdit();
+    setHover(null);
+    onCut?.(points);
+  };
+
+  /** "Align N": the selected points are aligned by themselves (L) - drag
+   * them onto their place, then "Apply". */
+  const startGroup = () => {
+    if (!selectedIds.length) {
+      return;
+    }
+    const ids = new Set(selectedIds);
+    leaveEdit();
+    setGroup({ ids, pins: [] });
+  };
+
+  /** Moves points onto this plan at new normalized positions (measure_points/place). */
+  const placePoints = (
+    positions: Array<{ id: number; start: ImagePoint; end: ImagePoint | null }>,
+    action: 'insert' | 'align',
+    onDone: () => void,
+  ) => {
+    if (locationId == null || lageplanId == null) {
+      return;
+    }
+    setEditBusy(true);
+    setEditError('');
+    void axiosConfig.perform_post(
+      auth,
+      '/v1/status/measure_points/place/',
+      {
+        location_id: locationId,
+        lageplan_id: lageplanId,
+        points: positions.map(({ id, start, end }) => ({
+          id,
+          nx: start[0],
+          ny: start[1],
+          ...(end ? { nx_end: end[0], ny_end: end[1] } : {}),
+        })),
+      },
+      (response: { data?: Record<string, unknown> }) => {
+        setEditBusy(false);
+        setHover(null);
+        onDone();
+        onPointsPlaced?.(response?.data ?? {}, action);
+      },
+      (placeFailure: unknown) => {
+        setEditBusy(false);
+        setEditError(
+          `Could not ${action === 'insert' ? 'insert the cut points' : 'store the aligned points'}: ${requestReason(placeFailure)}`,
+        );
+      },
+    );
+  };
+
+  // I + click: the cut points onto this plan, their middle at the click.
+  const insertCut = (at: ImagePoint) => {
+    const placed = cutPlacedAt(cutItems, at);
+    if (placed) {
+      placePoints(placed, 'insert', () => setInsertAt(null));
+    }
+  };
+
+  // Group "Apply": the group's points where the pins put them.
+  const storeGroup = () => {
+    if (!group || !groupTransform) {
+      return;
+    }
+    placePoints(
+      shownItems
+        .filter((item) => group.ids.has(Number(item.point.id)))
+        .map((item) => ({ id: Number(item.point.id), start: item.start, end: item.end })),
+      'align',
+      leaveGroup,
     );
   };
 
@@ -1460,7 +1890,20 @@ const ImageCanvasStage = ({
   const hoveredItem = hover ? (items[hover.index] ?? null) : null;
   const cssHeight = (cssWidth * CANVAS_HEIGHT) / CANVAS_WIDTH;
   const tooltipBelow = hover ? hover.y < cssHeight - 140 : true;
-  const editing = editMode != null && canEditImage;
+  const editing = editMode != null && canSelectFor(editMode);
+  const selectingPoints = editing && pointSelect != null;
+  const pointNoun = lineMode ? 'dm sensor' : 'measure point';
+  // What D / O / L + drag do, for the badge and the button under the selection.
+  const POINT_ACTIONS: Record<PointSelect, { name: string; doing: string; button: string }> = {
+    remove: { name: 'Remove', doing: 'to remove', button: 'Remove' },
+    cut: { name: 'Cut out', doing: 'to cut out - insert them with I', button: 'Cut' },
+    group: { name: 'Align a group', doing: 'to align by themselves', button: 'Align' },
+  };
+  const heldSelect = heldKey ? SELECT_KEYS[heldKey] : undefined;
+  const pointBadge = (mode: PointSelect, selected: boolean) =>
+    selected
+      ? `${POINT_ACTIONS[mode].name}: ${selectedIds.length} ${pointNoun}(s) selected · Esc cancels`
+      : `${POINT_ACTIONS[mode].name}: drag over the ${pointNoun}s ${POINT_ACTIONS[mode].doing}`;
   // "Apply" floats below the selection's lower right corner (CSS pixels), on the canvas.
   const applyAt = (() => {
     if (!editing || !selectionRect || selecting || !image) {
@@ -1474,10 +1917,29 @@ const ImageCanvasStage = ({
       top: clamp(bottom + 8, 8, Math.max(8, cssHeight - 44)),
     };
   })();
+  const badgeColor = editing
+    ? editMode === 'crop'
+      ? '#0d6efd'
+      : selectColor
+    : heldKey === 'i' && canInsert
+      ? CUT_COLOR
+      : group
+        ? GROUP_COLOR
+        : heldSelect && canSelectFor(heldSelect)
+          ? { remove: REMOVE_COLOR, cut: CUT_COLOR, group: GROUP_COLOR }[heldSelect]
+          : '#0d6efd';
   const badge = editing
     ? editMode === 'crop'
       ? 'Crop: drag the area to keep · Esc cancels'
-      : 'Clear: drag over the area to fill white · Esc cancels'
+      : pointSelect
+        ? pointBadge(pointSelect, selectionRect != null && !selecting)
+        : 'Clear: drag over the area to fill white · Esc cancels'
+    : heldKey === 'i' && canInsert
+      ? `Insert ${cutItems.length} cut ${pointNoun}(s): click where their middle goes`
+    : group
+      ? `Align ${group.ids.size} ${pointNoun}(s): drag them onto their place · Esc cancels`
+    : heldSelect && canSelectFor(heldSelect) && !aligning
+      ? pointBadge(heldSelect, false)
     : alignKey && canAlign
       ? `Align: drag a ${lineMode ? 'dm line' : 'sensor'} onto its right place`
       : canScale && heldKey === 'r'
@@ -1516,12 +1978,16 @@ const ImageCanvasStage = ({
               boxShadow: 'inset 0 0 0 1px rgba(11, 54, 89, 0.08)',
               cursor:
                 editing ||
+                (heldSelect && canSelectFor(heldSelect)) ||
+                (heldKey === 'i' && canInsert) ||
                 tool === 'reference' ||
                 placement?.activeDeviceId != null ||
                 (canScale && (heldKey === 'r' || heldKey === 'm'))
                   ? 'crosshair'
-                  : dragRef.current || alignDrag
+                  : dragRef.current || alignDrag || groupDrag
                     ? 'grabbing'
+                    : group && hoveredItem && group.ids.has(Number(hoveredItem.point.id))
+                      ? 'grab'
                     : alignKey && canAlign
                       ? hoveredItem
                         ? 'grab'
@@ -1549,7 +2015,7 @@ const ImageCanvasStage = ({
                 transform: 'translateX(-50%)',
                 zIndex: 2,
                 pointerEvents: 'none',
-                background: editing && editMode === 'clear' ? '#C44D26' : '#0d6efd',
+                background: badgeColor,
                 color: '#ffffff',
                 borderRadius: 'var(--progeo-radius-pill)',
                 padding: '5px 14px',
@@ -1566,12 +2032,22 @@ const ImageCanvasStage = ({
             <div className="d-flex gap-2" style={{ position: 'absolute', ...applyAt, zIndex: 3 }}>
               <button
                 type="button"
-                className={`btn btn-sm ${editMode === 'clear' ? 'btn-danger' : 'btn-primary'}`}
-                style={{ ...PILL_BUTTON, boxShadow: '0 2px 8px rgba(11, 54, 89, .25)' }}
-                disabled={editBusy}
+                className={`btn btn-sm ${editMode === 'crop' ? 'btn-primary' : 'btn-danger'}`}
+                style={{
+                  ...PILL_BUTTON,
+                  boxShadow: '0 2px 8px rgba(11, 54, 89, .25)',
+                  ...(pointSelect && pointSelect !== 'remove'
+                    ? { background: selectColor, borderColor: selectColor, color: '#ffffff' }
+                    : {}),
+                }}
+                disabled={editBusy || (selectingPoints && selectedIds.length === 0)}
                 onClick={applyEdit}
               >
-                {editBusy ? 'Applying…' : 'Apply'}
+                {editBusy
+                  ? 'Applying…'
+                  : selectingPoints && pointSelect
+                    ? `${POINT_ACTIONS[pointSelect].button} ${selectedIds.length}`
+                    : 'Apply'}
               </button>
               <button
                 type="button"
@@ -1699,10 +2175,41 @@ const ImageCanvasStage = ({
               entries: [
                 { keys: ['C'], label: 'Clear an area - fill it white', active: editMode === 'clear' },
                 { keys: ['X'], label: 'Crop the plan to an area', active: editMode === 'crop' },
-                editing && { keys: ['Drag'], label: selectionRect ? 'Select the area again' : 'Select the area', active: !selectionRect },
+                editing && !selectingPoints && {
+                  keys: ['Drag'],
+                  label: selectionRect ? 'Select the area again' : 'Select the area',
+                  active: !selectionRect,
+                },
                 { keys: ['Esc'], label: 'Cancel' },
               ],
               note: 'Nothing changes before "Apply" - the sensors keep their place.',
+            },
+            (canRemovePoints || canCut || canGroup || canInsert) && {
+              title: lineMode ? 'dm sensors' : 'Measure points',
+              entries: [
+                canRemovePoints && {
+                  keys: ['D', 'Drag'],
+                  label: `Hold D, drag over ${pointNoun}s to remove them`,
+                  active: heldKey === 'd' || editMode === 'remove',
+                },
+                canCut && {
+                  keys: ['O', 'Drag'],
+                  label: `Hold O, drag over ${pointNoun}s to cut them out`,
+                  active: heldKey === 'o' || editMode === 'cut',
+                },
+                canInsert && {
+                  keys: ['I', 'Click'],
+                  label: `Hold I, click where the ${cutItems.length} cut one(s) go - on any plan`,
+                  active: heldKey === 'i',
+                },
+                canGroup && {
+                  keys: ['L', 'Drag'],
+                  label: `Hold L, drag over ${pointNoun}s to align them by themselves`,
+                  active: heldKey === 'l' || editMode === 'group' || group != null,
+                },
+                { keys: ['Esc'], label: 'Cancel' },
+              ],
+              note: `Removing is for good once "Remove" is pressed; cut ${pointNoun}s stay where they were until inserted. All keep their number.`,
             },
           ]}
         />
@@ -1722,6 +2229,80 @@ const ImageCanvasStage = ({
           </div>
         )}
       </div>
+
+      {group && (
+        <div
+          className="d-flex flex-wrap align-items-center gap-2"
+          style={{ ...ACTION_PANEL, background: '#F1EBFA', color: '#3D2366' }}
+        >
+          <div style={{ flex: '1 1 260px' }}>
+            <div style={{ fontWeight: 600 }}>
+              Aligning {group.ids.size} {pointNoun}(s) by themselves · {group.pins.length} pinned
+            </div>
+            <div>
+              {groupFit && 'problem' in groupFit && group.pins.length
+                ? groupFit.problem
+                : group.pins.length === 0
+                  ? `Drag one of them onto its place - one pin moves the group, two or more far apart also scale it. The plan's alignment and the other ${pointNoun}s stay.`
+                  : group.pins.length === 1
+                    ? 'Moved by the pin. Drag another one, far from the first, to scale them too - or apply.'
+                    : 'Moved and scaled by the pins. Dragging one again moves its pin.'}
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn btn-sm btn-outline-secondary"
+            style={PILL_BUTTON}
+            disabled={editBusy}
+            onClick={leaveGroup}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm"
+            style={{ ...PILL_BUTTON, background: GROUP_COLOR, borderColor: GROUP_COLOR, color: '#ffffff' }}
+            disabled={editBusy || !groupTransform || group.pins.length === 0}
+            onClick={storeGroup}
+          >
+            {editBusy ? 'Storing…' : 'Apply'}
+          </button>
+        </div>
+      )}
+
+      {cutItems.length > 0 && (
+        <div
+          className="d-flex flex-wrap align-items-center gap-2"
+          style={{ ...ACTION_PANEL, background: '#FBF3DE', color: '#6B4E0B' }}
+        >
+          <div style={{ flex: '1 1 260px' }}>
+            <div style={{ fontWeight: 600 }}>
+              {cutItems.length} {pointNoun}(s) cut out
+            </div>
+            <div>
+              {canInsert ? (
+                <>
+                  Hold <kbd style={KEY_BADGE}>I</kbd> and click where they go - on this plan or another one. Until
+                  then they stay where they were.
+                </>
+              ) : (
+                'Open the plan they go onto to insert them. Until then they stay where they were.'
+              )}
+            </div>
+          </div>
+          {onDiscardCut && (
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-secondary"
+              style={PILL_BUTTON}
+              disabled={editBusy}
+              onClick={onDiscardCut}
+            >
+              Put back
+            </button>
+          )}
+        </div>
+      )}
 
       {editError && (
         <div

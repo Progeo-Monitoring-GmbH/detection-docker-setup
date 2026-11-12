@@ -14,7 +14,7 @@ from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import FileSystemStorage
 from django.db import transaction
-from django.db.models import OuterRef, Q, Subquery
+from django.db.models import OuterRef, Subquery
 from django.http import FileResponse, JsonResponse, RawPostDataException
 from django.utils import timezone
 from rest_framework.authentication import SessionAuthentication
@@ -146,6 +146,18 @@ def _measure_point_location(request, params):
         if device and device.location:
             return device.location, db_name, None
     return None, None, RequestFailed({"reason": f"No location found for device {device_id}"})
+
+
+def _import_lageplan_id(request, location, db_name):
+    """(pk of the Lageplan imported points go onto, error_response): the
+    request's `lageplan_id` if it is at the location, else the main plan's -
+    None while the location has no plan (cad_import.import_lageplan)."""
+    raw = request.query_params.get("lageplan_id") or request.data.get("lageplan_id")
+    try:
+        lageplan = cad_import.import_lageplan(location, db_name, raw)
+    except cad_import.LageplanGone as exc:
+        return None, RequestFailed({"reason": str(exc)})
+    return (lageplan.pk if lageplan else None), None
 
 
 def _lageplan_path(file_name):
@@ -608,6 +620,10 @@ class StatusViewSet(ProgeoModalViewSet):
         device_ranges, error = _point_devices(request, location, db_name)
         if error:
             return error
+        # The points go onto this plan (`lageplan_id`, else the main plan).
+        lageplan_id, error = _import_lageplan_id(request, location, db_name)
+        if error:
+            return error
 
         json_path = request.FILES.get("files0")
         data = json.load(json_path)
@@ -619,6 +635,8 @@ class StatusViewSet(ProgeoModalViewSet):
                                                                 db=db_name)
             # A dm band's end (cad_reader output) and the connected device.
             changed = {field: point[field] for field in cad_import.END_FIELDS if field in point}
+            if measure_point and measure_point.lageplan_id != lageplan_id:
+                changed["lageplan_id"] = lageplan_id
             if device_ranges and measure_point:
                 changed["device_id"] = cad_import.device_of(device_ranges, measure_point.sensor_order)
             if measure_point and changed:
@@ -669,11 +687,7 @@ class StatusViewSet(ProgeoModalViewSet):
         if lageplan is None:
             return RequestFailed({"reason": f"Lageplan {lageplan_id} is not at this location"})
 
-        on_plan = ProgeoMeasurePoint.objects.using(db_name).filter(location=location, lageplan=lageplan)
-        if plans.order_by("-is_active", "-id").values_list("pk", flat=True).first() == lageplan.pk:
-            on_plan = ProgeoMeasurePoint.objects.using(db_name).filter(location=location).filter(
-                Q(lageplan=lageplan) | Q(lageplan__isnull=True)
-            )
+        on_plan = cad_import.points_on_plan(location, db_name, lageplan)
         file_name = lageplan.lageplan.name if lageplan.lageplan else ""
         with transaction.atomic(using=db_name):
             removed_points, _ = on_plan.delete()
@@ -786,11 +800,114 @@ class StatusViewSet(ProgeoModalViewSet):
 
     @calc_runtime
     @require_module_permissions("module_devices_enabled", "module_devices_edit")
+    @action(detail=False, url_path="measure_points/remove", methods=["POST"])
+    def remove_measure_points(self, request, *args, **kwargs):
+        """Removes some measure points of a location (step 5 of the Lageplan
+        wizard: D + drag over the useless ones): POST {location_id (project
+        id), point_ids}. Points of other locations are not touched; the rest
+        keep their sensor_order (it addresses the sensor on its device). The
+        answer lists the ids actually removed."""
+        location, db_name, error = _measure_point_location(request, {"location_id": request.data.get("location_id")})
+        if error:
+            return error
+        raw_ids = request.data.get("point_ids")
+        try:
+            if not isinstance(raw_ids, list) or not raw_ids or any(isinstance(value, bool) for value in raw_ids):
+                raise ValueError
+            point_ids = {int(value) for value in raw_ids}
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "point_ids must be a non-empty list of measure point ids"})
+
+        points = ProgeoMeasurePoint.objects.using(db_name).filter(location=location, pk__in=point_ids)
+        with transaction.atomic(using=db_name):
+            removed_ids = sorted(points.values_list("pk", flat=True))
+            ProgeoMeasurePoint.objects.using(db_name).filter(pk__in=removed_ids).delete()
+
+        ilog(f"{len(removed_ids)} measure point(s) of location {location.id} removed: {removed_ids}")
+        return RequestSuccess({
+            "location_id": location.id,
+            "point_ids": removed_ids,
+            "removed": len(removed_ids),
+            "message": f"{len(removed_ids)} measure point(s) removed.",
+        })
+
+    # Normalized positions placed points may get - a little off the plan's
+    # frame is fine (moved between plans), far off is a mistake.
+    PLACE_LIMIT = 10.0
+
+    @calc_runtime
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
+    @action(detail=False, url_path="measure_points/place", methods=["POST"])
+    def place_measure_points(self, request, *args, **kwargs):
+        """Moves measure points of a location onto a Lageplan at new positions
+        (step 5 of the Lageplan wizard: cut points inserted with I + click, a
+        group aligned with L): POST {location_id (project id), lageplan_id,
+        points: [{id, nx, ny, nx_end?, ny_end?}]}. Only the normalized position
+        and the plan change - sensor_order (the sensor on its device) and the
+        CAD coordinates x/y stay. The answer lists the moved points."""
+        location, db_name, error = _measure_point_location(request, {"location_id": request.data.get("location_id")})
+        if error:
+            return error
+        try:
+            lageplan_id = int(request.data.get("lageplan_id"))
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "lageplan_id required"})
+        lageplan = ProgeoLageplan.objects.using(db_name).filter(location=location, pk=lageplan_id).first()
+        if lageplan is None:
+            return RequestFailed({"reason": f"Lageplan {lageplan_id} is not at this location"})
+
+        raw_points = request.data.get("points")
+        if not isinstance(raw_points, list) or not raw_points:
+            return RequestFailed({"reason": "points must be a non-empty list"})
+        positions = {}
+        for index, entry in enumerate(raw_points):
+            try:
+                if not isinstance(entry, dict) or isinstance(entry.get("id"), bool):
+                    raise TypeError
+                point_id = int(entry["id"])
+                values = {field: float(entry[field]) for field in ("nx", "ny")}
+                if entry.get("nx_end") is not None and entry.get("ny_end") is not None:
+                    values.update(nx_end=float(entry["nx_end"]), ny_end=float(entry["ny_end"]))
+            except (KeyError, TypeError, ValueError):
+                return RequestFailed({"reason": f"points[{index}] needs an id and its position nx, ny"})
+            if not all(math.isfinite(value) and abs(value) <= self.PLACE_LIMIT for value in values.values()):
+                return RequestFailed({"reason": f"points[{index}] lies far off the plan"})
+            positions[point_id] = values
+
+        with transaction.atomic(using=db_name):
+            points = list(
+                ProgeoMeasurePoint.objects.using(db_name).select_for_update().filter(location=location, pk__in=positions)
+            )
+            missing = sorted(set(positions) - {point.pk for point in points})
+            if missing:
+                return RequestFailed({"reason": f"Measure point(s) {missing} are not at this location"})
+            for point in points:
+                values = positions[point.pk]
+                if point.nx_end is None:
+                    # A point sensor gets no band end.
+                    values = {field: value for field, value in values.items() if field in ("nx", "ny")}
+                for field, value in values.items():
+                    setattr(point, field, round(value, 6))
+                point.lageplan = lageplan
+                point.save(using=db_name, update_fields=["lageplan", *values])
+
+        points.sort(key=lambda point: (point.sensor_order, point.pk))
+        ilog(f"{len(points)} measure point(s) of location {location.id} placed on Lageplan {lageplan.pk}")
+        return RequestSuccess({
+            "location_id": location.id,
+            "lageplan_id": lageplan.pk,
+            "moved": len(points),
+            "points": ProgeoMeasurePointSerializer(points, many=True).data,
+        })
+
+    @calc_runtime
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
     @action(detail=False, url_path="measure_points/upload_cad", methods=["POST"])
     def upload_measure_points_from_cad(self, request, *args, **kwargs):
-        """Replaces a location's measure points with imported ones, connected
-        to the location's devices `point_devices` / `point_device_id` if given
-        (_point_devices). Text
+        """Replaces the measure points on a Lageplan (`lageplan_id`, else the
+        main plan - cad_import.store_measure_points) with imported ones, tied
+        to it and connected to the location's devices `point_devices` /
+        `point_device_id` if given (_point_devices). Text
         (semicolon rows) is stored right away; a DWG/DXF plan is read by
         progeo-cad_factory in a background job: the answer is {job_id}, follow it on
         /ws/cad_import/<job_id>/ or poll measure_points/cad_job
@@ -803,6 +920,9 @@ class StatusViewSet(ProgeoModalViewSet):
         if error:
             return error
         device_ranges, error = _point_devices(request, location, db_name)
+        if error:
+            return error
+        lageplan_id, error = _import_lageplan_id(request, location, db_name)
         if error:
             return error
 
@@ -820,7 +940,7 @@ class StatusViewSet(ProgeoModalViewSet):
                     coord_margin = 0.2
 
                 return self._queue_cad_job(request, location, db_name, upload, suffix, coord_margin=coord_margin,
-                                           device_ranges=device_ranges)
+                                           device_ranges=device_ranges, lageplan_id=lageplan_id)
 
             try:
                 text_data = upload.read().decode("utf-8", errors="replace")
@@ -845,7 +965,9 @@ class StatusViewSet(ProgeoModalViewSet):
             except ValueError as exc:
                 return RequestFailed({"reason": f"Invalid text point format: {exc}"})
 
-        return RequestSuccess(cad_import.store_measure_points(location, db_name, points, device_ranges))
+        return RequestSuccess(
+            cad_import.store_measure_points(location, db_name, points, device_ranges, lageplan_id=lageplan_id)
+        )
 
     @calc_runtime
     @require_module_permissions("module_devices_enabled", "module_devices_edit")

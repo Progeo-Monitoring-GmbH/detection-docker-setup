@@ -1,5 +1,6 @@
 """Clearing and cropping a Lageplan image (step 5 of the Lageplan wizard):
-/v1/status/measure_points/edit_lageplan/ and helper/lageplan_edit.py. A crop
+/v1/status/measure_points/edit_lageplan/ and helper/lageplan_edit.py - and
+removing measure points (measure_points/remove). A crop
 must leave every measure point, the reference point and the heat limitations
 where they were on the plan."""
 import io
@@ -10,7 +11,7 @@ from PIL import Image
 from progeo.helper import lageplan_edit
 from progeo.helper.plan_meters import alignment_base_scale
 from progeo.tests import factories as f
-from progeo.v1.models import Account, ProgeoLageplan
+from progeo.v1.models import Account, ProgeoLageplan, ProgeoMeasurePoint
 
 DEVICES = ("module_devices_enabled", "module_devices_edit")
 URL = "/v1/status/measure_points/edit_lageplan/"
@@ -179,3 +180,121 @@ def test_a_heat_limitation_crossing_the_crop_is_cut_at_its_edge():
     assert lageplan_edit.cropped_heat_limitations(areas, (100, 100), rect) == [
         {"id": "t", "name": "", "points": [[0.0, 0.0], [1.0, 0.25], [1.0, 0.75], [0.0, 1.0]]},
     ]
+
+
+REMOVE_URL = "/v1/status/measure_points/remove/"
+
+
+def test_remove_drops_only_the_given_points_of_the_location(editor, location):
+    keep, drop_a, drop_b = (f.make_measure_point(location, order) for order in (1, 2, 3))
+    other = f.make_measure_point(f.make_location(Account.objects.using(f.DB).get(pk=1), project_id=931003), 1)
+
+    response = editor.post(REMOVE_URL, {
+        "location_id": location.project_id, "point_ids": [drop_a.pk, drop_b.pk, other.pk],
+    }, format="json")
+
+    assert response.status_code == 200, response.content
+    assert response.json()["point_ids"] == sorted([drop_a.pk, drop_b.pk])
+    assert response.json()["removed"] == 2
+    remaining = ProgeoMeasurePoint.objects.using(f.DB).filter(pk__in=[keep.pk, drop_a.pk, drop_b.pk, other.pk])
+    # The rest keep their sensor_order - it addresses the sensor on its device.
+    assert sorted(remaining.values_list("pk", "sensor_order")) == sorted([(keep.pk, 1), (other.pk, 1)])
+
+
+@pytest.mark.parametrize("point_ids", [None, [], "1,2", [True], ["x"]])
+def test_remove_needs_a_list_of_ids(editor, location, point_ids):
+    point = f.make_measure_point(location, 1)
+
+    response = editor.post(REMOVE_URL, {"location_id": location.project_id, "point_ids": point_ids}, format="json")
+
+    assert response.status_code == 400
+    assert "point_ids" in response.json()["reason"]
+    assert ProgeoMeasurePoint.objects.using(f.DB).filter(pk=point.pk).exists()
+
+
+def test_remove_needs_the_edit_permission(api_client, location):
+    user = f.make_user(perms=("module_devices_enabled",))
+    f.make_access(location, user)
+    api_client.force_authenticate(user=user)
+    point = f.make_measure_point(location, 1)
+
+    response = api_client.post(REMOVE_URL, {"location_id": location.project_id, "point_ids": [point.pk]}, format="json")
+
+    assert response.status_code in (400, 403)
+    assert ProgeoMeasurePoint.objects.using(f.DB).filter(pk=point.pk).exists()
+
+
+PLACE_URL = "/v1/status/measure_points/place/"
+
+
+def _two_plans(location):
+    main = ProgeoLageplan.objects.using(f.DB).create(location=location, lageplan="lageplan/main.png")
+    second = ProgeoLageplan.objects.using(f.DB).create(location=location, lageplan="lageplan/second.png",
+                                                       is_active=False)
+    return main, second
+
+
+def test_place_moves_points_onto_a_plan_at_new_positions(editor, location):
+    main, second = _two_plans(location)
+    band = f.make_measure_point(location, 7, lageplan=main, x=50, y=60, nx=0.1, ny=0.2, nx_end=0.3, ny_end=0.2)
+    dot = f.make_measure_point(location, 8, nx=0.5, ny=0.5)
+    stays = f.make_measure_point(location, 9, lageplan=main, nx=0.9, ny=0.9)
+
+    response = editor.post(PLACE_URL, {"location_id": location.project_id, "lageplan_id": second.pk, "points": [
+        {"id": band.pk, "nx": 0.61, "ny": 0.42, "nx_end": 0.81, "ny_end": 0.42},
+        {"id": dot.pk, "nx": -0.05, "ny": 1.02, "nx_end": 0.3, "ny_end": 0.3},
+    ]}, format="json")
+
+    assert response.status_code == 200, response.content
+    assert [p["id"] for p in response.json()["points"]] == [band.pk, dot.pk]
+    band.refresh_from_db(using=f.DB)
+    dot.refresh_from_db(using=f.DB)
+    stays.refresh_from_db(using=f.DB)
+    assert (band.lageplan_id, band.nx, band.ny, band.nx_end, band.ny_end) == (second.pk, 0.61, 0.42, 0.81, 0.42)
+    # The sensor keeps its number and its CAD coordinates.
+    assert (band.sensor_order, band.x, band.y) == (7, 50, 60)
+    # A point sensor gets no band end.
+    assert (dot.lageplan_id, dot.nx, dot.ny, dot.nx_end) == (second.pk, -0.05, 1.02, None)
+    assert (stays.lageplan_id, stays.nx) == (main.pk, 0.9)
+
+
+@pytest.mark.parametrize("points, reason", [
+    ([], "non-empty list"),
+    ([{"id": "own"}], "needs an id and its position"),
+    ([{"id": True, "nx": 0, "ny": 0}], "needs an id and its position"),
+    ([{"id": "own", "nx": 50, "ny": 0}], "far off the plan"),
+    ([{"id": "own", "nx": "nan", "ny": 0}], "far off the plan"),
+])
+def test_place_validation(editor, location, points, reason):
+    _main, second = _two_plans(location)
+    point = f.make_measure_point(location, 1, nx=0.5, ny=0.5)
+    points = [{**entry, "id": point.pk} if entry.get("id") == "own" else entry for entry in points]
+
+    response = editor.post(PLACE_URL, {"location_id": location.project_id, "lageplan_id": second.pk,
+                                       "points": points}, format="json")
+
+    assert response.status_code == 400
+    assert reason in response.json()["reason"]
+    point.refresh_from_db(using=f.DB)
+    assert (point.lageplan_id, point.nx) == (None, 0.5)
+
+
+def test_place_only_points_and_plans_of_the_location(editor, location):
+    _main, second = _two_plans(location)
+    hidden = f.make_location(Account.objects.using(f.DB).get(pk=1), project_id=931004)
+    foreign_plan = ProgeoLageplan.objects.using(f.DB).create(location=hidden, lageplan="lageplan/f.png")
+    foreign_point = f.make_measure_point(hidden, 1)
+    own = f.make_measure_point(location, 1)
+
+    response = editor.post(PLACE_URL, {"location_id": location.project_id, "lageplan_id": foreign_plan.pk,
+                                       "points": [{"id": own.pk, "nx": 0.1, "ny": 0.1}]}, format="json")
+    assert (response.status_code, response.json()["reason"]) == (400, f"Lageplan {foreign_plan.pk} is not at this location")
+
+    response = editor.post(PLACE_URL, {"location_id": location.project_id, "lageplan_id": second.pk, "points": [
+        {"id": own.pk, "nx": 0.1, "ny": 0.1}, {"id": foreign_point.pk, "nx": 0.1, "ny": 0.1},
+    ]}, format="json")
+    assert (response.status_code, response.json()["reason"]) == (
+        400, f"Measure point(s) [{foreign_point.pk}] are not at this location"
+    )
+    own.refresh_from_db(using=f.DB)
+    assert own.lageplan_id is None
