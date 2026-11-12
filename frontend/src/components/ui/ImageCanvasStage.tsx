@@ -191,12 +191,22 @@ const ALIGN_STORE_DELAY = 600;
 
 /** Click tools: pan (default), place the metric reference point, or pick
  * the two points of a known distance for the meters-per-pixel calibration
- * (picked only while C is held - plain presses still pan). */
+ * (picked only while M is held - plain presses still pan). */
 type CanvasTool = 'pan' | 'reference' | 'calibrate';
 /** Held keys that change what a press on the plan does: A drags sensors to
- * align, R sets the reference point, C picks a calibration point. */
-type HeldKey = 'a' | 'r' | 'c';
-const HELD_KEYS: HeldKey[] = ['a', 'r', 'c'];
+ * align, R sets the reference point, M picks a calibration point. */
+type HeldKey = 'a' | 'r' | 'm';
+const HELD_KEYS: HeldKey[] = ['a', 'r', 'm'];
+/** Edits of the plan image, switched on by a key press: C fills the selected
+ * area white, X crops the plan to it - each only once "Apply" is pressed. */
+type ImageEdit = 'clear' | 'crop';
+const EDIT_KEYS: Record<string, ImageEdit> = { c: 'clear', x: 'crop' };
+/** Image pixels a selection needs at least (both sides) to be applied. */
+const MIN_SELECTION = 2;
+
+const requestReason = (requestError: unknown) =>
+  (requestError as { response?: { data?: { reason?: string } } })?.response?.data?.reason ??
+  (requestError as Error).message;
 
 type AlignmentValues = {
   offsetX: number;
@@ -249,6 +259,10 @@ type ImageCanvasStageProps = {
   /** Stores the metric scale (reference point in image pixels, m/px). */
   onSaveScale?: (values: PlanScaleValues) => void;
   placement?: SensorPlacement;
+  /** Enables clearing (C) and cropping (X) the plan image, done on the server
+   * (measure_points/edit_lageplan) - called with its answer, which carries
+   * the stored plan ("lageplan": new url, a crop's moved alignment). */
+  onImageEdited?: (response: Record<string, unknown>) => void;
 };
 
 const ImageCanvasStage = ({
@@ -266,6 +280,7 @@ const ImageCanvasStage = ({
   onSaveSliders,
   onSaveScale,
   placement,
+  onImageEdited,
 }: ImageCanvasStageProps) => {
   const auth = useAuth();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -320,6 +335,15 @@ const ImageCanvasStage = ({
   const [alignDrag, setAlignDrag] = useState<{ index: number; source: ImagePoint; at: ImagePoint } | null>(null);
   const aligning = pins.length > 0 || alignDrag != null;
   const [alignBefore, setAlignBefore] = useState<AlignmentValues | null>(null);
+  // Image edit (C / X): the mode, the selected area (two corners in image
+  // pixels), whether it is being dragged, and the request applying it.
+  const [editMode, setEditMode] = useState<ImageEdit | null>(null);
+  const editModeRef = useRef(editMode);
+  editModeRef.current = editMode;
+  const [selection, setSelection] = useState<[ImagePoint, ImagePoint] | null>(null);
+  const [selecting, setSelecting] = useState(false);
+  const [editBusy, setEditBusy] = useState(false);
+  const [editError, setEditError] = useState('');
 
   // Shown width of the canvas (CSS pixels): it is drawn at that size times
   // the device pixel ratio; sizes of markers and labels are screen pixels.
@@ -377,16 +401,48 @@ const ImageCanvasStage = ({
   const canAlign = withSliders && !placement && image != null && items.length >= ALIGN_PINS;
   // Reference point and calibration with the scale panel.
   const canScale = withSliders && onSaveScale != null && image != null;
-  // A/R/C (no modifier, not typing) held: what a press on the plan does;
-  // released on keyup or leaving the window.
+  // Clearing / cropping the image of a stored plan, not during the point calibration.
+  const canEditImage =
+    withSliders && onImageEdited != null && image != null && locationId != null && lageplanId != null;
+  const canEditImageRef = useRef(false);
+  canEditImageRef.current = canEditImage && !aligning;
+  const leaveEdit = () => {
+    setEditMode(null);
+    setSelection(null);
+    setSelecting(false);
+    setEditError('');
+  };
+  // A/R/M (no modifier, not typing) held: what a press on the plan does;
+  // released on keyup or leaving the window. C/X switch the image edit on
+  // and off, Escape leaves it.
   useEffect(() => {
     const typing = (target: EventTarget | null) =>
       target instanceof HTMLElement &&
       (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
     const onKeyDown = (event: KeyboardEvent) => {
-      const key = event.key.toLowerCase() as HeldKey;
-      if (HELD_KEYS.includes(key) && !event.ctrlKey && !event.metaKey && !event.altKey && !typing(event.target)) {
-        setHeldKey(key);
+      if (event.ctrlKey || event.metaKey || event.altKey || typing(event.target)) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      if (key === 'escape') {
+        leaveEdit();
+        return;
+      }
+      const edit = EDIT_KEYS[key];
+      if (edit) {
+        if (!event.repeat && canEditImageRef.current) {
+          // The other key switches the mode and keeps the selection.
+          const next = editModeRef.current === edit ? null : edit;
+          setEditMode(next);
+          setEditError('');
+          if (!next) {
+            setSelection(null);
+          }
+        }
+        return;
+      }
+      if (HELD_KEYS.includes(key as HeldKey)) {
+        setHeldKey(key as HeldKey);
       }
     };
     const onKeyUp = (event: KeyboardEvent) => {
@@ -525,6 +581,28 @@ const ImageCanvasStage = ({
     ctx.lineWidth = px;
     ctx.strokeRect(px / 2, px / 2, width - px, height - px);
     ctx.drawImage(image, drawX, drawY, drawWidth, drawHeight);
+
+    // Image edit: the selected area - white as "clear" will leave it, or the
+    // rest of the plan dimmed for "crop". The points stay on top.
+    if (editMode && selection) {
+      const [[ax, ay], [bx, by]] = selection.map(toCanvas);
+      const [left, top, right, bottom] = [Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by)];
+      if (editMode === 'crop') {
+        ctx.beginPath();
+        ctx.rect(drawX, drawY, drawWidth, drawHeight);
+        ctx.rect(left, top, right - left, bottom - top);
+        ctx.fillStyle = 'rgba(16, 20, 25, 0.45)';
+        ctx.fill('evenodd');
+      } else {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(left, top, right - left, bottom - top);
+      }
+      ctx.setLineDash([6 * px, 4 * px]);
+      ctx.lineWidth = 1.5 * px;
+      ctx.strokeStyle = editMode === 'crop' ? '#0d6efd' : '#C44D26';
+      ctx.strokeRect(left, top, right - left, bottom - top);
+      ctx.setLineDash([]);
+    }
 
     /** Text with a white halo, readable on any plan. */
     const drawLabel = (text: string, x: number, y: number, color: string, size = 11) => {
@@ -702,6 +780,8 @@ const ImageCanvasStage = ({
       ctx.stroke();
     }
   }, [
+    editMode,
+    selection,
     referencePoint,
     calibrationPoints,
     image,
@@ -747,6 +827,10 @@ const ImageCanvasStage = ({
 
   useEffect(() => {
     const handleMouseMove = (event: MouseEvent) => {
+      if (selectMoveRef.current) {
+        selectMoveRef.current(event);
+        return;
+      }
       if (!dragRef.current) {
         return;
       }
@@ -760,6 +844,7 @@ const ImageCanvasStage = ({
 
     const handleMouseUp = () => {
       dragRef.current = null;
+      setSelecting(false);
       // Released off the canvas: the "Align" drag is dropped (on it, the
       // canvas pins it first - see handleCanvasMouseUp).
       setAlignDrag(null);
@@ -824,7 +909,7 @@ const ImageCanvasStage = ({
 
   /** Canvas unit (LOGICAL) under the mouse - the canvas is shown at any width. */
   const canvasPointAt = (
-    event: React.MouseEvent<HTMLCanvasElement>,
+    event: { clientX: number; clientY: number },
   ): ImagePoint | null => {
     const canvas = canvasRef.current;
     if (!canvas) {
@@ -863,6 +948,30 @@ const ImageCanvasStage = ({
     }
     return [x, y];
   };
+
+  /** Image pixel under the mouse, moved onto the plan - a selection ends at its edge. */
+  const imagePointOnPlan = (event: { clientX: number; clientY: number }): ImagePoint | null => {
+    const canvasPoint = canvasPointAt(event);
+    if (!image || !canvasPoint) {
+      return null;
+    }
+    const { scale, drawX, drawY } = canvasLayout(LOGICAL, image, zoom, offsetX, offsetY);
+    return [
+      clamp((canvasPoint[0] - drawX) / scale, 0, image.naturalWidth),
+      clamp((canvasPoint[1] - drawY) / scale, 0, image.naturalHeight),
+    ];
+  };
+  // While a selection is dragged, the mouse anywhere on the page moves its
+  // second corner (the window's mousemove, see above).
+  const selectMoveRef = useRef<((event: MouseEvent) => void) | null>(null);
+  selectMoveRef.current = selecting
+    ? (event) => {
+        const point = imagePointOnPlan(event);
+        if (point) {
+          setSelection((current) => (current ? [current[0], point] : current));
+        }
+      }
+    : null;
 
   const pointTransform = (): PointTransform | null => {
     const canvas = canvasRef.current;
@@ -993,6 +1102,9 @@ const ImageCanvasStage = ({
   };
 
   const handleMouseMove = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    if (selecting) {
+      return;
+    }
     if (alignDrag) {
       const at = canvasPointAt(event);
       if (at) {
@@ -1048,6 +1160,18 @@ const ImageCanvasStage = ({
 
   const handleMouseDown = (event: React.MouseEvent<HTMLCanvasElement>) => {
     pressRef.current = null;
+    // Image edit (C / X): a drag selects the area - a new one replaces it,
+    // Shift + drag still pans.
+    if (editMode && canEditImage && !editBusy && !event.shiftKey) {
+      const point = imagePointOnPlan(event);
+      if (point) {
+        setSelection([point, point]);
+        setSelecting(true);
+        setEditError('');
+        setHover(null);
+      }
+      return;
+    }
     // A held: a press on a sensor drags it to its place (elsewhere it pans);
     // the first one remembers the alignment before, for "Cancel".
     if (alignKey && canAlign && tool !== 'reference') {
@@ -1076,8 +1200,8 @@ const ImageCanvasStage = ({
       }
       return;
     }
-    // C held: a press picks a calibration point - a third starts a new measurement.
-    if (canScale && heldKey === 'c') {
+    // M held: a press picks a calibration point - a third starts a new measurement.
+    if (canScale && heldKey === 'm') {
       const point = imagePointAt(event);
       if (point) {
         setTool('calibrate');
@@ -1150,6 +1274,10 @@ const ImageCanvasStage = ({
     }
     const store = () => {
       pendingAlignRef.current = null;
+      // Stored meanwhile with an image edit - a crop has moved it since.
+      if (sameAlignment(values, storedAlignRef.current)) {
+        return;
+      }
       storedAlignRef.current = values;
       storeAlignment(values);
     };
@@ -1160,6 +1288,90 @@ const ImageCanvasStage = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [withSliders, pointOffsetX, pointOffsetY, pointScaleX, pointScaleY, isVerticallyFlipped]);
   useEffect(() => () => pendingAlignRef.current?.(), []);
+
+  // The selected area in image pixels, once it can be applied.
+  const selectionRect = (() => {
+    if (!selection) {
+      return null;
+    }
+    const [[ax, ay], [bx, by]] = selection;
+    const rect = { x: Math.min(ax, bx), y: Math.min(ay, by), width: Math.abs(bx - ax), height: Math.abs(by - ay) };
+    return rect.width >= MIN_SELECTION && rect.height >= MIN_SELECTION ? rect : null;
+  })();
+
+  /** "Apply": the server clears / crops the image and stores the alignment
+   * shown with it (a crop moves it onto the cropped image); the new image
+   * is loaded in place. */
+  const applyEdit = () => {
+    if (!editMode || !selectionRect || locationId == null || lageplanId == null) {
+      return;
+    }
+    const action = editMode;
+    const values: AlignmentValues = {
+      offsetX: pointOffsetX,
+      offsetY: pointOffsetY,
+      scaleX: pointScaleX,
+      scaleY: pointScaleY,
+      flipY: isVerticallyFlipped,
+    };
+    // Stored with the edit: a store still pending must not follow it.
+    storedAlignRef.current = values;
+    pendingAlignRef.current = null;
+    setEditBusy(true);
+    setEditError('');
+    void axiosConfig.perform_post(
+      auth,
+      '/v1/status/measure_points/edit_lageplan/',
+      {
+        location_id: locationId,
+        lageplan_id: lageplanId,
+        action,
+        ...selectionRect,
+        offset_x: values.offsetX,
+        offset_y: values.offsetY,
+        scale_x: values.scaleX,
+        scale_y: values.scaleY,
+        flip_y: values.flipY,
+      },
+      (response: { data?: Record<string, unknown> }) => {
+        const answer = response?.data ?? {};
+        const plan = (answer.lageplan ?? {}) as NonNullable<ImageCanvasStageProps['sourceMeta']>;
+        setEditBusy(false);
+        leaveEdit();
+        if (action === 'crop') {
+          // The points keep their place on the plan: their alignment, the
+          // reference point (image pixels) and the view start anew.
+          const moved: AlignmentValues = {
+            offsetX: plan.offset_x ?? 0,
+            offsetY: plan.offset_y ?? 0,
+            scaleX: plan.scale_x ?? 1,
+            scaleY: plan.scale_y ?? 1,
+            flipY: plan.flip_y ?? values.flipY,
+          };
+          storedAlignRef.current = moved;
+          setPointOffsetX(moved.offsetX);
+          setPointOffsetY(moved.offsetY);
+          setPointScaleX(moved.scaleX);
+          setPointScaleY(moved.scaleY);
+          setIsVerticallyFlipped(moved.flipY);
+          setReferencePoint(
+            plan.reference_x != null && plan.reference_y != null ? [plan.reference_x, plan.reference_y] : null,
+          );
+          setCalibrationPoints([]);
+          // Not a frame of the old image with the new alignment.
+          setImage(null);
+          resetView();
+        }
+        onImageEdited?.(answer);
+      },
+      (editFailure: unknown) => {
+        setEditBusy(false);
+        setEditError(
+          `Could not ${action === 'crop' ? 'crop the plan' : 'clear the area'}: ${requestReason(editFailure)}`,
+        );
+      },
+    );
+  };
 
   const sliders: Array<{
     id: string;
@@ -1263,6 +1475,31 @@ const ImageCanvasStage = ({
   const hoveredItem = hover ? (items[hover.index] ?? null) : null;
   const cssHeight = (cssWidth * CANVAS_HEIGHT) / CANVAS_WIDTH;
   const tooltipBelow = hover ? hover.y < cssHeight - 140 : true;
+  const editing = editMode != null && canEditImage;
+  // "Apply" floats below the selection's lower right corner (CSS pixels), on the canvas.
+  const applyAt = (() => {
+    if (!editing || !selectionRect || selecting || !image) {
+      return null;
+    }
+    const { scale, drawX, drawY } = canvasLayout(LOGICAL, image, zoom, offsetX, offsetY);
+    const right = (drawX + (selectionRect.x + selectionRect.width) * scale) * screenScale;
+    const bottom = (drawY + (selectionRect.y + selectionRect.height) * scale) * screenScale;
+    return {
+      left: clamp(right - 190, 8, Math.max(8, cssWidth - 198)),
+      top: clamp(bottom + 8, 8, Math.max(8, cssHeight - 44)),
+    };
+  })();
+  const badge = editing
+    ? editMode === 'crop'
+      ? 'Crop: drag the area to keep · Esc cancels'
+      : 'Clear: drag over the area to fill white · Esc cancels'
+    : alignKey && canAlign
+      ? `Align: drag a ${lineMode ? 'dm line' : 'sensor'} onto its right place`
+      : canScale && heldKey === 'r'
+        ? 'Reference point: click it on the plan'
+        : canScale && heldKey === 'm'
+          ? `Calibrate: click ${calibrationPoints.length === 1 ? 'the second' : 'the first'} point of a known distance`
+          : null;
 
   return (
     <div className="d-flex flex-column gap-3">
@@ -1293,9 +1530,10 @@ const ImageCanvasStage = ({
               background: 'var(--progeo-surface)',
               boxShadow: 'inset 0 0 0 1px rgba(11, 54, 89, 0.08)',
               cursor:
+                editing ||
                 tool === 'reference' ||
                 placement?.activeDeviceId != null ||
-                (canScale && (heldKey === 'r' || heldKey === 'c'))
+                (canScale && (heldKey === 'r' || heldKey === 'm'))
                   ? 'crosshair'
                   : dragRef.current || alignDrag
                     ? 'grabbing'
@@ -1316,7 +1554,7 @@ const ImageCanvasStage = ({
             resetDisabled={zoom === 1 && offsetX === 0 && offsetY === 0}
           />
           <WheelZoomHint visible={wheelHint} />
-          {((alignKey && canAlign) || (canScale && (heldKey === 'r' || heldKey === 'c'))) && (
+          {badge && (
             <div
               aria-live="polite"
               style={{
@@ -1326,7 +1564,7 @@ const ImageCanvasStage = ({
                 transform: 'translateX(-50%)',
                 zIndex: 2,
                 pointerEvents: 'none',
-                background: '#0d6efd',
+                background: editing && editMode === 'clear' ? '#C44D26' : '#0d6efd',
                 color: '#ffffff',
                 borderRadius: 'var(--progeo-radius-pill)',
                 padding: '5px 14px',
@@ -1336,11 +1574,29 @@ const ImageCanvasStage = ({
                 whiteSpace: 'nowrap',
               }}
             >
-              {heldKey === 'r'
-                ? 'Reference point: click it on the plan'
-                : heldKey === 'c'
-                  ? `Calibrate: click ${calibrationPoints.length === 1 ? 'the second' : 'the first'} point of a known distance`
-                  : `Align: drag a ${lineMode ? 'dm line' : 'sensor'} onto its right place`}
+              {badge}
+            </div>
+          )}
+          {applyAt && (
+            <div className="d-flex gap-2" style={{ position: 'absolute', ...applyAt, zIndex: 3 }}>
+              <button
+                type="button"
+                className={`btn btn-sm ${editMode === 'clear' ? 'btn-danger' : 'btn-primary'}`}
+                style={{ ...PILL_BUTTON, boxShadow: '0 2px 8px rgba(11, 54, 89, .25)' }}
+                disabled={editBusy}
+                onClick={applyEdit}
+              >
+                {editBusy ? 'Applying…' : 'Apply'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm btn-light"
+                style={{ ...PILL_BUTTON, boxShadow: '0 2px 8px rgba(11, 54, 89, .25)' }}
+                disabled={editBusy}
+                onClick={leaveEdit}
+              >
+                Cancel
+              </button>
             </div>
           )}
           {hover && hoveredItem && (
@@ -1408,11 +1664,13 @@ const ImageCanvasStage = ({
             </span>
           )}
           <span>
-            {placement
+            {editing
+              ? `Drag to select${selectionRect ? ' again' : ''} · Shift + drag to pan · nothing changes before "Apply"`
+              : placement
               ? placement.activeDeviceId != null
                 ? `Click on the plan to place ${placement.activeLabel ?? 'the selected sensor'} · drag points to move them`
                 : 'Select a sensor in step 3 · drag points to move them'
-              : `Drag to pan · Ctrl + scroll or the buttons to zoom · hover a sensor for details${canAlign ? ' · hold A + drag a sensor to align' : ''}${canScale ? ' · hold R + click: reference point · hold C + click: calibrate' : ''}`}
+              : `Drag to pan · Ctrl + scroll or the buttons to zoom · hover a sensor for details${canAlign ? ' · hold A + drag a sensor to align' : ''}${canScale ? ' · hold R + click: reference point · hold M + click: calibrate' : ''}${canEditImage ? ' · C: clear an area · X: crop the plan' : ''}`}
           </span>
         </div>
 
@@ -1431,6 +1689,21 @@ const ImageCanvasStage = ({
           </div>
         )}
       </div>
+
+      {editError && (
+        <div
+          role="alert"
+          style={{
+            background: '#FBE9E3',
+            color: '#C44D26',
+            borderRadius: 12,
+            padding: '10px 14px',
+            fontSize: 12.5,
+          }}
+        >
+          {editError}
+        </div>
+      )}
 
       {imageError && (
         <div
@@ -1610,7 +1883,7 @@ const ImageCanvasStage = ({
             </button>
             {calibrationPixels == null && (
               <span className="d-flex align-items-center gap-1" style={{ fontSize: 12, color: MUTED }}>
-                Hold <kbd style={KEY_BADGE}>C</kbd> and click two points with a known distance
+                Hold <kbd style={KEY_BADGE}>M</kbd> and click two points with a known distance
                 {tool === 'calibrate' ? ` (${calibrationPoints.length}/2)` : ''}.
               </span>
             )}

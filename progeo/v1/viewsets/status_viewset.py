@@ -1,14 +1,18 @@
 import ipaddress
 import json
+import math
 import os
 import posixpath
 import tempfile
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from itertools import pairwise
 from uuid import uuid4
 
 from django.conf import settings
+from django.core.files.base import ContentFile
+from django.core.files.storage import FileSystemStorage
 from django.db import transaction
 from django.db.models import OuterRef, Q, Subquery
 from django.http import FileResponse, JsonResponse, RawPostDataException
@@ -20,7 +24,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.authentication import ExpiringTokenAuthentication
 from progeo.decorator import calc_runtime, require_module_permissions
-from progeo.helper import cad_import
+from progeo.helper import cad_import, lageplan_edit
 from progeo.helper.basics import RequestFailed, RequestSuccess, ilog, save_check_dir
 from progeo.helper.creator import create_MfS_log
 from progeo.helper.device_inventory import (
@@ -142,6 +146,33 @@ def _measure_point_location(request, params):
         if device and device.location:
             return device.location, db_name, None
     return None, None, RequestFailed({"reason": f"No location found for device {device_id}"})
+
+
+def _lageplan_path(file_name):
+    """Absolute path of a Lageplan file (ProgeoLageplan.lageplan.name), None
+    unless it lies below UPLOAD_DIR."""
+    root = os.path.realpath(settings.UPLOAD_DIR)
+    path = os.path.realpath(os.path.join(root, file_name or ""))
+    return path if file_name and path.startswith(root + os.sep) else None
+
+
+def _remove_unused_lageplan_file(db_name, file_name):
+    """Deletes a Lageplan's file once no plan uses it any more."""
+    from progeo.helper.demo import DEMO_LAGEPLAN_PREFIX_REL
+
+    # Demo plans share their files with other databases' demos.
+    if (
+        not file_name
+        or file_name.startswith(DEMO_LAGEPLAN_PREFIX_REL)
+        or ProgeoLageplan.objects.using(db_name).filter(lageplan=file_name).exists()
+    ):
+        return
+    path = _lageplan_path(file_name)
+    if path and os.path.isfile(path):
+        try:
+            os.remove(path)
+        except OSError as exc:  # e.g. held open (Windows) - the row is updated anyway
+            dlog(f"Could not remove the Lageplan file {path}: {exc}")
 
 
 def _point_devices(request, location, db_name):
@@ -626,8 +657,6 @@ class StatusViewSet(ProgeoModalViewSet):
         with it - those tied to it, and for the main plan (the first of
         measure_points ?with_lageplan=1) also those without a plan, which are
         shown on the main plan. Its file is deleted unless another plan uses it."""
-        from progeo.helper.demo import DEMO_LAGEPLAN_PREFIX_REL
-
         location, db_name, error = _measure_point_location(request, {"location_id": request.data.get("location_id")})
         if error:
             return error
@@ -650,20 +679,110 @@ class StatusViewSet(ProgeoModalViewSet):
             removed_points, _ = on_plan.delete()
             lageplan.delete(using=db_name)
 
-        # Demo plans share their files with other databases' demos.
-        if (
-            file_name
-            and not file_name.startswith(DEMO_LAGEPLAN_PREFIX_REL)
-            and not ProgeoLageplan.objects.using(db_name).filter(lageplan=file_name).exists()
-        ):
-            path = os.path.realpath(os.path.join(settings.UPLOAD_DIR, file_name))
-            if path.startswith(os.path.realpath(settings.UPLOAD_DIR) + os.sep) and os.path.isfile(path):
-                try:
-                    os.remove(path)
-                except OSError as exc:  # e.g. held open (Windows) - the row is gone anyway
-                    dlog(f"Could not remove the Lageplan file {path}: {exc}")
+        _remove_unused_lageplan_file(db_name, file_name)
         ilog(f"Lageplan {lageplan_id} of location {location.id} deleted with {removed_points} measure point(s)")
         return RequestSuccess({"location_id": location.id, "lageplan_id": lageplan_id, "removed_points": removed_points})
+
+    @calc_runtime
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
+    @action(detail=False, url_path="measure_points/edit_lageplan", methods=["POST"])
+    def edit_lageplan_image(self, request, *args, **kwargs):
+        """Clears or crops a Lageplan image (step 5 of the Lageplan wizard, see
+        helper/lageplan_edit.py): POST {location_id (project id), lageplan_id,
+        action: "clear" | "crop", x, y, width, height (the selection in image
+        pixels)} plus the alignment shown - offset_x, offset_y, scale_x,
+        scale_y, flip_y - which is stored with it (a crop moves it onto the
+        cropped image). The edited image is a new file (a new URL: nothing
+        shows the old one from a cache); the old file is deleted unless another
+        plan uses it. The answer is upload_png's (lageplan_answer)."""
+        location, db_name, error = _measure_point_location(request, {"location_id": request.data.get("location_id")})
+        if error:
+            return error
+        action_name = request.data.get("action")
+        if action_name not in lageplan_edit.ACTIONS:
+            return RequestFailed({"reason": f"action must be one of {', '.join(lageplan_edit.ACTIONS)}"})
+        try:
+            lageplan_id = int(request.data.get("lageplan_id"))
+            selection = tuple(float(request.data.get(field)) for field in ("x", "y", "width", "height"))
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "lageplan_id and the selection (x, y, width, height) are required"})
+
+        with transaction.atomic(using=db_name):
+            lageplan = (
+                ProgeoLageplan.objects.using(db_name).select_for_update().filter(location=location, pk=lageplan_id).first()
+            )
+            if lageplan is None:
+                return RequestFailed({"reason": f"Lageplan {lageplan_id} is not at this location"})
+            alignment = {
+                "offset_x": lageplan.offset_x or 0,
+                "offset_y": lageplan.offset_y or 0,
+                "scale_x": lageplan.scale_x or 1,
+                "scale_y": lageplan.scale_y or 1,
+            }
+            try:
+                for field in alignment:
+                    if request.data.get(field) not in (None, ""):
+                        alignment[field] = float(request.data.get(field))
+                flip_y = request.data.get("flip_y", lageplan.flip_y)
+                flip_y = flip_y if isinstance(flip_y, bool) else str(flip_y).lower() in ("1", "true", "yes", "on")
+            except (TypeError, ValueError):
+                return RequestFailed({"reason": "Invalid alignment values"})
+            if not all(math.isfinite(value) for value in alignment.values()) or min(
+                alignment["scale_x"], alignment["scale_y"]
+            ) <= 0:
+                return RequestFailed({"reason": "Invalid alignment values"})
+
+            old_name = lageplan.lageplan.name if lageplan.lageplan else ""
+            path = _lageplan_path(old_name)
+            if not path or not os.path.isfile(path):
+                return RequestFailed({"reason": "The Lageplan has no file to edit"})
+            suffix = os.path.splitext(old_name)[1].lower()
+            try:
+                with open(path, "rb") as source:
+                    edited = lageplan_edit.edit_image(source.read(), suffix, action_name, selection)
+            except lageplan_edit.LageplanEditError as exc:
+                return RequestFailed({"reason": str(exc)})
+
+            changed = {
+                "offset_x": round(alignment["offset_x"]),
+                "offset_y": round(alignment["offset_y"]),
+                "scale_x": alignment["scale_x"],
+                "scale_y": alignment["scale_y"],
+                "flip_y": flip_y,
+            }
+            if action_name == "crop":
+                changed.update(lageplan_edit.cropped_alignment(alignment, edited.size, edited.rect))
+                if lageplan.reference_x is not None and lageplan.reference_y is not None:
+                    changed["reference_x"] = lageplan.reference_x - edited.rect.left
+                    changed["reference_y"] = lageplan.reference_y - edited.rect.top
+                changed["heat_limitations"] = lageplan_edit.cropped_heat_limitations(
+                    lageplan.heat_limitations, edited.size, edited.rect
+                )
+
+            save_check_dir(settings.UPLOAD_DIR, "lageplan")
+            new_name = FileSystemStorage(location=settings.UPLOAD_DIR).save(
+                f"lageplan/{location.id}_{location.project_id or ''}_{int(time.time())}{suffix}",
+                ContentFile(edited.data),
+            )
+            try:
+                for field, value in changed.items():
+                    setattr(lageplan, field, value)
+                lageplan.lageplan = new_name
+                lageplan.save(using=db_name, update_fields=[*changed, "lageplan"])
+            except Exception:
+                os.remove(os.path.join(settings.UPLOAD_DIR, new_name))
+                raise
+
+        _remove_unused_lageplan_file(db_name, old_name)
+        rect = edited.rect
+        ilog(
+            f"Lageplan {lageplan.pk} of location {location.id}: {action_name} "
+            f"{rect.width}x{rect.height} px at ({rect.left}, {rect.top}) -> {new_name}"
+        )
+        return RequestSuccess({
+            **cad_import.lageplan_answer(lageplan),
+            "message": "Lageplan cropped." if action_name == "crop" else "Area cleared.",
+        })
 
     @calc_runtime
     @require_module_permissions("module_devices_enabled", "module_devices_edit")

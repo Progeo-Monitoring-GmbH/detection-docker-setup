@@ -713,6 +713,16 @@ const LageplanWizardView = () => {
     );
   };
 
+  // Step 5 cleared or cropped the plan image (measure_points/edit_lageplan):
+  // the stored plan - a new file, for a crop also the moved alignment,
+  // reference point and heat limitations.
+  const handleImageEdited = (response: Record<string, unknown>) => {
+    const plan = response?.lageplan as WizardLageplan | undefined;
+    if (plan?.id) {
+      updatePlan(plan.id, plan);
+    }
+  };
+
   // RedDropbox (instantFileUpload) passes the upload response, which carries
   // the stored Lageplan - see StatusViewSet.upload_measure_points_from_png.
   // The new plan is active and the newest, so it heads the list.
@@ -1525,6 +1535,7 @@ const LageplanWizardView = () => {
           withSliders={canEditLocation}
           onSaveSliders={canEditLocation ? handleSaveSliders : undefined}
           onSaveScale={canEditLocation ? handleSaveScale : undefined}
+          onImageEdited={canEditLocation ? handleImageEdited : undefined}
           placement={
             manualPlacement
               ? {

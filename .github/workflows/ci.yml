@@ -19,6 +19,7 @@ permissions:
 
 jobs:
   backend:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     services:
@@ -96,6 +97,7 @@ jobs:
           if-no-files-found: ignore
 
   frontend:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     defaults:
@@ -128,7 +130,9 @@ jobs:
 
   # Known vulnerabilities in the dependencies. Reported, not blocking yet:
   # turn continue-on-error off once the current findings are dealt with.
+  # Only on pushes to staging (not on every push / PR) to keep the noise down.
   dependency-audit:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     continue-on-error: true
