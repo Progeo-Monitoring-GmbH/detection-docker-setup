@@ -260,7 +260,29 @@ def test_a_plan_pdf_is_cropped_to_the_plan_layers(cad_reader, tmp_path):
     # (MuPDF rounds the pixmap outward by a pixel).
     pixmap = pymupdf.Pixmap(str(png))
     assert (pixmap.width, pixmap.height) == (1001, 520)
-    assert description == "page 1 of 1, cropped to 4 drawings on the plan layers: 1001 x 520 px"
+    assert description == (
+        "page 1 of 1, cropped to 4 drawings on the plan layers DKS_Konstruktion 2, DKS_MPLE: 1001 x 520 px"
+    )
+
+
+def test_a_plan_pdf_crop_includes_straight_bands_and_the_misspelt_construction_layer(cad_reader, tmp_path):
+    """A horizontal dm band has an empty rect to pymupdf - it still widens the
+    crop; "DKS_Kostruktion" (a CAD typo) counts as the construction layer."""
+    pymupdf = pytest.importorskip("pymupdf")
+    path, png = tmp_path / "plan.pdf", tmp_path / "plan.png"
+    doc = pymupdf.open()
+    page = doc.new_page(width=842, height=595)
+    page.draw_rect(pymupdf.Rect(10, 10, 832, 585))
+    page.draw_rect(pymupdf.Rect(100, 100, 500, 300), oc=doc.add_ocg("DKS_Kostruktion"))
+    page.draw_line((100, 400), (500, 400), oc=doc.add_ocg("DKS_MPLE"))
+    doc.save(path)
+
+    description = cad_reader.render_pdf_plan(str(path), str(png), max_pixels=1000)
+
+    # 400 x 300 pt plus 2 % margin (8 pt): 416 x 316 pt.
+    pixmap = pymupdf.Pixmap(str(png))
+    assert (pixmap.width, pixmap.height) == (1001, 760)
+    assert "cropped to 2 drawings on the plan layers DKS_Kostruktion, DKS_MPLE" in description
 
 
 def test_a_pdf_without_plan_layers_is_rendered_whole(cad_reader, tmp_path, monkeypatch, capsys):

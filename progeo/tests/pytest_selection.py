@@ -36,7 +36,7 @@ AREA_MODULES = {
     """,
     "locations": """
         favorites_api koords_to_points location_geo_and_admin_api
-        location_timeline_and_measurepoints measurepoints_api plan_meters status_api
+        location_timeline_and_measurepoints measurepoints_api plan_meters rain_events status_api
     """,
     "measurements": """
         catch_up_legacy_files climate_heatmap evaluate_measurement heatmap_video

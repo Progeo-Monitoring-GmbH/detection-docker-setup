@@ -55,8 +55,11 @@ DM_LABEL_RE = re.compile(r"^\s*dm\s*0*(\d+)\s*$", re.IGNORECASE)
 # only float noise apart).
 ROUTE_MATCH_TOLERANCE = 0.01
 HEARTBEAT_SECONDS = 15
-# Layer name prefixes of the plan itself in a PDF export ("DKS_Konstruktion 2" too).
-PDF_PLAN_LAYERS = ("DKS_Konstruktion", "DKS_MPLE", "DKS_Vorlauf", "DKS_Entry", ROUTE_LAYER, "DKS_Dachaufbauten")
+# Layer name prefixes of the plan itself in a PDF export ("DKS_Konstruktion 2" too);
+# "DKS_Kostruktion" is how some drawings misspell it.
+PDF_PLAN_LAYERS = (
+    "DKS_Konstruktion", "DKS_Kostruktion", "DKS_MPLE", "DKS_Vorlauf", "DKS_Entry", ROUTE_LAYER, "DKS_Dachaufbauten",
+)
 # Longer side of the rendered Lageplan; space around the plan, share of its longer side.
 PDF_MAX_PIXELS = 5000
 PDF_MARGIN = 0.02
@@ -424,15 +427,22 @@ def render_pdf_plan(path: str, png_out: str, max_pixels: int = PDF_MAX_PIXELS, l
     with doc:
         if not doc.page_count:
             raise CadReadError("The PDF has no pages.")
-        page, plan_box, count = doc[0], None, 0
+        page, plan_box, count, layers = doc[0], None, 0, set()
         for candidate in doc:
-            box, count = pymupdf.Rect(), 0
+            xs, ys, count, layers = [], [], 0, set()
             for drawing in candidate.get_drawings():
-                if (drawing.get("layer") or "").startswith(PDF_PLAN_LAYERS):
-                    box |= drawing["rect"]
+                layer = drawing.get("layer") or ""
+                if layer.startswith(PDF_PLAN_LAYERS):
+                    # Not Rect |= : the rect of a horizontal or vertical line (a
+                    # dm band) is empty to pymupdf, and a union skips it.
+                    rect = drawing["rect"]
+                    xs += (rect.x0, rect.x1)
+                    ys += (rect.y0, rect.y1)
                     count += 1
+                    layers.add(layer)
             if count:
                 # Drawings are in unrotated page coordinates, the clip in rotated ones.
+                box = pymupdf.Rect(min(xs), min(ys), max(xs), max(ys))
                 page, plan_box = candidate, box * candidate.rotation_matrix
                 break
 
@@ -443,7 +453,8 @@ def render_pdf_plan(path: str, png_out: str, max_pixels: int = PDF_MAX_PIXELS, l
             margin = PDF_MARGIN * max(plan_box.width, plan_box.height)
             clip = pymupdf.Rect(plan_box.x0 - margin, plan_box.y0 - margin, plan_box.x1 + margin, plan_box.y1 + margin)
             clip &= page.rect
-            what = f"page {page.number + 1} of {doc.page_count}, cropped to {count} drawings on the plan layers"
+            what = (f"page {page.number + 1} of {doc.page_count}, cropped to {count} drawings "
+                    f"on the plan layers {', '.join(sorted(layers))}")
 
         zoom = max_pixels / max(clip.width, clip.height)
         pixmap = page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), clip=clip, alpha=False)
