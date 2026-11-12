@@ -735,6 +735,31 @@ def test_locate_device_finds_the_database_of_a_raw_hash(project_dbs):
 
 
 @WITH_PROJECT_DBS
+@LOCMEM_CACHE
+def test_locate_device_remembers_a_miss_until_the_device_is_created(project_dbs, monkeypatch,
+                                                                    django_capture_on_commit_callbacks):
+    # A controller polling sample/cc with an unfiled hash searched every
+    # project database on each poll - Daphne killed the request.
+    from progeo.helper import project_dbs as dbs
+
+    _scenario()
+    _copy()
+    raw_hash = f.unique("later")
+    assert locate_device(raw_hash) is None
+
+    searched = []
+    original = dbs.existing_project_aliases
+    monkeypatch.setattr(dbs, "existing_project_aliases", lambda: searched.append(1) or original())
+    assert locate_device(raw_hash) is None
+    assert searched == []  # the miss is remembered - no search
+
+    with django_capture_on_commit_callbacks(using=ALIAS, execute=True):
+        ProgeoDevice.objects.using(ALIAS).create(raw_hash=raw_hash, location=None)
+
+    assert locate_device(raw_hash) == ALIAS
+
+
+@WITH_PROJECT_DBS
 def test_stats_land_on_every_location_of_the_project(project_dbs):
     s = _scenario()
     _copy()

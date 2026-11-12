@@ -587,32 +587,54 @@ def _existing_or_default(alias):
 # ---------------------------------------------------------------------------- devices
 
 _DEVICE_DB_CACHE_TIMEOUT = 60 * 60
+# A miss is remembered too: a controller polling sample/cc with a hash that
+# is filed nowhere searched all ~1000 databases on every poll - longer than
+# the controller waits, so Daphne killed the request ("took too long to shut
+# down"). A new device clears it (project_db_signals._forget_device_db_miss).
+_DEVICE_DB_MISS_TIMEOUT = 5 * 60
 
 
 def _device_db_cache_key(raw_hash):
     return f"progeo:device-db:{raw_hash}"
 
 
+def _device_db_miss_key(raw_hash):
+    return f"progeo:device-db-miss:{raw_hash}"
+
+
+def forget_device_db_miss(raw_hash):
+    """The next locate_device(raw_hash) searches again (a device with that hash was created)."""
+    from django.core.cache import cache
+
+    try:
+        cache.delete(_device_db_miss_key(raw_hash))
+    except Exception:  # noqa: BLE001, S110 - cache unavailable: nothing remembered either
+        pass
+
+
 def locate_device(raw_hash):
     """Project database holding the device with `raw_hash`, or None.
 
     Ingestion only knows the hash, so the databases are searched (unknown
-    first - new devices land there) and the hit is cached."""
+    first - new devices land there); the hit is cached for an hour, a miss
+    for _DEVICE_DB_MISS_TIMEOUT."""
     from django.core.cache import cache
 
     from progeo.v1.models import ProgeoDevice
 
     key = _device_db_cache_key(raw_hash)
     try:
-        cached = cache.get(key)
+        cached, missed = cache.get(key), cache.get(_device_db_miss_key(raw_hash))
     except Exception:  # noqa: BLE001 - cache unavailable, search instead
-        cached = None
+        cached, missed = None, False
     if cached:
         try:
             if ProgeoDevice.objects.using(register_project_db(cached)).filter(raw_hash=raw_hash).exists():
                 return cached
         finally:
             release_connection(cached)
+    elif missed:
+        return None
 
     aliases = existing_project_aliases()
     aliases.sort(key=lambda a: project_key_from_alias(a) != UNKNOWN_PROJECT)
@@ -628,6 +650,10 @@ def locate_device(raw_hash):
             except Exception:  # noqa: BLE001, S110 - cache unavailable, the next lookup searches again
                 pass
             return alias
+    try:
+        cache.set(_device_db_miss_key(raw_hash), True, _DEVICE_DB_MISS_TIMEOUT)
+    except Exception:  # noqa: BLE001, S110 - cache unavailable, the next lookup searches again
+        pass
     return None
 
 

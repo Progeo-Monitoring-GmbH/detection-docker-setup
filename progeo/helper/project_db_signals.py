@@ -367,6 +367,17 @@ def _activate_project_on_first_device(sender, instance, raw, using, **kwargs):
     transaction.on_commit(queue, using=DEFAULT_DB_ALIAS)
 
 
+@receiver(post_save, sender=ProgeoDevice)
+def _forget_device_db_miss(sender, instance, created, using, **kwargs):
+    """A new device (in any database): a remembered locate_device miss of
+    its hash is wrong now - once committed, so a concurrent lookup can't
+    remember the miss again before the row is visible."""
+    if created and instance.raw_hash:
+        from progeo.helper.project_dbs import forget_device_db_miss
+
+        transaction.on_commit(lambda: forget_device_db_miss(instance.raw_hash), using=using)
+
+
 @receiver(post_delete, sender=ProgeoLocation)
 def _delete_location(sender, instance, using, **kwargs):
     if _active(using):
