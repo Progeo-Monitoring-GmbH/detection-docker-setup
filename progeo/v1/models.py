@@ -671,11 +671,29 @@ class ProgeoNoiseProfile(auto_prefetch.Model):
 
 
 class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
+    @staticmethod
+    def shows_archived(user) -> bool:
+        """Whether `user` sees archived measurements: staff (staff or
+        superuser, is_staff_admin) unless they hid them (UserProfile.
+        hide_archived_measurements); nobody else."""
+        from progeo.helper.location_access import is_staff_admin
+
+        if not is_staff_admin(user):
+            return False
+        try:
+            return not user.profile.hide_archived_measurements
+        except UserProfile.DoesNotExist:
+            return True
+
     @classmethod
     def for_account(cls, account, using=None, user=None):
+        """The measurements `user` (or, without one, any user of `account`)
+        may see - archived ones only for staff who show them (shows_archived)."""
         queryset = cls.objects
         if using:
             queryset = queryset.using(using)
+        if not cls.shows_archived(user):
+            queryset = queryset.filter(archived=False)
         if user and (user.is_staff or user.is_superuser):
             return queryset
         if not account:
@@ -694,6 +712,11 @@ class ProgeoMeasurement(ProgeoModel, auto_prefetch.Model):
     device = models.ForeignKey(ProgeoDevice, on_delete=models.CASCADE)
     project_id = models.IntegerField(null=True, blank=True)
     is_watching = models.BooleanField(default=False)
+    # Hidden from everyone but staff (for_account / shows_archived) - e.g. test
+    # or faulty measurements that must not reach the customer, kept for us.
+    # db_default: rows inserted outside the ORM (copies between databases,
+    # raw SQL) get False too, and the yearly partitions inherit it.
+    archived = models.BooleanField(default=False, db_default=False)
     humidity = models.FloatField(null=True, blank=True)
     temperature = models.FloatField(null=True, blank=True)
     # Battery level in percent (LoRaWAN "upload_battery" messages).
@@ -1163,6 +1186,9 @@ class UserProfile(models.Model):
     # Last login in a chat app on our Matrix server (the portal handed MAS a
     # token, helper/matrix_accounts.py) - Mein Konto confirms the connection.
     matrix_connected_at = models.DateTimeField(null=True, blank=True)
+    # Staff only: archived measurements left out of every view
+    # (ProgeoMeasurement.shows_archived) - the switch in the top bar.
+    hide_archived_measurements = models.BooleanField(default=False)
 
     def messenger_address(self):
         """Where the messenger notifications go, or None when incomplete."""
@@ -1174,7 +1200,10 @@ class UserProfile(models.Model):
         return address or None
 
     def is_empty(self):
-        return not (self.mobile or self.messenger or self.messenger_id or self.matrix_connected_at)
+        return not (
+            self.mobile or self.messenger or self.messenger_id or self.matrix_connected_at
+            or self.hide_archived_measurements
+        )
 
     def __str__(self):
         return f"[{self.pk}] {self.user.username} - {self.mobile or 'no mobile'}"

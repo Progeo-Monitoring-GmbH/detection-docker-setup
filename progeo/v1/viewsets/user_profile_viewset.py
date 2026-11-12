@@ -54,6 +54,19 @@ def _messenger_invalid(service, address):
     return None
 
 
+def _archived_setting(user, hide=None) -> dict:
+    """{"hide_archived_measurements": bool} for staff (who see archived
+    measurements unless they hide them), {} for everyone else."""
+    from progeo.helper.location_access import is_staff_admin
+    from progeo.v1.models import UserProfile
+
+    if not is_staff_admin(user):
+        return {}
+    if hide is None:
+        hide = UserProfile.objects.filter(user_id=user.pk, hide_archived_measurements=True).exists()
+    return {"hide_archived_measurements": hide}
+
+
 def _token_pair(user) -> dict:
     """Fresh JWTs - their claims (two_factor_setup_required) follow a 2FA change."""
     from progeo.v1.serializers import ProgeoTokenObtainPairSerializer
@@ -115,7 +128,31 @@ class UserProfileViewSet(viewsets.ViewSet):
             "language": language,
             "two_factor_enabled": two_factor.is_enabled(user),
             "has_usable_password": user.has_usable_password(),
+            **_archived_setting(user),
         })
+
+    @action(detail=False, url_path="archived_measurements", methods=["POST"])
+    def archived_measurements(self, request, *args, **kwargs):
+        """Staff only: hide the archived measurements (they see them by
+        default) - POST {hide: bool}. Every measurement view follows it
+        (ProgeoMeasurement.shows_archived)."""
+        from progeo.helper.location_access import is_staff_admin
+        from progeo.v1.models import UserProfile
+
+        user = request.user
+        if not is_staff_admin(user):
+            return _failed("staff_only", "only staff see archived measurements")
+        hide = request.data.get("hide") if isinstance(request.data, dict) else None
+        if not isinstance(hide, bool):
+            return RequestFailed({"reason": "hide must be true or false"})
+
+        profile, _ = UserProfile.objects.get_or_create(user_id=user.pk)
+        profile.hide_archived_measurements = hide
+        if profile.is_empty():
+            profile.delete()
+        else:
+            profile.save(update_fields=["hide_archived_measurements"])
+        return RequestSuccess(_archived_setting(user, hide))
 
     @action(detail=False, url_path="matrix", methods=["GET"])
     def matrix_connection(self, request, *args, **kwargs):

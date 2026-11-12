@@ -413,7 +413,8 @@ describe('ImageCanvasStage alignment and scale', () => {
       expect(sent[0].ny).toBeCloseTo(0.6);
       expect(sent[1].nx).toBeCloseTo(0.35 + 100 / 868);
       expect(onPointsPlaced).toHaveBeenCalledWith({ points: sent }, 'align');
-      expect(container.textContent).not.toContain('by themselves');
+      // The group panel is gone (the key help still says "by themselves").
+      expect(container.textContent).not.toContain('Aligning');
     });
   });
 });

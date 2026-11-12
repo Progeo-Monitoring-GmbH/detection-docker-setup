@@ -463,6 +463,8 @@ class ProgeoMeasurementSerializer(ProgeoBaseSerializer):
             "last_fetched",
             "project_id",
             "is_watching",
+            # Only staff get archived measurements at all (ProgeoMeasurement.for_account).
+            "archived",
             "samples",
             "pair_abs_values",
             "pair_count",

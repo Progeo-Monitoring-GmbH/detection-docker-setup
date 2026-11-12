@@ -199,7 +199,23 @@ class ProgeoDeviceAdmin(MultiDBModelAdmin):
     pass
 
 class ProgeoMeasurementAdmin(MultiDBModelAdmin):
-    pass
+    """Archived measurements are only shown to staff (ProgeoMeasurement.
+    shows_archived) - archived and brought back here, in the database picked
+    in the header."""
+    list_display = ("id", "device", "last_fetched", "archived")
+    list_filter = ("archived",)
+    ordering = ("-pk",)
+    actions = ("archive_measurements", "unarchive_measurements")
+
+    @admin.action(description="Archive the selected measurements (only staff see them)")
+    def archive_measurements(self, request, queryset):
+        count = queryset.update(archived=True)
+        self.message_user(request, f"{count} measurement(s) archived.")
+
+    @admin.action(description="Unarchive the selected measurements")
+    def unarchive_measurements(self, request, queryset):
+        count = queryset.update(archived=False)
+        self.message_user(request, f"{count} measurement(s) unarchived.")
 
 class ProgeoDeviceCommandAdmin(MultiDBModelAdmin):
     """Command history: what was sent, whether it worked and when. The

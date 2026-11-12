@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
-import { DoorOpen, Eye, InfoCircle, PersonGear } from 'react-bootstrap-icons';
+import { Archive, DoorOpen, Eye, InfoCircle, PersonGear } from 'react-bootstrap-icons';
 import { useAuth } from '../../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../../axiosConfig';
 import { UserProfileModal } from '../../main/UserProfile.tsx';
@@ -28,17 +28,40 @@ const TopBar = () => {
   const [infoOpen, setInfoOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  // Staff only: archived measurements hidden in every view (null: not staff /
+  // not loaded) - stored on the server (ProgeoMeasurement.shows_archived).
+  const [hideArchived, setHideArchived] = useState<boolean | null>(null);
+  const [archivedBusy, setArchivedBusy] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     void axiosConfig.perform_get(
       auth,
       '/v1/user/profile/',
-      (response) => setUsername(response?.data?.username || ''),
+      (response) => {
+        setUsername(response?.data?.username || '');
+        const hide = response?.data?.hide_archived_measurements;
+        setHideArchived(typeof hide === 'boolean' ? hide : null);
+      },
       () => {},
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // The views load their measurements once - a reload shows them with or without the archived ones.
+  const toggleArchived = () => {
+    if (hideArchived === null || archivedBusy) {
+      return;
+    }
+    setArchivedBusy(true);
+    void axiosConfig.perform_post(
+      auth,
+      '/v1/user/archived_measurements/',
+      { hide: !hideArchived },
+      () => window.location.reload(),
+      () => setArchivedBusy(false),
+    );
+  };
 
   useEffect(() => {
     const onClickAway = (event: MouseEvent) => {
@@ -124,6 +147,22 @@ const TopBar = () => {
           {auth.viewAsUser
             ? t('topbar_view_as_staff')
             : t('topbar_view_as_user')}
+        </button>
+      )}
+      {auth.canViewAsUser && !auth.viewAsUser && hideArchived !== null && (
+        <button
+          type="button"
+          onClick={toggleArchived}
+          disabled={archivedBusy}
+          aria-pressed={!hideArchived}
+          title={t('topbar_archived_title')}
+          style={{
+            ...pillButtonStyle(true),
+            ...(hideArchived && { color: 'var(--progeo-muted, #8B8383)' }),
+          }}
+        >
+          <Archive size={16} />
+          {hideArchived ? t('topbar_archived_hidden') : t('topbar_archived_shown')}
         </button>
       )}
       <div style={{ position: 'relative' }}>
