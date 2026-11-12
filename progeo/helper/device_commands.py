@@ -1065,6 +1065,29 @@ def emulate_measurement(device, mux, sensors=None, location=None, user=None):
         return {}
 
 
+MAX_MUX_FAULTS = 64
+
+
+def clean_mux_faults(value):
+    """The "mux_faults" a controller reports with a sample
+    ([{"mux": 2, "missing_channels": 16}] - MUXes that answered with fewer
+    channels than they have), cleaned: entries without an integer mux >= 1
+    and missing_channels >= 0 are dropped. None if `value` is no list."""
+    if not isinstance(value, list):
+        return None
+    faults = []
+    for item in value[:MAX_MUX_FAULTS]:
+        if not isinstance(item, dict):
+            continue
+        try:
+            mux, missing = int(item.get("mux")), int(item.get("missing_channels"))
+        except (TypeError, ValueError):
+            continue
+        if mux >= 1 and missing >= 0:
+            faults.append({"mux": mux, "missing_channels": missing})
+    return faults
+
+
 def measurement_row(measurement, threshold=None):
     """A test measurement as the provisioning page lists it - raw: the check
     tests the hardware, a Störungsprofil must not hide anything."""
@@ -1079,6 +1102,8 @@ def measurement_row(measurement, threshold=None):
         "max": max(pairs, default=None),
         "pairs": pairs,
         "check": check,
+        # Reported by the controller (raw_data) - [] without any.
+        "mux_faults": clean_mux_faults(raw.get("mux_faults")) or [],
         "png": png_data_url(
             pairs_png(
                 pairs,

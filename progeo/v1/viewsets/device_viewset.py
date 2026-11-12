@@ -335,11 +335,14 @@ class DeviceViewSet(DeviceCommandsMixin, DeviceProvisioningMixin, ProgeoModalVie
             return RequestFailed({"reason": "No samples provided"})
 
         raw_hash = str(payload.get("device_hash") or project_id).strip()
+        # MUXes that answered with missing channels - kept in raw_data, shown by the test measurements.
+        mux_faults = device_commands.clean_mux_faults(payload.get("mux_faults"))
         measure = save_measurement_from_legacy_data(
             measurement={
                 "project_id": project_id,
                 "potentials": values,
                 **{key: payload.get(key) for key in ("event", "sensors", "chip_id", "heap", "ip", "mac")},
+                **({"mux_faults": mux_faults} if mux_faults is not None else {}),
             },
             project_id=project_id,
             raw_hash=raw_hash,

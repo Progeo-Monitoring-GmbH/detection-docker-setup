@@ -473,3 +473,23 @@ def test_catch_live_data_stores_potentials_and_device_info(api_client):
     assert device.type == ProgeoDevice.DeviceType.SMARTBOX
     # device.mac is the custom name - not overwritten by the MAC.
     assert device.mac is None
+    # No mux_faults sent - none stored.
+    assert "mux_faults" not in saved.raw_data
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_catch_live_data_keeps_the_mux_faults_in_raw_data(api_client):
+    user = User.objects.using("default").order_by("id").first()
+    api_client.force_authenticate(user=user)
+    payload = {
+        "event": "sample", "sensors": 2, "samples": "10,15,20,40", "device_hash": unique("faults"),
+        "project_id": "1312",
+        # The broken entries are dropped.
+        "mux_faults": [{"mux": 2, "missing_channels": 16}, {"mux": "x", "missing_channels": 1}, "junk"],
+    }
+
+    response = api_client.post("/v1/device/1312/sample/", payload, format="json")
+
+    assert response.status_code == 200, response.content
+    saved = ProgeoMeasurement.objects.using("default").get(pk=response.json()["measurement_id"])
+    assert saved.raw_data["mux_faults"] == [{"mux": 2, "missing_channels": 16}]

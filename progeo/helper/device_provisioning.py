@@ -35,8 +35,6 @@ DEFAULT_FIRMWARE_CHANNEL = "stable"
 PORTAL = {"ssid": "MicroBoxInstallHelper", "pwd": "microWord", "timeout_sec": 60}
 # The controller's own address inside its setup network.
 PORTAL_URL = "http://192.168.16.1"
-# control.poll_sec of the config: 4 h.
-CONTROL_POLL_SEC = 14400
 
 # No upper limit on the sensors.
 SENSORS_RANGE = (1, None)
@@ -128,6 +126,21 @@ def _int_field(data, key, default=None, bounds=None):
     return value
 
 
+def _bool_field(data, key, default=False) -> bool:
+    """true/false, 1/0 or "true"/"false" (form and JSON both)."""
+    value = data.get(key)
+    if value in (None, ""):
+        return default
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in ("1", "true"):
+        return True
+    if text in ("0", "false"):
+        return False
+    raise ProvisionError(f"{key} must be true or false")
+
+
 def parse_settings(data) -> dict:
     """The settings of the request data, validated (ProvisionError)."""
     pulldown = _int_field(data, "pulldown_resistance", ProgeoDevice.Resistance.DEFAULT_100K)
@@ -143,6 +156,8 @@ def parse_settings(data) -> dict:
         "interval_sec": _int_field(data, "interval_sec", DEFAULT_INTERVAL_SEC, INTERVAL_RANGE),
         "pulldown_resistance": pulldown,
         "protective_earth": _int_field(data, "protective_earth", 0, (0, 1)),
+        # control.rpi of the config: the controller runs on a Raspberry Pi.
+        "rpi": _bool_field(data, "rpi"),
         "wifi_ssid": str(data.get("wifi_ssid") or "").strip(),
         "wifi_pwd": str(data.get("wifi_pwd") or ""),
         **resolve_firmware(str(data.get("firmware") or "").strip()),
@@ -224,7 +239,8 @@ def render_config(plan) -> str:
         "  control = {",
         f"    url = {lua_string(plan['url'])}, -- {{project_id}}: device.project_id",
         f"    token = {lua_string(plan['token'])},",
-        f"    poll_sec = {CONTROL_POLL_SEC},",
+        # A preview signed before rpi existed: false.
+        f"    rpi = {'true' if plan.get('rpi') else 'false'},",
         "  },",
         "  portal = {",
         f"    ssid = {lua_string(PORTAL['ssid'])},  -- name of the setup network",

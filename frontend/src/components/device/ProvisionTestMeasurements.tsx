@@ -43,6 +43,9 @@ type TestCheck = {
   reasons: string[];
 };
 
+/** A MUX the controller reports as answering with fewer channels than it has. */
+type MuxFault = { mux: number; missing_channels: number };
+
 /** A row of GET /v1/device/provision/test-measurements/. */
 type TestMeasurement = {
   id: number;
@@ -52,6 +55,8 @@ type TestMeasurement = {
   max: number | null;
   pairs: number[];
   check: TestCheck;
+  /** raw_data.mux_faults of the controller's sample - [] (or missing) without any. */
+  mux_faults?: MuxFault[];
   /** The pairs as a bar chart (data URL, 150 px high, at most 600 wide). */
   png: string;
 };
@@ -111,9 +116,12 @@ const MuxStatusPanel = ({
   // incremental poll merges responses, so the newest measurement for a MUX is
   // not necessarily the first row in `measurements`. Pick by id (pk) instead.
   const newest = new Map<number, TestCheck>();
-  [...measurements]
-    .sort((left, right) => right.id - left.id)
-    .forEach((row) => {
+  const byNewest = [...measurements].sort((left, right) => right.id - left.id);
+  // MUX faults of the newest measurement: the controller's current state.
+  const faults = new Map<number, number>(
+    (byNewest[0]?.mux_faults ?? []).map((fault) => [fault.mux, fault.missing_channels]),
+  );
+  byNewest.forEach((row) => {
       const mux = Number(row.check.mux);
       if (Number.isInteger(mux) && mux > 0 && !newest.has(mux)) {
         newest.set(mux, row.check);
@@ -220,11 +228,16 @@ const MuxStatusPanel = ({
           {Array.from({ length: muxCount }, (_, index) => {
             const mux = index + 1;
             const check = newest.get(mux);
-            const style = MUX_BOX[check?.status ?? 'pending'];
+            const missing = faults.get(mux);
+            const style = MUX_BOX[missing != null ? 'fail' : (check?.status ?? 'pending')];
             return (
               <div
                 key={mux}
-                title={`MUX ${mux}: ${style.label}`}
+                title={
+                  missing != null
+                    ? `MUX ${mux}: ${missing} channel(s) missing (reported by the controller)`
+                    : `MUX ${mux}: ${style.label}`
+                }
                 style={{
                   width: 100,
                   height: 100,
@@ -245,10 +258,16 @@ const MuxStatusPanel = ({
                 <span style={{ fontSize: 12, fontWeight: 600 }}>
                   {style.label}
                 </span>
-                {check && (
-                  <span style={{ fontSize: 10 }}>
-                    {check.rising} rising
+                {missing != null ? (
+                  <span style={{ fontSize: 10, fontWeight: 600 }}>
+                    {missing} ch missing
                   </span>
+                ) : (
+                  check && (
+                    <span style={{ fontSize: 10 }}>
+                      {check.rising} rising
+                    </span>
+                  )
                 )}
               </div>
             );
@@ -512,6 +531,11 @@ const ProvisionTestMeasurements = ({
           {row.check.reasons.map((reason) => (
             <div key={reason} className="text-muted">
               {reason}
+            </div>
+          ))}
+          {(row.mux_faults ?? []).map((fault) => (
+            <div key={fault.mux} className="text-danger fw-semibold">
+              MUX {fault.mux}: {fault.missing_channels} channel(s) missing
             </div>
           ))}
         </div>

@@ -64,13 +64,16 @@ def _preview(client, location, **settings):
 def test_parse_settings_validates_and_defaults():
     assert provisioning.parse_settings({}) == {
         "model": "smartex mx", "sensors": 32, "interval_sec": 1800, "pulldown_resistance": 136, "protective_earth": 0,
-        "wifi_ssid": "", "wifi_pwd": "",
+        "rpi": False, "wifi_ssid": "", "wifi_pwd": "",
         # No bundle on the server: the built-in firmware version.
         "firmware_bundle": None, "firmware_version": provisioning.FIRMWARE_VERSION,
     }
     assert provisioning.parse_settings({"sensors": 1000})["sensors"] == 1000
+    assert provisioning.parse_settings({"rpi": True})["rpi"] is True
+    assert provisioning.parse_settings({"rpi": "1"})["rpi"] is True
+    assert provisioning.parse_settings({"rpi": "false"})["rpi"] is False
     for bad in ({"sensors": 0}, {"sensors": "x"}, {"interval_sec": 1}, {"pulldown_resistance": 99},
-                {"protective_earth": 2}):
+                {"protective_earth": 2}, {"rpi": "maybe"}):
         with pytest.raises(provisioning.ProvisionError):
             provisioning.parse_settings(bad)
 
@@ -141,7 +144,10 @@ def test_render_config_escapes_lua_strings():
     assert 'device_hash = "1312-01"' in config
     assert 'url = "https://api.progeo.com/v1/device/1312/sample/",' in config
     assert 'token = "THMojjuhE4eFzNTZ",' in config
-    assert "poll_sec = 14400," in config
+    # control: no poll_sec any more, rpi false by default.
+    assert "poll_sec" not in config
+    assert "    rpi = false," in config
+    assert "    rpi = true," in provisioning.render_config({**plan, "rpi": True})
 
 
 def test_sample_url_follows_the_setting(settings):
@@ -284,11 +290,19 @@ def test_emulate_measurement_is_superuser_only_and_posts_like_the_controller(api
     assert payload["device_hash"] == preview["device_hash"] and payload["sensors"] == 48
     controller = APIClient()
     controller.credentials(HTTP_AUTHORIZATION=headers["Authorization"])
-    sample = controller.post(url.removeprefix("https://api.progeo.com"), payload, format="json")
+    # The controller reports a MUX with missing channels along with the sample.
+    faults = [{"mux": 2, "missing_channels": 16}]
+    sample = controller.post(url.removeprefix("https://api.progeo.com"), {**payload, "mux_faults": faults},
+                             format="json")
     assert sample.status_code == 200, sample.content
     measurement = ProgeoMeasurement.objects.using(f.DB).get(pk=sample.json()["measurement_id"])
     check = device_commands.check_test_pairs(measurement.get_pairs())
     assert (check["status"], check["start"], check["end"]) == ("ok", 33, 48)
+    assert measurement.raw_data["mux_faults"] == faults
+    rows = api_client.get(
+        f"/v1/device/provision/test-measurements/?location={location.pk}&device={device_id}"
+    ).json()["measurements"]
+    assert rows[0]["id"] == measurement.pk and rows[0]["mux_faults"] == faults
 
     too_high = api_client.post("/v1/device/provision/emulate-measurement/", {**params, "mux": 4}, format="json")
     assert too_high.status_code != 200 and "between 1 and 3" in too_high.json()["reason"]

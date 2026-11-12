@@ -28,6 +28,8 @@ type ProvisionSettings = {
   interval_sec: string;
   pulldown_resistance: string;
   protective_earth: boolean;
+  /** control.rpi of the config: the controller runs on a Raspberry Pi. */
+  rpi: boolean;
   wifi_ssid: string;
   wifi_pwd: string;
 };
@@ -61,6 +63,7 @@ const EMPTY_SETTINGS: ProvisionSettings = {
   interval_sec: '1800',
   pulldown_resistance: '136',
   protective_earth: false,
+  rpi: false,
   wifi_ssid: '',
   wifi_pwd: '',
 };
@@ -172,6 +175,7 @@ const DeviceProvisionPanel = ({
         interval_sec: Number(settings.interval_sec),
         pulldown_resistance: Number(settings.pulldown_resistance),
         protective_earth: settings.protective_earth ? 1 : 0,
+        rpi: settings.rpi,
         wifi_ssid: settings.wifi_ssid,
         wifi_pwd: settings.wifi_pwd,
       },
@@ -414,6 +418,16 @@ const DeviceProvisionPanel = ({
                 className="small mb-0"
                 checked={settings.protective_earth}
                 onChange={(event) => updateSetting('protective_earth', event.target.checked)}
+              />
+            </Col>
+            <Col xs="auto" className="pb-1">
+              <Form.Check
+                type="switch"
+                id="provision-rpi"
+                label="Raspberry Pi"
+                className="small mb-0"
+                checked={settings.rpi}
+                onChange={(event) => updateSetting('rpi', event.target.checked)}
               />
             </Col>
             <Col xs="auto" className="ms-lg-auto">
