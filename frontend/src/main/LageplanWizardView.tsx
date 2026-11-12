@@ -1172,7 +1172,9 @@ const LageplanWizardView = () => {
           auth={auth}
           url="/v1/status/measure_points/from_pdf/"
           accept="pdf"
-          hint="Drop a PDF here, or click to choose"
+          // Plan PDFs are often larger than the 5 MB default; one Lageplan per PDF.
+          maxSizeMB={50}
+          hint="Drop one or more PDFs here (a Lageplan each), or click to choose"
           instantFileUpload={true}
           withPreview={false}
           payload={{ location_id: selectedLocationId }}

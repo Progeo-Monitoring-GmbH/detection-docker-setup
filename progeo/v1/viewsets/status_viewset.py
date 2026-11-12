@@ -108,6 +108,10 @@ def _request_accounts(request):
     return resolve_request_accounts(request, fallback_account=fallback)
 
 
+# Plan PDFs of one upload (a job each, see upload_measure_points_from_pdf).
+MAX_PDF_UPLOADS = 20
+
+
 def _measure_point_location(request, params):
     """(location, db_name, error_response) for measure_points: by project id
     (`location_id`) or by device (`device_id`), within the user's access."""
@@ -570,9 +574,11 @@ class StatusViewSet(ProgeoModalViewSet):
         return points
 
     @staticmethod
-    def _queue_cad_job(request, location, db_name, upload, suffix, **job_options):
+    def _start_cad_job(request, location, db_name, upload, suffix, **job_options):
         """Stores the upload in UPLOAD_DIR/cad_imports and queues a progeo-cad_factory
-        job for it (helper/cad_import.py); the answer is {job_id}."""
+        job for it (helper/cad_import.py) - its own celery task, so several
+        jobs run side by side (as many as the worker has processes). Returns
+        the job id."""
         import_dir = save_check_dir(settings.UPLOAD_DIR, cad_import.IMPORT_DIR)
         target_name = f"{uuid4().hex}{suffix}"
         with open(os.path.join(import_dir, target_name), "wb") as handle:
@@ -587,25 +593,46 @@ class StatusViewSet(ProgeoModalViewSet):
             **job_options,
         )
         run_cad_import.delay(job_id)
+        return job_id
+
+    @classmethod
+    def _queue_cad_job(cls, request, location, db_name, upload, suffix, **job_options):
+        """_start_cad_job; the answer is {job_id}."""
+        job_id = cls._start_cad_job(request, location, db_name, upload, suffix, **job_options)
         return RequestSuccess({"job_id": job_id, "status": "queued", "location_id": location.id})
 
     @calc_runtime
     @require_module_permissions("module_devices_enabled", "module_devices_edit")
     @action(detail=False, url_path="measure_points/from_pdf", methods=["POST"])
     def upload_measure_points_from_pdf(self, request, *args, **kwargs):
-        """A new Lageplan from a plan PDF: progeo-cad_factory renders it as PNG,
-        cropped to the plan, in a background job - the answer is {job_id} like
-        upload_cad's, the job's result upload_png's answer."""
+        """A new Lageplan per uploaded plan PDF (files0, files1, ...):
+        progeo-cad_factory renders each as PNG, cropped to the plan, in its own
+        background job - side by side. The answer lists the jobs {"jobs":
+        [{job_id, source_name}, ...]} (and "job_id": the first, like
+        upload_cad's); each job's result is upload_png's answer."""
         location, db_name, error = _measure_point_location(
             request, {"location_id": request.query_params.get("location_id") or request.data.get("location_id")}
         )
         if error:
             return error
 
-        upload = next(iter(request.FILES.values()), None)
-        if not upload or os.path.splitext(upload.name)[1].lower() != ".pdf":
+        uploads = list(request.FILES.values())
+        if not uploads:
             return RequestFailed({"reason": "Upload a PDF file."})
-        return self._queue_cad_job(request, location, db_name, upload, ".pdf", kind="lageplan")
+        if len(uploads) > MAX_PDF_UPLOADS:
+            return RequestFailed({"reason": f"At most {MAX_PDF_UPLOADS} PDFs at once."})
+        # All or none: a wrong file among them is named before any job starts.
+        wrong = [upload.name for upload in uploads if os.path.splitext(upload.name)[1].lower() != ".pdf"]
+        if wrong:
+            return RequestFailed({"reason": f"Only PDF files: {', '.join(wrong)}"})
+        jobs = [
+            {"job_id": self._start_cad_job(request, location, db_name, upload, ".pdf", kind="lageplan"),
+             "source_name": upload.name}
+            for upload in uploads
+        ]
+        return RequestSuccess({
+            "jobs": jobs, "job_id": jobs[0]["job_id"], "status": "queued", "location_id": location.id,
+        })
 
     @calc_runtime
     @require_module_permissions("module_devices_enabled", "module_devices_edit")

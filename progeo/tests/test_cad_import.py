@@ -516,7 +516,45 @@ def test_upload_of_a_pdf_starts_a_lageplan_job(api_client, location, tmp_path, m
         "/v1/status/measure_points/from_pdf/",
         {"location_id": location.project_id, "files0": SimpleUploadedFile("plan.png", b"png")},
     )
-    assert (response.status_code, response.json()["reason"]) == (400, "Upload a PDF file.")
+    assert (response.status_code, response.json()["reason"]) == (400, "Only PDF files: plan.png")
+
+
+def test_several_pdfs_start_a_lageplan_job_each(api_client, location, tmp_path, monkeypatch):
+    monkeypatch.setattr(django_settings, "UPLOAD_DIR", str(tmp_path))
+    queued = []
+    monkeypatch.setattr(status_viewset.run_cad_import, "delay", queued.append)
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    response = api_client.post("/v1/status/measure_points/from_pdf/", {
+        "location_id": location.project_id,
+        "files0": SimpleUploadedFile("EG.pdf", b"%PDF-1.7 a"),
+        "files1": SimpleUploadedFile("OG.pdf", b"%PDF-1.7 b"),
+    })
+
+    assert response.status_code == 200, response.content
+    jobs = response.json()["jobs"]
+    assert [job["source_name"] for job in jobs] == ["EG.pdf", "OG.pdf"]
+    # One celery task each - they run side by side.
+    assert queued == [job["job_id"] for job in jobs]
+    assert response.json()["job_id"] == jobs[0]["job_id"]
+    inputs = {cad_import.get_job(job["job_id"])["cad_input"] for job in jobs}
+    assert len(inputs) == 2
+
+
+def test_a_wrong_file_among_the_pdfs_starts_no_job(api_client, location, tmp_path, monkeypatch):
+    monkeypatch.setattr(django_settings, "UPLOAD_DIR", str(tmp_path))
+    queued = []
+    monkeypatch.setattr(status_viewset.run_cad_import, "delay", queued.append)
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    response = api_client.post("/v1/status/measure_points/from_pdf/", {
+        "location_id": location.project_id,
+        "files0": SimpleUploadedFile("EG.pdf", b"%PDF-1.7"),
+        "files1": SimpleUploadedFile("notes.txt", b"x"),
+    })
+
+    assert (response.status_code, response.json()["reason"]) == (400, "Only PDF files: notes.txt")
+    assert queued == []
 
 
 def test_lageplan_job_stores_the_rendered_plan(location, events, tmp_path, monkeypatch):
