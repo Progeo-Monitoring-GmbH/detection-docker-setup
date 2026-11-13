@@ -2,9 +2,11 @@ import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useLocation as useRouterLocation } from 'react-router';
 import {
+  Activity,
   Bell,
   Calendar3,
   Database,
+  DatabaseCheck,
   ExclamationTriangle,
   Gear,
   Geo,
@@ -173,6 +175,22 @@ const LocationSidebar = ({
       icon: People,
       to: '/staff/',
       visible: can(routeRule('/staff/')),
+    },
+    {
+      // How the project databases are used - which are dead.
+      key: 'database-usage',
+      label: t('sidebar_database_usage'),
+      icon: DatabaseCheck,
+      to: '/insights/databases/',
+      visible: can(routeRule('/insights/databases/')),
+    },
+    {
+      // The usage sessions of the (consenting) users.
+      key: 'user-activity',
+      label: t('sidebar_user_activity'),
+      icon: Activity,
+      to: '/insights/activity/',
+      visible: can(routeRule('/insights/activity/')),
     },
     {
       // SMTP/Modbus/SMS/messenger - system-wide, not per location.

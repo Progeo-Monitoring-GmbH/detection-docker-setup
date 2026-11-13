@@ -1,0 +1,61 @@
+/* DonutChart.tsx - the donut and its legend. */
+
+.progeo-donut {
+  flex-shrink: 0;
+}
+
+.progeo-donut-clickable {
+  cursor: pointer;
+}
+
+.progeo-donut-total {
+  font-size: 18px;
+  font-weight: 600;
+  fill: var(--progeo-blue);
+}
+
+.progeo-donut-label {
+  font-size: 8px;
+  fill: #8b8383;
+}
+
+.progeo-donut-legend {
+  min-width: 0;
+  flex: 1;
+}
+
+.progeo-donut-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 2px 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--progeo-blue);
+  font-family: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: default;
+}
+
+.progeo-donut-legend-item--clickable {
+  cursor: pointer;
+}
+
+.progeo-donut-legend-item--clickable:hover {
+  background: rgba(11, 54, 89, 0.06);
+}
+
+/* The colour (the slice's) is set inline. */
+.progeo-donut-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.progeo-donut-amount {
+  white-space: nowrap;
+}

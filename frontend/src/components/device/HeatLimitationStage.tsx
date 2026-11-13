@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { Button, Spinner } from 'react-bootstrap';
 import { Magic } from 'react-bootstrap-icons';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
@@ -6,14 +6,15 @@ import axiosConfig from '../../axiosConfig';
 import { getBackendUrl } from '../../backendUrl';
 import { plotTheme } from '../../styles/plotTheme';
 import { childTestId } from '../../testIds';
+import CanvasKeyLegend from '../ui/CanvasKeyLegend';
 import { normalizedToImage } from '../ui/ImageCanvasStage';
 import { TWO_FINGER_TOUCH_ACTION, useWheelHint, WheelZoomHint } from '../ui/wheelZoom';
 import { toScreen, toWorld, type View, type WorldSize } from './heatmapCanvas';
 import { sizedContext } from './heatmapScene';
 import { HeatLimitationBar, HeatLimitationLayer, useHeatLimitationEditor } from './HeatLimitationEditor';
-import { limitPolygons, toPlanPoint } from './heatLimitations';
+import { limitPolygons, toPlanPoint, toWorldPoint } from './heatLimitations';
 import type { HeatLimitation, SensorHeatmapLageplanData } from './sensorHeatmapTypes';
-import { useHeatmapViewport, usePanZoomGestures } from './useHeatmapViewport';
+import { type AreaRect, useHeatmapViewport, usePanZoomGestures } from './useHeatmapViewport';
 import { useLageplanImageState } from './useLageplanImage';
 import ZoomControls from './ZoomControls';
 import './SensorHeatmap2D.css';
@@ -194,6 +195,40 @@ const HeatLimitationStage = ({
   const editor = useHeatLimitationEditor({ plans, plan, editable: editable && image != null, onChange });
   const drawing = editor.draft != null;
 
+  // D held while an area is drawn or edited: a drag over the plan removes
+  // the draft's points in the rectangle (as D + drag removes measure points
+  // in step 5). Not while typing, e.g. the area's name.
+  const [dHeld, setDHeld] = useState(false);
+  const [removeRect, setRemoveRect] = useState<AreaRect | null>(null);
+  useEffect(() => {
+    if (!drawing) {
+      return undefined;
+    }
+    const typing = (target: EventTarget | null) =>
+      target instanceof HTMLElement &&
+      (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() === 'd' && !event.ctrlKey && !event.metaKey && !event.altKey && !typing(event.target)) {
+        setDHeld(true);
+      }
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() === 'd') {
+        setDHeld(false);
+      }
+    };
+    const release = () => setDHeld(false);
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', release);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', release);
+    };
+  }, [drawing]);
+  const removing = drawing && dHeld;
+
   // Auto heat limitations: the areas proposed for this plan (shown instead
   // of the stored ones until applied or discarded).
   const auth = useAuth();
@@ -233,7 +268,9 @@ const HeatLimitationStage = ({
     bounds,
     height,
     fitPlan: true,
-    compact: false,
+    // As wide as the plan needs, left-aligned (like the heatmap and step 5) - no colour scale here.
+    compact: true,
+    reservedRight: 0,
   });
 
   const [wheelHint, showWheelHint] = useWheelHint();
@@ -245,9 +282,29 @@ const HeatLimitationStage = ({
     onHover: () => undefined,
     onLeave: () => undefined,
     onTap: (sx, sy) => {
-      if (drawing && view && world) {
+      // With D a click is a (too small) removal rectangle - no new point.
+      if (drawing && !dHeld && view && world) {
         editor.addPoint(toPlanPoint(toWorld(view, sx, sy), world), world);
       }
+    },
+    area: {
+      starts: () => removing,
+      onChange: setRemoveRect,
+      onSelect: ([x0, y0, x1, y1]) => {
+        const draft = editor.draft;
+        if (!draft || !view || !world) {
+          return;
+        }
+        const [left, right] = [Math.min(x0, x1), Math.max(x0, x1)];
+        const [top, bottom] = [Math.min(y0, y1), Math.max(y0, y1)];
+        const inside = draft.points.flatMap((point, index) => {
+          const [sx, sy] = toScreen(view, ...toWorldPoint(point, world));
+          return sx >= left && sx <= right && sy >= top && sy <= bottom ? [index] : [];
+        });
+        if (inside.length) {
+          editor.removePoints(inside);
+        }
+      },
     },
     wheelZoomsAt: (sx, sy) => {
       if (!view || !world) {
@@ -303,7 +360,7 @@ const HeatLimitationStage = ({
   }
 
   return (
-    <div data-testid={testId}>
+    <div className="d-flex flex-column" data-testid={testId}>
       {proposal ? (
         <ProposalBar
           proposal={proposal}
@@ -336,6 +393,39 @@ const HeatLimitationStage = ({
           {detectError}
         </div>
       )}
+      <div className="mb-2">
+        <CanvasKeyLegend
+          testId={childTestId(testId, 'legend')}
+          groups={[
+            {
+              title: 'View',
+              entries: [
+                { keys: ['Drag'], label: 'Move the plan' },
+                { keys: ['Ctrl', 'Scroll'], label: 'Zoom - or the buttons on the plan' },
+                !drawing && { keys: ['Double-click'], label: 'Fit the plan again' },
+              ],
+            },
+            editor.canEdit && !proposal && {
+              title: drawing ? (editor.draft?.id ? 'Edit the area' : 'Draw an area') : 'Areas',
+              entries: drawing
+                ? [
+                    {
+                      keys: ['Click'],
+                      label: editor.draft?.id ? 'Add a point to the nearest edge' : 'Add a point',
+                      active: !removing,
+                    },
+                    { keys: ['Drag'], label: 'Move a point (drag it)' },
+                    { keys: ['Double-click'], label: 'Remove a point' },
+                    { keys: ['D', 'Drag'], label: 'Remove the points in the dragged area', active: removing },
+                  ]
+                : [
+                    { keys: ['Click'], label: '"Create Heat-Limitation", or the pencil of an area to edit it' },
+                  ],
+              note: drawing ? 'Confirm stores the area - it needs at least 3 points.' : undefined,
+            },
+          ]}
+        />
+      </div>
       <div ref={wrapRef} className="heatmap2d-plot-area">
         <div
           className="heatmap2d-plot-wrap"
@@ -348,6 +438,7 @@ const HeatLimitationStage = ({
             aria-label="Lageplan with its heat limitations"
             data-testid={childTestId(testId, 'canvas')}
             className={`heatmap2d-canvas heatmap2d-canvas--${drawing ? 'crosshair' : grabbing ? 'grabbing' : 'grab'}`}
+            data-removing={removing || undefined}
             style={{ height: canvasHeight, touchAction: drawing ? 'none' : TWO_FINGER_TOUCH_ACTION }}
             {...handlers}
             // While drawing, double clicks are two points - not a reset.
@@ -362,6 +453,23 @@ const HeatLimitationStage = ({
               height={canvasHeight}
               testId={childTestId(testId, 'heat-limit')}
             />
+          )}
+          {removeRect && (
+            <div
+              className="heatmap2d-area-rect heat-limit-remove-rect"
+              data-testid={childTestId(testId, 'remove-rect')}
+              style={{
+                left: Math.min(removeRect[0], removeRect[2]),
+                top: Math.min(removeRect[1], removeRect[3]),
+                width: Math.abs(removeRect[2] - removeRect[0]),
+                height: Math.abs(removeRect[3] - removeRect[1]),
+              }}
+            />
+          )}
+          {removing && (
+            <div className="heat-limit-remove-badge" aria-live="polite" data-testid={childTestId(testId, 'remove-badge')}>
+              Remove: drag over the points to remove
+            </div>
           )}
           <WheelZoomHint visible={wheelHint} radius={0} testId={childTestId(testId, 'wheel-hint')} />
           <ZoomControls

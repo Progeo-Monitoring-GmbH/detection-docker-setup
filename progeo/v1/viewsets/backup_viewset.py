@@ -23,12 +23,12 @@ from progeo.helper.project_dbs import (
     existing_project_aliases,
     is_project_alias,
     project_alias,
-    project_key,
     project_key_from_alias,
+    project_location_names,
     register_project_db,
 )
 from progeo.tasks import create_database_backup
-from progeo.v1.models import Backup, ProgeoLocation
+from progeo.v1.models import Backup
 from progeo.v1.serializers import BackupSerializer
 from progeo.v1.viewsets.base_viewsets import StandardResultsSetPagination
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
@@ -117,17 +117,6 @@ def _known_database(db):
     return db in connections.settings
 
 
-def _project_names():
-    """{project key: "location, location"} - the names shown next to a
-    project's backups (locations live in the default database)."""
-    names = {}
-    rows = ProgeoLocation.objects.using(DEFAULT_DB_ALIAS).order_by("name").values_list("project_id", "name")
-    for project_id, name in rows:
-        if name:
-            names.setdefault(project_key(project_id), []).append(name)
-    return {key: ", ".join(values) for key, values in names.items()}
-
-
 class BackupViewSet(ProgeoModalViewSet):
     pagination_class = StandardResultsSetPagination
     serializer_class = BackupSerializer
@@ -170,7 +159,7 @@ class BackupViewSet(ProgeoModalViewSet):
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
-        context["project_names"] = _project_names()
+        context["project_names"] = project_location_names()
         return context
 
     @require_module_permissions("module_backup_enabled")
@@ -178,7 +167,7 @@ class BackupViewSet(ProgeoModalViewSet):
     def list_projects(self, request, *args, **kwargs):
         """Databases that can be backed up: "default" plus every project
         database, with the project's location names."""
-        names = _project_names()
+        names = project_location_names()
         projects = [{"database": DEFAULT_DB_ALIAS, "project": None, "name": None}]
         for alias in existing_project_aliases(refresh=True):
             key = project_key_from_alias(alias)

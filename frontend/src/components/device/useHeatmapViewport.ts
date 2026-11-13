@@ -26,12 +26,15 @@ export const useHeatmapViewport = ({
   height,
   fitPlan,
   compact = fitPlan,
+  reservedRight = COLORBAR_SPACE,
 }: {
   bounds: WorldRect | null;
   height: number;
   fitPlan: boolean;
   /** As wide as the content needs, not the whole card (default: with fitPlan). */
   compact?: boolean;
+  /** Kept free on the right of the content - the colour scale; 0 without one. */
+  reservedRight?: number;
 }) => {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [available, setAvailable] = useState(0);
@@ -49,19 +52,19 @@ export const useHeatmapViewport = ({
     return () => observer.disconnect();
   }, [hasChart]);
 
-  const canvasHeight = canvasHeightFor(bounds, available, height, fitPlan);
+  const canvasHeight = canvasHeightFor(bounds, available, height, fitPlan, reservedRight);
   // A readable margin that follows the card's width (8-28 px) instead of a
   // fixed fraction of the plan: small in the narrow /status card, larger in
   // the wide /analyse card, never a huge empty band.
   const viewPadding = available > 0 ? Math.round(Math.min(28, Math.max(8, available * 0.02))) : 12;
   // Compact: no empty bands beside content that is tall for the card.
-  const width = compact ? compactCanvasWidth(bounds, available, canvasHeight, viewPadding) : available;
+  const width = compact ? compactCanvasWidth(bounds, available, canvasHeight, viewPadding, reservedRight) : available;
   const fitted = useMemo(
     () =>
       bounds && width > 0
-        ? fitView(bounds, width, canvasHeight, COLORBAR_SPACE, viewPadding)
+        ? fitView(bounds, width, canvasHeight, reservedRight, viewPadding)
         : null,
-    [bounds, width, canvasHeight, viewPadding],
+    [bounds, width, canvasHeight, viewPadding, reservedRight],
   );
 
   // The user's view, for the bounds it was made on.

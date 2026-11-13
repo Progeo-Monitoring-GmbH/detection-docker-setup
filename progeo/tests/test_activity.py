@@ -230,7 +230,8 @@ def test_summary_aggregates(tracking):
     assert body["days"] == 30
     assert body["events"] == 10
     assert body["users"] == 2
-    assert body["pages"][0] == {"path": "/alarms/", "views": 3, "users": 2, "avg_ms": 3000, "median_ms": 2000}
+    assert body["pages"][0] == {"path": "/alarms/", "views": 3, "users": 2, "avg_ms": 3000, "median_ms": 2000,
+                                 "total_ms": 9000}
     assert body["pages"][1]["path"] == "/map/"
     assert body["clicks"] == [
         {"target": "alarms-export", "clicks": 2, "users": 2},

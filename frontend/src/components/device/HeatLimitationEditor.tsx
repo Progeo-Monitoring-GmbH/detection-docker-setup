@@ -202,6 +202,11 @@ export const useHeatLimitationEditor = ({
     movePoint: (index: number, point: Point) =>
       updatePoints((points) => points.map((p, i) => (i === index ? point : p))),
     removePoint: (index: number) => updatePoints((points) => points.filter((_, i) => i !== index)),
+    /** D + drag: removes the draft's points with these indices. */
+    removePoints: (indices: number[]) => {
+      const gone = new Set(indices);
+      updatePoints((points) => points.filter((_, i) => !gone.has(i)));
+    },
     undoPoint: () => updatePoints((points) => points.slice(0, -1)),
     confirm: () => {
       if (draft && draft.points.length >= MIN_AREA_POINTS) {

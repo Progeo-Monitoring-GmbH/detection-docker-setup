@@ -61,6 +61,8 @@ describe('APP_ROUTE_ACCESS', () => {
         '/device/overview',
         '/escalations/',
         '/escalations/:id',
+        '/insights/activity/',
+        '/insights/databases/',
         '/staff/',
       ].sort(),
     );

@@ -11,6 +11,8 @@ for how long, what they click, when they log in.
   - cleanup_activity(): daily (celery beat) - events older than
     ACTIVITY_RETENTION_DAYS are deleted.
   - summary(): the staff overview (GET /v1/activity/summary/?days=30).
+  - sessions() / session_events(): the staff analysis of the sessions -
+    all of them (how long, how many pages) and one with its events.
 
 No IP address, no user agent, no text from the page: paths have their ids
 replaced again here and click targets are test ids (or a tag name).
@@ -19,7 +21,8 @@ import datetime
 import re
 
 from django.conf import settings
-from django.db.models import Aggregate, Avg, Count, FloatField
+from django.db.models import Aggregate, Avg, Count, FloatField, Max, Min, Q, Sum
+from django.db.models.expressions import RawSQL
 from django.db.models.functions import TruncDate
 from django.utils import timezone
 
@@ -40,6 +43,9 @@ MAX_EVENT_AGE = datetime.timedelta(hours=24)
 SUMMARY_DAYS_DEFAULT = 30
 SUMMARY_DAYS_MAX = 366
 SUMMARY_TOP = 50
+# The newest sessions listed, the events of one session shown.
+SESSIONS_MAX = 2000
+SESSION_EVENTS_MAX = 5000
 
 _NUMERIC_SEGMENT = re.compile(r"^\d+$")
 # The routes with a token of a mailed link (frontend/src/CoreRoutes.jsx).
@@ -223,7 +229,7 @@ def summary(days: int = SUMMARY_DAYS_DEFAULT) -> dict:
     pages = (
         events.filter(kind=kinds.PAGE).values("path")
         .annotate(views=Count("id"), users=Count("user", distinct=True),
-                  avg_ms=Avg("duration_ms"), median_ms=Median("duration_ms"))
+                  avg_ms=Avg("duration_ms"), median_ms=Median("duration_ms"), total_ms=Sum("duration_ms"))
         .order_by("-views", "path")[:SUMMARY_TOP]
     )
     clicks = (
@@ -247,7 +253,8 @@ def summary(days: int = SUMMARY_DAYS_DEFAULT) -> dict:
         "users": events.aggregate(users=Count("user", distinct=True))["users"],
         "pages": [
             {"path": row["path"], "views": row["views"], "users": row["users"],
-             "avg_ms": _ms(row["avg_ms"]), "median_ms": _ms(row["median_ms"])}
+             "avg_ms": _ms(row["avg_ms"]), "median_ms": _ms(row["median_ms"]),
+             "total_ms": _ms(row["total_ms"])}
             for row in pages
         ],
         "clicks": list(clicks),
@@ -255,4 +262,84 @@ def summary(days: int = SUMMARY_DAYS_DEFAULT) -> dict:
             {"day": row["day"].isoformat(), "logins": row["logins"], "users": row["users"]} for row in logins
         ],
         "active_users_per_day": [{"day": row["day"].isoformat(), "users": row["users"]} for row in active],
+    }
+
+
+def _iso(value):
+    return value.isoformat() if value else None
+
+
+def sessions(days: int = SUMMARY_DAYS_DEFAULT) -> dict:
+    """The tab sessions of the last `days` days, newest first (at most
+    SESSIONS_MAX): who, from when to when - a page view's time is its start,
+    so a session ends with its last page's visible time - the time pages were
+    visible, page views, distinct pages, clicks and logins."""
+    from progeo.v1.models import ProgeoActivity
+
+    since = timezone.now() - datetime.timedelta(days=days)
+    table = ProgeoActivity._meta.db_table
+    page = Q(kind=ProgeoActivity.Kind.PAGE)
+    rows = (
+        ProgeoActivity.objects.using(DB).filter(created_at__gte=since)
+        .values("session", "user_id", "user__username")
+        .annotate(
+            start=Min("created_at"),
+            end=Max(RawSQL(
+                f"\"{table}\".\"created_at\" + COALESCE(\"{table}\".\"duration_ms\", 0) * interval '1 millisecond'", []
+            )),
+            visible_ms=Sum("duration_ms", filter=page),
+            views=Count("id", filter=page),
+            pages=Count("path", filter=page, distinct=True),
+            clicks=Count("id", filter=Q(kind=ProgeoActivity.Kind.CLICK)),
+            logins=Count("id", filter=Q(kind=ProgeoActivity.Kind.LOGIN)),
+        )
+        .order_by("-start")[:SESSIONS_MAX]
+    )
+    return {
+        "days": days,
+        "enabled": enabled(),
+        "retention_days": retention_days(),
+        "limit": SESSIONS_MAX,
+        "sessions": [
+            {
+                "session": row["session"],
+                "user_id": row["user_id"],
+                "username": row["user__username"],
+                "start": _iso(row["start"]),
+                "end": _iso(row["end"]),
+                "duration_ms": _ms((row["end"] - row["start"]).total_seconds() * 1000) if row["end"] else 0,
+                "visible_ms": row["visible_ms"] or 0,
+                "views": row["views"],
+                "pages": row["pages"],
+                "clicks": row["clicks"],
+                "logins": row["logins"],
+            }
+            for row in rows
+        ],
+    }
+
+
+def session_events(session: str) -> dict | None:
+    """One session with its events in order (at most SESSION_EVENTS_MAX) -
+    None for an unknown session."""
+    from progeo.v1.models import ProgeoActivity
+
+    if not isinstance(session, str) or not SESSION_PATTERN.match(session):
+        return None
+    events = list(
+        ProgeoActivity.objects.using(DB).filter(session=session)
+        .order_by("created_at", "id")
+        .values("kind", "path", "target", "duration_ms", "created_at", "user_id", "user__username")[:SESSION_EVENTS_MAX]
+    )
+    if not events:
+        return None
+    return {
+        "session": session,
+        "user_id": events[0]["user_id"],
+        "username": events[0]["user__username"],
+        "events": [
+            {"kind": event["kind"], "path": event["path"], "target": event["target"],
+             "duration_ms": event["duration_ms"], "at": _iso(event["created_at"])}
+            for event in events
+        ],
     }

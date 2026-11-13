@@ -583,8 +583,10 @@ export const canvasHeightFor = (
   width: number,
   height: number,
   fitPlan: boolean,
+  /** Kept free on the right (the colour scale). */
+  reservedRight = COLORBAR_SPACE,
 ) => {
-  const usable = width - COLORBAR_SPACE;
+  const usable = width - reservedRight;
   const spanX = bounds ? bounds.right - bounds.left : 0;
   const spanY = bounds ? bounds.bottom - bounds.top : 0;
   if (width <= 0 || spanX <= 0 || spanY <= 0 || usable <= 0) {
@@ -613,17 +615,19 @@ export const compactCanvasWidth = (
   available: number,
   height: number,
   padding: number,
+  /** Kept free on the right (the colour scale). */
+  reservedRight = COLORBAR_SPACE,
 ) => {
   const spanX = bounds ? bounds.right - bounds.left : 0;
   const spanY = bounds ? bounds.bottom - bounds.top : 0;
   if (available <= 0 || spanX <= 0 || spanY <= 0) {
     return available;
   }
-  const scale = Math.min((available - COLORBAR_SPACE - 2 * padding) / spanX, (height - 2 * padding) / spanY);
+  const scale = Math.min((available - reservedRight - 2 * padding) / spanX, (height - 2 * padding) / spanY);
   if (!(scale > 0)) {
     return available;
   }
-  const needed = Math.ceil(spanX * scale + COLORBAR_SPACE + 2 * padding);
+  const needed = Math.ceil(spanX * scale + reservedRight + 2 * padding);
   return Math.min(available, Math.max(needed, Math.min(COMPACT_MIN_WIDTH, available)));
 };
 

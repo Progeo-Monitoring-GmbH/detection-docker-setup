@@ -1,13 +1,82 @@
-/* The legend under a plan canvas (CanvasKeyLegend.tsx): groups of mouse and
-   key actions, the one in use highlighted; key and mouse badges. */
+/* The legend over a plan canvas (CanvasKeyLegend.tsx): a title line with the
+   collapse toggle, groups of mouse and key actions (the one in use
+   highlighted); key and mouse badges. */
+
+.canvas-key-legend-shell {
+  background: var(--progeo-surface);
+  border-radius: 13px;
+  padding: 8px 16px;
+  box-shadow: 0 0 0 1px rgba(11, 54, 89, 0.08);
+}
+
+/* On top of the window while the page scrolls - below the mobile top bar
+   (Sidebar.css .progeo-sidebar-bar, z-index 60). */
+.canvas-key-legend-shell--sticky {
+  position: sticky;
+  top: 8px;
+  z-index: 50;
+  box-shadow: 0 0 0 1px rgba(11, 54, 89, 0.08), 0 8px 18px -14px rgba(11, 54, 89, 0.45);
+}
+
+@media (max-width: 859.98px) {
+  .canvas-key-legend-shell--sticky {
+    top: 70px;
+  }
+}
+
+.canvas-key-legend-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  min-height: 30px;
+}
+
+.canvas-key-legend-head-icon {
+  color: #8b8383;
+}
+
+.canvas-key-legend-head-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #8b8383;
+}
+
+/* Collapsed: the action in use, still visible. */
+.canvas-key-legend-head-active {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0b3659;
+  background: #e7f0fd;
+  border-radius: 8px;
+  padding: 2px 8px;
+}
+
+.canvas-key-legend-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  color: var(--progeo-blue);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+
+.canvas-key-legend-toggle:hover,
+.canvas-key-legend-toggle:focus-visible {
+  background: rgba(11, 54, 89, 0.06);
+}
 
 .canvas-key-legend {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 14px 28px;
-  background: var(--progeo-surface);
-  border-radius: 13px;
-  padding: 14px 16px;
+  padding: 8px 0 6px;
 }
 
 .canvas-key-legend-title {

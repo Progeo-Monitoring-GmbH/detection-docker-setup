@@ -1,0 +1,73 @@
+/* The staff insight pages: DatabaseUsageView, UserActivityView. */
+
+.staff-insights {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.staff-insights-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.staff-insights-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--progeo-blue);
+}
+
+.staff-insights-subtitle {
+  font-size: 0.8125rem;
+  color: #6b6a64;
+}
+
+/* Two charts side by side, one on narrow screens. */
+.staff-insights-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  gap: 14px;
+}
+
+/* Data being reloaded: the previous one stays, dimmed - no layout jump. */
+.staff-insights-busy {
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+
+.staff-insights-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  color: #6b6a64;
+}
+
+.staff-insights-note {
+  margin-top: 6px;
+  font-size: 0.75rem;
+  color: #6b6a64;
+}
+
+/* Numbers aligned in table columns. */
+.staff-insights-num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* A status: icon in the status colour + its label in ink. */
+.staff-insights-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+
+.staff-insights-status-icon {
+  display: inline-flex;
+}

@@ -8,7 +8,13 @@
   background: var(--progeo-panel-bg);
   border-radius: var(--progeo-radius-panel);
   box-shadow: var(--progeo-shadow-panel);
+  /* Clips to the rounded corners. clip, not hidden: hidden makes the panel a
+     scroll container and sticky content inside (the canvas key legend) would
+     stick to the panel instead of the window. flow-root keeps the block
+     formatting context hidden gave. Older browsers fall back to hidden. */
+  display: flow-root;
   overflow: hidden;
+  overflow: clip;
 }
 
 .progeo-panel-head {

@@ -18,7 +18,9 @@ const clamp = (value: number, min: number, max: number) =>
 const CANVAS_WIDTH = 900;
 const CANVAS_HEIGHT = 600;
 const CANVAS_PADDING = 32;
-const LOGICAL = { width: CANVAS_WIDTH, height: CANVAS_HEIGHT };
+// The narrowest compact canvas - room for the controls floating on it
+// (zoom, rotate, badges, the apply bar).
+const MIN_CANVAS_WIDTH = 560;
 // Backing store pixels per canvas unit at most (huge screens / zoomed pages).
 const MAX_PIXEL_RATIO = 4;
 // Screen pixels: how close the mouse must be to a sensor for its tooltip,
@@ -400,6 +402,21 @@ const ImageCanvasStage = ({
   // Insert (I held): the normalized point under the mouse - the cut points' middle goes there.
   const [insertAt, setInsertAt] = useState<ImagePoint | null>(null);
 
+  // Compact: the canvas only as wide as the plan needs at zoom 1 (plus the
+  // padding), never narrower than its floating controls need - left-aligned,
+  // at the screen scale and height of the full width, so a tall plan has no
+  // empty bands beside it. Its units stay the alignment's (CANVAS_HEIGHT
+  // high): the plan's scale depends on the image only, the points' place is
+  // relative to the drawn plan.
+  const canvasWidth = image
+    ? clamp(
+        Math.ceil(image.naturalWidth * alignmentBaseScale(image.naturalWidth, image.naturalHeight) + CANVAS_PADDING),
+        MIN_CANVAS_WIDTH,
+        CANVAS_WIDTH,
+      )
+    : CANVAS_WIDTH;
+  const logical = useMemo(() => ({ width: canvasWidth, height: CANVAS_HEIGHT }), [canvasWidth]);
+
   // Shown width of the canvas (CSS pixels): it is drawn at that size times
   // the device pixel ratio; sizes of markers and labels are screen pixels.
   const [cssWidth, setCssWidth] = useState(CANVAS_WIDTH);
@@ -416,7 +433,7 @@ const ImageCanvasStage = ({
     observer.observe(canvas);
     return () => observer.disconnect();
   }, []);
-  const screenScale = cssWidth / CANVAS_WIDTH;
+  const screenScale = cssWidth / canvasWidth;
   const pixelRatio = Math.min(
     MAX_PIXEL_RATIO,
     screenScale * (typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1),
@@ -696,15 +713,15 @@ const ImageCanvasStage = ({
       return;
     }
 
-    // Drawn in canvas units (LOGICAL), at pixelRatio backing pixels each.
+    // Drawn in canvas units (logical), at pixelRatio backing pixels each.
     ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-    const { width, height } = LOGICAL;
+    const { width, height } = logical;
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = '#f5f6f8';
     ctx.fillRect(0, 0, width, height);
     ctx.imageSmoothingQuality = 'high';
 
-    const layout = canvasLayout(LOGICAL, image, zoom, offsetX, offsetY);
+    const layout = canvasLayout(logical, image, zoom, offsetX, offsetY);
     const { scale, drawWidth, drawHeight, drawX, drawY } = layout;
     const transform: PointTransform = {
       ...layout,
@@ -1040,6 +1057,7 @@ const ImageCanvasStage = ({
     pointScaleY,
     isVerticallyFlipped,
     zoom,
+    logical,
   ]);
 
   // Two picked points + their real distance -> meters per image pixel.
@@ -1102,11 +1120,11 @@ const ImageCanvasStage = ({
   /** Zoom by `factor` around a canvas point (default: the middle) - the
    * plan point there stays where it is. */
   const zoomAround = (factor: number, at?: ImagePoint) => {
-    const [pointerX, pointerY] = at ?? [CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2];
+    const [pointerX, pointerY] = at ?? [canvasWidth / 2, CANVAS_HEIGHT / 2];
     const nextZoom = clamp(zoom * factor, MIN_ZOOM, MAX_ZOOM);
     const ratio = 1 - nextZoom / zoom;
     setZoom(nextZoom);
-    setOffsetX(offsetX + (pointerX - CANVAS_WIDTH / 2 - offsetX) * ratio);
+    setOffsetX(offsetX + (pointerX - canvasWidth / 2 - offsetX) * ratio);
     setOffsetY(offsetY + (pointerY - CANVAS_HEIGHT / 2 - offsetY) * ratio);
   };
   const resetView = () => {
@@ -1138,7 +1156,7 @@ const ImageCanvasStage = ({
       }
       const delta = clamp(event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY, -120, 120);
       zoomAroundRef.current(Math.exp(-delta * 0.0015), [
-        ((event.clientX - rect.left) * CANVAS_WIDTH) / rect.width,
+        ((event.clientX - rect.left) * CANVAS_HEIGHT) / rect.height,
         ((event.clientY - rect.top) * CANVAS_HEIGHT) / rect.height,
       ]);
     };
@@ -1146,7 +1164,7 @@ const ImageCanvasStage = ({
     return () => canvas.removeEventListener('wheel', onWheel);
   }, [showWheelHint]);
 
-  /** Canvas unit (LOGICAL) under the mouse - the canvas is shown at any width. */
+  /** Canvas unit (logical) under the mouse - the canvas is shown at any width. */
   const canvasPointAt = (
     event: { clientX: number; clientY: number },
   ): ImagePoint | null => {
@@ -1159,7 +1177,7 @@ const ImageCanvasStage = ({
       return null;
     }
     return [
-      ((event.clientX - rect.left) * CANVAS_WIDTH) / rect.width,
+      ((event.clientX - rect.left) * CANVAS_HEIGHT) / rect.height,
       ((event.clientY - rect.top) * CANVAS_HEIGHT) / rect.height,
     ];
   };
@@ -1174,7 +1192,7 @@ const ImageCanvasStage = ({
       return null;
     }
     const { scale, drawX, drawY } = canvasLayout(
-      LOGICAL,
+      logical,
       image,
       zoom,
       offsetX,
@@ -1194,7 +1212,7 @@ const ImageCanvasStage = ({
     if (!image || !canvasPoint) {
       return null;
     }
-    const { scale, drawX, drawY } = canvasLayout(LOGICAL, image, zoom, offsetX, offsetY);
+    const { scale, drawX, drawY } = canvasLayout(logical, image, zoom, offsetX, offsetY);
     return [
       clamp((canvasPoint[0] - drawX) / scale, 0, image.naturalWidth),
       clamp((canvasPoint[1] - drawY) / scale, 0, image.naturalHeight),
@@ -1220,7 +1238,7 @@ const ImageCanvasStage = ({
       return null;
     }
     return {
-      ...canvasLayout(LOGICAL, image, zoom, offsetX, offsetY),
+      ...canvasLayout(logical, image, zoom, offsetX, offsetY),
       offsetX: pointOffsetX,
       offsetY: pointOffsetY,
       scaleX: pointScaleX,
@@ -1313,7 +1331,7 @@ const ImageCanvasStage = ({
     if (!image) {
       return null;
     }
-    const { drawX, drawY, drawWidth, drawHeight } = canvasLayout(LOGICAL, image, zoom, offsetX, offsetY);
+    const { drawX, drawY, drawWidth, drawHeight } = canvasLayout(logical, image, zoom, offsetX, offsetY);
     return [(x - drawX) / drawWidth, (y - drawY) / drawHeight];
   };
 
@@ -1950,7 +1968,7 @@ const ImageCanvasStage = ({
   };
 
   const hoveredItem = hover ? (items[hover.index] ?? null) : null;
-  const cssHeight = (cssWidth * CANVAS_HEIGHT) / CANVAS_WIDTH;
+  const cssHeight = (cssWidth * CANVAS_HEIGHT) / canvasWidth;
   const tooltipBelow = hover ? hover.y < cssHeight - 140 : true;
   const editing = editMode != null && canSelectFor(editMode);
   const selectingPoints = editing && pointSelect != null;
@@ -1971,7 +1989,7 @@ const ImageCanvasStage = ({
     if (!editing || !selectionRect || selecting || !image) {
       return null;
     }
-    const { scale, drawX, drawY } = canvasLayout(LOGICAL, image, zoom, offsetX, offsetY);
+    const { scale, drawX, drawY } = canvasLayout(logical, image, zoom, offsetX, offsetY);
     const right = (drawX + (selectionRect.x + selectionRect.width) * scale) * screenScale;
     const bottom = (drawY + (selectionRect.y + selectionRect.height) * scale) * screenScale;
     return {
@@ -2019,11 +2037,102 @@ const ImageCanvasStage = ({
         )}
       </div>
 
+      <CanvasKeyLegend
+        testId={childTestId(testId, 'legend')}
+        groups={[
+          {
+            title: 'View',
+            entries: [
+              { keys: editing ? ['Shift', 'Drag'] : ['Drag'], label: 'Move the plan' },
+              { keys: ['Ctrl', 'Scroll'], label: 'Zoom - or the buttons on the plan' },
+              !placement && { keys: ['Hover'], label: 'Details of a sensor' },
+            ],
+          },
+          placement && {
+            title: 'Place sensors',
+            entries: [
+              {
+                keys: ['Click'],
+                label:
+                  placement.activeDeviceId != null
+                    ? `Place ${placement.activeLabel ?? 'the selected sensor'}`
+                    : 'Place the sensor selected in step 3',
+                active: placement.activeDeviceId != null && !editing,
+              },
+              { keys: ['Drag'], label: 'Move a placed sensor (drag the dot)' },
+            ],
+          },
+          (canAlign || canScale) && {
+            title: 'Align and scale',
+            entries: [
+              canAlign && {
+                keys: ['A', 'Drag'],
+                label: `Hold A, drag a ${lineMode ? 'dm line' : 'sensor'} onto its place`,
+                active: alignKey || aligning,
+              },
+              canScale && {
+                keys: ['R', 'Click'],
+                label: 'Hold R, click the reference point',
+                active: heldKey === 'r' || tool === 'reference',
+              },
+              canScale && {
+                keys: ['M', 'Click'],
+                label: 'Hold M, click two points of a known distance',
+                active: heldKey === 'm',
+              },
+            ],
+          },
+          canEditImage && {
+            title: 'Edit the image',
+            entries: [
+              { keys: ['C'], label: 'Clear an area - fill it white', active: editMode === 'clear' },
+              { keys: ['X'], label: 'Crop the plan to an area', active: editMode === 'crop' },
+              { keys: ['↺ / ↻'], label: 'Rotate the plan by 90° (buttons on the plan) - the sensors turn with it' },
+              editing && !selectingPoints && {
+                keys: ['Drag'],
+                label: selectionRect ? 'Select the area again' : 'Select the area',
+                active: !selectionRect,
+              },
+              { keys: ['Esc'], label: 'Cancel' },
+            ],
+            note: 'Nothing changes before "Apply" - the sensors keep their place.',
+          },
+          (canRemovePoints || canCut || canGroup || canInsert) && {
+            title: lineMode ? 'dm sensors' : 'Measure points',
+            entries: [
+              canRemovePoints && {
+                keys: ['D', 'Drag'],
+                label: `Hold D, drag over ${pointNoun}s to remove them`,
+                active: heldKey === 'd' || editMode === 'remove',
+              },
+              canCut && {
+                keys: ['O', 'Drag'],
+                label: `Hold O, drag over ${pointNoun}s to cut them out`,
+                active: heldKey === 'o' || editMode === 'cut',
+              },
+              canInsert && {
+                keys: ['I', 'Click'],
+                label: `Hold I, click where the ${cutItems.length} cut one(s) go - on any plan`,
+                active: heldKey === 'i',
+              },
+              canGroup && {
+                keys: ['L', 'Drag'],
+                label: `Hold L, drag over ${pointNoun}s to align them by themselves`,
+                active: heldKey === 'l' || editMode === 'group' || group != null,
+              },
+              { keys: ['Esc'], label: 'Cancel' },
+            ],
+            note: `Removing is for good once "Remove" is pressed; cut ${pointNoun}s stay where they were until inserted. All keep their number.`,
+          },
+        ]}
+      />
+
       <div className="d-flex flex-column gap-2">
-        <div className="image-canvas-wrap">
+        {/* As wide as the compact canvas (its share of the full width), left-aligned. */}
+        <div className="image-canvas-wrap" style={{ width: `${(canvasWidth / CANVAS_WIDTH) * 100}%` }}>
           <canvas
             ref={canvasRef}
-            width={Math.round(CANVAS_WIDTH * pixelRatio)}
+            width={Math.round(canvasWidth * pixelRatio)}
             height={Math.round(CANVAS_HEIGHT * pixelRatio)}
             onMouseDown={handleMouseDown}
             onMouseUp={handleCanvasMouseUp}
@@ -2050,7 +2159,7 @@ const ImageCanvasStage = ({
                     ? 'pointer'
                     : 'grab'
             }`}
-            style={{ aspectRatio: `${CANVAS_WIDTH} / ${CANVAS_HEIGHT}` }}
+            style={{ aspectRatio: `${canvasWidth} / ${CANVAS_HEIGHT}` }}
             data-testid={childTestId(testId, 'canvas')}
           />
           <ZoomControls
@@ -2172,95 +2281,6 @@ const ImageCanvasStage = ({
           )}
         </div>
 
-        <CanvasKeyLegend
-          testId={childTestId(testId, 'legend')}
-          groups={[
-            {
-              title: 'View',
-              entries: [
-                { keys: editing ? ['Shift', 'Drag'] : ['Drag'], label: 'Move the plan' },
-                { keys: ['Ctrl', 'Scroll'], label: 'Zoom - or the buttons on the plan' },
-                !placement && { keys: ['Hover'], label: 'Details of a sensor' },
-              ],
-            },
-            placement && {
-              title: 'Place sensors',
-              entries: [
-                {
-                  keys: ['Click'],
-                  label:
-                    placement.activeDeviceId != null
-                      ? `Place ${placement.activeLabel ?? 'the selected sensor'}`
-                      : 'Place the sensor selected in step 3',
-                  active: placement.activeDeviceId != null && !editing,
-                },
-                { keys: ['Drag'], label: 'Move a placed sensor (drag the dot)' },
-              ],
-            },
-            (canAlign || canScale) && {
-              title: 'Align and scale',
-              entries: [
-                canAlign && {
-                  keys: ['A', 'Drag'],
-                  label: `Hold A, drag a ${lineMode ? 'dm line' : 'sensor'} onto its place`,
-                  active: alignKey || aligning,
-                },
-                canScale && {
-                  keys: ['R', 'Click'],
-                  label: 'Hold R, click the reference point',
-                  active: heldKey === 'r' || tool === 'reference',
-                },
-                canScale && {
-                  keys: ['M', 'Click'],
-                  label: 'Hold M, click two points of a known distance',
-                  active: heldKey === 'm',
-                },
-              ],
-            },
-            canEditImage && {
-              title: 'Edit the image',
-              entries: [
-                { keys: ['C'], label: 'Clear an area - fill it white', active: editMode === 'clear' },
-                { keys: ['X'], label: 'Crop the plan to an area', active: editMode === 'crop' },
-                { keys: ['↺ / ↻'], label: 'Rotate the plan by 90° (buttons on the plan) - the sensors turn with it' },
-                editing && !selectingPoints && {
-                  keys: ['Drag'],
-                  label: selectionRect ? 'Select the area again' : 'Select the area',
-                  active: !selectionRect,
-                },
-                { keys: ['Esc'], label: 'Cancel' },
-              ],
-              note: 'Nothing changes before "Apply" - the sensors keep their place.',
-            },
-            (canRemovePoints || canCut || canGroup || canInsert) && {
-              title: lineMode ? 'dm sensors' : 'Measure points',
-              entries: [
-                canRemovePoints && {
-                  keys: ['D', 'Drag'],
-                  label: `Hold D, drag over ${pointNoun}s to remove them`,
-                  active: heldKey === 'd' || editMode === 'remove',
-                },
-                canCut && {
-                  keys: ['O', 'Drag'],
-                  label: `Hold O, drag over ${pointNoun}s to cut them out`,
-                  active: heldKey === 'o' || editMode === 'cut',
-                },
-                canInsert && {
-                  keys: ['I', 'Click'],
-                  label: `Hold I, click where the ${cutItems.length} cut one(s) go - on any plan`,
-                  active: heldKey === 'i',
-                },
-                canGroup && {
-                  keys: ['L', 'Drag'],
-                  label: `Hold L, drag over ${pointNoun}s to align them by themselves`,
-                  active: heldKey === 'l' || editMode === 'group' || group != null,
-                },
-                { keys: ['Esc'], label: 'Cancel' },
-              ],
-              note: `Removing is for good once "Remove" is pressed; cut ${pointNoun}s stay where they were until inserted. All keep their number.`,
-            },
-          ]}
-        />
 
         {!placement && lineSensors && items.length > 0 && lineCount === 0 && (
           <div className="image-canvas-action image-canvas-action--warning" data-testid={childTestId(testId, 'no-lines-warning')}>

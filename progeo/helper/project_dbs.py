@@ -111,6 +111,20 @@ def project_key(project_id):
     return project_id
 
 
+def project_location_names():
+    """{project key: "location, location"} - the names shown next to a
+    project's database (backups, database usage); the locations live in the
+    default database."""
+    from progeo.v1.models import ProgeoLocation
+
+    names = {}
+    rows = ProgeoLocation.objects.using(DEFAULT_DB_ALIAS).order_by("name").values_list("project_id", "name")
+    for project_id, name in rows:
+        if name:
+            names.setdefault(project_key(project_id), []).append(name)
+    return {key: ", ".join(values) for key, values in names.items()}
+
+
 def project_alias(project_id):
     """Database alias (== database name) of a project; None -> "...unknown"."""
     return f"{project_db_prefix()}{project_key(project_id)}"

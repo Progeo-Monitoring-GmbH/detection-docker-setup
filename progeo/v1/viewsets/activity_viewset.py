@@ -17,6 +17,8 @@ class ActivityViewSet(viewsets.ViewSet):
                                             -> {stored, rejected}; stored 0 for staff/superusers,
                                             "log in as" sessions or with ACTIVITY_TRACKING_ENABLED off
         GET  /v1/activity/summary/?days=30  staff (is_staff or is_superuser): the overview
+        GET  /v1/activity/sessions/?days=30 staff: every session (duration, pages, clicks)
+        GET  /v1/activity/session/?session=<id>  staff: one session with its events
     """
 
     authentication_classes = [JWTAuthentication, ExpiringTokenAuthentication, SessionAuthentication]
@@ -29,9 +31,32 @@ class ActivityViewSet(viewsets.ViewSet):
             return RequestFailed({"reason": str(exc)})
         return RequestSuccess(result)
 
-    @action(detail=False, url_path="summary", methods=["GET"])
-    def summary(self, request, *args, **kwargs):
+    @staticmethod
+    def _staff_only(request):
         user = request.user
         if not (user.is_staff or user.is_superuser):
             return Response({"success": False, "reason": "staff only"}, status=403)
+        return None
+
+    @action(detail=False, url_path="summary", methods=["GET"])
+    def summary(self, request, *args, **kwargs):
+        if denied := self._staff_only(request):
+            return denied
         return RequestSuccess(activity.summary(activity.summary_days(request.query_params.get("days"))))
+
+    @action(detail=False, url_path="sessions", methods=["GET"])
+    def sessions(self, request, *args, **kwargs):
+        """Staff: the sessions of the last ?days= days (helper/activity.sessions)."""
+        if denied := self._staff_only(request):
+            return denied
+        return RequestSuccess(activity.sessions(activity.summary_days(request.query_params.get("days"))))
+
+    @action(detail=False, url_path="session", methods=["GET"])
+    def session(self, request, *args, **kwargs):
+        """Staff: one session with its events - ?session=<id>."""
+        if denied := self._staff_only(request):
+            return denied
+        result = activity.session_events(request.query_params.get("session"))
+        if result is None:
+            return Response({"success": False, "reason": "Session not found"}, status=404)
+        return RequestSuccess(result)

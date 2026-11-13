@@ -66,6 +66,9 @@ export const APP_ROUTE_ACCESS = {
   '/device/statistics/': allOf(STAFF, permission('module_devices_enabled')),
   '/admin/panel/': SUPERUSER,
   '/staff/': STAFF,
+  // Database usage and user activity (main/staff/).
+  '/insights/databases/': STAFF,
+  '/insights/activity/': STAFF,
   // System-wide interface config; the cards check module_interface_* themselves.
   '/schnittstelle/': permission('module_interface_enabled'),
   '/escalations/': STAFF,

@@ -111,6 +111,8 @@ const DeviceSettingsRedirect = React.lazy(
 );
 const AdminPanel = React.lazy(() => import('./main/AdminPanel.tsx'));
 const StaffAdmin = React.lazy(() => import('./main/StaffAdmin.tsx'));
+const DatabaseUsageView = React.lazy(() => import('./main/staff/DatabaseUsageView.tsx'));
+const UserActivityView = React.lazy(() => import('./main/staff/UserActivityView.tsx'));
 const EscalationsView = React.lazy(() => import('./main/EscalationsView.tsx'));
 const LandingPage = React.lazy(() => import('./main/LandingPage.tsx'));
 const LageplanWizardView = React.lazy(
@@ -277,6 +279,15 @@ const CoreRoutes = () => {
             element={guard('/admin/panel/', <AdminPanel />)}
           />
           <Route path="/staff/" element={guard('/staff/', <StaffAdmin />)} />
+          {/* Staff insights: how the project databases and the portal are used. */}
+          <Route
+            path="/insights/databases/"
+            element={guard('/insights/databases/', <DatabaseUsageView />)}
+          />
+          <Route
+            path="/insights/activity/"
+            element={guard('/insights/activity/', <UserActivityView />)}
+          />
           {/* System-wide SMTP/Modbus/SMS/messenger config - not per location. */}
           <Route
             path="/schnittstelle/"
