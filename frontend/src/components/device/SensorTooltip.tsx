@@ -25,6 +25,8 @@ type SensorTooltipProps = {
   containerHeight: number;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
+  /** data-testid of the tooltip (see CursorTooltip). */
+  testId?: string;
 };
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
@@ -38,12 +40,14 @@ const SensorTooltip = ({
   unit,
   decimals,
   dotColor,
+  testId = 'sensor-tooltip',
   ...rest
 }: SensorTooltipProps) => (
   <CursorTooltip
     width={200}
     dotColor={dotColor ?? alarmHeatColor({ threshold, max_value: value, max_values: [] })}
     title={name ? `${name} (#${sensorPos})` : `Sensor #${sensorPos}`}
+    testId={testId}
     {...rest}
   >
     <TooltipRow label="Value">

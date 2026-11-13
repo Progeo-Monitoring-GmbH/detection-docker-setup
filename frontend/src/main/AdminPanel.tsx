@@ -12,6 +12,8 @@ import PillButton from '../components/ui/kit/PillButton';
 import PillSelect from '../components/ui/kit/PillSelect';
 import useLogStream, { type LogStreamStatus } from './admin/useLogStream';
 import { formatDate } from './dateFormat';
+import { repeatedTestId } from '../testIds';
+import './AdminPanel.css';
 
 type DiskInfo = {
   filesystem?: string;
@@ -33,7 +35,6 @@ type StorageInfo = {
 
 const LAGEPLAN_PERIODS = ['1', '3', '7', '14', '30'];
 const LOG_LINES = ['200', '500', '1000', '2000'];
-const MUTED = '#8B8383';
 
 const bytesToReadable = (value?: number) => {
   if (!Number.isFinite(value as number) || (value as number) < 0) {
@@ -58,10 +59,10 @@ const attachmentName = (header?: string | null) => header?.match(/filename="?([^
 
 const UsageBar = ({ percent }: { percent: number | null }) => {
   const value = percent == null ? 0 : Math.max(0, Math.min(100, percent));
-  const color = value >= 90 ? '#C44D26' : value >= 75 ? '#D99A1E' : 'var(--progeo-blue)';
+  const level = value >= 90 ? ' admin-usage-fill--danger' : value >= 75 ? ' admin-usage-fill--warn' : '';
   return (
-    <div style={{ height: 6, borderRadius: 3, background: 'var(--progeo-track)', overflow: 'hidden' }}>
-      <div style={{ width: `${value}%`, height: '100%', background: color, transition: 'width .4s ease' }} />
+    <div className="admin-usage-bar">
+      <div className={`admin-usage-fill${level}`} style={{ width: `${value}%` }} />
     </div>
   );
 };
@@ -71,30 +72,23 @@ const StorageTile = ({
   value,
   percent,
   lines,
+  testKey,
 }: {
   label: string;
   value: string;
   percent: number | null;
   lines: Array<string | null>;
+  /** data-test-key of the tile (src/testIds.ts). */
+  testKey: string;
 }) => (
-  <div
-    style={{
-      background: 'var(--progeo-surface)',
-      borderRadius: 14,
-      padding: '14px 16px',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 8,
-      minWidth: 0,
-    }}
-  >
-    <div style={{ fontSize: 13, color: '#6E6868' }}>{label}</div>
-    <div style={{ fontSize: 24, fontWeight: 500, color: 'var(--progeo-blue)', letterSpacing: '-0.02em' }}>
+  <div className="admin-storage-tile" {...repeatedTestId('admin-storage-tile', testKey)}>
+    <div className="admin-storage-label">{label}</div>
+    <div className="admin-storage-value" {...repeatedTestId('admin-storage-tile-value', testKey)}>
       {value}
     </div>
     {percent != null && <UsageBar percent={percent} />}
     {lines.filter(Boolean).map((line) => (
-      <div key={line} style={{ fontSize: 12, color: MUTED, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+      <div key={line} className="admin-storage-line">
         {line}
       </div>
     ))}
@@ -152,10 +146,11 @@ const StorageSection = () => {
 
   return (
     <PanelCard
+      testId="admin-storage"
       title={t('admin_storage_title')}
       actions={
         <>
-          <span style={{ fontSize: 12, color: MUTED }}>
+          <span className="admin-muted" data-testid="admin-storage-host">
             {[info?.host?.hostname, info?.host?.kernel, info?.generated_at && t('admin_storage_generated', { time: formatTime(info.generated_at) })]
               .filter(Boolean)
               .join(' · ')}
@@ -166,12 +161,14 @@ const StorageSection = () => {
             icon={loading ? <Spinner size="sm" animation="border" /> : <ArrowClockwise />}
             disabled={loading}
             onClick={() => load(true)}
+            testId="admin-storage-refresh"
           />
         </>
       }
     >
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+      <div className="admin-storage-grid">
         <StorageTile
+          testKey="root"
           label={t('admin_storage_root')}
           value={rootPercent != null ? `${rootPercent.toFixed(0)} %` : '-'}
           percent={rootPercent}
@@ -181,6 +178,7 @@ const StorageSection = () => {
           ]}
         />
         <StorageTile
+          testKey="media"
           label={t('admin_storage_media')}
           value={bytesToReadable(media.directory_size_bytes)}
           percent={mediaPercent}
@@ -192,6 +190,7 @@ const StorageSection = () => {
           ]}
         />
         <StorageTile
+          testKey="logs"
           label={t('admin_storage_logs')}
           value={bytesToReadable(logs.directory_size_bytes)}
           percent={null}
@@ -230,7 +229,7 @@ const LageplanExportSection = () => {
           <>
             {t('admin_lageplan_done', { count, days: usedDays })}
             {usedDays !== Number(days) && (
-              <span style={{ color: '#9A7208' }}> {t('admin_lageplan_widened', { days: usedDays })}</span>
+              <span className="admin-warning-text"> {t('admin_lageplan_widened', { days: usedDays })}</span>
             )}
           </>,
         );
@@ -249,8 +248,8 @@ const LageplanExportSection = () => {
   };
 
   return (
-    <PanelCard title={t('admin_lageplan_title')}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+    <PanelCard title={t('admin_lageplan_title')} testId="admin-lageplan">
+      <div className="admin-lageplan-row">
         <PillSelect
           label={t('admin_lageplan_period')}
           options={LAGEPLAN_PERIODS.map((value) => ({
@@ -259,61 +258,41 @@ const LageplanExportSection = () => {
           }))}
           value={days}
           onChange={setDays}
+          testId="admin-lageplan-period"
         />
         <button
           type="button"
-          className="btn btn-primary btn-sm d-inline-flex align-items-center gap-2"
-          style={{ borderRadius: 'var(--progeo-radius-pill)', height: 32, padding: '0 16px' }}
+          className="btn btn-primary btn-sm d-inline-flex align-items-center gap-2 admin-lageplan-download"
           disabled={busy}
           onClick={exportLageplans}
+          data-testid="admin-lageplan-download"
         >
           {busy ? <Spinner size="sm" animation="border" /> : <FileEarmarkZip />}
           {t('admin_lageplan_download')}
         </button>
-        {result && <span style={{ fontSize: 12.5, color: '#3F7A1C' }}>{result}</span>}
+        {result && <span className="admin-lageplan-result" data-testid="admin-lageplan-result">{result}</span>}
       </div>
-      <div style={{ fontSize: 12, color: MUTED, marginTop: 10 }}>{t('admin_lageplan_hint')}</div>
+      <div className="admin-muted admin-lageplan-hint">{t('admin_lageplan_hint')}</div>
     </PanelCard>
   );
 };
 
 // ---------------------------------------------------------------------- logs
 
-const STATUS_STYLE: Record<LogStreamStatus, { color: string; bg: string; key: string }> = {
-  live: { color: '#3F7A1C', bg: '#EBF4E3', key: 'admin_logs_status_live' },
-  connecting: { color: '#6E6868', bg: '#EFECEC', key: 'admin_logs_status_connecting' },
-  reconnecting: { color: '#9A7208', bg: '#FBF3DE', key: 'admin_logs_status_reconnecting' },
-  denied: { color: '#C44D26', bg: '#FBE9E3', key: 'admin_logs_status_denied' },
+/** The colours per status: .admin-status-pill--<status> in AdminPanel.css. */
+const STATUS_KEY: Record<LogStreamStatus, string> = {
+  live: 'admin_logs_status_live',
+  connecting: 'admin_logs_status_connecting',
+  reconnecting: 'admin_logs_status_reconnecting',
+  denied: 'admin_logs_status_denied',
 };
 
 const StatusPill = ({ status }: { status: LogStreamStatus }) => {
   const { t } = useTranslation();
-  const style = STATUS_STYLE[status];
   return (
-    <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
-        fontSize: 11.5,
-        fontWeight: 600,
-        color: style.color,
-        background: style.bg,
-        borderRadius: 'var(--progeo-radius-pill)',
-        padding: '3px 10px',
-        whiteSpace: 'nowrap',
-      }}
-    >
-      <span
-        style={{
-          width: 7,
-          height: 7,
-          borderRadius: '50%',
-          background: style.color,
-          animation: status === 'live' ? 'admin-pulse 2s ease-in-out infinite' : undefined,
-        }}
-      />
-      {t(style.key)}
+    <span className={`admin-status-pill admin-status-pill--${status}`} data-testid="admin-logs-status">
+      <span className="admin-status-dot" />
+      {t(STATUS_KEY[status])}
     </span>
   );
 };
@@ -371,37 +350,35 @@ const LogsSection = () => {
 
   return (
     <PanelCard
+      testId="admin-logs"
       title={t('admin_logs_title')}
       actions={
         <>
           <StatusPill status={status} />
-          <PillButton variant="ghost" label={t('admin_refresh')} icon={<ArrowClockwise />} onClick={refreshFiles} />
+          <PillButton variant="ghost" label={t('admin_refresh')} icon={<ArrowClockwise />} onClick={refreshFiles} testId="admin-logs-refresh" />
         </>
       }
     >
-      <style>
-        {'@keyframes admin-pulse { 0%, 100% { opacity: 1 } 50% { opacity: .35 } }' +
-          '@media (max-width: 860px) { .admin-logs-grid { grid-template-columns: minmax(0, 1fr) !important } }'}
-      </style>
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 280px) minmax(0, 1fr)', gap: 14 }} className="admin-logs-grid">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
-          <div style={{ position: 'relative' }}>
-            <Search style={{ position: 'absolute', left: 10, top: 9, color: MUTED }} size={13} />
+      <div className="admin-logs-grid">
+        <div className="admin-logs-column">
+          <div className="admin-search">
+            <Search className="admin-search-icon" size={13} />
             <Form.Control
               size="sm"
               placeholder={t('admin_logs_filter_files')}
               value={fileFilter}
               onChange={(event) => setFileFilter(event.target.value)}
-              style={{ paddingLeft: 30, borderRadius: 'var(--progeo-radius-pill)' }}
+              className="admin-search-input"
+              data-testid="admin-logs-file-filter"
             />
           </div>
-          <div style={{ maxHeight: 560, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <div className="admin-log-files" data-testid="admin-logs-files">
             {files === null ? (
-              <div className="text-muted small py-3 text-center">
+              <div className="text-muted small py-3 text-center" data-testid="admin-logs-files-loading">
                 <Spinner size="sm" animation="border" />
               </div>
             ) : shownFiles.length === 0 ? (
-              <div className="text-muted small py-3">{t('admin_logs_no_files')}</div>
+              <div className="text-muted small py-3" data-testid="admin-logs-files-empty">{t('admin_logs_no_files')}</div>
             ) : (
               shownFiles.map((item) => {
                 const active = item.file === selected;
@@ -411,22 +388,13 @@ const LogsSection = () => {
                     type="button"
                     onClick={() => choose(item.file)}
                     title={item.path}
-                    style={{
-                      textAlign: 'left',
-                      border: 'none',
-                      borderRadius: 10,
-                      padding: '7px 10px',
-                      background: active ? 'var(--progeo-surface)' : 'transparent',
-                      boxShadow: active ? 'var(--progeo-shadow-chrome)' : 'none',
-                      color: active ? 'var(--progeo-blue)' : '#3A3535',
-                      fontFamily: 'inherit',
-                      cursor: 'pointer',
-                    }}
+                    className={active ? 'admin-log-file admin-log-file--active' : 'admin-log-file'}
+                    {...repeatedTestId('admin-logs-file', item.file)}
                   >
-                    <div style={{ fontSize: 12.5, fontWeight: active ? 600 : 500, wordBreak: 'break-all' }}>
+                    <div className="admin-log-file-name">
                       {item.file}
                     </div>
-                    <div style={{ fontSize: 11, color: MUTED }}>
+                    <div className="admin-log-file-meta">
                       {bytesToReadable(item.size_bytes)} · {formatTime(item.modified_at)}
                     </div>
                   </button>
@@ -436,16 +404,17 @@ const LogsSection = () => {
           </div>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <div style={{ position: 'relative', flex: '1 1 200px' }}>
-              <Search style={{ position: 'absolute', left: 10, top: 9, color: MUTED }} size={13} />
+        <div className="admin-logs-column">
+          <div className="admin-logs-toolbar" data-testid="admin-logs-toolbar">
+            <div className="admin-search admin-search--grow">
+              <Search className="admin-search-icon" size={13} />
               <Form.Control
                 size="sm"
                 placeholder={t('admin_logs_filter_lines')}
                 value={lineFilter}
                 onChange={(event) => setLineFilter(event.target.value)}
-                style={{ paddingLeft: 30, borderRadius: 'var(--progeo-radius-pill)' }}
+                className="admin-search-input"
+                data-testid="admin-logs-line-filter"
               />
             </div>
             <PillSelect
@@ -453,6 +422,7 @@ const LogsSection = () => {
               options={LOG_LINES.map((value) => ({ value, label: value }))}
               value={lines}
               onChange={setLines}
+              testId="admin-logs-lines"
             />
             <Form.Check
               type="switch"
@@ -461,6 +431,7 @@ const LogsSection = () => {
               label={t('admin_logs_follow')}
               checked={follow}
               onChange={(event) => setFollow(event.target.checked)}
+              data-testid="admin-logs-follow"
             />
             <Form.Check
               type="switch"
@@ -469,6 +440,7 @@ const LogsSection = () => {
               label={t('admin_logs_wrap')}
               checked={wrap}
               onChange={(event) => setWrap(event.target.checked)}
+              data-testid="admin-logs-wrap"
             />
             <PillButton
               variant="ghost"
@@ -476,6 +448,7 @@ const LogsSection = () => {
               icon={paused != null ? <PlayFill /> : <PauseFill />}
               disabled={content == null}
               onClick={() => setPaused((current) => (current != null ? null : (content ?? '')))}
+              testId="admin-logs-pause"
             />
             <PillButton
               variant="ghost"
@@ -485,42 +458,32 @@ const LogsSection = () => {
               onClick={() =>
                 downloadBlob(new Blob([text], { type: 'text/plain' }), (selected.split('/').pop() || 'log') + '.txt')
               }
+              testId="admin-logs-download"
             />
           </div>
 
-          <div style={{ display: 'flex', gap: 12, fontSize: 11.5, color: MUTED, flexWrap: 'wrap' }}>
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+          <div className="admin-logs-meta" data-testid="admin-logs-meta">
+            <span className="admin-logs-path" data-testid="admin-logs-path">
               {meta?.path || selected || '-'}
             </span>
             {meta && <span>{bytesToReadable(meta.size_bytes)}</span>}
             {updatedAt && <span>{t('admin_logs_updated', { time: formatTime(updatedAt) })}</span>}
-            {filtered.matches != null && <span>{t('admin_logs_matches', { count: filtered.matches })}</span>}
-            {paused != null && <span style={{ color: '#9A7208', fontWeight: 600 }}>{t('admin_logs_paused')}</span>}
+            {filtered.matches != null && <span data-testid="admin-logs-matches">{t('admin_logs_matches', { count: filtered.matches })}</span>}
+            {paused != null && <span className="admin-logs-paused" data-testid="admin-logs-paused">{t('admin_logs_paused')}</span>}
           </div>
-          {error && <div style={{ fontSize: 12, color: '#C44D26' }}>{error}</div>}
+          {error && <div className="admin-logs-error" data-testid="admin-logs-error">{error}</div>}
 
           <pre
             ref={viewerRef}
             onScroll={onScroll}
-            style={{
-              background: '#101419',
-              color: '#d9e2ec',
-              borderRadius: 12,
-              padding: '12px 14px',
-              height: 560,
-              margin: 0,
-              overflow: 'auto',
-              fontSize: 12,
-              lineHeight: 1.5,
-              whiteSpace: wrap ? 'pre-wrap' : 'pre',
-              wordBreak: wrap ? 'break-all' : 'normal',
-            }}
+            className={wrap ? 'admin-log-viewer admin-log-viewer--wrap' : 'admin-log-viewer'}
+            data-testid="admin-logs-viewer"
           >
             {content == null && selected ? t('ui_loading') : filtered.text || t('admin_logs_empty')}
           </pre>
           {!follow && (
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <PillButton variant="ghost" label={t('admin_logs_jump_end')} onClick={() => setFollow(true)} />
+            <div className="admin-logs-end">
+              <PillButton variant="ghost" label={t('admin_logs_jump_end')} onClick={() => setFollow(true)} testId="admin-logs-jump-end" />
             </div>
           )}
         </div>
@@ -534,7 +497,7 @@ const LogsSection = () => {
 const AdminPanelView = () => {
   const { t } = useTranslation();
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, paddingBottom: 24 }}>
+    <div className="admin-panel" data-testid="page-admin-panel">
       <h2 className="mb-0">{t('admin_title')}</h2>
       <StorageSection />
       <LageplanExportSection />

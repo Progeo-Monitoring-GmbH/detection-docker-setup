@@ -1,0 +1,8 @@
+/* The "reset scale" pill of a plot (PlotResetButton.tsx) - doubled class to
+   beat Bootstrap's .btn / .btn-sm. */
+
+.btn.plot-reset-button {
+  font-size: 12.5px;
+  border-radius: var(--progeo-radius-pill);
+  padding-inline: 10px;
+}

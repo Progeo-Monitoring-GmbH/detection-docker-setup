@@ -12,6 +12,8 @@ import {
   showRequestError,
   showSuccessBar,
 } from '../components/ui/Snackbar.jsx';
+import { repeatedTestId } from '../testIds';
+import './StaffAdmin.css';
 
 type MessageStatus =
   | 'sent'
@@ -181,7 +183,7 @@ const StaffMessaging = () => {
         name: t('staff_messaging_col_channel'),
         width: '100px',
         cell: (row) => (
-          <Badge bg={CHANNEL_BADGES[row.channel]?.bg || 'secondary'}>
+          <Badge bg={CHANNEL_BADGES[row.channel]?.bg || 'secondary'} {...repeatedTestId('staff-messaging-message-channel', row.id)}>
             {CHANNEL_BADGES[row.channel]?.label || row.channel}
           </Badge>
         ),
@@ -190,7 +192,7 @@ const StaffMessaging = () => {
         name: t('staff_messaging_col_status'),
         width: '130px',
         cell: (row) => (
-          <Badge bg={STATUS_VARIANT[row.status] || 'secondary'}>
+          <Badge bg={STATUS_VARIANT[row.status] || 'secondary'} {...repeatedTestId('staff-messaging-message-status', row.id)}>
             {t(`staff_messaging_status_${row.status}`)}
           </Badge>
         ),
@@ -238,7 +240,7 @@ const StaffMessaging = () => {
 
   if (loading && !state) {
     return (
-      <Card className="border-0 shadow-sm my-4 p-3">
+      <Card className="border-0 shadow-sm my-4 p-3" data-testid="staff-messaging-loading">
         <Card.Body className="d-flex align-items-center gap-2 text-muted">
           <Spinner size="sm" animation="border" />
           {t('staff_loading')}
@@ -252,47 +254,47 @@ const StaffMessaging = () => {
   }
 
   return (
-    <Card className="border-0 shadow-sm my-4 p-3">
+    <Card className="border-0 shadow-sm my-4 p-3" data-testid="staff-messaging">
       <Card.Body>
         <div className="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
           <h5 className="mb-0">
             <Envelope className="me-2 text-warning" />
             {t('staff_messaging_title')}
           </h5>
-          <Button variant="outline-secondary" size="sm" onClick={fetchState}>
+          <Button variant="outline-secondary" size="sm" onClick={fetchState} data-testid="staff-messaging-refresh">
             <ArrowRepeat className="me-1" />
             {t('staff_refresh')}
           </Button>
         </div>
 
-        <div className="d-flex flex-wrap gap-2 mb-3">
+        <div className="d-flex flex-wrap gap-2 mb-3" data-testid="staff-messaging-modes">
           {!state.mailing_enabled && (
-            <Badge bg="secondary">
+            <Badge bg="secondary" data-testid="staff-messaging-mailing-disabled">
               {t('staff_messaging_mailing_disabled')}
             </Badge>
           )}
           {state.mail_test_mode ? (
-            <Badge bg="info" text="dark">
+            <Badge bg="info" text="dark" data-testid="staff-messaging-mail-mode">
               {t('staff_messaging_test_mode', {
                 recipient: state.mail_test_recipient,
               })}
             </Badge>
           ) : (
-            <Badge bg="success">{t('staff_messaging_live_mode')}</Badge>
+            <Badge bg="success" data-testid="staff-messaging-mail-mode">{t('staff_messaging_live_mode')}</Badge>
           )}
           {state.sms_dry_run ? (
-            <Badge bg="info" text="dark">
+            <Badge bg="info" text="dark" data-testid="staff-messaging-sms-mode">
               {t('staff_messaging_sms_dry_run')}
             </Badge>
           ) : (
-            <Badge bg="success">{t('staff_messaging_sms_live')}</Badge>
+            <Badge bg="success" data-testid="staff-messaging-sms-mode">{t('staff_messaging_sms_live')}</Badge>
           )}
           {state.messenger_dry_run ? (
-            <Badge bg="info" text="dark">
+            <Badge bg="info" text="dark" data-testid="staff-messaging-messenger-mode">
               {t('staff_messaging_messenger_dry_run')}
             </Badge>
           ) : (
-            <Badge bg="success">{t('staff_messaging_messenger_live')}</Badge>
+            <Badge bg="success" data-testid="staff-messaging-messenger-mode">{t('staff_messaging_messenger_live')}</Badge>
           )}
         </div>
 
@@ -300,6 +302,7 @@ const StaffMessaging = () => {
           <Alert
             variant="danger"
             className="d-flex flex-wrap justify-content-between align-items-center gap-2"
+            data-testid="staff-messaging-breaker"
           >
             <span>
               <strong>{t('staff_messaging_breaker_tripped')}</strong>{' '}
@@ -311,6 +314,7 @@ const StaffMessaging = () => {
               size="sm"
               disabled={busy}
               onClick={resetBreaker}
+              data-testid="staff-messaging-breaker-reset"
             >
               {t('staff_messaging_breaker_reset')}
             </Button>
@@ -320,34 +324,34 @@ const StaffMessaging = () => {
         <Table
           size="sm"
           bordered
-          className="mb-4 small"
-          style={{ maxWidth: 560 }}
+          className="mb-4 small staff-messaging-counts"
+          data-testid="staff-messaging-counts"
         >
           <tbody>
             <tr>
               <th>{t('staff_messaging_count_mail_hour')}</th>
-              <td>{state.counts.mail_last_hour}</td>
+              <td {...repeatedTestId('staff-messaging-count', 'mail_last_hour')}>{state.counts.mail_last_hour}</td>
             </tr>
             <tr>
               <th>{t('staff_messaging_count_sms_hour')}</th>
-              <td>{state.counts.sms_last_hour}</td>
+              <td {...repeatedTestId('staff-messaging-count', 'sms_last_hour')}>{state.counts.sms_last_hour}</td>
             </tr>
             <tr>
               <th>{t('staff_messaging_count_sms_today')}</th>
-              <td>{state.counts.sms_today}</td>
+              <td {...repeatedTestId('staff-messaging-count', 'sms_today')}>{state.counts.sms_today}</td>
             </tr>
             <tr>
               <th>{t('staff_messaging_count_messenger_hour')}</th>
-              <td>{state.counts.messenger_last_hour}</td>
+              <td {...repeatedTestId('staff-messaging-count', 'messenger_last_hour')}>{state.counts.messenger_last_hour}</td>
             </tr>
             <tr>
               <th>{t('staff_messaging_count_messenger_today')}</th>
-              <td>{state.counts.messenger_today}</td>
+              <td {...repeatedTestId('staff-messaging-count', 'messenger_today')}>{state.counts.messenger_today}</td>
             </tr>
             {Object.entries(state.limits).map(([name, value]) => (
               <tr key={name}>
                 <th className="fw-normal text-muted">{name}</th>
-                <td>{value}</td>
+                <td {...repeatedTestId('staff-messaging-limit', name)}>{value}</td>
               </tr>
             ))}
           </tbody>
@@ -360,7 +364,7 @@ const StaffMessaging = () => {
           pagination
           paginationPerPage={15}
           noDataComponent={
-            <div className="text-muted py-4">
+            <div className="text-muted py-4" data-testid="staff-messaging-messages-empty">
               {t('staff_messaging_no_messages')}
             </div>
           }
@@ -373,11 +377,11 @@ const StaffMessaging = () => {
           {t('staff_messaging_suppressions_hint')}
         </p>
         {state.suppressions.length === 0 ? (
-          <p className="text-muted small">
+          <p className="text-muted small" data-testid="staff-messaging-suppressions-empty">
             {t('staff_messaging_no_suppressions')}
           </p>
         ) : (
-          <Table size="sm" hover className="small">
+          <Table size="sm" hover className="small" data-testid="staff-messaging-suppressions">
             <thead>
               <tr>
                 <th>{t('staff_messaging_col_address')}</th>
@@ -389,7 +393,7 @@ const StaffMessaging = () => {
             </thead>
             <tbody>
               {state.suppressions.map((suppression) => (
-                <tr key={suppression.id}>
+                <tr key={suppression.id} {...repeatedTestId('staff-messaging-suppression', suppression.id)}>
                   <td>{suppression.address}</td>
                   <td>{suppression.reason}</td>
                   <td>{suppression.bounce_count}</td>
@@ -402,6 +406,7 @@ const StaffMessaging = () => {
                       aria-label={t('staff_messaging_suppression_delete')}
                       disabled={busy}
                       onClick={() => deleteSuppression(suppression)}
+                      {...repeatedTestId('staff-messaging-suppression-delete', suppression.id)}
                     >
                       <Trash size={14} />
                     </Button>

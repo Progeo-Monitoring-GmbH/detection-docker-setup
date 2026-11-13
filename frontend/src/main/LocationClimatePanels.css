@@ -1,0 +1,35 @@
+/* The climate panels of LoRaWAN objects (LocationClimatePanels.tsx): range
+   switch, bucket note, superuser tools and the charts. */
+
+.climate-panels {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.climate-toolbar {
+  padding: 2px 2px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.climate-muted {
+  color: #8b8383;
+  font-size: 12px;
+}
+
+.climate-muted--large {
+  font-size: 13px;
+}
+
+.climate-tools {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.climate-file-input {
+  display: none;
+}

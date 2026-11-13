@@ -22,6 +22,7 @@ import {
   showRequestError,
   showSuccessBar,
 } from '../components/ui/Snackbar.jsx';
+import { repeatedTestId } from '../testIds';
 
 type AccessRequestStatus =
   'unverified' | 'pending' | 'approved' | 'rejected';
@@ -204,7 +205,7 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
         name: t('staff_requests_col_status'),
         width: '120px',
         cell: (row) => (
-          <Badge bg={STATUS_VARIANT[row.status]}>
+          <Badge bg={STATUS_VARIANT[row.status]} {...repeatedTestId('staff-requests-status', row.id)}>
             {t(`staff_requests_status_${row.status}`)}
           </Badge>
         ),
@@ -227,7 +228,7 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
         name: t('staff_requests_col_contact'),
         cell: (row) => (
           <span className="small">
-            <a href={`mailto:${row.email}`}>{row.email}</a>
+            <a href={`mailto:${row.email}`} {...repeatedTestId('staff-requests-email', row.id)}>{row.email}</a>
             {row.phone && (
               <>
                 <br />
@@ -286,6 +287,7 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
                 title={t('staff_requests_approve')}
                 aria-label={t('staff_requests_approve')}
                 onClick={() => openDecision(row, 'approve')}
+                {...repeatedTestId('staff-requests-approve', row.id)}
               >
                 <CheckLg size={14} />
               </Button>
@@ -295,6 +297,7 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
                 title={t('staff_requests_reject')}
                 aria-label={t('staff_requests_reject')}
                 onClick={() => openDecision(row, 'reject')}
+                {...repeatedTestId('staff-requests-reject', row.id)}
               >
                 <XLg size={14} />
               </Button>
@@ -306,7 +309,7 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
   );
 
   return (
-    <Card className="border-0 shadow-sm my-4 p-3">
+    <Card className="border-0 shadow-sm my-4 p-3" data-testid="staff-requests">
       <Card.Body>
         <div className="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
           <h5 className="mb-0">
@@ -314,21 +317,23 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
             {t('staff_requests_title')}
           </h5>
           <div className="d-flex gap-2">
-            <ButtonGroup size="sm">
+            <ButtonGroup size="sm" data-testid="staff-requests-filter">
               <Button
                 variant={filter === 'pending' ? 'primary' : 'outline-primary'}
                 onClick={() => changeFilter('pending')}
+                {...repeatedTestId('staff-requests-filter-option', 'pending')}
               >
                 {t('staff_requests_filter_pending')}
               </Button>
               <Button
                 variant={filter === 'all' ? 'primary' : 'outline-primary'}
                 onClick={() => changeFilter('all')}
+                {...repeatedTestId('staff-requests-filter-option', 'all')}
               >
                 {t('staff_requests_filter_all')}
               </Button>
             </ButtonGroup>
-            <Button variant="outline-secondary" size="sm" onClick={refresh}>
+            <Button variant="outline-secondary" size="sm" onClick={refresh} data-testid="staff-requests-refresh">
               <ArrowRepeat className="me-1" />
               {t('staff_refresh')}
             </Button>
@@ -342,20 +347,20 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
           paginationPerPage={10}
           progressPending={loading}
           progressComponent={
-            <div className="d-flex align-items-center gap-2 text-muted py-4">
+            <div className="d-flex align-items-center gap-2 text-muted py-4" data-testid="staff-requests-loading">
               <Spinner size="sm" animation="border" />
               {t('staff_loading')}
             </div>
           }
           noDataComponent={
-            <div className="text-muted py-4">{t('staff_requests_empty')}</div>
+            <div className="text-muted py-4" data-testid="staff-requests-empty">{t('staff_requests_empty')}</div>
           }
           highlightOnHover
           dense
         />
       </Card.Body>
 
-      <Modal show={decision != null} onHide={() => setDecision(null)} centered>
+      <Modal show={decision != null} onHide={() => setDecision(null)} centered data-testid="staff-requests-decision">
         <Modal.Header closeButton>
           <Modal.Title>
             {decision?.action === 'approve'
@@ -386,8 +391,9 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
                   setProjectIds(event.target.value);
                   setDecisionError('');
                 }}
+                data-testid="staff-requests-decision-projects"
               />
-              <Form.Control.Feedback type="invalid">
+              <Form.Control.Feedback type="invalid" data-testid="staff-requests-decision-error">
                 {decisionError}
               </Form.Control.Feedback>
               <Form.Text muted>
@@ -406,18 +412,20 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
               rows={2}
               value={note}
               onChange={(event) => setNote(event.target.value)}
+              data-testid="staff-requests-decision-note"
             />
             <Form.Text muted>{t('staff_requests_note_hint')}</Form.Text>
           </Form.Group>
         </Modal.Body>
         <Modal.Footer>
-          <Button variant="secondary" onClick={() => setDecision(null)}>
+          <Button variant="secondary" onClick={() => setDecision(null)} data-testid="staff-requests-decision-cancel">
             {t('staff_cancel')}
           </Button>
           <Button
             variant={decision?.action === 'approve' ? 'success' : 'danger'}
             disabled={busy}
             onClick={submitDecision}
+            data-testid="staff-requests-decision-submit"
           >
             {decision?.action === 'approve'
               ? t('staff_requests_approve')

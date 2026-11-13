@@ -13,6 +13,8 @@ import PillButton from '../components/ui/kit/PillButton';
 import SearchableDataTable, { type SearchableColumn } from '../components/ui/kit/SearchableDataTable';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import { formatRelativeTime } from './dateFormat';
+import { repeatedTestId } from '../testIds';
+import './DockerStatusView.css';
 
 /** A row of GET /api/docker/status/. */
 export type DockerContainer = {
@@ -33,47 +35,26 @@ const API = '/api/docker/';
 const REFRESH_MS = 15_000;
 const LOG_TAILS = [200, 1000, 5000];
 
-const MUTED = '#8B8383';
-const STATUS_COLORS: Record<string, { color: string; background: string }> = {
-  running: { color: '#3F7A1C', background: '#EBF4E3' },
-  exited: { color: '#C44D26', background: '#FBE9E3' },
-  dead: { color: '#C44D26', background: '#FBE9E3' },
-  paused: { color: '#9A6700', background: '#FFF4D6' },
-  restarting: { color: '#9A6700', background: '#FFF4D6' },
+/** The colours per tone: .docker-status-chip--<tone> / .docker-status-health--<tone> in DockerStatusView.css. */
+type Tone = 'ok' | 'danger' | 'warn';
+const STATUS_TONES: Record<string, Tone> = {
+  running: 'ok',
+  exited: 'danger',
+  dead: 'danger',
+  paused: 'warn',
+  restarting: 'warn',
 };
-const HEALTH_COLORS: Record<string, string> = { healthy: '#3F7A1C', unhealthy: '#C44D26', starting: '#9A6700' };
+const HEALTH_TONES: Record<string, Tone> = { healthy: 'ok', unhealthy: 'danger', starting: 'warn' };
 
-const Chip = ({ label, color, background }: { label: string; color: string; background: string }) => (
+/** Without a tone (an unknown status) the chip is neutral grey. */
+const Chip = ({ label, tone, testKey }: { label: string; tone?: Tone; testKey: string }) => (
   <span
-    style={{
-      fontSize: 11.5,
-      fontWeight: 600,
-      color,
-      background,
-      borderRadius: 'var(--progeo-radius-pill)',
-      padding: '3px 10px',
-      whiteSpace: 'nowrap',
-    }}
+    className={tone ? `docker-status-chip docker-status-chip--${tone}` : 'docker-status-chip'}
+    {...repeatedTestId('docker-container-status', testKey)}
   >
     {label}
   </span>
 );
-
-const iconButtonStyle = (disabled: boolean) => ({
-  width: 30,
-  height: 30,
-  border: 'none',
-  borderRadius: 9,
-  background: 'var(--progeo-surface)',
-  boxShadow: '0 2px 8px rgba(11, 54, 89, .12)',
-  color: 'var(--progeo-blue)',
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  cursor: disabled ? 'default' : 'pointer',
-  opacity: disabled ? 0.4 : 1,
-  padding: 0,
-});
 
 const isRunning = (container: DockerContainer) => container.status === 'running';
 
@@ -194,9 +175,9 @@ const DockerStatusView = () => {
         selector: (container) => container.name,
         searchText: (container) => `${container.name} ${container.id} ${container.image ?? ''}`,
         cell: (container) => (
-          <div style={{ padding: '6px 0', minWidth: 0 }}>
-            <div style={{ fontWeight: 500 }}>{container.name}</div>
-            <div className="font-monospace" style={{ fontSize: 11, color: MUTED }} title={container.id}>
+          <div className="docker-status-container">
+            <div className="docker-status-name" {...repeatedTestId('docker-container-name', container.id)}>{container.name}</div>
+            <div className="font-monospace docker-status-id" title={container.id}>
               {container.id.slice(0, 12)}
               {container.image ? ` · ${container.image}` : ''}
             </div>
@@ -211,12 +192,18 @@ const DockerStatusView = () => {
         searchText: (container) => `${container.status} ${container.health ?? ''}`,
         cell: (container) => (
           <span className="d-inline-flex align-items-center gap-2 flex-wrap">
-            <Chip
-              label={container.status}
-              {...(STATUS_COLORS[container.status] ?? { color: '#6E6868', background: 'var(--progeo-track-soft)' })}
-            />
+            <Chip label={container.status} tone={STATUS_TONES[container.status]} testKey={container.id} />
             {container.health && (
-              <span style={{ fontSize: 11.5, color: HEALTH_COLORS[container.health] ?? MUTED }}>{container.health}</span>
+              <span
+                className={
+                  HEALTH_TONES[container.health]
+                    ? `docker-status-health docker-status-health--${HEALTH_TONES[container.health]}`
+                    : 'docker-status-health'
+                }
+                {...repeatedTestId('docker-container-health', container.id)}
+              >
+                {container.health}
+              </span>
             )}
           </span>
         ),
@@ -230,7 +217,7 @@ const DockerStatusView = () => {
           isRunning(container) && container.started_at ? (
             <span title={container.started_at}>{formatRelativeTime(container.started_at)}</span>
           ) : (
-            <span style={{ color: MUTED }}>–</span>
+            <span className="docker-status-muted">–</span>
           ),
       },
       {
@@ -251,7 +238,8 @@ const DockerStatusView = () => {
                 aria-label={t(`docker_action_${startStop}`)}
                 disabled={Boolean(action)}
                 onClick={() => run(container, startStop)}
-                style={iconButtonStyle(Boolean(action))}
+                className="progeo-icon-button"
+                {...repeatedTestId('docker-container-start-stop', container.id)}
               >
                 {running ? <PauseFill size={15} /> : <PlayFill size={15} />}
               </button>
@@ -261,7 +249,8 @@ const DockerStatusView = () => {
                 aria-label={t('docker_action_restart')}
                 disabled={Boolean(action)}
                 onClick={() => setConfirm({ container, action: 'restart' })}
-                style={iconButtonStyle(Boolean(action))}
+                className="progeo-icon-button"
+                {...repeatedTestId('docker-container-restart', container.id)}
               >
                 <BootstrapReboot size={14} />
               </button>
@@ -270,7 +259,8 @@ const DockerStatusView = () => {
                 title={t('docker_action_logs')}
                 aria-label={t('docker_action_logs')}
                 onClick={() => loadLogs(container, logs?.tail ?? LOG_TAILS[1])}
-                style={iconButtonStyle(false)}
+                className="progeo-icon-button"
+                {...repeatedTestId('docker-container-logs', container.id)}
               >
                 <FileText size={14} />
               </button>
@@ -278,6 +268,8 @@ const DockerStatusView = () => {
                 label={running ? t('docker_remove_running_hint') : t('docker_action_remove')}
                 disabled={running || Boolean(action)}
                 onClick={() => setConfirm({ container, action: 'remove' })}
+                testId="docker-container-remove"
+                testKey={container.id}
               />
             </div>
           );
@@ -292,13 +284,14 @@ const DockerStatusView = () => {
   const runningCount = containers?.filter(isRunning).length ?? 0;
 
   return (
-    <div className="d-flex flex-column gap-3">
+    <div className="d-flex flex-column gap-3" data-testid="page-docker">
       <PanelCard
+        testId="docker-containers"
         title={t('docker_title')}
         actions={
           <div className="d-flex align-items-center gap-2">
             {containers && (
-              <span style={{ fontSize: 12.5, color: MUTED }}>
+              <span className="docker-status-note" data-testid="docker-running-count">
                 {t('docker_running_count', { running: runningCount, total: containers.length })}
               </span>
             )}
@@ -308,18 +301,19 @@ const DockerStatusView = () => {
               label={t('docker_refresh')}
               disabled={refreshing}
               onClick={load}
+              testId="docker-refresh"
             />
           </div>
         }
       >
         {loadError && (
-          <div style={{ color: '#C44D26', fontSize: 13, marginBottom: 10 }}>
+          <div className="docker-status-error" data-testid="docker-error">
             {t('docker_load_failed')}: {loadError}
           </div>
         )}
         {containers == null ? (
           !loadError && (
-            <div className="d-flex justify-content-center py-4">
+            <div className="d-flex justify-content-center py-4" data-testid="docker-loading">
               <Spinner animation="border" />
             </div>
           )
@@ -330,7 +324,8 @@ const DockerStatusView = () => {
             keyField="id"
             defaultSortFieldId="name"
             highlightOnHover
-            noDataComponent={<div style={{ color: MUTED, padding: 14 }}>{t('docker_none')}</div>}
+            testId="docker-table"
+            noDataComponent={<div className="docker-status-muted docker-status-empty" data-testid="docker-empty">{t('docker_none')}</div>}
           />
         )}
       </PanelCard>
@@ -342,6 +337,7 @@ const DockerStatusView = () => {
         confirmLabel={confirm ? t(`docker_action_${confirm.action}`) : ''}
         cancelLabel={t('docker_cancel')}
         danger={confirm?.action === 'remove'}
+        testId="docker-confirm"
         onCancel={() => setConfirm(null)}
         onConfirm={() => {
           if (confirm) {
@@ -351,28 +347,30 @@ const DockerStatusView = () => {
         }}
       />
 
-      <Modal show={logs !== null} onHide={() => setLogs(null)} size="xl" scrollable>
+      <Modal show={logs !== null} onHide={() => setLogs(null)} size="xl" scrollable data-testid="docker-logs-dialog">
         <Modal.Header closeButton>
-          <Modal.Title style={{ fontSize: 16 }}>
+          <Modal.Title className="docker-logs-title" data-testid="docker-logs-title">
             {logs ? t('docker_logs_title', { name: logs.container.name }) : ''}
           </Modal.Title>
         </Modal.Header>
         <Modal.Body>
           {logs && (
             <div className="d-flex align-items-center gap-2 flex-wrap mb-2">
-              <span style={{ fontSize: 12.5, color: MUTED }}>{t('docker_logs_tail')}</span>
+              <span className="docker-status-note">{t('docker_logs_tail')}</span>
               <SegmentedControl
                 options={LOG_TAILS.map((tail) => ({ value: String(tail), label: String(tail) }))}
                 value={String(logs.tail)}
                 onChange={(value) => loadLogs(logs.container, Number(value))}
+                testId="docker-logs-tail"
               />
-              <span style={{ flex: 1 }} />
+              <span className="docker-logs-spacer" />
               <PillButton
                 variant="ghost"
                 icon={<ArrowClockwise size={13} />}
                 label={t('docker_refresh')}
                 disabled={logs.text == null}
                 onClick={() => loadLogs(logs.container, logs.tail)}
+                testId="docker-logs-refresh"
               />
               <PillButton
                 variant="ghost"
@@ -380,29 +378,19 @@ const DockerStatusView = () => {
                 label={t('docker_logs_copy')}
                 disabled={!logs.text}
                 onClick={copyLogs}
+                testId="docker-logs-copy"
               />
             </div>
           )}
           {logs?.text == null ? (
-            <div className="d-flex justify-content-center py-4">
+            <div className="d-flex justify-content-center py-4" data-testid="docker-logs-loading">
               <Spinner animation="border" />
             </div>
           ) : (
             <pre
               ref={logRef}
               data-testid="docker-logs"
-              style={{
-                maxHeight: '65vh',
-                overflow: 'auto',
-                background: '#07223A',
-                color: '#E6EEF5',
-                borderRadius: 10,
-                padding: 12,
-                fontSize: 11.5,
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-all',
-                margin: 0,
-              }}
+              className="docker-logs"
             >
               {logs.text || t('docker_logs_empty')}
             </pre>

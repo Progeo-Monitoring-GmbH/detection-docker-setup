@@ -1,0 +1,268 @@
+/* The Verwaltung page (LocationVerwaltungView.tsx): the object list and the
+   permissions dialog. Theme variables: scss/main.css; pills, panels, the pill
+   track of the status filter: components/ui/kit/kit.css. */
+
+.location-verwaltung {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.location-verwaltung-muted {
+  color: #8b8383;
+  font-size: 13px;
+}
+
+.location-verwaltung-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.location-verwaltung-count {
+  font-size: 12.5px;
+  color: #8b8383;
+  font-weight: 400;
+}
+
+.location-verwaltung-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.location-verwaltung-search {
+  height: 34px;
+  min-width: 220px;
+  border: none;
+  border-radius: 999px;
+  background: var(--progeo-surface);
+  box-shadow: 0 1px 4px rgba(11, 54, 89, 0.09);
+  padding: 0 14px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--progeo-blue);
+}
+
+.location-verwaltung-empty {
+  padding: 10px 2px;
+}
+
+/* -- object table ------------------------------------------------------------ */
+
+.location-verwaltung-scroll {
+  overflow-x: auto;
+}
+
+.location-verwaltung-table {
+  min-width: 560px;
+}
+
+.location-verwaltung-grid {
+  display: grid;
+  grid-template-columns: 70px 1fr 100px 130px 110px 130px;
+  gap: 8px;
+}
+
+.location-verwaltung-head {
+  padding: 6px 4px 10px;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #8b8383;
+  font-weight: 500;
+}
+
+.location-verwaltung-row {
+  padding: 10px 4px;
+  font-size: 13px;
+  border-top: 1px solid var(--progeo-track);
+  align-items: center;
+}
+
+.location-verwaltung-right {
+  text-align: right;
+}
+
+.location-verwaltung-nr {
+  font-weight: 600;
+}
+
+.location-verwaltung-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.location-verwaltung-name {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.location-verwaltung-dim {
+  color: #8b8383;
+}
+
+.location-verwaltung-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.location-verwaltung-ok {
+  font-size: 12px;
+  color: #3f7a1c;
+  font-weight: 500;
+}
+
+.location-verwaltung-row-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* A link: also on hover, so the global a:hover colour doesn't win. */
+.location-verwaltung-open,
+.location-verwaltung-open:hover {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--progeo-radius-pill);
+  background: var(--progeo-surface);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--progeo-orange);
+}
+
+/* -- permissions dialog ------------------------------------------------------- */
+
+.location-verwaltung-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(7, 34, 58, 0.38);
+  z-index: 75;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 36px 16px;
+  overflow: auto;
+}
+
+.location-verwaltung-dialog {
+  width: min(640px, 100%);
+  background: var(--progeo-panel-bg);
+  border-radius: 20px;
+  box-shadow: 0 24px 60px rgba(11, 54, 89, 0.3);
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.location-verwaltung-dialog-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.location-verwaltung-dialog-heading {
+  min-width: 0;
+}
+
+.location-verwaltung-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: #8b8383;
+  font-weight: 500;
+}
+
+.location-verwaltung-dialog-title {
+  font-size: 17px;
+  font-weight: 500;
+  margin-top: 3px;
+}
+
+.location-verwaltung-spacer {
+  flex: 1;
+}
+
+.location-verwaltung-close {
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 50%;
+  background: var(--progeo-surface);
+  cursor: pointer;
+  color: var(--progeo-blue);
+}
+
+.location-verwaltung-rules-empty {
+  background: var(--progeo-surface);
+  border-radius: 14px;
+  padding: 20px 16px;
+  font-size: 13px;
+  color: #8b8383;
+}
+
+.location-verwaltung-rule {
+  background: var(--progeo-surface);
+  border-radius: 14px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.location-verwaltung-rule-user {
+  flex: 1;
+  min-width: 0;
+}
+
+.location-verwaltung-rule-name {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.location-verwaltung-rule-email {
+  font-size: 12px;
+  color: #8b8383;
+}
+
+.location-verwaltung-revoke {
+  height: 30px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 9px;
+  background: #fbeae4;
+  color: #c44d26;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.location-verwaltung-add {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.location-verwaltung-user-select {
+  height: 38px;
+  border: none;
+  border-radius: 10px;
+  background: var(--progeo-surface);
+  padding: 0 12px;
+  font-family: inherit;
+  font-size: 13.5px;
+  color: var(--progeo-blue);
+  flex: 1 1 220px;
+}

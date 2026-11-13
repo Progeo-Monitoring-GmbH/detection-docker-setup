@@ -7,7 +7,7 @@ const LocationHeatplotView = () => {
   const { loading, limit, setLimit, refresh } = useLocationHeatmap(id);
 
   return (
-    <Container className="py-4">
+    <Container className="py-4" data-testid="page-location-heatplot">
       <HeatmapViewHeader
         id={id}
         switchTo="heatmap2d"
@@ -15,11 +15,11 @@ const LocationHeatplotView = () => {
         onRefresh={refresh}
       />
 
-      <Card className="border-0 shadow-sm mb-3">
+      <Card className="border-0 shadow-sm mb-3" data-testid="location-heatplot-settings">
         <Card.Body>
           <h4 className="mb-1">Location Heatplot</h4>
           <div className="text-muted small">Location {id}</div>
-          <label htmlFor="heatplot-limit" className="form-label mt-3 mb-1">
+          <label htmlFor="heatplot-limit" className="form-label mt-3 mb-1" data-testid="location-heatplot-limit-value">
             Measurements: {limit}
           </label>
           <input
@@ -34,6 +34,7 @@ const LocationHeatplotView = () => {
             aria-valuemin={1}
             aria-valuemax={500}
             aria-valuenow={limit}
+            data-testid="location-heatplot-limit"
           />
           <div className="d-flex justify-content-between text-muted small">
             <span>1</span>
@@ -43,7 +44,7 @@ const LocationHeatplotView = () => {
       </Card>
 
       {loading && (
-        <Card className="border-0 shadow-sm">
+        <Card className="border-0 shadow-sm" data-testid="location-heatplot-loading">
           <Card.Body className="d-flex align-items-center gap-2 text-muted">
             <Spinner size="sm" animation="border" />
             Loading sensor measurements...

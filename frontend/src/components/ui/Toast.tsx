@@ -58,6 +58,7 @@ const Toast = forwardRef<HTMLDivElement, CustomContentProps>(
         <div
           className="progeo-toast"
           data-testid="toast"
+          data-test-key={String(id)}
           style={{ '--toast-color': COLOR[variant] } as CSSProperties}
           onClick={close}
           title={t('toast_click_to_close')}
@@ -68,6 +69,8 @@ const Toast = forwardRef<HTMLDivElement, CustomContentProps>(
             type="button"
             className="progeo-toast-close"
             aria-label={t('toast_close')}
+            data-testid="toast-close"
+            data-test-key={String(id)}
             onClick={(event) => {
               event.stopPropagation();
               close();
@@ -79,6 +82,7 @@ const Toast = forwardRef<HTMLDivElement, CustomContentProps>(
             <div
               className="progeo-toast-progress"
               data-testid="toast-progress"
+              data-test-key={String(id)}
               style={{ animationDuration: `${duration}ms` }}
               onAnimationEnd={close}
             />

@@ -1,0 +1,73 @@
+/* The "ProGeo-Chat" section of Mein Konto (MatrixChatSection.tsx): Matrix ID,
+   connection state and the per-app QR codes. */
+
+.matrix-chat-app-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+/* Its corner radius scales with the logo size (inline). */
+.matrix-chat-app-logo {
+  flex-shrink: 0;
+}
+
+.matrix-chat-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.matrix-chat-muted {
+  color: #8b8383;
+}
+
+.matrix-chat-id {
+  font-weight: 500;
+  word-break: break-all;
+}
+
+.matrix-chat-connected {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #3f7a1c;
+}
+
+.matrix-chat-connected-icon {
+  flex-shrink: 0;
+}
+
+.matrix-chat-apps {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.matrix-chat-code {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.matrix-chat-qr {
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(11, 54, 89, 0.09);
+}
+
+.matrix-chat-steps {
+  flex: 1;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.matrix-chat-waiting {
+  color: #8b8383;
+  font-size: 12px;
+}

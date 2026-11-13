@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import usePermissions from '../../hooks/usePermissions';
 import PillButton from '../components/ui/kit/PillButton';
 import ThresholdMixerPanel from './ThresholdMixerPanel';
+import './ThresholdMixer.css';
 import type { MixerSensor } from './thresholdMixer';
 
 type ThresholdMixerToggleProps = {
@@ -27,35 +28,22 @@ const ThresholdMixerToggle = ({ locationId, initialObjectThreshold, onSaved, loa
   const [open, setOpen] = useState(false);
 
   return (
-    // Open: the bar and the mixer are one framed block - the bar its head,
-    // the mixer below with the same inner padding (it has no card of its own).
+    // Open: the bar and the mixer are one framed block (see ThresholdMixer.css).
     <div
       data-testid="threshold-mixer-toggle"
-      style={{
-        borderRadius: 12,
-        border: `1px solid ${open ? 'rgba(31, 95, 191, 0.35)' : 'transparent'}`,
-        overflow: 'hidden',
-      }}
+      className={open ? 'threshold-toggle threshold-toggle--open' : 'threshold-toggle'}
     >
-      <div
-        className="d-flex flex-wrap align-items-center gap-3"
-        style={{
-          background: 'var(--progeo-surface)',
-          padding: '10px 14px',
-          borderBottom: open ? '1px solid rgba(31, 95, 191, 0.2)' : 'none',
-        }}
-      >
-        <Sliders size={20} style={{ color: 'var(--progeo-blue)', flexShrink: 0 }} aria-hidden="true" />
-        <div style={{ flex: '1 1 260px', minWidth: 0 }}>
-          <div className="fw-semibold" style={{ fontSize: 13.5 }}>
+      <div className="d-flex flex-wrap align-items-center gap-3 threshold-toggle-bar">
+        <Sliders size={20} className="threshold-toggle-icon" aria-hidden="true" />
+        <div className="threshold-toggle-text">
+          <div className="fw-semibold threshold-toggle-title">
             {t('thresholds_toggle_title')}
           </div>
           <div className="small text-muted">{t('thresholds_toggle_hint')}</div>
         </div>
         {initialObjectThreshold != null && (
           <span
-            className="rounded-pill px-2 small fw-semibold"
-            style={{ background: 'var(--progeo-track-soft)', color: 'var(--progeo-blue)' }}
+            className="rounded-pill px-2 small fw-semibold threshold-toggle-object"
             data-testid="threshold-mixer-object"
           >
             {t('thresholds_toggle_object', { value: initialObjectThreshold })}
@@ -68,10 +56,11 @@ const ThresholdMixerToggle = ({ locationId, initialObjectThreshold, onSaved, loa
           label={open ? t('thresholds_toggle_hide') : t('thresholds_toggle_load')}
           title={t('thresholds_toggle_hint')}
           onClick={() => setOpen((shown) => !shown)}
+          testId="threshold-mixer-toggle-button"
         />
       </div>
       {open && (
-        <div style={{ padding: '14px 16px 16px', background: 'var(--progeo-panel-bg, #fff)' }} data-testid="threshold-mixer-body">
+        <div className="threshold-toggle-body" data-testid="threshold-mixer-body">
           <ThresholdMixerPanel
             // A fresh mixer (drafts, selection) per object.
             key={locationId}

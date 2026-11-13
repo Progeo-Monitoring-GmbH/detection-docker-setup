@@ -7,6 +7,8 @@ import axiosConfig from '../../axiosConfig';
 import { showErrorBar, showRequestError, showSuccessBar } from '../ui/Snackbar.jsx';
 import PanelCard from '../ui/kit/PanelCard';
 import SearchableDataTable, { ROW_CLICK, type SearchableColumn } from '../ui/kit/SearchableDataTable';
+import { repeatedTestId } from '../../testIds';
+import './AirtableSyncPanel.css';
 
 type AirtableProject = {
   project_id: number;
@@ -51,7 +53,11 @@ const COLUMNS: SearchableColumn<AirtableProject>[] = [
     selector: (project) => project.project_id,
     sortable: true,
     sortFunction: (a, b) => a.project_id - b.project_id,
-    cell: (project) => <code {...ROW_CLICK}>{project.project_id}</code>,
+    cell: (project) => (
+      <code {...ROW_CLICK} {...repeatedTestId('airtable-sync-project', project.project_id)}>
+        {project.project_id}
+      </code>
+    ),
     width: '110px',
   },
   {
@@ -92,7 +98,7 @@ const COLUMNS: SearchableColumn<AirtableProject>[] = [
     sortable: true,
     sortFunction: byText((project) => project.raw_address),
     cell: (project) => (
-      <div {...ROW_CLICK} className="small text-muted" style={{ whiteSpace: 'pre-line', padding: '4px 0' }}>
+      <div {...ROW_CLICK} className="airtable-sync-address small text-muted">
         {project.raw_address || '-'}
       </div>
     ),
@@ -103,7 +109,12 @@ const COLUMNS: SearchableColumn<AirtableProject>[] = [
     name: '',
     cell: (project) =>
       project.airtable_url && (
-        <a href={project.airtable_url} target="_blank" rel="noreferrer">
+        <a
+          href={project.airtable_url}
+          target="_blank"
+          rel="noreferrer"
+          {...repeatedTestId('airtable-sync-project-link', project.project_id)}
+        >
           Airtable
         </a>
       ),
@@ -179,26 +190,27 @@ const AirtableSyncPanel = ({
   return (
     <PanelCard
       title='Airtable projects in "Messeinheit und Inbetriebnahme"'
+      testId="airtable-sync"
       actions={
-        <Button variant="link" size="sm" className="p-0" onClick={onClose}>
+        <Button variant="link" size="sm" className="p-0" onClick={onClose} data-testid="airtable-sync-close">
           Close
         </Button>
       }
     >
-      <small className="text-muted d-block mb-3">
+      <small className="text-muted d-block mb-3" data-testid="airtable-sync-summary">
         {airtable.updated.length} existing location(s) updated, {airtable.unchanged} already up to date.{' '}
         {airtable.available.length} project(s) without a location.
       </small>
 
       {airtable.updated.length > 0 && (
-        <Alert variant="info" className="small">
+        <Alert variant="info" className="small" data-testid="airtable-sync-updated">
           Updated:{' '}
           {airtable.updated.map((location) => `${location.project_id} (${location.fields.join(', ')})`).join('; ')}
         </Alert>
       )}
 
       {airtable.available.length === 0 ? (
-        <Alert variant="success" className="mb-0">
+        <Alert variant="success" className="mb-0" data-testid="airtable-sync-empty">
           <CheckCircle className="me-2" />
           Every project has a location.
         </Alert>
@@ -210,13 +222,18 @@ const AirtableSyncPanel = ({
             keyField="project_id"
             defaultSortFieldId="project_id"
             selection={selection}
+            testId="airtable-sync-table"
             highlightOnHover
             dense
           />
           <Row className="g-2 align-items-end mt-2">
             <Col md={4}>
               <Form.Label className="text-muted small mb-1">Account of the new locations</Form.Label>
-              <Form.Select value={importAccount} onChange={(event) => setImportAccount(event.target.value)}>
+              <Form.Select
+                value={importAccount}
+                onChange={(event) => setImportAccount(event.target.value)}
+                data-testid="airtable-sync-account"
+              >
                 <option value="">Select account…</option>
                 {airtable.accounts.map((account) => (
                   <option key={account.id} value={account.id}>
@@ -230,6 +247,7 @@ const AirtableSyncPanel = ({
                 variant="primary"
                 onClick={importProjects}
                 disabled={importing || !selected.size || !importAccount}
+                data-testid="airtable-sync-import"
               >
                 {importing ? (
                   <Spinner size="sm" animation="border" className="me-2" />

@@ -27,6 +27,7 @@ import { isLorawanProject, planVisualization } from './projectType';
 import '../components/ui/kit/kit.css';
 import './LageplanWizard.css';
 import { formatDate } from './dateFormat';
+import { repeatedTestId } from '../testIds';
 
 type ImportedCad = {
   location_id: number;
@@ -208,10 +209,17 @@ const toastSaved = (message: string) =>
 const Notice = ({
   tone = 'info',
   children,
+  testId,
 }: {
   tone?: 'info' | 'warning' | 'danger' | 'success';
   children: React.ReactNode;
-}) => <div className={`lageplan-notice lageplan-notice--${tone}`}>{children}</div>;
+  /** data-testid of the notice. */
+  testId?: string;
+}) => (
+  <div className={`lageplan-notice lageplan-notice--${tone}`} data-testid={testId}>
+    {children}
+  </div>
+);
 
 /** A tile's state chip - grey, or `main` (blue) / `active` (green). */
 const Chip = ({ children, variant }: { children: React.ReactNode; variant?: 'main' | 'active' }) => (
@@ -241,6 +249,7 @@ const StepCard = ({
       </span>
     }
     actions={actions}
+    testId={`lageplan-wizard-step-${number}`}
   >
     {children}
   </PanelCard>
@@ -1053,12 +1062,15 @@ const LageplanWizardView = () => {
           valueKey="project_id"
           onChange={selectLocation}
           loading={locationLoading}
+          testId="lageplan-wizard-location"
         />
       </div>
 
       {!locations.length && !locationLoading && (
         <div className="lageplan-spaced">
-          <Notice tone="warning">No locations are available yet.</Notice>
+          <Notice tone="warning" testId="lageplan-wizard-no-locations">
+            No locations are available yet.
+          </Notice>
         </div>
       )}
     </StepCard>
@@ -1070,8 +1082,14 @@ const LageplanWizardView = () => {
     const updated = plan.last_updated ? new Date(plan.last_updated) : null;
     return (
       // The tile's buttons sit next to (not inside) the tile's own button.
-      <div key={plan.id} className="lageplan-tile-wrap">
-        <button type="button" onClick={() => selectPlan(plan.id)} aria-pressed={selected} className="lageplan-tile">
+      <div key={plan.id} className="lageplan-tile-wrap" {...repeatedTestId('lageplan-tile', plan.id)}>
+        <button
+          type="button"
+          onClick={() => selectPlan(plan.id)}
+          aria-pressed={selected}
+          className="lageplan-tile"
+          {...repeatedTestId('lageplan-tile-select', plan.id)}
+        >
           <LageplanThumb key={plan.url ?? ''} url={plan.url} />
           {selected && (
             <span className="lageplan-tile-check">
@@ -1113,11 +1131,16 @@ const LageplanWizardView = () => {
               aria-label={`Move “${planLabel(plan)}” earlier`}
               disabled={isProcessing || index === 0}
               onClick={() => movePlan(index, -1)}
+              {...repeatedTestId('lageplan-tile-move-earlier', plan.id)}
               className="progeo-icon-button progeo-icon-button--small"
             >
               <ChevronLeft size={13} />
             </button>
-            <span title={`Place ${index + 1} of ${lageplans.length}`} className="lageplan-tile-place">
+            <span
+              title={`Place ${index + 1} of ${lageplans.length}`}
+              className="lageplan-tile-place"
+              {...repeatedTestId('lageplan-tile-place', plan.id)}
+            >
               {index + 1}
             </span>
             <button
@@ -1126,6 +1149,7 @@ const LageplanWizardView = () => {
               aria-label={`Move “${planLabel(plan)}” later`}
               disabled={isProcessing || index === lageplans.length - 1}
               onClick={() => movePlan(index, 1)}
+              {...repeatedTestId('lageplan-tile-move-later', plan.id)}
               className="progeo-icon-button progeo-icon-button--small"
             >
               <ChevronRight size={13} />
@@ -1139,6 +1163,7 @@ const LageplanWizardView = () => {
             aria-label="Rename Lageplan"
             disabled={isProcessing}
             onClick={() => setRenaming({ plan, name: plan.name ?? '' })}
+            {...repeatedTestId('lageplan-tile-rename', plan.id)}
             className="progeo-icon-button"
           >
             <PencilSquare size={14} />
@@ -1147,6 +1172,8 @@ const LageplanWizardView = () => {
             label="Remove Lageplan"
             disabled={isProcessing}
             onClick={() => setConfirmAction({ kind: 'plan', plan })}
+            testId="lageplan-tile-remove"
+            testKey={plan.id}
           />
         </span>
       </div>
@@ -1154,7 +1181,7 @@ const LageplanWizardView = () => {
   };
 
   const renderPlanUpload = () => (
-    <div className="lageplan-upload">
+    <div className="lageplan-upload" data-testid="lageplan-wizard-plan-upload">
       <div className="d-flex align-items-start gap-2">
         <div>
           <div className="lageplan-upload-title">Add a Lageplan</div>
@@ -1170,6 +1197,7 @@ const LageplanWizardView = () => {
               variant="ghost"
               label="Cancel"
               onClick={() => setAddingPlan(false)}
+              testId="lageplan-wizard-plan-upload-cancel"
             />
           </div>
         )}
@@ -1179,6 +1207,7 @@ const LageplanWizardView = () => {
           auth={auth}
           url="/v1/status/measure_points/upload_png/"
           accept="image"
+          testId="lageplan-wizard-plan-upload-png"
           hint="Drop a PNG here, or click to choose"
           instantFileUpload={true}
           withPreview={false}
@@ -1189,6 +1218,7 @@ const LageplanWizardView = () => {
           auth={auth}
           url="/v1/status/measure_points/from_pdf/"
           accept="pdf"
+          testId="lageplan-wizard-plan-upload-pdf"
           // Plan PDFs are often larger than the 5 MB default; one Lageplan per PDF.
           maxSizeMB={50}
           hint="Drop one or more PDFs here (a Lageplan each), or click to choose"
@@ -1208,26 +1238,31 @@ const LageplanWizardView = () => {
       done={!!sourceMeta?.imageUrl}
       actions={
         lageplans.length > 0 && (
-          <span className="lageplan-muted">
+          <span className="lageplan-muted" data-testid="lageplan-wizard-plan-count">
             {lageplans.length} plan(s) for this location
           </span>
         )
       }
     >
       {selectedLocationId === null ? (
-        <Notice tone="warning">Select a location in step 1 first.</Notice>
+        <Notice tone="warning" testId="lageplan-wizard-plans-need-location">Select a location in step 1 first.</Notice>
       ) : (
         <div className="d-flex flex-column gap-3">
           {lageplans.length === 0 && !isProcessing && (
-            <Notice>
+            <Notice testId="lageplan-wizard-no-plans">
               This location has no Lageplan yet - upload the first one below.
             </Notice>
           )}
           {lageplans.length > 0 && (
-            <div className="lageplan-tiles">
+            <div className="lageplan-tiles" data-testid="lageplan-wizard-plans">
               {lageplans.map((plan, index) => renderPlanTile(plan, index))}
               {!addingPlan && (
-                <button type="button" onClick={() => setAddingPlan(true)} className="lageplan-tile lageplan-tile--add">
+                <button
+                  type="button"
+                  onClick={() => setAddingPlan(true)}
+                  className="lageplan-tile lageplan-tile--add"
+                  data-testid="lageplan-wizard-add-plan"
+                >
                   <span className="lageplan-tile-add-icon">
                     <PlusLg size={15} />
                   </span>
@@ -1238,7 +1273,7 @@ const LageplanWizardView = () => {
           )}
           {(addingPlan || lageplans.length === 0) && renderPlanUpload()}
           {selectedPlan && !selectedPlan.url && (
-            <Notice tone="warning">
+            <Notice tone="warning" testId="lageplan-wizard-plan-no-file">
               The selected Lageplan has no file - pick another one or upload a
               new plan.
             </Notice>
@@ -1249,14 +1284,14 @@ const LageplanWizardView = () => {
   );
 
   const renderManualSensors = () => (
-    <div className="d-flex flex-column gap-3">
+    <div className="d-flex flex-column gap-3" data-testid="lageplan-wizard-manual-sensors">
       <div className="lageplan-muted">
         Select a sensor, then click its position on the plan in step 5. Placed
         points can be dragged. Nothing is stored until you save.
       </div>
 
       {devices.length === 0 ? (
-        <Notice tone="warning">
+        <Notice tone="warning" testId="lageplan-wizard-no-devices">
           No devices are connected to this location.
         </Notice>
       ) : (
@@ -1295,6 +1330,7 @@ const LageplanWizardView = () => {
                   .filter(Boolean)
                   .join(' · ')}
                 onClick={() => setActiveDeviceId(active ? null : device.id)}
+                {...repeatedTestId('lageplan-wizard-sensor-device', device.id)}
               >
                 {order > 0 && (
                   <Badge
@@ -1313,7 +1349,7 @@ const LageplanWizardView = () => {
       )}
 
       <div className="d-flex flex-wrap align-items-center gap-2">
-        <span className="lageplan-muted">
+        <span className="lageplan-muted" data-testid="lageplan-wizard-placed-count">
           {planSensors.length} on this plan · {placedSensors.length} /{' '}
           {devices.length} placed
           {placementDirty && ' · unsaved changes'}
@@ -1322,6 +1358,7 @@ const LageplanWizardView = () => {
           <DeleteIconButton
             label={`Remove ${deviceLabel(activeDevice)} from the plan`}
             onClick={removeActiveSensor}
+            testId="lageplan-wizard-sensor-remove"
           />
         )}
         <div className="ms-auto d-flex gap-2">
@@ -1330,6 +1367,7 @@ const LageplanWizardView = () => {
             label="Discard changes"
             disabled={!placementDirty || isProcessing}
             onClick={discardPlacement}
+            testId="lageplan-wizard-placement-discard"
           />
           <Button
             size="sm"
@@ -1337,6 +1375,7 @@ const LageplanWizardView = () => {
             className="lageplan-save-button"
             disabled={!placementDirty || isProcessing}
             onClick={() => void handleSaveManualSensors()}
+            data-testid="lageplan-wizard-placement-save"
           >
             Save manual sensors
           </Button>
@@ -1344,13 +1383,13 @@ const LageplanWizardView = () => {
       </div>
 
       {placementDirty && replacedPointCount > 0 && (
-        <Notice tone="warning">
+        <Notice tone="warning" testId="lageplan-wizard-placement-replaces">
           Saving replaces the {replacedPointCount} existing measure point(s)
           without a sensor (e.g. from a CAD import).
         </Notice>
       )}
       {!sourceMeta?.imageUrl && (
-        <Notice>Select or add a Lageplan in step 3 to place the sensors.</Notice>
+        <Notice testId="lageplan-wizard-placement-needs-plan">Select or add a Lageplan in step 3 to place the sensors.</Notice>
       )}
     </div>
   );
@@ -1363,7 +1402,7 @@ const LageplanWizardView = () => {
       <span className="lageplan-muted lageplan-muted--small">{text}</span>
     );
     return (
-      <div className="d-flex flex-column gap-2">
+      <div className="d-flex flex-column gap-2" data-testid="lageplan-wizard-device-ranges">
         <div className="lageplan-muted lageplan-muted--small">
           {devices.length === 0
             ? 'No devices are connected to this location - the points are imported without device.'
@@ -1371,11 +1410,16 @@ const LageplanWizardView = () => {
         </div>
         {deviceRanges.map((range, index) => (
           // Rows have no id of their own.
-          <div key={index} className="d-flex flex-wrap align-items-center gap-2">
+          <div
+            key={index}
+            className="d-flex flex-wrap align-items-center gap-2"
+            {...repeatedTestId('lageplan-wizard-device-range', index)}
+          >
             <select
               aria-label="Device"
               className="form-select form-select-sm lageplan-range-field lageplan-range-field--device"
               value={range.deviceId ?? ''}
+              {...repeatedTestId('lageplan-wizard-device-range-device', index)}
               onChange={(event) =>
                 updateRange(index, {
                   deviceId: event.target.value ? Number(event.target.value) : null,
@@ -1403,6 +1447,7 @@ const LageplanWizardView = () => {
               placeholder="1"
               value={range.from}
               onChange={(event) => updateRange(index, { from: event.target.value })}
+              {...repeatedTestId('lageplan-wizard-device-range-from', index)}
             />
             {rangeLabel('to')}
             <input
@@ -1413,12 +1458,15 @@ const LageplanWizardView = () => {
               placeholder="last"
               value={range.to}
               onChange={(event) => updateRange(index, { to: event.target.value })}
+              {...repeatedTestId('lageplan-wizard-device-range-to', index)}
             />
             <DeleteIconButton
               label="Remove this device"
               onClick={() =>
                 setDeviceRanges((current) => current.filter((_range, position) => position !== index))
               }
+              testId="lageplan-wizard-device-range-remove"
+              testKey={index}
             />
           </div>
         ))}
@@ -1427,6 +1475,7 @@ const LageplanWizardView = () => {
             <PillButton
               variant="ghost"
               label={deviceRanges.length ? 'Add another device' : 'Connect a device'}
+              testId="lageplan-wizard-device-range-add"
               onClick={() =>
                 setDeviceRanges((current) => {
                   // A new row continues after the last one's range.
@@ -1439,7 +1488,11 @@ const LageplanWizardView = () => {
             />
           </div>
         )}
-        {deviceRangesProblem && <Notice tone="warning">{deviceRangesProblem}</Notice>}
+        {deviceRangesProblem && (
+          <Notice tone="warning" testId="lageplan-wizard-device-ranges-problem">
+            {deviceRangesProblem}
+          </Notice>
+        )}
       </div>
     );
   };
@@ -1451,14 +1504,14 @@ const LageplanWizardView = () => {
       done={usedRanges.length > 0 && !deviceRangesProblem}
       actions={
         selectedLocationId !== null && (
-          <span className="lageplan-muted">
+          <span className="lageplan-muted" data-testid="lageplan-wizard-device-count">
             {devices.length} device(s) at this location
           </span>
         )
       }
     >
       {selectedLocationId === null ? (
-        <Notice tone="warning">Select a location in step 1 first.</Notice>
+        <Notice tone="warning" testId="lageplan-wizard-devices-need-location">Select a location in step 1 first.</Notice>
       ) : (
         renderDeviceRanges()
       )}
@@ -1473,7 +1526,7 @@ const LageplanWizardView = () => {
       actions={
         selectedLocationId !== null && (
           <span className="d-flex align-items-center gap-2">
-            <span className="lageplan-muted">
+            <span className="lageplan-muted" data-testid="lageplan-wizard-point-count">
               {measurePoints.length} measure point(s) stored
             </span>
             {measurePoints.length > 0 && (
@@ -1482,6 +1535,7 @@ const LageplanWizardView = () => {
                 label="Clear measure points"
                 disabled={isProcessing}
                 onClick={() => setConfirmAction({ kind: 'points' })}
+                testId="lageplan-wizard-points-clear"
               />
             )}
           </span>
@@ -1489,7 +1543,7 @@ const LageplanWizardView = () => {
       }
     >
       {selectedLocationId === null ? (
-        <Notice tone="warning">Select a location in step 1 first.</Notice>
+        <Notice tone="warning" testId="lageplan-wizard-points-need-location">Select a location in step 1 first.</Notice>
       ) : (
         <div className="d-flex flex-column gap-3">
           <div className="lageplan-sources">
@@ -1498,12 +1552,15 @@ const LageplanWizardView = () => {
                 options={POINT_SOURCES}
                 value={pointSource}
                 onChange={(value) => setPointSource(value as PointSource)}
+                testId="lageplan-wizard-point-source"
               />
             </div>
           </div>
 
           {pointSource !== 'manual' && deviceRangesProblem && (
-            <Notice tone="warning">Fix the device ranges in step 2 before importing.</Notice>
+            <Notice tone="warning" testId="lageplan-wizard-import-blocked">
+              Fix the device ranges in step 2 before importing.
+            </Notice>
           )}
           {/* No import while the device ranges don't fit (see the notice). */}
           {!deviceRangesProblem && pointSource === 'cad' && (
@@ -1511,6 +1568,7 @@ const LageplanWizardView = () => {
               auth={auth}
               url={`/v1/status/measure_points/upload_cad/`}
               accept="cad"
+              testId="lageplan-wizard-import-cad"
               hint="Drop a DWG/DXF file here, or click to choose"
               maxSizeMB={100}
               instantFileUpload={true}
@@ -1524,6 +1582,7 @@ const LageplanWizardView = () => {
               auth={auth}
               url={`/v1/status/measure_points/from_json/`}
               accept="json"
+              testId="lageplan-wizard-import-json"
               hint="Drop a JSON file here, or click to choose"
               instantFileUpload={true}
               withPreview={false}
@@ -1536,6 +1595,7 @@ const LageplanWizardView = () => {
               auth={auth}
               url={`/v1/status/measure_points/upload_cad/`}
               accept="text"
+              testId="lageplan-wizard-import-txt"
               hint="Drop a TXT file here, or click to choose"
               instantFileUpload={true}
               withPreview={false}
@@ -1546,20 +1606,22 @@ const LageplanWizardView = () => {
           {pointSource === 'manual' && renderManualSensors()}
 
           {pointSource !== 'manual' && lageplans.length > 1 && selectedPlanId !== null && (
-            <Notice>
+            <Notice testId="lageplan-wizard-import-target">
               Imported points go onto “{planNameOf(selectedPlanId)}” and replace
               the {pointsOnPlan(selectedPlanId)} point(s) on it - the points on
               the other plans stay.
             </Notice>
           )}
           {cadPayload && pointSource !== 'manual' && (
-            <Notice tone="success">
+            <Notice tone="success" testId="lageplan-wizard-import-done">
               Import complete: {cadPayload.stored} points stored
               {cadPayload.lageplan_id != null ? ` on “${planNameOf(cadPayload.lageplan_id)}”` : ''}.
             </Notice>
           )}
           {cadPayload?.warning && pointSource !== 'manual' && (
-            <Notice tone="warning">{cadPayload.warning}</Notice>
+            <Notice tone="warning" testId="lageplan-wizard-import-warning">
+              {cadPayload.warning}
+            </Notice>
           )}
         </div>
       )}
@@ -1572,13 +1634,14 @@ const LageplanWizardView = () => {
   const renderStepFour = () => (
     <StepCard number={5} title="Align and inspect">
       {!sourceMeta?.imageUrl ? (
-        <Notice tone="warning">
+        <Notice tone="warning" testId="lageplan-wizard-canvas-needs-plan">
           Select or add a Lageplan in step 3 before using the canvas editor.
         </Notice>
       ) : (
         <ImageCanvasStage
           // A different plan starts with its own view (zoom, tools).
           key={selectedPlanId ?? 'none'}
+          testId="lageplan-wizard-canvas"
           sourceMeta={sourceMeta}
           imageUrl={sourceMeta.imageUrl}
           title={
@@ -1626,8 +1689,8 @@ const LageplanWizardView = () => {
 
   if (!permissionsLoading && !canEditDevices) {
     return (
-      <div>
-        <Notice tone="warning">
+      <div data-testid="page-lageplan-wizard">
+        <Notice tone="warning" testId="lageplan-wizard-no-permission">
           You do not have permission to edit measure points.
         </Notice>
       </div>
@@ -1635,7 +1698,7 @@ const LageplanWizardView = () => {
   }
 
   return (
-    <div className="lageplan-wizard">
+    <div className="lageplan-wizard" data-testid="page-lageplan-wizard">
       <div className="lageplan-wizard-head">
         <div>
           <div className="lageplan-wizard-title">Lageplan wizard</div>
@@ -1645,7 +1708,7 @@ const LageplanWizardView = () => {
           </div>
         </div>
         {isProcessing && (
-          <span className="d-flex align-items-center gap-2 lageplan-muted">
+          <span className="d-flex align-items-center gap-2 lageplan-muted" data-testid="lageplan-wizard-processing">
             <Spinner animation="border" size="sm" />
             Processing…
           </span>
@@ -1655,11 +1718,16 @@ const LageplanWizardView = () => {
             variant="ghost"
             label="Reset"
             onClick={() => selectLocation(null)}
+            testId="lageplan-wizard-reset"
           />
         </div>
       </div>
 
-      {error && <Notice tone="danger">{error}</Notice>}
+      {error && (
+        <Notice tone="danger" testId="lageplan-wizard-error">
+          {error}
+        </Notice>
+      )}
 
       {renderStepOne()}
       {renderStepDevice()}
@@ -1669,6 +1737,7 @@ const LageplanWizardView = () => {
 
       <ConfirmDialog
         show={confirmAction !== null}
+        testId="lageplan-wizard-confirm"
         title={confirmAction?.kind === 'plan' ? 'Remove Lageplan?' : 'Clear measure points?'}
         message={
           confirmAction?.kind === 'plan'
@@ -1694,6 +1763,7 @@ const LageplanWizardView = () => {
 
       <ConfirmDialog
         show={renaming !== null}
+        testId="lageplan-wizard-rename"
         title="Rename Lageplan"
         message={
           <form
@@ -1714,6 +1784,7 @@ const LageplanWizardView = () => {
               maxLength={255}
               value={renaming?.name ?? ''}
               placeholder={renaming?.plan.url?.split('/').pop() ?? ''}
+              data-testid="lageplan-wizard-rename-input"
               disabled={isProcessing}
               onChange={(event) =>
                 setRenaming((current) => (current ? { ...current, name: event.target.value } : current))

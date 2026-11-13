@@ -4,6 +4,7 @@ import { XLg } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
 import PillSelect from '../components/ui/kit/PillSelect';
 import { formatDate } from './dateFormat';
+import './NoiseProfile.css';
 import {
   formatSpan,
   type NoiseProfile,
@@ -53,10 +54,8 @@ type NoiseProfilePanelProps = {
 };
 
 /** The panel's buttons: as high as its pill select (32 px), text centred. */
-const SMALL = { fontSize: 12.5, height: 32 } as const;
-const BUTTON_CLASS = 'd-inline-flex align-items-center';
+const BUTTON_CLASS = 'd-inline-flex align-items-center noise-profile-btn';
 /** The panel's inner blocks: one surface, radius and padding. */
-const SURFACE = { background: 'var(--progeo-surface)', borderRadius: 12, padding: '10px 14px' } as const;
 
 /** The quick spans next to "Neu aus Zeitraum" (days up to now). */
 export const QUICK_RANGE_DAYS = [7, 30] as const;
@@ -96,35 +95,24 @@ const RatingTile = ({
       data-testid={`noise-rating-${measure}`}
       data-level={level ?? 'none'}
       title={hint}
-      className="rounded-3 px-3 py-2"
+      className="rounded-3 px-3 py-2 noise-rating-card"
       style={{
-        flex: '1 1 160px',
-        minWidth: 140,
         background: colors?.background ?? 'var(--progeo-surface)',
         border: `2px solid ${colors?.border ?? 'var(--progeo-warm-gray-2)'}`,
       }}
     >
-      <div className="d-flex align-items-center gap-2 small fw-semibold text-uppercase" style={{ letterSpacing: 0.5 }}>
+      <div className="d-flex align-items-center gap-2 small fw-semibold text-uppercase noise-rating-card-label">
         <span
           aria-hidden="true"
-          style={{
-            width: 12,
-            height: 12,
-            borderRadius: '50%',
-            background: colors?.border ?? 'var(--progeo-warm-gray-3)',
-            flexShrink: 0,
-          }}
+          className="noise-rating-card-dot"
+          style={{ background: colors?.border ?? 'var(--progeo-warm-gray-3)' }}
         />
         {label}
       </div>
       <div
-        className="fw-bold"
-        style={{
-          fontSize: '2.75rem',
-          lineHeight: 1.1,
-          color: colors?.text ?? 'var(--progeo-warm-gray-4)',
-          fontVariantNumeric: 'tabular-nums',
-        }}
+        className="fw-bold noise-rating-card-value"
+        data-testid={`noise-rating-${measure}-value`}
+        style={{ color: colors?.text ?? 'var(--progeo-warm-gray-4)' }}
       >
         {text}
       </div>
@@ -161,7 +149,7 @@ const NoiseRatingTiles = ({ rating }: { rating: NoiseRating | null }) => {
         />
       </div>
       {rating && (
-        <div className="small text-muted mt-1" title={t('noise_profile_rating_hint')}>
+        <div className="small text-muted mt-1" title={t('noise_profile_rating_hint')} data-testid="noise-rating-details">
           {t('noise_profile_rating_details', {
             before: rating.exceedBefore,
             after: rating.exceedAfter,
@@ -243,20 +231,25 @@ const NoiseProfilePanel = ({
       <Card.Header className="bg-transparent border-0 px-3 pt-3 pb-2 d-flex flex-wrap align-items-center gap-2">
         <Button
           variant="link"
-          className="p-0 text-decoration-none fw-semibold"
-          style={{ color: 'var(--progeo-blue)' }}
+          className="p-0 text-decoration-none fw-semibold noise-profile-toggle"
           aria-expanded={open}
           aria-controls="analyse-noise-profile"
           onClick={() => setOpen((shown) => !shown)}
+          data-testid="noise-profile-toggle"
         >
           <span className="me-2">{open ? '▾' : '▸'}</span>
           {t('noise_profile_label')}
         </Button>
-        {deviceName && <span className="small text-muted">{deviceName}</span>}
+        {deviceName && (
+          <span className="small text-muted" data-testid="noise-profile-device">
+            {deviceName}
+          </span>
+        )}
         {/* Folded: the rating and what is shown, in one line. */}
         {!open && rating && scoreLevel && (
           <span
             className="rounded-pill px-2 fw-semibold small"
+            data-testid="noise-profile-folded-score"
             style={{
               color: LEVEL_COLORS[scoreLevel].text,
               background: LEVEL_COLORS[scoreLevel].background,
@@ -269,14 +262,15 @@ const NoiseProfilePanel = ({
         <small className="text-muted ms-auto" data-testid="noise-profile-status">
           {viewLabel}
         </small>
-        {busy && <Spinner size="sm" animation="border" className="text-muted" />}
+        {busy && <Spinner size="sm" animation="border" className="text-muted" data-testid="noise-profile-busy" />}
       </Card.Header>
       <Collapse in={open}>
-        <div id="analyse-noise-profile">
+        <div id="analyse-noise-profile" data-testid="noise-profile-body">
           <Card.Body className="px-3 pt-1 pb-3 mx-3 d-flex flex-column gap-3">
             {/* Pick, try, switch active, edit, download, delete. */}
             <div className="d-flex flex-wrap align-items-center gap-2" data-testid="noise-profile-controls">
               <PillSelect
+                testId="noise-profile-select"
                 label={t('noise_profile_label')}
                 title={t('noise_profile_hint')}
                 options={[
@@ -293,10 +287,10 @@ const NoiseProfilePanel = ({
                     variant={testedId === selected.id ? 'primary' : 'outline-primary'}
                     aria-pressed={testedId === selected.id}
                     className={BUTTON_CLASS}
-                    style={SMALL}
                     title={t('noise_profile_apply_hint')}
                     disabled={busy || editing}
                     onClick={() => onTest(testedId === selected.id ? null : selected.id)}
+                    data-testid="noise-profile-apply"
                   >
                     {testedId === selected.id ? t('noise_profile_apply_end') : t('noise_profile_apply')}
                   </Button>
@@ -305,10 +299,10 @@ const NoiseProfilePanel = ({
                       size="sm"
                       variant="outline-success"
                       className={BUTTON_CLASS}
-                      style={SMALL}
                       title={t('noise_profile_activate_hint')}
                       disabled={busy || editing}
                       onClick={() => onActivate(selected)}
+                      data-testid="noise-profile-activate"
                     >
                       {t('noise_profile_activate')}
                     </Button>
@@ -317,9 +311,9 @@ const NoiseProfilePanel = ({
                     size="sm"
                     variant="outline-secondary"
                     className={BUTTON_CLASS}
-                    style={SMALL}
                     disabled={busy || editing}
                     onClick={() => onEdit(selected)}
+                    data-testid="noise-profile-edit"
                   >
                     {t('noise_profile_edit')}
                   </Button>
@@ -327,9 +321,9 @@ const NoiseProfilePanel = ({
                     size="sm"
                     variant="outline-secondary"
                     className={BUTTON_CLASS}
-                    style={SMALL}
                     title={t('noise_profile_csv_hint')}
                     onClick={() => onDownload(selected)}
+                    data-testid="noise-profile-download"
                   >
                     {t('noise_profile_csv')}
                   </Button>
@@ -337,8 +331,8 @@ const NoiseProfilePanel = ({
                     size="sm"
                     variant="outline-danger"
                     className={BUTTON_CLASS}
-                    style={SMALL}
                     disabled={busy || editing}
+                    data-testid="noise-profile-delete"
                     onClick={() => {
                       if (window.confirm(t('noise_profile_delete_confirm', { name: selected.name }))) {
                         onDelete(selected);
@@ -354,10 +348,10 @@ const NoiseProfilePanel = ({
                   size="sm"
                   variant="outline-warning"
                   className={BUTTON_CLASS}
-                  style={SMALL}
                   title={t('noise_profile_deactivate_hint', { name: active.name })}
                   disabled={busy || editing}
                   onClick={onDeactivate}
+                  data-testid="noise-profile-deactivate"
                 >
                   {t('noise_profile_deactivate')}
                 </Button>
@@ -366,19 +360,17 @@ const NoiseProfilePanel = ({
 
             {/* The span a new profile is made from - and how long it is. */}
             <div
-              className="d-flex flex-wrap align-items-center gap-2 small"
-              style={SURFACE}
+              className="d-flex flex-wrap align-items-center gap-2 small noise-profile-surface"
               data-testid="noise-profile-range"
             >
               {range ? (
                 <>
                   <span className="fw-semibold">{t('noise_profile_range')}</span>
-                  <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  <span className="noise-profile-tabular" data-testid="noise-profile-range-span">
                     {formatDate(range.from, 'dateTime')} – {formatDate(range.to, 'dateTime')}
                   </span>
                   <span
-                    className="rounded-pill px-2 fw-semibold"
-                    style={{ background: 'rgba(235, 99, 59, 0.15)', color: '#a3401f' }}
+                    className="rounded-pill px-2 fw-semibold noise-profile-range-length"
                     data-testid="noise-profile-range-length"
                   >
                     {formatSpan(range.to - range.from)}
@@ -389,12 +381,15 @@ const NoiseProfilePanel = ({
                     title={t('noise_profile_range_clear')}
                     aria-label={t('noise_profile_range_clear')}
                     onClick={onClearRange}
+                    data-testid="noise-profile-range-clear"
                   >
                     <XLg size={11} />
                   </button>
                 </>
               ) : (
-                <span className="text-muted">{t('noise_profile_range_none')}</span>
+                <span className="text-muted" data-testid="noise-profile-range-none">
+                  {t('noise_profile_range_none')}
+                </span>
               )}
               <div className="d-flex flex-wrap gap-2 ms-auto">
                 {QUICK_RANGE_DAYS.map((days) => {
@@ -406,7 +401,6 @@ const NoiseProfilePanel = ({
                       variant={picked ? 'primary' : 'outline-primary'}
                       aria-pressed={picked}
                       className={BUTTON_CLASS}
-                      style={SMALL}
                       title={t('noise_profile_range_last_days_hint', { count: days })}
                       disabled={busy || editing}
                       data-testid={`noise-profile-range-last-${days}`}
@@ -423,10 +417,10 @@ const NoiseProfilePanel = ({
                   size="sm"
                   variant="primary"
                   className={BUTTON_CLASS}
-                  style={SMALL}
                   title={t('noise_profile_new_hint')}
                   disabled={busy || editing || !range}
                   onClick={onCreate}
+                  data-testid="noise-profile-new"
                 >
                   {t('noise_profile_new')}
                 </Button>
@@ -435,7 +429,9 @@ const NoiseProfilePanel = ({
 
             {showRating && (
               <div data-testid="noise-profile-rating">
-                <div className="small text-muted mb-2">{t('noise_profile_rating_of', { name: ratedName ?? '' })}</div>
+                <div className="small text-muted mb-2" data-testid="noise-profile-rating-of">
+                  {t('noise_profile_rating_of', { name: ratedName ?? '' })}
+                </div>
                 <NoiseRatingTiles rating={rating} />
               </div>
             )}

@@ -16,6 +16,8 @@ type LabeledInputProps = {
    * user's own address when navigating away.
    */
   autoComplete?: string;
+  /** data-testid of the input. */
+  testId?: string;
 };
 
 /** Uppercase small label above a soft-surface input, as used on the Objekt/Einstellungen panels. */
@@ -27,6 +29,7 @@ const LabeledInput = ({
   type = 'text',
   title,
   autoComplete = NO_AUTOFILL,
+  testId,
 }: LabeledInputProps) => {
   const labelId = useId();
   // Firefox ignores autocomplete for address capture and recognises the
@@ -49,6 +52,7 @@ const LabeledInput = ({
         aria-labelledby={noAutofill ? labelId : undefined}
         onChange={(event: ChangeEvent<HTMLInputElement>) => onChange?.(event.target.value)}
         className="progeo-field-input"
+        data-testid={testId}
       />
     </Wrapper>
   );

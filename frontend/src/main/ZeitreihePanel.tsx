@@ -10,6 +10,7 @@ import PillButton from '../components/ui/kit/PillButton';
 import PlotHelp from '../components/ui/PlotHelp';
 import { progeoTableStyles } from '../components/ui/kit/SearchableDataTable';
 import { staffFlags } from './access';
+import './ZeitreihePanel.css';
 import {
   ACTIVE_RANGE,
   byPeak,
@@ -21,7 +22,6 @@ import {
 } from './zeitreiheSensors';
 
 const MUTED = '#8B8383';
-const OVER_COLOR = '#C44D26';
 /** Rows per page of each table. */
 const TABLE_PAGE = 8;
 const NO_HIDDEN = new Set<string>();
@@ -41,15 +41,8 @@ const formatValue = (value: number) => String(Math.round(value));
 const SensorSwatch = ({ color }: { color: string | null }) => (
   <span
     aria-hidden="true"
-    style={{
-      display: 'inline-block',
-      width: 10,
-      height: 10,
-      borderRadius: '50%',
-      flexShrink: 0,
-      background: color ?? 'transparent',
-      boxShadow: color ? 'none' : `inset 0 0 0 1.5px ${MUTED}`,
-    }}
+    className={`zeitreihe-swatch${color ? '' : ' zeitreihe-swatch--empty'}`}
+    style={color ? { background: color } : undefined}
   />
 );
 
@@ -126,9 +119,9 @@ const ZeitreihePanel = ({ loading, sensors }: { loading: boolean; sensors: Zeitr
         sortable: true,
         grow: 2,
         cell: (sensor) => (
-          <span data-tag="allowRowEvents" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+          <span data-tag="allowRowEvents" className="zeitreihe-sensor-cell">
             <SensorSwatch color={colorOf(sensor.id)} />
-            <span data-tag="allowRowEvents" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <span data-tag="allowRowEvents" className="zeitreihe-sensor-label">
               {sensor.label}
             </span>
           </span>
@@ -144,7 +137,7 @@ const ZeitreihePanel = ({ loading, sensors }: { loading: boolean; sensors: Zeitr
           <span
             data-tag="allowRowEvents"
             title={sensor.threshold != null ? t('status_zeitreihe_threshold_of', { value: sensor.threshold }) : undefined}
-            style={{ color: sensor.triggered ? OVER_COLOR : undefined, fontVariantNumeric: 'tabular-nums' }}
+            className={`zeitreihe-number${sensor.triggered ? ' zeitreihe-number--over' : ''}`}
           >
             {formatValue(sensor.max)}
           </span>
@@ -157,7 +150,7 @@ const ZeitreihePanel = ({ loading, sensors }: { loading: boolean; sensors: Zeitr
         sortable: true,
         right: true,
         cell: (sensor) => (
-          <span data-tag="allowRowEvents" style={{ fontVariantNumeric: 'tabular-nums' }}>
+          <span data-tag="allowRowEvents" className="zeitreihe-number">
             {formatValue(sensor.range)}
           </span>
         ),
@@ -184,33 +177,37 @@ const ZeitreihePanel = ({ loading, sensors }: { loading: boolean; sensors: Zeitr
 
   return (
     <PanelCard
+      testId="zeitreihe"
       title={t('status_zeitreihe_title')}
       actions={
         <div className="d-flex align-items-center gap-2 flex-wrap">
           {!loading && sensors.length > 0 && (
             <>
-              <span style={{ fontSize: 12, color: MUTED }}>
+              <span className="zeitreihe-muted" data-testid="zeitreihe-shown">
                 {t('status_zeitreihe_shown', { shown: shownIds.length, total: sensors.length })}
               </span>
               <PillButton
+                testId="zeitreihe-only-triggered"
                 variant={onlyTriggered ? 'accent' : 'ghost'}
                 label={t('status_zeitreihe_only_triggered', { count: triggeredIds.length })}
                 disabled={triggeredIds.length === 0}
                 onClick={() => (onlyTriggered ? reset() : setOnlyTriggered(true))}
               />
-              {customized && <PillButton variant="ghost" label={t('status_zeitreihe_reset')} onClick={reset} />}
+              {customized && (
+                <PillButton testId="zeitreihe-reset" variant="ghost" label={t('status_zeitreihe_reset')} onClick={reset} />
+              )}
             </>
           )}
-          <PlotHelp topic="status_zeitreihe" />
+          <PlotHelp topic="status_zeitreihe" testId="zeitreihe-help" />
         </div>
       }
     >
       {loading ? (
-        <div className="d-flex justify-content-center py-5 text-muted">
+        <div className="d-flex justify-content-center py-5 text-muted" data-testid="zeitreihe-loading">
           <Spinner animation="border" className="me-2" /> {t('ui_loading')}
         </div>
       ) : (
-        <div className="d-flex flex-column gap-3">
+        <div className="d-flex flex-column gap-3" data-testid="zeitreihe-content">
           <ThresholdTrendChart
             series={series}
             hiddenSeries={NO_HIDDEN}
@@ -226,22 +223,25 @@ const ZeitreihePanel = ({ loading, sensors }: { loading: boolean; sensors: Zeitr
 
           {sensors.length > 0 && (
             <div
-              style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 14 }}
+              className="zeitreihe-tables"
+              data-testid="zeitreihe-tables"
               onMouseLeave={() => setHighlighted(null)}
             >
               {tables.map(({ kind, rows }) => {
                 const data = rows(sensors);
                 return (
-                  <div key={kind} data-testid={`zeitreihe-${kind}`} style={{ minWidth: 0 }}>
+                  <div key={kind} data-testid={`zeitreihe-${kind}`} className="zeitreihe-table">
                     <div className="d-flex align-items-baseline gap-2">
-                      <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--progeo-blue)' }}>
+                      <span className="zeitreihe-table-title">
                         {t(`status_zeitreihe_${kind}_title`)}
                       </span>
-                      <span style={{ fontSize: 12, color: MUTED }}>{data.length}</span>
+                      <span className="zeitreihe-muted" data-testid={`zeitreihe-${kind}-count`}>
+                        {data.length}
+                      </span>
                     </div>
-                    <div style={{ fontSize: 11.5, color: MUTED, marginBottom: 4 }}>{tableHint[kind]}</div>
+                    <div className="zeitreihe-hint zeitreihe-hint--table">{tableHint[kind]}</div>
                     {data.length === 0 ? (
-                      <div style={{ fontSize: 12.5, color: MUTED, padding: '8px 0' }}>
+                      <div className="zeitreihe-table-empty" data-testid={`zeitreihe-${kind}-empty`}>
                         {t('status_zeitreihe_table_empty')}
                       </div>
                     ) : (
@@ -273,7 +273,7 @@ const ZeitreihePanel = ({ loading, sensors }: { loading: boolean; sensors: Zeitr
             </div>
           )}
           {sensors.length > 0 && (
-            <div style={{ fontSize: 11.5, color: MUTED }}>{t('status_zeitreihe_table_click')}</div>
+            <div className="zeitreihe-hint">{t('status_zeitreihe_table_click')}</div>
           )}
         </div>
       )}

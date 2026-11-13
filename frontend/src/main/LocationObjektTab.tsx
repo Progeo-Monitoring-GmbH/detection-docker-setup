@@ -13,6 +13,7 @@ import LocationStandortPanel from './LocationStandortPanel';
 import { useProgeoRole } from './roleModel';
 import { formatDate } from './dateFormat';
 import { getProjectTypeLabel } from './projectType';
+import './LocationObjektTab.css';
 
 type ProjectTypeOption = { value: number; label: string };
 
@@ -149,48 +150,31 @@ const LocationObjektTab = () => {
     getProjectTypeLabel(t, value, projectTypeOptions.find((option) => option.value === value)?.label);
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        gap: 14,
-        alignItems: 'flex-start',
-        flexWrap: 'wrap',
-      }}
-    >
-      <div
-        style={{
-          flex: '1 1 480px',
-          minWidth: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 14,
-        }}
-      >
-        <PanelCard title={t('objekt_section_project')}>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
-              gap: '14px 18px',
-            }}
-          >
+    <div className="objekt-tab" data-testid="page-location-objekt">
+      <div className="objekt-main">
+        <PanelCard title={t('objekt_section_project')} testId="objekt-project">
+          <div className="objekt-grid">
             <LabeledInput
+              testId="objekt-project-nr"
               label={t('objekt_field_project_nr')}
               value={form.project_id}
               readOnly
             />
             <LabeledInput
+              testId="objekt-project-name"
               label={t('objekt_field_project_name')}
               value={form.name}
               onChange={set('name')}
               readOnly={!canEditIdentity}
             />
             <LabeledInput
+              testId="objekt-online-since"
               label={t('objekt_field_online_since')}
               value={formatDate(location?.last_updated)}
               readOnly
             />
             <LabeledInput
+              testId="objekt-last-measurement"
               label={t('objekt_field_last_measurement')}
               value={formatDate(location?.last_measurement_at)}
               readOnly
@@ -198,41 +182,18 @@ const LocationObjektTab = () => {
           </div>
         </PanelCard>
 
-        <PanelCard title={t('objekt_section_product')}>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
-              gap: '14px 18px',
-            }}
-          >
+        <PanelCard title={t('objekt_section_product')} testId="objekt-product">
+          <div className="objekt-grid">
             {canEditIdentity && projectTypeOptions.length > 0 ? (
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>
-                <span
-                  style={{
-                    fontSize: 11,
-                    letterSpacing: '.07em',
-                    textTransform: 'uppercase',
-                    color: '#8B8383',
-                    fontWeight: 500,
-                  }}
-                >
+              <label className="objekt-field">
+                <span className="objekt-field-label">
                   {t('objekt_field_project_type')}
                 </span>
                 <select
                   value={form.project_type}
                   onChange={(event) => set('project_type')(event.target.value)}
-                  style={{
-                    height: 40,
-                    border: 'none',
-                    borderRadius: 11,
-                    background: 'var(--progeo-surface)',
-                    boxShadow: '0 1px 4px rgba(11, 54, 89, .09)',
-                    padding: '0 13px',
-                    fontFamily: 'inherit',
-                    fontSize: 14,
-                    color: 'var(--progeo-blue)',
-                  }}
+                  className="objekt-select"
+                  data-testid="objekt-project-type"
                 >
                   {projectTypeOptions.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -243,12 +204,14 @@ const LocationObjektTab = () => {
               </label>
             ) : (
               <LabeledInput
+                testId="objekt-project-type"
                 label={t('objekt_field_project_type')}
                 value={projectTypeLabel(location?.project_type ?? null)}
                 readOnly
               />
             )}
             <LabeledInput
+              testId="objekt-device-count"
               label={t('objekt_field_device_count')}
               value={
                 location?.device_count != null
@@ -260,33 +223,31 @@ const LocationObjektTab = () => {
           </div>
         </PanelCard>
 
-        <PanelCard title={t('objekt_section_address')}>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
-              gap: '14px 18px',
-            }}
-          >
+        <PanelCard title={t('objekt_section_address')} testId="objekt-address">
+          <div className="objekt-grid">
             <LabeledInput
+              testId="objekt-street"
               label={t('objekt_field_street')}
               value={form.address}
               onChange={set('address')}
               readOnly={!canEditContact}
             />
             <LabeledInput
+              testId="objekt-plz"
               label={t('objekt_field_plz')}
               value={form.plz}
               onChange={set('plz')}
               readOnly={!canEditContact}
             />
             <LabeledInput
+              testId="objekt-city"
               label={t('objekt_field_city')}
               value={form.city}
               onChange={set('city')}
               readOnly={!canEditContact}
             />
             <LabeledInput
+              testId="objekt-country"
               label={t('objekt_field_country')}
               value={form.country}
               onChange={set('country')}
@@ -295,33 +256,31 @@ const LocationObjektTab = () => {
           </div>
         </PanelCard>
 
-        <PanelCard title={t('objekt_section_contact')}>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
-              gap: '14px 18px',
-            }}
-          >
+        <PanelCard title={t('objekt_section_contact')} testId="objekt-contact">
+          <div className="objekt-grid">
             <LabeledInput
+              testId="objekt-manager"
               label={t('objekt_field_manager')}
               value={form.manager}
               onChange={set('manager')}
               readOnly={!canEditContact}
             />
             <LabeledInput
+              testId="objekt-phone"
               label={t('objekt_field_phone')}
               value={form.telefon}
               onChange={set('telefon')}
               readOnly={!canEditContact}
             />
             <LabeledInput
+              testId="objekt-email"
               label={t('objekt_field_email')}
               value={form.mail}
               onChange={set('mail')}
               readOnly={!canEditContact}
             />
             <LabeledInput
+              testId="objekt-contact-person"
               label={t('objekt_field_contact_person')}
               value={form.contact_person}
               onChange={set('contact_person')}
@@ -336,32 +295,21 @@ const LocationObjektTab = () => {
               type="button"
               onClick={save}
               disabled={saving}
-              style={{
-                height: 40,
-                padding: '0 20px',
-                border: 'none',
-                borderRadius: 10,
-                background: 'var(--progeo-orange)',
-                color: '#fff',
-                fontFamily: 'inherit',
-                fontSize: 13.5,
-                fontWeight: 500,
-                cursor: saving ? 'default' : 'pointer',
-                boxShadow: '0 4px 14px rgba(235, 99, 59, .28)',
-              }}
+              className="objekt-save"
+              data-testid="objekt-save"
             >
               {saving ? t('ui_loading') : t('objekt_save')}
             </button>
           </div>
         )}
         {!canEditContact && (
-          <span style={{ fontSize: 12.5, color: '#8B8383' }}>
+          <span className="objekt-no-permission" data-testid="objekt-no-permission">
             {t('ui_no_permission_edit')}
           </span>
         )}
       </div>
 
-      <div style={{ flex: '1 1 300px', minWidth: 0, maxWidth: 360 }}>
+      <div className="objekt-side">
         <LocationStandortPanel
           location={location}
           onGeocode={canEditContact ? geocode : undefined}

@@ -19,6 +19,7 @@ const ImpersonationBanner = () => {
     <Alert
       variant="warning"
       className="d-flex flex-wrap align-items-center justify-content-between gap-2 py-2 mb-0"
+      data-testid="impersonation-banner"
     >
       <span>
         <Incognito className="me-2" />
@@ -32,6 +33,7 @@ const ImpersonationBanner = () => {
         size="sm"
         variant="dark"
         onClick={() => stopImpersonation(auth, '/staff/')}
+        data-testid="impersonation-banner-stop"
       >
         {t('impersonation_back')}
       </Button>

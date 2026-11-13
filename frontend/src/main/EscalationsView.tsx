@@ -22,6 +22,8 @@ import {
   type StaffUser,
 } from './escalations';
 import { staffFlags } from './access';
+import { repeatedTestId } from '../testIds';
+import './EscalationsView.css';
 
 type StateFilter = 'open' | 'closed' | 'all';
 
@@ -92,7 +94,7 @@ const EscalationsView = () => {
   }, [selectedId, isStaff]);
 
   if (!isStaff) {
-    return <div className="text-muted py-5 text-center">{t('escalation_staff_only')}</div>;
+    return <div className="text-muted py-5 text-center" data-testid="page-escalations">{t('escalation_staff_only')}</div>;
   }
 
   // The loaded escalation, while it is the selected one.
@@ -105,9 +107,10 @@ const EscalationsView = () => {
   };
 
   return (
-    <div className="d-flex flex-column flex-xl-row gap-3 align-items-stretch">
-      <div style={{ flex: '1 1 0', minWidth: 0 }}>
+    <div className="d-flex flex-column flex-xl-row gap-3 align-items-stretch" data-testid="page-escalations">
+      <div className="escalations-list-col">
         <PanelCard
+          testId="escalations-list"
           title={t('escalations_title')}
           actions={
             <div className="d-flex align-items-center gap-2">
@@ -119,8 +122,16 @@ const EscalationsView = () => {
                 ]}
                 value={filter}
                 onChange={(value) => setFilter(value as StateFilter)}
+                testId="escalations-filter"
               />
-              <Button size="sm" variant="link" onClick={loadList} title={t('escalation_refresh')} aria-label={t('escalation_refresh')}>
+              <Button
+                size="sm"
+                variant="link"
+                onClick={loadList}
+                title={t('escalation_refresh')}
+                aria-label={t('escalation_refresh')}
+                data-testid="escalations-refresh"
+              >
                 <ArrowRepeat />
               </Button>
             </div>
@@ -134,7 +145,7 @@ const EscalationsView = () => {
         </PanelCard>
       </div>
       {selectedId != null && (
-        <div style={{ flex: '1.2 1 0', minWidth: 0 }}>
+        <div className="escalations-detail-col">
           {shown ? (
             // Remounted with every change: the controls start from the saved values.
             <EscalationDetail
@@ -144,7 +155,7 @@ const EscalationsView = () => {
               onChanged={changed}
             />
           ) : (
-            <PanelCard>
+            <PanelCard testId="escalation-detail-loading">
               <div className="d-flex justify-content-center py-4 text-muted">
                 <Spinner size="sm" animation="border" />
               </div>
@@ -168,36 +179,30 @@ const EscalationList = ({
   const { t } = useTranslation();
   if (list == null) {
     return (
-      <div className="d-flex justify-content-center py-4 text-muted">
+      <div className="d-flex justify-content-center py-4 text-muted" data-testid="escalations-list-loading">
         <Spinner size="sm" animation="border" />
       </div>
     );
   }
   if (list.length === 0) {
-    return <div className="text-muted small py-3">{t('escalation_none')}</div>;
+    return <div className="text-muted small py-3" data-testid="escalations-list-empty">{t('escalation_none')}</div>;
   }
   return (
-    <div className="d-flex flex-column gap-2">
+    <div className="d-flex flex-column gap-2" data-testid="escalations-items">
       {list.map((escalation) => (
         <button
           key={escalation.id}
           type="button"
           onClick={() => onSelect(escalation)}
-          className="text-start border-0 w-100"
-          style={{
-            background: escalation.id === selectedId ? 'var(--progeo-surface)' : 'transparent',
-            borderRadius: 10,
-            padding: '10px 12px',
-            boxShadow: escalation.id === selectedId ? 'inset 0 0 0 1px #D0CACA' : 'none',
-            color: 'var(--progeo-blue)',
-          }}
+          className={`text-start border-0 w-100 escalations-item${escalation.id === selectedId ? ' escalations-item--selected' : ''}`}
+          {...repeatedTestId('escalations-item', escalation.id)}
         >
           <div className="d-flex align-items-center gap-2">
-            <span style={{ fontWeight: 600, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <span className="escalations-item-title">
               {escalation.title}
             </span>
             <span className="ms-auto">
-              <EscalationStatusBadge status={escalation.status} />
+              <EscalationStatusBadge status={escalation.status} testId="escalations-item-status" testKey={escalation.id} />
             </span>
           </div>
           <div className="small text-muted d-flex flex-wrap gap-2 mt-1">
@@ -261,15 +266,16 @@ const EscalationDetail = ({
 
   return (
     <PanelCard
+      testId="escalation-detail"
       title={
         <span className="d-flex align-items-center gap-2 flex-wrap">
           {escalation.title}
-          <EscalationStatusBadge status={escalation.status} />
+          <EscalationStatusBadge status={escalation.status} testId="escalation-detail-status" />
         </span>
       }
     >
       <div className="small text-muted mb-3 d-flex flex-wrap gap-2">
-        <Link to={`/location/${escalation.location}/status`}>
+        <Link to={`/location/${escalation.location}/status`} data-testid="escalation-detail-location">
           {t('escalation_project')} {escalation.project_id ?? '–'} · {escalation.location_name ?? '–'}
         </Link>
         <span>
@@ -287,7 +293,7 @@ const EscalationDetail = ({
       <EscalationProtocol entries={escalation.entries ?? []} />
 
       {isOpen ? (
-        <div className="mt-3 d-flex flex-column gap-2">
+        <div className="mt-3 d-flex flex-column gap-2" data-testid="escalation-detail-actions">
           <Form.Control
             as="textarea"
             rows={3}
@@ -296,19 +302,21 @@ const EscalationDetail = ({
             placeholder={t('escalation_message_placeholder')}
             aria-label={t('escalation_message_placeholder')}
             onChange={(event) => setMessage(event.target.value)}
+            data-testid="escalation-message"
           />
           <div className="d-flex flex-wrap align-items-center gap-2">
-            <Button size="sm" onClick={() => act('comment')} disabled={busy || !message.trim()}>
+            <Button size="sm" onClick={() => act('comment')} disabled={busy || !message.trim()} data-testid="escalation-comment">
               <ChatLeftText className="me-1" />
               {t('escalation_comment')}
             </Button>
             <span className="vr mx-1" />
             <Form.Select
               size="sm"
-              style={{ width: 'auto' }}
+              className="escalations-select"
               aria-label={t('escalation_status')}
               value={status}
               onChange={(event) => setStatus(event.target.value as EscalationStatus)}
+              data-testid="escalation-status-select"
             >
               {SETTABLE_STATUSES.map((value) => (
                 <option key={value} value={value}>
@@ -321,16 +329,18 @@ const EscalationDetail = ({
               variant="outline-primary"
               onClick={() => act('status', { status })}
               disabled={busy || status === escalation.status}
+              data-testid="escalation-set-status"
             >
               {t('escalation_set_status')}
             </Button>
             <span className="vr mx-1" />
             <Form.Select
               size="sm"
-              style={{ width: 'auto' }}
+              className="escalations-select"
               aria-label={t('escalation_assignee')}
               value={assignee}
               onChange={(event) => setAssignee(event.target.value)}
+              data-testid="escalation-assignee-select"
             >
               <option value="">{t('escalation_unassigned')}</option>
               {staff.map((user) => (
@@ -344,10 +354,11 @@ const EscalationDetail = ({
               variant="outline-primary"
               onClick={() => act('assign', { assigned_to: assignee ? Number(assignee) : null })}
               disabled={busy || assignee === (escalation.assigned_to?.toString() ?? '')}
+              data-testid="escalation-assign"
             >
               {t('escalation_assign')}
             </Button>
-            <Button size="sm" variant="outline-danger" className="ms-auto" onClick={close} disabled={busy}>
+            <Button size="sm" variant="outline-danger" className="ms-auto" onClick={close} disabled={busy} data-testid="escalation-close">
               <CheckCircle className="me-1" />
               {t('escalation_close')}
             </Button>
@@ -355,7 +366,7 @@ const EscalationDetail = ({
           <div className="small text-muted">{t('escalation_message_hint')}</div>
         </div>
       ) : (
-        <div className="small text-muted mt-3">{t('escalation_closed_hint')}</div>
+        <div className="small text-muted mt-3" data-testid="escalation-closed-hint">{t('escalation_closed_hint')}</div>
       )}
     </PanelCard>
   );
@@ -391,22 +402,14 @@ const EscalationProtocol = ({ entries }: { entries: EscalationEntry[] }) => {
       {entries.map((entry) => {
         const line = change(entry);
         return (
-          <div key={entry.id}>
+          <div key={entry.id} {...repeatedTestId('escalation-protocol-entry', entry.id)}>
             <div className="small text-muted d-flex flex-wrap gap-1">
-              <strong style={{ color: 'var(--progeo-blue)' }}>{entry.author_name ?? '–'}</strong>
+              <strong className="escalations-entry-author">{entry.author_name ?? '–'}</strong>
               <span>{formatDate(entry.created, 'dateTime')}</span>
               {line && <span>· {line}</span>}
             </div>
             {entry.text && (
-              <div
-                style={{
-                  whiteSpace: 'pre-wrap',
-                  background: entry.kind === 'comment' ? 'var(--progeo-surface)' : '#F7F3E8',
-                  borderRadius: 10,
-                  padding: '8px 12px',
-                  marginTop: 2,
-                }}
-              >
+              <div className={entry.kind === 'comment' ? 'escalations-entry-text escalations-entry-text--comment' : 'escalations-entry-text'}>
                 {entry.text}
               </div>
             )}

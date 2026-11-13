@@ -17,6 +17,8 @@ import UsageHelp from '../components/ui/UsageHelp';
 import PlotHelp from '../components/ui/PlotHelp';
 import { gridValuesOf, labelEveryOf } from './thresholdMixer';
 import { paintMask } from './noiseProfiles';
+import { childTestId } from '../testIds';
+import './NoiseProfile.css';
 
 type Masks = { mask_e: number[]; mask_w: number[] };
 
@@ -29,6 +31,8 @@ type NoiseProfilePlotProps = {
   reference?: { ep: number[]; wp: number[] } | null;
   /** Keys the surrounding editor handles too (Strg + Z) - listed with the plot's. */
   extraKeyHints?: KeyHint[];
+  /** data-testid of the plot (default "noise-profile-plot"); its area is "<testId>-area". */
+  testId?: string;
 };
 
 const EP_COLOR = '#d62728';
@@ -72,7 +76,14 @@ const KEY: Record<Exclude<Series, 'both'>, keyof Masks> = { ep: 'mask_e', wp: 'm
  * next sensor. Hovering shows the sensor's values (tooltip, as in the
  * measurement plot) and highlights the nearest line - its legend entry too.
  */
-const NoiseProfilePlot = ({ mask_e, mask_w, onChange, reference = null, extraKeyHints = [] }: NoiseProfilePlotProps) => {
+const NoiseProfilePlot = ({
+  mask_e,
+  mask_w,
+  onChange,
+  reference = null,
+  extraKeyHints = [],
+  testId = 'noise-profile-plot',
+}: NoiseProfilePlotProps) => {
   const { t } = useTranslation();
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
@@ -280,8 +291,7 @@ const NoiseProfilePlot = ({ mask_e, mask_w, onChange, reference = null, extraKey
 
   const legendEntry = (line: Line, swatch: ReactNode, label: string) => (
     <span
-      className={`d-inline-flex align-items-center gap-1 ${lit === line ? 'fw-semibold text-body' : ''}`}
-      style={{ cursor: 'default' }}
+      className={`d-inline-flex align-items-center gap-1 noise-plot-legend-entry ${lit === line ? 'fw-semibold text-body' : ''}`}
       data-testid={`noise-profile-legend-${line}`}
       onMouseEnter={() => setLegendHover(line)}
       onMouseLeave={() => setLegendHover(null)}
@@ -310,14 +320,14 @@ const NoiseProfilePlot = ({ mask_e, mask_w, onChange, reference = null, extraKey
       : [t('usage_tip_plot_pick')];
 
   return (
-    <div data-testid="noise-profile-plot">
+    <div data-testid={testId}>
       <div className="d-flex flex-wrap align-items-center gap-3 mb-2 small text-muted">
-        {legendEntry('ep', <span style={{ width: 18, height: 3, background: EP_COLOR }} />, t('noise_profile_mask_ep'))}
-        {legendEntry('wp', <span style={{ width: 18, height: 3, background: WP_COLOR }} />, t('noise_profile_mask_wp'))}
+        {legendEntry('ep', <span className="noise-plot-swatch" style={{ background: EP_COLOR }} />, t('noise_profile_mask_ep'))}
+        {legendEntry('wp', <span className="noise-plot-swatch" style={{ background: WP_COLOR }} />, t('noise_profile_mask_wp'))}
         {reference &&
           legendEntry(
             'ref',
-            <span style={{ width: 22, height: 0, borderTop: `3px dashed ${MUTED}` }} />,
+            <span className="noise-plot-swatch noise-plot-swatch--dashed" style={{ borderTop: `3px dashed ${MUTED}` }} />,
             t('noise_profile_plot_reference'),
           )}
         <span className="ms-auto d-inline-flex align-items-center gap-2">
@@ -328,11 +338,11 @@ const NoiseProfilePlot = ({ mask_e, mask_w, onChange, reference = null, extraKey
             active={focused}
             inactiveNote={t('key_hints_plot_inactive')}
           />
-          <PlotHelp topic="noise_profile" />
+          <PlotHelp topic="noise_profile" testId={childTestId(testId, 'help')} />
         </span>
       </div>
-      <div ref={wrapRef} className="d-flex" style={{ position: 'relative' }}>
-        <svg width={GUTTER} height={SVG_H} style={{ flexShrink: 0 }} aria-hidden="true">
+      <div ref={wrapRef} className="d-flex noise-plot-body">
+        <svg width={GUTTER} height={SVG_H} className="noise-plot-gutter" aria-hidden="true">
           {gridValues.map((tick) => (
             <text key={tick} x={GUTTER - 6} y={toY(tick) + 3} textAnchor="end" fontSize={10} fill={MUTED}>
               {tick}
@@ -344,23 +354,16 @@ const NoiseProfilePlot = ({ mask_e, mask_w, onChange, reference = null, extraKey
           tabIndex={0}
           role="group"
           aria-label={t('noise_profile_plot_label')}
+          data-testid={childTestId(testId, 'scroller')}
           onKeyDown={onKeyDown}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          style={{
-            flex: 1,
-            minWidth: 0,
-            overflowX: 'auto',
-            overflowY: 'hidden',
-            outline: 'none',
-            borderRadius: 6,
-            boxShadow: focused ? '0 0 0 2px rgba(31, 95, 191, 0.35)' : 'none',
-          }}
+          className={`noise-plot-scroller${focused ? ' noise-plot-scroller--focused' : ''}`}
         >
           <svg
             width={plotWidth}
             height={SVG_H}
-            style={{ display: 'block', touchAction: 'none', userSelect: 'none', cursor: drag ? 'ns-resize' : 'crosshair' }}
+            className={`noise-plot-area${drag ? ' noise-plot-area--dragging' : ''}`}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={endDrag}
@@ -371,7 +374,7 @@ const NoiseProfilePlot = ({ mask_e, mask_w, onChange, reference = null, extraKey
                 setHighlighted(null);
               }
             }}
-            data-testid="noise-profile-plot-area"
+            data-testid={childTestId(testId, 'area')}
           >
             {gridValues.map((value) => (
               <line key={value} x1={0} x2={plotWidth} y1={toY(value)} y2={toY(value)} stroke={GRID} />
@@ -425,6 +428,7 @@ const NoiseProfilePlot = ({ mask_e, mask_w, onChange, reference = null, extraKey
         {tooltip && (
           <MeasurementCompareTooltip
             tooltip={tooltip}
+            testId={childTestId(testId, 'tooltip')}
             activeKey={lit === 'ref' ? 'ref' : lit}
             style={
               tooltipLeft

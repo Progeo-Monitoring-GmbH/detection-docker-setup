@@ -3,7 +3,7 @@ import { Navigate, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
-import AuthPage, { MUTED_TEXT, buttonStyle } from '../components/auth/AuthPage';
+import AuthPage, { authButtonClass } from '../components/auth/AuthPage';
 import { COMPANY, telHref } from './company';
 
 type ReviewStatus = 'pending' | 'approved' | 'rejected' | null;
@@ -57,12 +57,13 @@ const PendingReview = () => {
 
   if (status === 'approved' || status === null) {
     return (
-      <AuthPage title={t('pending_approved_title')}>
-        <p style={MUTED_TEXT}>{t('pending_approved_text')}</p>
+      <AuthPage title={t('pending_approved_title')} testId="page-pending-review">
+        <p className="auth-muted" data-testid="pending-review-approved">{t('pending_approved_text')}</p>
         <button
           type="button"
-          style={{ ...buttonStyle(), width: '100%' }}
+          className={authButtonClass(false, false, 'auth-button--block')}
           onClick={() => auth.logoutAction('/')}
+          data-testid="pending-review-login-again"
         >
           {t('pending_login_again')}
         </button>
@@ -72,19 +73,20 @@ const PendingReview = () => {
 
   if (status === 'rejected') {
     return (
-      <AuthPage title={t('pending_rejected_title')}>
-        <p style={MUTED_TEXT}>{t('pending_rejected_text')}</p>
-        <p style={MUTED_TEXT}>
+      <AuthPage title={t('pending_rejected_title')} testId="page-pending-review">
+        <p className="auth-muted" data-testid="pending-review-rejected">{t('pending_rejected_text')}</p>
+        <p className="auth-muted">
           {t('login_phone')}:{' '}
-          <a href={telHref(COMPANY.phone)}>{COMPANY.phone}</a>
+          <a href={telHref(COMPANY.phone)} data-testid="pending-review-contact-phone">{COMPANY.phone}</a>
           <br />
           {t('login_email')}:{' '}
-          <a href={`mailto:${COMPANY.email}`}>{COMPANY.email}</a>
+          <a href={`mailto:${COMPANY.email}`} data-testid="pending-review-contact-email">{COMPANY.email}</a>
         </p>
         <button
           type="button"
-          style={{ ...buttonStyle(false, true), width: '100%' }}
+          className={authButtonClass(false, true, 'auth-button--block')}
           onClick={() => auth.logoutAction()}
+          data-testid="pending-review-logout"
         >
           {t('pending_logout')}
         </button>
@@ -93,16 +95,17 @@ const PendingReview = () => {
   }
 
   return (
-    <AuthPage title={t('pending_title')}>
-      <p style={MUTED_TEXT}>{t('pending_text')}</p>
-      <p style={MUTED_TEXT}>{t('pending_text_mail')}</p>
+    <AuthPage title={t('pending_title')} testId="page-pending-review">
+      <p className="auth-muted" data-testid="pending-review-pending">{t('pending_text')}</p>
+      <p className="auth-muted">{t('pending_text_mail')}</p>
       {demoUrl && (
         <>
-          <p style={MUTED_TEXT}>{t('pending_demo_hint')}</p>
+          <p className="auth-muted">{t('pending_demo_hint')}</p>
           <button
             type="button"
-            style={{ ...buttonStyle(), width: '100%', marginTop: 0, marginBottom: 12 }}
+            className={authButtonClass(false, false, 'auth-button--block', 'auth-button--stacked')}
             onClick={() => navigate(demoUrl)}
+            data-testid="pending-review-demo"
           >
             {t('pending_demo')}
           </button>
@@ -110,8 +113,9 @@ const PendingReview = () => {
       )}
       <button
         type="button"
-        style={{ ...buttonStyle(false, true), width: '100%' }}
+        className={authButtonClass(false, true, 'auth-button--block')}
         onClick={() => auth.logoutAction()}
+        data-testid="pending-review-logout"
       >
         {t('pending_logout')}
       </button>

@@ -1,0 +1,167 @@
+/* The backup page (BackupView.tsx): action buttons, the filter row and the
+   table cells. Theme variables: scss/main.css. The table itself is styled
+   via dataTableStyles (react-data-table customStyles). */
+
+.backup-view {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.backup-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* -- buttons ------------------------------------------------------------------- */
+
+.backup-button {
+  height: 38px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.backup-button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.backup-button--primary {
+  background: var(--progeo-orange);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(235, 99, 59, 0.28);
+}
+
+.backup-button--danger {
+  background: #fbeae4;
+  color: #c44d26;
+}
+
+/* "Download shown / selected" at the end of the filter row. */
+.backup-button--download {
+  height: 30px;
+  margin-left: auto;
+}
+
+.backup-small-button {
+  height: 30px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 8px;
+  background: var(--progeo-surface);
+  color: var(--progeo-blue);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.backup-small-button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* -- filters ------------------------------------------------------------------- */
+
+.backup-filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.backup-filter-label {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #8b8383;
+  font-weight: 500;
+}
+
+.backup-filter-label--spaced {
+  margin-left: 8px;
+}
+
+/* .form-control: over Bootstrap's width: 100%. */
+.form-control.backup-project-input {
+  width: 220px;
+  max-width: 100%;
+}
+
+.form-control.backup-date-input {
+  width: auto;
+}
+
+.backup-latest {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+  font-size: 13px;
+}
+
+/* .form-check-input: over Bootstrap's margin-top. */
+.form-check-input.backup-latest-check {
+  margin: 0;
+}
+
+/* -- table cells ----------------------------------------------------------------- */
+
+/* The backup's name: a download link. */
+.backup-name {
+  border: none;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--progeo-blue);
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  word-break: break-all;
+}
+
+.backup-name--busy {
+  cursor: progress;
+}
+
+.backup-compressed {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--progeo-track-soft);
+  color: #8b8383;
+}
+
+.backup-compressed--yes {
+  background: rgba(97, 170, 197, 0.18);
+  color: var(--progeo-blue);
+}
+
+.backup-row-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.backup-empty {
+  padding: 22px 0;
+  color: #8b8383;
+  font-size: 13px;
+}
+
+.backup-confirm-list {
+  max-height: 160px;
+  overflow-y: auto;
+  margin: 10px 0 0;
+  padding: 0 0 0 18px;
+  font-size: 12.5px;
+}

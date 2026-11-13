@@ -16,6 +16,8 @@ import {
 import { fullBox, isFull, panBox, type ViewBox, viewBoxAttribute, zoomBox } from './planViewBox';
 import SensorTooltip from './SensorTooltip';
 import ZoomControls from './ZoomControls';
+import { childTestId } from '../../testIds';
+import './LageplanZoneOverlay.css';
 
 export type LageplanZonePoint = {
   pos: number;
@@ -65,7 +67,16 @@ type LageplanZoneOverlayProps = {
   alignment?: PlanPointAlignment | null;
   /** A click (not a drag) on a sensor or dm band, with its pos. */
   onPointClick?: (pos: number) => void;
+  /**
+   * data-testid of the overlay; its parts are "<testId>-plan", "-zoom",
+   * "-tooltip", ... With the default the sensors keep their own ids
+   * ("zone-point", "zone-line", "zone-band", "zone-segment"; key: pos or
+   * group); with another one they are scoped under it too.
+   */
+  testId?: string;
 };
+
+const DEFAULT_TEST_ID = 'lageplan-zone';
 
 /**
  * Normalized point -> fraction of the plan image (y downwards), as the
@@ -138,8 +149,11 @@ const LageplanZoneOverlay = ({
   mode = 'lines',
   alignment = null,
   onPointClick,
+  testId = DEFAULT_TEST_ID,
 }: LageplanZoneOverlayProps) => {
   const { t } = useTranslation();
+  // The sensors keep their own ids while the overlay has the default id.
+  const zoneId = (part: string) => (testId === DEFAULT_TEST_ID ? `zone-${part}` : childTestId(testId, part));
   const groups = groupPoints(points, mode);
 
   const resolvedUrl = imageUrl ? getBackendUrl(imageUrl) : null;
@@ -376,13 +390,9 @@ const LageplanZoneOverlay = ({
   return (
     <div
       ref={containerRef}
-      style={{
-        position: 'relative',
-        height,
-        borderRadius: 14,
-        overflow: 'hidden',
-        background: 'var(--progeo-surface)',
-      }}
+      className="lageplan-zone"
+      data-testid={testId}
+      style={{ height }}
       onMouseLeave={() => setHover(null)}
     >
       {imageSrc ? (
@@ -395,10 +405,10 @@ const LageplanZoneOverlay = ({
             const { naturalWidth, naturalHeight } = event.currentTarget;
             setImageSize(naturalWidth && naturalHeight ? [naturalWidth, naturalHeight] : null);
           }}
-          style={{ display: 'none' }}
+          className="lageplan-zone-measure"
         />
       ) : (
-        <div style={{ height, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B8383' }}>
+        <div className="lageplan-zone-empty" style={{ height }} data-testid={childTestId(testId, 'empty')}>
           {'–'}
         </div>
       )}
@@ -408,19 +418,20 @@ const LageplanZoneOverlay = ({
         aria-label={`Lageplan - ${t('heatmap_canvas_hint')}`}
         viewBox={viewBoxAttribute(box)}
         preserveAspectRatio="xMidYMid meet"
-        style={{
-          position: 'absolute',
-          inset: 0,
-          width: '100%',
-          height: '100%',
-          touchAction: TWO_FINGER_TOUCH_ACTION,
-          cursor: dragging ? 'grabbing' : userBox ? 'grab' : 'default',
-        }}
+        className={
+          dragging
+            ? 'lageplan-zone-svg lageplan-zone-svg--grabbing'
+            : userBox
+              ? 'lageplan-zone-svg lageplan-zone-svg--grab'
+              : 'lageplan-zone-svg'
+        }
+        style={{ touchAction: TWO_FINGER_TOUCH_ACTION }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         onDoubleClick={() => setUserBox(null)}
+        data-testid={childTestId(testId, 'plan')}
       >
         {imageSrc && imageSize && (
           <image href={imageSrc} x={0} y={0} width={viewWidth} height={viewHeight} preserveAspectRatio="none" />
@@ -433,7 +444,7 @@ const LageplanZoneOverlay = ({
             return (
               // The hull, stroked as wide as the padding with round joins: the
               // group's area grown evenly around its outermost sensors.
-              <g key={group.key} opacity={SEGMENT_OPACITY} data-testid="zone-segment" {...groupHover(group)}>
+              <g key={group.key} opacity={SEGMENT_OPACITY} data-testid={zoneId('segment')} data-test-key={group.key} {...groupHover(group)}>
                 {group.isOver && (
                   <path
                     d={path}
@@ -481,14 +492,15 @@ const LageplanZoneOverlay = ({
                 <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={color} strokeWidth={0.007 * unit} strokeLinecap="round" />
                 {/* Wider invisible hit area for hovering the band. */}
                 <line
-                  data-testid="zone-band"
+                  data-testid={zoneId('band')}
+                  data-test-key={point.pos}
                   x1={x1}
                   y1={y1}
                   x2={x2}
                   y2={y2}
                   stroke="transparent"
                   strokeWidth={0.025 * unit}
-                  style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
+                  className="lageplan-zone-hit"
                   onMouseMove={(event) => hoverAt(event, { point })}
                   onMouseLeave={() => setHover(null)}
                   {...clickProps(point)}
@@ -510,12 +522,13 @@ const LageplanZoneOverlay = ({
                   />
                   {/* Wider invisible hit area for hovering the line. */}
                   <polyline
-                    data-testid="zone-line"
+                    data-testid={zoneId('line')}
+                    data-test-key={group.key}
                     points={coords}
                     fill="none"
                     stroke="transparent"
                     strokeWidth={0.03 * unit}
-                    style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
+                    className="lageplan-zone-hit"
                     onMouseMove={(event) => hoverAt(event, { group })}
                     onMouseLeave={() => setHover(null)}
                   />
@@ -544,18 +557,20 @@ const LageplanZoneOverlay = ({
                         y={cy + 0.008 * unit}
                         fontSize={0.022 * unit}
                         fill="var(--progeo-blue)"
-                        style={{ paintOrder: 'stroke', stroke: '#ffffff', strokeWidth: 0.005 * unit, pointerEvents: 'none' }}
+                        className="lageplan-zone-label"
+                        style={{ strokeWidth: 0.005 * unit }}
                       >
                         {point.name}
                       </text>
                     )}
                     <circle
-                      data-testid="zone-point"
+                      data-testid={zoneId('point')}
+                      data-test-key={point.pos}
                       cx={cx}
                       cy={cy}
                       r={Math.max(0.022 * unit, markerRadius * 1.5)}
                       fill="transparent"
-                      style={{ cursor: 'pointer' }}
+                      className="lageplan-zone-point"
                       onMouseMove={(event) => hoverAt(event, asLine ? { group } : { point })}
                       onMouseLeave={() => setHover(null)}
                       {...clickProps(point)}
@@ -571,13 +586,14 @@ const LageplanZoneOverlay = ({
         })}
       </svg>
 
-      <WheelZoomHint visible={wheelHint} radius={14} />
+      <WheelZoomHint visible={wheelHint} radius={14} testId={childTestId(testId, 'wheel-hint')} />
       <ZoomControls
         onZoomIn={() => zoomBy(ZOOM_STEP)}
         onZoomOut={() => zoomBy(1 / ZOOM_STEP)}
         onReset={() => setUserBox(null)}
         zoomOutDisabled={userBox == null}
         resetDisabled={userBox == null}
+        testId={childTestId(testId, 'zoom')}
       />
 
       {hover?.kind === 'point' && (
@@ -598,9 +614,12 @@ const LageplanZoneOverlay = ({
           cursorY={hover.cursorY}
           containerWidth={hover.width}
           containerHeight={hover.height}
+          testId={childTestId(testId, 'sensor-tooltip')}
         />
       )}
-      {hover?.kind === 'zone' && <ZoneTooltip hover={hover} group={hover.group} />}
+      {hover?.kind === 'zone' && (
+        <ZoneTooltip hover={hover} group={hover.group} testId={childTestId(testId, 'zone-tooltip')} />
+      )}
     </div>
   );
 };
@@ -631,7 +650,8 @@ const GroupLabel = ({
       fontSize={0.028 * unit}
       fill="var(--progeo-blue)"
       textAnchor="middle"
-      style={{ paintOrder: 'stroke', stroke: '#ffffff', strokeWidth: 0.006 * unit, pointerEvents: 'none' }}
+      className="lageplan-zone-label"
+      style={{ strokeWidth: 0.006 * unit }}
     >
       {group.label}
     </text>
@@ -639,7 +659,7 @@ const GroupLabel = ({
 };
 
 /** The zone of a hovered line or segment: its sensors and the highest current value. */
-const ZoneTooltip = ({ hover, group }: { hover: Hover; group: ZoneGroup }) => {
+const ZoneTooltip = ({ hover, group, testId }: { hover: Hover; group: ZoneGroup; testId?: string }) => {
   const highest = highestPoint(group.points);
   const threshold = highest?.threshold ?? group.points[0]?.threshold ?? null;
   return (
@@ -651,6 +671,7 @@ const ZoneTooltip = ({ hover, group }: { hover: Hover; group: ZoneGroup }) => {
       cursorY={hover.cursorY}
       containerWidth={hover.width}
       containerHeight={hover.height}
+      testId={testId}
     >
       <TooltipRow label="Sensors">{group.points.map((point) => `#${point.pos}`).join(', ')}</TooltipRow>
       {highest && (

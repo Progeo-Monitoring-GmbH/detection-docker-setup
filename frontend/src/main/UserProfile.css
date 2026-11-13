@@ -1,0 +1,207 @@
+/* The "Mein Konto" account drawer (UserProfile.tsx): backdrop, the sliding
+   panel with its sticky head and foot, the form sections and buttons.
+   Theme variables: scss/main.css. */
+
+.profile-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(7, 34, 58, 0.38);
+  z-index: 70;
+  display: flex;
+  justify-content: flex-end;
+  padding: 14px;
+}
+
+.profile-drawer {
+  width: min(430px, 100%);
+  height: 100%;
+  background: var(--progeo-panel-bg);
+  border-radius: 20px;
+  box-shadow: -10px 0 44px rgba(11, 54, 89, 0.26);
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+
+.profile-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 22px 14px;
+  position: sticky;
+  top: 0;
+  background: var(--progeo-panel-bg);
+  z-index: 2;
+}
+
+.profile-title {
+  font-size: 17px;
+  font-weight: 500;
+}
+
+.profile-spacer {
+  flex: 1;
+}
+
+.profile-close {
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 50%;
+  background: var(--progeo-surface);
+  box-shadow: 0 2px 8px rgba(11, 54, 89, 0.1);
+  cursor: pointer;
+  color: var(--progeo-blue);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.profile-body {
+  padding: 0 22px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+/* Keep in sync with sectionLabelStyle (MatrixChatSection's labelStyle). */
+.profile-section-label {
+  font-size: 11px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: #8b8383;
+  font-weight: 500;
+  margin-bottom: 12px;
+}
+
+.profile-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.profile-span-2 {
+  grid-column: span 2;
+}
+
+/* A select styled like the kit's LabeledInput. */
+.profile-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.profile-field-label {
+  font-size: 11px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #8b8383;
+  font-weight: 500;
+}
+
+.profile-select {
+  height: 40px;
+  border: none;
+  border-radius: 11px;
+  background: var(--progeo-surface);
+  box-shadow: 0 1px 4px rgba(11, 54, 89, 0.09);
+  padding: 0 13px;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--progeo-blue);
+}
+
+.profile-messenger-hint {
+  grid-column: span 2;
+  font-size: 12px;
+  color: #8b8383;
+}
+
+.profile-warning {
+  color: #c44d26;
+  margin-top: 4px;
+}
+
+.profile-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.profile-hint {
+  font-size: 12.5px;
+  color: #8b8383;
+  margin-top: 8px;
+}
+
+.profile-password-panel {
+  margin-top: 14px;
+  background: var(--progeo-surface);
+  border-radius: 14px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.btn.profile-link-button {
+  font-size: 12.5px;
+}
+
+.profile-delete-title {
+  font-size: 13.5px;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.profile-delete-hint {
+  font-size: 12.5px;
+  color: #8b8383;
+  margin-bottom: 12px;
+}
+
+.profile-delete-button {
+  height: 36px;
+  padding: 0 15px;
+  border: none;
+  border-radius: 10px;
+  background: #fbeae4;
+  color: #c44d26;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.profile-foot {
+  margin-top: auto;
+  display: flex;
+  gap: 10px;
+  padding: 14px 22px 20px;
+  position: sticky;
+  bottom: 0;
+  background: var(--progeo-panel-bg);
+}
+
+.profile-button {
+  height: 38px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 10px;
+  background: var(--progeo-surface);
+  box-shadow: 0 2px 8px rgba(11, 54, 89, 0.1);
+  color: var(--progeo-blue);
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.profile-button--primary {
+  padding: 0 18px;
+  background: var(--progeo-orange);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(235, 99, 59, 0.26);
+}

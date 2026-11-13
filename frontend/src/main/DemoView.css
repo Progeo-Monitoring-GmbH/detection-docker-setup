@@ -1,0 +1,5 @@
+/* The demo entry page (DemoView.tsx): a centred loading state. */
+
+.demo-view {
+  min-height: 100vh;
+}

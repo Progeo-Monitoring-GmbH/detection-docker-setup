@@ -18,6 +18,8 @@ import {
   zonePointsOf,
 } from './locationStatusData';
 import type { PlanVisualization } from './projectType';
+import { childTestId } from '../testIds';
+import './LocationPlanPanel.css';
 
 type LocationPlanPanelProps = {
   /** The frames of the selected range (with the location's plans and points). */
@@ -36,10 +38,12 @@ type LocationPlanPanelProps = {
   profile?: HeatProfile;
   onProfileChange?: (profile: HeatProfile) => void;
   profileLoading?: boolean;
+  /** data-testid of the panel (default "plan-panel"); its parts derive from it. */
+  testId?: string;
 };
 
-const PlanHint = ({ children }: { children: ReactNode }) => (
-  <div style={{ color: '#8B8383', fontSize: 13 }}>{children}</div>
+const PlanHint = ({ children, testId }: { children: ReactNode; testId?: string }) => (
+  <div className="plan-panel-hint" data-testid={testId}>{children}</div>
 );
 
 /**
@@ -58,6 +62,7 @@ const LocationPlanPanel = ({
   profile = 'diff',
   onProfileChange,
   profileLoading = false,
+  testId = 'plan-panel',
 }: LocationPlanPanelProps) => {
   const { t } = useTranslation();
   // smartex® dm: the heat field too, with its band lines (SensorHeatmap2D).
@@ -128,17 +133,17 @@ const LocationPlanPanel = ({
   );
 
   const sensorTable = withSensorTable && (
-    <div style={{ marginTop: 14 }}>
+    <div className="plan-panel-sensor-table" data-testid={childTestId(testId, 'sensor-table')}>
       <SensorListTable rows={sensorRows} />
     </div>
   );
 
   const content = () => {
     if (denied) {
-      return <PlanHint>{t('status_no_measurement_access')}</PlanHint>;
+      return <PlanHint testId={childTestId(testId, 'denied')}>{t('status_no_measurement_access')}</PlanHint>;
     }
     if (!shownPlan) {
-      return <PlanHint>{t('status_no_lageplan')}</PlanHint>;
+      return <PlanHint testId={childTestId(testId, 'no-plan')}>{t('status_no_lageplan')}</PlanHint>;
     }
     if (sensorPoints.length === 0) {
       return <SensorListTable rows={sensorRows} />;
@@ -146,14 +151,7 @@ const LocationPlanPanel = ({
     if (withHeat) {
       return (
         <>
-          <div
-            style={{
-              position: 'relative',
-              borderRadius: 14,
-              background: 'var(--progeo-surface)',
-              overflow: 'hidden',
-            }}
-          >
+          <div className="plan-panel-heatmap" data-testid={childTestId(testId, 'heatmap')}>
             <SensorHeatmap2D
               response={viewHeatmap}
               height={480}
@@ -172,7 +170,7 @@ const LocationPlanPanel = ({
     return (
       <>
         {heatmap && frameTotal > 0 && frameIndex != null && (
-          <div className="px-2 py-2">
+          <div className="px-2 py-2" data-testid={childTestId(testId, 'frame-slider')}>
             <FrameSlider
               id="plan-frame"
               timestamps={heatmap.timestamps}
@@ -196,11 +194,13 @@ const LocationPlanPanel = ({
 
   return (
     <PanelCard
+      testId={testId}
       title={t('status_dachansicht_title')}
       actions={
         <>
           {planViews.length > 1 && (
             <SegmentedControl
+              testId={childTestId(testId, 'plans')}
               options={planViews.map((plan, index) => ({
                 value: String(plan.id),
                 label: plan.name || t('status_plan_view', { index: index + 1 }),
@@ -209,7 +209,7 @@ const LocationPlanPanel = ({
               onChange={(value) => setSelectedPlanId(Number(value))}
             />
           )}
-          <PlotHelp topic="status_plan" />
+          <PlotHelp topic="status_plan" testId={childTestId(testId, 'help')} />
         </>
       }
     >

@@ -9,6 +9,8 @@ import { PRIVACY_POLICY_URL } from '../privacy/consent';
 import { useConsent } from '../privacy/ConsentProvider';
 import { isDemoUser } from '../../main/demo';
 import useDemoHeartbeat from '../../main/useDemoHeartbeat';
+import { repeatedTestId } from '../../testIds';
+import './TopBar.css';
 
 const LANGUAGES: { code: 'de' | 'en'; label: string }[] = [
   { code: 'de', label: 'DE' },
@@ -82,50 +84,17 @@ const TopBar = () => {
   const currentLang =
     (i18n.language || 'de').slice(0, 2).toLowerCase() === 'en' ? 'en' : 'de';
 
-  const pillButtonStyle = (active = false) => ({
-    height: 40,
-    padding: active ? '0 14px' : 0,
-    width: active ? undefined : 40,
-    border: 'none',
-    borderRadius: 'var(--progeo-radius-pill)',
-    background: 'var(--progeo-surface)',
-    boxShadow: 'var(--progeo-shadow-chrome)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 7,
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-    fontSize: 13,
-    fontWeight: 500,
-    color: 'var(--progeo-blue)',
-  });
-
   return (
     <div
       ref={containerRef}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 12,
-        flexWrap: 'wrap',
-        justifyContent: 'flex-end',
-      }}
+      className="topbar"
+      data-testid="topbar"
     >
       {demo && (
         <span
           title={t('demo_subtitle')}
-          style={{
-            height: 28,
-            padding: '0 12px',
-            borderRadius: 'var(--progeo-radius-pill)',
-            background: 'var(--progeo-orange)',
-            color: '#fff',
-            fontSize: 12,
-            fontWeight: 600,
-            display: 'flex',
-            alignItems: 'center',
-          }}
+          className="topbar-demo-badge"
+          data-testid="topbar-demo-badge"
         >
           {t('demo_badge')}
         </span>
@@ -135,13 +104,8 @@ const TopBar = () => {
           type="button"
           onClick={() => auth.setViewAsUser(!auth.viewAsUser)}
           title={auth.viewAsUser ? undefined : t('topbar_view_as_user_title')}
-          style={{
-            ...pillButtonStyle(true),
-            ...(auth.viewAsUser && {
-              background: 'var(--progeo-orange)',
-              color: '#fff',
-            }),
-          }}
+          className={auth.viewAsUser ? 'topbar-pill topbar-pill--accent' : 'topbar-pill'}
+          data-testid="topbar-view-as-user"
         >
           {auth.viewAsUser ? <PersonGear size={16} /> : <Eye size={16} />}
           {auth.viewAsUser
@@ -156,16 +120,14 @@ const TopBar = () => {
           disabled={archivedBusy}
           aria-pressed={!hideArchived}
           title={t('topbar_archived_title')}
-          style={{
-            ...pillButtonStyle(true),
-            ...(hideArchived && { color: 'var(--progeo-muted, #8B8383)' }),
-          }}
+          className={hideArchived ? 'topbar-pill topbar-pill--muted' : 'topbar-pill'}
+          data-testid="topbar-archived-toggle"
         >
           <Archive size={16} />
           {hideArchived ? t('topbar_archived_hidden') : t('topbar_archived_shown')}
         </button>
       )}
-      <div style={{ position: 'relative' }}>
+      <div className="topbar-anchor">
         <button
           type="button"
           onClick={() => {
@@ -174,42 +136,20 @@ const TopBar = () => {
           }}
           title={t('topbar_info_title')}
           aria-label={t('topbar_info_title')}
-          style={pillButtonStyle(false)}
+          className="topbar-pill topbar-pill--icon"
+          data-testid="topbar-info"
         >
           <InfoCircle size={16} />
         </button>
         {infoOpen && (
-          <div
-            style={{
-              position: 'absolute',
-              top: 48,
-              right: 0,
-              width: 240,
-              background: 'var(--progeo-surface)',
-              borderRadius: 14,
-              boxShadow: '0 14px 40px rgba(11, 54, 89, .2)',
-              padding: 14,
-              zIndex: 50,
-              fontSize: 12.5,
-              color: 'var(--progeo-blue)',
-              lineHeight: 1.5,
-            }}
-          >
+          <div className="topbar-popover topbar-popover--info" data-testid="topbar-info-popover">
             {t('topbar_info_company')}
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 4,
-                marginTop: 10,
-                paddingTop: 10,
-                borderTop: '1px solid var(--progeo-track)',
-              }}
-            >
+            <div className="topbar-info-links">
               <Link
                 to={PRIVACY_POLICY_URL}
                 onClick={() => setInfoOpen(false)}
-                style={{ color: 'var(--progeo-blue)' }}
+                className="topbar-info-link"
+                data-testid="topbar-privacy-link"
               >
                 {t('consent_privacy_policy')}
               </Link>
@@ -219,17 +159,8 @@ const TopBar = () => {
                   setInfoOpen(false);
                   openSettings();
                 }}
-                style={{
-                  border: 'none',
-                  background: 'transparent',
-                  padding: 0,
-                  color: 'var(--progeo-blue)',
-                  textAlign: 'left',
-                  textDecoration: 'underline',
-                  fontFamily: 'inherit',
-                  fontSize: 'inherit',
-                  cursor: 'pointer',
-                }}
+                className="topbar-text-button"
+                data-testid="topbar-privacy-settings"
               >
                 {t('consent_open_settings')}
               </button>
@@ -238,31 +169,20 @@ const TopBar = () => {
         )}
       </div>
 
-      <div style={{ position: 'relative' }}>
+      <div className="topbar-anchor">
         <button
           type="button"
           onClick={() => {
             setLangOpen((open) => !open);
             setInfoOpen(false);
           }}
-          style={pillButtonStyle(true)}
+          className="topbar-pill"
+          data-testid="topbar-language"
         >
           {currentLang.toUpperCase()}
         </button>
         {langOpen && (
-          <div
-            style={{
-              position: 'absolute',
-              top: 48,
-              right: 0,
-              width: 140,
-              background: 'var(--progeo-surface)',
-              borderRadius: 14,
-              boxShadow: '0 14px 40px rgba(11, 54, 89, .2)',
-              padding: 8,
-              zIndex: 50,
-            }}
-          >
+          <div className="topbar-popover topbar-popover--lang" data-testid="topbar-language-menu">
             {LANGUAGES.map((language) => (
               <button
                 key={language.code}
@@ -271,22 +191,12 @@ const TopBar = () => {
                   void i18n.changeLanguage(language.code);
                   setLangOpen(false);
                 }}
-                style={{
-                  display: 'block',
-                  width: '100%',
-                  textAlign: 'left',
-                  background:
-                    currentLang === language.code
-                      ? 'var(--progeo-track-soft)'
-                      : 'none',
-                  border: 'none',
-                  padding: '9px 10px',
-                  borderRadius: 9,
-                  cursor: 'pointer',
-                  fontFamily: 'inherit',
-                  fontSize: 13,
-                  color: 'var(--progeo-blue)',
-                }}
+                className={
+                  currentLang === language.code
+                    ? 'topbar-lang-item topbar-lang-item--active'
+                    : 'topbar-lang-item'
+                }
+                {...repeatedTestId('topbar-language-option', language.code)}
               >
                 {language.code === 'de' ? 'Deutsch' : 'English'}
               </button>
@@ -299,39 +209,13 @@ const TopBar = () => {
         type="button"
         onClick={() => setProfileOpen(true)}
         title={t('topbar_account_title')}
-        style={{
-          height: 40,
-          padding: '4px 16px 4px 5px',
-          border: 'none',
-          borderRadius: 'var(--progeo-radius-pill)',
-          background: 'var(--progeo-surface)',
-          boxShadow: 'var(--progeo-shadow-chrome)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          cursor: 'pointer',
-          fontFamily: 'inherit',
-          color: 'var(--progeo-blue)',
-        }}
+        className="topbar-account"
+        data-testid="topbar-account"
       >
-        <span
-          style={{
-            width: 31,
-            height: 31,
-            borderRadius: '50%',
-            background: '#1E5688',
-            color: '#fff',
-            fontSize: 11.5,
-            fontWeight: 600,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-          }}
-        >
+        <span className="topbar-avatar">
           {initials}
         </span>
-        <span style={{ fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap' }}>
+        <span className="topbar-username" data-testid="topbar-username">
           {username}
         </span>
       </button>
@@ -341,7 +225,8 @@ const TopBar = () => {
         onClick={() => auth.logoutAction()}
         title={t('topbar_logout')}
         aria-label={t('topbar_logout')}
-        style={pillButtonStyle(false)}
+        className="topbar-pill topbar-pill--icon"
+        data-testid="topbar-logout"
       >
         <DoorOpen size={16} />
       </button>

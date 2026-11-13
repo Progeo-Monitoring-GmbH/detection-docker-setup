@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
 import type { LocationDetail } from './locationTypes';
+import './DemoView.css';
 
 /**
  * Start of the public demo (/demo/, after DemoLogin): opens the first demo
@@ -48,8 +49,8 @@ const DemoView = () => {
   }
   return (
     <div
-      className="d-flex justify-content-center align-items-center text-muted"
-      style={{ minHeight: '100vh' }}
+      className="d-flex justify-content-center align-items-center text-muted demo-view"
+      data-testid="page-demo"
     >
       {failed ? (
         t('demo_load_error')

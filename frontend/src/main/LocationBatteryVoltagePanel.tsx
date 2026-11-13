@@ -55,7 +55,7 @@ const LocationBatteryVoltagePanel = ({
   }
 
   return (
-    <PanelCard title={t('climate_battery_v_title')}>
+    <PanelCard title={t('climate_battery_v_title')} testId="location-battery-voltage">
       <ClimateChart
         devices={devices}
         metric="battery_v"

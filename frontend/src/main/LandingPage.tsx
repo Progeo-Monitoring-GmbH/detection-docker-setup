@@ -7,6 +7,7 @@ import usePermissions, {
 } from '../../hooks/usePermissions';
 import LoadingIcon from '../components/ui/LoadingIcon';
 import { routeRule, useAccess, type AppRoutePath } from './access';
+import { repeatedTestId } from '../testIds';
 
 type LandingModule = {
   /** Its route in APP_ROUTE_ACCESS - offered only where that lets the user in. */
@@ -82,7 +83,7 @@ const LandingPage = () => {
 
   if (!auth.token || !auth.user) {
     return (
-      <Row>
+      <Row data-testid="page-landing">
         <LoadingIcon />
       </Row>
     );
@@ -90,7 +91,7 @@ const LandingPage = () => {
 
   if (isLoading) {
     return (
-      <Row>
+      <Row data-testid="page-landing">
         <LoadingIcon />
       </Row>
     );
@@ -98,9 +99,9 @@ const LandingPage = () => {
 
   if (availableModules.length === 0) {
     return (
-      <Row className="mt-3">
+      <Row className="mt-3" data-testid="page-landing">
         <Col>
-          <Card>
+          <Card data-testid="landing-no-modules">
             <Card.Body>
               <Card.Title>{t('landing_no_modules_title')}</Card.Title>
               <Card.Text>{t('landing_no_modules_description')}</Card.Text>
@@ -113,9 +114,9 @@ const LandingPage = () => {
 
   if (availableModules.length > 1 && !hasPermission('module_locations_enabled')) {
     return (
-      <Row className="mt-3 g-3">
+      <Row className="mt-3 g-3" data-testid="page-landing">
         <Col xs={12}>
-          <Card>
+          <Card data-testid="landing-module-picker">
             <Card.Body>
               <Card.Title>{t('landing_select_title')}</Card.Title>
               <Card.Text>{t('landing_select_description')}</Card.Text>
@@ -124,6 +125,7 @@ const LandingPage = () => {
                   key={module.route}
                   className="me-2 mb-2"
                   onClick={() => auth.navigate(module.target)}
+                  {...repeatedTestId('landing-module', module.route)}
                 >
                   {t(module.labelKey)}
                 </Button>
@@ -136,7 +138,7 @@ const LandingPage = () => {
   }
 
   return (
-    <Row>
+    <Row data-testid="page-landing">
       <LoadingIcon />
     </Row>
   );

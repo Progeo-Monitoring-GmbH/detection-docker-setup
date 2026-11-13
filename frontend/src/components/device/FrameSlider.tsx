@@ -14,6 +14,7 @@ import { PauseFill, PlayFill } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
 import { formatDate } from '../../main/dateFormat';
 import { announceKey } from '../ui/KeyHints';
+import { childTestId } from '../../testIds';
 import TimeAxis from './TimeAxis';
 import { frameTimeAt } from './timeTicks';
 import './FrameSlider.css';
@@ -42,6 +43,8 @@ type FrameSliderProps = {
   onSelectionChange?: (selection: TimeSpan) => void;
   /** The selection band's tooltip, e.g. what it is for. */
   selectionLabel?: string;
+  /** data-testid of the slider; its parts are "<testId>-play", "-input", "-time", "-selection", ... */
+  testId?: string;
 };
 
 type TimeSpan = { from: number; to: number };
@@ -284,6 +287,7 @@ const FrameSlider = ({
   selection = null,
   onSelectionChange,
   selectionLabel,
+  testId = 'frame-slider',
 }: FrameSliderProps) => {
   const { t } = useTranslation();
   const count = timestamps.length;
@@ -373,7 +377,7 @@ const FrameSlider = ({
   });
 
   return (
-    <div className="pb-2 pt-3" style={{ minWidth: 200 }}>
+    <div className="frame-slider pb-2 pt-3" data-testid={testId}>
       <div className="d-flex flex-wrap align-items-center gap-2">
         <Button
           size="sm"
@@ -382,26 +386,26 @@ const FrameSlider = ({
           disabled={!canPlay}
           aria-pressed={playing}
           title={playKey ? `${label} (${t('heatmap_animation_key')})` : label}
-          className="d-inline-flex align-items-center gap-1 py-0"
-          style={{ borderRadius: 'var(--progeo-radius-pill)', paddingInline: 12, fontSize: 12.5, fontWeight: 500 }}
+          className="frame-slider__play d-inline-flex align-items-center gap-1 py-0"
+          data-testid={childTestId(testId, 'play')}
         >
           {playing ? <PauseFill /> : <PlayFill />}
           {label}
         </Button>
-        <label htmlFor={id} className="form-label small text-muted mb-0">
+        <label htmlFor={id} className="form-label small text-muted mb-0" data-testid={childTestId(testId, 'position')}>
           {count ? `${index + 1}/${count}` : 'Timestamp'}
         </label>
         {toolbar}
         {count > 0 && (
           // The frame's time, large - readable at a glance while it plays.
           <div
-            className="ms-auto d-flex align-items-baseline gap-2 text-nowrap"
-            style={{ fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}
+            className="frame-slider__time ms-auto d-flex align-items-baseline gap-2 text-nowrap"
+            data-testid={childTestId(testId, 'time')}
           >
-            <span className="fw-semibold" style={{ fontSize: '2.25rem' }}>
+            <span className="frame-slider__time-clock fw-semibold">
               {formatDate(timestamps[index] * 1000, 'time')}
             </span>
-            <span className="text-muted" style={{ fontSize: '1.1rem' }}>
+            <span className="frame-slider__time-date text-muted">
               {formatDate(timestamps[index] * 1000, 'weekdayDate')}
             </span>
           </div>
@@ -422,6 +426,8 @@ const FrameSlider = ({
                 key={alarm.key}
                 className={`frame-slider__alarm${alarm.key === hoveredAlarm ? ' frame-slider__alarm--hovered' : ''}`}
                 style={markStyle(at)}
+                data-testid={childTestId(testId, 'alarm')}
+                data-test-key={alarm.key}
               />
             ))}
           </div>
@@ -439,11 +445,13 @@ const FrameSlider = ({
           style={{ '--fill-ratio': count > 1 ? index / (count - 1) : 0 } as CSSProperties}
           onChange={(event) => onChange(Number(event.target.value))}
           disabled={disabled}
+          data-testid={childTestId(testId, 'input')}
         />
         {visibleAt && (
           <div className="frame-slider__visible-layer" aria-hidden="true">
             <span
               className="frame-slider__visible"
+              data-testid={childTestId(testId, 'visible-range')}
               style={{
                 left: `${visibleAt.left * 100}%`,
                 width: `${(visibleAt.right - visibleAt.left) * 100}%`,
@@ -469,7 +477,7 @@ const FrameSlider = ({
         <div
           ref={stripRef}
           className="frame-slider__selection-strip"
-          data-testid="frame-slider-selection-strip"
+          data-testid={childTestId(testId, 'selection-strip')}
           title={selectionAt ? undefined : selectionLabel}
           onPointerDown={(event) => startSelectionDrag(event, 'create')}
           onPointerMove={moveSelectionDrag}
@@ -485,7 +493,7 @@ const FrameSlider = ({
                 selection ? `${formatDate(selection.from, 'dateTime')} - ${formatDate(selection.to, 'dateTime')}` : undefined
               }
               className={`frame-slider__selection${selectionDrag ? ' frame-slider__selection--dragging' : ''}`}
-              data-testid="frame-slider-selection"
+              data-testid={childTestId(testId, 'selection')}
               title={selectionLabel}
               style={{ left: `${selectionAt.left * 100}%`, width: `${(selectionAt.right - selectionAt.left) * 100}%` }}
               onPointerDown={(event) => startSelectionDrag(event, 'move')}
@@ -493,12 +501,12 @@ const FrameSlider = ({
             >
               <span
                 className="frame-slider__selection-grip frame-slider__selection-grip--start"
-                data-testid="frame-slider-selection-start"
+                data-testid={childTestId(testId, 'selection-start')}
                 onPointerDown={(event) => startSelectionDrag(event, 'start')}
               />
               <span
                 className="frame-slider__selection-grip frame-slider__selection-grip--end"
-                data-testid="frame-slider-selection-end"
+                data-testid={childTestId(testId, 'selection-end')}
                 onPointerDown={(event) => startSelectionDrag(event, 'end')}
               />
             </div>
@@ -507,8 +515,13 @@ const FrameSlider = ({
       )}
       {count > 1 && (
         // The thumb's centre travels half a thumb (1 rem) inside the input.
-        <div className="frame-slider__layer" style={{ margin: '-4px 0.5rem 0' }}>
-          <TimeAxis from={timestamps[0] * 1000} to={timestamps[count - 1] * 1000} timeAt={timeAt} />
+        <div className="frame-slider__layer frame-slider__axis">
+          <TimeAxis
+            from={timestamps[0] * 1000}
+            to={timestamps[count - 1] * 1000}
+            timeAt={timeAt}
+            testId={childTestId(testId, 'time-axis')}
+          />
           {marks.length > 0 && (
             // Under the track the alarms are buttons: a click jumps to their
             // start. Transparent - the time labels show through.
@@ -520,6 +533,8 @@ const FrameSlider = ({
                   className="frame-slider__alarm-jump"
                   style={markStyle(at)}
                   aria-label={alarm.label}
+                  data-testid={childTestId(testId, 'alarm-jump')}
+                  data-test-key={alarm.key}
                   onClick={() => onChange(frameAt(timestamps, alarm.from))}
                   onFocus={() => setHoveredAlarm(alarm.key)}
                   onBlur={() => setHoveredAlarm(null)}
@@ -533,11 +548,11 @@ const FrameSlider = ({
         <div
           className="frame-slider__alarm-tooltip"
           role="tooltip"
-          data-testid="frame-slider-alarm-tooltip"
+          data-testid={childTestId(testId, 'alarm-tooltip')}
           style={tooltipPlace((hoveredMark.at.left + hoveredMark.at.right) / 2)}
         >
           <div className="fw-semibold">{hoveredMark.alarm.label}</div>
-          <div style={{ fontVariantNumeric: 'tabular-nums' }}>
+          <div className="frame-slider__alarm-tooltip-time">
             {formatDate(hoveredMark.alarm.from, 'dateTime')} – {formatDate(hoveredMark.alarm.to, 'dateTime')}
           </div>
           <div className="frame-slider__alarm-tooltip-hint">{t('frame_slider_alarm_jump')}</div>

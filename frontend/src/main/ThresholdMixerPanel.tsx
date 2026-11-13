@@ -21,6 +21,8 @@ import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import { useWheelHint, useZoomWheel, WheelZoomHint } from '../components/ui/wheelZoom';
+import { childTestId, repeatedTestId } from '../testIds';
+import './ThresholdMixer.css';
 import {
   effectiveThresholdOf,
   gridValuesOf,
@@ -71,8 +73,6 @@ const MIN_ZOOM_COLUMN = 3;
 const GRAB_PX = 11;
 /** A press on a marker that moves less than this (px) is a click: it removes the marker. */
 const CLICK_PX = 4;
-/** Room under the plot for the horizontal scrollbar - it must not cover the labels. */
-const SCROLLBAR_ROOM = 14;
 /** ←/→ scroll this many columns (Shift: a page). */
 const KEY_SCROLL_COLUMNS = 5;
 
@@ -100,6 +100,7 @@ const ThresholdMixerPanel = ({
   onSaved,
   embedded = false,
   loaded = null,
+  testId = 'threshold-mixer',
 }: {
   locationId: number | string;
   initialObjectThreshold: number | null;
@@ -114,6 +115,8 @@ const ThresholdMixerPanel = ({
    * with the period's maxima itself (the Einstellungen tab).
    */
   loaded?: { sensors: MixerSensor[]; note: string } | null;
+  /** data-testid of the panel; its parts are "<testId>-<part>" (src/testIds.ts). */
+  testId?: string;
 }) => {
   const auth = useAuth();
   const { t } = useTranslation();
@@ -527,31 +530,17 @@ const ThresholdMixerPanel = ({
       aria-label={t(side === 'left' ? 'einstell_mixer_scroll_left' : 'einstell_mixer_scroll_right')}
       title={t(side === 'left' ? 'einstell_mixer_scroll_left' : 'einstell_mixer_scroll_right')}
       onClick={() => scrollBy((side === 'left' ? -1 : 1) * scroll.client * 0.9)}
-      style={{
-        position: 'absolute',
-        top: 0,
-        bottom: SCROLLBAR_ROOM,
-        [side]: 0,
-        width: 36,
-        border: 'none',
-        padding: 0,
-        cursor: 'pointer',
-        color: 'var(--progeo-blue)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: side === 'left' ? 'flex-start' : 'flex-end',
-        background: `linear-gradient(to ${side === 'left' ? 'right' : 'left'}, var(--progeo-panel-bg, #fff) 25%, rgba(255,255,255,0))`,
-        zIndex: 2,
-      }}
+      className={`threshold-mixer-edge threshold-mixer-edge--${side}`}
+      {...repeatedTestId(`${testId}-scroll`, side)}
     >
       {side === 'left' ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
     </button>
   );
 
   const chart = (
-    <div style={{ display: 'flex', position: 'relative' }}>
+    <div className="threshold-mixer-chart" data-testid={childTestId(testId, 'chart')}>
       {/* The y-axis with the object grip stays put while the columns scroll. */}
-      <svg width={GUTTER} height={SVG_H} style={{ flexShrink: 0, overflow: 'visible' }} aria-hidden={!canEdit}>
+      <svg width={GUTTER} height={SVG_H} className="threshold-mixer-gutter" aria-hidden={!canEdit}>
         {gridValues.map((tick) => (
           <text key={tick} x={GUTTER - 8} y={toY(tick) + 3} textAnchor="end" fontSize={10} fill={MUTED}>
             {tick}
@@ -565,7 +554,8 @@ const ThresholdMixerPanel = ({
             aria-valuenow={objectThreshold}
             aria-valuemin={0}
             aria-valuemax={Math.round(scale)}
-            style={{ cursor: canEdit ? 'ns-resize' : 'default', outline: 'none' }}
+            className={canEdit ? 'threshold-mixer-grip threshold-mixer-grip--editable' : 'threshold-mixer-grip'}
+            data-testid={childTestId(testId, 'grip')}
             onPointerDown={onGripDown}
             onPointerMove={onGripMove}
             onPointerUp={endDrag}
@@ -581,7 +571,7 @@ const ThresholdMixerPanel = ({
         )}
       </svg>
 
-      <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+      <div className="threshold-mixer-scroll-wrap">
       <div
         ref={scrollerRef}
         tabIndex={0}
@@ -589,24 +579,19 @@ const ThresholdMixerPanel = ({
         aria-label={t('einstell_mixer_plot_label')}
         onKeyDown={onScrollerKey}
         onScroll={measureScroll}
-        style={{
-          overflowX: 'auto',
-          overflowY: 'hidden',
-          paddingBottom: SCROLLBAR_ROOM,
-          outline: 'none',
-          scrollbarColor: `${MUTED} var(--progeo-track-soft)`,
-        }}
+        className="threshold-mixer-scroller"
+        data-testid={childTestId(testId, 'scroller')}
       >
         <svg
           width={plotWidth}
           height={SVG_H}
-          style={{ display: 'block', touchAction: 'none', userSelect: 'none' }}
+          className="threshold-mixer-plot"
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
           onPointerLeave={() => !drag && setHovered(null)}
-          data-testid="threshold-mixer-plot"
+          data-testid={childTestId(testId, 'plot')}
         >
           <defs>
             {/* Protected by its own threshold, but above the object's: blue-red. */}
@@ -627,7 +612,7 @@ const ThresholdMixerPanel = ({
             const isSelected = selected.has(order);
             const barWidth = Math.max(1, column * 0.62);
             return (
-              <g key={order} data-sensor={order}>
+              <g key={order} data-sensor={order} {...repeatedTestId(`${testId}-column`, order)}>
                 {(isSelected || hovered === order) && (
                   <rect
                     x={x}
@@ -697,34 +682,20 @@ const ThresholdMixerPanel = ({
       </div>
 
       {hoveredSensor && !drag && (
-        <div
-          style={{
-            position: 'absolute',
-            top: 0,
-            right: 0,
-            background: '#07223A',
-            color: '#fff',
-            borderRadius: 8,
-            padding: '6px 10px',
-            fontSize: 11.5,
-            lineHeight: 1.5,
-            pointerEvents: 'none',
-            boxShadow: '0 6px 18px rgba(11, 54, 89, .3)',
-          }}
-        >
-          <div style={{ fontWeight: 600 }}>{labelOf(hoveredSensor.sensor_order)}</div>
+        <div className="threshold-mixer-tooltip" data-testid={childTestId(testId, 'tooltip')}>
+          <div className="threshold-mixer-tooltip-title">{labelOf(hoveredSensor.sensor_order)}</div>
           <div>
             {t('einstell_mixer_max')}: {formatValue(hoveredSensor.max)} mV
           </div>
           <div>
             {t('einstell_points_threshold')}: {formatValue(effectiveThresholdOf(hoveredSensor, savedObject, drafts))} mV
-            <span style={{ opacity: 0.7 }}>
+            <span className="threshold-mixer-tooltip-dim">
               {' '}
               ({overrideOf(hoveredSensor, drafts) != null ? t('einstell_mixer_own') : t('einstell_mixer_object')})
             </span>
           </div>
           {canEdit && overrideOf(hoveredSensor, drafts) != null && (
-            <div style={{ opacity: 0.7 }}>{t('einstell_mixer_marker_hint')}</div>
+            <div className="threshold-mixer-tooltip-dim">{t('einstell_mixer_marker_hint')}</div>
           )}
         </div>
       )}
@@ -732,7 +703,7 @@ const ThresholdMixerPanel = ({
   );
 
   const legendItem = (swatch: ReactNode, label: string) => (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+    <span className="threshold-mixer-legend-item">
       {swatch}
       {label}
     </span>
@@ -740,12 +711,13 @@ const ThresholdMixerPanel = ({
 
   return (
     <PanelCard
+      testId={testId}
       flat={embedded}
       title={t('einstell_section_thresholds')}
       actions={
         loaded ? (
           // The page's own data - no period of its own to pick.
-          <span style={{ fontSize: 12, color: MUTED }} data-testid="threshold-mixer-source">
+          <span className="threshold-mixer-muted" data-testid={childTestId(testId, 'source')}>
             {loaded.note}
           </span>
         ) : (
@@ -759,15 +731,16 @@ const ThresholdMixerPanel = ({
               setLoading(true);
               setDays(Number(value));
             }}
+            testId={childTestId(testId, 'period')}
           />
         )
       }
     >
       <div className="d-flex flex-column gap-3">
         <div className="d-flex align-items-center gap-3 flex-wrap">
-          <div style={{ flex: '1 1 260px' }}>
-            <div style={{ fontSize: 13.5, fontWeight: 500 }}>{t('einstell_alarm_threshold')}</div>
-            <div style={{ fontSize: 12, color: MUTED }}>{t('einstell_mixer_hint')}</div>
+          <div className="threshold-mixer-intro">
+            <div className="threshold-mixer-intro-title">{t('einstell_alarm_threshold')}</div>
+            <div className="threshold-mixer-muted">{t('einstell_mixer_hint')}</div>
           </div>
           <label className="d-flex align-items-center gap-2 mb-0">
             <input
@@ -783,63 +756,45 @@ const ThresholdMixerPanel = ({
                   object: event.target.value === '' ? null : Number(event.target.value),
                 }))
               }
-              style={{
-                height: 36,
-                width: 110,
-                border: 'none',
-                borderRadius: 10,
-                background: 'var(--progeo-track-soft)',
-                padding: '0 12px',
-                fontFamily: 'inherit',
-                fontSize: 14,
-                color: 'var(--progeo-blue)',
-              }}
+              className="threshold-mixer-object-input"
+              data-testid={childTestId(testId, 'object-input')}
             />
-            <span style={{ fontSize: 13, color: MUTED }}>mV</span>
+            <span className="threshold-mixer-unit">mV</span>
           </label>
         </div>
 
-        <div className="d-flex align-items-center gap-3 flex-wrap" style={{ fontSize: 12, color: '#6E6868' }}>
-          {legendItem(<span style={{ width: 10, height: 12, borderRadius: 2, background: BAR }} />, t('einstell_mixer_max_legend'))}
-          {legendItem(<span style={{ width: 10, height: 12, borderRadius: 2, background: BAR_OVER }} />, t('einstell_mixer_over_legend', { count: overCount }))}
-          {legendItem(
-            <span
-              style={{
-                width: 10,
-                height: 12,
-                borderRadius: 2,
-                background: `repeating-linear-gradient(45deg, ${OWN} 0 3px, ${BAR_OVER} 3px 6px)`,
-              }}
-            />,
-            t('einstell_mixer_protected_legend'),
-          )}
-          {legendItem(<span style={{ width: 16, height: 3, background: OBJECT_LINE }} />, t('einstell_mixer_object'))}
-          {legendItem(<span style={{ width: 16, height: 4, borderRadius: 2, background: OWN }} />, t('einstell_mixer_own_legend', { count: ownCount }))}
-          <span style={{ marginLeft: 'auto', color: MUTED }}>{canEdit ? t('einstell_mixer_usage') : null}</span>
+        <div className="d-flex align-items-center gap-3 flex-wrap threshold-mixer-legend" data-testid={childTestId(testId, 'legend')}>
+          {legendItem(<span className="threshold-mixer-swatch" />, t('einstell_mixer_max_legend'))}
+          {legendItem(<span className="threshold-mixer-swatch threshold-mixer-swatch--over" />, t('einstell_mixer_over_legend', { count: overCount }))}
+          {legendItem(<span className="threshold-mixer-swatch threshold-mixer-swatch--protected" />, t('einstell_mixer_protected_legend'))}
+          {legendItem(<span className="threshold-mixer-swatch-object" />, t('einstell_mixer_object'))}
+          {legendItem(<span className="threshold-mixer-swatch-own" />, t('einstell_mixer_own_legend', { count: ownCount }))}
+          <span className="threshold-mixer-usage">{canEdit ? t('einstell_mixer_usage') : null}</span>
         </div>
 
         {loading && sensors.length === 0 ? (
-          <div className="d-flex justify-content-center py-5 text-muted">
+          <div className="d-flex justify-content-center py-5 text-muted" data-testid={childTestId(testId, 'loading')}>
             <Spinner animation="border" size="sm" />
           </div>
         ) : sensors.length === 0 ? (
-          <div style={{ fontSize: 13, color: MUTED }}>{t('einstell_points_empty')}</div>
+          <div className="threshold-mixer-empty" data-testid={childTestId(testId, 'empty')}>{t('einstell_points_empty')}</div>
         ) : (
-          <div style={{ opacity: loading ? 0.5 : 1 }}>
-            <div className="d-flex align-items-center gap-2 flex-wrap mb-1" style={{ fontSize: 12, color: MUTED }}>
-              <span data-testid="threshold-mixer-range">
+          <div className={loading ? 'threshold-mixer-loading' : undefined}>
+            <div className="d-flex align-items-center gap-2 flex-wrap mb-1 threshold-mixer-muted">
+              <span data-testid={childTestId(testId, 'range')}>
                 {scrollable
                   ? t('einstell_mixer_range', { first: firstShown, last: lastShown, total: columns.length })
                   : t('einstell_mixer_all_shown', { total: columns.length })}
                 {quietHidden > 0 && ` · ${t('einstell_mixer_quiet_hidden', { count: quietHidden })}`}
               </span>
-              <span style={{ flex: 1 }} />
+              <span className="threshold-mixer-spacer" />
               <PillButton
                 variant={hideQuiet ? 'accent' : 'ghost'}
                 label={t('einstell_mixer_hide_quiet', { count: quietOrders.size })}
                 title={t('einstell_mixer_hide_quiet_hint', { percent: 5 })}
                 disabled={quietOrders.size === 0 && !hideQuiet}
                 onClick={() => setHideQuiet((hide) => !hide)}
+                testId={childTestId(testId, 'hide-quiet')}
               />
             </div>
             {chart}
@@ -848,11 +803,16 @@ const ThresholdMixerPanel = ({
 
         {canEdit && sensors.length > 0 && (
           <div
-            className="d-flex align-items-center gap-2 flex-wrap"
-            style={{ background: 'var(--progeo-surface)', borderRadius: 12, padding: '8px 12px', fontSize: 12.5 }}
+            className="d-flex align-items-center gap-2 flex-wrap threshold-mixer-bulk"
+            data-testid={childTestId(testId, 'bulk')}
           >
-            <span style={{ fontWeight: 500 }}>{t('einstell_mixer_selected', { count: selectedOrders.length })}</span>
-            <PillButton variant="ghost" label={t('einstell_mixer_select_all')} onClick={() => setSelected(new Set(orders))} />
+            <span className="threshold-mixer-strong" data-testid={childTestId(testId, 'selected-count')}>{t('einstell_mixer_selected', { count: selectedOrders.length })}</span>
+            <PillButton
+              variant="ghost"
+              label={t('einstell_mixer_select_all')}
+              onClick={() => setSelected(new Set(orders))}
+              testId={childTestId(testId, 'select-all')}
+            />
             <PillButton
               variant="ghost"
               label={t('einstell_mixer_select_over')}
@@ -860,14 +820,16 @@ const ThresholdMixerPanel = ({
               onClick={() =>
                 setSelected(new Set(sensors.filter((sensor) => isOver(sensor, savedObject, drafts)).map((s) => s.sensor_order)))
               }
+              testId={childTestId(testId, 'select-over')}
             />
             <PillButton
               variant="ghost"
               label={t('einstell_mixer_select_none')}
               disabled={selectedOrders.length === 0}
               onClick={() => setSelected(new Set())}
+              testId={childTestId(testId, 'select-none')}
             />
-            <span style={{ flex: 1 }} />
+            <span className="threshold-mixer-spacer" />
             <input
               type="number"
               min={0}
@@ -875,21 +837,14 @@ const ThresholdMixerPanel = ({
               aria-label={t('einstell_mixer_bulk_value')}
               value={bulkValue}
               onChange={(event) => setBulkValue(event.target.value)}
-              style={{
-                height: 32,
-                width: 110,
-                border: 'none',
-                borderRadius: 9,
-                background: 'var(--progeo-track-soft)',
-                padding: '0 10px',
-                fontFamily: 'inherit',
-                fontSize: 12.5,
-              }}
+              className="threshold-mixer-bulk-input"
+              data-testid={childTestId(testId, 'bulk-value')}
             />
             <PillButton
               label={t('einstell_mixer_set_selected')}
               disabled={!bulkValid || selectedOrders.length === 0}
               onClick={() => bulkValid && setDrafts((prev) => withOverrides(prev, selectedOrders, bulkNumber))}
+              testId={childTestId(testId, 'set-selected')}
             />
             <PillButton
               variant="ghost"
@@ -899,6 +854,7 @@ const ThresholdMixerPanel = ({
                 !sensors.some((sensor) => selected.has(sensor.sensor_order) && overrideOf(sensor, drafts) != null)
               }
               onClick={() => setDrafts((prev) => withOverrides(prev, selectedOrders, null))}
+              testId={childTestId(testId, 'remove-selected')}
             />
           </div>
         )}
@@ -907,42 +863,31 @@ const ThresholdMixerPanel = ({
           <div className="d-flex gap-3 flex-wrap align-items-stretch">
             <div
               data-testid="threshold-changes"
-              style={{
-                flex: '1 1 320px',
-                background: 'var(--progeo-surface)',
-                borderRadius: 12,
-                padding: '8px 12px',
-                fontSize: 12.5,
-                maxHeight: 170,
-                overflowY: 'auto',
-              }}
+              className="threshold-mixer-changes"
             >
-              <div style={{ fontWeight: 500, marginBottom: 4 }}>
+              <div className="threshold-mixer-changes-title">
                 {t('einstell_mixer_changes', { count: changes.length })}
               </div>
               {changes.length === 0 ? (
-                <div style={{ color: MUTED }}>{t('einstell_mixer_no_changes')}</div>
+                <div className="threshold-mixer-changes-empty" data-testid={childTestId(testId, 'changes-empty')}>{t('einstell_mixer_no_changes')}</div>
               ) : (
                 changes.map((change) => (
-                  <div key={change.key} className="d-flex align-items-center gap-2" style={{ padding: '2px 0' }}>
-                    <span style={{ fontWeight: 500, minWidth: 0, flex: '0 1 auto' }}>
+                  <div
+                    key={change.key}
+                    className="d-flex align-items-center gap-2 threshold-mixer-change"
+                    {...repeatedTestId(`${testId}-change`, change.key)}
+                  >
+                    <span className="threshold-mixer-change-label">
                       {change.kind === 'object' ? t('einstell_mixer_object') : labelOf(change.sensorOrder)}
                     </span>
-                    <span style={{ color: '#6E6868', fontVariantNumeric: 'tabular-nums' }}>{changeText(change)}</span>
+                    <span className="threshold-mixer-change-value">{changeText(change)}</span>
                     <button
                       type="button"
                       title={t('einstell_mixer_undo')}
                       aria-label={t('einstell_mixer_undo')}
                       onClick={() => setDrafts((prev) => withoutChange(prev, change))}
-                      style={{
-                        marginLeft: 'auto',
-                        border: 'none',
-                        background: 'none',
-                        color: MUTED,
-                        padding: 2,
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                      }}
+                      className="threshold-mixer-undo"
+                      {...repeatedTestId(`${testId}-change-undo`, change.key)}
                     >
                       <XLg size={11} />
                     </button>
@@ -956,6 +901,7 @@ const ThresholdMixerPanel = ({
                 label={saving ? t('einstell_mixer_saving') : t('einstell_mixer_save', { count: changes.length })}
                 disabled={saving || changes.length === 0}
                 onClick={() => void save()}
+                testId={childTestId(testId, 'save')}
               />
               <PillButton
                 variant="ghost"
@@ -963,6 +909,7 @@ const ThresholdMixerPanel = ({
                 label={t('einstell_mixer_discard')}
                 disabled={saving || (changes.length === 0 && drafts === NO_DRAFTS)}
                 onClick={() => setDrafts(NO_DRAFTS)}
+                testId={childTestId(testId, 'discard')}
               />
             </div>
           </div>

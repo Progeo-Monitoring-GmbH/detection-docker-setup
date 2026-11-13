@@ -151,3 +151,186 @@
     transform: none;
   }
 }
+
+/* -- Shell (SidebarShell) ---------------------------------------------------
+   The desktop aside's width and padding change with folding and stay inline;
+   everything else is here. */
+
+.progeo-sidebar {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  transition:
+    width 0.18s ease,
+    padding 0.18s ease;
+  overflow: hidden;
+}
+
+.progeo-sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 11px;
+}
+
+.progeo-sidebar[data-collapsed='true'] .progeo-sidebar-head {
+  justify-content: center;
+}
+
+.progeo-sidebar-fold {
+  margin-left: auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+}
+
+.progeo-sidebar[data-collapsed='true'] .progeo-sidebar-fold {
+  margin-left: 0;
+}
+
+.progeo-sidebar-logo {
+  height: 20px;
+  width: auto;
+  flex-shrink: 0;
+  display: block;
+}
+
+.progeo-sidebar-brand-divider {
+  width: 1px;
+  height: 22px;
+  background: #d0caca;
+  flex-shrink: 0;
+}
+
+.progeo-sidebar-subtitle {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #6e6868;
+  font-weight: 500;
+}
+
+.progeo-sidebar-subtitle--desktop {
+  line-height: 1.3;
+}
+
+.progeo-sidebar-subtitle--mobile {
+  white-space: nowrap;
+}
+
+/* Mobile: a sticky top bar with a burger dropdown. */
+.progeo-sidebar-bar {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 11px 12px;
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  background: var(--progeo-page-bg);
+  box-shadow: 0 8px 18px -14px rgba(11, 54, 89, 0.3);
+}
+
+.progeo-sidebar-bar-head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.progeo-sidebar-burger {
+  margin-left: auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+}
+
+.progeo-sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(11, 54, 89, 0.28);
+  z-index: 55;
+  border: none;
+  padding: 0;
+}
+
+.progeo-sidebar-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--progeo-surface);
+  padding: 8px 10px 14px;
+  border-radius: 0 0 18px 18px;
+  box-shadow: 0 22px 44px rgba(11, 54, 89, 0.22);
+  max-height: calc(100vh - 70px);
+  overflow: auto;
+  z-index: 62;
+}
+
+/* -- Nav (LocationSidebar) --------------------------------------------------- */
+
+.progeo-sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* Uppercase section caption; --separated adds the divider above a group. */
+.progeo-sidebar-group-label {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #a09898;
+  font-weight: 600;
+  padding: 2px 14px 7px;
+}
+
+.progeo-sidebar-group-label--separated {
+  padding: 16px 14px 7px;
+  margin-top: 8px;
+  border-top: 1px solid #d9d4d4;
+}
+
+/* Folded sidebar: the group caption is a plain divider. */
+.progeo-sidebar-group-divider {
+  margin: 8px 6px;
+  border-top: 1px solid #d9d4d4;
+}
+
+.progeo-sidebar-svg {
+  flex-shrink: 0;
+}
+
+.progeo-sidebar-item-main {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+.progeo-sidebar-item-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.progeo-sidebar-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--progeo-orange);
+  border-radius: var(--progeo-radius-pill);
+  padding: 2px 7px;
+}
+
+/* Folded: the badge becomes a dot on the icon. */
+.progeo-sidebar-badge-dot {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--progeo-orange);
+}

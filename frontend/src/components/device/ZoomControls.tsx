@@ -1,6 +1,8 @@
 import { Button, ButtonGroup } from 'react-bootstrap';
 import { ArrowCounterclockwise, ZoomIn, ZoomOut } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
+import { childTestId } from '../../testIds';
+import './ZoomControls.css';
 
 type ZoomControlsProps = {
   onZoomIn: () => void;
@@ -9,6 +11,8 @@ type ZoomControlsProps = {
   onReset: () => void;
   zoomOutDisabled?: boolean;
   resetDisabled: boolean;
+  /** data-testid of the group; its buttons are "<testId>-in" / "-out" / "-reset". */
+  testId?: string;
 };
 
 /** Zoom in/out/reset buttons in the top left corner of a plan view. */
@@ -18,15 +22,23 @@ const ZoomControls = ({
   onReset,
   zoomOutDisabled = false,
   resetDisabled,
+  testId = 'zoom-controls',
 }: ZoomControlsProps) => {
   const { t } = useTranslation();
   return (
     <ButtonGroup
       size="sm"
       vertical
-      style={{ position: 'absolute', left: 8, top: 8, boxShadow: '0 2px 8px rgba(11, 54, 89, .18)' }}
+      className="zoom-controls"
+      data-testid={testId}
     >
-      <Button variant="light" onClick={onZoomIn} title={t('heatmap_zoom_in')} aria-label={t('heatmap_zoom_in')}>
+      <Button
+        variant="light"
+        onClick={onZoomIn}
+        title={t('heatmap_zoom_in')}
+        aria-label={t('heatmap_zoom_in')}
+        data-testid={childTestId(testId, 'in')}
+      >
         <ZoomIn />
       </Button>
       <Button
@@ -35,6 +47,7 @@ const ZoomControls = ({
         disabled={zoomOutDisabled}
         title={t('heatmap_zoom_out')}
         aria-label={t('heatmap_zoom_out')}
+        data-testid={childTestId(testId, 'out')}
       >
         <ZoomOut />
       </Button>
@@ -44,6 +57,7 @@ const ZoomControls = ({
         disabled={resetDisabled}
         title={`${t('heatmap_zoom_reset')} (${t('heatmap_canvas_hint')})`}
         aria-label={t('heatmap_zoom_reset')}
+        data-testid={childTestId(testId, 'reset')}
       >
         <ArrowCounterclockwise />
       </Button>

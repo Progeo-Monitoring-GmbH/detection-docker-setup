@@ -117,14 +117,14 @@ const LocationHeatmap2DView = () => {
   };
 
   return (
-    <Container className="py-4">
+    <Container className="py-4" data-testid="page-location-heatmap2d">
       <HeatmapViewHeader id={id} switchTo="heatplot" loading={loading} onRefresh={refresh} className="p-3" />
 
-      <Card className="border-0 shadow-sm mb-3 p-3">
+      <Card className="border-0 shadow-sm mb-3 p-3" data-testid="location-heatmap2d-settings">
         <Card.Body>
           <h4 className="mb-1">Location Heatmap (2D)</h4>
           <div className="text-muted small">Location {id}</div>
-          <label htmlFor="heatmap2d-limit" className="form-label mt-3 mb-1">
+          <label htmlFor="heatmap2d-limit" className="form-label mt-3 mb-1" data-testid="location-heatmap2d-limit-value">
             Measurements: {limit}
           </label>
           <input
@@ -139,6 +139,7 @@ const LocationHeatmap2DView = () => {
             aria-valuemin={1}
             aria-valuemax={MAX_LIMIT}
             aria-valuenow={limit}
+            data-testid="location-heatmap2d-limit"
           />
           <div className="d-flex justify-content-between align-items-center text-muted small">
             <span>1</span>
@@ -155,6 +156,7 @@ const LocationHeatmap2DView = () => {
                   )
                 }
                 disabled={loading || limit >= MAX_LIMIT}
+                data-testid="location-heatmap2d-load-more"
               >
                 Load more (+{LOAD_MORE_STEP})
               </Button>
@@ -165,7 +167,7 @@ const LocationHeatmap2DView = () => {
       </Card>
 
       {withSliders && (
-        <Card className="border-0 shadow-sm mb-3 p-3">
+        <Card className="border-0 shadow-sm mb-3 p-3" data-testid="location-heatmap2d-alignment">
           <Card.Body>
             <h5 className="mb-2">Alignment sliders</h5>
             <div className="row g-2">
@@ -187,6 +189,7 @@ const LocationHeatmap2DView = () => {
                   onChange={(event) =>
                     setAlignmentValue('offset_x', Number(event.target.value))
                   }
+                  data-testid="location-heatmap2d-align-offset-x"
                 />
               </div>
               <div className="col-md-6">
@@ -207,6 +210,7 @@ const LocationHeatmap2DView = () => {
                   onChange={(event) =>
                     setAlignmentValue('offset_y', Number(event.target.value))
                   }
+                  data-testid="location-heatmap2d-align-offset-y"
                 />
               </div>
               <div className="col-md-6">
@@ -227,6 +231,7 @@ const LocationHeatmap2DView = () => {
                   onChange={(event) =>
                     setAlignmentValue('scale_x', Number(event.target.value))
                   }
+                  data-testid="location-heatmap2d-align-scale-x"
                 />
               </div>
               <div className="col-md-6">
@@ -247,6 +252,7 @@ const LocationHeatmap2DView = () => {
                   onChange={(event) =>
                     setAlignmentValue('scale_y', Number(event.target.value))
                   }
+                  data-testid="location-heatmap2d-align-scale-y"
                 />
               </div>
               <div className="col-12 d-flex gap-2">
@@ -255,6 +261,7 @@ const LocationHeatmap2DView = () => {
                     variant="primary"
                     onClick={saveAlignment}
                     disabled={saving || !alignment || projectId == null}
+                    data-testid="location-heatmap2d-align-store"
                   >
                     {saving ? 'Storing\u2026' : 'Store alignment'}
                   </Button>
@@ -262,6 +269,7 @@ const LocationHeatmap2DView = () => {
                 <Button
                   variant="outline-secondary"
                   onClick={resetAlignmentValues}
+                  data-testid="location-heatmap2d-align-reset"
                 >
                   Reset values
                 </Button>
@@ -272,7 +280,7 @@ const LocationHeatmap2DView = () => {
       )}
 
       {loading ? (
-        <Card className="border-0 shadow-sm p-3">
+        <Card className="border-0 shadow-sm p-3" data-testid="location-heatmap2d-loading">
           <Card.Body className="d-flex align-items-center gap-2 text-muted">
             <Spinner size="sm" animation="border" />
             Loading sensor measurements...

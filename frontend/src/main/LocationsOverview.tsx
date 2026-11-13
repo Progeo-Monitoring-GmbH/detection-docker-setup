@@ -19,6 +19,8 @@ import LocationEditModal, {
 } from '../components/modal/LocationEditModal.tsx';
 import { staffFlags } from './access';
 import { formatDate } from './dateFormat';
+import { repeatedTestId } from '../testIds';
+import './LocationsOverview.css';
 
 type LocationRow = LocationEditRow & {
   measurement_count?: number;
@@ -67,7 +69,7 @@ const activeAlarmColumns: TableColumn<ActiveAlarm>[] = [
     name: 'Location',
     selector: (row) => row.location.name || '-',
     cell: (row) => (
-      <div className="small">
+      <div className="small" {...repeatedTestId('locations-active-alarm', row.id)}>
         {row.location.name || '-'}
         {row.location.city && (
           <div className="text-muted">{row.location.city}</div>
@@ -207,7 +209,7 @@ const LocationStateCell = ({
 }) => {
   if (!summary || row.measurement_count === undefined) {
     return (
-      <div className="d-flex align-items-center gap-2 text-muted">
+      <div className="d-flex align-items-center gap-2 text-muted" {...repeatedTestId('locations-state-loading', row.id)}>
         <Spinner size="sm" animation="border" />
       </div>
     );
@@ -219,10 +221,10 @@ const LocationStateCell = ({
     none: 'No data',
   };
   return (
-    <div className="d-flex align-items-center gap-2">
+    <div className="d-flex align-items-center gap-2" {...repeatedTestId('locations-state', row.id)}>
       <span
-        className="d-inline-block rounded-circle"
-        style={{ width: 10, height: 10, backgroundColor: STATE_DOT_COLORS[state] }}
+        className="d-inline-block rounded-circle locations-state-dot"
+        style={{ backgroundColor: STATE_DOT_COLORS[state] }}
       />
       <span className="small">{labels[state]}</span>
     </div>
@@ -247,6 +249,7 @@ const LocationActions = ({
         variant="outline-primary"
         title="Edit location"
         aria-label="Edit location"
+        {...repeatedTestId('locations-edit', row.id)}
         onClick={(event) => {
           event.stopPropagation();
           onEdit(row);
@@ -261,6 +264,8 @@ const LocationActions = ({
         href={getBackendUrl(`/aadmin/progeo/progeolocation/${row.id}/delete/`)}
         target="_blank"
         onClick={(event) => event.stopPropagation()}
+        testId="locations-delete"
+        testKey={row.id}
       />
     )}
   </div>
@@ -288,9 +293,9 @@ const locationColumns = ({
     selector: (row) => row.name || '-',
     // The star pins the location as favorite.
     cell: (row) => (
-      <span className="d-flex align-items-center gap-2" style={{ minWidth: 0 }}>
+      <span className="d-flex align-items-center gap-2 locations-name-cell" {...repeatedTestId('locations-row', row.id)}>
         <FavoriteStar locationId={row.id} size={26} />
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.name || '-'}</span>
+        <span className="locations-name-text">{row.name || '-'}</span>
       </span>
     ),
     sortable: true,
@@ -549,10 +554,13 @@ const LocationsOverview = () => {
 
   return (
     <React.Fragment>
-      <div className="d-flex flex-wrap mb-3 gap-3 align-items-center justify-content-between">
+      <div
+        className="d-flex flex-wrap mb-3 gap-3 align-items-center justify-content-between"
+        data-testid="page-location-overview"
+      >
         <h2 className="mb-0">Locations Overview</h2>
 
-        <div className="d-flex flex-wrap gap-3 align-items-center">
+        <div className="d-flex flex-wrap gap-3 align-items-center" data-testid="locations-filters">
           <Form.Control
             type="text"
             placeholder="Search by name, address, postcode, city, project id…"
@@ -561,10 +569,12 @@ const LocationsOverview = () => {
               setSearchText(event.target.value);
               setCurrentPage(1);
             }}
-            style={{ minWidth: '260px' }}
+            className="locations-search"
+            data-testid="locations-search"
           />
           <Form.Check
             id="locations-only-connected"
+            data-testid="locations-only-connected"
             type="checkbox"
             label="Only locations with connected devices"
             checked={onlyConnected}
@@ -575,6 +585,7 @@ const LocationsOverview = () => {
               variant="outline-warning"
               onClick={fetchActiveAlarms}
               disabled={loadingActive}
+              data-testid="locations-active-alarms-button"
             >
               {loadingActive ? (
                 <Spinner size="sm" animation="border" className="me-2" />
@@ -588,10 +599,10 @@ const LocationsOverview = () => {
       </div>
 
       {activeAlarms && (
-        <Card className="border-0 shadow-sm mb-3">
+        <Card className="border-0 shadow-sm mb-3" data-testid="locations-active-alarms">
           <Card.Body>
             <div className="d-flex justify-content-between align-items-start mb-2">
-              <h5 className="mb-0">
+              <h5 className="mb-0" data-testid="locations-active-alarms-count">
                 Active alarms ({activeAlarms.length}
                 {activeTruncated ? '+' : ''})
               </h5>
@@ -600,17 +611,18 @@ const LocationsOverview = () => {
                 size="sm"
                 className="p-0"
                 onClick={() => setActiveAlarms(null)}
+                data-testid="locations-active-alarms-close"
               >
                 Close
               </Button>
             </div>
             {activeTruncated && (
-              <Alert variant="warning" className="small py-2">
+              <Alert variant="warning" className="small py-2" data-testid="locations-active-alarms-truncated">
                 Only the newest {activeAlarms.length} active alarms are listed.
               </Alert>
             )}
             {activeAlarms.length === 0 ? (
-              <Alert variant="success" className="mb-0">
+              <Alert variant="success" className="mb-0" data-testid="locations-active-alarms-empty">
                 No active alarms.
               </Alert>
             ) : (

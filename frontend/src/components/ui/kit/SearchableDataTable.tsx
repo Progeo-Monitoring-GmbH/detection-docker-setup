@@ -2,6 +2,7 @@ import { useMemo, useState, type MouseEvent, type ReactNode } from 'react';
 import DataTable, { type TableColumn, type TableProps } from 'react-data-table-component';
 import { Search, XLg } from 'react-bootstrap-icons';
 import { matchesSearchWords, rowSearchText, searchWords } from './tableSearch';
+import { childTestId } from '../../../testIds';
 import './kit.css';
 
 /** A DataTable column plus what the global search should read from it. */
@@ -126,6 +127,8 @@ export type SearchableDataTableProps<T, K> = Omit<TableProps<T>, 'columns' | 'da
   labels?: Partial<SearchableDataTableLabels>;
   /** Content right of the search field (filters, actions). */
   toolbar?: ReactNode;
+  /** data-testid of the table; its search field is "<testId>-search", the count "<testId>-count". */
+  testId?: string;
 };
 
 /**
@@ -148,6 +151,7 @@ const SearchableDataTable = <T, K = string | number>({
   onRowClicked,
   pointerOnHover,
   conditionalRowStyles,
+  testId,
   ...tableProps
 }: SearchableDataTableProps<T, K>) => {
   const [query, setQuery] = useState('');
@@ -235,7 +239,7 @@ const SearchableDataTable = <T, K = string | number>({
   };
 
   return (
-    <div>
+    <div data-testid={testId}>
       <div className="progeo-table-toolbar">
         <div className="progeo-table-search">
           <Search aria-hidden size={13} className="progeo-table-search-icon" />
@@ -251,6 +255,7 @@ const SearchableDataTable = <T, K = string | number>({
               }
             }}
             className="progeo-table-search-input"
+            data-testid={childTestId(testId, 'search')}
           />
           {query && (
             <button
@@ -265,7 +270,7 @@ const SearchableDataTable = <T, K = string | number>({
           )}
         </div>
         {words.length > 0 && (
-          <span className="progeo-table-count" aria-live="polite">
+          <span className="progeo-table-count" aria-live="polite" data-testid={childTestId(testId, 'count')}>
             {labels.count(rows.length, data.length)}
           </span>
         )}

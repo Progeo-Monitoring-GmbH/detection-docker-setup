@@ -15,6 +15,7 @@ import ImpersonationBanner from './ImpersonationBanner';
 import { isStaffUser } from './favorites';
 import type { LocationDetail } from './locationTypes';
 import { getProjectTypeLabel } from './projectType';
+import './LocationPortalLayout.css';
 
 export type PortalOutletContext = {
   location: LocationDetail | null;
@@ -76,58 +77,45 @@ const LocationPortalLayout = () => {
     .join(', ');
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        flexDirection: mobile ? 'column' : 'row',
-        alignItems: mobile ? 'stretch' : 'stretch',
-        background: 'var(--progeo-page-bg)',
-      }}
-    >
+    <div className={`portal-layout${mobile ? ' portal-layout--mobile' : ''}`} data-testid="location-portal">
       <LocationSidebar location={id ? location : null} locationId={id ? locationId : null} />
-      <div
-        style={{
-          flex: 1,
-          minWidth: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 14,
-          padding: mobile ? '4px 12px 20px' : '20px 20px 22px 6px',
-        }}
-      >
+      <div className="portal-content" data-testid="location-portal-content">
         <TopBar />
         <ImpersonationBanner />
         <FavoritesBar />
         {id && !loading && location && (
           // The big star pins the location; staff also see its escalation.
-          <div className="d-flex align-items-center gap-3">
+          <div className="d-flex align-items-center gap-3" data-testid="location-portal-header">
             <FavoriteStar locationId={locationId} size={40} />
             {/* Which object this is - on every tab, for everyone (the tabs show no name of their own). */}
-            <div style={{ minWidth: 0, flexShrink: 1 }} data-testid="portal-location-title">
+            <div className="portal-title" data-testid="portal-location-title">
               <div
-                className="fw-semibold text-truncate"
-                style={{ fontSize: 20, lineHeight: 1.2, color: 'var(--progeo-blue)' }}
+                className="fw-semibold text-truncate portal-title-name"
                 title={location.name ?? undefined}
+                data-testid="location-portal-name"
               >
                 {location.name || location.project_id || locationId}
               </div>
-              {projectLine && <div className="small text-muted text-truncate">{projectLine}</div>}
+              {projectLine && (
+                <div className="small text-muted text-truncate" data-testid="location-portal-project">
+                  {projectLine}
+                </div>
+              )}
               {addressLine && (
-                <div className="small text-muted text-truncate" title={addressLine}>
+                <div className="small text-muted text-truncate" title={addressLine} data-testid="location-portal-address">
                   {addressLine}
                 </div>
               )}
             </div>
             {staff && (
-              <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="portal-escalation" data-testid="location-portal-escalation">
                 <EscalationBanner locationId={locationId} />
               </div>
             )}
           </div>
         )}
         {loading ? (
-          <div className="d-flex justify-content-center py-5 text-muted">
+          <div className="d-flex justify-content-center py-5 text-muted" data-testid="location-portal-loading">
             <Spinner animation="border" className="me-2" />
           </div>
         ) : (

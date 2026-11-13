@@ -1,0 +1,42 @@
+/* The values under the cursor of a compare plot (MeasurementCompareTooltip.tsx).
+   Its width (TOOLTIP_WIDTH, also used to place it) and position stay inline,
+   as does each swatch's trace colour. */
+
+.measurement-compare-tooltip {
+  pointer-events: none;
+  z-index: 2;
+  opacity: 0.95;
+}
+
+.measurement-compare-tooltip-subtitle {
+  font-size: 11px;
+}
+
+/* Swatch, name, value per row. */
+.measurement-compare-tooltip-rows {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 2px;
+}
+
+/* A line. */
+.measurement-compare-tooltip-swatch {
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+/* A filled band: a square. */
+.measurement-compare-tooltip-swatch--band {
+  width: 12px;
+  height: 10px;
+  border: 1px solid;
+}
+
+.measurement-compare-tooltip-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

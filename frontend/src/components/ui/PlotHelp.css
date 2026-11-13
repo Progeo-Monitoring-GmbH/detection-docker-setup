@@ -1,0 +1,47 @@
+/* The "?" help button next to a plot and its popover (PlotHelp.tsx).
+   Classes on Bootstrap components are doubled (.btn.x, .popover.x) so they
+   beat Bootstrap's own rules. */
+
+.btn.plot-help-button {
+  /* Same colour and border in every state (hover, focus, active). */
+  --bs-btn-color: var(--progeo-blue);
+  --bs-btn-hover-color: var(--progeo-blue);
+  --bs-btn-active-color: var(--progeo-blue);
+  --bs-btn-disabled-color: var(--progeo-blue);
+  --bs-btn-border-width: 1px;
+  --bs-btn-border-color: var(--progeo-warm-gray-3, #d6d0d0);
+  --bs-btn-hover-border-color: var(--progeo-warm-gray-3, #d6d0d0);
+  --bs-btn-active-border-color: var(--progeo-warm-gray-3, #d6d0d0);
+  --bs-btn-disabled-border-color: var(--progeo-warm-gray-3, #d6d0d0);
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.popover.plot-help-popover {
+  max-width: 420px;
+}
+
+.popover-header.plot-help-title {
+  font-size: 13.5px;
+}
+
+.popover-body.plot-help-body {
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.plot-help-section-title {
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #8b8383;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.plot-help-workflow {
+  background: var(--progeo-panel-bg, #f3f1f0);
+  border-radius: 6px;
+}

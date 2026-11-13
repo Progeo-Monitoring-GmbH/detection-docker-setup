@@ -18,3 +18,8 @@ yarn.lock
 storybook-static
 
 .env.local
+
+# Playwright (e2e/README.md): the login session, results and report
+e2e/.auth/
+e2e/test-results/
+e2e/report/

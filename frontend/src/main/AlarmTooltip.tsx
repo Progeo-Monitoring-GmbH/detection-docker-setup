@@ -88,14 +88,23 @@ const AlarmTooltip = ({
       dotBorderColor={active ? '#dc3545' : '#198754'}
       title={t('alarm_tooltip_title', { id: alarm.id })}
       headExtra={
-        <span className={['badge', active ? 'text-bg-danger' : 'text-bg-success'].join(' ')}>
+        <span
+          className={['badge', active ? 'text-bg-danger' : 'text-bg-success'].join(' ')}
+          data-testid="alarm-tooltip-state"
+        >
           {active ? t('alarm_tooltip_still_active') : t('alarm_tooltip_normalized')}
         </span>
       }
       footer={
         locationId != null && (
           <div className="alarm-tooltip-actions">
-            <Button size="sm" variant="primary" onClick={openDetails} className="w-100">
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={openDetails}
+              className="w-100"
+              data-testid="alarm-tooltip-open-details"
+            >
               <ArrowRightCircle className="me-1" />
               {t('alarm_tooltip_open_details')}
             </Button>

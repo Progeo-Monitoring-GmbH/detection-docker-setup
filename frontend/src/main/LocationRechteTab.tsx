@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { CSSProperties } from 'react';
 import { useOutletContext } from 'react-router';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
@@ -15,6 +14,8 @@ import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import type { PortalOutletContext } from './LocationPortalLayout';
 import { formatDate } from './dateFormat';
 import { staffFlags } from './access';
+import { repeatedTestId } from '../testIds';
+import './LocationRechteTab.css';
 
 type AccessRule = {
   id: number;
@@ -58,12 +59,6 @@ const ACCESS_LABEL_KEYS: Record<Access, string> = {
   staff: 'rechte_scope_staff',
 };
 
-const BADGE_COLORS: Record<Access, { background: string; color: string }> = {
-  single: { background: '#FBEAE4', color: '#C44D26' },
-  account: { background: '#E3ECF4', color: 'var(--progeo-blue)' },
-  staff: { background: 'var(--progeo-track-soft)', color: '#6E6868' },
-};
-
 // ProgeoAccess.NotifiTrans / NotifiTypes bit values. The channels combine;
 // 4 is the legacy "E-Mail + SMS" value, read as (and saved as) 1 | 2.
 const TRANSPORT_EMAIL = 1;
@@ -96,35 +91,9 @@ const initialsOf = (name?: string | null) =>
 
 const displayName = (user: UserContact) => user.full_name || user.username;
 
-const fieldLabelStyle: CSSProperties = {
-  fontSize: 10.5,
-  letterSpacing: '.08em',
-  textTransform: 'uppercase',
-  color: '#8B8383',
-  fontWeight: 500,
-  marginBottom: 5,
-};
-
-const segmentTrackStyle: CSSProperties = {
-  display: 'flex',
-  gap: 3,
-  background: 'var(--progeo-track-soft)',
-  borderRadius: 'var(--progeo-radius-pill)',
-  padding: 3,
-  width: 'fit-content',
-};
-
+/** The colours per scope: .location-rechte-badge--<scope> in LocationRechteTab.css. */
 const ScopeBadge = ({ scope, label }: { scope: Access; label: string }) => (
-  <span
-    style={{
-      fontSize: 11,
-      fontWeight: 500,
-      padding: '2px 9px',
-      borderRadius: 'var(--progeo-radius-pill)',
-      ...BADGE_COLORS[scope],
-      whiteSpace: 'nowrap',
-    }}
-  >
+  <span className={`location-rechte-badge location-rechte-badge--${scope}`}>
     {label}
   </span>
 );
@@ -324,24 +293,27 @@ const LocationRechteTab = () => {
       !hasMobile && { field: 'mobile' as const, label: 'rechte_field_mobile', add: 'rechte_add_mobile' },
     ].filter(Boolean) as { field: 'email' | 'mobile'; label: string; add: string }[];
     return (
-      <div style={{ paddingLeft: 48, display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+      <div className="location-rechte-contact-fix" {...repeatedTestId('rechte-contact-fix', member.user_id)}>
         {fields.map(({ field, label, add }) => {
           const editing =
             contactEdit && contactEdit.userId === member.user_id && contactEdit.field === field
               ? contactEdit
               : null;
           return editing ? (
-            <div key={field} style={{ display: 'flex', gap: 6, alignItems: 'flex-end' }}>
+            <div key={field} className="location-rechte-contact-edit">
               <LabeledInput
+                testId="rechte-contact-input"
                 label={t(label)}
                 value={editing.value}
                 onChange={(value) => setContactEdit({ ...editing, value })}
               />
-              <PillButton label={t('rechte_save')} onClick={saveContact} />
+              <PillButton testId="rechte-contact-save" label={t('rechte_save')} onClick={saveContact} />
             </div>
           ) : (
             <PillButton
               key={field}
+              testId="rechte-contact-add"
+              testKey={`${member.user_id}-${field}`}
               variant="ghost"
               label={t(add)}
               onClick={() => setContactEdit({ userId: member.user_id, field, value: '' })}
@@ -374,36 +346,18 @@ const LocationRechteTab = () => {
     return (
       <div
         key={member.user_id}
-        style={{
-          background: 'var(--progeo-surface)',
-          borderRadius: 14,
-          padding: '14px 16px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 12,
-        }}
+        className="location-rechte-member"
+        {...repeatedTestId('rechte-member', member.user_id)}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <div
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: '50%',
-              background: 'var(--progeo-track-soft)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 12,
-              fontWeight: 600,
-              color: 'var(--progeo-blue)',
-              flexShrink: 0,
-            }}
-          >
+        <div className="location-rechte-member-head">
+          <div className="location-rechte-avatar">
             {initialsOf(displayName(member))}
           </div>
-          <div style={{ flex: 1, minWidth: 160 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 14, fontWeight: 500 }}>{displayName(member)}</span>
+          <div className="location-rechte-member-info">
+            <div className="location-rechte-member-name-row">
+              <span className="location-rechte-member-name" {...repeatedTestId('rechte-member-name', member.user_id)}>
+                {displayName(member)}
+              </span>
               <ScopeBadge
                 scope={member.access}
                 label={t(ACCESS_LABEL_KEYS[member.access])}
@@ -412,11 +366,13 @@ const LocationRechteTab = () => {
                 <ScopeBadge scope="account" label={t('rechte_objektleitung')} />
               )}
             </div>
-            <div style={{ fontSize: 12, color: '#8B8383' }}>{member.email || '–'}</div>
+            <div className="location-rechte-member-email" {...repeatedTestId('rechte-member-email', member.user_id)}>
+              {member.email || '–'}
+            </div>
           </div>
-          <div style={{ minWidth: 110 }}>
-            <div style={{ ...fieldLabelStyle, marginBottom: 2 }}>{t('rechte_last_login')}</div>
-            <div style={{ fontSize: 12.5, color: '#6E6868' }}>
+          <div className="location-rechte-last-login">
+            <div className="location-rechte-label location-rechte-label--tight">{t('rechte_last_login')}</div>
+            <div className="location-rechte-last-login-value" {...repeatedTestId('rechte-member-last-login', member.user_id)}>
               {member.last_login ? formatDate(member.last_login) : t('rechte_never_logged_in')}
             </div>
           </div>
@@ -424,31 +380,23 @@ const LocationRechteTab = () => {
             <button
               type="button"
               onClick={() => setRevokeTarget(member)}
+              {...repeatedTestId('rechte-revoke', member.user_id)}
               disabled={revokeLocked}
               title={revokeLocked ? lockedHint : t('rechte_revoke')}
-              style={{
-                height: 32,
-                padding: '0 12px',
-                border: 'none',
-                borderRadius: 9,
-                background: revokeLocked ? 'var(--progeo-track-soft)' : '#FBEAE4',
-                color: revokeLocked ? '#A9A2A2' : '#C44D26',
-                fontFamily: 'inherit',
-                fontSize: 12.5,
-                fontWeight: 500,
-                cursor: revokeLocked ? 'not-allowed' : 'pointer',
-              }}
+              className={revokeLocked ? 'location-rechte-revoke location-rechte-revoke--locked' : 'location-rechte-revoke'}
             >
               {t('rechte_revoke')}
             </button>
           )}
         </div>
 
-        <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', paddingLeft: 48 }}>
+        <div className="location-rechte-settings">
           <div>
-            <div style={fieldLabelStyle}>{t('rechte_channel')}</div>
-            <div style={segmentTrackStyle}>
+            <div className="location-rechte-label">{t('rechte_channel')}</div>
+            <div className="location-rechte-track">
               <PillButton
+                testId="rechte-channel"
+                testKey={`${member.user_id}-0`}
                 label={t('rechte_transport_silent')}
                 active={transport === 0}
                 disabled={!canEditRule}
@@ -460,6 +408,8 @@ const LocationRechteTab = () => {
                 return (
                   <PillButton
                     key={option.value}
+                    testId="rechte-channel"
+                    testKey={`${member.user_id}-${option.value}`}
                     label={
                       isMessenger && member.messenger
                         ? MESSENGER_LABELS[member.messenger]
@@ -476,11 +426,13 @@ const LocationRechteTab = () => {
             </div>
           </div>
           <div>
-            <div style={fieldLabelStyle}>{t('rechte_type')}</div>
-            <div style={segmentTrackStyle}>
+            <div className="location-rechte-label">{t('rechte_type')}</div>
+            <div className="location-rechte-track">
               {TYPE_OPTIONS.map((option) => (
                 <PillButton
                   key={option.value}
+                  testId="rechte-type"
+                  testKey={`${member.user_id}-${option.value}`}
                   label={t(option.labelKey)}
                   active={(type & option.value) !== 0}
                   disabled={!canEditRule || transport === 0}
@@ -494,7 +446,9 @@ const LocationRechteTab = () => {
         {!isStaff && renderContactFix(member)}
 
         {revokeLocked && canEdit && (
-          <div style={{ paddingLeft: 48, fontSize: 12, color: '#8B8383' }}>{lockedHint}</div>
+          <div className="location-rechte-locked-hint" {...repeatedTestId('rechte-locked-hint', member.user_id)}>
+            {lockedHint}
+          </div>
         )}
       </div>
     );
@@ -503,10 +457,11 @@ const LocationRechteTab = () => {
   return (
     <>
       <PanelCard
+        testId="page-location-rechte"
         title={
-          <span style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+          <span className="location-rechte-title">
             {t('rechte_title')}
-            <span style={{ fontSize: 12.5, color: '#8B8383', fontWeight: 400 }}>
+            <span className="location-rechte-summary" data-testid="rechte-summary">
               {/* ProGeo staff are listed (and counted) for staff only - the backend sends them to nobody else. */}
               {t(viewerIsStaff ? 'rechte_summary' : 'rechte_summary_customer', {
                 account: countOf('account'),
@@ -521,22 +476,8 @@ const LocationRechteTab = () => {
             <button
               type="button"
               onClick={() => setAddOpen((open) => !open)}
-              style={{
-                height: 36,
-                padding: '0 16px',
-                border: 'none',
-                borderRadius: 10,
-                background: 'var(--progeo-orange)',
-                color: '#fff',
-                fontFamily: 'inherit',
-                fontSize: 13,
-                fontWeight: 500,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 7,
-                boxShadow: '0 4px 14px rgba(235, 99, 59, .28)',
-              }}
+              className="location-rechte-add-button"
+              data-testid="rechte-add-button"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden="true">
                 <path d="M12 5v14M5 12h14" />
@@ -547,28 +488,17 @@ const LocationRechteTab = () => {
         }
       >
         {loading ? (
-          <div className="d-flex justify-content-center py-4 text-muted">
+          <div className="d-flex justify-content-center py-4 text-muted" data-testid="rechte-loading">
             <Spinner animation="border" size="sm" />
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div className="location-rechte-list" data-testid="rechte-list">
             {addOpen && (
-              <div
-                style={{
-                  background: 'var(--progeo-surface)',
-                  borderRadius: 14,
-                  padding: 16,
-                  boxShadow: 'inset 0 0 0 1.5px var(--progeo-orange)',
-                  display: 'flex',
-                  gap: 16,
-                  alignItems: 'flex-end',
-                  flexWrap: 'wrap',
-                }}
-              >
-                <div style={{ minWidth: 240, flex: '1 1 240px' }}>
-                  <div style={fieldLabelStyle}>{t('rechte_select_user')}</div>
+              <div className="location-rechte-add" data-testid="rechte-add">
+                <div className="location-rechte-add-user">
+                  <div className="location-rechte-label">{t('rechte_select_user')}</div>
                   {candidates.length === 0 ? (
-                    <div style={{ fontSize: 13, color: '#8B8383', height: 38, display: 'flex', alignItems: 'center' }}>
+                    <div className="location-rechte-no-candidates" data-testid="rechte-no-candidates">
                       {t('rechte_no_candidates')}
                     </div>
                   ) : (
@@ -576,17 +506,8 @@ const LocationRechteTab = () => {
                       value={newUserId}
                       onChange={(event) => setNewUserId(event.target.value)}
                       autoComplete="off"
-                      style={{
-                        height: 38,
-                        border: 'none',
-                        borderRadius: 10,
-                        background: '#EFECEC',
-                        padding: '0 12px',
-                        fontFamily: 'inherit',
-                        fontSize: 13.5,
-                        color: 'var(--progeo-blue)',
-                        width: '100%',
-                      }}
+                      className="location-rechte-user-select"
+                      data-testid="rechte-user-select"
                     >
                       <option value="">{t('rechte_select_user_placeholder')}</option>
                       {candidates.map((user) => (
@@ -600,11 +521,13 @@ const LocationRechteTab = () => {
                 </div>
                 {canGrantAccount && (
                   <div>
-                    <div style={fieldLabelStyle}>{t('rechte_scope')}</div>
-                    <div style={segmentTrackStyle}>
+                    <div className="location-rechte-label">{t('rechte_scope')}</div>
+                    <div className="location-rechte-track">
                       {(['single', 'account'] as Scope[]).map((scope) => (
                         <PillButton
                           key={scope}
+                          testId="rechte-scope"
+                          testKey={scope}
                           label={t(scope === 'account' ? 'rechte_scope_account' : 'rechte_scope_single')}
                           title={scope === 'account' ? t('rechte_scope_account_hint') : undefined}
                           active={newScope === scope}
@@ -614,13 +537,15 @@ const LocationRechteTab = () => {
                     </div>
                   </div>
                 )}
-                <div style={{ display: 'flex', gap: 6 }}>
+                <div className="location-rechte-add-actions">
                   <PillButton
+                    testId="rechte-add-confirm"
                     label={t('rechte_add_confirm')}
                     onClick={addUser}
                     disabled={!newUserId || adding}
                   />
                   <PillButton
+                    testId="rechte-add-cancel"
                     variant="ghost"
                     label={t('rechte_cancel')}
                     onClick={() => setAddOpen(false)}
@@ -630,15 +555,7 @@ const LocationRechteTab = () => {
             )}
 
             {members.length === 0 && (
-              <div
-                style={{
-                  background: 'var(--progeo-surface)',
-                  borderRadius: 14,
-                  padding: '22px 16px',
-                  fontSize: 13,
-                  color: '#8B8383',
-                }}
-              >
+              <div className="location-rechte-empty" data-testid="rechte-empty">
                 {t('rechte_empty')}
               </div>
             )}
@@ -646,12 +563,13 @@ const LocationRechteTab = () => {
             {members.map(renderMember)}
 
             {!canEdit && !canAdd && (
-              <span style={{ fontSize: 12.5, color: '#8B8383' }}>{t('ui_no_permission_edit')}</span>
+              <span className="location-rechte-no-permission" data-testid="rechte-no-permission">{t('ui_no_permission_edit')}</span>
             )}
           </div>
         )}
       </PanelCard>
       <ConfirmDialog
+        testId="rechte-revoke-dialog"
         show={revokeTarget !== null}
         title={t('rechte_revoke_title')}
         message={t('rechte_revoke_message', { name: revokeTarget ? displayName(revokeTarget) : '' })}

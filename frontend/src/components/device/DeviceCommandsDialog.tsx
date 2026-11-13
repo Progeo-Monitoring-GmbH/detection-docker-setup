@@ -1,4 +1,4 @@
-import { type CSSProperties, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from 'react-bootstrap';
@@ -11,6 +11,8 @@ import { showRequestError, showSuccessBar } from '../ui/Snackbar.jsx';
 import PillButton from '../ui/kit/PillButton';
 import DeviceFirmwareUpdate from './DeviceFirmwareUpdate';
 import { type ParamOption, SET_PARAMS } from './deviceParams';
+import { childTestId, repeatedTestId } from '../../testIds';
+import './DeviceCommandsDialog.css';
 
 /** A row of /v1/device/<id>/commands/ - payload and result are never listed. */
 type DeviceCommand = {
@@ -62,57 +64,6 @@ const OPEN_STATUSES = new Set(['pending', 'sent']);
 const REFRESH_MS = 5000;
 const DEFAULT_CONFIG_PATH = 'config/device_config.lua';
 
-const MUTED = '#8B8383';
-
-const STATUS_COLORS: Record<DeviceCommand['status'], [string, string]> = {
-  pending: ['#8A6D1F', '#FBF3DC'],
-  sent: ['var(--progeo-blue)', '#E3ECF4'],
-  success: ['#3F7A1C', '#EBF4E3'],
-  failed: ['#C44D26', '#FBE9E3'],
-  timeout: ['#C44D26', '#FBE9E3'],
-  expired: ['#6E6868', 'var(--progeo-track-soft)'],
-  cancelled: ['#6E6868', 'var(--progeo-track-soft)'],
-};
-
-const inputStyle: CSSProperties = {
-  height: 32,
-  border: '1px solid var(--progeo-track)',
-  borderRadius: 8,
-  padding: '0 10px',
-  fontSize: 13,
-  fontFamily: 'inherit',
-  background: 'var(--progeo-surface)',
-  color: 'var(--progeo-blue)',
-  minWidth: 0,
-};
-
-const thStyle: CSSProperties = {
-  fontSize: 11,
-  letterSpacing: '.07em',
-  textTransform: 'uppercase',
-  color: MUTED,
-  fontWeight: 500,
-  padding: '0 8px 8px',
-  textAlign: 'left',
-  whiteSpace: 'nowrap',
-};
-
-const tdStyle: CSSProperties = {
-  padding: '8px',
-  borderTop: '1px solid var(--progeo-track)',
-  fontSize: 12.5,
-  verticalAlign: 'top',
-};
-
-const sectionTitle: CSSProperties = {
-  fontSize: 11,
-  letterSpacing: '.07em',
-  textTransform: 'uppercase',
-  color: MUTED,
-  fontWeight: 500,
-  marginBottom: 8,
-};
-
 /** A result that is a flat object of plain values (identify: chip id, IP, ...). */
 const flatEntries = (value: unknown): [string, string][] | null => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -139,11 +90,14 @@ const DeviceCommandsDialog = ({
   isSuperuser,
   canEdit,
   onClose,
+  testId = 'device-commands',
 }: {
   device: CommandDevice;
   isSuperuser: boolean;
   canEdit: boolean;
   onClose: () => void;
+  /** data-testid of the dialog; its parts are "<testId>-close", "-command", "-history-row", ... */
+  testId?: string;
 }) => {
   const auth = useAuth();
   const { t } = useTranslation();
@@ -289,20 +243,12 @@ const DeviceCommandsDialog = ({
   };
 
   const statusChip = (command: DeviceCommand) => {
-    const [color, background] = STATUS_COLORS[command.status] ?? STATUS_COLORS.expired;
     return (
       <span
         title={command.error ?? undefined}
-        style={{
-          display: 'inline-block',
-          fontSize: 11.5,
-          fontWeight: 600,
-          color,
-          background,
-          borderRadius: 'var(--progeo-radius-pill)',
-          padding: '2px 9px',
-          whiteSpace: 'nowrap',
-        }}
+        data-testid={childTestId(testId, 'status')}
+        data-test-key={command.id}
+        className={`device-commands-status device-commands-status--${command.status}`}
       >
         {t(`device_commands_status_${command.status}`)}
       </span>
@@ -316,44 +262,20 @@ const DeviceCommandsDialog = ({
   const resultEntries = result && !resultText ? flatEntries(result.value) : null;
 
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(7, 34, 58, .38)',
-        zIndex: 80,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 16,
-      }}
-    >
+    <div onClick={onClose} className="progeo-dialog-backdrop" data-testid={childTestId(testId, 'backdrop')}>
       <div
         role="dialog"
         aria-label={t('device_commands_title')}
         onClick={(event) => event.stopPropagation()}
-        style={{
-          width: '100%',
-          maxWidth: 860,
-          maxHeight: '90vh',
-          overflowY: 'auto',
-          background: 'var(--progeo-panel-bg)',
-          borderRadius: 18,
-          boxShadow: '0 20px 60px rgba(11, 54, 89, .3)',
-          padding: 22,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 18,
-          color: 'var(--progeo-blue)',
-        }}
+        className="device-commands-dialog"
+        data-testid={testId}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+        <div className="device-commands-header">
           <div>
-            <div style={{ fontSize: 16, fontWeight: 600 }}>
+            <div className="device-commands-title">
               {t('device_commands_title')} · {device.display_name || device.raw_hash}
             </div>
-            <div style={{ fontSize: 12, color: MUTED, marginTop: 4 }}>
+            <div className="device-commands-subtitle" data-testid={childTestId(testId, 'last-poll')}>
               {data?.last_command_poll
                 ? t('device_commands_last_poll', { time: time(data.last_command_poll) })
                 : t('device_commands_never_polled')}
@@ -365,22 +287,23 @@ const DeviceCommandsDialog = ({
             title={t('devices_cancel')}
             aria-label={t('devices_cancel')}
             onClick={onClose}
-            style={{ border: 'none', background: 'transparent', color: MUTED, cursor: 'pointer', padding: 4 }}
+            className="device-commands-close"
+            data-testid={childTestId(testId, 'close')}
           >
             <X size={20} />
           </button>
         </div>
 
         {!data ? (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: 20 }}>
+          <div className="device-commands-loading" data-testid={childTestId(testId, 'loading')}>
             <Spinner animation="border" />
           </div>
         ) : (
           <>
             {canEdit && (
               <div>
-                <div style={sectionTitle}>{t('device_commands_send')}</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                <div className="device-commands-section-title">{t('device_commands_send')}</div>
+                <div className="device-commands-actions" data-testid={childTestId(testId, 'actions')}>
                   {SIMPLE_COMMANDS.filter(allowed).map((command) => {
                     const asking = confirming === command;
                     return (
@@ -395,6 +318,8 @@ const DeviceCommandsDialog = ({
                         onClick={() =>
                           CONFIRM_COMMANDS.has(command) && !asking ? setConfirming(command) : queue(command)
                         }
+                        testId={childTestId(testId, 'command')}
+                        testKey={command}
                       />
                     );
                   })}
@@ -403,18 +328,24 @@ const DeviceCommandsDialog = ({
             )}
 
             {canEdit && isStaff && (
-              <DeviceFirmwareUpdate deviceId={device.id} query={query} onChanged={load} />
+              <DeviceFirmwareUpdate
+                deviceId={device.id}
+                query={query}
+                onChanged={load}
+                testId={childTestId(testId, 'firmware')}
+              />
             )}
 
             {allowed('logs') && (
               <div>
-                <div style={sectionTitle}>{t('device_command_logs')}</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                <div className="device-commands-section-title">{t('device_command_logs')}</div>
+                <div className="device-commands-row">
                   <select
                     aria-label={t('device_commands_logs_hour_label')}
                     value={logHour}
                     onChange={(event) => setLogHour(Number(event.target.value))}
-                    style={inputStyle}
+                    className="device-commands-input"
+                    data-testid={childTestId(testId, 'logs-hour')}
                   >
                     {HOURS.map((hour) => (
                       <option key={hour} value={hour}>
@@ -428,24 +359,26 @@ const DeviceCommandsDialog = ({
                     icon={busy === 'logs' ? <Spinner animation="border" size="sm" /> : undefined}
                     disabled={busy !== null}
                     onClick={() => queue('logs', { hour: logHour })}
+                    testId={childTestId(testId, 'logs-get')}
                   />
                   <PillButton
                     variant="accent"
                     label={t('device_commands_logs_day')}
                     disabled={busy !== null}
                     onClick={() => queue('logs', undefined, undefined, HOURS.map((hour) => ({ hour })))}
+                    testId={childTestId(testId, 'logs-day')}
                   />
-                  <span style={{ fontSize: 11.5, color: MUTED }}>{t('device_commands_logs_hint')}</span>
+                  <span className="device-commands-hint">{t('device_commands_logs_hint')}</span>
                 </div>
               </div>
             )}
 
             {allowed('set_params') && (
               <div>
-                <div style={sectionTitle}>{t('device_command_set_params')}</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div className="device-commands-section-title">{t('device_command_set_params')}</div>
+                <div className="device-commands-stack">
                   {params.map((row, index) => (
-                    <div key={row.key} style={{ display: 'flex', gap: 6 }}>
+                    <div key={row.key} className="device-commands-param" {...repeatedTestId(`${testId}-param`, row.key)}>
                       <select
                         aria-label={t('device_commands_param_key')}
                         value={row.key}
@@ -453,7 +386,9 @@ const DeviceCommandsDialog = ({
                           // Another parameter - its own first valid value.
                           setParams(params.map((p, i) => (i === index ? paramRow(event.target.value) : p)))
                         }
-                        style={{ ...inputStyle, flex: 1 }}
+                        className="device-commands-input device-commands-input--grow"
+                        data-testid={childTestId(testId, 'param-key')}
+                        data-test-key={row.key}
                       >
                         {unusedKeys(row.key).map((spec) => (
                           <option key={spec.key} value={spec.key}>
@@ -467,7 +402,9 @@ const DeviceCommandsDialog = ({
                         onChange={(event) =>
                           setParams(params.map((p, i) => (i === index ? { ...p, value: Number(event.target.value) } : p)))
                         }
-                        style={{ ...inputStyle, flex: 1 }}
+                        className="device-commands-input device-commands-input--grow"
+                        data-testid={childTestId(testId, 'param-value')}
+                        data-test-key={row.key}
                       >
                         {paramSpec(row.key).options.map((option) => (
                           <option key={option.value} value={option.value}>
@@ -481,18 +418,21 @@ const DeviceCommandsDialog = ({
                         aria-label={t('device_commands_param_remove')}
                         disabled={params.length === 1}
                         onClick={() => setParams(params.filter((_, i) => i !== index))}
-                        style={{ border: 'none', background: 'transparent', color: MUTED, cursor: 'pointer' }}
+                        className="device-commands-param-remove"
+                        data-testid={childTestId(testId, 'param-remove')}
+                        data-test-key={row.key}
                       >
                         <X size={16} />
                       </button>
                     </div>
                   ))}
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <div className="device-commands-inline">
                     <PillButton
                       variant="ghost"
                       icon={<Plus size={14} />}
                       label={t('device_commands_param_add')}
                       disabled={unusedKeys().length === 0}
+                      testId={childTestId(testId, 'param-add')}
                       onClick={() => {
                         const [next] = unusedKeys();
                         if (next) {
@@ -506,8 +446,9 @@ const DeviceCommandsDialog = ({
                       icon={busy === 'set_params' ? <Spinner animation="border" size="sm" /> : undefined}
                       disabled={busy !== null || params.length === 0}
                       onClick={sendParams}
+                      testId={childTestId(testId, 'send-params')}
                     />
-                    <span style={{ fontSize: 11.5, color: MUTED }}>{t('device_commands_params_hint')}</span>
+                    <span className="device-commands-hint">{t('device_commands_params_hint')}</span>
                   </div>
                 </div>
               </div>
@@ -515,14 +456,14 @@ const DeviceCommandsDialog = ({
 
             {isSuperuser && allowed('update') && (
               <div>
-                <div style={sectionTitle}>{t('device_command_update')}</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div className="device-commands-section-title">{t('device_command_update')}</div>
+                <div className="device-commands-stack">
                   <input
                     aria-label={t('device_commands_update_path')}
                     value={updatePath}
                     onChange={(event) => setUpdatePath(event.target.value)}
-                    style={inputStyle}
-                    className="font-monospace"
+                    className="device-commands-input font-monospace"
+                    data-testid={childTestId(testId, 'update-path')}
                   />
                   <textarea
                     aria-label={t('device_commands_update_content')}
@@ -532,32 +473,34 @@ const DeviceCommandsDialog = ({
                     rows={8}
                     spellCheck={false}
                     autoComplete="off"
-                    className="font-monospace"
-                    style={{ ...inputStyle, height: 'auto', padding: 10, fontSize: 12, resize: 'vertical' }}
+                    className="device-commands-input device-commands-input--text font-monospace"
+                    data-testid={childTestId(testId, 'update-content')}
                   />
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <div className="device-commands-inline">
                     <PillButton
                       variant="accent"
                       label={t('device_commands_send_update')}
                       icon={busy === 'update' ? <Spinner animation="border" size="sm" /> : undefined}
                       disabled={busy !== null || !updateContent.trim()}
                       onClick={sendUpdate}
+                      testId={childTestId(testId, 'send-update')}
                     />
-                    <span style={{ fontSize: 11.5, color: MUTED }}>{t('device_commands_update_hint')}</span>
+                    <span className="device-commands-hint">{t('device_commands_update_hint')}</span>
                   </div>
                 </div>
               </div>
             )}
 
             {result && (
-              <div>
-                <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between' }}>
+              <div data-testid={childTestId(testId, 'result')}>
+                <div className="device-commands-section-title device-commands-section-title--split">
                   <span>{t('device_commands_result_title', { command: commandLabel(result.command), id: result.id })}</span>
-                  <span style={{ display: 'inline-flex', gap: 8 }}>
+                  <span className="device-commands-result-actions">
                     {resultConfig && allowed('update') && (
                       <PillButton
                         variant="ghost"
                         label={t('device_commands_result_edit')}
+                        testId={childTestId(testId, 'result-edit')}
                         onClick={() => {
                           setUpdatePath(resultConfig.path || DEFAULT_CONFIG_PATH);
                           setUpdateContent(resultConfig.content);
@@ -565,21 +508,24 @@ const DeviceCommandsDialog = ({
                         }}
                       />
                     )}
-                    <PillButton variant="ghost" label={t('device_commands_result_hide')} onClick={() => setResult(null)} />
+                    <PillButton
+                      variant="ghost"
+                      label={t('device_commands_result_hide')}
+                      onClick={() => setResult(null)}
+                      testId={childTestId(testId, 'result-hide')}
+                    />
                   </span>
                 </div>
                 {resultEntries ? (
                   // identify: chip id, IP, MAC, ... as a small table.
-                  <table
-                    style={{ borderCollapse: 'collapse', background: 'var(--progeo-surface)', borderRadius: 10 }}
-                  >
+                  <table className="device-commands-identity" data-testid={childTestId(testId, 'identity')}>
                     <tbody>
                       {resultEntries.map(([key, value]) => (
-                        <tr key={key}>
-                          <td style={{ ...tdStyle, color: MUTED, borderTop: 'none', paddingRight: 24 }}>
+                        <tr key={key} {...repeatedTestId(`${testId}-identity-row`, key)}>
+                          <td className="device-commands-cell device-commands-cell--key">
                             {t(`device_commands_identity_${key}`, { defaultValue: key })}
                           </td>
-                          <td style={{ ...tdStyle, borderTop: 'none' }} className="font-monospace">
+                          <td className="device-commands-cell device-commands-cell--value font-monospace">
                             {value}
                           </td>
                         </tr>
@@ -587,18 +533,7 @@ const DeviceCommandsDialog = ({
                     </tbody>
                   </table>
                 ) : (
-                  <pre
-                    style={{
-                      margin: 0,
-                      padding: 12,
-                      borderRadius: 10,
-                      background: 'var(--progeo-surface)',
-                      fontSize: 12,
-                      maxHeight: 280,
-                      overflow: 'auto',
-                      whiteSpace: 'pre-wrap',
-                    }}
-                  >
+                  <pre className="device-commands-result">
                     {resultText ? resultText.content : JSON.stringify(result.value, null, 2)}
                   </pre>
                 )}
@@ -606,61 +541,69 @@ const DeviceCommandsDialog = ({
             )}
 
             <div>
-              <div style={sectionTitle}>{t('device_commands_history')}</div>
+              <div className="device-commands-section-title">{t('device_commands_history')}</div>
               {commands.length === 0 ? (
-                <div style={{ fontSize: 13, color: MUTED }}>{t('device_commands_none')}</div>
+                <div className="device-commands-empty" data-testid={childTestId(testId, 'empty')}>{t('device_commands_none')}</div>
               ) : (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <div className="device-commands-scroll">
+                  <table className="device-commands-table" data-testid={childTestId(testId, 'history')}>
                     <thead>
                       <tr>
-                        <th style={thStyle}>{t('device_commands_col_command')}</th>
-                        <th style={thStyle}>{t('device_commands_col_status')}</th>
-                        <th style={thStyle}>{t('device_commands_col_created')}</th>
-                        <th style={thStyle}>{t('device_commands_col_finished')}</th>
-                        <th style={thStyle} />
+                        <th className="device-commands-th">{t('device_commands_col_command')}</th>
+                        <th className="device-commands-th">{t('device_commands_col_status')}</th>
+                        <th className="device-commands-th">{t('device_commands_col_created')}</th>
+                        <th className="device-commands-th">{t('device_commands_col_finished')}</th>
+                        <th className="device-commands-th" />
                       </tr>
                     </thead>
                     <tbody>
                       {commands.map((command) => (
-                        <tr key={command.id}>
-                          <td style={tdStyle}>
-                            <div style={{ fontWeight: 500 }}>
+                        <tr key={command.id} {...repeatedTestId(`${testId}-history-row`, command.id)}>
+                          <td className="device-commands-cell">
+                            <div className="device-commands-name">
                               {commandLabel(command.command)}{' '}
-                              <span style={{ color: MUTED, fontWeight: 400 }}>#{command.id}</span>
+                              <span className="device-commands-id">#{command.id}</span>
                             </div>
                             {summaryText(command) && (
-                              <div className="font-monospace" style={{ fontSize: 11.5, color: MUTED }}>
+                              <div className="device-commands-hint font-monospace">
                                 {summaryText(command)}
                               </div>
                             )}
                             {command.error && (
-                              <div style={{ fontSize: 11.5, color: '#C44D26' }}>{command.error}</div>
+                              <div className="device-commands-error" data-testid={childTestId(testId, 'error')} data-test-key={command.id}>{command.error}</div>
                             )}
                           </td>
-                          <td style={tdStyle}>{statusChip(command)}</td>
-                          <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                          <td className="device-commands-cell">{statusChip(command)}</td>
+                          <td className="device-commands-cell device-commands-cell--nowrap">
                             {time(command.created)}
                             {command.created_by && (
-                              <div style={{ fontSize: 11.5, color: MUTED }}>{command.created_by}</div>
+                              <div className="device-commands-hint">{command.created_by}</div>
                             )}
                           </td>
-                          <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                          <td className="device-commands-cell device-commands-cell--nowrap">
                             {command.finished_at
                               ? time(command.finished_at)
                               : command.sent_at
                                 ? t('device_commands_sent_at', { time: time(command.sent_at) })
                                 : '–'}
                           </td>
-                          <td style={{ ...tdStyle, whiteSpace: 'nowrap', textAlign: 'right' }}>
+                          <td className="device-commands-cell device-commands-cell--nowrap device-commands-cell--end">
                             {command.status === 'pending' && canEdit && (
-                              <PillButton variant="ghost" label={t('device_commands_cancel')} onClick={() => cancel(command)} />
+                              <PillButton
+                                variant="ghost"
+                                label={t('device_commands_cancel')}
+                                onClick={() => cancel(command)}
+                                testId={childTestId(testId, 'cancel')}
+                                testKey={String(command.id)}
+                              />
                             )}
                             {command.has_result && isSuperuser && (
                               <PillButton
                                 variant="ghost"
                                 label={t('device_commands_show_result')}
                                 onClick={() => showResult(command)}
+                                testId={childTestId(testId, 'show-result')}
+                                testKey={String(command.id)}
                               />
                             )}
                           </td>
@@ -670,7 +613,7 @@ const DeviceCommandsDialog = ({
                   </table>
                 </div>
               )}
-              <div style={{ fontSize: 11.5, color: MUTED, marginTop: 8 }}>
+              <div className="device-commands-hint device-commands-privacy">
                 {t('device_commands_privacy', { days: data.result_ttl_days })}
               </div>
             </div>

@@ -54,6 +54,7 @@ import { useMeasurementRangeState } from './useMeasurementRange';
 import { isDemoUser } from './demo';
 import { formatDate, formatRelativeTime } from './dateFormat';
 import { staffFlags } from './access';
+import './LocationStatusView.css';
 
 type LocationStatusViewProps = {
   location: LocationDetail | null;
@@ -72,7 +73,7 @@ const formatSpanTime = (ms: number) => formatDate(ms, 'dayMonthTime');
 const Loading = () => {
   const { t } = useTranslation();
   return (
-    <div className="d-flex justify-content-center py-5 text-muted">
+    <div className="d-flex justify-content-center py-5 text-muted" data-testid="status-loading">
       <Spinner animation="border" className="me-2" /> {t('ui_loading')}
     </div>
   );
@@ -178,32 +179,18 @@ const LocationStatusHeader = ({
   }
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'flex-end',
-        gap: 14,
-        flexWrap: 'wrap',
-      }}
-    >
+    <div className="status-header" data-testid="status-header">
       {canRequestMeasurement && devices.length > 0 && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            flexShrink: 0,
-          }}
-        >
+        <div className="status-request" data-testid="status-request">
           {devices.length > 1 && (
             <Form.Select
+              data-testid="status-request-device"
               aria-label={t('status_request_measurement_device')}
               title={t('status_request_measurement_device')}
               value={selectedDeviceId ?? ''}
               onChange={(event) => setSelectedDeviceId(Number(event.target.value))}
               disabled={requesting}
-              style={{ width: 'auto', maxWidth: 260, height: 38 }}
+              className="status-request-device"
             >
               {devices.map((device) => (
                 <option key={device.id} value={device.id}>
@@ -215,24 +202,9 @@ const LocationStatusHeader = ({
           <button
             type="button"
             onClick={requestMeasurement}
+            data-testid="status-request-measurement"
             disabled={requesting || selectedDeviceId == null}
-            style={{
-              height: 38,
-              padding: '0 18px',
-              border: 'none',
-              borderRadius: 10,
-              background: 'var(--progeo-orange)',
-              color: '#fff',
-              fontFamily: 'inherit',
-              fontSize: 13,
-              fontWeight: 500,
-              cursor: requesting ? 'default' : 'pointer',
-              boxShadow: '0 4px 14px rgba(235, 99, 59, .28)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              flexShrink: 0,
-            }}
+            className={`status-request-button${requesting ? ' status-request-button--requesting' : ''}`}
           >
             {requesting && <Spinner size="sm" animation="border" />}
             {t('status_request_measurement')}
@@ -288,8 +260,10 @@ const StatusKpis = ({
 
   return (
     <KpiStrip
+      testId="status-kpis"
       tiles={[
         {
+          testId: 'status-kpi-objektstatus',
           label: t('status_kpi_objektstatus'),
           value: worstSeverity
             ? t(`ui_severity_${worstSeverity}` as const)
@@ -300,11 +274,13 @@ const StatusKpis = ({
           valueColor: severityColor(worstSeverity),
         },
         {
+          testId: 'status-kpi-verdachtsstellen',
           label: t('status_kpi_verdachtsstellen'),
           value: String(openClusters.length),
           unit: t('status_kpi_active_unit'),
         },
         {
+          testId: 'status-kpi-max-value',
           label: t('status_kpi_max_value'),
           value:
             highestReading != null ? String(Math.round(highestReading)) : '–',
@@ -315,6 +291,7 @@ const StatusKpis = ({
               : undefined,
         },
         {
+          testId: 'status-kpi-anlage',
           label: t('status_kpi_anlage'),
           value:
             anlage.state === 'loading'
@@ -478,7 +455,7 @@ const LocationStatusView = ({
   );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div className="status-view" data-testid="page-location-status">
       <LocationStatusHeader
         locationId={locationId}
         canRequestMeasurement={!isLorawan && !readOnlyDemo}
@@ -501,15 +478,9 @@ const LocationStatusView = ({
             )
           )}
 
-          <div
-            style={{
-              display: 'flex',
-              gap: 12,
-              flexWrap: 'wrap',
-              padding: '2px 2px 0',
-            }}
-          >
+          <div className="status-switches" data-testid="status-switches">
             <SegmentedControl
+              testId="status-view-switch"
               options={[
                 { value: 'roof', label: t('status_view_roof') },
                 { value: 'zeitreihe', label: t('status_view_zeitreihe') },
@@ -518,6 +489,7 @@ const LocationStatusView = ({
               onChange={(value) => setStatusView(value as 'roof' | 'zeitreihe')}
             />
             <SegmentedControl
+              testId="status-range"
               options={rangeOptions.map((value) => ({
                 value,
                 label: t(timeRangeLabelKey(value)),
@@ -530,6 +502,7 @@ const LocationStatusView = ({
             />
             {statusView === 'roof' && stepOptions.length > 1 && (
               <PillSelect
+                testId="status-step"
                 label={t('heatmap_step_label')}
                 title={t('heatmap_step_hint')}
                 options={stepOptions.map((step) => ({
@@ -554,15 +527,8 @@ const LocationStatusView = ({
               )}
             </>
           ) : (
-            <div
-              style={{
-                display: 'flex',
-                gap: 14,
-                alignItems: 'flex-start',
-                flexWrap: 'wrap',
-              }}
-            >
-              <div style={{ flex: '1 1 560px', minWidth: 0 }}>
+            <div className="status-columns" data-testid="status-roof">
+              <div className="status-column-plan">
                 <LocationPlanPanel
                   heatmap={heatmap}
                   visualization={planVisualization(location?.project_type)}
@@ -576,7 +542,7 @@ const LocationStatusView = ({
                   profileLoading={heatProfile !== 'diff' && profileHistory.loading}
                 />
               </div>
-              <div style={{ flex: '1 1 380px', minWidth: 0 }}>
+              <div className="status-column-side">
                 <VerdachtsstellenPanel
                   clusters={clusters}
                   denied={clustersDenied}

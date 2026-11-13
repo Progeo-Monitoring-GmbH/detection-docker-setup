@@ -57,3 +57,100 @@
     padding: 12px 16px calc(16px + env(safe-area-inset-bottom));
   }
 }
+
+/* -- Content --------------------------------------------------------------- */
+
+.cookie-banner__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.cookie-banner__title {
+  flex: 1;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.cookie-banner__close {
+  border: none;
+  background: transparent;
+  color: var(--progeo-blue);
+  padding: 0;
+  line-height: 0;
+  cursor: pointer;
+}
+
+.cookie-banner__intro {
+  margin: 8px 0 0;
+}
+
+/* :hover repeats the color - the global a:hover would win otherwise. */
+.cookie-banner__link,
+.cookie-banner__link:hover {
+  color: var(--progeo-blue);
+  font-weight: 600;
+}
+
+.cookie-banner__categories {
+  list-style: none;
+  padding: 0;
+  margin: 14px 0 0;
+  display: grid;
+  gap: 8px;
+}
+
+.cookie-banner__category {
+  background: var(--progeo-surface);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.cookie-banner__category-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cookie-banner__always-on {
+  font-size: 12px;
+  color: #6e6868;
+}
+
+.form-check.cookie-banner__switch {
+  margin-bottom: 0;
+}
+
+.cookie-banner__category-desc {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #6e6868;
+}
+
+/* -- Buttons --------------------------------------------------------------- */
+
+/* Accept and reject deliberately share one style: regulators (EDPB cookie
+   banner taskforce, German DSK) require both options to be equally
+   prominent. */
+.cookie-banner__choice {
+  /* Wraps to one button per row when two don't fit side by side. */
+  flex: 1 1 140px;
+  min-height: 38px;
+  padding: 6px 16px;
+  border: none;
+  border-radius: var(--progeo-radius-pill);
+  background: var(--progeo-blue);
+  color: var(--progeo-white);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cookie-banner__choice--secondary {
+  flex: 1 1 100%;
+  background: transparent;
+  color: var(--progeo-blue);
+  box-shadow: inset 0 0 0 1.5px var(--progeo-blue);
+}

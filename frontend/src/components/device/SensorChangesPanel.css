@@ -1,0 +1,34 @@
+/* The biggest changes of a measurement comparison (SensorChangesPanel.tsx),
+   also its PercentCell (used by ZeitreihePanel too). The colour of a
+   percentage and of a swatch stays inline (per value / per plot line). */
+
+.sensor-changes {
+  font-size: 12.5px;
+}
+
+.sensor-changes-title {
+  color: var(--progeo-blue);
+}
+
+.sensor-changes-hint {
+  font-size: 11.5px;
+}
+
+/* No old value: a dash, the absolute change as a hint. */
+.sensor-changes-muted {
+  color: #8b8383;
+}
+
+.sensor-changes-percent {
+  font-weight: 600;
+}
+
+/* The colour of the plot's change line, in the column header. */
+.sensor-changes-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 3px;
+  border-radius: 2px;
+  margin-right: 4px;
+  vertical-align: middle;
+}

@@ -1,7 +1,7 @@
 import { Navigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider';
-import AuthPage, { MUTED_TEXT, buttonStyle } from '../components/auth/AuthPage';
+import AuthPage, { authButtonClass } from '../components/auth/AuthPage';
 import TwoFactorSettings from './TwoFactorSettings';
 import { needsTwoFactorSetup } from './twoFactor';
 
@@ -22,22 +22,24 @@ const TwoFactorSetupRequired = () => {
   const done = !needsTwoFactorSetup(auth.user);
 
   return (
-    <AuthPage title={t('tfa_required_title')}>
-      <p style={MUTED_TEXT}>{t('tfa_required_text')}</p>
+    <AuthPage title={t('tfa_required_title')} testId="page-two-factor-setup">
+      <p className="auth-muted">{t('tfa_required_text')}</p>
       <TwoFactorSettings />
       {done ? (
         <button
           type="button"
-          style={{ ...buttonStyle(), width: '100%', marginTop: 22 }}
+          className={authButtonClass(false, false, 'auth-button--block', 'auth-button--spaced')}
           onClick={() => auth.navigate('/', { replace: true })}
+          data-testid="two-factor-setup-continue"
         >
           {t('tfa_required_continue')}
         </button>
       ) : (
         <button
           type="button"
-          style={{ ...buttonStyle(false, true), width: '100%', marginTop: 22 }}
+          className={authButtonClass(false, true, 'auth-button--block', 'auth-button--spaced')}
           onClick={() => auth.logoutAction()}
+          data-testid="two-factor-setup-logout"
         >
           {t('pending_logout')}
         </button>

@@ -3,6 +3,7 @@ import LocationSidebar from '../components/sidebar/LocationSidebar';
 import TopBar from '../components/topbar/TopBar';
 import FavoritesBar from './FavoritesBar';
 import ImpersonationBanner from './ImpersonationBanner';
+import './AppLayout.css';
 
 /**
  * Layout for every route outside the object/location monitoring portal
@@ -13,28 +14,15 @@ const AppLayout = () => {
   const mobile = typeof window !== 'undefined' && window.innerWidth < 860;
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        flexDirection: mobile ? 'column' : 'row',
-        background: 'var(--progeo-page-bg)',
-      }}
-    >
+    <div className={`app-layout${mobile ? ' app-layout--mobile' : ''}`} data-testid="app-layout">
       <LocationSidebar />
-      <div
-        style={{
-          flex: 1,
-          minWidth: 0,
-          padding: mobile ? '4px 12px 20px' : '20px 20px 22px 6px',
-        }}
-      >
+      <div className="app-layout-content">
         <TopBar />
-        <div style={{ marginTop: 14 }}>
+        <div className="app-layout-spaced">
           <ImpersonationBanner />
         </div>
-        <FavoritesBar style={{ marginTop: 14 }} />
-        <div style={{ marginTop: 14 }}>
+        <FavoritesBar className="app-layout-spaced" />
+        <div className="app-layout-spaced" data-testid="app-content">
           <Outlet />
         </div>
       </div>

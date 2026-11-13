@@ -1,0 +1,32 @@
+/* The location map page (LocationsMapView.jsx): the map card and the
+   scrollable location list. The map's own size is a Leaflet prop. */
+
+.card.locmap-map-card {
+  min-height: 72vh;
+}
+
+.card-body.locmap-map-body {
+  padding: 0;
+  position: relative;
+}
+
+.locmap-loading {
+  min-height: 68vh;
+}
+
+.locmap-tooltip {
+  min-width: 180px;
+}
+
+.card.locmap-list-card {
+  min-height: 56vh;
+}
+
+.list-group.locmap-list {
+  max-height: 56vh;
+  overflow-y: auto;
+}
+
+.list-group-item.locmap-list-item {
+  cursor: pointer;
+}

@@ -1,0 +1,44 @@
+/* The location portal frame (LocationPortalLayout.tsx): sidebar + content
+   column with the object title above the tab outlet. Theme variables:
+   scss/main.css. */
+
+.portal-layout {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  background: var(--progeo-page-bg);
+}
+
+.portal-layout--mobile {
+  flex-direction: column;
+}
+
+.portal-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 20px 22px 6px;
+}
+
+.portal-layout--mobile .portal-content {
+  padding: 4px 12px 20px;
+}
+
+.portal-title {
+  min-width: 0;
+  flex-shrink: 1;
+}
+
+.portal-title-name {
+  font-size: 20px;
+  line-height: 1.2;
+  color: var(--progeo-blue);
+}
+
+.portal-escalation {
+  flex: 1;
+  min-width: 0;
+}

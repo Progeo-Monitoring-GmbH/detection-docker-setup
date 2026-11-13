@@ -1,0 +1,28 @@
+/* The frame of every page outside the location portal (AppLayout.tsx):
+   sidebar + content column. Theme variables: scss/main.css. */
+
+.app-layout {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: row;
+  background: var(--progeo-page-bg);
+}
+
+.app-layout--mobile {
+  flex-direction: column;
+}
+
+.app-layout-content {
+  flex: 1;
+  min-width: 0;
+  padding: 20px 20px 22px 6px;
+}
+
+.app-layout--mobile .app-layout-content {
+  padding: 4px 12px 20px;
+}
+
+/* Gap between the blocks below the TopBar. */
+.app-layout-spaced {
+  margin-top: 14px;
+}

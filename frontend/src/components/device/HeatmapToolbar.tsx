@@ -3,6 +3,8 @@ import { Film } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
 import type { SensorHeatmapLageplanData } from './sensorHeatmapTypes';
 import type { VideoExportStage } from './useHeatmapFrameExport';
+import { childTestId, repeatedTestId } from '../../testIds';
+import './HeatmapToolbar.css';
 
 type HeatmapToolbarProps = {
   /** Lageplans to switch between; null hides the switcher. */
@@ -22,6 +24,8 @@ type HeatmapToolbarProps = {
     /** Whether there are frames to export. */
     enabled: boolean;
   };
+  /** data-testid of the toolbar; its controls are "<testId>-plan", "-auto-sigma", "-sigma", "-video-export", ... */
+  testId?: string;
 };
 
 const STAGE_KEYS: Record<Exclude<VideoExportStage, 'capturing'>, string> = {
@@ -42,6 +46,7 @@ const HeatmapToolbar = ({
   sigma,
   onSigmaChange,
   video,
+  testId = 'heatmap-toolbar',
 }: HeatmapToolbarProps) => {
   const { t } = useTranslation();
   const stageText =
@@ -50,7 +55,7 @@ const HeatmapToolbar = ({
       : t(STAGE_KEYS[video.stage ?? 'downloading']);
 
   return (
-    <div className="d-flex flex-wrap align-items-center gap-2">
+    <div className="d-flex flex-wrap align-items-center gap-2" data-testid={testId}>
       {plans && plans.length > 1 && (
         <Form.Select
           size="sm"
@@ -58,10 +63,15 @@ const HeatmapToolbar = ({
           title={`Lageplan ${planIndex + 1} / ${plans.length}`}
           value={planIndex}
           onChange={(event) => onPlanChange(Number(event.target.value))}
-          style={{ width: 'auto', maxWidth: 200 }}
+          className="heatmap-toolbar-plan"
+          data-testid={childTestId(testId, 'plan')}
         >
           {plans.map((plan, index) => (
-            <option key={plan.id ?? index} value={index}>
+            <option
+              key={plan.id ?? index}
+              value={index}
+              {...repeatedTestId(`${testId}-plan-option`, plan.id ?? index)}
+            >
               {plan.name || `Lageplan ${index + 1}`}
               {plan.is_active ? ' (aktiv)' : ''}
             </option>
@@ -78,13 +88,15 @@ const HeatmapToolbar = ({
           checked={sigma === 'auto'}
           onChange={(event) => onSigmaChange(event.target.checked ? 'auto' : 0.04)}
           disabled={video.exporting}
+          data-testid={childTestId(testId, 'auto-sigma')}
         />
         {sigma !== 'auto' && (
-          <div className="d-flex align-items-center gap-2" style={{ width: 190 }}>
+          <div className="heatmap-toolbar-sigma d-flex align-items-center gap-2">
             <label
               htmlFor="heatmap2d-sigma"
               className="small text-muted mb-0 text-nowrap"
               title="σ (kernel width)"
+              data-testid={childTestId(testId, 'sigma-value')}
             >
               {'σ'} {sigma.toFixed(3)}
             </label>
@@ -98,24 +110,28 @@ const HeatmapToolbar = ({
               value={sigma}
               onChange={(event) => onSigmaChange(Number(event.target.value))}
               disabled={video.exporting}
+              data-testid={childTestId(testId, 'sigma')}
             />
           </div>
         )}
         {video.exporting ? (
           <>
             <Spinner size="sm" animation="border" />
-            <span className="text-muted small">{stageText}</span>
+            <span className="text-muted small" data-testid={childTestId(testId, 'video-stage')}>
+              {stageText}
+            </span>
           </>
         ) : (
           <>
             {video.resultUrl && (
-              <span className="small">
+              <span className="small" data-testid={childTestId(testId, 'video-ready')}>
                 {t('heatmap_video_ready')} -{' '}
                 <Button
                   variant="link"
                   size="sm"
                   className="p-0 align-baseline"
                   onClick={() => void video.download()}
+                  data-testid={childTestId(testId, 'video-download')}
                 >
                   {t('heatmap_video_download')}
                 </Button>
@@ -128,6 +144,7 @@ const HeatmapToolbar = ({
               disabled={!video.enabled}
               aria-label={t('heatmap_video_export')}
               title={t('heatmap_video_export_title')}
+              data-testid={childTestId(testId, 'video-export')}
             >
               <Film />
             </Button>

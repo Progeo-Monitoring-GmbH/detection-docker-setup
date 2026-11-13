@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { Outlet, useLocation, useNavigate } from 'react-router';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
+import './DeveloperView.css';
 
 /** The tabs of /developer/ - one route segment each (see CoreRoutes). */
 const DEVELOPER_TABS = [
@@ -26,8 +27,8 @@ const DeveloperView = () => {
     )?.segment ?? DEVELOPER_TABS[0].segment;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ alignSelf: 'flex-start', maxWidth: '100%', overflowX: 'auto' }}>
+    <div className="developer-view" data-testid="page-developer">
+      <div className="developer-view-tabs">
         <SegmentedControl
           options={DEVELOPER_TABS.map((tab) => ({
             value: tab.segment,
@@ -35,6 +36,7 @@ const DeveloperView = () => {
           }))}
           value={current}
           onChange={(segment) => navigate(`/developer/${segment}/`)}
+          testId="developer-tabs"
         />
       </div>
       <Outlet />

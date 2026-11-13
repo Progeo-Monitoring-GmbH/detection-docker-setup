@@ -1,0 +1,76 @@
+/* The measurement samples compare chart (MeasurementSamplesCompareChart.tsx):
+   the controls and overlays over its plots. Positions that follow the plot
+   geometry, and each sensor's colour, stay inline. Range colours are
+   RANGE_LINE (rgba(235, 99, 59, 0.75)) of the plot. */
+
+.measurement-samples-figure {
+  position: relative;
+}
+
+/* The second plot's controls, right above it in the figure. */
+.measurement-samples-toolbar {
+  position: absolute;
+  z-index: 2;
+}
+
+/* Raised over Bootstrap's .btn / .btn-sm font size. */
+.btn.measurement-samples-button {
+  font-size: 12px;
+}
+
+/* A shown sensor: its line colour as the border (inline). */
+.measurement-samples-chip {
+  padding: 1px 4px 1px 8px;
+  border: 1px solid;
+  font-size: 12px;
+}
+
+.btn.measurement-samples-chip-remove {
+  font-size: 12px;
+}
+
+/* The plots' help buttons (PlotHelp), at their plot's top right. */
+.btn.measurement-samples-help {
+  position: absolute;
+  z-index: 2;
+}
+
+.measurement-samples-swatch {
+  flex-shrink: 0;
+}
+
+/* Small dark hints: click a sensor / drag a range. */
+.measurement-samples-hint {
+  font-size: 11px;
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+.measurement-samples-hint--sensor {
+  z-index: 3;
+}
+
+.measurement-samples-hint--range {
+  top: 4px;
+  left: 4px;
+}
+
+/* Selecting a time range: drag over the plot. */
+.measurement-samples-range {
+  position: absolute;
+  z-index: 4;
+  outline: 1px dashed rgba(235, 99, 59, 0.75);
+  background: rgba(235, 99, 59, 0.04);
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.measurement-samples-range-drag {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 2px solid rgba(235, 99, 59, 0.75);
+  border-right: 2px solid rgba(235, 99, 59, 0.75);
+  background: rgba(235, 99, 59, 0.22);
+  pointer-events: none;
+}

@@ -1,0 +1,44 @@
+/* The Analyse tab (LocationAnalyseTab.tsx): toolbar badges, the sticky frame
+   slider, the heatmap card header and the measurement device picker.
+   Theme variables: scss/main.css. */
+
+/* The noise profile badge: colours come from the rating (inline). */
+.btn.analyse-noise-badge {
+  font-size: 12px;
+  height: 26px;
+  max-width: 320px;
+  border-radius: var(--progeo-radius-pill);
+}
+
+.btn.analyse-compare-end {
+  font-size: 12px;
+  border-radius: var(--progeo-radius-pill);
+}
+
+.analyse-archive-counts {
+  color: var(--progeo-blue);
+}
+
+/* Kept on top while the page scrolls; its top offset depends on the
+   layout (inline). */
+.analyse-frame-slider {
+  position: sticky;
+  z-index: 50;
+  background: var(--progeo-panel-bg);
+  border-radius: var(--progeo-radius-panel);
+  box-shadow: var(--progeo-shadow-panel);
+}
+
+/* Header toggle: a link button in the brand blue in every state. */
+.btn.analyse-heatmap-toggle {
+  --bs-btn-color: var(--progeo-blue);
+  --bs-btn-hover-color: var(--progeo-blue);
+  --bs-btn-active-color: var(--progeo-blue);
+  --bs-btn-disabled-color: var(--progeo-blue);
+}
+
+/* Bootstrap's form-select is full width; this one fits its content. */
+.form-select.analyse-device-select {
+  width: auto;
+  max-width: 260px;
+}

@@ -1,3 +1,36 @@
+/* The frame slider (FrameSlider.tsx). Positions and widths of the bands
+   and marks stay inline (computed from the timestamps). */
+.frame-slider {
+  min-width: 200px;
+}
+
+/* Raised over Bootstrap's .btn / .btn-sm. */
+.btn.frame-slider__play {
+  border-radius: var(--progeo-radius-pill);
+  padding-inline: 12px;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+/* The frame's time, large - readable at a glance while it plays. */
+.frame-slider__time {
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.frame-slider__time-clock {
+  font-size: 2.25rem;
+}
+
+.frame-slider__time-date {
+  font-size: 1.1rem;
+}
+
+/* The time axis under the track, inset like the thumb's travel. */
+.frame-slider__axis {
+  margin: -4px 0.5rem 0;
+}
+
 /* The frame slider: a darker, thicker track than Bootstrap's, the played
    part (up to the thumb's centre, which travels 0.5 rem inside the input)
    filled in brand blue, and a blue thumb with a white rim. */
@@ -140,6 +173,10 @@
   line-height: 1.45;
   pointer-events: none;
   box-shadow: 0 6px 18px rgba(11, 54, 89, 0.3);
+}
+
+.frame-slider__alarm-tooltip-time {
+  font-variant-numeric: tabular-nums;
 }
 
 .frame-slider__alarm-tooltip-hint {

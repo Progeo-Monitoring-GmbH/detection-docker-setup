@@ -4,16 +4,8 @@ import { Link, useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
-import AuthPage, {
-  AuthLinks,
-  ERROR_TEXT,
-  FIELD,
-  FIELD_LABEL,
-  FORM,
-  LABEL,
-  MUTED_TEXT,
-  buttonStyle,
-} from '../components/auth/AuthPage';
+import AuthPage, { AuthLinks, authButtonClass } from '../components/auth/AuthPage';
+import { repeatedTestId } from '../testIds';
 
 /**
  * Confirmation link of an access request (/zugang/bestaetigen/<token>). The
@@ -92,8 +84,8 @@ const VerifyAccess = () => {
 
   if (state === 'checking') {
     return (
-      <AuthPage title={t('access_verify_title')}>
-        <p style={MUTED_TEXT}>
+      <AuthPage title={t('access_verify_title')} testId="page-verify-access">
+        <p className="auth-muted" data-testid="verify-access-checking">
           <Spinner animation="border" size="sm" className="me-2" />
           {t('access_verify_checking')}
         </p>
@@ -103,11 +95,11 @@ const VerifyAccess = () => {
 
   if (state === 'invalid') {
     return (
-      <AuthPage title={t('access_verify_title')}>
-        <p style={MUTED_TEXT}>{t('access_verify_invalid')}</p>
+      <AuthPage title={t('access_verify_title')} testId="page-verify-access">
+        <p className="auth-muted" data-testid="verify-access-invalid">{t('access_verify_invalid')}</p>
         <AuthLinks>
-          <Link to="/zugang/beantragen">{t('login_request_access')}</Link>
-          <Link to="/login">{t('auth_back_to_login')}</Link>
+          <Link to="/zugang/beantragen" data-testid="verify-access-request-access-link">{t('login_request_access')}</Link>
+          <Link to="/login" data-testid="auth-back-to-login">{t('auth_back_to_login')}</Link>
         </AuthLinks>
       </AuthPage>
     );
@@ -117,20 +109,22 @@ const VerifyAccess = () => {
     <AuthPage
       title={t('access_verify_title')}
       intro={t('access_verify_intro', { name: firstName || email })}
+      testId="page-verify-access"
     >
-      <form onSubmit={onSubmit} style={FORM}>
-        <label style={LABEL}>
-          <span style={FIELD_LABEL}>{t('access_email')}</span>
+      <form onSubmit={onSubmit} className="auth-form" data-testid="verify-access-form">
+        <label className="auth-label">
+          <span className="auth-field-label">{t('access_email')}</span>
           <input
             type="email"
             value={email}
             readOnly
             autoComplete="username"
-            style={{ ...FIELD, opacity: 0.8 }}
+            className="auth-field auth-field--readonly"
+            data-testid="verify-access-email"
           />
         </label>
-        <label style={LABEL}>
-          <span style={FIELD_LABEL}>{t('login_password')}</span>
+        <label className="auth-label">
+          <span className="auth-field-label">{t('login_password')}</span>
           <input
             type="password"
             autoComplete="new-password"
@@ -138,26 +132,28 @@ const VerifyAccess = () => {
             autoFocus
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            style={FIELD}
+            className="auth-field"
+            data-testid="verify-access-password"
           />
         </label>
-        <label style={LABEL}>
-          <span style={FIELD_LABEL}>{t('access_verify_repeat')}</span>
+        <label className="auth-label">
+          <span className="auth-field-label">{t('access_verify_repeat')}</span>
           <input
             type="password"
             autoComplete="new-password"
             required
             value={repeat}
             onChange={(event) => setRepeat(event.target.value)}
-            style={FIELD}
+            className="auth-field"
+            data-testid="verify-access-repeat"
           />
         </label>
         {errors.map((message) => (
-          <p key={message} style={ERROR_TEXT}>
+          <p key={message} className="auth-error" {...repeatedTestId('verify-access-error', message)}>
             {message}
           </p>
         ))}
-        <button type="submit" disabled={busy} style={buttonStyle(busy)}>
+        <button type="submit" disabled={busy} className={authButtonClass(busy)} data-testid="verify-access-submit">
           {t('access_verify_submit')}
         </button>
       </form>

@@ -1,0 +1,158 @@
+/* The device overview of one location (DeviceListView.tsx): status chips,
+   the hash-kind count bars and the device table's cells. Theme variables:
+   scss/main.css; panels, pills and the row icon buttons: components/ui/kit/kit.css. */
+
+.device-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.device-list-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.device-list-picker {
+  max-width: 560px;
+}
+
+.device-list-muted {
+  color: #8b8383;
+}
+
+.device-list-hint {
+  font-size: 12px;
+  color: #8b8383;
+  margin-top: 12px;
+}
+
+.device-list-hint--pick {
+  font-size: 12.5px;
+  margin-top: 10px;
+}
+
+.device-list-loading {
+  display: flex;
+  justify-content: center;
+  padding: 30px;
+}
+
+.device-list-empty {
+  font-size: 13px;
+  color: #8b8383;
+  padding: 8px 0;
+}
+
+/* -- chips ---------------------------------------------------------------------- */
+
+.device-list-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #6e6868;
+  background: var(--progeo-track-soft);
+  border-radius: var(--progeo-radius-pill);
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
+.device-list-chip--ok {
+  color: #3f7a1c;
+  background: #ebf4e3;
+}
+
+.device-list-chip--danger {
+  color: #c44d26;
+  background: #fbe9e3;
+}
+
+.device-list-chip--info {
+  color: var(--progeo-blue);
+  background: #e3ecf4;
+}
+
+.device-list-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+/* A neutral chip's dot is lighter than its text. */
+.device-list-chip--neutral .device-list-dot {
+  background: #8b8383;
+}
+
+/* -- hash-kind counts --------------------------------------------------------- */
+
+.device-list-counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px 24px;
+}
+
+.device-list-count-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12.5px;
+  margin-bottom: 4px;
+}
+
+.device-list-count-label {
+  color: var(--progeo-blue);
+}
+
+.device-list-count-value {
+  font-weight: 600;
+  color: var(--progeo-blue);
+}
+
+.device-list-count--empty .device-list-count-label,
+.device-list-count--empty .device-list-count-value {
+  color: #8b8383;
+}
+
+.device-list-count-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--progeo-track);
+  overflow: hidden;
+}
+
+/* The width (share of the location's devices) is set inline. */
+.device-list-count-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--progeo-blue);
+}
+
+/* -- table cells ---------------------------------------------------------------- */
+
+.device-list-device {
+  padding: 6px 0;
+  min-width: 0;
+}
+
+.device-list-strong {
+  font-weight: 500;
+}
+
+.device-list-sub {
+  font-size: 11.5px;
+  color: #8b8383;
+}
+
+.device-list-nowrap {
+  white-space: nowrap;
+}
+
+.device-list-actions {
+  display: inline-flex;
+  gap: 6px;
+}

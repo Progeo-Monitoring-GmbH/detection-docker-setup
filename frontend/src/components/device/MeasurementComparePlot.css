@@ -1,0 +1,13 @@
+/* The measurement compare plot (MeasurementComparePlot.tsx): the plot and,
+   beside it (below on narrow screens), the biggest changes. */
+
+.measurement-compare-plot {
+  position: relative;
+  flex: 1 1 560px;
+  min-width: 0;
+}
+
+.measurement-compare-changes {
+  flex: 0 1 340px;
+  min-width: 260px;
+}

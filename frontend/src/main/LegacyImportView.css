@@ -1,0 +1,6 @@
+/* The legacy import page (LegacyImportView.tsx). */
+
+/* .form-control: over Bootstrap's width: 100%. */
+.form-control.legacy-import-project-input {
+  width: 180px;
+}

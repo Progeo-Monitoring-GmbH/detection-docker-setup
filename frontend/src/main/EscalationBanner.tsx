@@ -10,6 +10,7 @@ import { showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx'
 import EscalationStatusBadge from './EscalationStatusBadge';
 import { ESCALATION_URL, escalationPath, type Escalation, type StaffUser } from './escalations';
 import { staffFlags } from './access';
+import './Escalation.css';
 
 /**
  * Staff and superusers only, at the top of the project portal: whether the
@@ -49,21 +50,19 @@ const EscalationBanner = ({ locationId }: { locationId: number }) => {
   if (open) {
     return (
       <div
-        className="d-flex flex-wrap align-items-center gap-2"
+        className="d-flex flex-wrap align-items-center gap-2 escalation-banner"
         data-testid="escalation-banner"
-        style={{
-          background: '#FCE9E2',
-          color: '#B23A12',
-          borderRadius: 'var(--progeo-radius-panel)',
-          padding: '10px 16px',
-        }}
       >
         <ExclamationTriangleFill />
         <strong>{t('escalation_banner_title')}</strong>
         <span>{open.title}</span>
-        <EscalationStatusBadge status={open.status} />
+        <EscalationStatusBadge status={open.status} testId="escalation-banner-status" />
         <span className="small">· {open.assigned_to_name ?? t('escalation_unassigned')}</span>
-        <Link className="ms-auto small fw-semibold" to={escalationPath(open.id)} style={{ color: '#B23A12' }}>
+        <Link
+          className="ms-auto small fw-semibold escalation-banner-link"
+          to={escalationPath(open.id)}
+          data-testid="escalation-banner-open"
+        >
           {t('escalation_banner_open')}
         </Link>
       </div>
@@ -73,7 +72,7 @@ const EscalationBanner = ({ locationId }: { locationId: number }) => {
   return (
     <>
       <div className="d-flex justify-content-end">
-        <Button size="sm" variant="outline-danger" onClick={() => setCreating(true)}>
+        <Button size="sm" variant="outline-danger" onClick={() => setCreating(true)} data-testid="escalation-create">
           <ExclamationTriangleFill className="me-1" />
           {t('escalation_create')}
         </Button>
@@ -141,14 +140,20 @@ const CreateEscalationModal = ({
   };
 
   return (
-    <Modal show onHide={onClose} centered>
+    <Modal show onHide={onClose} centered data-testid="escalation-create-dialog">
       <Modal.Header closeButton>
         <Modal.Title>{t('escalation_create')}</Modal.Title>
       </Modal.Header>
       <Modal.Body className="d-flex flex-column gap-3">
         <Form.Group>
           <Form.Label>{t('escalation_title_label')}</Form.Label>
-          <Form.Control value={title} maxLength={200} autoFocus onChange={(event) => setTitle(event.target.value)} />
+          <Form.Control
+            value={title}
+            maxLength={200}
+            autoFocus
+            onChange={(event) => setTitle(event.target.value)}
+            data-testid="escalation-create-title"
+          />
         </Form.Group>
         <Form.Group>
           <Form.Label>{t('escalation_reason_label')}</Form.Label>
@@ -158,11 +163,16 @@ const CreateEscalationModal = ({
             value={text}
             maxLength={5000}
             onChange={(event) => setText(event.target.value)}
+            data-testid="escalation-create-reason"
           />
         </Form.Group>
         <Form.Group>
           <Form.Label>{t('escalation_assignee')}</Form.Label>
-          <Form.Select value={assignee} onChange={(event) => setAssignee(event.target.value)}>
+          <Form.Select
+            value={assignee}
+            onChange={(event) => setAssignee(event.target.value)}
+            data-testid="escalation-create-assignee"
+          >
             <option value="">{t('escalation_unassigned')}</option>
             {staff.map((user) => (
               <option key={user.id} value={user.id}>
@@ -173,10 +183,10 @@ const CreateEscalationModal = ({
         </Form.Group>
       </Modal.Body>
       <Modal.Footer>
-        <Button variant="outline-secondary" onClick={onClose} disabled={busy}>
+        <Button variant="outline-secondary" onClick={onClose} disabled={busy} data-testid="escalation-create-cancel">
           {t('heat_limit_cancel')}
         </Button>
-        <Button variant="danger" onClick={submit} disabled={busy || !title.trim()}>
+        <Button variant="danger" onClick={submit} disabled={busy || !title.trim()} data-testid="escalation-create-submit">
           {busy && <Spinner size="sm" animation="border" className="me-1" />}
           {t('escalation_create')}
         </Button>

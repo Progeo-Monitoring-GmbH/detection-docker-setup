@@ -2,11 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowClockwise, ArrowCounterclockwise } from 'react-bootstrap-icons';
 import axiosConfig from '../../axiosConfig';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
+import { childTestId } from '../../testIds';
 import ZoomControls from '../device/ZoomControls';
 import { ALIGN_PINS, fitAlignment, type AlignPin } from './alignmentFit';
-import CanvasKeyLegend, { KEY_BADGE } from './CanvasKeyLegend';
+import CanvasKeyLegend from './CanvasKeyLegend';
 import { applyGroup, fitGroup, toFraction, toNormalized, type GroupPin } from './groupAlign';
 import { isZoomWheel, useWheelHint, WheelZoomHint } from './wheelZoom';
+import './ImageCanvasStage.css';
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
@@ -183,26 +185,6 @@ type MarkerItem = {
 
 const SENSOR_RADIUS = 9;
 
-const MUTED = '#8B8383';
-/** The control blocks under the canvas (alignment, scale). */
-const SUB_PANEL: React.CSSProperties = {
-  background: 'var(--progeo-surface)',
-  borderRadius: 13,
-  padding: 16,
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 12,
-};
-/** The panels of a running action under the canvas (group alignment, cut points). */
-const ACTION_PANEL: React.CSSProperties = { borderRadius: 12, padding: '10px 14px', fontSize: 12.5 };
-const PILL_BUTTON: React.CSSProperties = {
-  borderRadius: 'var(--progeo-radius-pill)',
-  height: 32,
-  padding: '0 14px',
-  fontSize: 12.5,
-  fontWeight: 500,
-};
-const FIELD: React.CSSProperties = { borderRadius: 10, height: 32 };
 /** Mouse travel (px) up to which a press on the plan still counts as a click. */
 const CLICK_TOLERANCE = 4;
 
@@ -309,6 +291,8 @@ type ImageCanvasStageProps = {
    * points (L + drag), stored on the server (measure_points/place) - called
    * with its answer, which carries the moved points ("points"). */
   onPointsPlaced?: (response: Record<string, unknown>, action: 'insert' | 'align') => void;
+  /** data-testid of the stage; its parts are "<testId>-canvas", "-zoom", "-apply", "-scale-store", ... */
+  testId?: string;
 };
 
 const ImageCanvasStage = ({
@@ -332,6 +316,7 @@ const ImageCanvasStage = ({
   onCut,
   onDiscardCut,
   onPointsPlaced,
+  testId = 'image-canvas',
 }: ImageCanvasStageProps) => {
   const auth = useAuth();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1960,16 +1945,16 @@ const ImageCanvasStage = ({
           : null;
 
   return (
-    <div className="d-flex flex-column gap-3">
+    <div className="d-flex flex-column gap-3" data-testid={testId}>
       <div className="d-flex justify-content-between align-items-baseline gap-2 flex-wrap">
-        <span style={{ fontSize: 14, fontWeight: 500 }}>{title}</span>
+        <span className="image-canvas-title" data-testid={childTestId(testId, 'title')}>{title}</span>
         {fileName && (
-          <span style={{ fontSize: 12, color: MUTED }}>{fileName}</span>
+          <span className="image-canvas-muted" data-testid={childTestId(testId, 'file-name')}>{fileName}</span>
         )}
       </div>
 
       <div className="d-flex flex-column gap-2">
-        <div style={{ position: 'relative' }}>
+        <div className="image-canvas-wrap">
           <canvas
             ref={canvasRef}
             width={Math.round(CANVAS_WIDTH * pixelRatio)}
@@ -1979,34 +1964,28 @@ const ImageCanvasStage = ({
             onMouseMove={handleMouseMove}
             onMouseLeave={() => setHover(null)}
             onClick={handleClick}
-            style={{
-              display: 'block',
-              width: '100%',
-              height: 'auto',
-              aspectRatio: `${CANVAS_WIDTH} / ${CANVAS_HEIGHT}`,
-              borderRadius: 13,
-              background: 'var(--progeo-surface)',
-              boxShadow: 'inset 0 0 0 1px rgba(11, 54, 89, 0.08)',
-              cursor:
-                editing ||
-                (heldSelect && canSelectFor(heldSelect)) ||
-                (heldKey === 'i' && canInsert) ||
-                tool === 'reference' ||
-                placement?.activeDeviceId != null ||
-                (canScale && (heldKey === 'r' || heldKey === 'm'))
-                  ? 'crosshair'
-                  : dragRef.current || alignDrag || groupDrag
-                    ? 'grabbing'
-                    : group && hoveredItem && group.ids.has(Number(hoveredItem.point.id))
+            className={`image-canvas-stage-canvas image-canvas-stage-canvas--${
+              editing ||
+              (heldSelect && canSelectFor(heldSelect)) ||
+              (heldKey === 'i' && canInsert) ||
+              tool === 'reference' ||
+              placement?.activeDeviceId != null ||
+              (canScale && (heldKey === 'r' || heldKey === 'm'))
+                ? 'crosshair'
+                : dragRef.current || alignDrag || groupDrag
+                  ? 'grabbing'
+                  : group && hoveredItem && group.ids.has(Number(hoveredItem.point.id))
+                    ? 'grab'
+                  : alignKey && canAlign
+                    ? hoveredItem
                       ? 'grab'
-                    : alignKey && canAlign
-                      ? hoveredItem
-                        ? 'grab'
-                        : 'crosshair'
-                    : hoveredItem
-                      ? 'pointer'
-                      : 'grab',
-            }}
+                      : 'crosshair'
+                  : hoveredItem
+                    ? 'pointer'
+                    : 'grab'
+            }`}
+            style={{ aspectRatio: `${CANVAS_WIDTH} / ${CANVAS_HEIGHT}` }}
+            data-testid={childTestId(testId, 'canvas')}
           />
           <ZoomControls
             onZoomIn={() => zoomAround(ZOOM_STEP)}
@@ -2014,33 +1993,23 @@ const ImageCanvasStage = ({
             onReset={resetView}
             zoomOutDisabled={zoom <= MIN_ZOOM}
             resetDisabled={zoom === 1 && offsetX === 0 && offsetY === 0}
+            testId={childTestId(testId, 'zoom')}
           />
-          <WheelZoomHint visible={wheelHint} />
+          <WheelZoomHint visible={wheelHint} testId={childTestId(testId, 'wheel-hint')} />
           {canEditImage && !editing && (
             // Turns the image by 90 degrees - the measure points turn with it.
-            <div
-              className="d-flex gap-1"
-              style={{
-                position: 'absolute',
-                top: 8,
-                right: 8,
-                zIndex: 2,
-                background: 'var(--progeo-surface)',
-                borderRadius: 10,
-                padding: 3,
-                boxShadow: '0 2px 8px rgba(11, 54, 89, .18)',
-              }}
-            >
+            <div className="image-canvas-rotate d-flex gap-1">
               {([false, true] as const).map((clockwise) => (
                 <button
                   key={String(clockwise)}
                   type="button"
-                  className="btn btn-sm btn-light d-inline-flex align-items-center justify-content-center"
-                  style={{ width: 30, height: 30, padding: 0, borderRadius: 8 }}
+                  className="image-canvas-rotate-button btn btn-sm btn-light d-inline-flex align-items-center justify-content-center"
                   title={clockwise ? 'Rotate 90° clockwise' : 'Rotate 90° counterclockwise'}
                   aria-label={clockwise ? 'Rotate the plan 90° clockwise' : 'Rotate the plan 90° counterclockwise'}
                   disabled={editBusy || aligning}
                   onClick={() => rotateImage(clockwise)}
+                  data-testid={childTestId(testId, 'rotate')}
+                  data-test-key={clockwise ? 'clockwise' : 'counterclockwise'}
                 >
                   {clockwise ? <ArrowClockwise size={15} /> : <ArrowCounterclockwise size={15} />}
                 </button>
@@ -2050,40 +2019,27 @@ const ImageCanvasStage = ({
           {badge && (
             <div
               aria-live="polite"
-              style={{
-                position: 'absolute',
-                top: 10,
-                left: '50%',
-                transform: 'translateX(-50%)',
-                zIndex: 2,
-                pointerEvents: 'none',
-                background: badgeColor,
-                color: '#ffffff',
-                borderRadius: 'var(--progeo-radius-pill)',
-                padding: '5px 14px',
-                fontSize: 12.5,
-                fontWeight: 600,
-                boxShadow: '0 2px 8px rgba(11, 54, 89, .25)',
-                whiteSpace: 'nowrap',
-              }}
+              className="image-canvas-badge"
+              data-testid={childTestId(testId, 'badge')}
+              style={{ background: badgeColor }}
             >
               {badge}
             </div>
           )}
           {applyAt && (
-            <div className="d-flex gap-2" style={{ position: 'absolute', ...applyAt, zIndex: 3 }}>
+            <div className="image-canvas-apply d-flex gap-2" style={applyAt} data-testid={childTestId(testId, 'apply-bar')}>
               <button
                 type="button"
-                className={`btn btn-sm ${editMode === 'crop' ? 'btn-primary' : 'btn-danger'}`}
-                style={{
-                  ...PILL_BUTTON,
-                  boxShadow: '0 2px 8px rgba(11, 54, 89, .25)',
-                  ...(pointSelect && pointSelect !== 'remove'
+                className={`image-canvas-pill image-canvas-pill--raised btn btn-sm ${editMode === 'crop' ? 'btn-primary' : 'btn-danger'}`}
+                // The colour of the point action (cut / group) in use.
+                style={
+                  pointSelect && pointSelect !== 'remove'
                     ? { background: selectColor, borderColor: selectColor, color: '#ffffff' }
-                    : {}),
-                }}
+                    : undefined
+                }
                 disabled={editBusy || (selectingPoints && selectedIds.length === 0)}
                 onClick={applyEdit}
+                data-testid={childTestId(testId, 'apply')}
               >
                 {editBusy
                   ? 'Applying…'
@@ -2093,10 +2049,10 @@ const ImageCanvasStage = ({
               </button>
               <button
                 type="button"
-                className="btn btn-sm btn-light"
-                style={{ ...PILL_BUTTON, boxShadow: '0 2px 8px rgba(11, 54, 89, .25)' }}
+                className="image-canvas-pill image-canvas-pill--raised btn btn-sm btn-light"
                 disabled={editBusy}
                 onClick={leaveEdit}
+                data-testid={childTestId(testId, 'apply-cancel')}
               >
                 Cancel
               </button>
@@ -2105,39 +2061,20 @@ const ImageCanvasStage = ({
           {hover && hoveredItem && (
             <div
               role="tooltip"
+              data-testid={childTestId(testId, 'tooltip')}
+              className={tooltipBelow ? 'image-canvas-tooltip' : 'image-canvas-tooltip image-canvas-tooltip--above'}
               style={{
-                position: 'absolute',
                 left: clamp(hover.x + 14, 4, Math.max(4, cssWidth - 244)),
                 top: tooltipBelow ? hover.y + 16 : hover.y - 16,
-                transform: tooltipBelow ? undefined : 'translateY(-100%)',
-                pointerEvents: 'none',
-                zIndex: 2,
-                minWidth: 150,
-                maxWidth: 240,
-                background: 'rgba(16, 20, 25, 0.93)',
-                color: '#ffffff',
-                borderRadius: 10,
-                padding: '8px 11px',
-                fontSize: 12,
-                lineHeight: 1.5,
-                boxShadow: '0 6px 18px rgba(0, 0, 0, 0.25)',
               }}
             >
-              <div className="d-flex align-items-center gap-2" style={{ fontWeight: 600, fontSize: 13 }}>
-                <span
-                  style={{
-                    width: 10,
-                    height: 10,
-                    borderRadius: '50%',
-                    flexShrink: 0,
-                    background: hoveredItem.color,
-                  }}
-                />
+              <div className="image-canvas-tooltip-title d-flex align-items-center gap-2">
+                <span className="image-canvas-tooltip-dot" style={{ background: hoveredItem.color }} />
                 {lineMode ? `dm ${hoveredItem.label}` : `Sensor ${hoveredItem.label}`}
               </div>
               {tooltipRows(hoveredItem).map(([label, value]) => (
                 <div key={label} className="d-flex gap-2">
-                  <span style={{ color: '#aab4be' }}>{label}</span>
+                  <span className="image-canvas-tooltip-label">{label}</span>
                   <span className="ms-auto text-end">{value}</span>
                 </div>
               ))}
@@ -2146,16 +2083,17 @@ const ImageCanvasStage = ({
         </div>
 
         <div
-          className="d-flex justify-content-between align-items-center gap-2 flex-wrap"
-          style={{ fontSize: 12, color: MUTED, padding: '0 2px' }}
+          className="image-canvas-muted image-canvas-footer d-flex justify-content-between align-items-center gap-2 flex-wrap"
+          data-testid={childTestId(testId, 'footer')}
         >
-          <span>Zoom {zoom.toFixed(2)}×</span>
+          <span data-testid={childTestId(testId, 'zoom-level')}>Zoom {zoom.toFixed(2)}×</span>
           {!placement && items.length > 1 && (
             <span className="d-flex align-items-center gap-2">
               <span>{lineMode ? `dm ${items[0].label}` : items[0].label}</span>
               <span
                 aria-hidden="true"
-                style={{ width: 120, height: 8, borderRadius: 4, background: RAINBOW_GRADIENT }}
+                className="image-canvas-rainbow"
+                style={{ background: RAINBOW_GRADIENT }}
               />
               <span>{items[items.length - 1].label}</span>
               {lineMode && (
@@ -2169,6 +2107,7 @@ const ImageCanvasStage = ({
         </div>
 
         <CanvasKeyLegend
+          testId={childTestId(testId, 'legend')}
           groups={[
             {
               title: 'View',
@@ -2258,15 +2197,7 @@ const ImageCanvasStage = ({
         />
 
         {!placement && lineSensors && items.length > 0 && lineCount === 0 && (
-          <div
-            style={{
-              background: '#FBF3DE',
-              color: '#9A7208',
-              borderRadius: 12,
-              padding: '10px 14px',
-              fontSize: 12.5,
-            }}
-          >
+          <div className="image-canvas-action image-canvas-action--warning" data-testid={childTestId(testId, 'no-lines-warning')}>
             This is a smartex dm project, but these measure points have no band
             ends - import the DWG/DXF again in step 3 to get the sensor lines.
           </div>
@@ -2275,11 +2206,11 @@ const ImageCanvasStage = ({
 
       {group && (
         <div
-          className="d-flex flex-wrap align-items-center gap-2"
-          style={{ ...ACTION_PANEL, background: '#F1EBFA', color: '#3D2366' }}
+          className="image-canvas-action image-canvas-action--group d-flex flex-wrap align-items-center gap-2"
+          data-testid={childTestId(testId, 'group')}
         >
-          <div style={{ flex: '1 1 260px' }}>
-            <div style={{ fontWeight: 600 }}>
+          <div className="image-canvas-action-text">
+            <div className="image-canvas-action-title">
               Aligning {group.ids.size} {pointNoun}(s) by themselves · {group.pins.length} pinned
             </div>
             <div>
@@ -2294,19 +2225,19 @@ const ImageCanvasStage = ({
           </div>
           <button
             type="button"
-            className="btn btn-sm btn-outline-secondary"
-            style={PILL_BUTTON}
+            className="image-canvas-pill btn btn-sm btn-outline-secondary"
             disabled={editBusy}
             onClick={leaveGroup}
+            data-testid={childTestId(testId, 'group-cancel')}
           >
             Cancel
           </button>
           <button
             type="button"
-            className="btn btn-sm"
-            style={{ ...PILL_BUTTON, background: GROUP_COLOR, borderColor: GROUP_COLOR, color: '#ffffff' }}
+            className="image-canvas-pill image-canvas-pill--group btn btn-sm"
             disabled={editBusy || !groupTransform || group.pins.length === 0}
             onClick={storeGroup}
+            data-testid={childTestId(testId, 'group-apply')}
           >
             {editBusy ? 'Storing…' : 'Apply'}
           </button>
@@ -2315,17 +2246,17 @@ const ImageCanvasStage = ({
 
       {cutItems.length > 0 && (
         <div
-          className="d-flex flex-wrap align-items-center gap-2"
-          style={{ ...ACTION_PANEL, background: '#FBF3DE', color: '#6B4E0B' }}
+          className="image-canvas-action image-canvas-action--cut d-flex flex-wrap align-items-center gap-2"
+          data-testid={childTestId(testId, 'cut')}
         >
-          <div style={{ flex: '1 1 260px' }}>
-            <div style={{ fontWeight: 600 }}>
+          <div className="image-canvas-action-text">
+            <div className="image-canvas-action-title">
               {cutItems.length} {pointNoun}(s) cut out
             </div>
             <div>
               {canInsert ? (
                 <>
-                  Hold <kbd style={KEY_BADGE}>I</kbd> and click where they go - on this plan or another one. Until
+                  Hold <kbd className="canvas-key-badge">I</kbd> and click where they go - on this plan or another one. Until
                   then they stay where they were.
                 </>
               ) : (
@@ -2336,10 +2267,10 @@ const ImageCanvasStage = ({
           {onDiscardCut && (
             <button
               type="button"
-              className="btn btn-sm btn-outline-secondary"
-              style={PILL_BUTTON}
+              className="image-canvas-pill btn btn-sm btn-outline-secondary"
               disabled={editBusy}
               onClick={onDiscardCut}
+              data-testid={childTestId(testId, 'cut-discard')}
             >
               Put back
             </button>
@@ -2348,40 +2279,23 @@ const ImageCanvasStage = ({
       )}
 
       {editError && (
-        <div
-          role="alert"
-          style={{
-            background: '#FBE9E3',
-            color: '#C44D26',
-            borderRadius: 12,
-            padding: '10px 14px',
-            fontSize: 12.5,
-          }}
-        >
+        <div role="alert" className="image-canvas-action image-canvas-action--error" data-testid={childTestId(testId, 'edit-error')}>
           {editError}
         </div>
       )}
 
       {imageError && (
-        <div
-          style={{
-            background: '#FBE9E3',
-            color: '#C44D26',
-            borderRadius: 12,
-            padding: '10px 14px',
-            fontSize: 12.5,
-          }}
-        >
+        <div className="image-canvas-action image-canvas-action--error" data-testid={childTestId(testId, 'image-error')}>
           {imageError}
         </div>
       )}
 
       {withSliders && (
-        <div style={SUB_PANEL}>
+        <div className="image-canvas-sub-panel" data-testid={childTestId(testId, 'alignment')}>
           <div className="d-flex align-items-center gap-2 flex-wrap">
             <div>
-              <div style={{ fontSize: 13.5, fontWeight: 500 }}>Alignment</div>
-              <div style={{ fontSize: 12, color: MUTED }}>
+              <div className="image-canvas-sub-title">Alignment</div>
+              <div className="image-canvas-muted">
                 Moves and scales the measure points onto the plan - stored
                 automatically.
               </div>
@@ -2389,10 +2303,10 @@ const ImageCanvasStage = ({
             <div className="ms-auto d-flex gap-2">
               <button
                 type="button"
-                className={`btn btn-sm ${isVerticallyFlipped ? 'btn-secondary' : 'btn-outline-secondary'}`}
-                style={PILL_BUTTON}
+                className={`image-canvas-pill btn btn-sm ${isVerticallyFlipped ? 'btn-secondary' : 'btn-outline-secondary'}`}
                 aria-pressed={isVerticallyFlipped}
                 onClick={() => setIsVerticallyFlipped((current) => !current)}
+                data-testid={childTestId(testId, 'flip-vertical')}
               >
                 Vertical flip
               </button>
@@ -2400,8 +2314,8 @@ const ImageCanvasStage = ({
           </div>
 
           {canAlign && !aligning && (
-            <div className="d-flex align-items-center gap-2" style={{ fontSize: 12.5, color: MUTED }}>
-              <kbd style={KEY_BADGE}>A</kbd>
+            <div className="image-canvas-hint d-flex align-items-center gap-2" data-testid={childTestId(testId, 'align-hint')}>
+              <kbd className="canvas-key-badge">A</kbd>
               <span>
                 Hold <strong>A</strong> and drag a {lineMode ? 'dm line' : 'sensor'} onto its right place on
                 the plan - two far apart (e.g. opposite corners) set the alignment, more refine it.
@@ -2411,17 +2325,11 @@ const ImageCanvasStage = ({
 
           {aligning && (
             <div
-              className="d-flex flex-wrap align-items-center gap-2"
-              style={{
-                background: '#E7F0FD',
-                color: '#0B3659',
-                borderRadius: 12,
-                padding: '10px 14px',
-                fontSize: 12.5,
-              }}
+              className="image-canvas-action image-canvas-action--align d-flex flex-wrap align-items-center gap-2"
+              data-testid={childTestId(testId, 'aligning')}
             >
-              <div style={{ flex: '1 1 260px' }}>
-                <div style={{ fontWeight: 600 }}>
+              <div className="image-canvas-action-text">
+                <div className="image-canvas-action-title">
                   {pins.length} {lineMode ? 'dm sensor(s)' : 'sensor(s)'} pinned
                 </div>
                 <div>
@@ -2432,38 +2340,37 @@ const ImageCanvasStage = ({
                       : `Hold A and drag one more ${lineMode ? 'dm line' : 'sensor'} onto its place, far from the first. Dragging one again moves its pin.`}
                 </div>
               </div>
-              <button type="button" className="btn btn-sm btn-outline-secondary" style={PILL_BUTTON} onClick={() => stopAligning(true)}>
+              <button
+                type="button"
+                className="image-canvas-pill btn btn-sm btn-outline-secondary"
+                onClick={() => stopAligning(true)}
+                data-testid={childTestId(testId, 'align-cancel')}
+              >
                 Cancel
               </button>
               <button
                 type="button"
-                className="btn btn-sm btn-primary"
-                style={PILL_BUTTON}
+                className="image-canvas-pill btn btn-sm btn-primary"
                 onClick={() => stopAligning(false)}
+                data-testid={childTestId(testId, 'align-done')}
               >
                 Done
               </button>
             </div>
           )}
 
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-              gap: '10px 24px',
-            }}
-          >
+          <div className="image-canvas-sliders">
             {sliders.map((slider) => (
               <div key={slider.id}>
                 <label
                   htmlFor={slider.id}
-                  className="d-flex justify-content-between mb-0"
-                  style={{ fontSize: 12, color: MUTED }}
+                  className="image-canvas-muted d-flex justify-content-between mb-0"
                 >
                   <span>{slider.label}</span>
                   <span
-                    className="font-monospace"
-                    style={{ color: 'var(--progeo-blue)' }}
+                    className="image-canvas-slider-value font-monospace"
+                    data-testid={childTestId(testId, 'slider-value')}
+                    data-test-key={slider.id}
                   >
                     {slider.display}
                   </span>
@@ -2480,6 +2387,8 @@ const ImageCanvasStage = ({
                   onChange={(event) =>
                     slider.onChange(Number(event.target.value))
                   }
+                  data-testid={childTestId(testId, 'slider')}
+                  data-test-key={slider.id}
                 />
               </div>
             ))}
@@ -2488,10 +2397,10 @@ const ImageCanvasStage = ({
       )}
 
       {withSliders && onSaveScale && (
-        <div style={SUB_PANEL}>
+        <div className="image-canvas-sub-panel" data-testid={childTestId(testId, 'scale')}>
           <div>
-            <div style={{ fontSize: 13.5, fontWeight: 500 }}>Scale</div>
-            <div style={{ fontSize: 12, color: MUTED }}>
+            <div className="image-canvas-sub-title">Scale</div>
+            <div className="image-canvas-muted">
               Positions in meters: x to the right, y up from the reference
               point.
             </div>
@@ -2500,17 +2409,17 @@ const ImageCanvasStage = ({
           <div className="d-flex flex-wrap align-items-center gap-2">
             <button
               type="button"
-              className={`btn btn-sm ${tool === 'reference' ? 'btn-primary' : 'btn-outline-primary'}`}
-              style={PILL_BUTTON}
+              className={`image-canvas-pill btn btn-sm ${tool === 'reference' ? 'btn-primary' : 'btn-outline-primary'}`}
               onClick={() =>
                 setTool((current) =>
                   current === 'reference' ? 'pan' : 'reference',
                 )
               }
+              data-testid={childTestId(testId, 'reference-point')}
             >
               Reference point
             </button>
-            <span style={{ fontSize: 12, color: MUTED }}>
+            <span className="image-canvas-muted">
               {tool === 'reference'
                 ? 'Click the reference point on the plan.'
                 : referencePoint
@@ -2518,8 +2427,8 @@ const ImageCanvasStage = ({
                   : 'not set'}
             </span>
             {tool !== 'reference' && (
-              <span className="d-flex align-items-center gap-1" style={{ fontSize: 12, color: MUTED }}>
-                · or hold <kbd style={KEY_BADGE}>R</kbd> and click
+              <span className="image-canvas-muted d-flex align-items-center gap-1">
+                · or hold <kbd className="canvas-key-badge">R</kbd> and click
               </span>
             )}
           </div>
@@ -2527,66 +2436,64 @@ const ImageCanvasStage = ({
           <div className="d-flex flex-wrap align-items-center gap-2">
             <button
               type="button"
-              className={`btn btn-sm ${tool === 'calibrate' ? 'btn-primary' : 'btn-outline-primary'}`}
-              style={PILL_BUTTON}
+              className={`image-canvas-pill btn btn-sm ${tool === 'calibrate' ? 'btn-primary' : 'btn-outline-primary'}`}
               onClick={() => {
                 setTool((current) =>
                   current === 'calibrate' ? 'pan' : 'calibrate',
                 );
                 setCalibrationPoints([]);
               }}
+              data-testid={childTestId(testId, 'calibrate')}
             >
               Calibrate
             </button>
             {calibrationPixels == null && (
-              <span className="d-flex align-items-center gap-1" style={{ fontSize: 12, color: MUTED }}>
-                Hold <kbd style={KEY_BADGE}>M</kbd> and click two points with a known distance
+              <span className="image-canvas-muted d-flex align-items-center gap-1">
+                Hold <kbd className="canvas-key-badge">M</kbd> and click two points with a known distance
                 {tool === 'calibrate' ? ` (${calibrationPoints.length}/2)` : ''}.
               </span>
             )}
             {calibrationPixels != null && (
               <>
-                <span style={{ fontSize: 12, color: MUTED }}>
+                <span className="image-canvas-muted">
                   {calibrationPixels.toFixed(1)} px =
                 </span>
                 <input
                   type="number"
-                  className="form-control form-control-sm"
-                  style={{ ...FIELD, width: 110 }}
+                  className="image-canvas-field image-canvas-field--distance form-control form-control-sm"
                   min="0"
                   step="0.01"
                   placeholder="meters"
                   aria-label="Distance in meters"
                   value={calibrationMeters}
                   onChange={(event) => setCalibrationMeters(event.target.value)}
+                  data-testid={childTestId(testId, 'calibration-meters')}
                 />
-                <span style={{ fontSize: 12, color: MUTED }}>m</span>
+                <span className="image-canvas-muted">m</span>
               </>
             )}
           </div>
 
           <div className="d-flex flex-wrap align-items-center gap-2">
             <label
-              className="mb-0"
+              className="image-canvas-muted mb-0"
               htmlFor="meters-per-pixel"
-              style={{ fontSize: 12, color: MUTED }}
             >
               Meters per pixel
             </label>
             <input
               id="meters-per-pixel"
               type="number"
-              className="form-control form-control-sm"
-              style={{ ...FIELD, width: 160 }}
+              className="image-canvas-field image-canvas-field--scale form-control form-control-sm"
               min="0"
               step="any"
               value={metersPerPixel}
               onChange={(event) => setMetersPerPixel(event.target.value)}
+              data-testid={childTestId(testId, 'meters-per-pixel')}
             />
             <button
               type="button"
-              className="btn btn-sm btn-primary ms-auto"
-              style={PILL_BUTTON}
+              className="image-canvas-pill btn btn-sm btn-primary ms-auto"
               disabled={!referencePoint && !validMetersPerPixel}
               onClick={() => {
                 const values: PlanScaleValues = {};
@@ -2600,6 +2507,7 @@ const ImageCanvasStage = ({
                 setTool('pan');
                 onSaveScale(values);
               }}
+              data-testid={childTestId(testId, 'scale-store')}
             >
               Store scale
             </button>

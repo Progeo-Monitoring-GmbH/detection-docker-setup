@@ -12,6 +12,9 @@
     "lint": "oxlint src",
     "lint-fix": "oxlint --fix src && prettier --write src",
     "test:coverage": "vitest run --coverage --watch=false",
+    "e2e": "playwright test",
+    "e2e:ui": "playwright test --ui",
+    "e2e:install": "playwright install chromium",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "format": "prettier --check src"
@@ -22,6 +25,7 @@
   "__UPDATING-COMMAND_RUN__": "ncu --interactive --format group",
   "__RUN_DEEPSEEK__": "npx @deepseek-ai/dsh web",
   "devDependencies": {
+    "@playwright/test": "^1.65.0",
     "@storybook/addon-links": "^10.6.7",
     "@storybook/react-vite": "^10.6.7",
     "@types/node": "^26.6.6",

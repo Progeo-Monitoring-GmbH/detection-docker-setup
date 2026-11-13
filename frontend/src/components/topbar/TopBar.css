@@ -1,0 +1,165 @@
+/* The portal's top bar (TopBar.tsx): demo badge, the round/pill buttons,
+   the info and language popovers and the account button.
+   Theme variables: scss/main.css. */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.topbar-demo-badge {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: var(--progeo-radius-pill);
+  background: var(--progeo-orange);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+}
+
+/* A pill with a label; --icon makes it a round icon-only button. */
+.topbar-pill {
+  height: 40px;
+  padding: 0 14px;
+  border: none;
+  border-radius: var(--progeo-radius-pill);
+  background: var(--progeo-surface);
+  box-shadow: var(--progeo-shadow-chrome);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--progeo-blue);
+}
+
+.topbar-pill--icon {
+  padding: 0;
+  width: 40px;
+}
+
+/* "View as user" switched on. */
+.topbar-pill--accent {
+  background: var(--progeo-orange);
+  color: #fff;
+}
+
+/* Archived measurements hidden. */
+.topbar-pill--muted {
+  color: var(--progeo-muted, #8b8383);
+}
+
+.topbar-anchor {
+  position: relative;
+}
+
+.topbar-popover {
+  position: absolute;
+  top: 48px;
+  right: 0;
+  background: var(--progeo-surface);
+  border-radius: 14px;
+  box-shadow: 0 14px 40px rgba(11, 54, 89, 0.2);
+  z-index: 50;
+}
+
+.topbar-popover--info {
+  width: 240px;
+  padding: 14px;
+  font-size: 12.5px;
+  color: var(--progeo-blue);
+  line-height: 1.5;
+}
+
+.topbar-popover--lang {
+  width: 140px;
+  padding: 8px;
+}
+
+.topbar-info-links {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--progeo-track);
+}
+
+/* :hover repeats the color - the global a:hover would win otherwise. */
+.topbar-info-link,
+.topbar-info-link:hover {
+  color: var(--progeo-blue);
+}
+
+.topbar-text-button {
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: var(--progeo-blue);
+  text-align: left;
+  text-decoration: underline;
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+
+.topbar-lang-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 9px 10px;
+  border-radius: 9px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--progeo-blue);
+}
+
+.topbar-lang-item--active {
+  background: var(--progeo-track-soft);
+}
+
+.topbar-account {
+  height: 40px;
+  padding: 4px 16px 4px 5px;
+  border: none;
+  border-radius: var(--progeo-radius-pill);
+  background: var(--progeo-surface);
+  box-shadow: var(--progeo-shadow-chrome);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--progeo-blue);
+}
+
+.topbar-avatar {
+  width: 31px;
+  height: 31px;
+  border-radius: 50%;
+  background: #1e5688;
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.topbar-username {
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}

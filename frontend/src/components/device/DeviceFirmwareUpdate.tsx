@@ -1,4 +1,4 @@
-import { type CSSProperties, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from 'react-bootstrap';
@@ -6,6 +6,9 @@ import { useAuth } from '../../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../../axiosConfig';
 import { showRequestError, showSuccessBar } from '../ui/Snackbar.jsx';
 import PillButton from '../ui/kit/PillButton';
+// Section title, select and row are shared with the dialog it sits in.
+import './DeviceCommandsDialog.css';
+import { childTestId, repeatedTestId } from '../../testIds';
 
 /** A bundle of /v1/device/<id>/firmware/ - with whether it can go on remotely. */
 type FirmwareBundle = {
@@ -33,28 +36,6 @@ type UpdateState = {
 type FirmwareResponse = { current: string | null; bundles: FirmwareBundle[]; update: UpdateState | null };
 
 const REFRESH_MS = 5000;
-const MUTED = '#8B8383';
-
-const sectionTitle: CSSProperties = {
-  fontSize: 11,
-  letterSpacing: '.07em',
-  textTransform: 'uppercase',
-  color: MUTED,
-  fontWeight: 500,
-  marginBottom: 8,
-};
-
-const inputStyle: CSSProperties = {
-  height: 32,
-  border: '1px solid var(--progeo-track)',
-  borderRadius: 8,
-  padding: '0 10px',
-  fontSize: 13,
-  fontFamily: 'inherit',
-  background: 'var(--progeo-surface)',
-  color: 'var(--progeo-blue)',
-  minWidth: 0,
-};
 
 /**
  * Remote firmware update of one controller (staff, in the commands dialog):
@@ -66,10 +47,13 @@ const DeviceFirmwareUpdate = ({
   deviceId,
   query,
   onChanged,
+  testId = 'device-firmware',
 }: {
   deviceId: number;
   query: string;
   onChanged: () => void;
+  /** data-testid of the section; its parts are "<testId>-current", "-target", "-start", ... */
+  testId?: string;
 }) => {
   const auth = useAuth();
   const { t } = useTranslation();
@@ -142,9 +126,9 @@ const DeviceFirmwareUpdate = ({
 
   if (!data) {
     return (
-      <div>
-        <div style={sectionTitle}>{t('device_firmware_title')}</div>
-        <Spinner animation="border" size="sm" />
+      <div data-testid={testId}>
+        <div className="device-commands-section-title">{t('device_firmware_title')}</div>
+        <Spinner animation="border" size="sm" data-testid={childTestId(testId, 'loading')} />
       </div>
     );
   }
@@ -157,22 +141,20 @@ const DeviceFirmwareUpdate = ({
     `${bundle.id}${bundle.latest_in.length ? ` (${bundle.latest_in.join(', ')})` : ''}`;
 
   return (
-    <div>
-      <div style={sectionTitle}>{t('device_firmware_title')}</div>
-      <div style={{ fontSize: 13, marginBottom: 8 }}>
+    <div data-testid={testId}>
+      <div className="device-commands-section-title">{t('device_firmware_title')}</div>
+      <div className="device-firmware-current" data-testid={childTestId(testId, 'current')}>
         {data.current ? t('device_firmware_current', { bundle: data.current }) : t('device_firmware_unknown')}
       </div>
 
       {update && (
         <div
-          style={{
-            fontSize: 12.5,
-            marginBottom: 10,
-            padding: '8px 12px',
-            borderRadius: 10,
-            background: update.status === 'failed' || update.status === 'timeout' ? '#FBE9E3' : '#E3ECF4',
-            color: update.status === 'failed' || update.status === 'timeout' ? '#C44D26' : 'var(--progeo-blue)',
-          }}
+          className={
+            update.status === 'failed' || update.status === 'timeout'
+              ? 'device-firmware-state device-firmware-state--failed'
+              : 'device-firmware-state'
+          }
+          data-testid={childTestId(testId, 'state')}
         >
           <strong>{t(`device_firmware_phase_${update.phase}`)}</strong>
           {' · '}
@@ -188,7 +170,7 @@ const DeviceFirmwareUpdate = ({
 
       {data.current && !running && (
         remote.length ? (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+          <div className="device-commands-row">
             <select
               aria-label={t('device_firmware_target')}
               value={target}
@@ -196,7 +178,8 @@ const DeviceFirmwareUpdate = ({
                 setTarget(event.target.value);
                 setConfirming(false);
               }}
-              style={inputStyle}
+              className="device-commands-input"
+              data-testid={childTestId(testId, 'target')}
             >
               {remote.map((bundle) => (
                 <option key={bundle.id} value={bundle.id}>
@@ -210,23 +193,24 @@ const DeviceFirmwareUpdate = ({
               label={confirming ? t('device_firmware_confirm', { bundle: target }) : t('device_firmware_start')}
               disabled={busy || !target}
               onClick={() => (confirming ? start() : setConfirming(true))}
+              testId={childTestId(testId, 'start')}
             />
           </div>
         ) : (
-          <div style={{ fontSize: 12.5, color: MUTED }}>{t('device_firmware_none')}</div>
+          <div className="device-firmware-none" data-testid={childTestId(testId, 'none')}>{t('device_firmware_none')}</div>
         )
       )}
 
       {data.current && others.length > 0 && (
-        <ul style={{ fontSize: 12, color: MUTED, margin: '8px 0 0', paddingLeft: 18 }}>
+        <ul className="device-firmware-others" data-testid={childTestId(testId, 'others')}>
           {others.map((bundle) => (
-            <li key={bundle.id}>
+            <li key={bundle.id} {...repeatedTestId(`${testId}-other`, bundle.id)}>
               {bundleLabel(bundle)} - {t('device_firmware_not_remote', { reason: bundle.reason ?? '' })}
             </li>
           ))}
         </ul>
       )}
-      <div style={{ fontSize: 12, color: MUTED, marginTop: 8 }}>{t('device_firmware_hint')}</div>
+      <div className="device-firmware-hint">{t('device_firmware_hint')}</div>
     </div>
   );
 };

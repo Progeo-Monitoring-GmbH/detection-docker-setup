@@ -39,6 +39,8 @@ import { startImpersonation } from './impersonation';
 import StaffAccessRequests from './StaffAccessRequests';
 import StaffMessaging from './StaffMessaging';
 import { staffFlags } from './access';
+import { childTestId, repeatedTestId } from '../testIds';
+import './StaffAdmin.css';
 
 type PermissionDef = {
   code: string;
@@ -125,13 +127,8 @@ const SessionDot = ({ user }: { user: StaffUser }) => {
       role="img"
       aria-label={title}
       title={title}
-      className="d-inline-block rounded-circle me-2 flex-shrink-0"
-      style={{
-        width: 8,
-        height: 8,
-        background: user.logged_in ? 'var(--bs-success)' : 'transparent',
-        border: `1px solid ${user.logged_in ? 'var(--bs-success)' : 'var(--bs-gray-400)'}`,
-      }}
+      className={`d-inline-block rounded-circle me-2 flex-shrink-0 staff-session-dot${user.logged_in ? ' staff-session-dot--on' : ''}`}
+      {...repeatedTestId('staff-user-session', user.id)}
     />
   );
 };
@@ -156,6 +153,7 @@ const UserFormModal = ({
   isNew,
   onSave,
   onGeneratePassword,
+  testId,
 }: {
   show: boolean;
   onHide: () => void;
@@ -166,6 +164,8 @@ const UserFormModal = ({
   isNew: boolean;
   onSave: (data: Record<string, unknown>) => void;
   onGeneratePassword?: (user: StaffUser) => void;
+  /** data-testid of the dialog; its fields and buttons are "<testId>-<name>". */
+  testId: string;
 }) => {
   const { t } = useTranslation();
   const [username, setUsername] = useState('');
@@ -221,7 +221,7 @@ const UserFormModal = ({
   };
 
   return (
-    <Modal show={show} onHide={onHide} centered size="lg">
+    <Modal show={show} onHide={onHide} centered size="lg" data-testid={testId}>
       <Modal.Header closeButton>
         <Modal.Title>{title}</Modal.Title>
       </Modal.Header>
@@ -234,6 +234,7 @@ const UserFormModal = ({
                 value={username}
                 onChange={(event) => setUsername(event.target.value)}
                 placeholder={t('staff_field_username_placeholder')}
+                data-testid={childTestId(testId, 'username')}
               />
             </Form.Group>
           )}
@@ -244,6 +245,7 @@ const UserFormModal = ({
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               placeholder="vorname.nachname@progeo.com"
+              data-testid={childTestId(testId, 'email')}
             />
           </Form.Group>
           {isNew && (
@@ -254,6 +256,7 @@ const UserFormModal = ({
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 placeholder={t('staff_field_password_placeholder')}
+                data-testid={childTestId(testId, 'password')}
               />
             </Form.Group>
           )}
@@ -265,6 +268,7 @@ const UserFormModal = ({
               label={t('staff_field_is_staff')}
               checked={isStaff}
               onChange={(event) => setIsStaff(event.target.checked)}
+              data-testid={childTestId(testId, 'is-staff')}
             />
             <Form.Check
               type="switch"
@@ -272,6 +276,7 @@ const UserFormModal = ({
               label={t('staff_field_is_active')}
               checked={isActive}
               onChange={(event) => setIsActive(event.target.checked)}
+              data-testid={childTestId(testId, 'is-active')}
             />
             {isNew && (
               <Form.Check
@@ -282,6 +287,7 @@ const UserFormModal = ({
                 checked={sendInvite}
                 disabled={!email}
                 onChange={(event) => setSendInvite(event.target.checked)}
+                data-testid={childTestId(testId, 'send-invite')}
               />
             )}
           </div>
@@ -293,8 +299,8 @@ const UserFormModal = ({
             </small>
           </Form.Label>
           <div
-            className="border rounded p-2 mb-2"
-            style={{ maxHeight: 220, overflowY: 'auto' }}
+            className="border rounded p-2 mb-2 staff-permissions-box"
+            data-testid={childTestId(testId, 'permissions')}
           >
             {permissionDefs.length === 0 && (
               <small className="text-muted">{t('staff_no_permissions')}</small>
@@ -310,6 +316,7 @@ const UserFormModal = ({
                   disabled={!grantable}
                   checked={selectedPerms.includes(def.code)}
                   onChange={() => togglePermission(def.code)}
+                  {...repeatedTestId(`${testId}-permission`, def.code)}
                 />
               );
             })}
@@ -324,22 +331,23 @@ const UserFormModal = ({
       <Modal.Footer>
         {!isNew && onGeneratePassword && user && (
           <>
-            <small className="text-muted me-auto" style={{ maxWidth: 320 }}>
+            <small className="text-muted me-auto staff-invite-hint">
               {t('staff_password_invite_hint')}
             </small>
             <Button
               variant="outline-warning"
               onClick={() => onGeneratePassword(user)}
+              data-testid={childTestId(testId, 'generate-password')}
             >
               <Key className="me-1" />
               {t('staff_generate_password')}
             </Button>
           </>
         )}
-        <Button variant="secondary" onClick={onHide}>
+        <Button variant="secondary" onClick={onHide} data-testid={childTestId(testId, 'cancel')}>
           {t('staff_cancel')}
         </Button>
-        <Button variant="primary" onClick={handleSubmit}>
+        <Button variant="primary" onClick={handleSubmit} data-testid={childTestId(testId, 'save')}>
           {t('staff_save')}
         </Button>
       </Modal.Footer>
@@ -360,7 +368,7 @@ const PasswordResultModal = ({
 }) => {
   const { t } = useTranslation();
   return (
-    <Modal show={show} onHide={onHide} centered>
+    <Modal show={show} onHide={onHide} centered data-testid="staff-password-result">
       <Modal.Header closeButton>
         <Modal.Title>{t('staff_password_result_title')}</Modal.Title>
       </Modal.Header>
@@ -376,11 +384,12 @@ const PasswordResultModal = ({
           readOnly
           value={password}
           onFocus={(event) => event.target.select()}
+          data-testid="staff-password-result-value"
         />
         <Form.Text muted>{t('staff_password_invite_hint')}</Form.Text>
       </Modal.Body>
       <Modal.Footer>
-        <Button variant="primary" onClick={onHide}>
+        <Button variant="primary" onClick={onHide} data-testid="staff-password-result-close">
           {t('staff_close')}
         </Button>
       </Modal.Footer>
@@ -702,7 +711,7 @@ const StaffAdmin = () => {
         selector: (row) => row.username.toLowerCase(),
         sortable: true,
         cell: (row) => (
-          <span className="d-inline-flex align-items-center">
+          <span className="d-inline-flex align-items-center" {...repeatedTestId('staff-user-name', row.id)}>
             <SessionDot user={row} />
             {row.username}
             {row.is_superuser && (
@@ -727,6 +736,7 @@ const StaffAdmin = () => {
             <Badge
               bg={role === 'user' ? 'secondary' : 'warning'}
               text={role === 'user' ? undefined : 'dark'}
+              {...repeatedTestId('staff-user-role', row.id)}
             >
               {roleLabel(role)}
             </Badge>
@@ -740,9 +750,9 @@ const StaffAdmin = () => {
         sortable: true,
         cell: (row) =>
           row.is_active ? (
-            <Badge bg="success">{t('staff_badge_active')}</Badge>
+            <Badge bg="success" {...repeatedTestId('staff-user-active', row.id)}>{t('staff_badge_active')}</Badge>
           ) : (
-            <Badge bg="danger">{t('staff_badge_inactive')}</Badge>
+            <Badge bg="danger" {...repeatedTestId('staff-user-active', row.id)}>{t('staff_badge_inactive')}</Badge>
           ),
         width: '100px',
       },
@@ -752,7 +762,7 @@ const StaffAdmin = () => {
         sortable: true,
         cell: (row) =>
           row.two_factor_enabled ? (
-            <Badge bg="success">{t('staff_badge_two_factor')}</Badge>
+            <Badge bg="success" {...repeatedTestId('staff-user-two-factor', row.id)}>{t('staff_badge_two_factor')}</Badge>
           ) : (
             <span className="text-muted small">-</span>
           ),
@@ -766,13 +776,13 @@ const StaffAdmin = () => {
           const enabled = rowPermissions(row);
           if (enabled.length === 0) {
             return (
-              <span className="text-muted small">
+              <span className="text-muted small" {...repeatedTestId('staff-user-permissions', row.id)}>
                 {t('staff_permissions_none')}
               </span>
             );
           }
           return (
-            <span className="d-flex flex-wrap gap-1">
+            <span className="d-flex flex-wrap gap-1" {...repeatedTestId('staff-user-permissions', row.id)}>
               {enabled.slice(0, 3).map((code) => (
                 <Badge key={code} bg="info" pill text="dark">
                   {permissionLabel(code)}
@@ -813,6 +823,7 @@ const StaffAdmin = () => {
               aria-label={t('staff_edit_user')}
               disabled={busyId === row.id}
               onClick={() => setEditUser(row)}
+              {...repeatedTestId('staff-user-edit', row.id)}
             >
               <PencilSquare size={14} />
             </Button>
@@ -823,6 +834,7 @@ const StaffAdmin = () => {
               aria-label={`${t('staff_generate_new_password')} - ${t('staff_password_invite_hint')}`}
               disabled={busyId === row.id}
               onClick={() => handleGeneratePassword(row)}
+              {...repeatedTestId('staff-user-generate-password', row.id)}
             >
               <Key size={14} />
             </Button>
@@ -841,6 +853,7 @@ const StaffAdmin = () => {
               }
               disabled={busyId === row.id || !row.email || !row.is_active}
               onClick={() => handleInvite(row)}
+              {...repeatedTestId('staff-user-invite', row.id)}
             >
               <Envelope size={14} />
             </Button>
@@ -852,6 +865,7 @@ const StaffAdmin = () => {
                 aria-label={t('staff_reset_two_factor')}
                 disabled={busyId === row.id}
                 onClick={() => handleResetTwoFactor(row)}
+                {...repeatedTestId('staff-user-reset-two-factor', row.id)}
               >
                 <ShieldX size={14} />
               </Button>
@@ -864,6 +878,7 @@ const StaffAdmin = () => {
                 aria-label={t('staff_impersonate')}
                 disabled={busyId === row.id}
                 onClick={() => handleImpersonate(row)}
+                {...repeatedTestId('staff-user-impersonate', row.id)}
               >
                 <Incognito size={14} />
               </Button>
@@ -875,6 +890,7 @@ const StaffAdmin = () => {
               aria-label={t('staff_delete_user')}
               disabled={busyId === row.id}
               onClick={() => handleDelete(row)}
+              {...repeatedTestId('staff-user-delete', row.id)}
             >
               <Trash size={14} />
             </Button>
@@ -888,8 +904,8 @@ const StaffAdmin = () => {
 
   if (!isStaff) {
     return (
-      <Container>
-        <Card className="border-0 shadow-sm my-5">
+      <Container data-testid="page-staff">
+        <Card className="border-0 shadow-sm my-5" data-testid="staff-access-required">
           <Card.Body className="text-center py-5">
             <ShieldLock size={40} className="text-muted mb-3" />
             <h5>{t('staff_access_required')}</h5>
@@ -901,8 +917,8 @@ const StaffAdmin = () => {
   }
 
   return (
-    <Container fluid>
-      <Card className="border-0 shadow-sm my-4 p-3">
+    <Container fluid data-testid="page-staff">
+      <Card className="border-0 shadow-sm my-4 p-3" data-testid="staff-users">
         <Card.Body>
           <div className="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
             <h5 className="mb-0">
@@ -914,6 +930,7 @@ const StaffAdmin = () => {
                 variant="outline-secondary"
                 size="sm"
                 onClick={fetchUsers}
+                data-testid="staff-users-refresh"
               >
                 <ArrowRepeat className="me-1" />
                 {t('staff_refresh')}
@@ -922,6 +939,7 @@ const StaffAdmin = () => {
                 variant="primary"
                 size="sm"
                 onClick={() => setShowCreate(true)}
+                data-testid="staff-users-add"
               >
                 <PersonPlus className="me-1" />
                 {t('staff_add_user')}
@@ -929,23 +947,25 @@ const StaffAdmin = () => {
             </div>
           </div>
 
-          <div className="d-flex flex-wrap align-items-center gap-2 mb-2">
+          <div className="d-flex flex-wrap align-items-center gap-2 mb-2" data-testid="staff-users-filters">
             <Form.Control
               size="sm"
-              style={{ width: 240 }}
+              className="staff-filter-text"
               placeholder={t('staff_filter_text')}
               aria-label={t('staff_filter_text')}
               value={filters.text}
               onChange={(event) => setFilter('text', event.target.value)}
+              data-testid="staff-users-filter-text"
             />
             <Form.Select
               size="sm"
-              style={{ width: 'auto' }}
+              className="staff-filter-select"
               aria-label={t('staff_col_staff')}
               value={filters.role}
               onChange={(event) =>
                 setFilter('role', event.target.value as Filters['role'])
               }
+              data-testid="staff-users-filter-role"
             >
               <option value="">{t('staff_filter_all_roles')}</option>
               <option value="superuser">{t('staff_badge_superuser')}</option>
@@ -954,12 +974,13 @@ const StaffAdmin = () => {
             </Form.Select>
             <Form.Select
               size="sm"
-              style={{ width: 'auto' }}
+              className="staff-filter-select"
               aria-label={t('staff_col_active')}
               value={filters.active}
               onChange={(event) =>
                 setFilter('active', event.target.value as Filters['active'])
               }
+              data-testid="staff-users-filter-active"
             >
               <option value="">{t('staff_filter_all_states')}</option>
               <option value="active">{t('staff_badge_active')}</option>
@@ -967,7 +988,7 @@ const StaffAdmin = () => {
             </Form.Select>
             <Form.Select
               size="sm"
-              style={{ width: 'auto' }}
+              className="staff-filter-select"
               aria-label={t('staff_col_two_factor')}
               value={filters.twoFactor}
               onChange={(event) =>
@@ -976,6 +997,7 @@ const StaffAdmin = () => {
                   event.target.value as Filters['twoFactor'],
                 )
               }
+              data-testid="staff-users-filter-two-factor"
             >
               <option value="">{t('staff_filter_two_factor_any')}</option>
               <option value="on">{t('staff_filter_two_factor_on')}</option>
@@ -983,12 +1005,13 @@ const StaffAdmin = () => {
             </Form.Select>
             <Form.Select
               size="sm"
-              style={{ width: 'auto' }}
+              className="staff-filter-select"
               aria-label={t('staff_col_session')}
               value={filters.session}
               onChange={(event) =>
                 setFilter('session', event.target.value as Filters['session'])
               }
+              data-testid="staff-users-filter-session"
             >
               <option value="">{t('staff_filter_session_any')}</option>
               <option value="in">{t('staff_filter_logged_in')}</option>
@@ -996,10 +1019,11 @@ const StaffAdmin = () => {
             </Form.Select>
             <Form.Select
               size="sm"
-              style={{ width: 'auto', maxWidth: 260 }}
+              className="staff-filter-select staff-filter-select--narrow"
               aria-label={t('staff_col_permissions')}
               value={filters.permission}
               onChange={(event) => setFilter('permission', event.target.value)}
+              data-testid="staff-users-filter-permission"
             >
               <option value="">{t('staff_filter_all_permissions')}</option>
               {response.all_permission_defs.map((def) => (
@@ -1013,12 +1037,13 @@ const StaffAdmin = () => {
                 size="sm"
                 variant="outline-secondary"
                 onClick={() => updateFilters(NO_FILTERS)}
+                data-testid="staff-users-filter-clear"
               >
                 <XLg className="me-1" />
                 {t('staff_filter_clear')}
               </Button>
             )}
-            <small className="text-muted ms-auto">
+            <small className="text-muted ms-auto" data-testid="staff-users-count">
               {t('staff_filter_count', {
                 shown: filteredUsers.length,
                 total: response.users.length,
@@ -1036,7 +1061,7 @@ const StaffAdmin = () => {
             paginationRowsPerPageOptions={[10, 15, 25, 50]}
             progressPending={loading}
             progressComponent={
-              <div className="d-flex align-items-center gap-2 text-muted py-4">
+              <div className="d-flex align-items-center gap-2 text-muted py-4" data-testid="staff-users-loading">
                 <Spinner size="sm" animation="border" />
                 {t('staff_loading')}
               </div>
@@ -1061,6 +1086,7 @@ const StaffAdmin = () => {
         grantableCodes={response.grantable_codes}
         permissionDefs={response.all_permission_defs}
         onSave={handleSave(null, true)}
+        testId="staff-user-create"
       />
 
       <UserFormModal
@@ -1075,6 +1101,7 @@ const StaffAdmin = () => {
         permissionDefs={response.all_permission_defs}
         onSave={handleSave(editUser, false)}
         onGeneratePassword={handleGeneratePassword}
+        testId="staff-user-edit-dialog"
       />
 
       <PasswordResultModal

@@ -3,7 +3,7 @@ import React from 'react';
 
 const BoxContainer = ({ title = '', children }) => {
   return (
-    <Card className="col-* my-4" style={{ padding: 0 }}>
+    <Card className="col-* my-4 p-0">
       <Card.Body>
         {title && <Card.Title className="card-header">{title}</Card.Title>}
         <Card.Text as="div">{children}</Card.Text>

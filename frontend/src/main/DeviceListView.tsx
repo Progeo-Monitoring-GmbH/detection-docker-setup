@@ -1,4 +1,4 @@
-import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router';
@@ -31,6 +31,8 @@ import PillButton from '../components/ui/kit/PillButton';
 import SearchableDataTable, { type SearchableColumn } from '../components/ui/kit/SearchableDataTable';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import { staffFlags } from './access';
+import { repeatedTestId } from '../testIds';
+import './DeviceListView.css';
 
 type HashKind = 'project' | 'mac' | 'legacy';
 
@@ -75,83 +77,66 @@ type Overview = {
 
 type Filter = 'all' | 'online' | 'offline' | 'project';
 
-const MUTED = '#8B8383';
 const GREEN = '#3F7A1C';
-const RED = '#C44D26';
 
 const HASH_KINDS: HashKind[] = ['project', 'mac', 'legacy'];
 
+/** The colours per tone: .device-list-chip--<tone> in DeviceListView.css. */
+type ChipTone = 'neutral' | 'ok' | 'danger' | 'info';
+
 const Chip = ({
   children,
-  color = '#6E6868',
-  background = 'var(--progeo-track-soft)',
+  tone = 'neutral',
   title,
+  testId,
+  testKey,
 }: {
   children: ReactNode;
-  color?: string;
-  background?: string;
+  tone?: ChipTone;
   title?: string;
+  /** data-testid / data-test-key of the chip (src/testIds.ts). */
+  testId?: string;
+  testKey?: string | number;
 }) => (
-  <span
-    title={title}
-    style={{
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: 6,
-      fontSize: 11.5,
-      fontWeight: 600,
-      color,
-      background,
-      borderRadius: 'var(--progeo-radius-pill)',
-      padding: '3px 10px',
-      whiteSpace: 'nowrap',
-    }}
-  >
+  <span title={title} className={`device-list-chip device-list-chip--${tone}`} data-testid={testId} data-test-key={testKey}>
     {children}
   </span>
 );
 
-const Dot = ({ color }: { color: string }) => (
-  <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0 }} />
-);
+/** The status dot of a chip - its colour comes from the chip's tone. */
+const Dot = () => <span className="device-list-dot" />;
 
 /** One count with a bar relative to the location's device total. */
-const CountBar = ({ label, count, total, hint }: { label: string; count: number; total: number; hint?: string }) => (
-  <div title={hint}>
-    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, marginBottom: 4 }}>
-      <span style={{ color: count ? 'var(--progeo-blue)' : MUTED }}>{label}</span>
-      <span style={{ fontWeight: 600, color: count ? 'var(--progeo-blue)' : MUTED }}>{count}</span>
+const CountBar = ({
+  label,
+  count,
+  total,
+  hint,
+  testKey,
+}: {
+  label: string;
+  count: number;
+  total: number;
+  hint?: string;
+  /** data-test-key of the bar and its value (src/testIds.ts). */
+  testKey: string;
+}) => (
+  <div
+    title={hint}
+    className={count ? 'device-list-count' : 'device-list-count device-list-count--empty'}
+    {...repeatedTestId('device-list-hash-count', testKey)}
+  >
+    <div className="device-list-count-head">
+      <span className="device-list-count-label">{label}</span>
+      <span className="device-list-count-value" {...repeatedTestId('device-list-hash-count-value', testKey)}>{count}</span>
     </div>
-    <div style={{ height: 6, borderRadius: 3, background: 'var(--progeo-track)', overflow: 'hidden' }}>
-      <div
-        style={{
-          width: total ? `${(count / total) * 100}%` : 0,
-          height: '100%',
-          borderRadius: 3,
-          background: 'var(--progeo-blue)',
-        }}
-      />
+    <div className="device-list-count-bar">
+      <div className="device-list-count-fill" style={{ width: total ? `${(count / total) * 100}%` : 0 }} />
     </div>
   </div>
 );
 
-const actionStyle = (disabled = false): CSSProperties => ({
-  width: 30,
-  height: 30,
-  border: 'none',
-  borderRadius: 9,
-  background: 'var(--progeo-surface)',
-  boxShadow: '0 2px 8px rgba(11, 54, 89, .12)',
-  color: 'var(--progeo-blue)',
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  cursor: disabled ? 'default' : 'pointer',
-  opacity: disabled ? 0.4 : 1,
-  padding: 0,
-});
-
-const muted = <span style={{ color: MUTED }}>–</span>;
+const muted = <span className="device-list-muted">–</span>;
 
 /**
  * Device overview of ONE location: pick it with the LocationPicker, then
@@ -402,35 +387,39 @@ const DeviceListView = () => {
 
   const statusChip = (device: OverviewDevice) =>
     device.online ? (
-      <Chip color={GREEN} background="#EBF4E3">
-        <Dot color={GREEN} />
+      <Chip tone="ok" testId="device-list-status" testKey={device.id}>
+        <Dot />
         {t('devices_status_online')}
       </Chip>
     ) : device.last_seen_at ? (
-      <Chip color={RED} background="#FBE9E3">
-        <Dot color={RED} />
+      <Chip tone="danger" testId="device-list-status" testKey={device.id}>
+        <Dot />
         {t('devices_status_offline')}
       </Chip>
     ) : (
-      <Chip>
-        <Dot color={MUTED} />
+      <Chip testId="device-list-status" testKey={device.id}>
+        <Dot />
         {t('devices_status_never')}
       </Chip>
     );
 
   const pingChip = (device: OverviewDevice) => {
     if (!overview?.pinged) {
-      return <span style={{ color: MUTED }}>{pinging ? <Spinner animation="border" size="sm" /> : '–'}</span>;
+      return (
+        <span className="device-list-muted" {...repeatedTestId('device-list-ping', device.id)}>
+          {pinging ? <Spinner animation="border" size="sm" /> : '–'}
+        </span>
+      );
     }
     if (device.ping === null) {
-      return <Chip>{t('devices_ping_no_ip')}</Chip>;
+      return <Chip testId="device-list-ping" testKey={device.id}>{t('devices_ping_no_ip')}</Chip>;
     }
     return device.ping ? (
-      <Chip color={GREEN} background="#EBF4E3">
+      <Chip tone="ok" testId="device-list-ping" testKey={device.id}>
         {t('devices_ping_ok')}
       </Chip>
     ) : (
-      <Chip color={RED} background="#FBE9E3">
+      <Chip tone="danger" testId="device-list-ping" testKey={device.id}>
         {t('devices_ping_fail')}
       </Chip>
     );
@@ -438,11 +427,11 @@ const DeviceListView = () => {
 
   const hashChip = (device: OverviewDevice) =>
     device.hash_kind === 'project' ? (
-      <Chip color="var(--progeo-blue)" background="#E3ECF4">
+      <Chip tone="info" testId="device-list-hash" testKey={device.id}>
         {t('devices_hash_short_project')}
       </Chip>
     ) : (
-      <Chip>{t(`devices_hash_short_${device.hash_kind}`)}</Chip>
+      <Chip testId="device-list-hash" testKey={device.id}>{t(`devices_hash_short_${device.hash_kind}`)}</Chip>
     );
 
   // Commands are polled only by controllers on the new hash schema
@@ -454,14 +443,21 @@ const DeviceListView = () => {
         title={t('devices_action_commands')}
         aria-label={t('devices_action_commands')}
         onClick={() => setCommandsTarget(device)}
-        style={actionStyle()}
+        className="progeo-icon-button"
+        {...repeatedTestId('device-list-commands', device.id)}
       >
         <Terminal size={14} />
       </button>
     ) : (
       // A disabled button shows no tooltip in every browser - the span does.
       <span title={t('devices_action_commands_project_only', { example: projectExample })}>
-        <button type="button" disabled aria-label={t('devices_action_commands')} style={actionStyle(true)}>
+        <button
+          type="button"
+          disabled
+          aria-label={t('devices_action_commands')}
+          className="progeo-icon-button"
+          {...repeatedTestId('device-list-commands', device.id)}
+        >
           <Terminal size={14} />
         </button>
       </span>
@@ -477,9 +473,9 @@ const DeviceListView = () => {
       selector: (device) => device.display_name || device.raw_hash,
       searchText: (device) => `${device.display_name ?? ''} ${device.raw_hash} #${device.id}`,
       cell: (device) => (
-        <div style={{ padding: '6px 0', minWidth: 0 }}>
-          <div style={{ fontWeight: 500 }}>{device.display_name || device.raw_hash}</div>
-          <div className="font-monospace" style={{ fontSize: 11.5, color: MUTED }}>
+        <div className="device-list-device">
+          <div className="device-list-strong">{device.display_name || device.raw_hash}</div>
+          <div className="font-monospace device-list-sub">
             {device.raw_hash} · #{device.id}
           </div>
         </div>
@@ -495,8 +491,8 @@ const DeviceListView = () => {
       cell: (device) =>
         device.model || device.type ? (
           <div>
-            <div style={{ fontWeight: 500 }}>{device.model || device.type}</div>
-            {device.model && device.type && <div style={{ fontSize: 11.5, color: MUTED }}>{device.type}</div>}
+            <div className="device-list-strong">{device.model || device.type}</div>
+            {device.model && device.type && <div className="device-list-sub">{device.type}</div>}
           </div>
         ) : (
           muted
@@ -526,7 +522,7 @@ const DeviceListView = () => {
       selector: (device) => device.last_seen_at ?? '',
       searchText: (device) => (device.last_seen_at ? formatDate(device.last_seen_at, 'dateTimeSeconds') : ''),
       cell: (device) => (
-        <span style={{ whiteSpace: 'nowrap' }}>
+        <span className="device-list-nowrap">
           {device.last_seen_at ? formatDate(device.last_seen_at, 'dateTimeSeconds') : muted}
         </span>
       ),
@@ -557,7 +553,7 @@ const DeviceListView = () => {
       width: '210px',
       ignoreRowClick: true,
       cell: (device) => (
-        <div style={{ display: 'inline-flex', gap: 6 }}>
+        <div className="device-list-actions">
           {canCommands && commandsButton(device)}
           {/* "Einstellungen" is a superuser-only portal page. */}
           {canEdit && isSuperuser && device.location && (
@@ -566,7 +562,8 @@ const DeviceListView = () => {
               title={t('devices_action_settings')}
               aria-label={t('devices_action_settings')}
               onClick={() => navigate(`/location/${device.location}/einstellungen`)}
-              style={actionStyle()}
+              className="progeo-icon-button"
+              {...repeatedTestId('device-list-settings', device.id)}
             >
               <Sliders size={14} />
             </button>
@@ -578,7 +575,8 @@ const DeviceListView = () => {
               title={t('devices_action_editor')}
               aria-label={t('devices_action_editor')}
               onClick={() => navigate(`/lageplan/wizard/?location=${device.location}`)}
-              style={actionStyle()}
+              className="progeo-icon-button"
+              {...repeatedTestId('device-list-editor', device.id)}
             >
               <Image size={14} />
             </button>
@@ -589,12 +587,20 @@ const DeviceListView = () => {
               title={t('devices_action_test_measurements')}
               aria-label={t('devices_action_test_measurements')}
               onClick={() => setTestDevice({ id: device.id, location: device.location!, raw_hash: device.raw_hash })}
-              style={actionStyle()}
+              className="progeo-icon-button"
+              {...repeatedTestId('device-list-test-measurements', device.id)}
             >
               <Activity size={14} />
             </button>
           )}
-          {canDelete && <DeleteIconButton label={t('devices_action_delete')} onClick={() => setDeleteTarget(device)} />}
+          {canDelete && (
+            <DeleteIconButton
+              label={t('devices_action_delete')}
+              onClick={() => setDeleteTarget(device)}
+              testId="device-list-delete"
+              testKey={device.id}
+            />
+          )}
         </div>
       ),
     },
@@ -604,11 +610,12 @@ const DeviceListView = () => {
 
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div className="device-list" data-testid="page-device-overview">
       <PanelCard
+        testId="device-list-header"
         title={t('devices_title')}
         actions={
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="device-list-toolbar" data-testid="device-list-toolbar">
             {isStaff && (
               <PillButton
                 variant="ghost"
@@ -616,6 +623,7 @@ const DeviceListView = () => {
                 label={t('devices_airtable_sync')}
                 disabled={syncing}
                 onClick={syncAirtable}
+                testId="device-list-airtable-sync"
               />
             )}
             {locationId !== null && isStaff && canList && (
@@ -625,6 +633,7 @@ const DeviceListView = () => {
                 label={pinging ? t('devices_pinging') : t('devices_ping')}
                 disabled={pinging || loading}
                 onClick={() => void loadOverview(locationId, true)}
+                testId="device-list-ping-all"
               />
             )}
             {locationId !== null && canList && (
@@ -634,6 +643,7 @@ const DeviceListView = () => {
                 label={t('devices_refresh')}
                 disabled={loading}
                 onClick={() => void loadOverview(locationId, false)}
+                testId="device-list-refresh"
               />
             )}
             {locationId !== null && canProvision && (
@@ -643,22 +653,24 @@ const DeviceListView = () => {
                 label={t('devices_add')}
                 disabled={adding}
                 onClick={() => setAdding(true)}
+                testId="device-list-add"
               />
             )}
           </div>
         }
       >
-        <div style={{ maxWidth: 560 }}>
+        <div className="device-list-picker">
           <LocationPicker
             id="device-overview-location"
             locations={locations}
             value={locationId}
             onChange={selectLocation}
             loading={locationsLoading}
+            testId="device-list-location"
           />
         </div>
         {locationId === null && (
-          <div style={{ fontSize: 12.5, color: MUTED, marginTop: 10 }}>{t('devices_pick_location')}</div>
+          <div className="device-list-hint device-list-hint--pick" data-testid="device-list-pick-hint">{t('devices_pick_location')}</div>
         )}
       </PanelCard>
 
@@ -694,36 +706,32 @@ const DeviceListView = () => {
       )}
 
       {locationId !== null && loading && !overview && (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: 30 }}>
+        <div className="device-list-loading" data-testid="device-list-loading">
           <Spinner animation="border" />
         </div>
       )}
 
       {stats && (
         <>
-          <KpiStrip tiles={kpiTiles} />
+          <KpiStrip tiles={kpiTiles} testId="device-list-kpis" />
 
-          <PanelCard title={t('devices_hashes')}>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-                gap: '10px 24px',
-              }}
-            >
+          <PanelCard title={t('devices_hashes')} testId="device-list-hashes">
+            <div className="device-list-counts">
               {HASH_KINDS.map((kind) => (
                 <CountBar
                   key={kind}
+                  testKey={kind}
                   label={t(`devices_hash_${kind}`, { example: projectExample })}
                   count={stats.hash_kinds[kind]}
                   total={stats.total}
                 />
               ))}
             </div>
-            <div style={{ fontSize: 12, color: MUTED, marginTop: 12 }}>{t('devices_online_hint')}</div>
+            <div className="device-list-hint">{t('devices_online_hint')}</div>
           </PanelCard>
 
           <PanelCard
+            testId="device-list-devices"
             title={t('devices_list', { name: overview?.location.name || `#${overview?.location.id}` })}
             actions={
               <SegmentedControl
@@ -735,11 +743,12 @@ const DeviceListView = () => {
                 ]}
                 value={filter}
                 onChange={(value) => setFilter(value as Filter)}
+                testId="device-list-filter"
               />
             }
           >
             {shown.length === 0 ? (
-              <div style={{ fontSize: 13, color: MUTED, padding: '8px 0' }}>
+              <div className="device-list-empty" data-testid="device-list-empty">
                 {devices.length === 0 ? t('devices_none') : t('devices_none_filtered')}
               </div>
             ) : (
@@ -748,6 +757,7 @@ const DeviceListView = () => {
                 data={shown}
                 keyField="id"
                 defaultSortFieldId="device"
+                testId="device-list-table"
                 highlightOnHover
                 labels={{
                   placeholder: t('devices_search'),
@@ -777,6 +787,7 @@ const DeviceListView = () => {
         confirming={deleting}
         onConfirm={confirmDelete}
         onCancel={() => setDeleteTarget(null)}
+        testId="device-list-delete-confirm"
       />
     </div>
   );

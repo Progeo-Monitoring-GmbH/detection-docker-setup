@@ -165,20 +165,21 @@ const LocationAlarmDetail = ({
     : t('alarm_detail_location_fallback', { id });
 
   return (
-    <Container fluid className="py-4">
+    <Container fluid className="py-4" data-testid="page-location-alarms">
       <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
         <div>
-          <h2 className="mb-0">
+          <h2 className="mb-0" data-testid="location-alarms-title">
             <Geo className="me-2 text-primary" />
             {locationLabel}
           </h2>
-          <small className="text-muted">
+          <small className="text-muted" data-testid="location-alarms-count">
             {t('alarm_detail_count', { count: alarms.length })}
           </small>
         </div>
         <Button
           variant="outline-secondary"
           onClick={() => navigate('/location/overview/')}
+          data-testid="location-alarms-back"
         >
           <ArrowLeft className="me-2" />
           {t('alarm_detail_back')}
@@ -186,7 +187,7 @@ const LocationAlarmDetail = ({
       </div>
 
       {/* Timeline */}
-      <Card className="border-0 shadow-sm mb-3 p-2">
+      <Card className="border-0 shadow-sm mb-3 p-2" data-testid="location-alarms-timeline-card">
         <Card.Body>
           <div className="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
             <h5 className="mb-0">
@@ -198,12 +199,16 @@ const LocationAlarmDetail = ({
             </small>
           </div>
           {loading ? (
-            <div className="d-flex align-items-center gap-2 text-muted py-5 justify-content-center">
+            <div
+              className="d-flex align-items-center gap-2 text-muted py-5 justify-content-center"
+              data-testid="location-alarms-loading"
+            >
               <Spinner size="sm" animation="border" />
               {t('alarm_detail_loading')}
             </div>
           ) : (
             <AlarmTimeline
+              testId="location-alarms-timeline"
               alarms={alarms}
               rainEvents={rainEvents}
               now={now}
@@ -215,10 +220,10 @@ const LocationAlarmDetail = ({
       </Card>
 
       {/* TODO: insert alarms as DataTable - there already is a component for it */}
-      <AlarmsOverview />
+      <AlarmsOverview testId="location-alarms-overview" />
 
       {/* Details */}
-      <Card className="border-0 shadow-sm p-2">
+      <Card className="border-0 shadow-sm p-2" data-testid="location-alarms-details">
         <Card.Body>
           <h5 className="mb-3">
             <Building className="me-2 text-primary" />
@@ -227,7 +232,7 @@ const LocationAlarmDetail = ({
           <Row className="g-4">
             <Col md={6}>
               <h6 className="text-muted text-uppercase small mb-2">{t('alarm_detail_location')}</h6>
-              <dl className="row mb-0">
+              <dl className="row mb-0" data-testid="location-alarms-location">
                 <dt className="col-sm-4">{t('objekt_field_project_name')}</dt>
                 <dd className="col-sm-8">{location?.name || '-'}</dd>
                 <dt className="col-sm-4">{t('objekt_field_project_nr')}</dt>
@@ -258,13 +263,13 @@ const LocationAlarmDetail = ({
             <Col md={6}>
               <h6 className="text-muted text-uppercase small mb-2">{t('alarm_detail_alarm')}</h6>
               {!selectedAlarm ? (
-                <div className="text-muted">
+                <div className="text-muted" data-testid="location-alarms-select-hint">
                   {t('alarm_detail_select_hint')}
                 </div>
               ) : (
-                <dl className="row mb-0">
+                <dl className="row mb-0" data-testid="location-alarms-alarm">
                   <dt className="col-sm-4">{t('alarm_field_alarm_id')}</dt>
-                  <dd className="col-sm-8">#{selectedAlarm.id}</dd>
+                  <dd className="col-sm-8" data-testid="location-alarms-alarm-id">#{selectedAlarm.id}</dd>
                   <dt className="col-sm-4">{t('alarm_field_device')}</dt>
                   <dd className="col-sm-8">
                     {selectedAlarm.device?.display_name ||
@@ -295,9 +300,9 @@ const LocationAlarmDetail = ({
                     })()}
                   </dd>
                   <dt className="col-sm-4">{t('alarm_field_threshold')}</dt>
-                  <dd className="col-sm-8">{selectedAlarm.threshold ?? '-'}</dd>
+                  <dd className="col-sm-8" data-testid="location-alarms-alarm-threshold">{selectedAlarm.threshold ?? '-'}</dd>
                   <dt className="col-sm-4">{t('alarm_field_max_value')}</dt>
-                  <dd className="col-sm-8">{selectedAlarm.max_value ?? '-'}</dd>
+                  <dd className="col-sm-8" data-testid="location-alarms-alarm-max-value">{selectedAlarm.max_value ?? '-'}</dd>
                   <dt className="col-sm-4">{t('alarm_field_triggered')}</dt>
                   <dd className="col-sm-8">
                     {selectedAlarm.triggered_at
@@ -319,6 +324,7 @@ const LocationAlarmDetail = ({
                     <div className="d-flex align-items-center gap-2">
                       <Badge
                         bg={isAlarmActive(selectedAlarm) ? 'danger' : 'success'}
+                        data-testid="location-alarms-alarm-state"
                       >
                         {isAlarmActive(selectedAlarm) ? t('alarm_state_active') : t('alarm_state_normalized')}
                       </Badge>
@@ -329,6 +335,7 @@ const LocationAlarmDetail = ({
                             STATUS_LABELS[0]
                           ).variant
                         }
+                        data-testid="location-alarms-alarm-evaluation"
                       >
                         {t(
                           (

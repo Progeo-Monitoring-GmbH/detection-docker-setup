@@ -1,5 +1,6 @@
 import { type ReactNode, type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import './wheelZoom.css';
 
 /**
  * Plans and plots zoom with Ctrl (or ⌘) + mouse wheel only - a trackpad pinch
@@ -166,7 +167,16 @@ export const usePlotlyWheelZoom = (graphDiv: HTMLElement | null, onPlain: () => 
  * "Ctrl + scroll to zoom" (or, after a one-finger touch, "use two fingers")
  * over a plan or plot (its parent: position relative).
  */
-export const WheelZoomHint = ({ visible, radius = 13 }: { visible: boolean | ZoomHintKind; radius?: number }) => {
+export const WheelZoomHint = ({
+  visible,
+  radius = 13,
+  testId = 'wheel-zoom-hint',
+}: {
+  visible: boolean | ZoomHintKind;
+  radius?: number;
+  /** data-testid of the hint - set it when a page shows several zoomable views. */
+  testId?: string;
+}) => {
   const { t } = useTranslation();
   if (!visible) {
     return null;
@@ -178,22 +188,9 @@ export const WheelZoomHint = ({ visible, radius = 13 }: { visible: boolean | Zoo
   return (
     <div
       aria-live="polite"
-      style={{
-        position: 'absolute',
-        inset: 0,
-        zIndex: 3,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        pointerEvents: 'none',
-        borderRadius: radius,
-        background: 'rgba(16, 20, 25, 0.35)',
-        color: '#ffffff',
-        fontSize: 15,
-        fontWeight: 600,
-        textAlign: 'center',
-        padding: '0 12px',
-      }}
+      className="wheel-zoom-hint"
+      style={{ borderRadius: radius }}
+      data-testid={testId}
     >
       {text}
     </div>

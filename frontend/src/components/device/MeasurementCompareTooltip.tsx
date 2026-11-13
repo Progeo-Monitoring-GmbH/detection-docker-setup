@@ -1,4 +1,6 @@
 import { type CSSProperties, Fragment, type Ref } from 'react';
+import { childTestId } from '../../testIds';
+import './MeasurementCompareTooltip.css';
 
 type CompareTooltipRow = {
   /** The trace's uid. */
@@ -16,10 +18,9 @@ export type CompareTooltipData = {
   rows: CompareTooltipRow[];
 };
 
+/** The trace's colour (per row) - the swatch's shape comes from its class. */
 const swatchStyle = (row: CompareTooltipRow): CSSProperties =>
-  row.band
-    ? { width: 12, height: 10, background: row.color, border: `1px solid ${row.color}`, borderRadius: 2 }
-    : { width: 14, height: 3, background: row.color, borderRadius: 2 };
+  row.band ? { background: row.color, borderColor: row.color } : { background: row.color };
 
 export const TOOLTIP_WIDTH = 280;
 
@@ -33,46 +34,59 @@ const MeasurementCompareTooltip = ({
   activeKey,
   style,
   ref,
+  testId = 'measurement-compare-tooltip',
 }: {
   tooltip: CompareTooltipData;
   activeKey: string | null;
   style: CSSProperties;
   ref?: Ref<HTMLDivElement>;
+  /** data-testid of the tooltip; its rows' names / values are "<testId>-name" / "-value" (key: the trace uid). */
+  testId?: string;
 }) => (
   <div
     ref={ref}
-    className="position-absolute bg-white border rounded shadow-sm small px-2 py-1"
+    className="measurement-compare-tooltip position-absolute bg-white border rounded shadow-sm small px-2 py-1"
     // Fixed width: growing and shrinking with the values, it would flicker
     // while the cursor moves.
-    style={{ pointerEvents: 'none', zIndex: 2, width: TOOLTIP_WIDTH, opacity: 0.95, ...style }}
+    style={{ width: TOOLTIP_WIDTH, ...style }}
+    data-testid={testId}
   >
-    <div className="fw-semibold text-truncate">{tooltip.title}</div>
+    <div className="fw-semibold text-truncate" data-testid={childTestId(testId, 'title')}>
+      {tooltip.title}
+    </div>
     {tooltip.subtitle && (
-      <div className="text-muted text-truncate" style={{ fontSize: 11 }}>
+      <div
+        className="measurement-compare-tooltip-subtitle text-muted text-truncate"
+        data-testid={childTestId(testId, 'subtitle')}
+      >
         {tooltip.subtitle}
       </div>
     )}
-    <div
-      className="mt-1"
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'auto minmax(0, 1fr) auto',
-        alignItems: 'center',
-        columnGap: 8,
-        rowGap: 2,
-      }}
-    >
+    <div className="measurement-compare-tooltip-rows mt-1">
       {tooltip.rows.map((row) => {
         const active = row.key === activeKey ? 'fw-semibold' : undefined;
         return (
           <Fragment key={row.key}>
-            <span style={swatchStyle(row)} />
-            <span className={`text-truncate ${active ?? ''}`} title={row.name}>
+            <span
+              className={
+                row.band
+                  ? 'measurement-compare-tooltip-swatch measurement-compare-tooltip-swatch--band'
+                  : 'measurement-compare-tooltip-swatch'
+              }
+              style={swatchStyle(row)}
+            />
+            <span
+              className={`text-truncate ${active ?? ''}`}
+              title={row.name}
+              data-testid={childTestId(testId, 'name')}
+              data-test-key={row.key}
+            >
               {row.name}
             </span>
             <span
-              className={active}
-              style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}
+              className={`measurement-compare-tooltip-value ${active ?? ''}`}
+              data-testid={childTestId(testId, 'value')}
+              data-test-key={row.key}
             >
               {row.value}
             </span>

@@ -1,0 +1,21 @@
+/* The locations overview table (LocationsOverview.tsx): state dots, the name
+   cell with its favorite star and the search field. */
+
+/* The colour comes from the state (inline). */
+.locations-state-dot {
+  width: 10px;
+  height: 10px;
+}
+
+.locations-name-cell {
+  min-width: 0;
+}
+
+.locations-name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.form-control.locations-search {
+  min-width: 260px;
+}

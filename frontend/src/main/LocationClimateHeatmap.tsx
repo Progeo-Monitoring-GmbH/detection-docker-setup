@@ -11,6 +11,7 @@ import type { SensorHeatmapResponse } from '../components/device/sensorHeatmapTy
 import PanelCard from '../components/ui/kit/PanelCard';
 import PlotHelp from '../components/ui/PlotHelp';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
+import { childTestId } from '../testIds';
 import { routeRule, useAccess } from './access';
 import { TIME_RANGE_DAYS, type TimeRange } from './timeRanges';
 
@@ -48,6 +49,8 @@ type LocationClimateHeatmapProps = {
   /** Reports the loaded frames (Unix seconds, oldest first) - the page's
    * slider runs over them. */
   onFramesChange: (timestamps: number[]) => void;
+  /** data-testid of the panel; its parts are "<testId>-metric", "-map", "-loading", "-empty", ... */
+  testId?: string;
 };
 
 const NO_FRAMES: number[] = [];
@@ -60,6 +63,7 @@ const LocationClimateHeatmap = ({
   time,
   onTimeChange,
   onFramesChange,
+  testId = 'climate-heatmap',
 }: LocationClimateHeatmapProps) => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
@@ -102,7 +106,7 @@ const LocationClimateHeatmap = ({
   }, [frames, onFramesChange]);
 
   return (
-    <PanelCard>
+    <PanelCard testId={testId}>
       <div className="d-flex flex-column gap-2">
         <div className="d-flex flex-wrap align-items-center gap-3">
           <SegmentedControl
@@ -112,23 +116,27 @@ const LocationClimateHeatmap = ({
             }))}
             value={metric}
             onChange={(value) => setMetric(value as ClimateMetric)}
+            testId={childTestId(testId, 'metric')}
           />
           <PlotHelp topic="climate_heatmap" />
           {loading && response && (
-            <Spinner size="sm" animation="border" className="text-muted" />
+            <Spinner size="sm" animation="border" className="text-muted" data-testid={childTestId(testId, 'reloading')} />
           )}
         </div>
 
         {loading && !response ? (
-          <div className="d-flex align-items-center gap-2 text-muted py-4">
+          <div className="d-flex align-items-center gap-2 text-muted py-4" data-testid={childTestId(testId, 'loading')}>
             <Spinner size="sm" animation="border" /> {t('ui_loading')}
           </div>
         ) : !hasPoints ? (
-          <div className="text-muted py-4 text-center">
+          <div className="text-muted py-4 text-center" data-testid={childTestId(testId, 'empty')}>
             {t('climate_heatmap_no_points')}
             {can(routeRule('/lageplan/wizard/')) && (
               <div className="mt-2">
-                <Link to={`/lageplan/wizard/?location=${locationId}`}>{t('climate_heatmap_open_wizard')}</Link>
+                <Link
+                  to={`/lageplan/wizard/?location=${locationId}`}
+                  data-testid={childTestId(testId, 'wizard-link')}
+                >{t('climate_heatmap_open_wizard')}</Link>
               </div>
             )}
           </div>
@@ -144,9 +152,10 @@ const LocationClimateHeatmap = ({
               time={time}
               onTimeChange={onTimeChange}
               hideFrameSlider
+              testId={childTestId(testId, 'map')}
             />
             {response?.step != null && (
-              <div className="small text-muted">
+              <div className="small text-muted" data-testid={childTestId(testId, 'frames')}>
                 {t('climate_heatmap_frames', { hours: response.step / 3600 })}
               </div>
             )}

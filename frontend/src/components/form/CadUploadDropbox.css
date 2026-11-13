@@ -1,0 +1,54 @@
+/* The CAD/PDF import jobs below the drop zone (CadUploadDropbox.tsx):
+   status line, progress bar, the live log and the error. */
+
+.cad-job {
+  margin-top: 8px;
+}
+
+.cad-job-status {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: inherit;
+}
+
+.cad-job-status--failed {
+  color: #c44d26;
+}
+
+.progress.cad-job-progress {
+  height: 4px;
+  margin-bottom: 4px;
+}
+
+.cad-job-log-toggle {
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.cad-job-log {
+  background: #101419;
+  color: #d9e2ec;
+  border-radius: 12px;
+  padding: 10px 12px;
+  max-height: 240px;
+  margin: 0;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.cad-job-error {
+  font-size: 12px;
+  color: #c44d26;
+  margin-top: 4px;
+}
+
+/* Several jobs at once: "n of m files done". */
+.cad-jobs-summary {
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 8px;
+}

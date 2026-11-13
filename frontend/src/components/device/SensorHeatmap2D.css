@@ -1,0 +1,49 @@
+/* The 2D sensor heatmap (SensorHeatmap2D.tsx): the canvas, the area
+   selection rectangle and the readout under the pointer. Heights and the
+   rectangle's position stay inline (they follow the layout and the drag). */
+
+.heatmap2d-plot-wrap {
+  position: relative;
+}
+
+.heatmap2d-canvas {
+  display: block;
+  width: 100%;
+}
+
+/* The cursor: drawing / area selection, over a sensor, panning. */
+.heatmap2d-canvas--crosshair {
+  cursor: crosshair;
+}
+
+.heatmap2d-canvas--pointer {
+  cursor: pointer;
+}
+
+.heatmap2d-canvas--grab {
+  cursor: grab;
+}
+
+.heatmap2d-canvas--grabbing {
+  cursor: grabbing;
+}
+
+/* The area being selected (drag in area mode). */
+.heatmap2d-area-rect {
+  position: absolute;
+  border: 1.5px dashed var(--progeo-blue);
+  background: rgba(9, 75, 129, 0.12);
+  pointer-events: none;
+}
+
+/* Position and heat under the pointer, bottom left. Colour: plotTheme.brandBlue. */
+.heatmap2d-readout {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.85);
+  color: #094b81;
+  pointer-events: none;
+}

@@ -11,9 +11,9 @@ import './MaintenanceScreen.css';
  * translations have loaded. */
 function MaintenanceScreen() {
   return (
-    <div className="maintenance-screen">
+    <div className="maintenance-screen" data-testid="page-maintenance">
       <main>
-        <div className="maintenance-card" role="status" aria-live="polite">
+        <div className="maintenance-card" role="status" aria-live="polite" data-testid="maintenance-card">
           <img
             className="maintenance-logo"
             src="/assets/progeo-logo.png"
@@ -37,7 +37,9 @@ function MaintenanceScreen() {
       </main>
       <footer>
         &copy; ProGeo &middot;{' '}
-        <a href="https://www.progeo.com">www.progeo.com</a>
+        <a href="https://www.progeo.com" data-testid="maintenance-home-link">
+          www.progeo.com
+        </a>
       </footer>
     </div>
   );

@@ -21,7 +21,8 @@ import { portalItemRule, routeRule, useAccess } from '../../main/access';
 import { useProgeoRole } from '../../main/roleModel';
 import { PORTAL_NAV_ITEMS, portalNavPath } from '../../main/portalNav';
 import type { LocationDetail } from '../../main/locationTypes';
-import SidebarShell, { sidebarGroupLabelStyle } from './SidebarShell';
+import { repeatedTestId } from '../../testIds';
+import SidebarShell from './SidebarShell';
 
 type LocationSidebarProps = {
   /** The open location (portal routes) - null everywhere else. */
@@ -240,7 +241,7 @@ const LocationSidebar = ({
       strokeWidth="1.5"
       strokeLinecap="round"
       strokeLinejoin="round"
-      style={{ flexShrink: 0 }}
+      className="progeo-sidebar-svg"
     >
       <path d={d} />
     </svg>
@@ -279,53 +280,21 @@ const LocationSidebar = ({
       aria-current={active ? 'page' : undefined}
       title={collapsed ? label : undefined}
       aria-label={collapsed ? label : undefined}
+      {...repeatedTestId('sidebar-link', key)}
     >
-      <span
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 11,
-          minWidth: 0,
-        }}
-      >
+      <span className="progeo-sidebar-item-main">
         <span className="progeo-sidebar-item-icon">{icon}</span>
         {!collapsed && (
-          <span
-            style={{
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-          >
+          <span className="progeo-sidebar-item-label">
             {label}
           </span>
         )}
       </span>
       {badge != null && badge > 0 && (
         collapsed ? (
-          <span
-            aria-hidden="true"
-            style={{
-              position: 'absolute',
-              top: 6,
-              right: 10,
-              width: 8,
-              height: 8,
-              borderRadius: '50%',
-              background: 'var(--progeo-orange)',
-            }}
-          />
+          <span aria-hidden="true" className="progeo-sidebar-badge-dot" {...repeatedTestId('sidebar-link-badge', key)} />
         ) : (
-          <span
-            style={{
-              fontSize: 11,
-              fontWeight: 600,
-              color: '#fff',
-              background: 'var(--progeo-orange)',
-              borderRadius: 'var(--progeo-radius-pill)',
-              padding: '2px 7px',
-            }}
-          >
+          <span className="progeo-sidebar-badge" {...repeatedTestId('sidebar-link-badge', key)}>
             {badge}
           </span>
         )
@@ -343,7 +312,7 @@ const LocationSidebar = ({
       to: item.to,
       active: isActivePrefix(item.to),
       global: true,
-      icon: <Icon size={17} style={{ flexShrink: 0 }} />,
+      icon: <Icon size={17} className="progeo-sidebar-svg" />,
       label: item.label,
       collapsed,
     });
@@ -352,9 +321,17 @@ const LocationSidebar = ({
   /** A group caption - folded a plain divider. */
   const renderGroupLabel = (label: string, separated: boolean, collapsed: boolean) =>
     collapsed ? (
-      separated && <div aria-hidden="true" style={{ margin: '8px 6px', borderTop: '1px solid #D9D4D4' }} />
+      separated && <div aria-hidden="true" className="progeo-sidebar-group-divider" />
     ) : (
-      <div style={sidebarGroupLabelStyle(separated)}>{label}</div>
+      <div
+        className={
+          separated
+            ? 'progeo-sidebar-group-label progeo-sidebar-group-label--separated'
+            : 'progeo-sidebar-group-label'
+        }
+      >
+        {label}
+      </div>
     );
 
   const renderModuleGroup = (label: string, items: ModuleItem[], collapsed: boolean) =>
@@ -366,7 +343,7 @@ const LocationSidebar = ({
     );
 
   const renderNav = (collapsed: boolean) => (
-    <nav style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+    <nav className="progeo-sidebar-nav" data-testid="sidebar-nav">
       {location && (
         <>
           {renderGroupLabel(location.name ?? '', false, collapsed)}

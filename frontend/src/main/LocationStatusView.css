@@ -1,0 +1,76 @@
+/* The Status page (LocationStatusView.tsx): the measurement request header,
+   the view switch and the plan / Verdachtsstellen columns. */
+
+.status-view {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.status-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.status-request {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Bootstrap's form-select is full width; this one fits its content. */
+.form-select.status-request-device {
+  width: auto;
+  max-width: 260px;
+  height: 38px;
+}
+
+.status-request-button {
+  height: 38px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 10px;
+  background: var(--progeo-orange);
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(235, 99, 59, 0.28);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.status-request-button--requesting {
+  cursor: default;
+}
+
+.status-switches {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 2px 2px 0;
+}
+
+.status-columns {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.status-column-plan {
+  flex: 1 1 560px;
+  min-width: 0;
+}
+
+.status-column-side {
+  flex: 1 1 380px;
+  min-width: 0;
+}

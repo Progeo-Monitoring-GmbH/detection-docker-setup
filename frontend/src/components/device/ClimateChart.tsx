@@ -7,6 +7,8 @@ import { formatDate } from '../../main/dateFormat';
 import { formatDuration, type RainEvent, rainSpans } from '../../main/alarmUtils';
 import PlotResetButton, { PLOT_CONFIG_NO_MODEBAR } from '../ui/PlotResetButton';
 import { usePlotlyTouchScroll } from '../ui/wheelZoom';
+import { childTestId, testId as buildTestId } from '../../testIds';
+import './ClimateChart.css';
 
 /** One device of GET /v1/location/<pk>/climate/ - aligned series, oldest first. */
 type ClimateDeviceSeries = {
@@ -133,6 +135,9 @@ type ClimateChartProps = {
   /** Rain at the location (ClimateResponse.rain_events): shaded, with a
    * tooltip per event. */
   rainEvents?: RainEvent[] | null;
+  /** Prefix of the chart's test ids (default "climate-chart-<metric>"): "<testId>-legend",
+   * "-device" (key: the device id), "-reference-clear", "-reset-scale", "-empty", ... */
+  testId?: string;
 };
 
 /** The frame slider's line - the same as on MeasurementSamplesCompareChart. */
@@ -188,6 +193,7 @@ const ClimateChart = ({
   onReferenceChange,
   frameTime = null,
   rainEvents = null,
+  testId = buildTestId('climate-chart', metric),
 }: ClimateChartProps) => {
   const { t } = useTranslation();
   const [ownReference, setOwnReference] = useState<number | null>(null);
@@ -410,65 +416,60 @@ const ClimateChart = ({
   const revision = revisionOf(plotTraces);
 
   if (baseTraces.length === 0) {
-    return <div style={{ color: MUTED_TEXT, fontSize: 13 }}>{emptyLabel}</div>;
+    return (
+      <div className="climate-chart-empty" data-testid={childTestId(testId, 'empty')}>
+        {emptyLabel}
+      </div>
+    );
   }
 
   return (
     <>
     <div
-      style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '4px 16px', marginBottom: 6 }}
+      className="climate-chart-legend"
       onMouseLeave={() => onHoverDevice?.(null)}
+      data-testid={childTestId(testId, 'legend')}
     >
       {baseTraces.map((trace) => (
         <span
           key={trace.deviceId}
           onMouseEnter={() => onHoverDevice?.(trace.deviceId)}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            fontSize: 12,
-            cursor: 'default',
-            color: '#3A3535',
-            fontWeight: hoveredDeviceId === trace.deviceId ? 700 : 400,
-            opacity: hoveredDeviceId == null || hoveredDeviceId === trace.deviceId ? 1 : 0.4,
-          }}
+          data-testid={childTestId(testId, 'device')}
+          data-test-key={trace.deviceId}
+          className={
+            hoveredDeviceId == null
+              ? 'climate-chart-device'
+              : hoveredDeviceId === trace.deviceId
+                ? 'climate-chart-device climate-chart-device--hovered'
+                : 'climate-chart-device climate-chart-device--faded'
+          }
         >
-          <span
-            style={{ width: 18, height: 3, borderRadius: 2, background: trace.line.color }}
-          />
+          <span className="climate-chart-swatch" style={{ background: trace.line.color }} />
           {trace.label}
           {trace.mean != null && hoveredDeviceId === trace.deviceId && (
-            <span style={{ color: MUTED_TEXT, fontWeight: 400 }}>
+            <span className="climate-chart-device-mean" data-testid={childTestId(testId, 'device-mean')}>
               Ø {trace.mean.toFixed(decimals)} {unit}
             </span>
           )}
         </span>
       ))}
       {overallMean != null && (
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: MUTED_TEXT }}>
-          <span style={{ width: 18, borderTop: `2px dashed ${OVERALL_MEAN_COLOR}` }} />
+        <span className="climate-chart-legend-note" data-testid={childTestId(testId, 'mean')}>
+          <span className="climate-chart-swatch-mean" />
           {t('climate_mean_all')} Ø {overallMean.toFixed(decimals)} {unit}
         </span>
       )}
       {rainCount > 0 && (
         <span
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: MUTED_TEXT }}
+          className="climate-chart-legend-note"
           title={t('climate_rain_legend_hint')}
+          data-testid={childTestId(testId, 'rain')}
         >
-          <span
-            style={{
-              width: 18,
-              height: 10,
-              borderRadius: 2,
-              background: RAIN_FILL,
-              border: `1px solid ${RAIN_BORDER}`,
-            }}
-          />
+          <span className="climate-chart-swatch-rain" />
           {t('climate_rain_count', { count: rainCount })}
         </span>
       )}
-      <span style={{ marginLeft: 'auto', fontSize: 11.5, color: MUTED_TEXT }}>
+      <span className="climate-chart-reference" data-testid={childTestId(testId, 'reference')}>
         {referenceTime != null ? (
           <>
             {t('climate_reference_set', {
@@ -477,15 +478,8 @@ const ClimateChart = ({
             <button
               type="button"
               onClick={() => setReference(null)}
-              style={{
-                border: 'none',
-                background: 'none',
-                padding: 0,
-                color: 'var(--progeo-orange)',
-                fontSize: 11.5,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-              }}
+              className="climate-chart-reference-clear"
+              data-testid={childTestId(testId, 'reference-clear')}
             >
               {t('climate_reference_clear')}
             </button>
@@ -494,7 +488,7 @@ const ClimateChart = ({
           t('climate_reference_hint')
         )}
       </span>
-      <PlotResetButton graphDiv={graphDiv} />
+      <PlotResetButton graphDiv={graphDiv} testId={childTestId(testId, 'reset-scale')} />
     </div>
     <Plot
       key={`${axisTitle}|${height}`}

@@ -1,0 +1,44 @@
+/* Staff administration (StaffAdmin.tsx) and its messaging tab
+   (StaffMessaging.tsx): the session dot, the user filter row, the
+   permissions box. Bootstrap colours via its --bs-* variables. */
+
+/* Logged out: an empty ring; logged in: a filled green dot. */
+.staff-session-dot {
+  width: 8px;
+  height: 8px;
+  background: transparent;
+  border: 1px solid var(--bs-gray-400);
+}
+
+.staff-session-dot--on {
+  background: var(--bs-success);
+  border-color: var(--bs-success);
+}
+
+.staff-permissions-box {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.staff-invite-hint {
+  max-width: 320px;
+}
+
+/* .form-control / .form-select: over Bootstrap's width: 100%. */
+.form-control.staff-filter-text {
+  width: 240px;
+}
+
+.form-select.staff-filter-select {
+  width: auto;
+}
+
+.form-select.staff-filter-select--narrow {
+  max-width: 260px;
+}
+
+/* -- StaffMessaging ------------------------------------------------------------- */
+
+.table.staff-messaging-counts {
+  max-width: 560px;
+}

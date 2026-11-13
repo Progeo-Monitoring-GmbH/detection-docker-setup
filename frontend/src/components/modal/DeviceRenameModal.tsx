@@ -5,6 +5,8 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../../axiosConfig';
 import { showRequestError, showSuccessBar } from '../ui/Snackbar.jsx';
+import { repeatedTestId } from '../../testIds';
+import './DeviceRenameModal.css';
 
 type DeviceName = {
   id: number;
@@ -80,28 +82,31 @@ const DeviceRenameModal = ({ show, locationId, onClose, onSaved }: DeviceRenameM
   };
 
   return (
-    <Modal show={show} onHide={onClose} centered>
+    <Modal show={show} onHide={onClose} centered data-testid="device-rename-modal">
       <Modal.Header closeButton>
         <Modal.Title>{t('device_rename_title')}</Modal.Title>
       </Modal.Header>
       <Modal.Body>
         {devices === null ? (
-          <div className="d-flex justify-content-center py-4 text-muted">
+          <div className="d-flex justify-content-center py-4 text-muted" data-testid="device-rename-loading">
             <Spinner animation="border" className="me-2" /> {t('ui_loading')}
           </div>
         ) : devices.length === 0 ? (
-          <div className="text-muted">{t('device_rename_empty')}</div>
+          <div className="text-muted" data-testid="device-rename-empty">
+            {t('device_rename_empty')}
+          </div>
         ) : (
-          <Form onSubmit={(event) => event.preventDefault()}>
+          <Form onSubmit={(event) => event.preventDefault()} data-testid="device-rename-form">
             {devices.map((device) => (
               <Form.Group key={device.id} className="mb-3" controlId={`device-name-${device.id}`}>
-                <Form.Label style={{ fontSize: 12.5, color: '#8B8383' }}>
+                <Form.Label className="device-rename-label">
                   {device.hardware || device.type || `#${device.id}`}
                 </Form.Label>
                 <Form.Control
                   value={names[device.id] ?? ''}
                   maxLength={50}
                   placeholder={device.hardware ?? ''}
+                  {...repeatedTestId('device-rename-input', device.id)}
                   onChange={(event) =>
                     setNames((current) => ({ ...current, [device.id]: event.target.value }))
                   }
@@ -112,10 +117,15 @@ const DeviceRenameModal = ({ show, locationId, onClose, onSaved }: DeviceRenameM
         )}
       </Modal.Body>
       <Modal.Footer>
-        <Button variant="secondary" onClick={onClose} disabled={saving}>
+        <Button variant="secondary" onClick={onClose} disabled={saving} data-testid="device-rename-cancel">
           {t('device_rename_cancel')}
         </Button>
-        <Button variant="primary" onClick={save} disabled={saving || changed.length === 0}>
+        <Button
+          variant="primary"
+          onClick={save}
+          disabled={saving || changed.length === 0}
+          data-testid="device-rename-save"
+        >
           {saving ? '…' : t('device_rename_save', { count: changed.length })}
         </Button>
       </Modal.Footer>

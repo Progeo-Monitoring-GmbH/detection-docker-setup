@@ -1,0 +1,38 @@
+/* The "Bedienung" usage help button, its popover and the feedback of the
+   last processed key (UsageHelp.tsx). Classes on Bootstrap components are
+   doubled (.btn.x, .popover.x) so they beat Bootstrap's own rules. */
+
+.popover.usage-help-popover {
+  max-width: 380px;
+}
+
+.usage-help-section-title {
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #8b8383;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.usage-help-tip-icon {
+  color: #eb633b;
+}
+
+.btn.usage-help-button {
+  font-size: 12px;
+  border-radius: var(--progeo-radius-pill);
+  height: 26px;
+}
+
+/* What the last processed key did - gone after a moment. */
+.usage-help-feedback {
+  color: #a3401f;
+  opacity: 0;
+  transition: opacity 200ms;
+  white-space: nowrap;
+}
+
+.usage-help-feedback--shown {
+  opacity: 1;
+}

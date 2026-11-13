@@ -8,6 +8,8 @@ import axiosConfig from '../../axiosConfig';
 import { showErrorBar, showRequestError, showSuccessBar } from '../ui/Snackbar.jsx';
 import PanelCard from '../ui/kit/PanelCard';
 import { bundleVersionLabel, type FirmwareBundle } from './firmwareBundle';
+import { repeatedTestId } from '../../testIds';
+import './DeviceProvisionPanel.css';
 
 /** A location of /v1/device/provision/locations/ (model: its default device.model). */
 type ProvisionLocation = {
@@ -230,9 +232,9 @@ const DeviceProvisionPanel = ({
   };
 
   const portalQrCode = (title: string, caption: string, code: QrCode) => (
-    <figure className="m-0 text-center">
-      <img src={code.image} alt={title} width={130} height={130} style={{ imageRendering: 'pixelated' }} />
-      <figcaption style={{ fontSize: 11.5 }}>
+    <figure className="m-0 text-center" {...repeatedTestId('device-provision-portal-qr', caption)}>
+      <img src={code.image} alt={title} width={130} height={130} className="device-provision-qr" />
+      <figcaption className="device-provision-caption">
         <strong>{title}</strong>
         <br />
         <code>{caption}</code>
@@ -241,7 +243,7 @@ const DeviceProvisionPanel = ({
   );
 
   const label = (text: string) => (
-    <Form.Label className="text-muted mb-0" style={{ fontSize: 11.5 }}>
+    <Form.Label className="device-provision-label text-muted mb-0">
       {text}
     </Form.Label>
   );
@@ -259,7 +261,7 @@ const DeviceProvisionPanel = ({
 
   const facts: [string, ReactNode][] = preview
     ? [
-        ['Device hash', <code key="hash">{preview.device_hash}</code>],
+        ['Device hash', <code key="hash" data-testid="device-provision-hash">{preview.device_hash}</code>],
         [t('provision_model'), <code key="model">{preview.model}</code>],
         [
           t('provision_firmware'),
@@ -275,29 +277,30 @@ const DeviceProvisionPanel = ({
             {preview.url}
           </code>,
         ],
-        ['Token', <code key="token">{preview.token}</code>],
+        ['Token', <code key="token" data-testid="device-provision-token">{preview.token}</code>],
       ]
     : [];
 
   return (
     <PanelCard
       title={t('provision_add_title')}
+      testId="device-provision"
       actions={
-        <Button variant="link" size="sm" className="p-0" onClick={onClose}>
+        <Button variant="link" size="sm" className="p-0" onClick={onClose} data-testid="device-provision-close">
           {t('provision_add_close')}
         </Button>
       }
     >
-      <div className="text-muted mb-2" style={{ fontSize: 12 }}>
+      <div className="device-provision-hint text-muted mb-2">
         {t('provision_add_hint')}
       </div>
 
       {locations === null ? (
-        <div className="d-flex align-items-center gap-2 text-muted py-2">
+        <div className="d-flex align-items-center gap-2 text-muted py-2" data-testid="device-provision-loading">
           <Spinner size="sm" animation="border" /> {t('provision_loading')}
         </div>
       ) : !location ? (
-        <Alert variant="warning" className="mb-0">
+        <Alert variant="warning" className="mb-0" data-testid="device-provision-unavailable">
           {t('provision_location_unavailable')}
         </Alert>
       ) : (
@@ -310,6 +313,7 @@ const DeviceProvisionPanel = ({
                   size="sm"
                   value={settings.model}
                   onChange={(event) => updateSetting('model', event.target.value)}
+                  data-testid="device-provision-model"
                 >
                   {/* A default the list lacks stays selectable. */}
                   {settings.model && !models.includes(settings.model) && (
@@ -328,7 +332,7 @@ const DeviceProvisionPanel = ({
                 {label(t('provision_firmware'))}
                 {bundles.length === 0 ? (
                   // No bundle on the server: the config gets the built-in version.
-                  <Form.Select size="sm" disabled value="">
+                  <Form.Select size="sm" disabled value="" data-testid="device-provision-firmware">
                     <option value="">{t('provision_firmware_none', { version: firmwareFallback })}</option>
                   </Form.Select>
                 ) : (
@@ -337,6 +341,7 @@ const DeviceProvisionPanel = ({
                     value={settings.firmware}
                     title={settings.firmware || undefined}
                     onChange={(event) => updateSetting('firmware', event.target.value)}
+                    data-testid="device-provision-firmware"
                   >
                     {bundles.map((bundle) => (
                       <option key={bundle.id} value={bundle.id} title={bundle.id}>
@@ -356,6 +361,7 @@ const DeviceProvisionPanel = ({
                   min={1}
                   value={settings.sensors}
                   onChange={(event) => updateSetting('sensors', event.target.value)}
+                  data-testid="device-provision-sensors"
                 />
               </Form.Group>
             </Col>
@@ -369,6 +375,7 @@ const DeviceProvisionPanel = ({
                   max={86400}
                   value={settings.interval_sec}
                   onChange={(event) => updateSetting('interval_sec', event.target.value)}
+                  data-testid="device-provision-interval"
                 />
               </Form.Group>
             </Col>
@@ -379,6 +386,7 @@ const DeviceProvisionPanel = ({
                   size="sm"
                   value={settings.pulldown_resistance}
                   onChange={(event) => updateSetting('pulldown_resistance', event.target.value)}
+                  data-testid="device-provision-resistance"
                 >
                   {resistances.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -395,6 +403,7 @@ const DeviceProvisionPanel = ({
                   size="sm"
                   value={settings.wifi_ssid}
                   onChange={(event) => updateSetting('wifi_ssid', event.target.value)}
+                  data-testid="device-provision-wifi-ssid"
                 />
               </Form.Group>
             </Col>
@@ -407,6 +416,7 @@ const DeviceProvisionPanel = ({
                   autoComplete="new-password"
                   value={settings.wifi_pwd}
                   onChange={(event) => updateSetting('wifi_pwd', event.target.value)}
+                  data-testid="device-provision-wifi-pwd"
                 />
               </Form.Group>
             </Col>
@@ -418,6 +428,7 @@ const DeviceProvisionPanel = ({
                 className="small mb-0"
                 checked={settings.protective_earth}
                 onChange={(event) => updateSetting('protective_earth', event.target.checked)}
+                data-testid="device-provision-protective-earth"
               />
             </Col>
             <Col xs="auto" className="pb-1">
@@ -428,10 +439,17 @@ const DeviceProvisionPanel = ({
                 className="small mb-0"
                 checked={settings.rpi}
                 onChange={(event) => updateSetting('rpi', event.target.checked)}
+                data-testid="device-provision-rpi"
               />
             </Col>
             <Col xs="auto" className="ms-lg-auto">
-              <Button size="sm" variant="primary" onClick={generate} disabled={loading || !settings.model}>
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={generate}
+                disabled={loading || !settings.model}
+                data-testid="device-provision-generate"
+              >
                 {loading && !preview ? (
                   <Spinner size="sm" animation="border" className="me-2" />
                 ) : (
@@ -443,18 +461,10 @@ const DeviceProvisionPanel = ({
           </Row>
 
           {preview && (
-            <div className="mt-3">
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-                  gap: '4px 16px',
-                  fontSize: 12.5,
-                  marginBottom: 10,
-                }}
-              >
+            <div className="mt-3" data-testid="device-provision-preview">
+              <div className="device-provision-facts" data-testid="device-provision-facts">
                 {facts.map(([name, value]) => (
-                  <div key={name} style={{ minWidth: 0 }}>
+                  <div key={name} className="device-provision-fact">
                     <span className="text-muted me-2">{name}</span>
                     {value}
                   </div>
@@ -468,9 +478,9 @@ const DeviceProvisionPanel = ({
                     readOnly
                     rows={14}
                     value={preview.config}
-                    className="font-monospace"
-                    style={{ fontSize: 11.5 }}
+                    className="device-provision-config font-monospace"
                     onFocus={(event) => event.target.select()}
+                    data-testid="device-provision-config"
                   />
                 </Col>
                 <Col lg={3}>
@@ -482,7 +492,7 @@ const DeviceProvisionPanel = ({
               </Row>
 
               <div className="d-flex flex-wrap align-items-center gap-2">
-                <Button size="sm" variant="outline-secondary" onClick={copyConfig}>
+                <Button size="sm" variant="outline-secondary" onClick={copyConfig} data-testid="device-provision-copy">
                   <Clipboard className="me-2" />
                   Copy
                 </Button>
@@ -491,11 +501,12 @@ const DeviceProvisionPanel = ({
                   variant="outline-secondary"
                   onClick={() => setShowConfigQr(true)}
                   disabled={showConfigQr}
+                  data-testid="device-provision-show-config-qr"
                 >
                   <QrCodeIcon className="me-2" />
                   Generate QR-Code
                 </Button>
-                <Button size="sm" variant="success" onClick={confirm} disabled={loading || confirmed}>
+                <Button size="sm" variant="success" onClick={confirm} disabled={loading || confirmed} data-testid="device-provision-confirm">
                   {loading ? (
                     <Spinner size="sm" animation="border" className="me-2" />
                   ) : (
@@ -504,24 +515,24 @@ const DeviceProvisionPanel = ({
                   Confirm
                 </Button>
                 {confirmed ? (
-                  <span className="small" style={{ color: '#3F7A1C' }}>
+                  <span className="device-provision-ready small" data-testid="device-provision-ready">
                     <CheckCircle className="me-1" />
                     Device <code>{preview.device_hash}</code> is created and linked to its location - it is ready to
                     send its data.
                   </span>
                 ) : (
-                  <span className="small text-muted">Nothing is saved yet: the token only works once you confirm.</span>
+                  <span className="small text-muted" data-testid="device-provision-not-saved">Nothing is saved yet: the token only works once you confirm.</span>
                 )}
               </div>
 
               {showConfigQr && (
-                <figure className="mt-3 mb-0 text-center">
+                <figure className="mt-3 mb-0 text-center" data-testid="device-provision-config-qr">
                   <img
                     src={preview.config_qr}
                     alt={`Config ${preview.device_hash}`}
-                    style={{ width: '100%', maxWidth: 440, height: 'auto', imageRendering: 'pixelated' }}
+                    className="device-provision-qr device-provision-qr--config"
                   />
-                  <figcaption style={{ fontSize: 11.5 }}>
+                  <figcaption className="device-provision-caption">
                     <strong>Config</strong> <code>{preview.device_hash}</code>
                   </figcaption>
                 </figure>

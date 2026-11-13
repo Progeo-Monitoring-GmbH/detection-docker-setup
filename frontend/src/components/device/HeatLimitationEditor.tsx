@@ -7,10 +7,12 @@ import { useAuth } from '../../../hooks/CoreAuthProvider';
 import axiosConfig from '../../axiosConfig';
 import { plotTheme } from '../../styles/plotTheme';
 import { showRequestError, showSuccessBar } from '../ui/Snackbar.jsx';
+import { childTestId } from '../../testIds';
 import HeatLimitationCopyPicker from './HeatLimitationCopyPicker';
 import { toScreen, toWorld, type View, type WorldSize } from './heatmapCanvas';
 import { centroid, MIN_AREA_POINTS, nearestEdge, toPlanPoint, toWorldPoint, type Point } from './heatLimitations';
 import type { HeatLimitation, SensorHeatmapLageplanData } from './sensorHeatmapTypes';
+import './HeatLimitationEditor.css';
 
 /** The area being drawn: a new one (id null) or a copy of an existing one. */
 export type HeatLimitationDraft = { id: string | null; name: string; points: Point[] };
@@ -188,7 +190,14 @@ export type HeatLimitationEditor = ReturnType<typeof useHeatLimitationEditor>;
  * and the existing areas with edit / delete - while drawing, the name, the
  * hint and Confirm / Cancel.
  */
-export const HeatLimitationBar = ({ editor }: { editor: HeatLimitationEditor }) => {
+export const HeatLimitationBar = ({
+  editor,
+  testId = 'heat-limit',
+}: {
+  editor: HeatLimitationEditor;
+  /** Prefix of the bar's test ids: "<testId>-bar", "-draft", "-create", "-copy", "-chip" (key: area id), ... */
+  testId?: string;
+}) => {
   const { t } = useTranslation();
   const [copyOpen, setCopyOpen] = useState(false);
   if (!editor.canEdit) {
@@ -199,17 +208,18 @@ export const HeatLimitationBar = ({ editor }: { editor: HeatLimitationEditor }) 
   if (draft) {
     const enough = draft.points.length >= MIN_AREA_POINTS;
     return (
-      <div className="d-flex flex-wrap align-items-center gap-2 mt-2" data-testid="heat-limit-draft">
+      <div className="d-flex flex-wrap align-items-center gap-2 mt-2" data-testid={childTestId(testId, 'draft')}>
         <Form.Control
           size="sm"
-          style={{ maxWidth: 220 }}
+          className="heat-limit-name"
           placeholder={t('heat_limit_name')}
           aria-label={t('heat_limit_name')}
           value={draft.name}
           maxLength={100}
           onChange={(event) => editor.setName(event.target.value)}
+          data-testid={childTestId(testId, 'name')}
         />
-        <span className="small text-muted">
+        <span className="small text-muted" data-testid={childTestId(testId, 'hint')}>
           {t(draft.id ? 'heat_limit_hint_edit' : 'heat_limit_hint_create', { count: draft.points.length })}
         </span>
         {!draft.id && (
@@ -218,16 +228,29 @@ export const HeatLimitationBar = ({ editor }: { editor: HeatLimitationEditor }) 
             variant="outline-secondary"
             onClick={editor.undoPoint}
             disabled={busy || draft.points.length === 0}
+            data-testid={childTestId(testId, 'undo')}
           >
             <ArrowCounterclockwise className="me-1" />
             {t('heat_limit_undo')}
           </Button>
         )}
-        <Button size="sm" variant="primary" onClick={editor.confirm} disabled={busy || !enough}>
+        <Button
+          size="sm"
+          variant="primary"
+          onClick={editor.confirm}
+          disabled={busy || !enough}
+          data-testid={childTestId(testId, 'confirm')}
+        >
           {busy ? <Spinner size="sm" animation="border" className="me-1" /> : <Check2 className="me-1" />}
           {t('heat_limit_confirm')}
         </Button>
-        <Button size="sm" variant="outline-secondary" onClick={editor.cancel} disabled={busy}>
+        <Button
+          size="sm"
+          variant="outline-secondary"
+          onClick={editor.cancel}
+          disabled={busy}
+          data-testid={childTestId(testId, 'cancel')}
+        >
           <XLg className="me-1" />
           {t('heat_limit_cancel')}
         </Button>
@@ -237,8 +260,14 @@ export const HeatLimitationBar = ({ editor }: { editor: HeatLimitationEditor }) 
 
   return (
     <>
-      <div className="d-flex flex-wrap align-items-center gap-2 mt-2">
-        <Button size="sm" variant="outline-primary" onClick={editor.start} disabled={busy}>
+      <div className="d-flex flex-wrap align-items-center gap-2 mt-2" data-testid={childTestId(testId, 'bar')}>
+        <Button
+          size="sm"
+          variant="outline-primary"
+          onClick={editor.start}
+          disabled={busy}
+          data-testid={childTestId(testId, 'create')}
+        >
           <PlusLg className="me-1" />
           {t('heat_limit_create')}
         </Button>
@@ -247,7 +276,7 @@ export const HeatLimitationBar = ({ editor }: { editor: HeatLimitationEditor }) 
           variant="outline-secondary"
           onClick={() => setCopyOpen(true)}
           disabled={busy}
-          data-testid="heat-limit-copy"
+          data-testid={childTestId(testId, 'copy')}
         >
           <Copy className="me-1" />
           {t('heat_limit_copy')}
@@ -255,8 +284,9 @@ export const HeatLimitationBar = ({ editor }: { editor: HeatLimitationEditor }) 
         {editor.areas.map((area, index) => (
           <span
             key={area.id}
-            className="d-inline-flex align-items-center gap-1 small border rounded-pill ps-2 pe-1"
-            style={{ color: AREA_COLOR }}
+            className="heat-limit-chip d-inline-flex align-items-center gap-1 small border rounded-pill ps-2 pe-1"
+            data-testid={childTestId(testId, 'chip')}
+            data-test-key={area.id}
           >
             {area.name || t('heat_limit_numbered', { number: index + 1 })}
             <Button
@@ -267,6 +297,8 @@ export const HeatLimitationBar = ({ editor }: { editor: HeatLimitationEditor }) 
               aria-label={t('heat_limit_edit')}
               onClick={() => editor.edit(area)}
               disabled={busy}
+              data-testid={childTestId(testId, 'edit')}
+              data-test-key={area.id}
             >
               <PencilSquare />
             </Button>
@@ -278,6 +310,8 @@ export const HeatLimitationBar = ({ editor }: { editor: HeatLimitationEditor }) 
               aria-label={t('heat_limit_delete')}
               onClick={() => editor.remove(area)}
               disabled={busy}
+              data-testid={childTestId(testId, 'delete')}
+              data-test-key={area.id}
             >
               <Trash />
             </Button>
@@ -285,7 +319,11 @@ export const HeatLimitationBar = ({ editor }: { editor: HeatLimitationEditor }) 
         ))}
       </div>
       {copyOpen && (
-        <HeatLimitationCopyPicker onClose={() => setCopyOpen(false)} onCopy={editor.copyAreas} />
+        <HeatLimitationCopyPicker
+          onClose={() => setCopyOpen(false)}
+          onCopy={editor.copyAreas}
+          testId={childTestId(testId, 'copy-dialog')}
+        />
       )}
     </>
   );
@@ -304,12 +342,15 @@ export const HeatLimitationLayer = ({
   world,
   width,
   height,
+  testId = 'heat-limit',
 }: {
   editor: HeatLimitationEditor;
   view: View;
   world: WorldSize;
   width: number;
   height: number;
+  /** Prefix of the layer's test ids: "<testId>-layer", "-area" (key: area id), "-draft-shape", "-handle". */
+  testId?: string;
 }) => {
   const { t } = useTranslation();
   const svgRef = useRef<SVGSVGElement>(null);
@@ -355,15 +396,16 @@ export const HeatLimitationLayer = ({
       ref={svgRef}
       width={width}
       height={height}
-      style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}
+      className="heat-limit-layer"
       aria-hidden={draft ? undefined : true}
+      data-testid={childTestId(testId, 'layer')}
     >
       {editor.areas
         .filter((area) => area.id !== draft?.id && area.points.length >= MIN_AREA_POINTS)
         .map((area) => {
           const [cx, cy] = screen(centroid(area.points));
           return (
-            <g key={area.id} data-testid="heat-limit-area">
+            <g key={area.id} data-testid={childTestId(testId, 'area')} data-test-key={area.id}>
               <polygon
                 points={path(area.points)}
                 fill="none"
@@ -379,7 +421,7 @@ export const HeatLimitationLayer = ({
                   fontSize={12}
                   fontWeight={600}
                   fill={AREA_COLOR}
-                  style={{ paintOrder: 'stroke', stroke: '#ffffff', strokeWidth: 3 }}
+                  className="heat-limit-label"
                 >
                   {area.name}
                 </text>
@@ -389,7 +431,7 @@ export const HeatLimitationLayer = ({
         })}
 
       {draft && (
-        <g data-testid="heat-limit-draft-shape">
+        <g data-testid={childTestId(testId, 'draft-shape')}>
           {draft.points.length >= MIN_AREA_POINTS ? (
             <polygon
               points={path(draft.points)}
@@ -406,14 +448,15 @@ export const HeatLimitationLayer = ({
             return (
               <circle
                 key={index}
-                data-testid="heat-limit-handle"
+                data-testid={childTestId(testId, 'handle')}
+                data-test-key={index}
                 cx={x}
                 cy={y}
                 r={HANDLE_RADIUS}
                 fill="#ffffff"
                 stroke={DRAFT_COLOR}
                 strokeWidth={2}
-                style={{ pointerEvents: 'all', cursor: 'move', touchAction: 'none' }}
+                className="heat-limit-handle"
                 onPointerDown={onHandleDown(index)}
                 onPointerMove={onHandleMove}
                 onPointerUp={onHandleUp}

@@ -9,6 +9,8 @@ import SeverityBadge from '../components/ui/kit/SeverityBadge';
 import StateBadge from '../components/ui/kit/StateBadge';
 import { toggledSet, type VerdachtsstelleCluster } from './locationStatusData';
 import { formatDate } from './dateFormat';
+import { repeatedTestId } from '../testIds';
+import './VerdachtsstellenPanel.css';
 
 type VerdachtsstellenPanelProps = {
   clusters: VerdachtsstelleCluster[];
@@ -42,6 +44,7 @@ const VerdachtsstellenPanel = ({
 
   return (
     <PanelCard
+      testId="verdachtsstellen"
       title={t('status_verdachtsstellen_title')}
       actions={
         onViewAll && (
@@ -51,11 +54,8 @@ const VerdachtsstellenPanel = ({
               event.preventDefault();
               onViewAll();
             }}
-            style={{
-              fontSize: 12.5,
-              color: 'var(--progeo-orange)',
-              fontWeight: 500,
-            }}
+            className="verdachtsstellen-view-all"
+            data-testid="verdachtsstellen-view-all"
           >
             {t('status_view_all')}
           </a>
@@ -63,23 +63,15 @@ const VerdachtsstellenPanel = ({
       }
     >
       {denied ? (
-        <div style={{ color: '#8B8383', fontSize: 13 }}>
+        <div className="verdachtsstellen-denied" data-testid="verdachtsstellen-denied">
           {t('status_no_measurement_access')}
         </div>
       ) : clusters.length === 0 ? (
-        <div
-          style={{
-            background: 'var(--progeo-surface)',
-            borderRadius: 14,
-            padding: '22px 16px',
-            fontSize: 13,
-            color: '#8B8383',
-          }}
-        >
+        <div className="verdachtsstellen-empty" data-testid="verdachtsstellen-empty">
           {t('status_verdachtsstellen_empty')}
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <div className="verdachtsstellen-list" data-testid="verdachtsstellen-list">
           {clusters.map((cluster) => (
             <VerdachtsstelleRow
               key={cluster.id}
@@ -128,38 +120,20 @@ const VerdachtsstelleRow = ({
   const hasPendingAck = cluster.pending_ack_alarm_ids.length > 0;
 
   return (
-    <div>
+    <div {...repeatedTestId('verdachtsstelle', cluster.id)}>
       <button
         type="button"
         onClick={onToggle}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          width: '100%',
-          textAlign: 'left',
-          background: 'none',
-          border: 'none',
-          padding: '10px 12px',
-          borderRadius: 12,
-          cursor: 'pointer',
-          fontFamily: 'inherit',
-        }}
+        className="verdachtsstellen-row-toggle"
+        {...repeatedTestId('verdachtsstelle-toggle', cluster.id)}
       >
         {expanded ? <ChevronDown /> : <ChevronRight />}
-        <span style={{ flex: 1, minWidth: 0 }}>
-          <span
-            style={{
-              display: 'flex',
-              alignItems: 'baseline',
-              gap: 9,
-              flexWrap: 'wrap',
-            }}
-          >
-            <span style={{ fontSize: 14, fontWeight: 500 }}>
+        <span className="verdachtsstellen-row-main">
+          <span className="verdachtsstellen-row-head">
+            <span className="verdachtsstellen-row-label">
               {label}
               {cluster.device_label && (
-                <span style={{ fontWeight: 400, color: '#8B8383' }}>
+                <span className="verdachtsstellen-row-device">
                   {' '}
                   · {cluster.device_label}
                   {cluster.device_type ? ` (${cluster.device_type})` : ''}
@@ -175,14 +149,7 @@ const VerdachtsstelleRow = ({
               label={t(`ui_severity_${cluster.severity}`)}
             />
           </span>
-          <span
-            style={{
-              display: 'block',
-              marginTop: 4,
-              fontSize: 12.5,
-              color: '#8B8383',
-            }}
-          >
+          <span className="verdachtsstellen-row-meta">
             {cluster.active
               ? cluster.since &&
                 t('status_since', { date: formatDate(cluster.since, 'date') })
@@ -193,13 +160,7 @@ const VerdachtsstelleRow = ({
             {meters && ` · ${formatMeters(meters)}`}
           </span>
         </span>
-        <span
-          style={{
-            fontSize: 13.5,
-            fontWeight: 600,
-            color: 'var(--progeo-orange)',
-          }}
-        >
+        <span className="verdachtsstellen-row-peak" {...repeatedTestId('verdachtsstelle-peak', cluster.id)}>
           {cluster.max_value != null
             ? t('status_peak_value', { value: Math.round(cluster.max_value) })
             : '–'}
@@ -207,44 +168,12 @@ const VerdachtsstelleRow = ({
       </button>
 
       {expanded && (
-        <div
-          style={{
-            padding: '0 14px 14px 36px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 10,
-          }}
-        >
-          <div
-            style={{
-              fontSize: 10.5,
-              letterSpacing: '.09em',
-              textTransform: 'uppercase',
-              color: '#8B8383',
-              fontWeight: 500,
-            }}
-          >
+        <div className="verdachtsstellen-details" {...repeatedTestId('verdachtsstelle-details', cluster.id)}>
+          <div className="verdachtsstellen-details-title">
             {t('status_alarm_history')}
           </div>
-          <div
-            style={{
-              background: 'var(--progeo-surface)',
-              borderRadius: 11,
-              overflow: 'hidden',
-            }}
-          >
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1.3fr 1fr 1fr',
-                padding: '9px 12px',
-                fontSize: 10.5,
-                letterSpacing: '.06em',
-                textTransform: 'uppercase',
-                color: '#8B8383',
-                fontWeight: 500,
-              }}
-            >
+          <div className="verdachtsstellen-history">
+            <div className="verdachtsstellen-history-head">
               <span>{t('status_col_date')}</span>
               <span>{t('status_col_state')}</span>
               <span>{t('status_col_value')}</span>
@@ -252,15 +181,10 @@ const VerdachtsstelleRow = ({
             {cluster.alarms.map((entry) => (
               <div
                 key={entry.id}
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1.3fr 1fr 1fr',
-                  padding: '9px 12px',
-                  fontSize: 12.5,
-                  borderTop: '1px solid var(--progeo-track-soft)',
-                }}
+                className="verdachtsstellen-history-row"
+                {...repeatedTestId('verdachtsstelle-history-row', entry.id)}
               >
-                <span style={{ fontWeight: 500 }}>
+                <span className="verdachtsstellen-history-date">
                   {formatDate(entry.triggered_at)}
                 </span>
                 <span>
@@ -269,44 +193,20 @@ const VerdachtsstelleRow = ({
                     label={t(`ui_${entry.state}`)}
                   />
                 </span>
-                <span
-                  style={{ fontWeight: 600, color: 'var(--progeo-orange)' }}
-                >
+                <span className="verdachtsstellen-history-value">
                   {entry.value != null ? `${Math.round(entry.value)} mV` : '–'}
                 </span>
               </div>
             ))}
           </div>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 12,
-              flexWrap: 'wrap',
-            }}
-          >
+          <div className="verdachtsstellen-actions">
             <button
               type="button"
               hidden={readOnly}
               onClick={onAcknowledge}
+              {...repeatedTestId('verdachtsstelle-acknowledge', cluster.id)}
               disabled={!hasPendingAck || acknowledging}
-              style={{
-                height: 34,
-                padding: '0 14px',
-                border: 'none',
-                borderRadius: 10,
-                background: hasPendingAck
-                  ? 'var(--progeo-orange)'
-                  : 'var(--progeo-track-soft)',
-                color: hasPendingAck ? '#fff' : '#8B8383',
-                fontFamily: 'inherit',
-                fontSize: 13,
-                fontWeight: 500,
-                cursor: hasPendingAck && !acknowledging ? 'pointer' : 'default',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-              }}
+              className={`verdachtsstellen-ack${hasPendingAck ? ' verdachtsstellen-ack--pending' : ''}`}
             >
               {acknowledging ? (
                 <Spinner size="sm" animation="border" />
@@ -316,7 +216,7 @@ const VerdachtsstelleRow = ({
               <span>{t('ui_quittieren')}</span>
             </button>
             {cluster.ack_by && (
-              <span style={{ fontSize: 11.5, color: '#8B8383' }}>
+              <span className="verdachtsstellen-ack-by" {...repeatedTestId('verdachtsstelle-ack-by', cluster.id)}>
                 {t('status_acknowledged_by', {
                   name: cluster.ack_by,
                   time: formatDate(cluster.ack_at),

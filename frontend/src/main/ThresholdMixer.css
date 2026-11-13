@@ -1,0 +1,306 @@
+/* The threshold mixer (ThresholdMixerPanel.tsx) and the bar that shows it
+   anywhere outside the Einstellungen tab (ThresholdMixerToggle.tsx).
+   Theme variables: scss/main.css; pills and panels: components/ui/kit/kit.css.
+   The SVG colours (bars, markers, grid) stay constants in the component. */
+
+/* -- ThresholdMixerToggle ------------------------------------------------------ */
+
+/* Open: the bar and the mixer are one framed block - the bar its head, the
+   mixer below with the same inner padding (it has no card of its own). */
+.threshold-toggle {
+  border-radius: 12px;
+  border: 1px solid transparent;
+  overflow: hidden;
+}
+
+.threshold-toggle--open {
+  border-color: rgba(31, 95, 191, 0.35);
+}
+
+.threshold-toggle-bar {
+  background: var(--progeo-surface);
+  padding: 10px 14px;
+  border-bottom: none;
+}
+
+.threshold-toggle--open .threshold-toggle-bar {
+  border-bottom: 1px solid rgba(31, 95, 191, 0.2);
+}
+
+.threshold-toggle-icon {
+  color: var(--progeo-blue);
+  flex-shrink: 0;
+}
+
+.threshold-toggle-text {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.threshold-toggle-title {
+  font-size: 13.5px;
+}
+
+.threshold-toggle-object {
+  background: var(--progeo-track-soft);
+  color: var(--progeo-blue);
+}
+
+.threshold-toggle-body {
+  padding: 14px 16px 16px;
+  background: var(--progeo-panel-bg, #fff);
+}
+
+/* -- ThresholdMixerPanel: texts and inputs --------------------------------------- */
+
+.threshold-mixer-muted {
+  font-size: 12px;
+  color: #8b8383;
+}
+
+.threshold-mixer-intro {
+  flex: 1 1 260px;
+}
+
+.threshold-mixer-intro-title {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.threshold-mixer-object-input {
+  height: 36px;
+  width: 110px;
+  border: none;
+  border-radius: 10px;
+  background: var(--progeo-track-soft);
+  padding: 0 12px;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--progeo-blue);
+}
+
+.threshold-mixer-unit {
+  font-size: 13px;
+  color: #8b8383;
+}
+
+.threshold-mixer-empty {
+  font-size: 13px;
+  color: #8b8383;
+}
+
+.threshold-mixer-loading {
+  opacity: 0.5;
+}
+
+.threshold-mixer-spacer {
+  flex: 1;
+}
+
+.threshold-mixer-strong {
+  font-weight: 500;
+}
+
+/* -- legend ---------------------------------------------------------------------- */
+
+.threshold-mixer-legend {
+  font-size: 12px;
+  color: #6e6868;
+}
+
+.threshold-mixer-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Same colours as the SVG constants: BAR, BAR_OVER, OWN, OBJECT_LINE. */
+.threshold-mixer-swatch {
+  width: 10px;
+  height: 12px;
+  border-radius: 2px;
+  background: #a9bccf;
+}
+
+.threshold-mixer-swatch--over {
+  background: #c44d26;
+}
+
+.threshold-mixer-swatch--protected {
+  background: repeating-linear-gradient(45deg, #2a78d6 0 3px, #c44d26 3px 6px);
+}
+
+.threshold-mixer-swatch-object {
+  width: 16px;
+  height: 3px;
+  background: var(--progeo-orange);
+}
+
+.threshold-mixer-swatch-own {
+  width: 16px;
+  height: 4px;
+  border-radius: 2px;
+  background: #2a78d6;
+}
+
+.threshold-mixer-usage {
+  margin-left: auto;
+  color: #8b8383;
+}
+
+/* -- chart ----------------------------------------------------------------------- */
+
+.threshold-mixer-chart {
+  display: flex;
+  position: relative;
+}
+
+/* The y-axis with the object grip stays put while the columns scroll. */
+.threshold-mixer-gutter {
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.threshold-mixer-grip {
+  cursor: default;
+  outline: none;
+}
+
+.threshold-mixer-grip--editable {
+  cursor: ns-resize;
+}
+
+.threshold-mixer-scroll-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+/* padding-bottom: room under the plot for the horizontal scrollbar - it must
+   not cover the labels (the edge buttons stop above it, see below). */
+.threshold-mixer-scroller {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 14px;
+  outline: none;
+  scrollbar-color: #8b8383 var(--progeo-track-soft);
+}
+
+.threshold-mixer-plot {
+  display: block;
+  touch-action: none;
+  user-select: none;
+}
+
+/* The scroll buttons at the plot's edges, faded into the panel. */
+.threshold-mixer-edge {
+  position: absolute;
+  top: 0;
+  bottom: 14px;
+  width: 36px;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--progeo-blue);
+  display: flex;
+  align-items: center;
+  z-index: 2;
+}
+
+.threshold-mixer-edge--left {
+  left: 0;
+  justify-content: flex-start;
+  background: linear-gradient(to right, var(--progeo-panel-bg, #fff) 25%, rgba(255, 255, 255, 0));
+}
+
+.threshold-mixer-edge--right {
+  right: 0;
+  justify-content: flex-end;
+  background: linear-gradient(to left, var(--progeo-panel-bg, #fff) 25%, rgba(255, 255, 255, 0));
+}
+
+.threshold-mixer-tooltip {
+  position: absolute;
+  top: 0;
+  right: 0;
+  background: #07223a;
+  color: #fff;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  pointer-events: none;
+  box-shadow: 0 6px 18px rgba(11, 54, 89, 0.3);
+}
+
+.threshold-mixer-tooltip-title {
+  font-weight: 600;
+}
+
+.threshold-mixer-tooltip-dim {
+  opacity: 0.7;
+}
+
+/* -- selection bar and pending changes ------------------------------------------- */
+
+.threshold-mixer-bulk {
+  background: var(--progeo-surface);
+  border-radius: 12px;
+  padding: 8px 12px;
+  font-size: 12.5px;
+}
+
+.threshold-mixer-bulk-input {
+  height: 32px;
+  width: 110px;
+  border: none;
+  border-radius: 9px;
+  background: var(--progeo-track-soft);
+  padding: 0 10px;
+  font-family: inherit;
+  font-size: 12.5px;
+}
+
+.threshold-mixer-changes {
+  flex: 1 1 320px;
+  background: var(--progeo-surface);
+  border-radius: 12px;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  max-height: 170px;
+  overflow-y: auto;
+}
+
+.threshold-mixer-changes-title {
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.threshold-mixer-changes-empty {
+  color: #8b8383;
+}
+
+.threshold-mixer-change {
+  padding: 2px 0;
+}
+
+.threshold-mixer-change-label {
+  font-weight: 500;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.threshold-mixer-change-value {
+  color: #6e6868;
+  font-variant-numeric: tabular-nums;
+}
+
+.threshold-mixer-undo {
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: #8b8383;
+  padding: 2px;
+  cursor: pointer;
+  display: inline-flex;
+}

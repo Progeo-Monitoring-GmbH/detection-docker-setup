@@ -3,7 +3,6 @@ import {
   useId,
   useRef,
   useState,
-  type CSSProperties,
   type KeyboardEvent,
   type RefObject,
 } from 'react';
@@ -13,44 +12,8 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 import { PRIVACY_POLICY_URL } from './consent';
 import { useConsent } from './ConsentProvider';
+import { repeatedTestId, testId } from '../../testIds';
 import './CookieBanner.css';
-
-// Accept and reject deliberately share one style: regulators (EDPB cookie
-// banner taskforce, German DSK) require both options to be equally prominent.
-const choiceButtonStyle: CSSProperties = {
-  // Wraps to one button per row when two don't fit side by side.
-  flex: '1 1 140px',
-  minHeight: 38,
-  padding: '6px 16px',
-  border: 'none',
-  borderRadius: 'var(--progeo-radius-pill)',
-  background: 'var(--progeo-blue)',
-  color: 'var(--progeo-white)',
-  fontFamily: 'inherit',
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: 'pointer',
-};
-
-const secondaryButtonStyle: CSSProperties = {
-  ...choiceButtonStyle,
-  flex: '1 1 100%',
-  background: 'transparent',
-  color: 'var(--progeo-blue)',
-  boxShadow: 'inset 0 0 0 1.5px var(--progeo-blue)',
-};
-
-const categoryStyle: CSSProperties = {
-  background: 'var(--progeo-surface)',
-  borderRadius: 12,
-  padding: '10px 12px',
-};
-
-const categoryDescStyle: CSSProperties = {
-  margin: '4px 0 0',
-  fontSize: 12,
-  color: '#6E6868',
-};
 
 /** Moves focus into the dialog while it is shown, so screen readers announce
  * it, and hands focus back to where it was when it closes. */
@@ -72,15 +35,18 @@ const ConsentSwitch = ({
   description,
   checked,
   onChange,
+  category,
 }: {
   title: string;
   description: string;
   checked: boolean;
   onChange: (checked: boolean) => void;
+  /** For test ids: the item "cookie-banner-category" is keyed by it, the switch is "cookie-banner-<category>-switch". */
+  category: string;
 }) => {
   const id = useId();
   return (
-    <li style={categoryStyle}>
+    <li className="cookie-banner__category" {...repeatedTestId('cookie-banner-category', category)}>
       <Form.Check
         type="switch"
         id={id}
@@ -88,9 +54,10 @@ const ConsentSwitch = ({
         onChange={(event) => onChange(event.target.checked)}
         label={<strong>{title}</strong>}
         aria-describedby={`${id}-desc`}
-        style={{ marginBottom: 0 }}
+        className="cookie-banner__switch"
+        data-testid={testId('cookie-banner', category, 'switch')}
       />
-      <p id={`${id}-desc`} style={categoryDescStyle}>
+      <p id={`${id}-desc`} className="cookie-banner__category-desc">
         {description}
       </p>
     </li>
@@ -133,12 +100,13 @@ const CookieDialog = () => {
       tabIndex={-1}
       onKeyDown={onKeyDown}
       className="cookie-banner"
+      data-testid="cookie-banner"
     >
       <div className="cookie-banner__body">
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <div className="cookie-banner__head">
           <h2
             id={titleId}
-            style={{ flex: 1, margin: 0, fontSize: 16, fontWeight: 700 }}
+            className="cookie-banner__title"
           >
             {t('consent_title')}
           </h2>
@@ -148,83 +116,67 @@ const CookieDialog = () => {
               onClick={closeSettings}
               aria-label={t('consent_close')}
               title={t('consent_close')}
-              style={{
-                border: 'none',
-                background: 'transparent',
-                color: 'var(--progeo-blue)',
-                padding: 0,
-                lineHeight: 0,
-                cursor: 'pointer',
-              }}
+              className="cookie-banner__close"
+              data-testid="cookie-banner-close"
             >
               <X size={22} />
             </button>
           )}
         </div>
 
-        <p id={descId} style={{ margin: '8px 0 0' }}>
+        <p id={descId} className="cookie-banner__intro">
           {t('consent_intro')}{' '}
           <Link
             to={PRIVACY_POLICY_URL}
-            style={{ color: 'var(--progeo-blue)', fontWeight: 600 }}
+            className="cookie-banner__link"
+            data-testid="cookie-banner-privacy-link"
           >
             {t('consent_privacy_policy')}
           </Link>
         </p>
 
         {showDetails && (
-          <ul
-            style={{
-              listStyle: 'none',
-              padding: 0,
-              margin: '14px 0 0',
-              display: 'grid',
-              gap: 8,
-            }}
-          >
-            <li style={categoryStyle}>
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  gap: 8,
-                }}
-              >
+          <ul className="cookie-banner__categories" data-testid="cookie-banner-categories">
+            <li className="cookie-banner__category" {...repeatedTestId('cookie-banner-category', 'necessary')}>
+              <div className="cookie-banner__category-head">
                 <strong>{t('consent_necessary_title')}</strong>
-                <span style={{ fontSize: 12, color: '#6E6868' }}>
+                <span className="cookie-banner__always-on">
                   {t('consent_always_on')}
                 </span>
               </div>
-              <p style={categoryDescStyle}>{t('consent_necessary_desc')}</p>
+              <p className="cookie-banner__category-desc">{t('consent_necessary_desc')}</p>
             </li>
             <ConsentSwitch
               title={t('consent_maps_title')}
               description={t('consent_maps_desc')}
               checked={mapsChoice}
               onChange={setMapsChoice}
+              category="maps"
             />
             <ConsentSwitch
               title={t('consent_stats_title')}
               description={t('consent_stats_desc')}
               checked={statsChoice}
               onChange={setStatsChoice}
+              category="statistics"
             />
           </ul>
         )}
       </div>
 
       <div className="cookie-banner__actions">
-        <button type="button" onClick={rejectAll} style={choiceButtonStyle}>
+        <button type="button" onClick={rejectAll} className="cookie-banner__choice" data-testid="cookie-banner-reject">
           {t('consent_reject')}
         </button>
-        <button type="button" onClick={acceptAll} style={choiceButtonStyle}>
+        <button type="button" onClick={acceptAll} className="cookie-banner__choice" data-testid="cookie-banner-accept">
           {t('consent_accept_all')}
         </button>
         {showDetails ? (
           <button
             type="button"
             onClick={() => save({ externalMaps: mapsChoice, statistics: statsChoice })}
-            style={secondaryButtonStyle}
+            className="cookie-banner__choice cookie-banner__choice--secondary"
+            data-testid="cookie-banner-save"
           >
             {t('consent_save')}
           </button>
@@ -232,7 +184,8 @@ const CookieDialog = () => {
           <button
             type="button"
             onClick={() => setShowDetails(true)}
-            style={secondaryButtonStyle}
+            className="cookie-banner__choice cookie-banner__choice--secondary"
+            data-testid="cookie-banner-customize"
           >
             {t('consent_customize')}
           </button>

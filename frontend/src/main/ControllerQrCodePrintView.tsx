@@ -5,6 +5,8 @@ import { Printer } from 'react-bootstrap-icons';
 import axiosConfig from '../axiosConfig';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import PillButton from '../components/ui/kit/PillButton';
+import { repeatedTestId } from '../testIds';
+import './ControllerQrCodePrintView.css';
 
 type QrCode = {
   payload: string;
@@ -16,15 +18,10 @@ type ControllerQrCodes = {
   frontend: QrCode & { url: string };
 };
 
-// Printed edge length of each code (incl. the quiet zone of the PNG).
-const QR_SIZE = '6cm';
-
+// The page margin only while this sheet is shown - a stylesheet import would
+// keep it for every page printed later. The rest: ControllerQrCodePrintView.css.
 const PRINT_CSS = `
 @page { margin: 1cm; }
-@media print {
-  .qr-print-actions { display: none !important; }
-  .qr-print-page { padding: 0 !important; background: #fff !important; }
-}
 `;
 
 /**
@@ -51,27 +48,14 @@ const ControllerQrCodePrintView = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [account]);
 
-  const card = (title: string, caption: string, code: QrCode) => (
-    <figure
-      style={{
-        margin: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: '0.2cm',
-        breakInside: 'avoid',
-      }}
-    >
+  const card = (kind: 'wifi' | 'frontend', title: string, caption: string, code: QrCode) => (
+    <figure className="qr-print-card" {...repeatedTestId('controller-qrcodes-card', kind)}>
       <img
         src={code.image}
         alt={title}
-        style={{
-          width: QR_SIZE,
-          height: QR_SIZE,
-          imageRendering: 'pixelated',
-        }}
+        className="qr-print-code"
       />
-      <figcaption style={{ textAlign: 'center', fontSize: '10pt' }}>
+      <figcaption className="qr-print-caption">
         <strong>{title}</strong>
         <br />
         {caption}
@@ -80,30 +64,23 @@ const ControllerQrCodePrintView = () => {
   );
 
   return (
-    <div
-      className="qr-print-page"
-      style={{
-        minHeight: '100vh',
-        background: '#fff',
-        color: '#000',
-        padding: 24,
-      }}
-    >
+    <div className="qr-print-page" data-testid="page-controller-qrcodes">
       <style>{PRINT_CSS}</style>
-      <div className="qr-print-actions" style={{ marginBottom: 24 }}>
+      <div className="qr-print-actions">
         <PillButton
           label={t('qrprint_print')}
           icon={<Printer size={14} />}
           onClick={() => window.print()}
+          testId="controller-qrcodes-print"
           disabled={!codes}
         />
       </div>
-      {error && <p style={{ color: 'var(--progeo-orange)' }}>{error}</p>}
-      {!codes && !error && <p>{t('devcfg_loading')}</p>}
+      {error && <p className="qr-print-error" data-testid="controller-qrcodes-error">{error}</p>}
+      {!codes && !error && <p data-testid="controller-qrcodes-loading">{t('devcfg_loading')}</p>}
       {codes && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.5cm' }}>
-          {card(t('qrprint_wifi'), codes.wifi.ssid, codes.wifi)}
-          {card(t('qrprint_frontend'), codes.frontend.url, codes.frontend)}
+        <div className="qr-print-codes" data-testid="controller-qrcodes-list">
+          {card('wifi', t('qrprint_wifi'), codes.wifi.ssid, codes.wifi)}
+          {card('frontend', t('qrprint_frontend'), codes.frontend.url, codes.frontend)}
         </div>
       )}
     </div>

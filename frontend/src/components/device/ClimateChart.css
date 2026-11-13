@@ -1,0 +1,85 @@
+/* The climate chart (ClimateChart.tsx): the legend above the plot. A
+   device's line colour stays inline; the mean and rain swatches use
+   OVERALL_MEAN_COLOR and RAIN_FILL / RAIN_BORDER of the plot. */
+
+.climate-chart-empty {
+  color: #8b8383;
+  font-size: 13px;
+}
+
+.climate-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+  margin-bottom: 6px;
+}
+
+/* A device: hovering it (or its line) highlights it and fades the others. */
+.climate-chart-device {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #3a3535;
+  font-size: 12px;
+  font-weight: 400;
+  cursor: default;
+}
+
+.climate-chart-device--hovered {
+  font-weight: 700;
+}
+
+.climate-chart-device--faded {
+  opacity: 0.4;
+}
+
+.climate-chart-device-mean {
+  color: #8b8383;
+  font-weight: 400;
+}
+
+.climate-chart-swatch {
+  width: 18px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+/* The mean of all devices and the rain periods. */
+.climate-chart-legend-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #8b8383;
+  font-size: 12px;
+}
+
+.climate-chart-swatch-mean {
+  width: 18px;
+  border-top: 2px dashed #9e9696;
+}
+
+.climate-chart-swatch-rain {
+  width: 18px;
+  height: 10px;
+  border: 1px solid #42a5f5;
+  border-radius: 2px;
+  background: rgba(66, 165, 245, 0.16);
+}
+
+/* The reference time (a click on a point) and how to clear it. */
+.climate-chart-reference {
+  margin-left: auto;
+  color: #8b8383;
+  font-size: 11.5px;
+}
+
+.climate-chart-reference-clear {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--progeo-orange);
+  font-family: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}

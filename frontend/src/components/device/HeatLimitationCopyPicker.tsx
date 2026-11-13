@@ -7,6 +7,7 @@ import { useAuth } from '../../../hooks/CoreAuthProvider';
 import axiosConfig from '../../axiosConfig';
 import LocationPicker, { type PickableLocation } from '../location/LocationPicker';
 import { showRequestError } from '../ui/Snackbar.jsx';
+import { childTestId, repeatedTestId } from '../../testIds';
 import { MIN_AREA_POINTS } from './heatLimitations';
 import type { HeatLimitation } from './sensorHeatmapTypes';
 
@@ -45,6 +46,8 @@ type HeatLimitationCopyPickerProps = {
   onClose: () => void;
   /** Copies the picked areas into the current plan; false if one failed. */
   onCopy: (areas: HeatLimitation[]) => Promise<boolean>;
+  /** data-testid of the modal; its parts are "<testId>-source", "-plan", "-area" (key: area id), "-cancel", "-confirm". */
+  testId?: string;
 };
 
 /**
@@ -56,7 +59,7 @@ type HeatLimitationCopyPickerProps = {
  * leaves just the wanted ones. The parent mounts it per opening, so the
  * source picker starts empty again after it closes.
  */
-const HeatLimitationCopyPicker = ({ onClose, onCopy }: HeatLimitationCopyPickerProps) => {
+const HeatLimitationCopyPicker = ({ onClose, onCopy, testId = 'heat-limit-copy-dialog' }: HeatLimitationCopyPickerProps) => {
   const { t } = useTranslation();
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
@@ -161,7 +164,7 @@ const HeatLimitationCopyPicker = ({ onClose, onCopy }: HeatLimitationCopyPickerP
   };
 
   return (
-    <Modal show onHide={close} centered>
+    <Modal show onHide={close} centered data-testid={testId}>
       <Modal.Header closeButton>
         <Modal.Title>{t('heat_limit_copy')}</Modal.Title>
       </Modal.Header>
@@ -175,11 +178,12 @@ const HeatLimitationCopyPicker = ({ onClose, onCopy }: HeatLimitationCopyPickerP
             onChange={selectSource}
             loading={locationsLoading}
             disabled={copying}
+            testId={childTestId(testId, 'source')}
           />
         </Form.Group>
 
         {sourceLoading && (
-          <div className="text-center py-2">
+          <div className="text-center py-2" data-testid={childTestId(testId, 'loading')}>
             <Spinner animation="border" size="sm" />
           </div>
         )}
@@ -192,6 +196,7 @@ const HeatLimitationCopyPicker = ({ onClose, onCopy }: HeatLimitationCopyPickerP
               value={planId ?? ''}
               disabled={copying}
               onChange={(event) => selectPlan(Number(event.target.value))}
+              data-testid={childTestId(testId, 'plan')}
             >
               {sourcePlans.map((plan) => (
                 <option key={plan.id} value={plan.id}>
@@ -206,7 +211,9 @@ const HeatLimitationCopyPicker = ({ onClose, onCopy }: HeatLimitationCopyPickerP
           <div>
             <div className="small text-muted mb-1">{t('heat_limit_copy_areas')}</div>
             {areas.length === 0 ? (
-              <div className="small text-muted">{t('heat_limit_copy_empty')}</div>
+              <div className="small text-muted" data-testid={childTestId(testId, 'empty')}>
+                {t('heat_limit_copy_empty')}
+              </div>
             ) : (
               <div className="d-flex flex-column gap-2">
                 {areas.map((area, index) => (
@@ -217,6 +224,7 @@ const HeatLimitationCopyPicker = ({ onClose, onCopy }: HeatLimitationCopyPickerP
                     checked={selected.includes(area.id)}
                     disabled={copying}
                     onChange={(event) => toggle(area.id, event.target.checked)}
+                    {...repeatedTestId(`${testId}-area`, area.id)}
                     label={
                       <span>
                         {area.name || t('heat_limit_numbered', { number: index + 1 })}
@@ -233,10 +241,15 @@ const HeatLimitationCopyPicker = ({ onClose, onCopy }: HeatLimitationCopyPickerP
         )}
       </Modal.Body>
       <Modal.Footer>
-        <Button variant="outline-secondary" onClick={close} disabled={copying}>
+        <Button variant="outline-secondary" onClick={close} disabled={copying} data-testid={childTestId(testId, 'cancel')}>
           {t('heat_limit_cancel')}
         </Button>
-        <Button variant="primary" onClick={() => void submit()} disabled={copying || chosen.length === 0}>
+        <Button
+          variant="primary"
+          onClick={() => void submit()}
+          disabled={copying || chosen.length === 0}
+          data-testid={childTestId(testId, 'confirm')}
+        >
           {copying ? <Spinner size="sm" animation="border" className="me-1" /> : <Copy className="me-1" />}
           {t('heat_limit_copy_confirm', { count: chosen.length })}
         </Button>

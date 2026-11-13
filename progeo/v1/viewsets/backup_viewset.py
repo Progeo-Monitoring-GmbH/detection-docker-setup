@@ -92,6 +92,21 @@ def _picked_backup_ids(backups, day=None, latest=False):
     return picked if not latest else [pk for _, pk in newest.values()]
 
 
+def _dump_names(account_db, database=None):
+    """Names of the dump files in BACKUP_DIR the account lists - of its own
+    database and of every project database; only `database`'s if given."""
+    names = set()
+    for name in os.listdir(settings.BACKUP_DIR):
+        if not name.endswith((".psql", f".psql{Backup.COMPRESSED_SUFFIX}")):
+            continue
+        db = database_of_backup(name)
+        if database and db != database:
+            continue
+        if db == account_db or is_project_alias(db):
+            names.add(name)
+    return names
+
+
 def _known_database(db):
     """Register a project database (it must exist); False for databases
     this server does not have."""
@@ -174,17 +189,29 @@ class BackupViewSet(ProgeoModalViewSet):
     @require_module_permissions("module_backup_enabled")
     @action(detail=False, url_path="parse", methods=["POST"])
     def parse_backups(self, request, *args, **kwargs):
-        _files = os.listdir(settings.BACKUP_DIR)
-        for _f in _files:
-            is_backup_file = _f.endswith((".psql", f".psql{Backup.COMPRESSED_SUFFIX}"))
-            database = database_of_backup(_f)
-            if not is_backup_file or (database != request.account.db_name and not is_project_alias(database)):
-                continue
+        """Sync the Backup rows with the dump files in BACKUP_DIR - only the
+        ?project= database's if given. BACKUP_DIR holds ~10 dumps of each of
+        ~1000 databases, so this is set-based (one listing, one query, one
+        bulk insert/delete) instead of a get_or_create per file."""
+        db_name = request.account.db_name
+        database = _requested_database(request.query_params.get("project"))
+        on_disk = _dump_names(db_name, database)
 
-            backup, created = Backup.objects.using(request.account.db_name).get_or_create(name=_f, account=request.account)
-            if created:
-                backup.user_id = request.user.pk  # by id - see the database router
-                backup.save()
+        rows = Backup.objects.using(db_name).filter(account=request.account)
+        if database:
+            rows = rows.filter(name__startswith=f"{database}-")
+        known = set(rows.values_list("name", flat=True))
+
+        Backup.objects.using(db_name).bulk_create(
+            # user by id - see the database router
+            [Backup(name=name, account=request.account, user_id=request.user.pk) for name in sorted(on_disk - known)],
+            batch_size=1000,
+        )
+        # Rows whose file is gone (clean_old_dumps keeps only the newest
+        # dumps per database) - without this the table grows by ~1000 rows a
+        # day and every listing drags the dead ones along.
+        if known - on_disk:
+            rows.exclude(name__in=on_disk).delete()
 
         create_MfS_log(request)
 

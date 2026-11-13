@@ -1,0 +1,6 @@
+/* The alarms overview (AlarmsOverview.tsx): the time window picker fits its
+   content (over Bootstrap's full-width form-select). */
+
+.form-select.alarms-overview-window {
+  width: auto;
+}

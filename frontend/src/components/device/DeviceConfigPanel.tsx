@@ -8,6 +8,8 @@ import PillButton from '../ui/kit/PillButton';
 import LabeledInput from '../ui/kit/LabeledInput';
 import SegmentedControl from '../ui/kit/SegmentedControl';
 import { INTERVAL_OPTIONS, RESISTANCE_OPTIONS } from './deviceParams';
+import { childTestId } from '../../testIds';
+import './DeviceConfigPanel.css';
 
 /** The ProgeoDevice fields the config file is seeded from. */
 export type ConfigDevice = {
@@ -134,32 +136,6 @@ const toLuaConfig = (config: DeviceConfigForm) => `return {
 }
 `;
 
-const fieldLabelStyle = {
-  fontSize: 11,
-  letterSpacing: '.07em',
-  textTransform: 'uppercase' as const,
-  color: '#8B8383',
-  fontWeight: 500,
-};
-
-const selectStyle = {
-  height: 40,
-  border: 'none',
-  borderRadius: 11,
-  background: 'var(--progeo-surface)',
-  boxShadow: '0 1px 4px rgba(11,54,89,.09)',
-  padding: '0 13px',
-  fontFamily: 'inherit',
-  fontSize: 14,
-  color: 'var(--progeo-blue)',
-};
-
-const gridStyle = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
-  gap: '14px 18px',
-};
-
 type DeviceConfigPanelProps = {
   device: ConfigDevice;
   /** Upload is gated by module_devices_edit on the backend. */
@@ -171,6 +147,10 @@ type DeviceConfigPanelProps = {
   onPullResistanceSaved?: (value: number) => void;
   /** Called after ProgeoLocation.pe_geschaltet was saved. */
   onPeSwitchedSaved?: (value: boolean) => void;
+  /** data-testid of the panel (data-test-key: the device id); its fields are
+   * "<testId>-<field>", its buttons "<testId>-load" / "-save". Pass one per
+   * device when several panels can be open at once. */
+  testId?: string;
 };
 
 /**
@@ -190,6 +170,7 @@ const DeviceConfigPanel = ({
   peSwitched,
   onPullResistanceSaved,
   onPeSwitchedSaved,
+  testId = 'device-config',
 }: DeviceConfigPanelProps) => {
   const { enqueueSnackbar } = useSnackbar();
   const { t } = useTranslation();
@@ -318,6 +299,7 @@ const DeviceConfigPanel = ({
       value={String(form[name])}
       readOnly={!canEdit}
       onChange={(value) => setField(name, value)}
+      testId={childTestId(testId, name)}
     />
   );
 
@@ -328,25 +310,18 @@ const DeviceConfigPanel = ({
       value={String(form[name])}
       readOnly={!canEdit}
       onChange={(value) => setField(name, Number(value) || 0)}
+      testId={childTestId(testId, name)}
     />
   );
 
   return (
-    <div
-      style={{
-        background: 'var(--progeo-track-soft)',
-        borderRadius: 11,
-        padding: '12px 14px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 14,
-      }}
-    >
-      <div style={gridStyle}>
+    <div className="device-config" data-testid={testId} data-test-key={device.id}>
+      <div className="device-config-grid">
         <LabeledInput
           label={t('devcfg_device_ip')}
           value={device.device_ip || ''}
           readOnly
+          testId={childTestId(testId, 'device-ip')}
         />
         {textField('wifi_ssid', 'devcfg_wifi_ssid')}
         {textField('wifi_pwd', 'devcfg_wifi_pwd')}
@@ -354,15 +329,16 @@ const DeviceConfigPanel = ({
         {textField('device_version', 'devcfg_version')}
         {textField('device_project_id', 'devcfg_project_id')}
         {textField('device_hash', 'devcfg_hash')}
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-          <span style={fieldLabelStyle}>{t('devcfg_interval')}</span>
+        <label className="device-config-field">
+          <span className="progeo-field-label">{t('devcfg_interval')}</span>
           <select
             value={form.measurement_interval_sec}
             disabled={!canEdit}
             onChange={(event) =>
               setField('measurement_interval_sec', Number(event.target.value))
             }
-            style={selectStyle}
+            className="device-config-select"
+            data-testid={childTestId(testId, 'interval')}
           >
             {INTERVAL_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
@@ -372,15 +348,16 @@ const DeviceConfigPanel = ({
           </select>
         </label>
         {numberField('measurement_sensors', 'devcfg_sensors')}
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-          <span style={fieldLabelStyle}>{t('einstell_resistance')}</span>
+        <label className="device-config-field">
+          <span className="progeo-field-label">{t('einstell_resistance')}</span>
           <select
             value={form.measurement_pulldown_resistance}
             disabled={!canEdit || busy}
             onChange={(event) =>
               void changePullResistance(Number(event.target.value))
             }
-            style={selectStyle}
+            className="device-config-select"
+            data-testid={childTestId(testId, 'resistance')}
           >
             {/* A value on the device outside the known choices stays visible. */}
             {!RESISTANCE_OPTIONS.some(
@@ -399,19 +376,12 @@ const DeviceConfigPanel = ({
         </label>
       </div>
 
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 16,
-          flexWrap: 'wrap',
-        }}
-      >
-        <div style={{ flex: 1, minWidth: 180 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 500 }}>
+      <div className="device-config-switch">
+        <div className="device-config-switch-text">
+          <div className="device-config-switch-title">
             {t('einstell_pe_geschaltet')}
           </div>
-          <div style={{ fontSize: 12, color: '#8B8383', marginTop: 2 }}>
+          <div className="device-config-switch-hint">
             {t('einstell_pe_geschaltet_hint')}
           </div>
         </div>
@@ -426,59 +396,43 @@ const DeviceConfigPanel = ({
               ? (value) => void changePeSwitched(value === 'ja')
               : () => {}
           }
+          testId={childTestId(testId, 'pe-switched')}
         />
       </div>
 
-      <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-        <span style={fieldLabelStyle}>{t('devcfg_preview')}</span>
+      <label className="device-config-field">
+        <span className="progeo-field-label">{t('devcfg_preview')}</span>
         <textarea
           rows={14}
           value={content}
           readOnly
-          style={{
-            border: 'none',
-            borderRadius: 11,
-            background: 'var(--progeo-surface)',
-            padding: '10px 13px',
-            fontFamily: 'monospace',
-            fontSize: 12.5,
-            color: 'var(--progeo-blue)',
-            resize: 'vertical',
-          }}
+          className="device-config-preview"
+          data-testid={childTestId(testId, 'preview')}
         />
       </label>
 
-      <div
-        style={{
-          display: 'flex',
-          gap: 10,
-          flexWrap: 'wrap',
-          alignItems: 'center',
-        }}
-      >
+      <div className="device-config-actions">
         <PillButton
           variant="ghost"
           label={loading ? t('devcfg_loading') : t('devcfg_load')}
           onClick={() => handleLoad()}
           disabled={busy}
+          testId={childTestId(testId, 'load')}
         />
         {canEdit && (
           <PillButton
             label={saving ? t('devcfg_saving') : t('devcfg_save')}
             onClick={handleSave}
             disabled={busy}
+            testId={childTestId(testId, 'save')}
           />
         )}
         <Link
           to={`/setup/${QR_ACCOUNT_ID}/controller/qrcodes/`}
           target="_blank"
           rel="noopener"
-          style={{
-            marginLeft: 'auto',
-            fontSize: 12.5,
-            fontWeight: 500,
-            color: 'var(--progeo-orange)',
-          }}
+          className="device-config-qr-link"
+          data-testid={childTestId(testId, 'qr-link')}
         >
           {t('devcfg_qrcodes')}
         </Link>

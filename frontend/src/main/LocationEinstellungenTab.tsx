@@ -22,6 +22,8 @@ import ThresholdMixerPanel from './ThresholdMixerPanel';
 import { getProjectTypeLabel } from './projectType';
 import { useProgeoRole } from './roleModel';
 import { staffFlags } from './access';
+import { repeatedTestId, testId } from '../testIds';
+import './LocationEinstellungenTab.css';
 
 type Device = ConfigDevice & {
   hardware: string | null;
@@ -46,44 +48,6 @@ type StaffUser = {
 };
 
 type ProjectTypeOption = { value: number; label: string };
-
-const selectStyle = {
-  height: 40,
-  border: 'none',
-  borderRadius: 11,
-  background: 'var(--progeo-surface)',
-  boxShadow: '0 1px 4px rgba(11,54,89,.09)',
-  padding: '0 13px',
-  fontFamily: 'inherit',
-  fontSize: 14,
-  color: 'var(--progeo-blue)',
-};
-
-const fieldLabelStyle = {
-  fontSize: 11,
-  letterSpacing: '.07em',
-  textTransform: 'uppercase' as const,
-  color: '#8B8383',
-  fontWeight: 500,
-};
-
-const addRowInputStyle = {
-  height: 38,
-  minWidth: 220,
-  border: 'none',
-  borderRadius: 10,
-  background: 'var(--progeo-track-soft)',
-  padding: '0 12px',
-  fontFamily: 'inherit',
-  fontSize: 13.5,
-  color: 'var(--progeo-blue)',
-};
-
-const gridStyle = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
-  gap: '14px 18px',
-};
 
 /**
  * Einstellungen: object-level + per-measurement-point thresholds (the
@@ -323,13 +287,7 @@ const LocationEinstellungenTab = () => {
   };
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 14,
-      }}
-    >
+    <div className="einstell-tab" data-testid="page-location-einstellungen">
       <ThresholdMixerPanel
         // A fresh panel (drafts, selection) per object.
         key={locationId}
@@ -338,25 +296,18 @@ const LocationEinstellungenTab = () => {
         canEdit={canEdit}
       />
 
-      <PanelCard title={t('einstell_section_system')}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div
-            style={{
-              background: 'var(--progeo-surface)',
-              borderRadius: 13,
-              padding: '13px 16px',
-            }}
-          >
-            <div style={gridStyle}>
+      <PanelCard title={t('einstell_section_system')} testId="einstell-system">
+        <div className="einstell-stack">
+          <div className="einstell-card">
+            <div className="einstell-grid">
               {canEditProduct && projectTypeOptions.length > 0 ? (
-                <label
-                  style={{ display: 'flex', flexDirection: 'column', gap: 5 }}
-                >
-                  <span style={fieldLabelStyle}>{t('einstell_product')}</span>
+                <label className="einstell-field">
+                  <span className="einstell-field-label">{t('einstell_product')}</span>
                   <select
                     value={projectType}
                     onChange={(event) => saveProjectType(event.target.value)}
-                    style={selectStyle}
+                    className="einstell-select"
+                    data-testid="einstell-product"
                   >
                     {projectType === '' && <option value="">–</option>}
                     {projectTypeOptions.map((option) => (
@@ -368,6 +319,7 @@ const LocationEinstellungenTab = () => {
                 </label>
               ) : (
                 <LabeledInput
+                  testId="einstell-product"
                   label={t('einstell_product')}
                   value={projectTypeLabel(
                     projectType === '' ? null : Number(projectType),
@@ -378,22 +330,12 @@ const LocationEinstellungenTab = () => {
             </div>
           </div>
 
-          <div
-            style={{
-              background: 'var(--progeo-surface)',
-              borderRadius: 13,
-              padding: '13px 16px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 16,
-              flexWrap: 'wrap',
-            }}
-          >
-            <div style={{ flex: 1, minWidth: 180 }}>
-              <div style={{ fontSize: 13.5, fontWeight: 500 }}>
+          <div className="einstell-card einstell-card--row" data-testid="einstell-rain-check">
+            <div className="einstell-row-text">
+              <div className="einstell-row-title">
                 {t('einstell_rain_check')}
               </div>
-              <div style={{ fontSize: 12, color: '#8B8383', marginTop: 2 }}>
+              <div className="einstell-row-hint" data-testid="einstell-rain-check-hint">
                 {t(
                   rainCheck && !hasCoordinates
                     ? 'einstell_rain_check_no_coordinates'
@@ -402,6 +344,7 @@ const LocationEinstellungenTab = () => {
               </div>
             </div>
             <SegmentedControl
+              testId="einstell-rain-check-switch"
               options={[
                 { value: 'ja', label: t('einstell_yes') },
                 { value: 'nein', label: t('einstell_no') },
@@ -417,22 +360,17 @@ const LocationEinstellungenTab = () => {
           </div>
 
           {devicesLoading ? (
-            <div className="d-flex justify-content-center py-3 text-muted">
+            <div className="d-flex justify-content-center py-3 text-muted" data-testid="einstell-devices-loading">
               <Spinner animation="border" size="sm" />
             </div>
           ) : (
             devices.map((device) => (
               <div
                 key={device.id}
-                style={{
-                  background: 'var(--progeo-surface)',
-                  borderRadius: 13,
-                  padding: '13px 16px',
-                }}
+                className="einstell-card"
+                {...repeatedTestId('einstell-device', device.id)}
               >
-                <div
-                  style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 10 }}
-                >
+                <div className="einstell-device-title" {...repeatedTestId('einstell-device-title', device.id)}>
                   {device.hardware || `#${device.id}`}
                 </div>
                 <button
@@ -444,18 +382,8 @@ const LocationEinstellungenTab = () => {
                     }))
                   }
                   aria-expanded={Boolean(configOpen[device.id])}
-                  style={{
-                    marginTop: 12,
-                    marginBottom: configOpen[device.id] ? 10 : 0,
-                    background: 'none',
-                    border: 'none',
-                    padding: 0,
-                    fontFamily: 'inherit',
-                    fontSize: 12.5,
-                    fontWeight: 500,
-                    color: 'var(--progeo-orange)',
-                    cursor: 'pointer',
-                  }}
+                  {...repeatedTestId('einstell-config-toggle', device.id)}
+                  className={`einstell-config-toggle${configOpen[device.id] ? ' einstell-config-toggle--open' : ''}`}
                 >
                   {configOpen[device.id]
                     ? t('einstell_config_hide')
@@ -463,6 +391,7 @@ const LocationEinstellungenTab = () => {
                 </button>
                 {configOpen[device.id] && (
                   <DeviceConfigPanel
+                    testId={testId('device-config', device.id)}
                     device={device}
                     canEdit={canEditDevices}
                     locationId={locationId}
@@ -483,17 +412,17 @@ const LocationEinstellungenTab = () => {
             ))
           )}
           {!devicesLoading && devices.length === 0 && (
-            <span style={{ fontSize: 12.5, color: '#8B8383' }}>
+            <span className="einstell-empty" data-testid="einstell-no-devices">
               {t('einstell_no_devices')}
             </span>
           )}
         </div>
       </PanelCard>
 
-      <PanelCard title={t('einstell_section_objektleitung')}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <PanelCard title={t('einstell_section_objektleitung')} testId="einstell-objektleitung">
+        <div className="einstell-stack">
           {staffLoading ? (
-            <div className="d-flex justify-content-center py-3 text-muted">
+            <div className="d-flex justify-content-center py-3 text-muted" data-testid="einstell-staff-loading">
               <Spinner animation="border" size="sm" />
             </div>
           ) : (
@@ -501,28 +430,21 @@ const LocationEinstellungenTab = () => {
               {staffRules.map((rule) => (
                 <div
                   key={rule.id}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 14,
-                    background: 'var(--progeo-surface)',
-                    borderRadius: 13,
-                    padding: '12px 16px',
-                    flexWrap: 'wrap',
-                  }}
+                  className="einstell-staff-row"
+                  {...repeatedTestId('einstell-staff', rule.id)}
                 >
-                  <div style={{ flex: 1, minWidth: 150 }}>
-                    <div style={{ fontSize: 13.5, fontWeight: 500 }}>
+                  <div className="einstell-row-text einstell-row-text--narrow">
+                    <div className="einstell-row-title">
                       {rule.user_name}
                     </div>
-                    <div
-                      style={{ fontSize: 12, color: '#8B8383', marginTop: 2 }}
-                    >
+                    <div className="einstell-row-hint">
                       {rule.user_email}
                     </div>
                   </div>
                   {canRemoveStaff && (
                     <PillButton
+                      testId="einstell-staff-remove"
+                      testKey={String(rule.id)}
                       variant="ghost"
                       label={t('rechte_revoke')}
                       onClick={() => removeStaff(rule)}
@@ -531,23 +453,17 @@ const LocationEinstellungenTab = () => {
                 </div>
               ))}
               {staffRules.length === 0 && (
-                <span style={{ fontSize: 12.5, color: '#8B8383' }}>
+                <span className="einstell-empty" data-testid="einstell-objektleitung-empty">
                   {t('einstell_objektleitung_empty')}
                 </span>
               )}
               {canAssignStaff && (
-                <div
-                  style={{
-                    display: 'flex',
-                    gap: 10,
-                    alignItems: 'center',
-                    flexWrap: 'wrap',
-                  }}
-                >
+                <div className="einstell-add-row">
                   <select
                     value={addStaffId}
                     onChange={(event) => setAddStaffId(event.target.value)}
-                    style={addRowInputStyle}
+                    className="einstell-add-input"
+                    data-testid="einstell-staff-select"
                   >
                     <option value="">{t('einstell_select_staff')}</option>
                     {availableStaff.map((staff) => (
@@ -556,7 +472,7 @@ const LocationEinstellungenTab = () => {
                       </option>
                     ))}
                   </select>
-                  <PillButton label={t('einstell_assign')} onClick={addStaff} />
+                  <PillButton testId="einstell-staff-assign" label={t('einstell_assign')} onClick={addStaff} />
                 </div>
               )}
               {canAssignStaff && canAssignByEmail && (
@@ -565,12 +481,8 @@ const LocationEinstellungenTab = () => {
                     event.preventDefault();
                     addByEmail();
                   }}
-                  style={{
-                    display: 'flex',
-                    gap: 10,
-                    alignItems: 'center',
-                    flexWrap: 'wrap',
-                  }}
+                  className="einstell-add-row"
+                  data-testid="einstell-email-form"
                 >
                   <input
                     type="email"
@@ -579,14 +491,16 @@ const LocationEinstellungenTab = () => {
                     placeholder={t('einstell_objektleitung_email')}
                     aria-label={t('einstell_objektleitung_email')}
                     onChange={(event) => setAddEmail(event.target.value)}
-                    style={addRowInputStyle}
+                    className="einstell-add-input"
+                    data-testid="einstell-email-input"
                   />
                   <PillButton
+                    testId="einstell-email-assign"
                     label={t('einstell_assign')}
                     onClick={addByEmail}
                     disabled={addingEmail}
                   />
-                  <span style={{ fontSize: 11.5, color: '#8B8383' }}>
+                  <span className="einstell-add-hint">
                     {t('einstell_objektleitung_email_hint')}
                   </span>
                 </form>

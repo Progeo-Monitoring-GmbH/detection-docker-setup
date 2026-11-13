@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card } from 'react-bootstrap';
-import { plotTheme } from '../../styles/plotTheme';
 import FrameSlider, { type AlarmSpan, frameAt } from './FrameSlider';
 import { seriesRange } from './heatmapGrid';
 import { heatColorAt, heatColorTable } from './heatmapCanvas';
@@ -39,10 +38,12 @@ import { useHeatmapFrameExport } from './useHeatmapFrameExport';
 import { type AreaRect, useHeatmapViewport, usePanZoomGestures } from './useHeatmapViewport';
 import { useLageplanImage } from './useLageplanImage';
 import ZoomControls from './ZoomControls';
+import { childTestId } from '../../testIds';
 import { TWO_FINGER_TOUCH_ACTION, useWheelHint, WheelZoomHint } from '../ui/wheelZoom';
 import { getBackendUrl } from '../../backendUrl';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import { staffFlags } from '../../main/access';
+import './SensorHeatmap2D.css';
 
 type SensorHeatmap2DProps = {
   response: SensorHeatmapResponse | null | undefined;
@@ -116,7 +117,17 @@ type SensorHeatmap2DProps = {
    */
   planId?: number | null;
   onPlanChange?: (planId: number) => void;
+  /**
+   * data-testid of the heatmap (its card); its parts are "<testId>-plot",
+   * "-canvas", "-toolbar", "-frame-slider", "-zoom", ... With the default,
+   * the area rectangle, the display controls and the heat limitations keep
+   * their own ids ("heatmap-area-rect", "heatmap-display-controls",
+   * "heat-limit-*"); with another one they are scoped under it too.
+   */
+  testId?: string;
 };
+
+const DEFAULT_TEST_ID = 'sensor-heatmap';
 
 /** The plan under the cursor: the position in meters and the heat there
  * (with the cursor, for the reference guides). */
@@ -201,8 +212,11 @@ const SensorHeatmap2D = ({
   forceNormalize = false,
   planId = null,
   onPlanChange,
+  testId = DEFAULT_TEST_ID,
 }: SensorHeatmap2DProps) => {
   const { t } = useTranslation();
+  // The parts with an id of their own keep it while the heatmap has the default id.
+  const ownId = testId === DEFAULT_TEST_ID;
   // Primitives, so a new `field` object per render doesn't recompute.
   const fieldUnit = field?.unit ?? null;
   const fieldDecimals = field?.decimals ?? 1;
@@ -561,6 +575,7 @@ const SensorHeatmap2D = ({
           onPlanChange={choosePlan}
           sigma={sigma}
           onSigmaChange={setSigma}
+          testId={childTestId(testId, 'toolbar')}
           video={{
             exporting: videoExport.videoExporting,
             stage: videoExport.videoStage,
@@ -580,37 +595,36 @@ const SensorHeatmap2D = ({
               onChange={setTimestampIndex}
               disabled={videoExport.videoExporting}
               alarms={alarms}
+              testId={childTestId(testId, 'frame-slider')}
             />
           </div>
         )}
-        <HeatLimitationBar editor={limitEditor} />
+        <HeatLimitationBar editor={limitEditor} testId={ownId ? undefined : childTestId(testId, 'heat-limit')} />
       </div>
 
       {videoExport.videoError && (
-        <div className="text-danger small mb-2 px-2">{videoExport.videoError}</div>
+        <div className="text-danger small mb-2 px-2" data-testid={childTestId(testId, 'video-error')}>
+          {videoExport.videoError}
+        </div>
       )}
 
       <div
         ref={wrapRef}
         className="heatmap2d-plot-wrap"
-        style={{ position: 'relative', height: canvasHeight }}
+        data-testid={childTestId(testId, 'plot')}
+        style={{ height: canvasHeight }}
       >
         <canvas
           ref={canvasRef}
           role="img"
           aria-label={t('heatmap_canvas_hint')}
+          data-testid={childTestId(testId, 'canvas')}
+          className={`heatmap2d-canvas heatmap2d-canvas--${
+            drawing || areaMode ? 'crosshair' : hoveredIndex != null ? 'pointer' : grabbing ? 'grabbing' : 'grab'
+          }`}
           style={{
-            display: 'block',
-            width: '100%',
             height: canvasHeight,
             touchAction: oneFingerTool ? 'none' : TWO_FINGER_TOUCH_ACTION,
-            cursor: drawing || areaMode
-              ? 'crosshair'
-              : hoveredIndex != null
-                ? 'pointer'
-                : grabbing
-                  ? 'grabbing'
-                  : 'grab',
           }}
           {...handlers}
           // While drawing, double clicks are two points - not a reset.
@@ -624,22 +638,20 @@ const SensorHeatmap2D = ({
             world={scene.layout.world}
             width={width}
             height={canvasHeight}
+            testId={ownId ? undefined : childTestId(testId, 'heat-limit')}
           />
         )}
 
-        <WheelZoomHint visible={wheelHint} radius={0} />
+        <WheelZoomHint visible={wheelHint} radius={0} testId={childTestId(testId, 'wheel-hint')} />
         {areaRect && (
           <div
-            data-testid="heatmap-area-rect"
+            data-testid={ownId ? 'heatmap-area-rect' : childTestId(testId, 'area-rect')}
+            className="heatmap2d-area-rect"
             style={{
-              position: 'absolute',
               left: Math.min(areaRect[0], areaRect[2]),
               top: Math.min(areaRect[1], areaRect[3]),
               width: Math.abs(areaRect[2] - areaRect[0]),
               height: Math.abs(areaRect[3] - areaRect[1]),
-              border: '1.5px dashed var(--progeo-blue)',
-              background: 'rgba(9, 75, 129, 0.12)',
-              pointerEvents: 'none',
             }}
           />
         )}
@@ -657,12 +669,14 @@ const SensorHeatmap2D = ({
               ? { value: profile, onChange: onProfileChange, loading: profileLoading }
               : null
           }
+          testId={ownId ? undefined : childTestId(testId, 'display')}
         />
         <ZoomControls
           onZoomIn={() => zoomBy(ZOOM_STEP)}
           onZoomOut={() => zoomBy(1 / ZOOM_STEP)}
           onReset={() => setView(null)}
           resetDisabled={!isZoomed}
+          testId={childTestId(testId, 'zoom')}
         />
 
         {hover?.kind === 'sensor' && hoveredIndex != null && (
@@ -675,16 +689,24 @@ const SensorHeatmap2D = ({
             colorTable={colorTable}
             containerWidth={width}
             containerHeight={canvasHeight}
+            testId={childTestId(testId, 'sensor-tooltip')}
           />
         )}
 
         {underCursor && (
-          <CursorReadout meters={underCursor.meters} heat={underCursor.heat} fieldScale={fieldScale} />
+          <CursorReadout
+            meters={underCursor.meters}
+            heat={underCursor.heat}
+            fieldScale={fieldScale}
+            testId={childTestId(testId, 'readout')}
+          />
         )}
       </div>
     </>
   ) : (
-    <div className="text-muted py-5 text-center">{t('heatmap_no_data')}</div>
+    <div className="text-muted py-5 text-center" data-testid={childTestId(testId, 'empty')}>
+      {t('heatmap_no_data')}
+    </div>
   );
 
   if (hideChrome) {
@@ -692,7 +714,7 @@ const SensorHeatmap2D = ({
   }
 
   return (
-    <Card className="border-0 shadow-sm">
+    <Card className="border-0 shadow-sm" data-testid={testId}>
       <Card.Body>{body}</Card.Body>
     </Card>
   );
@@ -709,6 +731,7 @@ const HoveredSensorTooltip = ({
   colorTable,
   containerWidth,
   containerHeight,
+  testId,
 }: {
   sensor: ChartSensor;
   value: number;
@@ -718,6 +741,7 @@ const HoveredSensorTooltip = ({
   colorTable: Uint8ClampedArray;
   containerWidth: number;
   containerHeight: number;
+  testId?: string;
 }) => {
   const range = fieldScale?.range;
   return (
@@ -738,6 +762,7 @@ const HoveredSensorTooltip = ({
       cursorY={screen[1]}
       containerWidth={containerWidth}
       containerHeight={containerHeight}
+      testId={testId}
     />
   );
 };
@@ -748,10 +773,12 @@ const CursorReadout = ({
   meters,
   heat,
   fieldScale,
+  testId,
 }: {
   meters: [number, number] | null;
   heat: number | null;
   fieldScale: FieldScale | null;
+  testId?: string;
 }) => {
   const { t } = useTranslation();
   const heatText = (value: number) =>
@@ -759,19 +786,7 @@ const CursorReadout = ({
       ? formatReading(fieldScale, fieldReading(fieldScale, value))
       : `${t('heatmap_heat')} ${value.toFixed(2)}`;
   return (
-    <div
-      className="small"
-      style={{
-        position: 'absolute',
-        left: 8,
-        bottom: 8,
-        padding: '2px 8px',
-        borderRadius: 6,
-        background: 'rgba(255, 255, 255, 0.85)',
-        color: plotTheme.brandBlue,
-        pointerEvents: 'none',
-      }}
-    >
+    <div className="heatmap2d-readout small" data-testid={testId}>
       {[meters ? formatMeters(meters) : null, heat == null ? null : heatText(heat)]
         .filter(Boolean)
         .join(' · ')}

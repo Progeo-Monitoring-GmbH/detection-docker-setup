@@ -26,6 +26,7 @@ export {
   type TimelineAlarm,
 } from './alarmUtils';
 import { formatDate } from './dateFormat';
+import { childTestId } from '../testIds';
 
 type AlarmTimelineProps = {
   alarms: TimelineAlarm[];
@@ -36,6 +37,8 @@ type AlarmTimelineProps = {
   onSelectAlarm?: (alarm: TimelineAlarm) => void;
   /** Rain events of the alarms' locations - drawn on each location's lane. */
   rainEvents?: RainEvent[];
+  /** data-testid of the timeline (default "alarm-timeline"); its parts derive from it. */
+  testId?: string;
 };
 
 /** Close delay for the floating alarm tooltip after the mouse left it (ms). */
@@ -97,6 +100,7 @@ const AlarmTimeline = ({
   selectedAlarmKey = null,
   onSelectAlarm,
   rainEvents,
+  testId = 'alarm-timeline',
 }: AlarmTimelineProps) => {
   const [sortBy, setSortBy] = useState<'label' | 'duration' | 'max_value'>(
     'duration',
@@ -518,7 +522,7 @@ const AlarmTimeline = ({
 
   if (spans.length === 0) {
     return (
-      <div className="alarm-timeline-empty">
+      <div className="alarm-timeline-empty" data-testid={childTestId(testId, 'empty')}>
         <ClockHistory className="me-2 text-muted" />
         No alarms to display on the timeline.
       </div>
@@ -526,26 +530,30 @@ const AlarmTimeline = ({
   }
 
   return (
-    <div className="alarm-timeline">
+    <div className="alarm-timeline" data-testid={testId}>
       <div className="alarm-timeline-header">
-        <div className="alarm-timeline-summary d-flex flex-wrap gap-3 align-items-center">
-          <span className="text-muted small">
+        <div
+          className="alarm-timeline-summary d-flex flex-wrap gap-3 align-items-center"
+          data-testid={childTestId(testId, 'summary')}
+        >
+          <span className="text-muted small" data-testid={childTestId(testId, 'alarm-count')}>
             <strong>{spans.length}</strong> alarm(s)
           </span>
-          <span className="text-muted small">
+          <span className="text-muted small" data-testid={childTestId(testId, 'active-count')}>
             <strong>{activeCount}</strong> active
           </span>
-          <span className="text-muted small">
+          <span className="text-muted small" data-testid={childTestId(testId, 'total-duration')}>
             Total active time:{' '}
             <strong>{formatDuration(totalDurationSeconds)}</strong>
           </span>
-          <span className="text-muted small">
+          <span className="text-muted small" data-testid={childTestId(testId, 'location-count')}>
             <strong>{groups.length}</strong> location(s)
           </span>
           <div className="ms-auto">
             <select
               className="form-select form-select-sm"
               aria-label="Sort timeline"
+              data-testid={childTestId(testId, 'sort')}
               value={sortBy}
               onChange={(event) =>
                 setSortBy(
@@ -569,6 +577,7 @@ const AlarmTimeline = ({
                 type="button"
                 className="alarm-timeline-zoom-reset"
                 onClick={resetZoom}
+                data-testid={childTestId(testId, 'zoom-reset')}
               >
                 Reset zoom
               </button>
@@ -578,7 +587,7 @@ const AlarmTimeline = ({
         </div>
       </div>
 
-      <div className="alarm-timeline-body" ref={bodyRef}>
+      <div className="alarm-timeline-body" ref={bodyRef} data-testid={childTestId(testId, 'body')}>
         {/* Day header: day labels aligned with the tracks (spacer matches the
             lane label column, so labels line up with the time axis). */}
         <div className="alarm-timeline-day-header">
@@ -625,7 +634,12 @@ const AlarmTimeline = ({
               isAlarmActive(span.alarm),
             ).length;
             return (
-              <div className="alarm-timeline-lane" key={group.key}>
+              <div
+                className="alarm-timeline-lane"
+                key={group.key}
+                data-testid={childTestId(testId, 'lane')}
+                data-test-key={group.key}
+              >
                 <div className="alarm-timeline-label">
                   <div
                     className="alarm-timeline-label-name"
@@ -633,7 +647,11 @@ const AlarmTimeline = ({
                   >
                     {group.label}
                   </div>
-                  <div className="alarm-timeline-label-stats small text-muted">
+                  <div
+                    className="alarm-timeline-label-stats small text-muted"
+                    data-testid={childTestId(testId, 'lane-stats')}
+                    data-test-key={group.key}
+                  >
                     {group.spans.length} alarm(s) · {groupActiveCount} active ·{' '}
                     {formatDuration(groupDurationSeconds)}
                   </div>
@@ -657,6 +675,8 @@ const AlarmTimeline = ({
                       <div
                         key={`rain-${group.key}-${rain.start}`}
                         className="alarm-timeline-rain"
+                        data-testid={childTestId(testId, 'rain')}
+                        data-test-key={`${group.key}-${rain.start}`}
                         style={{
                           left: `${toLeft(rain.start)}%`,
                           width: `${toWidth(rain.end - rain.start)}%`,
@@ -705,6 +725,8 @@ const AlarmTimeline = ({
                           onMouseMove={handleBarMouseMove}
                           onMouseLeave={handleBarMouseLeave}
                           onClick={() => onSelectAlarm?.(span.alarm)}
+                          data-testid={childTestId(testId, 'bar')}
+                          data-test-key={alarmKey(span.alarm)}
                         >
                           {showLabel && (
                             <span className="alarm-timeline-bar-label">
@@ -730,7 +752,11 @@ const AlarmTimeline = ({
               className="alarm-timeline-hover-line"
               style={{ left: hover.x }}
             />
-            <div className="alarm-timeline-hover-tip" style={{ left: hover.x }}>
+            <div
+              className="alarm-timeline-hover-tip"
+              style={{ left: hover.x }}
+              data-testid={childTestId(testId, 'hover-time')}
+            >
               {formatClock(hover.ms)}
             </div>
           </>
@@ -773,7 +799,7 @@ const AlarmTimeline = ({
         )}
       </div>
 
-      <div className="alarm-timeline-legend d-flex gap-3 mt-2 small text-muted">
+      <div className="alarm-timeline-legend d-flex gap-3 mt-2 small text-muted" data-testid={childTestId(testId, 'legend')}>
         <span className="d-flex align-items-center gap-1">
           <span className="alarm-timeline-swatch alarm-timeline-swatch-border-red" />
           Still active

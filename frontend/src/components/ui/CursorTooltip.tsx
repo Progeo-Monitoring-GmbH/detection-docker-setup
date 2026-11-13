@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode, RefObject } from 'react';
 import { formatDate } from '../../main/dateFormat';
+import { childTestId } from '../../testIds';
 import '../../main/AlarmTooltip.css';
 
 /** Fixed gap between the cursor and the tooltip, in either direction. */
@@ -28,6 +29,8 @@ type CursorTooltipProps = {
   children: ReactNode;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
+  /** data-testid of the tooltip; its title is "<testId>-title". */
+  testId?: string;
 };
 
 export const formatClock = (ms: number): string => formatDate(ms, 'dayMonthTime');
@@ -101,6 +104,7 @@ const CursorTooltip = ({
   children,
   onMouseEnter,
   onMouseLeave,
+  testId = 'cursor-tooltip',
 }: CursorTooltipProps) => {
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const size = useElementSize(tooltipRef);
@@ -120,10 +124,13 @@ const CursorTooltip = ({
       style={style}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
+      data-testid={testId}
     >
       <div className="alarm-tooltip-head">
         <span className="alarm-tooltip-dot" style={dotStyle} />
-        <span className="alarm-tooltip-title">{title}</span>
+        <span className="alarm-tooltip-title" data-testid={childTestId(testId, 'title')}>
+          {title}
+        </span>
         {headExtra}
       </div>
       <div className="alarm-tooltip-body">{children}</div>

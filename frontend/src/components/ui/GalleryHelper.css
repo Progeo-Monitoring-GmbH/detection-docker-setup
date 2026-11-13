@@ -1,0 +1,8 @@
+/* A gallery thumbnail (Thumbnail in GalleryHelper.tsx); its width and height
+   come from the props and stay inline. */
+
+.gallery-thumbnail {
+  display: block;
+  object-fit: cover;
+  border-radius: 8px;
+}

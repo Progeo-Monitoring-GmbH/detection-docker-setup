@@ -18,6 +18,7 @@ import {
   PRIVACY_POLICY_LAST_UPDATED,
   buildPolicySections,
 } from './privacyPolicyContent';
+import { repeatedTestId } from '../testIds';
 import './PrivacyPolicyPage.css';
 
 const HIGHLIGHTS = [
@@ -91,6 +92,7 @@ const PrivacyPolicyPage = () => {
             type="button"
             className="privacy-inline-button"
             onClick={openSettings}
+            data-testid="privacy-policy-inline-settings"
           >
             <Sliders size={14} />
             Datenschutz-Einstellungen öffnen
@@ -114,20 +116,20 @@ const PrivacyPolicyPage = () => {
   }, []);
 
   return (
-    <div className="privacy-page" lang="de">
+    <div className="privacy-page" lang="de" data-testid="page-privacy-policy">
       <div className="privacy-shell">
-        <Link to="/" className="privacy-back">
+        <Link to="/" className="privacy-back" data-testid="privacy-policy-back">
           <ArrowLeft size={14} />
           {t('privacy_back_to_app')}
         </Link>
 
         {!i18n.language?.startsWith('de') && (
-          <div className="privacy-language-note" lang={i18n.language}>
+          <div className="privacy-language-note" lang={i18n.language} data-testid="privacy-policy-language-note">
             {t('privacy_german_only')}
           </div>
         )}
 
-        <header className="privacy-hero">
+        <header className="privacy-hero" data-testid="privacy-policy-hero">
           <span className="privacy-hero-eyebrow">
             <ShieldLock size={14} />
             Datenschutz
@@ -139,7 +141,7 @@ const PrivacyPolicyPage = () => {
             wofür wir sie nutzen und welche Rechte Sie haben.
           </p>
           <div className="privacy-hero-meta">
-            <span className="privacy-chip">
+            <span className="privacy-chip" data-testid="privacy-policy-last-updated">
               <Calendar3 size={13} />
               Stand: {PRIVACY_POLICY_LAST_UPDATED}
             </span>
@@ -147,6 +149,7 @@ const PrivacyPolicyPage = () => {
               type="button"
               className="privacy-hero-button"
               onClick={openSettings}
+              data-testid="privacy-policy-settings"
             >
               <Sliders size={14} />
               Datenschutz-Einstellungen
@@ -155,6 +158,7 @@ const PrivacyPolicyPage = () => {
               type="button"
               className="privacy-hero-button ghost"
               onClick={() => window.print()}
+              data-testid="privacy-policy-print"
             >
               <Printer size={14} />
               Drucken
@@ -162,9 +166,9 @@ const PrivacyPolicyPage = () => {
           </div>
         </header>
 
-        <div className="privacy-highlights">
+        <div className="privacy-highlights" data-testid="privacy-policy-highlights">
           {HIGHLIGHTS.map((highlight) => (
-            <div key={highlight.title} className="privacy-highlight">
+            <div key={highlight.title} className="privacy-highlight" {...repeatedTestId('privacy-policy-highlight', highlight.title)}>
               <span className="privacy-highlight-icon">{highlight.icon}</span>
               <strong>{highlight.title}</strong>
               <span>{highlight.text}</span>
@@ -173,7 +177,7 @@ const PrivacyPolicyPage = () => {
         </div>
 
         <div className="privacy-layout">
-          <nav className="privacy-toc" aria-label="Inhaltsverzeichnis">
+          <nav className="privacy-toc" aria-label="Inhaltsverzeichnis" data-testid="privacy-policy-toc">
             <div className="privacy-toc-title">Inhalt</div>
             <ol>
               {sections.map((section) => (
@@ -181,6 +185,7 @@ const PrivacyPolicyPage = () => {
                   <a
                     href={`#${section.id}`}
                     className={section.id === activeId ? 'active' : undefined}
+                    {...repeatedTestId('privacy-policy-toc-link', section.id)}
                     aria-current={
                       section.id === activeId ? 'location' : undefined
                     }
@@ -192,13 +197,14 @@ const PrivacyPolicyPage = () => {
             </ol>
           </nav>
 
-          <main className="privacy-content">
+          <main className="privacy-content" data-testid="privacy-policy-content">
             {sections.map((section) => (
               <section
                 key={section.id}
                 id={section.id}
                 className="privacy-section"
                 aria-labelledby={`${section.id}-title`}
+                {...repeatedTestId('privacy-policy-section', section.id)}
               >
                 <h2 id={`${section.id}-title`}>{section.title}</h2>
                 {section.body}
@@ -207,7 +213,7 @@ const PrivacyPolicyPage = () => {
           </main>
         </div>
 
-        <footer className="privacy-footer">
+        <footer className="privacy-footer" data-testid="privacy-policy-footer">
           © {new Date().getFullYear()} {CONTROLLER.name}
         </footer>
       </div>

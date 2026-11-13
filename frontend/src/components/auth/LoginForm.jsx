@@ -5,15 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Eye, EyeSlash } from 'react-bootstrap-icons';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import { oidcLoginHint } from '../../main/oidcForward';
-import AuthPage, {
-  AuthLinks,
-  ERROR_TEXT,
-  FIELD,
-  FIELD_LABEL,
-  FORM,
-  LABEL,
-  buttonStyle,
-} from './AuthPage';
+import AuthPage, { AuthLinks, authButtonClass } from './AuthPage';
 
 /**
  * The portal's login: a card with the ProGeo logo and the sign-in form,
@@ -57,26 +49,28 @@ const LoginForm = () => {
 
   if (otpStep) {
     return (
-      <AuthPage title={t('login_otp_title')} intro={t('login_otp_intro')}>
-        <form onSubmit={handleSubmit(onSubmit)} style={FORM}>
-          <label style={LABEL}>
-            <span style={FIELD_LABEL}>{t('login_otp_code')}</span>
+      <AuthPage title={t('login_otp_title')} intro={t('login_otp_intro')} testId="page-login">
+        <form onSubmit={handleSubmit(onSubmit)} className="auth-form" data-testid="login-otp-form">
+          <label className="auth-label">
+            <span className="auth-field-label">{t('login_otp_code')}</span>
             <input
               type="text"
               autoComplete="one-time-code"
               autoFocus
               required
-              style={FIELD}
+              className="auth-field"
+              data-testid="login-otp"
               {...register('otp')}
             />
           </label>
           {otpStep === 'otp_invalid' && (
-            <p style={ERROR_TEXT}>{t('login_otp_invalid')}</p>
+            <p className="auth-error" data-testid="login-otp-error">{t('login_otp_invalid')}</p>
           )}
           <button
             type="submit"
             disabled={formState.isSubmitting}
-            style={buttonStyle(formState.isSubmitting)}
+            className={authButtonClass(formState.isSubmitting)}
+            data-testid="login-otp-submit"
           >
             {t('login_otp_submit')}
           </button>
@@ -86,8 +80,8 @@ const LoginForm = () => {
           <button
             type="button"
             onClick={backToCredentials}
-            className="btn btn-link p-0"
-            style={{ fontSize: 13 }}
+            className="btn btn-link p-0 auth-link-button"
+            data-testid="login-otp-back"
           >
             {t('login_otp_back')}
           </button>
@@ -97,28 +91,30 @@ const LoginForm = () => {
   }
 
   return (
-    <AuthPage title={t('login_title')} intro={t('login_intro')}>
-      <form onSubmit={handleSubmit(onSubmit)} style={FORM}>
-        <label style={LABEL}>
-          <span style={FIELD_LABEL}>{t('login_username')}</span>
+    <AuthPage title={t('login_title')} intro={t('login_intro')} testId="page-login">
+      <form onSubmit={handleSubmit(onSubmit)} className="auth-form" data-testid="login-form">
+        <label className="auth-label">
+          <span className="auth-field-label">{t('login_username')}</span>
           <input
             type="text"
             autoComplete="username"
             autoFocus
             required
-            style={FIELD}
+            className="auth-field"
+            data-testid="login-username"
             {...register('username')}
           />
         </label>
 
-        <label style={LABEL}>
-          <span style={FIELD_LABEL}>{t('login_password')}</span>
-          <span style={{ position: 'relative', display: 'block' }}>
+        <label className="auth-label">
+          <span className="auth-field-label">{t('login_password')}</span>
+          <span className="auth-password-wrap">
             <input
               type={showPasswd ? 'text' : 'password'}
               autoComplete="current-password"
               required
-              style={{ ...FIELD, paddingRight: 44 }}
+              className="auth-field auth-field--password"
+              data-testid="login-password"
               {...register('password')}
             />
             <button
@@ -130,21 +126,8 @@ const LoginForm = () => {
               title={
                 showPasswd ? t('login_hide_password') : t('login_show_password')
               }
-              style={{
-                position: 'absolute',
-                right: 6,
-                top: 6,
-                width: 30,
-                height: 30,
-                border: 'none',
-                borderRadius: 'var(--progeo-radius-pill)',
-                background: 'transparent',
-                color: '#6E6868',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-              }}
+              className="auth-password-toggle"
+              data-testid="login-password-toggle"
             >
               {showPasswd ? <EyeSlash /> : <Eye />}
             </button>
@@ -154,16 +137,17 @@ const LoginForm = () => {
         <button
           type="submit"
           disabled={formState.isSubmitting}
-          style={buttonStyle(formState.isSubmitting)}
+          className={authButtonClass(formState.isSubmitting)}
+          data-testid="login-submit"
         >
           {t('login_submit')}
         </button>
       </form>
 
       <AuthLinks>
-        <Link to="/passwort-vergessen">{t('login_forgot_password')}</Link>
-        <Link to="/login/link">{t('login_magic_link')}</Link>
-        <Link to="/zugang/beantragen">{t('login_request_access')}</Link>
+        <Link to="/passwort-vergessen" data-testid="login-forgot-password-link">{t('login_forgot_password')}</Link>
+        <Link to="/login/link" data-testid="login-magic-link-link">{t('login_magic_link')}</Link>
+        <Link to="/zugang/beantragen" data-testid="login-request-access-link">{t('login_request_access')}</Link>
       </AuthLinks>
     </AuthPage>
   );

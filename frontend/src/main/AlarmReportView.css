@@ -1,0 +1,10 @@
+/* The alarm report page (AlarmReportView.tsx): fixed-width date pickers
+   (over Bootstrap's full-width form-select). */
+
+.form-select.alarm-report-date-select {
+  width: 200px;
+}
+
+.form-select.alarm-report-date-select--nav {
+  width: 220px;
+}

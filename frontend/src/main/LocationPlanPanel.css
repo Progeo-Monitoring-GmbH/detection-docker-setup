@@ -1,0 +1,18 @@
+/* The "Dachansicht" panel (LocationPlanPanel.tsx): hints, the heatmap frame
+   and the sensor table below the plan. Theme variables: scss/main.css. */
+
+.plan-panel-hint {
+  color: #8b8383;
+  font-size: 13px;
+}
+
+.plan-panel-heatmap {
+  position: relative;
+  border-radius: 14px;
+  background: var(--progeo-surface);
+  overflow: hidden;
+}
+
+.plan-panel-sensor-table {
+  margin-top: 14px;
+}

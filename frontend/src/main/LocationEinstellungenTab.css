@@ -1,0 +1,144 @@
+/* The Einstellungen tab (LocationEinstellungenTab.tsx): system settings,
+   per-device config cards and the Objektleitung list. Theme variables:
+   scss/main.css. */
+
+.einstell-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.einstell-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* A light card inside a panel: product, rain check, one device. */
+.einstell-card {
+  background: var(--progeo-surface);
+  border-radius: 13px;
+  padding: 13px 16px;
+}
+
+.einstell-card--row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.einstell-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 14px 18px;
+}
+
+.einstell-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.einstell-field-label {
+  font-size: 11px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #8b8383;
+  font-weight: 500;
+}
+
+.einstell-select {
+  height: 40px;
+  border: none;
+  border-radius: 11px;
+  background: var(--progeo-surface);
+  box-shadow: 0 1px 4px rgba(11, 54, 89, 0.09);
+  padding: 0 13px;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--progeo-blue);
+}
+
+.einstell-row-text {
+  flex: 1;
+  min-width: 180px;
+}
+
+.einstell-row-text--narrow {
+  min-width: 150px;
+}
+
+.einstell-row-title {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.einstell-row-hint {
+  font-size: 12px;
+  color: #8b8383;
+  margin-top: 2px;
+}
+
+.einstell-device-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+/* Text-link style toggle for the device config panel. */
+.einstell-config-toggle {
+  margin-top: 12px;
+  margin-bottom: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--progeo-orange);
+  cursor: pointer;
+}
+
+.einstell-config-toggle--open {
+  margin-bottom: 10px;
+}
+
+.einstell-empty {
+  font-size: 12.5px;
+  color: #8b8383;
+}
+
+.einstell-staff-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--progeo-surface);
+  border-radius: 13px;
+  padding: 12px 16px;
+  flex-wrap: wrap;
+}
+
+.einstell-add-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.einstell-add-input {
+  height: 38px;
+  min-width: 220px;
+  border: none;
+  border-radius: 10px;
+  background: var(--progeo-track-soft);
+  padding: 0 12px;
+  font-family: inherit;
+  font-size: 13.5px;
+  color: var(--progeo-blue);
+}
+
+.einstell-add-hint {
+  font-size: 11.5px;
+  color: #8b8383;
+}

@@ -2,6 +2,7 @@ import { Button } from 'react-bootstrap';
 import { ArrowCounterclockwise } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
 import Plotly from 'plotly.js/dist/plotly';
+import './PlotResetButton.css';
 
 /** What the reset reads of Plotly's full (internal) axes. */
 type ResetAxis = {
@@ -51,11 +52,13 @@ type PlotResetButtonProps = {
   /** The Plotly graph div (onInitialized) - null until it is drawn. */
   graphDiv: HTMLElement | null;
   className?: string;
+  /** data-testid of the button - set it when a page shows several plots. */
+  testId?: string;
 };
 
 /** "Reset scale": the one plot control left - a visible button instead of
  * a mode bar icon that only shows on hover. */
-const PlotResetButton = ({ graphDiv, className }: PlotResetButtonProps) => {
+const PlotResetButton = ({ graphDiv, className, testId = 'plot-reset-scale' }: PlotResetButtonProps) => {
   const { t } = useTranslation();
   const reset = () => {
     const fullLayout = (graphDiv as { _fullLayout?: Record<string, unknown> } | null)?._fullLayout;
@@ -67,12 +70,11 @@ const PlotResetButton = ({ graphDiv, className }: PlotResetButtonProps) => {
     <Button
       size="sm"
       variant="outline-primary"
-      className={`d-inline-flex align-items-center gap-1 py-0 ${className ?? ''}`}
-      style={{ fontSize: 12.5, borderRadius: 'var(--progeo-radius-pill)', paddingInline: 10 }}
+      className={`d-inline-flex align-items-center gap-1 py-0 plot-reset-button ${className ?? ''}`}
       onClick={reset}
       disabled={!graphDiv}
       title={t('plot_reset_scale_hint')}
-      data-testid="plot-reset-scale"
+      data-testid={testId}
     >
       <ArrowCounterclockwise size={13} />
       {t('plot_reset_scale')}

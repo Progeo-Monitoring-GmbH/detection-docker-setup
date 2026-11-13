@@ -1,10 +1,11 @@
-import { useMemo } from 'react';
+import { useMemo, type InputHTMLAttributes } from 'react';
 import { Badge } from 'react-bootstrap';
 import { Typeahead } from 'react-bootstrap-typeahead';
 import 'react-bootstrap-typeahead/css/Typeahead.css';
 import 'react-bootstrap-typeahead/css/Typeahead.bs5.css';
 import { useTranslation } from 'react-i18next';
 import { getProjectTypeLabel } from '../../main/projectType';
+import { childTestId, repeatedTestId } from '../../testIds';
 import {
   locationAddressLine,
   locationLabel,
@@ -33,6 +34,9 @@ type LocationPickerProps<T extends PickableLocation> = {
   placeholder?: string;
   /** Show the selected location's address and product below the input. */
   showDetails?: boolean;
+  /** data-testid of the picker; its input is "<testId>-input", the options
+   * "<testId>-option" (key: the location id), the details "<testId>-details". */
+  testId?: string;
 };
 
 /**
@@ -50,6 +54,7 @@ const LocationPicker = <T extends PickableLocation>({
   disabled = false,
   placeholder,
   showDetails = true,
+  testId = 'location-picker',
 }: LocationPickerProps<T>) => {
   const { t } = useTranslation();
 
@@ -73,9 +78,11 @@ const LocationPicker = <T extends PickableLocation>({
         : '';
 
   return (
-    <div>
+    <div data-testid={testId}>
       <Typeahead
         id={id}
+        // data-* attributes reach the input; the typeahead's type doesn't list them
+        inputProps={{ 'data-testid': childTestId(testId, 'input') } as InputHTMLAttributes<HTMLInputElement>}
         options={sorted}
         labelKey={(option) => locationLabel(option as T)}
         filterBy={(option, state) =>
@@ -85,7 +92,10 @@ const LocationPicker = <T extends PickableLocation>({
           const location = option as T;
           const product = productLabel(location);
           return (
-            <div className="d-flex flex-column lh-sm py-1">
+            <div
+              className="d-flex flex-column lh-sm py-1"
+              {...repeatedTestId(`${testId}-option`, location.id ?? locationLabel(location))}
+            >
               <span className="text-truncate">
                 <strong>
                   {location.name || location.address || 'Location'}
@@ -136,7 +146,7 @@ const LocationPicker = <T extends PickableLocation>({
       />
 
       {showDetails && selected && (
-        <div className="small text-muted mt-1">
+        <div className="small text-muted mt-1" data-testid={childTestId(testId, 'details')}>
           {[
             locationAddressLine(selected),
             selected.country,

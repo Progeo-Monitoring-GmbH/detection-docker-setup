@@ -1,0 +1,11 @@
+/* The heatmap toolbar (HeatmapToolbar.tsx): plan switcher and sigma slider. */
+
+/* Raised over Bootstrap's .form-select (width: 100%). */
+.form-select.heatmap-toolbar-plan {
+  width: auto;
+  max-width: 200px;
+}
+
+.heatmap-toolbar-sigma {
+  width: 190px;
+}

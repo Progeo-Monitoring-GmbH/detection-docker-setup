@@ -14,6 +14,7 @@ import { isDemoReadOnlyError, isDemoUser } from './demo';
 import MatrixChatSection, { type MatrixAccount } from './MatrixChatSection';
 import TwoFactorSettings from './TwoFactorSettings';
 import { serverErrorText } from './twoFactor';
+import './UserProfile.css';
 
 type UserProfileResponse = {
   username: string;
@@ -116,15 +117,6 @@ const evaluatePasswordStrength = (password: string): PasswordStrength => {
 type UserProfileModalProps = {
   show: boolean;
   onHide: () => void;
-};
-
-const sectionLabelStyle: React.CSSProperties = {
-  fontSize: 11,
-  letterSpacing: '.11em',
-  textTransform: 'uppercase',
-  color: '#8B8383',
-  fontWeight: 500,
-  marginBottom: 12,
 };
 
 /**
@@ -352,94 +344,58 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
   return (
     <div
       onClick={onHide}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(7, 34, 58, .38)',
-        zIndex: 70,
-        display: 'flex',
-        justifyContent: 'flex-end',
-        padding: 14,
-      }}
+      className="profile-backdrop"
+      data-testid="user-profile-backdrop"
     >
       <div
         onClick={(event) => event.stopPropagation()}
-        style={{
-          width: 'min(430px, 100%)',
-          height: '100%',
-          background: 'var(--progeo-panel-bg)',
-          borderRadius: 20,
-          boxShadow: '-10px 0 44px rgba(11, 54, 89, .26)',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'auto',
-        }}
+        className="profile-drawer"
+        data-testid="user-profile"
       >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            padding: '20px 22px 14px',
-            position: 'sticky',
-            top: 0,
-            background: 'var(--progeo-panel-bg)',
-            zIndex: 2,
-          }}
-        >
-          <div style={{ fontSize: 17, fontWeight: 500 }}>{t('profile_title')}</div>
-          <div style={{ flex: 1 }} />
+        <div className="profile-head">
+          <div className="profile-title">{t('profile_title')}</div>
+          <div className="profile-spacer" />
           <button
             type="button"
             onClick={onHide}
             aria-label={t('profile_close')}
-            style={{
-              width: 34,
-              height: 34,
-              border: 'none',
-              borderRadius: '50%',
-              background: 'var(--progeo-surface)',
-              boxShadow: '0 2px 8px rgba(11, 54, 89, .1)',
-              cursor: 'pointer',
-              color: 'var(--progeo-blue)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: 0,
-            }}
+            className="profile-close"
+            data-testid="user-profile-close"
           >
             <X size={16} />
           </button>
         </div>
 
         {loading ? (
-          <div className="d-flex align-items-center gap-2 text-muted py-4 px-4">
+          <div className="d-flex align-items-center gap-2 text-muted py-4 px-4" data-testid="user-profile-loading">
             <Spinner animation="border" size="sm" /> {t('profile_loading')}
           </div>
         ) : (
-          <div style={{ padding: '0 22px 20px', display: 'flex', flexDirection: 'column', gap: 22 }}>
-            <section>
-              <div style={sectionLabelStyle}>{t('profile_section_contact')}</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <LabeledInput label={t('profile_first_name')} value={firstName} onChange={setFirstName} />
-                <LabeledInput label={t('profile_last_name')} value={lastName} onChange={setLastName} />
-                <div style={{ gridColumn: 'span 2' }}>
+          <div className="profile-body">
+            <section data-testid="user-profile-contact">
+              <div className="profile-section-label">{t('profile_section_contact')}</div>
+              <div className="profile-grid">
+                <LabeledInput label={t('profile_first_name')} value={firstName} onChange={setFirstName} testId="user-profile-first-name" />
+                <LabeledInput label={t('profile_last_name')} value={lastName} onChange={setLastName} testId="user-profile-last-name" />
+                <div className="profile-span-2">
                   <LabeledInput
                     label={t('profile_email')}
                     value={email}
                     onChange={canEditEmail ? setEmail : undefined}
                     readOnly={!canEditEmail}
+                    testId="user-profile-email"
                   />
                 </div>
-                <LabeledInput label={t('profile_mobile')} value={mobile} onChange={setMobile} />
-                <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                  <span style={{ fontSize: 11, letterSpacing: '.07em', textTransform: 'uppercase', color: '#8B8383', fontWeight: 500 }}>
+                <LabeledInput label={t('profile_mobile')} value={mobile} onChange={setMobile} testId="user-profile-mobile" />
+                <label className="profile-field">
+                  <span className="profile-field-label">
                     {t('profile_language')}
                   </span>
                   <select
                     value={language}
                     onChange={(event) => setLanguage(event.target.value)}
-                    style={{ height: 40, border: 'none', borderRadius: 11, background: 'var(--progeo-surface)', boxShadow: '0 1px 4px rgba(11,54,89,.09)', padding: '0 13px', fontFamily: 'inherit', fontSize: 14, color: 'var(--progeo-blue)' }}
+                    className="profile-select"
+                    data-testid="user-profile-language"
                   >
                     <option value="de">Deutsch</option>
                     <option value="en">English</option>
@@ -447,14 +403,15 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
                 </label>
                 {(messengerServices.length > 0 || messenger) && (
                   <>
-                    <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                      <span style={{ fontSize: 11, letterSpacing: '.07em', textTransform: 'uppercase', color: '#8B8383', fontWeight: 500 }}>
+                    <label className="profile-field">
+                      <span className="profile-field-label">
                         {t('profile_messenger')}
                       </span>
                       <select
                         value={messenger}
                         onChange={(event) => setMessenger(event.target.value as Messenger | '')}
-                        style={{ height: 40, border: 'none', borderRadius: 11, background: 'var(--progeo-surface)', boxShadow: '0 1px 4px rgba(11,54,89,.09)', padding: '0 13px', fontFamily: 'inherit', fontSize: 14, color: 'var(--progeo-blue)' }}
+                        className="profile-select"
+                        data-testid="user-profile-messenger"
                       >
                         <option value="">{t('profile_messenger_none')}</option>
                         {(Object.keys(MESSENGER_LABELS) as Messenger[])
@@ -473,21 +430,22 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
                         onChange={ownMatrixId ? undefined : setMessengerId}
                         readOnly={Boolean(ownMatrixId)}
                         title={messenger === 'matrix' ? '@name:matrix.org' : t('profile_messenger_number_hint')}
+                        testId="user-profile-messenger-id"
                       />
                     ) : (
                       <div />
                     )}
                     {messenger && (
-                      <div style={{ gridColumn: 'span 2', fontSize: 12, color: '#8B8383' }}>
+                      <div className="profile-messenger-hint" data-testid="user-profile-messenger-hint">
                         {messenger === 'matrix'
                           ? t(ownMatrixId ? 'profile_messenger_own_matrix_hint' : 'profile_messenger_matrix_hint')
                           : t('profile_messenger_number_hint')}
                         {messenger === 'whatsapp' && <> {t('profile_messenger_whatsapp_hint')}</>}
                         {messenger !== 'matrix' && !messengerId.trim() && !mobile.trim() && (
-                          <div style={{ color: '#C44D26', marginTop: 4 }}>{t('profile_messenger_no_number')}</div>
+                          <div className="profile-warning" data-testid="user-profile-messenger-no-number">{t('profile_messenger_no_number')}</div>
                         )}
                         {!messengerServices.includes(messenger) && (
-                          <div style={{ color: '#C44D26', marginTop: 4 }}>{t('profile_messenger_unavailable')}</div>
+                          <div className="profile-warning" data-testid="user-profile-messenger-unavailable">{t('profile_messenger_unavailable')}</div>
                         )}
                       </div>
                     )}
@@ -496,39 +454,42 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
               </div>
             </section>
 
-            {matrixAccount && <MatrixChatSection account={matrixAccount} labelStyle={sectionLabelStyle} />}
+            {matrixAccount && <MatrixChatSection account={matrixAccount} labelClassName="profile-section-label" />}
 
-            <section>
-              <div style={sectionLabelStyle}>{t('profile_section_access')}</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start' }}>
+            <section data-testid="user-profile-access">
+              <div className="profile-section-label">{t('profile_section_access')}</div>
+              <div className="profile-actions">
                 <PillButton
                   label={t('profile_request_access')}
                   onClick={() => showInfoBar(enqueueSnackbar, t('profile_request_access_info'))}
+                  testId="user-profile-request-access"
                 />
                 {hasUsablePassword ? (
-                  <PillButton label={t('profile_change_password')} onClick={() => togglePasswordMode('change')} />
+                  <PillButton label={t('profile_change_password')} onClick={() => togglePasswordMode('change')} testId="user-profile-change-password" />
                 ) : (
                   <PillButton
                     label={t('profile_set_password')}
                     onClick={() => togglePasswordMode('set')}
                     disabled={!twoFactorEnabled}
+                    testId="user-profile-set-password"
                   />
                 )}
               </div>
               {!hasUsablePassword && (
-                <div style={{ fontSize: 12.5, color: '#8B8383', marginTop: 8 }}>
+                <div className="profile-hint" data-testid="user-profile-set-password-hint">
                   {twoFactorEnabled ? t('profile_set_password_hint') : t('profile_set_password_needs_2fa')}
                 </div>
               )}
 
               {passwordMode && (
-                <div style={{ marginTop: 14, background: 'var(--progeo-surface)', borderRadius: 14, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div className="profile-password-panel" data-testid="user-profile-password-panel">
                   {passwordMode === 'change' ? (
                     <LabeledInput
                       label={t('profile_current_password')}
                       value={currentPassword}
                       onChange={setCurrentPassword}
                       type="password"
+                      testId="user-profile-current-password"
                     />
                   ) : (
                     <LabeledInput
@@ -536,14 +497,15 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
                       value={passwordCode}
                       onChange={setPasswordCode}
                       autoComplete="one-time-code"
+                      testId="user-profile-password-code"
                     />
                   )}
                   {passwordMode === 'change' && twoFactorEnabled && (
                     <button
                       type="button"
-                      className="btn btn-link p-0 text-start"
-                      style={{ fontSize: 12.5 }}
+                      className="btn btn-link p-0 text-start profile-link-button"
                       onClick={() => togglePasswordMode('set')}
+                      data-testid="user-profile-forgot-password-2fa"
                     >
                       {t('profile_forgot_password_2fa')}
                     </button>
@@ -553,23 +515,25 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
                     value={newPassword}
                     onChange={setNewPassword}
                     type="password"
+                    testId="user-profile-new-password"
                   />
                   <div>
                     <div className="d-flex justify-content-between align-items-center mb-1">
                       <small className="text-muted">{t('profile_password_strength')}</small>
-                      <small>{t(`profile_password_strength_${passwordStrength.level}`)}</small>
+                      <small data-testid="user-profile-password-strength-level">{t(`profile_password_strength_${passwordStrength.level}`)}</small>
                     </div>
                     <ProgressBar
                       now={(passwordStrength.score / 6) * 100}
                       variant={passwordStrengthVariantByLevel[passwordStrength.level]}
+                      data-testid="user-profile-password-strength"
                     />
                     <small className="text-muted d-block mt-2">{t('profile_password_requirements_hint')}</small>
-                    <small className="d-block mt-1">
+                    <small className="d-block mt-1" data-testid="user-profile-password-min-length">
                       {passwordStrength.checks.minLength
                         ? t('profile_password_requirement_min_length_ok')
                         : t('profile_password_requirement_min_length')}
                     </small>
-                    <small className="d-block">
+                    <small className="d-block" data-testid="user-profile-password-charset">
                       {passwordStrength.checks.multipleCharsets
                         ? t('profile_password_requirement_charset_ok')
                         : t('profile_password_requirement_charset')}
@@ -580,30 +544,33 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
                     value={newPasswordConfirm}
                     onChange={setNewPasswordConfirm}
                     type="password"
+                    testId="user-profile-confirm-password"
                   />
                   <PillButton
                     label={isSavingPassword ? t('profile_saving') : t('profile_save_password')}
                     onClick={changePassword}
                     disabled={isSavingPassword || !isPasswordInputValid}
+                    testId="user-profile-save-password"
                   />
                 </div>
               )}
             </section>
 
             {!isDemo && (
-              <section>
-                <div style={sectionLabelStyle}>{t('tfa_title')}</div>
+              <section data-testid="user-profile-two-factor">
+                <div className="profile-section-label">{t('tfa_title')}</div>
                 <TwoFactorSettings onEnabledChange={setTwoFactorEnabled} />
               </section>
             )}
 
-            <section>
-              <div style={{ fontSize: 13.5, fontWeight: 500, marginBottom: 4 }}>{t('profile_delete_account')}</div>
-              <div style={{ fontSize: 12.5, color: '#8B8383', marginBottom: 12 }}>{t('profile_delete_account_hint')}</div>
+            <section data-testid="user-profile-delete-account">
+              <div className="profile-delete-title">{t('profile_delete_account')}</div>
+              <div className="profile-delete-hint">{t('profile_delete_account_hint')}</div>
               <button
                 type="button"
                 onClick={() => showInfoBar(enqueueSnackbar, t('profile_delete_account_info'))}
-                style={{ height: 36, padding: '0 15px', border: 'none', borderRadius: 10, background: '#FBEAE4', color: '#C44D26', fontFamily: 'inherit', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
+                className="profile-delete-button"
+                data-testid="user-profile-delete-account-button"
               >
                 {t('profile_delete_account')}
               </button>
@@ -611,29 +578,21 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
           </div>
         )}
 
-        <div
-          style={{
-            marginTop: 'auto',
-            display: 'flex',
-            gap: 10,
-            padding: '14px 22px 20px',
-            position: 'sticky',
-            bottom: 0,
-            background: 'var(--progeo-panel-bg)',
-          }}
-        >
+        <div className="profile-foot">
           <button
             type="button"
             onClick={save}
             disabled={saving || loading}
-            style={{ height: 38, padding: '0 18px', border: 'none', borderRadius: 10, background: 'var(--progeo-orange)', color: '#fff', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 500, cursor: 'pointer', boxShadow: '0 4px 14px rgba(235, 99, 59, .26)' }}
+            className="profile-button profile-button--primary"
+            data-testid="user-profile-save"
           >
             {saving ? t('profile_saving') : t('profile_save_settings')}
           </button>
           <button
             type="button"
             onClick={onHide}
-            style={{ height: 38, padding: '0 16px', border: 'none', borderRadius: 10, background: 'var(--progeo-surface)', boxShadow: '0 2px 8px rgba(11, 54, 89, .1)', color: 'var(--progeo-blue)', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 500, cursor: 'pointer' }}
+            className="profile-button"
+            data-testid="user-profile-footer-close"
           >
             {t('profile_close')}
           </button>

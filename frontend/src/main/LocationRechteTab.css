@@ -1,0 +1,251 @@
+/* The Rechte tab (LocationRechteTab.tsx): who can see the object, their
+   notification channels and the add-user form. Theme variables:
+   scss/main.css; pills and panels: components/ui/kit/kit.css. */
+
+.location-rechte-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.location-rechte-summary {
+  font-size: 12.5px;
+  color: #8b8383;
+  font-weight: 400;
+}
+
+.location-rechte-label {
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8b8383;
+  font-weight: 500;
+  margin-bottom: 5px;
+}
+
+.location-rechte-label--tight {
+  margin-bottom: 2px;
+}
+
+/* The grey track the pills of a channel / type / scope choice sit on. */
+.location-rechte-track {
+  display: flex;
+  gap: 3px;
+  background: var(--progeo-track-soft);
+  border-radius: var(--progeo-radius-pill);
+  padding: 3px;
+  width: fit-content;
+}
+
+.location-rechte-badge {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 9px;
+  border-radius: var(--progeo-radius-pill);
+  white-space: nowrap;
+}
+
+.location-rechte-badge--single {
+  background: #fbeae4;
+  color: #c44d26;
+}
+
+.location-rechte-badge--account {
+  background: #e3ecf4;
+  color: var(--progeo-blue);
+}
+
+.location-rechte-badge--staff {
+  background: var(--progeo-track-soft);
+  color: #6e6868;
+}
+
+.location-rechte-add-button {
+  height: 36px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 10px;
+  background: var(--progeo-orange);
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  box-shadow: 0 4px 14px rgba(235, 99, 59, 0.28);
+}
+
+.location-rechte-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* -- add form ------------------------------------------------------------------ */
+
+.location-rechte-add {
+  background: var(--progeo-surface);
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: inset 0 0 0 1.5px var(--progeo-orange);
+  display: flex;
+  gap: 16px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.location-rechte-add-user {
+  min-width: 240px;
+  flex: 1 1 240px;
+}
+
+.location-rechte-no-candidates {
+  font-size: 13px;
+  color: #8b8383;
+  height: 38px;
+  display: flex;
+  align-items: center;
+}
+
+.location-rechte-user-select {
+  height: 38px;
+  border: none;
+  border-radius: 10px;
+  background: #efecec;
+  padding: 0 12px;
+  font-family: inherit;
+  font-size: 13.5px;
+  color: var(--progeo-blue);
+  width: 100%;
+}
+
+.location-rechte-add-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.location-rechte-empty {
+  background: var(--progeo-surface);
+  border-radius: 14px;
+  padding: 22px 16px;
+  font-size: 13px;
+  color: #8b8383;
+}
+
+.location-rechte-no-permission {
+  font-size: 12.5px;
+  color: #8b8383;
+}
+
+/* -- member card ---------------------------------------------------------------- */
+
+.location-rechte-member {
+  background: var(--progeo-surface);
+  border-radius: 14px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.location-rechte-member-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.location-rechte-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--progeo-track-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--progeo-blue);
+  flex-shrink: 0;
+}
+
+.location-rechte-member-info {
+  flex: 1;
+  min-width: 160px;
+}
+
+.location-rechte-member-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.location-rechte-member-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.location-rechte-member-email {
+  font-size: 12px;
+  color: #8b8383;
+}
+
+.location-rechte-last-login {
+  min-width: 110px;
+}
+
+.location-rechte-last-login-value {
+  font-size: 12.5px;
+  color: #6e6868;
+}
+
+.location-rechte-revoke {
+  height: 32px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 9px;
+  background: #fbeae4;
+  color: #c44d26;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+/* Account / staff access is broader than this object - not revocable here. */
+.location-rechte-revoke--locked {
+  background: var(--progeo-track-soft);
+  color: #a9a2a2;
+  cursor: not-allowed;
+}
+
+/* The rows below the head line up with the name (avatar 36px + gap 12px). */
+.location-rechte-settings {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding-left: 48px;
+}
+
+.location-rechte-contact-fix {
+  padding-left: 48px;
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.location-rechte-contact-edit {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+}
+
+.location-rechte-locked-hint {
+  padding-left: 48px;
+  font-size: 12px;
+  color: #8b8383;
+}

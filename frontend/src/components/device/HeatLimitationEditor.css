@@ -1,0 +1,33 @@
+/* The heat limitation editor (HeatLimitationEditor.tsx): the bar under the
+   heatmap and the SVG layer with the areas over it. Area blue is
+   plotTheme.brandBlue (AREA_COLOR). */
+
+.heat-limit-name {
+  max-width: 220px;
+}
+
+/* One saved area in the bar. */
+.heat-limit-chip {
+  color: #094b81;
+}
+
+/* Over the heatmap canvas; only the draft's handles take the pointer. */
+.heat-limit-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* An area's name, with a white halo. */
+.heat-limit-label {
+  paint-order: stroke;
+  stroke: #ffffff;
+  stroke-width: 3;
+}
+
+.heat-limit-handle {
+  pointer-events: all;
+  cursor: move;
+  touch-action: none;
+}

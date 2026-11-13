@@ -18,6 +18,7 @@ import {
 } from 'react-bootstrap-icons';
 import axiosConfig from '../axiosConfig';
 import { formatDate } from './dateFormat';
+import { repeatedTestId } from '../testIds';
 
 type BootMetrics = {
   domContentLoadedMs: number | null;
@@ -257,10 +258,10 @@ const DevView = () => {
   }, [apiResults]);
 
   return (
-    <Container fluid className="dev-view py-4">
+    <Container fluid className="dev-view py-4" data-testid="page-dev">
       <Row className="mb-3 g-3 align-items-stretch">
         <Col lg={8}>
-          <Card className="h-100">
+          <Card className="h-100" data-testid="dev-actions">
             <Card.Body>
               <h3 className="mb-2">Frontend Diagnostics</h3>
               <p className="text-muted mb-3">
@@ -272,6 +273,7 @@ const DevView = () => {
                   variant="primary"
                   onClick={runAllDiagnostics}
                   disabled={isRunningModules || isRunningApis}
+                  data-testid="dev-run-all"
                 >
                   <BarChart className="me-2" />
                   Run Full Diagnostics
@@ -280,6 +282,7 @@ const DevView = () => {
                   variant="outline-primary"
                   onClick={runModuleDiagnostics}
                   disabled={isRunningModules}
+                  data-testid="dev-run-modules"
                 >
                   <Download className="me-2" />
                   Test Module Imports
@@ -288,11 +291,12 @@ const DevView = () => {
                   variant="outline-secondary"
                   onClick={runApiDiagnostics}
                   disabled={isRunningApis}
+                  data-testid="dev-run-apis"
                 >
                   <Stopwatch className="me-2" />
                   Test API Timing
                 </Button>
-                <Button variant="outline-dark" onClick={collectBootMetrics}>
+                <Button variant="outline-dark" onClick={collectBootMetrics} data-testid="dev-refresh-metrics">
                   <ArrowClockwise className="me-2" />
                   Refresh Browser Metrics
                 </Button>
@@ -301,16 +305,16 @@ const DevView = () => {
           </Card>
         </Col>
         <Col lg={4}>
-          <Card className="h-100">
+          <Card className="h-100" data-testid="dev-last-run">
             <Card.Body>
               <h6 className="mb-3">Last Run</h6>
-              <div className="fw-bold">{lastRun}</div>
+              <div className="fw-bold" data-testid="dev-last-run-time">{lastRun}</div>
               <hr />
               <div className="small text-muted">
-                Module failures: <strong>{moduleSummary.failed}</strong>
+                Module failures: <strong data-testid="dev-module-failures">{moduleSummary.failed}</strong>
               </div>
               <div className="small text-muted">
-                API failures: <strong>{apiSummary.failed}</strong>
+                API failures: <strong data-testid="dev-api-failures">{apiSummary.failed}</strong>
               </div>
             </Card.Body>
           </Card>
@@ -319,7 +323,7 @@ const DevView = () => {
 
       <Row className="g-3 mb-3">
         <Col lg={4}>
-          <Card className="metric-card">
+          <Card className="metric-card" data-testid="dev-startup-metrics">
             <Card.Body>
               <h6>Startup Metrics (ms)</h6>
               <div>
@@ -334,7 +338,7 @@ const DevView = () => {
           </Card>
         </Col>
         <Col lg={4}>
-          <Card className="metric-card">
+          <Card className="metric-card" data-testid="dev-module-summary">
             <Card.Body>
               <h6>Module Summary</h6>
               <div>Total Duration: {moduleSummary.totalDuration} ms</div>
@@ -345,7 +349,7 @@ const DevView = () => {
           </Card>
         </Col>
         <Col lg={4}>
-          <Card className="metric-card">
+          <Card className="metric-card" data-testid="dev-api-summary">
             <Card.Body>
               <h6>API Summary</h6>
               <div>Total Duration: {apiSummary.totalDuration} ms</div>
@@ -359,10 +363,10 @@ const DevView = () => {
 
       <Row className="g-3">
         <Col lg={7}>
-          <Card>
+          <Card data-testid="dev-modules">
             <Card.Header>Module Import Diagnostics</Card.Header>
             <Card.Body className="p-0">
-              <Table striped hover responsive className="mb-0">
+              <Table striped hover responsive className="mb-0" data-testid="dev-modules-table">
                 <thead>
                   <tr>
                     <th>Module</th>
@@ -375,7 +379,7 @@ const DevView = () => {
                 </thead>
                 <tbody>
                   {moduleResults.map((row) => (
-                    <tr key={row.name}>
+                    <tr key={row.name} {...repeatedTestId('dev-modules-row', row.name)}>
                       <td>{row.name}</td>
                       <td>{row.status}</td>
                       <td>{row.durationMs}</td>
@@ -387,7 +391,7 @@ const DevView = () => {
                 </tbody>
               </Table>
               {!moduleResults.length && (
-                <div className="p-3 text-muted">
+                <div className="p-3 text-muted" data-testid="dev-modules-empty">
                   Run module diagnostics to see import timings and chunk sizes.
                 </div>
               )}
@@ -395,10 +399,10 @@ const DevView = () => {
           </Card>
         </Col>
         <Col lg={5}>
-          <Card>
+          <Card data-testid="dev-apis">
             <Card.Header>API Timing Diagnostics</Card.Header>
             <Card.Body className="p-0">
-              <Table striped hover responsive className="mb-0">
+              <Table striped hover responsive className="mb-0" data-testid="dev-apis-table">
                 <thead>
                   <tr>
                     <th>Endpoint</th>
@@ -410,7 +414,7 @@ const DevView = () => {
                 </thead>
                 <tbody>
                   {apiResults.map((row) => (
-                    <tr key={row.name}>
+                    <tr key={row.name} {...repeatedTestId('dev-apis-row', row.name)}>
                       <td>{row.name}</td>
                       <td>{row.status}</td>
                       <td>{row.statusCode ?? '-'}</td>
@@ -421,7 +425,7 @@ const DevView = () => {
                 </tbody>
               </Table>
               {!apiResults.length && (
-                <div className="p-3 text-muted">
+                <div className="p-3 text-muted" data-testid="dev-apis-empty">
                   Run API diagnostics to compare latency and payload weight.
                 </div>
               )}
@@ -433,7 +437,7 @@ const DevView = () => {
       {(moduleSummary.failed > 0 || apiSummary.failed > 0) && (
         <Row className="mt-3">
           <Col>
-            <Alert variant="warning" className="mb-0">
+            <Alert variant="warning" className="mb-0" data-testid="dev-failure-alert">
               At least one diagnostic test failed. Check backend availability,
               endpoint permissions, or import path issues.
             </Alert>

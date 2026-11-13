@@ -1,0 +1,257 @@
+/* The plan canvas (ImageCanvasStage.tsx): the canvas with its overlays
+   (rotate buttons, mode badge, apply buttons, sensor tooltip) and the panels
+   under it (running actions, alignment, scale). Key badges in the hints are
+   .canvas-key-badge (CanvasKeyLegend.css). Positions and colours computed at
+   runtime stay inline. */
+
+.image-canvas-title {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* Secondary text: file name, zoom, hints and labels. */
+.image-canvas-muted {
+  color: #8b8383;
+  font-size: 12px;
+}
+
+.image-canvas-footer {
+  padding: 0 2px;
+}
+
+/* -- the canvas and its overlays ----------------------------------------------- */
+
+.image-canvas-wrap {
+  position: relative;
+}
+
+.image-canvas-stage-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 13px;
+  background: var(--progeo-surface);
+  box-shadow: inset 0 0 0 1px rgba(11, 54, 89, 0.08);
+}
+
+/* The cursor: picking a point / an area, dragging, over a sensor, panning. */
+.image-canvas-stage-canvas--crosshair {
+  cursor: crosshair;
+}
+
+.image-canvas-stage-canvas--grabbing {
+  cursor: grabbing;
+}
+
+.image-canvas-stage-canvas--grab {
+  cursor: grab;
+}
+
+.image-canvas-stage-canvas--pointer {
+  cursor: pointer;
+}
+
+/* Turns the image by 90 degrees - top right on the plan. */
+.image-canvas-rotate {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--progeo-surface);
+  box-shadow: 0 2px 8px rgba(11, 54, 89, 0.18);
+}
+
+/* Raised over Bootstrap's .btn / .btn-sm. */
+.btn.image-canvas-rotate-button {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 8px;
+}
+
+/* What a held key / the edit mode does - its colour comes inline. */
+.image-canvas-badge {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  z-index: 2;
+  transform: translateX(-50%);
+  padding: 5px 14px;
+  border-radius: var(--progeo-radius-pill);
+  box-shadow: 0 2px 8px rgba(11, 54, 89, 0.25);
+  color: #ffffff;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Apply / Cancel next to the selected area (placed inline). */
+.image-canvas-apply {
+  position: absolute;
+  z-index: 3;
+}
+
+.image-canvas-tooltip {
+  position: absolute;
+  z-index: 2;
+  min-width: 150px;
+  max-width: 240px;
+  padding: 8px 11px;
+  border-radius: 10px;
+  background: rgba(16, 20, 25, 0.93);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+  color: #ffffff;
+  font-size: 12px;
+  line-height: 1.5;
+  pointer-events: none;
+}
+
+/* Near the bottom of the canvas: above the cursor. */
+.image-canvas-tooltip--above {
+  transform: translateY(-100%);
+}
+
+.image-canvas-tooltip-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.image-canvas-tooltip-dot {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.image-canvas-tooltip-label {
+  color: #aab4be;
+}
+
+/* The sensors' colour scale, first to last. */
+.image-canvas-rainbow {
+  width: 120px;
+  height: 8px;
+  border-radius: 4px;
+}
+
+/* -- buttons and fields -------------------------------------------------------- */
+
+/* Raised over Bootstrap's .btn / .btn-sm (padding, radius, font size). */
+.btn.image-canvas-pill {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: var(--progeo-radius-pill);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+/* Over the plan; the same shadow when focused. */
+.btn.image-canvas-pill--raised {
+  --bs-btn-focus-box-shadow: 0 2px 8px rgba(11, 54, 89, 0.25);
+  box-shadow: 0 2px 8px rgba(11, 54, 89, 0.25);
+}
+
+/* Applying a group alignment: the group colour (GROUP_COLOR) in every state. */
+.btn.image-canvas-pill--group {
+  --bs-btn-color: #ffffff;
+  --bs-btn-bg: #6f42c1;
+  --bs-btn-border-color: #6f42c1;
+  --bs-btn-hover-color: #ffffff;
+  --bs-btn-hover-bg: #6f42c1;
+  --bs-btn-hover-border-color: #6f42c1;
+  --bs-btn-active-color: #ffffff;
+  --bs-btn-active-bg: #6f42c1;
+  --bs-btn-active-border-color: #6f42c1;
+  --bs-btn-disabled-color: #ffffff;
+  --bs-btn-disabled-bg: #6f42c1;
+  --bs-btn-disabled-border-color: #6f42c1;
+}
+
+/* Raised over Bootstrap's .form-control / .form-control-sm. */
+.form-control.image-canvas-field {
+  height: 32px;
+  border-radius: 10px;
+}
+
+.form-control.image-canvas-field--distance {
+  width: 110px;
+}
+
+.form-control.image-canvas-field--scale {
+  width: 160px;
+}
+
+/* -- panels under the canvas ----------------------------------------------------- */
+
+/* A running action (group alignment, cut points, alignment) or a notice. */
+.image-canvas-action {
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 12.5px;
+}
+
+.image-canvas-action--group {
+  background: #f1ebfa;
+  color: #3d2366;
+}
+
+.image-canvas-action--cut {
+  background: #fbf3de;
+  color: #6b4e0b;
+}
+
+.image-canvas-action--align {
+  background: #e7f0fd;
+  color: #0b3659;
+}
+
+.image-canvas-action--warning {
+  background: #fbf3de;
+  color: #9a7208;
+}
+
+.image-canvas-action--error {
+  background: #fbe9e3;
+  color: #c44d26;
+}
+
+.image-canvas-action-text {
+  flex: 1 1 260px;
+}
+
+.image-canvas-action-title {
+  font-weight: 600;
+}
+
+/* The control blocks under the canvas (alignment, scale). */
+.image-canvas-sub-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 13px;
+  background: var(--progeo-surface);
+}
+
+.image-canvas-sub-title {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.image-canvas-hint {
+  color: #8b8383;
+  font-size: 12.5px;
+}
+
+.image-canvas-sliders {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px 24px;
+}
+
+.image-canvas-slider-value {
+  color: var(--progeo-blue);
+}

@@ -1,0 +1,96 @@
+/* The device statistics page (DeviceStatisticsView.tsx): the donut charts
+   with their legends, the scan progress and the list headings. Theme
+   variables: scss/main.css. The data tables' compact look stays in
+   COMPACT_TABLE_STYLES (react-data-table customStyles). */
+
+.device-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.device-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 14px;
+}
+
+.device-stats-muted {
+  color: #8b8383;
+}
+
+.device-stats-nowrap {
+  white-space: nowrap;
+}
+
+/* Small heading above one list inside a tab. */
+.device-stats-section-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--progeo-blue);
+  margin-bottom: 6px;
+}
+
+/* By-type groups are jumped to from the donut - keep a little room above. */
+.device-stats-type-group {
+  scroll-margin-top: 16px;
+}
+
+/* .progress: over Bootstrap's own --bs-progress-height. */
+.progress.device-stats-progress {
+  height: 6px;
+}
+
+/* -- donut chart ---------------------------------------------------------------- */
+
+.device-stats-donut {
+  flex-shrink: 0;
+}
+
+.device-stats-donut-clickable {
+  cursor: pointer;
+}
+
+.device-stats-donut-total {
+  font-size: 18px;
+  font-weight: 600;
+  fill: var(--progeo-blue);
+}
+
+.device-stats-donut-label {
+  font-size: 8px;
+  fill: #8b8383;
+}
+
+.device-stats-donut-legend {
+  min-width: 0;
+  flex: 1;
+}
+
+.device-stats-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 2px 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--progeo-blue);
+  font-family: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: default;
+}
+
+.device-stats-legend-item--clickable {
+  cursor: pointer;
+}
+
+/* The colour (the slice's) is set inline. */
+.device-stats-legend-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}

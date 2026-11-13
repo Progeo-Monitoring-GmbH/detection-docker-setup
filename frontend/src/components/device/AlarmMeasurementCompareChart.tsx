@@ -14,6 +14,7 @@ import MeasurementSamplesCompareChart, {
   type MeasurementCompareRow,
 } from './MeasurementSamplesCompareChart.tsx';
 import { toLocalIso } from '../../main/dateFormat';
+import { childTestId } from '../../testIds';
 
 /** Measurements are loaded for triggered_at ± this window. */
 const ALARM_WINDOW_MS = 6 * 60 * 60 * 1000;
@@ -21,6 +22,8 @@ const ALARM_WINDOW_MS = 6 * 60 * 60 * 1000;
 
 type AlarmMeasurementCompareChartProps = {
   alarm: TimelineAlarm;
+  /** data-testid of the card; its parts are "<testId>-load", "-reload", "-chart", ... */
+  testId?: string;
 };
 
 /**
@@ -32,6 +35,7 @@ type AlarmMeasurementCompareChartProps = {
  */
 const AlarmMeasurementCompareChart = ({
   alarm,
+  testId = 'alarm-measurements',
 }: AlarmMeasurementCompareChartProps) => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
@@ -98,7 +102,7 @@ const AlarmMeasurementCompareChart = ({
   };
 
   return (
-    <Card className="border-0 shadow-sm p-3">
+    <Card className="border-0 shadow-sm p-3" data-testid={testId}>
       <Card.Body>
         {!open ? (
           <div className="text-center py-3">
@@ -106,6 +110,7 @@ const AlarmMeasurementCompareChart = ({
               variant="outline-primary"
               onClick={loadMeasurements}
               disabled={loading}
+              data-testid={childTestId(testId, 'load')}
             >
               {loading ? (
                 <>
@@ -128,12 +133,13 @@ const AlarmMeasurementCompareChart = ({
                 variant="outline-secondary"
                 onClick={loadMeasurements}
                 disabled={loading}
+                data-testid={childTestId(testId, 'reload')}
               >
                 {loading ? 'Loading...' : 'Reload'}
               </Button>
             </div>
             {rows.length === 0 ? (
-              <div className="text-muted py-4 text-center">
+              <div className="text-muted py-4 text-center" data-testid={childTestId(testId, 'empty')}>
                 No measurements found in the ±6h window.
               </div>
             ) : (
@@ -144,6 +150,7 @@ const AlarmMeasurementCompareChart = ({
                 frameSlider
                 sliderPlayKey={false}
                 hideChrome
+                testId={childTestId(testId, 'chart')}
               />
             )}
           </>

@@ -12,6 +12,8 @@ import SeverityBadge, { type Severity } from '../components/ui/kit/SeverityBadge
 import { useProgeoRole } from './roleModel';
 import type { PortalOutletContext } from './LocationPortalLayout';
 import { formatDate } from './dateFormat';
+import { repeatedTestId } from '../testIds';
+import './LocationNotificationsTab.css';
 
 type TimelineEvent = {
   kind: 'email' | 'sms' | 'messenger' | 'alarm_triggered' | 'alarm_acknowledged' | 'alarm_resolved';
@@ -189,28 +191,15 @@ const LocationNotificationsTab = () => {
   return (
     <>
     <PanelCard
+      testId="page-location-benachrichtigungen"
       title={t('benach_title')}
       actions={
         isStaff && (
           <button
             type="button"
             onClick={openTest}
-            style={{
-              height: 36,
-              padding: '0 16px',
-              border: 'none',
-              borderRadius: 10,
-              background: 'var(--progeo-orange)',
-              color: '#fff',
-              fontFamily: 'inherit',
-              fontSize: 13,
-              fontWeight: 500,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 7,
-              boxShadow: '0 4px 14px rgba(235, 99, 59, .28)',
-            }}
+            className="benach-test-button"
+            data-testid="benach-test-button"
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M12 2.7s-6 6.6-6 11.3a6 6 0 0 0 12 0c0-4.7-6-11.3-6-11.3z" />
@@ -221,55 +210,35 @@ const LocationNotificationsTab = () => {
       }
     >
       {loading ? (
-        <div className="d-flex justify-content-center py-4 text-muted">
+        <div className="d-flex justify-content-center py-4 text-muted" data-testid="benach-loading">
           <Spinner animation="border" size="sm" />
         </div>
       ) : denied ? (
-        <div style={{ color: '#8B8383', fontSize: 13 }}>{t('status_no_measurement_access')}</div>
+        <div className="benach-denied" data-testid="benach-denied">{t('status_no_measurement_access')}</div>
       ) : events.length === 0 ? (
-        <div
-          style={{
-            background: 'var(--progeo-surface)',
-            borderRadius: 14,
-            padding: '22px 16px',
-            fontSize: 13,
-            color: '#8B8383',
-          }}
-        >
+        <div className="benach-empty" data-testid="benach-empty">
           {t('benach_empty')}
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <div className="benach-events" data-testid="benach-events">
           {events.map((event, index) => (
             <div
               key={index}
-              style={{
-                display: 'flex',
-                gap: 14,
-                padding: '15px 4px',
-                borderTop: index > 0 ? '1px solid var(--progeo-track)' : 'none',
-              }}
+              className="benach-event"
+              // Events have no id: the position in the feed tells them apart.
+              {...repeatedTestId('benach-event', index)}
             >
-              <span
-                style={{
-                  width: 9,
-                  height: 9,
-                  borderRadius: '50%',
-                  background: dotColor(event),
-                  flexShrink: 0,
-                  marginTop: 5,
-                }}
-              />
-              <span style={{ flex: 1, minWidth: 0 }}>
-                <span style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 14, fontWeight: 500 }}>{eventTitle(event)}</span>
+              <span className="benach-event-dot" style={{ background: dotColor(event) }} />
+              <span className="benach-event-body">
+                <span className="benach-event-head">
+                  <span className="benach-event-title">{eventTitle(event)}</span>
                   {event.severity && <SeverityBadge severity={event.severity} label={t(`ui_severity_${event.severity}`)} />}
-                  <span style={{ fontSize: 12, color: '#8B8383' }}>
+                  <span className="benach-event-time">
                     {formatDate(event.at)}
                   </span>
                 </span>
                 {eventDetail(event) && (
-                  <span style={{ display: 'block', marginTop: 4, fontSize: 13, color: '#6E6868' }}>
+                  <span className="benach-event-detail">
                     {eventDetail(event)}
                   </span>
                 )}
@@ -280,6 +249,7 @@ const LocationNotificationsTab = () => {
       )}
     </PanelCard>
     <ConfirmDialog
+      testId="benach-test-dialog"
       show={testOpen}
       title={t('benach_test_title')}
       danger={false}
@@ -289,19 +259,22 @@ const LocationNotificationsTab = () => {
       onCancel={() => setTestOpen(false)}
       onConfirm={sendTest}
       message={
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div className="benach-test-body">
           <div>{t('benach_test_description')}</div>
           {testRecipients.length === 0 ? (
-            <div style={{ color: '#8B8383' }}>{t('benach_test_no_recipients')}</div>
+            <div className="benach-muted" data-testid="benach-test-no-recipients">
+              {t('benach_test_no_recipients')}
+            </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div className="benach-recipients" data-testid="benach-test-recipients">
               {testRecipients.map((recipient) => (
                 <div
                   key={recipient.user_id}
-                  style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12.5 }}
+                  className="benach-recipient"
+                  {...repeatedTestId('benach-test-recipient', recipient.user_id)}
                 >
                   <span>{recipient.name}</span>
-                  <span style={{ color: '#8B8383' }}>{recipient.kanal}</span>
+                  <span className="benach-muted">{recipient.kanal}</span>
                 </div>
               ))}
             </div>

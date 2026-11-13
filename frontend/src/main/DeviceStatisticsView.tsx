@@ -28,6 +28,8 @@ import { plotTheme } from '../styles/plotTheme';
 import { staffFlags } from './access';
 import { getProjectTypeLabel } from './projectType';
 import { addCounts, mergeTypeCounts, runChunks } from './deviceStatisticsBuild';
+import { childTestId, repeatedTestId } from '../testIds';
+import './DeviceStatisticsView.css';
 
 /** A row of GET /v1/status/device_statistics/ - devices.* and by_type values. */
 type StatisticsDevice = {
@@ -191,7 +193,6 @@ type BuildProgress = {
 
 const RED = '#B42318';
 const AMBER = '#B54708';
-const MUTED = '#8B8383';
 
 /** Dense rows are the point of this page - don't waste card height. */
 const COMPACT_TABLE_STYLES = {
@@ -204,19 +205,15 @@ const COMPACT_TABLE_STYLES = {
 const ListSection = ({
   title,
   children,
+  testKey,
 }: {
   title: string;
   children: ReactNode;
+  /** data-test-key of the section (src/testIds.ts). */
+  testKey: string;
 }) => (
-  <div className="mb-3">
-    <div
-      style={{
-        fontSize: 13.5,
-        fontWeight: 600,
-        color: 'var(--progeo-blue)',
-        marginBottom: 6,
-      }}
-    >
+  <div className="mb-3" {...repeatedTestId('device-stats-list', testKey)}>
+    <div className="device-stats-section-title">
       {title}
     </div>
     {children}
@@ -255,18 +252,25 @@ const DeviceList = ({
   selectionKey,
   onSelectionChange,
   showAdminEdit = false,
+  testKey,
 }: {
   rows: StatisticsDevice[];
   selectable?: boolean;
   selectionKey?: string;
   onSelectionChange?: (rows: StatisticsDevice[]) => void;
   showAdminEdit?: boolean;
+  /** data-test-key of the list's empty state (src/testIds.ts). */
+  testKey: string;
 }) => {
   const { t } = useTranslation();
   const now = useNow();
 
   if (!rows.length) {
-    return <div className="small text-muted py-2">{t('device_stats_empty')}</div>;
+    return (
+      <div className="small text-muted py-2" {...repeatedTestId('device-stats-list-empty', testKey)}>
+        {t('device_stats_empty')}
+      </div>
+    );
   }
 
   const columns: TableColumn<StatisticsDevice>[] = [
@@ -276,7 +280,11 @@ const DeviceList = ({
       sortable: true,
       cell: (row) => (
         <div className="small">
-          <Link to={deviceDetailUrl(row)} title={t('device_stats_open_device')}>
+          <Link
+            to={deviceDetailUrl(row)}
+            title={t('device_stats_open_device')}
+            {...repeatedTestId('device-stats-device-link', `${row.database}-${row.id}`)}
+          >
             {row.display_name || row.raw_hash}
           </Link>
           <code className="text-muted d-block">{row.raw_hash}</code>
@@ -308,7 +316,7 @@ const DeviceList = ({
         row.chip_id ? (
           <code className="small">{row.chip_id}</code>
         ) : (
-          <span style={{ color: MUTED }}>–</span>
+          <span className="device-stats-muted">–</span>
         ),
       width: '110px',
     },
@@ -322,6 +330,7 @@ const DeviceList = ({
             <Link
               to={locationDetailUrl({ id: row.location_id })}
               title={t('device_stats_open_location')}
+              {...repeatedTestId('device-stats-device-location-link', `${row.database}-${row.id}`)}
             >
               {row.location_name || '–'}
             </Link>
@@ -363,6 +372,7 @@ const DeviceList = ({
                 rel="noreferrer"
                 title={t('device_stats_admin_edit')}
                 aria-label={t('device_stats_admin_edit')}
+                {...repeatedTestId('device-stats-device-admin-edit', `${row.database}-${row.id}`)}
               >
                 <PencilSquare size={14} />
               </a>
@@ -399,18 +409,25 @@ const LocationList = ({
   selectionKey,
   onSelectionChange,
   showAdminEdit = false,
+  testKey,
 }: {
   rows: StatisticsLocation[];
   selectable?: boolean;
   selectionKey?: string;
   onSelectionChange?: (rows: StatisticsLocation[]) => void;
   showAdminEdit?: boolean;
+  /** data-test-key of the list's empty state (src/testIds.ts). */
+  testKey: string;
 }) => {
   const { t } = useTranslation();
   const now = useNow();
 
   if (!rows.length) {
-    return <div className="small text-muted py-2">{t('device_stats_empty')}</div>;
+    return (
+      <div className="small text-muted py-2" {...repeatedTestId('device-stats-list-empty', testKey)}>
+        {t('device_stats_empty')}
+      </div>
+    );
   }
 
   const columns: TableColumn<StatisticsLocation>[] = [
@@ -420,7 +437,11 @@ const LocationList = ({
       sortable: true,
       cell: (row) => (
         <div className="small">
-          <Link to={locationDetailUrl(row)} title={t('device_stats_open_location')}>
+          <Link
+            to={locationDetailUrl(row)}
+            title={t('device_stats_open_location')}
+            {...repeatedTestId('device-stats-location-link', `${row.database}-${row.id}`)}
+          >
             {row.name || '–'}
           </Link>
           {row.project_id != null && (
@@ -476,7 +497,7 @@ const LocationList = ({
           ) : null}
           {row.dead ? <Badge bg="danger">{t('device_stats_dead')}</Badge> : null}
           {!row.unused && !row.dead ? (
-            <span style={{ color: MUTED }}>–</span>
+            <span className="device-stats-muted">–</span>
           ) : null}
         </div>
       ),
@@ -495,6 +516,7 @@ const LocationList = ({
                 rel="noreferrer"
                 title={t('device_stats_admin_edit')}
                 aria-label={t('device_stats_admin_edit')}
+                {...repeatedTestId('device-stats-location-admin-edit', `${row.database}-${row.id}`)}
               >
                 <PencilSquare size={14} />
               </a>
@@ -542,18 +564,21 @@ const DonutChart = ({
   ariaLabel,
   onSelect,
   selectTitle,
+  testId,
 }: {
   slices: DonutSlice[];
   centerLabel: string;
   ariaLabel: string;
   onSelect?: (key: string) => void;
   selectTitle?: string;
+  /** data-testid of the chart; slices "-slice", legend entries "-legend-item" (key: the slice key). */
+  testId: string;
 }) => {
   const { t } = useTranslation();
   const shown = slices.filter((slice) => slice.count > 0);
   const total = shown.reduce((sum, slice) => sum + slice.count, 0);
   if (total <= 0) {
-    return <div className="small text-muted py-2">{t('device_stats_empty')}</div>;
+    return <div className="small text-muted py-2" data-testid={childTestId(testId, 'empty')}>{t('device_stats_empty')}</div>;
   }
 
   const center = 60;
@@ -577,11 +602,11 @@ const DonutChart = ({
           : `M ${center} ${center} L ${x1} ${y1} A ${radius} ${radius} 0 ${sweep > Math.PI ? 1 : 0} 1 ${x2} ${y2} Z`,
     };
   });
-  const clickable = onSelect ? { cursor: 'pointer' } : undefined;
+  const clickable = onSelect ? 'device-stats-donut-clickable' : undefined;
 
   return (
-    <div className="d-flex align-items-center gap-3">
-      <svg width={130} height={130} viewBox="0 0 120 120" role="img" aria-label={ariaLabel} style={{ flexShrink: 0 }}>
+    <div className="d-flex align-items-center gap-3" data-testid={testId}>
+      <svg width={130} height={130} viewBox="0 0 120 120" role="img" aria-label={ariaLabel} className="device-stats-donut">
         {segments.map(({ slice, percent, path }) => {
           const title = (
             <title>
@@ -595,8 +620,9 @@ const DonutChart = ({
               fill={slice.color}
               stroke="var(--progeo-panel-bg)"
               strokeWidth={1.5}
-              style={clickable}
+              className={clickable}
               onClick={() => onSelect?.(slice.key)}
+              {...repeatedTestId(`${testId}-slice`, slice.key)}
             >
               {title}
             </path>
@@ -607,22 +633,23 @@ const DonutChart = ({
               cy={center}
               r={radius}
               fill={slice.color}
-              style={clickable}
+              className={clickable}
               onClick={() => onSelect?.(slice.key)}
+              {...repeatedTestId(`${testId}-slice`, slice.key)}
             >
               {title}
             </circle>
           );
         })}
         <circle cx={center} cy={center} r={31} fill="var(--progeo-panel-bg)" pointerEvents="none" />
-        <text x={center} y={center + 1} textAnchor="middle" style={{ fontSize: 18, fontWeight: 600, fill: 'var(--progeo-blue)' }}>
+        <text x={center} y={center + 1} textAnchor="middle" className="device-stats-donut-total" data-testid={childTestId(testId, 'total')}>
           {total}
         </text>
-        <text x={center} y={center + 14} textAnchor="middle" style={{ fontSize: 8, fill: MUTED }}>
+        <text x={center} y={center + 14} textAnchor="middle" className="device-stats-donut-label">
           {centerLabel}
         </text>
       </svg>
-      <div className="d-flex flex-column" style={{ minWidth: 0, flex: 1 }}>
+      <div className="d-flex flex-column device-stats-donut-legend">
         {segments.map(({ slice, percent }) => (
           <button
             key={slice.key}
@@ -630,25 +657,12 @@ const DonutChart = ({
             disabled={!onSelect}
             onClick={() => onSelect?.(slice.key)}
             title={selectTitle}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 7,
-              width: '100%',
-              padding: '2px 4px',
-              border: 'none',
-              borderRadius: 6,
-              background: 'transparent',
-              color: 'var(--progeo-blue)',
-              fontFamily: 'inherit',
-              fontSize: 12,
-              textAlign: 'left',
-              cursor: onSelect ? 'pointer' : 'default',
-            }}
+            className={onSelect ? 'device-stats-legend-item device-stats-legend-item--clickable' : 'device-stats-legend-item'}
+            {...repeatedTestId(`${testId}-legend-item`, slice.key)}
           >
-            <span style={{ width: 8, height: 8, borderRadius: 2, background: slice.color, flexShrink: 0 }} />
+            <span className="device-stats-legend-swatch" style={{ background: slice.color }} />
             <span className="text-truncate">{slice.label}</span>
-            <span className="ms-auto text-muted" style={{ whiteSpace: 'nowrap' }}>
+            <span className="ms-auto text-muted device-stats-nowrap">
               {slice.count} · {percent}%
             </span>
           </button>
@@ -864,7 +878,7 @@ const DeviceStatisticsView = () => {
 
   if (!isStaff) {
     return (
-      <div className="text-muted py-5 text-center">
+      <div className="text-muted py-5 text-center" data-testid="page-device-statistics">
         {t('device_stats_staff_only')}
       </div>
     );
@@ -989,11 +1003,12 @@ const DeviceStatisticsView = () => {
 
   const header = (
     <PanelCard
+      testId="device-stats-header"
       title={t('device_stats_title')}
       actions={
         <div className="d-flex align-items-center gap-2 flex-wrap">
           {generatedAt && (
-            <span className="small text-muted">
+            <span className="small text-muted" data-testid="device-stats-generated-at">
               {t('device_stats_generated_at', {
                 date: formatDate(generatedAt, 'dateTime'),
               })}
@@ -1005,6 +1020,7 @@ const DeviceStatisticsView = () => {
               variant="outline-danger"
               onClick={deleteSelected}
               disabled={loading || deleting}
+              data-testid="device-stats-delete-selected"
             >
               {t('device_stats_delete_selected', { count: selected.length })}
             </Button>
@@ -1021,16 +1037,17 @@ const DeviceStatisticsView = () => {
             label={t('device_stats_refresh')}
             onClick={refresh}
             disabled={loading || deleting}
+            testId="device-stats-refresh"
           />
         </div>
       }
     >
-      <div className="small" style={{ color: MUTED }}>
+      <div className="small device-stats-muted">
         {t('device_stats_hint')}
       </div>
       {progress && (
-        <div className="mt-2" aria-live="polite">
-          <div className="d-flex justify-content-between small mb-1" style={{ color: MUTED }}>
+        <div className="mt-2" aria-live="polite" data-testid="device-stats-progress">
+          <div className="d-flex justify-content-between small mb-1 device-stats-muted">
             <span>
               {t('device_stats_scanning', {
                 done: progress.databasesDone,
@@ -1045,17 +1062,17 @@ const DeviceStatisticsView = () => {
             now={progress.databasesDone}
             max={Math.max(progress.databases, 1)}
             animated={progress.databasesDone < progress.databases}
-            style={{ height: 6 }}
+            className="device-stats-progress"
           />
           {progress.chunksDone === progress.chunks && (
-            <div className="small mt-1" style={{ color: MUTED }}>
+            <div className="small mt-1 device-stats-muted">
               {t('device_stats_merging')}
             </div>
           )}
         </div>
       )}
       {error && (
-        <Alert variant="danger" className="mt-2 mb-0">
+        <Alert variant="danger" className="mt-2 mb-0" data-testid="device-stats-error">
           {t('device_stats_load_failed')}: {error}
         </Alert>
       )}
@@ -1126,7 +1143,7 @@ const DeviceStatisticsView = () => {
       // the build is through.
       if (progress) {
         return (
-          <div className="d-flex align-items-center gap-2 text-muted py-3">
+          <div className="d-flex align-items-center gap-2 text-muted py-3" data-testid="device-stats-lists-pending">
             <Spinner animation="border" size="sm" />
             {t('device_stats_lists_after_scan')}
           </div>
@@ -1137,7 +1154,7 @@ const DeviceStatisticsView = () => {
       if (loading || (!error && sections.overview)) {
         return waiting;
       }
-      return <div className="small text-muted py-2">{t('device_stats_empty')}</div>;
+      return <div className="small text-muted py-2" data-testid="device-stats-lists-empty">{t('device_stats_empty')}</div>;
     }
     switch (section) {
       case 'by_type':
@@ -1147,16 +1164,10 @@ const DeviceStatisticsView = () => {
               <div
                 key={group.type}
                 id={`device-stats-type-${group.type}`}
-                style={{ scrollMarginTop: 16 }}
+                className="device-stats-type-group"
+                {...repeatedTestId('device-stats-type-group', group.type)}
               >
-                <div
-                  style={{
-                    fontSize: 13.5,
-                    fontWeight: 600,
-                    color: 'var(--progeo-blue)',
-                    marginBottom: 6,
-                  }}
-                >
+                <div className="device-stats-section-title">
                   {group.label}{' '}
                   <span className="text-muted">({group.rows.length})</span>
                 </div>
@@ -1166,31 +1177,34 @@ const DeviceStatisticsView = () => {
                   showAdminEdit={isSuperuser}
                   selectionKey={`by_type-${group.type}-${selectionEpoch}`}
                   onSelectionChange={selectionHandler(`by_type-${group.type}`, 'device')}
+                  testKey={`by-type-${group.type}`}
                 />
               </div>
             ))}
           </div>
         ) : (
-          <div className="small text-muted py-2">{t('device_stats_empty')}</div>
+          <div className="small text-muted py-2" data-testid="device-stats-lists-empty">{t('device_stats_empty')}</div>
         );
       case 'chip_id':
         return (
           <>
-            <ListSection title={t('device_stats_with_chip_id')}>
+            <ListSection title={t('device_stats_with_chip_id')} testKey="chip-with">
               <DeviceList
                 rows={current.devices.with_chip_id}
                 selectable
                 showAdminEdit={isSuperuser}
                 selectionKey={`chip-with-${selectionEpoch}`}
+                testKey="chip-with"
                 onSelectionChange={selectionHandler('chip-with', 'device')}
               />
             </ListSection>
-            <ListSection title={t('device_stats_without_chip_id')}>
+            <ListSection title={t('device_stats_without_chip_id')} testKey="chip-without">
               <DeviceList
                 rows={current.devices.without_chip_id}
                 selectable
                 showAdminEdit={isSuperuser}
                 selectionKey={`chip-without-${selectionEpoch}`}
+                testKey="chip-without"
                 onSelectionChange={selectionHandler('chip-without', 'device')}
               />
             </ListSection>
@@ -1199,21 +1213,23 @@ const DeviceStatisticsView = () => {
       case 'measured':
         return (
           <>
-            <ListSection title={t('device_stats_measured_24h')}>
+            <ListSection title={t('device_stats_measured_24h')} testKey="measured-yes">
               <DeviceList
                 rows={current.devices.measured_24h}
                 selectable
                 showAdminEdit={isSuperuser}
                 selectionKey={`measured-yes-${selectionEpoch}`}
+                testKey="measured-yes"
                 onSelectionChange={selectionHandler('measured-yes', 'device')}
               />
             </ListSection>
-            <ListSection title={t('device_stats_not_measured_24h')}>
+            <ListSection title={t('device_stats_not_measured_24h')} testKey="measured-no">
               <DeviceList
                 rows={current.devices.not_measured_24h}
                 selectable
                 showAdminEdit={isSuperuser}
                 selectionKey={`measured-no-${selectionEpoch}`}
+                testKey="measured-no"
                 onSelectionChange={selectionHandler('measured-no', 'device')}
               />
             </ListSection>
@@ -1221,60 +1237,65 @@ const DeviceStatisticsView = () => {
         );
       case 'lageplan':
         return (
-          <ListSection title={t('device_stats_missing_lageplan')}>
+          <ListSection title={t('device_stats_missing_lageplan')} testKey="lageplan">
             <DeviceList
               rows={current.devices.missing_lageplan}
               selectable
               showAdminEdit={isSuperuser}
               selectionKey={`lageplan-${selectionEpoch}`}
+              testKey="lageplan"
               onSelectionChange={selectionHandler('lageplan', 'device')}
             />
           </ListSection>
         );
       case 'dead':
         return (
-          <ListSection title={t('device_stats_dead_devices')}>
+          <ListSection title={t('device_stats_dead_devices')} testKey="dead">
             <DeviceList
               rows={current.devices.dead}
               selectable
               showAdminEdit={isSuperuser}
               selectionKey={`dead-${selectionEpoch}`}
+              testKey="dead"
               onSelectionChange={selectionHandler('dead', 'device')}
             />
           </ListSection>
         );
       case 'unused_locations':
         return (
-          <ListSection title={t('device_stats_unused_locations')}>
+          <ListSection title={t('device_stats_unused_locations')} testKey="unused">
             <LocationList
               rows={current.locations.unused_locations ?? []}
               selectable
               showAdminEdit={isSuperuser}
               selectionKey={`unused-${selectionEpoch}`}
+              testKey="unused"
               onSelectionChange={selectionHandler('unused', 'location')}
             />
           </ListSection>
         );
       case 'locations_missing_lageplan':
         return (
-          <ListSection title={t('device_stats_locations_missing_lageplan')}>
+          <ListSection title={t('device_stats_locations_missing_lageplan')} testKey="missing-lageplan">
             <LocationList
               rows={current.locations.locations_missing_lageplan ?? []}
               selectable
               showAdminEdit={isSuperuser}
               selectionKey={`missing-lageplan-${selectionEpoch}`}
+              testKey="missing-lageplan"
               onSelectionChange={selectionHandler('missing-lageplan', 'location')}
             />
           </ListSection>
         );
       case 'dead_locations':
         return (
-          <ListSection title={t('device_stats_dead_locations')}>
+          <ListSection title={t('device_stats_dead_locations')} testKey="dead-locations">
             <LocationList
               rows={current.locations.dead_locations ?? []}
               selectable
               showAdminEdit={isSuperuser}
               selectionKey={`dead-locations-${selectionEpoch}`}
+              testKey="dead-locations"
               onSelectionChange={selectionHandler('dead-locations', 'location')}
             />
           </ListSection>
@@ -1331,15 +1352,15 @@ const DeviceStatisticsView = () => {
   ];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div className="device-stats" data-testid="page-device-statistics">
       {header}
 
-      <KpiStrip tiles={kpiTiles} />
+      <KpiStrip tiles={kpiTiles} testId="device-stats-kpis" />
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 14 }}>
-        <PanelCard title={t('device_stats_by_type_title')}>
+      <div className="device-stats-grid">
+        <PanelCard title={t('device_stats_by_type_title')} testId="device-stats-by-type">
           {!hasCounts ? (
-            loading ? waiting : <div className="small text-muted py-2">{t('device_stats_empty')}</div>
+            loading ? waiting : <div className="small text-muted py-2" data-testid="device-stats-type-chart-empty">{t('device_stats_empty')}</div>
           ) : (
             <DonutChart
               slices={typeSlices}
@@ -1347,12 +1368,13 @@ const DeviceStatisticsView = () => {
               ariaLabel={t('device_stats_by_type_title')}
               onSelect={openTypeTable}
               selectTitle={t('device_stats_type_open')}
+              testId="device-stats-type-chart"
             />
           )}
         </PanelCard>
-        <PanelCard title={t('device_stats_status_title')}>
+        <PanelCard title={t('device_stats_status_title')} testId="device-stats-status">
           {!hasCounts ? (
-            loading ? waiting : <div className="small text-muted py-2">{t('device_stats_empty')}</div>
+            loading ? waiting : <div className="small text-muted py-2" data-testid="device-stats-status-chart-empty">{t('device_stats_empty')}</div>
           ) : (
             <DonutChart
               slices={statusSlices}
@@ -1361,12 +1383,14 @@ const DeviceStatisticsView = () => {
               // Online/offline: the 24 h lists, dead: the dead devices.
               onSelect={(key) => chooseSection(key === 'dead' ? 'dead' : 'measured')}
               selectTitle={t('device_stats_status_open')}
+              testId="device-stats-status-chart"
             />
           )}
         </PanelCard>
       </div>
 
       <PanelCard
+        testId="device-stats-lists"
         title={t('device_stats_lists_title')}
         actions={
           <SegmentedControl
@@ -1374,6 +1398,7 @@ const DeviceStatisticsView = () => {
             value={section}
             onChange={(value) => chooseSection(value as StatsSection)}
             disabled={loading || deleting}
+            testId="device-stats-section"
           />
         }
       >
@@ -1392,6 +1417,7 @@ const DeviceStatisticsView = () => {
         onConfirm={performDelete}
         onCancel={() => setConfirmDelete(false)}
         confirming={deleting}
+        testId="device-stats-delete-confirm"
       />
     </div>
   );

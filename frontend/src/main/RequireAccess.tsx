@@ -35,7 +35,7 @@ const RequireAccess = ({
   // The token is decoded into auth.user one render later.
   if (isLoading || !auth.user) {
     return (
-      <Container fluid className="py-3">
+      <Container fluid className="py-3" data-testid="require-access-loading">
         <div className="d-flex justify-content-center py-5 text-muted">
           <Spinner animation="border" />
         </div>
@@ -46,7 +46,7 @@ const RequireAccess = ({
   if (!can(rule)) {
     return (
       <Container fluid className="py-3">
-        <Card className="border-0 shadow-sm">
+        <Card className="border-0 shadow-sm" data-testid="require-access-denied">
           <Card.Body className="py-5 text-center text-muted">
             {t(deniedKey)}
           </Card.Body>

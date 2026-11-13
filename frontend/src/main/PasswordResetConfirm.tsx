@@ -4,16 +4,8 @@ import { Link, useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
-import AuthPage, {
-  AuthLinks,
-  ERROR_TEXT,
-  FIELD,
-  FIELD_LABEL,
-  FORM,
-  LABEL,
-  MUTED_TEXT,
-  buttonStyle,
-} from '../components/auth/AuthPage';
+import AuthPage, { AuthLinks, authButtonClass } from '../components/auth/AuthPage';
+import { repeatedTestId } from '../testIds';
 
 /**
  * Reset link from the "Passwort vergessen" mail (/passwort/neu/<token>).
@@ -102,8 +94,8 @@ const PasswordResetConfirm = () => {
 
   if (state === 'checking') {
     return (
-      <AuthPage title={t('password_new_title')}>
-        <p style={MUTED_TEXT}>
+      <AuthPage title={t('password_new_title')} testId="page-password-reset">
+        <p className="auth-muted" data-testid="password-reset-checking">
           <Spinner animation="border" size="sm" className="me-2" />
           {t('access_verify_checking')}
         </p>
@@ -113,11 +105,11 @@ const PasswordResetConfirm = () => {
 
   if (state === 'invalid') {
     return (
-      <AuthPage title={t('password_new_title')}>
-        <p style={MUTED_TEXT}>{t('password_new_invalid')}</p>
+      <AuthPage title={t('password_new_title')} testId="page-password-reset">
+        <p className="auth-muted" data-testid="password-reset-invalid">{t('password_new_invalid')}</p>
         <AuthLinks>
-          <Link to="/passwort-vergessen">{t('password_new_request_new')}</Link>
-          <Link to="/login">{t('auth_back_to_login')}</Link>
+          <Link to="/passwort-vergessen" data-testid="password-reset-request-new">{t('password_new_request_new')}</Link>
+          <Link to="/login" data-testid="auth-back-to-login">{t('auth_back_to_login')}</Link>
         </AuthLinks>
       </AuthPage>
     );
@@ -127,20 +119,22 @@ const PasswordResetConfirm = () => {
     <AuthPage
       title={t('password_new_title')}
       intro={t('password_new_intro', { name: firstName || username })}
+      testId="page-password-reset"
     >
-      <form onSubmit={onSubmit} style={FORM}>
-        <label style={LABEL}>
-          <span style={FIELD_LABEL}>{t('login_username')}</span>
+      <form onSubmit={onSubmit} className="auth-form" data-testid="password-reset-form">
+        <label className="auth-label">
+          <span className="auth-field-label">{t('login_username')}</span>
           <input
             type="text"
             value={username}
             readOnly
             autoComplete="username"
-            style={{ ...FIELD, opacity: 0.8 }}
+            className="auth-field auth-field--readonly"
+            data-testid="password-reset-username"
           />
         </label>
-        <label style={LABEL}>
-          <span style={FIELD_LABEL}>{t('profile_new_password')}</span>
+        <label className="auth-label">
+          <span className="auth-field-label">{t('profile_new_password')}</span>
           <input
             type="password"
             autoComplete="new-password"
@@ -148,37 +142,40 @@ const PasswordResetConfirm = () => {
             autoFocus
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            style={FIELD}
+            className="auth-field"
+            data-testid="password-reset-password"
           />
         </label>
-        <label style={LABEL}>
-          <span style={FIELD_LABEL}>{t('access_verify_repeat')}</span>
+        <label className="auth-label">
+          <span className="auth-field-label">{t('access_verify_repeat')}</span>
           <input
             type="password"
             autoComplete="new-password"
             required
             value={repeat}
             onChange={(event) => setRepeat(event.target.value)}
-            style={FIELD}
+            className="auth-field"
+            data-testid="password-reset-repeat"
           />
         </label>
-        <label style={LABEL}>
-          <span style={FIELD_LABEL}>{t('login_otp_code')}</span>
+        <label className="auth-label">
+          <span className="auth-field-label">{t('login_otp_code')}</span>
           <input
             type="text"
             autoComplete="one-time-code"
             required
             value={otp}
             onChange={(event) => setOtp(event.target.value)}
-            style={FIELD}
+            className="auth-field"
+            data-testid="password-reset-otp"
           />
         </label>
         {errors.map((message) => (
-          <p key={message} style={ERROR_TEXT}>
+          <p key={message} className="auth-error" {...repeatedTestId('password-reset-error', message)}>
             {message}
           </p>
         ))}
-        <button type="submit" disabled={busy} style={buttonStyle(busy)}>
+        <button type="submit" disabled={busy} className={authButtonClass(busy)} data-testid="password-reset-submit">
           {t('password_new_submit')}
         </button>
       </form>

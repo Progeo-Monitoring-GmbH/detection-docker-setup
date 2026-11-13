@@ -3,35 +3,9 @@
  * keys do, in groups - the action in use (a held key, an edit mode) is
  * highlighted.
  */
+import { childTestId } from '../../testIds';
+import './CanvasKeyLegend.css';
 
-/** A keyboard key in a hint. */
-export const KEY_BADGE: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  minWidth: 24,
-  height: 24,
-  padding: '0 6px',
-  borderRadius: 6,
-  background: '#ffffff',
-  color: 'var(--progeo-blue)',
-  border: '1px solid #cfd4da',
-  boxShadow: 'inset 0 -2px 0 #cfd4da',
-  fontSize: 12,
-  fontWeight: 700,
-};
-
-/** A mouse action (drag, click, ...) - told apart from the keys. */
-const MOUSE_BADGE: React.CSSProperties = {
-  ...KEY_BADGE,
-  borderRadius: 'var(--progeo-radius-pill)',
-  background: 'transparent',
-  color: '#495057',
-  border: '1px dashed #adb5bd',
-  boxShadow: 'none',
-  padding: '0 9px',
-  fontWeight: 600,
-};
 const MOUSE_ACTIONS = new Set(['Drag', 'Click', 'Scroll', 'Hover']);
 
 export type LegendEntry = {
@@ -48,7 +22,14 @@ export type LegendGroup = {
   note?: string;
 };
 
-const CanvasKeyLegend = ({ groups }: { groups: Array<LegendGroup | false | null | undefined> }) => {
+const CanvasKeyLegend = ({
+  groups,
+  testId = 'canvas-key-legend',
+}: {
+  groups: Array<LegendGroup | false | null | undefined>;
+  /** data-testid of the legend; its groups are "<testId>-group" (key: the group's title). */
+  testId?: string;
+}) => {
   const shown = groups
     .filter((group): group is LegendGroup => Boolean(group))
     .map((group) => ({ ...group, entries: group.entries.filter((entry): entry is LegendEntry => Boolean(entry)) }))
@@ -59,51 +40,40 @@ const CanvasKeyLegend = ({ groups }: { groups: Array<LegendGroup | false | null 
   return (
     <div
       aria-label="Mouse and keyboard"
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-        gap: '14px 28px',
-        background: 'var(--progeo-surface)',
-        borderRadius: 13,
-        padding: '14px 16px',
-      }}
+      className="canvas-key-legend"
+      data-testid={testId}
     >
       {shown.map((group) => (
-        <section key={group.title} className="d-flex flex-column gap-1">
-          <h6
-            className="mb-1"
-            style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: '#8B8383' }}
-          >
+        <section
+          key={group.title}
+          className="d-flex flex-column gap-1"
+          data-testid={childTestId(testId, 'group')}
+          data-test-key={group.title}
+        >
+          <h6 className="mb-1 canvas-key-legend-title">
             {group.title}
           </h6>
           {group.entries.map((entry) => (
             <div
               key={`${entry.keys.join('+')} ${entry.label}`}
-              className="d-flex align-items-center gap-3"
-              style={{
-                fontSize: 13.5,
-                lineHeight: 1.35,
-                padding: '4px 8px',
-                margin: '0 -8px',
-                borderRadius: 8,
-                color: entry.active ? '#0B3659' : '#343a40',
-                background: entry.active ? '#E7F0FD' : 'transparent',
-                fontWeight: entry.active ? 600 : 400,
-                transition: 'background-color .15s',
-              }}
+              className={`d-flex align-items-center gap-3 canvas-key-legend-entry${
+                entry.active ? ' canvas-key-legend-entry--active' : ''
+              }`}
             >
-              <span className="d-inline-flex align-items-center gap-1 flex-shrink-0" style={{ minWidth: 104 }}>
+              <span className="d-inline-flex align-items-center gap-1 flex-shrink-0 canvas-key-legend-keys">
                 {entry.keys.map((key, index) => (
                   <span key={key} className="d-inline-flex align-items-center gap-1">
-                    {index > 0 && <span style={{ color: '#adb5bd', fontSize: 12 }}>+</span>}
-                    <kbd style={MOUSE_ACTIONS.has(key) ? MOUSE_BADGE : KEY_BADGE}>{key}</kbd>
+                    {index > 0 && <span className="canvas-key-legend-plus">+</span>}
+                    <kbd className={MOUSE_ACTIONS.has(key) ? 'canvas-key-badge canvas-key-badge--mouse' : 'canvas-key-badge'}>
+                      {key}
+                    </kbd>
                   </span>
                 ))}
               </span>
               <span>{entry.label}</span>
             </div>
           ))}
-          {group.note && <div style={{ fontSize: 12, color: '#8B8383', marginTop: 2 }}>{group.note}</div>}
+          {group.note && <div className="canvas-key-legend-note">{group.note}</div>}
         </section>
       ))}
     </div>

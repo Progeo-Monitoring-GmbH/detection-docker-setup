@@ -1,6 +1,6 @@
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { MUTED_TEXT } from '../components/auth/AuthPage';
+import '../components/auth/Auth.css';
 import EmailRequestPage from '../components/auth/EmailRequestPage';
 
 /**
@@ -17,10 +17,11 @@ const PasswordResetRequest = () => {
       endpoint="/api/auth-support/password-reset/"
       title={t('password_reset_title')}
       intro={t('password_reset_intro')}
-      notice={<p style={MUTED_TEXT}>{t('password_reset_2fa_hint')}</p>}
+      notice={<p className="auth-muted" data-testid="password-reset-request-2fa-hint">{t('password_reset_2fa_hint')}</p>}
       submitLabel={t('password_reset_submit')}
       sentText={t('password_reset_sent_text')}
-      extraLinks={<Link to="/login/link">{t('login_magic_link')}</Link>}
+      extraLinks={<Link to="/login/link" data-testid="password-reset-request-magic-link-link">{t('login_magic_link')}</Link>}
+      testId="page-password-reset-request"
     />
   );
 };

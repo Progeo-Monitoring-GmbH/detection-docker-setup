@@ -168,7 +168,7 @@ const LocationEditModal = ({
   };
 
   return (
-    <Modal show={show} onHide={handleClose} centered size="lg">
+    <Modal show={show} onHide={handleClose} centered size="lg" data-testid="location-edit-modal">
       <Modal.Header closeButton>
         <Modal.Title>{t('location_edit_title')}</Modal.Title>
       </Modal.Header>
@@ -178,6 +178,7 @@ const LocationEditModal = ({
             <Form.Label>{t('objekt_field_project_name')}</Form.Label>
             <Form.Control
               value={form.name}
+              data-testid="location-edit-name"
               onChange={(event) =>
                 setForm((prev) => ({ ...prev, name: event.target.value }))
               }
@@ -187,6 +188,7 @@ const LocationEditModal = ({
             <Form.Label>{t('objekt_field_plz')}</Form.Label>
             <Form.Control
               value={form.plz}
+              data-testid="location-edit-plz"
               onChange={(event) =>
                 setForm((prev) => ({ ...prev, plz: event.target.value }))
               }
@@ -196,6 +198,7 @@ const LocationEditModal = ({
             <Form.Label>{t('objekt_field_project_nr')}</Form.Label>
             <Form.Control
               value={form.project_id}
+              data-testid="location-edit-project-id"
               readOnly
               disabled
               title={t('location_edit_project_nr_hint')}
@@ -205,6 +208,7 @@ const LocationEditModal = ({
             <Form.Label>{t('objekt_field_street')}</Form.Label>
             <Form.Control
               value={form.address}
+              data-testid="location-edit-address"
               onChange={(event) =>
                 setForm((prev) => ({ ...prev, address: event.target.value }))
               }
@@ -214,6 +218,7 @@ const LocationEditModal = ({
             <Form.Label>{t('objekt_field_city')}</Form.Label>
             <Form.Control
               value={form.city}
+              data-testid="location-edit-city"
               onChange={(event) =>
                 setForm((prev) => ({ ...prev, city: event.target.value }))
               }
@@ -223,6 +228,7 @@ const LocationEditModal = ({
             <Form.Label>{t('objekt_field_manager')}</Form.Label>
             <Form.Control
               value={form.manager}
+              data-testid="location-edit-manager"
               onChange={(event) =>
                 setForm((prev) => ({ ...prev, manager: event.target.value }))
               }
@@ -232,6 +238,7 @@ const LocationEditModal = ({
             <Form.Label>{t('objekt_field_phone')}</Form.Label>
             <Form.Control
               value={form.telefon}
+              data-testid="location-edit-phone"
               onChange={(event) =>
                 setForm((prev) => ({ ...prev, telefon: event.target.value }))
               }
@@ -242,6 +249,7 @@ const LocationEditModal = ({
             <Form.Control
               type="email"
               value={form.mail}
+              data-testid="location-edit-mail"
               onChange={(event) =>
                 setForm((prev) => ({ ...prev, mail: event.target.value }))
               }
@@ -251,6 +259,7 @@ const LocationEditModal = ({
             <Form.Label>{t('location_edit_latitude')}</Form.Label>
             <Form.Control
               value={form.latitude}
+              data-testid="location-edit-latitude"
               onChange={(event) =>
                 setForm((prev) => ({ ...prev, latitude: event.target.value }))
               }
@@ -260,6 +269,7 @@ const LocationEditModal = ({
             <Form.Label>{t('location_edit_longitude')}</Form.Label>
             <Form.Control
               value={form.longitude}
+              data-testid="location-edit-longitude"
               onChange={(event) =>
                 setForm((prev) => ({ ...prev, longitude: event.target.value }))
               }
@@ -269,6 +279,7 @@ const LocationEditModal = ({
             <Form.Label>{t('objekt_field_alarm_threshold')}</Form.Label>
             <Form.Control
               value={form.alarm_threshold}
+              data-testid="location-edit-alarm-threshold"
               onChange={(event) =>
                 setForm((prev) => ({
                   ...prev,
@@ -280,10 +291,10 @@ const LocationEditModal = ({
         </div>
       </Modal.Body>
       <Modal.Footer>
-        <Button variant="secondary" onClick={handleClose} disabled={saving}>
+        <Button variant="secondary" onClick={handleClose} disabled={saving} data-testid="location-edit-cancel">
           {t('location_edit_cancel')}
         </Button>
-        <Button variant="primary" onClick={handleSave} disabled={saving}>
+        <Button variant="primary" onClick={handleSave} disabled={saving} data-testid="location-edit-save">
           {saving ? t('location_edit_saving') : t('location_edit_save')}
         </Button>
       </Modal.Footer>

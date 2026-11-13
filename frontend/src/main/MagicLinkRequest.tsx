@@ -15,6 +15,7 @@ const MagicLinkRequest = () => {
       intro={t('magic_link_intro')}
       submitLabel={t('magic_link_submit')}
       sentText={t('magic_link_sent_text')}
+      testId="page-magic-link-request"
     />
   );
 };

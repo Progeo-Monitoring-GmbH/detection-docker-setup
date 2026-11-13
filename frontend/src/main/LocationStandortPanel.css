@@ -1,0 +1,73 @@
+/* The "Standort" side panel (LocationStandortPanel.tsx): the small map or its
+   placeholder with the geocode button, and the facts below it. */
+
+.standort-map {
+  aspect-ratio: 4 / 3;
+  background: var(--progeo-surface);
+  border-radius: 13px;
+  overflow: hidden;
+  position: relative;
+}
+
+.standort-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 12px;
+  color: #8b8383;
+  padding: 12px;
+}
+
+.standort-placeholder-text {
+  margin-top: 6px;
+}
+
+.standort-geocode {
+  margin-top: 12px;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid #eb633b;
+  border-radius: 10px;
+  background: transparent;
+  color: #eb633b;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  opacity: 1;
+}
+
+.standort-geocode:disabled {
+  cursor: default;
+}
+
+/* Geocoding is not possible (the reason is shown below it). */
+.standort-geocode--blocked {
+  opacity: 0.55;
+}
+
+.standort-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 14px;
+}
+
+.standort-fact {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 2px;
+  font-size: 13.5px;
+}
+
+.standort-fact-label {
+  color: #6e6868;
+}
+
+.standort-fact-value {
+  font-weight: 500;
+}

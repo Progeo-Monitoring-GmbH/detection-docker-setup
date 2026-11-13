@@ -58,6 +58,7 @@ import {
   rateNoiseProfile,
   spanParts,
 } from './noiseProfiles';
+import './LocationAnalyseTab.css';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 import {
@@ -1100,12 +1101,8 @@ const LocationAnalyseTab = () => {
   const noiseBadge = badge ? (
     <button
       type="button"
-      className="btn btn-sm d-inline-flex align-items-center gap-1 py-0 fw-semibold text-truncate"
+      className="btn btn-sm d-inline-flex align-items-center gap-1 py-0 fw-semibold text-truncate analyse-noise-badge"
       style={{
-        fontSize: 12,
-        height: 26,
-        maxWidth: 320,
-        borderRadius: 'var(--progeo-radius-pill)',
         color: badge.color,
         background: badge.background,
         border: `1px solid ${badge.color}`,
@@ -1141,6 +1138,7 @@ const LocationAnalyseTab = () => {
   const rangeControl = (
     <div className="d-flex flex-wrap align-items-center gap-2">
       <SegmentedControl
+        testId="analyse-range"
         options={rangeOptions.map((value) => ({
           value,
           label: t(timeRangeLabelKey(value)),
@@ -1154,6 +1152,7 @@ const LocationAnalyseTab = () => {
       {!isLorawan && (
         <>
           <PillSelect
+            testId="analyse-resolution"
             label={t('analyse_resolution')}
             title={t('analyse_resolution_hint')}
             options={RESOLUTIONS.map((value) => ({
@@ -1164,6 +1163,7 @@ const LocationAnalyseTab = () => {
             onChange={(value) => setResolution(Number(value))}
           />
           <PillSelect
+            testId="analyse-mean"
             label={t('analyse_mean')}
             title={t('analyse_mean_hint')}
             options={MEAN_WINDOWS.map((value) => ({
@@ -1174,6 +1174,7 @@ const LocationAnalyseTab = () => {
             onChange={(value) => setMeanWindow(Number(value))}
           />
           <PillSelect
+            testId="analyse-compare-select"
             label={t('analyse_compare')}
             title={compareOptions.length ? t('analyse_compare_hint') : t('analyse_compare_unavailable')}
             options={[
@@ -1190,9 +1191,9 @@ const LocationAnalyseTab = () => {
             <Button
               size="sm"
               variant="outline-secondary"
-              className="d-inline-flex align-items-center gap-1 py-0"
-              style={{ fontSize: 12, borderRadius: 'var(--progeo-radius-pill)' }}
+              className="d-inline-flex align-items-center gap-1 py-0 analyse-compare-end"
               onClick={() => setCompareDays(null)}
+              data-testid="analyse-compare-end"
             >
               <XLg size={11} />
               {t('analyse_compare_end')}
@@ -1201,24 +1202,25 @@ const LocationAnalyseTab = () => {
         </>
       )}
       {!isLorawan && loading && (heatmap || measurements.length > 0) && (
-        <Spinner size="sm" animation="border" className="text-muted" />
+        <Spinner size="sm" animation="border" className="text-muted" data-testid="analyse-range-loading" />
       )}
       {noiseBadge}
       {frameSeconds.length > 0 && (
         <span className="ms-auto">
-          <UsageHelp id="analyse-usage-help" hints={pageKeyHints} tips={pageTips} />
+          <UsageHelp id="analyse-usage-help" hints={pageKeyHints} tips={pageTips} testId="analyse-usage-help" />
         </span>
       )}
     </div>
   );
 
   return (
-    <div className="d-flex flex-column gap-4">
-      <div className="d-flex flex-wrap align-items-center gap-3">
+    <div className="d-flex flex-column gap-4" data-testid="page-location-analyse">
+      <div className="d-flex flex-wrap align-items-center gap-3" data-testid="analyse-toolbar">
         <button
           type="button"
           className="btn btn-outline-secondary btn-sm"
           onClick={exportCsv}
+          data-testid="analyse-export-csv"
         >
           {t('analyse_export_csv')}
         </button>
@@ -1227,6 +1229,7 @@ const LocationAnalyseTab = () => {
             type="button"
             className="btn btn-outline-secondary btn-sm"
             title={t('analyse_export_csv_raw_hint')}
+            data-testid="analyse-export-csv-raw"
             onClick={() => {
               void openResponseInNewTab(auth, `/v1/location/${locationId}/export_csv/?raw=1`);
               setExportMsg(t('analyse_export_csv_done'));
@@ -1240,6 +1243,7 @@ const LocationAnalyseTab = () => {
           className="btn btn-outline-secondary btn-sm"
           onClick={exportPdf}
           disabled={exportingPdf}
+          data-testid="analyse-export-pdf"
         >
           {exportingPdf && <Spinner size="sm" animation="border" className="me-2" />}
           {t('analyse_export_pdf')}
@@ -1252,21 +1256,27 @@ const LocationAnalyseTab = () => {
             title={profileRange ? t('analyse_archive_hint') : t('analyse_archive_pick_span')}
             disabled={!profileRange}
             onClick={() => setArchiveDialog({ allDevices: false, archive: true })}
+            data-testid="analyse-archive"
           >
             <Archive size={13} aria-hidden="true" />
             {t('analyse_archive')}
           </button>
         )}
-        {exportMsg && <span className="text-success small">{exportMsg}</span>}
+        {exportMsg && (
+          <span className="text-success small" data-testid="analyse-export-message">
+            {exportMsg}
+          </span>
+        )}
       </div>
 
       <ConfirmDialog
+        testId="analyse-archive-dialog"
         show={archiveDialog !== null && profileRange !== null}
         title={t('analyse_archive')}
         message={
           archiveDialog && profileRange ? (
             <div className="d-flex flex-column gap-2">
-              <div>
+              <div data-testid="analyse-archive-span">
                 {t('analyse_archive_span', {
                   from: formatDate(profileRange.from),
                   to: formatDate(profileRange.to),
@@ -1277,6 +1287,7 @@ const LocationAnalyseTab = () => {
                   <Form.Check
                     type="radio"
                     id="analyse-archive-device"
+                    data-testid="analyse-archive-scope-device"
                     name="analyse-archive-scope"
                     label={t('analyse_archive_scope_device', { device: shownDeviceName ?? shownDevice })}
                     checked={!archiveDialog.allDevices}
@@ -1286,6 +1297,7 @@ const LocationAnalyseTab = () => {
                 <Form.Check
                   type="radio"
                   id="analyse-archive-all"
+                  data-testid="analyse-archive-scope-all"
                   name="analyse-archive-scope"
                   label={t('analyse_archive_scope_all')}
                   checked={archiveDialog.allDevices || shownDevice == null}
@@ -1296,6 +1308,7 @@ const LocationAnalyseTab = () => {
                 <Form.Check
                   type="radio"
                   id="analyse-archive-archive"
+                  data-testid="analyse-archive-action-archive"
                   name="analyse-archive-action"
                   label={t('analyse_archive_action_archive')}
                   checked={archiveDialog.archive}
@@ -1304,13 +1317,14 @@ const LocationAnalyseTab = () => {
                 <Form.Check
                   type="radio"
                   id="analyse-archive-restore"
+                  data-testid="analyse-archive-action-restore"
                   name="analyse-archive-action"
                   label={t('analyse_archive_action_restore')}
                   checked={!archiveDialog.archive}
                   onChange={() => setArchiveDialog({ ...archiveDialog, archive: false })}
                 />
               </div>
-              <div className="fw-semibold" style={{ color: 'var(--progeo-blue)' }}>
+              <div className="fw-semibold analyse-archive-counts" data-testid="analyse-archive-counts">
                 {archiveCountsShown ? (
                   t('analyse_archive_counts', { total: archiveCountsShown.total, archived: archiveCountsShown.archived })
                 ) : (
@@ -1332,15 +1346,8 @@ const LocationAnalyseTab = () => {
           the period it covers - kept on top while the page scrolls down. */}
       <div
         data-testid="analyse-frame-slider"
-        className="px-3"
-        style={{
-          position: 'sticky',
-          top: mobile ? STICKY_TOP_MOBILE : STICKY_TOP,
-          zIndex: 50,
-          background: 'var(--progeo-panel-bg)',
-          borderRadius: 'var(--progeo-radius-panel)',
-          boxShadow: 'var(--progeo-shadow-panel)',
-        }}
+        className="px-3 analyse-frame-slider"
+        style={{ top: mobile ? STICKY_TOP_MOBILE : STICKY_TOP }}
       >
         {frameSeconds.length > 0 ? (
           <FrameSlider
@@ -1355,7 +1362,9 @@ const LocationAnalyseTab = () => {
             selectionLabel={t('noise_profile_range_band')}
           />
         ) : (
-          <div className="d-flex flex-wrap align-items-center gap-2 py-3">{rangeControl}</div>
+          <div className="d-flex flex-wrap align-items-center gap-2 py-3" data-testid="analyse-range-toolbar">
+            {rangeControl}
+          </div>
         )}
       </div>
 
@@ -1371,6 +1380,7 @@ const LocationAnalyseTab = () => {
             onFramesChange={setClimateHeatmapFrames}
           />
           <LocationClimatePanels
+            testId="analyse-climate-panels"
             locationId={locationId}
             range={range}
             showBattery={isStaff}
@@ -1382,49 +1392,55 @@ const LocationAnalyseTab = () => {
         </>
       ) : (
         <>
-          <Card className="border-0 shadow-sm">
-            <Card.Header className="bg-transparent border-0 pt-2 pb-1 d-flex flex-wrap align-items-center gap-2">
+          <Card className="border-0 shadow-sm" data-testid="analyse-heatmap">
+            <Card.Header className="bg-transparent border-0 pt-2 pb-1">
               <Button
                 variant="link"
-                className="p-0 text-decoration-none fw-semibold"
-                style={{ color: 'var(--progeo-blue)' }}
+                className="p-0 text-decoration-none fw-semibold analyse-heatmap-toggle"
                 aria-expanded={heatmapOpen}
                 aria-controls="analyse-heatmap"
                 onClick={() => setHeatmapOpen((open) => !open)}
+                data-testid="analyse-heatmap-toggle"
               >
                 <span className="me-2">{heatmapOpen ? '▾' : '▸'}</span>
                 {t('analyse_heatmap_title')}
               </Button>
               {compare && (
-                <span className="ms-2 small text-muted">{t('analyse_heatmap_change', { label: compareLabel })}</span>
+                <span className="ms-2 small text-muted" data-testid="analyse-heatmap-change">
+                  {t('analyse_heatmap_change', { label: compareLabel })}
+                </span>
               )}
-              <PlotHelp topic="heatmap" className="ms-2 align-middle" />
+              <PlotHelp topic="heatmap" className="ms-2 align-middle" testId="analyse-heatmap-help" />
               {heatmapLoading && (
-                <Spinner size="sm" animation="border" className="ms-2 text-muted" />
-              )}
-              {/* The plan switcher of /status (LocationPlanPanel) - each pill
-                  shows its key (1-9). */}
-              {plans.length > 1 && (
-                <div className="ms-auto">
-                  <SegmentedControl
-                    options={plans.map((plan, index) => ({
-                      value: String(plan.id),
-                      label: plan.name || t('status_plan_view', { index: index + 1 }),
-                      hotkey: planHotkeys && index < 9 ? String(index + 1) : undefined,
-                      title: planHotkeys && index < 9 ? t('analyse_plan_key', { key: index + 1 }) : undefined,
-                    }))}
-                    value={String(planId)}
-                    onChange={(value) => pickPlan(Number(value))}
-                  />
-                </div>
+                <Spinner size="sm" animation="border" className="ms-2 text-muted" data-testid="analyse-heatmap-loading" />
               )}
             </Card.Header>
             <Collapse in={heatmapOpen}>
-              <div id="analyse-heatmap">
+              <div id="analyse-heatmap" data-testid="analyse-heatmap-body">
                 <Card.Body className="pt-1">
+                  {/* The plan switcher of /status (LocationPlanPanel) - each pill
+                      shows its key (1-9). */}
+                  {plans.length > 1 && (
+                    <div className="d-flex mb-2">
+                      <SegmentedControl
+                        options={plans.map((plan, index) => ({
+                          value: String(plan.id),
+                          label: plan.name || t('status_plan_view', { index: index + 1 }),
+                          hotkey: planHotkeys && index < 9 ? String(index + 1) : undefined,
+                          title: planHotkeys && index < 9 ? t('analyse_plan_key', { key: index + 1 }) : undefined,
+                        }))}
+                        value={String(planId)}
+                        onChange={(value) => pickPlan(Number(value))}
+                        testId="analyse-heatmap-plans"
+                      />
+                    </div>
+                  )}
                   {/* Also while another plan loads - its image must not show the old plan's sensors. */}
                   {heatmapLoading && (!shownHeatmap || (shownHeatmap.lageplan ?? null) !== planId) ? (
-                    <div className="d-flex justify-content-center align-items-center py-5 text-muted">
+                    <div
+                      className="d-flex justify-content-center align-items-center py-5 text-muted"
+                      data-testid="analyse-heatmap-plan-loading"
+                    >
                       <Spinner animation="border" className="me-2" /> {t('ui_loading')}
                     </div>
                   ) : (
@@ -1469,7 +1485,7 @@ const LocationAnalyseTab = () => {
 
           {noisePanel}
 
-          <Card className="border-0 shadow-sm p-2">
+          <Card className="border-0 shadow-sm p-2" data-testid="analyse-measurements">
             <Card.Body>
               <div className="d-flex flex-wrap align-items-center gap-3 mb-1">
                 <h5 className="mb-0">{t('analyse_measurements_title')}</h5>
@@ -1482,7 +1498,8 @@ const LocationAnalyseTab = () => {
                     onChange={(event) =>
                       setPickedDevice({ locationId, id: Number(event.target.value) })
                     }
-                    style={{ width: 'auto', maxWidth: 260 }}
+                    className="analyse-device-select"
+                    data-testid="analyse-device-select"
                   >
                     {devices.map((device) => (
                       <option key={device.id} value={device.id}>
@@ -1493,7 +1510,7 @@ const LocationAnalyseTab = () => {
                 )}
               </div>
               {measurementTotal > measurements.length && (
-                <div className="text-muted small mb-2">
+                <div className="text-muted small mb-2" data-testid="analyse-measurements-spread">
                   {t('analyse_spread', {
                     count: measurements.length,
                     total: measurementTotal,
@@ -1501,11 +1518,14 @@ const LocationAnalyseTab = () => {
                 </div>
               )}
               {measurementsLoading && measurements.length === 0 ? (
-                <div className="d-flex justify-content-center align-items-center py-5 text-muted">
+                <div
+                  className="d-flex justify-content-center align-items-center py-5 text-muted"
+                  data-testid="analyse-measurements-loading"
+                >
                   <Spinner animation="border" className="me-2" /> {t('ui_loading')}
                 </div>
               ) : measurements.length === 0 ? (
-                <div className="text-muted py-4 text-center">
+                <div className="text-muted py-4 text-center" data-testid="analyse-measurements-empty">
                   {t('analyse_no_measurements')}
                 </div>
               ) : (

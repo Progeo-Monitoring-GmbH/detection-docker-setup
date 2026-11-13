@@ -1,0 +1,10 @@
+/* The Schnittstellen tab (LocationInterfaceTab.tsx): test-send inputs and the
+   Signal linking hint. */
+
+.form-control.interface-test-to {
+  width: 240px;
+}
+
+.interface-signal-hint {
+  max-width: 320px;
+}

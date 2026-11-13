@@ -7,6 +7,7 @@ import type { LocationDetail } from './locationTypes';
 import { formatDate } from './dateFormat';
 import { useConsent } from '../components/privacy/ConsentProvider';
 import MapConsentNotice from '../components/privacy/MapConsentNotice';
+import './LocationStandortPanel.css';
 
 // react-leaflet@5's shipped prop types don't resolve `center`/`zoom`/
 // `attribution`/`radius` etc. under this project's TS setup (every other
@@ -50,16 +51,8 @@ const LocationStandortPanel = ({
   const { allows } = useConsent();
 
   return (
-    <PanelCard title={t('objekt_standort_title')}>
-      <div
-        style={{
-          aspectRatio: '4 / 3',
-          background: 'var(--progeo-surface)',
-          borderRadius: 13,
-          overflow: 'hidden',
-          position: 'relative',
-        }}
-      >
+    <PanelCard title={t('objekt_standort_title')} testId="standort">
+      <div className="standort-map" data-testid="standort-map">
         {hasCoordinates(location) ? (
           <>
             <AnyMapContainer
@@ -90,91 +83,46 @@ const LocationStandortPanel = ({
             <MapConsentNotice />
           </>
         ) : (
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              textAlign: 'center',
-              fontSize: 12,
-              color: '#8B8383',
-              padding: 12,
-            }}
-          >
+          <div className="standort-placeholder" data-testid="standort-placeholder">
             <div>
               <Geo size={26} color="#EB633B" />
-              <div style={{ marginTop: 6 }}>
+              <div className="standort-placeholder-text">
                 {t('objekt_standort_placeholder')}
               </div>
               {onGeocode && (
                 <button
                   type="button"
                   onClick={onGeocode}
+                  data-testid="standort-geocode"
                   disabled={geocoding || Boolean(geocodeBlockedReason)}
                   title={geocodeBlockedReason}
-                  style={{
-                    marginTop: 12,
-                    height: 34,
-                    padding: '0 14px',
-                    border: '1px solid #EB633B',
-                    borderRadius: 10,
-                    background: 'transparent',
-                    color: '#EB633B',
-                    fontFamily: 'inherit',
-                    fontSize: 12.5,
-                    fontWeight: 500,
-                    cursor: geocoding || geocodeBlockedReason ? 'default' : 'pointer',
-                    opacity: geocodeBlockedReason ? 0.55 : 1,
-                  }}
+                  className={`standort-geocode${geocodeBlockedReason ? ' standort-geocode--blocked' : ''}`}
                 >
                   {geocoding ? t('ui_loading') : t('objekt_geocode')}
                 </button>
               )}
               {onGeocode && geocodeBlockedReason && (
-                <div style={{ marginTop: 6 }}>{geocodeBlockedReason}</div>
+                <div className="standort-placeholder-text" data-testid="standort-geocode-blocked">
+                  {geocodeBlockedReason}
+                </div>
               )}
             </div>
           </div>
         )}
       </div>
 
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 1,
-          marginTop: 14,
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            gap: 12,
-            padding: '8px 2px',
-            fontSize: 13.5,
-          }}
-        >
-          <span style={{ color: '#6E6868' }}>{t('objekt_fact_devices')}</span>
-          <span style={{ fontWeight: 500 }}>
+      <div className="standort-facts" data-testid="standort-facts">
+        <div className="standort-fact">
+          <span className="standort-fact-label">{t('objekt_fact_devices')}</span>
+          <span className="standort-fact-value" data-testid="standort-device-count">
             {location?.device_count ?? '–'}
           </span>
         </div>
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            gap: 12,
-            padding: '8px 2px',
-            fontSize: 13.5,
-          }}
-        >
-          <span style={{ color: '#6E6868' }}>
+        <div className="standort-fact">
+          <span className="standort-fact-label">
             {t('objekt_fact_last_measurement')}
           </span>
-          <span style={{ fontWeight: 500 }}>
+          <span className="standort-fact-value" data-testid="standort-last-measurement">
             {formatDate(location?.last_measurement_at)}
           </span>
         </div>

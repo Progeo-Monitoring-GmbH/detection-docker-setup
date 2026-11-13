@@ -1,0 +1,48 @@
+/* Adding a controller (DeviceProvisionPanel.tsx): the generated config, its
+   facts and the QR codes. */
+
+.device-provision-hint {
+  font-size: 12px;
+}
+
+.device-provision-label {
+  font-size: 11.5px;
+}
+
+/* What the config was generated for. */
+.device-provision-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 4px 16px;
+  margin-bottom: 10px;
+  font-size: 12.5px;
+}
+
+.device-provision-fact {
+  min-width: 0;
+}
+
+/* Raised over Bootstrap's .form-control (font-size: 1rem). */
+.form-control.device-provision-config {
+  font-size: 11.5px;
+}
+
+/* The device is created. */
+.device-provision-ready {
+  color: #3f7a1c;
+}
+
+/* QR codes stay sharp when scaled. */
+.device-provision-qr {
+  image-rendering: pixelated;
+}
+
+.device-provision-qr--config {
+  width: 100%;
+  max-width: 440px;
+  height: auto;
+}
+
+.device-provision-caption {
+  font-size: 11.5px;
+}

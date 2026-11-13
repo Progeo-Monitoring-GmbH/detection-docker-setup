@@ -1,0 +1,141 @@
+/* The noise profile UI: the panel with its rating cards (NoiseProfilePanel.tsx),
+   the mask plot (NoiseProfilePlot.tsx) and the mask editor
+   (NoiseProfileEditor.tsx). Level colours stay inline (they come from
+   LEVEL_COLORS per rating), so do the plot's line colours (shared with the
+   SVG drawing). Theme variables: scss/main.css. */
+
+/* -- NoiseProfilePanel ---------------------------------------------------------- */
+
+/* Header toggle: a link button in the brand blue in every state. */
+.btn.noise-profile-toggle {
+  --bs-btn-color: var(--progeo-blue);
+  --bs-btn-hover-color: var(--progeo-blue);
+  --bs-btn-active-color: var(--progeo-blue);
+  --bs-btn-disabled-color: var(--progeo-blue);
+}
+
+/* The compact action buttons (Bootstrap btn-sm, a bit smaller and taller). */
+.btn.noise-profile-btn {
+  font-size: 12.5px;
+  height: 32px;
+}
+
+.noise-profile-surface {
+  background: var(--progeo-surface);
+  border-radius: 12px;
+  padding: 10px 14px;
+}
+
+.noise-profile-tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.noise-profile-range-length {
+  background: rgba(235, 99, 59, 0.15);
+  color: #a3401f;
+}
+
+.noise-rating-card {
+  flex: 1 1 160px;
+  min-width: 140px;
+}
+
+.noise-rating-card-label {
+  letter-spacing: 0.5px;
+}
+
+.noise-rating-card-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.noise-rating-card-value {
+  font-size: 2.75rem;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* -- NoiseProfilePlot ----------------------------------------------------------- */
+
+.noise-plot-legend-entry {
+  cursor: default;
+}
+
+.noise-plot-swatch {
+  width: 18px;
+  height: 3px;
+}
+
+.noise-plot-swatch--dashed {
+  width: 22px;
+  height: 0;
+}
+
+.noise-plot-body {
+  position: relative;
+}
+
+.noise-plot-gutter {
+  flex-shrink: 0;
+}
+
+.noise-plot-scroller {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  outline: none;
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+.noise-plot-scroller--focused {
+  box-shadow: 0 0 0 2px rgba(31, 95, 191, 0.35);
+}
+
+.noise-plot-area {
+  display: block;
+  touch-action: none;
+  user-select: none;
+  cursor: crosshair;
+}
+
+.noise-plot-area--dragging {
+  cursor: ns-resize;
+}
+
+/* -- NoiseProfileEditor --------------------------------------------------------- */
+
+.noise-editor {
+  border: 1px solid var(--progeo-warm-gray-2, #e6e2df);
+}
+
+.noise-editor-name {
+  flex: 1 1 260px;
+  max-width: 420px;
+}
+
+.noise-editor-changes {
+  background: var(--progeo-surface);
+  border-radius: 12px;
+  padding: 8px 12px;
+  flex: 1 1 320px;
+  font-size: 12.5px;
+  max-height: 170px;
+  overflow-y: auto;
+}
+
+.noise-editor-change {
+  padding: 2px 0;
+}
+
+.noise-editor-change-index {
+  font-variant-numeric: tabular-nums;
+  min-width: 22px;
+}
+
+.noise-editor-actions {
+  min-width: 180px;
+}

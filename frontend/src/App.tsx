@@ -13,6 +13,7 @@ import { ConsentProvider, useConsent } from './components/privacy/ConsentProvide
 import CoreRoutes from './CoreRoutes';
 
 import './i18n';
+import './App.css';
 
 /**
  * True when this frontend runs against the staging server: either built with
@@ -42,36 +43,8 @@ function StagingOverlay() {
   }
   return (
     <>
-      <div
-        aria-hidden="true"
-        style={{
-          position: 'fixed',
-          inset: 0,
-          zIndex: 10000,
-          pointerEvents: 'none',
-          boxShadow: 'inset 0 0 0 4px #ff69b4',
-        }}
-      />
-      <div
-        role="status"
-        style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          zIndex: 10001,
-          pointerEvents: 'none',
-          maxWidth: 'min(92vw, 620px)',
-          padding: '8px 14px',
-          borderBottomRightRadius: 12,
-          background: '#ff69b4',
-          color: '#2B0A17',
-          fontFamily: 'inherit',
-          fontSize: 13.5,
-          fontWeight: 600,
-          lineHeight: 1.3,
-          boxShadow: '0 2px 10px rgba(0, 0, 0, .25)',
-        }}
-      >
+      <div aria-hidden="true" className="app-staging-frame" />
+      <div role="status" className="app-staging-banner" data-testid="app-staging-banner">
         {t('staging_banner', { defaultValue: STAGING_BANNER_TEXT })}
       </div>
     </>
@@ -87,14 +60,7 @@ function GatedMain() {
   const { consent } = useConsent();
   const locked = consent === null;
   return (
-    <div
-      aria-hidden={locked}
-      style={{
-        pointerEvents: locked ? 'none' : 'auto',
-        filter: locked ? 'blur(2px)' : 'none',
-        userSelect: locked ? 'none' : 'auto',
-      }}
-    >
+    <div aria-hidden={locked} className={`app-gated${locked ? ' app-gated--locked' : ''}`} data-testid="app-gated">
       <CoreRoutes />
     </div>
   );
@@ -112,10 +78,7 @@ function PortalFrame({ children }: { children: React.ReactNode }) {
   // Side padding grows with the window up to 32 px - empty grid columns
   // took 1/12 per side (160 px on a 1920 px screen).
   return (
-    <Container
-      fluid={true}
-      style={{ minWidth: '750px', margin: '0', padding: '0' }}
-    >
+    <Container fluid={true} className="app-portal-frame" data-testid="app-portal-frame">
       {children}
     </Container>
   );

@@ -27,6 +27,8 @@ import { matchesLocationSearch } from '../components/location/locationSearch';
 import { showInfoBar, showRequestError } from '../components/ui/Snackbar.jsx';
 import { useConsent } from '../components/privacy/ConsentProvider';
 import MapConsentNotice from '../components/privacy/MapConsentNotice';
+import { repeatedTestId } from '../testIds';
+import './LocationsMapView.css';
 
 const DEFAULT_CENTER = [51.1657, 10.4515];
 const FLASH_DURATION_MS = 30000;
@@ -388,22 +390,22 @@ const LocationsMapView = () => {
   );
 
   return (
-    <Container fluid className="py-4">
+    <Container fluid className="py-4" data-testid="page-locations-map">
       <Row className="g-3">
         <Col xl={9} lg={8}>
-          <Card style={{ minHeight: '72vh' }}>
+          <Card className="locmap-map-card" data-testid="locations-map-card">
             <Card.Header className="d-flex justify-content-between align-items-center">
               <span>Location Map</span>
-              <span className="text-muted small">
+              <span className="text-muted small" data-testid="locations-map-counts">
                 {mappableRows.length} mapped / {filteredRows.length} filtered /{' '}
                 {rows.length} total
               </span>
             </Card.Header>
-            <Card.Body style={{ padding: 0, position: 'relative' }}>
+            <Card.Body className="locmap-map-body" data-testid="locations-map-map">
               {loading ? (
                 <div
-                  className="d-flex justify-content-center align-items-center"
-                  style={{ minHeight: '68vh' }}
+                  className="d-flex justify-content-center align-items-center locmap-loading"
+                  data-testid="locations-map-loading"
                 >
                   <Spinner animation="border" />
                 </div>
@@ -477,7 +479,7 @@ const LocationsMapView = () => {
                           opacity={1}
                           permanent={isSelected === true}
                         >
-                          <div style={{ minWidth: 180 }}>
+                          <div className="locmap-tooltip" {...repeatedTestId('locations-map-tooltip', location.id)}>
                             <div>
                               <strong>{buildLocationLabel(location)}</strong>
                             </div>
@@ -506,24 +508,24 @@ const LocationsMapView = () => {
         </Col>
 
         <Col xl={3} lg={4}>
-          <Card className="mb-3">
+          <Card className="mb-3" data-testid="locations-map-filters">
             <Card.Header>Statistics & Filters</Card.Header>
             <Card.Body className="m-2">
               <div className="small text-muted mb-2">Location state counts</div>
-              <div className="d-flex flex-wrap gap-2 mb-3">
-                <Badge bg="success">
+              <div className="d-flex flex-wrap gap-2 mb-3" data-testid="locations-map-state-counts">
+                <Badge bg="success" {...repeatedTestId('locations-map-state-count', 'fresh_1h')}>
                   {STATE_TITLES.fresh_1h}: {stateStats.fresh_1h}
                 </Badge>
-                <Badge bg="warning" text="dark">
+                <Badge bg="warning" text="dark" {...repeatedTestId('locations-map-state-count', 'fresh_24h')}>
                   {STATE_TITLES.fresh_24h}: {stateStats.fresh_24h}
                 </Badge>
-                <Badge bg="warning">
+                <Badge bg="warning" {...repeatedTestId('locations-map-state-count', 'late_72h')}>
                   {STATE_TITLES.late_72h}: {stateStats.late_72h}
                 </Badge>
-                <Badge bg="danger">
+                <Badge bg="danger" {...repeatedTestId('locations-map-state-count', 'stale')}>
                   {STATE_TITLES.stale}: {stateStats.stale}
                 </Badge>
-                <Badge bg="secondary">
+                <Badge bg="secondary" {...repeatedTestId('locations-map-state-count', 'no_data')}>
                   {STATE_TITLES.no_data}: {stateStats.no_data}
                 </Badge>
               </div>
@@ -536,6 +538,7 @@ const LocationsMapView = () => {
                   placeholder="Name, address, postcode, city, project id…"
                   value={searchText}
                   onChange={(event) => setSearchText(event.target.value)}
+                  data-testid="locations-map-search"
                 />
               </Form.Group>
 
@@ -549,19 +552,21 @@ const LocationsMapView = () => {
                     label={option.label}
                     checked={stateFilter === option.value}
                     onChange={() => setStateFilter(option.value)}
+                    {...repeatedTestId('locations-map-state-filter', option.value)}
                   />
                 ))}
               </Form.Group>
             </Card.Body>
           </Card>
 
-          <Card style={{ minHeight: '56vh' }}>
-            <Card.Header>
+          <Card className="locmap-list-card" data-testid="locations-map-list-card">
+            <Card.Header data-testid="locations-map-list-count">
               Existing Locations ({filteredRows.length})
             </Card.Header>
             <ListGroup
               variant="flush"
-              style={{ maxHeight: '56vh', overflowY: 'auto' }}
+              className="locmap-list"
+              data-testid="locations-map-list"
             >
               {filteredRows.map((location) => {
                 const isFocused =
@@ -579,7 +584,8 @@ const LocationsMapView = () => {
                       )
                     }
                     onClick={() => setSelectedId(location.id)}
-                    style={{ cursor: 'pointer' }}
+                    className="locmap-list-item"
+                    {...repeatedTestId('locations-map-item', location.id)}
                   >
                     <div className="d-flex justify-content-between align-items-start gap-2">
                       <div>
@@ -612,7 +618,7 @@ const LocationsMapView = () => {
                 );
               })}
               {!filteredRows.length && !loading && (
-                <ListGroup.Item className="text-muted">
+                <ListGroup.Item className="text-muted" data-testid="locations-map-empty">
                   No locations found for this filter.
                 </ListGroup.Item>
               )}

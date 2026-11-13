@@ -1,0 +1,62 @@
+/* The overlay of a map whose tiles wait for the consent to external map
+   services (MapConsentNotice.tsx). */
+
+.map-consent-notice {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(340px, calc(100% - 24px));
+  /* Above Leaflet's panes and controls (z-index up to 1000). */
+  z-index: 1001;
+  background: var(--progeo-surface);
+  color: var(--progeo-blue);
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(11, 54, 89, 0.2);
+  padding: 12px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+/* Keeps markers in the middle of large maps visible. */
+.map-consent-notice--top {
+  top: 12px;
+  transform: translateX(-50%);
+}
+
+.map-consent-notice-text {
+  margin: 0 0 10px;
+}
+
+.map-consent-notice-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.map-consent-notice-enable {
+  height: 32px;
+  padding: 0 14px;
+  border: none;
+  border-radius: var(--progeo-radius-pill);
+  background: var(--progeo-blue);
+  color: var(--progeo-white);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.map-consent-notice-settings {
+  height: 32px;
+  padding: 0 10px;
+  border: none;
+  background: transparent;
+  color: var(--progeo-blue);
+  font-family: inherit;
+  font-size: 12.5px;
+  text-decoration: underline;
+  cursor: pointer;
+}

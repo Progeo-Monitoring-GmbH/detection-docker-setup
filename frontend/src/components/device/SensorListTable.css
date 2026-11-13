@@ -1,0 +1,26 @@
+/* The sensor list (SensorListTable.tsx): readings per sensor. */
+
+.sensor-list-table {
+  background: var(--progeo-surface);
+  border-radius: 11px;
+  overflow: hidden;
+}
+
+.sensor-list-empty {
+  color: #8b8383;
+  font-size: 13px;
+  padding: 10px 2px;
+}
+
+.sensor-list-strong {
+  font-weight: 600;
+}
+
+.sensor-list-muted {
+  color: #8b8383;
+}
+
+/* A reading over the sensor's threshold. */
+.sensor-list--over {
+  color: #dc2626;
+}

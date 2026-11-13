@@ -3,16 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
-import AuthPage, {
-  AuthLinks,
-  ERROR_TEXT,
-  FIELD,
-  FIELD_LABEL,
-  FORM,
-  LABEL,
-  MUTED_TEXT,
-  buttonStyle,
-} from '../components/auth/AuthPage';
+import AuthPage, { AuthLinks, authButtonClass } from '../components/auth/AuthPage';
 import { OtpReason, otpReason } from './twoFactor';
 
 /**
@@ -65,11 +56,11 @@ const MagicLinkLogin = () => {
 
   if (invalid) {
     return (
-      <AuthPage title={t('magic_link_login_title')}>
-        <p style={MUTED_TEXT}>{t('magic_link_invalid')}</p>
+      <AuthPage title={t('magic_link_login_title')} testId="page-magic-link-login">
+        <p className="auth-muted" data-testid="magic-link-login-invalid">{t('magic_link_invalid')}</p>
         <AuthLinks>
-          <Link to="/login/link">{t('magic_link_request_new')}</Link>
-          <Link to="/login">{t('auth_back_to_login')}</Link>
+          <Link to="/login/link" data-testid="magic-link-login-request-new">{t('magic_link_request_new')}</Link>
+          <Link to="/login" data-testid="auth-back-to-login">{t('auth_back_to_login')}</Link>
         </AuthLinks>
       </AuthPage>
     );
@@ -77,10 +68,10 @@ const MagicLinkLogin = () => {
 
   if (otpStep) {
     return (
-      <AuthPage title={t('login_otp_title')} intro={t('login_otp_intro')}>
-        <form onSubmit={onLogin} style={FORM}>
-          <label style={LABEL}>
-            <span style={FIELD_LABEL}>{t('login_otp_code')}</span>
+      <AuthPage title={t('login_otp_title')} intro={t('login_otp_intro')} testId="page-magic-link-login">
+        <form onSubmit={onLogin} className="auth-form" data-testid="magic-link-login-otp-form">
+          <label className="auth-label">
+            <span className="auth-field-label">{t('login_otp_code')}</span>
             <input
               type="text"
               autoComplete="one-time-code"
@@ -88,14 +79,15 @@ const MagicLinkLogin = () => {
               required
               value={otp}
               onChange={(event) => setOtp(event.target.value)}
-              style={FIELD}
+              className="auth-field"
+              data-testid="magic-link-login-otp"
             />
           </label>
           {otpStep === 'otp_invalid' && (
-            <p style={ERROR_TEXT}>{t('login_otp_invalid')}</p>
+            <p className="auth-error" data-testid="magic-link-login-otp-error">{t('login_otp_invalid')}</p>
           )}
-          {error && <p style={ERROR_TEXT}>{error}</p>}
-          <button type="submit" disabled={busy} style={buttonStyle(busy)}>
+          {error && <p className="auth-error" data-testid="magic-link-login-error">{error}</p>}
+          <button type="submit" disabled={busy} className={authButtonClass(busy)} data-testid="magic-link-login-otp-submit">
             {t('login_otp_submit')}
           </button>
         </form>
@@ -107,13 +99,15 @@ const MagicLinkLogin = () => {
     <AuthPage
       title={t('magic_link_login_title')}
       intro={t('magic_link_login_intro')}
+      testId="page-magic-link-login"
     >
-      {error && <p style={ERROR_TEXT}>{error}</p>}
+      {error && <p className="auth-error" data-testid="magic-link-login-error">{error}</p>}
       <button
         type="button"
         disabled={busy}
         onClick={() => onLogin()}
-        style={{ ...buttonStyle(busy), width: '100%' }}
+        className={authButtonClass(busy, false, 'auth-button--block')}
+        data-testid="magic-link-login-submit"
       >
         {t('magic_link_login_submit')}
       </button>

@@ -1,5 +1,7 @@
 import { useState, type MouseEvent } from 'react';
 import { formatDate } from '../../main/dateFormat';
+import { childTestId } from '../../testIds';
+import './ThresholdTrendChart.css';
 
 type ThresholdTrendPoint = {
   id: number | string;
@@ -35,6 +37,8 @@ type ThresholdTrendChartProps = {
   highlightedId?: string | null;
   /** A line or legend entry is hovered (null when left). */
   onHighlight?: (id: string | null) => void;
+  /** data-testid of the chart; its parts are "<testId>-plot", "-series" / "-legend-entry" (key: the series id), ... */
+  testId?: string;
 };
 
 // Series hues deliberately avoid red/orange/green: those already mean
@@ -90,7 +94,7 @@ type HoverInfo = {
 
 /** Legend sample of a series/threshold line. */
 const LegendSwatch = ({ color, width = 2.5 }: { color: string; width?: number }) => (
-  <svg width={18} height={6} style={{ flexShrink: 0 }} aria-hidden="true">
+  <svg width={18} height={6} className="threshold-trend-swatch" aria-hidden="true">
     <line x1={0} x2={18} y1={3} y2={3} stroke={color} strokeWidth={width} strokeLinecap="round" />
   </svg>
 );
@@ -150,6 +154,7 @@ const ThresholdTrendChart = ({
   thresholdLabel,
   highlightedId = null,
   onHighlight,
+  testId = 'threshold-trend',
 }: ThresholdTrendChartProps) => {
   const [hover, setHover] = useState<HoverInfo | null>(null);
 
@@ -174,15 +179,7 @@ const ThresholdTrendChart = ({
 
   if (ratioSeries.length === 0) {
     return (
-      <div
-        style={{
-          background: 'var(--progeo-surface)',
-          borderRadius: 14,
-          padding: '22px 16px',
-          fontSize: 13,
-          color: '#8B8383',
-        }}
-      >
+      <div className="threshold-trend-empty" data-testid={childTestId(testId, 'empty')}>
         {emptyLabel}
       </div>
     );
@@ -260,11 +257,11 @@ const ThresholdTrendChart = ({
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ position: 'relative' }}>
+    <div className="threshold-trend" data-testid={testId}>
+      <div className="threshold-trend-plot" data-testid={childTestId(testId, 'plot')}>
         <svg
           viewBox={`0 0 ${VB_W} ${VB_H}`}
-          style={{ display: 'block', width: '100%', height: 'auto', cursor: 'crosshair' }}
+          className="threshold-trend-svg"
           onMouseMove={handleMouseMove}
           onMouseLeave={() => {
             setHover(null);
@@ -298,7 +295,7 @@ const ThresholdTrendChart = ({
             const emphasized = entry.id === highlight;
             const opacity = highlight == null || emphasized ? 1 : FADED_OPACITY;
             return (
-              <g key={entry.id} data-series={entry.id}>
+              <g key={entry.id} data-series={entry.id} data-testid={childTestId(testId, 'series')} data-test-key={entry.id}>
                 <polyline
                   points={entry.display.map((point) => `${toX(point.time)},${toY(point.ratio)}`).join(' ')}
                   fill="none"
@@ -331,74 +328,49 @@ const ThresholdTrendChart = ({
 
         {hover && (
           <div
+            className="threshold-trend-tooltip"
+            data-testid={childTestId(testId, 'tooltip')}
             style={{
-              position: 'absolute',
               left: `${Math.min(82, Math.max(0, (hover.x / VB_W) * 100))}%`,
               top: `${Math.max(0, (hover.y / VB_H) * 100 - 6)}%`,
-              transform: 'translate(8px, -100%)',
-              background: '#07223A',
-              color: '#fff',
-              borderRadius: 8,
-              padding: '7px 10px',
-              fontSize: 11.5,
-              lineHeight: 1.5,
-              pointerEvents: 'none',
-              whiteSpace: 'nowrap',
-              boxShadow: '0 6px 18px rgba(11, 54, 89, .3)',
-              zIndex: 5,
             }}
           >
-            <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: hover.color, display: 'inline-block' }} />
+            <div className="threshold-trend-tooltip-title">
+              <span className="threshold-trend-tooltip-dot" style={{ background: hover.color }} />
               {hover.label}
             </div>
             <div>
               {formatTime(hover.time, withYear)}
-              {hover.count > 1 && <span style={{ opacity: 0.7 }}> ({meanOfLabel(hover.count)})</span>}
+              {hover.count > 1 && <span className="threshold-trend-tooltip-muted"> ({meanOfLabel(hover.count)})</span>}
             </div>
             <div>{formatRatio(hover.ratio)}</div>
           </div>
         )}
       </div>
 
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+      <div className="threshold-trend-legend" data-testid={childTestId(testId, 'legend')}>
         {legendSeries.map((entry) => (
           <button
             key={entry.id}
             type="button"
             onClick={() => onToggleSeries(entry.id)}
+            data-testid={childTestId(testId, 'legend-entry')}
+            data-test-key={entry.id}
             onMouseEnter={() => onHighlight?.(entry.id)}
             onMouseLeave={() => onHighlight?.(null)}
             onFocus={() => onHighlight?.(entry.id)}
             onBlur={() => onHighlight?.(null)}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              padding: 0,
-              fontFamily: 'inherit',
-              fontSize: 12.5,
-              fontWeight: entry.id === highlight ? 600 : 400,
-              color: hiddenSeries.has(entry.id) ? '#B8B0B0' : '#6E6868',
-            }}
+            className={[
+              'threshold-trend-legend-entry',
+              entry.id === highlight ? 'threshold-trend-legend-entry--highlight' : '',
+              hiddenSeries.has(entry.id) ? 'threshold-trend-legend-entry--hidden' : '',
+            ].filter(Boolean).join(' ')}
           >
             <LegendSwatch color={hiddenSeries.has(entry.id) ? '#B8B0B0' : entry.color} />
             {entry.label}
           </button>
         ))}
-        <span
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 8,
-            fontSize: 12.5,
-            color: '#6E6868',
-            marginLeft: 'auto',
-          }}
-        >
+        <span className="threshold-trend-legend-threshold">
           <LegendSwatch color={THRESHOLD_COLOR} width={1.3} />
           {thresholdLabel}
         </span>

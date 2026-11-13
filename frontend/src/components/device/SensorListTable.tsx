@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
 import DataTable, { type TableColumn } from 'react-data-table-component';
 import { useTranslation } from 'react-i18next';
+import { childTestId, repeatedTestId } from '../../testIds';
+import './SensorListTable.css';
 
 export type SensorListRow = {
   key: string;
@@ -14,9 +16,9 @@ export type SensorListRow = {
 
 type SensorListTableProps = {
   rows: SensorListRow[];
+  /** data-testid of the table; each row's sensor cell is "<testId>-row" (key: the row key), its value "<testId>-value". */
+  testId?: string;
 };
-
-const OVER_COLOR = '#dc2626';
 
 const formatMv = (value: number | null) => (value != null ? `${Math.round(value)} mV` : '–');
 
@@ -66,7 +68,7 @@ const tableStyles = {
  * values of the timestamp its slider shows - and as the fallback when a
  * location has no positioned measure points. Sortable by every column.
  */
-const SensorListTable = ({ rows }: SensorListTableProps) => {
+const SensorListTable = ({ rows, testId = 'sensor-list-table' }: SensorListTableProps) => {
   const { t } = useTranslation();
 
   const columns = useMemo<TableColumn<SensorListRow>[]>(
@@ -78,7 +80,11 @@ const SensorListTable = ({ rows }: SensorListTableProps) => {
         sortable: true,
         // Sensor numbers in their natural order ("2" before "10").
         sortFunction: (a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }),
-        cell: (row) => <span style={{ fontWeight: 600 }}>{row.label}</span>,
+        cell: (row) => (
+          <span className="sensor-list-strong" {...repeatedTestId(`${testId}-row`, row.key)}>
+            {row.label}
+          </span>
+        ),
         grow: 1.4,
       },
       {
@@ -88,7 +94,10 @@ const SensorListTable = ({ rows }: SensorListTableProps) => {
         sortable: true,
         sortFunction: byNumber((row) => row.value),
         cell: (row) => (
-          <span style={{ fontWeight: 600, color: isOver(row.value, row.threshold) ? OVER_COLOR : undefined }}>
+          <span
+            className={isOver(row.value, row.threshold) ? 'sensor-list-strong sensor-list--over' : 'sensor-list-strong'}
+            {...repeatedTestId(`${testId}-value`, row.key)}
+          >
             {formatMv(row.value)}
           </span>
         ),
@@ -101,7 +110,7 @@ const SensorListTable = ({ rows }: SensorListTableProps) => {
         sortable: true,
         sortFunction: byNumber((row) => row.max),
         cell: (row) => (
-          <span style={{ color: isOver(row.max, row.threshold) ? OVER_COLOR : undefined }}>
+          <span className={isOver(row.max, row.threshold) ? 'sensor-list--over' : undefined}>
             {formatMv(row.max)}
           </span>
         ),
@@ -113,23 +122,23 @@ const SensorListTable = ({ rows }: SensorListTableProps) => {
         selector: (row) => row.threshold ?? -Infinity,
         sortable: true,
         sortFunction: byNumber((row) => row.threshold),
-        cell: (row) => <span style={{ color: '#8B8383' }}>{formatMv(row.threshold)}</span>,
+        cell: (row) => <span className="sensor-list-muted">{formatMv(row.threshold)}</span>,
         right: true,
       },
     ],
-    [t],
+    [t, testId],
   );
 
   if (rows.length === 0) {
     return (
-      <div style={{ color: '#8B8383', fontSize: 13, padding: '10px 2px' }}>
+      <div className="sensor-list-empty" data-testid={childTestId(testId, 'empty')}>
         {t('status_sensor_table_empty')}
       </div>
     );
   }
 
   return (
-    <div style={{ background: 'var(--progeo-surface)', borderRadius: 11, overflow: 'hidden' }}>
+    <div className="sensor-list-table" data-testid={testId}>
       <DataTable
         columns={columns}
         data={rows}

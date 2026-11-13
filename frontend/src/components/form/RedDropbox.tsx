@@ -9,6 +9,8 @@ import {
   showSuccessBar,
 } from '../ui/Snackbar.jsx';
 import { useSnackbar } from 'notistack';
+import { childTestId } from '../../testIds';
+import './RedDropbox.css';
 
 // Typed as Accept: the inferred union of the literals gives every branch
 // the other branches' keys as `?: undefined`, which useDropzone rejects.
@@ -36,41 +38,6 @@ const getAcceptesTypes = (kind: string): Accept => {
   return { '*/*': [] };
 };
 
-// Static: outside the component, so `style` below depends on the drag state only.
-const baseStyle = {
-  flex: 1,
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  justifyContent: 'center',
-  minHeight: 84,
-  padding: '18px 16px',
-  borderWidth: 1.5,
-  borderRadius: 13,
-  borderColor: 'var(--progeo-warm-gray-3)',
-  borderStyle: 'dashed',
-  backgroundColor: 'var(--progeo-surface)',
-  color: '#8B8383',
-  fontSize: 13,
-  fontWeight: 500,
-  textAlign: 'center',
-  cursor: 'pointer',
-  outline: 'none',
-  transition: 'border .24s ease-in-out',
-};
-
-const focusedStyle = {
-  borderColor: 'var(--progeo-blue)',
-};
-
-const acceptStyle = {
-  borderColor: '#00e676',
-};
-
-const rejectStyle = {
-  borderColor: '#ff1744',
-};
-
 const RedDropbox = ({
   auth,
   url,
@@ -83,6 +50,8 @@ const RedDropbox = ({
   refreshed = undefined,
   payload = {},
   hint = 'Drag & drop some files here, or click to select files',
+  // data-testid of the drop zone; its parts are "<testId>-input", "-progress", "-error", "-preview".
+  testId = 'dropzone',
 }) => {
   const _types = useMemo(() => getAcceptesTypes(accept), [accept]);
   const [progress, setProgress] = useState<number>(0);
@@ -129,15 +98,15 @@ const RedDropbox = ({
     isDragReject,
   } = useDropzone(dropzoneOptions));
 
-  const style = useMemo(
-    () => ({
-      ...baseStyle,
-      ...(isFocused ? focusedStyle : {}),
-      ...(isDragAccept ? acceptStyle : {}),
-      ...(isDragReject ? rejectStyle : {}),
-    }),
-    [isFocused, isDragAccept, isDragReject],
-  );
+  // The look of each drag state: RedDropbox.css.
+  const className = [
+    'red-dropbox',
+    isFocused ? 'red-dropbox--focused' : '',
+    isDragAccept ? 'red-dropbox--accept' : '',
+    isDragReject ? 'red-dropbox--reject' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   const handleFiles = useCallback(
     (list: FileList | null) => {
@@ -314,20 +283,29 @@ const RedDropbox = ({
     <Form.Group controlId="formValue">
       <Row>
         <Col>
-          <div {...getRootProps({ style })}>
-            <input {...getInputProps()} />
+          <div {...getRootProps({ className })} data-testid={testId}>
+            <input {...getInputProps()} data-testid={childTestId(testId, 'input')} />
             <span>{hint}</span>
           </div>
           {/* Only while a file is on its way - no empty bar under the box. */}
           {progress > 0 && (
-            <ProgressBar now={progress} variant="success" style={{ height: 6, marginTop: 6 }} />
+            <ProgressBar
+              now={progress}
+              variant="success"
+              className="red-dropbox-progress"
+              data-testid={childTestId(testId, 'progress')}
+            />
           )}
         </Col>
       </Row>
       {(error || (withPreview && previews.length > 0)) && (
         <Row>
           <Col className={'mt-2'}>
-            {error && <div className="text-danger small">{error}</div>}
+            {error && (
+              <div className="text-danger small" data-testid={childTestId(testId, 'error')}>
+                {error}
+              </div>
+            )}
             {withPreview &&
               previews.length > 0 &&
               previews.map((preview: IPreview, i) => (
@@ -336,6 +314,7 @@ const RedDropbox = ({
                   src={preview.src}
                   width={'250px'}
                   alt={`preview-${i}`}
+                  testId={childTestId(testId, 'preview')}
                 />
               ))}
           </Col>

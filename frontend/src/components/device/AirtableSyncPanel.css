@@ -1,0 +1,7 @@
+/* The Airtable sync panel (AirtableSyncPanel.tsx): its project table. */
+
+/* The address keeps its line breaks. */
+.airtable-sync-address {
+  white-space: pre-line;
+  padding: 4px 0;
+}

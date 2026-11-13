@@ -9,6 +9,10 @@ type PillButtonProps = {
   icon?: ReactNode;
   disabled?: boolean;
   title?: string;
+  /** data-testid (src/testIds.ts) - UI tests find the element by it. */
+  testId?: string;
+  /** Tells copies of a repeated button apart (data-test-key, src/testIds.ts). */
+  testKey?: string;
 };
 
 /**
@@ -27,6 +31,8 @@ const PillButton = ({
   icon,
   disabled = false,
   title,
+  testId,
+  testKey,
 }: PillButtonProps) => {
   const classes = ['progeo-pill', `progeo-pill--${variant}`, active ? 'progeo-pill--active' : ''];
   return (
@@ -36,6 +42,9 @@ const PillButton = ({
       disabled={disabled}
       title={title}
       className={classes.filter(Boolean).join(' ')}
+      data-testid={testId}
+      data-test-key={testKey}
+      aria-pressed={variant !== 'accent' && active ? true : undefined}
     >
       {icon}
       {label}

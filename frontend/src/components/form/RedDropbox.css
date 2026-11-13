@@ -1,0 +1,41 @@
+/* The upload drop zone (RedDropbox.tsx) - its border colour follows the
+   drag state (focused / file accepted / rejected) - and the upload bar. */
+
+.red-dropbox {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 84px;
+  padding: 18px 16px;
+  border-width: 1.5px;
+  border-radius: 13px;
+  border-color: var(--progeo-warm-gray-3);
+  border-style: dashed;
+  background-color: var(--progeo-surface);
+  color: #8b8383;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
+  cursor: pointer;
+  outline: none;
+  transition: border 0.24s ease-in-out;
+}
+
+.red-dropbox--focused {
+  border-color: var(--progeo-blue);
+}
+
+.red-dropbox--accept {
+  border-color: #00e676;
+}
+
+.red-dropbox--reject {
+  border-color: #ff1744;
+}
+
+.progress.red-dropbox-progress {
+  height: 6px;
+  margin-top: 6px;
+}

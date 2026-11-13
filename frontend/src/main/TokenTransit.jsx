@@ -52,16 +52,16 @@ const TokenTransit = () => {
 
   if (isLoading) {
     return (
-      <Row>
+      <Row data-testid="page-token-transit">
         <LoadingIcon />
       </Row>
     );
   }
   if (hasError) {
     return (
-      <Row>
+      <Row data-testid="page-token-transit">
         <Col>
-          <h2 className={'text-danger'}>Nothing to see here...</h2>
+          <h2 className={'text-danger'} data-testid="token-transit-error">Nothing to see here...</h2>
         </Col>
       </Row>
     );
@@ -69,9 +69,9 @@ const TokenTransit = () => {
 
   if (!data) {
     return (
-      <Row>
+      <Row data-testid="page-token-transit">
         <Col>
-          <h2 className={'text-danger'}>Not available anymore...</h2>
+          <h2 className={'text-danger'} data-testid="token-transit-unavailable">Not available anymore...</h2>
         </Col>
       </Row>
     );

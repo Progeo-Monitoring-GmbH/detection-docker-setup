@@ -9,6 +9,8 @@ type PanelCardProps = {
   /** Inside another panel: no background, shadow or padding of its own - the
    * outer panel's would double them. */
   flat?: boolean;
+  /** data-testid (src/testIds.ts) - UI tests find the element by it. */
+  testId?: string;
 };
 
 /**
@@ -16,8 +18,8 @@ type PanelCardProps = {
  * panel in the Portal v2 mockup (KPI strip, Dachansicht, Verdachtsstellen,
  * Objekt sections, ...). Styles: kit.css (.progeo-panel).
  */
-const PanelCard = ({ title, actions, children, bodyClassName, flat = false }: PanelCardProps) => (
-  <section className={flat ? 'progeo-panel progeo-panel--flat' : 'progeo-panel'}>
+const PanelCard = ({ title, actions, children, bodyClassName, flat = false, testId }: PanelCardProps) => (
+  <section className={flat ? 'progeo-panel progeo-panel--flat' : 'progeo-panel'} data-testid={testId}>
     {(title || actions) && (
       <div className="progeo-panel-head">
         {title && <div className="progeo-panel-title">{title}</div>}

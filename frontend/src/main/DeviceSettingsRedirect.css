@@ -1,0 +1,5 @@
+/* The redirect spinner of the old device settings URL (DeviceSettingsRedirect.tsx). */
+
+.device-settings-redirect {
+  min-height: 50vh;
+}

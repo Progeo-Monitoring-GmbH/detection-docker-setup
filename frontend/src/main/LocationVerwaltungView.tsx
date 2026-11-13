@@ -12,6 +12,8 @@ import KpiStrip from '../components/ui/kit/KpiStrip';
 import SeverityBadge, { type Severity } from '../components/ui/kit/SeverityBadge';
 import { matchesLocationSearch } from '../components/location/locationSearch';
 import FavoriteStar from './FavoriteStar';
+import { repeatedTestId } from '../testIds';
+import './LocationVerwaltungView.css';
 
 type VerwaltungRow = {
   id: number;
@@ -175,66 +177,50 @@ const LocationVerwaltungView = () => {
 
   if (denied) {
     return (
-      <PanelCard title={t('verwaltung_title')}>
-        <div style={{ color: '#8B8383', fontSize: 13 }}>{t('verwaltung_denied')}</div>
+      <PanelCard title={t('verwaltung_title')} testId="page-verwaltung">
+        <div className="location-verwaltung-muted" data-testid="verwaltung-denied">{t('verwaltung_denied')}</div>
       </PanelCard>
     );
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div className="location-verwaltung" data-testid="page-verwaltung">
       {loading ? (
-        <div className="d-flex justify-content-center py-5 text-muted">
+        <div className="d-flex justify-content-center py-5 text-muted" data-testid="verwaltung-loading">
           <Spinner animation="border" />
         </div>
       ) : (
         <>
-          <KpiStrip tiles={kpiTiles} />
+          <KpiStrip tiles={kpiTiles} testId="verwaltung-kpis" />
 
           <PanelCard
+            testId="verwaltung-objects"
             title={
-              <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span className="location-verwaltung-title">
                 {t('verwaltung_objects_title')}
-                <span style={{ fontSize: 12.5, color: '#8B8383', fontWeight: 400 }}>
+                <span className="location-verwaltung-count" data-testid="verwaltung-count">
                   {t('verwaltung_object_count', { count: filtered.length, total: rows.length })}
                 </span>
               </span>
             }
             actions={
-              <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div className="location-verwaltung-actions" data-testid="verwaltung-filters">
                 <input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder={t('verwaltung_search_placeholder')}
-                  style={{
-                    height: 34,
-                    minWidth: 220,
-                    border: 'none',
-                    borderRadius: 999,
-                    background: 'var(--progeo-surface)',
-                    boxShadow: '0 1px 4px rgba(11, 54, 89, .09)',
-                    padding: '0 14px',
-                    fontFamily: 'inherit',
-                    fontSize: 13,
-                    color: 'var(--progeo-blue)',
-                  }}
+                  className="location-verwaltung-search"
+                  data-testid="verwaltung-search"
                 />
-                <div
-                  style={{
-                    display: 'flex',
-                    gap: 3,
-                    background: 'var(--progeo-track)',
-                    borderRadius: 'var(--progeo-radius-pill)',
-                    padding: 3,
-                    flexWrap: 'wrap',
-                  }}
-                >
+                <div className="progeo-pill-track" data-testid="verwaltung-status-filter">
                   {STATUS_FILTERS.map((filter) => (
                     <PillButton
                       key={filter.value}
                       label={t(filter.labelKey)}
                       active={statusFilter === filter.value}
                       onClick={() => setStatusFilter(filter.value)}
+                      testId="verwaltung-status-filter-option"
+                      testKey={filter.value}
                     />
                   ))}
                 </div>
@@ -242,78 +228,55 @@ const LocationVerwaltungView = () => {
             }
           >
             {filtered.length === 0 ? (
-              <div style={{ color: '#8B8383', fontSize: 13, padding: '10px 2px' }}>
+              <div className="location-verwaltung-muted location-verwaltung-empty" data-testid="verwaltung-empty">
                 {t('verwaltung_no_objects')}
               </div>
             ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <div style={{ minWidth: 560 }}>
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '70px 1fr 100px 130px 110px 130px',
-                      gap: 8,
-                      padding: '6px 4px 10px',
-                      fontSize: 10.5,
-                      letterSpacing: '.06em',
-                      textTransform: 'uppercase',
-                      color: '#8B8383',
-                      fontWeight: 500,
-                    }}
-                  >
+              <div className="location-verwaltung-scroll">
+                <div className="location-verwaltung-table" data-testid="verwaltung-table">
+                  <div className="location-verwaltung-grid location-verwaltung-head">
                     <span>{t('verwaltung_col_nr')}</span>
                     <span>{t('verwaltung_col_object')}</span>
                     <span>{t('verwaltung_col_city')}</span>
                     <span>{t('verwaltung_col_owner')}</span>
                     <span>{t('verwaltung_col_status')}</span>
-                    <span style={{ textAlign: 'right' }}>{t('verwaltung_col_actions')}</span>
+                    <span className="location-verwaltung-right">{t('verwaltung_col_actions')}</span>
                   </div>
                   {filtered.map((row) => (
                     <div
                       key={`${row.account_id}-${row.id}`}
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: '70px 1fr 100px 130px 110px 130px',
-                        gap: 8,
-                        padding: '10px 4px',
-                        fontSize: 13,
-                        borderTop: '1px solid var(--progeo-track)',
-                        alignItems: 'center',
-                      }}
+                      className="location-verwaltung-grid location-verwaltung-row"
+                      {...repeatedTestId('verwaltung-row', `${row.account_id}-${row.id}`)}
                     >
-                      <span style={{ fontWeight: 600 }}>{row.nr ?? '–'}</span>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                      <span className="location-verwaltung-nr">{row.nr ?? '–'}</span>
+                      <span className="location-verwaltung-name-cell">
                         <FavoriteStar locationId={row.id} size={26} />
-                        <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <span className="location-verwaltung-name">
                           {row.name || '–'}
                         </span>
                       </span>
-                      <span style={{ color: '#8B8383' }}>{row.city || '–'}</span>
-                      <span style={{ color: '#8B8383', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <span className="location-verwaltung-dim">{row.city || '–'}</span>
+                      <span className="location-verwaltung-dim location-verwaltung-ellipsis">
                         {row.owner || '–'}
                       </span>
-                      <span>
+                      <span {...repeatedTestId('verwaltung-row-status', `${row.account_id}-${row.id}`)}>
                         {row.status === 'ok' ? (
-                          <span style={{ fontSize: 12, color: '#3F7A1C', fontWeight: 500 }}>{t('status_kpi_ok')}</span>
+                          <span className="location-verwaltung-ok">{t('status_kpi_ok')}</span>
                         ) : (
                           <SeverityBadge severity={row.status} label={t(`ui_severity_${row.status}`)} />
                         )}
                       </span>
-                      <span style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-                        <PillButton label={t('verwaltung_permissions')} onClick={() => loadPerms(row)} />
+                      <span className="location-verwaltung-row-actions">
+                        <PillButton
+                          label={t('verwaltung_permissions')}
+                          onClick={() => loadPerms(row)}
+                          testId="verwaltung-row-permissions"
+                          testKey={`${row.account_id}-${row.id}`}
+                        />
                         <Link
                           to={`/location/${row.id}/status`}
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            height: 32,
-                            padding: '0 12px',
-                            borderRadius: 'var(--progeo-radius-pill)',
-                            background: 'var(--progeo-surface)',
-                            fontSize: 12.5,
-                            fontWeight: 500,
-                            color: 'var(--progeo-orange)',
-                          }}
+                          className="location-verwaltung-open"
+                          {...repeatedTestId('verwaltung-row-open', `${row.account_id}-${row.id}`)}
                         >
                           {t('verwaltung_open')}
                         </Link>
@@ -330,114 +293,71 @@ const LocationVerwaltungView = () => {
       {permsFor && (
         <div
           onClick={() => setPermsFor(null)}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(7, 34, 58, .38)',
-            zIndex: 75,
-            display: 'flex',
-            alignItems: 'flex-start',
-            justifyContent: 'center',
-            padding: '36px 16px',
-            overflow: 'auto',
-          }}
+          className="location-verwaltung-backdrop"
+          data-testid="verwaltung-permissions-backdrop"
         >
           <div
             onClick={(event) => event.stopPropagation()}
-            style={{
-              width: 'min(640px, 100%)',
-              background: 'var(--progeo-panel-bg)',
-              borderRadius: 20,
-              boxShadow: '0 24px 60px rgba(11, 54, 89, .3)',
-              padding: 22,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 14,
-            }}
+            className="location-verwaltung-dialog"
+            data-testid="verwaltung-permissions-dialog"
           >
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 11, letterSpacing: '.11em', textTransform: 'uppercase', color: '#8B8383', fontWeight: 500 }}>
+            <div className="location-verwaltung-dialog-head">
+              <div className="location-verwaltung-dialog-heading">
+                <div className="location-verwaltung-eyebrow">
                   {t('verwaltung_permissions')} · {permsFor.nr ?? permsFor.id}
                 </div>
-                <div style={{ fontSize: 17, fontWeight: 500, marginTop: 3 }}>{permsFor.name}</div>
+                <div className="location-verwaltung-dialog-title">{permsFor.name}</div>
               </div>
-              <div style={{ flex: 1 }} />
+              <div className="location-verwaltung-spacer" />
               <button
                 type="button"
                 onClick={() => setPermsFor(null)}
                 aria-label={t('verwaltung_close')}
-                style={{
-                  width: 34,
-                  height: 34,
-                  border: 'none',
-                  borderRadius: '50%',
-                  background: 'var(--progeo-surface)',
-                  cursor: 'pointer',
-                  color: 'var(--progeo-blue)',
-                }}
+                className="location-verwaltung-close"
+                data-testid="verwaltung-permissions-close"
               >
                 ×
               </button>
             </div>
 
             {permsLoading ? (
-              <div className="d-flex justify-content-center py-4 text-muted">
+              <div className="d-flex justify-content-center py-4 text-muted" data-testid="verwaltung-permissions-loading">
                 <Spinner animation="border" size="sm" />
               </div>
             ) : (
               <>
                 {rules.length === 0 && (
-                  <div style={{ background: 'var(--progeo-surface)', borderRadius: 14, padding: '20px 16px', fontSize: 13, color: '#8B8383' }}>
+                  <div className="location-verwaltung-rules-empty" data-testid="verwaltung-permissions-empty">
                     {t('rechte_empty')}
                   </div>
                 )}
                 {rules.map((rule) => (
                   <div
                     key={rule.id}
-                    style={{ background: 'var(--progeo-surface)', borderRadius: 14, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12 }}
+                    className="location-verwaltung-rule"
+                    {...repeatedTestId('verwaltung-permissions-rule', rule.id)}
                   >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13.5, fontWeight: 500 }}>{rule.user_name || `#${rule.user}`}</div>
-                      <div style={{ fontSize: 12, color: '#8B8383' }}>{rule.user_email || '–'}</div>
+                    <div className="location-verwaltung-rule-user">
+                      <div className="location-verwaltung-rule-name">{rule.user_name || `#${rule.user}`}</div>
+                      <div className="location-verwaltung-rule-email">{rule.user_email || '–'}</div>
                     </div>
                     <button
                       type="button"
                       onClick={() => removeRule(rule)}
-                      style={{
-                        height: 30,
-                        padding: '0 12px',
-                        border: 'none',
-                        borderRadius: 9,
-                        background: '#FBEAE4',
-                        color: '#C44D26',
-                        fontFamily: 'inherit',
-                        fontSize: 12.5,
-                        fontWeight: 500,
-                        cursor: 'pointer',
-                        flexShrink: 0,
-                      }}
+                      className="location-verwaltung-revoke"
+                      {...repeatedTestId('verwaltung-permissions-revoke', rule.id)}
                     >
                       {t('rechte_revoke')}
                     </button>
                   </div>
                 ))}
 
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                <div className="location-verwaltung-add">
                   <select
                     value={newUserId}
                     onChange={(event) => setNewUserId(event.target.value)}
-                    style={{
-                      height: 38,
-                      border: 'none',
-                      borderRadius: 10,
-                      background: 'var(--progeo-surface)',
-                      padding: '0 12px',
-                      fontFamily: 'inherit',
-                      fontSize: 13.5,
-                      color: 'var(--progeo-blue)',
-                      flex: '1 1 220px',
-                    }}
+                    className="location-verwaltung-user-select"
+                    data-testid="verwaltung-permissions-user"
                   >
                     <option value="">{t('rechte_select_user_placeholder')}</option>
                     {availableUsers.map((user) => (
@@ -447,7 +367,7 @@ const LocationVerwaltungView = () => {
                       </option>
                     ))}
                   </select>
-                  <PillButton label={t('rechte_add_confirm')} onClick={addUser} />
+                  <PillButton label={t('rechte_add_confirm')} onClick={addUser} testId="verwaltung-permissions-add" />
                 </div>
               </>
             )}

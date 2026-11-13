@@ -5,6 +5,7 @@ import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
 import { showErrorBar, showRequestError } from '../components/ui/Snackbar.jsx';
+import './LegacyImportView.css';
 
 type LegacyImportReport = {
   project_id?: number | null;
@@ -71,7 +72,7 @@ const LegacyImportView = () => {
   };
 
   return (
-    <Container fluid className="py-4">
+    <Container fluid className="py-4" data-testid="page-legacy-import">
       <div className="mb-3">
         <h2 className="mb-0">Legacy Data Import</h2>
         <small className="text-muted">
@@ -81,7 +82,7 @@ const LegacyImportView = () => {
         </small>
       </div>
 
-      <Card className="border-0 shadow-sm mb-3 p-3">
+      <Card className="border-0 shadow-sm mb-3 p-3" data-testid="legacy-import-form">
         <Card.Body>
           <div className="d-flex flex-wrap align-items-end gap-3">
             <Form.Group>
@@ -99,7 +100,8 @@ const LegacyImportView = () => {
                     fetchProject();
                   }
                 }}
-                style={{ width: 180 }}
+                className="legacy-import-project-input"
+                data-testid="legacy-import-project-id"
               />
             </Form.Group>
             <Form.Check
@@ -108,11 +110,13 @@ const LegacyImportView = () => {
               label="Dry run (parse only, don't save)"
               checked={dryRun}
               onChange={(event) => setDryRun(event.target.checked)}
+              data-testid="legacy-import-dry-run"
             />
             <Button
               variant="primary"
               onClick={fetchProject}
               disabled={loading || !projectId.trim()}
+              data-testid="legacy-import-fetch"
             >
               {loading ? (
                 <>
@@ -131,7 +135,7 @@ const LegacyImportView = () => {
       </Card>
 
       {report && (
-        <Card className="border-0 shadow-sm p-3">
+        <Card className="border-0 shadow-sm p-3" data-testid="legacy-import-report">
           <Card.Body>
             <h5 className="mb-3">
               <FileEarmarkText className="me-2 text-primary" />
@@ -139,26 +143,26 @@ const LegacyImportView = () => {
             </h5>
 
             {report.fetched ? (
-              <dl className="row mb-2">
+              <dl className="row mb-2" data-testid="legacy-import-report-values">
                 <dt className="col-sm-3">URL</dt>
-                <dd className="col-sm-9 text-break">{report.url || '-'}</dd>
+                <dd className="col-sm-9 text-break" data-testid="legacy-import-url">{report.url || '-'}</dd>
                 <dt className="col-sm-3">Size</dt>
-                <dd className="col-sm-9">{formatBytes(report.bytes)}</dd>
+                <dd className="col-sm-9" data-testid="legacy-import-size">{formatBytes(report.bytes)}</dd>
                 <dt className="col-sm-3">Lines</dt>
-                <dd className="col-sm-9">{report.lines ?? 0}</dd>
+                <dd className="col-sm-9" data-testid="legacy-import-lines">{report.lines ?? 0}</dd>
                 <dt className="col-sm-3">Parsed measurements</dt>
-                <dd className="col-sm-9">{report.parsed ?? 0}</dd>
+                <dd className="col-sm-9" data-testid="legacy-import-parsed">{report.parsed ?? 0}</dd>
                 <dt className="col-sm-3">Created</dt>
                 <dd className="col-sm-9">
-                  <span className="text-success fw-semibold">
+                  <span className="text-success fw-semibold" data-testid="legacy-import-created">
                     {report.created ?? 0}
                   </span>
                 </dd>
                 <dt className="col-sm-3">Skipped (duplicates)</dt>
-                <dd className="col-sm-9">{report.skipped_duplicates ?? 0}</dd>
+                <dd className="col-sm-9" data-testid="legacy-import-skipped">{report.skipped_duplicates ?? 0}</dd>
               </dl>
             ) : (
-              <div className="text-muted">
+              <div className="text-muted" data-testid="legacy-import-fetch-failed">
                 The file could not be fetched
                 {report.status_code != null
                   ? ` (HTTP ${report.status_code})`
@@ -168,8 +172,8 @@ const LegacyImportView = () => {
             )}
 
             {Array.isArray(report.errors) && report.errors.length > 0 && (
-              <div className="mt-2">
-                <div className="text-danger small fw-semibold mb-1">
+              <div className="mt-2" data-testid="legacy-import-errors">
+                <div className="text-danger small fw-semibold mb-1" data-testid="legacy-import-errors-count">
                   {report.errors.length} issue(s):
                 </div>
                 <ul className="text-danger small mb-0 ps-3">
@@ -182,7 +186,7 @@ const LegacyImportView = () => {
             )}
 
             {dryRun && (
-              <div className="text-muted small mt-2">
+              <div className="text-muted small mt-2" data-testid="legacy-import-dry-run-note">
                 Dry run — nothing was saved.
               </div>
             )}

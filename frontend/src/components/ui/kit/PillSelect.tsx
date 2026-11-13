@@ -10,6 +10,8 @@ type PillSelectProps = {
   value: string;
   onChange: (value: string) => void;
   title?: string;
+  /** data-testid of the select. */
+  testId?: string;
 };
 
 /**
@@ -17,11 +19,16 @@ type PillSelectProps = {
  * the active pill on the grey track - for choices with too many options for
  * a segment row (the plan's step width, ...).
  */
-const PillSelect = ({ label, options, value, onChange, title }: PillSelectProps) => (
+const PillSelect = ({ label, options, value, onChange, title, testId }: PillSelectProps) => (
   <label title={title} className="progeo-pill-select">
     {label}
     <span className="progeo-pill-track">
-      <select className="form-select" value={value} onChange={(event) => onChange(event.target.value)}>
+      <select
+        className="form-select"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        data-testid={testId}
+      >
         {options.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}

@@ -12,6 +12,8 @@ import PillButton from '../components/ui/kit/PillButton';
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import DeleteIconButton from '../components/ui/kit/DeleteIconButton';
 import { formatDate } from './dateFormat';
+import { repeatedTestId } from '../testIds';
+import './BackupView.css';
 import {
   type BackupProject,
   type BackupProjectOption,
@@ -68,50 +70,6 @@ const dataTableStyles = {
       color: '#8B8383',
     },
   },
-};
-
-const buttonStyle = (variant: 'primary' | 'danger', disabled: boolean) => ({
-  height: 38,
-  padding: '0 16px',
-  border: 'none',
-  borderRadius: 10,
-  fontFamily: 'inherit',
-  fontSize: 13.5,
-  fontWeight: 500,
-  cursor: disabled ? 'default' : 'pointer',
-  opacity: disabled ? 0.6 : 1,
-  ...(variant === 'primary'
-    ? {
-        background: 'var(--progeo-orange)',
-        color: '#fff',
-        boxShadow: '0 4px 14px rgba(235, 99, 59, .28)',
-      }
-    : {
-        background: '#FBEAE4',
-        color: '#C44D26',
-      }),
-});
-
-const smallActionButtonStyle = (disabled: boolean) => ({
-  height: 30,
-  padding: '0 12px',
-  border: 'none',
-  borderRadius: 8,
-  background: 'var(--progeo-surface)',
-  color: 'var(--progeo-blue)',
-  fontFamily: 'inherit',
-  fontSize: 12.5,
-  fontWeight: 500,
-  cursor: disabled ? 'default' : 'pointer',
-  opacity: disabled ? 0.6 : 1,
-});
-
-const filterLabelStyle = {
-  fontSize: 11,
-  letterSpacing: '.06em',
-  textTransform: 'uppercase' as const,
-  color: '#8B8383',
-  fontWeight: 500,
 };
 
 const BackupView = () => {
@@ -400,19 +358,8 @@ const BackupView = () => {
           onClick={() => downloadBackup(row)}
           disabled={busyAction === `download-${row.id}`}
           title={t('backup_download')}
-          style={{
-            border: 'none',
-            background: 'none',
-            padding: 0,
-            fontFamily: 'inherit',
-            fontSize: 'inherit',
-            color: 'var(--progeo-blue)',
-            textAlign: 'left',
-            textDecoration: 'underline',
-            textUnderlineOffset: 3,
-            cursor: busyAction === `download-${row.id}` ? 'progress' : 'pointer',
-            wordBreak: 'break-all',
-          }}
+          className={busyAction === `download-${row.id}` ? 'backup-name backup-name--busy' : 'backup-name'}
+          {...repeatedTestId('backup-download', row.id)}
         >
           {row.name}
         </button>
@@ -443,18 +390,7 @@ const BackupView = () => {
       selector: (row) => (row.is_compressed ? 1 : 0),
       sortable: true,
       cell: (row) => (
-        <span
-          style={{
-            fontSize: 11,
-            fontWeight: 600,
-            padding: '3px 9px',
-            borderRadius: 999,
-            background: row.is_compressed
-              ? 'rgba(97, 170, 197, .18)'
-              : 'var(--progeo-track-soft)',
-            color: row.is_compressed ? 'var(--progeo-blue)' : '#8B8383',
-          }}
-        >
+        <span className={row.is_compressed ? 'backup-compressed backup-compressed--yes' : 'backup-compressed'}>
           {row.is_compressed
             ? t('backup_compressed_yes')
             : t('backup_compressed_no')}
@@ -465,12 +401,13 @@ const BackupView = () => {
     {
       name: t('backup_col_actions'),
       cell: (row) => (
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="backup-row-actions">
           <button
             type="button"
             onClick={() => restoreBackup(row)}
             disabled={isBulkBusy || busyAction === `restore-${row.id}`}
-            style={smallActionButtonStyle(isBulkBusy || busyAction === `restore-${row.id}`)}
+            className="backup-small-button"
+            {...repeatedTestId('backup-restore', row.id)}
           >
             {t('backup_restore')}
           </button>
@@ -479,6 +416,8 @@ const BackupView = () => {
               label={t('backup_delete')}
               onClick={() => deleteBackup(row)}
               disabled={isBulkBusy || busyAction === `delete-${row.id}`}
+              testId="backup-delete"
+              testKey={row.id}
             />
           )}
         </div>
@@ -488,19 +427,21 @@ const BackupView = () => {
   ];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <PanelCard title={t('backup_actions')}>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+    <div className="backup-view" data-testid="page-backup">
+      <PanelCard title={t('backup_actions')} testId="backup-actions">
+        <div className="backup-actions">
           <PillButton
             label={t('backup_reload')}
             onClick={reloadBackups}
             disabled={busyAction === 'reload'}
+            testId="backup-reload"
           />
           <button
             type="button"
             onClick={createBackup}
             disabled={busyAction === 'create'}
-            style={buttonStyle('primary', busyAction === 'create')}
+            className="backup-button backup-button--primary"
+            data-testid="backup-create"
           >
             {projectFilterLabel
               ? t('backup_create_for', { project: projectFilterLabel })
@@ -511,7 +452,8 @@ const BackupView = () => {
               type="button"
               onClick={() => setConfirmOpen(true)}
               disabled={isBulkBusy}
-              style={buttonStyle('danger', isBulkBusy)}
+              className="backup-button backup-button--danger"
+              data-testid="backup-delete-bulk"
             >
               {hasSelection
                 ? t('backup_delete_selected', { count: selectedRows.length })
@@ -521,26 +463,18 @@ const BackupView = () => {
         </div>
       </PanelCard>
 
-      <PanelCard title={t('backup_available')}>
-        <div
-          style={{
-            display: 'flex',
-            gap: 8,
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            marginBottom: 12,
-          }}
-        >
-          <label htmlFor="backup-project-filter" style={filterLabelStyle}>
+      <PanelCard title={t('backup_available')} testId="backup-list">
+        <div className="backup-filters" data-testid="backup-filters">
+          <label htmlFor="backup-project-filter" className="backup-filter-label">
             {t('backup_filter_project')}
           </label>
           {/* Type a project id (or pick from the suggestions, which also
               match location names) instead of scrolling a long dropdown. */}
           <input
             id="backup-project-filter"
-            className="form-control form-control-sm"
-            style={{ width: 220, maxWidth: '100%' }}
+            className="form-control form-control-sm backup-project-input"
             list="backup-project-options"
+            data-testid="backup-filter-project"
             placeholder={t('backup_project_all')}
             title={projectFilterLabel ?? undefined}
             value={projectInput}
@@ -559,24 +493,22 @@ const BackupView = () => {
               </option>
             ))}
           </datalist>
-          <label htmlFor="backup-date-filter" style={{ ...filterLabelStyle, marginLeft: 8 }}>
+          <label htmlFor="backup-date-filter" className="backup-filter-label backup-filter-label--spaced">
             {t('backup_filter_date')}
           </label>
           <input
             id="backup-date-filter"
             type="date"
-            className="form-control form-control-sm"
-            style={{ width: 'auto' }}
+            className="form-control form-control-sm backup-date-input"
+            data-testid="backup-filter-date"
             value={dateFilter}
             onChange={(event) => changeFilters({ date: parseDateFilter(event.target.value) })}
           />
-          <label
-            style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 8, fontSize: 13 }}
-          >
+          <label className="backup-latest">
             <input
               type="checkbox"
-              className="form-check-input"
-              style={{ margin: 0 }}
+              className="form-check-input backup-latest-check"
+              data-testid="backup-filter-latest"
               checked={latestOnly}
               onChange={(event) => changeFilters({ latest: event.target.checked ? '1' : null })}
             />
@@ -586,7 +518,8 @@ const BackupView = () => {
             <button
               type="button"
               onClick={() => changeFilters({ project: null, date: null, latest: null })}
-              style={smallActionButtonStyle(false)}
+              className="backup-small-button"
+              data-testid="backup-filter-clear"
             >
               {t('backup_filter_clear')}
             </button>
@@ -595,11 +528,8 @@ const BackupView = () => {
             type="button"
             onClick={() => void downloadBackups()}
             disabled={isDownloading || backups.length === 0}
-            style={{
-              ...buttonStyle('primary', isDownloading || backups.length === 0),
-              height: 30,
-              marginLeft: 'auto',
-            }}
+            className="backup-button backup-button--primary backup-button--download"
+            data-testid="backup-download-many"
           >
             {hasSelection
               ? t('backup_download_selected', { count: selectedRows.length })
@@ -618,7 +548,7 @@ const BackupView = () => {
           onSelectedRowsChange={({ selectedRows: rows }) => setSelectedRows(rows)}
           clearSelectedRows={clearSelectionToggle}
           noDataComponent={
-            <div style={{ padding: '22px 0', color: '#8B8383', fontSize: 13 }}>
+            <div className="backup-empty" data-testid="backup-empty">
               {t('backup_empty')}
             </div>
           }
@@ -640,17 +570,9 @@ const BackupView = () => {
                 ? t('backup_delete_selected_confirm_body')
                 : t('backup_delete_all_confirm_body')}
             </div>
-            <ul
-              style={{
-                maxHeight: 160,
-                overflowY: 'auto',
-                margin: '10px 0 0',
-                padding: '0 0 0 18px',
-                fontSize: 12.5,
-              }}
-            >
+            <ul className="backup-confirm-list" data-testid="backup-delete-confirm-list">
               {(hasSelection ? selectedRows : backups).map((backup) => (
-                <li key={backup.id}>{backup.name}</li>
+                <li key={backup.id} {...repeatedTestId('backup-delete-confirm-item', backup.id)}>{backup.name}</li>
               ))}
             </ul>
           </div>
@@ -660,6 +582,7 @@ const BackupView = () => {
         onConfirm={hasSelection ? confirmDeleteSelectedBackups : confirmDeleteAllBackups}
         onCancel={() => setConfirmOpen(false)}
         confirming={isBulkBusy}
+        testId="backup-delete-confirm"
       />
     </div>
   );

@@ -4,6 +4,8 @@ import { type ComponentProps, useEffect, useRef, useState } from 'react';
 import { showErrorBar, showSuccessBar } from '../ui/Snackbar.jsx';
 import RedDropbox from './RedDropbox.tsx';
 import useCadImportJob, { type CadImportJob } from './useCadImportJob.ts';
+import { repeatedTestId } from '../../testIds';
+import './CadUploadDropbox.css';
 
 type Props = ComponentProps<typeof RedDropbox>;
 
@@ -13,20 +15,6 @@ const STATUS_TEXT: Record<CadImportJob['status'], string> = {
   done: 'Import finished',
   failed: 'Import failed',
 };
-
-const LOG_STYLE = {
-  background: '#101419',
-  color: '#d9e2ec',
-  borderRadius: 12,
-  padding: '10px 12px',
-  maxHeight: 240,
-  margin: 0,
-  overflow: 'auto',
-  fontSize: 12,
-  lineHeight: 1.5,
-  whiteSpace: 'pre-wrap',
-  wordBreak: 'break-all',
-} as const;
 
 type FollowedJob = { id: string; name?: string };
 
@@ -40,12 +28,15 @@ const CadJobView = ({
   name,
   compact,
   onFinished,
+  testId,
 }: {
   auth: Props['auth'];
   jobId: string;
   name?: string;
   compact: boolean;
   onFinished: (job: CadImportJob) => void;
+  /** data-testid of the job (key: its id); its parts are "<testId>-status", "-log", "-error". */
+  testId: string;
 }) => {
   const logRef = useRef<HTMLPreElement | null>(null);
   const { job, follow, running } = useCadImportJob(auth, onFinished);
@@ -66,35 +57,33 @@ const CadJobView = ({
   }
   const source = job.source_name || name;
   const log = (
-    <pre ref={logRef} style={LOG_STYLE}>
+    <pre ref={logRef} className="cad-job-log" {...repeatedTestId(`${testId}-log`, jobId)}>
       {job.log.length ? job.log.join('\n') : 'Waiting for output…'}
     </pre>
   );
   return (
-    <div style={{ marginTop: 8 }}>
+    <div className="cad-job" {...repeatedTestId(testId, jobId)}>
       <div
-        style={{
-          fontSize: 12,
-          fontWeight: 600,
-          marginBottom: 4,
-          color: job.status === 'failed' ? '#C44D26' : 'inherit',
-        }}
+        className={job.status === 'failed' ? 'cad-job-status cad-job-status--failed' : 'cad-job-status'}
+        {...repeatedTestId(`${testId}-status`, jobId)}
       >
         {STATUS_TEXT[job.status]}
         {source ? ` - ${source}` : ''}
       </div>
       {/* Indeterminate: the import reports no percentage. */}
-      {running && <ProgressBar animated striped now={100} style={{ height: 4, marginBottom: 4 }} />}
+      {running && <ProgressBar animated striped now={100} className="cad-job-progress" />}
       {compact ? (
         <details>
-          <summary style={{ fontSize: 12, cursor: 'pointer' }}>Log ({job.log.length} lines)</summary>
+          <summary className="cad-job-log-toggle" {...repeatedTestId(`${testId}-log-toggle`, jobId)}>Log ({job.log.length} lines)</summary>
           {log}
         </details>
       ) : (
         log
       )}
       {job.status === 'failed' && job.error && (
-        <div style={{ fontSize: 12, color: '#C44D26', marginTop: 4 }}>{job.error}</div>
+        <div className="cad-job-error" {...repeatedTestId(`${testId}-error`, jobId)}>
+          {job.error}
+        </div>
       )}
     </div>
   );
@@ -108,7 +97,7 @@ const CadJobView = ({
  * the same answer a text (upload_cad) or PNG (upload_png) upload gets right
  * away.
  */
-const CadUploadDropbox = ({ callBackProcessing = () => {}, ...props }: Props) => {
+const CadUploadDropbox = ({ callBackProcessing = () => {}, testId = 'cad-upload', ...props }: Props) => {
   const { enqueueSnackbar } = useSnackbar();
   const [jobs, setJobs] = useState<FollowedJob[]>([]);
   // How each followed job ended - a new upload drops the finished ones.
@@ -154,9 +143,9 @@ const CadUploadDropbox = ({ callBackProcessing = () => {}, ...props }: Props) =>
 
   return (
     <>
-      <RedDropbox {...props} callBackProcessing={handleResponse} />
+      <RedDropbox {...props} callBackProcessing={handleResponse} testId={testId} />
       {compact && (
-        <div style={{ fontSize: 12, fontWeight: 600, marginTop: 8 }}>
+        <div className="cad-jobs-summary" data-testid={`${testId}-summary`}>
           {done} of {jobs.length} files done{failed ? ` · ${failed} failed` : ''}
         </div>
       )}
@@ -168,6 +157,7 @@ const CadUploadDropbox = ({ callBackProcessing = () => {}, ...props }: Props) =>
           name={job.name}
           compact={compact}
           onFinished={handleFinished}
+          testId={`${testId}-job`}
         />
       ))}
     </>

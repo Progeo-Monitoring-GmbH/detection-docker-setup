@@ -1,0 +1,57 @@
+/* The Lageplan with its sensor zones (LageplanZoneOverlay.tsx). The height
+   and the stroke widths (scaled to the plan) stay inline. */
+
+.lageplan-zone {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--progeo-surface);
+}
+
+/* Only measures the plan (its natural size is the coordinate system); the
+   SVG draws it, so it zooms with the overlay. */
+.lageplan-zone-measure {
+  display: none;
+}
+
+/* No plan: a dash. */
+.lageplan-zone-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #8b8383;
+}
+
+.lageplan-zone-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: default;
+}
+
+/* Zoomed in: the plan can be dragged. */
+.lageplan-zone-svg--grab {
+  cursor: grab;
+}
+
+.lageplan-zone-svg--grabbing {
+  cursor: grabbing;
+}
+
+/* Wider invisible hit areas for hovering a band or a line. */
+.lageplan-zone-hit {
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.lageplan-zone-point {
+  cursor: pointer;
+}
+
+/* Names and labels, with a white halo. */
+.lageplan-zone-label {
+  paint-order: stroke;
+  stroke: #ffffff;
+  pointer-events: none;
+}

@@ -1,0 +1,80 @@
+/* The Objekt tab (LocationObjektTab.tsx): the master data forms next to the
+   Standort panel. Theme variables: scss/main.css. */
+
+.objekt-tab {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.objekt-main {
+  flex: 1 1 480px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.objekt-side {
+  flex: 1 1 300px;
+  min-width: 0;
+  max-width: 360px;
+}
+
+.objekt-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 14px 18px;
+}
+
+.objekt-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.objekt-field-label {
+  font-size: 11px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #8b8383;
+  font-weight: 500;
+}
+
+.objekt-select {
+  height: 40px;
+  border: none;
+  border-radius: 11px;
+  background: var(--progeo-surface);
+  box-shadow: 0 1px 4px rgba(11, 54, 89, 0.09);
+  padding: 0 13px;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--progeo-blue);
+}
+
+.objekt-save {
+  height: 40px;
+  padding: 0 20px;
+  border: none;
+  border-radius: 10px;
+  background: var(--progeo-orange);
+  color: #fff;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(235, 99, 59, 0.28);
+}
+
+/* Disabled while saving. */
+.objekt-save:disabled {
+  cursor: default;
+}
+
+.objekt-no-permission {
+  font-size: 12.5px;
+  color: #8b8383;
+}

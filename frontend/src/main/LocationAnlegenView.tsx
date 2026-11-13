@@ -7,6 +7,8 @@ import { showErrorBar, showRequestError, showSuccessBar } from '../components/ui
 import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import LabeledInput from '../components/ui/kit/LabeledInput';
+import { childTestId, repeatedTestId } from '../testIds';
+import './LocationAnlegenView.css';
 
 type AccountOption = { id: number; name: string };
 type ProjectTypeOption = { value: number; label: string };
@@ -53,23 +55,26 @@ type FilePickerCardProps = {
   chooseLabel: string;
   files: File[];
   onChange: (files: File[]) => void;
+  /** data-testid of the card; its input is "<testId>-input", the picked files "<testId>-file" (key: the name). */
+  testId: string;
 };
 
-const FilePickerCard = ({ title, hint, chooseLabel, files, onChange }: FilePickerCardProps) => (
-  <div style={{ background: 'var(--progeo-surface)', borderRadius: 13, padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
-    <div style={{ fontSize: 13.5, fontWeight: 500 }}>{title}</div>
-    <div style={{ fontSize: 12, color: '#8B8383' }}>{hint}</div>
-    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 9, height: 36, padding: '0 15px', borderRadius: 10, background: 'var(--progeo-track-soft)', color: 'var(--progeo-blue)', fontSize: 13, fontWeight: 500, cursor: 'pointer', alignSelf: 'flex-start' }}>
+const FilePickerCard = ({ title, hint, chooseLabel, files, onChange, testId }: FilePickerCardProps) => (
+  <div className="anlegen-file-card" data-testid={testId}>
+    <div className="anlegen-file-card-title">{title}</div>
+    <div className="anlegen-file-card-hint">{hint}</div>
+    <label className="anlegen-file-choose">
       <span>{chooseLabel}</span>
       <input
         type="file"
         multiple
         onChange={(event) => onChange(Array.from(event.target.files || []))}
-        style={{ display: 'none' }}
+        className="anlegen-file-input"
+        data-testid={childTestId(testId, 'input')}
       />
     </label>
     {files.map((file) => (
-      <div key={file.name} style={{ fontSize: 12.5 }}>{file.name}</div>
+      <div key={file.name} className="anlegen-file-name" {...repeatedTestId(`${testId}-file`, file.name)}>{file.name}</div>
     ))}
   </div>
 );
@@ -187,35 +192,25 @@ const LocationAnlegenView = () => {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 900 }}>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 11,
-          background: 'var(--progeo-surface)',
-          borderRadius: 14,
-          padding: '13px 18px',
-          fontSize: 13,
-          color: '#6E6868',
-        }}
-      >
+    <div className="anlegen-view" data-testid="page-anlegen">
+      <div className="anlegen-notice" data-testid="anlegen-notice">
         {t('anlegen_notice')}
       </div>
 
-      <PanelCard title={t('anlegen_section_stammdaten')}>
-        <div style={{ fontSize: 12.5, color: '#8B8383', marginBottom: 14 }}>
+      <PanelCard title={t('anlegen_section_stammdaten')} testId="anlegen-stammdaten">
+        <div className="anlegen-section-hint">
           {t('anlegen_section_stammdaten_hint')}
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-            <span style={{ fontSize: 11, letterSpacing: '.07em', textTransform: 'uppercase', color: '#8B8383', fontWeight: 500 }}>
+        <div className="anlegen-grid">
+          <label className="anlegen-field">
+            <span className="anlegen-field-label">
               {t('anlegen_field_account')}
             </span>
             <select
               value={form.accountId}
               onChange={(event) => setField('accountId')(event.target.value)}
-              style={{ height: 40, border: 'none', borderRadius: 11, background: 'var(--progeo-surface)', padding: '0 12px', fontFamily: 'inherit', fontSize: 14, color: 'var(--progeo-blue)' }}
+              className="anlegen-select"
+              data-testid="anlegen-account"
             >
               <option value="">{t('anlegen_field_account_placeholder')}</option>
               {accounts.map((account) => (
@@ -225,41 +220,42 @@ const LocationAnlegenView = () => {
               ))}
             </select>
           </label>
-          <LabeledInput label={t('anlegen_field_nr')} value={form.nr} onChange={setField('nr')} />
-          <LabeledInput label={t('anlegen_field_name')} value={form.name} onChange={setField('name')} />
-          <LabeledInput label={t('anlegen_field_airtable')} value={form.airtableUrl} onChange={setField('airtableUrl')} title={t('anlegen_field_airtable_hint')} />
+          <LabeledInput label={t('anlegen_field_nr')} value={form.nr} onChange={setField('nr')} testId="anlegen-nr" />
+          <LabeledInput label={t('anlegen_field_name')} value={form.name} onChange={setField('name')} testId="anlegen-name" />
+          <LabeledInput label={t('anlegen_field_airtable')} value={form.airtableUrl} onChange={setField('airtableUrl')} testId="anlegen-airtable" title={t('anlegen_field_airtable_hint')} />
         </div>
       </PanelCard>
 
-      <PanelCard title={t('anlegen_section_adresse')}>
-        <div style={{ fontSize: 12.5, color: '#8B8383', marginBottom: 14 }}>{t('anlegen_section_adresse_hint')}</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
-          <LabeledInput label={t('anlegen_field_address')} value={form.address} onChange={setField('address')} />
-          <LabeledInput label={t('anlegen_field_plz')} value={form.plz} onChange={setField('plz')} />
-          <LabeledInput label={t('anlegen_field_city')} value={form.city} onChange={setField('city')} />
-          <LabeledInput label={t('anlegen_field_country')} value={form.country} onChange={setField('country')} />
+      <PanelCard title={t('anlegen_section_adresse')} testId="anlegen-adresse">
+        <div className="anlegen-section-hint">{t('anlegen_section_adresse_hint')}</div>
+        <div className="anlegen-grid">
+          <LabeledInput label={t('anlegen_field_address')} value={form.address} onChange={setField('address')} testId="anlegen-address" />
+          <LabeledInput label={t('anlegen_field_plz')} value={form.plz} onChange={setField('plz')} testId="anlegen-plz" />
+          <LabeledInput label={t('anlegen_field_city')} value={form.city} onChange={setField('city')} testId="anlegen-city" />
+          <LabeledInput label={t('anlegen_field_country')} value={form.country} onChange={setField('country')} testId="anlegen-country" />
         </div>
       </PanelCard>
 
-      <PanelCard title={t('anlegen_section_ansprechpartner')}>
-        <div style={{ fontSize: 12.5, color: '#8B8383', marginBottom: 14 }}>{t('anlegen_section_ansprechpartner_hint')}</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
-          <LabeledInput label={t('anlegen_field_manager')} value={form.manager} onChange={setField('manager')} />
-          <LabeledInput label={t('anlegen_field_mail')} value={form.mail} onChange={setField('mail')} />
-          <LabeledInput label={t('anlegen_field_telefon')} value={form.telefon} onChange={setField('telefon')} />
+      <PanelCard title={t('anlegen_section_ansprechpartner')} testId="anlegen-ansprechpartner">
+        <div className="anlegen-section-hint">{t('anlegen_section_ansprechpartner_hint')}</div>
+        <div className="anlegen-grid">
+          <LabeledInput label={t('anlegen_field_manager')} value={form.manager} onChange={setField('manager')} testId="anlegen-manager" />
+          <LabeledInput label={t('anlegen_field_mail')} value={form.mail} onChange={setField('mail')} testId="anlegen-mail" />
+          <LabeledInput label={t('anlegen_field_telefon')} value={form.telefon} onChange={setField('telefon')} testId="anlegen-telefon" />
         </div>
       </PanelCard>
 
-      <PanelCard title={t('anlegen_section_produkt')}>
-        <div style={{ fontSize: 12.5, color: '#8B8383', marginBottom: 14 }}>{t('anlegen_section_produkt_hint')}</div>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 5, maxWidth: 260 }}>
-          <span style={{ fontSize: 11, letterSpacing: '.07em', textTransform: 'uppercase', color: '#8B8383', fontWeight: 500 }}>
+      <PanelCard title={t('anlegen_section_produkt')} testId="anlegen-produkt">
+        <div className="anlegen-section-hint">{t('anlegen_section_produkt_hint')}</div>
+        <label className="anlegen-field anlegen-field--narrow">
+          <span className="anlegen-field-label">
             {t('anlegen_field_project_type')}
           </span>
           <select
             value={form.projectType}
             onChange={(event) => setField('projectType')(event.target.value)}
-            style={{ height: 40, border: 'none', borderRadius: 11, background: 'var(--progeo-surface)', padding: '0 12px', fontFamily: 'inherit', fontSize: 14, color: 'var(--progeo-blue)' }}
+            className="anlegen-select"
+            data-testid="anlegen-project-type"
           >
             {projectTypes.map((option) => (
               <option key={option.value} value={option.value}>
@@ -270,15 +266,16 @@ const LocationAnlegenView = () => {
         </label>
       </PanelCard>
 
-      <PanelCard title={t('anlegen_section_files')}>
-        <div style={{ fontSize: 12.5, color: '#8B8383', marginBottom: 14 }}>{t('anlegen_section_files_hint')}</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
+      <PanelCard title={t('anlegen_section_files')} testId="anlegen-files">
+        <div className="anlegen-section-hint">{t('anlegen_section_files_hint')}</div>
+        <div className="anlegen-grid anlegen-grid--files">
           <FilePickerCard
             title={t('anlegen_field_visualization')}
             hint={t('anlegen_field_visualization_hint')}
             chooseLabel={t('anlegen_choose_files')}
             files={visualizationFiles}
             onChange={setVisualizationFiles}
+            testId="anlegen-visualization-files"
           />
           <FilePickerCard
             title={t('anlegen_field_coordinates')}
@@ -286,33 +283,21 @@ const LocationAnlegenView = () => {
             chooseLabel={t('anlegen_choose_files')}
             files={coordinateFiles}
             onChange={setCoordinateFiles}
+            testId="anlegen-coordinate-files"
           />
         </div>
       </PanelCard>
 
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-        <PillButton label={t('anlegen_create')} onClick={create} disabled={creating} />
-        <label
-          style={{
-            height: 40,
-            padding: '0 16px',
-            borderRadius: 10,
-            background: 'var(--progeo-surface)',
-            color: 'var(--progeo-blue)',
-            fontSize: 13.5,
-            fontWeight: 500,
-            cursor: 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 9,
-          }}
-        >
+      <div className="anlegen-actions" data-testid="anlegen-actions">
+        <PillButton label={t('anlegen_create')} onClick={create} disabled={creating} testId="anlegen-create" />
+        <label className="anlegen-import">
           <span>{importing ? '…' : t('anlegen_import_data')}</span>
           <input
             type="file"
             accept="application/json"
             onChange={(event) => importData(event.target.files)}
-            style={{ display: 'none' }}
+            className="anlegen-file-input"
+            data-testid="anlegen-import-input"
           />
         </label>
         <PillButton
@@ -323,8 +308,9 @@ const LocationAnlegenView = () => {
             setVisualizationFiles([]);
             setCoordinateFiles([]);
           }}
+          testId="anlegen-reset"
         />
-        {importMsg && <span style={{ fontSize: 12.5, color: '#3F7A1C', fontWeight: 500 }}>{importMsg}</span>}
+        {importMsg && <span className="anlegen-import-msg" data-testid="anlegen-import-message">{importMsg}</span>}
       </div>
     </div>
   );

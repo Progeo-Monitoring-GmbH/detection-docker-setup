@@ -31,6 +31,8 @@ import AlarmTimeline, {
 } from './AlarmTimeline.tsx';
 import { type RainEvent, rainEventKey } from './alarmUtils';
 import { formatDate, toLocalIso } from './dateFormat';
+import { repeatedTestId } from '../testIds';
+import './AlarmsOverview.css';
 
 type AlarmDevice = {
   id?: number | null;
@@ -109,7 +111,9 @@ const STATUS_LABELS: Record<number, { labelKey: string; variant: string }> = {
   2: { labelKey: 'alarm_status_fault', variant: 'danger' },
 };
 
-const AlarmsOverview = () => {
+/** `testId`: the page root's test id - "page-alarms" on /alarms/, another one
+ * where the overview is embedded in a page of its own (LocationAlarmDetail). */
+const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
   const { t } = useTranslation();
@@ -493,15 +497,17 @@ const AlarmsOverview = () => {
         const active = isAlarmActive(row);
         const acknowledged = row.status === 1;
         return (
-          <div className="d-flex flex-column gap-1">
+          <div className="d-flex flex-column gap-1" {...repeatedTestId('alarms-row-status', alarmKey(row))}>
             <div className="d-flex align-items-center gap-2">
-              <Badge bg={active ? 'danger' : 'success'}>
+              <Badge bg={active ? 'danger' : 'success'} {...repeatedTestId('alarms-row-state', alarmKey(row))}>
                 {active ? t('alarm_state_active') : t('alarm_state_normalized')}
               </Badge>
-              <Badge bg={status.variant}>{t(status.labelKey)}</Badge>
+              <Badge bg={status.variant} {...repeatedTestId('alarms-row-evaluation', alarmKey(row))}>
+                {t(status.labelKey)}
+              </Badge>
             </div>
             {acknowledged && (
-              <small className="text-muted">
+              <small className="text-muted" {...repeatedTestId('alarms-row-acknowledged-by', alarmKey(row))}>
                 {t('alarms_overview_acknowledged_by', {
                   user: row.evaluated_by?.username || t('alarm_unknown_user'),
                 })}{' '}
@@ -540,6 +546,7 @@ const AlarmsOverview = () => {
               event.stopPropagation();
               acknowledgeAlarm(row);
             }}
+            {...repeatedTestId('alarms-acknowledge', alarmKey(row))}
           >
             {acknowledgingId === alarmKey(row) ? (
               <Spinner size="sm" animation="border" />
@@ -589,11 +596,11 @@ const AlarmsOverview = () => {
   const handleClearFilter = () => setFilterText('');
 
   return (
-    <Container fluid className="py-4">
+    <Container fluid className="py-4" data-testid={testId}>
       <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
         <div>
           <h2 className="mb-0">{t('alarms_overview_title')}</h2>
-          <small className="text-muted">
+          <small className="text-muted" data-testid="alarms-count">
             {t('alarms_overview_count', {
               shown: filteredRows.length,
               total: rows.length,
@@ -601,10 +608,11 @@ const AlarmsOverview = () => {
             })}
           </small>
         </div>
-        <div className="d-flex flex-wrap align-items-center gap-2">
+        <div className="d-flex flex-wrap align-items-center gap-2" data-testid="alarms-filters">
           <Form.Check
             type="switch"
             id="alarms-only-active"
+            data-testid="alarms-only-active"
             label={t('alarms_overview_only_active')}
             checked={onlyActive}
             onChange={(event) => setOnlyActive(event.target.checked)}
@@ -613,6 +621,7 @@ const AlarmsOverview = () => {
           <Form.Check
             type="switch"
             id="alarms-only-last-hour"
+            data-testid="alarms-only-last-hour"
             label={t('alarms_overview_last_hour')}
             checked={onlyLastHour}
             onChange={(event) => setOnlyLastHour(event.target.checked)}
@@ -625,7 +634,8 @@ const AlarmsOverview = () => {
           />
           <Form.Select
             size="sm"
-            style={{ width: 'auto' }}
+            className="alarms-overview-window"
+            data-testid="alarms-window"
             aria-label={t('alarms_overview_window')}
             value={days}
             disabled={loading}
@@ -642,6 +652,7 @@ const AlarmsOverview = () => {
             onClick={loadMore}
             disabled={loading || loadedDays >= 365}
             title={t('alarms_overview_load_more_hint')}
+            data-testid="alarms-load-more"
           >
             <PlusLg className="me-2" />+{t('alarms_overview_days', { count: days })}
           </Button>
@@ -649,6 +660,7 @@ const AlarmsOverview = () => {
             variant="outline-primary"
             onClick={refresh}
             disabled={loading}
+            data-testid="alarms-refresh"
           >
             <ArrowClockwise className="me-2" />
             {t('alarms_overview_refresh')}
@@ -656,7 +668,7 @@ const AlarmsOverview = () => {
         </div>
       </div>
 
-      <Card className="border-0 shadow-sm mb-3 p-2">
+      <Card className="border-0 shadow-sm mb-3 p-2" data-testid="alarms-timeline-card">
         <Card.Body>
           <div className="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
             <h5 className="mb-0">{t('alarm_detail_timeline')}</h5>
@@ -674,10 +686,10 @@ const AlarmsOverview = () => {
         </Card.Body>
       </Card>
 
-      <Card ref={heatmapCardRef} className="border-0 shadow-sm my-5 p-2">
+      <Card ref={heatmapCardRef} className="border-0 shadow-sm my-5 p-2" data-testid="alarms-heatmap">
         <Card.Body>
           <div className="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
-            <h5 className="mb-0">
+            <h5 className="mb-0" data-testid="alarms-heatmap-title">
               <ThermometerHalf className="me-2 text-danger" />
               {heatmapTitle}
             </h5>
@@ -687,12 +699,15 @@ const AlarmsOverview = () => {
           </div>
 
           {heatmapLoading ? (
-            <div className="d-flex align-items-center gap-2 text-muted py-5 justify-content-center">
+            <div
+              className="d-flex align-items-center gap-2 text-muted py-5 justify-content-center"
+              data-testid="alarms-heatmap-loading"
+            >
               <Spinner size="sm" animation="border" />
               {t('alarms_overview_heatmap_loading')}
             </div>
           ) : !selectedAlarm ? (
-            <div className="text-muted py-5 text-center">
+            <div className="text-muted py-5 text-center" data-testid="alarms-heatmap-select">
               {t('alarms_overview_heatmap_select')}
             </div>
           ) : (
@@ -716,7 +731,7 @@ const AlarmsOverview = () => {
               {selectedAlarm ? (
                 <AlarmMeasurementCompareChart alarm={selectedAlarm} />
               ) : (
-                <div className="text-muted py-5 text-center">
+                <div className="text-muted py-5 text-center" data-testid="alarms-measurements-select">
                   {t('alarms_overview_measurements_select')}
                 </div>
               )}

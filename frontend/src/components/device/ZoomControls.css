@@ -1,0 +1,10 @@
+/* The zoom in/out/reset buttons (ZoomControls.tsx) floating in the top
+   left corner of a plan view. */
+
+/* Raised over Bootstrap's .btn-group-vertical (position: relative). */
+.btn-group-vertical.zoom-controls {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  box-shadow: 0 2px 8px rgba(11, 54, 89, 0.18);
+}

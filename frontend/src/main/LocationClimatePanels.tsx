@@ -26,6 +26,8 @@ import {
 } from './timeRanges';
 import useMeasurementRange from './useMeasurementRange';
 import { staffFlags } from './access';
+import { childTestId } from '../testIds';
+import './LocationClimatePanels.css';
 
 type LocationClimatePanelsProps = {
   locationId: number;
@@ -45,6 +47,8 @@ type LocationClimatePanelsProps = {
   /** Reports the times (Unix seconds, oldest first) of all readings - the
    * page's slider runs over them when there is no heatmap. */
   onFramesChange?: (timestamps: number[]) => void;
+  /** data-testid of the panels (default "climate-panels"); their parts derive from it. */
+  testId?: string;
 };
 
 /**
@@ -61,6 +65,7 @@ const LocationClimatePanels = ({
   range: controlledRange,
   frameTime = null,
   onFramesChange,
+  testId = 'climate-panels',
 }: LocationClimatePanelsProps) => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
@@ -230,11 +235,11 @@ const LocationClimatePanels = ({
 
   const body = (metric: ClimateMetric, axisTitle: string, unit: string) =>
     denied ? (
-      <div style={{ color: '#8B8383', fontSize: 13 }}>
+      <div className="climate-muted climate-muted--large" data-testid={childTestId(testId, metric, 'denied')}>
         {t('status_no_measurement_access')}
       </div>
     ) : loading && !climate ? (
-      <div className="d-flex justify-content-center py-5 text-muted">
+      <div className="d-flex justify-content-center py-5 text-muted" data-testid={childTestId(testId, metric, 'loading')}>
         <Spinner animation="border" className="me-2" /> {t('ui_loading')}
       </div>
     ) : (
@@ -255,11 +260,12 @@ const LocationClimatePanels = ({
     );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div className="climate-panels" data-testid={testId}>
       {(controlledRange == null || bucket || isSuperuser) && (
-        <div style={{ padding: '2px 2px 0', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <div className="climate-toolbar" data-testid={childTestId(testId, 'toolbar')}>
           {controlledRange == null && (
             <SegmentedControl
+              testId={childTestId(testId, 'range')}
               options={availableRanges.map((value) => ({
                 value,
                 label: t(timeRangeLabelKey(value)),
@@ -269,25 +275,28 @@ const LocationClimatePanels = ({
             />
           )}
           {bucket && (
-            <span style={{ color: '#8B8383', fontSize: 12 }}>
+            <span className="climate-muted" data-testid={childTestId(testId, 'bucket')}>
               {t(bucket.key, { count: bucket.count })}
             </span>
           )}
           {isSuperuser && (
-            <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
+            <div className="climate-tools" data-testid={childTestId(testId, 'tools')}>
               <PillButton
+                testId={childTestId(testId, 'rename-devices')}
                 variant="ghost"
                 label={t('device_rename_title')}
                 disabled={busy}
                 onClick={() => setRenameOpen(true)}
               />
               <PillButton
+                testId={childTestId(testId, 'export')}
                 variant="ghost"
                 label={t('measurements_export')}
                 disabled={busy}
                 onClick={exportMeasurements}
               />
               <PillButton
+                testId={childTestId(testId, 'import')}
                 variant="ghost"
                 label={t('measurements_import')}
                 disabled={busy}
@@ -297,13 +306,15 @@ const LocationClimatePanels = ({
                 ref={importInputRef}
                 type="file"
                 accept="application/json"
-                style={{ display: 'none' }}
+                className="climate-file-input"
+                data-testid={childTestId(testId, 'import-file')}
                 onChange={(event) => {
                   importMeasurements(event.target.files);
                   event.target.value = '';
                 }}
               />
               <PillButton
+                testId={childTestId(testId, 'clean')}
                 variant="ghost"
                 label={t('measurements_clean')}
                 disabled={busy}
@@ -313,14 +324,26 @@ const LocationClimatePanels = ({
           )}
         </div>
       )}
-      <PanelCard title={t('climate_humidity_title')} actions={<PlotHelp topic="climate_chart" />}>
+      <PanelCard
+        testId={childTestId(testId, 'humidity')}
+        title={t('climate_humidity_title')}
+        actions={<PlotHelp topic="climate_chart" testId={childTestId(testId, 'humidity', 'help')} />}
+      >
         {body('humidity', t('climate_humidity_axis'), '%')}
       </PanelCard>
-      <PanelCard title={t('climate_temperature_title')} actions={<PlotHelp topic="climate_chart" />}>
+      <PanelCard
+        testId={childTestId(testId, 'temperature')}
+        title={t('climate_temperature_title')}
+        actions={<PlotHelp topic="climate_chart" testId={childTestId(testId, 'temperature', 'help')} />}
+      >
         {body('temperature', t('climate_temperature_axis'), '°C')}
       </PanelCard>
       {showBattery && (
-        <PanelCard title={t('climate_battery_title')} actions={<PlotHelp topic="climate_chart" />}>
+        <PanelCard
+          testId={childTestId(testId, 'battery')}
+          title={t('climate_battery_title')}
+          actions={<PlotHelp topic="climate_chart" testId={childTestId(testId, 'battery', 'help')} />}
+        >
           {body('battery', t('climate_battery_axis'), '%')}
         </PanelCard>
       )}

@@ -60,10 +60,7 @@ const DemoLogin = () => {
   }, [token]);
 
   return (
-    <div
-      className="d-flex justify-content-center align-items-center text-muted"
-      style={{ minHeight: '100vh' }}
-    >
+    <div className="d-flex justify-content-center align-items-center text-muted min-vh-100" data-testid="page-demo-login">
       {invalid ? (
         t('demo_login_invalid')
       ) : (

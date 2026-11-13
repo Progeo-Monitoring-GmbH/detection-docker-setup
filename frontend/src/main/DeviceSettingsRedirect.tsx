@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router';
 import { Container, Spinner } from 'react-bootstrap';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
+import './DeviceSettingsRedirect.css';
 
 /**
  * The old /device/:id/update/ config page now lives in the device's
@@ -31,8 +32,8 @@ const DeviceSettingsRedirect = () => {
 
   return (
     <Container
-      className="d-flex justify-content-center align-items-center"
-      style={{ minHeight: '50vh' }}
+      className="d-flex justify-content-center align-items-center device-settings-redirect"
+      data-testid="page-device-settings-redirect"
     >
       <Spinner animation="border" role="status">
         <span className="visually-hidden">Loading...</span>

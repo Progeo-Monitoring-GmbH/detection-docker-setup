@@ -15,6 +15,8 @@ import {
 import LabeledInput from '../components/ui/kit/LabeledInput';
 import PillButton from '../components/ui/kit/PillButton';
 import { recoveryCodesText, serverErrorText } from './twoFactor';
+import { repeatedTestId } from '../testIds';
+import './TwoFactorSettings.css';
 
 type TwoFactorStatus = {
   enabled: boolean;
@@ -32,27 +34,6 @@ type TwoFactorSetup = {
 };
 
 type CodeAction = 'disable' | 'recovery';
-
-const panelStyle: React.CSSProperties = {
-  background: 'var(--progeo-surface)',
-  borderRadius: 14,
-  padding: 16,
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 12,
-};
-
-const hintStyle: React.CSSProperties = {
-  fontSize: 12.5,
-  color: '#8B8383',
-  margin: 0,
-};
-
-const errorStyle: React.CSSProperties = {
-  fontSize: 12.5,
-  color: '#b42318',
-  margin: 0,
-};
 
 /**
  * The recovery codes - shown once, right after they were generated; the
@@ -79,26 +60,18 @@ const RecoveryCodes = ({
     downloadBlob(new Blob([text], { type: 'text/plain' }), 'progeo-wiederherstellungscodes.txt');
 
   return (
-    <div style={{ ...panelStyle, border: '1px solid var(--progeo-orange)' }}>
-      <div style={{ fontSize: 13.5, fontWeight: 600 }}>{t('tfa_recovery_title')}</div>
-      <p style={{ ...hintStyle, color: '#C44D26' }}>{t('tfa_recovery_hint')}</p>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: '6px 16px',
-          fontFamily: 'monospace',
-          fontSize: 14,
-        }}
-      >
+    <div className="tfa-panel tfa-panel--alert" data-testid="two-factor-recovery-codes">
+      <div className="tfa-title">{t('tfa_recovery_title')}</div>
+      <p className="tfa-hint tfa-hint--alert">{t('tfa_recovery_hint')}</p>
+      <div className="tfa-codes" data-testid="two-factor-recovery-code-list">
         {codes.map((code) => (
-          <span key={code}>{code}</span>
+          <span key={code} {...repeatedTestId('two-factor-recovery-code', code)}>{code}</span>
         ))}
       </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-        <PillButton label={t('tfa_recovery_copy')} icon={<Clipboard size={13} />} onClick={copy} />
-        <PillButton label={t('tfa_recovery_download')} icon={<Download size={13} />} onClick={download} />
-        <PillButton label={t('tfa_recovery_done')} onClick={onDone} />
+      <div className="tfa-buttons tfa-buttons--wrap">
+        <PillButton label={t('tfa_recovery_copy')} icon={<Clipboard size={13} />} onClick={copy} testId="two-factor-recovery-copy" />
+        <PillButton label={t('tfa_recovery_download')} icon={<Download size={13} />} onClick={download} testId="two-factor-recovery-download" />
+        <PillButton label={t('tfa_recovery_done')} onClick={onDone} testId="two-factor-recovery-done" />
       </div>
     </div>
   );
@@ -234,7 +207,7 @@ const TwoFactorSettings = ({
 
   if (!status) {
     return (
-      <div className="d-flex align-items-center gap-2 text-muted">
+      <div className="d-flex align-items-center gap-2 text-muted" data-testid="two-factor-loading">
         <Spinner animation="border" size="sm" /> {t('profile_loading')}
       </div>
     );
@@ -246,39 +219,31 @@ const TwoFactorSettings = ({
       value={code}
       onChange={setCode}
       autoComplete="one-time-code"
+      testId="two-factor-code"
     />
   );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span
-          style={{
-            fontSize: 11.5,
-            fontWeight: 600,
-            padding: '3px 10px',
-            borderRadius: 'var(--progeo-radius-pill)',
-            background: status.enabled ? '#E3F4EA' : '#FBEAE4',
-            color: status.enabled ? '#1E7B45' : '#C44D26',
-          }}
-        >
+    <div className="tfa-settings" data-testid="two-factor-settings">
+      <div className="tfa-status-row">
+        <span className={status.enabled ? 'tfa-status tfa-status--on' : 'tfa-status'} data-testid="two-factor-status">
           {status.enabled ? t('tfa_status_on') : t('tfa_status_off')}
         </span>
         {status.enabled && (
-          <span style={hintStyle}>
+          <span className="tfa-hint" data-testid="two-factor-codes-left">
             {t('tfa_codes_left', { count: status.recovery_codes_left })}
           </span>
         )}
       </div>
-      {!status.enabled && <p style={hintStyle}>{t('tfa_intro')}</p>}
-      {status.required && <p style={hintStyle}>{t('tfa_required_hint')}</p>}
+      {!status.enabled && <p className="tfa-hint">{t('tfa_intro')}</p>}
+      {status.required && <p className="tfa-hint" data-testid="two-factor-required-hint">{t('tfa_required_hint')}</p>}
 
       {recoveryCodes && (
         <RecoveryCodes codes={recoveryCodes} onDone={() => setRecoveryCodes(null)} />
       )}
 
       {!status.enabled && !setup && (
-        <div style={panelStyle}>
+        <div className="tfa-panel" data-testid="two-factor-start">
           {status.has_usable_password && (
             <LabeledInput
               label={t('profile_current_password')}
@@ -286,61 +251,65 @@ const TwoFactorSettings = ({
               onChange={setPassword}
               type="password"
               autoComplete="current-password"
+              testId="two-factor-password"
             />
           )}
-          {error && <p style={errorStyle}>{error}</p>}
+          {error && <p className="tfa-error" data-testid="two-factor-error">{error}</p>}
           <PillButton
             label={t('tfa_setup')}
             onClick={startSetup}
             disabled={busy || (status.has_usable_password && !password)}
+            testId="two-factor-setup-start"
           />
         </div>
       )}
 
       {!status.enabled && setup && (
-        <div style={panelStyle}>
-          <p style={hintStyle}>{t('tfa_scan')}</p>
+        <div className="tfa-panel" data-testid="two-factor-setup">
+          <p className="tfa-hint">{t('tfa_scan')}</p>
           <img
             src={setup.qr_code}
             alt={t('tfa_qr_alt')}
-            style={{ width: 180, height: 180, alignSelf: 'center', background: '#fff', borderRadius: 8 }}
+            className="tfa-qr"
+            data-testid="two-factor-qr-code"
           />
           <div>
-            <p style={hintStyle}>{t('tfa_secret')}</p>
-            <code style={{ fontSize: 13, wordBreak: 'break-all', userSelect: 'all' }}>{setup.secret}</code>
+            <p className="tfa-hint">{t('tfa_secret')}</p>
+            <code className="tfa-secret" data-testid="two-factor-secret">{setup.secret}</code>
           </div>
           {codeInput}
-          {error && <p style={errorStyle}>{error}</p>}
-          <div style={{ display: 'flex', gap: 4 }}>
-            <PillButton label={t('tfa_confirm')} onClick={confirmSetup} disabled={busy || !code.trim()} />
-            <PillButton label={t('tfa_cancel')} variant="ghost" onClick={resetForms} disabled={busy} />
+          {error && <p className="tfa-error" data-testid="two-factor-error">{error}</p>}
+          <div className="tfa-buttons">
+            <PillButton label={t('tfa_confirm')} onClick={confirmSetup} disabled={busy || !code.trim()} testId="two-factor-confirm" />
+            <PillButton label={t('tfa_cancel')} variant="ghost" onClick={resetForms} disabled={busy} testId="two-factor-cancel" />
           </div>
         </div>
       )}
 
       {status.enabled && !codeAction && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          <PillButton label={t('tfa_recovery_regenerate')} onClick={() => setCodeAction('recovery')} />
+        <div className="tfa-options" data-testid="two-factor-options">
+          <PillButton label={t('tfa_recovery_regenerate')} onClick={() => setCodeAction('recovery')} testId="two-factor-regenerate" />
           {!status.required && (
-            <PillButton label={t('tfa_disable')} onClick={() => setCodeAction('disable')} />
+            <PillButton label={t('tfa_disable')} onClick={() => setCodeAction('disable')} testId="two-factor-disable" />
           )}
         </div>
       )}
 
       {status.enabled && codeAction && (
-        <div style={panelStyle}>
-          <p style={hintStyle}>
+        <div className="tfa-panel" data-testid="two-factor-code-action">
+          <p className="tfa-hint">
             {codeAction === 'recovery' ? t('tfa_recovery_regenerate_hint') : t('tfa_disable_hint')}
           </p>
           {codeInput}
-          {error && <p style={errorStyle}>{error}</p>}
-          <div style={{ display: 'flex', gap: 4 }}>
+          {error && <p className="tfa-error" data-testid="two-factor-error">{error}</p>}
+          <div className="tfa-buttons">
             <PillButton
               label={codeAction === 'recovery' ? t('tfa_recovery_regenerate') : t('tfa_disable')}
               onClick={submitCodeAction}
               disabled={busy || !code.trim()}
+              testId="two-factor-code-action-submit"
             />
-            <PillButton label={t('tfa_cancel')} variant="ghost" onClick={resetForms} disabled={busy} />
+            <PillButton label={t('tfa_cancel')} variant="ghost" onClick={resetForms} disabled={busy} testId="two-factor-cancel" />
           </div>
         </div>
       )}

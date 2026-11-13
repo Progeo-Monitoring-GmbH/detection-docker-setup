@@ -2,16 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import axiosConfig from '../../axiosConfig';
-import AuthPage, {
-  AuthLinks,
-  ERROR_TEXT,
-  FIELD,
-  FIELD_LABEL,
-  FORM,
-  LABEL,
-  MUTED_TEXT,
-  buttonStyle,
-} from './AuthPage';
+import AuthPage, { AuthLinks, authButtonClass } from './AuthPage';
 
 type EmailRequestPageProps = {
   /** Backend endpoint the address is posted to. */
@@ -26,6 +17,8 @@ type EmailRequestPageProps = {
   sentText: string;
   /** Links shown before "back to login" below the form. */
   extraLinks?: ReactNode;
+  /** data-testid of the page root (`page-<name>`). */
+  testId?: string;
 };
 
 /** Asks for an e-mail address and posts it to `endpoint` (login link,
@@ -38,6 +31,7 @@ const EmailRequestPage = ({
   submitLabel,
   sentText,
   extraLinks,
+  testId = 'page-email-request',
 }: EmailRequestPageProps) => {
   const { t } = useTranslation();
   const [email, setEmail] = useState('');
@@ -67,21 +61,21 @@ const EmailRequestPage = ({
 
   if (sent) {
     return (
-      <AuthPage title={t('magic_link_sent_title')}>
-        <p style={MUTED_TEXT}>{sentText}</p>
+      <AuthPage title={t('magic_link_sent_title')} testId={testId}>
+        <p className="auth-muted" data-testid="email-request-sent">{sentText}</p>
         <AuthLinks>
-          <Link to="/login">{t('auth_back_to_login')}</Link>
+          <Link to="/login" data-testid="auth-back-to-login">{t('auth_back_to_login')}</Link>
         </AuthLinks>
       </AuthPage>
     );
   }
 
   return (
-    <AuthPage title={title} intro={intro}>
+    <AuthPage title={title} intro={intro} testId={testId}>
       {notice}
-      <form onSubmit={onSubmit} style={FORM}>
-        <label style={LABEL}>
-          <span style={FIELD_LABEL}>{t('access_email')}</span>
+      <form onSubmit={onSubmit} className="auth-form" data-testid="email-request-form">
+        <label className="auth-label">
+          <span className="auth-field-label">{t('access_email')}</span>
           <input
             type="email"
             autoComplete="email"
@@ -89,17 +83,18 @@ const EmailRequestPage = ({
             required
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            style={FIELD}
+            className="auth-field"
+            data-testid="email-request-email"
           />
         </label>
-        {error && <p style={ERROR_TEXT}>{error}</p>}
-        <button type="submit" disabled={busy} style={buttonStyle(busy)}>
+        {error && <p className="auth-error" data-testid="email-request-error">{error}</p>}
+        <button type="submit" disabled={busy} className={authButtonClass(busy)} data-testid="email-request-submit">
           {submitLabel}
         </button>
       </form>
       <AuthLinks>
         {extraLinks}
-        <Link to="/login">{t('auth_back_to_login')}</Link>
+        <Link to="/login" data-testid="auth-back-to-login">{t('auth_back_to_login')}</Link>
       </AuthLinks>
     </AuthPage>
   );

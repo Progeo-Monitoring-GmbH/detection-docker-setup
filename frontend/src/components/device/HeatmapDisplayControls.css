@@ -1,0 +1,29 @@
+/* What the heatmap shows (HeatmapDisplayControls.tsx): a translucent pill
+   bar floating over the heatmap's top left, beside the zoom buttons. */
+
+.heatmap-display-controls {
+  position: absolute;
+  left: 52px;
+  top: 8px;
+  max-width: calc(100% - 120px);
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.88);
+  border-radius: var(--progeo-radius-pill);
+  box-shadow: 0 2px 8px rgba(11, 54, 89, 0.18);
+  z-index: 2;
+}
+
+/* Raised over Bootstrap's .btn / .btn-sm. */
+.btn.heatmap-display-toggle {
+  font-size: 12px;
+  padding-inline: 10px;
+  border-radius: var(--progeo-radius-pill);
+}
+
+/* Raised over Bootstrap's .form-select / .form-select-sm. */
+.form-select.heatmap-display-profile {
+  width: auto;
+  font-size: 12px;
+  padding-block: 1px;
+  border-radius: var(--progeo-radius-pill);
+}

@@ -26,6 +26,8 @@ import PlotResetButton, { PLOT_CONFIG_NO_MODEBAR } from '../ui/PlotResetButton';
 /** No mode bar - only PlotResetButton; Ctrl + wheel zooms (wheelZoom). */
 const PLOT_CONFIG = { ...PLOT_CONFIG_NO_MODEBAR, scrollZoom: true };
 import type { MeasurementCompareRow } from './MeasurementSamplesCompareChart';
+import { childTestId } from '../../testIds';
+import './MeasurementComparePlot.css';
 
 type MeasurementComparePlotProps = {
   /** The shown period's measurements (as the measurements chart has them). */
@@ -44,6 +46,8 @@ type MeasurementComparePlotProps = {
   selectedSensors?: number[];
   /** A sensor clicked in the list of changes. */
   onSensorSelect?: (sensor: number) => void;
+  /** data-testid of the card; its parts are "<testId>-close", "-plot", "-changes", ... */
+  testId?: string;
 };
 
 const MIN_MAX_COLOR = 'rgba(153, 27, 27, 0.25)';
@@ -71,6 +75,7 @@ const MeasurementComparePlot = ({
   onClose,
   selectedSensors,
   onSensorSelect,
+  testId = 'analyse-compare',
 }: MeasurementComparePlotProps) => {
   const { t } = useTranslation();
   // The sensor hovered in the list of changes - marked in the plot.
@@ -202,27 +207,28 @@ const MeasurementComparePlot = ({
   usePlotlyTouchScroll(graphDiv);
 
   return (
-    <Card className="border-0 shadow-sm p-2" data-testid="analyse-compare">
+    <Card className="border-0 shadow-sm p-2" data-testid={testId}>
       <Card.Body>
         <div className="d-flex flex-wrap align-items-center gap-3 mb-1">
           <h5 className="mb-0">{t('analyse_compare_title', { label })}</h5>
-          <PlotHelp topic="compare" />
-          <PlotResetButton graphDiv={graphDiv} />
+          <PlotHelp topic="compare" testId={childTestId(testId, 'help')} />
+          <PlotResetButton graphDiv={graphDiv} testId={childTestId(testId, 'reset-scale')} />
           {loading && (
-            <Spinner size="sm" animation="border" className="text-muted" />
+            <Spinner size="sm" animation="border" className="text-muted" data-testid={childTestId(testId, 'loading')} />
           )}
           <Button
             size="sm"
             variant="outline-secondary"
             className="ms-auto d-inline-flex align-items-center gap-1"
             onClick={onClose}
+            data-testid={childTestId(testId, 'close')}
           >
             <XLg size={12} />
             {t('analyse_compare_end')}
           </Button>
         </div>
         {past && current && (
-          <div className="text-muted small mb-2">
+          <div className="text-muted small mb-2" data-testid={childTestId(testId, 'measurements')}>
             {t('analyse_compare_measurements', {
               now: formatDate(current.last_fetched, 'dateTime'),
               then: formatDate(past.last_fetched, 'dateTime'),
@@ -230,16 +236,14 @@ const MeasurementComparePlot = ({
           </div>
         )}
         {!past ? (
-          <div className="text-muted py-4 text-center">
+          <div className="text-muted py-4 text-center" data-testid={childTestId(testId, 'empty')}>
             {loading ? t('ui_loading') : t('analyse_compare_no_data')}
           </div>
         ) : (
           // The plot, and beside it (below on narrow screens) the biggest changes.
           <div className="d-flex flex-wrap gap-3 align-items-start">
-            <div
-              style={{ position: 'relative', flex: '1 1 560px', minWidth: 0 }}
-            >
-              <WheelZoomHint visible={wheelHint} radius={0} />
+            <div className="measurement-compare-plot" data-testid={childTestId(testId, 'plot')}>
+              <WheelZoomHint visible={wheelHint} radius={0} testId={childTestId(testId, 'wheel-hint')} />
               <Plot
                 data={data}
                 onInitialized={(_, div) => setGraphDiv(div as HTMLElement)}
@@ -297,7 +301,7 @@ const MeasurementComparePlot = ({
                 }}
               />
             </div>
-            <div style={{ flex: '0 1 340px', minWidth: 260 }}>
+            <div className="measurement-compare-changes">
               <SensorChangesPanel
                 changes={changes}
                 wpColor={WP_CHANGE_COLOR}
@@ -305,6 +309,7 @@ const MeasurementComparePlot = ({
                 selectedSensors={selectedSensors}
                 onSensorSelect={onSensorSelect}
                 onSensorHover={setHoveredSensor}
+                testId={childTestId(testId, 'changes')}
               />
             </div>
           </div>

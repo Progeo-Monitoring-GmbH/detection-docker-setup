@@ -6,6 +6,7 @@ import { announceKey } from '../components/ui/KeyHints';
 import { formatDate } from './dateFormat';
 import { describeMaskChange, formatSpan, type MaskChange, type NoiseProfileDraft } from './noiseProfiles';
 import NoiseProfilePlot from './NoiseProfilePlot';
+import './NoiseProfile.css';
 
 type Masks = Pick<NoiseProfileDraft, 'mask_e' | 'mask_w'>;
 
@@ -25,7 +26,6 @@ type NoiseProfileEditorProps = {
 /** A manual change: what it did, and the masks before it (for undo). */
 type HistoryEntry = { change: MaskChange; before: Masks };
 
-const SURFACE = { background: 'var(--progeo-surface)', borderRadius: 12, padding: '8px 12px' } as const;
 
 /** Ctrl / ⌘ + Z - except in a text field, which has its own undo. */
 const isUndoKey = (event: KeyboardEvent<HTMLElement>) =>
@@ -105,24 +105,24 @@ const NoiseProfileEditor = ({
 
   return (
     <div
-      className="rounded-3 p-3"
-      style={{ border: '1px solid var(--progeo-warm-gray-2, #e6e2df)' }}
+      className="rounded-3 p-3 noise-editor"
       data-testid="noise-profile-editor"
       onKeyDown={onKeyDown}
     >
       <div className="d-flex flex-wrap align-items-end gap-3 mb-3">
-        <Form.Group style={{ flex: '1 1 260px', maxWidth: 420 }}>
+        <Form.Group className="noise-editor-name">
           <Form.Label className="small fw-semibold mb-1">{t('noise_profile_name')}</Form.Label>
           <Form.Control
             size="sm"
             value={draft.name}
             maxLength={100}
             onChange={(event) => onChange({ ...draft, name: event.target.value })}
+            data-testid="noise-profile-editor-name"
           />
         </Form.Group>
         <div className="small text-muted">
           {draft.source_from && (
-            <div>
+            <div data-testid="noise-profile-editor-source">
               {t('noise_profile_source', {
                 count: draft.source_count,
                 from: formatDate(draft.source_from, 'dateTime'),
@@ -132,11 +132,12 @@ const NoiseProfileEditor = ({
                 ` (${formatSpan(new Date(draft.source_to).getTime() - new Date(draft.source_from).getTime())})`}
             </div>
           )}
-          <div>{t('noise_profile_sums', { sumE, sumW, sensors })}</div>
+          <div data-testid="noise-profile-editor-sums">{t('noise_profile_sums', { sumE, sumW, sensors })}</div>
         </div>
         <Form.Check
           type="switch"
           id="noise-profile-preview"
+          data-testid="noise-profile-editor-preview"
           className="small ms-auto"
           label={t('noise_profile_preview')}
           title={t('noise_profile_preview_hint')}
@@ -157,33 +158,43 @@ const NoiseProfileEditor = ({
       <div className="d-flex gap-3 flex-wrap align-items-stretch mt-3">
         <div
           data-testid="noise-profile-changes"
-          style={{ ...SURFACE, flex: '1 1 320px', fontSize: 12.5, maxHeight: 170, overflowY: 'auto' }}
+          className="noise-editor-changes"
         >
-          <div className="fw-semibold mb-1">{t('noise_profile_changes', { count: history.length })}</div>
+          <div className="fw-semibold mb-1" data-testid="noise-profile-changes-count">
+            {t('noise_profile_changes', { count: history.length })}
+          </div>
           {history.length === 0 ? (
-            <div className="text-muted">{t('noise_profile_no_changes')}</div>
+            <div className="text-muted" data-testid="noise-profile-no-changes">
+              {t('noise_profile_no_changes')}
+            </div>
           ) : (
             [...history].reverse().map((entry, index) => (
               <div
                 key={history.length - index}
-                className="d-flex align-items-center gap-2"
-                style={{ padding: '2px 0' }}
+                className="d-flex align-items-center gap-2 noise-editor-change"
                 data-testid="noise-profile-change"
+                data-test-key={history.length - index}
               >
-                <span className="text-muted" style={{ fontVariantNumeric: 'tabular-nums', minWidth: 22 }}>
+                <span className="text-muted noise-editor-change-index">
                   {history.length - index}.
                 </span>
                 <span className="fw-semibold">{seriesLabel(entry.change)}</span>
                 <span>{sensorsLabel(entry.change)}</span>
-                <span className="text-muted ms-auto" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                <span className="text-muted ms-auto noise-profile-tabular">
                   {valuesLabel(entry.change)}
                 </span>
               </div>
             ))
           )}
         </div>
-        <div className="d-flex flex-column gap-2 justify-content-end" style={{ minWidth: 180 }}>
-          <Button size="sm" variant="primary" disabled={saving || !draft.name.trim() || !sensors} onClick={onSave}>
+        <div className="d-flex flex-column gap-2 justify-content-end noise-editor-actions">
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={saving || !draft.name.trim() || !sensors}
+            onClick={onSave}
+            data-testid="noise-profile-editor-save"
+          >
             {saving && <Spinner size="sm" animation="border" className="me-1" />}
             {t('noise_profile_save')}
           </Button>
@@ -194,19 +205,34 @@ const NoiseProfileEditor = ({
             disabled={saving || history.length === 0}
             title={t('noise_profile_undo_hint')}
             onClick={undo}
+            data-testid="noise-profile-editor-undo"
           >
             <ArrowCounterclockwise size={13} />
             {t('noise_profile_undo')}
           </Button>
-          <Button size="sm" variant="outline-secondary" disabled={saving || history.length === 0} onClick={undoAll}>
+          <Button
+            size="sm"
+            variant="outline-secondary"
+            disabled={saving || history.length === 0}
+            onClick={undoAll}
+            data-testid="noise-profile-editor-undo-all"
+          >
             {t('noise_profile_undo_all')}
           </Button>
-          <Button size="sm" variant="outline-danger" disabled={saving} onClick={onCancel}>
+          <Button
+            size="sm"
+            variant="outline-danger"
+            disabled={saving}
+            onClick={onCancel}
+            data-testid="noise-profile-editor-cancel"
+          >
             {t('noise_profile_cancel')}
           </Button>
         </div>
       </div>
-      <div className="small text-muted mt-2">{t('noise_profile_draft_hint')}</div>
+      <div className="small text-muted mt-2" data-testid="noise-profile-editor-hint">
+        {t('noise_profile_draft_hint')}
+      </div>
     </div>
   );
 };

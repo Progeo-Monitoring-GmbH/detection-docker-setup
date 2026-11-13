@@ -1,6 +1,7 @@
 import React from 'react';
 import { Col, Row } from 'react-bootstrap';
 import BoxContainer from '../components/ui/BoxContainer';
+import { repeatedTestId } from '../testIds';
 
 const ChangeLogs = () => {
   // See https://dreamyguy.github.io/react-emojis/
@@ -17,7 +18,7 @@ const ChangeLogs = () => {
     <BoxContainer title={'ChangeLogs'}>
       {logs.map(({ id, date, version, changes }) => {
         return (
-          <div key={`log-${id}`}>
+          <div key={`log-${id}`} {...repeatedTestId('changelog-entry', id)}>
             <Row className={'pt-3 pt-2'}>
               <Col md={2}>
                 <h4>Version: {version}</h4>

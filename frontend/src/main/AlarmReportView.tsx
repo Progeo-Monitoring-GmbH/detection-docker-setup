@@ -25,6 +25,8 @@ import axiosConfig from '../axiosConfig';
 import { showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import { plotTheme } from '../styles/plotTheme';
 import { formatDate } from './dateFormat';
+import { childTestId, repeatedTestId, testId as makeTestId } from '../testIds';
+import './AlarmReportView.css';
 
 type AlarmProjectStatus = {
   status?: 'online' | 'disconnected' | 'dead';
@@ -94,11 +96,12 @@ const toMs = (iso?: string | null): number | null => {
   return Number.isNaN(ms) ? null : ms;
 };
 
-const ReportSummaryCard = ({ report }: { report: AlarmDailyReport | null }) => {
+/** `testId`: the card's data-testid (one per report shown); its values derive from it. */
+const ReportSummaryCard = ({ report, testId }: { report: AlarmDailyReport | null; testId: string }) => {
   if (!report) {
     return (
-      <Card className="border-0 shadow-sm h-100 p-2">
-        <Card.Body className="text-muted text-center py-5">
+      <Card className="border-0 shadow-sm h-100 p-2" data-testid={testId}>
+        <Card.Body className="text-muted text-center py-5" data-testid={childTestId(testId, 'empty')}>
           No report for this day yet.
         </Card.Body>
       </Card>
@@ -107,49 +110,51 @@ const ReportSummaryCard = ({ report }: { report: AlarmDailyReport | null }) => {
 
   const peakMs = toMs(report.max_value_at);
   return (
-    <Card className="border-0 shadow-sm h-100 p-2">
+    <Card className="border-0 shadow-sm h-100 p-2" data-testid={testId}>
       <Card.Body>
-        <h6 className="text-muted text-uppercase small mb-3">
+        <h6 className="text-muted text-uppercase small mb-3" data-testid={childTestId(testId, 'date')}>
           <Calendar3 className="me-1" />
           {formatReportDay(report.date)}
         </h6>
         <Row className="g-3 text-center">
           <Col xs={6} md={4}>
-            <div className="fs-4 fw-bold">
+            <div className="fs-4 fw-bold" data-testid={childTestId(testId, 'total')}>
               {formatCount(report.total_count)}
             </div>
             <small className="text-muted">Total</small>
           </Col>
           <Col xs={6} md={4}>
-            <div className="fs-4 fw-bold text-danger">
+            <div className="fs-4 fw-bold text-danger" data-testid={childTestId(testId, 'active')}>
               {formatCount(report.active_count)}
             </div>
             <small className="text-muted">Active</small>
           </Col>
           <Col xs={6} md={4}>
-            <div className="fs-4 fw-bold text-success">
+            <div className="fs-4 fw-bold text-success" data-testid={childTestId(testId, 'normalized')}>
               {formatCount(report.normalized_count)}
             </div>
             <small className="text-muted">Normalized</small>
           </Col>
           <Col xs={6} md={4}>
-            <div className="fs-4 fw-bold text-secondary">
+            <div className="fs-4 fw-bold text-secondary" data-testid={childTestId(testId, 'acknowledged')}>
               {formatCount(report.acknowledged_count)}
             </div>
             <small className="text-muted">Acknowledged</small>
           </Col>
           <Col xs={6} md={4}>
-            <div className="fs-4 fw-bold text-warning">
+            <div className="fs-4 fw-bold text-warning" data-testid={childTestId(testId, 'stoppage')}>
               {formatCount(report.stoppage_count)}
             </div>
             <small className="text-muted">Stoerung</small>
           </Col>
           <Col xs={6} md={4}>
-            <div className="fs-4 fw-bold">{formatCount(report.max_value)}</div>
+            <div className="fs-4 fw-bold" data-testid={childTestId(testId, 'max-value')}>
+              {formatCount(report.max_value)}
+            </div>
             <small className="text-muted">Max value</small>
           </Col>
         </Row>
-        <div className="mt-3 small text-muted d-flex flex-wrap gap-3">
+        <div className="mt-3 small text-muted d-flex flex-wrap gap-3" data-testid={childTestId(testId, 'facts')}>
           <span>
             Locations:{' '}
             <strong>{Object.keys(report.locations || {}).length}</strong>
@@ -187,13 +192,18 @@ const ProjectStatusCard = ({ report }: { report: AlarmDailyReport | null }) => {
   ) => {
     const list = grouped[key];
     if (list.length === 0) {
-      return <div className="text-muted small py-2">None</div>;
+      return (
+        <div className="text-muted small py-2" data-testid={makeTestId('alarm-report-projects', key, 'empty')}>
+          None
+        </div>
+      );
     }
     return (
-      <ul className="list-unstyled small mb-0">
+      <ul className="list-unstyled small mb-0" data-testid={makeTestId('alarm-report-projects', key)}>
         {list.map(([id, p]) => (
           <li
             key={id}
+            {...repeatedTestId('alarm-report-project', id)}
             className="d-flex justify-content-between gap-2 py-1 border-bottom"
           >
             <span>
@@ -220,17 +230,21 @@ const ProjectStatusCard = ({ report }: { report: AlarmDailyReport | null }) => {
   };
 
   return (
-    <Card className="border-0 shadow-sm p-2">
+    <Card className="border-0 shadow-sm p-2" data-testid="alarm-report-projects">
       <Card.Body>
         <div className="d-flex flex-wrap align-items-center gap-3 mb-3">
           <h6 className="text-muted text-uppercase small mb-0">
             Project connectivity
           </h6>
-          <Badge bg="success">{report.online_count ?? 0} online</Badge>
-          <Badge bg="danger">
+          <Badge bg="success" data-testid="alarm-report-online-count">
+            {report.online_count ?? 0} online
+          </Badge>
+          <Badge bg="danger" data-testid="alarm-report-disconnected-count">
             {report.disconnected_count ?? 0} disconnected
           </Badge>
-          <Badge bg="secondary">{report.dead_count ?? 0} dead</Badge>
+          <Badge bg="secondary" data-testid="alarm-report-dead-count">
+            {report.dead_count ?? 0} dead
+          </Badge>
         </div>
 
         <Row className="g-3">
@@ -258,18 +272,20 @@ const ProjectStatusCard = ({ report }: { report: AlarmDailyReport | null }) => {
 
 type ReportDateSelectProps = {
   label: string;
+  testId: string;
   dates: string[];
   value: string;
   onChange: (date: string) => void;
 };
 
-const ReportDateSelect = ({ label, dates, value, onChange }: ReportDateSelectProps) => (
+const ReportDateSelect = ({ label, dates, value, onChange, testId }: ReportDateSelectProps) => (
   <div>
     <Form.Label className="small text-muted mb-1">{label}</Form.Label>
     <Form.Select
+      data-testid={testId}
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      style={{ width: 200 }}
+      className="alarm-report-date-select"
     >
       <option value="">— select —</option>
       {dates.map((date) => (
@@ -443,11 +459,11 @@ const AlarmReportView = () => {
   );
 
   return (
-    <Container fluid>
+    <Container fluid data-testid="page-alarm-report">
       <div className="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
         <h5 className="mb-0">Alarm Reports</h5>
-        <div className="d-flex gap-2">
-          <Button variant="outline-secondary" size="sm" onClick={fetchReports}>
+        <div className="d-flex gap-2" data-testid="alarm-report-toolbar">
+          <Button variant="outline-secondary" size="sm" onClick={fetchReports} data-testid="alarm-report-refresh">
             Refresh
           </Button>
           <Button
@@ -455,6 +471,7 @@ const AlarmReportView = () => {
             size="sm"
             disabled={generating}
             onClick={handleGenerate}
+            data-testid="alarm-report-generate"
           >
             {generating ? (
               <>
@@ -469,20 +486,23 @@ const AlarmReportView = () => {
       </div>
 
       {loading ? (
-        <div className="d-flex align-items-center gap-2 text-muted py-5 justify-content-center">
+        <div
+          className="d-flex align-items-center gap-2 text-muted py-5 justify-content-center"
+          data-testid="alarm-report-loading"
+        >
           <Spinner size="sm" animation="border" />
           Loading reports…
         </div>
       ) : (
         <>
           {/* Daily alarm count graph */}
-          <Card className="border-0 shadow-sm my-4 p-3">
+          <Card className="border-0 shadow-sm my-4 p-3" data-testid="alarm-report-daily">
             <Card.Body>
               <h6 className="text-muted text-uppercase small mb-3">
                 Alarms per day
               </h6>
               {dailyCounts.length === 0 ? (
-                <div className="text-muted text-center py-4">
+                <div className="text-muted text-center py-4" data-testid="alarm-report-daily-empty">
                   No reports available yet — generate one or wait for the daily
                   celery task.
                 </div>
@@ -528,14 +548,15 @@ const AlarmReportView = () => {
           </Card>
 
           {/* Navigation + selected report */}
-          <Card className="border-0 shadow-sm my-4 py-3">
+          <Card className="border-0 shadow-sm my-4 py-3" data-testid="alarm-report-day">
             <Card.Body>
-              <div className="d-flex flex-wrap align-items-center gap-2 ms-2">
+              <div className="d-flex flex-wrap align-items-center gap-2 ms-2" data-testid="alarm-report-day-nav">
                 <Button
                   variant="outline-secondary"
                   size="sm"
                   onClick={() => moveDate(-1)}
                   title="Previous day"
+                  data-testid="alarm-report-previous-day"
                   aria-label="Previous day"
                 >
                   <ArrowLeft />
@@ -543,8 +564,9 @@ const AlarmReportView = () => {
                 <Form.Select
                   value={selectedDate}
                   onChange={(event) => setSelectedDate(event.target.value)}
-                  style={{ width: 220 }}
+                  className="alarm-report-date-select alarm-report-date-select--nav"
                   aria-label="Select report date"
+                  data-testid="alarm-report-date"
                 >
                   {sortedDates.length === 0 && (
                     <option value="">No reports</option>
@@ -560,25 +582,26 @@ const AlarmReportView = () => {
                   size="sm"
                   onClick={() => moveDate(1)}
                   title="Next day"
+                  data-testid="alarm-report-next-day"
                   aria-label="Next day"
                 >
                   <ArrowRight />
                 </Button>
-                {reportLoading && <Spinner size="sm" animation="border" />}
+                {reportLoading && <Spinner size="sm" animation="border" data-testid="alarm-report-day-loading" />}
                 {report && (
-                  <Badge bg="info" pill>
+                  <Badge bg="info" pill data-testid="alarm-report-day-badge">
                     {formatReportDay(report.date)} · {report.total_count} alarms
                   </Badge>
                 )}
               </div>
 
               {reportLoading ? (
-                <div className="text-muted text-center py-4">
+                <div className="text-muted text-center py-4" data-testid="alarm-report-day-loading-body">
                   <Spinner size="sm" animation="border" /> Loading…
                 </div>
               ) : (
                 <>
-                  <ReportSummaryCard report={report} />
+                  <ReportSummaryCard report={report} testId="alarm-report-summary" />
                   <div className="mt-3">
                     <ProjectStatusCard report={report} />
                   </div>
@@ -588,7 +611,7 @@ const AlarmReportView = () => {
           </Card>
 
           {/* Comparison */}
-          <Card className="border-0 shadow-sm my-4 p-3">
+          <Card className="border-0 shadow-sm my-4 p-3" data-testid="alarm-report-compare">
             <Card.Body>
               <h6 className="text-muted text-uppercase small mb-3">
                 Compare two reports
@@ -596,19 +619,21 @@ const AlarmReportView = () => {
               <div className="d-flex flex-wrap align-items-end gap-3 mb-3">
                 <ReportDateSelect
                   label="Report A"
+                  testId="alarm-report-compare-a"
                   dates={sortedDates}
                   value={compareA}
                   onChange={setCompareA}
                 />
                 <ReportDateSelect
                   label="Report B"
+                  testId="alarm-report-compare-b"
                   dates={sortedDates}
                   value={compareB}
                   onChange={setCompareB}
                 />
-                {compareLoading && <Spinner size="sm" animation="border" />}
+                {compareLoading && <Spinner size="sm" animation="border" data-testid="alarm-report-compare-loading" />}
                 {compareA && compareB && compareA === compareB && (
-                  <Badge bg="warning" text="dark">
+                  <Badge bg="warning" text="dark" data-testid="alarm-report-compare-same-day">
                     <XCircle className="me-1" />
                     Choose two different days
                   </Badge>
@@ -619,15 +644,15 @@ const AlarmReportView = () => {
                 <>
                   <Row className="g-3 mb-3">
                     <Col md={6}>
-                      <ReportSummaryCard report={comparison.report_a} />
+                      <ReportSummaryCard report={comparison.report_a} testId="alarm-report-summary-a" />
                     </Col>
                     <Col md={6}>
-                      <ReportSummaryCard report={comparison.report_b} />
+                      <ReportSummaryCard report={comparison.report_b} testId="alarm-report-summary-b" />
                     </Col>
                   </Row>
 
                   {/* Hourly distribution overlay */}
-                  <Card className="border-0 bg-light">
+                  <Card className="border-0 bg-light" data-testid="alarm-report-hourly">
                     <Card.Body>
                       <h6 className="text-muted text-uppercase small mb-2">
                         Hourly distribution
@@ -685,13 +710,13 @@ const AlarmReportView = () => {
                           : formatReportDay(compareB);
                       return (
                         <Col md={6} key={key}>
-                          <Card className="border-0 shadow-sm">
+                          <Card className="border-0 shadow-sm" data-testid={makeTestId('alarm-report-top', key)}>
                             <Card.Body>
                               <h6 className="text-muted text-uppercase small mb-2">
                                 Top alarms · {dateLabel}
                               </h6>
                               {!data || data.top_alarms.length === 0 ? (
-                                <div className="text-muted small">
+                                <div className="text-muted small" data-testid={makeTestId('alarm-report-top', key, 'empty')}>
                                   No alarms this day.
                                 </div>
                               ) : (
@@ -701,6 +726,10 @@ const AlarmReportView = () => {
                                       // ids repeat across project databases
                                       key={`${alarm.location_id ?? alarm.location_name ?? ''}:${alarm.id}`}
                                       className="d-flex justify-content-between gap-2 py-1 border-bottom"
+                                      {...repeatedTestId(
+                                        'alarm-report-top-alarm',
+                                        `${key}-${alarm.location_id ?? alarm.location_name ?? ''}:${alarm.id}`,
+                                      )}
                                     >
                                       <span>
                                         <Check2
@@ -725,7 +754,7 @@ const AlarmReportView = () => {
                   </Row>
                 </>
               ) : (
-                <div className="text-muted text-center py-4">
+                <div className="text-muted text-center py-4" data-testid="alarm-report-compare-empty">
                   Select two reports above to compare them.
                 </div>
               )}

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { COMPANY } from './company';
+import { repeatedTestId } from '../testIds';
 
 /*
  * Wording of the privacy policy (German, legally binding version).
@@ -106,7 +107,7 @@ const ExternalLink = ({
   href: string;
   children: ReactNode;
 }) => (
-  <a href={href} target="_blank" rel="noopener noreferrer">
+  <a href={href} target="_blank" rel="noopener noreferrer" {...repeatedTestId('privacy-policy-external-link', href)}>
     {children}
   </a>
 );
@@ -137,7 +138,7 @@ export const buildPolicySections = ({
           <span>Telefon: {CONTROLLER.phone}</span>
           <span>
             E-Mail:{' '}
-            <a href={`mailto:${CONTROLLER.email}`}>{CONTROLLER.email}</a>
+            <a href={`mailto:${CONTROLLER.email}`} {...repeatedTestId('privacy-policy-mail-link', 'verantwortlicher')}>{CONTROLLER.email}</a>
           </span>
         </address>
         <p>
@@ -326,7 +327,7 @@ export const buildPolicySections = ({
           Werbe-Cookies ein.
         </p>
         <div className="privacy-table-wrap">
-          <table className="privacy-table">
+          <table className="privacy-table" data-testid="privacy-policy-cookie-table">
             <thead>
               <tr>
                 <th>Name</th>
@@ -522,7 +523,7 @@ export const buildPolicySections = ({
         </ul>
         <p>
           Wenden Sie sich dazu formlos an{' '}
-          <a href={`mailto:${CONTROLLER.email}`}>{CONTROLLER.email}</a>. Ihren
+          <a href={`mailto:${CONTROLLER.email}`} {...repeatedTestId('privacy-policy-mail-link', 'rechte')}>{CONTROLLER.email}</a>. Ihren
           Namen, Ihre E-Mail-Adresse und Ihre Mobilfunknummer können Sie
           außerdem jederzeit selbst in Ihrem Profil im Portal ändern.
         </p>

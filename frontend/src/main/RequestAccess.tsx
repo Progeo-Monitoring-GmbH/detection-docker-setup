@@ -3,17 +3,9 @@ import { Link } from 'react-router';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import axiosConfig from '../axiosConfig';
-import AuthPage, {
-  AuthLinks,
-  ERROR_TEXT,
-  FIELD,
-  FIELD_LABEL,
-  FORM,
-  LABEL,
-  MUTED_TEXT,
-  buttonStyle,
-} from '../components/auth/AuthPage';
+import AuthPage, { AuthLinks, authButtonClass } from '../components/auth/AuthPage';
 import { PRIVACY_POLICY_URL } from '../components/privacy/consent';
+import { testId } from '../testIds';
 
 type RequestForm = {
   first_name: string;
@@ -99,10 +91,10 @@ const RequestAccess = () => {
 
   if (sent) {
     return (
-      <AuthPage title={t('access_request_sent_title')}>
-        <p style={MUTED_TEXT}>{t('access_request_sent_text')}</p>
+      <AuthPage title={t('access_request_sent_title')} testId="page-request-access">
+        <p className="auth-muted" data-testid="request-access-sent">{t('access_request_sent_text')}</p>
         <AuthLinks>
-          <Link to="/login">{t('auth_back_to_login')}</Link>
+          <Link to="/login" data-testid="auth-back-to-login">{t('auth_back_to_login')}</Link>
         </AuthLinks>
       </AuthPage>
     );
@@ -112,11 +104,12 @@ const RequestAccess = () => {
     <AuthPage
       title={t('access_request_title')}
       intro={t('access_request_intro')}
+      testId="page-request-access"
     >
-      <form onSubmit={handleSubmit(onSubmit)} style={FORM}>
+      <form onSubmit={handleSubmit(onSubmit)} className="auth-form" data-testid="request-access-form">
         {TEXT_FIELDS.map((field) => (
-          <label key={field.name} style={LABEL}>
-            <span style={FIELD_LABEL}>
+          <label key={field.name} className="auth-label">
+            <span className="auth-field-label">
               {t(field.label)}
               {!field.required && ` (${t('access_optional')})`}
             </span>
@@ -124,27 +117,24 @@ const RequestAccess = () => {
               type={field.type || 'text'}
               autoComplete={field.autoComplete}
               required={field.required}
-              style={FIELD}
+              className="auth-field"
+              data-testid={testId('request-access', field.name)}
               {...register(field.name)}
             />
             {fieldErrors[field.name] && (
-              <p style={ERROR_TEXT}>{fieldErrors[field.name]}</p>
+              <p className="auth-error" data-testid={testId('request-access', field.name, 'error')}>{fieldErrors[field.name]}</p>
             )}
           </label>
         ))}
 
-        <label style={LABEL}>
-          <span style={FIELD_LABEL}>
+        <label className="auth-label">
+          <span className="auth-field-label">
             {t('access_message')} ({t('access_optional')})
           </span>
           <textarea
             rows={3}
-            style={{
-              ...FIELD,
-              height: 'auto',
-              padding: '10px 13px',
-              resize: 'vertical',
-            }}
+            className="auth-field auth-field--textarea"
+            data-testid="request-access-message"
             {...register('message')}
           />
         </label>
@@ -155,54 +145,43 @@ const RequestAccess = () => {
           tabIndex={-1}
           autoComplete="off"
           aria-hidden="true"
-          style={{
-            position: 'absolute',
-            left: '-10000px',
-            width: 1,
-            height: 1,
-            opacity: 0,
-          }}
+          className="auth-honeypot"
+          data-testid="request-access-honeypot"
           {...register('website')}
         />
 
-        <label
-          style={{
-            display: 'flex',
-            gap: 8,
-            alignItems: 'flex-start',
-            fontSize: 13,
-            margin: 0,
-          }}
-        >
+        <label className="auth-check">
           <input
             type="checkbox"
             required
-            style={{ marginTop: 3 }}
+            className="auth-check-input"
+            data-testid="request-access-privacy-accepted"
             {...register('privacy_accepted')}
           />
           <span>
             {t('access_privacy_prefix')}{' '}
-            <Link to={PRIVACY_POLICY_URL}>{t('consent_privacy_policy')}</Link>{' '}
+            <Link to={PRIVACY_POLICY_URL} data-testid="request-access-privacy-link">{t('consent_privacy_policy')}</Link>{' '}
             {t('access_privacy_suffix')}
           </span>
         </label>
         {fieldErrors.privacy_accepted && (
-          <p style={ERROR_TEXT}>{fieldErrors.privacy_accepted}</p>
+          <p className="auth-error" data-testid="request-access-privacy-accepted-error">{fieldErrors.privacy_accepted}</p>
         )}
 
-        {error && <p style={ERROR_TEXT}>{error}</p>}
+        {error && <p className="auth-error" data-testid="request-access-error">{error}</p>}
 
         <button
           type="submit"
           disabled={formState.isSubmitting}
-          style={buttonStyle(formState.isSubmitting)}
+          className={authButtonClass(formState.isSubmitting)}
+          data-testid="request-access-submit"
         >
           {t('access_request_submit')}
         </button>
       </form>
 
       <AuthLinks>
-        <Link to="/login">{t('auth_back_to_login')}</Link>
+        <Link to="/login" data-testid="auth-back-to-login">{t('auth_back_to_login')}</Link>
       </AuthLinks>
     </AuthPage>
   );

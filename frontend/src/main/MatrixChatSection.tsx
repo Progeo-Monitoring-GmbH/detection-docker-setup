@@ -8,6 +8,7 @@ import axiosConfig from '../axiosConfig';
 import { showSuccessBar } from '../components/ui/Snackbar.jsx';
 import PillButton from '../components/ui/kit/PillButton';
 import { formatDate } from './dateFormat';
+import './MatrixChatSection.css';
 
 type ChatApp = 'element_x' | 'fluffychat';
 
@@ -18,13 +19,14 @@ const CHAT_APPS: Record<ChatApp, { name: string; logo: string }> = {
 };
 
 const ChatAppLabel = ({ app, size = 18 }: { app: ChatApp; size?: number }) => (
-  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+  <span className="matrix-chat-app-label">
     <img
       src={CHAT_APPS[app].logo}
       alt=""
       width={size}
       height={size}
-      style={{ borderRadius: size / 4.5, flexShrink: 0 }}
+      className="matrix-chat-app-logo"
+      style={{ borderRadius: size / 4.5 }}
     />
     {CHAT_APPS[app].name}
   </span>
@@ -47,7 +49,8 @@ const POLL_MS = 4000;
  * another device should be added - a QR code per app; meanwhile it asks the
  * backend every few seconds whether an app signed in and then confirms it.
  */
-const MatrixChatSection = ({ account, labelStyle }: { account: MatrixAccount; labelStyle: React.CSSProperties }) => {
+/** `labelClassName`: the look of the section label - the drawer's own (UserProfile). */
+const MatrixChatSection = ({ account, labelClassName }: { account: MatrixAccount; labelClassName: string }) => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
   const { t } = useTranslation();
@@ -86,17 +89,19 @@ const MatrixChatSection = ({ account, labelStyle }: { account: MatrixAccount; la
   const current = account.apps[app];
 
   return (
-    <section>
-      <div style={labelStyle}>{t('profile_section_chat')}</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 }}>
+    <section data-testid="matrix-chat">
+      <div className={labelClassName}>{t('profile_section_chat')}</div>
+      <div className="matrix-chat-body">
         <div>
-          <span style={{ color: '#8B8383' }}>{t('profile_matrix_id')}: </span>
-          <span style={{ fontWeight: 500, wordBreak: 'break-all' }}>{account.user_id}</span>
+          <span className="matrix-chat-muted">{t('profile_matrix_id')}: </span>
+          <span className="matrix-chat-id" data-testid="matrix-chat-id">
+            {account.user_id}
+          </span>
         </div>
 
         {connectedAt && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#3F7A1C' }}>
-            <CheckCircleFill size={15} style={{ flexShrink: 0 }} />
+          <div className="matrix-chat-connected" data-testid="matrix-chat-connected">
+            <CheckCircleFill size={15} className="matrix-chat-connected-icon" />
             <span>{t('profile_chat_connected', { date: formatDate(connectedAt) })}</span>
           </div>
         )}
@@ -104,6 +109,7 @@ const MatrixChatSection = ({ account, labelStyle }: { account: MatrixAccount; la
         {connectedAt && (
           <div>
             <PillButton
+              testId="matrix-chat-connect-more"
               label={addDevice ? t('profile_chat_hide') : t('profile_chat_connect_more')}
               onClick={() => setAddDevice((shown) => !shown)}
             />
@@ -112,10 +118,12 @@ const MatrixChatSection = ({ account, labelStyle }: { account: MatrixAccount; la
 
         {showCodes && (
           <>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <div className="matrix-chat-apps" data-testid="matrix-chat-apps">
               {(Object.keys(CHAT_APPS) as ChatApp[]).map((key) => (
                 <PillButton
                   key={key}
+                  testId="matrix-chat-app"
+                  testKey={key}
                   label={<ChatAppLabel app={key} />}
                   active={app === key}
                   variant="ghost"
@@ -123,25 +131,26 @@ const MatrixChatSection = ({ account, labelStyle }: { account: MatrixAccount; la
                 />
               ))}
             </div>
-            <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+            <div className="matrix-chat-code" data-testid="matrix-chat-code">
               <img
                 src={current.qr}
                 alt={t('profile_chat_qr_alt', { app: CHAT_APPS[app].name })}
                 width={148}
                 height={148}
-                style={{ borderRadius: 12, background: '#fff', boxShadow: '0 1px 4px rgba(11,54,89,.09)' }}
+                className="matrix-chat-qr"
+                data-testid="matrix-chat-qr"
               />
-              <div style={{ flex: 1, minWidth: 180, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div className="matrix-chat-steps">
                 <ChatAppLabel app={app} size={22} />
                 <div>
                   {app === 'element_x'
                     ? t('profile_chat_element_steps')
                     : t('profile_chat_fluffychat_steps', { server: account.homeserver })}
                 </div>
-                <a href={current.link} target="_blank" rel="noreferrer">
+                <a href={current.link} target="_blank" rel="noreferrer" data-testid="matrix-chat-link">
                   {app === 'element_x' ? t('profile_chat_open_here') : t('profile_chat_get_app')}
                 </a>
-                <div style={{ color: '#8B8383', fontSize: 12 }}>{t('profile_chat_waiting')}</div>
+                <div className="matrix-chat-waiting" data-testid="matrix-chat-waiting">{t('profile_chat_waiting')}</div>
               </div>
             </div>
           </>

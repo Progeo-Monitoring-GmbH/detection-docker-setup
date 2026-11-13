@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useConsent } from './ConsentProvider';
+import './MapConsentNotice.css';
 
 type MapConsentNoticeProps = {
   /** 'top' keeps markers in the middle of large maps visible. */
@@ -23,67 +24,29 @@ const MapConsentNotice = ({ placement = 'center' }: MapConsentNoticeProps) => {
   return (
     <div
       role="note"
-      style={{
-        position: 'absolute',
-        left: '50%',
-        top: placement === 'top' ? 12 : '50%',
-        transform:
-          placement === 'top' ? 'translateX(-50%)' : 'translate(-50%, -50%)',
-        width: 'min(340px, calc(100% - 24px))',
-        // Above Leaflet's panes and controls (z-index up to 1000).
-        zIndex: 1001,
-        background: 'var(--progeo-surface)',
-        color: 'var(--progeo-blue)',
-        borderRadius: 14,
-        boxShadow: '0 10px 30px rgba(11, 54, 89, .2)',
-        padding: 12,
-        fontSize: 12.5,
-        lineHeight: 1.45,
-        textAlign: 'center',
-      }}
+      className={
+        placement === 'top'
+          ? 'map-consent-notice map-consent-notice--top'
+          : 'map-consent-notice'
+      }
+      data-testid="map-consent-notice"
     >
-      <p style={{ margin: '0 0 10px' }}>{t('consent_maps_blocked')}</p>
-      <div
-        style={{
-          display: 'flex',
-          gap: 8,
-          justifyContent: 'center',
-          flexWrap: 'wrap',
-        }}
-      >
+      <p className="map-consent-notice-text">{t('consent_maps_blocked')}</p>
+      <div className="map-consent-notice-actions">
         <button
           type="button"
           // Only the maps - the statistics choice stays as it was.
           onClick={() => save({ externalMaps: true, statistics: allows('statistics') })}
-          style={{
-            height: 32,
-            padding: '0 14px',
-            border: 'none',
-            borderRadius: 'var(--progeo-radius-pill)',
-            background: 'var(--progeo-blue)',
-            color: 'var(--progeo-white)',
-            fontFamily: 'inherit',
-            fontSize: 12.5,
-            fontWeight: 600,
-            cursor: 'pointer',
-          }}
+          className="map-consent-notice-enable"
+          data-testid="map-consent-notice-enable"
         >
           {t('consent_maps_enable')}
         </button>
         <button
           type="button"
           onClick={openSettings}
-          style={{
-            height: 32,
-            padding: '0 10px',
-            border: 'none',
-            background: 'transparent',
-            color: 'var(--progeo-blue)',
-            fontFamily: 'inherit',
-            fontSize: 12.5,
-            textDecoration: 'underline',
-            cursor: 'pointer',
-          }}
+          className="map-consent-notice-settings"
+          data-testid="map-consent-notice-settings"
         >
           {t('consent_open_settings')}
         </button>

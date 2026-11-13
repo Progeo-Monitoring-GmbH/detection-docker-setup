@@ -1,0 +1,81 @@
+/* The legend under a plan canvas (CanvasKeyLegend.tsx): groups of mouse and
+   key actions, the one in use highlighted; key and mouse badges. */
+
+.canvas-key-legend {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px 28px;
+  background: var(--progeo-surface);
+  border-radius: 13px;
+  padding: 14px 16px;
+}
+
+.canvas-key-legend-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #8b8383;
+}
+
+.canvas-key-legend-entry {
+  font-size: 13.5px;
+  line-height: 1.35;
+  padding: 4px 8px;
+  margin: 0 -8px;
+  border-radius: 8px;
+  color: #343a40;
+  background: transparent;
+  font-weight: 400;
+  transition: background-color 0.15s;
+}
+
+/* The action in use (a held key, an edit mode). */
+.canvas-key-legend-entry--active {
+  color: #0b3659;
+  background: #e7f0fd;
+  font-weight: 600;
+}
+
+.canvas-key-legend-keys {
+  min-width: 104px;
+}
+
+.canvas-key-legend-plus {
+  color: #adb5bd;
+  font-size: 12px;
+}
+
+.canvas-key-legend-note {
+  font-size: 12px;
+  color: #8b8383;
+  margin-top: 2px;
+}
+
+/* A keyboard key in a hint - also the <kbd> chips of ImageCanvasStage. */
+.canvas-key-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--progeo-blue);
+  border: 1px solid #cfd4da;
+  box-shadow: inset 0 -2px 0 #cfd4da;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* A mouse action (drag, click, ...) - told apart from the keys. */
+.canvas-key-badge--mouse {
+  border-radius: var(--progeo-radius-pill);
+  background: transparent;
+  color: #495057;
+  border: 1px dashed #adb5bd;
+  box-shadow: none;
+  padding: 0 9px;
+  font-weight: 600;
+}

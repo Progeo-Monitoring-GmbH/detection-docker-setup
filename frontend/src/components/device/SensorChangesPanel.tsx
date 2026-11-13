@@ -3,6 +3,8 @@ import DataTable, { type TableColumn } from 'react-data-table-component';
 import { CheckLg } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
 import type { SensorChange } from './measurementBands';
+import { childTestId } from '../../testIds';
+import './SensorChangesPanel.css';
 
 /** Rows per page of the table. */
 export const CHANGES_PAGE = 10;
@@ -23,6 +25,8 @@ type SensorChangesPanelProps = {
   onSensorSelect?: (sensor: number) => void;
   /** The hovered sensor (null when left) - marked in the plot. */
   onSensorHover?: (sensor: number | null) => void;
+  /** data-testid of the panel; each row's sensor cell is "<testId>-sensor" (key: the sensor index). */
+  testId?: string;
 };
 
 /** Change in percent of the old value; null when there was none (0). */
@@ -49,15 +53,17 @@ const epPercent = (change: SensorChange) => percentChange(change.epThen, change.
 /** The percentage, plus green and minus red; without an old value the absolute change as a hint. */
 export const PercentCell = ({ percent, change }: { percent: number | null; change: number }) =>
   percent == null ? (
-    <span style={{ color: MUTED }} title={`${change > 0 ? '+' : ''}${change.toFixed(2)}`}>
+    <span className="sensor-changes-muted" title={`${change > 0 ? '+' : ''}${change.toFixed(2)}`}>
       –
     </span>
   ) : (
+    // Colour and tabular-nums stay inline: SensorChangesPanel.spec finds the
+    // values by their tabular-nums style and checks their colour.
     <span
+      className="sensor-changes-percent"
       style={{
         color: percent > 0 ? UP_COLOR : percent < 0 ? DOWN_COLOR : MUTED,
         fontVariantNumeric: 'tabular-nums',
-        fontWeight: 600,
       }}
     >
       {formatPercent(percent)}
@@ -67,15 +73,8 @@ export const PercentCell = ({ percent, change }: { percent: number | null; chang
 const Swatch = ({ color }: { color: string }) => (
   <span
     aria-hidden="true"
-    style={{
-      display: 'inline-block',
-      width: 10,
-      height: 3,
-      borderRadius: 2,
-      background: color,
-      marginRight: 4,
-      verticalAlign: 'middle',
-    }}
+    className="sensor-changes-swatch"
+    style={{ background: color }}
   />
 );
 
@@ -99,6 +98,7 @@ const SensorChangesPanel = ({
   selectedSensors = [],
   onSensorSelect,
   onSensorHover,
+  testId = 'sensor-changes',
 }: SensorChangesPanelProps) => {
   const { t } = useTranslation();
 
@@ -110,7 +110,7 @@ const SensorChangesPanel = ({
         selector: (change) => change.sensor,
         sortable: true,
         cell: (change) => (
-          <span>
+          <span data-testid={childTestId(testId, 'sensor')} data-test-key={change.sensor}>
             {t('measurement_compare_pair_label')} {change.sensor + 1}
             {selectedSensors.includes(change.sensor) && <CheckLg className="ms-1 text-primary" size={12} />}
           </span>
@@ -145,19 +145,21 @@ const SensorChangesPanel = ({
         right: true,
       },
     ],
-    [t, wpColor, epColor, selectedSensors],
+    [t, wpColor, epColor, selectedSensors, testId],
   );
 
   return (
-    <div data-testid="sensor-changes" style={{ fontSize: 12.5 }}>
-      <div className="fw-semibold mb-1" style={{ color: 'var(--progeo-blue)' }}>
+    <div data-testid={testId} className="sensor-changes">
+      <div className="sensor-changes-title fw-semibold mb-1">
         {t('analyse_compare_changes_title')}
       </div>
-      <div className="text-muted mb-2" style={{ fontSize: 11.5 }}>
+      <div className="sensor-changes-hint text-muted mb-2">
         {t('analyse_compare_changes_hint')}
       </div>
       {changes.length === 0 ? (
-        <div className="text-muted">{t('analyse_compare_changes_empty')}</div>
+        <div className="text-muted" data-testid={childTestId(testId, 'empty')}>
+          {t('analyse_compare_changes_empty')}
+        </div>
       ) : (
         <DataTable
           columns={columns}

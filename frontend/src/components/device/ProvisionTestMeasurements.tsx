@@ -25,6 +25,8 @@ import {
 } from '../ui/Snackbar.jsx';
 import { formatDate } from '../../main/dateFormat';
 import { staffFlags } from '../../main/access';
+import { repeatedTestId } from '../../testIds';
+import './ProvisionTestMeasurements.css';
 
 /** helper/device_commands.check_test_pairs (sensors numbered from 1). */
 type TestCheck = {
@@ -88,14 +90,12 @@ const STATUS: Record<TestCheck['status'], { bg: string; label: string }> = {
 
 const formatTime = (value: string | null) => formatDate(value, 'dateTimeSeconds');
 
-const MUX_BOX: Record<
-  TestCheck['status'] | 'pending',
-  { background: string; border: string; text: string; label: string }
-> = {
-  ok: { background: '#E7F3DD', border: '#3F7A1C', text: '#2F5D16', label: 'OK' },
-  warn: { background: '#FDF1D6', border: '#B54708', text: '#7A3206', label: 'Check' },
-  fail: { background: '#FCE9E2', border: '#C44D26', text: '#8E2F13', label: 'Failed' },
-  pending: { background: '#F3F1F0', border: '#B8B0B0', text: '#6E6868', label: 'not tested' },
+// The colours per state: .provision-mux-box--<state> (ProvisionTestMeasurements.css).
+const MUX_BOX: Record<TestCheck['status'] | 'pending', { label: string }> = {
+  ok: { label: 'OK' },
+  warn: { label: 'Check' },
+  fail: { label: 'Failed' },
+  pending: { label: 'not tested' },
 };
 
 /** Floating status board of a running measurement-test session: one 100x100
@@ -128,17 +128,6 @@ const MuxStatusPanel = ({
       }
     });
 
-  const headerButtonStyle = {
-    border: 0,
-    background: 'transparent',
-    color: '#4A4F57',
-    padding: 2,
-    borderRadius: 4,
-    display: 'flex',
-    alignItems: 'center',
-    cursor: 'pointer',
-  } as const;
-
   if (closed) {
     return (
       <button
@@ -148,21 +137,8 @@ const MuxStatusPanel = ({
           setCollapsed(false);
         }}
         title="Show MUX test status"
-        style={{
-          position: 'fixed',
-          top: 8,
-          left: '50%',
-          transform: 'translateX(-50%)',
-          zIndex: 1100,
-          padding: '4px 12px',
-          border: '1px solid #B8B0B0',
-          borderRadius: 999,
-          background: 'var(--progeo-surface)',
-          color: '#4A4F57',
-          fontSize: 12,
-          boxShadow: '0 4px 12px rgba(11, 54, 89, .18)',
-          cursor: 'pointer',
-        }}
+        className="provision-mux-reopen"
+        data-testid="mux-status-reopen"
       >
         MUX test status · {newest.size}/{muxCount}
       </button>
@@ -172,43 +148,23 @@ const MuxStatusPanel = ({
   return (
     <div
       data-testid="mux-status-panel"
-      style={{
-        position: 'fixed',
-        top: 8,
-        left: '50%',
-        transform: 'translateX(-50%)',
-        zIndex: 1100,
-        display: 'flex',
-        flexDirection: 'column',
-        maxWidth: 'calc(100vw - 24px)',
-        overflow: 'hidden',
-        padding: 8,
-        borderRadius: 12,
-        background: 'var(--progeo-surface)',
-        boxShadow: '0 10px 28px rgba(11, 54, 89, .22)',
-      }}
+      className="provision-mux-panel"
     >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '0 2px 6px',
-        }}
-      >
-        <strong style={{ fontSize: 13, color: '#2F3A45' }}>
+      <div className="provision-mux-header">
+        <strong className="provision-mux-title">
           MUX test status
         </strong>
-        <span style={{ fontSize: 11, color: '#6E6868' }}>
+        <span className="provision-mux-count" data-testid="mux-status-count">
           {newest.size}/{muxCount} tested
         </span>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+        <div className="provision-mux-header-actions">
           <button
             type="button"
             title={collapsed ? 'Expand' : 'Minimize'}
             aria-label={collapsed ? 'Expand MUX status' : 'Minimize MUX status'}
             onClick={() => setCollapsed((value) => !value)}
-            style={headerButtonStyle}
+            className="provision-mux-header-button"
+            data-testid="mux-status-collapse"
           >
             {collapsed ? <ChevronDown size={14} /> : <DashLg size={14} />}
           </button>
@@ -217,19 +173,21 @@ const MuxStatusPanel = ({
             title="Close"
             aria-label="Close MUX status"
             onClick={() => setClosed(true)}
-            style={headerButtonStyle}
+            className="provision-mux-header-button"
+            data-testid="mux-status-close"
           >
             <X size={14} />
           </button>
         </div>
       </div>
       {!collapsed && (
-        <div style={{ display: 'flex', gap: 8, overflowX: 'auto' }}>
+        <div className="provision-mux-boxes">
           {Array.from({ length: muxCount }, (_, index) => {
             const mux = index + 1;
             const check = newest.get(mux);
             const missing = faults.get(mux);
-            const style = MUX_BOX[missing != null ? 'fail' : (check?.status ?? 'pending')];
+            const state = missing != null ? 'fail' : (check?.status ?? 'pending');
+            const style = MUX_BOX[state];
             return (
               <div
                 key={mux}
@@ -238,33 +196,20 @@ const MuxStatusPanel = ({
                     ? `MUX ${mux}: ${missing} channel(s) missing (reported by the controller)`
                     : `MUX ${mux}: ${style.label}`
                 }
-                style={{
-                  width: 100,
-                  height: 100,
-                  flex: '0 0 100px',
-                  borderRadius: 10,
-                  border: `2px solid ${style.border}`,
-                  background: style.background,
-                  color: style.text,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 4,
-                  boxSizing: 'border-box',
-                }}
+                className={`provision-mux-box provision-mux-box--${state}`}
+                {...repeatedTestId('mux-status-box', mux)}
               >
-                <strong style={{ fontSize: 15 }}>MUX {mux}</strong>
-                <span style={{ fontSize: 12, fontWeight: 600 }}>
+                <strong className="provision-mux-box-name">MUX {mux}</strong>
+                <span className="provision-mux-box-state">
                   {style.label}
                 </span>
                 {missing != null ? (
-                  <span style={{ fontSize: 10, fontWeight: 600 }}>
+                  <span className="provision-mux-box-note provision-mux-box-note--strong">
                     {missing} ch missing
                   </span>
                 ) : (
                   check && (
-                    <span style={{ fontSize: 10 }}>
+                    <span className="provision-mux-box-note">
                       {check.rising} rising
                     </span>
                   )
@@ -502,7 +447,7 @@ const ProvisionTestMeasurements = ({
       selector: (row) => row.time ?? '',
       sortable: true,
       cell: (row) => (
-        <div className="small">
+        <div className="small" {...repeatedTestId('provision-test-measurement', row.id)}>
           {formatTime(row.time)}
           {row.event && <div className="text-muted">{row.event}</div>}
         </div>
@@ -516,7 +461,7 @@ const ProvisionTestMeasurements = ({
       sortable: true,
       cell: (row) => (
         <div className="small py-2">
-          <Badge bg={STATUS[row.check.status].bg}>
+          <Badge bg={STATUS[row.check.status].bg} {...repeatedTestId('provision-test-check', row.id)}>
             {STATUS[row.check.status].label}
           </Badge>
           <div className="mt-1">
@@ -618,8 +563,7 @@ const ProvisionTestMeasurements = ({
           src={row.png}
           alt={`Pairs: ${row.pairs.join(', ')}`}
           title={row.pairs.join(', ')}
-          style={{ height: 150, maxWidth: 600, display: 'block' }}
-          className="my-2"
+          className="provision-test-pairs my-2"
         />
       ),
       minWidth: '200px',
@@ -638,6 +582,7 @@ const ProvisionTestMeasurements = ({
           title="Copy measurement data to the clipboard"
           aria-label="Copy measurement data to the clipboard"
           onClick={() => copyMeasurement(row)}
+          {...repeatedTestId('provision-test-copy', row.id)}
         >
           <Clipboard size={14} />
         </Button>
@@ -651,7 +596,7 @@ const ProvisionTestMeasurements = ({
       {state && (
         <MuxStatusPanel muxCount={muxCount} measurements={measurements} />
       )}
-      <Card className="border-0 shadow-sm p-3 mt-3">
+      <Card className="border-0 shadow-sm p-3 mt-3" data-testid="provision-test">
         <Card.Body>
         <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
           <h5 className="mb-0 me-auto">Test-Messungen</h5>
@@ -662,7 +607,8 @@ const ProvisionTestMeasurements = ({
                 value={mux}
                 onChange={(event) => setMux(Number(event.target.value))}
                 disabled={emulating}
-                style={{ width: 'auto' }}
+                className="provision-test-mux"
+                data-testid="provision-test-mux"
               >
                 {Array.from(
                   { length: Math.max(muxCount, mux) },
@@ -677,6 +623,7 @@ const ProvisionTestMeasurements = ({
                 variant="outline-secondary"
                 onClick={emulateMeasurement}
                 disabled={emulating}
+                data-testid="provision-test-emulate"
               >
                 {emulating ? (
                   <Spinner size="sm" animation="border" className="me-2" />
@@ -691,6 +638,7 @@ const ProvisionTestMeasurements = ({
             variant="outline-primary"
             onClick={requestMeasurement}
             disabled={requesting}
+            data-testid="provision-test-request"
           >
             {requesting ? (
               <Spinner size="sm" animation="border" className="me-2" />
@@ -700,7 +648,7 @@ const ProvisionTestMeasurements = ({
             Messung anfragen
           </Button>
           {canCommands && (
-            <Button variant="outline-primary" onClick={() => setShowCommands(true)}>
+            <Button variant="outline-primary" onClick={() => setShowCommands(true)} data-testid="provision-test-commands">
               <Terminal className="me-2" />
               {t('devices_action_commands')}
             </Button>
@@ -710,19 +658,20 @@ const ProvisionTestMeasurements = ({
               variant="outline-danger"
               onClick={() => setConfirmClear(true)}
               disabled={!measurements.length || clearing}
+              data-testid="provision-test-clear"
             >
               <Trash className="me-2" />
               Test-Messungen bereinigen
             </Button>
           )}
           {onClose && (
-            <Button variant="link" size="sm" className="p-0 ms-1" onClick={onClose}>
+            <Button variant="link" size="sm" className="p-0 ms-1" onClick={onClose} data-testid="provision-test-close">
               {t('provision_add_close')}
             </Button>
           )}
         </div>
 
-        <div className="small text-muted mb-3">
+        <div className="small text-muted mb-3" data-testid="provision-test-status">
           Measurements of <code>{deviceHash}</code>, newest first - refreshed
           every {POLL_MS / 1000} s. Expected: {expected} sensors with rising
           values, every other sensor empty.{' '}
@@ -734,11 +683,11 @@ const ProvisionTestMeasurements = ({
         </div>
 
         {state === null ? (
-          <div className="d-flex align-items-center gap-2 text-muted py-3">
+          <div className="d-flex align-items-center gap-2 text-muted py-3" data-testid="provision-test-loading">
             <Spinner size="sm" animation="border" /> Loading…
           </div>
         ) : measurements.length === 0 ? (
-          <Alert variant="light" className="mb-0">
+          <Alert variant="light" className="mb-0" data-testid="provision-test-empty">
             No measurements yet - power the controller on or request a
             measurement.
           </Alert>
@@ -761,6 +710,7 @@ const ProvisionTestMeasurements = ({
           onConfirm={clearMeasurements}
           onCancel={() => setConfirmClear(false)}
           confirming={clearing}
+          testId="provision-test-clear-dialog"
         />
         </Card.Body>
       </Card>
@@ -770,6 +720,7 @@ const ProvisionTestMeasurements = ({
           isSuperuser={isSuperuser}
           canEdit={canCommands}
           onClose={() => setShowCommands(false)}
+          testId="provision-test-commands-dialog"
         />
       )}
     </>

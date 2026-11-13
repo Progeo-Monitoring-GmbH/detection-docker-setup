@@ -1,0 +1,105 @@
+/* The Docker status page (DockerStatusView.tsx): container table cells,
+   status chips and the log modal. Theme variables: scss/main.css; the row
+   icon buttons: components/ui/kit/kit.css (.progeo-icon-button). */
+
+.docker-status-muted {
+  color: #8b8383;
+}
+
+.docker-status-note {
+  font-size: 12.5px;
+  color: #8b8383;
+}
+
+.docker-status-error {
+  color: #c44d26;
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+
+.docker-status-empty {
+  padding: 14px;
+}
+
+/* -- table cells ----------------------------------------------------------------- */
+
+.docker-status-container {
+  padding: 6px 0;
+  min-width: 0;
+}
+
+.docker-status-name {
+  font-weight: 500;
+}
+
+.docker-status-id {
+  font-size: 11px;
+  color: #8b8383;
+}
+
+/* An unknown status: neutral grey. */
+.docker-status-chip {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #6e6868;
+  background: var(--progeo-track-soft);
+  border-radius: var(--progeo-radius-pill);
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
+.docker-status-chip--ok {
+  color: #3f7a1c;
+  background: #ebf4e3;
+}
+
+.docker-status-chip--danger {
+  color: #c44d26;
+  background: #fbe9e3;
+}
+
+.docker-status-chip--warn {
+  color: #9a6700;
+  background: #fff4d6;
+}
+
+.docker-status-health {
+  font-size: 11.5px;
+  color: #8b8383;
+}
+
+.docker-status-health--ok {
+  color: #3f7a1c;
+}
+
+.docker-status-health--danger {
+  color: #c44d26;
+}
+
+.docker-status-health--warn {
+  color: #9a6700;
+}
+
+/* -- log modal --------------------------------------------------------------------- */
+
+/* .modal-title: over Bootstrap's .h4 size. */
+.modal-title.docker-logs-title {
+  font-size: 16px;
+}
+
+.docker-logs-spacer {
+  flex: 1;
+}
+
+.docker-logs {
+  max-height: 65vh;
+  overflow: auto;
+  background: #07223a;
+  color: #e6eef5;
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+}

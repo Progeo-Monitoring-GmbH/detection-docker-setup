@@ -23,6 +23,8 @@ import MeasurementCompareTooltip, {
   type CompareTooltipData,
   TOOLTIP_WIDTH,
 } from './MeasurementCompareTooltip';
+import { childTestId } from '../../testIds';
+import './MeasurementSamplesCompareChart.css';
 
 export type MeasurementCompareRow = {
   id: number;
@@ -111,6 +113,9 @@ type MeasurementSamplesCompareChartProps = {
    */
   selectedRange?: { from: number; to: number } | null;
   onRangeSelect?: ((range: { from: number; to: number }) => void) | null;
+  /** data-testid of the chart (its Card; with `hideChrome` only its parts
+   * carry ids), e.g. "<testId>-figure", "<testId>-sensor-chip". */
+  testId?: string;
 };
 
 /** Held down, this key turns a drag over the time plots into a range selection. */
@@ -230,7 +235,7 @@ const formatSigned = (value: number) => `${value > 0 ? '+' : ''}${value.toFixed(
 
 /** A legend swatch of a sensor's line - its colour and its marker. */
 const LineSwatch = ({ style }: { style: SensorStyle }) => (
-  <svg width={18} height={10} aria-hidden="true" style={{ flexShrink: 0 }}>
+  <svg width={18} height={10} aria-hidden="true" className="measurement-samples-swatch">
     <line x1={1} x2={17} y1={5} y2={5} stroke={style.color} strokeWidth={2.5} strokeLinecap="round" />
     {style.marker === 'circle' && <circle cx={9} cy={5} r={3.5} fill={style.color} />}
     {style.marker === 'square' && <rect x={5.5} y={1.5} width={7} height={7} fill={style.color} />}
@@ -407,6 +412,7 @@ const MeasurementSamplesCompareChart = (
     maskLines = null,
     selectedRange = null,
     onRangeSelect = null,
+    testId = 'measurement-compare',
   } = props;
   const { t } = useTranslation();
   const currentYear = new Date().getFullYear();
@@ -1384,16 +1390,17 @@ const MeasurementSamplesCompareChart = (
     <>
       <div className="d-flex flex-wrap justify-content-between align-items-center mb-2">
         <div className="d-flex flex-wrap align-items-center gap-2">
-          <small className="text-muted">
+          <small className="text-muted" data-testid={childTestId(testId, 'count')}>
             {t('measurement_compare_measurements_included')}: {series.length}
           </small>
-          <PlotResetButton graphDiv={graphDiv} />
+          <PlotResetButton graphDiv={graphDiv} testId={childTestId(testId, 'reset-scale')} />
           {onLoadCurrentYear && (
             <Button
               size="sm"
               variant="outline-primary"
               onClick={onLoadCurrentYear}
               disabled={isLoadingCurrentYear}
+              data-testid={childTestId(testId, 'load-year')}
             >
               {isLoadingCurrentYear
                 ? `Loading ${currentYear}...`
@@ -1401,7 +1408,7 @@ const MeasurementSamplesCompareChart = (
             </Button>
           )}
         </div>
-        <small className="fw-semibold text-dark">
+        <small className="fw-semibold text-dark" data-testid={childTestId(testId, 'summary')}>
           {t('measurement_compare_mean_avg_sigma_summary', {
             mean: overallMean.toFixed(2),
             avgSigma: averageSigma.toFixed(2),
@@ -1417,23 +1424,27 @@ const MeasurementSamplesCompareChart = (
           onChange={selectFrame}
           playKey={sliderPlayKey}
           visibleRange={visibleRange}
+          testId={childTestId(testId, 'frame-slider')}
         />
       )}
 
-      <div ref={wrapRef} style={{ position: 'relative' }} onMouseMove={onMouseMove}>
+      <div
+        ref={wrapRef}
+        className="measurement-samples-figure"
+        onMouseMove={onMouseMove}
+        data-testid={childTestId(testId, 'figure')}
+      >
         {/* The second plot's controls, right above it in the figure (the plots
             make room for their measured height, however many rows they wrap
             to): the buttons that pick sensors, below them the shown ones. */}
         <div
           ref={toolbarRef}
-          className="d-flex flex-column gap-1 pb-2"
-          data-testid="measurement-compare-sensor-toolbar"
+          className="measurement-samples-toolbar d-flex flex-column gap-1 pb-2"
+          data-testid={childTestId(testId, 'sensor-toolbar')}
           style={{
-            position: 'absolute',
             top: geometry.toolbarTop,
             left: margin.l,
             right: margin.r,
-            zIndex: 2,
           }}
         >
           {/* The buttons that pick sensors ... */}
@@ -1441,21 +1452,21 @@ const MeasurementSamplesCompareChart = (
             <Button
               size="sm"
               variant="outline-secondary"
-              className="py-0"
-              style={{ fontSize: 12 }}
+              className="measurement-samples-button py-0"
               onClick={() => updateSensors([])}
               disabled={selectedSensors.length === 0}
+              data-testid={childTestId(testId, 'clear-sensors')}
             >
               {t('measurement_compare_clear_sensors')}
             </Button>
             <Button
               size="sm"
               variant="outline-secondary"
-              className="py-0"
-              style={{ fontSize: 12 }}
+              className="measurement-samples-button py-0"
               onClick={addRandomSensor}
               disabled={randomCandidates.length === 0}
               title={t('measurement_compare_add_random_hint')}
+              data-testid={childTestId(testId, 'add-random')}
             >
               {t('measurement_compare_add_random')}
             </Button>
@@ -1475,9 +1486,10 @@ const MeasurementSamplesCompareChart = (
                       variant={shown ? 'primary' : 'outline-primary'}
                       aria-pressed={shown}
                       title={t('measurement_compare_activity_hint')}
-                      className="py-0"
-                      style={{ fontSize: 12 }}
+                      className="measurement-samples-button py-0"
                       onClick={() => toggleGroup(activeSensors[group])}
+                      data-testid={childTestId(testId, 'active-group')}
+                      data-test-key={group}
                     >
                       {t(label, { n: ACTIVE_SENSOR_COUNT })}
                     </Button>
@@ -1491,20 +1503,24 @@ const MeasurementSamplesCompareChart = (
                 variant={historySeries ? 'primary' : 'outline-primary'}
                 aria-pressed={historySeries != null}
                 title={t('measurement_compare_sensor_history_hint')}
-                className="py-0"
-                style={{ fontSize: 12 }}
+                className="measurement-samples-button py-0"
                 onClick={onToggleSensorHistory}
                 disabled={isLoadingSensorHistory || (!historySeries && selectedSensors.length === 0)}
+                data-testid={childTestId(testId, 'sensor-history')}
               >
                 {isLoadingSensorHistory && <Spinner size="sm" animation="border" className="me-1" />}
                 {t('measurement_compare_sensor_history')}
               </Button>
             )}
-            <PlotHelp topic="sensors_over_time" className="ms-auto" />
+            <PlotHelp
+              topic="sensors_over_time"
+              className="ms-auto"
+              testId={childTestId(testId, 'help-sensors-over-time')}
+            />
           </div>
           {/* ... then the shown sensors - hover highlights one, ✕ removes it. */}
           <div className="d-flex flex-wrap align-items-center gap-2">
-            <small className="text-muted me-1">
+            <small className="text-muted me-1" data-testid={childTestId(testId, 'selected-count')}>
               {t('measurement_compare_selected_sensors', {
                 count: selectedSensors.length,
               })}
@@ -1512,9 +1528,10 @@ const MeasurementSamplesCompareChart = (
             {selectedSensors.map((sensor) => (
               <span
                 key={sensor}
-                className="d-inline-flex align-items-center gap-1 rounded-pill bg-white"
-                data-testid="measurement-compare-sensor-chip"
-                style={{ fontSize: 12, padding: '1px 4px 1px 8px', border: `1px solid ${styleOf(sensor).color}` }}
+                className="measurement-samples-chip d-inline-flex align-items-center gap-1 rounded-pill bg-white"
+                data-testid={childTestId(testId, 'sensor-chip')}
+                data-test-key={sensor}
+                style={{ borderColor: styleOf(sensor).color }}
                 onMouseEnter={() => setHighlighted(`sensor-${sensor}`)}
                 onMouseLeave={() => setHighlighted(null)}
               >
@@ -1522,14 +1539,15 @@ const MeasurementSamplesCompareChart = (
                 {t('measurement_compare_pair_label')} {sensorNumber(sensor)}
                 <button
                   type="button"
-                  className="btn btn-link p-0 px-1 text-muted text-decoration-none lh-1"
-                  style={{ fontSize: 12 }}
+                  className="measurement-samples-chip-remove btn btn-link p-0 px-1 text-muted text-decoration-none lh-1"
                   title={t('measurement_compare_sensor_click_remove', { sensor: sensorNumber(sensor) })}
                   aria-label={t('measurement_compare_sensor_click_remove', { sensor: sensorNumber(sensor) })}
                   onClick={() => {
                     setHighlighted(null);
                     toggleSensor(sensor);
                   }}
+                  data-testid={childTestId(testId, 'sensor-chip-remove')}
+                  data-test-key={sensor}
                 >
                   ✕
                 </button>
@@ -1537,18 +1555,20 @@ const MeasurementSamplesCompareChart = (
             ))}
           </div>
         </div>
-        <WheelZoomHint visible={wheelHint} radius={0} />
+        <WheelZoomHint visible={wheelHint} radius={0} testId={childTestId(testId, 'wheel-hint')} />
         {/* Help of the first and the third plot, right above each (the
             second's sits in its controls). */}
         <PlotHelp
           topic="by_sensor"
-          style={{ position: 'absolute', zIndex: 2, right: margin.r, top: Math.max(0, margin.t - HELP_ABOVE_PX) }}
+          className="measurement-samples-help"
+          testId={childTestId(testId, 'help-by-sensor')}
+          style={{ right: margin.r, top: Math.max(0, margin.t - HELP_ABOVE_PX) }}
         />
         <PlotHelp
           topic="sensor_sum"
+          className="measurement-samples-help"
+          testId={childTestId(testId, 'help-sensor-sum')}
           style={{
-            position: 'absolute',
-            zIndex: 2,
             right: margin.r,
             top: margin.t + (1 - geometry.sum[1]) * (geometry.height - margin.t - margin.b) - HELP_ABOVE_PX,
           }}
@@ -1559,6 +1579,7 @@ const MeasurementSamplesCompareChart = (
             ref={tooltipRef}
             tooltip={tooltip}
             activeKey={highlighted}
+            testId={childTestId(testId, 'tooltip')}
             style={
               tooltipLeft
                 ? { top: margin.t + TOOLTIP_INSET_PX, left: margin.l + TOOLTIP_INSET_PX }
@@ -1569,8 +1590,8 @@ const MeasurementSamplesCompareChart = (
         {hoveredSensor != null && (
           <div
             ref={hintRef}
-            className="position-absolute bg-dark text-white rounded px-2 py-1 text-nowrap"
-            style={{ pointerEvents: 'none', zIndex: 3, fontSize: 11, opacity: 0.85 }}
+            className="measurement-samples-hint measurement-samples-hint--sensor position-absolute bg-dark text-white rounded px-2 py-1 text-nowrap"
+            data-testid={childTestId(testId, 'sensor-hint')}
           >
             {t(
               selectedSensors.includes(hoveredSensor)
@@ -1582,42 +1603,31 @@ const MeasurementSamplesCompareChart = (
         )}
         {showRangeOverlay && (
           <div
-            data-testid="measurement-compare-range-overlay"
+            data-testid={childTestId(testId, 'range-overlay')}
             onPointerDown={onRangePointerDown}
             onPointerMove={onRangePointerMove}
             onPointerUp={onRangePointerUp}
             onPointerCancel={() => setRangeDrag(null)}
+            className="measurement-samples-range"
             style={{
-              position: 'absolute',
-              zIndex: 4,
               left: margin.l,
               right: margin.r,
               top: rangeOverlayTop,
               height: rangeOverlayBottom - rangeOverlayTop,
-              cursor: 'col-resize',
-              touchAction: 'none',
-              background: 'rgba(235, 99, 59, 0.04)',
-              outline: `1px dashed ${RANGE_LINE}`,
             }}
           >
             <span
-              className="position-absolute bg-dark text-white rounded px-2 py-1 text-nowrap"
-              style={{ top: 4, left: 4, fontSize: 11, opacity: 0.85, pointerEvents: 'none' }}
+              className="measurement-samples-hint measurement-samples-hint--range position-absolute bg-dark text-white rounded px-2 py-1 text-nowrap"
             >
               {t('measurement_compare_range_select_hint')}
             </span>
             {rangeDrag && (
               <div
+                className="measurement-samples-range-drag"
+                data-testid={childTestId(testId, 'range-drag')}
                 style={{
-                  position: 'absolute',
-                  top: 0,
-                  bottom: 0,
                   left: Math.min(rangeDrag.start, rangeDrag.end),
                   width: Math.abs(rangeDrag.end - rangeDrag.start),
-                  background: 'rgba(235, 99, 59, 0.22)',
-                  borderLeft: `2px solid ${RANGE_LINE}`,
-                  borderRight: `2px solid ${RANGE_LINE}`,
-                  pointerEvents: 'none',
                 }}
               />
             )}
@@ -1782,7 +1792,7 @@ const MeasurementSamplesCompareChart = (
     return content;
   }
   return (
-    <Card className="border-0 shadow-sm p-3">
+    <Card className="border-0 shadow-sm p-3" data-testid={testId}>
       <Card.Body>{content}</Card.Body>
     </Card>
   );

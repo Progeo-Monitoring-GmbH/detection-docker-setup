@@ -1,0 +1,294 @@
+/* The Admin Panel (AdminPanel.tsx): host storage tiles, the Lageplan export
+   and the live log viewer. Theme variables: scss/main.css; pills and panels:
+   components/ui/kit/kit.css. */
+
+.admin-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-bottom: 24px;
+}
+
+.admin-muted {
+  font-size: 12px;
+  color: #8b8383;
+}
+
+.admin-warning-text {
+  color: #9a7208;
+}
+
+/* -- storage ------------------------------------------------------------------ */
+
+.admin-storage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.admin-storage-tile {
+  background: var(--progeo-surface);
+  border-radius: 14px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.admin-storage-label {
+  font-size: 13px;
+  color: #6e6868;
+}
+
+.admin-storage-value {
+  font-size: 24px;
+  font-weight: 500;
+  color: var(--progeo-blue);
+  letter-spacing: -0.02em;
+}
+
+.admin-storage-line {
+  font-size: 12px;
+  color: #8b8383;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-usage-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--progeo-track);
+  overflow: hidden;
+}
+
+/* The width (the used percentage) is set inline. */
+.admin-usage-fill {
+  height: 100%;
+  background: var(--progeo-blue);
+  transition: width 0.4s ease;
+}
+
+.admin-usage-fill--warn {
+  background: #d99a1e;
+}
+
+.admin-usage-fill--danger {
+  background: #c44d26;
+}
+
+/* -- Lageplan export ---------------------------------------------------------- */
+
+.admin-lageplan-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* .btn.btn-sm: over Bootstrap's own padding / radius. */
+.btn.btn-sm.admin-lageplan-download {
+  border-radius: var(--progeo-radius-pill);
+  height: 32px;
+  padding: 0 16px;
+}
+
+.admin-lageplan-result {
+  font-size: 12.5px;
+  color: #3f7a1c;
+}
+
+.admin-lageplan-hint {
+  margin-top: 10px;
+}
+
+/* -- logs --------------------------------------------------------------------- */
+
+.admin-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  border-radius: var(--progeo-radius-pill);
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
+.admin-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.admin-status-pill--live {
+  color: #3f7a1c;
+  background: #ebf4e3;
+}
+
+.admin-status-pill--live .admin-status-dot {
+  animation: admin-pulse 2s ease-in-out infinite;
+}
+
+.admin-status-pill--connecting {
+  color: #6e6868;
+  background: #efecec;
+}
+
+.admin-status-pill--reconnecting {
+  color: #9a7208;
+  background: #fbf3de;
+}
+
+.admin-status-pill--denied {
+  color: #c44d26;
+  background: #fbe9e3;
+}
+
+@keyframes admin-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.admin-logs-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  gap: 14px;
+}
+
+@media (max-width: 860px) {
+  .admin-logs-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.admin-logs-column {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.admin-logs-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.admin-search {
+  position: relative;
+}
+
+.admin-search--grow {
+  flex: 1 1 200px;
+}
+
+.admin-search-icon {
+  position: absolute;
+  left: 10px;
+  top: 9px;
+  color: #8b8383;
+}
+
+/* .form-control: over Bootstrap's form-control(-sm) padding / radius. */
+.form-control.admin-search-input {
+  padding-left: 30px;
+  border-radius: var(--progeo-radius-pill);
+}
+
+.admin-log-files {
+  max-height: 560px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.admin-log-file {
+  text-align: left;
+  border: none;
+  border-radius: 10px;
+  padding: 7px 10px;
+  background: transparent;
+  box-shadow: none;
+  color: #3a3535;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.admin-log-file--active {
+  background: var(--progeo-surface);
+  box-shadow: var(--progeo-shadow-chrome);
+  color: var(--progeo-blue);
+}
+
+.admin-log-file-name {
+  font-size: 12.5px;
+  font-weight: 500;
+  word-break: break-all;
+}
+
+.admin-log-file--active .admin-log-file-name {
+  font-weight: 600;
+}
+
+.admin-log-file-meta {
+  font-size: 11px;
+  color: #8b8383;
+}
+
+.admin-logs-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 11.5px;
+  color: #8b8383;
+  flex-wrap: wrap;
+}
+
+.admin-logs-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.admin-logs-paused {
+  color: #9a7208;
+  font-weight: 600;
+}
+
+.admin-logs-error {
+  font-size: 12px;
+  color: #c44d26;
+}
+
+.admin-log-viewer {
+  background: #101419;
+  color: #d9e2ec;
+  border-radius: 12px;
+  padding: 12px 14px;
+  height: 560px;
+  margin: 0;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+  word-break: normal;
+}
+
+.admin-log-viewer--wrap {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.admin-logs-end {
+  display: flex;
+  justify-content: flex-end;
+}
