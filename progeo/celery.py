@@ -81,6 +81,12 @@ celery_instance.conf.beat_schedule = {
         # Unconfirmed access requests expire, rejected ones are deleted (GDPR).
         "schedule": crontab(hour=4, minute=12),
     },
+    "cleanup-activity-daily": {
+        "task": "progeo.tasks.cleanup_activity",
+        # Usage events (ProgeoActivity) older than ACTIVITY_RETENTION_DAYS
+        # are deleted (GDPR) - also while the tracking is switched off.
+        "schedule": crontab(hour=4, minute=24),
+    },
     "fetch-rain-events-hourly": {
         "task": "progeo.tasks.fetch_rain_events",
         # Precipitation of the locations with rain_check_enabled (Open-Meteo)

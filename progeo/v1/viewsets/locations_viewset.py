@@ -1789,6 +1789,33 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
 
         return self._edit_heat_limitations(request, pk, change)
 
+    @action(detail=True, url_path="heat-sigma", methods=["POST"])
+    def heat_sigma(self, request, pk=None, *args, **kwargs):
+        """Staff: the heatmap's kernel width (σ) of one of the location's
+        Lageplans - POST {lageplan_id, sigma}; `sigma` null (or empty) means
+        "Auto σ". Everyone's heatmap of that plan uses it."""
+        location, account, error = self._staff_location(request, pk)
+        if error:
+            return error
+        raw = request.data.get("sigma")
+        sigma = None
+        if raw not in (None, ""):
+            try:
+                sigma = float(raw)
+            except (TypeError, ValueError):
+                return RequestFailed({"reason": "sigma must be a number or null"})
+            if not ProgeoLageplan.HEAT_SIGMA_MIN <= sigma <= ProgeoLageplan.HEAT_SIGMA_MAX:
+                return RequestFailed({
+                    "reason": f"sigma must lie between {ProgeoLageplan.HEAT_SIGMA_MIN} and {ProgeoLageplan.HEAT_SIGMA_MAX}"
+                })
+            sigma = round(sigma, 4)
+        db_name = location_db(location, account)
+        lageplan, error = _target_lageplan(db_name, location, request.data.get("lageplan_id"))
+        if error:
+            return error
+        ProgeoLageplan.objects.using(db_name).filter(pk=lageplan.pk).update(heat_sigma=sigma)
+        return RequestSuccess({"lageplan_id": lageplan.pk, "heat_sigma": sigma})
+
     @action(detail=True, url_path="heat-limitations/delete", methods=["POST"])
     def heat_limitations_delete(self, request, pk=None, *args, **kwargs):
         """Staff: delete a heat limitation - POST {lageplan_id, id}."""

@@ -1,6 +1,7 @@
 from django.urls import include, re_path
 
 from progeo.routers import CustomRouter
+from progeo.v1.viewsets.activity_viewset import ActivityViewSet
 from progeo.v1.viewsets.alarm_report_viewset import AlarmReportViewSet
 from progeo.v1.viewsets.alarm_viewset import AlarmViewSet
 from progeo.v1.viewsets.backup_viewset import BackupViewSet
@@ -57,6 +58,9 @@ escalation_router.register(r'', EscalationViewSet, basename='escalation')
 favorite_router = CustomRouter()
 favorite_router.register(r'', FavoriteViewSet, basename='favorite')
 
+activity_router = CustomRouter()
+activity_router.register(r'', ActivityViewSet, basename='activity')
+
 urlpatterns = [
     re_path(r'^(?P<account_id>\d+)/', include(progeo_router.urls)),
     re_path(r'^device/', include(device_router.urls)),
@@ -70,6 +74,7 @@ urlpatterns = [
     re_path(r'^demo/', include(demo_router.urls)),
     re_path(r'^escalation/', include(escalation_router.urls)),
     re_path(r'^favorite/', include(favorite_router.urls)),
+    re_path(r'^activity/', include(activity_router.urls)),
     # Flash bundle uploads (release.sh); nginx serves them at /firmware/.
     re_path(r'^firmware/bundles/$', FirmwareBundleUploadView.as_view(), name='firmware_bundle_upload'),
     re_path(r'^firmware/channels/(?P<channel>[^/]+)/$', FirmwareChannelUploadView.as_view(), name='firmware_channel_upload'),

@@ -46,7 +46,9 @@ DEMO_LAGEPLAN_PREFIX = os.path.relpath(settings.UPLOAD_DIR, settings.MEDIA_ROOT)
 # heartbeat of the demo session.
 DEMO_EXPORT_PATHS = ("/v1/location/heatmap_video/",)
 DEMO_HEARTBEAT_PATH = "/v1/demo/heartbeat/"
-DEMO_WRITE_PATHS = (*DEMO_EXPORT_PATHS, DEMO_HEARTBEAT_PATH)
+# The usage analysis (helper/activity.py) counts demo visitors like other users.
+DEMO_ACTIVITY_PATH = "/v1/activity/"
+DEMO_WRITE_PATHS = (*DEMO_EXPORT_PATHS, DEMO_HEARTBEAT_PATH, DEMO_ACTIVITY_PATH)
 
 # Demo sessions (DemoSession): the JWT claim with the session key, the
 # browser's heartbeat interval, the longest gap between two heartbeats that

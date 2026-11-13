@@ -58,6 +58,9 @@ MAGIC_LINK_LOGIN_MINUTES = 15
 MAGIC_LINK_INVITE_HOURS = 72
 ACCESS_REQUEST_VERIFY_HOURS = 48
 MAGIC_LINK_ALLOW_STAFF = False
+# Usage analysis (helper/activity.py) - off, as in production; its tests switch it on.
+ACTIVITY_TRACKING_ENABLED = False
+ACTIVITY_RETENTION_DAYS = 180
 
 # Our Matrix server and the portal's OpenID Connect provider (progeo/settings.py)
 # - always on in tests, with a throwaway signing key.

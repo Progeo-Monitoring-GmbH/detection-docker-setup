@@ -338,6 +338,7 @@ class ProgeoLageplanSerializer(ProgeoBaseSerializer):
             "reference_y",
             "meters_per_pixel",
             "heat_limitations",
+            "heat_sigma",
             "is_active",
             "last_fetched",
             "last_updated",

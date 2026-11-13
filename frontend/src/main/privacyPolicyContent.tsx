@@ -11,7 +11,7 @@ import { repeatedTestId } from '../testIds';
  * categories change, a CONSENT_VERSION bump in components/privacy/consent.ts).
  */
 
-export const PRIVACY_POLICY_LAST_UPDATED = 'Oktober 2026';
+export const PRIVACY_POLICY_LAST_UPDATED = 'November 2026';
 
 export const CONTROLLER = {
   name: COMPANY.name,
@@ -417,43 +417,70 @@ export const buildPolicySections = ({
     ),
   },
   {
-    id: 'demo-statistik',
-    title: 'Nutzungsstatistik der öffentlichen Demo',
+    id: 'nutzungsstatistik',
+    title: 'Nutzungsstatistik (nur mit Einwilligung)',
     body: (
       <>
         <p>
-          Für Interessenten stellen wir eine öffentliche Demo des Portals
-          bereit, die über einen Demo-Link aufgerufen wird. Für jeden Besuch
-          über einen Demo-Link erfassen wir auf unserem Server: den verwendeten
-          Demo-Link, den Beginn und den Zeitpunkt der letzten Aktivität, die
-          Anzahl der Anfragen an den Server und die Spracheinstellung des
-          Browsers. Diese Angaben fallen bei der Bereitstellung der Demo ohnehin
-          an; dafür werden keine Cookies gesetzt und keine Informationen auf
-          Ihrem Endgerät gespeichert oder ausgelesen.
+          <strong>
+            Nur wenn Sie in die „Nutzungsstatistik“ eingewilligt haben
+          </strong>
+          , erfassen wir, wie Sie das Portal nutzen, um es zu verbessern (z. B.
+          welche Funktionen gebraucht werden und wo Bedienschritte zu lange
+          dauern). Ohne Einwilligung sendet Ihr Browser dafür nichts.
         </p>
         <p>
-          <strong>
-            Nur wenn Sie in die „Nutzungsstatistik (Demo)“ eingewilligt haben
-          </strong>
-          , sendet Ihr Browser zusätzlich etwa alle 30 Sekunden eine kurze
-          Aktivitätsmeldung, solange der Tab sichtbar ist und Sie die Demo
-          bedienen. Daraus ermitteln wir die aktive Nutzungsdauer und die
-          aufgerufenen Bereiche (z. B. Status, Analyse).
+          Bei angemeldeten Nutzerinnen und Nutzern speichern wir auf unserem
+          Server, <strong>bezogen auf Ihr Benutzerkonto</strong>:
         </p>
+        <ul>
+          <li>
+            die aufgerufenen Seiten (ohne Kennungen, z. B. „Objekt – Analyse“
+            statt der Nummer des Objekts) und wie lange die Seite sichtbar war,
+          </li>
+          <li>
+            angeklickte Schaltflächen und Bedienelemente – nur deren
+            technische Bezeichnung, nie Texte oder Eingaben,
+          </li>
+          <li>Zeitpunkte Ihrer Anmeldungen,</li>
+          <li>
+            eine zufällige Kennung je Browser-Tab, um zusammengehörige Aufrufe
+            zu erkennen.
+          </li>
+        </ul>
         <p>
           Wir speichern dabei weder Ihre IP-Adresse noch Angaben zu Ihrem
-          Browser oder Gerät. Die Daten werden je Demo-Link ausgewertet und
-          nicht mit anderen Daten zusammengeführt.
+          Browser oder Gerät, setzen keine Cookies und geben nichts an Dritte
+          weiter. Konten unserer Mitarbeiterinnen und Mitarbeiter werden nicht
+          erfasst. Die Daten werten wir zusammengefasst aus (z. B. Aufrufe und
+          Verweildauer je Seite); sie dienen nicht der Leistungs- oder
+          Verhaltenskontrolle einzelner Personen.
+        </p>
+        <p>
+          <strong>Öffentliche Demo:</strong> Für jeden Besuch über einen
+          Demo-Link erfassen wir zudem den verwendeten Demo-Link, den Beginn und
+          den Zeitpunkt der letzten Aktivität, die Anzahl der Anfragen an den
+          Server und die Spracheinstellung des Browsers. Diese Angaben fallen
+          bei der Bereitstellung der Demo ohnehin an. Mit Ihrer Einwilligung
+          sendet Ihr Browser in der Demo außerdem etwa alle 30 Sekunden eine
+          kurze Aktivitätsmeldung, solange der Tab sichtbar ist und Sie die Demo
+          bedienen; daraus ermitteln wir die aktive Nutzungsdauer und die
+          aufgerufenen Bereiche. Diese Daten werden je Demo-Link ausgewertet.
         </p>
         <Facts
-          purpose="Auswertung, wie und wie lange die Demo genutzt wird, um sie zu verbessern."
-          legalBasis="Erfassung der Besuche: unser berechtigtes Interesse an der Auswertung der Demo (Art. 6 Abs. 1 lit. f DSGVO). Aktive Nutzungsdauer und aufgerufene Bereiche: Ihre Einwilligung gemäß § 25 Abs. 1 TDDDG und Art. 6 Abs. 1 lit. a DSGVO."
-          retention="Solange der jeweilige Demo-Link ausgewertet wird."
+          purpose="Auswertung, wie und wie lange das Portal und die Demo genutzt werden, um sie zu verbessern."
+          legalBasis="Ihre Einwilligung gemäß § 25 Abs. 1 TDDDG und Art. 6 Abs. 1 lit. a DSGVO. Erfassung der Demo-Besuche: unser berechtigtes Interesse an der Auswertung der Demo (Art. 6 Abs. 1 lit. f DSGVO)."
+          retention="Seitenaufrufe, Klicks und Anmeldungen werden nach 180 Tagen automatisch gelöscht. Demo-Besuche: solange der jeweilige Demo-Link ausgewertet wird."
         />
-        <p>
-          Ihre Einwilligung können Sie jederzeit mit Wirkung für die Zukunft
-          über das Info-Menü (i) in der Kopfleiste widerrufen.
-        </p>
+        <div className="privacy-callout">
+          <strong>Einwilligung jederzeit widerrufen</strong>
+          <p>
+            Ihre Einwilligung können Sie jederzeit mit Wirkung für die Zukunft
+            in den Datenschutz-Einstellungen widerrufen – über das Info-Menü
+            (i) in der Kopfleiste oder oben auf dieser Seite. Ab dann sendet
+            Ihr Browser keine Nutzungsdaten mehr.
+          </p>
+        </div>
       </>
     ),
   },
@@ -477,7 +504,7 @@ export const buildPolicySections = ({
         </p>
         <p>
           Wir verkaufen keine Daten, nutzen sie nicht für Werbung und erstellen
-          keine Nutzerprofile.
+          keine Nutzerprofile für Werbezwecke.
         </p>
       </>
     ),

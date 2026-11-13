@@ -24,8 +24,8 @@ import './PrivacyPolicyPage.css';
 const HIGHLIGHTS = [
   {
     icon: <EyeSlash size={18} />,
-    title: 'Kein Tracking',
-    text: 'Keine Analyse-, Werbe- oder Tracking-Cookies.',
+    title: 'Statistik nur mit Einwilligung',
+    text: 'Keine Werbe- oder Tracking-Cookies; Nutzungsstatistik erst nach Ihrer Zustimmung.',
   },
   {
     icon: <GeoAlt size={18} />,

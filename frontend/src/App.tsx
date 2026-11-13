@@ -11,6 +11,7 @@ import MaintenanceGate from './components/ui/MaintenanceScreen';
 import { ConsentProvider, useConsent } from './components/privacy/ConsentProvider';
 
 import CoreRoutes from './CoreRoutes';
+import { ActivityTracking } from './activity/useActivityTracking';
 
 import './i18n';
 import './App.css';
@@ -104,6 +105,8 @@ function App() {
             <ModalProvider>
               <BrowserRouter>
                 <CoreAuthProvider>
+                  {/* Usage analysis - only with the backend's flag and consent. */}
+                  <ActivityTracking />
                   <PortalFrame>
                     <GatedMain />
                     <CookieBanner />

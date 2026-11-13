@@ -235,12 +235,19 @@ class UserModulePermissionView(APIView):
         return plain
 
     def get(self, request, *args, **kwargs):
+        from progeo.helper import activity
+
         user = request.user
+        # Whether the frontend sends usage events (with the user's consent) -
+        # from the real user, also in the "show as normal user" view.
+        tracking = {"activity_tracking": activity.tracking_allowed(request)}
         if request.GET.get("as_user") and user.is_superuser:
             # A superuser rarely holds explicit grants - the defaults every
             # new user gets keep the portal usable in this view.
-            return RequestSuccess(self._permission_payload(self._as_normal_user(user), DEFAULT_USER_PERMISSION_CODES))
-        return RequestSuccess(self._permission_payload(user))
+            return RequestSuccess({
+                **self._permission_payload(self._as_normal_user(user), DEFAULT_USER_PERMISSION_CODES), **tracking,
+            })
+        return RequestSuccess({**self._permission_payload(user), **tracking})
 
     def post(self, request, *args, **kwargs):
         if not request.user.is_staff and not request.user.is_superuser:

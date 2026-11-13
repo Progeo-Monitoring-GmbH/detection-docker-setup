@@ -10,6 +10,7 @@ import {
   useMemo,
 } from 'react';
 import { useLocation, useNavigate } from 'react-router';
+import { markLogin, startsNewSession } from '../src/activity/activityTracker';
 import { getBackendBaseUrl } from '../src/backendUrl';
 import { showErrorBar } from '../src/components/ui/Snackbar.jsx';
 import { isDemoUser, setDemoToken } from '../src/main/demo';
@@ -223,6 +224,7 @@ const CoreAuthProvider = ({ children }) => {
         setRefreshToken(response.data.refresh);
         clearImpersonation();
         setViewAsUser(false);
+        markLogin();
 
         // Login for the chat app (progeo/oidc.py): back to the backend.
         const oidcUrl = oidcForwardUrl(forward);
@@ -253,6 +255,11 @@ const CoreAuthProvider = ({ children }) => {
   );
 
   const loginWithTokens = useCallback((access: string, refresh: string) => {
+    // Demo, mailed login link, password reset, access request: a login for
+    // the usage analysis - a token swap of the same user or "log in as" not.
+    if (startsNewSession(readStoredTokens().access, access)) {
+      markLogin();
+    }
     storeTokens(access, refresh);
     setToken(access);
     setRefreshToken(refresh);

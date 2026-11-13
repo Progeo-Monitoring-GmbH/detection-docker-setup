@@ -20,6 +20,7 @@ from progeo.v1.models import (
     LimitedToken,
     MfSLog,
     ProgeoAccess,
+    ProgeoActivity,
     ProgeoAlarm,
     ProgeoDevice,
     ProgeoDeviceCommand,
@@ -272,6 +273,23 @@ class ProgeoFavoriteLocationAdmin(admin.ModelAdmin):
     list_display = ("created", "user", "location")
     raw_id_fields = ("user", "location")
 
+class ProgeoActivityAdmin(admin.ModelAdmin):
+    """Usage events of normal users (read-only, see ProgeoActivity) - the
+    aggregated view is GET /v1/activity/summary/."""
+
+    list_display = ("created_at", "user", "kind", "path", "target", "duration_ms")
+    list_filter = ("kind", ("created_at", admin.DateFieldListFilter))
+    search_fields = ("path", "target", "user__username")
+    list_select_related = ("user",)
+    date_hierarchy = "created_at"
+    readonly_fields = [field.name for field in ProgeoActivity._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
 class UserModulePermissionsAdminForm(ModelForm):
     module_permissions = forms.ModelMultipleChoiceField(
         queryset=Permission.objects.none(),
@@ -400,6 +418,7 @@ register_models = [
     {"model": SMS, "admin": SMSAdmin, "custom": True},
     {"model": ProgeoEscalation, "admin": ProgeoEscalationAdmin, "custom": True},
     {"model": ProgeoFavoriteLocation, "admin": ProgeoFavoriteLocationAdmin, "custom": True},
+    {"model": ProgeoActivity, "admin": ProgeoActivityAdmin, "custom": True},
     
 ]
 

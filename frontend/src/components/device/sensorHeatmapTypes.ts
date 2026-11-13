@@ -36,6 +36,8 @@ export type SensorHeatmapLageplanData = {
   meters_per_pixel?: number | null;
   /** Areas the heat field is limited to; none: not limited. */
   heat_limitations?: HeatLimitation[] | null;
+  /** The heatmap's kernel width (σ) for this plan; null: "Auto σ". */
+  heat_sigma?: number | null;
   is_active?: boolean;
   location_id?: number;
   location_name?: string | null;

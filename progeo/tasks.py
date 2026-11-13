@@ -728,6 +728,14 @@ def cleanup_access_requests():
 
 
 @shared_task
+def cleanup_activity():
+    """Delete usage events older than ACTIVITY_RETENTION_DAYS (helper/activity.py)."""
+    from progeo.helper.activity import cleanup_activity as cleanup
+
+    return cleanup()
+
+
+@shared_task
 def fetch_rain_events(location_id=None, hours=None):
     """Hourly: the rain of every location with rain_check_enabled
     (helper/weather.py) - the last RAIN_LOOKBACK hours are read again and

@@ -16,8 +16,8 @@ type HeatmapToolbarProps = {
   plans: SensorHeatmapLageplanData[] | null;
   planIndex: number;
   onPlanChange: (index: number) => void;
-  sigma: 'auto' | number;
-  onSigmaChange: (sigma: 'auto' | number) => void;
+  /** The kernel width (σ) and its change - staff only; without it no σ controls. */
+  sigma?: { value: 'auto' | number; onChange: (sigma: 'auto' | number) => void };
   video: {
     exporting: boolean;
     stage: VideoExportStage | null;
@@ -42,8 +42,9 @@ const STAGE_KEYS: Record<Exclude<VideoExportStage, 'capturing'>, string> = {
 /**
  * One compact toolbar row of SensorHeatmap2D (wraps on narrow cards): the
  * page's own controls (`start`), the Lageplan switcher, the heat limitations
- * (`middle`) and - on the right - the kernel width (σ) and the video export;
- * the kernel width sits with the export, both shape the video.
+ * (`middle`) and - on the right - the kernel width (σ, staff only; stored per
+ * plan) and the video export; the kernel width sits with the export, both
+ * shape the video.
  */
 const HeatmapToolbar = ({
   start,
@@ -52,7 +53,6 @@ const HeatmapToolbar = ({
   planIndex,
   onPlanChange,
   sigma,
-  onSigmaChange,
   video,
   testId = 'heatmap-toolbar',
 }: HeatmapToolbarProps) => {
@@ -90,17 +90,19 @@ const HeatmapToolbar = ({
       {middle}
 
       <div className="ms-auto d-flex flex-wrap align-items-center justify-content-end gap-2">
-        <Form.Check
-          type="switch"
-          id="heatmap2d-auto-sigma"
-          className="small mb-0"
-          label={'Auto σ'}
-          checked={sigma === 'auto'}
-          onChange={(event) => onSigmaChange(event.target.checked ? 'auto' : 0.04)}
-          disabled={video.exporting}
-          data-testid={childTestId(testId, 'auto-sigma')}
-        />
-        {sigma !== 'auto' && (
+        {sigma && (
+          <Form.Check
+            type="switch"
+            id="heatmap2d-auto-sigma"
+            className="small mb-0"
+            label={'Auto σ'}
+            checked={sigma.value === 'auto'}
+            onChange={(event) => sigma.onChange(event.target.checked ? 'auto' : 0.04)}
+            disabled={video.exporting}
+            data-testid={childTestId(testId, 'auto-sigma')}
+          />
+        )}
+        {sigma && sigma.value !== 'auto' && (
           <div className="heatmap-toolbar-sigma d-flex align-items-center gap-2">
             <label
               htmlFor="heatmap2d-sigma"
@@ -108,7 +110,7 @@ const HeatmapToolbar = ({
               title="σ (kernel width)"
               data-testid={childTestId(testId, 'sigma-value')}
             >
-              {'σ'} {sigma.toFixed(3)}
+              {'σ'} {sigma.value.toFixed(3)}
             </label>
             <input
               id="heatmap2d-sigma"
@@ -117,8 +119,8 @@ const HeatmapToolbar = ({
               min={0.005}
               max={0.15}
               step={0.005}
-              value={sigma}
-              onChange={(event) => onSigmaChange(Number(event.target.value))}
+              value={sigma.value}
+              onChange={(event) => sigma.onChange(Number(event.target.value))}
               disabled={video.exporting}
               data-testid={childTestId(testId, 'sigma')}
             />

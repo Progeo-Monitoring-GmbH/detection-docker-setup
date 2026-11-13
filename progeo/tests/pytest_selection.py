@@ -15,7 +15,7 @@ AREA_MODULES = {
         alarm_overview_api alarm_report_api alarm_severity_and_clusters escalations_api
     """,
     "backups": """
-        backup_download backup_transfer dbbackup_connector import_live_backup restore_backups
+        backup_download backup_reload backup_transfer dbbackup_connector import_live_backup restore_backups
         sync_backups
     """,
     "databases": """
@@ -44,7 +44,7 @@ AREA_MODULES = {
     """,
     "notifications": "bounces_and_notifications email_and_sms_helpers messenger outbound test_mail_command",
     "operations": """
-        celery_schedule clear_logs deployment_settings docker_agent docker_api health logging_handler log_stream metrics
+        activity celery_schedule clear_logs deployment_settings docker_agent docker_api health logging_handler log_stream metrics
         periodic_task_skipping sentry_shutdown task_config_errors
     """,
 }

@@ -35,6 +35,7 @@ import SensorTooltip from './SensorTooltip';
 import type { HeatProfile, SensorHeatmapLocation, SensorHeatmapResponse } from './sensorHeatmapTypes';
 import HeatmapDisplayControls from './HeatmapDisplayControls';
 import { useHeatmapFrameExport } from './useHeatmapFrameExport';
+import { useHeatSigma } from './useHeatSigma';
 import { type AreaRect, useHeatmapViewport, usePanZoomGestures } from './useHeatmapViewport';
 import { useLageplanImage } from './useLageplanImage';
 import ZoomControls from './ZoomControls';
@@ -230,7 +231,6 @@ const SensorHeatmap2D = ({
   const fieldUnit = field?.unit ?? null;
   const fieldDecimals = field?.decimals ?? 1;
   const fieldMode = fieldUnit != null;
-  const [sigma, setSigma] = useState<'auto' | number>('auto');
   const [hover, setHover] = useState<Hover | null>(null);
   // What is drawn (the floating controls): the dots, the dm band lines and -
   // staff - the heat normalized to the period's highest value.
@@ -308,6 +308,10 @@ const SensorHeatmap2D = ({
   // image (not in the alignment wizard mode).
   const auth = useAuth();
   const canEditLimits = staffFlags(auth?.user).isStaffOrSuperuser;
+  // σ of the plan (null: Auto σ) - staff change and store it, not in the
+  // alignment wizard.
+  const canEditSigma = canEditLimits && !alignment;
+  const [sigma, setSigma] = useHeatSigma({ plan: activePlan, editable: canEditSigma });
   const limitEditor = useHeatLimitationEditor({
     plans,
     plan: activePlan,
@@ -587,8 +591,7 @@ const SensorHeatmap2D = ({
           plans={alignment || onPlanChange ? null : plans}
           planIndex={planIndex}
           onPlanChange={choosePlan}
-          sigma={sigma}
-          onSigmaChange={setSigma}
+          sigma={canEditSigma ? { value: sigma, onChange: setSigma } : undefined}
           testId={childTestId(testId, 'toolbar')}
           video={{
             exporting: videoExport.videoExporting,

@@ -9,6 +9,8 @@ type ModulePermissionPayload = {
   username?: string;
   permissions: ModulePermissions;
   enabled: string[];
+  /** Usage analysis on for this user (normal user, ACTIVITY_TRACKING_ENABLED). */
+  activity_tracking?: boolean;
 };
 
 type PermissionResponsePayload =
@@ -54,6 +56,7 @@ const normalizePermissionPayload = (
     enabled:
       payload?.enabled ||
       Object.keys(permissions).filter((key) => permissions[key]),
+    activity_tracking: payload?.activity_tracking === true,
   };
 };
 
@@ -177,6 +180,36 @@ const fetchPermissionPayload = async (auth: AuthContextType, token: string) => {
   });
 
   return pendingPermissionRequest;
+};
+
+type UserClaims = { user_id?: number | string } | null;
+
+/**
+ * The backend's `activity_tracking` flag of the logged-in user (from the
+ * cached module permissions) - without usePermissions' forwarding of
+ * single-module users, so it can run on every page (useActivityTracking).
+ * It belongs to one user: false until that user's payload has loaded.
+ */
+export const useActivityTrackingFlag = () => {
+  const auth = useAuth();
+  const token = auth?.token || '';
+  const userId = (auth?.user as UserClaims)?.user_id ?? null;
+  const [state, setState] = useState<{ userId: unknown; on: boolean }>({ userId: null, on: false });
+
+  useEffect(() => {
+    if (!token) {
+      return undefined;
+    }
+    let isMounted = true;
+    fetchPermissionPayload(auth, token)
+      .then((payload) => isMounted && setState({ userId, on: Boolean(payload.activity_tracking) }))
+      .catch(() => isMounted && setState({ userId, on: false }));
+    return () => {
+      isMounted = false;
+    };
+  }, [auth, token, userId]);
+
+  return Boolean(token) && userId != null && state.userId === userId && state.on;
 };
 
 const usePermissions = () => {

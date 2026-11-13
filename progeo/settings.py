@@ -139,6 +139,12 @@ TWO_FACTOR_ISSUER = os.getenv("TWO_FACTOR_ISSUER", "ProGeo")
 # keep it - changing it (or SECRET_KEY without it) invalidates every 2FA device.
 TWO_FACTOR_ENCRYPTION_KEY = os.getenv("TWO_FACTOR_ENCRYPTION_KEY", "")
 TWO_FACTOR_REQUIRED_FOR_STAFF = parse_boolean(os.getenv("TWO_FACTOR_REQUIRED_FOR_STAFF", "0"))
+# Usage analysis of normal users (helper/activity.py, ProgeoActivity): page
+# views, their duration, clicks, logins - only with the user's consent
+# ("statistics"), never for staff/superusers. Off unless switched on (see
+# .env.template); the events are deleted after ACTIVITY_RETENTION_DAYS.
+ACTIVITY_TRACKING_ENABLED = parse_boolean(os.getenv("ACTIVITY_TRACKING_ENABLED", "0"))
+ACTIVITY_RETENTION_DAYS = max(1, parse_int(os.getenv("ACTIVITY_RETENTION_DAYS"), 180))
 # Who is told about new access requests; empty = DJANGO_SUPERUSER_EMAIL.
 ACCESS_REQUEST_NOTIFY = (os.getenv("ACCESS_REQUEST_NOTIFY") or os.getenv("DJANGO_SUPERUSER_EMAIL") or "").strip()
 # Bounce mailbox (helper/bounces.py); user/password default to the SMTP login.

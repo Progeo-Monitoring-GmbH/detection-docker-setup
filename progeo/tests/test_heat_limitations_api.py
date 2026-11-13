@@ -164,3 +164,41 @@ def test_the_areas_come_with_the_lageplan(api_client, setup):
 
     assert plans[0]["heat_limitations"][0]["name"] == "Halle"
     assert plans[0]["heat_limitations"][0]["points"] == SQUARE
+
+
+# -- σ (heat_sigma) --------------------------------------------------------------
+
+def _sigma(api_client, location, lageplan, sigma):
+    return api_client.post(
+        f"/v1/location/{location.id}/heat-sigma/", {"lageplan_id": lageplan.pk, "sigma": sigma}, format="json"
+    )
+
+
+def test_staff_store_the_sigma_of_a_plan_and_reset_it_to_auto(api_client, setup):
+    location, lageplan = setup
+
+    response = _sigma(api_client, location, lageplan, 0.04)
+
+    assert response.status_code == 200, response.content
+    assert response.json()["heat_sigma"] == 0.04
+    lageplan.refresh_from_db(using=f.DB)
+    assert lageplan.heat_sigma == 0.04
+    # Everyone's heatmap gets it with the plan.
+    plan = api_client.get(f"/v1/location/{location.id}/").json()["lageplans"][0]
+    assert plan["heat_sigma"] == 0.04
+
+    assert _sigma(api_client, location, lageplan, None).json()["heat_sigma"] is None
+    lageplan.refresh_from_db(using=f.DB)
+    assert lageplan.heat_sigma is None
+
+
+def test_sigma_is_staff_only_and_in_range(api_client, setup):
+    location, lageplan = setup
+    for bad in (0.0001, 0.9, "x"):
+        assert _sigma(api_client, location, lageplan, bad).status_code == 400, bad
+
+    user = f.make_user(accounts=[location.account])
+    api_client.force_authenticate(user=user)
+    assert _sigma(api_client, location, lageplan, 0.04).status_code == 400
+    lageplan.refresh_from_db(using=f.DB)
+    assert lageplan.heat_sigma is None

@@ -457,6 +457,14 @@ class ProgeoLageplan(ProgeoModel, auto_prefetch.Model):
     # normalized to the plan image (0..1, y downwards) like the measure
     # points; see clean_heat_limitation.
     heat_limitations = models.JSONField(default=list, blank=True)
+    # The heatmap's kernel width (σ, normalized like the measure points) for
+    # this plan - set by staff on the heatmap; None: "Auto σ" (from the
+    # sensor spacing, heatmapChart.ts computeAutoSigma).
+    heat_sigma = models.FloatField(null=True, blank=True, help_text="Heatmap kernel width; empty: automatic")
+
+    # The range a stored σ may take (the frontend clamps to the same).
+    HEAT_SIGMA_MIN = 0.005
+    HEAT_SIGMA_MAX = 0.3
 
     # Metadata
     is_active = models.BooleanField(default=True, help_text="Whether this is the active/current lageplan")
@@ -1725,6 +1733,43 @@ class DemoSession(models.Model):
 
     def __str__(self):
         return f"Demo session {self.session_key[:8]} ({self.active_seconds}s active, {self.requests} requests)"
+
+
+class ProgeoActivity(models.Model):
+    """One usage event of a normal user's portal session (helper/activity.py):
+    a login, a page view with the time it was visible, or a click on an
+    element - only with ACTIVITY_TRACKING_ENABLED and the user's consent
+    ("statistics"), never for staff. Kept in "default" next to the users and
+    deleted after ACTIVITY_RETENTION_DAYS. No IP address, no user agent, no
+    text from the page: `path` has its ids replaced (/location/:id/analyse),
+    `target` is the clicked element's data-testid (or its tag name)."""
+
+    class Kind(models.TextChoices):
+        LOGIN = "login", "Login"
+        PAGE = "page", "Page view"
+        CLICK = "click", "Click"
+
+    id = models.BigAutoField(primary_key=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="+")
+    # Random id per browser tab session (frontend/src/activity/activityTracker.ts).
+    session = models.CharField(max_length=64)
+    kind = models.CharField(max_length=8, choices=Kind.choices)
+    path = models.CharField(max_length=255)
+    target = models.CharField(max_length=100, blank=True, default="")
+    # Page views: how long the page was visible (hidden tab time left out).
+    duration_ms = models.PositiveIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        verbose_name_plural = "Progeo activities"
+        indexes = [
+            models.Index(fields=["kind", "created_at"], name="progeo_activity_kind_created"),
+            models.Index(fields=["user", "created_at"], name="progeo_activity_user_created"),
+        ]
+
+    def __str__(self):
+        return f"{self.kind} {self.path} {self.target}".strip()
 
 
 # ==============================================================================================

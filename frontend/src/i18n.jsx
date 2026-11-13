@@ -1179,7 +1179,7 @@ i18n
             'This privacy policy is currently available in German only. The German version is legally binding.',
           consent_title: 'Privacy settings',
           consent_intro:
-            'We only use technically necessary cookies and browser storage to sign you in and to run this application securely. With your consent, maps additionally load map tiles from external providers, and the public demo measures how long it is actively used. You can change your choice at any time via the info menu (i) in the top bar.',
+            'We only use technically necessary cookies and browser storage to sign you in and to run this application securely. With your consent, maps additionally load map tiles from external providers, and we analyse how the portal is used (pages, their duration, clicks, logins). You can change your choice at any time via the info menu (i) in the top bar.',
           consent_privacy_policy: 'Privacy policy',
           consent_reject: 'Necessary only',
           consent_accept_all: 'Accept all',
@@ -1191,9 +1191,9 @@ i18n
           consent_necessary_desc:
             'Sign-in token, CSRF protection, session cache, language preference and this privacy choice. Required for the application to work; cannot be disabled.',
           consent_maps_title: 'External map services',
-          consent_stats_title: 'Usage statistics (demo)',
+          consent_stats_title: 'Usage statistics',
           consent_stats_desc:
-            'Only in the public demo: measures how long and which areas of the demo are actively used (a short activity message every 30 seconds while you use it). No cookies, no IP address, nothing passed on to third parties.',
+            'Which pages of the portal you open and for how long, which buttons you click (the element, never its text) and when you log in - tied to your user account, deleted after 180 days, used only to improve the portal. In the public demo: how long and which areas are actively used. Staff accounts are not tracked. No cookies, no IP address, nothing passed on to third parties. You can withdraw at any time here.',
           consent_maps_desc:
             'Loads map tiles from OpenStreetMap and Esri ArcGIS Online. Your IP address and the requested map area are transmitted to these providers, possibly to servers outside the EU.',
           consent_maps_blocked:
@@ -1253,6 +1253,7 @@ i18n
           heat_limit_saved: 'Heat limitation saved.',
           heat_limit_deleted: 'Heat limitation deleted.',
           heat_limit_save_failed: 'Could not save the heat limitation',
+          heatmap_sigma_save_failed: 'Could not save the kernel width (σ)',
           heat_limit_handle_hint: 'Drag to move · double-click to remove',
           escalations_title: 'Escalations',
           escalation_filter_open: 'Open',
@@ -2917,7 +2918,7 @@ i18n
             'Diese Datenschutzerklärung ist derzeit nur auf Deutsch verfügbar.',
           consent_title: 'Datenschutz-Einstellungen',
           consent_intro:
-            'Wir verwenden nur technisch notwendige Cookies und Browser-Speicher, um Sie anzumelden und diese Anwendung sicher zu betreiben. Mit Ihrer Einwilligung laden Karten zusätzlich Kartenkacheln von externen Anbietern, und die öffentliche Demo misst, wie lange sie aktiv genutzt wird. Ihre Auswahl können Sie jederzeit über das Info-Menü (i) in der Kopfleiste ändern.',
+            'Wir verwenden nur technisch notwendige Cookies und Browser-Speicher, um Sie anzumelden und diese Anwendung sicher zu betreiben. Mit Ihrer Einwilligung laden Karten zusätzlich Kartenkacheln von externen Anbietern, und wir werten aus, wie das Portal genutzt wird (Seiten, Verweildauer, Klicks, Anmeldungen). Ihre Auswahl können Sie jederzeit über das Info-Menü (i) in der Kopfleiste ändern.',
           consent_privacy_policy: 'Datenschutzerklärung',
           consent_reject: 'Nur notwendige',
           consent_accept_all: 'Alle akzeptieren',
@@ -2929,9 +2930,9 @@ i18n
           consent_necessary_desc:
             'Anmelde-Token, CSRF-Schutz, Sitzungs-Cache, Spracheinstellung und diese Datenschutz-Auswahl. Für den Betrieb der Anwendung erforderlich; kann nicht deaktiviert werden.',
           consent_maps_title: 'Externe Kartendienste',
-          consent_stats_title: 'Nutzungsstatistik (Demo)',
+          consent_stats_title: 'Nutzungsstatistik',
           consent_stats_desc:
-            'Nur in der öffentlichen Demo: misst, wie lange und welche Bereiche der Demo aktiv genutzt werden (eine kurze Aktivitätsmeldung alle 30 Sekunden, solange Sie sie bedienen). Ohne Cookies, ohne IP-Adresse, keine Weitergabe an Dritte.',
+            'Welche Seiten des Portals Sie wie lange aufrufen, welche Schaltflächen Sie anklicken (das Element, nie dessen Text) und wann Sie sich anmelden – bezogen auf Ihr Benutzerkonto, nach 180 Tagen gelöscht, nur zur Verbesserung des Portals. In der öffentlichen Demo: wie lange und welche Bereiche aktiv genutzt werden. Mitarbeiterkonten werden nicht erfasst. Ohne Cookies, ohne IP-Adresse, keine Weitergabe an Dritte. Jederzeit hier widerrufbar.',
           consent_maps_desc:
             'Lädt Kartenkacheln von OpenStreetMap und Esri ArcGIS Online. Dabei werden Ihre IP-Adresse und der angefragte Kartenausschnitt an diese Anbieter übermittelt, ggf. auch an Server außerhalb der EU.',
           consent_maps_blocked:
@@ -2991,6 +2992,7 @@ i18n
           heat_limit_saved: 'Heat-Limitation gespeichert.',
           heat_limit_deleted: 'Heat-Limitation gelöscht.',
           heat_limit_save_failed: 'Heat-Limitation konnte nicht gespeichert werden',
+          heatmap_sigma_save_failed: 'Kernbreite (σ) konnte nicht gespeichert werden',
           heat_limit_handle_hint: 'Ziehen: verschieben · Doppelklick: entfernen',
           escalations_title: 'Eskalationen',
           escalation_filter_open: 'Offen',
