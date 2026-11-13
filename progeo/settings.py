@@ -556,10 +556,18 @@ STAGING_REMOTE_KEEP = int(os.getenv("STAGING_REMOTE_KEEP", "") or 2)
 STAGING_REMOTE_GPG_KEY_FILE = (os.getenv("STAGING_REMOTE_GPG_KEY_FILE", "").strip()
                                or "/etc/progeo/backup/staging-public-key.asc")
 # STAGING server: where the live server's bundles arrive (`import_live_backup`) and
-# the private key that opens them - this key opens staging bundles only.
+# the private keys that may open them (comma-separated): every one of them that
+# exists is loaded, gpg takes the one the bundle is encrypted for. By default the
+# staging key pair's and the backup key pair's private key (./secrets/backup).
 STAGING_IMPORT_DIR = os.path.join(MEDIA_ROOT, os.getenv("STAGING_IMPORT_DIR", "staging"))
-STAGING_IMPORT_GPG_KEY_FILE = (os.getenv("STAGING_IMPORT_GPG_KEY_FILE", "").strip()
-                               or "/etc/progeo/backup/staging-private-key.asc")
+STAGING_IMPORT_GPG_KEY_FILES = [
+    path.strip()
+    for path in (
+        os.getenv("STAGING_IMPORT_GPG_KEY_FILE", "").strip()
+        or "/etc/progeo/backup/staging-private-key.asc,/etc/progeo/backup/backup-private-key.asc"
+    ).split(",")
+    if path.strip()
+]
 STAGING_IMPORT_GPG_PASSPHRASE = os.getenv("STAGING_IMPORT_GPG_PASSPHRASE", "")
 # STAGING server: cronjobs/staging-import.sh restores each new bundle at night. Off by default.
 STAGING_AUTO_IMPORT = parse_boolean(os.getenv("STAGING_AUTO_IMPORT"))

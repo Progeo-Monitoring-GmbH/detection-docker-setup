@@ -224,6 +224,7 @@ Also check the jobs that talk to the outside world, e.g. the Airtable sync (`AIR
    gpg --batch --pinentry-mode loopback --passphrase "" --armor --export-secret-keys > staging-private-key.asc
    chmod 600 staging-private-key.asc && rm -rf "$GNUPGHOME"
    ```
+   `import_live_backup` loads every private key it finds: `secrets/backup/staging-private-key.asc` and `secrets/backup/backup-private-key.asc`, or the comma-separated list in `STAGING_IMPORT_GPG_KEY_FILE`. gpg takes the one the bundle is encrypted for.
 2. **Staging server**: allow the live server's backup SSH key (`secrets/backup/id_ed25519.pub` on live) for the user `progeo`, restricted to SFTP. Add it as one line to `~progeo/.ssh/authorized_keys`:
    ```text
    restrict,command="/usr/lib/openssh/sftp-server" ssh-ed25519 AAAA... progeo-backup

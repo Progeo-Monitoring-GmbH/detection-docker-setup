@@ -83,6 +83,14 @@ const POINT_SOURCES: Array<{ value: PointSource; label: string }> = [
 
 const MUTED = '#8B8383';
 
+/** A measure point's normalized position after its plan turned by 90
+ * degrees - as the backend turns the stored ones (lageplan_edit.rotated_point). */
+const rotatedPoint = (nx: number, ny: number, flipY: boolean, clockwise: boolean): [number, number] => {
+  const v = flipY ? 1 - ny : ny;
+  const [nextNx, nextV] = clockwise ? [1 - v, nx] : [v, 1 - nx];
+  return [nextNx, flipY ? 1 - nextV : nextV];
+};
+
 const getFileExt = (name: string) => name.split('.').pop()?.toLowerCase() ?? '';
 
 /** Devices are shown by their MAC; without one by hardware name / hash. */
@@ -763,13 +771,38 @@ const LageplanWizardView = () => {
     );
   };
 
-  // Step 5 cleared or cropped the plan image (measure_points/edit_lageplan):
-  // the stored plan - a new file, for a crop also the moved alignment,
-  // reference point and heat limitations.
+  // Step 5 cleared, cropped or rotated the plan image
+  // (measure_points/edit_lageplan): the stored plan - a new file, for a crop
+  // or rotation also the moved alignment, reference point and heat
+  // limitations; a rotation also turned the plan's measure points.
   const handleImageEdited = (response: Record<string, unknown>) => {
     const plan = response?.lageplan as WizardLageplan | undefined;
     if (plan?.id) {
       updatePlan(plan.id, plan);
+    }
+    if (response?.direction === 'cw' || response?.direction === 'ccw') {
+      const clockwise = response.direction === 'cw';
+      const turned = (Array.isArray(response.points) ? response.points : []) as Array<Record<string, unknown>>;
+      const byId = new Map(turned.map((point) => [Number(point.id), point]));
+      const merged = measurePoints.map((point) => byId.get(Number(point.id)) ?? point);
+      setMeasurePoints(merged);
+      if (!placementDirty) {
+        setPlacedSensors(placedFromPoints(merged, devices));
+      } else if (plan?.id) {
+        // Not stored yet - turned here like the stored ones.
+        const flipY = plan.flip_y ?? true;
+        setPlacedSensors((current) =>
+          current.map((sensor) => {
+            if (!belongsTo(sensor.lageplanId, plan.id)) {
+              return sensor;
+            }
+            const [nx, ny] = rotatedPoint(sensor.nx, sensor.ny, flipY, clockwise);
+            return { ...sensor, nx, ny };
+          }),
+        );
+      }
+      toastSaved(`Lageplan rotated and saved - ${turned.length} measure point(s) turned with it.`);
+      return;
     }
     toastSaved(
       response?.message === 'Lageplan cropped.'

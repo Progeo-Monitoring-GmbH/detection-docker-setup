@@ -6,13 +6,13 @@ encrypted for the staging server's own key pair:
     STAGING_IMPORT_DIR/progeo-<YYYY-MM-DD-HHMMSS>.tar.gpg (+ .sha256)
         -> BACKUP_DIR/<db>-<server>-<datetime>.psql.gz
 
-The bundle is checked against its ".sha256", decrypted with the private key
-STAGING_IMPORT_GPG_KEY_FILE in a throwaway GnuPG home and unpacked straight from
+The bundle is checked against its ".sha256", decrypted with the private keys of
+STAGING_IMPORT_GPG_KEY_FILES (those that exist - gpg takes the one the bundle
+is encrypted for: the staging or the backup key pair's) in a throwaway GnuPG
+home and unpacked straight from
 gpg's output - no decrypted tar on disk. Only plain dump files are taken from
 the tar, anything else fails the import. When gpg fails (wrong key, damaged
 data) the dumps unpacked so far are deleted again.
-
-That key opens the staging bundles only, never the backup server's.
 """
 import hashlib
 import os
@@ -67,17 +67,26 @@ def _gpg(home, *args):
             "--pinentry-mode", "loopback", "--passphrase-fd", "0", *args]
 
 
+def existing_key_files(key_files):
+    """The key files of key_files that exist; TransferError when none does."""
+    found = [path for path in key_files if os.path.isfile(path)]
+    if not found:
+        raise TransferError(f"No private key to open the bundle - none of {', '.join(key_files) or '(none)'} "
+                            "exists (STAGING_IMPORT_GPG_KEY_FILE)")
+    return found
+
+
 @contextmanager
-def private_keyring(key_file, secret):
-    """A throwaway GnuPG home holding the private key of key_file; yields its path."""
-    if not os.path.isfile(key_file):
-        raise TransferError(f"The private key STAGING_IMPORT_GPG_KEY_FILE={key_file} is missing")
+def private_keyring(key_files, secret):
+    """A throwaway GnuPG home holding the private keys of key_files (one path or
+    several - those that exist); yields its path."""
+    key_files = existing_key_files([key_files] if isinstance(key_files, str) else list(key_files))
     home = tempfile.mkdtemp(prefix="progeo-gpg-")
     try:
         # An existing common.conf keeps gpg >= 2.4.1 from switching a new home to keyboxd
         open(os.path.join(home, "common.conf"), "w").close()
         try:
-            done = subprocess.run(_gpg(home, "--import", key_file), input=secret, check=False,
+            done = subprocess.run(_gpg(home, "--import", *key_files), input=secret, check=False,
                                   capture_output=True, timeout=_TIMEOUT)
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise TransferError(f"gpg failed: {exc}") from exc
@@ -115,10 +124,12 @@ def _extract(stream, backup_dir, bundle, written):
 
 
 def unpack(bundle_path, backup_dir=None, key_file=None, passphrase=None):
-    """Checks, decrypts and unpacks a bundle into backup_dir (default BACKUP_DIR);
-    returns {database: dump file name}. Raises TransferError, leaving no dump of it behind."""
+    """Checks, decrypts and unpacks a bundle into backup_dir (default BACKUP_DIR)
+    with the private key(s) key_file (a path or a list, default
+    STAGING_IMPORT_GPG_KEY_FILES); returns {database: dump file name}. Raises
+    TransferError, leaving no dump of it behind."""
     backup_dir = backup_dir or settings.BACKUP_DIR
-    key_file = key_file or settings.STAGING_IMPORT_GPG_KEY_FILE
+    key_file = key_file or settings.STAGING_IMPORT_GPG_KEY_FILES
     passphrase = settings.STAGING_IMPORT_GPG_PASSPHRASE if passphrase is None else passphrase
     bundle = os.path.basename(bundle_path)
     verify_checksum(bundle_path)
@@ -142,8 +153,10 @@ def unpack(bundle_path, backup_dir=None, key_file=None, passphrase=None):
         # but not when it only died of the kill above (negative returncode)
         if returncode and (failure is None or (returncode > 0 and isinstance(failure, Exception))):
             stderr.seek(0)
+            loaded = existing_key_files([key_file] if isinstance(key_file, str) else list(key_file))
             failure = TransferError(f"gpg --decrypt of {bundle} failed (exit {returncode}): "
-                                    f"{stderr.read().decode(errors='replace').strip()}")
+                                    f"{stderr.read().decode(errors='replace').strip()} "
+                                    f"- keys loaded: {', '.join(os.path.basename(path) for path in loaded)}")
     if failure is not None:
         for path in written:
             for victim in (path, path + PART_SUFFIX):

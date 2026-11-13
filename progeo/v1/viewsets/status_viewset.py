@@ -794,23 +794,35 @@ class StatusViewSet(ProgeoModalViewSet):
     @require_module_permissions("module_devices_enabled", "module_devices_edit")
     @action(detail=False, url_path="measure_points/edit_lageplan", methods=["POST"])
     def edit_lageplan_image(self, request, *args, **kwargs):
-        """Clears or crops a Lageplan image (step 5 of the Lageplan wizard, see
-        helper/lageplan_edit.py): POST {location_id (project id), lageplan_id,
-        action: "clear" | "crop", x, y, width, height (the selection in image
-        pixels)} plus the alignment shown - offset_x, offset_y, scale_x,
-        scale_y, flip_y - which is stored with it (a crop moves it onto the
-        cropped image). The edited image is a new file (a new URL: nothing
-        shows the old one from a cache); the old file is deleted unless another
-        plan uses it. The answer is upload_png's (lageplan_answer)."""
+        """Clears, crops or rotates a Lageplan image (step 5 of the Lageplan
+        wizard, see helper/lageplan_edit.py): POST {location_id (project id),
+        lageplan_id, action: "clear" | "crop", x, y, width, height (the
+        selection in image pixels)} or {..., action: "rotate", direction: "cw"
+        | "ccw"} (90 degrees) plus the alignment shown - offset_x, offset_y,
+        scale_x, scale_y, flip_y - which is stored with it (a crop moves it
+        onto the cropped image, a rotation rebuilds it for the turned one and
+        turns the plan's measure points with it). The edited image is a new
+        file (a new URL: nothing shows the old one from a cache); the old file
+        is deleted unless another plan uses it. The answer is upload_png's
+        (lageplan_answer) - after a rotation with the turned `points`."""
         location, db_name, error = _measure_point_location(request, {"location_id": request.data.get("location_id")})
         if error:
             return error
         action_name = request.data.get("action")
         if action_name not in lageplan_edit.ACTIONS:
             return RequestFailed({"reason": f"action must be one of {', '.join(lageplan_edit.ACTIONS)}"})
+        rotate = action_name == "rotate"
+        direction = request.data.get("direction", "cw")
+        if rotate and direction not in ("cw", "ccw"):
+            return RequestFailed({"reason": "direction must be cw or ccw"})
+        clockwise = direction == "cw"
         try:
             lageplan_id = int(request.data.get("lageplan_id"))
-            selection = tuple(float(request.data.get(field)) for field in ("x", "y", "width", "height"))
+            selection = (
+                None
+                if action_name in lageplan_edit.WHOLE_IMAGE_ACTIONS
+                else tuple(float(request.data.get(field)) for field in ("x", "y", "width", "height"))
+            )
         except (TypeError, ValueError):
             return RequestFailed({"reason": "lageplan_id and the selection (x, y, width, height) are required"})
 
@@ -846,7 +858,7 @@ class StatusViewSet(ProgeoModalViewSet):
             suffix = os.path.splitext(old_name)[1].lower()
             try:
                 with open(path, "rb") as source:
-                    edited = lageplan_edit.edit_image(source.read(), suffix, action_name, selection)
+                    edited = lageplan_edit.edit_image(source.read(), suffix, action_name, selection, clockwise)
             except lageplan_edit.LageplanEditError as exc:
                 return RequestFailed({"reason": str(exc)})
 
@@ -865,6 +877,29 @@ class StatusViewSet(ProgeoModalViewSet):
                 changed["heat_limitations"] = lageplan_edit.cropped_heat_limitations(
                     lageplan.heat_limitations, edited.size, edited.rect
                 )
+            turned = []
+            if rotate:
+                changed.update(lageplan_edit.rotated_alignment(alignment, edited.size, clockwise))
+                if lageplan.reference_x is not None and lageplan.reference_y is not None:
+                    changed["reference_x"], changed["reference_y"] = lageplan_edit.rotated_pixel(
+                        lageplan.reference_x, lageplan.reference_y, edited.size, clockwise
+                    )
+                changed["heat_limitations"] = lageplan_edit.rotated_heat_limitations(
+                    lageplan.heat_limitations, clockwise
+                )
+                # The plan's points (the main plan's: also those without a
+                # plan) turn with the image - dm bands with their end.
+                turned = list(cad_import.points_on_plan(location, db_name, lageplan).select_for_update())
+                for point in turned:
+                    point.nx, point.ny = (
+                        round(value, 6) for value in lageplan_edit.rotated_point(point.nx, point.ny, flip_y, clockwise)
+                    )
+                    if point.nx_end is not None and point.ny_end is not None:
+                        point.nx_end, point.ny_end = (
+                            round(value, 6)
+                            for value in lageplan_edit.rotated_point(point.nx_end, point.ny_end, flip_y, clockwise)
+                        )
+                ProgeoMeasurePoint.objects.using(db_name).bulk_update(turned, ["nx", "ny", "nx_end", "ny_end"])
 
             save_check_dir(settings.UPLOAD_DIR, "lageplan")
             new_name = FileSystemStorage(location=settings.UPLOAD_DIR).save(
@@ -886,9 +921,16 @@ class StatusViewSet(ProgeoModalViewSet):
             f"Lageplan {lageplan.pk} of location {location.id}: {action_name} "
             f"{rect.width}x{rect.height} px at ({rect.left}, {rect.top}) -> {new_name}"
         )
+        messages = {"crop": "Lageplan cropped.", "clear": "Area cleared.", "rotate": "Lageplan rotated."}
+        turned.sort(key=lambda point: (point.sensor_order, point.pk))
         return RequestSuccess({
             **cad_import.lageplan_answer(lageplan),
-            "message": "Lageplan cropped." if action_name == "crop" else "Area cleared.",
+            "message": messages[action_name],
+            **(
+                {"direction": direction, "points": ProgeoMeasurePointSerializer(turned, many=True).data}
+                if rotate
+                else {}
+            ),
         })
 
     @calc_runtime

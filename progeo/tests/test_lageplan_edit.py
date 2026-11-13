@@ -116,6 +116,87 @@ def test_clear_fills_the_selection_white_and_stores_the_alignment_shown(editor, 
     assert (plan.offset_x, plan.offset_y, plan.scale_x, plan.scale_y, plan.flip_y) == (12, -7, 1.25, 0.75, False)
 
 
+def _rotate(client, location, plan, direction, **alignment):
+    return client.post(URL, {
+        "location_id": location.project_id, "lageplan_id": plan.pk, "action": "rotate",
+        "direction": direction, **alignment,
+    }, format="json")
+
+
+@pytest.mark.parametrize("direction", ["cw", "ccw"])
+@pytest.mark.parametrize("flip_y", [True, False])
+def test_a_rotation_turns_the_image_and_keeps_the_points_on_the_drawing(editor, upload_dir, location, direction, flip_y):
+    clockwise = direction == "cw"
+    plan = _plan(
+        upload_dir, location, offset_x=20, offset_y=-10, scale_x=0.8, scale_y=0.9, flip_y=flip_y,
+        reference_x=400.0, reference_y=300.0, meters_per_pixel=0.05,
+        heat_limitations=[{"id": "a", "name": "Hall", "points": [[0.1, 0.2], [0.5, 0.2], [0.5, 0.6]]}],
+    )
+    # A white marker pixel on the red image, to see where the content went.
+    image = _image(upload_dir, plan)
+    image.putpixel((100, 50), WHITE)
+    image.save(upload_dir / plan.lageplan.name)
+    point = f.make_measure_point(location, 1, nx=0.3, ny=0.7, lageplan=plan)
+    band = f.make_measure_point(location, 2, nx=0.1, ny=0.2, nx_end=0.6, ny_end=0.2, lageplan=plan)
+    unplaced = f.make_measure_point(location, 3, nx=0.9, ny=0.1)  # on the main plan
+    before = {
+        pk: _on_image(plan, (1000, 500), nx, ny)
+        for pk, nx, ny in [(point.pk, 0.3, 0.7), (band.pk, 0.1, 0.2), ("end", 0.6, 0.2), (unplaced.pk, 0.9, 0.1)]
+    }
+
+    response = _rotate(editor, location, plan, direction,
+                       offset_x=20, offset_y=-10, scale_x=0.8, scale_y=0.9, flip_y=flip_y)
+
+    assert response.status_code == 200, response.content
+    assert response.json()["message"] == "Lageplan rotated."
+    assert sorted(p["id"] for p in response.json()["points"]) == sorted([point.pk, band.pk, unplaced.pk])
+    plan.refresh_from_db(using=f.DB)
+    turned = _image(upload_dir, plan)
+    assert turned.size == (500, 1000)
+    marker = lageplan_edit.rotated_pixel(100, 50, (1000, 500), clockwise)
+    assert turned.getpixel((int(marker[0]) - (1 if clockwise else 0), int(marker[1]) - (0 if clockwise else 1))) == WHITE
+    assert plan.flip_y is flip_y
+    # Every point on the same spot of the drawing - up to the integer offsets.
+    tolerance = 0.5 / alignment_base_scale(500, 1000)
+    points = {p.pk: p for p in ProgeoMeasurePoint.objects.using(f.DB).filter(location=location)}
+    after = {pk: _on_image(plan, (500, 1000), points[pk].nx, points[pk].ny) for pk in (point.pk, band.pk, unplaced.pk)}
+    after["end"] = _on_image(plan, (500, 1000), points[band.pk].nx_end, points[band.pk].ny_end)
+    for key, (x, y) in before.items():
+        expected = lageplan_edit.rotated_pixel(x, y, (1000, 500), clockwise)
+        assert after[key] == pytest.approx(expected, abs=tolerance), key
+    assert points[point.pk].nx_end is None
+    assert (plan.reference_x, plan.reference_y) == lageplan_edit.rotated_pixel(400.0, 300.0, (1000, 500), clockwise)
+    assert plan.meters_per_pixel == 0.05
+    expected_area = [[0.8, 0.1], [0.8, 0.5], [0.4, 0.5]] if clockwise else [[0.2, 0.9], [0.2, 0.5], [0.6, 0.5]]
+    assert plan.heat_limitations[0]["points"] == expected_area
+
+
+def test_four_rotations_bring_everything_back(editor, upload_dir, location):
+    plan = _plan(upload_dir, location, offset_x=0, offset_y=0, scale_x=1, scale_y=1, flip_y=True)
+    point = f.make_measure_point(location, 1, nx=0.3, ny=0.7, lageplan=plan)
+
+    for _ in range(4):
+        plan.refresh_from_db(using=f.DB)
+        response = _rotate(editor, location, plan, "ccw", offset_x=plan.offset_x, offset_y=plan.offset_y,
+                           scale_x=plan.scale_x, scale_y=plan.scale_y, flip_y=plan.flip_y)
+        assert response.status_code == 200, response.content
+
+    plan.refresh_from_db(using=f.DB)
+    point.refresh_from_db(using=f.DB)
+    assert _image(upload_dir, plan).size == (1000, 500)
+    assert (point.nx, point.ny) == pytest.approx((0.3, 0.7))
+    assert (plan.offset_x, plan.offset_y, plan.scale_x, plan.scale_y) == (0, 0, 1, 1)
+
+
+def test_rotate_needs_a_direction(editor, upload_dir, location):
+    plan = _plan(upload_dir, location)
+
+    response = _rotate(editor, location, plan, "up")
+
+    assert response.status_code == 400
+    assert "direction" in response.json()["reason"]
+
+
 def test_an_edit_keeps_a_file_another_plan_uses(editor, upload_dir, location):
     plan = _plan(upload_dir, location)
     ProgeoLageplan.objects.using(f.DB).create(location=location, lageplan=plan.lageplan.name)
@@ -126,7 +207,7 @@ def test_an_edit_keeps_a_file_another_plan_uses(editor, upload_dir, location):
 
 
 @pytest.mark.parametrize("action, rect, reason", [
-    ("rotate", (0, 0, 10, 10), "action must be one of"),
+    ("spin", (0, 0, 10, 10), "action must be one of"),
     ("crop", (0, 0, 0, 10), "Select an area first"),
     ("crop", (2000, 0, 10, 10), "outside the Lageplan"),
 ])

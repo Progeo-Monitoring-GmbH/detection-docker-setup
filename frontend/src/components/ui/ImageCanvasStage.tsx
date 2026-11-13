@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowClockwise, ArrowCounterclockwise } from 'react-bootstrap-icons';
 import axiosConfig from '../../axiosConfig';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import ZoomControls from '../device/ZoomControls';
@@ -1609,10 +1610,21 @@ const ImageCanvasStage = ({
       startGroup();
       return;
     }
-    if (!editMode || !selectionRect || locationId == null || lageplanId == null) {
+    if (!editMode || !selectionRect) {
       return;
     }
-    const action = editMode;
+    postImageEdit(editMode, { ...selectionRect });
+  };
+
+  /** Rotation by 90 degrees: the server turns the image and the plan's
+   * measure points with it - they stay on the drawing. */
+  const rotateImage = (clockwise: boolean) => postImageEdit('rotate', { direction: clockwise ? 'cw' : 'ccw' });
+
+  /** Stores an image edit (measure_points/edit_lageplan) with the alignment shown. */
+  const postImageEdit = (action: ImageEdit | 'rotate', extra: Record<string, unknown>) => {
+    if (locationId == null || lageplanId == null) {
+      return;
+    }
     const values: AlignmentValues = {
       offsetX: pointOffsetX,
       offsetY: pointOffsetY,
@@ -1632,7 +1644,7 @@ const ImageCanvasStage = ({
         location_id: locationId,
         lageplan_id: lageplanId,
         action,
-        ...selectionRect,
+        ...extra,
         offset_x: values.offsetX,
         offset_y: values.offsetY,
         scale_x: values.scaleX,
@@ -1644,7 +1656,7 @@ const ImageCanvasStage = ({
         const plan = (answer.lageplan ?? {}) as NonNullable<ImageCanvasStageProps['sourceMeta']>;
         setEditBusy(false);
         leaveEdit();
-        if (action === 'crop') {
+        if (action === 'crop' || action === 'rotate') {
           // The points keep their place on the plan: their alignment, the
           // reference point (image pixels) and the view start anew.
           const moved: AlignmentValues = {
@@ -1672,9 +1684,8 @@ const ImageCanvasStage = ({
       },
       (editFailure: unknown) => {
         setEditBusy(false);
-        setEditError(
-          `Could not ${action === 'crop' ? 'crop the plan' : 'clear the area'}: ${requestReason(editFailure)}`,
-        );
+        const what = { crop: 'crop the plan', clear: 'clear the area', rotate: 'rotate the plan' }[action];
+        setEditError(`Could not ${what}: ${requestReason(editFailure)}`);
       },
     );
   };
@@ -2005,6 +2016,37 @@ const ImageCanvasStage = ({
             resetDisabled={zoom === 1 && offsetX === 0 && offsetY === 0}
           />
           <WheelZoomHint visible={wheelHint} />
+          {canEditImage && !editing && (
+            // Turns the image by 90 degrees - the measure points turn with it.
+            <div
+              className="d-flex gap-1"
+              style={{
+                position: 'absolute',
+                top: 8,
+                right: 8,
+                zIndex: 2,
+                background: 'var(--progeo-surface)',
+                borderRadius: 10,
+                padding: 3,
+                boxShadow: '0 2px 8px rgba(11, 54, 89, .18)',
+              }}
+            >
+              {([false, true] as const).map((clockwise) => (
+                <button
+                  key={String(clockwise)}
+                  type="button"
+                  className="btn btn-sm btn-light d-inline-flex align-items-center justify-content-center"
+                  style={{ width: 30, height: 30, padding: 0, borderRadius: 8 }}
+                  title={clockwise ? 'Rotate 90° clockwise' : 'Rotate 90° counterclockwise'}
+                  aria-label={clockwise ? 'Rotate the plan 90° clockwise' : 'Rotate the plan 90° counterclockwise'}
+                  disabled={editBusy || aligning}
+                  onClick={() => rotateImage(clockwise)}
+                >
+                  {clockwise ? <ArrowClockwise size={15} /> : <ArrowCounterclockwise size={15} />}
+                </button>
+              ))}
+            </div>
+          )}
           {badge && (
             <div
               aria-live="polite"
@@ -2175,6 +2217,7 @@ const ImageCanvasStage = ({
               entries: [
                 { keys: ['C'], label: 'Clear an area - fill it white', active: editMode === 'clear' },
                 { keys: ['X'], label: 'Crop the plan to an area', active: editMode === 'crop' },
+                { keys: ['↺ / ↻'], label: 'Rotate the plan by 90° (buttons on the plan) - the sensors turn with it' },
                 editing && !selectingPoints && {
                   keys: ['Drag'],
                   label: selectionRect ? 'Select the area again' : 'Select the area',
