@@ -65,3 +65,19 @@ export const PORTAL_NAV_ITEMS: PortalNavItem[] = [
 
 export const portalNavPath = (item: PortalNavItem, id: string | number) =>
   `/location/${id}/${item.segment}`;
+
+/** The portal tab of a location page (`/location/<id>/<segment>/...`), else null. */
+export const portalTabOf = (pathname: string): PortalNavItem | null => {
+  const segment = /^\/location\/\d+\/([^/?#]+)/.exec(pathname)?.[1];
+  return PORTAL_NAV_ITEMS.find((item) => item.segment === segment) ?? null;
+};
+
+/**
+ * Where a switch to location `id` leads (favorites bar): the tab of the open
+ * location page, so /objekt stays /objekt - anywhere else the analysis.
+ * Deeper paths of a tab are dropped: they belong to the open location.
+ */
+export const switchLocationPath = (pathname: string, id: string | number) => {
+  const tab = portalTabOf(pathname);
+  return tab ? portalNavPath(tab, id) : `/location/${id}/analyse`;
+};

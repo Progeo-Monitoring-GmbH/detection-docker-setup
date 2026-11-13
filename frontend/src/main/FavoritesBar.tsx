@@ -4,11 +4,13 @@ import { useTranslation } from 'react-i18next';
 import { Link, useLocation as useRouterLocation } from 'react-router';
 import { FAVORITE_COLOR } from './FavoriteStar';
 import { useFavorites } from './favorites';
+import { switchLocationPath } from './portalNav';
 
 /**
  * The user's favorite locations as one bar at the top of every page
- * (below the TopBar): each one opens the location's analysis, the x next to
- * it removes the favorite. Hidden without favorites - the stars pin them.
+ * (below the TopBar): each one opens the location on the tab of the open
+ * location page (/objekt stays /objekt), elsewhere its analysis; the x next
+ * to it removes the favorite. Hidden without favorites - the stars pin them.
  */
 const FavoritesBar = ({ style }: { style?: CSSProperties }) => {
   const { t } = useTranslation();
@@ -60,7 +62,7 @@ const FavoritesBar = ({ style }: { style?: CSSProperties }) => {
             }}
           >
             <Link
-              to={`/location/${favorite.location}/analyse`}
+              to={switchLocationPath(pathname, favorite.location)}
               title={[favorite.project_id, favorite.name, favorite.city].filter(Boolean).join(' · ')}
               style={{
                 color: 'inherit',

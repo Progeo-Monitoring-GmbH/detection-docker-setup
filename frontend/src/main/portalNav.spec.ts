@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PORTAL_NAV_ITEMS, portalNavPath } from './portalNav';
+import { PORTAL_NAV_ITEMS, portalNavPath, portalTabOf, switchLocationPath } from './portalNav';
 
 describe('PORTAL_NAV_ITEMS', () => {
   it('is non-empty and starts with the status page', () => {
@@ -50,5 +50,29 @@ describe('portalNavPath', () => {
   it('produces a distinct path for every item', () => {
     const paths = PORTAL_NAV_ITEMS.map((item) => portalNavPath(item, 3));
     expect(new Set(paths).size).toBe(paths.length);
+  });
+});
+
+describe('switchLocationPath', () => {
+  it.each([
+    ['/location/12/objekt', '/location/7/objekt'],
+    ['/location/12/benachrichtigungen', '/location/7/benachrichtigungen'],
+    ['/location/12/status/', '/location/7/status'],
+    // A deeper path belongs to the open location - only its tab is kept.
+    ['/location/12/einstellungen/lageplan/3', '/location/7/einstellungen'],
+  ])('keeps the tab of %s', (pathname, expected) => {
+    expect(switchLocationPath(pathname, 7)).toBe(expected);
+  });
+
+  it.each(['/alarms/', '/location/overview/', '/location/12/unknown', '/'])(
+    'opens the analysis from %s',
+    (pathname) => {
+      expect(switchLocationPath(pathname, 7)).toBe('/location/7/analyse');
+    },
+  );
+
+  it('knows the tab of a location page only', () => {
+    expect(portalTabOf('/location/3/rechte')?.key).toBe('rechte');
+    expect(portalTabOf('/device/overview')).toBeNull();
   });
 });
