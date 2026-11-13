@@ -26,6 +26,7 @@ from progeo.authentication import ExpiringTokenAuthentication
 from progeo.decorator import calc_runtime, require_module_permissions
 from progeo.helper import cad_import, lageplan_edit
 from progeo.helper.basics import RequestFailed, RequestSuccess, ilog, save_check_dir
+from progeo.helper.cacher import forget_location_answers
 from progeo.helper.creator import create_MfS_log
 from progeo.helper.device_inventory import (
     SECTION_NAMES,
@@ -747,6 +748,7 @@ class StatusViewSet(ProgeoModalViewSet):
             return RequestFailed({"reason": f"The name may have at most {max_length} characters"})
 
         updated = ProgeoLageplan.objects.using(db_name).filter(location=location, pk=lageplan_id).update(name=name)
+        forget_location_answers()  # update() sends no post_save
         if not updated:
             return RequestFailed({"reason": f"Lageplan {lageplan_id} is not at this location"})
         ilog(f"Lageplan {lageplan_id} of location {location.id} renamed to {name!r}")

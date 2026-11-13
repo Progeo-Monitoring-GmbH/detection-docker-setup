@@ -603,6 +603,35 @@ def test_order_lageplans_sets_the_order_everywhere(api_client, world):
     assert [plan["id"] for plan in listed["lageplans"]] == [third.pk, first.pk, second.pk]
 
 
+def test_reordered_and_renamed_plans_show_at_once_in_the_cached_location(
+    api_client, world, django_capture_on_commit_callbacks
+):
+    """/analyse reads the plans from the cached /v1/location/<id>/ answer -
+    the wizard's changes must not wait for the cache to expire."""
+    from progeo.v1.models import ProgeoLageplan
+
+    location = world[0]
+    first = ProgeoLageplan.objects.using(f.DB).create(location=location, lageplan="lageplan/a.png", name="A")
+    second = ProgeoLageplan.objects.using(f.DB).create(location=location, lageplan="lageplan/b.png", name="B")
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    def shown():
+        response = api_client.get(f"/v1/location/{location.pk}/")
+        assert response.status_code == 200, response.content
+        return [(plan["id"], plan["name"]) for plan in response.json()["lageplans"]]
+
+    assert shown() == [(second.pk, "B"), (first.pk, "A")]  # cached now: newest first
+
+    # The cache is dropped once the change is committed - the test's
+    # transaction never is, so run the on_commit callbacks here.
+    with django_capture_on_commit_callbacks(using=f.DB, execute=True):
+        assert _order_plans(api_client, location, [first.pk, second.pk]).status_code == 200
+    assert shown() == [(first.pk, "A"), (second.pk, "B")]
+
+    assert _rename_plan(api_client, location, second.pk, "Keller").status_code == 200
+    assert shown() == [(first.pk, "A"), (second.pk, "Keller")]
+
+
 def test_order_lageplans_needs_every_plan_of_the_location_once(api_client, world):
     from progeo.v1.models import ProgeoLageplan
 

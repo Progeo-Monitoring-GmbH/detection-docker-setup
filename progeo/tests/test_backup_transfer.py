@@ -437,7 +437,7 @@ def test_without_the_right_private_key_nothing_is_unpacked(dirs, gpg_key, tmp_pa
     bundle = server / STAGING / _send_to_staging(dirs, gpg_key).bundle
     out = tmp_path / "out"
 
-    with pytest.raises(bt.TransferError, match="missing"):
+    with pytest.raises(bt.TransferError, match="No private key"):
         bi.unpack(str(bundle), str(out), str(tmp_path / "no-key.asc"), "")
     with pytest.raises(bt.TransferError, match="gpg --decrypt"):
         bi.unpack(str(bundle), str(out), str(gpg_key[1]), "")  # the public key only

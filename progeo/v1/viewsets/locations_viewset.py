@@ -47,7 +47,7 @@ from progeo.helper.basics import (
     ilog,
     save_check_dir,
 )
-from progeo.helper.cacher import cache_save_and_return, search_cache
+from progeo.helper.cacher import cache_save_and_return, forget_location_answers, search_cache
 from progeo.helper.climate_heatmap import CLIMATE_METRICS, climate_frames
 from progeo.helper.climate_heatmap import frame_step as climate_frame_step
 from progeo.helper.demo import demo_export_throttle, is_demo_user
@@ -1814,6 +1814,7 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         if error:
             return error
         ProgeoLageplan.objects.using(db_name).filter(pk=lageplan.pk).update(heat_sigma=sigma)
+        forget_location_answers()  # update() sends no post_save
         return RequestSuccess({"lageplan_id": lageplan.pk, "heat_sigma": sigma})
 
     @action(detail=True, url_path="heat-limitations/delete", methods=["POST"])

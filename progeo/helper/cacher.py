@@ -42,10 +42,21 @@ def search_clear_cache(_key):
 
 def clear_cache_pattern(pattern):
     """Deletes every cached answer whose key matches the glob `pattern` -
-    django-redis walks the keys with SCAN, not the blocking KEYS."""
+    django-redis walks the keys with SCAN, not the blocking KEYS. A cache
+    without patterns (LocMemCache in some tests) is cleared entirely -
+    dropping too much is safe, keeping a stale answer is not."""
+    if not hasattr(cache, "delete_pattern"):
+        cache.clear()
+        return None
     deleted = cache.delete_pattern(pattern)
     dlog("Clear Cache", pattern, deleted, tag="[CACHE]", active=settings.DEBUG)
     return deleted
+
+
+def forget_location_answers():
+    """Drops the cached /v1/location/ answers (detail and list, every user) -
+    they embed the location's Lageplans (LocationSerializer.get_lageplans)."""
+    return clear_cache_pattern("/v1/location/*")
 
 
 def cache_save(_key, _data, time_out=DEFAULT_TIME_OUT):

@@ -8,14 +8,16 @@ import auto_prefetch
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.contrib.postgres.fields import ArrayField
-from django.db import connections, models
+from django.db import connections, models, transaction
+from django.db.models.signals import post_delete, post_save
+from django.dispatch import receiver
 from django.utils import timezone
 from jsonfield import JSONField
 from polymorphic.models import PolymorphicModel
 
 from progeo.decorator import has_test_coverage
 from progeo.helper.basics import get_templates
-from progeo.helper.cacher import search_clear_cache
+from progeo.helper.cacher import forget_location_answers, search_clear_cache
 from progeo.v1.helper import calc_hash_from_dict
 
 # ==============================================================================================
@@ -1859,6 +1861,17 @@ class SystemConfig(ProgeoModel, auto_prefetch.Model):
     def __str__(self):
         _id = f"[{self.pk}] " if settings.DEBUG else ""
         return f"{_id} ⚙️ {self.key}"
+
+
+@receiver(post_save, sender=ProgeoLageplan)
+@receiver(post_delete, sender=ProgeoLageplan)
+def _forget_cached_lageplans(sender, using, **kwargs):
+    # The cached location answers carry the plans in ORDER - without this a
+    # plan reordered, added, aligned or removed in the wizard showed in its old
+    # state on /analyse etc. for up to DEFAULT_TIME_OUT. After the commit, so
+    # a request in between cannot cache the old state again. QuerySet.update()
+    # sends no signal - its callers forget the answers themselves.
+    transaction.on_commit(forget_location_answers, using=using)
 
 
 # Signal receivers: mirroring users/accounts/locations/devices into the
