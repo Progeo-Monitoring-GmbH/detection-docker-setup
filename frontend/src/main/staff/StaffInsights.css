@@ -71,3 +71,8 @@
 .staff-insights-status-icon {
   display: inline-flex;
 }
+
+/* The chunked build's progress (DatabaseUsageView). */
+.progress.staff-insights-progress {
+  height: 6px;
+}

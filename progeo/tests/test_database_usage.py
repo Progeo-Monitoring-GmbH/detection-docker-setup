@@ -12,7 +12,7 @@ from progeo.tests import factories as f
 from progeo.v1.models import Account
 
 URL = "/v1/database-usage/"
-NOW = datetime.datetime(2026, 11, 13, 12, tzinfo=datetime.timezone.utc)
+NOW = datetime.datetime(2026, 11, 13, 12, tzinfo=datetime.UTC)
 
 
 @pytest.mark.parametrize("devices, last, status", [
@@ -28,20 +28,23 @@ def test_status(devices, last, status):
 
 @pytest.fixture
 def databases(monkeypatch):
-    """Three project databases: one alive, one without devices, one without
-    measurements; the newest measurement of each is faked."""
+    """Three project databases: one alive, one without measurements, one
+    without devices; what each database holds (devices, newest measurement)
+    is faked.
+
+    4711 as the split leaves it: its devices were moved into its database -
+    none in "default" (they used to be counted there: every database looked
+    dead). 4712 with its device still in "default" (split off)."""
     account = Account.objects.using(f.DB).get(pk=1)
     alive = f.make_location(account, project_id=4711, name="Halle Nord")
-    f.make_device(alive)
-    f.make_device(alive)
     alive.db_measurement_count = 1200
     alive.save(using=f.DB)
     silent = f.make_location(account, project_id=4712, name="Lager")
     f.make_device(silent)
     f.make_location(account, project_id=4713, name="Leer")
     aliases = [project_alias(key) for key in (4711, 4712, 4713)]
-    recent = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)
-    newest = {aliases[0]: (recent, None), aliases[1]: (None, None), aliases[2]: (None, None)}
+    recent = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=1)
+    newest = {aliases[0]: (2, recent, None), aliases[1]: (0, None, None), aliases[2]: (0, None, None)}
     monkeypatch.setattr(usage, "existing_project_aliases", lambda refresh=False: aliases)
     monkeypatch.setattr(usage, "register_project_db", lambda alias: alias)
     monkeypatch.setattr(usage, "map_databases", lambda work, names: [newest[name] for name in names])
@@ -69,6 +72,20 @@ def test_every_database_with_its_status(databases):
     assert body["default"]["size_bytes"] > 0  # the test database exists
 
 
+@pytest.mark.django_db
+def test_the_activity_of_a_database_is_counted_in_it(monkeypatch):
+    """_database_activity reads the database it is given - here the test's
+    "default" with a device and a measurement."""
+    location = f.make_location(Account.objects.using(f.DB).get(pk=1), project_id=4714)
+    device = f.make_device(location)
+    f.make_measurement(device, pairs=[100])
+
+    devices, last, error = usage._database_activity(f.DB)
+
+    assert error is None
+    assert devices >= 1 and last is not None
+
+
 def test_the_answer_is_cached_until_refreshed(databases, monkeypatch):
     staff = f.make_user(staff=True)
     first = _get(staff).json()
@@ -78,6 +95,41 @@ def test_the_answer_is_cached_until_refreshed(databases, monkeypatch):
     client.force_authenticate(user=staff)
     assert client.get(URL).json()["databases"] == first["databases"]
     assert _get(staff).json()["databases"] == []
+
+
+def test_the_page_builds_it_chunk_by_chunk(databases, monkeypatch):
+    monkeypatch.setattr(usage, "CHUNK_DATABASES", 2)
+    client = APIClient()
+    client.force_authenticate(user=f.make_user(staff=True))
+
+    plan = client.get(URL, {"plan": 1, "refresh": 1}).json()
+    assert plan["cached"] is False and (plan["databases"], plan["chunks"]) == (3, 2)
+    assert "split_enabled" in plan and plan["default"]["size_bytes"] > 0
+    build = plan["build"]
+
+    first = client.get(URL, {"build": build, "chunk": 0}).json()
+    assert [row["project"] for row in first["rows"]] == [4711, 4712]
+    assert first["rows"][0]["status"] == "active"
+    # Not every chunk scanned yet.
+    early = client.get(URL, {"build": build, "finish": 1}).json()
+    assert early["build_missing"] is True
+    second = client.get(URL, {"build": build, "chunk": 1}).json()
+    assert [(row["project"], row["status"]) for row in second["rows"]] == [(4713, "no_devices")]
+
+    result = client.get(URL, {"build": build, "finish": 1}).json()
+    assert result["dead"] == 2 and len(result["databases"]) == 3
+    # The next visit gets it from the cache.
+    assert client.get(URL, {"plan": 1}).json()["cached"] is True
+
+
+def test_unknown_builds_and_chunks_are_refused(databases):
+    client = APIClient()
+    client.force_authenticate(user=f.make_user(staff=True))
+
+    assert client.get(URL, {"build": "nope", "chunk": 0}).json()["build_missing"] is True
+    build = client.get(URL, {"plan": 1, "refresh": 1}).json()["build"]
+    assert "Invalid chunk" in client.get(URL, {"build": build, "chunk": 9}).json()["reason"]
+    assert client.get(URL, {"build": build, "chunk": "x"}).json()["reason"] == "Invalid chunk"
 
 
 def test_staff_only(databases):

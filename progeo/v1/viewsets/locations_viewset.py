@@ -39,7 +39,13 @@ from progeo.decorator import (
     permission_denied_response,
     require_module_permissions,
 )
-from progeo.helper import cad_import, device_overview, heatmap_video, plan_detect, plan_meters
+from progeo.helper import (
+    cad_import,
+    device_overview,
+    heatmap_video,
+    plan_detect,
+    plan_meters,
+)
 from progeo.helper.basics import (
     RequestFailed,
     RequestSuccess,

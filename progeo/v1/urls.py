@@ -2,11 +2,11 @@ from django.urls import include, re_path
 
 from progeo.routers import CustomRouter
 from progeo.v1.viewsets.activity_viewset import ActivityViewSet
-from progeo.v1.viewsets.database_usage_viewset import DatabaseUsageViewSet
 from progeo.v1.viewsets.alarm_report_viewset import AlarmReportViewSet
 from progeo.v1.viewsets.alarm_viewset import AlarmViewSet
 from progeo.v1.viewsets.backup_viewset import BackupViewSet
 from progeo.v1.viewsets.data_transfer_viewset import DataTransferViewSet
+from progeo.v1.viewsets.database_usage_viewset import DatabaseUsageViewSet
 from progeo.v1.viewsets.demo_viewset import DemoViewSet
 from progeo.v1.viewsets.device_viewset import DeviceViewSet
 from progeo.v1.viewsets.escalation_viewset import EscalationViewSet

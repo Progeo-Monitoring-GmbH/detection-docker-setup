@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Spinner } from 'react-bootstrap';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Alert, ProgressBar, Spinner } from 'react-bootstrap';
 import {
   ArrowClockwise,
   CheckCircleFill,
@@ -10,10 +10,8 @@ import {
 } from 'react-bootstrap-icons';
 import Plot from 'react-plotly.js';
 import { useTranslation } from 'react-i18next';
-import { useSnackbar } from 'notistack';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import axiosConfig from '../../axiosConfig';
-import { showRequestError } from '../../components/ui/Snackbar.jsx';
 import DonutChart from '../../components/ui/kit/DonutChart';
 import KpiStrip from '../../components/ui/kit/KpiStrip';
 import PanelCard from '../../components/ui/kit/PanelCard';
@@ -22,6 +20,7 @@ import SearchableDataTable, { progeoTableStyles, type SearchableColumn } from '.
 import SegmentedControl from '../../components/ui/kit/SegmentedControl';
 import { PlotlyTouchScroll } from '../../components/ui/wheelZoom';
 import { formatDate } from '../dateFormat';
+import { runChunks } from '../deviceStatisticsBuild';
 import { baseLayout, formatBytes, plotConfig, STATUS_COLORS } from './chartTheme';
 import './StaffInsights.css';
 
@@ -41,14 +40,31 @@ type DatabaseRow = {
   error: string | null;
 };
 
+/** What a run (plan, cached or finished result) says besides the rows. */
 type Usage = {
   generated_at: string;
   stale_days: number;
+  /** PROJECT_DB_SPLIT: off, the app still works in the main database. */
+  split_enabled: boolean;
   default: { database: string; size_bytes: number | null };
-  totals: Record<Status, { databases: number; size_bytes: number }>;
-  dead: number;
-  databases: DatabaseRow[];
 };
+
+/** The chunked build while it runs: chunks and databases done. */
+type BuildProgress = { chunks: number; chunksDone: number; databases: number; databasesDone: number };
+
+const USAGE_URL = '/v1/database-usage/';
+// Chunk requests at a time - each asks its databases in parallel on the server.
+const CHUNK_CONCURRENCY = 2;
+
+const usageOf = (data: Record<string, unknown>): Usage => ({
+  generated_at: String(data.generated_at ?? ''),
+  stale_days: Number(data.stale_days) || 30,
+  split_enabled: Boolean(data.split_enabled),
+  default: (data.default ?? { database: '', size_bytes: null }) as Usage['default'],
+});
+
+const reasonOf = (error: unknown) =>
+  (error as { response?: { data?: { reason?: string } } })?.response?.data?.reason ?? (error as Error)?.message;
 
 const STATUS_ORDER: Status[] = ['active', 'stale', 'no_measurements', 'no_devices', 'error'];
 const DEAD: Status[] = ['no_measurements', 'no_devices'];
@@ -80,39 +96,142 @@ const projectLabel = (row: DatabaseRow) =>
  * Staff (sidebar: Database usage): how the project databases are used - by
  * status (pie: count or storage), the largest ones and every database in a
  * table. Dead databases have no devices or never received a measurement.
- * Data: GET /v1/database-usage/ (cached by the backend; Refresh recomputes).
+ * Data: GET /v1/database-usage/ - the cached result, else built chunk by
+ * chunk (a few databases per request, as /device/statistics/): the tiles,
+ * charts and table fill up with every chunk, a bar shows the progress.
+ * Refresh builds it anew.
  */
 const DatabaseUsageView = () => {
   const { t } = useTranslation();
   const auth = useAuth();
-  const { enqueueSnackbar } = useSnackbar();
   const [usage, setUsage] = useState<Usage | null>(null);
+  // The databases so far - all of them once the build is done.
+  const [rows, setRows] = useState<DatabaseRow[]>([]);
+  const [progress, setProgress] = useState<BuildProgress | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [pieBy, setPieBy] = useState<'count' | 'size'>('count');
   const [filter, setFilter] = useState<Filter>('all');
+  const requestRef = useRef(0);
+  const inFlight = useRef(false);
+  const authRef = useRef(auth);
+  useEffect(() => {
+    authRef.current = auth;
+  }, [auth]);
 
-  // Loading starts true; Refresh sets it itself (not here: called from the effect).
-  const load = useCallback(
-    (refresh: boolean) => {
-      void axiosConfig.perform_get(
-        auth,
-        `/v1/database-usage/${refresh ? '?refresh=1' : ''}`,
-        (response) => {
-          setUsage((response?.data ?? null) as Usage | null);
-          setLoading(false);
-        },
-        (error) => {
-          setLoading(false);
-          showRequestError(enqueueSnackbar, t('dbu_load_failed'), error);
-        },
-      );
-    },
-    [auth, enqueueSnackbar, t],
+  const get = useCallback(
+    (query: string) =>
+      new Promise<Record<string, unknown>>((resolve, reject) => {
+        void axiosConfig.perform_get(
+          authRef.current,
+          `${USAGE_URL}?${query}`,
+          (response) => resolve((response?.data ?? {}) as Record<string, unknown>),
+          reject,
+        );
+      }),
+    [],
   );
-  useEffect(() => load(false), [load]);
+
+  /**
+   * The cached result, else a chunked build: every chunk's rows are shown
+   * as they come; finish merges and caches them on the server. Loading,
+   * the error and the rows are reset by the caller (Refresh) - not here,
+   * the first call comes from an effect.
+   */
+  const load = useCallback(
+    async (refresh: boolean) => {
+      if (inFlight.current) {
+        return;
+      }
+      inFlight.current = true;
+      const request = ++requestRef.current;
+      const stale = () => request !== requestRef.current;
+      try {
+        const plan = await get(`plan=1${refresh ? '&refresh=1' : ''}`);
+        if (stale()) {
+          return;
+        }
+        setUsage(usageOf(plan));
+        if (plan.cached) {
+          setRows((plan.databases ?? []) as DatabaseRow[]);
+          return;
+        }
+        const build = String(plan.build);
+        const chunks = Number(plan.chunks) || 0;
+        setRows([]);
+        setProgress({ chunks, chunksDone: 0, databases: Number(plan.databases) || 0, databasesDone: 0 });
+        await runChunks(
+          chunks,
+          CHUNK_CONCURRENCY,
+          async (index) => {
+            const chunk = await get(`build=${build}&chunk=${index}`);
+            if (stale()) {
+              return;
+            }
+            const chunkRows = (chunk.rows ?? []) as DatabaseRow[];
+            setRows((current) => [...current, ...chunkRows]);
+            setProgress(
+              (current) =>
+                current && {
+                  ...current,
+                  chunksDone: current.chunksDone + 1,
+                  databasesDone: current.databasesDone + chunkRows.length,
+                },
+            );
+          },
+          stale,
+        );
+        if (stale()) {
+          return;
+        }
+        const result = await get(`build=${build}&finish=1`);
+        if (!stale()) {
+          setUsage(usageOf(result));
+          setRows((result.databases ?? []) as DatabaseRow[]);
+        }
+      } catch (requestError) {
+        if (!stale()) {
+          setError(reasonOf(requestError) || 'Unknown error');
+        }
+      } finally {
+        if (!stale()) {
+          inFlight.current = false;
+          setLoading(false);
+          setProgress(null);
+        }
+      }
+    },
+    [get],
+  );
+  useEffect(() => {
+    void load(false);
+  }, [load]);
+
+  const refresh = () => {
+    if (inFlight.current) {
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    void load(true);
+  };
 
   const statusLabel = useCallback((status: Status) => t(`dbu_status_${status}`), [t]);
-  const rows = useMemo(() => usage?.databases ?? [], [usage]);
+  // While a build runs, no rows yet means: still scanning.
+  const emptyText = progress || loading ? t('dbu_waiting') : t('dbu_empty');
+  // Counted from the rows - while a build runs, those of the chunks so far.
+  const totals = useMemo(() => {
+    const counts = Object.fromEntries(
+      STATUS_ORDER.map((status) => [status, { databases: 0, size_bytes: 0 }]),
+    ) as Record<Status, { databases: number; size_bytes: number }>;
+    rows.forEach((row) => {
+      const total = counts[row.status] ?? counts.error;
+      total.databases += 1;
+      total.size_bytes += row.size_bytes ?? 0;
+    });
+    return counts;
+  }, [rows]);
+  const dead = DEAD.reduce((sum, status) => sum + totals[status].databases, 0);
   const shownRows = useMemo(
     () =>
       filter === 'all'
@@ -121,19 +240,23 @@ const DatabaseUsageView = () => {
     [rows, filter],
   );
   const projectSize = rows.reduce((sum, row) => sum + (row.size_bytes ?? 0), 0);
-  const deadSize = DEAD.reduce((sum, status) => sum + (usage?.totals[status]?.size_bytes ?? 0), 0);
+  const deadSize = DEAD.reduce((sum, status) => sum + totals[status].size_bytes, 0);
 
   const kpis = [
-    { label: t('dbu_kpi_databases'), value: usage ? String(rows.length) : '–' },
+    {
+      label: t('dbu_kpi_databases'),
+      value: usage ? String(rows.length) : '–',
+      note: progress ? t('dbu_kpi_scanned', { total: progress.databases }) : undefined,
+    },
     {
       label: t('dbu_kpi_dead'),
-      value: usage ? String(usage.dead) : '–',
+      value: usage ? String(dead) : '–',
       note: usage ? t('dbu_kpi_dead_note', { size: formatBytes(deadSize) }) : undefined,
-      valueColor: usage?.dead ? STATUS_COLORS.no_devices : undefined,
+      valueColor: dead ? STATUS_COLORS.no_devices : undefined,
     },
     {
       label: t('dbu_kpi_stale'),
-      value: usage ? String(usage.totals.stale?.databases ?? 0) : '–',
+      value: usage ? String(totals.stale.databases) : '–',
       note: usage ? t('dbu_kpi_stale_note', { days: usage.stale_days }) : undefined,
     },
     { label: t('dbu_kpi_project_size'), value: usage ? formatBytes(projectSize) : '–' },
@@ -147,7 +270,7 @@ const DatabaseUsageView = () => {
   const slices = STATUS_ORDER.map((status) => ({
     key: status,
     label: statusLabel(status),
-    count: pieBy === 'count' ? (usage?.totals[status]?.databases ?? 0) : (usage?.totals[status]?.size_bytes ?? 0),
+    count: pieBy === 'count' ? totals[status].databases : totals[status].size_bytes,
     color: STATUS_COLORS[status],
     icon: <span style={{ color: STATUS_COLORS[status], lineHeight: 1 }}>{STATUS_ICONS[status]}</span>,
   }));
@@ -224,10 +347,10 @@ const DatabaseUsageView = () => {
 
   const filterOptions: Array<{ value: Filter; label: string }> = [
     { value: 'all', label: t('dbu_filter_all', { count: rows.length }) },
-    { value: 'dead', label: t('dbu_filter_dead', { count: usage?.dead ?? 0 }) },
-    ...STATUS_ORDER.filter((status) => (usage?.totals[status]?.databases ?? 0) > 0).map((status) => ({
+    { value: 'dead', label: t('dbu_filter_dead', { count: dead }) },
+    ...STATUS_ORDER.filter((status) => totals[status].databases > 0).map((status) => ({
       value: status,
-      label: `${statusLabel(status)} (${usage?.totals[status]?.databases ?? 0})`,
+      label: `${statusLabel(status)} (${totals[status].databases})`,
     })),
   ];
 
@@ -245,10 +368,7 @@ const DatabaseUsageView = () => {
         <PillButton
           label={t('dbu_refresh')}
           icon={loading ? <Spinner animation="border" size="sm" /> : <ArrowClockwise />}
-          onClick={() => {
-            setLoading(true);
-            load(true);
-          }}
+          onClick={refresh}
           disabled={loading}
           variant="ghost"
           title={t('dbu_refresh_hint')}
@@ -256,9 +376,38 @@ const DatabaseUsageView = () => {
         />
       </div>
 
+      {progress && (
+        <div aria-live="polite" data-testid="database-usage-progress">
+          <div className="d-flex justify-content-between staff-insights-subtitle mb-1">
+            <span>{t('dbu_scanning', { done: progress.databasesDone, total: progress.databases })}</span>
+            <span>{progress.databases ? Math.round((progress.databasesDone / progress.databases) * 100) : 0} %</span>
+          </div>
+          <ProgressBar
+            now={progress.databasesDone}
+            max={Math.max(progress.databases, 1)}
+            animated={progress.databasesDone < progress.databases}
+            className="staff-insights-progress"
+          />
+          {progress.chunks > 0 && progress.chunksDone === progress.chunks && (
+            <div className="staff-insights-note">{t('dbu_merging')}</div>
+          )}
+        </div>
+      )}
+      {error && (
+        <Alert variant="danger" className="mb-0 small" data-testid="database-usage-error">
+          {t('dbu_load_failed')}: {error}
+        </Alert>
+      )}
+
+      {usage && !usage.split_enabled && (
+        <Alert variant="warning" className="mb-0 small" data-testid="database-usage-split-off">
+          {t('dbu_split_off')}
+        </Alert>
+      )}
+
       <KpiStrip tiles={kpis} testId="database-usage-kpis" />
 
-      <div className={`staff-insights-grid${loading && usage ? ' staff-insights-busy' : ''}`}>
+      <div className="staff-insights-grid">
         <PanelCard
           title={t('dbu_by_status')}
           actions={
@@ -284,7 +433,7 @@ const DatabaseUsageView = () => {
               formatValue={pieBy === 'count' ? String : formatBytes}
               onSelect={(status) => setFilter(status as Status)}
               selectTitle={t('dbu_pie_select')}
-              emptyLabel={t('dbu_empty')}
+              emptyLabel={emptyText}
               testId="database-usage-pie"
             />
           )}
@@ -295,7 +444,7 @@ const DatabaseUsageView = () => {
           {!usage ? (
             <div className="staff-insights-placeholder"><Spinner animation="border" size="sm" /></div>
           ) : largest.length === 0 ? (
-            <div className="small text-muted py-2">{t('dbu_empty')}</div>
+            <div className="small text-muted py-2">{emptyText}</div>
           ) : (
             <PlotlyTouchScroll>
               <Plot
@@ -337,7 +486,7 @@ const DatabaseUsageView = () => {
           customStyles={progeoTableStyles}
           progressPending={loading && !usage}
           progressComponent={<div className="py-4"><Spinner animation="border" size="sm" /></div>}
-          noDataComponent={<div className="small text-muted py-3">{t('dbu_empty')}</div>}
+          noDataComponent={<div className="small text-muted py-3">{emptyText}</div>}
           toolbar={
             <SegmentedControl
               options={filterOptions}

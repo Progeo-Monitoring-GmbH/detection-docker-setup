@@ -44,7 +44,7 @@ def events():
 
 
 def test_sessions_list_duration_pages_and_clicks(events):
-    user, start = events
+    user, _ = events
 
     response = _client(f.make_user(staff=True)).get(SESSIONS_URL, {"days": 30})
 
