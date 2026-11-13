@@ -77,6 +77,11 @@ def _grid(x_from, y_from, x_to, y_to, columns, rows, name=None, snake=False):
 
 SMARTEX_ROOF = (160, 130, 1340, 850)  # 59 m x 36 m
 SMARTEX_METERS = 59.0
+# The roof's penetrations (pixels): skylights (centre, half width/height),
+# the HVAC unit and the drains (centre, radius). The dm bands keep clear of them.
+SMARTEX_SKYLIGHTS = (((632, 274), (44, 26)), ((1104, 562), (44, 26)))
+SMARTEX_HVAC = (336, 670, 456, 742)
+SMARTEX_DRAINS = (((396, 418), 10), ((868, 418), 10), ((632, 562), 10), ((1104, 706), 10))
 
 IS_ZONES = {  # name: rectangle; Hauptdach 3x2, Anbau and Garage 2x2 sensors
     "Hauptdach": ((180, 150, 920, 560), 3, 2),
@@ -85,10 +90,82 @@ IS_ZONES = {  # name: rectangle; Hauptdach 3x2, Anbau and Garage 2x2 sensors
 }
 IS_METERS_PER_PIXEL = 0.025
 
-# smartex® dm: the 5 rows of sensors are 5 lines (sensor runs, grid_y), each
-# one entry of the sensor table under the name its sensors share. The leak
-# (sensor 13) lies on the middle one.
-DM_LINES = ["Attika Nord", "Lichtkuppeln", "Dachmitte", "RLT-Gerät", "Attika Süd"]
+# smartex® dm Breitband: every sensor is a band (a line, x/y its feed end,
+# x_end/y_end its other end), laid as the Verlegeplan does it - straight bands
+# left to right, 1,5 m apart, in columns of equal length (a band is at most
+# 30,5 m) with a 0,2 m joint, 0,2 m from the roof edge and clear of every
+# penetration; a piece shorter than 3 m is left out. Both columns are fed from
+# the joint, where the cable route runs to the entry points: EP 01 for the
+# north half, EP 02 for the south half. Numbered per EP, column by column,
+# top to bottom - "dm 01", "dm 02", ...
+DM_SPACING_M = 1.5
+DM_EDGE_M = 0.2
+DM_JOINT_M = 0.2
+DM_CLEARANCE_M = 0.2
+DM_MIN_PIECE_M = 3.0
+DM_MAX_BAND_M = 30.5
+DM_ENTRY_POINTS = 2
+
+
+def _dm_obstacles(clearance):
+    """The penetrations of the smartex® dm roof as boxes, `clearance` pixels larger."""
+    boxes = [(cx - hw, cy - hh, cx + hw, cy + hh) for (cx, cy), (hw, hh) in SMARTEX_SKYLIGHTS]
+    boxes.append(SMARTEX_HVAC)
+    boxes += [(cx - radius, cy - radius, cx + radius, cy + radius) for (cx, cy), radius in SMARTEX_DRAINS]
+    return [(x1 - clearance, y1 - clearance, x2 + clearance, y2 + clearance) for x1, y1, x2, y2 in boxes]
+
+
+def _free_pieces(start, end, y, obstacles, min_length):
+    """[start, end] on height y without the obstacles crossing it; pieces
+    shorter than min_length are left out."""
+    pieces = [(start, end)]
+    for x1, y1, x2, y2 in sorted(obstacles):
+        if not y1 <= y <= y2:
+            continue
+        pieces = [part for a, b in pieces for part in ((a, min(b, x1)), (max(a, x2), b)) if part[1] > part[0]]
+    return [(a, b) for a, b in pieces if b - a >= min_length]
+
+
+def _dm_bands():
+    """The bands of the smartex® dm roof: [(name, x, y, grid_x, grid_y, (x_end, y_end))]
+    in pixels, x/y the feed end at the joint. grid_x is the column, grid_y the row."""
+    x1, y1, x2, y2 = SMARTEX_ROOF
+    pixels = (x2 - x1) / SMARTEX_METERS  # per meter
+    width_m = (x2 - x1) / pixels
+    columns = math.ceil((width_m + DM_JOINT_M) / (DM_MAX_BAND_M + DM_JOINT_M))
+    column_px = (width_m - 2 * DM_EDGE_M - (columns - 1) * DM_JOINT_M) / columns * pixels
+    spacing = DM_SPACING_M * pixels
+    usable = (y2 - y1) - 2 * DM_EDGE_M * pixels
+    rows = int(usable // spacing) + 1
+    first_y = y1 + DM_EDGE_M * pixels  # the rest of the roof's depth stays below the last row
+    joint = (x1 + x2) / 2
+    obstacles = _dm_obstacles(DM_CLEARANCE_M * pixels)
+
+    pieces = []  # (entry point, column, row, start, end, y)
+    for row in range(rows):
+        y = first_y + row * spacing
+        for column in range(columns):
+            start = x1 + DM_EDGE_M * pixels + column * (column_px + DM_JOINT_M * pixels)
+            for a, b in _free_pieces(start, start + column_px, y, obstacles, DM_MIN_PIECE_M * pixels):
+                pieces.append((row * DM_ENTRY_POINTS // rows, column, row, a, b, y))
+
+    bands = []
+    for _entry, column, row, a, b, y in sorted(pieces):
+        # Fed from the joint: x/y is the end facing it.
+        feed, other = (b, a) if (a + b) / 2 < joint else (a, b)
+        bands.append((f"dm {len(bands) + 1:02d}", round(feed, 1), round(y, 1), column, row,
+                      (round(other, 1), round(y, 1))))
+    return bands
+
+
+DM_BANDS = _dm_bands()
+
+
+def _dm_band_below(x, y):
+    """Name of the band nearest below (x, y) that reaches over x."""
+    below = [band for band in DM_BANDS
+             if band[2] > y and min(band[1], band[5][0]) <= x <= max(band[1], band[5][0])]
+    return min(below, key=lambda band: band[2])[0]
 
 PEEL_ROOF = (180, 150, 1460, 900)  # 66 m x 38,7 m, 8x4 sensors
 PEEL_METERS = 66.0
@@ -169,7 +246,8 @@ LORAWAN_ROOMS = {  # sensor label: centre of the room (pixels)
 # - an open alarm. The others vary the state (open, acknowledged, resolved);
 # `sensor` may also be a sensor's name.
 DRY_MAX = 0.25
-SMARTEX_LEAK = {"sensor": 13, "start_days_ago": 5, "rise_h": 2, "peak": 3.68, "settle": 0.75, "decay_h": 36,
+# smartex® dm: the band just south of the north-west skylight - leaks start at penetrations.
+SMARTEX_LEAK = {"sensor": _dm_band_below(SMARTEX_SKYLIGHTS[0][0][0], SMARTEX_SKYLIGHTS[0][0][1]), "start_days_ago": 5, "rise_h": 2, "peak": 3.68, "settle": 0.75, "decay_h": 36,
                 "status": ProgeoAlarm.Status.QUITTIERT, "rain": {"before_h": 5, "duration": 8, "amount": 21.6}}
 IS_LEAK = {"sensor": 8, "start_days_ago": 3, "rise_h": 3, "peak": 1.9, "settle": 1.45, "decay_h": 30,
             "status": ProgeoAlarm.Status.NEU, "rain": {"before_h": 3, "duration": 5, "amount": 14.2}}
@@ -263,7 +341,7 @@ def _location(spec):
 LOCATIONS = [_location(spec) for spec in (
     {
         "kind": "smartex_dm",
-        "name": "Demo Flachdach (smartex® dm)",
+        "name": "Flachdach (smartex® dm)",
         "project_type": TYPES.SMARTEX_DM,
         "project_id": 9001,
         "address": "Musterstrasse 1",
@@ -272,16 +350,14 @@ LOCATIONS = [_location(spec) for spec in (
         "plans": [{
             "draw": lambda plan: _draw_smartex(plan),
             "areas": [_rect_area("Halle A", SMARTEX_ROOF)],
-            "points": [
-                (DM_LINES[grid_y], px, py, grid_x, grid_y)
-                for _name, px, py, grid_x, grid_y in _grid(*SMARTEX_ROOF, 5, 5)
-            ],
+            # Bands, not points: (name, x, y, column, row, (x_end, y_end)).
+            "points": DM_BANDS,
         }],
         "leak": SMARTEX_LEAK,
     },
     {
         "kind": "smartex_is",
-        "name": "Demo Dachsanierung (smartex® is)",
+        "name": "Dachsanierung (smartex® is)",
         "project_type": TYPES.SMARTEX_IS,
         "project_id": 9002,
         "address": "Dorfweg 12",
@@ -296,7 +372,7 @@ LOCATIONS = [_location(spec) for spec in (
     },
     {
         "kind": "lorawan",
-        "name": "Demo Gebaeude (LoRaWAN)",
+        "name": "Gebaeude (LoRaWAN)",
         "project_type": TYPES.LORAWAN,
         "project_id": 9003,
         "address": "Sensorallee 3",
@@ -314,7 +390,7 @@ LOCATIONS = [_location(spec) for spec in (
     },
     {
         "kind": "smartex_mx_peel",
-        "name": "Demo Logistikhalle (smartex® mx-PEEL)",
+        "name": "Logistikhalle (smartex® mx-PEEL)",
         "project_type": TYPES.SMARTEX_MX_PEEL,
         "project_id": 9004,
         "address": "Hallenweg 4",
@@ -329,7 +405,7 @@ LOCATIONS = [_location(spec) for spec in (
     },
     {
         "kind": "smartex_mx_va",
-        "name": "Demo Tiefgarage (smartex® mx-va)",
+        "name": "Tiefgarage (smartex® mx-va)",
         "project_type": TYPES.SMARTEX_MX_VA,
         "project_id": 9005,
         "address": "Parkstrasse 5",
@@ -345,7 +421,7 @@ LOCATIONS = [_location(spec) for spec in (
     },
     {
         "kind": "smartex_mx_al",
-        "name": "Demo Hallendach (smartex® mx-al)",
+        "name": "Hallendach (smartex® mx-al)",
         "project_type": TYPES.SMARTEX_MX_AL,
         "project_id": 9006,
         "address": "Werkstrasse 6",
@@ -360,7 +436,7 @@ LOCATIONS = [_location(spec) for spec in (
     },
     {
         "kind": "smartex_io",
-        "name": "Demo Bürogebäude (smartex® io)",
+        "name": "Bürogebäude (smartex® io)",
         "project_type": TYPES.SMARTEX_IO,
         "project_id": 9007,
         "address": "Kontorweg 7",
@@ -376,7 +452,7 @@ LOCATIONS = [_location(spec) for spec in (
     },
     {
         "kind": "smartex_vt",
-        "name": "Demo Wohnanlage (smartex® vt)",
+        "name": "Wohnanlage (smartex® vt)",
         "project_type": TYPES.SMARTEX_VT,
         "project_id": 9008,
         "address": "Gartenring 8",
@@ -398,7 +474,7 @@ class Command(BaseCommand):
     help = (
         "Create (or reset) the demo account used by the public demo: an Account with a 'demo' user "
         "(read-only portal permissions, see helper/demo.py), a LimitedToken for the demo link and one "
-        "demo location per device type (smartex® dm: 25 sensors, smartex® is: 14 sensors in 3 roof zones, "
+        f"demo location per device type (smartex® dm: {len(DM_BANDS)} band sensors, smartex® is: 14 sensors in 3 roof zones, "
         "LoRaWAN: 4 climate sensors, smartex® mx-PEEL: 32 sensors, mx-va: 47 sensors in 7 fields on two "
         "parking levels, mx-al: 24 sensors in 4 bays, io: 19 named sensors on two floors, vt: 11 sensors), "
         "each with drawn Lageplans (one per view), measure points on them, measurements of the "
@@ -760,8 +836,17 @@ class Command(BaseCommand):
         )
 
     def _create_points(self, location, plan, db, points, first=1):
-        """The sensors of one view; `first` is the sensor_order of its first one."""
+        """The sensors of one view; `first` is the sensor_order of its first one.
+        A smartex® dm band carries its other end as a sixth element: x/y is
+        then the band's start, x_end/y_end its end (like the CAD import)."""
         width, height = PLAN_SIZE
+
+        def ends(end):
+            if not end:
+                return {}
+            (x_end, y_end), = end
+            return {"x_end": x_end, "y_end": y_end, "nx_end": x_end / width, "ny_end": y_end / height}
+
         return ProgeoMeasurePoint.objects.using(db).bulk_create(
             ProgeoMeasurePoint(
                 location=location,
@@ -775,8 +860,9 @@ class Command(BaseCommand):
                 grid_x=grid_x,
                 grid_y=grid_y,
                 threshold=location.alarm_threshold,
+                **ends(end),
             )
-            for order, (name, px, py, grid_x, grid_y) in enumerate(points, start=first)
+            for order, (name, px, py, grid_x, grid_y, *end) in enumerate(points, start=first)
         )
 
     # ------------------------------------------------------- pair measurements
@@ -980,8 +1066,11 @@ class Command(BaseCommand):
         address = f"{spec['address']}, 12345 {spec['city']}"
         view = plan_spec.get("name")
         plan.title_block(_ascii(spec["name"]), _ascii(f"{view} - {address}" if view else address))
-        for order, (_name, px, py, _gx, _gy) in enumerate(plan_spec["points"], start=first):
-            plan.sensor_mark(px, py, f"{'S' if spec['kind'] == 'lorawan' else 'MP '}{order}")
+        for order, (name, px, py, _gx, _gy, *end) in enumerate(plan_spec["points"], start=first):
+            if end:  # smartex® dm: the band, labelled at its feed end
+                plan.band((px, py), end[0], name)
+            else:
+                plan.sensor_mark(px, py, f"{'S' if spec['kind'] == 'lorawan' else 'MP '}{order}")
 
         buffer = BytesIO()
         plan.image.save(buffer, format="PNG", optimize=True)
@@ -1270,6 +1359,20 @@ class _Plan:
         self.draw.line([x, y - 9, x, y + 9], fill=INK_SOFT, width=2)
         self.text(x + 10, y + 6, label, size=14, fill=INK_SOFT)
 
+    def band(self, start, end, label):
+        """A smartex® dm band from its feed end `start` to `end`, the label
+        under the feed end (as in the Verlegeplan)."""
+        self.draw.line([start, end], fill=INK_SOFT, width=3)
+        font = self.font(12)
+        left, _top, right, _bottom = self.draw.textbbox((0, 0), label, font=font)
+        x = start[0] - 3 - (right - left) if start[0] > end[0] else start[0] + 3
+        self.text(x, start[1] + 4, label, size=12, fill=INK_SOFT)
+
+    def entry_point(self, x, y, label):
+        """An entry point (EP) on the cable route, its label to the right."""
+        self.draw.rectangle([x - 5, y - 5, x + 5, y + 5], outline=INK, width=2, fill=ZONE_FILL)
+        self.text(x + 50, y - 7, label, size=13)
+
     def dashed_rectangle(self, box, dash=20, gap=16):
         x1, y1, x2, y2 = box
         for start in range(x1, x2, dash + gap):
@@ -1307,22 +1410,33 @@ def _drain(plan, cx, cy):
 
 
 def _draw_smartex(plan):
-    """Flat roof of a hall: parapet, skylights, roof drains, an HVAC unit."""
+    """Flat roof of a hall: parapet, skylights, roof drains, an HVAC unit, the
+    cable route of the dm bands in the column joint and its entry points.
+    The bands themselves are drawn with the sensors (_Plan.band)."""
     x1, y1, x2, y2 = SMARTEX_ROOF
     draw = plan.draw
     draw.rectangle([x1 - 12, y1 - 12, x2 + 12, y2 + 12], outline=INK, width=4, fill=ROOF_FILL)  # Attika
     draw.rectangle([x1, y1, x2, y2], outline=LINE_SOFT, width=2)
-    # Skylights (Lichtkuppeln), HVAC unit and drains sit between the sensor
-    # rows (y 202/346/490/634/778) and columns (x 278/514/750/986/1222).
-    for cx, cy in ((632, 274), (1104, 562)):
-        plan.hatch((cx - 44, cy - 26, cx + 44, cy + 26), fill=ZONE_FILL)
-        draw.rectangle([cx - 44, cy - 26, cx + 44, cy + 26], outline=INK, width=2)
-    draw.rectangle([336, 670, 456, 742], outline=INK, width=2, fill=ZONE_FILL)
-    plan.text(396, 706, "RLT", size=16, center=True)
-    for cx, cy in ((396, 418), (868, 418), (632, 562), (1104, 706)):  # Gullys
+    for (cx, cy), (half_width, half_height) in SMARTEX_SKYLIGHTS:  # Lichtkuppeln
+        box = (cx - half_width, cy - half_height, cx + half_width, cy + half_height)
+        plan.hatch(box, fill=ZONE_FILL)
+        draw.rectangle(box, outline=INK, width=2)
+    draw.rectangle(SMARTEX_HVAC, outline=INK, width=2, fill=ZONE_FILL)
+    plan.text((SMARTEX_HVAC[0] + SMARTEX_HVAC[2]) / 2, (SMARTEX_HVAC[1] + SMARTEX_HVAC[3]) / 2, "RLT",
+              size=16, center=True)
+    for (cx, cy), _radius in SMARTEX_DRAINS:  # Gullys
         _drain(plan, cx, cy)
-    plan.text(1104, 736, "Gefaelle 2 %", size=14, fill=INK_SOFT, center=True)
-    plan.text(x1 + 4, y1 - 46, "Halle A - Flachdach, Kunststoffbahn", size=20)
+    # Cable route in the joint between the band columns, an EP per half of the roof.
+    joint = (x1 + x2) / 2
+    rows = sorted({band[2] for band in DM_BANDS})
+    for start in range(int(rows[0]), int(rows[-1]), 18):
+        draw.line([joint, start, joint, min(start + 10, rows[-1])], fill=INK, width=2)
+    per_entry = len(rows) / DM_ENTRY_POINTS
+    for entry in range(DM_ENTRY_POINTS):
+        middle = int(entry * per_entry + per_entry / 2)
+        # In the lower part of the gap between two rows - the band labels take its upper part.
+        plan.entry_point(joint, rows[middle - 1] + 0.75 * (rows[middle] - rows[middle - 1]), f"EP {entry + 1:02d}")
+    plan.text(x1 + 4, y1 - 46, "Halle A - Flachdach, Kunststoffbahn, Gefaelle 2 %", size=20)
     meters_per_pixel = SMARTEX_METERS / (x2 - x1)
     plan.dimension((x1, y2 + 60), (x2, y2 + 60), _meters(x2 - x1, meters_per_pixel))
     plan.dimension((x1 - 60, y1), (x1 - 60, y2), _meters(y2 - y1, meters_per_pixel), vertical=True)

@@ -3,12 +3,15 @@
 The demo data lives in its own database (settings.DEMO_DATABASE, a real
 separate database "unit_tests_demo" here), listed in the django_db marker so
 it is rolled back like the others."""
+import itertools
+
 import pytest
 from django.conf import settings
 from django.core.management import call_command
 
 from conftest import TEST_DATABASES
 from progeo.helper.demo import DEMO_TOKEN_PURPOSE
+from progeo.management.commands.demo_account import DM_BANDS, SMARTEX_LEAK
 from progeo.v1.models import LimitedToken, ProgeoLocation
 
 pytestmark = pytest.mark.django_db(databases=TEST_DATABASES)
@@ -111,7 +114,10 @@ def test_demo_user_loads_the_demo_data(api_client, demo):
 
     heatmap = api_client.get(f"/v1/demo/{by_type[1]}/heatmap/")
     assert heatmap.status_code == 200, heatmap.content
-    assert len(heatmap.json()["sensor_points"]) == 25
+    dm_points = heatmap.json()["sensor_points"]
+    assert len(dm_points) == len(DM_BANDS)
+    # smartex® dm: every sensor is a band - the heatmap draws it as a line.
+    assert all(point["x_end"] is not None and point["y_end"] is not None for point in dm_points)
     assert heatmap.json()["location"]["lageplans"]
 
     smartex_is = api_client.get(f"/v1/demo/{by_type[3]}/heatmap/").json()
@@ -129,9 +135,9 @@ def test_demo_user_loads_the_demo_data(api_client, demo):
     assert None in {p["name"] for p in smartex_io["sensor_points"]}
     assert all(p["x_m"] is not None for p in smartex_io["sensor_points"])
 
-    # smartex® dm: the lines join the sensors of one grid row.
-    rows = {p["grid_y"] for p in heatmap.json()["sensor_points"]}
-    assert rows == {0, 1, 2, 3, 4}
+    # smartex® dm: the bands lie in rows (grid_y) of two columns (grid_x).
+    assert {p["grid_x"] for p in dm_points} == {0, 1}
+    assert len({p["grid_y"] for p in dm_points}) == len({band[4] for band in DM_BANDS})
 
     climate = api_client.get(f"/v1/demo/{by_type[6]}/climate/")
     assert climate.status_code == 200, climate.content
@@ -200,7 +206,7 @@ def test_demo_user_cannot_change_anything(api_client, demo):
         assert response.json()["demo_read_only"] is True
 
     location.refresh_from_db(using=db)
-    assert location.name == "Demo Flachdach (smartex® dm)"
+    assert location.name == "Flachdach (smartex® dm)"
     alarm.refresh_from_db(using=db)
     assert alarm.status == status
 
@@ -274,28 +280,45 @@ def test_demo_users_only_get_addresses_in_our_own_domain(demo):
     ).exists()
 
 
-def test_smartex_dm_has_five_named_lines_of_five_sensors(demo):
-    """The Status tab draws and lists one line per grid row (grid_y): the
-    demo plan shows 5 rows of sensors, so the table has 5 entries."""
+def test_smartex_dm_sensors_are_bands_laid_like_a_verlegeplan(demo):
+    """smartex® dm sensors are bands (lines), not points: each one runs left
+    to right on its row (x/y its feed end at the column joint, x_end/y_end its
+    other end), 3 to 30,5 m long, clear of the roof's penetrations, named
+    "dm 01", "dm 02", ... in sensor order. The Status tab lists each band as
+    a line of its own."""
+    from progeo.management.commands.demo_account import (
+        DM_CLEARANCE_M,
+        SMARTEX_METERS,
+        SMARTEX_ROOF,
+        _dm_obstacles,
+    )
     from progeo.v1.models import ProgeoMeasurePoint
 
     location = ProgeoLocation.objects.using(settings.DEMO_DATABASE).get(account=demo.account, project_type=1)
-    lines = {}
-    for point in ProgeoMeasurePoint.objects.using(settings.DEMO_DATABASE).filter(location=location):
-        lines.setdefault(point.grid_y, []).append(point)
+    points = list(ProgeoMeasurePoint.objects.using(settings.DEMO_DATABASE).filter(location=location)
+                  .order_by("sensor_order"))
+    x1, y1, x2, y2 = SMARTEX_ROOF
+    meters_per_pixel = SMARTEX_METERS / (x2 - x1)
+    joint = (x1 + x2) / 2
+    # The clearance minus a rounding margin: every band keeps it.
+    obstacles = _dm_obstacles(DM_CLEARANCE_M / meters_per_pixel - 0.5)
 
-    assert sorted(lines) == [0, 1, 2, 3, 4]
-    assert all(len(points) == 5 for points in lines.values())
-    # One name per line, shared by its sensors.
-    assert [{point.name for point in lines[row]} for row in sorted(lines)] == [
-        {"Attika Nord"}, {"Lichtkuppeln"}, {"Dachmitte"}, {"RLT-Gerät"}, {"Attika Süd"},
-    ]
-    # Each line runs left to right on one height of the plan.
-    for points in lines.values():
-        assert len({round(point.ny, 4) for point in points}) == 1
-        assert sorted(point.grid_x for point in points) == [0, 1, 2, 3, 4]
-    # The leak (sensor 13) lies on the middle line.
-    assert next(point for point in lines[2] if point.sensor_order == 13)
+    assert [point.name for point in points] == [f"dm {order:02d}" for order in range(1, len(points) + 1)]
+    for point in points:
+        assert point.y_end == point.y and point.ny_end == point.ny  # straight, left to right
+        assert point.nx_end == point.x_end / 1600
+        left, right = sorted((point.x, point.x_end))
+        assert x1 < left < right < x2 and y1 < point.y < y2
+        assert 3.0 <= (right - left) * meters_per_pixel <= 30.5
+        # Fed from the joint between the two columns.
+        assert abs(point.x - joint) < abs(point.x_end - joint)
+        assert not any(bx1 < right and left < bx2 and by1 < point.y < by2 for bx1, by1, bx2, by2 in obstacles)
+
+    # Bands of one row don't overlap; rows are 1,5 m apart.
+    rows = sorted({point.y for point in points})
+    assert {round((b - a) * meters_per_pixel, 2) for a, b in itertools.pairwise(rows)} == {1.5}
+    # The leak lies on a band.
+    assert SMARTEX_LEAK["sensor"] in {point.name for point in points}
 
 
 def test_command_builds_points_history_and_alarms(api_client, demo_db):
@@ -316,7 +339,7 @@ def test_command_builds_points_history_and_alarms(api_client, demo_db):
         project_type: ProgeoMeasurePoint.objects.using(db).filter(location=loc).count()
         for project_type, loc in locations.items()
     }
-    assert point_counts == {1: 25, 3: 14, 6: 4, 7: 32, 8: 47, 9: 24, 10: 19, 11: 11}
+    assert point_counts == {1: len(DM_BANDS), 3: 14, 6: 4, 7: 32, 8: 47, 9: 24, 10: 19, 11: 11}
 
     for loc in locations.values():
         plans = list(ProgeoLageplan.objects.using(db).filter(location=loc))
@@ -335,7 +358,8 @@ def test_command_builds_points_history_and_alarms(api_client, demo_db):
     # smartex® dm: dry, then a sharp spike to 368 %, declining - the alarm is over.
     # smartex® is: up to 190 % three days ago and still over the threshold - an open alarm.
     cases = (
-        (1, 13, (3.6, 3.76), (0.75, 0.95), ProgeoAlarm.Status.QUITTIERT, True, ProgeoAlarm.Severity.KRITISCH),
+        (1, int(SMARTEX_LEAK["sensor"].split()[1]), (3.6, 3.76), (0.75, 0.95), ProgeoAlarm.Status.QUITTIERT, True,
+         ProgeoAlarm.Severity.KRITISCH),
         (3, 8, (1.85, 1.95), (1.4, 1.6), ProgeoAlarm.Status.NEU, False, ProgeoAlarm.Severity.ALARM),
     )
     for project_type, leak_sensor, peak, last, status, over, severity in cases:

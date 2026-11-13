@@ -1,4 +1,4 @@
-import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useLocation as useRouterLocation } from 'react-router';
 import {
@@ -21,11 +21,7 @@ import { portalItemRule, routeRule, useAccess } from '../../main/access';
 import { useProgeoRole } from '../../main/roleModel';
 import { PORTAL_NAV_ITEMS, portalNavPath } from '../../main/portalNav';
 import type { LocationDetail } from '../../main/locationTypes';
-import SidebarShell, {
-  SIDEBAR_ACTIVE_SHADOW,
-  sidebarGroupLabelStyle,
-  sidebarItemBaseStyle,
-} from './SidebarShell';
+import SidebarShell, { sidebarGroupLabelStyle } from './SidebarShell';
 
 type LocationSidebarProps = {
   /** The open location (portal routes) - null everywhere else. */
@@ -234,24 +230,6 @@ const LocationSidebar = ({
     );
   };
 
-  const itemStyle = (active: boolean, global: boolean, collapsed: boolean): CSSProperties => ({
-    ...sidebarItemBaseStyle,
-    justifyContent: collapsed ? 'center' : 'space-between',
-    gap: 8,
-    ...(collapsed ? { padding: '11px 0', position: 'relative' } : {}),
-    color: global ? '#4F6B85' : 'var(--progeo-blue)',
-    background: active
-      ? global
-        ? '#E2DFDE'
-        : 'var(--progeo-surface)'
-      : 'transparent',
-    boxShadow: active
-      ? global
-        ? 'inset 0 0 0 1px #D0CACA'
-        : SIDEBAR_ACTIVE_SHADOW
-      : 'none',
-  });
-
   const renderIcon = (d: string) => (
     <svg
       width="17"
@@ -270,7 +248,8 @@ const LocationSidebar = ({
 
   /**
    * A nav link: icon and label - folded only the icon, the label as its
-   * tooltip and accessible name; a badge becomes a dot on the icon.
+   * tooltip and accessible name; a badge becomes a dot on the icon. Its look,
+   * hover and active state: .progeo-sidebar-item (Sidebar.css).
    */
   const renderLink = ({
     key,
@@ -294,7 +273,10 @@ const LocationSidebar = ({
     <Link
       key={key}
       to={to}
-      style={itemStyle(active, global, collapsed)}
+      className="progeo-sidebar-item"
+      data-global={global ? 'true' : 'false'}
+      data-collapsed={collapsed ? 'true' : 'false'}
+      aria-current={active ? 'page' : undefined}
       title={collapsed ? label : undefined}
       aria-label={collapsed ? label : undefined}
     >
@@ -306,7 +288,7 @@ const LocationSidebar = ({
           minWidth: 0,
         }}
       >
-        {icon}
+        <span className="progeo-sidebar-item-icon">{icon}</span>
         {!collapsed && (
           <span
             style={{

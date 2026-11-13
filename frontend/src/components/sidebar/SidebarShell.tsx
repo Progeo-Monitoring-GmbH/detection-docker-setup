@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useLocation as useRouterLocation } from 'react-router';
 import { ChevronDoubleLeft, ChevronDoubleRight, List, X } from 'react-bootstrap-icons';
+// The look of the nav links (.progeo-sidebar-item) and of these buttons.
+import './Sidebar.css';
 
 const MOBILE_BREAKPOINT = 860;
 /** Width of the folded desktop sidebar: the nav icons only. */
@@ -35,24 +37,6 @@ export const sidebarGroupLabelStyle = (separated: boolean): CSSProperties => ({
   padding: separated ? '16px 14px 7px' : '2px 14px 7px',
   ...(separated ? { marginTop: 8, borderTop: '1px solid #D9D4D4' } : {}),
 });
-
-/** Common look of a sidebar nav link; callers add colors/active state. */
-export const sidebarItemBaseStyle: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  width: '100%',
-  textAlign: 'left',
-  whiteSpace: 'nowrap',
-  padding: '11px 14px',
-  border: 'none',
-  borderRadius: 13,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-  fontSize: 14,
-  fontWeight: 500,
-};
-
-export const SIDEBAR_ACTIVE_SHADOW = '0 3px 12px rgba(11, 54, 89, .1)';
 
 type SidebarShellProps = {
   /** Desktop sidebar width in px. */
@@ -175,19 +159,12 @@ const SidebarShell = ({
             aria-label={foldLabel}
             title={foldLabel}
             aria-expanded={!collapsed}
+            className="progeo-sidebar-button"
             style={{
               marginLeft: collapsed ? 0 : 'auto',
               width: 32,
               height: 32,
-              flexShrink: 0,
-              border: 'none',
               borderRadius: 10,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--progeo-blue)',
-              background: 'transparent',
             }}
           >
             {collapsed ? <ChevronDoubleRight size={15} /> : <ChevronDoubleLeft size={15} />}
@@ -218,20 +195,14 @@ const SidebarShell = ({
           type="button"
           onClick={() => setMenuOpen((open) => !open)}
           aria-label={toggleLabel}
+          aria-expanded={menuOpen}
+          className="progeo-sidebar-button"
+          data-open={menuOpen ? 'true' : 'false'}
           style={{
             marginLeft: 'auto',
             width: 40,
             height: 40,
-            flexShrink: 0,
-            border: 'none',
             borderRadius: 12,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--progeo-blue)',
-            background: menuOpen ? 'var(--progeo-surface)' : 'transparent',
-            boxShadow: menuOpen ? '0 2px 10px rgba(11, 54, 89, .12)' : 'none',
           }}
         >
           {menuOpen ? <X size={20} /> : <List size={20} />}
@@ -254,6 +225,7 @@ const SidebarShell = ({
             }}
           />
           <div
+            className="progeo-sidebar-menu"
             style={{
               position: 'absolute',
               top: '100%',

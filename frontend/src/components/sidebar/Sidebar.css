@@ -1,0 +1,153 @@
+/* The sidebar's nav links (LocationSidebar) and its fold/menu buttons
+   (SidebarShell): button-like pills - never underlined, raised on hover,
+   pressed on click. The active link is marked with aria-current="page". */
+
+.progeo-sidebar-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 11px 14px;
+  border: none;
+  border-radius: 13px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+  text-decoration: none;
+  color: var(--progeo-blue);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    box-shadow 0.15s ease,
+    color 0.15s ease,
+    transform 0.1s ease;
+}
+
+/* Links of every object (not of the open location) are a muted blue. */
+.progeo-sidebar-item[data-global='true'] {
+  color: #4f6b85;
+}
+
+/* Folded sidebar: the icon only, centered; position for the badge dot. */
+.progeo-sidebar-item[data-collapsed='true'] {
+  justify-content: center;
+  padding: 11px 0;
+  position: relative;
+}
+
+/* :hover/:focus repeat the color - Bootstrap's a:hover would win otherwise. */
+.progeo-sidebar-item:hover,
+.progeo-sidebar-item:focus {
+  text-decoration: none;
+}
+
+.progeo-sidebar-item:hover {
+  color: var(--progeo-blue);
+  background: rgba(255, 255, 255, 0.6);
+  box-shadow: 0 2px 8px rgba(11, 54, 89, 0.09);
+}
+
+.progeo-sidebar-item:active {
+  transform: scale(0.98);
+}
+
+.progeo-sidebar-item:focus-visible {
+  outline: 2px solid rgba(11, 54, 89, 0.45);
+  outline-offset: 2px;
+}
+
+.progeo-sidebar-item[aria-current='page'] {
+  color: var(--progeo-blue);
+  background: var(--progeo-surface);
+  box-shadow: 0 3px 12px rgba(11, 54, 89, 0.1);
+}
+
+.progeo-sidebar-item[aria-current='page']:hover {
+  box-shadow: 0 4px 16px rgba(11, 54, 89, 0.15);
+}
+
+.progeo-sidebar-item[data-global='true'][aria-current='page'] {
+  color: #4f6b85;
+  background: #e2dfde;
+  box-shadow: inset 0 0 0 1px #d0caca;
+}
+
+.progeo-sidebar-item[data-global='true'][aria-current='page']:hover {
+  box-shadow:
+    inset 0 0 0 1px #d0caca,
+    0 2px 8px rgba(11, 54, 89, 0.09);
+}
+
+/* The icon nudges toward the label - folded it grows a little instead. */
+.progeo-sidebar-item-icon {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.progeo-sidebar-item-icon > svg {
+  transition: transform 0.15s ease;
+}
+
+.progeo-sidebar-item:hover .progeo-sidebar-item-icon > svg {
+  transform: translateX(2px);
+}
+
+.progeo-sidebar-item[data-collapsed='true']:hover .progeo-sidebar-item-icon > svg {
+  transform: scale(1.1);
+}
+
+/* The mobile dropdown is the surface color itself: hover darkens instead. */
+.progeo-sidebar-menu .progeo-sidebar-item:hover {
+  background: var(--progeo-track-soft);
+}
+
+/* Fold button (desktop) and burger (mobile). */
+.progeo-sidebar-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  color: var(--progeo-blue);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.1s ease;
+}
+
+.progeo-sidebar-button:hover,
+.progeo-sidebar-button[data-open='true'] {
+  background: var(--progeo-surface);
+  box-shadow: 0 2px 10px rgba(11, 54, 89, 0.12);
+}
+
+.progeo-sidebar-button:active {
+  transform: scale(0.94);
+}
+
+.progeo-sidebar-button:focus-visible {
+  outline: 2px solid rgba(11, 54, 89, 0.45);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progeo-sidebar-item,
+  .progeo-sidebar-item-icon > svg,
+  .progeo-sidebar-button {
+    transition: none;
+  }
+
+  .progeo-sidebar-item:active,
+  .progeo-sidebar-button:active,
+  .progeo-sidebar-item:hover .progeo-sidebar-item-icon > svg,
+  .progeo-sidebar-item[data-collapsed='true']:hover .progeo-sidebar-item-icon > svg {
+    transform: none;
+  }
+}
