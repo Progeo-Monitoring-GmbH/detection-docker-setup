@@ -76,3 +76,10 @@
 .progress.staff-insights-progress {
   height: 6px;
 }
+
+/* The wipe command in the "Show selected IDs" modal. */
+.staff-insights-command {
+  background: var(--progeo-surface);
+  color: var(--progeo-blue);
+  word-break: break-all;
+}

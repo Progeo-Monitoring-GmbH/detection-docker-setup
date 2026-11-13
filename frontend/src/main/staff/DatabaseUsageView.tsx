@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Alert, ProgressBar, Spinner } from 'react-bootstrap';
+import { Alert, Button, Form, Modal, ProgressBar, Spinner } from 'react-bootstrap';
 import {
   ArrowClockwise,
+  Clipboard,
+  ListCheck,
   CheckCircleFill,
   ClockHistory,
   DashCircleFill,
@@ -10,8 +12,10 @@ import {
 } from 'react-bootstrap-icons';
 import Plot from 'react-plotly.js';
 import { useTranslation } from 'react-i18next';
+import { useSnackbar } from 'notistack';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import axiosConfig from '../../axiosConfig';
+import { showErrorBar, showSuccessBar } from '../../components/ui/Snackbar.jsx';
 import DonutChart from '../../components/ui/kit/DonutChart';
 import KpiStrip from '../../components/ui/kit/KpiStrip';
 import PanelCard from '../../components/ui/kit/PanelCard';
@@ -89,6 +93,81 @@ const StatusBadge = ({ status, label }: { status: Status; label: string }) => (
   </span>
 );
 
+/** What wipe_project_databases takes: the project id ("unknown"), else the database name. */
+const scriptId = (row: DatabaseRow) => (row.project != null ? String(row.project) : row.database);
+
+/** Statuses of databases in use - the wipe script refuses them without --allow-active. */
+const IN_USE: Status[] = ['active', 'stale'];
+
+/**
+ * The selected databases' ids, one per line, to copy - with how to hand
+ * them to manage.py wipe_project_databases (by hand, on the server; it shows
+ * every database in detail and asks before it deletes anything).
+ */
+const SelectedIdsModal = ({ rows, onHide }: { rows: DatabaseRow[] | null; onHide: () => void }) => {
+  const { t } = useTranslation();
+  const { enqueueSnackbar } = useSnackbar();
+  const ids = (rows ?? []).map(scriptId).join('\n');
+  const inUse = (rows ?? []).filter((row) => IN_USE.includes(row.status));
+  const unreadable = (rows ?? []).filter((row) => row.status === 'error');
+  const command = 'python manage.py wipe_project_databases --file <file with the ids>';
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(ids);
+      showSuccessBar(enqueueSnackbar, t('dbu_ids_copied', { count: rows?.length ?? 0 }));
+    } catch {
+      showErrorBar(enqueueSnackbar, t('dbu_ids_copy_failed'));
+    }
+  };
+  return (
+    <Modal show={rows != null} onHide={onHide} size="lg" data-testid="database-usage-ids-modal">
+      <Modal.Header closeButton>
+        <Modal.Title as="h5">{t('dbu_ids_title', { count: rows?.length ?? 0 })}</Modal.Title>
+      </Modal.Header>
+      <Modal.Body className="d-flex flex-column gap-3">
+        <Form.Group controlId="database-usage-ids">
+          <Form.Label className="small text-muted">{t('dbu_ids_label')}</Form.Label>
+          <Form.Control
+            as="textarea"
+            readOnly
+            rows={Math.min(14, Math.max(4, rows?.length ?? 0))}
+            value={ids}
+            className="font-monospace"
+            onFocus={(event) => event.currentTarget.select()}
+            data-testid="database-usage-ids"
+          />
+        </Form.Group>
+        {inUse.length > 0 && (
+          <Alert variant="warning" className="mb-0 small" data-testid="database-usage-ids-in-use">
+            {t('dbu_ids_in_use', { count: inUse.length, ids: inUse.map(scriptId).join(', ') })}
+          </Alert>
+        )}
+        {unreadable.length > 0 && (
+          <Alert variant="secondary" className="mb-0 small">
+            {t('dbu_ids_unreadable', { count: unreadable.length })}
+          </Alert>
+        )}
+        <div className="small">
+          <div className="text-muted mb-1">{t('dbu_ids_how')}</div>
+          <code className="d-block p-2 rounded staff-insights-command" data-testid="database-usage-ids-command">
+            {command}
+          </code>
+          <div className="text-muted mt-1">{t('dbu_ids_safety')}</div>
+        </div>
+      </Modal.Body>
+      <Modal.Footer>
+        <Button variant="outline-secondary" onClick={onHide} data-testid="database-usage-ids-close">
+          {t('dbu_close')}
+        </Button>
+        <Button variant="primary" onClick={() => void copy()} data-testid="database-usage-ids-copy">
+          <Clipboard className="me-1" aria-hidden />
+          {t('dbu_ids_copy')}
+        </Button>
+      </Modal.Footer>
+    </Modal>
+  );
+};
+
 const projectLabel = (row: DatabaseRow) =>
   row.project == null ? row.database : typeof row.project === 'number' ? `#${row.project}` : String(row.project);
 
@@ -112,6 +191,10 @@ const DatabaseUsageView = () => {
   const [loading, setLoading] = useState(true);
   const [pieBy, setPieBy] = useState<'count' | 'size'>('count');
   const [filter, setFilter] = useState<Filter>('all');
+  // Selected databases (by name) - also those the filter hides; "Show
+  // selected IDs" lists them for the wipe script.
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [idsShown, setIdsShown] = useState<DatabaseRow[] | null>(null);
   const requestRef = useRef(0);
   const inFlight = useRef(false);
   const authRef = useRef(auth);
@@ -239,6 +322,7 @@ const DatabaseUsageView = () => {
         : rows.filter((row) => (filter === 'dead' ? DEAD.includes(row.status) : row.status === filter)),
     [rows, filter],
   );
+  const selectedRows = useMemo(() => rows.filter((row) => selected.has(row.database)), [rows, selected]);
   const projectSize = rows.reduce((sum, row) => sum + (row.size_bytes ?? 0), 0);
   const deadSize = DEAD.reduce((sum, status) => sum + totals[status].size_bytes, 0);
 
@@ -487,17 +571,38 @@ const DatabaseUsageView = () => {
           progressPending={loading && !usage}
           progressComponent={<div className="py-4"><Spinner animation="border" size="sm" /></div>}
           noDataComponent={<div className="small text-muted py-3">{emptyText}</div>}
+          selection={{ rowKey: (row) => row.database, selected, onChange: setSelected }}
           toolbar={
-            <SegmentedControl
-              options={filterOptions}
-              value={filter}
-              onChange={(value) => setFilter(value as Filter)}
-              testId="database-usage-filter"
-            />
+            <div className="d-flex flex-wrap align-items-center gap-2">
+              <SegmentedControl
+                options={filterOptions}
+                value={filter}
+                onChange={(value) => setFilter(value as Filter)}
+                testId="database-usage-filter"
+              />
+              <PillButton
+                label={t('dbu_show_ids', { count: selectedRows.length })}
+                icon={<ListCheck />}
+                onClick={() => setIdsShown(selectedRows)}
+                disabled={selectedRows.length === 0}
+                variant="ghost"
+                testId="database-usage-show-ids"
+              />
+              {selectedRows.length > 0 && (
+                <PillButton
+                  label={t('dbu_clear_selection')}
+                  onClick={() => setSelected(new Set())}
+                  variant="ghost"
+                  testId="database-usage-clear-selection"
+                />
+              )}
+            </div>
           }
           testId="database-usage-rows"
         />
       </PanelCard>
+
+      <SelectedIdsModal rows={idsShown} onHide={() => setIdsShown(null)} />
     </div>
   );
 };
