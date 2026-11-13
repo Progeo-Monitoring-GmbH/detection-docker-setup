@@ -109,14 +109,13 @@ type SensorHeatmap2DProps = {
   /** The heat is always normalized (e.g. a change has no threshold). */
   forceNormalize?: boolean;
   /**
-   * The parent picks the Lageplan (e.g. to load only its sensors): the id of
-   * the shown one (none / unknown: the first) - the switcher reports picks
-   * to `onPlanChange`. Without it the component keeps the pick itself.
+   * The parent picks the Lageplan (e.g. to load only its sensors) and shows
+   * the switcher: the id of the shown one (none / unknown: the first). With
+   * `onPlanChange` the own switcher is left out; without it the component
+   * keeps the pick itself.
    */
   planId?: number | null;
   onPlanChange?: (planId: number) => void;
-  /** The switcher numbers the plans - keys 1-9 pick them (the parent's). */
-  planHotkeys?: boolean;
 };
 
 /** The plan under the cursor: the position in meters and the heat there
@@ -202,7 +201,6 @@ const SensorHeatmap2D = ({
   forceNormalize = false,
   planId = null,
   onPlanChange,
-  planHotkeys = false,
 }: SensorHeatmap2DProps) => {
   const { t } = useTranslation();
   // Primitives, so a new `field` object per render doesn't recompute.
@@ -555,12 +553,12 @@ const SensorHeatmap2D = ({
     <>
       <div className="px-2 pt-2">
         {/* The Lageplan switcher is hidden in the alignment wizard mode
-            (alignment prop takes precedence). */}
+            (alignment prop takes precedence) and when the parent shows its own
+            (onPlanChange). */}
         <HeatmapToolbar
-          plans={alignment ? null : plans}
+          plans={alignment || onPlanChange ? null : plans}
           planIndex={planIndex}
           onPlanChange={choosePlan}
-          planHotkeys={planHotkeys}
           sigma={sigma}
           onSigmaChange={setSigma}
           video={{

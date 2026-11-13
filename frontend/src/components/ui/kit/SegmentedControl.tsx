@@ -1,6 +1,14 @@
 import PillButton from './PillButton';
+import { KeyChip } from '../KeyHints';
 
-type SegmentedOption = { value: string; label: string };
+type SegmentedOption = {
+  value: string;
+  label: string;
+  /** The key that picks the option (handled by the page) - shown as a chip. */
+  hotkey?: string;
+  /** Hover text, e.g. how the key works. */
+  title?: string;
+};
 
 type SegmentedControlProps = {
   options: SegmentedOption[];
@@ -32,6 +40,8 @@ const SegmentedControl = ({
         <PillButton
           key={option.value}
           label={option.label}
+          icon={option.hotkey ? <KeyChip>{option.hotkey}</KeyChip> : undefined}
+          title={option.title}
           active={option.value === value}
           onClick={() => onChange(option.value)}
           disabled={disabled}

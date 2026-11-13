@@ -327,3 +327,55 @@ def test_staff_download_the_raw_csv(api_client, cleaned):
 
     assert values("") == (f'attachment; filename="{cleaned["location"].project_id}-messwerte.csv"', ["250"])
     assert values("?raw=1") == (f'attachment; filename="{cleaned["location"].project_id}-messwerte-roh.csv"', ["300"])
+
+
+# -- archiving measurements (the Analyse tab, staff) -------------------------------
+
+def _archive_world(world):
+    now = timezone.now()
+    other = f.make_device(world["location"])
+    inside = f.make_measurement(world["device"], pairs=[1], fetched_at=now - timedelta(days=2))
+    other_inside = f.make_measurement(other, pairs=[1], fetched_at=now - timedelta(days=2))
+    outside = f.make_measurement(world["device"], pairs=[1], fetched_at=now - timedelta(days=10))
+    span = {"from": (now - timedelta(days=3)).isoformat(), "to": (now - timedelta(days=1)).isoformat()}
+    return other, inside, other_inside, outside, span
+
+
+def _archived(*measurements):
+    return [ProgeoMeasurement.objects.using(f.DB).get(pk=m.pk).archived for m in measurements]
+
+
+def test_staff_archive_the_measurements_of_a_span(api_client, world):
+    _other, inside, other_inside, outside, span = _archive_world(world)
+    api_client.force_authenticate(user=world["staff"])
+    url = _url(world, "measurements/archive/")
+
+    counted = api_client.get(url, span).json()
+    assert (counted["changed"], counted["total"], counted["archived"]) == (0, 2, 0)
+    body = api_client.post(url, {**span, "device": world["device"].pk, "archived": True}, format="json").json()
+
+    assert (body["changed"], body["total"], body["archived"]) == (1, 1, 1)
+    assert _archived(inside, other_inside, outside) == [True, False, False]
+
+    # Every device of the location, then back.
+    assert api_client.post(url, {**span, "archived": True}, format="json").json()["changed"] == 1
+    assert _archived(inside, other_inside, outside) == [True, True, False]
+    assert api_client.post(url, {**span, "archived": False}, format="json").json()["changed"] == 2
+    assert _archived(inside, other_inside, outside) == [False, False, False]
+
+
+def test_archiving_is_staff_only_and_checks_its_input(api_client, world):
+    other_location = f.make_location(world["account"], project_id=4712)
+    foreign_device = f.make_device(other_location)
+    _other, inside, _other_inside, _outside, span = _archive_world(world)
+    url = _url(world, "measurements/archive/")
+
+    api_client.force_authenticate(user=world["user"])
+    assert api_client.post(url, {**span, "archived": True}, format="json").json()["success"] is False
+    assert _archived(inside) == [False]
+
+    api_client.force_authenticate(user=world["staff"])
+    assert api_client.post(url, {"from": span["from"]}, format="json").json()["success"] is False
+    assert api_client.post(url, {"from": span["to"], "to": span["from"]}, format="json").json()["success"] is False
+    assert api_client.post(url, {**span, "device": foreign_device.pk}, format="json").json()["success"] is False
+    assert _archived(inside) == [False]

@@ -9,8 +9,6 @@ type HeatmapToolbarProps = {
   plans: SensorHeatmapLageplanData[] | null;
   planIndex: number;
   onPlanChange: (index: number) => void;
-  /** Numbers the plans: keys 1-9 pick them (handled by the page). */
-  planHotkeys?: boolean;
   sigma: 'auto' | number;
   onSigmaChange: (sigma: 'auto' | number) => void;
   video: {
@@ -41,7 +39,6 @@ const HeatmapToolbar = ({
   plans,
   planIndex,
   onPlanChange,
-  planHotkeys = false,
   sigma,
   onSigmaChange,
   video,
@@ -58,20 +55,15 @@ const HeatmapToolbar = ({
         <Form.Select
           size="sm"
           aria-label="Select lageplan"
-          title={
-            planHotkeys
-              ? `Lageplan ${planIndex + 1} / ${plans.length} - ${t('heatmap_plan_hotkeys', { last: Math.min(plans.length, 9) })}`
-              : `Lageplan ${planIndex + 1} / ${plans.length}`
-          }
+          title={`Lageplan ${planIndex + 1} / ${plans.length}`}
           value={planIndex}
           onChange={(event) => onPlanChange(Number(event.target.value))}
           style={{ width: 'auto', maxWidth: 200 }}
         >
           {plans.map((plan, index) => (
             <option key={plan.id ?? index} value={index}>
-              {`${planHotkeys && index < 9 ? `${index + 1} · ` : ''}${plan.name || `Lageplan ${index + 1}`}${
-                plan.is_active ? ' (aktiv)' : ''
-              }`}
+              {plan.name || `Lageplan ${index + 1}`}
+              {plan.is_active ? ' (aktiv)' : ''}
             </option>
           ))}
         </Form.Select>

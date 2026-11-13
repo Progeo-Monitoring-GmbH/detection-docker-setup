@@ -62,6 +62,11 @@ const KBD_FLASHED: CSSProperties = {
   borderColor: '#eb633b',
 };
 
+/** One key as a chip - lit (orange) right after it was pressed. */
+export const KeyChip = ({ children, lit = false }: { children: string; lit?: boolean }) => (
+  <kbd style={{ ...KBD, ...(lit ? KBD_FLASHED : {}) }}>{children}</kbd>
+);
+
 type KeyHintsProps = {
   hints: KeyHint[];
   /** Shown before the chips, e.g. "Tastatur". */
@@ -103,7 +108,7 @@ const KeyHints = ({ hints, title, active = true, inactiveNote, vertical = false,
             {hint.keys.map((key, index) => (
               <Fragment key={key}>
                 {index > 0 && <span>+</span>}
-                <kbd style={{ ...KBD, ...(lit ? KBD_FLASHED : {}) }}>{key}</kbd>
+                <KeyChip lit={lit}>{key}</KeyChip>
               </Fragment>
             ))}
             <span>{hint.label}</span>

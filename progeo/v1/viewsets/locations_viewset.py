@@ -40,7 +40,13 @@ from progeo.decorator import (
     require_module_permissions,
 )
 from progeo.helper import cad_import, heatmap_video, plan_meters
-from progeo.helper.basics import RequestFailed, RequestSuccess, dlog, save_check_dir
+from progeo.helper.basics import (
+    RequestFailed,
+    RequestSuccess,
+    dlog,
+    ilog,
+    save_check_dir,
+)
 from progeo.helper.cacher import cache_save_and_return, search_cache
 from progeo.helper.climate_heatmap import CLIMATE_METRICS, climate_frames
 from progeo.helper.climate_heatmap import frame_step as climate_frame_step
@@ -1821,6 +1827,54 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         return with_measurement_stats(
             ProgeoLocation.objects.using(account.db_name).filter(location_q(self.request.user, account))
         ).order_by("id")
+
+    @action(detail=True, url_path="measurements/archive", methods=["GET", "POST"])
+    def archive_measurements(self, request, pk=None, *args, **kwargs):
+        """Staff (is_staff or is_superuser): archive the measurements of a span
+        - only staff see them then (ProgeoMeasurement.archived, like the admin
+        action), e.g. test measurements before the installation.
+        GET ?from=&to=[&device=] counts them: {total, archived};
+        POST {from, to, device?, archived: true|false} sets the flag on all of
+        them: {changed, total, archived}. from/to ISO-8601 (last_fetched); without
+        `device` every device of the location."""
+        location, account, error = self._staff_location(request, pk)
+        if error:
+            return error
+        db_name = location_db(location, account)
+        params = request.query_params if request.method == "GET" else request.data
+        try:
+            time_from = datetime.fromisoformat(str(params.get("from")))
+            time_to = datetime.fromisoformat(str(params.get("to")))
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "from and to are required (ISO-8601)"})
+        time_from, time_to = _db_datetime(time_from), _db_datetime(time_to)
+        if time_to < time_from:
+            return RequestFailed({"reason": "to must not be before from"})
+
+        queryset = ProgeoMeasurement.objects.using(db_name).filter(
+            device__location=location, last_fetched__gte=time_from, last_fetched__lte=time_to
+        )
+        device_id = params.get("device")
+        if device_id not in (None, ""):
+            try:
+                device = ProgeoDevice.objects.using(db_name).filter(location=location, pk=int(device_id)).first()
+            except (TypeError, ValueError):
+                device = None
+            if device is None:
+                return RequestFailed({"reason": "Device not found"})
+            queryset = queryset.filter(device=device)
+
+        changed = 0
+        if request.method == "POST":
+            archived = params.get("archived", True)
+            archived = archived if isinstance(archived, bool) else str(archived).lower() in ("1", "true", "yes", "on")
+            changed = queryset.exclude(archived=archived).update(archived=archived)
+            ilog(
+                f"{request.user} {'archived' if archived else 'unarchived'} {changed} measurement(s) of location "
+                f"{location.id} ({time_from} - {time_to}, device {device_id or 'all'})"
+            )
+        counts = queryset.aggregate(total=Count("pk"), archived=Count("pk", filter=Q(archived=True)))
+        return RequestSuccess({"changed": changed, "total": counts["total"], "archived": counts["archived"]})
 
     @require_module_permissions("module_locations_enabled", "module_measurements_enabled")
     @action(detail=True, url_path="measurements", methods=["GET"])

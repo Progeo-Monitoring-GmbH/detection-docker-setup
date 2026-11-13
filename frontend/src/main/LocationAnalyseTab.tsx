@@ -38,7 +38,9 @@ import PillSelect from '../components/ui/kit/PillSelect';
 import { MEAN_WINDOWS, smoothHeatmap, smoothMeasurements } from './analyseSmoothing';
 import { compareOffsetsFor, heatmapChange } from './analyseCompare';
 import MeasurementComparePlot from '../components/device/MeasurementComparePlot';
-import { Funnel, XLg } from 'react-bootstrap-icons';
+import { Archive, Funnel, XLg } from 'react-bootstrap-icons';
+import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
+import { formatDate } from './dateFormat';
 import PlotHelp from '../components/ui/PlotHelp';
 import { announceKey, type KeyHint } from '../components/ui/KeyHints';
 import UsageHelp from '../components/ui/UsageHelp';
@@ -957,6 +959,77 @@ const LocationAnalyseTab = () => {
     />
   ) : null;
 
+  // ------------------------------------------------------------- archiving
+  // Staff: the measurements of the picked span (S + drag, the band under the
+  // frame slider) archived - only staff see them then (ProgeoMeasurement.archived)
+  // - or restored. Of the shown device or of every device of the location.
+  const [archiveDialog, setArchiveDialog] = useState<{ allDevices: boolean; archive: boolean } | null>(null);
+  const [archiveCounts, setArchiveCounts] = useState<{ key: string; total: number; archived: number } | null>(null);
+  const [archiving, setArchiving] = useState(false);
+  const archiveParams = (allDevices: boolean) =>
+    profileRange
+      ? {
+          from: new Date(profileRange.from).toISOString(),
+          to: new Date(profileRange.to).toISOString(),
+          ...(allDevices || shownDevice == null ? {} : { device: String(shownDevice) }),
+        }
+      : null;
+  const archiveParamsNow = archiveDialog ? archiveParams(archiveDialog.allDevices) : null;
+  const archiveKey = archiveParamsNow ? new URLSearchParams(archiveParamsNow).toString() : null;
+  const archiveCountsShown = archiveCounts?.key === archiveKey ? archiveCounts : null;
+
+  // How many measurements the dialog's choice covers.
+  useEffect(() => {
+    if (!archiveKey) {
+      return;
+    }
+    void axiosConfig.perform_get(
+      auth,
+      `/v1/location/${locationId}/measurements/archive/?${archiveKey}`,
+      (response) =>
+        setArchiveCounts({
+          key: archiveKey,
+          total: Number(response?.data?.total ?? 0),
+          archived: Number(response?.data?.archived ?? 0),
+        }),
+      (error) => showRequestError(enqueueSnackbar, t('analyse_archive_error'), error),
+    );
+  }, [archiveKey, auth, enqueueSnackbar, locationId, t]);
+
+  const applyArchive = () => {
+    if (!archiveDialog || !archiveParamsNow) {
+      return;
+    }
+    const { archive } = archiveDialog;
+    setArchiving(true);
+    void axiosConfig.perform_post(
+      auth,
+      `/v1/location/${locationId}/measurements/archive/`,
+      { ...archiveParamsNow, archived: archive },
+      (response: { data?: { changed?: number } }) => {
+        setArchiving(false);
+        setArchiveDialog(null);
+        setArchiveCounts(null);
+        enqueueSnackbar(
+          t(archive ? 'analyse_archive_done' : 'analyse_archive_restored', { count: response?.data?.changed ?? 0 }),
+          { variant: 'success' },
+        );
+        // Load everything again - staff who hide archived ones no longer see them.
+        heatmapCache.current.clear();
+        measurementsCache.current.clear();
+        setSensorHistory(null);
+        loadHeatmap();
+        loadMeasurements();
+        loadCompare();
+      },
+      (error) => {
+        setArchiving(false);
+        showRequestError(enqueueSnackbar, t('analyse_archive_error'), error);
+      },
+    );
+  };
+  const shownDeviceName = devices.find((device) => device.id === shownDevice)?.display_name ?? null;
+
   // An area dragged on the plan: its sensors (of the shown device, else of
   // the first other one - shown then) become the second plot's selection.
   const selectPlanArea = (positions: number[]) => {
@@ -1171,8 +1244,89 @@ const LocationAnalyseTab = () => {
           {exportingPdf && <Spinner size="sm" animation="border" className="me-2" />}
           {t('analyse_export_pdf')}
         </button>
+        {offerNoiseProfiles && (
+          // Staff: the span is picked like a noise profile's (S + drag).
+          <button
+            type="button"
+            className="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1"
+            title={profileRange ? t('analyse_archive_hint') : t('analyse_archive_pick_span')}
+            disabled={!profileRange}
+            onClick={() => setArchiveDialog({ allDevices: false, archive: true })}
+          >
+            <Archive size={13} aria-hidden="true" />
+            {t('analyse_archive')}
+          </button>
+        )}
         {exportMsg && <span className="text-success small">{exportMsg}</span>}
       </div>
+
+      <ConfirmDialog
+        show={archiveDialog !== null && profileRange !== null}
+        title={t('analyse_archive')}
+        message={
+          archiveDialog && profileRange ? (
+            <div className="d-flex flex-column gap-2">
+              <div>
+                {t('analyse_archive_span', {
+                  from: formatDate(profileRange.from),
+                  to: formatDate(profileRange.to),
+                })}
+              </div>
+              <div>
+                {shownDevice != null && (
+                  <Form.Check
+                    type="radio"
+                    id="analyse-archive-device"
+                    name="analyse-archive-scope"
+                    label={t('analyse_archive_scope_device', { device: shownDeviceName ?? shownDevice })}
+                    checked={!archiveDialog.allDevices}
+                    onChange={() => setArchiveDialog({ ...archiveDialog, allDevices: false })}
+                  />
+                )}
+                <Form.Check
+                  type="radio"
+                  id="analyse-archive-all"
+                  name="analyse-archive-scope"
+                  label={t('analyse_archive_scope_all')}
+                  checked={archiveDialog.allDevices || shownDevice == null}
+                  onChange={() => setArchiveDialog({ ...archiveDialog, allDevices: true })}
+                />
+              </div>
+              <div>
+                <Form.Check
+                  type="radio"
+                  id="analyse-archive-archive"
+                  name="analyse-archive-action"
+                  label={t('analyse_archive_action_archive')}
+                  checked={archiveDialog.archive}
+                  onChange={() => setArchiveDialog({ ...archiveDialog, archive: true })}
+                />
+                <Form.Check
+                  type="radio"
+                  id="analyse-archive-restore"
+                  name="analyse-archive-action"
+                  label={t('analyse_archive_action_restore')}
+                  checked={!archiveDialog.archive}
+                  onChange={() => setArchiveDialog({ ...archiveDialog, archive: false })}
+                />
+              </div>
+              <div className="fw-semibold" style={{ color: 'var(--progeo-blue)' }}>
+                {archiveCountsShown ? (
+                  t('analyse_archive_counts', { total: archiveCountsShown.total, archived: archiveCountsShown.archived })
+                ) : (
+                  <Spinner size="sm" animation="border" className="text-muted" />
+                )}
+              </div>
+            </div>
+          ) : null
+        }
+        confirmLabel={archiveDialog?.archive === false ? t('analyse_archive_restore') : t('analyse_archive_confirm')}
+        cancelLabel={t('location_edit_cancel')}
+        danger={archiveDialog?.archive !== false}
+        confirming={archiving}
+        onCancel={() => setArchiveDialog(null)}
+        onConfirm={applyArchive}
+      />
 
       {/* One slider for the heatmap and the charts (also LoRaWAN's), with
           the period it covers - kept on top while the page scrolls down. */}
@@ -1229,7 +1383,7 @@ const LocationAnalyseTab = () => {
       ) : (
         <>
           <Card className="border-0 shadow-sm">
-            <Card.Header className="bg-transparent border-0 pt-2 pb-1">
+            <Card.Header className="bg-transparent border-0 pt-2 pb-1 d-flex flex-wrap align-items-center gap-2">
               <Button
                 variant="link"
                 className="p-0 text-decoration-none fw-semibold"
@@ -1247,6 +1401,22 @@ const LocationAnalyseTab = () => {
               <PlotHelp topic="heatmap" className="ms-2 align-middle" />
               {heatmapLoading && (
                 <Spinner size="sm" animation="border" className="ms-2 text-muted" />
+              )}
+              {/* The plan switcher of /status (LocationPlanPanel) - each pill
+                  shows its key (1-9). */}
+              {plans.length > 1 && (
+                <div className="ms-auto">
+                  <SegmentedControl
+                    options={plans.map((plan, index) => ({
+                      value: String(plan.id),
+                      label: plan.name || t('status_plan_view', { index: index + 1 }),
+                      hotkey: planHotkeys && index < 9 ? String(index + 1) : undefined,
+                      title: planHotkeys && index < 9 ? t('analyse_plan_key', { key: index + 1 }) : undefined,
+                    }))}
+                    value={String(planId)}
+                    onChange={(value) => pickPlan(Number(value))}
+                  />
+                </div>
               )}
             </Card.Header>
             <Collapse in={heatmapOpen}>
@@ -1276,7 +1446,6 @@ const LocationAnalyseTab = () => {
                       profileLoading={heatmapLoading}
                       planId={planId}
                       onPlanChange={pickPlan}
-                      planHotkeys={planHotkeys}
                     />
                   )}
                 </Card.Body>
