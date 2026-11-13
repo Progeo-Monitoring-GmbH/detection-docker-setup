@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useOutletContext } from 'react-router';
+import { Link, useOutletContext } from 'react-router';
 import { Button, Card, Collapse, Form, Spinner } from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
@@ -38,7 +38,9 @@ import PillSelect from '../components/ui/kit/PillSelect';
 import { MEAN_WINDOWS, smoothHeatmap, smoothMeasurements } from './analyseSmoothing';
 import { compareOffsetsFor, heatmapChange } from './analyseCompare';
 import MeasurementComparePlot from '../components/device/MeasurementComparePlot';
-import { Archive, Funnel, XLg } from 'react-bootstrap-icons';
+import { Archive, Funnel, Magic, XLg } from 'react-bootstrap-icons';
+import { getBackendUrl } from '../backendUrl';
+import { usePreloadLageplanImages } from '../components/device/useLageplanImage';
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import { formatDate } from './dateFormat';
 import PlotHelp from '../components/ui/PlotHelp';
@@ -177,6 +179,10 @@ const LocationAnalyseTab = () => {
   const plans = useMemo(
     () => (location?.lageplans ?? []).filter((plan): plan is typeof plan & { id: number } => plan.id != null),
     [location?.lageplans],
+  );
+  // Every plan's image in the background - switching plans then draws at once.
+  usePreloadLageplanImages(
+    useMemo(() => plans.flatMap((plan) => (plan.url ? [getBackendUrl(plan.url)] : [])), [plans]),
   );
   const [pickedPlan, setPickedPlan] = useState<{ locationId: unknown; id: number } | null>(null);
   const planId =
@@ -448,6 +454,8 @@ const LocationAnalyseTab = () => {
   // What the heatmap and the charts show: the loads, averaged over
   // `meanWindow` neighbouring measurements.
   const shownHeatmap = useMemo(() => smoothHeatmap(heatmap, meanWindow), [heatmap, meanWindow]);
+  // Another plan's heatmap loads - the shown one stays (busy) until it is there.
+  const switchingPlan = heatmapLoading && shownHeatmap != null && (shownHeatmap.lageplan ?? null) !== planId;
   // Cleaned first (staff: by displayMask), then smoothed.
   const shownMeasurements = useMemo(
     () => smoothMeasurements(cleanRows(measurements, displayMask), meanWindow),
@@ -1430,13 +1438,25 @@ const LocationAnalyseTab = () => {
               {heatmapLoading && (
                 <Spinner size="sm" animation="border" className="ms-2 text-muted" data-testid="analyse-heatmap-loading" />
               )}
+              {isStaff && (
+                // Staff: straight to the Lageplan wizard - this location and the shown plan.
+                <Link
+                  to={`/lageplan/wizard/?location=${locationId}${planId != null ? `&plan=${planId}` : ''}`}
+                  className="analyse-wizard-link float-end"
+                  title={t('analyse_open_wizard_hint')}
+                  data-testid="analyse-open-wizard"
+                >
+                  <Magic className="analyse-wizard-link-icon" aria-hidden />
+                  <span>{t('analyse_open_wizard')}</span>
+                </Link>
+              )}
             </Card.Header>
             <Collapse in={heatmapOpen}>
               <div id="analyse-heatmap" data-testid="analyse-heatmap-body">
                 <Card.Body className="pt-0 px-2 pb-2">
-                  {/* Also while another plan loads - its image must not show the
-                      old plan's sensors; the plan pills stay, to switch on. */}
-                  {heatmapLoading && (!shownHeatmap || (shownHeatmap.lageplan ?? null) !== planId) ? (
+                  {/* Only before there is any heatmap - another plan loads with
+                      the shown one kept in place (busy), so nothing jumps. */}
+                  {heatmapLoading && !shownHeatmap ? (
                     <>
                       {planSwitcher && <div className="d-flex px-2 pt-2">{planSwitcher}</div>}
                       <div
@@ -1463,8 +1483,11 @@ const LocationAnalyseTab = () => {
                       profile={heatProfile}
                       onProfileChange={setHeatProfile}
                       profileLoading={heatmapLoading}
-                      planId={planId}
+                      // While another plan loads: the plan the shown data belongs
+                      // to - its image must not show the old plan's sensors.
+                      planId={switchingPlan ? (shownHeatmap?.lageplan ?? null) : planId}
                       onPlanChange={pickPlan}
+                      busy={switchingPlan}
                       toolbarStart={planSwitcher}
                     />
                   )}

@@ -22,7 +22,9 @@ import { useAuth } from '../../hooks/CoreAuthProvider';
 import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
 import { getBackendUrl } from '../backendUrl';
-import type { SensorHeatmapLageplanData } from '../components/device/sensorHeatmapTypes';
+import type { HeatLimitation, SensorHeatmapLageplanData } from '../components/device/sensorHeatmapTypes';
+import HeatLimitationStage from '../components/device/HeatLimitationStage';
+import { staffFlags } from './access';
 import { isLorawanProject, planVisualization } from './projectType';
 import '../components/ui/kit/kit.css';
 import './LageplanWizard.css';
@@ -373,6 +375,11 @@ const LageplanWizardView = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedLocation = Number(searchParams.get('location'));
   const appliedRequest = useRef(false);
+  // ?plan=<lageplan id> (e.g. from /analyse) preselects that plan of the
+  // location - once, with the first plans loaded.
+  const requestedPlan = useRef<number | null>(Number(searchParams.get('plan')) || null);
+  // Step 6 (heat limitations): staff and superusers, like the backend.
+  const staff = staffFlags(auth?.user).isStaffOrSuperuser;
 
   // Everything below step 1 belongs to the selected location.
   const selectLocation = (next: WizardLocation | null) => {
@@ -384,6 +391,7 @@ const LageplanWizardView = () => {
         } else {
           params.delete('location');
         }
+        params.delete('plan');
         return params;
       },
       { replace: true },
@@ -496,13 +504,17 @@ const LageplanWizardView = () => {
             setPointSource('manual');
           }
 
-          // Existing plans are ready to use: keep the picked one, else the
-          // main (first) one.
+          // Existing plans are ready to use: the one ?plan= asks for, else
+          // keep the picked one, else the main (first) one.
+          const wanted = requestedPlan.current;
+          requestedPlan.current = null;
+          const preselected = wanted != null && loadedPlans.some((plan) => plan.id === wanted) ? wanted : null;
           setLageplans(loadedPlans);
           setSelectedPlanId((current) =>
-            loadedPlans.some((plan) => plan.id === current)
+            preselected ??
+            (loadedPlans.some((plan) => plan.id === current)
               ? current
-              : (loadedPlans[0]?.id ?? null),
+              : (loadedPlans[0]?.id ?? null)),
           );
         },
         (fetchError) => {
@@ -1687,6 +1699,42 @@ const LageplanWizardView = () => {
     </StepCard>
   );
 
+  // Step 6: the areas the heatmap's heat field is limited to (staff).
+  const renderStepHeatLimits = () => (
+    <StepCard
+      number={6}
+      title="Heat limitations"
+      done={Boolean(selectedPlan?.heat_limitations?.length)}
+    >
+      {!selectedPlan?.url ? (
+        <Notice tone="warning" testId="lageplan-wizard-heat-limits-need-plan">
+          Select or add a Lageplan in step 3 to draw its heat limitations.
+        </Notice>
+      ) : (
+        <>
+          <div className="lageplan-muted mb-2">
+            The heatmap shows heat only inside these areas of “{planLabel(selectedPlan)}” - outside them the
+            plan is dimmed here. Without an area the heat is not limited.
+          </div>
+          <HeatLimitationStage
+            // A different plan starts with its own view and draft.
+            key={selectedPlan.id}
+            plan={selectedPlan}
+            plans={lageplans}
+            points={
+              manualPlacement
+                ? planSensors.map((sensor) => ({ nx: sensor.nx, ny: sensor.ny }))
+                : planPoints
+            }
+            editable={staff}
+            onChange={(planId: number, areas: HeatLimitation[]) => updatePlan(planId, { heat_limitations: areas })}
+            testId="lageplan-wizard-heat-limits"
+          />
+        </>
+      )}
+    </StepCard>
+  );
+
   if (!permissionsLoading && !canEditDevices) {
     return (
       <div data-testid="page-lageplan-wizard">
@@ -1734,6 +1782,7 @@ const LageplanWizardView = () => {
       {renderStepTwo()}
       {renderStepThree()}
       {renderStepFour()}
+      {staff && renderStepHeatLimits()}
 
       <ConfirmDialog
         show={confirmAction !== null}

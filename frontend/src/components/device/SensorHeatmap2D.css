@@ -35,6 +35,27 @@
   cursor: grabbing;
 }
 
+/* Where the plot goes while its plan image loads - as tall as the last plot,
+   so switching plans doesn't make the page jump. */
+.heatmap2d-plot-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The parent loads other data (busy): the plot dimmed, taking no input. */
+.heatmap2d-busy {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.6);
+  color: #6c757d;
+  cursor: progress;
+}
+
 /* The area being selected (drag in area mode). */
 .heatmap2d-area-rect {
   position: absolute;

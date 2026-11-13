@@ -1,6 +1,6 @@
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Card } from 'react-bootstrap';
+import { Card, Spinner } from 'react-bootstrap';
 import FrameSlider, { type AlarmSpan, frameAt } from './FrameSlider';
 import { seriesRange } from './heatmapGrid';
 import { heatColorAt, heatColorTable } from './heatmapCanvas';
@@ -27,9 +27,7 @@ import {
   type Scene,
 } from './heatmapScene';
 import { formatMeters } from './planMeters';
-import { toWorld } from './heatmapCanvas';
-import { HeatLimitationBar, HeatLimitationLayer, useHeatLimitationEditor } from './HeatLimitationEditor';
-import { limitPolygons, toPlanPoint } from './heatLimitations';
+import { limitPolygons } from './heatLimitations';
 import HeatmapToolbar from './HeatmapToolbar';
 import SensorTooltip from './SensorTooltip';
 import type { HeatProfile, SensorHeatmapLocation, SensorHeatmapResponse } from './sensorHeatmapTypes';
@@ -37,7 +35,7 @@ import HeatmapDisplayControls from './HeatmapDisplayControls';
 import { useHeatmapFrameExport } from './useHeatmapFrameExport';
 import { useHeatSigma } from './useHeatSigma';
 import { type AreaRect, useHeatmapViewport, usePanZoomGestures } from './useHeatmapViewport';
-import { useLageplanImage } from './useLageplanImage';
+import { useLageplanImageState } from './useLageplanImage';
 import ZoomControls from './ZoomControls';
 import { childTestId } from '../../testIds';
 import { TWO_FINGER_TOUCH_ACTION, useWheelHint, WheelZoomHint } from '../ui/wheelZoom';
@@ -126,11 +124,16 @@ type SensorHeatmap2DProps = {
   planId?: number | null;
   onPlanChange?: (planId: number) => void;
   /**
+   * The parent loads other data (e.g. another plan): the plot stays as it is,
+   * dimmed under a spinner, and takes no input - instead of collapsing.
+   */
+  busy?: boolean;
+  /**
    * data-testid of the heatmap (its card); its parts are "<testId>-plot",
    * "-canvas", "-toolbar", "-frame-slider", "-zoom", ... With the default,
-   * the area rectangle, the display controls and the heat limitations keep
-   * their own ids ("heatmap-area-rect", "heatmap-display-controls",
-   * "heat-limit-*"); with another one they are scoped under it too.
+   * the area rectangle and the display controls keep their own ids
+   * ("heatmap-area-rect", "heatmap-display-controls"); with another one they
+   * are scoped under it too.
    */
   testId?: string;
 };
@@ -189,9 +192,8 @@ const usePlanChoice = <T,>(plans: T[] | null) => {
  * reference point) and the heat there. The video export draws its frames
  * from the same scene (renderSceneFrame).
  *
- * The plan's heat limitations cut the heat field off outside their areas;
- * staff and superusers draw, edit and delete them right on the plan
- * (HeatLimitationEditor.tsx).
+ * The plan's heat limitations cut the heat field off outside their areas -
+ * they are drawn in the Lageplan wizard (HeatLimitationStage.tsx).
  *
  * Geometry and heat field: heatmapChart.ts, drawing: heatmapScene.ts.
  */
@@ -222,6 +224,7 @@ const SensorHeatmap2D = ({
   forceNormalize = false,
   planId = null,
   onPlanChange,
+  busy = false,
   testId = DEFAULT_TEST_ID,
 }: SensorHeatmap2DProps) => {
   const { t } = useTranslation();
@@ -298,26 +301,23 @@ const SensorHeatmap2D = ({
   const activePlan = plans?.[planIndex] ?? null;
   const location = useMemo(() => planLocation(baseLocation, activePlan), [baseLocation, activePlan]);
 
-  const image = useLageplanImage(location?.lageplan_url ? getBackendUrl(location.lageplan_url) : null);
+  // A plan image still loading: the plot keeps its height (no layout
+  // without the image first, then with it).
+  const { image, pending: imagePending } = useLageplanImageState(
+    location?.lageplan_url ? getBackendUrl(location.lageplan_url) : null,
+  );
   const imageSize = useMemo(
     () => (image ? { width: image.naturalWidth, height: image.naturalHeight } : null),
     [image],
   );
 
-  // Heat limitations of the plan: staff and superusers draw them on the plan
-  // image (not in the alignment wizard mode).
+  // Staff and superusers: σ, normalizing and the profile.
   const auth = useAuth();
-  const canEditLimits = staffFlags(auth?.user).isStaffOrSuperuser;
+  const staff = staffFlags(auth?.user).isStaffOrSuperuser;
   // σ of the plan (null: Auto σ) - staff change and store it, not in the
   // alignment wizard.
-  const canEditSigma = canEditLimits && !alignment;
+  const canEditSigma = staff && !alignment;
   const [sigma, setSigma] = useHeatSigma({ plan: activePlan, editable: canEditSigma });
-  const limitEditor = useHeatLimitationEditor({
-    plans,
-    plan: activePlan,
-    editable: canEditLimits && !alignment && image != null,
-  });
-  const drawing = limitEditor.draft != null;
 
   // ---------------------------------------------------------------- chart
 
@@ -373,9 +373,10 @@ const SensorHeatmap2D = ({
     [frame, colorTable],
   );
   // Only on the plan image - without one the areas have nothing to refer to.
+  const planAreas = activePlan?.heat_limitations;
   const limits = useMemo(
-    () => (layout && image ? limitPolygons(limitEditor.shownAreas, layout.world) : []),
-    [layout, image, limitEditor.shownAreas],
+    () => (layout && image ? limitPolygons(planAreas, layout.world) : []),
+    [layout, image, planAreas],
   );
 
   const scene = useMemo<Scene | null>(
@@ -454,20 +455,22 @@ const SensorHeatmap2D = ({
 
   // Ctrl + wheel zooms; the plain wheel over the plan shows how (wheelZoom).
   const [wheelHint, showWheelHint] = useWheelHint();
-  const oneFingerTool = drawing || areaMode;
+  const oneFingerTool = areaMode;
+  // The canvas is there - not while a plan image loads (the placeholder holds its place).
+  const plotShown = scene != null && !imagePending;
+  // The height of the last plot shown - the placeholder keeps it.
+  const [heldHeight, setHeldHeight] = useState<number | null>(null);
+  if (plotShown && width > 0 && heldHeight !== canvasHeight) {
+    setHeldHeight(canvasHeight);
+  }
   const { canvasRef, grabbing, handlers } = usePanZoomGestures({
-    enabled: scene != null,
+    enabled: plotShown,
     view,
     setView,
     zoomBy,
     onHover: updateHover,
     onLeave: clearHover,
     onTap: (sx, sy) => {
-      if (scene && view && drawing) {
-        // Drawing a heat limitation: every click on the plan is a point.
-        limitEditor.addPoint(toPlanPoint(toWorld(view, sx, sy), scene.layout.world), scene.layout.world);
-        return;
-      }
       if (!scene || !view || !onSensorClick) {
         return;
       }
@@ -478,13 +481,13 @@ const SensorHeatmap2D = ({
     },
     wheelZoomsAt: (sx, sy) => Boolean(scene && view && isOverDrawn(scene.layout, view, image != null, sx, sy)),
     onPlainWheel: showWheelHint,
-    // Drawing a limitation or selecting an area: one finger is the tool.
+    // Selecting an area: one finger is the tool.
     // Otherwise one finger scrolls the page, two move the plan.
     oneFingerPans: oneFingerTool,
     onOneFingerTouch: () => showWheelHint('touch'),
     area: onAreaSelect
       ? {
-          starts: (event) => !drawing && (areaMode || event.shiftKey),
+          starts: (event) => areaMode || event.shiftKey,
           onChange: setAreaRect,
           onSelect: (rect) => {
             if (scene && view) {
@@ -585,9 +588,6 @@ const SensorHeatmap2D = ({
             (onPlanChange). */}
         <HeatmapToolbar
           start={toolbarStart}
-          middle={
-            <HeatLimitationBar editor={limitEditor} testId={ownId ? undefined : childTestId(testId, 'heat-limit')} />
-          }
           plans={alignment || onPlanChange ? null : plans}
           planIndex={planIndex}
           onPlanChange={choosePlan}
@@ -627,9 +627,21 @@ const SensorHeatmap2D = ({
       {/* The outer box measures the width available; the plot is as wide as
           the canvas (narrower when compact, left-aligned - useHeatmapViewport). */}
       <div ref={wrapRef} className="heatmap2d-plot-area">
+      {imagePending ? (
+        // The plan image loads: its place keeps the last plot's height.
+        <div
+          className="heatmap2d-plot-placeholder text-muted"
+          style={{ height: heldHeight ?? canvasHeight }}
+          data-testid={childTestId(testId, 'plot-loading')}
+        >
+          <Spinner animation="border" size="sm" className="me-2" />
+          {t('ui_loading')}
+        </div>
+      ) : (
       <div
         className="heatmap2d-plot-wrap"
         data-testid={childTestId(testId, 'plot')}
+        aria-busy={busy || undefined}
         style={{ height: canvasHeight, width: width > 0 ? width : undefined }}
       >
         <canvas
@@ -638,27 +650,15 @@ const SensorHeatmap2D = ({
           aria-label={t('heatmap_canvas_hint')}
           data-testid={childTestId(testId, 'canvas')}
           className={`heatmap2d-canvas heatmap2d-canvas--${
-            drawing || areaMode ? 'crosshair' : hoveredIndex != null ? 'pointer' : grabbing ? 'grabbing' : 'grab'
+            areaMode ? 'crosshair' : hoveredIndex != null ? 'pointer' : grabbing ? 'grabbing' : 'grab'
           }`}
           style={{
             height: canvasHeight,
             touchAction: oneFingerTool ? 'none' : TWO_FINGER_TOUCH_ACTION,
           }}
           {...handlers}
-          // While drawing, double clicks are two points - not a reset.
-          onDoubleClick={() => !drawing && setView(null)}
+          onDoubleClick={() => setView(null)}
         />
-
-        {view && (
-          <HeatLimitationLayer
-            editor={limitEditor}
-            view={view}
-            world={scene.layout.world}
-            width={width}
-            height={canvasHeight}
-            testId={ownId ? undefined : childTestId(testId, 'heat-limit')}
-          />
-        )}
 
         <WheelZoomHint visible={wheelHint} radius={0} testId={childTestId(testId, 'wheel-hint')} />
         {areaRect && (
@@ -678,12 +678,12 @@ const SensorHeatmap2D = ({
           area={onAreaSelect ? { value: areaMode, onChange: setAreaMode } : null}
           lines={hasLines ? { value: showLines, onChange: setShowLines } : null}
           normalize={
-            canEditLimits && !fieldMode
+            staff && !fieldMode
               ? { value: normalize, onChange: setNormalize, forced: normalizeForced }
               : null
           }
           profile={
-            canEditLimits && !fieldMode && onProfileChange
+            staff && !fieldMode && onProfileChange
               ? { value: profile, onChange: onProfileChange, loading: profileLoading }
               : null
           }
@@ -719,7 +719,16 @@ const SensorHeatmap2D = ({
             testId={childTestId(testId, 'readout')}
           />
         )}
+
+        {busy && (
+          // Over everything of the plot: it takes no input until the new data is there.
+          <div className="heatmap2d-busy" data-testid={childTestId(testId, 'busy')}>
+            <Spinner animation="border" className="me-2" />
+            {t('ui_loading')}
+          </div>
+        )}
       </div>
+      )}
       </div>
     </>
   ) : (

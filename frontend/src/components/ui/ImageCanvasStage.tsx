@@ -55,7 +55,7 @@ const finite = (value: unknown) => (value == null || value === '' ? NaN : Number
 
 /** Image pixel of a normalized point (nx/ny) under the point alignment -
  * where the canvas draws it, independent of zoom and pan. */
-const normalizedToImage = (
+export const normalizedToImage = (
   [nx, ny]: [number, number],
   alignment: { offsetX: number; offsetY: number; scaleX: number; scaleY: number; flipY: boolean },
   width: number,

@@ -30,6 +30,47 @@
 }
 
 /* Header toggle: a link button in the brand blue in every state. */
+/* Staff: the Lageplan wizard of this location - a gradient pill whose wand
+   sparkles on hover. */
+.analyse-wizard-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 12px 3px 8px;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--progeo-white);
+  text-decoration: none;
+  background: linear-gradient(135deg, var(--progeo-blue) 0%, var(--progeo-contrast-violet) 60%, var(--progeo-orange) 100%);
+  box-shadow: 0 1px 3px rgba(11, 54, 89, 0.25);
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.analyse-wizard-link:hover,
+.analyse-wizard-link:focus-visible {
+  color: var(--progeo-white);
+  box-shadow: 0 3px 10px rgba(149, 119, 179, 0.45);
+  transform: translateY(-1px);
+}
+
+.analyse-wizard-link-icon {
+  transition: transform 0.3s ease;
+}
+
+.analyse-wizard-link:hover .analyse-wizard-link-icon,
+.analyse-wizard-link:focus-visible .analyse-wizard-link-icon {
+  transform: rotate(-20deg) scale(1.15);
+  filter: drop-shadow(0 0 3px var(--progeo-contrast-yellow));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .analyse-wizard-link,
+  .analyse-wizard-link-icon {
+    transition: none;
+  }
+}
+
 .btn.analyse-heatmap-toggle {
   --bs-btn-color: var(--progeo-blue);
   --bs-btn-hover-color: var(--progeo-blue);

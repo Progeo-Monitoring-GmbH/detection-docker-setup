@@ -24,7 +24,8 @@ const HANDLE_RADIUS = 7;
 /**
  * Heat limitations of the shown Lageplan (ProgeoLageplan.heat_limitations)
  * and their editing - staff and superusers draw an area as draggable points
- * on the heatmap and confirm it (POST /v1/location/<id>/heat-limitations/),
+ * on the plan (Lageplan wizard, HeatLimitationStage) and confirm it
+ * (POST /v1/location/<id>/heat-limitations/),
  * edit, delete or copy existing ones. The saved list is kept per plan until
  * the plans change (a new response brings it along).
  */
@@ -32,11 +33,14 @@ export const useHeatLimitationEditor = ({
   plans,
   plan,
   editable,
+  onChange,
 }: {
   plans: SensorHeatmapLageplanData[] | null;
   plan: SensorHeatmapLageplanData | null;
   /** Whether the user may edit (staff or superuser, plan image shown). */
   editable: boolean;
+  /** Called with a plan's new list after every save - the owner of `plans` keeps it. */
+  onChange?: (planId: number, areas: HeatLimitation[]) => void;
 }) => {
   const { t } = useTranslation();
   const auth = useAuth();
@@ -79,6 +83,7 @@ export const useHeatLimitationEditor = ({
       plans,
       byPlan: { ...(current?.plans === plans ? current.byPlan : {}), [planId]: list },
     }));
+    onChange?.(planId, list);
   };
 
   const post = (suffix: string, data: Record<string, unknown>, success: string) => {
@@ -185,7 +190,7 @@ export const useHeatLimitationEditor = ({
 export type HeatLimitationEditor = ReturnType<typeof useHeatLimitationEditor>;
 
 /**
- * The controls above the heatmap (staff and superusers): "Create
+ * The controls above the plan (staff and superusers): "Create
  * Heat-Limitation", "Copy from existing project" (HeatLimitationCopyPicker)
  * and the existing areas with edit / delete - while drawing, the name, the
  * hint and Confirm / Cancel.
@@ -330,7 +335,7 @@ export const HeatLimitationBar = ({
 };
 
 /**
- * The areas over the heatmap canvas (staff and superusers), in its view:
+ * The areas over the plan canvas (staff and superusers), in its view:
  * saved ones outlined with their name, the draft filled with draggable points
  * (double-click removes one). Only the points take the pointer - the canvas
  * below keeps zooming, moving and, while drawing, receives the clicks that
