@@ -145,6 +145,36 @@ export const useHeatLimitationEditor = ({
     return true;
   };
 
+  /**
+   * Replaces every area of the plan (e.g. with the auto-detected ones -
+   * POST heat-limitations/replace/); resolves with whether it was stored.
+   */
+  const replaceAreas = (next: Array<Pick<HeatLimitation, 'name' | 'points'>>): Promise<boolean> =>
+    new Promise((resolve) => {
+      if (planId == null || locationId == null) {
+        resolve(false);
+        return;
+      }
+      setBusy(true);
+      void axiosConfig.perform_post(
+        auth,
+        `/v1/location/${locationId}/heat-limitations/replace/`,
+        { lageplan_id: planId, areas: next.map(({ name, points }) => ({ name, points })) },
+        (response) => {
+          remember((response?.data?.heat_limitations ?? []) as HeatLimitation[]);
+          setDraft(null);
+          setBusy(false);
+          showSuccessBar(enqueueSnackbar, t('heat_limit_saved'));
+          resolve(true);
+        },
+        (error) => {
+          setBusy(false);
+          showRequestError(enqueueSnackbar, t('heat_limit_save_failed'), error);
+          resolve(false);
+        },
+      );
+    });
+
   const updatePoints = (change: (points: Point[]) => Point[]) =>
     setDraft((current) => (current ? { ...current, points: change(current.points) } : current));
 
@@ -179,6 +209,7 @@ export const useHeatLimitationEditor = ({
       }
     },
     copyAreas,
+    replaceAreas,
     remove: (area: HeatLimitation) => {
       if (window.confirm(t('heat_limit_delete_confirm', { name: area.name || t('heat_limit_unnamed') }))) {
         post('delete/', { id: area.id }, t('heat_limit_deleted'));

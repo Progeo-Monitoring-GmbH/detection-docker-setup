@@ -148,6 +148,25 @@
   font-weight: 500;
 }
 
+/* The auto functions (auto-align, auto heat limitations): the gradient pill
+   of the wizard link on /analyse. */
+.btn.image-canvas-auto {
+  --bs-btn-color: var(--progeo-white);
+  --bs-btn-hover-color: var(--progeo-white);
+  --bs-btn-active-color: var(--progeo-white);
+  --bs-btn-disabled-color: var(--progeo-white);
+  --bs-btn-border-color: transparent;
+  --bs-btn-hover-border-color: transparent;
+  --bs-btn-disabled-border-color: transparent;
+  background: linear-gradient(135deg, var(--progeo-blue) 0%, var(--progeo-contrast-violet) 60%, var(--progeo-orange) 100%);
+  box-shadow: 0 1px 3px rgba(11, 54, 89, 0.25);
+}
+
+.btn.image-canvas-auto:hover:not(:disabled),
+.btn.image-canvas-auto:focus-visible {
+  box-shadow: 0 3px 10px rgba(149, 119, 179, 0.45);
+}
+
 /* Over the plan; the same shadow when focused. */
 .btn.image-canvas-pill--raised {
   --bs-btn-focus-box-shadow: 0 2px 8px rgba(11, 54, 89, 0.25);

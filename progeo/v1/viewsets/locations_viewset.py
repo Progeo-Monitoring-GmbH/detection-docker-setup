@@ -39,7 +39,7 @@ from progeo.decorator import (
     permission_denied_response,
     require_module_permissions,
 )
-from progeo.helper import cad_import, device_overview, heatmap_video, plan_meters
+from progeo.helper import cad_import, device_overview, heatmap_video, plan_detect, plan_meters
 from progeo.helper.basics import (
     RequestFailed,
     RequestSuccess,
@@ -47,7 +47,11 @@ from progeo.helper.basics import (
     ilog,
     save_check_dir,
 )
-from progeo.helper.cacher import cache_save_and_return, forget_location_answers, search_cache
+from progeo.helper.cacher import (
+    cache_save_and_return,
+    forget_location_answers,
+    search_cache,
+)
 from progeo.helper.climate_heatmap import CLIMATE_METRICS, climate_frames
 from progeo.helper.climate_heatmap import frame_step as climate_frame_step
 from progeo.helper.demo import demo_export_throttle, is_demo_user
@@ -65,6 +69,7 @@ from progeo.helper.project_dbs import location_db, map_databases, split_enabled
 from progeo.tasks import render_heatmap_video
 from progeo.v1.creator import save_lageplan_upload
 from progeo.v1.models import (
+    HEAT_LIMITATION_MAX_POINTS,
     SMS,
     Account,
     EMail,
@@ -1831,6 +1836,73 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             return remaining
 
         return self._edit_heat_limitations(request, pk, change)
+
+    @action(detail=True, url_path="heat-limitations/detect", methods=["POST"])
+    def heat_limitations_detect(self, request, pk=None, *args, **kwargs):
+        """Staff: proposed heat limitations of a Lageplan (wizard step 6,
+        helper/plan_detect.py) - POST {lageplan_id}: the outlines of the
+        buildings on the plan holding its measure points (placed by the
+        stored alignment), every area with at least one sensor inside;
+        sensors outside every outline get an area around their cluster.
+        Nothing is stored - heat-limitations/replace/ does that."""
+        location, account, error = self._staff_location(request, pk)
+        if error:
+            return error
+        db_name = location_db(location, account)
+        lageplan, error = _target_lageplan(db_name, location, request.data.get("lageplan_id"))
+        if error:
+            return error
+        root = os.path.realpath(settings.UPLOAD_DIR)
+        name = lageplan.lageplan.name if lageplan.lageplan else ""
+        path = os.path.realpath(os.path.join(root, name))
+        if not name or not path.startswith(root + os.sep) or not os.path.isfile(path):
+            return RequestFailed({"reason": "The Lageplan has no image"})
+        try:
+            plan_image = plan_detect.load_plan_image(path)
+            width, height = plan_image.size
+            sensors = []
+            for point in cad_import.points_on_plan(location, db_name, lageplan).only("nx", "ny", "nx_end", "ny_end"):
+                if point.nx is None or point.ny is None:
+                    continue
+                ends = [(point.nx, point.ny)]
+                if point.nx_end is not None and point.ny_end is not None:
+                    # A dm band: points along it.
+                    ends = [(point.nx + (point.nx_end - point.nx) * t, point.ny + (point.ny_end - point.ny) * t)
+                            for t in (0, 0.25, 0.5, 0.75, 1)]
+                sensors.append([
+                    (px / width, py / height)
+                    for px, py in (plan_meters.plan_pixel(nx, ny, lageplan, width, height) for nx, ny in ends)
+                ])
+            if not sensors:
+                return RequestFailed({"reason": "The Lageplan has no measure points"})
+            detection = plan_detect.detect_heat_limitations(plan_image, sensors, HEAT_LIMITATION_MAX_POINTS)
+        except plan_detect.PlanDetectError as exc:
+            return RequestFailed({"reason": str(exc)})
+        return RequestSuccess({
+            "lageplan_id": lageplan.pk,
+            "areas": [
+                {"name": area.name, "points": area.points, "sensors": area.sensors, "kind": area.kind}
+                for area in detection.areas
+            ],
+            "sensors": detection.sensors,
+            "clustered": detection.clustered,
+        })
+
+    @action(detail=True, url_path="heat-limitations/replace", methods=["POST"])
+    def heat_limitations_replace(self, request, pk=None, *args, **kwargs):
+        """Staff: replace every heat limitation of a Lageplan - POST
+        {lageplan_id, areas: [{name?, points}, ...]} (e.g. the proposals of
+        heat-limitations/detect/); each area gets a new id."""
+        raw = request.data.get("areas")
+        if not isinstance(raw, list):
+            return RequestFailed({"reason": "areas must be a list"})
+        cleaned = []
+        for data in raw:
+            area, reason = ProgeoLageplan.clean_heat_limitation(data)
+            if reason:
+                return RequestFailed({"reason": reason})
+            cleaned.append({"id": uuid.uuid4().hex[:12], **area})
+        return self._edit_heat_limitations(request, pk, lambda areas: cleaned)
 
     @require_module_permissions("module_locations_enabled", "module_locations_delete")
     def destroy(self, request, *args, **kwargs):

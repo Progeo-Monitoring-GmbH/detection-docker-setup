@@ -24,7 +24,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.authentication import ExpiringTokenAuthentication
 from progeo.decorator import calc_runtime, require_module_permissions
-from progeo.helper import cad_import, lageplan_edit
+from progeo.helper import cad_import, lageplan_edit, plan_detect
 from progeo.helper.basics import RequestFailed, RequestSuccess, ilog, save_check_dir
 from progeo.helper.cacher import forget_location_answers
 from progeo.helper.creator import create_MfS_log
@@ -791,6 +791,70 @@ class StatusViewSet(ProgeoModalViewSet):
 
         ilog(f"Lageplans of location {location.id} ordered {ordered}" + (f", {tied} point(s) tied to {old_main.pk}" if tied else ""))
         return RequestSuccess({"location_id": location.id, "lageplan_ids": ordered, "tied_points": tied})
+
+    @calc_runtime
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
+    @action(detail=False, url_path="measure_points/auto_align", methods=["POST"])
+    def auto_align_lageplan(self, request, *args, **kwargs):
+        """Auto alignment (step 5 of the Lageplan wizard, helper/plan_detect.py):
+        POST {location_id (project id), lageplan_id} plus the alignment shown
+        (offset_x, offset_y, scale_x, scale_y, flip_y - a start of the search)
+        answers the alignment laying the plan's measure points onto its orange
+        lines, with `score` (share of the sensor points on orange) and
+        `matched`. Nothing is stored - the wizard shows it on its sliders,
+        which store it."""
+        location, db_name, error = _measure_point_location(request, {"location_id": request.data.get("location_id")})
+        if error:
+            return error
+        try:
+            lageplan_id = int(request.data.get("lageplan_id"))
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "lageplan_id required"})
+        lageplan = ProgeoLageplan.objects.using(db_name).filter(location=location, pk=lageplan_id).first()
+        if lageplan is None:
+            return RequestFailed({"reason": f"Lageplan {lageplan_id} is not at this location"})
+        path = _lageplan_path(lageplan.lageplan.name if lageplan.lageplan else "")
+        if not path or not os.path.isfile(path):
+            return RequestFailed({"reason": "The Lageplan has no image"})
+
+        current = {
+            "offset_x": lageplan.offset_x or 0,
+            "offset_y": lageplan.offset_y or 0,
+            "scale_x": lageplan.scale_x or 1,
+            "scale_y": lageplan.scale_y or 1,
+            "flip_y": lageplan.flip_y,
+        }
+        try:
+            for field in ("offset_x", "offset_y", "scale_x", "scale_y"):
+                if request.data.get(field) not in (None, ""):
+                    current[field] = float(request.data.get(field))
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "Invalid alignment values"})
+        if request.data.get("flip_y") not in (None, ""):
+            flip_y = request.data.get("flip_y")
+            current["flip_y"] = flip_y if isinstance(flip_y, bool) else str(flip_y).lower() in ("1", "true", "yes", "on")
+
+        segments = [
+            ((point.nx, point.ny), (point.nx_end, point.ny_end) if point.nx_end is not None and point.ny_end is not None
+             else None)
+            for point in cad_import.points_on_plan(location, db_name, lageplan).only("nx", "ny", "nx_end", "ny_end")
+            if point.nx is not None and point.ny is not None
+        ]
+        try:
+            result = plan_detect.auto_align(plan_detect.load_plan_image(path), segments, current)
+        except plan_detect.PlanDetectError as exc:
+            return RequestFailed({"reason": str(exc)})
+        ilog(f"Lageplan {lageplan.pk} of location {location.id} auto-aligned: score {result.score}")
+        return RequestSuccess({
+            "lageplan_id": lageplan.pk,
+            "offset_x": result.offset_x,
+            "offset_y": result.offset_y,
+            "scale_x": result.scale_x,
+            "scale_y": result.scale_y,
+            "flip_y": result.flip_y,
+            "score": result.score,
+            "matched": result.matched,
+        })
 
     @calc_runtime
     @require_module_permissions("module_devices_enabled", "module_devices_edit")

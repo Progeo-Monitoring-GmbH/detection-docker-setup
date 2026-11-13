@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowClockwise, ArrowCounterclockwise } from 'react-bootstrap-icons';
+import { ArrowClockwise, ArrowCounterclockwise, Magic } from 'react-bootstrap-icons';
 import axiosConfig from '../../axiosConfig';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import { childTestId } from '../../testIds';
@@ -371,6 +371,15 @@ const ImageCanvasStage = ({
   const [alignDrag, setAlignDrag] = useState<{ index: number; source: ImagePoint; at: ImagePoint } | null>(null);
   const aligning = pins.length > 0 || alignDrag != null;
   const [alignBefore, setAlignBefore] = useState<AlignmentValues | null>(null);
+  // Auto alignment (measure_points/auto_align): the request, the share of
+  // sensor points it laid onto the plan's orange lines and the values
+  // before - for Undo.
+  const [autoAlign, setAutoAlign] = useState<
+    | { busy: true }
+    | { busy: false; score: number; matched: boolean; before: AlignmentValues }
+    | { busy: false; error: string }
+    | null
+  >(null);
   // Image edit (C / X) or removing points (D): the mode, the selected area
   // (two corners in image pixels), whether it is being dragged, and the
   // request applying it.
@@ -445,6 +454,9 @@ const ImageCanvasStage = ({
 
   // Point calibration with the sliders' panel (alignment editable), not while placing sensors.
   const canAlign = withSliders && !placement && image != null && items.length >= ALIGN_PINS;
+  // Auto alignment of a stored plan's points onto its orange lines.
+  const canAutoAlign =
+    withSliders && !placement && image != null && items.length > 0 && locationId != null && lageplanId != null;
   // Reference point and calibration with the scale panel.
   const canScale = withSliders && onSaveScale != null && image != null;
   // Clearing / cropping the image of a stored plan, not during the point calibration.
@@ -1329,14 +1341,68 @@ const ImageCanvasStage = ({
     setAlignDrag(null);
   };
 
+  /** Shows (and so stores, see below) an alignment on the sliders. */
+  const showAlignment = (values: AlignmentValues) => {
+    setPointOffsetX(values.offsetX);
+    setPointOffsetY(values.offsetY);
+    setPointScaleX(values.scaleX);
+    setPointScaleY(values.scaleY);
+    setIsVerticallyFlipped(values.flipY);
+  };
+
+  // Auto alignment: the backend fits the points onto the plan's orange lines
+  // (dm bands / sensors of the CAD drawing), starting from what is shown.
+  const runAutoAlign = () => {
+    const before: AlignmentValues = {
+      offsetX: pointOffsetX,
+      offsetY: pointOffsetY,
+      scaleX: pointScaleX,
+      scaleY: pointScaleY,
+      flipY: isVerticallyFlipped,
+    };
+    setAutoAlign({ busy: true });
+    void axiosConfig.perform_post(
+      auth,
+      '/v1/status/measure_points/auto_align/',
+      {
+        location_id: locationId,
+        lageplan_id: lageplanId,
+        offset_x: before.offsetX,
+        offset_y: before.offsetY,
+        scale_x: before.scaleX,
+        scale_y: before.scaleY,
+        flip_y: before.flipY,
+      },
+      (response) => {
+        const data = (response?.data ?? {}) as {
+          offset_x: number;
+          offset_y: number;
+          scale_x: number;
+          scale_y: number;
+          flip_y: boolean;
+          score: number;
+          matched: boolean;
+        };
+        showAlignment({
+          offsetX: data.offset_x,
+          offsetY: data.offset_y,
+          scaleX: data.scale_x,
+          scaleY: data.scale_y,
+          flipY: data.flip_y,
+        });
+        setAutoAlign({ busy: false, score: data.score, matched: data.matched, before });
+      },
+      (error) => {
+        const reason = (error as { response?: { data?: { reason?: string } } })?.response?.data?.reason;
+        setAutoAlign({ busy: false, error: reason || 'The auto alignment failed' });
+      },
+    );
+  };
+
   // The point calibration ends with "Store alignment" or "Cancel" (restore).
   const stopAligning = (restore: boolean) => {
     if (restore && alignBefore) {
-      setPointOffsetX(alignBefore.offsetX);
-      setPointOffsetY(alignBefore.offsetY);
-      setPointScaleX(alignBefore.scaleX);
-      setPointScaleY(alignBefore.scaleY);
-      setIsVerticallyFlipped(alignBefore.flipY);
+      showAlignment(alignBefore);
     }
     setAlignBefore(null);
     setPins([]);
@@ -2301,6 +2367,23 @@ const ImageCanvasStage = ({
               </div>
             </div>
             <div className="ms-auto d-flex gap-2">
+              {canAutoAlign && (
+                <button
+                  type="button"
+                  className="image-canvas-pill image-canvas-auto btn btn-sm"
+                  onClick={runAutoAlign}
+                  disabled={autoAlign?.busy || aligning}
+                  title="Lay the measure points onto the orange lines of the plan"
+                  data-testid={childTestId(testId, 'auto-align')}
+                >
+                  {autoAlign?.busy ? (
+                    <span className="spinner-border spinner-border-sm me-1" aria-hidden />
+                  ) : (
+                    <Magic className="me-1" aria-hidden />
+                  )}
+                  Auto-align
+                </button>
+              )}
               <button
                 type="button"
                 className={`image-canvas-pill btn btn-sm ${isVerticallyFlipped ? 'btn-secondary' : 'btn-outline-secondary'}`}
@@ -2312,6 +2395,56 @@ const ImageCanvasStage = ({
               </button>
             </div>
           </div>
+
+          {autoAlign && !autoAlign.busy && (
+            <div
+              className={`image-canvas-action d-flex flex-wrap align-items-center gap-2 ${
+                'error' in autoAlign
+                  ? 'image-canvas-action--error'
+                  : autoAlign.matched
+                    ? 'image-canvas-action--align'
+                    : 'image-canvas-action--warning'
+              }`}
+              data-testid={childTestId(testId, 'auto-align-result')}
+            >
+              <div className="image-canvas-action-text">
+                {'error' in autoAlign ? (
+                  autoAlign.error
+                ) : (
+                  <>
+                    <div className="image-canvas-action-title">
+                      {autoAlign.matched ? 'Aligned to the orange lines' : 'Only a rough match'}
+                    </div>
+                    {Math.round(autoAlign.score * 100)}% of the sensor points lie on the orange lines of the plan
+                    {autoAlign.matched
+                      ? ' - stored. Check it, fine-tune with the sliders or hold A.'
+                      : ' - check the result, or undo and align by hand (hold A).'}
+                  </>
+                )}
+              </div>
+              {'before' in autoAlign && (
+                <button
+                  type="button"
+                  className="image-canvas-pill btn btn-sm btn-outline-secondary"
+                  onClick={() => {
+                    showAlignment(autoAlign.before);
+                    setAutoAlign(null);
+                  }}
+                  data-testid={childTestId(testId, 'auto-align-undo')}
+                >
+                  Undo
+                </button>
+              )}
+              <button
+                type="button"
+                className="image-canvas-pill btn btn-sm btn-outline-secondary"
+                onClick={() => setAutoAlign(null)}
+                data-testid={childTestId(testId, 'auto-align-close')}
+              >
+                OK
+              </button>
+            </div>
+          )}
 
           {canAlign && !aligning && (
             <div className="image-canvas-hint d-flex align-items-center gap-2" data-testid={childTestId(testId, 'align-hint')}>

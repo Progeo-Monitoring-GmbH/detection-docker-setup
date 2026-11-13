@@ -1,5 +1,8 @@
-import { useLayoutEffect, useMemo } from 'react';
-import { Spinner } from 'react-bootstrap';
+import { useLayoutEffect, useMemo, useState } from 'react';
+import { Button, Spinner } from 'react-bootstrap';
+import { Magic } from 'react-bootstrap-icons';
+import { useAuth } from '../../../hooks/CoreAuthProvider';
+import axiosConfig from '../../axiosConfig';
 import { getBackendUrl } from '../../backendUrl';
 import { plotTheme } from '../../styles/plotTheme';
 import { childTestId } from '../../testIds';
@@ -19,6 +22,12 @@ const ZOOM_STEP = 1.4;
 /** The plan outside every area: dimmed - the heat field is cut off there. */
 const OUTSIDE_SHADE = 'rgba(33, 37, 41, 0.35)';
 const SENSOR_COLOR = plotTheme.brandOrange;
+const PROPOSAL_COLOR = plotTheme.brandBlue;
+
+/** An area proposed by heat-limitations/detect/: a building outline on the
+ * plan, or around sensors outside every outline (cluster). */
+type ProposedArea = Pick<HeatLimitation, 'name' | 'points'> & { sensors: number; kind: 'outline' | 'cluster' };
+type Proposal = { areas: ProposedArea[]; sensors: number; clustered: number };
 
 type Segment = { start: [number, number]; end: [number, number] | null };
 
@@ -54,8 +63,10 @@ const drawStage = (
   view: View,
   image: HTMLImageElement,
   world: WorldSize,
-  areas: HeatLimitation[],
+  areas: Array<Pick<HeatLimitation, 'points'>>,
   sensors: Segment[],
+  /** Proposed areas: outlined (dashed) with their name. */
+  outlined: Array<Pick<HeatLimitation, 'name' | 'points'>> = [],
 ) => {
   ctx.setTransform(size.dpr, 0, 0, size.dpr, 0, 0);
   ctx.clearRect(0, 0, size.width, size.height);
@@ -73,7 +84,7 @@ const drawStage = (
 
   // Outside the areas the plan is dimmed: shade it all, then draw the plan
   // again clipped to the areas (nonzero - overlapping areas add up).
-  const polygons = limitPolygons(areas, world);
+  const polygons = limitPolygons(areas as HeatLimitation[], world);
   if (polygons.length) {
     const [x0, y0] = toScreen(view, 0, 0);
     const [x1, y1] = toScreen(view, world.width, world.height);
@@ -96,6 +107,34 @@ const drawStage = (
     drawPlan();
     ctx.restore();
   }
+
+  ctx.save();
+  ctx.strokeStyle = PROPOSAL_COLOR;
+  ctx.fillStyle = PROPOSAL_COLOR;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([7, 4]);
+  ctx.font = '600 12px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  outlined.forEach(({ name, points }) => {
+    ctx.beginPath();
+    points.forEach(([x, y], index) => {
+      const [sx, sy] = toScreen(view, x * world.width, y * world.height);
+      if (index === 0) {
+        ctx.moveTo(sx, sy);
+      } else {
+        ctx.lineTo(sx, sy);
+      }
+    });
+    ctx.closePath();
+    ctx.stroke();
+    const [cx, cy] = toScreen(
+      view,
+      (points.reduce((sum, [x]) => sum + x, 0) / points.length) * world.width,
+      (points.reduce((sum, [, y]) => sum + y, 0) / points.length) * world.height,
+    );
+    ctx.fillText(name, cx, cy);
+  });
+  ctx.restore();
 
   // The sensors - where the heat comes from.
   ctx.strokeStyle = SENSOR_COLOR;
@@ -154,6 +193,36 @@ const HeatLimitationStage = ({
   );
   const editor = useHeatLimitationEditor({ plans, plan, editable: editable && image != null, onChange });
   const drawing = editor.draft != null;
+
+  // Auto heat limitations: the areas proposed for this plan (shown instead
+  // of the stored ones until applied or discarded).
+  const auth = useAuth();
+  const [detecting, setDetecting] = useState(false);
+  const [detectError, setDetectError] = useState('');
+  const [proposal, setProposal] = useState<Proposal | null>(null);
+  const detect = () => {
+    setDetecting(true);
+    setDetectError('');
+    void axiosConfig.perform_post(
+      auth,
+      `/v1/location/${plan.location_id}/heat-limitations/detect/`,
+      { lageplan_id: plan.id },
+      (response) => {
+        setDetecting(false);
+        setProposal((response?.data ?? { areas: [], sensors: 0, clustered: 0 }) as Proposal);
+      },
+      (error) => {
+        setDetecting(false);
+        const reason = (error as { response?: { data?: { reason?: string } } })?.response?.data?.reason;
+        setDetectError(reason || 'The heat limitations could not be detected');
+      },
+    );
+  };
+  const apply = async () => {
+    if (proposal && (await editor.replaceAreas(proposal.areas))) {
+      setProposal(null);
+    }
+  };
   const sensors = useMemo(() => (world ? sensorSegments(points, plan, world) : []), [points, plan, world]);
 
   const bounds = useMemo(
@@ -200,9 +269,18 @@ const HeatLimitationStage = ({
     const dpr = window.devicePixelRatio || 1;
     const ctx = sizedContext(canvas, width, canvasHeight, dpr);
     if (ctx) {
-      drawStage(ctx, { width, height: canvasHeight, dpr }, view, image, world, editor.shownAreas, sensors);
+      drawStage(
+        ctx,
+        { width, height: canvasHeight, dpr },
+        view,
+        image,
+        world,
+        proposal ? proposal.areas : editor.shownAreas,
+        sensors,
+        proposal?.areas,
+      );
     }
-  }, [canvasRef, image, world, view, width, canvasHeight, editor.shownAreas, sensors]);
+  }, [canvasRef, image, world, view, width, canvasHeight, editor.shownAreas, sensors, proposal]);
 
   if (pending) {
     return (
@@ -226,9 +304,38 @@ const HeatLimitationStage = ({
 
   return (
     <div data-testid={testId}>
-      <div className="mb-2">
-        <HeatLimitationBar editor={editor} testId={childTestId(testId, 'heat-limit')} />
-      </div>
+      {proposal ? (
+        <ProposalBar
+          proposal={proposal}
+          existing={editor.areas.length}
+          busy={editor.busy}
+          onApply={() => void apply()}
+          onDiscard={() => setProposal(null)}
+          testId={childTestId(testId, 'proposal')}
+        />
+      ) : (
+        <div className="mb-2 d-flex flex-wrap align-items-center gap-2">
+          {editor.canEdit && !drawing && (
+            <Button
+              size="sm"
+              className="image-canvas-pill image-canvas-auto"
+              onClick={detect}
+              disabled={detecting || editor.busy}
+              title="Find the outlines of the buildings with sensors on the plan"
+              data-testid={childTestId(testId, 'auto-detect')}
+            >
+              {detecting ? <Spinner size="sm" animation="border" className="me-1" /> : <Magic className="me-1" />}
+              Auto-detect
+            </Button>
+          )}
+          <HeatLimitationBar editor={editor} testId={childTestId(testId, 'heat-limit')} />
+        </div>
+      )}
+      {detectError && (
+        <div className="text-danger small mb-2" data-testid={childTestId(testId, 'detect-error')}>
+          {detectError}
+        </div>
+      )}
       <div ref={wrapRef} className="heatmap2d-plot-area">
         <div
           className="heatmap2d-plot-wrap"
@@ -246,7 +353,7 @@ const HeatLimitationStage = ({
             // While drawing, double clicks are two points - not a reset.
             onDoubleClick={() => !drawing && setView(null)}
           />
-          {view && (
+          {view && !proposal && (
             <HeatLimitationLayer
               editor={editor}
               view={view}
@@ -266,6 +373,63 @@ const HeatLimitationStage = ({
           />
         </div>
       </div>
+    </div>
+  );
+};
+
+/** The proposed areas: what was found, Apply (replacing the stored areas) or Discard. */
+const ProposalBar = ({
+  proposal,
+  existing,
+  busy,
+  onApply,
+  onDiscard,
+  testId,
+}: {
+  proposal: Proposal;
+  existing: number;
+  busy: boolean;
+  onApply: () => void;
+  onDiscard: () => void;
+  testId?: string;
+}) => {
+  const outlines = proposal.areas.filter((area) => area.kind === 'outline').length;
+  const clusters = proposal.areas.length - outlines;
+  return (
+    <div
+      className="image-canvas-action image-canvas-action--align d-flex flex-wrap align-items-center gap-2 mb-2"
+      data-testid={testId}
+    >
+      <div className="image-canvas-action-text">
+        {proposal.areas.length === 0 ? (
+          <div className="image-canvas-action-title">No areas found</div>
+        ) : (
+          <>
+            <div className="image-canvas-action-title">
+              {proposal.areas.length} area(s) found - dashed on the plan
+            </div>
+            {outlines} building outline(s) with sensors
+            {clusters > 0 && `, ${clusters} around ${proposal.clustered} sensor(s) outside every outline`}. Every
+            area holds at least one sensor.
+            {existing > 0 && ` Apply replaces the ${existing} stored area(s).`}
+          </>
+        )}
+      </div>
+      {proposal.areas.length > 0 && (
+        <Button size="sm" variant="primary" onClick={onApply} disabled={busy} data-testid={childTestId(testId, 'apply')}>
+          {busy && <Spinner size="sm" animation="border" className="me-1" />}
+          Apply
+        </Button>
+      )}
+      <Button
+        size="sm"
+        variant="outline-secondary"
+        onClick={onDiscard}
+        disabled={busy}
+        data-testid={childTestId(testId, 'discard')}
+      >
+        Discard
+      </Button>
     </div>
   );
 };
