@@ -250,6 +250,7 @@ const LocationClimatePanels = ({
         referenceTime={referenceTime}
         onReferenceChange={setReferenceTime}
         frameTime={frameTime}
+        rainEvents={climate?.rain_events}
       />
     );
 

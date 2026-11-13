@@ -158,3 +158,29 @@ def test_the_alarm_list_carries_the_rain_of_its_locations(api_client, location):
         (in_window.pk, location.pk, 6.5, 2.0)
     ]
     assert "rain_events" not in body["alarms"][0]
+
+
+def test_a_location_without_alarms_shows_its_rain(api_client, location):
+    """The per-location view draws the rain even when nothing alarmed in the
+    window - right after `fetch_weather --days 30`, for example."""
+    event = ProgeoRainEvent.objects.using(f.DB).create(
+        location=location, start=NOW - 5 * HOUR, end=NOW - 3 * HOUR, amount=2.5
+    )
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    body = api_client.get(f"/v1/alarm/?location={location.pk}&days=14").json()
+
+    assert body["alarms"] == []
+    assert [rain["id"] for rain in body["rain_events"]] == [event.pk]
+
+
+def test_the_rain_of_a_location_the_user_does_not_see_stays_hidden(api_client, location):
+    ProgeoRainEvent.objects.using(f.DB).create(location=location, start=NOW - 5 * HOUR, end=NOW - 3 * HOUR, amount=2.5)
+    # Module permission, but neither staff nor member of the location's account.
+    api_client.force_authenticate(user=f.make_user(perms=("module_measurements_enabled",)))
+
+    response = api_client.get(f"/v1/alarm/?location={location.pk}&days=14")
+
+    assert response.status_code in (200, 403)
+    if response.status_code == 200:
+        assert response.json()["rain_events"] == []

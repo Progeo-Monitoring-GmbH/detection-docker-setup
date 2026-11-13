@@ -66,7 +66,6 @@ class MultiDBModelAdmin(admin.ModelAdmin):
 
     @staticmethod
     def handle_register_custom(using_db):
-        dlog("handle_register_custom", using_db)
         for data in register_models:
             _model = data.get("model")
             _admin = data.get("admin")

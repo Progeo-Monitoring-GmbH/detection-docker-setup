@@ -169,6 +169,26 @@ def test_short_climate_ranges_stay_raw(api_client, climate_location):
     assert body["devices"][0]["humidity"] == [50.0]
 
 
+def test_climate_carries_the_rain_events_of_its_range(api_client, climate_location):
+    """The LoRaWAN charts shade the location's rain - the events reaching into the range."""
+    from progeo.v1.models import ProgeoRainEvent
+
+    location, _ = climate_location
+    now = timezone.now().replace(minute=0, second=0, microsecond=0)
+    recent = ProgeoRainEvent.objects.using(f.DB).create(
+        location=location, start=now - timedelta(days=2), end=now - timedelta(days=2) + timedelta(hours=3), amount=4.5
+    )
+    ProgeoRainEvent.objects.using(f.DB).create(  # before the 7 days
+        location=location, start=now - timedelta(days=30), end=now - timedelta(days=30, hours=-1), amount=1.0
+    )
+
+    body = api_client.get(f"/v1/location/{location.id}/climate/?days=7").json()
+
+    assert [(event["id"], event["amount"], event["duration_hours"]) for event in body["rain_events"]] == [
+        (recent.pk, 4.5, 3.0)
+    ]
+
+
 def test_climate_allows_three_years(api_client, climate_location):
     location, _ = climate_location
     assert api_client.get(f"/v1/location/{location.id}/climate/?days=5000").json()["days"] == 1096

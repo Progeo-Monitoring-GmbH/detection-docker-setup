@@ -23,7 +23,7 @@ from progeo.helper.location_access import (
     visible_locations_by_db,
 )
 from progeo.helper.project_dbs import map_databases, split_enabled
-from progeo.v1.models import ProgeoAlarm, ProgeoRainEvent
+from progeo.v1.models import ProgeoAlarm, ProgeoLocation, ProgeoRainEvent
 from progeo.v1.serializers import ProgeoAlarmSerializer, ProgeoRainEventSerializer
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.v1.viewsets.setup_viewset import _get_controller_account
@@ -82,15 +82,26 @@ class AlarmViewSet(ProgeoModalViewSet):
                                          alarm.get("id") or 0), reverse=True)
             return cache_save_and_return(cache_key, {"alarms": data, "rain_events": rain})
         data = self.get_serializer(self.get_queryset(), many=True).data
-        account_db = self._db_for(account, self._location_id(request)) if account else None
-        rain = self._rain_events(account_db, data) if account_db else []
+        location_id = self._location_id(request)
+        account_db = self._db_for(account, location_id) if account else None
+        # One location's view: its rain even without an alarm in the window -
+        # if the user sees the location (like its alarms, location_q).
+        shown = (
+            {location_id}
+            if account and location_id is not None
+            and ProgeoLocation.objects.using(account.db_name)
+            .filter(location_q(request.user, account), pk=location_id).exists()
+            else set()
+        )
+        rain = self._rain_events(account_db, data, shown) if account_db else []
         return cache_save_and_return(cache_key, {"alarms": data, "rain_events": rain})
 
-    def _rain_events(self, db_name, alarms):
+    def _rain_events(self, db_name, alarms, location_ids=()):
         """The rain events (ProgeoRainEvent) of the serialized `alarms`'
-        locations in the list's time window - the timeline draws them on each
-        location's lane. Rain events live in the database of the alarms."""
-        location_ids = {alarm["location"]["id"] for alarm in alarms if alarm.get("location")}
+        locations, plus `location_ids`, in the list's time window - the
+        timeline draws them on each location's lane. Rain events live in the
+        database of the alarms."""
+        location_ids = {alarm["location"]["id"] for alarm in alarms if alarm.get("location")} | set(location_ids)
         if not location_ids:
             return []
         window_start, window_end = self._window()

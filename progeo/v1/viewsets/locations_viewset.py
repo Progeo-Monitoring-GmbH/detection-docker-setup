@@ -69,6 +69,7 @@ from progeo.v1.models import (
     ProgeoLocation,
     ProgeoMeasurement,
     ProgeoMeasurePoint,
+    ProgeoRainEvent,
     UserProfile,
 )
 from progeo.v1.serializers import (
@@ -78,6 +79,7 @@ from progeo.v1.serializers import (
     ProgeoLocationMinSerializer,
     ProgeoMeasurementSerializer,
     ProgeoMeasurePointSerializer,
+    ProgeoRainEventSerializer,
     location_prefetches,
     prepare_locations,
     with_measurement_stats,
@@ -2164,7 +2166,9 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         counterpart of `heatmap`. LoRaWAN measurements carry no samples, only
         ProgeoMeasurement.humidity/temperature/battery, and a location has several
         devices, so every device gets its own series (oldest first). Also the
-        battery voltage (battery_v) of IMEI devices, shown below their Zeitreihe."""
+        battery voltage (battery_v) of IMEI devices, shown below their Zeitreihe,
+        and the location's rain events (ProgeoRainEvent) of the range - the
+        charts shade them."""
         try:
             days = int(request.query_params.get("days", 7))
         except (TypeError, ValueError):
@@ -2245,11 +2249,17 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
                 entry["battery"].append(battery)
                 entry["battery_v"].append(battery_v)
 
+        rain = (
+            ProgeoRainEvent.objects.using(db_name)
+            .filter(location_id=location.pk, end__gte=since)
+            .order_by("start")
+        )
         return RequestSuccess({
             "location": _location_data(location, account),
             "days": days,
             "bucket_seconds": bucket_seconds,
             "devices": sorted(devices.values(), key=lambda entry: entry["label"]),
+            "rain_events": ProgeoRainEventSerializer(rain, many=True).data,
         })
 
     @require_module_permissions("module_locations_enabled", "module_measurements_enabled")

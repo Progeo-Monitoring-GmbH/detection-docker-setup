@@ -4,6 +4,7 @@ import Plot from 'react-plotly.js';
 import Plotly from 'plotly.js/dist/plotly';
 import { plotTheme } from '../../styles/plotTheme';
 import { formatDate } from '../../main/dateFormat';
+import { formatDuration, type RainEvent, rainSpans } from '../../main/alarmUtils';
 import PlotResetButton, { PLOT_CONFIG_NO_MODEBAR } from '../ui/PlotResetButton';
 import { usePlotlyTouchScroll } from '../ui/wheelZoom';
 
@@ -28,6 +29,8 @@ export type ClimateResponse = {
    * one value per bucket, timestamps = bucket start. null/absent: raw data. */
   bucket_seconds?: number | null;
   devices: ClimateDeviceSeries[];
+  /** The location's rain events (ProgeoRainEvent) of the range. */
+  rain_events?: RainEvent[];
 };
 
 export type ClimateMetric = 'humidity' | 'temperature' | 'battery' | 'battery_v';
@@ -86,6 +89,9 @@ const deviceColor = (metric: ClimateMetric, index: number): string => {
 const MUTED_TEXT = '#8B8383';
 // The mean over all devices.
 const OVERALL_MEAN_COLOR = '#9E9696';
+// Rain events: a transparent light blue band over the plot's full height.
+const RAIN_FILL = 'rgba(66, 165, 245, 0.16)';
+const RAIN_BORDER = '#42A5F5';
 
 // One revision number per computed trace set (see Plot's revision prop).
 const revisions = new WeakMap<object, number>();
@@ -124,6 +130,9 @@ type ClimateChartProps = {
   /** The page's frame slider (epoch ms): a vertical line - as on the other
    * projects' time plots. null: none. */
   frameTime?: number | null;
+  /** Rain at the location (ClimateResponse.rain_events): shaded, with a
+   * tooltip per event. */
+  rainEvents?: RainEvent[] | null;
 };
 
 /** The frame slider's line - the same as on MeasurementSamplesCompareChart. */
@@ -178,6 +187,7 @@ const ClimateChart = ({
   referenceTime: controlledReference,
   onReferenceChange,
   frameTime = null,
+  rainEvents = null,
 }: ClimateChartProps) => {
   const { t } = useTranslation();
   const [ownReference, setOwnReference] = useState<number | null>(null);
@@ -269,8 +279,9 @@ const ClimateChart = ({
   const overallMean = useMemo(() => mean(baseTraces.flatMap((trace) => trace.y)), [baseTraces]);
 
   // Every plotted trace: the devices' lines, then their means (dashed, no
-  // hover, hidden until the device is hovered), then the overall mean.
-  // Highlight and hover map plot traces to devices by this list.
+  // hover, hidden until the device is hovered), then the overall mean, then
+  // the rain events. Highlight and hover map plot traces to devices by this
+  // list - the devices come first, so a curve number is their baseTraces index.
   const plotTraces = useMemo(() => {
     const first = Math.min(...devices.map((device) => device.timestamps[0] ?? Infinity));
     const last = Math.max(...devices.map((device) => device.timestamps[device.timestamps.length - 1] ?? -Infinity));
@@ -293,6 +304,48 @@ const ClimateChart = ({
           .map((trace) => meanLine(trace.deviceId, `Ø ${trace.name}`, trace.mean as number, trace.line.color, 'mean'))
       : [];
     const overall = span && overallMean != null ? [meanLine(null, 'Ø', overallMean, OVERALL_MEAN_COLOR, 'overall')] : [];
+    // A rain event: a filled rectangle over the full height (the hidden axis
+    // y2 runs 0..1), cut to the data's time span so it never stretches the
+    // x axis; hovering the fill shows the event.
+    const rain = span
+      ? rainSpans(rainEvents)
+          .map((event) => ({
+            ...event,
+            from: Math.max(event.start, first * 1000),
+            to: Math.min(event.end, last * 1000),
+          }))
+          .filter((event) => event.to > event.from)
+          .map((event) => {
+            const hours = (event.end - event.start) / 3_600_000;
+            const amount =
+              event.amount != null
+                ? `<br>${t('climate_rain_amount')}: <b>${event.amount.toFixed(1)} mm</b>` +
+                  ` <span style="color:${MUTED_TEXT}">(${(event.amount / hours).toFixed(1)} mm/h)</span>`
+                : '';
+            return {
+              deviceId: null,
+              kind: 'rain' as const,
+              type: 'scatter' as const,
+              mode: 'lines' as const,
+              name: t('climate_rain_legend'),
+              yaxis: 'y2',
+              x: [event.from, event.from, event.to, event.to, event.from].map((time) => new Date(time)),
+              y: [0, 1, 1, 0, 0],
+              fill: 'toself' as const,
+              fillcolor: RAIN_FILL,
+              line: { color: RAIN_FILL, width: 0 },
+              hoveron: 'fills' as const,
+              hoverinfo: 'text' as const,
+              text:
+                `<span style="color:${RAIN_BORDER}">●</span> <b>${t('climate_rain_legend')}</b><br>` +
+                `${t('climate_rain_start')}: ${formatDate(event.start, 'dateTime')}<br>` +
+                `${t('climate_rain_end')}: ${formatDate(event.end, 'dateTime')}<br>` +
+                `${t('climate_rain_duration')}: ${formatDuration((event.end - event.start) / 1000)}` +
+                amount,
+              hoverlabel: { bordercolor: RAIN_BORDER },
+            };
+          })
+      : [];
     return [
       ...baseTraces.map(({ label: _label, mean: _mean, referenceIndex: _reference, ...trace }) => ({
         ...trace,
@@ -300,8 +353,10 @@ const ClimateChart = ({
       })),
       ...means,
       ...overall,
+      ...rain,
     ];
-  }, [baseTraces, devices, overallMean]);
+  }, [baseTraces, devices, overallMean, rainEvents, t]);
+  const rainCount = plotTraces.filter((trace) => trace.kind === 'rain').length;
 
   // The hover highlight is applied straight to the plot (Plotly.restyle) and
   // never goes through the data props: re-feeding data on every hover made
@@ -323,6 +378,9 @@ const ClimateChart = ({
       gd as never,
       {
         'line.width': plotTraces.map((trace) => {
+          if (trace.kind === 'rain') {
+            return 0;
+          }
           if (trace.kind !== 'device') {
             return 1.5;
           }
@@ -330,7 +388,7 @@ const ClimateChart = ({
         }),
         // A device's mean shows only while the device is hovered.
         opacity: plotTraces.map((trace) => {
-          if (trace.kind === 'overall') {
+          if (trace.kind === 'overall' || trace.kind === 'rain') {
             return 1;
           }
           if (trace.kind === 'mean') {
@@ -391,6 +449,23 @@ const ClimateChart = ({
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: MUTED_TEXT }}>
           <span style={{ width: 18, borderTop: `2px dashed ${OVERALL_MEAN_COLOR}` }} />
           {t('climate_mean_all')} Ø {overallMean.toFixed(decimals)} {unit}
+        </span>
+      )}
+      {rainCount > 0 && (
+        <span
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: MUTED_TEXT }}
+          title={t('climate_rain_legend_hint')}
+        >
+          <span
+            style={{
+              width: 18,
+              height: 10,
+              borderRadius: 2,
+              background: RAIN_FILL,
+              border: `1px solid ${RAIN_BORDER}`,
+            }}
+          />
+          {t('climate_rain_count', { count: rainCount })}
         </span>
       )}
       <span style={{ marginLeft: 'auto', fontSize: 11.5, color: MUTED_TEXT }}>
@@ -545,6 +620,13 @@ const ClimateChart = ({
           showgrid: true,
           gridcolor: plotTheme.warmGray1,
           zeroline: false,
+        },
+        // The rain bands' axis: 0..1 = the plot's full height, never shown or zoomed.
+        yaxis2: {
+          overlaying: 'y',
+          range: [0, 1],
+          visible: false,
+          fixedrange: true,
         },
       }}
     />
