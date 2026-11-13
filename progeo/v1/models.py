@@ -460,7 +460,15 @@ class ProgeoLageplan(ProgeoModel, auto_prefetch.Model):
 
     # Metadata
     is_active = models.BooleanField(default=True, help_text="Whether this is the active/current lageplan")
-    
+    # The plan's place among the location's plans (ORDER) - set in the
+    # Lageplan wizard; new plans go last. The first is the main plan: measure
+    # points without a plan show on it.
+    position = models.PositiveIntegerField(default=0, db_default=0, help_text="Order among the location's lageplans")
+
+    # How a location's plans are listed everywhere (also which is the main
+    # plan): by position - plans never reordered keep active first, newest first.
+    ORDER = ("position", "-is_active", "-id")
+
     class Meta:
         base_manager_name = "prefetch_manager"
 

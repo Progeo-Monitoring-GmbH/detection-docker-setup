@@ -260,7 +260,7 @@ def koords_to_points(apply=False):
 
         db_name = location_db(location, location.account)
         try:
-            plans = list(ProgeoLageplan.objects.using(db_name).filter(location=location).order_by("-is_active", "-id"))
+            plans = list(ProgeoLageplan.objects.using(db_name).filter(location=location).order_by(*ProgeoLageplan.ORDER))
             plan = next((plan for plan in plans if plan.name == f"{project_id}.png"), plans[0] if plans else None)
             if plan is None:
                 without_plan.append(project_id)

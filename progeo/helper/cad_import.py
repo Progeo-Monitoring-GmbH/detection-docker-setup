@@ -140,7 +140,7 @@ def main_lageplan(location, db_name: str):
     ?with_lageplan=1 (active, else newest). Points without a plan show on it."""
     from progeo.v1.models import ProgeoLageplan
 
-    return ProgeoLageplan.objects.using(db_name).filter(location=location).order_by("-is_active", "-id").first()
+    return ProgeoLageplan.objects.using(db_name).filter(location=location).order_by(*ProgeoLageplan.ORDER).first()
 
 
 def points_on_plan(location, db_name: str, lageplan):

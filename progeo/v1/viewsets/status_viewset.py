@@ -754,6 +754,44 @@ class StatusViewSet(ProgeoModalViewSet):
 
     @calc_runtime
     @require_module_permissions("module_devices_enabled", "module_devices_edit")
+    @action(detail=False, url_path="measure_points/order_lageplans", methods=["POST"])
+    def order_lageplans(self, request, *args, **kwargs):
+        """Orders the Lageplans of a location (Lageplan wizard): POST
+        {location_id (project id), lageplan_ids: every plan of the location, in
+        the new order} - stored as ProgeoLageplan.position. The first is the
+        main plan; when it changes, the measure points without a plan are tied
+        to the old main plan, so they stay where they were shown."""
+        location, db_name, error = _measure_point_location(request, {"location_id": request.data.get("location_id")})
+        if error:
+            return error
+        try:
+            ordered = [int(pk) for pk in request.data.get("lageplan_ids")]
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "lageplan_ids must be a list of ids"})
+
+        with transaction.atomic(using=db_name):
+            plans = {
+                plan.pk: plan
+                for plan in ProgeoLageplan.objects.using(db_name).select_for_update().filter(location=location)
+            }
+            if len(ordered) != len(set(ordered)) or set(ordered) != set(plans):
+                return RequestFailed({"reason": "lageplan_ids must list every Lageplan of the location once"})
+            old_main = cad_import.main_lageplan(location, db_name)
+            for position, pk in enumerate(ordered):
+                if plans[pk].position != position:
+                    plans[pk].position = position
+                    plans[pk].save(using=db_name, update_fields=["position"])
+            tied = 0
+            if old_main is not None and ordered and ordered[0] != old_main.pk:
+                tied = ProgeoMeasurePoint.objects.using(db_name).filter(
+                    location=location, lageplan__isnull=True
+                ).update(lageplan=old_main)
+
+        ilog(f"Lageplans of location {location.id} ordered {ordered}" + (f", {tied} point(s) tied to {old_main.pk}" if tied else ""))
+        return RequestSuccess({"location_id": location.id, "lageplan_ids": ordered, "tied_points": tied})
+
+    @calc_runtime
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
     @action(detail=False, url_path="measure_points/edit_lageplan", methods=["POST"])
     def edit_lageplan_image(self, request, *args, **kwargs):
         """Clears or crops a Lageplan image (step 5 of the Lageplan wizard, see
@@ -1063,7 +1101,7 @@ class StatusViewSet(ProgeoModalViewSet):
             if with_lageplan:
                 # From db_name, not location.lageplans: the location may come
                 # from "default" while its plans live in the project database.
-                lageplans_qs = ProgeoLageplan.objects.using(db_name).filter(location=location).order_by("-is_active", "-id")
+                lageplans_qs = ProgeoLageplan.objects.using(db_name).filter(location=location).order_by(*ProgeoLageplan.ORDER)
                 if lageplans_qs.exists():
                     lageplans_serialized = ProgeoLageplanSerializer(lageplans_qs, many=True).data
                     response_data["lageplans"] = lageplans_serialized

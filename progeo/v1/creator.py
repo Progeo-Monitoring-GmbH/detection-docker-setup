@@ -6,7 +6,7 @@ from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.files.base import ContentFile
 from django.core.files.storage import FileSystemStorage
-from django.db.models import Q
+from django.db.models import Max, Q
 from django.utils import timezone
 
 from progeo.helper.basics import elog, okaylog, save_check_dir
@@ -140,8 +140,11 @@ def save_lageplan_upload(location: ProgeoLocation, source: bytes | Any, original
 	saved_name = fs.save(filename, source)
 	# Vertically flipped by default: CAD/measure point y runs up, image y down
 	# (the Lageplan wizard's alignment starts from there).
+	# Last of the location's plans (ProgeoLageplan.ORDER) - the wizard reorders them.
+	last = ProgeoLageplan.objects.using(db).filter(location=location).aggregate(last=Max("position"))["last"]
 	return ProgeoLageplan.objects.using(db).create(
 		location=location, lageplan=saved_name, name=original_name, flip_y=True,
+		position=0 if last is None else last + 1,
 	)
 
 

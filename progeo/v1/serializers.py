@@ -126,7 +126,7 @@ class DeviceSerializer(ProgeoBaseSerializer):
 
 
 
-LAGEPLAN_ORDER = ("-is_active", "-id")
+LAGEPLAN_ORDER = ProgeoLageplan.ORDER
 
 
 def _is_prefetched(obj, relation):

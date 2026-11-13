@@ -2,7 +2,7 @@ import React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { Badge, Button, Spinner } from 'react-bootstrap';
-import { CheckLg, FileEarmarkPdf, PencilSquare, PlusLg } from 'react-bootstrap-icons';
+import { CheckLg, ChevronLeft, ChevronRight, FileEarmarkPdf, PencilSquare, PlusLg } from 'react-bootstrap-icons';
 import CadUploadDropbox from '../components/form/CadUploadDropbox.tsx';
 import { enqueueSnackbar } from 'notistack';
 import RedDropbox from '../components/form/RedDropbox.tsx';
@@ -364,6 +364,24 @@ const LageplanThumb = ({ url }: { url?: string | null }) => {
     </div>
   );
 };
+
+/** The small icon buttons on a plan tile (rename, move). */
+const tileButtonStyle = (disabled: boolean, size = 30): React.CSSProperties => ({
+  width: size,
+  height: size,
+  flexShrink: 0,
+  border: 'none',
+  borderRadius: 9,
+  background: 'var(--progeo-surface)',
+  boxShadow: '0 2px 8px rgba(11, 54, 89, .12)',
+  color: 'var(--progeo-blue)',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  cursor: disabled ? 'default' : 'pointer',
+  opacity: disabled ? 0.4 : 1,
+  padding: 0,
+});
 
 const tileStyle = (selected: boolean): React.CSSProperties => ({
   position: 'relative',
@@ -1023,6 +1041,45 @@ const LageplanWizardView = () => {
     );
   };
 
+  // Moves a plan one place earlier (-1) or later (+1) and stores the order
+  // (StatusViewSet.order_lageplans). The first is the main plan - when it
+  // changes, the points without a plan are tied to the old one (backend and
+  // here), so they stay where they are shown.
+  const movePlan = (index: number, delta: -1 | 1) => {
+    const target = index + delta;
+    if (selectedLocationId === null || target < 0 || target >= lageplans.length) {
+      return;
+    }
+    const previous = lageplans;
+    const reordered = [...previous];
+    [reordered[index], reordered[target]] = [reordered[target], reordered[index]];
+    const oldMainId = previous[0]?.id ?? null;
+    setLageplans(reordered);
+    setIsProcessing(true);
+    setError('');
+    void axiosConfig.perform_post(
+      auth,
+      '/v1/status/measure_points/order_lageplans/',
+      { location_id: selectedLocationId, lageplan_ids: reordered.map((plan) => plan.id) },
+      () => {
+        if (oldMainId !== null && reordered[0].id !== oldMainId) {
+          setMeasurePoints((current) =>
+            current.map((point) => (point.lageplan == null ? { ...point, lageplan: oldMainId } : point)),
+          );
+          setPlacedSensors((current) =>
+            current.map((sensor) => (sensor.lageplanId == null ? { ...sensor, lageplanId: oldMainId } : sensor)),
+          );
+        }
+        setIsProcessing(false);
+      },
+      (orderError) => {
+        setLageplans(previous);
+        setError(`Could not change the order: ${requestReason(orderError)}`);
+        setIsProcessing(false);
+      },
+    );
+  };
+
   // Removes every measure point of the location (an empty replace).
   const clearMeasurePoints = () => {
     if (selectedLocationId === null) {
@@ -1078,7 +1135,7 @@ const LageplanWizardView = () => {
     </StepCard>
   );
 
-  const renderPlanTile = (plan: WizardLageplan) => {
+  const renderPlanTile = (plan: WizardLageplan, index: number) => {
     const selected = plan.id === selectedPlanId;
     const pointCount = pointsOnPlan(plan.id);
     const updated = plan.last_updated ? new Date(plan.last_updated) : null;
@@ -1133,6 +1190,13 @@ const LageplanWizardView = () => {
             </div>
             {/* paddingRight: room for the rename / remove buttons in the corner. */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 7, paddingRight: 68 }}>
+              {index === 0 && lageplans.length > 1 && (
+                <span title="The first plan - measure points without a plan show on it">
+                  <Chip color="var(--progeo-blue)" background="#E4EEF6">
+                    Main plan
+                  </Chip>
+                </span>
+              )}
               {plan.is_active ? (
                 <Chip color="#3F7A1C" background="#EBF4E3">
                   Active
@@ -1145,6 +1209,57 @@ const LageplanWizardView = () => {
             </div>
           </div>
         </button>
+        {lageplans.length > 1 && (
+          <span
+            style={{
+              position: 'absolute',
+              top: 14,
+              left: 14,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+            }}
+          >
+            <button
+              type="button"
+              title="Move earlier"
+              aria-label={`Move “${planLabel(plan)}” earlier`}
+              disabled={isProcessing || index === 0}
+              onClick={() => movePlan(index, -1)}
+              style={tileButtonStyle(isProcessing || index === 0, 26)}
+            >
+              <ChevronLeft size={13} />
+            </button>
+            <span
+              title={`Place ${index + 1} of ${lageplans.length}`}
+              style={{
+                minWidth: 22,
+                height: 22,
+                padding: '0 6px',
+                borderRadius: 11,
+                background: 'var(--progeo-blue)',
+                color: '#fff',
+                fontSize: 11.5,
+                fontWeight: 600,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              {index + 1}
+            </span>
+            <button
+              type="button"
+              title="Move later"
+              aria-label={`Move “${planLabel(plan)}” later`}
+              disabled={isProcessing || index === lageplans.length - 1}
+              onClick={() => movePlan(index, 1)}
+              style={tileButtonStyle(isProcessing || index === lageplans.length - 1, 26)}
+            >
+              <ChevronRight size={13} />
+            </button>
+          </span>
+        )}
         <span style={{ position: 'absolute', right: 10, bottom: 10, display: 'flex', gap: 6 }}>
           <button
             type="button"
@@ -1152,22 +1267,7 @@ const LageplanWizardView = () => {
             aria-label="Rename Lageplan"
             disabled={isProcessing}
             onClick={() => setRenaming({ plan, name: plan.name ?? '' })}
-            style={{
-              width: 30,
-              height: 30,
-              flexShrink: 0,
-              border: 'none',
-              borderRadius: 9,
-              background: 'var(--progeo-surface)',
-              boxShadow: '0 2px 8px rgba(11, 54, 89, .12)',
-              color: 'var(--progeo-blue)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: isProcessing ? 'default' : 'pointer',
-              opacity: isProcessing ? 0.4 : 1,
-              padding: 0,
-            }}
+            style={tileButtonStyle(isProcessing)}
           >
             <PencilSquare size={14} />
           </button>
@@ -1274,7 +1374,7 @@ const LageplanWizardView = () => {
                 gap: 12,
               }}
             >
-              {lageplans.map(renderPlanTile)}
+              {lageplans.map((plan, index) => renderPlanTile(plan, index))}
               {!addingPlan && (
                 <button
                   type="button"

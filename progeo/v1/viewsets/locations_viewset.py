@@ -128,7 +128,7 @@ def _target_lageplan(db_name, location, lageplan_id):
         if not lageplan:
             return None, RequestFailed({"reason": "Lageplan not found for this location"})
         return lageplan, None
-    lageplan = lageplans.order_by("-is_active", "-id").first()
+    lageplan = lageplans.order_by(*ProgeoLageplan.ORDER).first()
     if not lageplan:
         return None, RequestFailed({"reason": "No Lageplan uploaded for this location"})
     return lageplan, None
@@ -353,7 +353,7 @@ def _sensor_points_data(points, location, db_name, names=None):
     # Meter positions are measured on the point's own Lageplan (a location
     # may have several views, e.g. floors), else on the active one (the
     # one every view shows by default); None while it isn't calibrated.
-    plans = list(ProgeoLageplan.objects.using(db_name).filter(location=location).order_by("-is_active", "-id"))
+    plans = list(ProgeoLageplan.objects.using(db_name).filter(location=location).order_by(*ProgeoLageplan.ORDER))
     plans_by_id = {plan.pk: plan for plan in plans}
     plan_sizes = {}
     starts = _device_starts(location, db_name)
@@ -1715,7 +1715,7 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             return error
         db_name = location_db(location, account)
         lageplans = list(
-            ProgeoLageplan.objects.using(db_name).filter(location=location).order_by("-is_active", "-id")
+            ProgeoLageplan.objects.using(db_name).filter(location=location).order_by(*ProgeoLageplan.ORDER)
         )
         lageplan_id = request.query_params.get("lageplan_id")
         target = None

@@ -562,3 +562,70 @@ def test_clearing_the_measure_points(api_client, world):
 
     assert body["stored"] == 0
     assert not ProgeoMeasurePoint.objects.using(f.DB).filter(location=location).exists()
+
+
+# -- order_lageplans -----------------------------------------------------------
+
+def _order_plans(api_client, location, lageplan_ids):
+    return api_client.post(
+        "/v1/status/measure_points/order_lageplans/",
+        {"location_id": location.project_id, "lageplan_ids": lageplan_ids},
+        format="json",
+    )
+
+
+def test_order_lageplans_sets_the_order_everywhere(api_client, world):
+    from progeo.helper import cad_import
+    from progeo.v1.models import ProgeoLageplan
+
+    location = world[0]
+    first = ProgeoLageplan.objects.using(f.DB).create(location=location, lageplan="lageplan/a.png", is_active=True)
+    second = ProgeoLageplan.objects.using(f.DB).create(location=location, lageplan="lageplan/b.png", is_active=False)
+    third = ProgeoLageplan.objects.using(f.DB).create(location=location, lageplan="lageplan/c.png", is_active=False)
+    unplaced = f.make_measure_point(location, 1)
+    api_client.force_authenticate(user=world[5])
+    assert cad_import.main_lageplan(location, f.DB) == first
+
+    response = _order_plans(api_client, location, [third.pk, first.pk, second.pk])
+
+    assert response.status_code == 200, response.content
+    assert response.json()["tied_points"] == 1
+    ordered = ProgeoLageplan.objects.using(f.DB).filter(location=location).order_by(*ProgeoLageplan.ORDER)
+    assert list(ordered.values_list("pk", flat=True)) == [third.pk, first.pk, second.pk]
+    assert cad_import.main_lageplan(location, f.DB) == third
+    # The point without a plan stays on the plan it was shown on.
+    unplaced.refresh_from_db(using=f.DB)
+    assert unplaced.lageplan_id == first.pk
+
+    listed = api_client.get(
+        "/v1/status/measure_points/", {"location_id": location.project_id, "with_lageplan": 1}
+    ).json()
+    assert [plan["id"] for plan in listed["lageplans"]] == [third.pk, first.pk, second.pk]
+
+
+def test_order_lageplans_needs_every_plan_of_the_location_once(api_client, world):
+    from progeo.v1.models import ProgeoLageplan
+
+    location, hidden_location = world[0], world[1]
+    first = ProgeoLageplan.objects.using(f.DB).create(location=location, lageplan="lageplan/a.png")
+    second = ProgeoLageplan.objects.using(f.DB).create(location=location, lageplan="lageplan/b.png")
+    foreign = ProgeoLageplan.objects.using(f.DB).create(location=hidden_location, lageplan="lageplan/f.png")
+    api_client.force_authenticate(user=world[5])
+
+    for ids in ([first.pk], [first.pk, first.pk], [first.pk, second.pk, foreign.pk], "x", None):
+        assert _order_plans(api_client, location, ids).status_code == 400, ids
+    assert _order_plans(api_client, hidden_location, [foreign.pk]).status_code == 400
+    assert set(ProgeoLageplan.objects.using(f.DB).values_list("position", flat=True)) == {0}
+
+
+def test_a_new_upload_goes_last(world, settings, tmp_path):
+    from progeo.v1.creator import save_lageplan_upload
+    from progeo.v1.models import ProgeoLageplan
+
+    settings.UPLOAD_DIR = str(tmp_path)
+    location = world[0]
+    ProgeoLageplan.objects.using(f.DB).create(location=location, lageplan="lageplan/a.png", position=3)
+
+    plan = save_lageplan_upload(location, b"png", "new.png", db=f.DB)
+
+    assert plan.position == 4
