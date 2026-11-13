@@ -154,7 +154,8 @@ const LocationPlanPanel = ({
           <div className="plan-panel-heatmap" data-testid={childTestId(testId, 'heatmap')}>
             <SensorHeatmap2D
               response={viewHeatmap}
-              height={480}
+              height={560}
+              compact
               hideChrome
               onTimestampChange={setFrameIndex}
               alarms={alarmSpans}

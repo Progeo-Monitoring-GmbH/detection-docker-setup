@@ -82,6 +82,11 @@ type SensorHeatmap2DProps = {
    * `height` as the upper bound.
    */
   fitPlan?: boolean;
+  /**
+   * The canvas only as wide as the plan needs at its height, left-aligned -
+   * no empty bands beside it in a wide card. Default: with fitPlan.
+   */
+  compact?: boolean;
   /** Device (sensor_points[].device) whose marker is highlighted - e.g. the
    * line hovered in the climate charts. */
   highlightedDevice?: number | null;
@@ -203,6 +208,7 @@ const SensorHeatmap2D = ({
   alarms,
   field,
   fitPlan = false,
+  compact = fitPlan,
   highlightedDevice = null,
   selectedPositions,
   onHoverDevice,
@@ -403,6 +409,7 @@ const SensorHeatmap2D = ({
     bounds: scene?.layout.bounds ?? null,
     height,
     fitPlan,
+    compact,
   });
 
   // The device last reported to onHoverDevice - pointer moves report changes only.
@@ -614,11 +621,13 @@ const SensorHeatmap2D = ({
         </div>
       )}
 
+      {/* The outer box measures the width available; the plot is as wide as
+          the canvas (narrower when compact, left-aligned - useHeatmapViewport). */}
+      <div ref={wrapRef} className="heatmap2d-plot-area">
       <div
-        ref={wrapRef}
         className="heatmap2d-plot-wrap"
         data-testid={childTestId(testId, 'plot')}
-        style={{ height: canvasHeight }}
+        style={{ height: canvasHeight, width: width > 0 ? width : undefined }}
       >
         <canvas
           ref={canvasRef}
@@ -707,6 +716,7 @@ const SensorHeatmap2D = ({
             testId={childTestId(testId, 'readout')}
           />
         )}
+      </div>
       </div>
     </>
   ) : (

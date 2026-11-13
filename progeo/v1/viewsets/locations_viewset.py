@@ -39,7 +39,7 @@ from progeo.decorator import (
     permission_denied_response,
     require_module_permissions,
 )
-from progeo.helper import cad_import, heatmap_video, plan_meters
+from progeo.helper import cad_import, device_overview, heatmap_video, plan_meters
 from progeo.helper.basics import (
     RequestFailed,
     RequestSuccess,
@@ -1975,6 +1975,8 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
                 {
                     "id": device.pk,
                     "display_name": device.display_name,
+                    # The full name for the picker: name · model · hash.
+                    "label": device_overview.device_label(device),
                     "chip_id": device.chip_id,
                     "device_ip": device.device_ip,
                 }

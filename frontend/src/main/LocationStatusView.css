@@ -23,9 +23,10 @@
 }
 
 /* Bootstrap's form-select is full width; this one fits its content. */
+/* Wide enough for the full name (name · model · hash). */
 .form-select.status-request-device {
   width: auto;
-  max-width: 260px;
+  max-width: min(420px, 100%);
   height: 38px;
 }
 

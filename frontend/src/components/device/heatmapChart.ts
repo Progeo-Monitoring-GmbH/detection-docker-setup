@@ -599,6 +599,34 @@ export const canvasHeightFor = (
   return Math.round(clamp((usable * spanY) / spanX, 160, maxHeight));
 };
 
+/** The narrowest compact canvas - room for the controls floating on it. */
+export const COMPACT_MIN_WIDTH = 420;
+
+/**
+ * fitPlan: the canvas width the fitted content needs at `height` (fitView
+ * with `padding`, plus the colour scale) - a plan that is tall for the card
+ * would otherwise leave empty bands beside it. The canvas shrinks to it
+ * (left-aligned), at most `available`, at least COMPACT_MIN_WIDTH.
+ */
+export const compactCanvasWidth = (
+  bounds: WorldRect | null,
+  available: number,
+  height: number,
+  padding: number,
+) => {
+  const spanX = bounds ? bounds.right - bounds.left : 0;
+  const spanY = bounds ? bounds.bottom - bounds.top : 0;
+  if (available <= 0 || spanX <= 0 || spanY <= 0) {
+    return available;
+  }
+  const scale = Math.min((available - COLORBAR_SPACE - 2 * padding) / spanX, (height - 2 * padding) / spanY);
+  if (!(scale > 0)) {
+    return available;
+  }
+  const needed = Math.ceil(spanX * scale + COLORBAR_SPACE + 2 * padding);
+  return Math.min(available, Math.max(needed, Math.min(COMPACT_MIN_WIDTH, available)));
+};
+
 /** Whether the screen point lies on the drawn plan (without one: the heat
  * field) - only there the wheel zooms instead of scrolling the page. */
 export const isOverDrawn = (layout: ChartLayout, view: View, hasImage: boolean, sx: number, sy: number) => {

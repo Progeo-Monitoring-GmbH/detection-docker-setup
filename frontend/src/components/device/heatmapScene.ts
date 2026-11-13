@@ -229,9 +229,32 @@ const drawLines = (ctx: CanvasRenderingContext2D, scene: Scene, view: View, over
   ctx.restore();
 };
 
+/** The label of a band line (smartex® dm): centred on the line's middle, in
+ * the same white-on-dark style as a marker's - the line itself is the
+ * sensor, it gets no dot. */
+const drawLineLabel = (
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  sx: number,
+  sy: number,
+  highlighted: boolean,
+) => {
+  ctx.save();
+  ctx.textBaseline = 'middle';
+  ctx.font = highlighted ? HIGHLIGHTED_LABEL_FONT : LABEL_FONT;
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = highlighted ? plotTheme.brandOrange : 'rgba(9, 75, 129, 0.85)';
+  ctx.strokeText(text, sx, sy);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(text, sx, sy);
+  ctx.restore();
+};
+
 /** Sensor markers (screen size at any zoom) - the highlighted one last, on
  * top of its neighbours' labels; markers off screen are skipped. Without
- * `showSensors` only the hovered and highlighted one. */
+ * `showSensors` only the hovered and highlighted one. A band sensor whose
+ * line is drawn gets no marker: only its label, in the line's middle - its
+ * hover, highlight and selection show on the line (drawLines). */
 const drawSensors = (
   ctx: CanvasRenderingContext2D,
   scene: Scene,
@@ -250,7 +273,11 @@ const drawSensors = (
   ctx.textBaseline = 'bottom';
   order.forEach((index) => {
     const sensor = sensors[index];
-    const [sx, sy] = toScreen(view, sensor.wx, sensor.wy);
+    const asLine = scene.showLines && sensor.wxEnd != null && sensor.wyEnd != null;
+    // A band line's label sits in its middle.
+    const [sx, sy] = asLine
+      ? toScreen(view, (sensor.wx + (sensor.wxEnd as number)) / 2, (sensor.wy + (sensor.wyEnd as number)) / 2)
+      : toScreen(view, sensor.wx, sensor.wy);
     if (sx < -20 || sy < -20 || sx > width + 20 || sy > height + 20) {
       return;
     }
@@ -259,6 +286,10 @@ const drawSensors = (
     const selected = overlay.selected?.has(index) ?? false;
     // Without the dots: still the hovered, highlighted and selected ones.
     if (!scene.showSensors && !highlighted && !hovered && !selected) {
+      return;
+    }
+    if (asLine) {
+      drawLineLabel(ctx, scene.sensorText(index), sx, sy, highlighted);
       return;
     }
     const value = scene.frame.values[index];

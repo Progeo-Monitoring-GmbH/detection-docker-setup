@@ -330,6 +330,23 @@ def test_provision_devices_lists_existing_devices_with_their_last_measurement(st
     assert staff_client.get(f"/v1/device/provision/devices/?location={empty.pk}").json()["devices"] == []
 
 
+def test_device_label_names_the_device_fully():
+    from types import SimpleNamespace
+
+    from progeo.helper.device_overview import device_label
+
+    def device(**fields):
+        return SimpleNamespace(**{"pk": 7, "mac": None, "hardware": None, "raw_hash": None, **fields})
+
+    assert device_label(device(hardware="smartex dm", raw_hash="1312-01")) == "smartex dm · 1312-01"
+    assert device_label(device(mac="Dach Nord", hardware="smartex dm", raw_hash="1312-01")) == (
+        "Dach Nord · smartex dm · 1312-01"
+    )
+    # A LoRaWAN sensor: its hardware name, no repeated parts.
+    assert device_label(device(hardware="7067_S1", raw_hash="7067_S1")) == "7067_S1"
+    assert device_label(device()) == "#7"
+
+
 def test_request_measurement_devices_and_the_request_need_a_chip_id(staff_client, location, monkeypatch):
     from types import SimpleNamespace
 
@@ -341,7 +358,8 @@ def test_request_measurement_devices_and_the_request_need_a_chip_id(staff_client
 
     monkeypatch.setattr("progeo.tasks.request_device_measurement", SimpleNamespace(delay=dispatch))
 
-    chipped = f.make_device(location, raw_hash=f"{location.project_id}-11", chip_id="chip-11", device_ip="10.0.0.1")
+    chipped = f.make_device(location, raw_hash=f"{location.project_id}-11", chip_id="chip-11", device_ip="10.0.0.1",
+                            hardware="smartex dm")
     unreachable = f.make_device(location, raw_hash=f"{location.project_id}-12", chip_id="chip-12")
     no_chip = f.make_device(location, raw_hash=f"{location.project_id}-13", device_ip="10.0.0.3")
 
@@ -349,6 +367,8 @@ def test_request_measurement_devices_and_the_request_need_a_chip_id(staff_client
     assert [(row["id"], row["chip_id"]) for row in devices["devices"]] == [(chipped.pk, "chip-11"),
                                                                          (unreachable.pk, "chip-12")]
     assert devices["count"] == 2
+    # The picker's full name: model and hash, not just "smartex dm".
+    assert devices["devices"][0]["label"] == f"smartex dm · {location.project_id}-11"
 
     refused = staff_client.post(f"/v1/location/{location.pk}/request-measurement/", {"device": no_chip.pk},
                                 format="json")

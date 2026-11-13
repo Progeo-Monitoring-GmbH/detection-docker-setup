@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   canvasHeightFor,
+  COMPACT_MIN_WIDTH,
+  compactCanvasWidth,
   closestOnSegment,
   heatSources,
   sensorsInRect,
@@ -240,6 +242,24 @@ describe('frameWeights / chartFrame', () => {
     });
     expect(frame.coverage).toHaveLength(40);
     expect(frame.values).toEqual([-5, 20]);
+  });
+});
+
+describe('compactCanvasWidth', () => {
+  const bounds = { left: 0, top: 0, right: 1000, bottom: 1000 };
+
+  it('shrinks the canvas to the fitted plan when the height limits it', () => {
+    // Height 500 (10 px padding): scale 0.48, the plan 480 px wide.
+    expect(compactCanvasWidth(bounds, 2000, 500, 10)).toBe(480 + COLORBAR_SPACE + 20);
+  });
+
+  it('keeps the available width when the plan fills it', () => {
+    expect(compactCanvasWidth({ ...bounds, bottom: 100 }, 1000, 500, 10)).toBe(1000);
+  });
+
+  it('never gets narrower than the controls need', () => {
+    expect(compactCanvasWidth({ ...bounds, right: 50 }, 2000, 500, 10)).toBe(COMPACT_MIN_WIDTH);
+    expect(compactCanvasWidth({ ...bounds, right: 50 }, 300, 500, 10)).toBe(300);
   });
 });
 

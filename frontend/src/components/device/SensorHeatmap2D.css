@@ -2,8 +2,15 @@
    selection rectangle and the readout under the pointer. Heights and the
    rectangle's position stay inline (they follow the layout and the drag). */
 
+.heatmap2d-plot-area {
+  width: 100%;
+}
+
+/* As wide as the canvas: the floating controls and the colour scale stay
+   with the plan when it is narrower than the card (fitPlan). */
 .heatmap2d-plot-wrap {
   position: relative;
+  max-width: 100%;
 }
 
 .heatmap2d-canvas {

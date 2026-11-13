@@ -38,6 +38,19 @@ def device_model(hardware):
     return next((known for known in MODELS if known.lower() == model), None) if model else None
 
 
+def device_label(device) -> str:
+    """The full name of a device for pickers: its custom name (mac) if set,
+    its model (device_model, else the hardware name) and its hash - e.g.
+    "Dach Nord · smartex dm · 1312-01" or "smartex dm · 1312-01". Parts that
+    repeat one another are left out."""
+    model = device_model(device.hardware) or (device.hardware or "").strip() or None
+    parts = []
+    for part in ((device.mac or "").strip(), model, (device.raw_hash or "").strip()):
+        if part and part.lower() not in (seen.lower() for seen in parts):
+            parts.append(part)
+    return " · ".join(parts) or f"#{device.pk}"
+
+
 def is_online(last_seen, data_interval, now) -> bool:
     if last_seen is None:
         return False

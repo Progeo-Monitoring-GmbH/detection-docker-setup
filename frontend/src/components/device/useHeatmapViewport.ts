@@ -8,12 +8,15 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { fitView, MAX_ZOOM, MIN_ZOOM, panBy, zoomAt, type View, type WorldRect } from './heatmapCanvas';
-import { canvasHeightFor, COLORBAR_SPACE } from './heatmapChart';
+import { canvasHeightFor, COLORBAR_SPACE, compactCanvasWidth } from './heatmapChart';
 import { isZoomWheel, useTwoFingerTouch } from '../ui/wheelZoom';
 
 /**
  * Size and view of the heatmap canvas: its width follows the wrapper
- * (`wrapRef`), its height the content (canvasHeightFor). `view` is the
+ * (`wrapRef`, the full width available), its height the content
+ * (canvasHeightFor). `compact`: the canvas is only as wide as the fitted
+ * content needs (compactCanvasWidth) - the caller sizes the plot to `width`,
+ * left-aligned, while `wrapRef` keeps measuring the full width. `view` is the
  * user's zoom/pan, else the view fitted to `bounds` - new bounds (a new
  * plan, other sensors) start from the fitted view again. Null bounds: no
  * chart (nothing to measure).
@@ -22,13 +25,16 @@ export const useHeatmapViewport = ({
   bounds,
   height,
   fitPlan,
+  compact = fitPlan,
 }: {
   bounds: WorldRect | null;
   height: number;
   fitPlan: boolean;
+  /** As wide as the content needs, not the whole card (default: with fitPlan). */
+  compact?: boolean;
 }) => {
   const wrapRef = useRef<HTMLDivElement | null>(null);
-  const [width, setWidth] = useState(0);
+  const [available, setAvailable] = useState(0);
   const hasChart = bounds != null;
 
   useEffect(() => {
@@ -36,18 +42,20 @@ export const useHeatmapViewport = ({
     if (!wrap) {
       return undefined;
     }
-    const measure = () => setWidth(wrap.clientWidth);
+    const measure = () => setAvailable(wrap.clientWidth);
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(wrap);
     return () => observer.disconnect();
   }, [hasChart]);
 
-  const canvasHeight = canvasHeightFor(bounds, width, height, fitPlan);
+  const canvasHeight = canvasHeightFor(bounds, available, height, fitPlan);
   // A readable margin that follows the card's width (8-28 px) instead of a
   // fixed fraction of the plan: small in the narrow /status card, larger in
   // the wide /analyse card, never a huge empty band.
-  const viewPadding = width > 0 ? Math.round(Math.min(28, Math.max(8, width * 0.02))) : 12;
+  const viewPadding = available > 0 ? Math.round(Math.min(28, Math.max(8, available * 0.02))) : 12;
+  // Compact: no empty bands beside content that is tall for the card.
+  const width = compact ? compactCanvasWidth(bounds, available, canvasHeight, viewPadding) : available;
   const fitted = useMemo(
     () =>
       bounds && width > 0

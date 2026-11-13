@@ -85,6 +85,8 @@ const Loading = () => {
 type RequestableDevice = {
   id: number;
   display_name: string | null;
+  /** The full name: custom name · model · hash (device_overview.device_label). */
+  label?: string | null;
   chip_id: string | null;
   device_ip: string | null;
 };
@@ -194,7 +196,7 @@ const LocationStatusHeader = ({
             >
               {devices.map((device) => (
                 <option key={device.id} value={device.id}>
-                  {device.display_name || device.chip_id || `#${device.id}`}
+                  {device.label || device.display_name || device.chip_id || `#${device.id}`}
                 </option>
               ))}
             </Form.Select>
