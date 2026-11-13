@@ -15,6 +15,7 @@ import ImageCanvasStage, {
 } from '../components/ui/ImageCanvasStage.tsx';
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import DeleteIconButton from '../components/ui/kit/DeleteIconButton';
+import FloatingActionBar from '../components/ui/kit/FloatingActionBar';
 import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
@@ -1373,26 +1374,36 @@ const LageplanWizardView = () => {
             testId="lageplan-wizard-sensor-remove"
           />
         )}
-        <div className="ms-auto d-flex gap-2">
-          <PillButton
-            variant="ghost"
-            label="Discard changes"
-            disabled={!placementDirty || isProcessing}
-            onClick={discardPlacement}
-            testId="lageplan-wizard-placement-discard"
-          />
-          <Button
-            size="sm"
-            variant="primary"
-            className="lageplan-save-button"
-            disabled={!placementDirty || isProcessing}
-            onClick={() => void handleSaveManualSensors()}
-            data-testid="lageplan-wizard-placement-save"
-          >
-            Save manual sensors
-          </Button>
-        </div>
       </div>
+
+      {placementDirty && (
+        // Unsaved placement: floats at the bottom of the window until saved or discarded.
+        <FloatingActionBar
+          message={`${planSensors.length} sensor(s) on this plan - not saved yet`}
+          detail={
+            replacedPointCount > 0
+              ? `Saving replaces the ${replacedPointCount} existing measure point(s) without a sensor.`
+              : 'Placed sensors are only stored with "Save manual sensors".'
+          }
+          tone={replacedPointCount > 0 ? 'warning' : 'primary'}
+          actions={[
+            {
+              label: 'Discard changes',
+              variant: 'secondary',
+              disabled: isProcessing,
+              onClick: discardPlacement,
+              testId: 'lageplan-wizard-placement-discard',
+            },
+            {
+              label: 'Save manual sensors',
+              busy: isProcessing,
+              onClick: () => void handleSaveManualSensors(),
+              testId: 'lageplan-wizard-placement-save',
+            },
+          ]}
+          testId="lageplan-wizard-placement-actions"
+        />
+      )}
 
       {placementDirty && replacedPointCount > 0 && (
         <Notice tone="warning" testId="lageplan-wizard-placement-replaces">

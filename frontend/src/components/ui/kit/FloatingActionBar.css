@@ -1,0 +1,143 @@
+/* FloatingActionBar.tsx - pending actions (save, apply, confirm) floating at
+   the bottom of the window with big buttons. Several stack, newest on top. */
+
+.progeo-floating-actions {
+  position: fixed;
+  left: 50%;
+  bottom: max(20px, env(safe-area-inset-bottom));
+  z-index: 1040; /* above the page and sticky bars, below modals (1050) */
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 10px;
+  width: min(960px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.progeo-floating-actions:empty {
+  display: none;
+}
+
+.progeo-floating-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px 20px;
+  padding: 16px 18px 16px 22px;
+  border-radius: 20px;
+  background: #ffffff;
+  border-left: 8px solid var(--progeo-blue);
+  box-shadow: 0 18px 44px -12px rgba(11, 54, 89, 0.45), 0 0 0 1px rgba(11, 54, 89, 0.08);
+  pointer-events: auto;
+  animation: progeo-floating-in 0.22s ease-out;
+}
+
+.progeo-floating-bar--danger {
+  border-left-color: #c44d26;
+}
+
+.progeo-floating-bar--warning {
+  border-left-color: #fab219;
+}
+
+@keyframes progeo-floating-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progeo-floating-bar {
+    animation: none;
+  }
+}
+
+.progeo-floating-text {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.progeo-floating-message {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--progeo-blue);
+}
+
+.progeo-floating-detail {
+  margin-top: 2px;
+  font-size: 0.875rem;
+  color: #6b6a64;
+}
+
+.progeo-floating-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-left: auto;
+}
+
+/* Really big - found at once. */
+.progeo-floating-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 60px;
+  min-width: 150px;
+  padding: 0 32px;
+  border: 2px solid transparent;
+  border-radius: var(--progeo-radius-pill);
+  font-size: 1.2rem;
+  font-weight: 700;
+  line-height: 1.1;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+}
+
+.progeo-floating-button:hover:not(:disabled),
+.progeo-floating-button:focus-visible {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+}
+
+.progeo-floating-button:focus-visible {
+  outline: 3px solid rgba(9, 75, 129, 0.45);
+  outline-offset: 2px;
+}
+
+.progeo-floating-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.progeo-floating-button--primary {
+  background: var(--progeo-orange);
+  color: #ffffff;
+  box-shadow: 0 8px 20px -8px rgba(235, 99, 59, 0.75);
+}
+
+.progeo-floating-button--danger {
+  background: #c44d26;
+  color: #ffffff;
+  box-shadow: 0 8px 20px -8px rgba(196, 77, 38, 0.75);
+}
+
+.progeo-floating-button--secondary {
+  background: #ffffff;
+  color: var(--progeo-blue);
+  border-color: #cfd4da;
+}
+
+/* Phones: the bar spans the width, the buttons share it. */
+@media (max-width: 575.98px) {
+  .progeo-floating-buttons {
+    width: 100%;
+  }
+
+  .progeo-floating-button {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0 16px;
+  }
+}

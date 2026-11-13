@@ -7,6 +7,8 @@
   gap: 14px;
   width: 100%;
   min-width: 0;
+  /* Room to scroll the last step above the floating save/apply bar. */
+  padding-bottom: 140px;
 }
 
 .lageplan-wizard-head {

@@ -6,6 +6,7 @@ import { childTestId } from '../../testIds';
 import ZoomControls from '../device/ZoomControls';
 import { ALIGN_PINS, fitAlignment, type AlignPin } from './alignmentFit';
 import CanvasKeyLegend from './CanvasKeyLegend';
+import FloatingActionBar from './kit/FloatingActionBar';
 import { applyGroup, fitGroup, toFraction, toNormalized, type GroupPin } from './groupAlign';
 import { isZoomWheel, useWheelHint, WheelZoomHint } from './wheelZoom';
 import './ImageCanvasStage.css';
@@ -1080,6 +1081,29 @@ const ImageCanvasStage = ({
     Number.isFinite(parsedMetersPerPixel) && parsedMetersPerPixel > 0
       ? parsedMetersPerPixel
       : null;
+  // The reference point or the ratio differ from the plan's stored ones -
+  // "Store scale" floats until they are stored.
+  const scaleDirty =
+    withSliders &&
+    onSaveScale != null &&
+    ((referencePoint != null &&
+      (referencePoint[0] !== sourceMeta?.reference_x || referencePoint[1] !== sourceMeta?.reference_y)) ||
+      (validMetersPerPixel != null && validMetersPerPixel !== (sourceMeta?.meters_per_pixel ?? null)));
+  const storeScale = () => {
+    if (!onSaveScale) {
+      return;
+    }
+    const values: PlanScaleValues = {};
+    if (referencePoint) {
+      values.reference_x = referencePoint[0];
+      values.reference_y = referencePoint[1];
+    }
+    if (validMetersPerPixel) {
+      values.meters_per_pixel = validMetersPerPixel;
+    }
+    setTool('pan');
+    onSaveScale(values);
+  };
 
   useEffect(() => {
     const handleMouseMove = (event: MouseEvent) => {
@@ -2201,38 +2225,6 @@ const ImageCanvasStage = ({
               {badge}
             </div>
           )}
-          {applyAt && (
-            <div className="image-canvas-apply d-flex gap-2" style={applyAt} data-testid={childTestId(testId, 'apply-bar')}>
-              <button
-                type="button"
-                className={`image-canvas-pill image-canvas-pill--raised btn btn-sm ${editMode === 'crop' ? 'btn-primary' : 'btn-danger'}`}
-                // The colour of the point action (cut / group) in use.
-                style={
-                  pointSelect && pointSelect !== 'remove'
-                    ? { background: selectColor, borderColor: selectColor, color: '#ffffff' }
-                    : undefined
-                }
-                disabled={editBusy || (selectingPoints && selectedIds.length === 0)}
-                onClick={applyEdit}
-                data-testid={childTestId(testId, 'apply')}
-              >
-                {editBusy
-                  ? 'Applying…'
-                  : selectingPoints && pointSelect
-                    ? `${POINT_ACTIONS[pointSelect].button} ${selectedIds.length}`
-                    : 'Apply'}
-              </button>
-              <button
-                type="button"
-                className="image-canvas-pill image-canvas-pill--raised btn btn-sm btn-light"
-                disabled={editBusy}
-                onClick={leaveEdit}
-                data-testid={childTestId(testId, 'apply-cancel')}
-              >
-                Cancel
-              </button>
-            </div>
-          )}
           {hover && hoveredItem && (
             <div
               role="tooltip"
@@ -2309,24 +2301,6 @@ const ImageCanvasStage = ({
                     : 'Moved and scaled by the pins. Dragging one again moves its pin.'}
             </div>
           </div>
-          <button
-            type="button"
-            className="image-canvas-pill btn btn-sm btn-outline-secondary"
-            disabled={editBusy}
-            onClick={leaveGroup}
-            data-testid={childTestId(testId, 'group-cancel')}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="image-canvas-pill image-canvas-pill--group btn btn-sm"
-            disabled={editBusy || !groupTransform || group.pins.length === 0}
-            onClick={storeGroup}
-            data-testid={childTestId(testId, 'group-apply')}
-          >
-            {editBusy ? 'Storing…' : 'Apply'}
-          </button>
         </div>
       )}
 
@@ -2493,22 +2467,6 @@ const ImageCanvasStage = ({
                       : `Hold A and drag one more ${lineMode ? 'dm line' : 'sensor'} onto its place, far from the first. Dragging one again moves its pin.`}
                 </div>
               </div>
-              <button
-                type="button"
-                className="image-canvas-pill btn btn-sm btn-outline-secondary"
-                onClick={() => stopAligning(true)}
-                data-testid={childTestId(testId, 'align-cancel')}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="image-canvas-pill btn btn-sm btn-primary"
-                onClick={() => stopAligning(false)}
-                data-testid={childTestId(testId, 'align-done')}
-              >
-                Done
-              </button>
             </div>
           )}
 
@@ -2644,28 +2602,82 @@ const ImageCanvasStage = ({
               onChange={(event) => setMetersPerPixel(event.target.value)}
               data-testid={childTestId(testId, 'meters-per-pixel')}
             />
-            <button
-              type="button"
-              className="image-canvas-pill btn btn-sm btn-primary ms-auto"
-              disabled={!referencePoint && !validMetersPerPixel}
-              onClick={() => {
-                const values: PlanScaleValues = {};
-                if (referencePoint) {
-                  values.reference_x = referencePoint[0];
-                  values.reference_y = referencePoint[1];
-                }
-                if (validMetersPerPixel) {
-                  values.meters_per_pixel = validMetersPerPixel;
-                }
-                setTool('pan');
-                onSaveScale(values);
-              }}
-              data-testid={childTestId(testId, 'scale-store')}
-            >
-              Store scale
-            </button>
+            {scaleDirty && <span className="image-canvas-muted ms-auto">Not stored yet - see the bar at the bottom.</span>}
           </div>
         </div>
+      )}
+
+      {applyAt && (
+        <FloatingActionBar
+          tone={editMode === 'crop' || pointSelect === 'cut' || pointSelect === 'group' ? 'primary' : 'danger'}
+          message={
+            editMode === 'crop'
+              ? 'Crop the plan to the selected area'
+              : selectingPoints && pointSelect
+                ? `${POINT_ACTIONS[pointSelect].name}: ${selectedIds.length} ${pointNoun}(s) selected`
+                : 'Fill the selected area white'
+          }
+          detail={selectingPoints && selectedIds.length === 0 ? `No ${pointNoun} in the selection - drag again.` : 'Esc cancels.'}
+          actions={[
+            { label: 'Cancel', variant: 'secondary', disabled: editBusy, onClick: leaveEdit, testId: childTestId(testId, 'apply-cancel') },
+            {
+              label: selectingPoints && pointSelect ? `${POINT_ACTIONS[pointSelect].button} ${selectedIds.length}` : 'Apply',
+              variant: editMode === 'crop' ? 'primary' : 'danger',
+              // The colour of the point action (cut / group) in use.
+              color: pointSelect && pointSelect !== 'remove' ? selectColor : undefined,
+              busy: editBusy,
+              disabled: selectingPoints && selectedIds.length === 0,
+              onClick: applyEdit,
+              testId: childTestId(testId, 'apply'),
+            },
+          ]}
+          testId={childTestId(testId, 'apply-bar')}
+        />
+      )}
+
+      {aligning && (
+        <FloatingActionBar
+          message={`Point calibration: ${pins.length} ${lineMode ? 'dm sensor(s)' : 'sensor(s)'} pinned`}
+          detail="The alignment is stored as you pin - Done keeps it, Cancel restores the one before."
+          actions={[
+            { label: 'Cancel', variant: 'secondary', onClick: () => stopAligning(true), testId: childTestId(testId, 'align-cancel') },
+            { label: 'Done', onClick: () => stopAligning(false), testId: childTestId(testId, 'align-done') },
+          ]}
+          testId={childTestId(testId, 'align-bar')}
+        />
+      )}
+
+      {group && (
+        <FloatingActionBar
+          message={`Align ${group.ids.size} ${pointNoun}(s) by themselves · ${group.pins.length} pinned`}
+          detail={group.pins.length === 0 ? 'Drag one of them onto its place first.' : 'Apply stores their new places.'}
+          actions={[
+            { label: 'Cancel', variant: 'secondary', disabled: editBusy, onClick: leaveGroup, testId: childTestId(testId, 'group-cancel') },
+            {
+              label: 'Apply',
+              color: GROUP_COLOR,
+              busy: editBusy,
+              disabled: !groupTransform || group.pins.length === 0,
+              onClick: storeGroup,
+              testId: childTestId(testId, 'group-apply'),
+            },
+          ]}
+          testId={childTestId(testId, 'group-bar')}
+        />
+      )}
+
+      {scaleDirty && (
+        <FloatingActionBar
+          message="The scale is not stored yet"
+          detail={[
+            referencePoint ? 'reference point set' : null,
+            validMetersPerPixel ? `${Number(validMetersPerPixel.toPrecision(4))} m per pixel` : null,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+          actions={[{ label: 'Store scale', onClick: storeScale, testId: childTestId(testId, 'scale-store') }]}
+          testId={childTestId(testId, 'scale-bar')}
+        />
       )}
     </div>
   );

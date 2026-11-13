@@ -7,6 +7,7 @@ import { getBackendUrl } from '../../backendUrl';
 import { plotTheme } from '../../styles/plotTheme';
 import { childTestId } from '../../testIds';
 import CanvasKeyLegend from '../ui/CanvasKeyLegend';
+import FloatingActionBar from '../ui/kit/FloatingActionBar';
 import { normalizedToImage } from '../ui/ImageCanvasStage';
 import { TWO_FINGER_TOUCH_ACTION, useWheelHint, WheelZoomHint } from '../ui/wheelZoom';
 import { toScreen, toWorld, type View, type WorldSize } from './heatmapCanvas';
@@ -523,21 +524,23 @@ const ProposalBar = ({
           </>
         )}
       </div>
-      {proposal.areas.length > 0 && (
-        <Button size="sm" variant="primary" onClick={onApply} disabled={busy} data-testid={childTestId(testId, 'apply')}>
-          {busy && <Spinner size="sm" animation="border" className="me-1" />}
-          Apply
-        </Button>
-      )}
-      <Button
-        size="sm"
-        variant="outline-secondary"
-        onClick={onDiscard}
-        disabled={busy}
-        data-testid={childTestId(testId, 'discard')}
-      >
-        Discard
-      </Button>
+      {/* Apply / Discard float at the bottom of the window. */}
+      <FloatingActionBar
+        message={
+          proposal.areas.length
+            ? `${proposal.areas.length} detected area(s) - not stored yet`
+            : 'No areas found'
+        }
+        detail={existing > 0 && proposal.areas.length ? `Apply replaces the ${existing} stored area(s).` : undefined}
+        tone={existing > 0 ? 'warning' : 'primary'}
+        actions={[
+          { label: 'Discard', variant: 'secondary', disabled: busy, onClick: onDiscard, testId: childTestId(testId, 'discard') },
+          ...(proposal.areas.length > 0
+            ? [{ label: 'Apply', busy, onClick: onApply, testId: childTestId(testId, 'apply') }]
+            : []),
+        ]}
+        testId={childTestId(testId, 'floating')}
+      />
     </div>
   );
 };

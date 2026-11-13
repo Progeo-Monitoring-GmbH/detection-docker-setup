@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, type PointerEvent } from 'react';
-import { Button, Form, Spinner } from 'react-bootstrap';
+import { Button, Form } from 'react-bootstrap';
 import { ArrowCounterclockwise, Check2, Copy, PencilSquare, PlusLg, Trash, XLg } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
 import { useSnackbar } from 'notistack';
@@ -9,6 +9,7 @@ import { plotTheme } from '../../styles/plotTheme';
 import { showRequestError, showSuccessBar } from '../ui/Snackbar.jsx';
 import { childTestId } from '../../testIds';
 import HeatLimitationCopyPicker from './HeatLimitationCopyPicker';
+import FloatingActionBar from '../ui/kit/FloatingActionBar';
 import { toScreen, toWorld, type View, type WorldSize } from './heatmapCanvas';
 import { centroid, MIN_AREA_POINTS, nearestEdge, toPlanPoint, toWorldPoint, type Point } from './heatLimitations';
 import type { HeatLimitation, SensorHeatmapLageplanData } from './sensorHeatmapTypes';
@@ -275,26 +276,30 @@ export const HeatLimitationBar = ({
             {t('heat_limit_undo')}
           </Button>
         )}
-        <Button
-          size="sm"
-          variant="primary"
-          onClick={editor.confirm}
-          disabled={busy || !enough}
-          data-testid={childTestId(testId, 'confirm')}
-        >
-          {busy ? <Spinner size="sm" animation="border" className="me-1" /> : <Check2 className="me-1" />}
-          {t('heat_limit_confirm')}
-        </Button>
-        <Button
-          size="sm"
-          variant="outline-secondary"
-          onClick={editor.cancel}
-          disabled={busy}
-          data-testid={childTestId(testId, 'cancel')}
-        >
-          <XLg className="me-1" />
-          {t('heat_limit_cancel')}
-        </Button>
+        {/* Confirm / Cancel float at the bottom of the window - found at once. */}
+        <FloatingActionBar
+          message={draft.name ? `“${draft.name}”: ${t('heat_limit_floating', { count: draft.points.length })}` : t('heat_limit_floating', { count: draft.points.length })}
+          detail={enough ? undefined : t('heat_limit_floating_more')}
+          actions={[
+            {
+              label: t('heat_limit_cancel'),
+              variant: 'secondary',
+              icon: <XLg aria-hidden />,
+              disabled: busy,
+              onClick: editor.cancel,
+              testId: childTestId(testId, 'cancel'),
+            },
+            {
+              label: t('heat_limit_confirm'),
+              icon: <Check2 aria-hidden />,
+              busy,
+              disabled: !enough,
+              onClick: editor.confirm,
+              testId: childTestId(testId, 'confirm'),
+            },
+          ]}
+          testId={childTestId(testId, 'floating')}
+        />
       </div>
     );
   }
