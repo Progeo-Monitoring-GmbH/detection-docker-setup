@@ -9,7 +9,7 @@ from rest_framework_simplejwt.token_blacklist.models import (
     OutstandingToken,
 )
 
-from progeo.helper.basics import dlog, elog, ilog, okaylog
+from progeo.helper.basics import elog, ilog, okaylog
 from progeo.v1.models import (
     MODULE_PERMISSION_CODES,
     SMS,
