@@ -208,7 +208,7 @@ export const HeatLimitationBar = ({
   if (draft) {
     const enough = draft.points.length >= MIN_AREA_POINTS;
     return (
-      <div className="d-flex flex-wrap align-items-center gap-2 mt-2" data-testid={childTestId(testId, 'draft')}>
+      <div className="d-flex flex-wrap align-items-center gap-2" data-testid={childTestId(testId, 'draft')}>
         <Form.Control
           size="sm"
           className="heat-limit-name"
@@ -260,7 +260,7 @@ export const HeatLimitationBar = ({
 
   return (
     <>
-      <div className="d-flex flex-wrap align-items-center gap-2 mt-2" data-testid={childTestId(testId, 'bar')}>
+      <div className="d-flex flex-wrap align-items-center gap-2" data-testid={childTestId(testId, 'bar')}>
         <Button
           size="sm"
           variant="outline-primary"

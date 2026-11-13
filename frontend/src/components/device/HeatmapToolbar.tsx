@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Button, Form, Spinner } from 'react-bootstrap';
 import { Film } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
@@ -7,6 +8,10 @@ import { childTestId, repeatedTestId } from '../../testIds';
 import './HeatmapToolbar.css';
 
 type HeatmapToolbarProps = {
+  /** First in the row - e.g. the page's own plan switcher. */
+  start?: ReactNode;
+  /** After the plan switcher - e.g. the heat limitations. */
+  middle?: ReactNode;
   /** Lageplans to switch between; null hides the switcher. */
   plans: SensorHeatmapLageplanData[] | null;
   planIndex: number;
@@ -36,10 +41,13 @@ const STAGE_KEYS: Record<Exclude<VideoExportStage, 'capturing'>, string> = {
 
 /**
  * One compact toolbar row of SensorHeatmap2D (wraps on narrow cards): the
- * Lageplan switcher, the kernel width (σ) and the video export - the kernel
- * width sits with the export, both shape the video.
+ * page's own controls (`start`), the Lageplan switcher, the heat limitations
+ * (`middle`) and - on the right - the kernel width (σ) and the video export;
+ * the kernel width sits with the export, both shape the video.
  */
 const HeatmapToolbar = ({
+  start,
+  middle,
   plans,
   planIndex,
   onPlanChange,
@@ -56,6 +64,7 @@ const HeatmapToolbar = ({
 
   return (
     <div className="d-flex flex-wrap align-items-center gap-2" data-testid={testId}>
+      {start}
       {plans && plans.length > 1 && (
         <Form.Select
           size="sm"
@@ -78,6 +87,7 @@ const HeatmapToolbar = ({
           ))}
         </Form.Select>
       )}
+      {middle}
 
       <div className="ms-auto d-flex flex-wrap align-items-center justify-content-end gap-2">
         <Form.Check

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card } from 'react-bootstrap';
 import FrameSlider, { type AlarmSpan, frameAt } from './FrameSlider';
@@ -65,6 +65,8 @@ type SensorHeatmap2DProps = {
   onTimeChange?: (ms: number) => void;
   /** Leaves out the own slider - the page shows one for everything (with `time`). */
   hideFrameSlider?: boolean;
+  /** Controls of the page at the start of the toolbar row (e.g. its plan switcher). */
+  toolbarStart?: ReactNode;
   /** Alarm periods, marked on the timestamp slider. */
   alarms?: AlarmSpan[];
   /**
@@ -197,6 +199,7 @@ const SensorHeatmap2D = ({
   time = null,
   onTimeChange,
   hideFrameSlider = false,
+  toolbarStart,
   alarms,
   field,
   fitPlan = false,
@@ -570,6 +573,10 @@ const SensorHeatmap2D = ({
             (alignment prop takes precedence) and when the parent shows its own
             (onPlanChange). */}
         <HeatmapToolbar
+          start={toolbarStart}
+          middle={
+            <HeatLimitationBar editor={limitEditor} testId={ownId ? undefined : childTestId(testId, 'heat-limit')} />
+          }
           plans={alignment || onPlanChange ? null : plans}
           planIndex={planIndex}
           onPlanChange={choosePlan}
@@ -599,7 +606,6 @@ const SensorHeatmap2D = ({
             />
           </div>
         )}
-        <HeatLimitationBar editor={limitEditor} testId={ownId ? undefined : childTestId(testId, 'heat-limit')} />
       </div>
 
       {videoExport.videoError && (

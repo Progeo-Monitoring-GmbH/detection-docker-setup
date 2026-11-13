@@ -489,6 +489,22 @@ const LocationAnalyseTab = () => {
   const mobile = typeof window !== 'undefined' && window.innerWidth < MOBILE_WIDTH;
   // Keys 1-9 pick the heatmap's Lageplan - while there is more than one.
   const planHotkeys = !isLorawan && plans.length > 1;
+  // The plan switcher of /status (LocationPlanPanel) - each pill shows its
+  // key (1-9); first in the heatmap's toolbar row.
+  const planSwitcher =
+    plans.length > 1 ? (
+      <SegmentedControl
+        options={plans.map((plan, index) => ({
+          value: String(plan.id),
+          label: plan.name || t('status_plan_view', { index: index + 1 }),
+          hotkey: planHotkeys && index < 9 ? String(index + 1) : undefined,
+          title: planHotkeys && index < 9 ? t('analyse_plan_key', { key: index + 1 }) : undefined,
+        }))}
+        value={String(planId)}
+        onChange={(value) => pickPlan(Number(value))}
+        testId="analyse-heatmap-plans"
+      />
+    ) : null;
   // The keys of the whole page (the profile plot lists its own).
   const pageKeyHints: KeyHint[] = [
     { id: 'play', keys: [t('key_space')], label: t('key_hint_play') },
@@ -1393,7 +1409,7 @@ const LocationAnalyseTab = () => {
       ) : (
         <>
           <Card className="border-0 shadow-sm" data-testid="analyse-heatmap">
-            <Card.Header className="bg-transparent border-0 pt-2 pb-1">
+            <Card.Header className="bg-transparent border-0 pt-2 pb-0">
               <Button
                 variant="link"
                 className="p-0 text-decoration-none fw-semibold analyse-heatmap-toggle"
@@ -1417,32 +1433,19 @@ const LocationAnalyseTab = () => {
             </Card.Header>
             <Collapse in={heatmapOpen}>
               <div id="analyse-heatmap" data-testid="analyse-heatmap-body">
-                <Card.Body className="pt-1">
-                  {/* The plan switcher of /status (LocationPlanPanel) - each pill
-                      shows its key (1-9). */}
-                  {plans.length > 1 && (
-                    <div className="d-flex mb-2">
-                      <SegmentedControl
-                        options={plans.map((plan, index) => ({
-                          value: String(plan.id),
-                          label: plan.name || t('status_plan_view', { index: index + 1 }),
-                          hotkey: planHotkeys && index < 9 ? String(index + 1) : undefined,
-                          title: planHotkeys && index < 9 ? t('analyse_plan_key', { key: index + 1 }) : undefined,
-                        }))}
-                        value={String(planId)}
-                        onChange={(value) => pickPlan(Number(value))}
-                        testId="analyse-heatmap-plans"
-                      />
-                    </div>
-                  )}
-                  {/* Also while another plan loads - its image must not show the old plan's sensors. */}
+                <Card.Body className="pt-0 px-2 pb-2">
+                  {/* Also while another plan loads - its image must not show the
+                      old plan's sensors; the plan pills stay, to switch on. */}
                   {heatmapLoading && (!shownHeatmap || (shownHeatmap.lageplan ?? null) !== planId) ? (
-                    <div
-                      className="d-flex justify-content-center align-items-center py-5 text-muted"
-                      data-testid="analyse-heatmap-plan-loading"
-                    >
-                      <Spinner animation="border" className="me-2" /> {t('ui_loading')}
-                    </div>
+                    <>
+                      {planSwitcher && <div className="d-flex px-2 pt-2">{planSwitcher}</div>}
+                      <div
+                        className="d-flex justify-content-center align-items-center py-5 text-muted"
+                        data-testid="analyse-heatmap-plan-loading"
+                      >
+                        <Spinner animation="border" className="me-2" /> {t('ui_loading')}
+                      </div>
+                    </>
                   ) : (
                     // smartex® dm too: the heat field with its band lines.
                     <SensorHeatmap2D
@@ -1462,6 +1465,7 @@ const LocationAnalyseTab = () => {
                       profileLoading={heatmapLoading}
                       planId={planId}
                       onPlanChange={pickPlan}
+                      toolbarStart={planSwitcher}
                     />
                   )}
                 </Card.Body>
