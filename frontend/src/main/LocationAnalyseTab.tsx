@@ -168,6 +168,20 @@ const LocationAnalyseTab = () => {
   const [measurementsLoading, setMeasurementsLoading] = useState(true);
   // The heatmap card is foldable - its height is the page's largest block.
   const [heatmapOpen, setHeatmapOpen] = useState(true);
+  // The Lageplan the heatmap shows - only its sensors are loaded
+  // (?lageplan=). Picked in the heatmap's switcher or with the keys 1-9;
+  // else the first (the main plan).
+  const plans = useMemo(
+    () => (location?.lageplans ?? []).filter((plan): plan is typeof plan & { id: number } => plan.id != null),
+    [location?.lageplans],
+  );
+  const [pickedPlan, setPickedPlan] = useState<{ locationId: unknown; id: number } | null>(null);
+  const planId =
+    pickedPlan?.locationId === locationId && plans.some((plan) => plan.id === pickedPlan.id)
+      ? pickedPlan.id
+      : (plans[0]?.id ?? null);
+  const pickPlan = useCallback((id: number) => setPickedPlan({ locationId, id }), [locationId]);
+  const planQuery = planId != null ? `&lageplan=${planId}` : '';
   // Only the newest request may set the data - switching periods quickly
   // must not let a slower, older response win.
   const heatmapRequest = useRef(0);
@@ -293,7 +307,7 @@ const LocationAnalyseTab = () => {
     if (isLorawan) {
       return;
     }
-    const cacheKey = `${locationId}:${heatProfile}:${heatNoiseQuery}`;
+    const cacheKey = `${locationId}:${planQuery}:${heatProfile}:${heatNoiseQuery}`;
     const cached = cachedPeriod(heatmapCache.current.get(cacheKey), days, resolution, Date.now(), (value, fromMs) =>
       cutHeatmap(value, fromMs) ?? value,
     );
@@ -307,7 +321,7 @@ const LocationAnalyseTab = () => {
     const isCurrent = () => current === heatmapRequest.current;
     void axiosConfig.perform_get(
       auth,
-      `/v1/location/${locationId}/heatmap/?${query}${heatProfileQuery(heatProfile)}${heatNoiseQuery}`,
+      `/v1/location/${locationId}/heatmap/?${query}${planQuery}${heatProfileQuery(heatProfile)}${heatNoiseQuery}`,
       (response) => {
         const data = (response?.data || null) as SensorHeatmapResponse | null;
         if (data) {
@@ -336,7 +350,7 @@ const LocationAnalyseTab = () => {
     );
     // noiseRevision: a changed profile - the cache was cleared, load again.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auth, days, enqueueSnackbar, heatProfile, heatNoiseQuery, isLorawan, locationId, noiseRevision, query, resolution]);
+  }, [auth, days, enqueueSnackbar, heatProfile, heatNoiseQuery, isLorawan, locationId, noiseRevision, planQuery, query, resolution]);
 
   // Switching the device reloads only the measurements.
   const loadMeasurements = useCallback(() => {
@@ -470,11 +484,14 @@ const LocationAnalyseTab = () => {
   const frameIndex =
     frameTime == null ? frameSeconds.length - 1 : frameAt(frameSeconds, frameTime);
   const mobile = typeof window !== 'undefined' && window.innerWidth < MOBILE_WIDTH;
+  // Keys 1-9 pick the heatmap's Lageplan - while there is more than one.
+  const planHotkeys = !isLorawan && plans.length > 1;
   // The keys of the whole page (the profile plot lists its own).
   const pageKeyHints: KeyHint[] = [
     { id: 'play', keys: [t('key_space')], label: t('key_hint_play') },
     { id: 'frame-step', keys: ['← / →'], label: t('key_hint_frame_step') },
     { id: 'frame-jump', keys: ['↑ / ↓'], label: t('key_hint_frame_jump') },
+    ...(planHotkeys ? [{ id: 'plan', keys: [`1 … ${Math.min(plans.length, 9)}`], label: t('key_hint_plan') }] : []),
     ...(offerNoiseProfiles
       ? [
           { id: 'range-select', keys: ['S', t('key_drag')], label: t('key_hint_range_select') },
@@ -514,6 +531,34 @@ const LocationAnalyseTab = () => {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [frameSeconds, frameTime]);
 
+  // 1-9: the heatmap shows that Lageplan (the switcher numbers them).
+  useEffect(() => {
+    if (!planHotkeys) {
+      return undefined;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      const index = /^[1-9]$/.test(event.key) ? Number(event.key) - 1 : -1;
+      if (
+        index < 0 ||
+        index >= plans.length ||
+        event.repeat ||
+        event.defaultPrevented ||
+        event.isComposing ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.metaKey ||
+        isFormTarget(event.target)
+      ) {
+        return;
+      }
+      event.preventDefault();
+      announceKey('plan');
+      pickPlan(plans[index].id);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [planHotkeys, plans, pickPlan]);
+
   // C: the span picked for a new profile is cleared (not with Ctrl - copy).
   useEffect(() => {
     if (!offerNoiseProfiles || !profileRange) {
@@ -551,7 +596,7 @@ const LocationAnalyseTab = () => {
   const compareOffsetMs = compare ? compare.days * DAY_MS : 0;
   // The comparison's loads, for the settings they were loaded with.
   const compareKey = compare
-    ? `${locationId}:${compare.days}:${days}:${resolution}:${heatProfile}:${shownDevice}:${heatNoiseQuery}:${noiseRevision}`
+    ? `${locationId}:${compare.days}:${days}:${resolution}:${heatProfile}:${shownDevice}:${heatNoiseQuery}:${noiseRevision}:${planQuery}`
     : null;
   const [compareHeatmap, setCompareHeatmap] = useState<{ key: string; value: SensorHeatmapResponse | null } | null>(null);
   const [compareRows, setCompareRows] = useState<{ key: string; rows: MeasurementCompareRow[] } | null>(null);
@@ -567,7 +612,7 @@ const LocationAnalyseTab = () => {
     const period = `days=${days}&limit=${resolution}&to=${to}`;
     void axiosConfig.perform_get(
       auth,
-      `/v1/location/${locationId}/heatmap/?${period}${heatProfileQuery(heatProfile)}${heatNoiseQuery}`,
+      `/v1/location/${locationId}/heatmap/?${period}${planQuery}${heatProfileQuery(heatProfile)}${heatNoiseQuery}`,
       (response) => {
         if (isCurrent()) {
           setCompareHeatmap({ key: compareKey, value: (response?.data || null) as SensorHeatmapResponse | null });
@@ -606,6 +651,7 @@ const LocationAnalyseTab = () => {
     heatProfile,
     isLorawan,
     locationId,
+    planQuery,
     rawQuery,
     resolution,
     shownDevice,
@@ -1206,7 +1252,8 @@ const LocationAnalyseTab = () => {
             <Collapse in={heatmapOpen}>
               <div id="analyse-heatmap">
                 <Card.Body className="pt-1">
-                  {heatmapLoading && !shownHeatmap ? (
+                  {/* Also while another plan loads - its image must not show the old plan's sensors. */}
+                  {heatmapLoading && (!shownHeatmap || (shownHeatmap.lageplan ?? null) !== planId) ? (
                     <div className="d-flex justify-content-center align-items-center py-5 text-muted">
                       <Spinner animation="border" className="me-2" /> {t('ui_loading')}
                     </div>
@@ -1227,6 +1274,9 @@ const LocationAnalyseTab = () => {
                       profile={heatProfile}
                       onProfileChange={setHeatProfile}
                       profileLoading={heatmapLoading}
+                      planId={planId}
+                      onPlanChange={pickPlan}
+                      planHotkeys={planHotkeys}
                     />
                   )}
                 </Card.Body>

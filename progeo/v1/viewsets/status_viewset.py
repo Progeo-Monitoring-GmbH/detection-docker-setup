@@ -726,6 +726,34 @@ class StatusViewSet(ProgeoModalViewSet):
 
     @calc_runtime
     @require_module_permissions("module_devices_enabled", "module_devices_edit")
+    @action(detail=False, url_path="measure_points/rename_lageplan", methods=["POST"])
+    def rename_lageplan(self, request, *args, **kwargs):
+        """Renames a Lageplan of a location (Lageplan wizard): POST
+        {location_id (project id), lageplan_id, name}. An empty name clears it
+        (the plan is then shown by its file name)."""
+        location, db_name, error = _measure_point_location(request, {"location_id": request.data.get("location_id")})
+        if error:
+            return error
+        try:
+            lageplan_id = int(request.data.get("lageplan_id"))
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "lageplan_id required"})
+        name = request.data.get("name")
+        if name is not None and not isinstance(name, str):
+            return RequestFailed({"reason": "name must be a text"})
+        name = (name or "").strip() or None
+        max_length = ProgeoLageplan._meta.get_field("name").max_length
+        if name and len(name) > max_length:
+            return RequestFailed({"reason": f"The name may have at most {max_length} characters"})
+
+        updated = ProgeoLageplan.objects.using(db_name).filter(location=location, pk=lageplan_id).update(name=name)
+        if not updated:
+            return RequestFailed({"reason": f"Lageplan {lageplan_id} is not at this location"})
+        ilog(f"Lageplan {lageplan_id} of location {location.id} renamed to {name!r}")
+        return RequestSuccess({"location_id": location.id, "lageplan_id": lageplan_id, "name": name})
+
+    @calc_runtime
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
     @action(detail=False, url_path="measure_points/edit_lageplan", methods=["POST"])
     def edit_lageplan_image(self, request, *args, **kwargs):
         """Clears or crops a Lageplan image (step 5 of the Lageplan wizard, see

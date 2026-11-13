@@ -2,7 +2,7 @@ import React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { Badge, Button, Spinner } from 'react-bootstrap';
-import { CheckLg, FileEarmarkPdf, PlusLg } from 'react-bootstrap-icons';
+import { CheckLg, FileEarmarkPdf, PencilSquare, PlusLg } from 'react-bootstrap-icons';
 import CadUploadDropbox from '../components/form/CadUploadDropbox.tsx';
 import { enqueueSnackbar } from 'notistack';
 import RedDropbox from '../components/form/RedDropbox.tsx';
@@ -418,6 +418,8 @@ const LageplanWizardView = () => {
   const [confirmAction, setConfirmAction] = useState<
     { kind: 'plan'; plan: WizardLageplan } | { kind: 'points' } | null
   >(null);
+  // The rename dialog: the plan and the name typed so far.
+  const [renaming, setRenaming] = useState<{ plan: WizardLageplan; name: string } | null>(null);
 
   // Step 4, "Manually set sensors": the location's devices and the points
   // placed on the plans - stored only with "Save manual sensors".
@@ -989,6 +991,38 @@ const LageplanWizardView = () => {
     );
   };
 
+  // Renames a Lageplan (StatusViewSet.rename_lageplan); an empty name clears
+  // it, the plan is then shown by its file name.
+  const renamePlan = (plan: WizardLageplan, name: string) => {
+    if (selectedLocationId === null) {
+      return;
+    }
+    const trimmed = name.trim();
+    if (trimmed === (plan.name ?? '').trim()) {
+      setRenaming(null);
+      return;
+    }
+    setIsProcessing(true);
+    setError('');
+    void axiosConfig.perform_post(
+      auth,
+      '/v1/status/measure_points/rename_lageplan/',
+      { location_id: selectedLocationId, lageplan_id: plan.id, name: trimmed },
+      (response: { data?: { name?: string | null } }) => {
+        const stored = response?.data?.name ?? null;
+        updatePlan(plan.id, { name: stored });
+        setRenaming(null);
+        setIsProcessing(false);
+        toastSaved(`Lageplan renamed to “${planLabel({ ...plan, name: stored })}”.`);
+      },
+      (renameError) => {
+        setRenaming(null);
+        setError(`Could not rename the Lageplan: ${requestReason(renameError)}`);
+        setIsProcessing(false);
+      },
+    );
+  };
+
   // Removes every measure point of the location (an empty replace).
   const clearMeasurePoints = () => {
     if (selectedLocationId === null) {
@@ -1097,7 +1131,8 @@ const LageplanWizardView = () => {
                 : ''}
               {` · ${pointCount} point(s)`}
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 7 }}>
+            {/* paddingRight: room for the rename / remove buttons in the corner. */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 7, paddingRight: 68 }}>
               {plan.is_active ? (
                 <Chip color="#3F7A1C" background="#EBF4E3">
                   Active
@@ -1110,7 +1145,32 @@ const LageplanWizardView = () => {
             </div>
           </div>
         </button>
-        <span style={{ position: 'absolute', right: 10, bottom: 10 }}>
+        <span style={{ position: 'absolute', right: 10, bottom: 10, display: 'flex', gap: 6 }}>
+          <button
+            type="button"
+            title="Rename Lageplan"
+            aria-label="Rename Lageplan"
+            disabled={isProcessing}
+            onClick={() => setRenaming({ plan, name: plan.name ?? '' })}
+            style={{
+              width: 30,
+              height: 30,
+              flexShrink: 0,
+              border: 'none',
+              borderRadius: 9,
+              background: 'var(--progeo-surface)',
+              boxShadow: '0 2px 8px rgba(11, 54, 89, .12)',
+              color: 'var(--progeo-blue)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: isProcessing ? 'default' : 'pointer',
+              opacity: isProcessing ? 0.4 : 1,
+              padding: 0,
+            }}
+          >
+            <PencilSquare size={14} />
+          </button>
           <DeleteIconButton
             label="Remove Lageplan"
             disabled={isProcessing}
@@ -1731,6 +1791,47 @@ const LageplanWizardView = () => {
             deletePlan(confirmAction.plan);
           } else if (confirmAction?.kind === 'points') {
             clearMeasurePoints();
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        show={renaming !== null}
+        title="Rename Lageplan"
+        message={
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (renaming) {
+                renamePlan(renaming.plan, renaming.name);
+              }
+            }}
+          >
+            <label htmlFor="lageplan-rename-input" className="form-label" style={{ fontSize: 12.5 }}>
+              Name (empty: the file name is shown)
+            </label>
+            <input
+              id="lageplan-rename-input"
+              className="form-control"
+              autoFocus
+              maxLength={255}
+              value={renaming?.name ?? ''}
+              placeholder={renaming?.plan.url?.split('/').pop() ?? ''}
+              disabled={isProcessing}
+              onChange={(event) =>
+                setRenaming((current) => (current ? { ...current, name: event.target.value } : current))
+              }
+            />
+          </form>
+        }
+        confirmLabel="Save"
+        cancelLabel="Cancel"
+        danger={false}
+        confirming={isProcessing}
+        onCancel={() => setRenaming(null)}
+        onConfirm={() => {
+          if (renaming) {
+            renamePlan(renaming.plan, renaming.name);
           }
         }}
       />

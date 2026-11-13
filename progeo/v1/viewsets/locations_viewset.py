@@ -39,7 +39,7 @@ from progeo.decorator import (
     permission_denied_response,
     require_module_permissions,
 )
-from progeo.helper import heatmap_video, plan_meters
+from progeo.helper import cad_import, heatmap_video, plan_meters
 from progeo.helper.basics import RequestFailed, RequestSuccess, dlog, save_check_dir
 from progeo.helper.cacher import cache_save_and_return, search_cache
 from progeo.helper.climate_heatmap import CLIMATE_METRICS, climate_frames
@@ -2096,17 +2096,41 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             return RequestFailed({"reason": "Location not found"})
         db_name = location_db(location, account)
 
+        # ?lageplan=<id>: only the sensors on that plan (the analyse page's
+        # pick) - without it, every sensor of the location.
+        lageplan = None
+        lageplan_id = request.query_params.get("lageplan")
+        if lageplan_id not in (None, ""):
+            try:
+                lageplan = ProgeoLageplan.objects.using(db_name).filter(location=location, pk=int(lageplan_id)).first()
+            except (TypeError, ValueError):
+                return RequestFailed({"reason": "lageplan must be an integer"})
+            if lageplan is None:
+                return RequestFailed({"reason": f"Lageplan {lageplan_id} is not at this location"})
+
         view, error = noise_view_of(request, location, db_name)
         if error:
             return error
         with view:
             return self._heatmap_response(
-                request, location, account, db_name, limit, profile, time_from, time_to, days, step
+                request, location, account, db_name, limit, profile, time_from, time_to, days, step, lageplan
             )
 
-    def _heatmap_response(self, request, location, account, db_name, limit, profile, time_from, time_to, days, step):
-        points = ProgeoMeasurePoint.objects.using(db_name).filter(location=location)
+    def _heatmap_response(
+        self, request, location, account, db_name, limit, profile, time_from, time_to, days, step, lageplan=None
+    ):
         queryset = ProgeoMeasurement.for_account(account, using=db_name, user=request.user).filter(device__location=location)
+        if lageplan is None:
+            points = ProgeoMeasurePoint.objects.using(db_name).filter(location=location)
+            plan_sensors = None
+        else:
+            # The plan's points (points_on_plan: the main plan also shows those
+            # without a plan) - and only their devices' measurements, when
+            # every point names its device.
+            points = list(cad_import.points_on_plan(location, db_name, lageplan))
+            plan_sensors = {point.sensor_order for point in points}
+            if all(point.device_id for point in points):
+                queryset = queryset.filter(device_id__in={point.device_id for point in points})
         starts = _device_starts(location, db_name)
         stepped = None
         if step:
@@ -2142,6 +2166,8 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
 
         if stepped:
             timestamps, _map = stepped[0], stepped[1]
+        if plan_sensors is not None:
+            _map = {sensor: values for sensor, values in _map.items() if sensor in plan_sensors}
 
         return RequestSuccess({
             "location": _location_data(location, account),
@@ -2156,7 +2182,9 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             "total": total,
             "data": _map,
             "timestamps": timestamps,
-            "sensor_points": sensor_points
+            "sensor_points": sensor_points,
+            # The plan ?lageplan= picked (None: all of the location's sensors).
+            "lageplan": lageplan.pk if lageplan else None,
         })
 
     @require_module_permissions("module_locations_enabled", "module_measurements_enabled")

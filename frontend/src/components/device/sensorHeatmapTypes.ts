@@ -116,4 +116,6 @@ export type SensorHeatmapResponse = {
   /** Unix seconds, oldest first. */
   timestamps: number[];
   sensor_points?: SensorHeatmapPoint[];
+  /** The Lageplan ?lageplan= limited the sensors to; null: all of the location. */
+  lageplan?: number | null;
 };

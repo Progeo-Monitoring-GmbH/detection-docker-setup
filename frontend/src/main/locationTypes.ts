@@ -1,3 +1,5 @@
+import type { SensorHeatmapLageplanData } from '../components/device/sensorHeatmapTypes';
+
 export type LocationDetail = {
   id?: number | null;
   project_id?: number | null;
@@ -23,4 +25,6 @@ export type LocationDetail = {
   pe_geschaltet?: boolean | null;
   /** The hourly rain check (ProgeoRainEvent) runs for this location. */
   rain_check_enabled?: boolean | null;
+  /** The location's Lageplans, active ones first (the first is the main plan). */
+  lageplans?: SensorHeatmapLageplanData[] | null;
 };

@@ -108,6 +108,15 @@ type SensorHeatmap2DProps = {
   heatTitle?: string;
   /** The heat is always normalized (e.g. a change has no threshold). */
   forceNormalize?: boolean;
+  /**
+   * The parent picks the Lageplan (e.g. to load only its sensors): the id of
+   * the shown one (none / unknown: the first) - the switcher reports picks
+   * to `onPlanChange`. Without it the component keeps the pick itself.
+   */
+  planId?: number | null;
+  onPlanChange?: (planId: number) => void;
+  /** The switcher numbers the plans - keys 1-9 pick them (the parent's). */
+  planHotkeys?: boolean;
 };
 
 /** The plan under the cursor: the position in meters and the heat there
@@ -191,6 +200,9 @@ const SensorHeatmap2D = ({
   onAreaSelect,
   heatTitle,
   forceNormalize = false,
+  planId = null,
+  onPlanChange,
+  planHotkeys = false,
 }: SensorHeatmap2DProps) => {
   const { t } = useTranslation();
   // Primitives, so a new `field` object per render doesn't recompute.
@@ -250,7 +262,18 @@ const SensorHeatmap2D = ({
     const list = baseLocation?.lageplans;
     return Array.isArray(list) && list.length > 0 ? list : null;
   }, [baseLocation]);
-  const [planIndex, choosePlan] = usePlanChoice(plans);
+  const [ownPlanIndex, chooseOwnPlan] = usePlanChoice(plans);
+  const planIndex = onPlanChange
+    ? Math.max(plans?.findIndex((plan) => plan.id === planId) ?? 0, 0)
+    : ownPlanIndex;
+  const choosePlan = (index: number) => {
+    const picked = plans?.[index]?.id;
+    if (!onPlanChange) {
+      chooseOwnPlan(index);
+    } else if (picked != null) {
+      onPlanChange(picked);
+    }
+  };
   const activePlan = plans?.[planIndex] ?? null;
   const location = useMemo(() => planLocation(baseLocation, activePlan), [baseLocation, activePlan]);
 
@@ -537,6 +560,7 @@ const SensorHeatmap2D = ({
           plans={alignment ? null : plans}
           planIndex={planIndex}
           onPlanChange={choosePlan}
+          planHotkeys={planHotkeys}
           sigma={sigma}
           onSigmaChange={setSigma}
           video={{

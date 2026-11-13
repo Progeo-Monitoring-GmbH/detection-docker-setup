@@ -151,3 +151,43 @@ def test_heatmap_sensor_points_without_calibration(api_client, plan_world):
 
     [point] = body["sensor_points"]
     assert (point["x_m"], point["y_m"]) == (None, None)
+
+
+# -- ?lageplan= ----------------------------------------------------------------
+
+def test_heatmap_of_one_lageplan_holds_only_its_sensors(api_client, plan_world):
+    account, location, main = plan_world
+    second = ProgeoLageplan.objects.using(f.DB).create(location=location, lageplan="lageplan/plan.png", is_active=False)
+    device_main, device_second = f.make_device(location), f.make_device(location, first_sensor_order=3)
+    f.make_measure_point(location, 1, device=device_main)
+    f.make_measure_point(location, 2, device=device_main, lageplan=main)
+    f.make_measure_point(location, 3, device=device_second, lageplan=second)
+    f.make_measurement(device_main, pairs=[5, 6])
+    f.make_measurement(device_second, pairs=[7])
+    api_client.force_authenticate(user=f.make_user(perms=VIEW, accounts=[account]))
+    url = f"/v1/location/{location.id}/heatmap/?limit=10"
+
+    everything = api_client.get(url).json()
+    on_main = api_client.get(f"{url}&lageplan={main.pk}").json()
+    on_second = api_client.get(f"{url}&lageplan={second.pk}").json()
+
+    assert sorted(point["pos"] for point in everything["sensor_points"]) == [1, 2, 3]
+    assert everything["lageplan"] is None
+    # The main plan also shows the points without a plan.
+    assert sorted(point["pos"] for point in on_main["sensor_points"]) == [1, 2]
+    assert sorted(map(int, on_main["data"])) == [1, 2]
+    assert on_main["lageplan"] == main.pk
+    assert [point["pos"] for point in on_second["sensor_points"]] == [3]
+    assert list(map(int, on_second["data"])) == [3]
+    # Only the plan's device was loaded.
+    assert len(on_second["timestamps"]) == 1
+
+
+def test_heatmap_rejects_a_lageplan_of_another_location(api_client, plan_world):
+    account, location, _plan_row = plan_world
+    other = f.make_location(account, project_id=920002)
+    foreign = ProgeoLageplan.objects.using(f.DB).create(location=other, lageplan="lageplan/plan.png")
+    api_client.force_authenticate(user=f.make_user(perms=VIEW, accounts=[account]))
+
+    assert api_client.get(f"/v1/location/{location.id}/heatmap/?lageplan={foreign.pk}").status_code == 400
+    assert api_client.get(f"/v1/location/{location.id}/heatmap/?lageplan=x").status_code == 400

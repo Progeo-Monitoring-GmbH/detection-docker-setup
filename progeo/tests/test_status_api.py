@@ -503,6 +503,53 @@ def test_delete_lageplan_only_at_its_location(api_client, world):
     assert ProgeoLageplan.objects.using(f.DB).filter(pk=foreign.pk).exists()
 
 
+# -- rename_lageplan ---------------------------------------------------------
+
+def _rename_plan(api_client, location, lageplan_id, name):
+    return api_client.post(
+        "/v1/status/measure_points/rename_lageplan/",
+        {"location_id": location.project_id, "lageplan_id": lageplan_id, "name": name},
+        format="json",
+    )
+
+
+def test_rename_lageplan(api_client, world):
+    from progeo.v1.models import ProgeoLageplan
+
+    location = world[0]
+    plan = ProgeoLageplan.objects.using(f.DB).create(location=location, lageplan="lageplan/main.png", name="Alt")
+    api_client.force_authenticate(user=world[5])
+
+    response = _rename_plan(api_client, location, plan.pk, "  Dach Nord  ")
+
+    assert response.status_code == 200, response.content
+    assert response.json()["name"] == "Dach Nord"
+    plan.refresh_from_db(using=f.DB)
+    assert plan.name == "Dach Nord"
+
+    assert _rename_plan(api_client, location, plan.pk, " ").json()["name"] is None
+    plan.refresh_from_db(using=f.DB)
+    assert plan.name is None
+
+
+def test_rename_lageplan_only_at_its_location_and_with_a_valid_name(api_client, world):
+    from progeo.v1.models import ProgeoLageplan
+
+    location, hidden_location = world[0], world[1]
+    plan = ProgeoLageplan.objects.using(f.DB).create(location=location, lageplan="lageplan/p.png", name="Plan")
+    foreign = ProgeoLageplan.objects.using(f.DB).create(location=hidden_location, lageplan="lageplan/f.png", name="F")
+    api_client.force_authenticate(user=world[5])
+
+    assert _rename_plan(api_client, location, foreign.pk, "X").status_code == 400
+    assert _rename_plan(api_client, hidden_location, foreign.pk, "X").status_code == 400
+    assert _rename_plan(api_client, location, "x", "X").status_code == 400
+    assert _rename_plan(api_client, location, plan.pk, "x" * 256).status_code == 400
+    assert _rename_plan(api_client, location, plan.pk, 5).status_code == 400
+    foreign.refresh_from_db(using=f.DB)
+    plan.refresh_from_db(using=f.DB)
+    assert (foreign.name, plan.name) == ("F", "Plan")
+
+
 def test_clearing_the_measure_points(api_client, world):
     location = world[0]
     f.make_measure_point(location, 1)
