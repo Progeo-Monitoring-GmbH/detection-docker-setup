@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import './kit.css';
 
 type PanelCardProps = {
   title?: ReactNode;
@@ -13,42 +14,19 @@ type PanelCardProps = {
 /**
  * The rounded, softly-shadowed "#F3F1F0" section wrapper used for every
  * panel in the Portal v2 mockup (KPI strip, Dachansicht, Verdachtsstellen,
- * Objekt sections, ...).
+ * Objekt sections, ...). Styles: kit.css (.progeo-panel).
  */
-const PanelCard = ({ title, actions, children, bodyClassName, flat = false }: PanelCardProps) => {
-  return (
-    <section
-      style={
-        flat
-          ? {}
-          : {
-              background: 'var(--progeo-panel-bg)',
-              borderRadius: 'var(--progeo-radius-panel)',
-              boxShadow: 'var(--progeo-shadow-panel)',
-              overflow: 'hidden',
-            }
-      }
-    >
-      {(title || actions) && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            padding: flat ? '0 0 12px' : '18px 20px 12px',
-            flexWrap: 'wrap',
-          }}
-        >
-          {title && <div style={{ fontSize: 16, fontWeight: 500 }}>{title}</div>}
-          <div style={{ flex: 1, minWidth: 8 }} />
-          {actions}
-        </div>
-      )}
-      <div className={bodyClassName} style={{ padding: flat ? 0 : title || actions ? '0 20px 18px' : 20 }}>
-        {children}
+const PanelCard = ({ title, actions, children, bodyClassName, flat = false }: PanelCardProps) => (
+  <section className={flat ? 'progeo-panel progeo-panel--flat' : 'progeo-panel'}>
+    {(title || actions) && (
+      <div className="progeo-panel-head">
+        {title && <div className="progeo-panel-title">{title}</div>}
+        <div className="progeo-panel-spacer" />
+        {actions}
       </div>
-    </section>
-  );
-};
+    )}
+    <div className={bodyClassName ? `progeo-panel-body ${bodyClassName}` : 'progeo-panel-body'}>{children}</div>
+  </section>
+);
 
 export default PanelCard;

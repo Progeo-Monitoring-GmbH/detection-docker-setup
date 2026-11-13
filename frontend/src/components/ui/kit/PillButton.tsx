@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import './kit.css';
 
 type PillButtonProps = {
   label: ReactNode;
@@ -16,7 +17,7 @@ type PillButtonProps = {
  * the selected option inside a SegmentedControl track; `variant="solid"`
  * (default) is a standalone pill button on its own (e.g. "Alle ansehen").
  * `variant="accent"` is a filled ProGeo-orange action button - for actions
- * that must stand out on a panel (the device commands).
+ * that must stand out on a panel (the device commands). Styles: kit.css.
  */
 const PillButton = ({
   label,
@@ -27,36 +28,14 @@ const PillButton = ({
   disabled = false,
   title,
 }: PillButtonProps) => {
-  const isGhost = variant === 'ghost' && !active;
-  const isAccent = variant === 'accent' && !active;
+  const classes = ['progeo-pill', `progeo-pill--${variant}`, active ? 'progeo-pill--active' : ''];
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
       title={title}
-      style={{
-        height: 32,
-        padding: '0 14px',
-        border: 'none',
-        borderRadius: 'var(--progeo-radius-pill)',
-        background: active
-          ? 'var(--progeo-surface)'
-          : isAccent
-            ? 'var(--progeo-orange)'
-            : 'transparent',
-        boxShadow: active || isAccent ? 'var(--progeo-shadow-chrome)' : 'none',
-        color: isAccent ? 'var(--progeo-white)' : isGhost ? '#6E6868' : 'var(--progeo-blue)',
-        fontFamily: 'inherit',
-        fontSize: 12.5,
-        fontWeight: isAccent ? 600 : 500,
-        cursor: disabled ? 'default' : 'pointer',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 7,
-        opacity: disabled ? 0.5 : 1,
-        ...(isAccent ? { whiteSpace: 'nowrap' as const } : {}),
-      }}
+      className={classes.filter(Boolean).join(' ')}
     >
       {icon}
       {label}

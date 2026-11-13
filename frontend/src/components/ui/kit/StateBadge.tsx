@@ -1,9 +1,11 @@
+import './kit.css';
+
 export type AlarmState = 'neu' | 'quittiert' | 'geloest';
 
-const STATE_STYLE: Record<AlarmState, { color: string; bg: string }> = {
-  neu: { color: '#9A7208', bg: '#FBF3DE' },
-  quittiert: { color: '#6E6868', bg: '#EFECEC' },
-  geloest: { color: '#3F7A1C', bg: '#EBF4E3' },
+const STATE_STYLE: Record<AlarmState, { color: string; background: string }> = {
+  neu: { color: '#9A7208', background: '#FBF3DE' },
+  quittiert: { color: '#6E6868', background: '#EFECEC' },
+  geloest: { color: '#3F7A1C', background: '#EBF4E3' },
 };
 
 type StateBadgeProps = {
@@ -12,25 +14,10 @@ type StateBadgeProps = {
 };
 
 /** Colored state pill (NEU / QUITTIERT / GELÖST) - label passed in so callers keep i18n. */
-const StateBadge = ({ state, label }: StateBadgeProps) => {
-  const style = STATE_STYLE[state];
-  return (
-    <span
-      style={{
-        fontSize: 11,
-        fontWeight: 600,
-        letterSpacing: '.05em',
-        textTransform: 'uppercase',
-        color: style.color,
-        background: style.bg,
-        borderRadius: 'var(--progeo-radius-pill)',
-        padding: '3px 10px',
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {label}
-    </span>
-  );
-};
+const StateBadge = ({ state, label }: StateBadgeProps) => (
+  <span className="progeo-badge progeo-badge--wide" style={STATE_STYLE[state]}>
+    {label}
+  </span>
+);
 
 export default StateBadge;

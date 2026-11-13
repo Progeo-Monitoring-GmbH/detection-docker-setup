@@ -18,7 +18,14 @@ import {
   type WorldRect,
   type WorldSize,
 } from './heatmapCanvas';
-import { buildFieldGrid, buildWeightedGrid, gridAxis, type WeightedPoint } from './heatmapGrid';
+import {
+  buildFieldGrid,
+  buildWeightedGrid,
+  gridAxis,
+  gridDomain,
+  type GridDomain,
+  type WeightedPoint,
+} from './heatmapGrid';
 import { isCalibrated, pixelToMeters, pointMeters, type ImageSize } from './planMeters';
 import type {
   SensorHeatmapLageplanData,
@@ -62,7 +69,11 @@ export type ChartSensor = Omit<PlotSensor, 'x' | 'y' | 'xEnd' | 'yEnd' | 'series
 /** Everything of the heatmap that doesn't change with the frame. */
 export type ChartLayout = {
   world: WorldSize;
+  /** Grid points per axis - more when the domain is larger than the unit square. */
   resolution: number;
+  /** The normalized range the heat grid covers (gridDomain): the unit square
+   * and every sensor beside it. */
+  domain: GridDomain;
   /** Kernel width from the sensor spacing (computeAutoSigma). */
   autoSigma: number;
   /** Border of the heat field around the sensors (normalized). */
@@ -389,7 +400,13 @@ export const chartLayout = ({
     ? { width: imageSize.width, height: imageSize.height }
     : { width: WORLD_FALLBACK, height: WORLD_FALLBACK };
 
-  const { axis } = gridAxis(resolution, pad);
+  // The grid covers the sensors - also those placed beside the plan's unit
+  // square (wizard alignment) - with as many cells per unit as before.
+  const domain = gridDomain(
+    sensors.flatMap((sensor) => [sensor.x, sensor.y, ...(sensor.xEnd != null && sensor.yEnd != null ? [sensor.xEnd, sensor.yEnd] : [])]),
+  );
+  const gridResolution = Math.round((resolution - 1) * (domain.hi - domain.lo)) + 1;
+  const { axis } = gridAxis(gridResolution, pad, domain);
   const xAxis = axis.map(toPlotX);
   const yAxis = axis.map(toPlotY);
   const field = heatRect(xAxis, yAxis, world);
@@ -443,7 +460,8 @@ export const chartLayout = ({
 
   return {
     world,
-    resolution,
+    resolution: gridResolution,
+    domain,
     autoSigma,
     pad,
     xAxis,
@@ -538,7 +556,7 @@ export const chartFrame = (
 ): ChartFrame => {
   const usedSigma = sigma === 'auto' ? layout.autoSigma : clamp(sigma, 0.005, 0.3);
   const { grid, coverage } = fieldRange
-    ? buildFieldGrid(weights, layout.resolution, usedSigma, fieldRange, layout.pad)
+    ? buildFieldGrid(weights, layout.resolution, usedSigma, fieldRange, layout.pad, layout.domain)
     : {
         grid: buildWeightedGrid(
           heatSources(weights, layout.lines, usedSigma),
@@ -546,6 +564,7 @@ export const chartFrame = (
           usedSigma,
           reference,
           layout.pad,
+          layout.domain,
         ).grid,
         coverage: null,
       };

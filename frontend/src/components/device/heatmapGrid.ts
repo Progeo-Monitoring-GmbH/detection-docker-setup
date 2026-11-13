@@ -16,27 +16,53 @@ const clamp = (value: number, min: number, max: number) =>
 /** Heat (fraction of the scale) below which a kernel is no longer drawn. */
 const HEAT_CUTOFF = 0.001;
 
-/** Regular grid over [-pad, 1 + pad] with `resolution` (at least 2) points
- * per axis; `cell` is the normalized length of one grid cell. */
-export const gridAxis = (resolution: number, pad: number) => {
-  const res = Math.max(2, resolution);
-  const span = 1 + 2 * pad;
-  const cell = span / (res - 1);
-  const axis = Array.from({ length: res }, (_, index) => -pad + index * cell);
-  return { res, span, cell, axis };
+/**
+ * The normalized range [lo, hi] the grid covers on both axes (the same on
+ * both: the cells stay square, the kernels round). The unit square by
+ * default - sensors placed beside the plan (e.g. aligned in the Lageplan
+ * wizard) lie outside it, see gridDomain.
+ */
+export type GridDomain = { lo: number; hi: number };
+
+export const UNIT_DOMAIN: GridDomain = { lo: 0, hi: 1 };
+
+/** How far beyond the unit square the grid follows the sensors - a stray
+ * point far off the plan must not stretch the grid over nothing. */
+const DOMAIN_LIMIT = 2;
+
+/** The range covering the unit square and the coordinates (sensor x / y,
+ * band ends) - at most DOMAIN_LIMIT beyond it. */
+export const gridDomain = (coordinates: number[]): GridDomain => {
+  const finite = coordinates.filter(Number.isFinite);
+  return {
+    lo: Math.max(Math.min(0, ...finite), -DOMAIN_LIMIT),
+    hi: Math.min(Math.max(1, ...finite), 1 + DOMAIN_LIMIT),
+  };
 };
 
-/** Grid position of a point (clamped to the unit square) and the cells
+/** Regular grid over [lo - pad, hi + pad] with `resolution` (at least 2)
+ * points per axis; `cell` is the normalized length of one grid cell. */
+export const gridAxis = (resolution: number, pad: number, domain: GridDomain = UNIT_DOMAIN) => {
+  const res = Math.max(2, resolution);
+  const origin = domain.lo - pad;
+  const span = domain.hi - domain.lo + 2 * pad;
+  const cell = span / (res - 1);
+  const axis = Array.from({ length: res }, (_, index) => origin + index * cell);
+  return { res, span, cell, axis, origin };
+};
+
+/** Grid position of a point (clamped to the grid's domain) and the cells
  * within `radiusCells` around it. */
 const kernelWindow = (
   point: WeightedPoint,
-  pad: number,
+  domain: GridDomain,
+  origin: number,
   cell: number,
   res: number,
   radiusCells: number,
 ) => {
-  const cx = (clamp(point.x, 0, 1) + pad) / cell;
-  const cy = (clamp(point.y, 0, 1) + pad) / cell;
+  const cx = (clamp(point.x, domain.lo, domain.hi) - origin) / cell;
+  const cy = (clamp(point.y, domain.lo, domain.hi) - origin) / cell;
   return {
     cx,
     cy,
@@ -48,9 +74,10 @@ const kernelWindow = (
 };
 
 /**
- * Weighted Gaussian splatting on a regular grid over [-pad, 1 + pad]^2 - the
- * padding lets the heat of sensors on the border fade out instead of being
- * cut off at the outermost points:
+ * Weighted Gaussian splatting on a regular grid over [lo - pad, hi + pad]^2
+ * (the domain, by default the unit square) - the padding lets the heat of
+ * sensors on the border fade out instead of being cut off at the outermost
+ * points:
  *
  *   heat(x) = sum_i weight_i * exp(-d(x, point_i)^2 / (2 * sigma^2))
  *
@@ -70,8 +97,9 @@ export const buildWeightedGrid = (
   sigma: number,
   referenceMax: number | null = null,
   pad = 0,
+  domain: GridDomain = UNIT_DOMAIN,
 ) => {
-  const { res, span, cell, axis } = gridAxis(resolution, pad);
+  const { res, span, cell, axis, origin } = gridAxis(resolution, pad, domain);
   const grid = Array.from({ length: res }, () => new Float64Array(res));
 
   const twoSigmaSquared = 2 * sigma * sigma;
@@ -95,7 +123,8 @@ export const buildWeightedGrid = (
 
     const { cx, cy, startX, endX, startY, endY } = kernelWindow(
       point,
-      pad,
+      domain,
+      origin,
       cell,
       res,
       radiusCells,
@@ -161,8 +190,9 @@ export const buildFieldGrid = (
   sigma: number,
   range: { min: number; max: number },
   pad = 0,
+  domain: GridDomain = UNIT_DOMAIN,
 ) => {
-  const { res, span, cell, axis } = gridAxis(resolution, pad);
+  const { res, span, cell, axis, origin } = gridAxis(resolution, pad, domain);
   const weighted = Array.from({ length: res }, () => new Float64Array(res));
   const weights = Array.from({ length: res }, () => new Float64Array(res));
   const nearest = Array.from({ length: res }, () => new Float64Array(res));
@@ -177,7 +207,8 @@ export const buildFieldGrid = (
     }
     const { cx, cy, startX, endX, startY, endY } = kernelWindow(
       point,
-      pad,
+      domain,
+      origin,
       cell,
       res,
       radiusCells,

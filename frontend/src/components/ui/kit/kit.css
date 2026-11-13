@@ -1,0 +1,430 @@
+/* The ProGeo UI kit (components/ui/kit): panels, pills, badges, inputs and
+   dialogs. Colours and radii come from the theme variables (scss/main.css);
+   only values that change per item stay inline in the components. */
+
+/* -- PanelCard ----------------------------------------------------------- */
+
+.progeo-panel {
+  background: var(--progeo-panel-bg);
+  border-radius: var(--progeo-radius-panel);
+  box-shadow: var(--progeo-shadow-panel);
+  overflow: hidden;
+}
+
+.progeo-panel-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 18px 20px 12px;
+}
+
+.progeo-panel-title {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.progeo-panel-spacer {
+  flex: 1;
+  min-width: 8px;
+}
+
+.progeo-panel-body {
+  padding: 20px;
+}
+
+.progeo-panel-head + .progeo-panel-body {
+  padding: 0 20px 18px;
+}
+
+/* Inside another panel: no chrome of its own. */
+.progeo-panel--flat {
+  background: none;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.progeo-panel--flat .progeo-panel-head {
+  padding: 0 0 12px;
+}
+
+.progeo-panel--flat .progeo-panel-body,
+.progeo-panel--flat .progeo-panel-head + .progeo-panel-body {
+  padding: 0;
+}
+
+/* -- KpiStrip / StatTile --------------------------------------------------- */
+
+.progeo-kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  background: var(--progeo-panel-bg);
+  border-radius: var(--progeo-radius-panel);
+  box-shadow: var(--progeo-shadow-panel);
+  overflow: hidden;
+}
+
+.progeo-kpi-strip > * + * {
+  border-left: 1px solid var(--progeo-track);
+}
+
+.progeo-stat {
+  padding: 16px 20px;
+  min-width: 0;
+}
+
+.progeo-stat-label {
+  font-size: 13px;
+  font-weight: 400;
+  color: #6e6868;
+}
+
+.progeo-stat-value {
+  margin-top: 6px;
+}
+
+.progeo-stat-number {
+  font-size: 26px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--progeo-blue);
+}
+
+.progeo-stat-unit {
+  margin-left: 7px;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: #8b8383;
+}
+
+.progeo-stat-note {
+  margin-top: 5px;
+  font-size: 12px;
+  font-weight: 400;
+  color: #8b8383;
+}
+
+/* -- PillButton / SegmentedControl / PillSelect ------------------------------ */
+
+.progeo-pill {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 14px;
+  border: none;
+  border-radius: var(--progeo-radius-pill);
+  background: transparent;
+  color: var(--progeo-blue);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.progeo-pill:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.progeo-pill--active {
+  background: var(--progeo-surface);
+  box-shadow: var(--progeo-shadow-chrome);
+}
+
+.progeo-pill--ghost:not(.progeo-pill--active) {
+  color: #6e6868;
+}
+
+.progeo-pill--accent:not(.progeo-pill--active) {
+  background: var(--progeo-orange);
+  box-shadow: var(--progeo-shadow-chrome);
+  color: var(--progeo-white);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* The grey track the pills of a SegmentedControl / PillSelect sit on. */
+.progeo-pill-track {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 3px;
+  border-radius: var(--progeo-radius-pill);
+  background: var(--progeo-track);
+}
+
+.progeo-pill-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: #6e6868;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.progeo-pill-select .progeo-pill-track {
+  display: inline-flex;
+}
+
+.progeo-pill-select select.form-select {
+  width: auto;
+  height: 32px;
+  padding: 0 34px 0 14px;
+  border: none;
+  border-radius: var(--progeo-radius-pill);
+  background-color: var(--progeo-surface);
+  background-position: right 12px center;
+  box-shadow: var(--progeo-shadow-chrome);
+  color: var(--progeo-blue);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+/* -- Badges (SeverityBadge / StateBadge); the colour comes per value --------- */
+
+.progeo-badge {
+  padding: 3px 10px;
+  border-radius: var(--progeo-radius-pill);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.progeo-badge--wide {
+  letter-spacing: 0.05em;
+}
+
+/* -- Icon buttons (DeleteIconButton, the Lageplan tiles' buttons) ------------ */
+
+.progeo-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 9px;
+  background: var(--progeo-surface);
+  box-shadow: 0 2px 8px rgba(11, 54, 89, 0.12);
+  color: var(--progeo-blue);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.progeo-icon-button:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.progeo-icon-button--small {
+  width: 26px;
+  height: 26px;
+}
+
+.progeo-icon-button--danger {
+  color: #c44d26;
+}
+
+/* -- LabeledInput ------------------------------------------------------------ */
+
+.progeo-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.progeo-field-label {
+  color: #8b8383;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.progeo-field-input {
+  width: 100%;
+  height: 40px;
+  padding: 0 13px;
+  border: none;
+  border-radius: 11px;
+  background: var(--progeo-surface);
+  box-shadow: 0 1px 4px rgba(11, 54, 89, 0.09);
+  color: var(--progeo-blue);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+/* Read-only fields drop the input look, so they don't invite typing. */
+.progeo-field-input:read-only {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px rgba(11, 54, 89, 0.12);
+  color: #6e6868;
+  cursor: default;
+}
+
+/* -- ConfirmDialog ----------------------------------------------------------- */
+
+.progeo-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(7, 34, 58, 0.38);
+}
+
+.progeo-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 380px;
+  padding: 22px;
+  border-radius: 18px;
+  background: var(--progeo-panel-bg);
+  box-shadow: 0 20px 60px rgba(11, 54, 89, 0.3);
+}
+
+.progeo-dialog-title {
+  color: var(--progeo-blue);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.progeo-dialog-message {
+  color: #6e6868;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.progeo-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.progeo-dialog-button {
+  height: 38px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 10px;
+  background: var(--progeo-surface);
+  box-shadow: 0 2px 8px rgba(11, 54, 89, 0.1);
+  color: var(--progeo-blue);
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.progeo-dialog-button:disabled {
+  cursor: default;
+}
+
+.progeo-dialog-button--confirm {
+  padding: 0 18px;
+  background: var(--progeo-orange);
+  box-shadow: 0 4px 14px rgba(196, 77, 38, 0.28);
+  color: #fff;
+}
+
+.progeo-dialog-button--danger {
+  background: #c44d26;
+}
+
+.progeo-dialog-button--confirm:disabled {
+  opacity: 0.7;
+}
+
+/* -- SearchableDataTable ----------------------------------------------------- */
+
+.progeo-table-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.progeo-table-search {
+  position: relative;
+  flex: 1 1 220px;
+  max-width: 360px;
+}
+
+.progeo-table-search-icon {
+  position: absolute;
+  left: 13px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #8b8383;
+  pointer-events: none;
+}
+
+.progeo-table-search-input {
+  width: 100%;
+  height: 34px;
+  padding: 0 34px;
+  border: none;
+  border-radius: var(--progeo-radius-pill);
+  background: var(--progeo-surface);
+  box-shadow: 0 1px 4px rgba(11, 54, 89, 0.09);
+  color: var(--progeo-blue);
+  font-family: inherit;
+  font-size: 13px;
+  /* The browser's own clear button would duplicate ours. */
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.progeo-table-search-clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--progeo-track-soft);
+  color: #6e6868;
+  cursor: pointer;
+}
+
+.progeo-table-count {
+  color: #8b8383;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.progeo-table-toolbar-end {
+  margin-left: auto;
+}
+
+.progeo-table-empty {
+  padding: 14px 2px;
+  color: #8b8383;
+  font-size: 13px;
+}
+
+.progeo-table-check:not(:disabled) {
+  cursor: pointer;
+}

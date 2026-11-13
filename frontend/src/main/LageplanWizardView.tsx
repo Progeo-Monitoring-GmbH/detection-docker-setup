@@ -24,6 +24,8 @@ import axiosConfig from '../axiosConfig';
 import { getBackendUrl } from '../backendUrl';
 import type { SensorHeatmapLageplanData } from '../components/device/sensorHeatmapTypes';
 import { isLorawanProject, planVisualization } from './projectType';
+import '../components/ui/kit/kit.css';
+import './LageplanWizard.css';
 import { formatDate } from './dateFormat';
 
 type ImportedCad = {
@@ -81,7 +83,6 @@ const POINT_SOURCES: Array<{ value: PointSource; label: string }> = [
   { value: 'manual', label: 'Manually set sensors' },
 ];
 
-const MUTED = '#8B8383';
 
 /** A measure point's normalized position after its plan turned by 90
  * degrees - as the backend turns the stored ones (lageplan_edit.rotated_point). */
@@ -204,55 +205,17 @@ const toastSaved = (message: string) =>
 
 // -- building blocks ----------------------------------------------------------
 
-const NOTICE_TONES = {
-  info: { background: 'var(--progeo-surface)', color: '#6E6868' },
-  warning: { background: '#FBF3DE', color: '#9A7208' },
-  danger: { background: '#FBE9E3', color: '#C44D26' },
-  success: { background: '#EBF4E3', color: '#3F7A1C' },
-} as const;
-
 const Notice = ({
   tone = 'info',
   children,
 }: {
-  tone?: keyof typeof NOTICE_TONES;
+  tone?: 'info' | 'warning' | 'danger' | 'success';
   children: React.ReactNode;
-}) => (
-  <div
-    style={{
-      ...NOTICE_TONES[tone],
-      borderRadius: 12,
-      padding: '11px 15px',
-      fontSize: 12.5,
-      lineHeight: 1.5,
-    }}
-  >
-    {children}
-  </div>
-);
+}) => <div className={`lageplan-notice lageplan-notice--${tone}`}>{children}</div>;
 
-const Chip = ({
-  children,
-  color = '#6E6868',
-  background = 'var(--progeo-track-soft)',
-}: {
-  children: React.ReactNode;
-  color?: string;
-  background?: string;
-}) => (
-  <span
-    style={{
-      fontSize: 11,
-      fontWeight: 600,
-      color,
-      background,
-      borderRadius: 'var(--progeo-radius-pill)',
-      padding: '2px 8px',
-      whiteSpace: 'nowrap',
-    }}
-  >
-    {children}
-  </span>
+/** A tile's state chip - grey, or `main` (blue) / `active` (green). */
+const Chip = ({ children, variant }: { children: React.ReactNode; variant?: 'main' | 'active' }) => (
+  <span className={variant ? `lageplan-chip lageplan-chip--${variant}` : 'lageplan-chip'}>{children}</span>
 );
 
 const StepCard = ({
@@ -270,22 +233,8 @@ const StepCard = ({
 }) => (
   <PanelCard
     title={
-      <span style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-        <span
-          style={{
-            width: 26,
-            height: 26,
-            borderRadius: '50%',
-            flexShrink: 0,
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 12.5,
-            fontWeight: 600,
-            background: done ? 'var(--progeo-contrast-green)' : 'var(--progeo-track)',
-            color: done ? '#fff' : 'var(--progeo-blue)',
-          }}
-        >
+      <span className="lageplan-step-title">
+        <span className={done ? 'lageplan-step-number lageplan-step-number--done' : 'lageplan-step-number'}>
           {done ? <CheckLg size={13} /> : number}
         </span>
         {title}
@@ -343,25 +292,9 @@ const LageplanThumb = ({ url }: { url?: string | null }) => {
   }, [url, isPdf]);
 
   return (
-    <div
-      style={{
-        aspectRatio: '4 / 3',
-        borderRadius: 10,
-        background: 'var(--progeo-track-soft)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        overflow: 'hidden',
-        color: MUTED,
-        fontSize: 12,
-      }}
-    >
+    <div className="lageplan-thumb">
       {src ? (
-        <img
-          src={src}
-          alt=""
-          style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-        />
+        <img src={src} alt="" />
       ) : isPdf ? (
         <FileEarmarkPdf size={26} />
       ) : failed || !url ? (
@@ -372,43 +305,6 @@ const LageplanThumb = ({ url }: { url?: string | null }) => {
     </div>
   );
 };
-
-/** The small icon buttons on a plan tile (rename, move). */
-const tileButtonStyle = (disabled: boolean, size = 30): React.CSSProperties => ({
-  width: size,
-  height: size,
-  flexShrink: 0,
-  border: 'none',
-  borderRadius: 9,
-  background: 'var(--progeo-surface)',
-  boxShadow: '0 2px 8px rgba(11, 54, 89, .12)',
-  color: 'var(--progeo-blue)',
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  cursor: disabled ? 'default' : 'pointer',
-  opacity: disabled ? 0.4 : 1,
-  padding: 0,
-});
-
-const tileStyle = (selected: boolean): React.CSSProperties => ({
-  position: 'relative',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 9,
-  padding: 8,
-  border: 'none',
-  borderRadius: 14,
-  background: 'var(--progeo-surface)',
-  boxShadow: selected
-    ? '0 0 0 2px var(--progeo-blue)'
-    : 'inset 0 0 0 1px rgba(11, 54, 89, 0.07)',
-  textAlign: 'left',
-  fontFamily: 'inherit',
-  color: 'var(--progeo-blue)',
-  cursor: 'pointer',
-  minWidth: 0,
-});
 
 // -- the wizard ---------------------------------------------------------------
 
@@ -1149,7 +1045,7 @@ const LageplanWizardView = () => {
 
   const renderStepOne = () => (
     <StepCard number={1} title="Location" done={!!selectedLocation}>
-      <div style={{ maxWidth: 560 }}>
+      <div className="lageplan-picker">
         <LocationPicker
           id="lageplan-location-picker"
           locations={locations}
@@ -1161,7 +1057,7 @@ const LageplanWizardView = () => {
       </div>
 
       {!locations.length && !locationLoading && (
-        <div style={{ marginTop: 12 }}>
+        <div className="lageplan-spaced">
           <Notice tone="warning">No locations are available yet.</Notice>
         </div>
       )}
@@ -1173,67 +1069,34 @@ const LageplanWizardView = () => {
     const pointCount = pointsOnPlan(plan.id);
     const updated = plan.last_updated ? new Date(plan.last_updated) : null;
     return (
-      // The remove button sits next to (not inside) the tile's button.
-      <div key={plan.id} style={{ position: 'relative', display: 'grid', minWidth: 0 }}>
-        <button
-          type="button"
-          onClick={() => selectPlan(plan.id)}
-          aria-pressed={selected}
-          style={tileStyle(selected)}
-        >
+      // The tile's buttons sit next to (not inside) the tile's own button.
+      <div key={plan.id} className="lageplan-tile-wrap">
+        <button type="button" onClick={() => selectPlan(plan.id)} aria-pressed={selected} className="lageplan-tile">
           <LageplanThumb key={plan.url ?? ''} url={plan.url} />
           {selected && (
-            <span
-              style={{
-                position: 'absolute',
-                top: 14,
-                right: 14,
-                width: 24,
-                height: 24,
-                borderRadius: '50%',
-                background: 'var(--progeo-blue)',
-                color: '#fff',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
+            <span className="lageplan-tile-check">
               <CheckLg size={13} />
             </span>
           )}
-          <div style={{ padding: '0 4px 4px', minWidth: 0 }}>
-            <div
-              title={planLabel(plan)}
-              style={{
-                fontSize: 13,
-                fontWeight: 500,
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-              }}
-            >
+          <div className="lageplan-tile-text">
+            <div title={planLabel(plan)} className="lageplan-tile-name">
               {planLabel(plan)}
             </div>
-            <div style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>
+            <div className="lageplan-tile-meta">
               #{plan.id}
               {updated && !Number.isNaN(updated.getTime())
                 ? ` · ${formatDate(updated, 'date')}`
                 : ''}
               {` · ${pointCount} point(s)`}
             </div>
-            {/* paddingRight: room for the rename / remove buttons in the corner. */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 7, paddingRight: 68 }}>
+            <div className="lageplan-tile-chips">
               {index === 0 && lageplans.length > 1 && (
                 <span title="The first plan - measure points without a plan show on it">
-                  <Chip color="var(--progeo-blue)" background="#E4EEF6">
-                    Main plan
-                  </Chip>
+                  <Chip variant="main">Main plan</Chip>
                 </span>
               )}
               {plan.is_active ? (
-                <Chip color="#3F7A1C" background="#EBF4E3">
-                  Active
-                </Chip>
+                <Chip variant="active">Active</Chip>
               ) : (
                 <Chip>Inactive</Chip>
               )}
@@ -1243,42 +1106,18 @@ const LageplanWizardView = () => {
           </div>
         </button>
         {lageplans.length > 1 && (
-          <span
-            style={{
-              position: 'absolute',
-              top: 14,
-              left: 14,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-            }}
-          >
+          <span className="lageplan-tile-order">
             <button
               type="button"
               title="Move earlier"
               aria-label={`Move “${planLabel(plan)}” earlier`}
               disabled={isProcessing || index === 0}
               onClick={() => movePlan(index, -1)}
-              style={tileButtonStyle(isProcessing || index === 0, 26)}
+              className="progeo-icon-button progeo-icon-button--small"
             >
               <ChevronLeft size={13} />
             </button>
-            <span
-              title={`Place ${index + 1} of ${lageplans.length}`}
-              style={{
-                minWidth: 22,
-                height: 22,
-                padding: '0 6px',
-                borderRadius: 11,
-                background: 'var(--progeo-blue)',
-                color: '#fff',
-                fontSize: 11.5,
-                fontWeight: 600,
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
+            <span title={`Place ${index + 1} of ${lageplans.length}`} className="lageplan-tile-place">
               {index + 1}
             </span>
             <button
@@ -1287,20 +1126,20 @@ const LageplanWizardView = () => {
               aria-label={`Move “${planLabel(plan)}” later`}
               disabled={isProcessing || index === lageplans.length - 1}
               onClick={() => movePlan(index, 1)}
-              style={tileButtonStyle(isProcessing || index === lageplans.length - 1, 26)}
+              className="progeo-icon-button progeo-icon-button--small"
             >
               <ChevronRight size={13} />
             </button>
           </span>
         )}
-        <span style={{ position: 'absolute', right: 10, bottom: 10, display: 'flex', gap: 6 }}>
+        <span className="lageplan-tile-actions">
           <button
             type="button"
             title="Rename Lageplan"
             aria-label="Rename Lageplan"
             disabled={isProcessing}
             onClick={() => setRenaming({ plan, name: plan.name ?? '' })}
-            style={tileButtonStyle(isProcessing)}
+            className="progeo-icon-button"
           >
             <PencilSquare size={14} />
           </button>
@@ -1315,20 +1154,11 @@ const LageplanWizardView = () => {
   };
 
   const renderPlanUpload = () => (
-    <div
-      style={{
-        background: 'var(--progeo-surface)',
-        borderRadius: 13,
-        padding: 16,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 12,
-      }}
-    >
+    <div className="lageplan-upload">
       <div className="d-flex align-items-start gap-2">
         <div>
-          <div style={{ fontSize: 13.5, fontWeight: 500 }}>Add a Lageplan</div>
-          <div style={{ fontSize: 12, color: MUTED }}>
+          <div className="lageplan-upload-title">Add a Lageplan</div>
+          <div className="lageplan-muted lageplan-muted--small">
             Upload a PNG rendering of the plan - it is added to the existing
             ones and selected. A PDF export of the CAD plan is rendered as
             PNG, cropped to the plan.
@@ -1344,13 +1174,7 @@ const LageplanWizardView = () => {
           </div>
         )}
       </div>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-          gap: 12,
-        }}
-      >
+      <div className="lageplan-upload-drops">
         <RedDropbox
           auth={auth}
           url="/v1/status/measure_points/upload_png/"
@@ -1384,7 +1208,7 @@ const LageplanWizardView = () => {
       done={!!sourceMeta?.imageUrl}
       actions={
         lageplans.length > 0 && (
-          <span style={{ fontSize: 12.5, color: MUTED }}>
+          <span className="lageplan-muted">
             {lageplans.length} plan(s) for this location
           </span>
         )
@@ -1400,43 +1224,11 @@ const LageplanWizardView = () => {
             </Notice>
           )}
           {lageplans.length > 0 && (
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))',
-                gap: 12,
-              }}
-            >
+            <div className="lageplan-tiles">
               {lageplans.map((plan, index) => renderPlanTile(plan, index))}
               {!addingPlan && (
-                <button
-                  type="button"
-                  onClick={() => setAddingPlan(true)}
-                  style={{
-                    ...tileStyle(false),
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    minHeight: 150,
-                    background: 'transparent',
-                    boxShadow: 'none',
-                    border: '1.5px dashed var(--progeo-warm-gray-3)',
-                    color: MUTED,
-                    fontSize: 13,
-                    fontWeight: 500,
-                  }}
-                >
-                  <span
-                    style={{
-                      width: 34,
-                      height: 34,
-                      borderRadius: '50%',
-                      background: 'var(--progeo-track)',
-                      color: 'var(--progeo-blue)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
+                <button type="button" onClick={() => setAddingPlan(true)} className="lageplan-tile lageplan-tile--add">
+                  <span className="lageplan-tile-add-icon">
                     <PlusLg size={15} />
                   </span>
                   Add Lageplan
@@ -1458,7 +1250,7 @@ const LageplanWizardView = () => {
 
   const renderManualSensors = () => (
     <div className="d-flex flex-column gap-3">
-      <div style={{ fontSize: 12.5, color: MUTED }}>
+      <div className="lageplan-muted">
         Select a sensor, then click its position on the plan in step 5. Placed
         points can be dragged. Nothing is stored until you save.
       </div>
@@ -1491,8 +1283,7 @@ const LageplanWizardView = () => {
                         ? 'outline-success'
                         : 'outline-secondary'
                 }
-                className="d-inline-flex align-items-center gap-1"
-                style={{ borderRadius: 'var(--progeo-radius-pill)' }}
+                className="d-inline-flex align-items-center gap-1 lageplan-pill-button"
                 title={[
                   device.hardware,
                   device.type,
@@ -1522,7 +1313,7 @@ const LageplanWizardView = () => {
       )}
 
       <div className="d-flex flex-wrap align-items-center gap-2">
-        <span style={{ fontSize: 12.5, color: MUTED }}>
+        <span className="lageplan-muted">
           {planSensors.length} on this plan · {placedSensors.length} /{' '}
           {devices.length} placed
           {placementDirty && ' · unsaved changes'}
@@ -1543,11 +1334,7 @@ const LageplanWizardView = () => {
           <Button
             size="sm"
             variant="primary"
-            style={{
-              borderRadius: 'var(--progeo-radius-pill)',
-              height: 32,
-              padding: '0 16px',
-            }}
+            className="lageplan-save-button"
             disabled={!placementDirty || isProcessing}
             onClick={() => void handleSaveManualSensors()}
           >
@@ -1572,13 +1359,12 @@ const LageplanWizardView = () => {
   // come from them): each takes the sensors from..to, its pair 1 being the
   // first of them. Without a row the points stay without device.
   const renderDeviceRanges = () => {
-    const fieldStyle: React.CSSProperties = { borderRadius: 10, height: 32 };
     const rangeLabel = (text: string) => (
-      <span style={{ fontSize: 12, color: MUTED }}>{text}</span>
+      <span className="lageplan-muted lageplan-muted--small">{text}</span>
     );
     return (
       <div className="d-flex flex-column gap-2">
-        <div style={{ fontSize: 12, color: MUTED }}>
+        <div className="lageplan-muted lageplan-muted--small">
           {devices.length === 0
             ? 'No devices are connected to this location - the points are imported without device.'
             : 'The sensors imported in step 4 (CAD/JSON/TXT) are connected to these devices. Each device counts its pairs from 1: pair 1 is the first sensor of its range. Leave "to" empty for all sensors from "from" on. Placing sensors manually picks the device per sensor in step 4.'}
@@ -1588,8 +1374,7 @@ const LageplanWizardView = () => {
           <div key={index} className="d-flex flex-wrap align-items-center gap-2">
             <select
               aria-label="Device"
-              className="form-select form-select-sm"
-              style={{ ...fieldStyle, width: 'auto', minWidth: 200 }}
+              className="form-select form-select-sm lageplan-range-field lageplan-range-field--device"
               value={range.deviceId ?? ''}
               onChange={(event) =>
                 updateRange(index, {
@@ -1614,8 +1399,7 @@ const LageplanWizardView = () => {
               aria-label="First sensor"
               type="number"
               min={1}
-              className="form-control form-control-sm"
-              style={{ ...fieldStyle, width: 90 }}
+              className="form-control form-control-sm lageplan-range-field lageplan-range-field--number"
               placeholder="1"
               value={range.from}
               onChange={(event) => updateRange(index, { from: event.target.value })}
@@ -1625,8 +1409,7 @@ const LageplanWizardView = () => {
               aria-label="Last sensor"
               type="number"
               min={1}
-              className="form-control form-control-sm"
-              style={{ ...fieldStyle, width: 90 }}
+              className="form-control form-control-sm lageplan-range-field lageplan-range-field--number"
               placeholder="last"
               value={range.to}
               onChange={(event) => updateRange(index, { to: event.target.value })}
@@ -1668,7 +1451,7 @@ const LageplanWizardView = () => {
       done={usedRanges.length > 0 && !deviceRangesProblem}
       actions={
         selectedLocationId !== null && (
-          <span style={{ fontSize: 12.5, color: MUTED }}>
+          <span className="lageplan-muted">
             {devices.length} device(s) at this location
           </span>
         )
@@ -1690,7 +1473,7 @@ const LageplanWizardView = () => {
       actions={
         selectedLocationId !== null && (
           <span className="d-flex align-items-center gap-2">
-            <span style={{ fontSize: 12.5, color: MUTED }}>
+            <span className="lageplan-muted">
               {measurePoints.length} measure point(s) stored
             </span>
             {measurePoints.length > 0 && (
@@ -1709,8 +1492,8 @@ const LageplanWizardView = () => {
         <Notice tone="warning">Select a location in step 1 first.</Notice>
       ) : (
         <div className="d-flex flex-column gap-3">
-          <div style={{ maxWidth: '100%', overflowX: 'auto' }}>
-            <div style={{ display: 'inline-flex' }}>
+          <div className="lageplan-sources">
+            <div>
               <SegmentedControl
                 options={POINT_SOURCES}
                 value={pointSource}
@@ -1852,36 +1635,17 @@ const LageplanWizardView = () => {
   }
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 14,
-        width: '100%',
-        minWidth: 0,
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          flexWrap: 'wrap',
-          padding: '0 4px',
-        }}
-      >
+    <div className="lageplan-wizard">
+      <div className="lageplan-wizard-head">
         <div>
-          <div style={{ fontSize: 20, fontWeight: 600 }}>Lageplan wizard</div>
-          <div style={{ fontSize: 12.5, color: MUTED }}>
+          <div className="lageplan-wizard-title">Lageplan wizard</div>
+          <div className="lageplan-muted">
             Pick a location, choose or add a Lageplan, set the measure points
             and align them on the plan.
           </div>
         </div>
         {isProcessing && (
-          <span
-            className="d-flex align-items-center gap-2"
-            style={{ fontSize: 12.5, color: MUTED }}
-          >
+          <span className="d-flex align-items-center gap-2 lageplan-muted">
             <Spinner animation="border" size="sm" />
             Processing…
           </span>
@@ -1940,7 +1704,7 @@ const LageplanWizardView = () => {
               }
             }}
           >
-            <label htmlFor="lageplan-rename-input" className="form-label" style={{ fontSize: 12.5 }}>
+            <label htmlFor="lageplan-rename-input" className="form-label lageplan-rename-label">
               Name (empty: the file name is shown)
             </label>
             <input

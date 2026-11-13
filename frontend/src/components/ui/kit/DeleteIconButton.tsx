@@ -1,5 +1,6 @@
-import type { CSSProperties, MouseEvent } from 'react';
+import type { MouseEvent } from 'react';
 import { Trash } from 'react-bootstrap-icons';
+import './kit.css';
 
 type DeleteIconButtonProps = {
   /** What the button does ("Delete device") - shown on hover and read by screen readers. */
@@ -11,25 +12,7 @@ type DeleteIconButtonProps = {
   target?: string;
 };
 
-const RED = '#C44D26';
-
-const style = (disabled: boolean): CSSProperties => ({
-  width: 30,
-  height: 30,
-  flexShrink: 0,
-  border: 'none',
-  borderRadius: 9,
-  background: 'var(--progeo-surface)',
-  boxShadow: '0 2px 8px rgba(11, 54, 89, .12)',
-  color: RED,
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  cursor: disabled ? 'default' : 'pointer',
-  opacity: disabled ? 0.4 : 1,
-  padding: 0,
-  textDecoration: 'none',
-});
+const CLASS_NAME = 'progeo-icon-button progeo-icon-button--danger';
 
 /**
  * The delete / remove action of a row: a trash icon instead of a "Delete"
@@ -45,12 +28,12 @@ const DeleteIconButton = ({ label, onClick, disabled = false, href, target }: De
       title={label}
       aria-label={label}
       onClick={onClick}
-      style={style(false)}
+      className={CLASS_NAME}
     >
       <Trash size={14} />
     </a>
   ) : (
-    <button type="button" title={label} aria-label={label} disabled={disabled} onClick={onClick} style={style(disabled)}>
+    <button type="button" title={label} aria-label={label} disabled={disabled} onClick={onClick} className={CLASS_NAME}>
       <Trash size={14} />
     </button>
   );

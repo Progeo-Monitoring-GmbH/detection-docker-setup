@@ -1,0 +1,42 @@
+/* Keyboard hints (KeyHints.tsx): the hint row and its <kbd> chips - a chip
+   lights up orange right after its key was handled (data-lit). */
+
+.progeo-key-hints {
+  column-gap: 14px;
+  row-gap: 4px;
+  color: #6e6868;
+  font-size: 11.5px;
+}
+
+.progeo-key-hints--vertical {
+  row-gap: 6px;
+}
+
+/* The keys only work once e.g. the plot has the focus. */
+.progeo-key-hints--inactive {
+  opacity: 0.6;
+}
+
+.progeo-key {
+  display: inline-block;
+  min-width: 20px;
+  padding: 0 5px;
+  border: 1px solid var(--progeo-warm-gray-3, #d6d1ce);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--progeo-surface, #fff);
+  color: var(--progeo-blue, #0b3659);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 17px;
+  text-align: center;
+  transition:
+    background 120ms,
+    border-color 120ms;
+}
+
+.progeo-key--lit {
+  border-color: #eb633b;
+  background: rgba(235, 99, 59, 0.2);
+}

@@ -1,4 +1,5 @@
 import { useId, type ChangeEvent } from 'react';
+import './kit.css';
 
 const NO_AUTOFILL = 'progeo-no-autofill';
 
@@ -35,17 +36,8 @@ const LabeledInput = ({
   const Wrapper = noAutofill ? 'div' : 'label';
 
   return (
-    <Wrapper style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>
-      <span
-        id={labelId}
-        style={{
-          fontSize: 11,
-          letterSpacing: '.07em',
-          textTransform: 'uppercase',
-          color: '#8B8383',
-          fontWeight: 500,
-        }}
-      >
+    <Wrapper className="progeo-field">
+      <span id={labelId} className="progeo-field-label">
         {label}
       </span>
       <input
@@ -56,23 +48,7 @@ const LabeledInput = ({
         autoComplete={autoComplete}
         aria-labelledby={noAutofill ? labelId : undefined}
         onChange={(event: ChangeEvent<HTMLInputElement>) => onChange?.(event.target.value)}
-        style={{
-          height: 40,
-          border: 'none',
-          borderRadius: 11,
-          // Read-only fields drop the input look, so they don't invite typing.
-          background: readOnly ? 'transparent' : 'var(--progeo-surface)',
-          boxShadow: readOnly
-            ? 'inset 0 0 0 1px rgba(11, 54, 89, .12)'
-            : '0 1px 4px rgba(11, 54, 89, .09)',
-          padding: '0 13px',
-          fontFamily: 'inherit',
-          fontSize: 14,
-          fontWeight: 400,
-          color: readOnly ? '#6E6868' : 'var(--progeo-blue)',
-          cursor: readOnly ? 'default' : undefined,
-          width: '100%',
-        }}
+        className="progeo-field-input"
       />
     </Wrapper>
   );

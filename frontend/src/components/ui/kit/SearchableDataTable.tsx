@@ -2,6 +2,7 @@ import { useMemo, useState, type MouseEvent, type ReactNode } from 'react';
 import DataTable, { type TableColumn, type TableProps } from 'react-data-table-component';
 import { Search, XLg } from 'react-bootstrap-icons';
 import { matchesSearchWords, rowSearchText, searchWords } from './tableSearch';
+import './kit.css';
 
 /** A DataTable column plus what the global search should read from it. */
 export type SearchableColumn<T> = TableColumn<T> & {
@@ -98,7 +99,7 @@ type CheckboxProps = {
 const Checkbox = ({ checked, indeterminate = false, disabled, onChange, label }: CheckboxProps) => (
   <input
     type="checkbox"
-    className="form-check-input m-0"
+    className="form-check-input m-0 progeo-table-check"
     aria-label={label}
     checked={checked}
     disabled={disabled}
@@ -109,7 +110,6 @@ const Checkbox = ({ checked, indeterminate = false, disabled, onChange, label }:
         element.indeterminate = indeterminate;
       }
     }}
-    style={{ cursor: disabled ? 'default' : 'pointer' }}
   />
 );
 
@@ -236,20 +236,9 @@ const SearchableDataTable = <T, K = string | number>({
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
-        <div style={{ position: 'relative', flex: '1 1 220px', maxWidth: 360 }}>
-          <Search
-            aria-hidden
-            size={13}
-            style={{
-              position: 'absolute',
-              left: 13,
-              top: '50%',
-              transform: 'translateY(-50%)',
-              color: '#8B8383',
-              pointerEvents: 'none',
-            }}
-          />
+      <div className="progeo-table-toolbar">
+        <div className="progeo-table-search">
+          <Search aria-hidden size={13} className="progeo-table-search-icon" />
           <input
             type="search"
             value={query}
@@ -261,21 +250,7 @@ const SearchableDataTable = <T, K = string | number>({
                 setQuery('');
               }
             }}
-            style={{
-              width: '100%',
-              height: 34,
-              border: 'none',
-              borderRadius: 'var(--progeo-radius-pill)',
-              background: 'var(--progeo-surface)',
-              boxShadow: '0 1px 4px rgba(11, 54, 89, .09)',
-              padding: '0 34px 0 34px',
-              fontFamily: 'inherit',
-              fontSize: 13,
-              color: 'var(--progeo-blue)',
-              // The browser's own clear button would duplicate ours.
-              appearance: 'none',
-              WebkitAppearance: 'none',
-            }}
+            className="progeo-table-search-input"
           />
           {query && (
             <button
@@ -283,34 +258,18 @@ const SearchableDataTable = <T, K = string | number>({
               onClick={() => setQuery('')}
               aria-label={labels.clear}
               title={labels.clear}
-              style={{
-                position: 'absolute',
-                right: 6,
-                top: '50%',
-                transform: 'translateY(-50%)',
-                width: 24,
-                height: 24,
-                border: 'none',
-                borderRadius: '50%',
-                background: 'var(--progeo-track-soft)',
-                color: '#6E6868',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: 0,
-                cursor: 'pointer',
-              }}
+              className="progeo-table-search-clear"
             >
               <XLg size={10} />
             </button>
           )}
         </div>
         {words.length > 0 && (
-          <span style={{ fontSize: 12, color: '#8B8383', whiteSpace: 'nowrap' }} aria-live="polite">
+          <span className="progeo-table-count" aria-live="polite">
             {labels.count(rows.length, data.length)}
           </span>
         )}
-        {toolbar && <div style={{ marginLeft: 'auto' }}>{toolbar}</div>}
+        {toolbar && <div className="progeo-table-toolbar-end">{toolbar}</div>}
       </div>
       <DataTable
         {...tableProps}
@@ -322,7 +281,7 @@ const SearchableDataTable = <T, K = string | number>({
         pointerOnHover={pointerOnHover ?? rowClickToggles}
         noDataComponent={
           words.length && data.length ? (
-            <div style={{ color: '#8B8383', fontSize: 13, padding: '14px 2px' }}>{labels.noMatches}</div>
+            <div className="progeo-table-empty">{labels.noMatches}</div>
           ) : (
             noDataComponent
           )

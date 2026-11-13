@@ -1,4 +1,5 @@
 import PillButton from './PillButton';
+import './kit.css';
 import { KeyChip } from '../KeyHints';
 
 type SegmentedOption = {
@@ -26,16 +27,7 @@ const SegmentedControl = ({
   disabled = false,
 }: SegmentedControlProps) => {
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexWrap: 'wrap',
-        gap: 3,
-        background: 'var(--progeo-track)',
-        borderRadius: 'var(--progeo-radius-pill)',
-        padding: 3,
-      }}
-    >
+    <div className="progeo-pill-track">
       {options.map((option) => (
         <PillButton
           key={option.value}

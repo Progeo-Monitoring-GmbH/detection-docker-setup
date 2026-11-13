@@ -1,4 +1,5 @@
 import { type CSSProperties, Fragment, useEffect, useState } from 'react';
+import './KeyHints.css';
 
 /**
  * Keyboard hints: which keys a page or plot reacts to, as <kbd> chips. The
@@ -40,31 +41,9 @@ export type KeyHint = {
   label: string;
 };
 
-const KBD: CSSProperties = {
-  display: 'inline-block',
-  minWidth: 20,
-  padding: '0 5px',
-  borderRadius: 4,
-  border: '1px solid var(--progeo-warm-gray-3, #d6d1ce)',
-  borderBottomWidth: 2,
-  background: 'var(--progeo-surface, #fff)',
-  color: 'var(--progeo-blue, #0b3659)',
-  fontFamily: 'inherit',
-  fontSize: 11,
-  fontWeight: 600,
-  lineHeight: '17px',
-  textAlign: 'center',
-  transition: 'background 120ms, border-color 120ms',
-};
-
-const KBD_FLASHED: CSSProperties = {
-  background: 'rgba(235, 99, 59, 0.2)',
-  borderColor: '#eb633b',
-};
-
-/** One key as a chip - lit (orange) right after it was pressed. */
+/** One key as a chip - lit (orange) right after it was pressed (KeyHints.css). */
 export const KeyChip = ({ children, lit = false }: { children: string; lit?: boolean }) => (
-  <kbd style={{ ...KBD, ...(lit ? KBD_FLASHED : {}) }}>{children}</kbd>
+  <kbd className={lit ? 'progeo-key progeo-key--lit' : 'progeo-key'}>{children}</kbd>
 );
 
 type KeyHintsProps = {
@@ -84,15 +63,15 @@ const KeyHints = ({ hints, title, active = true, inactiveNote, vertical = false,
   const flashed = useFlashedKey();
   return (
     <div
-      className={`d-flex ${vertical ? 'flex-column align-items-start' : 'flex-wrap align-items-center'} ${className ?? ''}`}
-      style={{
-        columnGap: 14,
-        rowGap: vertical ? 6 : 4,
-        fontSize: 11.5,
-        color: '#6E6868',
-        opacity: active ? 1 : 0.6,
-        ...style,
-      }}
+      className={[
+        'd-flex progeo-key-hints',
+        vertical ? 'flex-column align-items-start progeo-key-hints--vertical' : 'flex-wrap align-items-center',
+        active ? '' : 'progeo-key-hints--inactive',
+        className ?? '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+      style={style}
       data-testid="key-hints"
     >
       {title && <span className="fw-semibold">{title}</span>}

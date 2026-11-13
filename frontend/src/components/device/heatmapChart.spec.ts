@@ -18,6 +18,7 @@ import {
   plotSensors,
   type ChartLayout,
 } from './heatmapChart';
+import { heatAt } from './heatmapCanvas';
 import type { SensorHeatmapPoint, SensorHeatmapResponse } from './sensorHeatmapTypes';
 
 const IDENTITY = { scale: 1, tx: 0, ty: 0 };
@@ -166,6 +167,31 @@ describe('chartLayout', () => {
     const { bounds } = layoutOf(res, { imageSize: { width: 1000, height: 1000 }, fitPlan: true });
     expect(bounds.left).toBeCloseTo(-20);
     expect(bounds.right).toBeCloseTo(1020);
+  });
+
+  it('covers sensors placed beside the plan with the heat field', () => {
+    // ny = -0.5: above the plan (aligned there in the Lageplan wizard).
+    const beside = response(
+      [
+        { pos: 1, x: 0.25, y: 0.25 },
+        { pos: 2, x: 0.75, y: -0.5 },
+      ],
+      { '1': [0, 0], '2': [50, 50] },
+    );
+    const layout = layoutOf(beside, { imageSize: { width: 1000, height: 1000 } });
+    const [, above] = layout.sensors;
+    expect(above.wy).toBeCloseTo(-500);
+    expect(layout.heatRect.top).toBeLessThan(above.wy);
+    expect(layout.heatRect.bottom).toBeGreaterThan(layout.sensors[0].wy);
+    // As many cells per unit as on the unit square.
+    expect(layout.resolution).toBe(Math.round(39 * 1.5) + 1);
+    const frame = chartFrame(layout, frameWeights(plotSensors(beside, false), 0, false), {
+      sigma: 'auto',
+      heatReference: null,
+      fieldRange: null,
+    });
+    const heat = heatAt(frame.grid, layout.xAxis, layout.yAxis, above.wx, above.wy, layout.world);
+    expect(heat).toBeCloseTo(1, 1);
   });
 
   it('has no thresholds in field mode', () => {
