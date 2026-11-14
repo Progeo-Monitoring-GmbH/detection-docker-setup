@@ -56,3 +56,5 @@ progeo/tests/progeo/tests/_pytest.log
 coverage_html_report/
 coverage.xml
 documentation/
+auto_lageplan_previews/
+cosign.*

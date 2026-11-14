@@ -1,14 +1,24 @@
 # syntax=docker/dockerfile:1
 ARG BASE_IMAGE=progeomonitoring/detection-docker-setup:backend-base-py3.13-alpine3.24-v2.0.0
+# Pre-built wheels for the base's Python/Alpine (docker/backend-base/Dockerfile,
+# --target wheels): opencv-python-headless has none for musl on PyPI and
+# would take ~30 min to compile in every build.
+ARG WHEELS_IMAGE=progeomonitoring/detection-docker-setup:backend-wheels-py3.13-alpine3.24-opencv5.0.0.93
 
-# Build stage: the compilers live only here (on musl, several packages build
-# from source) - the image that runs gets the finished venv, no toolchain.
+FROM ${WHEELS_IMAGE} AS wheels
+
+# Build stage: the compilers live only here - the image that runs gets the
+# finished venv, no toolchain.
 FROM ${BASE_IMAGE} AS build
 RUN apk add --no-cache build-base linux-headers
 RUN python -m venv "${VENV_ROOT}" && "${VENV_ROOT}/bin/pip" install --no-cache-dir -U pip setuptools wheel
+COPY --from=wheels /wheels /wheels
 COPY ./requirements.txt ./requirements.txt
-# The download/wheel cache survives between builds (BuildKit), nothing of it lands in the image.
-RUN --mount=type=cache,target=/root/.cache/pip "${VENV_ROOT}/bin/pip" install -r requirements.txt
+# --find-links + --prefer-binary: the pre-built opencv wheel wins over a
+# newer source release on PyPI (which would compile again). The download/
+# wheel cache survives between builds (BuildKit), nothing of it lands in the image.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    "${VENV_ROOT}/bin/pip" install --find-links /wheels --prefer-binary -r requirements.txt
 
 FROM ${BASE_IMAGE} AS python
 

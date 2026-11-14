@@ -50,7 +50,7 @@ mdurl~=0.1.2
 msgpack~=1.2.4
 numpy==2.5.4
 odfpy~=1.4.1
-opencv-python-headless~=5.0.0.93   # already installed from the base-image
+opencv-python-headless~=5.0.0.93   # pre-built wheel (no musl wheel on PyPI): docker/backend-base --target wheels - same version as OPENCV_VERSION there
 openpyxl~=3.1.5
 packaging~=26.3
 pandas~=3.1.1
