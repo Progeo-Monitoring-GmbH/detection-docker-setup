@@ -1,5 +1,6 @@
 ﻿import json
 import os
+import re
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
@@ -450,69 +451,71 @@ def drop_duplicate_locations(apply=False):
     ilog(f"{len(mergeable)} projects {'merged' if apply else 'to merge'}")
 
 
-# A Lageplan image on smartex is projects that is not their plan - its image
-# signature as auto_lageplans --categories writes it (image_hash), given with
-# 63 of its 64 hex digits.
-IS_PLAN_HASH = "800080008000800080d889c8898889888198800080008000800080008000800"
-# The names of the four measure points of those projects, by sensor_order.
-IS_POINT_NAMES = {1: "Hauptdach", 2: "Garage", 3: "Anbau", 4: "Vordach"}
+# A table naming dm sensors ("dm 1", "DM-Sensor 3", "dm12") belongs to a
+# smartex dm project - its location is not set to smartex is.
+DM_SENSOR_RE = re.compile(r"\bdm(?:\b|\d)", re.IGNORECASE)
 
 
-def _is_is_plan(path):
-    """The image at `path` is the one of IS_PLAN_HASH - the missing digit is
-    either a leading zero or the last one."""
-    from progeo.helper import plan_categories
+def _placeholder_tables(path):
+    """The tables of a placeholder Lageplan at `path` (no drawing, only the
+    legend table - plan_detect.placeholder_tables), [] for any other plan or
+    a file that is no image."""
+    from progeo.helper import plan_detect
 
     try:
-        signature = f"{plan_categories.image_signature(path):064x}"
-    except Exception as exc:  # noqa: BLE001 - a PDF or broken file is simply not that image
-        dlog(f"No image signature for {path}: {exc}")
-        return False
-    return signature.startswith(IS_PLAN_HASH) or signature == IS_PLAN_HASH.zfill(64)
+        return plan_detect.placeholder_tables(plan_detect.load_plan_image(path))
+    except plan_detect.PlanDetectError:
+        return []
 
 
-def _remove_unreferenced_lageplan_files(names, databases):
-    """Deletes the Lageplan files `names` (below UPLOAD_DIR) that no plan in
-    any of `databases` uses any more - default and the project databases may
-    share a file."""
+def _table_rows(path, tables):
+    """The rows (sensor number or None, name) of `tables` read by OCR (as
+    auto_lageplans --tables) - [] without OCR."""
+    from progeo.helper import plan_ocr
+
+    lang = plan_ocr.ocr_languages()
+    if not lang:
+        return []
+    rows = []
+    for table in tables:
+        try:
+            rows.extend(plan_ocr.read_table_rows(path, table, lang))
+        except Exception as exc:  # noqa: BLE001 - one unreadable table must not stop the plan
+            dlog(f"Could not read a table of {path}: {exc}")
+    return rows
+
+
+def _remove_lageplan_file(name):
+    """Deletes the Lageplan file `name` (relative to UPLOAD_DIR) - not a demo
+    plan's (shared by the demos of every database)."""
     from progeo.helper.demo import DEMO_LAGEPLAN_PREFIX_REL
-    from progeo.helper.project_dbs import register_project_db, release_connection
 
-    names = {name for name in names if name and not name.startswith(DEMO_LAGEPLAN_PREFIX_REL)}
-    for database in databases:
-        if not names:
-            break
-        if database != "default":
-            register_project_db(database)
-        try:
-            names -= set(ProgeoLageplan.objects.using(database).filter(lageplan__in=names)
-                         .values_list("lageplan", flat=True))
-        finally:
-            release_connection(database)
-
+    if not name or name.startswith(DEMO_LAGEPLAN_PREFIX_REL):
+        return
     root = os.path.realpath(settings.UPLOAD_DIR)
-    for name in sorted(names):
-        path = os.path.realpath(os.path.join(root, name))
-        if not path.startswith(root + os.sep) or not os.path.isfile(path):
-            continue
-        try:
-            os.remove(path)
-            dlog(f"Removed the Lageplan file {path}")
-        except OSError as exc:
-            elog(f"Could not remove the Lageplan file {path}: {exc}")
+    path = os.path.realpath(os.path.join(root, name))
+    if not path.startswith(root + os.sep) or not os.path.isfile(path):
+        return
+    try:
+        os.remove(path)
+        dlog(f"Removed the Lageplan file {path}")
+    except OSError as exc:
+        elog(f"Could not remove the Lageplan file {path}: {exc}")
 
 
 def drop_is_plans(apply=False):
-    """The Lageplans of IS_PLAN_HASH in default and every project database:
-    deletes the plan and its image file, sets the location to smartex is and
-    its devices' model (hardware) to "smartex is". The measure points stay
-    (without a plan - they show on the location's main plan); four of them
-    (sensor_order 1-4) get IS_POINT_NAMES, other sets are only reported.
-    Read only unless `apply`."""
-    from django.db import DEFAULT_DB_ALIAS, transaction
+    """The placeholder Lageplans (no drawing, only the legend table of the
+    measure points - plan_detect.placeholder_tables) in default and every
+    project database: deletes the plan and its image file. The measure
+    points stay (without a plan - they show on the location's main plan) and
+    get the names of the table's rows (OCR). A location of type Unknown whose
+    table names no dm sensors becomes smartex is, its devices' model
+    (hardware) "smartex is"; other locations keep their type (reported).
+    Image files no plan uses any more that show a placeholder (left by a run
+    that stopped) are removed too. Read only unless `apply`."""
+    from django.db import DEFAULT_DB_ALIAS
 
     from progeo.helper.cacher import forget_location_answers
-    from progeo.helper.device_provisioning import ascii_model
     from progeo.helper.project_dbs import (
         existing_project_aliases,
         register_project_db,
@@ -520,65 +523,157 @@ def drop_is_plans(apply=False):
     )
     from progeo.management.commands.auto_lageplans import _plan_path
 
-    is_type = ProgeoLocation.PROJECT_TYPE_CHOICES.SMARTEX_IS
-    is_model = ascii_model(is_type.label)  # "smartex is", as device_model() knows it
     databases = [DEFAULT_DB_ALIAS, *existing_project_aliases(refresh=True)]
-    ilog(f"Looking for the smartex is Lageplan in {len(databases)} database(s)"
+    ilog(f"Looking for placeholder Lageplans (only a legend table) in {len(databases)} database(s)"
          f"{'' if apply else ' (dry run, use --apply)'}")
 
-    files, plans, unnamed = set(), 0, set()
+    plans, typed, unnamed, kept_type, failed = 0, 0, set(), set(), []
+    # Every file a plan (still) uses, over all databases - for the orphan sweep.
+    referenced, complete = set(), True
     for database in databases:
         if database != DEFAULT_DB_ALIAS:
             register_project_db(database)
         try:
             for plan in ProgeoLageplan.objects.using(database).select_related("location").order_by("pk"):
                 path = _plan_path(plan)
-                if not path or not _is_is_plan(path):
+                tables = _placeholder_tables(path) if path else []
+                if not tables:
                     continue
                 plans += 1
-                location, file_name = plan.location, plan.lageplan.name
-                points = list(ProgeoMeasurePoint.objects.using(database).filter(location=location).order_by("id"))
-                orders = sorted(point.sensor_order for point in points)
-                nameable = orders == sorted(IS_POINT_NAMES)
-                if not nameable:
-                    unnamed.add(location.project_id)
-                devices = ProgeoDevice.objects.using(database).filter(location=location)
-                ilog(f"{database}: plan {plan.pk} ({plan.name or file_name}) of location {location.pk} "
-                     f"(project {location.project_id}, {location.name!r}): delete, smartex is, "
-                     f"{devices.count()} device(s), measure points {orders}"
-                     f"{'' if nameable else ' - not named'}")
-                if not apply:
-                    continue
-
-                with transaction.atomic(using=database):
-                    # The points on the plan would go with it (CASCADE) - they stay, without a plan.
-                    ProgeoMeasurePoint.objects.using(database).filter(lageplan=plan).update(lageplan=None)
-                    plan.delete(using=database)
-                    # update(): saving a device in default may start a project database (project_db_signals).
-                    devices.update(hardware=is_model)
-                    if nameable:
-                        for point in points:
-                            point.name = IS_POINT_NAMES[point.sensor_order]
-                            point.save(using=database, update_fields=["name"])
-                # The type lives in default - save() mirrors it into the project database.
-                stored = ProgeoLocation.objects.using(DEFAULT_DB_ALIAS).filter(pk=location.pk).first() or location
-                if stored.project_type != is_type:
-                    stored.project_type = is_type
-                    stored.save(using=stored._state.db, update_fields=["project_type"])
-                files.add(file_name)
+                try:
+                    typed += _drop_placeholder(database, plan, path, tables, apply, unnamed, kept_type)
+                except Exception as exc:  # noqa: BLE001 - one failing plan must not stop the others
+                    elog(f"{database}: plan {plan.pk}: {exc}")
+                    failed.append(f"{database}:{plan.pk}")
+            referenced |= set(ProgeoLageplan.objects.using(database).values_list("lageplan", flat=True))
         except Exception as exc:  # noqa: BLE001 - one failing database must not stop the others
             elog(f"{database}: {exc}")
+            complete = False
         finally:
             release_connection(database)
 
-    if apply and files:
-        _remove_unreferenced_lageplan_files(files, databases)
+    orphans = _placeholder_orphans(referenced) if complete else []
+    if not complete:
+        elog("Not every database could be read - no sweep for orphaned placeholder files")
+    for name in orphans:
+        ilog(f"orphaned placeholder file {name} (no plan uses it): {'removed' if apply else 'remove'}")
+        if apply:
+            _remove_lageplan_file(name)
+
     if apply and plans:
         forget_location_answers()
     if unnamed:
-        elog(f"{len(unnamed)} project(s) without exactly the measure points 1-4 - name them by hand: "
+        elog(f"{len(unnamed)} project(s) whose table gave no names - name their measure points by hand: "
              f"{sorted(unnamed, key=str)}")
-    ilog(f"{plans} smartex is Lageplan(s) {'deleted' if apply else 'to delete'}")
+    if kept_type:
+        ilog(f"{len(kept_type)} project(s) kept their type (known already, or dm sensors in the table): "
+             f"{sorted(kept_type, key=str)}")
+    if failed:
+        elog(f"{len(failed)} plan(s) failed: {failed}")
+    ilog(f"{plans} placeholder Lageplan(s) {'deleted' if apply else 'to delete'}"
+         f"{f', {typed} location(s) set to smartex is' if apply else ''}, "
+         f"{len(orphans)} orphaned placeholder file(s) {'removed' if apply else 'to remove'}")
+
+
+def _placeholder_orphans(referenced):
+    """The files in UPLOAD_DIR/lageplan/ that no plan uses (`referenced`:
+    the files of every plan in every database) and that show a placeholder -
+    left by an earlier run that stopped before removing them."""
+    from progeo.helper.demo import DEMO_LAGEPLAN_PREFIX_REL
+
+    directory = os.path.join(settings.UPLOAD_DIR, "lageplan")
+    if not os.path.isdir(directory):
+        return []
+    orphans = []
+    for file in sorted(os.listdir(directory)):
+        name = f"lageplan/{file}"
+        path = os.path.join(directory, file)
+        if (name in referenced or name.startswith(DEMO_LAGEPLAN_PREFIX_REL) or not os.path.isfile(path)
+                or not _placeholder_tables(path)):
+            continue
+        orphans.append(name)
+    return orphans
+
+
+def _drop_placeholder(database, plan, path, tables, apply, unnamed, kept_type):
+    """One placeholder plan (drop_is_plans) - 1 if its location was set to
+    smartex is, else 0."""
+    from django.db import DEFAULT_DB_ALIAS, transaction
+
+    from progeo.helper import plan_ocr
+    from progeo.helper.device_provisioning import ascii_model
+    from progeo.helper.project_dbs import (
+        existing_project_aliases,
+        project_alias,
+        register_project_db,
+        release_connection,
+    )
+
+    types = ProgeoLocation.PROJECT_TYPE_CHOICES
+    location, file_name = plan.location, plan.lageplan.name
+    points = list(ProgeoMeasurePoint.objects.using(database).filter(location=location).order_by("id"))
+    rows = _table_rows(path, tables)
+    names = {
+        pk: name.strip()[:100]
+        for pk, name in plan_ocr.names_for_points(rows, [(point.pk, point.sensor_order) for point in points]).items()
+        if name and name.strip()
+    }
+    if points and not names:
+        unnamed.add(location.project_id)
+    # The type lives in default - save() mirrors it into the project database.
+    stored = ProgeoLocation.objects.using(DEFAULT_DB_ALIAS).filter(pk=location.pk).first() or location
+    dm_table = any(DM_SENSOR_RE.search(name) for _number, name in rows)
+    # smartex is already: from this plan's copy in another database - its devices here still follow.
+    set_is = stored.project_type in (None, types.UNKNOWN, types.SMARTEX_IS) and not dm_table
+    if not set_is:
+        kept_type.add(location.project_id)
+    order_of = {point.pk: point.sensor_order for point in points}
+    devices = ProgeoDevice.objects.using(database).filter(location=location)
+    type_note = (
+        "set smartex is" if set_is
+        else "type kept (table names dm sensors)" if dm_table
+        else f"type kept ({types(stored.project_type).label})" if stored.project_type in types.values
+        else "type kept"
+    )
+    ilog(f"{database}: plan {plan.pk} ({plan.name or file_name}) of location {location.pk} "
+         f"(project {location.project_id}, {location.name!r}): delete, {type_note}, "
+         f"{devices.count()} device(s), measure points {sorted(order_of.values())}, names: "
+         + ("; ".join(f"{order_of[pk]}={name}" for pk, name in sorted(
+             names.items(), key=lambda item: order_of[item[0]])) or "none"))
+    if not apply:
+        return 0
+
+    with transaction.atomic(using=database):
+        # The points on the plan would go with it (CASCADE) - they stay, without a plan.
+        ProgeoMeasurePoint.objects.using(database).filter(lageplan=plan).update(lageplan=None)
+        plan.delete(using=database)
+        if set_is:
+            # update(): saving a device in default may start a project database (project_db_signals).
+            devices.update(hardware=ascii_model(types.SMARTEX_IS.label))  # "smartex is", as device_model() knows
+        for point in points:
+            if point.pk in names and point.name != names[point.pk]:
+                point.name = names[point.pk]
+                point.save(using=database, update_fields=["name"])
+    # The file now, not at the end of the run - a run that stops must not leave it behind. Only
+    # plans of the same project share it: in default, this database and the project's own.
+    sharing = {DEFAULT_DB_ALIAS, database}
+    opened = None
+    if location.project_id is not None:
+        alias = project_alias(location.project_id)
+        if alias not in sharing and alias in existing_project_aliases():
+            opened = register_project_db(alias)
+            sharing.add(opened)
+    try:
+        if not any(ProgeoLageplan.objects.using(db).filter(lageplan=file_name).exists() for db in sharing):
+            _remove_lageplan_file(file_name)
+    finally:
+        if opened:
+            release_connection(opened)
+    if set_is and stored.project_type != types.SMARTEX_IS:
+        stored.project_type = types.SMARTEX_IS
+        stored.save(using=stored._state.db, update_fields=["project_type"])
+        return 1
+    return 0
 
 
 class Command(BaseCommand):
@@ -594,9 +689,10 @@ class Command(BaseCommand):
         '                            - read only unless --apply\n'
         '  drop_duplicate_locations  remove the unnamed duplicate locations and their copied\n'
         '                            lageplans ("Location None") - read only unless --apply\n'
-        '  drop_is_plans             delete the smartex is Lageplan (IS_PLAN_HASH) and its image, set\n'
-        '                            location and devices to smartex is, name the measure points 1-4\n'
-        '                            Hauptdach, Garage, Anbau, Vordach - read only unless --apply\n\n'
+        '  drop_is_plans             delete the placeholder Lageplans (no drawing, only a legend table)\n'
+        '                            and their images, name the measure points from the table, set\n'
+        '                            Unknown locations (no dm sensors) and their devices to smartex is\n'
+        '                            - read only unless --apply\n\n'
         'Examples:\n'
         '  python manage.py patch_live --patch fix_dragino_usage\n'
         '  python manage.py patch_live --patch fetch_legacy_data\n'
@@ -622,24 +718,6 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
 
         patch = options.get("patch")
-
-        if patch == "fix_dragino_usage":
-            imei = "863663069840180"
-
-            measurements = ProgeoMeasurement.objects.filter(device__raw_hash=imei, last_updated__isnull=True)
-
-            for m in measurements:
-                data = m.raw_data
-                row = data.get("raw", {}).get("1", [0, 0, 0])
-
-                _, _, ts = row[0], row[1], row[2]
-                m.last_updated = parse_sample_timestamp(ts)
-
-                if len(data["resistance_rows"]) >= 1:
-                    sample = data["resistance_rows"][0]
-                    m.resistance_idc = sample.get("r_idc_ohm", MAX_JSON_SAFE_RESISTANCE_OHM)
-
-                m.save()
 
         if patch == "fetch_legacy_data":
             fetch_legacy_data(dry_run=True)

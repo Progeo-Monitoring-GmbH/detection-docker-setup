@@ -240,6 +240,34 @@ def test_frames_title_blocks_and_buildings_are_no_tables(plan_path):
     assert plan_detect.detect_tables(plan_detect.load_plan_image(plan_path)) == []
 
 
+def _placeholder(path, header=False, orange=False):
+    """A plan that is only the legend table - with `header` a title line
+    above it, with `orange` an orange line next to it."""
+    image = np.full((SIZE[1], SIZE[0], 3), 255, np.uint8)
+    cv2.line(image, (0, 0), (0, SIZE[1] - 1), (160, 160, 160), 1)  # a frame line along the edge
+    _table(image)
+    if header:
+        cv2.putText(image, "1234 Wohnhaus", (200, 600), cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 2)
+    if orange:
+        cv2.line(image, (800, 200), (1400, 200), ORANGE, 4)
+    cv2.imwrite(str(path), cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
+    return str(path)
+
+
+def test_a_plan_of_only_the_legend_table_is_a_placeholder(tmp_path):
+    for header in (False, True):
+        tables = plan_detect.placeholder_tables(plan_detect.load_plan_image(_placeholder(tmp_path / "p.png", header)))
+        assert [len(table.rows) for table in tables] == [len(TABLE_ROWS)]
+
+
+def test_a_drawing_with_a_legend_table_is_no_placeholder(tmp_path):
+    assert plan_detect.placeholder_tables(plan_detect.load_plan_image(write_plan(tmp_path / "p.png", table=True))) == []
+    assert plan_detect.placeholder_tables(
+        plan_detect.load_plan_image(_placeholder(tmp_path / "o.png", orange=True))
+    ) == []
+    assert plan_detect.placeholder_tables(plan_detect.load_plan_image(write_plan(tmp_path / "n.png"))) == []
+
+
 def test_a_table_is_never_an_area_and_its_sensors_are_left_out(tmp_path):
     plan_image = plan_detect.load_plan_image(write_plan(tmp_path / "plan.png", table=True))
     on_table = [[(300 / SIZE[0], 760 / SIZE[1]), (500 / SIZE[0], 760 / SIZE[1])]]

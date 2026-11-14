@@ -590,6 +590,51 @@ def _framed_text_lines(cells, box_width, box_height, size):
     return [(max(0.0, (top + bottom) / 2 - half), min(box_height, (top + bottom) / 2 + half)) for top, bottom in lines]
 
 
+# A placeholder Lageplan is no drawing, only the legend table of the measure
+# points (a header line above it at most): every table has evenly spaced
+# rows (heights within PLACEHOLDER_ROW_SPREAD of the largest - a drawing's
+# lines taken for rules are not), the tables cover at most
+# PLACEHOLDER_MAX_AREA of the image, and outside them (PLACEHOLDER_PAD
+# around each, the PLACEHOLDER_EDGE along the image's border left out - a
+# frame line) lies ink on at most PLACEHOLDER_MAX_INK and orange on at most
+# PLACEHOLDER_MAX_ORANGE of the image.
+PLACEHOLDER_ROW_SPREAD = 0.15
+PLACEHOLDER_MAX_AREA = 0.5
+PLACEHOLDER_PAD = 0.01
+PLACEHOLDER_EDGE = 0.01
+PLACEHOLDER_MAX_INK = 0.005
+PLACEHOLDER_MAX_ORANGE = 0.0005
+
+
+def placeholder_tables(plan_image: PlanImage) -> list[Table]:
+    """The tables of a placeholder Lageplan (only a legend table, no
+    drawing) - [] for a plan with a drawing or without tables."""
+    tables = detect_tables(plan_image)
+    if not tables:
+        return []
+    for table in tables:
+        heights = [bottom - top for top, bottom in table.rows]
+        if len(heights) < 2 or (max(heights) - min(heights)) > PLACEHOLDER_ROW_SPREAD * max(heights):
+            return []
+    if sum((right - left) * (bottom - top) for left, top, right, bottom in (t.box for t in tables)) \
+            > PLACEHOLDER_MAX_AREA:
+        return []
+
+    ink, orange = plan_image.masks(LIMIT_SIZE)
+    height, width = ink.shape
+    outside = np.zeros((height, width), bool)
+    edge_y, edge_x = max(1, round(PLACEHOLDER_EDGE * height)), max(1, round(PLACEHOLDER_EDGE * width))
+    outside[edge_y:height - edge_y, edge_x:width - edge_x] = True
+    for left, top, right, bottom in (table.box for table in tables):
+        outside[max(0, math.floor((top - PLACEHOLDER_PAD) * height)):math.ceil((bottom + PLACEHOLDER_PAD) * height),
+                max(0, math.floor((left - PLACEHOLDER_PAD) * width)):math.ceil((right + PLACEHOLDER_PAD) * width)] = False
+    pixels = height * width
+    if ((ink > 0) & outside).sum() > PLACEHOLDER_MAX_INK * pixels \
+            or ((orange > 0) & outside).sum() > PLACEHOLDER_MAX_ORANGE * pixels:
+        return []
+    return tables
+
+
 def _in_table(point, tables, size) -> bool:
     x, y = point[0] / size[0], point[1] / size[1]
     return any(left <= x <= right and top <= y <= bottom for left, top, right, bottom in (t.box for t in tables))
