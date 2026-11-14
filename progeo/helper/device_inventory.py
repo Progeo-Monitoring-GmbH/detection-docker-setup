@@ -3,15 +3,16 @@
 One pass over the locations of the request's account answers the questions the
 "Geräte-Statistik" screen asks: which devices exist per project type (their
 location's PROJECT_TYPE_CHOICES - the product, e.g. smartex® dm), which have a
-chip_id, which measured in the last 24 hours, which locations have no active
-Lageplan, and which devices/locations look dead or unused.
+chip_id, which measured in the last 24 hours, which locations have no measure
+points (sensor points) yet, and which devices/locations look dead or unused.
 
 Data layout: the ProgeoLocations themselves are read once (account database),
 then grouped by the database that holds their project rows
 (``project_dbs.locations_by_db``/``location_db``). Each of those databases is
-queried once for its devices and once for its locations' active Lageplan - not
-once per location. The newest measurement is annotated with a Subquery and the
-active Lageplan with Exists, so neither costs a query per row.
+queried once for its devices, once for its locations' active Lageplan and once
+for their measure point counts - not once per location. The newest measurement
+is annotated with a Subquery and the active Lageplan with Exists, so neither
+costs a query per row.
 
 Definitions
 -----------
@@ -22,8 +23,11 @@ Definitions
 - ``dead`` location: its newest device measurement is older than 30 days (or
   there is none) - the same age limit as a device.
 - ``unused`` location: no devices, or no measurement in the last 30 days.
-- ``missing_lageplan``: the location has no active (``is_active=True``)
-  ``ProgeoLageplan``.
+- ``missing_points``: the location has no ``ProgeoMeasurePoint`` - checked
+  before the Lageplan: without sensor points a location shows nothing, with or
+  without a plan. A device is ``missing_points`` when its location is.
+- ``has_lageplan`` (location rows, shown as a column): the location has an
+  active (``is_active=True``) ``ProgeoLageplan``.
 """
 import math
 import re
@@ -33,7 +37,7 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 from django.core.cache import cache
-from django.db.models import Exists, OuterRef, Subquery
+from django.db.models import Count, Exists, OuterRef, Subquery
 from django.utils import timezone
 
 from progeo.helper.project_dbs import (
@@ -55,6 +59,7 @@ from progeo.v1.models import (
     ProgeoLageplan,
     ProgeoLocation,
     ProgeoMeasurement,
+    ProgeoMeasurePoint,
 )
 
 # A device/location counts as measured only within this window.
@@ -74,7 +79,9 @@ CACHE_SECONDS = 900
 CHUNK_DATABASES = 40
 # How long a started chunked build (its plan and finished chunks) is kept.
 BUILD_SECONDS = 900
-CACHE_PREFIX = "progeo:device-statistics:"
+# Versioned: a snapshot of an older layout (e.g. still with missing_lageplan)
+# must not be served after a deploy.
+CACHE_PREFIX = "progeo:device-statistics:v2:"
 # The sections the frontend requests one by one (the first also warms the
 # cache for all following ones, which are then served from it).
 SECTION_NAMES = (
@@ -82,10 +89,10 @@ SECTION_NAMES = (
     "by_type",
     "chip_id",
     "measured",
-    "lageplan",
+    "points",
     "dead",
     "unused_locations",
-    "locations_missing_lageplan",
+    "locations_missing_points",
     "dead_locations",
 )
 
@@ -120,10 +127,12 @@ def _collect_locations(accounts):
 
 
 def _rows_of_database(database, locations):
-    """(devices, {location pk: has_active_lageplan}) of one database.
+    """(devices, {location pk: has_active_lageplan}, {location pk: point count})
+    of one database.
 
-    Two queries regardless of the number of locations: the newest measurement
-    of each device is a Subquery, its location's active Lageplan an Exists.
+    Three queries regardless of the number of locations: the newest
+    measurement of each device is a Subquery, the active Lageplan an Exists,
+    the measure points one grouped count (locations without points are absent).
     Release the connection in ``finally`` after the rows are evaluated.
     """
     if split_enabled() and database in existing_project_aliases():
@@ -139,14 +148,7 @@ def _rows_of_database(database, locations):
         devices = list(
             ProgeoDevice.objects.using(database)
             .filter(location_id__in=location_ids)
-            .annotate(
-                last_measurement_at=Subquery(latest.values("last_fetched")[:1]),
-                has_lageplan=Exists(
-                    ProgeoLageplan.objects.using(database).filter(
-                        location_id=OuterRef("location_id"), is_active=True
-                    )
-                ),
-            )
+            .annotate(last_measurement_at=Subquery(latest.values("last_fetched")[:1]))
             .order_by("location_id", "id")
         )
         lageplans = dict(
@@ -161,7 +163,15 @@ def _rows_of_database(database, locations):
             )
             .values_list("pk", "has_lageplan")
         )
-        return devices, lageplans
+        point_counts = dict(
+            ProgeoMeasurePoint.objects.using(database)
+            .filter(location_id__in=location_ids)
+            .order_by()
+            .values("location_id")
+            .annotate(count=Count("id"))
+            .values_list("location_id", "count")
+        )
+        return devices, lageplans, point_counts
     finally:
         # ~1000 project databases: one open connection each is too many.
         release_connection(database)
@@ -174,7 +184,7 @@ def project_type_key(location) -> str:
     return UNKNOWN_TYPE if project_type is None else str(project_type)
 
 
-def _device_row(device, location, now, database):
+def _device_row(device, location, now, database, point_count):
     last = device.last_measurement_at
     return {
         "id": device.pk,
@@ -195,12 +205,12 @@ def _device_row(device, location, now, database):
         "project_id": getattr(location, "project_id", None),
         "last_measurement_at": _iso(last),
         "measured_24h": last is not None and last >= now - MEASURED_WINDOW,
-        "missing_lageplan": not device.has_lageplan,
+        "missing_points": point_count == 0,
         "dead": last is None or last < now - DEAD_AFTER,
     }
 
 
-def _location_row(location, device_count, last, has_lageplan, now, database):
+def _location_row(location, device_count, last, has_lageplan, point_count, now, database):
     dead = last is None or last < now - DEAD_AFTER
     return {
         "id": location.pk,
@@ -209,6 +219,8 @@ def _location_row(location, device_count, last, has_lageplan, now, database):
         "project_id": location.project_id,
         "device_count": device_count,
         "last_measurement_at": _iso(last),
+        "point_count": point_count,
+        "has_points": point_count > 0,
         "has_lageplan": has_lageplan,
         "unused": device_count == 0 or dead,
         "dead": dead,
@@ -230,7 +242,7 @@ def _scan_databases(location_groups, databases, now):
         lambda database: _rows_of_database(database, location_groups[database]),
         databases,
     )
-    for database, (devices, lageplans) in zip(databases, rows_by_database, strict=True):
+    for database, (devices, lageplans, point_counts) in zip(databases, rows_by_database, strict=True):
         db_locations = location_groups[database]
 
         device_counts = Counter(device.location_id for device in devices)
@@ -245,7 +257,10 @@ def _scan_databases(location_groups, databases, now):
 
         for device in devices:
             device_rows.append(
-                _device_row(device, db_locations.get(device.location_id), now, database)
+                _device_row(
+                    device, db_locations.get(device.location_id), now, database,
+                    point_counts.get(device.location_id, 0),
+                )
             )
         for location_id, location in db_locations.items():
             location_rows.append(
@@ -254,6 +269,7 @@ def _scan_databases(location_groups, databases, now):
                     device_counts.get(location_id, 0),
                     last_by_location.get(location_id),
                     bool(lageplans.get(location_id)),
+                    point_counts.get(location_id, 0),
                     now,
                     database,
                 )
@@ -285,10 +301,10 @@ def _totals(device_rows, location_rows):
         "without_chip_id": sum(1 for row in device_rows if not row["chip_id"]),
         "measured_24h": sum(1 for row in device_rows if row["measured_24h"]),
         "not_measured_24h": sum(1 for row in device_rows if not row["measured_24h"]),
-        "missing_lageplan": sum(1 for row in device_rows if row["missing_lageplan"]),
+        "missing_points": sum(1 for row in device_rows if row["missing_points"]),
         "dead": sum(1 for row in device_rows if row["dead"]),
         "unused_locations": sum(1 for row in location_rows if row["unused"]),
-        "locations_missing_lageplan": sum(1 for row in location_rows if not row["has_lageplan"]),
+        "locations_missing_points": sum(1 for row in location_rows if not row["has_points"]),
     }
 
 
@@ -307,12 +323,12 @@ def _aggregate(device_rows, location_rows, now):
         "without_chip_id": [row for row in device_rows if not row["chip_id"]],
         "measured_24h": [row for row in device_rows if row["measured_24h"]],
         "not_measured_24h": [row for row in device_rows if not row["measured_24h"]],
-        "missing_lageplan": [row for row in device_rows if row["missing_lageplan"]],
+        "missing_points": [row for row in device_rows if row["missing_points"]],
         "dead": [row for row in device_rows if row["dead"]],
     }
 
     unused_locations = [row for row in location_rows if row["unused"]]
-    locations_missing_lageplan = [row for row in location_rows if not row["has_lageplan"]]
+    locations_missing_points = [row for row in location_rows if not row["has_points"]]
     dead_locations = [row for row in location_rows if row["dead"]]
 
     truncated = False
@@ -320,18 +336,18 @@ def _aggregate(device_rows, location_rows, now):
         devices["by_type"][type_key], dropped = _capped(rows)
         truncated = truncated or dropped
     for key in ("with_chip_id", "without_chip_id", "measured_24h", "not_measured_24h",
-                "missing_lageplan", "dead"):
+                "missing_points", "dead"):
         devices[key], dropped = _capped(devices[key])
         truncated = truncated or dropped
 
     locations = {
         "unused": unused_locations[:MAX_LIST_ROWS],
-        "missing_lageplan": locations_missing_lageplan[:MAX_LIST_ROWS],
+        "missing_points": locations_missing_points[:MAX_LIST_ROWS],
         "dead": dead_locations[:MAX_LIST_ROWS],
     }
     truncated = truncated or any(
         len(rows) > MAX_LIST_ROWS
-        for rows in (unused_locations, locations_missing_lageplan, dead_locations)
+        for rows in (unused_locations, locations_missing_points, dead_locations)
     )
 
     payload = {
@@ -564,14 +580,14 @@ def statistics_section(payload, section):
                 "not_measured_24h": devices["not_measured_24h"],
             },
         }
-    if section == "lageplan":
-        return {**base, "devices": {"missing_lageplan": devices["missing_lageplan"]}}
+    if section == "points":
+        return {**base, "devices": {"missing_points": devices["missing_points"]}}
     if section == "dead":
         return {**base, "devices": {"dead": devices["dead"]}}
     # The three location sections.
     location_key = {
         "unused_locations": "unused",
-        "locations_missing_lageplan": "missing_lageplan",
+        "locations_missing_points": "missing_points",
         "dead_locations": "dead",
     }[section]
     return {**base, "locations": {section: locations[location_key]}}

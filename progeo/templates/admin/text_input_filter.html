@@ -1,0 +1,14 @@
+{% load i18n %}
+<details data-filter-title="{{ title }}" open>
+  <summary>{% blocktranslate with filter_title=title %} By {{ filter_title }} {% endblocktranslate %}</summary>
+  {% with choices.0 as choice %}
+  <form method="get" class="text-input-filter">
+    {% for key, value in choice.other_params %}
+      <input type="hidden" name="{{ key }}" value="{{ value }}">
+    {% endfor %}
+    <input type="text" name="{{ choice.parameter_name }}" value="{{ choice.value }}"
+           placeholder="{% translate 'contains…' %}" aria-label="{{ title }}">
+    {% if choice.value %}<a href="{{ choice.query_string }}">{% translate 'Clear' %}</a>{% endif %}
+  </form>
+  {% endwith %}
+</details>

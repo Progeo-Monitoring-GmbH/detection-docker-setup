@@ -10,7 +10,7 @@ import pytest
 from django.utils import timezone
 
 from progeo.tests import factories as f
-from progeo.v1.models import Account, ProgeoDevice, ProgeoLageplan, ProgeoLocation
+from progeo.v1.models import Account, ProgeoDevice, ProgeoLageplan, ProgeoLocation, ProgeoMeasurePoint
 
 URL = "/v1/status/device_statistics/"
 
@@ -22,15 +22,20 @@ def bound_account():
 
 @pytest.fixture
 def world(bound_account):
-    """Two locations: one with an active Lageplan and a fresh smartbox plus a
-    40-day-old device; one without a Lageplan and with a never-measured node
-    (no chip_id)."""
+    """Two locations: one with two measure points (no Lageplan), a fresh
+    smartbox and a 40-day-old device; one with an active Lageplan but no
+    measure points and a never-measured node (no chip_id)."""
     now = timezone.now()
-    with_plan = f.make_location(bound_account, name="Halle mit Plan", project_id=940001, project_type=1)
-    without_plan = f.make_location(bound_account, name="Halle ohne Plan", project_id=940002, project_type=3)
+    with_plan = f.make_location(bound_account, name="Halle mit Punkten", project_id=940001, project_type=1)
+    without_plan = f.make_location(bound_account, name="Halle ohne Punkte", project_id=940002, project_type=3)
+    # The Lageplan does not count: without points the location still lacks them.
     ProgeoLageplan.objects.using(f.DB).create(
-        location=with_plan, lageplan="uploads/halle-plan.png", is_active=True
+        location=without_plan, lageplan="uploads/halle-plan.png", is_active=True
     )
+    for order in (1, 2):
+        ProgeoMeasurePoint.objects.using(f.DB).create(
+            location=with_plan, sensor_order=order, x=order, y=0, nx=0, ny=0, grid_x=0, grid_y=0
+        )
     smartbox = f.make_device(
         with_plan, raw_hash=f.unique("device-smartbox"), type="smartbox",
         chip_id="chip-1", device_ip="10.0.0.1",
@@ -73,8 +78,8 @@ def test_base_url_is_only_the_page_shell(api_client, world):
 
     assert body["generated_at"]
     assert body["sections"] == [
-        "overview", "by_type", "chip_id", "measured", "lageplan", "dead",
-        "unused_locations", "locations_missing_lageplan", "dead_locations",
+        "overview", "by_type", "chip_id", "measured", "points", "dead",
+        "unused_locations", "locations_missing_points", "dead_locations",
     ]
     # No inventory data and therefore no expensive scan on the base request.
     assert "totals" not in body
@@ -112,10 +117,10 @@ def test_overview_has_totals_and_type_breakdown(api_client, world):
         "without_chip_id": 1,
         "measured_24h": 1,
         "not_measured_24h": 2,
-        "missing_lageplan": 1,
+        "missing_points": 1,
         "dead": 2,
         "unused_locations": 1,
-        "locations_missing_lageplan": 1,
+        "locations_missing_points": 1,
     }
     # By the locations' project type, not the technical device type.
     assert body["by_type"] == [
@@ -139,10 +144,10 @@ def test_by_type_section_lists_every_type(api_client, world):
     assert row["database"] == f.DB
     assert row["chip_id"] == "chip-1"
     assert row["location_id"] == world["with_plan"].id
-    assert row["location_name"] == "Halle mit Plan"
+    assert row["location_name"] == "Halle mit Punkten"
     assert row["project_id"] == 940001
     assert row["measured_24h"] is True
-    assert row["missing_lageplan"] is False
+    assert row["missing_points"] is False
     assert row["dead"] is False
 
 
@@ -150,7 +155,7 @@ def test_devices_land_in_chip_and_measurement_lists(api_client, world):
     user = f.make_user(staff=True)
     chip = _get(api_client, user, "chip_id", refresh=True)
     measured = _get(api_client, user, "measured")
-    lageplan = _get(api_client, user, "lageplan")
+    points = _get(api_client, user, "points")
     dead = _get(api_client, user, "dead")
 
     assert _ids(chip, "with_chip_id") == {world["smartbox"].id, world["old"].id}
@@ -158,23 +163,25 @@ def test_devices_land_in_chip_and_measurement_lists(api_client, world):
     assert _ids(measured, "measured_24h") == {world["smartbox"].id}
     assert _ids(measured, "not_measured_24h") == {world["never"].id, world["old"].id}
     assert _ids(dead, "dead") == {world["never"].id, world["old"].id}
-    # The never-measured node sits at the location without a Lageplan.
-    assert _ids(lageplan, "missing_lageplan") == {world["never"].id}
+    # The never-measured node sits at the location without measure points.
+    assert _ids(points, "missing_points") == {world["never"].id}
     # Every section carries the totals for the KPI tiles.
     assert chip["totals"]["devices"] == 3
 
 
-def test_location_without_lageplan_is_listed(api_client, world):
+def test_location_without_measure_points_is_listed(api_client, world):
     user = f.make_user(staff=True)
     body = _get(api_client, user, "unused_locations", refresh=True)
-    missing = _get(api_client, user, "locations_missing_lageplan")
+    missing = _get(api_client, user, "locations_missing_points")
 
-    assert {row["id"] for row in missing["locations"]["locations_missing_lageplan"]} == {
-        world["without_plan"].id
-    }
+    # Listed although it has an active Lageplan; the one with points is not,
+    # although it has no Lageplan.
+    rows = {row["id"]: row for row in missing["locations"]["locations_missing_points"]}
+    assert set(rows) == {world["without_plan"].id}
+    assert rows[world["without_plan"].id]["has_lageplan"] is True
     unused = {row["id"]: row for row in body["locations"]["unused_locations"]}
     row = unused[world["without_plan"].id]
-    assert row["has_lageplan"] is False
+    assert (row["point_count"], row["has_points"]) == (0, False)
     assert row["device_count"] == 1
     assert row["last_measurement_at"] is None
     assert row["unused"] is True

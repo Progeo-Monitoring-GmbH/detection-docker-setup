@@ -6,7 +6,7 @@ import pytest
 
 AREA_MODULES = {
     "access": """
-        access_and_login_links access_scoping_api account_middleware authentication_order
+        access_and_login_links access_scoping_api account_middleware admin_lists authentication_order
         location_access module_permissions_as_user monitoring_auth oidc rechte_api
         staff_admin_api staff_impersonation user_management_security user_profile
     """,
@@ -35,7 +35,7 @@ AREA_MODULES = {
         matrix_account_sync modbus_tcp
     """,
     "locations": """
-        auto_lageplans drop_is_plans favorites_api koords_to_points lageplan_edit location_geo_and_admin_api
+        auto_lageplans drop_is_plans favorites_api koords_to_points lageplan_edit location_admin location_geo_and_admin_api
         location_timeline_and_measurepoints measurepoints_api plan_detect plan_detect_api plan_meters plan_ocr
         rain_events status_api
     """,

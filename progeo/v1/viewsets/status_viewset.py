@@ -1397,7 +1397,7 @@ class StatusViewSet(ProgeoModalViewSet):
     def device_statistics(self, request, *args, **kwargs):
         """Staff-only inventory statistics of the account's devices and
         locations (helper/device_inventory.py): per type, chip_id, measurement
-        in the last 24h, missing Lageplan, dead/unused.
+        in the last 24h, missing measure points, dead/unused.
 
         Without parameters this returns only the page shell (no database work).
 

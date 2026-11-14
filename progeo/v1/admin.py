@@ -1,9 +1,12 @@
+import json
+
 from django import forms
 from django.contrib import admin
 from django.contrib.auth.models import Permission, User
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.sessions.models import Session
 from django.forms import ModelForm
+from django.utils.html import format_html
 from rest_framework_simplejwt.token_blacklist.models import (
     BlacklistedToken,
     OutstandingToken,
@@ -15,6 +18,7 @@ from progeo.v1.models import (
     SMS,
     Account,
     AlarmDailyReport,
+    Backup,
     DemoSession,
     EMail,
     LimitedToken,
@@ -182,18 +186,182 @@ class ProgeoNoiseProfileAdmin(MultiDBModelAdmin):
         return False
 
 
-class MfSLogAdmin(MultiDBModelAdmin):
-    
-    raw_id_fields = ["user", "account"]
+def _pretty_json(value):
+    """A JSON field as an indented block for the read-only detail views."""
+    if value in (None, {}, []):
+        return "-"
+    return format_html("<pre class=\"admin-json\">{}</pre>", json.dumps(value, indent=2, ensure_ascii=False))
 
-class AlarmDailyReportAdmin(MultiDBModelAdmin):
+
+class AccountDBModelAdmin(MultiDBModelAdmin):
+    """A model of the account database (default) with user/account foreign
+    keys: joined only there - User and Account rows live in default, so a
+    join in a project database would drop or blank them."""
+    default_related = ()
+
+    def get_queryset(self, request):
+        queryset = super().get_queryset(request)
+        if self.default_related and self._db(request) == "default":
+            queryset = queryset.select_related(*self.default_related)
+        return queryset
+
+
+class ReadOnlyAdminMixin:
+    """Rows written by the app (logs, reports): view and delete only."""
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+class MfSLogAdmin(ReadOnlyAdminMixin, AccountDBModelAdmin):
+    """Log of the requests that changed data (helper/creator.create_MfS_log)."""
+    list_display = ("created", "user", "account", "url", "data_keys")
+    list_filter = (("created", admin.DateFieldListFilter), "account")
+    search_fields = ("url", "user__username", "user__email")
+    date_hierarchy = "created"
+    ordering = ("-created", "-pk")
+    default_related = ("user", "account")
+    fields = ("created", "user", "account", "url", "data_pretty")
+    readonly_fields = fields
+
+    @admin.display(description="Data keys")
+    def data_keys(self, obj):
+        return ", ".join(obj.data) if isinstance(obj.data, dict) and obj.data else "-"
+
+    @admin.display(description="Data")
+    def data_pretty(self, obj):
+        return _pretty_json(obj.data)
+
+
+class ProgeoAlarmAdmin(MultiDBModelAdmin):
     pass
 
-class ProgeoAlarmReportAdmin(MultiDBModelAdmin):
-    pass
+
+class AlarmDailyReportAdmin(ReadOnlyAdminMixin, AccountDBModelAdmin):
+    """Daily alarm reports - written by the generate_daily_alarm_report task."""
+    list_display = (
+        "date", "account", "total_count", "active_count", "acknowledged_count", "normalized_count",
+        "stoppage_count", "online_count", "disconnected_count", "dead_count",
+    )
+    list_filter = ("account", ("date", admin.DateFieldListFilter))
+    date_hierarchy = "date"
+    ordering = ("-date", "-pk")
+    default_related = ("account",)
+    fields = (
+        "date", "account", "total_count", "active_count", "normalized_count", "acknowledged_count",
+        "stoppage_count", "avg_duration_seconds", "max_value", "peak_sensor_id", "max_value_at",
+        "online_count", "disconnected_count", "dead_count",
+        "projects_pretty", "locations_pretty", "sensors_pretty", "hourly_pretty", "top_alarms_pretty",
+    )
+    readonly_fields = fields
+
+    @admin.display(description="Projects")
+    def projects_pretty(self, obj):
+        return _pretty_json(obj.projects)
+
+    @admin.display(description="Locations")
+    def locations_pretty(self, obj):
+        return _pretty_json(obj.locations)
+
+    @admin.display(description="Sensors")
+    def sensors_pretty(self, obj):
+        return _pretty_json(obj.sensors)
+
+    @admin.display(description="Hourly")
+    def hourly_pretty(self, obj):
+        return _pretty_json(obj.hourly)
+
+    @admin.display(description="Top alarms")
+    def top_alarms_pretty(self, obj):
+        return _pretty_json(obj.top_alarms)
+
+
+class BackupAdmin(admin.ModelAdmin):
+    """Database dumps (BACKUP_DIR). Rows come from the backup task and
+    sync_backups; deleting a row here leaves the file on disk (sync_backups
+    lists it again)."""
+    list_display = ("name", "account", "user", "size", "created_at", "is_compressed")
+    list_filter = ("account",)
+    search_fields = ("name", "user__username")
+    list_select_related = ("account", "user")
+    ordering = ("-pk",)
+    fields = ("name", "account", "user", "size", "created_at", "is_compressed", "file_path")
+    readonly_fields = fields
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    @admin.display(description="Size")
+    def size(self, obj):
+        return obj.get_size() or "missing on disk"
+
+    @admin.display(description="Created")
+    def created_at(self, obj):
+        return obj.get_created_at()
+
+    @admin.display(description="Compressed", boolean=True)
+    def is_compressed(self, obj):
+        return obj.is_compressed
+
+    @admin.display(description="File")
+    def file_path(self, obj):
+        return obj.get_file_path()
+
+class TextInputFilter(admin.SimpleListFilter):
+    """Sidebar filter with a text box: keeps the rows whose `field` contains
+    the typed text (case-insensitive). Subclasses set title, parameter_name
+    and field."""
+    template = "admin/text_input_filter.html"
+    field = None
+
+    def lookups(self, request, model_admin):
+        return ()
+
+    def has_output(self):
+        return True
+
+    def text(self):
+        return (self.value() or "").strip()
+
+    def choices(self, changelist):
+        # The form submits only its own fields: carry the other filters,
+        # the search and the ordering along (page "p" restarts at 1).
+        skip = {self.parameter_name, "p"}
+        yield {
+            "parameter_name": self.parameter_name,
+            "value": self.text(),
+            "query_string": changelist.get_query_string(remove=[self.parameter_name]),
+            "other_params": [
+                (key, value)
+                for key, values in changelist.params.items() if key not in skip
+                for value in (values if isinstance(values, list) else [values])
+            ],
+        }
+
+    def queryset(self, request, queryset):
+        if self.text():
+            return queryset.filter(**{f"{self.field}__icontains": self.text()})
+        return queryset
+
+
+class LocationNameFilter(TextInputFilter):
+    title = "name"
+    parameter_name = "name"
+    field = "name"
+
 
 class ProgeoLocationAdmin(MultiDBModelAdmin):
-    pass
+    list_display = ("id", "name", "project_id", "project_type", "city")
+    list_display_links = ("id", "name")
+    list_filter = (LocationNameFilter, "project_type")
+    search_fields = ("name", "=project_id", "city", "address")
+    ordering = ("name",)
 
 class ProgeoDeviceAdmin(MultiDBModelAdmin):
     pass
@@ -270,8 +438,22 @@ class ProgeoEscalationAdmin(admin.ModelAdmin):
     inlines = [ProgeoEscalationEntryInline]
 
 class ProgeoFavoriteLocationAdmin(admin.ModelAdmin):
-    list_display = ("created", "user", "location")
+    """Favorites bar of the staff users (kept in default with the locations)."""
+    list_display = ("created", "user", "location_name", "project_id")
+    list_display_links = ("created", "location_name")
+    list_filter = (("user", admin.RelatedOnlyFieldListFilter), ("created", admin.DateFieldListFilter))
+    search_fields = ("location__name", "=location__project_id", "user__username", "user__email")
+    list_select_related = ("user", "location")
     raw_id_fields = ("user", "location")
+    ordering = ("user__username", "created", "pk")
+
+    @admin.display(description="Location", ordering="location__name")
+    def location_name(self, obj):
+        return obj.location.name or f"#{obj.location_id}"
+
+    @admin.display(description="Project", ordering="location__project_id")
+    def project_id(self, obj):
+        return obj.location.project_id
 
 class ProgeoActivityAdmin(admin.ModelAdmin):
     """Usage events of normal users (read-only, see ProgeoActivity) - the
@@ -403,8 +585,9 @@ register_models = [
     {"model": LimitedToken, "admin": LimitedTokenAdmin, "custom": True},
     {"model": DemoSession, "admin": DemoSessionAdmin, "custom": True},
     {"model": MfSLog, "admin": MfSLogAdmin, "custom": True},
-    {"model": ProgeoAlarm, "admin": AlarmDailyReportAdmin, "custom": True},
-    {"model": AlarmDailyReport, "admin": ProgeoAlarmReportAdmin, "custom": True},
+    {"model": ProgeoAlarm, "admin": ProgeoAlarmAdmin, "custom": True},
+    {"model": AlarmDailyReport, "admin": AlarmDailyReportAdmin, "custom": True},
+    {"model": Backup, "admin": BackupAdmin, "custom": True},
     {"model": ProgeoLocation, "admin": ProgeoLocationAdmin, "custom": True},
     {"model": ProgeoDevice, "admin": ProgeoDeviceAdmin, "custom": True},
     {"model": ProgeoDeviceCommand, "admin": ProgeoDeviceCommandAdmin, "custom": True},

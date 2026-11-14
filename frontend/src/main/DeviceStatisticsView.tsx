@@ -48,7 +48,7 @@ type StatisticsDevice = {
   project_id: number | null;
   last_measurement_at: string | null;
   measured_24h: boolean;
-  missing_lageplan: boolean;
+  missing_points: boolean;
   dead: boolean;
 };
 
@@ -60,6 +60,8 @@ type StatisticsLocation = {
   project_id: number | null;
   device_count: number;
   last_measurement_at: string | null;
+  point_count: number;
+  has_points: boolean;
   has_lageplan: boolean;
   unused: boolean;
   dead: boolean;
@@ -72,10 +74,10 @@ type StatisticsTotals = {
   without_chip_id: number;
   measured_24h: number;
   not_measured_24h: number;
-  missing_lageplan: number;
+  missing_points: number;
   dead: number;
   unused_locations: number;
-  locations_missing_lageplan: number;
+  locations_missing_points: number;
 };
 
 type StatisticsTypeRow = {
@@ -95,7 +97,7 @@ type DeviceStatisticsSection = {
     without_chip_id: StatisticsDevice[];
     measured_24h: StatisticsDevice[];
     not_measured_24h: StatisticsDevice[];
-    missing_lageplan: StatisticsDevice[];
+    missing_points: StatisticsDevice[];
     dead: StatisticsDevice[];
   };
   locations: Record<string, StatisticsLocation[]>;
@@ -107,20 +109,20 @@ type StatisticsRequestSection =
   | 'by_type'
   | 'chip_id'
   | 'measured'
-  | 'lageplan'
+  | 'points'
   | 'dead'
   | 'unused_locations'
-  | 'locations_missing_lageplan'
+  | 'locations_missing_points'
   | 'dead_locations';
 
 type StatsSection =
   | 'by_type'
   | 'chip_id'
   | 'measured'
-  | 'lageplan'
+  | 'points'
   | 'dead'
   | 'unused_locations'
-  | 'locations_missing_lageplan'
+  | 'locations_missing_points'
   | 'dead_locations';
 
 /** One selected table row; `database` addresses it for bulk deletion. */
@@ -137,10 +139,10 @@ const EMPTY_TOTALS: StatisticsTotals = {
   without_chip_id: 0,
   measured_24h: 0,
   not_measured_24h: 0,
-  missing_lageplan: 0,
+  missing_points: 0,
   dead: 0,
   unused_locations: 0,
-  locations_missing_lageplan: 0,
+  locations_missing_points: 0,
 };
 
 /** Missing lists/keys become empty instead of crashing the page. */
@@ -159,7 +161,7 @@ const normalizeSection = (raw: unknown): DeviceStatisticsSection => {
       without_chip_id: devices.without_chip_id ?? [],
       measured_24h: devices.measured_24h ?? [],
       not_measured_24h: devices.not_measured_24h ?? [],
-      missing_lageplan: devices.missing_lageplan ?? [],
+      missing_points: devices.missing_points ?? [],
       dead: devices.dead ?? [],
     },
     locations: data.locations ?? {},
@@ -171,10 +173,10 @@ const REQUEST_SECTION: Record<StatsSection, StatisticsRequestSection> = {
   by_type: 'by_type',
   chip_id: 'chip_id',
   measured: 'measured',
-  lageplan: 'lageplan',
+  points: 'points',
   dead: 'dead',
   unused_locations: 'unused_locations',
-  locations_missing_lageplan: 'locations_missing_lageplan',
+  locations_missing_points: 'locations_missing_points',
   dead_locations: 'dead_locations',
 };
 
@@ -403,7 +405,7 @@ const DeviceList = ({
   );
 };
 
-/** The shared location table (location, device count, Lageplan, status). */
+/** The shared location table (location, device count, measure points, Lageplan, status). */
 const LocationList = ({
   rows,
   selectable = false,
@@ -473,6 +475,20 @@ const LocationList = ({
         </span>
       ),
       width: '135px',
+    },
+    {
+      name: t('device_stats_col_points'),
+      selector: (row) => row.point_count,
+      sortable: true,
+      cell: (row) =>
+        row.has_points ? (
+          <span className="small">{row.point_count}</span>
+        ) : (
+          <Badge bg="warning" text="dark">
+            {t('device_stats_no')}
+          </Badge>
+        ),
+      width: '110px',
     },
     {
       name: t('device_stats_col_lageplan'),
@@ -560,8 +576,8 @@ const PIE_COLORS = [
  * Staff statistics of all devices and locations (sidebar: Device statistics):
  * totals, the breakdown by device type and the lists that need attention -
  * devices without a chip ID, without a measurement in the last 24 h, without
- * a Lageplan or dead, plus unused/dead locations and locations without a
- * Lageplan. Data comes from GET /v1/status/device_statistics/.
+ * measure points at their location or dead, plus unused/dead locations and
+ * locations without measure points. Data comes from GET /v1/status/device_statistics/.
  */
 const DeviceStatisticsView = () => {
   const auth = useAuth();
@@ -967,12 +983,12 @@ const DeviceStatisticsView = () => {
     { value: 'by_type', label: t('device_stats_by_type_title') },
     { value: 'chip_id', label: t('device_stats_view_chip_id') },
     { value: 'measured', label: t('device_stats_view_measured') },
-    { value: 'lageplan', label: t('device_stats_missing_lageplan') },
+    { value: 'points', label: t('device_stats_missing_points') },
     { value: 'dead', label: t('device_stats_dead_devices') },
     { value: 'unused_locations', label: t('device_stats_unused_locations') },
     {
-      value: 'locations_missing_lageplan',
-      label: t('device_stats_locations_missing_lageplan'),
+      value: 'locations_missing_points',
+      label: t('device_stats_locations_missing_points'),
     },
     { value: 'dead_locations', label: t('device_stats_dead_locations') },
   ];
@@ -1119,16 +1135,16 @@ const DeviceStatisticsView = () => {
             </ListSection>
           </>
         );
-      case 'lageplan':
+      case 'points':
         return (
-          <ListSection title={t('device_stats_missing_lageplan')} testKey="lageplan">
+          <ListSection title={t('device_stats_missing_points')} testKey="points">
             <DeviceList
-              rows={current.devices.missing_lageplan}
+              rows={current.devices.missing_points}
               selectable
               showAdminEdit={isSuperuser}
-              selectionKey={`lageplan-${selectionEpoch}`}
-              testKey="lageplan"
-              onSelectionChange={selectionHandler('lageplan', 'device')}
+              selectionKey={`points-${selectionEpoch}`}
+              testKey="points"
+              onSelectionChange={selectionHandler('points', 'device')}
             />
           </ListSection>
         );
@@ -1158,16 +1174,16 @@ const DeviceStatisticsView = () => {
             />
           </ListSection>
         );
-      case 'locations_missing_lageplan':
+      case 'locations_missing_points':
         return (
-          <ListSection title={t('device_stats_locations_missing_lageplan')} testKey="missing-lageplan">
+          <ListSection title={t('device_stats_locations_missing_points')} testKey="missing-points">
             <LocationList
-              rows={current.locations.locations_missing_lageplan ?? []}
+              rows={current.locations.locations_missing_points ?? []}
               selectable
               showAdminEdit={isSuperuser}
-              selectionKey={`missing-lageplan-${selectionEpoch}`}
-              testKey="missing-lageplan"
-              onSelectionChange={selectionHandler('missing-lageplan', 'location')}
+              selectionKey={`missing-points-${selectionEpoch}`}
+              testKey="missing-points"
+              onSelectionChange={selectionHandler('missing-points', 'location')}
             />
           </ListSection>
         );
@@ -1216,8 +1232,8 @@ const DeviceStatisticsView = () => {
         : undefined,
     },
     {
-      label: t('device_stats_missing_lageplan'),
-      value: hasTotals ? String(totals.missing_lageplan) : '–',
+      label: t('device_stats_missing_points'),
+      value: hasTotals ? String(totals.missing_points) : '–',
     },
     {
       label: t('device_stats_dead_devices'),
@@ -1230,8 +1246,9 @@ const DeviceStatisticsView = () => {
       valueColor: totals.unused_locations > 0 ? AMBER : undefined,
     },
     {
-      label: t('device_stats_locations_missing_lageplan'),
-      value: hasTotals ? String(totals.locations_missing_lageplan) : '–',
+      label: t('device_stats_locations_missing_points'),
+      value: hasTotals ? String(totals.locations_missing_points) : '–',
+      valueColor: totals.locations_missing_points > 0 ? AMBER : undefined,
     },
   ];
 
