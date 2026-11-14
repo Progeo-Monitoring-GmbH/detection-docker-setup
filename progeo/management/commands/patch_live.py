@@ -450,6 +450,137 @@ def drop_duplicate_locations(apply=False):
     ilog(f"{len(mergeable)} projects {'merged' if apply else 'to merge'}")
 
 
+# A Lageplan image on smartex is projects that is not their plan - its image
+# signature as auto_lageplans --categories writes it (image_hash), given with
+# 63 of its 64 hex digits.
+IS_PLAN_HASH = "800080008000800080d889c8898889888198800080008000800080008000800"
+# The names of the four measure points of those projects, by sensor_order.
+IS_POINT_NAMES = {1: "Hauptdach", 2: "Garage", 3: "Anbau", 4: "Vordach"}
+
+
+def _is_is_plan(path):
+    """The image at `path` is the one of IS_PLAN_HASH - the missing digit is
+    either a leading zero or the last one."""
+    from progeo.helper import plan_categories
+
+    try:
+        signature = f"{plan_categories.image_signature(path):064x}"
+    except Exception as exc:  # noqa: BLE001 - a PDF or broken file is simply not that image
+        dlog(f"No image signature for {path}: {exc}")
+        return False
+    return signature.startswith(IS_PLAN_HASH) or signature == IS_PLAN_HASH.zfill(64)
+
+
+def _remove_unreferenced_lageplan_files(names, databases):
+    """Deletes the Lageplan files `names` (below UPLOAD_DIR) that no plan in
+    any of `databases` uses any more - default and the project databases may
+    share a file."""
+    from progeo.helper.demo import DEMO_LAGEPLAN_PREFIX_REL
+    from progeo.helper.project_dbs import register_project_db, release_connection
+
+    names = {name for name in names if name and not name.startswith(DEMO_LAGEPLAN_PREFIX_REL)}
+    for database in databases:
+        if not names:
+            break
+        if database != "default":
+            register_project_db(database)
+        try:
+            names -= set(ProgeoLageplan.objects.using(database).filter(lageplan__in=names)
+                         .values_list("lageplan", flat=True))
+        finally:
+            release_connection(database)
+
+    root = os.path.realpath(settings.UPLOAD_DIR)
+    for name in sorted(names):
+        path = os.path.realpath(os.path.join(root, name))
+        if not path.startswith(root + os.sep) or not os.path.isfile(path):
+            continue
+        try:
+            os.remove(path)
+            dlog(f"Removed the Lageplan file {path}")
+        except OSError as exc:
+            elog(f"Could not remove the Lageplan file {path}: {exc}")
+
+
+def drop_is_plans(apply=False):
+    """The Lageplans of IS_PLAN_HASH in default and every project database:
+    deletes the plan and its image file, sets the location to smartex is and
+    its devices' model (hardware) to "smartex is". The measure points stay
+    (without a plan - they show on the location's main plan); four of them
+    (sensor_order 1-4) get IS_POINT_NAMES, other sets are only reported.
+    Read only unless `apply`."""
+    from django.db import DEFAULT_DB_ALIAS, transaction
+
+    from progeo.helper.cacher import forget_location_answers
+    from progeo.helper.device_provisioning import ascii_model
+    from progeo.helper.project_dbs import (
+        existing_project_aliases,
+        register_project_db,
+        release_connection,
+    )
+    from progeo.management.commands.auto_lageplans import _plan_path
+
+    is_type = ProgeoLocation.PROJECT_TYPE_CHOICES.SMARTEX_IS
+    is_model = ascii_model(is_type.label)  # "smartex is", as device_model() knows it
+    databases = [DEFAULT_DB_ALIAS, *existing_project_aliases(refresh=True)]
+    ilog(f"Looking for the smartex is Lageplan in {len(databases)} database(s)"
+         f"{'' if apply else ' (dry run, use --apply)'}")
+
+    files, plans, unnamed = set(), 0, set()
+    for database in databases:
+        if database != DEFAULT_DB_ALIAS:
+            register_project_db(database)
+        try:
+            for plan in ProgeoLageplan.objects.using(database).select_related("location").order_by("pk"):
+                path = _plan_path(plan)
+                if not path or not _is_is_plan(path):
+                    continue
+                plans += 1
+                location, file_name = plan.location, plan.lageplan.name
+                points = list(ProgeoMeasurePoint.objects.using(database).filter(location=location).order_by("id"))
+                orders = sorted(point.sensor_order for point in points)
+                nameable = orders == sorted(IS_POINT_NAMES)
+                if not nameable:
+                    unnamed.add(location.project_id)
+                devices = ProgeoDevice.objects.using(database).filter(location=location)
+                ilog(f"{database}: plan {plan.pk} ({plan.name or file_name}) of location {location.pk} "
+                     f"(project {location.project_id}, {location.name!r}): delete, smartex is, "
+                     f"{devices.count()} device(s), measure points {orders}"
+                     f"{'' if nameable else ' - not named'}")
+                if not apply:
+                    continue
+
+                with transaction.atomic(using=database):
+                    # The points on the plan would go with it (CASCADE) - they stay, without a plan.
+                    ProgeoMeasurePoint.objects.using(database).filter(lageplan=plan).update(lageplan=None)
+                    plan.delete(using=database)
+                    # update(): saving a device in default may start a project database (project_db_signals).
+                    devices.update(hardware=is_model)
+                    if nameable:
+                        for point in points:
+                            point.name = IS_POINT_NAMES[point.sensor_order]
+                            point.save(using=database, update_fields=["name"])
+                # The type lives in default - save() mirrors it into the project database.
+                stored = ProgeoLocation.objects.using(DEFAULT_DB_ALIAS).filter(pk=location.pk).first() or location
+                if stored.project_type != is_type:
+                    stored.project_type = is_type
+                    stored.save(using=stored._state.db, update_fields=["project_type"])
+                files.add(file_name)
+        except Exception as exc:  # noqa: BLE001 - one failing database must not stop the others
+            elog(f"{database}: {exc}")
+        finally:
+            release_connection(database)
+
+    if apply and files:
+        _remove_unreferenced_lageplan_files(files, databases)
+    if apply and plans:
+        forget_location_answers()
+    if unnamed:
+        elog(f"{len(unnamed)} project(s) without exactly the measure points 1-4 - name them by hand: "
+             f"{sorted(unnamed, key=str)}")
+    ilog(f"{plans} smartex is Lageplan(s) {'deleted' if apply else 'to delete'}")
+
+
 class Command(BaseCommand):
     help = (
         'Patches for live data. Selects the patch to run with -p/--patch.\n\n'
@@ -462,7 +593,10 @@ class Command(BaseCommand):
         '  koords_to_points          create / complete the measure points from those koord tables\n'
         '                            - read only unless --apply\n'
         '  drop_duplicate_locations  remove the unnamed duplicate locations and their copied\n'
-        '                            lageplans ("Location None") - read only unless --apply\n\n'
+        '                            lageplans ("Location None") - read only unless --apply\n'
+        '  drop_is_plans             delete the smartex is Lageplan (IS_PLAN_HASH) and its image, set\n'
+        '                            location and devices to smartex is, name the measure points 1-4\n'
+        '                            Hauptdach, Garage, Anbau, Vordach - read only unless --apply\n\n'
         'Examples:\n'
         '  python manage.py patch_live --patch fix_dragino_usage\n'
         '  python manage.py patch_live --patch fetch_legacy_data\n'
@@ -470,7 +604,8 @@ class Command(BaseCommand):
         '  python manage.py patch_live --patch fetch_lageplan\n'
         '  python manage.py patch_live --patch fetch_koords\n'
         '  python manage.py patch_live --patch koords_to_points [--apply]\n'
-        '  python manage.py patch_live --patch drop_duplicate_locations [--apply]'
+        '  python manage.py patch_live --patch drop_duplicate_locations [--apply]\n'
+        '  python manage.py patch_live --patch drop_is_plans [--apply]'
     )
 
     def add_arguments(self, parser):
@@ -478,7 +613,8 @@ class Command(BaseCommand):
                             help="Select a patch to run",
                             default=None)
         parser.add_argument("--apply", action="store_true",
-                            help="drop_duplicate_locations, koords_to_points: change the data (default: only report)")
+                            help="drop_duplicate_locations, drop_is_plans, koords_to_points: change the data "
+                                 "(default: only report)")
 
 
 
@@ -513,6 +649,9 @@ class Command(BaseCommand):
 
         if patch == "drop_duplicate_locations":
             drop_duplicate_locations(apply=options["apply"])
+
+        if patch == "drop_is_plans":
+            drop_is_plans(apply=options["apply"])
 
         if patch == "fetch_koords":
             fetch_koords()

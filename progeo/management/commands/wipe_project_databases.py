@@ -13,6 +13,10 @@ Dangerous, so on purpose:
   - dumps every database first (dbbackup, like the "Create backup" button);
     a database whose dump fails is not deleted. --no-backup skips the dump.
 
+After the DROP the project's locations are deleted in "default" too, with
+what still hangs on them there (devices not split off, plans, measure
+points, notifications, access rules, ...). The dump holds their mirrors.
+
 Never "default", the demo or the template database - only project
 databases (helper/project_dbs.py) that exist.
 """
@@ -22,11 +26,12 @@ import sys
 import psycopg2
 from django.conf import settings
 from django.core.management import CommandError, call_command
-from django.db import DEFAULT_DB_ALIAS, connections
+from django.db import DEFAULT_DB_ALIAS, connections, transaction
 from psycopg2 import sql
 
 from progeo.helper import project_dbs
 from progeo.helper.basics import elog, ilog
+from progeo.helper.cacher import forget_location_answers
 from progeo.helper.database_usage import CACHE_KEY, _sizes
 from progeo.helper.project_dbs import (
     UNKNOWN_PROJECT,
@@ -127,7 +132,8 @@ class Command(BaseCommand):
         "DELETE project databases for good (DROP DATABASE) - after showing each in\n"
         "detail and a typed confirmation. Only in an interactive terminal; there is\n"
         "no option to skip the confirmation. Each database is dumped first\n"
-        "(dbbackup) unless --no-backup; a failed dump keeps its database.\n\n"
+        "(dbbackup) unless --no-backup; a failed dump keeps its database.\n"
+        "The project's locations are deleted in \"default\" as well.\n\n"
         "IDs: project ids, \"unknown\" or database names - as arguments or in a file\n"
         "(--file; the output of \"Show selected IDs\" on /insights/databases/).\n"
         "Databases in use (devices and measurements) are refused without --allow-active.\n\n"
@@ -194,7 +200,8 @@ class Command(BaseCommand):
         if active:
             phrase += f" including {len(active)} active"
         self.stdout.write(self.style.ERROR(
-            "\nThis DELETES the databases above for good - every measurement, device, plan and alarm in them."
+            "\nThis DELETES the databases above for good - every measurement, device, plan and alarm in them -"
+            "\nand their locations in \"default\" (with the devices, plans, ... still there)."
         ))
         self.stdout.write(
             "Other processes may still route to them for up to a minute (their list of databases is cached)."
@@ -220,15 +227,25 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.ERROR(f"{alias}: could not be deleted: {exc}"))
                 kept.append(alias)
                 continue
-            self._forget(entry)
             wiped.append(alias)
+            try:
+                removed = self._remove_locations(entry)
+            except Exception as exc:  # noqa: BLE001 - the database is gone already, go on with the others
+                elog(f"wipe: {alias} deleted, its locations in default not: {exc!r}", tag="[PROJECT_DB]")
+                self.stdout.write(self.style.ERROR(
+                    f"{alias}: deleted, but its locations are still in default ({exc}) - remove them by hand."
+                ))
+                continue
             ilog(f"wipe: {alias} deleted by {getpass.getuser()} ({entry['measurements']} measurements, "
-                 f"{entry['devices']} devices, backup {'skipped' if options['no_backup'] else 'made'})",
+                 f"{entry['devices']} devices, {removed} locations in default, "
+                 f"backup {'skipped' if options['no_backup'] else 'made'})",
                  tag="[PROJECT_DB]")
-            self.stdout.write(self.style.SUCCESS(f"{alias}: deleted."))
+            self.stdout.write(self.style.SUCCESS(f"{alias}: deleted, {removed} location(s) removed from default."))
 
         project_dbs._existing_cache["at"] = 0.0
         cache_delete(CACHE_KEY)
+        if wiped:
+            forget_location_answers()
         self.stdout.write(f"\n{len(wiped)} deleted, {len(kept)} kept{': ' + ', '.join(kept) if kept else ''}.")
         if wiped and not options["no_backup"]:
             self.stdout.write(f"The dumps are in {settings.BACKUP_DIR} (sync_backups lists them on the backup page).")
@@ -241,7 +258,8 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING(title) if active else self.style.MIGRATE_HEADING(title))
             locations = ", ".join(f"#{pk} {name}" for pk, name in entry["locations"]) or "-"
             rows = [
-                ("Locations", locations if entry["locations"] else names.get(entry["project"], "-")),
+                ("Locations", (locations + "  (deleted in default too)") if entry["locations"]
+                 else names.get(entry["project"], "-")),
                 ("Size", _format_bytes(entry["size"])),
                 ("Devices", f"{entry['devices']} in the database, {entry['default_devices']} in default"),
                 ("Measurements", f"{entry['measurements']}"
@@ -283,12 +301,18 @@ class Command(BaseCommand):
             maintenance.close()
 
     @staticmethod
-    def _forget(entry):
-        """The deleted database's stats on its locations."""
+    def _remove_locations(entry) -> int:
+        """Delete the deleted database's locations in "default" - the ORM
+        cascades over what still hangs on them there; child locations of
+        other projects lose their parent (SET_NULL). Returns how many."""
         from progeo.v1.models import ProgeoLocation
 
+        # The delete is mirrored into the project's database after the commit
+        # (project_db_signals) - refreshed, the list no longer has the dropped one.
+        project_dbs._existing_cache["at"] = 0.0
         locations = ProgeoLocation.objects.using(DEFAULT_DB_ALIAS)
         key = entry["project"]
         locations = locations.filter(project_id__isnull=True) if key == UNKNOWN_PROJECT else locations.filter(project_id=key)
-        # update(): no save() - it would mirror the locations into the deleted database.
-        locations.update(db_size_bytes=None, db_measurement_count=None, db_stats_at=None)
+        with transaction.atomic(using=DEFAULT_DB_ALIAS):
+            _, per_model = locations.delete()
+        return per_model.get(ProgeoLocation._meta.label, 0)

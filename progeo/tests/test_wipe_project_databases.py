@@ -32,14 +32,22 @@ def _details(alias, devices=0, measurements=0):
 
 @pytest.fixture
 def faked(monkeypatch):
-    calls = {"dropped": [], "dumped": [], "forgotten": []}
+    calls = {"dropped": [], "dumped": [], "removed": []}
     details = {DEAD: _details(DEAD), ALSO_DEAD: _details(ALSO_DEAD, devices=2), ACTIVE: _details(ACTIVE, 3, 900)}
     monkeypatch.setattr(wipe, "existing_project_aliases", lambda refresh=False: list(details))
     monkeypatch.setattr(wipe, "register_project_db", lambda alias: alias)
     monkeypatch.setattr(wipe, "project_location_names", dict)
     monkeypatch.setattr(wipe, "database_details", lambda alias: details[alias])
+    monkeypatch.setattr(wipe, "forget_location_answers", lambda: None)
     monkeypatch.setattr(wipe.Command, "_drop", staticmethod(lambda alias: calls["dropped"].append(alias)))
-    monkeypatch.setattr(wipe.Command, "_forget", staticmethod(lambda entry: calls["forgotten"].append(entry["alias"])))
+
+    def remove_locations(entry):
+        if calls.get("fail_remove") == entry["alias"]:
+            raise RuntimeError("lock timeout")
+        calls["removed"].append(entry["alias"])
+        return len(entry["locations"])
+
+    monkeypatch.setattr(wipe.Command, "_remove_locations", staticmethod(remove_locations))
 
     def dump(name, *args):
         assert name == "dbbackup"
@@ -78,9 +86,19 @@ def test_the_right_phrase_dumps_and_deletes(faked, monkeypatch):
     output = _run(monkeypatch, "wipe 2 databases", "4711", "4712")
 
     assert faked["dumped"] == [DEAD, ALSO_DEAD]
-    assert faked["dropped"] == [DEAD, ALSO_DEAD] == faked["forgotten"]
+    assert faked["dropped"] == [DEAD, ALSO_DEAD] == faked["removed"]
     assert "Halle" in output and "8.0 MB" in output  # the details were shown
+    assert "1 location(s) removed from default" in output
     assert "2 deleted, 0 kept" in output
+
+
+def test_a_failed_location_removal_is_reported(faked, monkeypatch):
+    faked["fail_remove"] = DEAD
+
+    output = _run(monkeypatch, "wipe 2 databases", "4711", "4712")
+
+    assert faked["dropped"] == [DEAD, ALSO_DEAD] and faked["removed"] == [ALSO_DEAD]
+    assert "still in default" in output and "2 deleted, 0 kept" in output
 
 
 @pytest.mark.parametrize("answer", ["", "yes", "wipe 1 databases", "WIPE 2 DATABASES"])
@@ -145,6 +163,26 @@ def test_the_details_are_read_from_the_database():
     assert details["devices"] >= 1 and details["measurements"] >= 1
     assert details["newest"] is not None and details["oldest"] is not None
     assert wipe.is_active(details)
+
+
+@pytest.mark.django_db
+def test_the_locations_are_deleted_in_default():
+    """_remove_locations deletes the project's locations (and their devices) in
+    "default" - and nothing of other projects."""
+    from progeo.tests import factories as f
+    from progeo.v1.models import Account, ProgeoDevice, ProgeoLocation
+
+    account = Account.objects.using(f.DB).get(pk=1)
+    gone = [f.make_location(account, project_id=4798), f.make_location(account, project_id=4798)]
+    device = f.make_device(gone[0])
+    kept = f.make_location(account, project_id=4797)
+
+    removed = wipe.Command._remove_locations({"project": 4798})
+
+    assert removed == 2
+    assert not ProgeoLocation.objects.using(f.DB).filter(pk__in=[location.pk for location in gone]).exists()
+    assert not ProgeoDevice.objects.using(f.DB).filter(pk=device.pk).exists()
+    assert ProgeoLocation.objects.using(f.DB).filter(pk=kept.pk).exists()
 
 
 def test_ids_from_a_file(faked, monkeypatch, tmp_path):
