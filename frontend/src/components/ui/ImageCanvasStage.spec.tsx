@@ -106,8 +106,9 @@ describe('ImageCanvasStage alignment and scale', () => {
     act(() => {
       window.dispatchEvent(new KeyboardEvent(type, { key: value }));
     });
+  // The whole page: "Apply", "Remove N", ... sit in the FloatingActionBar, portalled into document.body.
   const button = (label: string) =>
-    [...container.querySelectorAll('button')].find((item) => item.textContent === label)!;
+    [...document.body.querySelectorAll('button')].find((item) => item.textContent === label)!;
 
   beforeEach(() => {
     vi.stubGlobal('Image', LoadedImage);

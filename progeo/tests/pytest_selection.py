@@ -19,9 +19,9 @@ AREA_MODULES = {
         sync_backups
     """,
     "databases": """
-        admin_db_switch adv_migrate drop_samples_migration handle_all_dbs
+        admin_db_switch adv_migrate database_usage drop_samples_migration handle_all_dbs
         legacy_file_migration merge_duplicate_locations project_dbs pytest_database_setup pytest_selection
-        relink_locations_command router_regressions split_views sync_default_skipping
+        relink_locations_command router_regressions split_views sync_default_skipping wipe_project_databases
     """,
     "demo": "demo_account_areas demo_view",
     "devices": """
@@ -35,8 +35,9 @@ AREA_MODULES = {
         matrix_account_sync modbus_tcp
     """,
     "locations": """
-        favorites_api koords_to_points lageplan_edit location_geo_and_admin_api
-        location_timeline_and_measurepoints measurepoints_api plan_meters rain_events status_api
+        auto_lageplans favorites_api koords_to_points lageplan_edit location_geo_and_admin_api
+        location_timeline_and_measurepoints measurepoints_api plan_detect plan_detect_api plan_meters plan_ocr
+        rain_events status_api
     """,
     "measurements": """
         archived_measurements catch_up_legacy_files climate_heatmap evaluate_measurement heatmap_video
@@ -44,7 +45,7 @@ AREA_MODULES = {
     """,
     "notifications": "bounces_and_notifications email_and_sms_helpers messenger outbound test_mail_command",
     "operations": """
-        activity celery_schedule clear_logs deployment_settings docker_agent docker_api health logging_handler log_stream metrics
+        activity activity_sessions celery_schedule clear_logs deployment_settings docker_agent docker_api health logging_handler log_stream metrics
         periodic_task_skipping sentry_shutdown task_config_errors
     """,
 }
