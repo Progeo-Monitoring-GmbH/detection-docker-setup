@@ -1865,20 +1865,8 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             return RequestFailed({"reason": "The Lageplan has no image"})
         try:
             plan_image = plan_detect.load_plan_image(path)
-            width, height = plan_image.size
-            sensors = []
-            for point in cad_import.points_on_plan(location, db_name, lageplan).only("nx", "ny", "nx_end", "ny_end"):
-                if point.nx is None or point.ny is None:
-                    continue
-                ends = [(point.nx, point.ny)]
-                if point.nx_end is not None and point.ny_end is not None:
-                    # A dm band: points along it.
-                    ends = [(point.nx + (point.nx_end - point.nx) * t, point.ny + (point.ny_end - point.ny) * t)
-                            for t in (0, 0.25, 0.5, 0.75, 1)]
-                sensors.append([
-                    (px / width, py / height)
-                    for px, py in (plan_meters.plan_pixel(nx, ny, lageplan, width, height) for nx, ny in ends)
-                ])
+            segments = plan_detect.plan_segments(cad_import.points_on_plan(location, db_name, lageplan))
+            sensors = plan_detect.sensor_fractions(segments, plan_detect.plan_alignment(lageplan), plan_image.size)
             if not sensors:
                 return RequestFailed({"reason": "The Lageplan has no measure points"})
             detection = plan_detect.detect_heat_limitations(plan_image, sensors, HEAT_LIMITATION_MAX_POINTS)
@@ -1892,6 +1880,9 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             ],
             "sensors": detection.sensors,
             "clustered": detection.clustered,
+            # Tables of the plan are never areas; sensors placed on them are left out.
+            "tables": len(detection.tables or []),
+            "in_tables": detection.in_tables,
         })
 
     @action(detail=True, url_path="heat-limitations/replace", methods=["POST"])

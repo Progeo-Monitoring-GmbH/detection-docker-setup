@@ -1,23 +1,14 @@
 import os
-import re
 
 from django.conf import settings
 from django.core.management.base import CommandError
 
 from progeo.helper.basics import dlog, elog, ilog
+from progeo.helper.plan_ocr import (
+    extract_ordered_labels,  # helper/plan_ocr.py - also used by auto_lageplans
+)
 from progeo.management.commands._base import BaseCommand
 from progeo.v1.models import ProgeoLageplan, ProgeoMeasurePoint
-
-# Below this OCR confidence (0-100, -1 for non-text regions) a token is
-# treated as noise rather than a real word. Lageplan images are often poor
-# scans, so this stays lenient - "Anbau" in the reference sample OCRs at
-# only ~20-30% confidence yet is correctly read.
-MIN_OCR_CONFIDENCE = 10
-
-# A token must contain at least one letter to count as a word - drops stray
-# punctuation/table-border artifacts (e.g. a lone "|") that can appear next
-# to text after image preprocessing.
-_HAS_LETTER_RE = re.compile(r"[^\W\d_]", re.UNICODE)
 
 # For now, only create measure points when the OCR'd legend exactly matches
 # one of these (order matters - top-to-bottom). Anything else is reported
@@ -26,78 +17,6 @@ _HAS_LETTER_RE = re.compile(r"[^\W\d_]", re.UNICODE)
 KNOWN_LABEL_SETS = [
     ["Hauptdach", "Garage", "Anbau", "Vordach"],
 ]
-
-
-def _flatten_to_white(image):
-    """Composite the image onto a solid white background and drop its
-    transparency metadata.
-
-    Needed because a palette PNG's `transparency` color-key survives a plain
-    `.convert("L")`/grayscale and lands on a now-unrelated gray value;
-    Pillow then re-applies it when the temp file for Tesseract is written,
-    so Tesseract reads back an image that looks entirely blank. Confirmed
-    against a real Lageplan export (a palette PNG with a stray
-    `transparency` tag) - grayscale-converting it directly makes OCR return
-    nothing at all, while flattening first reads it perfectly.
-    """
-    from PIL import Image
-
-    rgba = image.convert("RGBA")
-    background = Image.new("RGB", rgba.size, (255, 255, 255))
-    background.paste(rgba, mask=rgba.split()[3])
-    return background
-
-
-def _prepare_for_ocr(image):
-    from PIL import ImageOps
-
-    flattened = _flatten_to_white(image)
-    grayscale = ImageOps.grayscale(flattened)
-    # Stretch contrast so faint scans still separate cleanly from the
-    # background. Deliberately NOT upscaling or hard-thresholding here: both
-    # were tested against a real Lageplan and introduced a stray leading "|"
-    # per line (the table's border line bleeding into the text column) -
-    # Tesseract's own built-in binarization handles this image better than a
-    # naive global threshold does.
-    return ImageOps.autocontrast(grayscale)
-
-
-def extract_ordered_labels(image, min_confidence=MIN_OCR_CONFIDENCE, lang="deu+eng"):
-    """OCR `image` and return its text labels ordered top-to-bottom.
-
-    Built for the common Lageplan legend: a small table whose second column
-    lists one zone name per row (e.g. Hauptdach/Garage/Anbau/Vordach) - each
-    OCR "line" (Tesseract's own block/paragraph/line grouping, so a
-    multi-word label stays one entry) becomes one label, sorted by its
-    topmost pixel row.
-    """
-    import pytesseract
-
-    prepared = _prepare_for_ocr(image)
-    data = pytesseract.image_to_data(prepared, lang=lang, output_type=pytesseract.Output.DICT)
-
-    lines = {}
-    for index in range(len(data["text"])):
-        text = (data["text"][index] or "").strip()
-        if not text or not _HAS_LETTER_RE.search(text):
-            continue
-        try:
-            confidence = float(data["conf"][index])
-        except (TypeError, ValueError):
-            confidence = -1
-        if confidence < min_confidence:
-            continue
-
-        key = (data["block_num"][index], data["par_num"][index], data["line_num"][index])
-        line = lines.setdefault(key, {"top": data["top"][index], "words": []})
-        line["top"] = min(line["top"], data["top"][index])
-        line["words"].append((data["left"][index], text))
-
-    ordered_lines = sorted(lines.values(), key=lambda line: line["top"])
-    return [
-        " ".join(text for _, text in sorted(line["words"], key=lambda word: word[0]))
-        for line in ordered_lines
-    ]
 
 
 class Command(BaseCommand):

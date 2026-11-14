@@ -58,15 +58,16 @@ jobs:
 
       - uses: actions/setup-python@v7
         with:
-          # The version of the backend image (docker/backend-base/Dockerfile).
-          python-version: '3.13.7'
+          # The version of the backend image (docker/backend-base/Dockerfile:
+          # python:3.13-alpine3.24 - the latest 3.13 patch release).
+          python-version: '3.13'
           cache: pip
           cache-dependency-path: |
             requirements.txt
             requirements-cad-test.txt
 
-      - name: System packages (ffmpeg for the video export, gpg for the backup bundles)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg gnupg
+      - name: System packages (ffmpeg for the video export, gpg for the backup bundles, tesseract for the plan OCR)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg gnupg tesseract-ocr tesseract-ocr-deu
 
       - name: Python packages
         run: |

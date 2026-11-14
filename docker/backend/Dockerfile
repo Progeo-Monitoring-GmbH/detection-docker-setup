@@ -1,4 +1,16 @@
-FROM progeomonitoring/detection-docker-setup:backend-base-py3.13.7-alpine3.21 AS python
+# syntax=docker/dockerfile:1
+ARG BASE_IMAGE=progeomonitoring/detection-docker-setup:backend-base-py3.13-alpine3.24-v2.0.0
+
+# Build stage: the compilers live only here (on musl, several packages build
+# from source) - the image that runs gets the finished venv, no toolchain.
+FROM ${BASE_IMAGE} AS build
+RUN apk add --no-cache build-base linux-headers
+RUN python -m venv "${VENV_ROOT}" && "${VENV_ROOT}/bin/pip" install --no-cache-dir -U pip setuptools wheel
+COPY ./requirements.txt ./requirements.txt
+# The download/wheel cache survives between builds (BuildKit), nothing of it lands in the image.
+RUN --mount=type=cache,target=/root/.cache/pip "${VENV_ROOT}/bin/pip" install -r requirements.txt
+
+FROM ${BASE_IMAGE} AS python
 
 ARG BACKEND_PORT
 ARG DB_HOST
@@ -16,8 +28,14 @@ RUN addgroup -g ${DOCKER_GID} -S progeo \
     && if [ -z "${socket_group}" ]; then addgroup -g ${DOCKER_SOCKET_GID} -S docker && socket_group=docker; fi \
     && addgroup progeo "${socket_group}"
 
-COPY ./requirements.txt ./requirements.txt
-RUN pip install -r requirements.txt --use-feature=fast-deps
+COPY --from=build ${VENV_ROOT} ${VENV_ROOT}
+# No pip in the image that runs - nothing installs packages here, and pip's
+# bundled copies of urllib3/msgpack/pkg_resources are its only findings in
+# Docker Scout. Packages are updated by rebuilding (build stage above).
+RUN rm -rf /usr/local/lib/python3*/site-packages/pip /usr/local/lib/python3*/site-packages/pip-*.dist-info \
+           /usr/local/lib/python3*/ensurepip /usr/local/bin/pip /usr/local/bin/pip3* \
+           "${VENV_ROOT}"/lib/python3*/site-packages/pip "${VENV_ROOT}"/lib/python3*/site-packages/pip-*.dist-info \
+           "${VENV_ROOT}"/bin/pip "${VENV_ROOT}"/bin/pip3*
 
 COPY ./docker/backend/ .
 COPY ./progeo ./progeo

@@ -50,7 +50,7 @@ mdurl~=0.1.2
 msgpack~=1.2.4
 numpy==2.5.4
 odfpy~=1.4.1
-#opencv-python-headless==4.12.0.88
+opencv-python-headless~=5.0.0.93   # already installed from the base-image
 openpyxl~=3.1.5
 packaging~=26.3
 pandas~=3.1.1
@@ -74,6 +74,7 @@ pyOpenSSL~=26.4.0
 pyparsing~=3.3.3
 pypdf~=7.0.0
 pypng~=0.20220715.0
+pytesseract~=0.3.13    # OCR of the Lageplan tables (progeo/helper/plan_ocr.py); binary: docker/backend-base
 python-dateutil~=4.0.0
 python-gnupg~=0.5.7
 python-Levenshtein~=0.27.5
@@ -98,6 +99,7 @@ rncryptor~=3.3.0
 ruff~=0.17.4            # ruff check --fix
 sentry-sdk~=2.74.0      # error tracking -> GlitchTip, only active with SENTRY_DSN (progeo/sentry.py)
 simplejson~=4.2.0
+supervisor~=4.3.0      # supervisord/supervisorctl of the backend container - from pip, not apk
 tablib~=3.10.0
 Twisted[tls,http2]~=26.10.0
 typing_extensions~=4.16.0

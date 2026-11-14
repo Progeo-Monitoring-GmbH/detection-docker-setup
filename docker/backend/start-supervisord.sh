@@ -156,4 +156,5 @@ do
   chmod 666 "$log_file" 2>/dev/null || true
 done
 
-exec /usr/bin/supervisord -c /home/progeo/detection-docker-setup/supervisord.conf
+# supervisord comes from the venv (requirements.txt), not from apk.
+exec "${VENV_ROOT:-/opt/venv}/bin/supervisord" -c /home/progeo/detection-docker-setup/supervisord.conf

@@ -4,6 +4,10 @@ Reading a Lageplan image with OpenCV for the Lageplan wizard.
 - auto_align: the plan's point alignment (offset/scale/flip, see
   plan_meters.plan_pixel) that lays the measure points onto the orange lines
   of the plan - the dm bands / sensors as the CAD drawing marks them.
+- detect_dm: whether the plan is a smartex dm plan - its sensors are long
+  thin orange lines (the dm bands), not orange dots;
+- detect_tables: the tables of the plan (legends listing the measure
+  points) - never an area; their rows are read by plan_ocr;
 - detect_heat_limitations: areas for the heat limitations - the outlines of
   the buildings drawn on the plan (several clusters each get their own),
   every one holding at least one sensor. Sensors outside every outline get
@@ -14,14 +18,16 @@ away when the image is scaled down first - and then reduced to a working
 size with "any pixel set" (cv2.INTER_AREA, > 0). Everything else works in
 fractions of the image, so the results don't depend on its resolution.
 """
+import itertools
 import math
 from dataclasses import dataclass
+from types import SimpleNamespace
 
 import cv2
 import numpy as np
 from PIL import Image, ImageOps, UnidentifiedImageError
 
-from progeo.helper.plan_meters import alignment_base_scale
+from progeo.helper.plan_meters import alignment_base_scale, plan_pixel
 
 # Longest side of the working copies - alignment runs its search on the
 # smaller one (many distance transforms), the outlines need more detail.
@@ -295,6 +301,160 @@ def auto_align(plan_image: PlanImage, segments, current: dict) -> Alignment:
     return min((fit(flip) for flip in (current_flip, not current_flip)), key=lambda result: result[0])[1]
 
 
+def plan_segments(points) -> list:
+    """[((nx, ny), (nx_end, ny_end) | None)] of measure points (a queryset or
+    rows with nx/ny/nx_end/ny_end) - dm bands with their end."""
+    return [
+        ((point.nx, point.ny), (point.nx_end, point.ny_end) if point.nx_end is not None and point.ny_end is not None
+         else None)
+        for point in points
+        if point.nx is not None and point.ny is not None
+    ]
+
+
+def plan_alignment(plan) -> dict:
+    """A Lageplan's stored point alignment as auto_align / alignment_score take it."""
+    return {
+        "offset_x": plan.offset_x or 0,
+        "offset_y": plan.offset_y or 0,
+        "scale_x": plan.scale_x or 1,
+        "scale_y": plan.scale_y or 1,
+        "flip_y": bool(plan.flip_y),
+    }
+
+
+def alignment_score(plan_image: PlanImage, segments, alignment: dict) -> float:
+    """Share of the sensor points lying on the plan's orange lines when placed
+    by `alignment` (offset_x, offset_y, scale_x, scale_y, flip_y) - the score
+    auto_align reports for its result, so the two compare."""
+    _, orange = plan_image.masks(ALIGN_SIZE)
+    if np.count_nonzero(orange) < ORANGE_MIN_PIXELS:
+        raise PlanDetectError("No orange lines found on the plan to align the measure points to")
+    samples, _ = _segment_samples(segments)
+    if not len(samples):
+        return 0.0
+    height, width = orange.shape
+    to_orange = cv2.distanceTransform(np.where(orange > 0, 0, 255).astype(np.uint8), cv2.DIST_L2, 3)
+    full_width, full_height = plan_image.size
+    base = alignment_base_scale(full_width, full_height)
+    v = 1 - samples[:, 1] if alignment.get("flip_y", True) else samples[:, 1]
+    xs = (float(alignment.get("offset_x") or 0) / (full_width * base)
+          + samples[:, 0] * float(alignment.get("scale_x") or 1)) * width
+    ys = (float(alignment.get("offset_y") or 0) / (full_height * base) + v * float(alignment.get("scale_y") or 1)) * height
+    inside = (xs >= 0) & (xs <= width - 1) & (ys >= 0) & (ys <= height - 1)
+    on_orange = np.zeros(len(xs), bool)
+    on_orange[inside] = (
+        to_orange[ys[inside].round().astype(int), xs[inside].round().astype(int)] <= ALIGN_HIT_DISTANCE * max(width, height)
+    )
+    return round(float(on_orange.mean()), 3)
+
+
+def sensor_fractions(segments, alignment: dict, size: tuple[int, int]) -> list[list[tuple[float, float]]]:
+    """Per sensor its points as fractions of the image, placed by `alignment`
+    (plan_meters.plan_pixel) - dm bands with points along them. The input of
+    detect_heat_limitations."""
+    width, height = size
+    plan = SimpleNamespace(
+        offset_x=alignment.get("offset_x") or 0,
+        offset_y=alignment.get("offset_y") or 0,
+        scale_x=alignment.get("scale_x") or 1,
+        scale_y=alignment.get("scale_y") or 1,
+        flip_y=alignment.get("flip_y", True),
+    )
+    sensors = []
+    for start, end in segments:
+        ends = [start] if end is None else [
+            (start[0] + (end[0] - start[0]) * t, start[1] + (end[1] - start[1]) * t) for t in (0, 0.25, 0.5, 0.75, 1)
+        ]
+        sensors.append([
+            (px / width, py / height) for px, py in (plan_pixel(nx, ny, plan, width, height) for nx, ny in ends)
+        ])
+    return sensors
+
+
+# ------------------------------------------------------------- dm projects
+
+# An orange shape is a dm band when it is thin and long: thickness (2 * area /
+# perimeter - also for bent bands) at most DM_MAX_THICKNESS, length
+# (perimeter / 2) at least DM_MIN_LENGTH - both shares of the longest side of
+# the working image. Orange text and sensor dots stay below the length.
+DM_MAX_THICKNESS = 0.006
+DM_MIN_LENGTH = 0.05
+# A dm plan: at least DM_MIN_LINES bands holding DM_LINE_SHARE of the orange.
+DM_MIN_LINES = 3
+DM_LINE_SHARE = 0.6
+# Measure points stored as bands (nx_end/ny_end, the CAD import of dm plans)
+# also tell it: at least DM_MIN_LINES of them and DM_BAND_SHARE of the points.
+DM_BAND_SHARE = 0.5
+
+
+@dataclass
+class DmDetection:
+    """What the orange of a plan looks like - and the verdict:
+    "dm" (bands), "points" (orange, but no bands) or "unclear" (no orange)."""
+
+    lines: int
+    blobs: int
+    # Share of the orange pixels in bands.
+    line_share: float
+    # Measure points stored as bands, of all measure points.
+    bands: int
+    points: int
+    # The bands' outlines, as fractions of the image (for the preview).
+    outlines: list
+    verdict: str
+
+    @property
+    def is_dm(self) -> bool:
+        return self.verdict == "dm"
+
+
+def detect_dm(plan_image: PlanImage, segments=()) -> DmDetection:
+    """Whether the plan shows dm bands: long thin orange lines - or its
+    measure points are stored as bands (`segments`, plan_segments)."""
+    _, orange = plan_image.masks(LIMIT_SIZE)
+    height, width = orange.shape
+    longest = max(width, height)
+    # Antialiasing and dashes: tiny gaps closed, so a band is one shape.
+    joined = cv2.morphologyEx(orange, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
+    contours, _ = cv2.findContours(joined, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    max_thickness = max(5.0, DM_MAX_THICKNESS * longest)
+    min_length = DM_MIN_LENGTH * longest
+    lines = blobs = 0
+    line_pixels = blob_pixels = 0.0
+    outlines = []
+    for contour in contours:
+        area = cv2.contourArea(contour) + cv2.arcLength(contour, True) / 2  # the outline's pixels count too
+        perimeter = cv2.arcLength(contour, True)
+        if area < ORANGE_MIN_AREA or perimeter <= 0:
+            continue
+        thickness = 2 * area / perimeter
+        length = perimeter / 2
+        if thickness <= max_thickness and length >= min_length:
+            lines += 1
+            line_pixels += area
+            simplified = cv2.approxPolyDP(contour, 1.5, True).reshape(-1, 2)
+            outlines.append((simplified / [width - 1, height - 1]).round(4).tolist())
+        else:
+            blobs += 1
+            blob_pixels += area
+    total = line_pixels + blob_pixels
+    line_share = round(line_pixels / total, 3) if total else 0.0
+    bands = sum(1 for _, end in segments if end is not None)
+    points = len(segments)
+
+    by_image = lines >= DM_MIN_LINES and line_share >= DM_LINE_SHARE
+    by_points = bands >= DM_MIN_LINES and bands >= DM_BAND_SHARE * points
+    if by_image or by_points:
+        verdict = "dm"
+    elif total >= ORANGE_MIN_PIXELS:
+        verdict = "points"
+    else:
+        verdict = "unclear"
+    return DmDetection(lines=lines, blobs=blobs, line_share=line_share, bands=bands, points=points,
+                       outlines=outlines, verdict=verdict)
+
+
 # ---------------------------------------------------------- heat limitations
 
 @dataclass
@@ -314,6 +474,125 @@ class Detection:
     sensors: int
     # Sensors inside no outline - covered by the cluster areas.
     clustered: int
+    # The plan's tables (never an area) and the sensors placed on them (left out).
+    tables: list = None
+    in_tables: int = 0
+
+
+# ------------------------------------------------------------------ tables
+
+# A table: thin ruled lines - at least TABLE_MIN_RULES horizontal ones and
+# TABLE_MIN_COLUMNS + 1 vertical ones, each across TABLE_RULE_SPAN of the
+# table, at most TABLE_MAX_RULE pixels thick (walls are thicker), rows at
+# most TABLE_MAX_ROW (share of the longest side) high - and text in the
+# cells (parking bays and hatching have none).
+TABLE_MIN_RULES = 3
+TABLE_MIN_COLUMNS = 1
+TABLE_RULE_SPAN = 0.8
+TABLE_MAX_RULE = 4
+TABLE_MAX_ROW = 0.06
+# Rules are found as runs of ink at least this long (share of the longest side).
+TABLE_RULE_LENGTH = 0.02
+# A table without rules between its rows: a thin frame with at least
+# TABLE_MIN_TEXT_LINES evenly spaced text lines filling TABLE_TEXT_FILL of
+# its height - no larger than TABLE_MAX_FRAME of the plan's height / width
+# (a thin-walled building with a few room labels is none).
+TABLE_MIN_TEXT_LINES = 3
+TABLE_TEXT_FILL = 0.35
+TABLE_MAX_FRAME = (0.6, 0.5)
+
+
+@dataclass
+class Table:
+    """A table of the plan - fractions of the image (0..1, y down)."""
+
+    box: tuple[float, float, float, float]
+    # The bands between its horizontal rules, top to bottom: (top, bottom).
+    rows: list[tuple[float, float]]
+    columns: int
+
+
+def _runs(flags: np.ndarray) -> list[tuple[int, int]]:
+    """(start, end) of the runs of True (end exclusive)."""
+    padded = np.concatenate([[False], flags, [False]])
+    edges = np.flatnonzero(padded[1:] != padded[:-1])
+    return list(zip(edges[::2].tolist(), edges[1::2].tolist()))
+
+
+def detect_tables(plan_image: PlanImage) -> list[Table]:
+    """The tables drawn on the plan (legends of the measure points, title
+    blocks with rows): grids of thin ruled lines with text in the cells."""
+    ink, _ = plan_image.masks(LIMIT_SIZE)
+    height, width = ink.shape
+    longest = max(width, height)
+    span = max(15, round(TABLE_RULE_LENGTH * longest))
+    horizontal = cv2.morphologyEx(ink, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (span, 1)))
+    vertical = cv2.morphologyEx(ink, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (1, span)))
+    grid = cv2.dilate(cv2.bitwise_or(horizontal, vertical), np.ones((3, 3), np.uint8))
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(grid, connectivity=8)
+
+    tables = []
+    for label in range(1, count):
+        x, y, box_width, box_height = (int(stats[label, key]) for key in (
+            cv2.CC_STAT_LEFT, cv2.CC_STAT_TOP, cv2.CC_STAT_WIDTH, cv2.CC_STAT_HEIGHT))
+        if box_width < 2 * span or box_height < span:
+            continue
+        mine = labels[y:y + box_height, x:x + box_width] == label
+        rules = _runs(((horizontal[y:y + box_height, x:x + box_width] > 0) & mine).sum(axis=1)
+                      >= TABLE_RULE_SPAN * box_width)
+        columns = _runs(((vertical[y:y + box_height, x:x + box_width] > 0) & mine).sum(axis=0)
+                        >= TABLE_RULE_SPAN * box_height)
+        if len(rules) < 2 or len(columns) < TABLE_MIN_COLUMNS + 1:
+            continue
+        thickness = float(np.median([end - start for start, end in rules + columns]))
+        if thickness > TABLE_MAX_RULE:
+            continue
+        # Text in the cells: ink that is no rule.
+        cells = (ink[y:y + box_height, x:x + box_width] > 0) & ~(grid[y:y + box_height, x:x + box_width] > 0)
+        if len(rules) >= TABLE_MIN_RULES:
+            centers = [(start + end) / 2 for start, end in rules]
+            if float(np.median(np.diff(centers))) > TABLE_MAX_ROW * longest:
+                continue
+            text_marks = cv2.connectedComponents(cells.astype(np.uint8), connectivity=8)[0] - 1
+            if text_marks < len(rules) - 1:
+                continue
+            bands = list(itertools.pairwise(centers))
+        else:
+            bands = _framed_text_lines(cells, box_width, box_height, (width, height))
+            if bands is None:
+                continue
+        tables.append(Table(
+            box=(x / width, y / height, (x + box_width) / width, (y + box_height) / height),
+            rows=[((y + top) / height, (y + bottom) / height) for top, bottom in bands],
+            columns=len(columns) - 1,
+        ))
+    return sorted(tables, key=lambda table: (table.box[1], table.box[0]))
+
+
+def _framed_text_lines(cells, box_width, box_height, size):
+    """The text lines of a frame without rules between its rows - (top,
+    bottom) in the frame's pixels, None unless it looks like a table: small
+    enough, at least TABLE_MIN_TEXT_LINES lines, evenly spaced, filling
+    TABLE_TEXT_FILL of its height."""
+    width, height = size
+    if box_width > TABLE_MAX_FRAME[0] * width or box_height > TABLE_MAX_FRAME[1] * height:
+        return None
+    lines = [(top, bottom) for top, bottom in _runs(cells.any(axis=1)) if bottom - top >= 3]
+    if len(lines) < TABLE_MIN_TEXT_LINES:
+        return None
+    if sum(bottom - top for top, bottom in lines) < TABLE_TEXT_FILL * box_height:
+        return None
+    steps = np.diff([(top + bottom) / 2 for top, bottom in lines])
+    if steps.std() > 0.35 * steps.mean():
+        return None
+    # Each line's band reaches halfway to its neighbours.
+    half = float(np.median(steps)) / 2
+    return [(max(0.0, (top + bottom) / 2 - half), min(box_height, (top + bottom) / 2 + half)) for top, bottom in lines]
+
+
+def _in_table(point, tables, size) -> bool:
+    x, y = point[0] / size[0], point[1] / size[1]
+    return any(left <= x <= right and top <= y <= bottom for left, top, right, bottom in (t.box for t in tables))
 
 
 def _encloses_rooms(region: np.ndarray, free: np.ndarray, box: int) -> bool:
@@ -360,6 +639,32 @@ def _footprints(ink: np.ndarray, kernel: int) -> np.ndarray:
     return outlines
 
 
+# Thin fragments (wall stubs, dimension lines touching the building) are cut
+# off an area by an opening - shrink and grow back by CLEAN_RADIUS (share of
+# the longest side), at least half the kernel that sealed the gaps (sealing
+# rounds the inner corners by that much: a stub keeps fillets otherwise) -
+# and its edge smoothed by a closing; the holes are filled.
+CLEAN_RADIUS = 0.008
+
+
+def _clean_region(mask: np.ndarray, anchors: np.ndarray, radius: int) -> np.ndarray:
+    """The region without its thin fragments: opening (erode, dilate) then
+    closing (dilate, erode) with a disk, holes filled - only the parts that
+    hold a sensor. Back to the region as it was if the opening loses them."""
+    disk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * radius + 1, 2 * radius + 1))
+    opened = cv2.morphologyEx(mask, cv2.MORPH_OPEN, disk)
+    cleaned = cv2.morphologyEx(opened, cv2.MORPH_CLOSE, disk)
+    _, parts = cv2.connectedComponents(cleaned, connectivity=8)
+    keep = {int(parts[y, x]) for x, y in anchors} - {0}
+    if not keep:
+        return mask
+    result = np.isin(parts, list(keep)).astype(np.uint8) * 255
+    contours, _ = cv2.findContours(result, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    filled = np.zeros_like(result)
+    cv2.drawContours(filled, contours, -1, 255, thickness=cv2.FILLED)
+    return filled
+
+
 def _polygon(mask: np.ndarray, max_points: int) -> np.ndarray | None:
     """The outer outline of `mask` (uint8) as at most max_points corners."""
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -399,14 +704,21 @@ def _clusters(points: np.ndarray, distance: float) -> list[list[int]]:
 
 
 def detect_heat_limitations(plan_image: PlanImage, sensors: list[list[tuple[float, float]]],
-                            max_points: int = 200) -> Detection:
+                            max_points: int = 200, tables: list | None = None) -> Detection:
     """Areas for the heat limitations: the outlines (closed walls) on the plan
     holding sensors - `sensors`: per sensor its points as fractions of the
     image (a dm band: several along it) - each outline at most once, each
-    with at least one sensor inside. Sensors outside every outline are
-    clustered, each cluster gets the padded hull of its points."""
+    with at least one sensor inside, cleaned of thin fragments. Sensors
+    outside every outline are clustered, each cluster gets the padded hull of
+    its points. Tables (detect_tables, unless given) are no outlines: they are
+    blanked out first, sensors placed on them are left out."""
     ink, _ = plan_image.masks(LIMIT_SIZE)
     height, width = ink.shape
+    tables = detect_tables(plan_image) if tables is None else tables
+    if tables:
+        ink = ink.copy()
+        for left, top, right, bottom in (table.box for table in tables):
+            ink[int(top * height):int(np.ceil(bottom * height)) + 1, int(left * width):int(np.ceil(right * width)) + 1] = 0
     scale = np.array([width - 1, height - 1], dtype=float)
     on_plan = [
         np.clip(np.round(np.asarray(points, dtype=float) * scale), 0, scale).astype(int)
@@ -415,6 +727,14 @@ def detect_heat_limitations(plan_image: PlanImage, sensors: list[list[tuple[floa
     ]
     if not on_plan:
         raise PlanDetectError("No measure point lies on the plan - align them first (step 5)")
+    # A sensor on a table is no sensor of a building: not checked at all.
+    in_tables = 0
+    if tables:
+        kept = [points for points in on_plan if not _in_table(points[len(points) // 2], tables, (width, height))]
+        in_tables = len(on_plan) - len(kept)
+        on_plan = kept
+        if not on_plan:
+            return Detection(areas=[], sensors=0, clustered=0, tables=tables, in_tables=in_tables)
     # Where a sensor is: the middle of its points.
     anchors = np.array([points[len(points) // 2] for points in on_plan])
 
@@ -425,16 +745,18 @@ def detect_heat_limitations(plan_image: PlanImage, sensors: list[list[tuple[floa
         labels = outlines[anchors[:, 1], anchors[:, 0]]
         covered = int((labels > 0).sum())
         if best is None or covered > best[1]:
-            best = (outlines, covered)
+            best = (outlines, covered, kernel)
         if covered == len(anchors):
             break
-    outlines, _ = best
+    outlines, _, kernel = best
 
     areas: list[DetectedArea] = []
     covered = np.zeros(len(anchors), bool)
     labels = outlines[anchors[:, 1], anchors[:, 0]]
+    radius = max(2, round(CLEAN_RADIUS * max(width, height)), kernel // 2)
     for label in sorted(set(labels.tolist()) - {0}):
-        polygon = _polygon(((outlines == label) * 255).astype(np.uint8), max_points)
+        region = ((outlines == label) * 255).astype(np.uint8)
+        polygon = _polygon(_clean_region(region, anchors[labels == label], radius), max_points)
         if polygon is None:
             continue
         inside = [index for index in np.nonzero(labels == label)[0] if _holds(polygon, anchors[index])]
@@ -459,4 +781,4 @@ def detect_heat_limitations(plan_image: PlanImage, sensors: list[list[tuple[floa
 
     for number, area in enumerate(areas, start=1):
         area.name = f"Auto {number}" if area.kind == "outline" else f"Auto {number} (sensors)"
-    return Detection(areas=areas, sensors=len(anchors), clustered=len(rest))
+    return Detection(areas=areas, sensors=len(anchors), clustered=len(rest), tables=tables, in_tables=in_tables)

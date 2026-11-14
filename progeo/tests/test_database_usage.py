@@ -26,6 +26,36 @@ def test_status(devices, last, status):
     assert usage.status_of(devices, last, NOW) == status
 
 
+@pytest.mark.parametrize("use_tz", [True, False])
+def test_status_with_naive_times(settings, use_tz):
+    """The live settings have USE_TZ = False: the database hands out naive
+    local times - comparing them with an aware "now" crashed every chunk (500)."""
+    settings.USE_TZ = use_tz
+    now = datetime.datetime.now(datetime.UTC)
+    naive_recent = datetime.datetime.now() - datetime.timedelta(hours=1)
+    naive_old = datetime.datetime.now() - datetime.timedelta(days=usage.STALE_DAYS + 1)
+
+    assert usage.status_of(3, naive_recent, now) == "active"
+    assert usage.status_of(3, naive_old, now) == "stale"
+
+
+def test_a_chunk_with_naive_measurement_times(databases, monkeypatch, settings):
+    """As live: USE_TZ = False, the newest measurement a naive local time."""
+    settings.USE_TZ = False
+    naive = datetime.datetime.now() - datetime.timedelta(hours=1)
+    monkeypatch.setattr(usage, "map_databases", lambda work, names: [(2, naive, None)] + [(0, None, None)] * 2)
+    client = APIClient()
+    client.force_authenticate(user=f.make_user(staff=True))
+    build = client.get(URL, {"plan": 1, "refresh": 1}).json()["build"]
+
+    response = client.get(URL, {"build": build, "chunk": 0})
+
+    assert response.status_code == 200, response.content
+    first = response.json()["rows"][0]
+    assert first["status"] == "active"
+    assert first["last_measurement_at"].endswith(("+01:00", "+02:00", "+03:00"))  # with its offset now
+
+
 @pytest.fixture
 def databases(monkeypatch):
     """Three project databases: one alive, one without measurements, one

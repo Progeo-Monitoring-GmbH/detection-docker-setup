@@ -26,7 +26,8 @@ step=$?
 [ "$step" -eq 3 ] && exit 0  # nothing to import
 [ "$step" -ne 0 ] && exit "$step"
 
-SUPERVISORCTL="supervisorctl -c $PROJECT_ROOT/supervisord.conf"
+# From the venv (requirements.txt) - cron jobs get no PATH with it.
+SUPERVISORCTL="${VENV_ROOT:-/opt/venv}/bin/supervisorctl -c $PROJECT_ROOT/supervisord.conf"
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] staging import started, stopping $SERVICES"
 if $SUPERVISORCTL stop $SERVICES; then

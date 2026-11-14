@@ -834,12 +834,9 @@ class StatusViewSet(ProgeoModalViewSet):
             flip_y = request.data.get("flip_y")
             current["flip_y"] = flip_y if isinstance(flip_y, bool) else str(flip_y).lower() in ("1", "true", "yes", "on")
 
-        segments = [
-            ((point.nx, point.ny), (point.nx_end, point.ny_end) if point.nx_end is not None and point.ny_end is not None
-             else None)
-            for point in cad_import.points_on_plan(location, db_name, lageplan).only("nx", "ny", "nx_end", "ny_end")
-            if point.nx is not None and point.ny is not None
-        ]
+        segments = plan_detect.plan_segments(
+            cad_import.points_on_plan(location, db_name, lageplan).only("nx", "ny", "nx_end", "ny_end")
+        )
         try:
             result = plan_detect.auto_align(plan_detect.load_plan_image(path), segments, current)
         except plan_detect.PlanDetectError as exc:

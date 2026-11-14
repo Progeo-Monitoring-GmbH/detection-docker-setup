@@ -28,6 +28,7 @@ from django.conf import settings
 from django.core.cache import cache
 from django.db import DEFAULT_DB_ALIAS, connections
 from django.db.models import Count, Max
+from django.utils import timezone
 
 from progeo.helper.basics import elog
 from progeo.helper.project_dbs import (
@@ -63,12 +64,19 @@ class InvalidChunk(ValueError):
     """A chunk index outside the build's chunks."""
 
 
+def _aware(value):
+    """`value` with a time zone: with USE_TZ = False (the live settings) the
+    database hands out naive local times (TIME_ZONE) - comparing those with
+    an aware "now" raises TypeError."""
+    return timezone.make_aware(value) if timezone.is_naive(value) else value
+
+
 def status_of(devices: int, last_measurement_at, now) -> str:
     if not devices:
         return "no_devices"
     if last_measurement_at is None:
         return "no_measurements"
-    if now - last_measurement_at > datetime.timedelta(days=STALE_DAYS):
+    if _aware(now) - _aware(last_measurement_at) > datetime.timedelta(days=STALE_DAYS):
         return "stale"
     return "active"
 
@@ -202,7 +210,7 @@ def build_chunk(build, index) -> dict:
             "devices": device_count,
             "measurements": count,
             "stats_at": stats_at,
-            "last_measurement_at": last.isoformat() if last else None,
+            "last_measurement_at": _aware(last).isoformat() if last else None,
             "status": "error" if error else status_of(device_count, last, now),
             "error": error,
         })
