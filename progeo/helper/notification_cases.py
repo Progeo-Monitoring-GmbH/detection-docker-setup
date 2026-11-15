@@ -375,12 +375,28 @@ def _send_mails(case, rows, template, context, category):
     return sent, failed
 
 
-def _send_short_messages(case, rows, sms_body, messenger_body):
+def _languages(rows) -> dict:
+    """{user_id: "de"|"en"} of the recipients (UserProfile.language, default German)."""
+    from progeo.v1.models import UserProfile
+
+    user_ids = [row["user_id"] for row in rows if row.get("user_id")]
+    stored = dict(
+        UserProfile.objects.using(DB).filter(user_id__in=user_ids).exclude(language__isnull=True)
+        .values_list("user_id", "language")
+    ) if user_ids else {}
+    return {user_id: "en" if str(stored.get(user_id) or "").startswith("en") else "de" for user_id in user_ids}
+
+
+def _send_short_messages(case, rows, bodies):
+    """SMS / messenger message per recipient in their language - `bodies`:
+    {"de"|"en": (sms_body, messenger_body)}."""
     from progeo.helper import esendex, messenger
 
     location = _location(case)
+    languages = _languages(rows)
     sms = chats = 0
     for row in rows:
+        sms_body, messenger_body = bodies[languages.get(row.get("user_id"), "de")]
         if row.get("mobile"):
             try:
                 esendex.send_sms(row["mobile"], sms_body, location=location, db=case.db, category="alarm")
@@ -504,6 +520,17 @@ def send_offline_stage(case):
     return _record_stage(case, case.stage, sent, failed, recipient_count=len(rows))
 
 
+# The words of the alarm SMS / messenger messages per recipient language.
+ALARM_WORDS = {
+    "de": {"alarm": "ProGeo Alarm", "reminder": "ProGeo Erinnerung: Alarm", "object": "Objekt",
+           "reading": "Messwert", "threshold": "Schwelle", "details": "Details im Portal.",
+           "sensors": "Sensoren", "not_acknowledged": "Noch nicht quittiert."},
+    "en": {"alarm": "ProGeo alarm", "reminder": "ProGeo reminder: alarm", "object": "object",
+           "reading": "reading", "threshold": "threshold", "details": "Details in the portal.",
+           "sensors": "Sensors", "not_acknowledged": "Not acknowledged yet."},
+}
+
+
 def send_alarm_stage(case):
     from progeo.helper.emailhelper import portal_url
 
@@ -517,19 +544,26 @@ def send_alarm_stage(case):
     context = {**_alarm_context(case, location, alarms), "include_objektleitung": last}
     template = "alarm_notification" if case.stage == 1 else "alarm_reminder"
     sent, failed = _send_mails(case, rows, template, context, "alarm")
-    prefix = "ProGeo Alarm" if case.stage == 1 else "ProGeo Erinnerung: Alarm"
-    sms_body = (
-        f"{prefix} Objekt {context['project_nr']} {context['project_name']}: "
-        f"Messwert {context['max_value']} > Schwelle {context['threshold']}. Details im Portal."
-    )
-    messenger_body = (
-        f"{prefix} - Objekt {context['project_nr']} {context['project_name']}\n"
-        f"{context['triggered_at']}: Messwert {context['max_value']} > Schwelle {context['threshold']}"
-        + (f"\nSensoren: {context['sensors']}" if context["sensors"] else "")
-        + ("\nNoch nicht quittiert." if case.stage > 1 else "")
-        + f"\n{portal_url(f'/location/{case.location_id}/status')}"
-    )
-    sms, chats = _send_short_messages(case, rows, sms_body, messenger_body)
+    link = portal_url(f'/location/{case.location_id}/status')
+    reminder = case.stage > 1
+    bodies = {}
+    for language, words in ALARM_WORDS.items():
+        prefix = words["reminder"] if reminder else words["alarm"]
+        sms_body = (
+            f"{prefix} {words['object']} {context['project_nr']} {context['project_name']}: "
+            f"{words['reading']} {context['max_value']} > {words['threshold']} {context['threshold']}. "
+            f"{words['details']}"
+        )
+        messenger_body = (
+            f"{prefix} - {words['object']} {context['project_nr']} {context['project_name']}\n"
+            f"{context['triggered_at']}: {words['reading']} {context['max_value']} > "
+            f"{words['threshold']} {context['threshold']}"
+            + (f"\n{words['sensors']}: {context['sensors']}" if context["sensors"] else "")
+            + (f"\n{words['not_acknowledged']}" if reminder else "")
+            + f"\n{link}"
+        )
+        bodies[language] = (sms_body, messenger_body)
+    sms, chats = _send_short_messages(case, rows, bodies)
     _record_stage(case, case.stage, sent, failed, sms, chats, recipient_count=len(rows))
     if last:
         _escalate(case, f"Alarm im Objekt {case.project_id or case.location_id} nicht quittiert")

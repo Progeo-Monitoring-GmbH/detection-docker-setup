@@ -112,21 +112,66 @@ def html_to_text(markup: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
 
 
-def render_mail(template_name: str, context: dict | None = None, secret_context: dict | None = None) -> dict | None:
-    """Render `template_name` -> {"subject", "text", "html", "log_text"}, or
-    None when the template is missing. `log_text` is the text with every
-    secret_context value redacted."""
+# Languages of the mail templates: German in emails/, the others in
+# emails/<language>/ - a template missing there falls back to German.
+DEFAULT_LANGUAGE = "de"
+LANGUAGES = ("de", "en")
+
+
+def normalize_language(value) -> str | None:
+    """"en-GB" -> "en"; None for anything we have no templates for."""
+    language = str(value or "").strip().lower()[:2]
+    return language if language in LANGUAGES else None
+
+
+def template_path(template_name: str, language: str | None = None) -> str:
+    """emails/<language>/<name>.html if it exists, else the German emails/<name>.html."""
     base = _template_base(template_name)
+    language = normalize_language(language) or DEFAULT_LANGUAGE
+    if language != DEFAULT_LANGUAGE and (EMAIL_TEMPLATE_DIR / language / f"{base}.html").exists():
+        return f"emails/{language}/{base}.html"
+    return f"emails/{base}.html"
+
+
+def recipient_language(sent_to) -> str:
+    """The language of the mail's recipient: the profile language of the
+    active user with that address (UserProfile.language), German without one
+    - several recipients, unknown addresses (location contacts) and users
+    without a stored language get German."""
+    from django.contrib.auth.models import User
+
+    addresses = [str(address).strip() for address in (sent_to or []) if address]
+    if len(addresses) != 1:
+        return DEFAULT_LANGUAGE
+    try:
+        languages = list(
+            User.objects.using("default").filter(email__iexact=addresses[0], is_active=True)
+            .exclude(profile__language__isnull=True).exclude(profile__language="")
+            .values_list("profile__language", flat=True)[:2]
+        )
+    except Exception as exc:  # noqa: BLE001 - never fail a mail over its language
+        elog(f"[emailhelper] Could not read the language of {addresses[0]}: {exc}")
+        return DEFAULT_LANGUAGE
+    # Two accounts with this address and different languages: German.
+    return normalize_language(languages[0]) if len(set(languages)) == 1 else DEFAULT_LANGUAGE
+
+
+def render_mail(template_name: str, context: dict | None = None, secret_context: dict | None = None,
+                language: str | None = None) -> dict | None:
+    """Render `template_name` in `language` (template_path) -> {"subject",
+    "text", "html", "log_text", "language"}, or None when the template is
+    missing. `log_text` is the text with every secret_context value redacted."""
+    path = template_path(template_name, language)
     context = {"company": COMPANY, "portal_url": portal_url(), **(context or {})}
     secrets = secret_context or {}
     try:
-        markup = render_to_string(f"emails/{base}.html", {**context, **secrets})
+        markup = render_to_string(path, {**context, **secrets})
         log_markup = (
-            render_to_string(f"emails/{base}.html", {**context, **{key: REDACTED_LINK for key in secrets}})
+            render_to_string(path, {**context, **{key: REDACTED_LINK for key in secrets}})
             if secrets else markup
         )
     except Exception as exc:  # noqa: BLE001 - a broken template must not crash the caller
-        elog(f"[emailhelper] Email template not usable: emails/{base}.html ({exc})")
+        elog(f"[emailhelper] Email template not usable: {path} ({exc})")
         return None
 
     def _parts(source):
@@ -141,12 +186,14 @@ def render_mail(template_name: str, context: dict | None = None, secret_context:
 
     subject, text = _parts(markup)
     _subject, log_text = _parts(log_markup)
-    return {"subject": subject, "text": text, "html": markup, "log_text": log_text}
+    used = path.split("/")[1] if path.count("/") == 2 else DEFAULT_LANGUAGE
+    return {"subject": subject, "text": text, "html": markup, "log_text": log_text, "language": used}
 
 
-def render_email_template(template_name: str, context: dict | None = None) -> tuple[str, str]:
+def render_email_template(template_name: str, context: dict | None = None,
+                          language: str | None = None) -> tuple[str, str]:
     """(subject, plain text) of a template - empty strings when it is missing."""
-    rendered = render_mail(template_name, context)
+    rendered = render_mail(template_name, context, language=language)
     if not rendered:
         return "", ""
     return rendered["subject"], rendered["text"]
@@ -472,15 +519,17 @@ def send_template_mail(sent_to: list, template_name: str, context: dict | None =
                        files: list | None = None, subject_override: str | None = None,
                        location=None, db: str = "default", category: str = "system",
                        secret_context: dict | None = None, case_id: int | None = None,
-                       extra_headers: dict | None = None):
-    """Render `template_name` with `context` and send it (HTML + text).
+                       extra_headers: dict | None = None, language: str | None = None):
+    """Render `template_name` with `context` and send it (HTML + text) - in
+    `language`, by default the recipient's (recipient_language).
 
     Returns the content hash when sent, False when the template is missing,
     and None when SMTP is not configured / sending failed or was blocked. The
     mail attempt is persisted as an EMail row (linked to `location` when
     given) - with every `secret_context` value redacted.
     """
-    rendered = render_mail(template_name, context, secret_context)
+    language = normalize_language(language) or recipient_language(sent_to)
+    rendered = render_mail(template_name, context, secret_context, language=language)
     if not rendered or (not rendered["subject"] and not rendered["text"]):
         return False
     subject = subject_override or rendered["subject"]

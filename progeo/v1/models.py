@@ -1216,6 +1216,9 @@ class UserProfile(models.Model):
     # Staff only: archived measurements left out of every view
     # (ProgeoMeasurement.shows_archived) - the switch in the top bar.
     hide_archived_measurements = models.BooleanField(default=False)
+    # "de" / "en": the language of the user's mails and messenger messages
+    # (helper/emailhelper.recipient_language) - set with the portal language.
+    language = models.CharField(max_length=8, null=True, blank=True)
 
     def messenger_address(self):
         """Where the messenger notifications go, or None when incomplete."""
@@ -1229,7 +1232,7 @@ class UserProfile(models.Model):
     def is_empty(self):
         return not (
             self.mobile or self.messenger or self.messenger_id or self.matrix_connected_at
-            or self.hide_archived_measurements
+            or self.hide_archived_measurements or self.language
         )
 
     def __str__(self):
@@ -1520,6 +1523,10 @@ class LoginLink(models.Model):
         LOGIN = "login", "Anmeldelink"
         INVITE = "invite", "Einladung"
         RESET = "reset", "Passwort zurücksetzen"
+        # Chat login by QR code (helper/matrix_accounts.create_qr_login): the
+        # token rides in the login_hint of the Element X link, MAS forwards it
+        # to /auth/oidc/authorize/ - it signs in to the chat, never the portal.
+        MATRIX = "matrix", "Chat-Anmeldung (QR-Code)"
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="login_links")
     purpose = models.CharField(max_length=16, choices=Purpose.choices)

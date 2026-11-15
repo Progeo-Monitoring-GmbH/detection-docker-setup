@@ -1,0 +1,11 @@
+{% extends "emails/en/base.html" %}
+{# Back online (English) - see emails/offline_resolved.html. #}
+{% block subject %}Project '{{ project_name }}' - data transmission resumed - case {{ case_id }}{% endblock %}
+{% block preheader %}Data has been arriving again since {{ back_since }}{% endblock %}
+{% block content %}
+<p style="margin:0 0 12px;">Dear Sir or Madam,</p>
+<p style="margin:0 0 12px;">good news: your roof monitoring system at object <strong>{{ project_nr }} — {{ project_name }}</strong> has been transmitting data again since <strong>{{ back_since }}</strong>. Leak monitoring is active again and case <strong>{{ case_id }}</strong> is closed.</p>
+<p style="margin:0 0 12px;">Thank you for your support.</p>
+<p style="margin:0;">Kind regards<br>Your ProGeo team</p>
+{% include "emails/en/_notification_links.html" with kind_text="fault notifications" %}
+{% endblock %}

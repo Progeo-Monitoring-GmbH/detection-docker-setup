@@ -41,6 +41,65 @@ type PageRow = { path: string; views: number; users: number; avg_ms: number | nu
 type ActivityEvent = { kind: 'login' | 'page' | 'click'; path: string; target: string; duration_ms: number | null; at: string };
 type SessionDetail = { session: string; user_id: number; username: string; events: ActivityEvent[] };
 
+/** GET /v1/activity/messaging/ (matrix_accounts.stats, login_links.usage_stats). */
+type MessagingStats = {
+  matrix: { enabled: boolean; server_accounts: number | null; connected: number; active_7d: number; active_30d: number; primary: number };
+  login_links: Record<'24h' | '7d' | '30d', Record<'login' | 'invite' | 'reset' | 'matrix' | 'total', number>>;
+};
+
+const LINK_PERIODS = ['24h', '7d', '30d'] as const;
+
+/** Chat accounts and the use of one-time login links - independent of the usage tracking. */
+const MessagingStatsPanel = () => {
+  const { t } = useTranslation();
+  const auth = useAuth();
+  const [stats, setStats] = useState<MessagingStats | null>(null);
+
+  useEffect(() => {
+    void axiosConfig.perform_get(
+      auth,
+      '/v1/activity/messaging/',
+      (response) => setStats(response?.data as MessagingStats),
+      () => {},
+    );
+  }, [auth]);
+
+  if (!stats) {
+    return null;
+  }
+  const { matrix, login_links: links } = stats;
+  const number = (value: number | null) => (value === null ? '–' : String(value));
+  return (
+    <PanelCard title={t('ua_messaging_title')} testId="user-activity-messaging">
+      {matrix.enabled && (
+        <KpiStrip
+          testId="user-activity-matrix"
+          tiles={[
+            { label: t('ua_matrix_server_accounts'), value: number(matrix.server_accounts), note: t('ua_matrix_server_accounts_note'), testId: 'ua-matrix-server' },
+            { label: t('ua_matrix_connected'), value: number(matrix.connected), note: t('ua_matrix_connected_note'), testId: 'ua-matrix-connected' },
+            { label: t('ua_matrix_active'), value: number(matrix.active_7d), note: t('ua_matrix_active_note', { count: matrix.active_30d }), testId: 'ua-matrix-active' },
+            { label: t('ua_matrix_primary'), value: number(matrix.primary), note: t('ua_matrix_primary_note'), testId: 'ua-matrix-primary' },
+          ]}
+        />
+      )}
+      <KpiStrip
+        testId="user-activity-login-links"
+        tiles={LINK_PERIODS.map((period) => ({
+          label: t(`ua_links_${period}`),
+          value: String(links[period].total),
+          note: t('ua_links_note', {
+            login: links[period].login,
+            invite: links[period].invite,
+            reset: links[period].reset,
+            matrix: links[period].matrix,
+          }),
+          testId: `ua-links-${period}`,
+        }))}
+      />
+    </PanelCard>
+  );
+};
+
 const PERIODS = ['7', '30', '90', '180'];
 const TOP_PAGES = 12;
 const MINUTE = 60 * 1000;
@@ -520,6 +579,8 @@ const UserActivityView = () => {
           {t('ua_disabled', { days: sessions.retention_days })}
         </Alert>
       )}
+
+      {!session && <MessagingStatsPanel />}
 
       {session ? (
         <OneSession key={session} session={session} onBack={() => openSession(null)} />

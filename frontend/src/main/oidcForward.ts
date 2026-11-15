@@ -26,8 +26,16 @@ export const oidcForwardUrl = (
   origin: string = window.location.origin,
 ): string | null => parse(forward, origin)?.toString() ?? null;
 
-/** The user name the chat app passed along (QR code login link), or ''. */
+/** One-time chat login tokens travel in login_hint too (QR code, backend
+ * matrix_accounts.QR_LOGIN_PREFIX) - an expired one lands on the login page
+ * and must not be shown as the user name. */
+const QR_LOGIN_PREFIX = 'progeo-qr:';
+
+/** The user name the chat app passed along (Element X provisioning link), or ''. */
 export const oidcLoginHint = (
   forward: string | null | undefined,
   origin: string = window.location.origin,
-): string => parse(forward, origin)?.searchParams.get('login_hint') ?? '';
+): string => {
+  const hint = parse(forward, origin)?.searchParams.get('login_hint') ?? '';
+  return hint.startsWith(QR_LOGIN_PREFIX) ? '' : hint;
+};

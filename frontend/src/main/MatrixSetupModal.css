@@ -1,0 +1,208 @@
+/* "ProGeo Chat einrichten" (MatrixSetupModal.tsx): stepper, animated clip, QR codes. */
+
+.matrix-setup-title {
+  font-size: 18px;
+  color: var(--progeo-blue);
+}
+
+.matrix-setup-steps {
+  display: flex;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+  margin: 0 0 16px;
+  flex-wrap: wrap;
+}
+
+.matrix-setup-steps li {
+  flex: 1;
+  min-width: 140px;
+}
+
+.matrix-setup-steps button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid #d9dfe6;
+  border-radius: 999px;
+  background: #fff;
+  color: #6e6868;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.matrix-setup-steps li.is-active button {
+  border-color: var(--progeo-blue);
+  color: var(--progeo-blue);
+  background: #eef3f7;
+}
+
+.matrix-setup-steps li.is-done button {
+  color: #2fa36b;
+}
+
+.matrix-setup-step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.matrix-setup-step-number,
+.matrix-setup-step-number svg {
+  color: #fff;
+}
+
+.matrix-setup-steps li .matrix-setup-step-number {
+  background: #b9c3cd;
+}
+
+.matrix-setup-steps li.is-active .matrix-setup-step-number {
+  background: var(--progeo-blue);
+}
+
+.matrix-setup-steps li.is-done .matrix-setup-step-number {
+  background: #2fa36b;
+}
+
+.matrix-setup-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 720px) {
+  .matrix-setup-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.matrix-setup-clip {
+  width: 100%;
+  aspect-ratio: 720 / 450;
+  border-radius: 14px;
+  background: #dfe7ef;
+  object-fit: cover;
+}
+
+.matrix-setup-content {
+  font-size: 14px;
+  color: var(--progeo-blue);
+}
+
+.matrix-setup-heading {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0 0 8px;
+}
+
+.matrix-setup-stores {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.matrix-setup-store {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: #1b2430;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.matrix-setup-store:hover {
+  color: #fff;
+  background: #0b3659;
+}
+
+.matrix-setup-qr-row {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.matrix-setup-qr {
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(11, 54, 89, 0.12);
+}
+
+.matrix-setup-qr--empty {
+  width: 168px;
+  height: 168px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.matrix-setup-qr-side {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-width: 140px;
+}
+
+.matrix-setup-muted,
+.matrix-setup-waiting {
+  color: #6e6868;
+  font-size: 12px;
+}
+
+.matrix-setup-open-here {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.matrix-setup-manual {
+  font-size: 12px;
+  color: #6e6868;
+}
+
+.matrix-setup-manual summary {
+  cursor: pointer;
+  margin-bottom: 4px;
+}
+
+.matrix-setup-actions {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.matrix-setup-hint {
+  font-size: 13px;
+  color: #4f4949;
+}
+
+.matrix-setup-primary {
+  border-top: 1px solid #e6e3e2;
+  padding-top: 12px;
+  margin-top: 4px;
+}
+
+.matrix-setup-ok {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #2fa36b;
+  font-weight: 600;
+}

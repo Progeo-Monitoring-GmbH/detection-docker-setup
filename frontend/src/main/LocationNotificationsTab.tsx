@@ -13,6 +13,7 @@ import { useProgeoRole } from './roleModel';
 import type { PortalOutletContext } from './LocationPortalLayout';
 import { formatDate } from './dateFormat';
 import { repeatedTestId } from '../testIds';
+import MatrixPromoBanner from './MatrixPromoBanner';
 import './LocationNotificationsTab.css';
 
 type TimelineEvent = {
@@ -190,6 +191,7 @@ const LocationNotificationsTab = () => {
 
   return (
     <>
+    <MatrixPromoBanner />
     <PanelCard
       testId="page-location-benachrichtigungen"
       title={t('benach_title')}

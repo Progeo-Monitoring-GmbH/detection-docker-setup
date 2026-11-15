@@ -27,5 +27,7 @@ describe('oidcLoginHint', () => {
   it('reads the user name of the chat login link', () => {
     expect(oidcLoginHint(AUTHORIZE, ORIGIN)).toBe('kai');
     expect(oidcLoginHint('/v1/0/overview?login_hint=kai', ORIGIN)).toBe('');
+    // An expired QR code login token is no user name.
+    expect(oidcLoginHint('/auth/oidc/authorize/?client_id=progeo-matrix&login_hint=progeo-qr%3Aabc', ORIGIN)).toBe('');
   });
 });

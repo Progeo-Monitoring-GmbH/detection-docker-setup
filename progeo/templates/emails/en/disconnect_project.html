@@ -1,0 +1,22 @@
+{% extends "emails/en/base.html" %}
+{# Offline stage 1 (English) - see emails/disconnect_project.html. #}
+{% block subject %}Project '{{ project_name }}' - monitoring system fault - case {{ case_id }}{% endblock %}
+{% block preheader %}No data has been transmitted since {{ last_measurement_at }}{% endblock %}
+{% block content %}
+<p style="margin:0 0 12px;">Dear Sir or Madam,</p>
+<p style="margin:0 0 12px;">your roof monitoring system has not transmitted any data to our server since <strong>{{ last_measurement_at }}</strong>. Until the data transmission resumes, your waterproofing is not being monitored for leaks.</p>
+{% if devices %}<p style="margin:0 0 4px;">Affected devices:</p>
+<ul style="margin:0 0 12px; padding-left:20px;">{% for device in devices %}
+  <li>{{ device.label }} (last seen {{ device.last_seen }})</li>{% endfor %}
+</ul>{% endif %}
+<p style="margin:0 0 12px;">If you are responsible for operating the system in your building, please help us to resolve the fault as quickly as possible:</p>
+<ul style="margin:0 0 12px; padding-left:20px;">
+  <li>Check that your internet connection is working and restore it if necessary.</li>
+  <li>If your network configuration has changed, grant the required access. Please ask your network administrator.</li>
+  <li>Check that your evaluation unit or monitoring box is powered and takes measurements regularly. If not, reset it as described in the system documentation.</li>
+</ul>
+<p style="margin:0 0 12px;">If you need further help, please call us on {{ company.phone }}. We are available on working days from 09:00 to 16:30 (CET). Please always quote the case number <strong>{{ case_id }}</strong>.</p>
+<p style="margin:0 0 12px;">Please confirm briefly that you have received this message. We will remind you again as long as the fault persists - and let you know as soon as data arrives again.</p>
+<p style="margin:0;">Kind regards<br>Your ProGeo team</p>
+{% include "emails/en/_notification_links.html" with ack_label="Confirm receipt" kind_text="fault notifications" %}
+{% endblock %}

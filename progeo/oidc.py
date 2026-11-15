@@ -20,7 +20,13 @@ from oauth2_provider import urls as oauth2_urls
 from oauth2_provider.oauth2_validators import OAuth2Validator
 from oauth2_provider.views import AuthorizationView, UserInfoView
 
-from progeo.helper.matrix_accounts import matrix_localpart, may_use_matrix
+from progeo.helper.matrix_accounts import (
+    OIDC_CLIENT_ID,
+    QR_LOGIN_PREFIX,
+    matrix_localpart,
+    may_use_matrix,
+    redeem_qr_login,
+)
 
 
 class ProgeoOIDCValidator(OAuth2Validator):
@@ -43,6 +49,16 @@ class MatrixAuthorizationView(AuthorizationView):
     def dispatch(self, request, *args, **kwargs):
         if request.user.is_authenticated and not may_use_matrix(request.user):
             return HttpResponseForbidden("This account cannot use the ProGeo chat.")
+        if not request.user.is_authenticated and request.method == "GET":
+            # QR code login (matrix_accounts.create_qr_login): the one-time
+            # token in login_hint stands in for the portal session - for this
+            # authorization of the chat client only. No session is created;
+            # the client skips the consent page, so GET answers with the code.
+            hint = request.GET.get("login_hint") or ""
+            if hint.startswith(QR_LOGIN_PREFIX) and request.GET.get("client_id") == OIDC_CLIENT_ID:
+                user = redeem_qr_login(hint)
+                if user is not None:
+                    request.user = user
         return super().dispatch(request, *args, **kwargs)
 
 

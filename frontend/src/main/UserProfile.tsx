@@ -36,7 +36,8 @@ type UserProfileResponse = {
 
 type Messenger = 'signal' | 'whatsapp' | 'matrix';
 
-const MESSENGER_LABELS: Record<Messenger, string> = { signal: 'Signal', whatsapp: 'WhatsApp', matrix: 'Matrix' };
+// Matrix first: our own chat server is the recommended channel.
+const MESSENGER_LABELS: Record<Messenger, string> = { matrix: 'Matrix', signal: 'Signal', whatsapp: 'WhatsApp' };
 
 const isValidMatrixId = (input: string): boolean => /^@[^\s:]+:\S+$/.test(input.trim());
 
@@ -372,6 +373,18 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
           </div>
         ) : (
           <div className="profile-body">
+            {matrixAccount && (
+              <MatrixChatSection
+                account={matrixAccount}
+                labelClassName="profile-section-label"
+                onPrimary={() => {
+                  // The server switched the messenger to Matrix - mirror it in the form.
+                  setMessenger('matrix');
+                  setMessengerId(matrixAccount.user_id);
+                }}
+              />
+            )}
+
             <section data-testid="user-profile-contact">
               <div className="profile-section-label">{t('profile_section_contact')}</div>
               <div className="profile-grid">
@@ -419,6 +432,7 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
                           .map((service) => (
                             <option key={service} value={service}>
                               {MESSENGER_LABELS[service]}
+                              {service === 'matrix' && matrixAccount ? ` (${t('matrix_recommended')})` : ''}
                             </option>
                           ))}
                       </select>
@@ -454,7 +468,6 @@ export const UserProfileModal = ({ show, onHide }: UserProfileModalProps) => {
               </div>
             </section>
 
-            {matrixAccount && <MatrixChatSection account={matrixAccount} labelClassName="profile-section-label" />}
 
             <section data-testid="user-profile-access">
               <div className="profile-section-label">{t('profile_section_access')}</div>

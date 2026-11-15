@@ -43,7 +43,7 @@ AREA_MODULES = {
         archived_measurements catch_up_legacy_files climate_heatmap evaluate_measurement heatmap_video
         heat_limitations_api location_climate measurement_history noise_profiles
     """,
-    "notifications": "bounces_and_notifications notification_cases email_and_sms_helpers messenger outbound test_mail_command",
+    "notifications": "bounces_and_notifications notification_cases email_and_sms_helpers messenger matrix_setup outbound test_mail_command",
     "operations": """
         activity activity_sessions celery_schedule clear_logs deployment_settings docker_agent docker_api health logging_handler log_stream metrics
         periodic_task_skipping sentry_shutdown task_config_errors

@@ -168,3 +168,31 @@ def redeem(token: str, otp=None, request=None, purposes=None):
         link.save(using=DB, update_fields=["used_at"])
     ilog(f"[login_links] {link.purpose} link of user {link.user_id} redeemed")
     return link.user, link.purpose
+
+
+# ---------------------------------------------------------------------------- statistics
+
+STAT_PERIODS = {"24h": timedelta(hours=24), "7d": timedelta(days=7), "30d": timedelta(days=30)}
+
+
+def usage_stats(now=None) -> dict:
+    """How many one-time links were used: {"24h"|"7d"|"30d": {purpose: n,
+    ..., "total": n}} - login/invite/reset links from mails and the chat QR
+    code logins ("matrix"). Used links are kept (only unused ones are
+    replaced), so the numbers reach back as far as the rows do."""
+    from django.db.models import Count
+
+    from progeo.v1.models import LoginLink
+
+    now = now or timezone.now()
+    result = {}
+    for label, span in STAT_PERIODS.items():
+        rows = (
+            LoginLink.objects.using(DB).filter(used_at__gte=now - span)
+            .values("purpose").annotate(n=Count("id"))
+        )
+        counts = dict.fromkeys(LoginLink.Purpose.values, 0)
+        counts.update({row["purpose"]: row["n"] for row in rows})
+        counts["total"] = sum(counts.values())
+        result[label] = counts
+    return result

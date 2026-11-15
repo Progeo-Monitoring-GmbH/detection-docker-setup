@@ -1,0 +1,16 @@
+{% extends "emails/en/base.html" %}
+{# Offline stages 2+ (English) - see emails/offline_reminder.html. #}
+{% block subject %}Reminder: project '{{ project_name }}' - fault persists - case {{ case_id }}{% endblock %}
+{% block preheader %}Still no data since {{ last_measurement_at }}{% endblock %}
+{% block content %}
+<p style="margin:0 0 12px;">Dear Sir or Madam,</p>
+<p style="margin:0 0 12px;">the fault of your roof monitoring system at object <strong>{{ project_nr }} — {{ project_name }}</strong> persists: no data has reached our server since <strong>{{ last_measurement_at }}</strong>. Your waterproofing is not being monitored for leaks during this time.</p>
+{% if devices %}<p style="margin:0 0 4px;">Affected devices:</p>
+<ul style="margin:0 0 12px; padding-left:20px;">{% for device in devices %}
+  <li>{{ device.label }} (last seen {{ device.last_seen }})</li>{% endfor %}
+</ul>{% endif %}
+<p style="margin:0 0 12px;">Please check the internet connection, network permissions and the power supply of the monitoring box. For questions, call us on working days from 09:00 to 16:30 (CET) on {{ company.phone }} and quote the case number <strong>{{ case_id }}</strong>.</p>
+{% if include_objektleitung %}<p style="margin:0 0 12px;">This reminder also goes to the responsible ProGeo site manager.</p>{% endif %}
+<p style="margin:0;">Kind regards<br>Your ProGeo team</p>
+{% include "emails/en/_notification_links.html" with ack_label="Confirm receipt" kind_text="fault notifications" %}
+{% endblock %}

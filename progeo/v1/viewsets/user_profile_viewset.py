@@ -21,6 +21,34 @@ def _failed(code, reason, **extra):
     return RequestFailed({"reason": reason, "code": code, **extra})
 
 
+def _stored_language(user):
+    profile = getattr(user, "profile", None)
+    return getattr(profile, "language", None) or None
+
+
+def _save_language(user, language) -> None:
+    """The portal language is also the language of the user's mails and
+    messenger messages (UserProfile.language)."""
+    from progeo.v1.models import UserProfile
+
+    if not language or _stored_language(user) == language:
+        return
+    profile, _ = UserProfile.objects.get_or_create(user_id=user.pk)
+    profile.language = language
+    profile.save(update_fields=["language"])
+
+
+def _matrix_user(request):
+    """(user, error): the request's user when it may use our chat."""
+    from progeo.helper import matrix_accounts
+
+    if not matrix_accounts.enabled():
+        return None, _failed("matrix_disabled", "this server has no ProGeo chat")
+    if not matrix_accounts.may_use_matrix(request.user):
+        return None, _failed("matrix_not_allowed", "this account cannot use the ProGeo chat")
+    return request.user, None
+
+
 def _password_invalid(exc):
     """validate_password failed: the validators' codes (password_too_short, ...)."""
     return _failed("password_invalid", " ".join(exc.messages), password_codes=[error.code for error in exc.error_list])
@@ -118,7 +146,8 @@ class UserProfileViewSet(viewsets.ViewSet):
     @action(detail=False, url_path="profile", methods=["GET"])
     def profile(self, request, *args, **kwargs):
         user = request.user
-        language = self._normalize_language(request.session.get(LANGUAGE_SESSION_KEY)) or "de"
+        language = (self._normalize_language(_stored_language(user))
+                    or self._normalize_language(request.session.get(LANGUAGE_SESSION_KEY)) or "de")
         return RequestSuccess({
             "username": user.username,
             "first_name": user.first_name,
@@ -161,6 +190,66 @@ class UserProfileViewSet(viewsets.ViewSet):
         from progeo.helper.matrix_accounts import connected_at
 
         return RequestSuccess({"connected_at": connected_at(request.user)})
+
+    @action(detail=False, url_path="language", methods=["POST"])
+    def language(self, request, *args, **kwargs):
+        """POST {language: "de"|"en"} - the top bar's language switch: also
+        the language of the user's mails and messenger messages."""
+        language = self._normalize_language((request.data or {}).get("language")
+                                            if isinstance(request.data, dict) else None)
+        if not language:
+            return RequestFailed({"reason": "language must be de or en"})
+        request.session[LANGUAGE_SESSION_KEY] = language
+        _save_language(request.user, language)
+        return RequestSuccess({"language": language})
+
+    @action(detail=False, url_path="matrix/qr", methods=["POST"])
+    def matrix_qr(self, request, *args, **kwargs):
+        """A fresh one-time chat login QR code (helper/matrix_accounts.create_qr_login):
+        {link, qr, expires_at, valid_seconds}. Older unused codes stop working."""
+        from progeo.helper import matrix_accounts
+
+        user, error = _matrix_user(request)
+        if error:
+            return error
+        return RequestSuccess(matrix_accounts.create_qr_login(user))
+
+    @action(detail=False, url_path="matrix/test", methods=["POST"])
+    def matrix_test(self, request, *args, **kwargs):
+        """The bot sends a test message to the user's chat account - at most
+        one per minute (the messenger limits apply on top)."""
+        from django.core.cache import cache
+
+        from progeo.helper import matrix_accounts, messenger
+
+        user, error = _matrix_user(request)
+        if error:
+            return error
+        if not matrix_accounts.connected_at(user):
+            return _failed("matrix_not_connected", "sign in to a chat app first")
+        try:
+            if not cache.add(f"matrix-test:{user.pk}", 1, timeout=60):
+                return _failed("matrix_test_wait", "one test message per minute")
+        except Exception:  # noqa: BLE001, S110 - no cache: the messenger limits still hold
+            pass
+        try:
+            result = matrix_accounts.send_test_message(user)
+        except messenger.MessengerError as exc:
+            return _failed("matrix_test_failed", str(exc))
+        return RequestSuccess({"dry_run": bool(result.get("dry_run")), "user_id": matrix_accounts.matrix_user_id(user)})
+
+    @action(detail=False, url_path="matrix/primary", methods=["POST"])
+    def matrix_primary(self, request, *args, **kwargs):
+        """Matrix as the user's messenger, and the messenger channel on for
+        every location the user gets notifications of -> {subscriptions}."""
+        from progeo.helper import matrix_accounts
+
+        user, error = _matrix_user(request)
+        if error:
+            return error
+        changed = matrix_accounts.make_primary(user)
+        user.refresh_from_db()
+        return RequestSuccess({"subscriptions": changed, **_contact_fields(user)})
 
     @action(detail=False, url_path="settings", methods=["POST"])
     def update_settings(self, request, *args, **kwargs):
@@ -224,6 +313,7 @@ class UserProfileViewSet(viewsets.ViewSet):
         if next_language:
             request.session[LANGUAGE_SESSION_KEY] = next_language
             translation.activate(next_language)
+            _save_language(user, next_language)
 
         return RequestSuccess({
             "email": user.email,

@@ -1,0 +1,10 @@
+{% extends "emails/en/base.html" %}
+{# Manually triggered delivery check (English) - see emails/test_leakage.html. #}
+{% block subject %}Test leak — object {{ project_nr }} · {{ project_name }}{% endblock %}
+{% block preheader %}Test - there is no suspected leak{% endblock %}
+{% block content %}
+<p style="margin:0 0 12px;">Manually triggered delivery check for object <strong>{{ project_nr }} — {{ project_name }}</strong>.</p>
+<p style="margin:0 0 12px;">This message is marked as a test. There is no suspected leak. Triggering and delivery of this notification are recorded.</p>
+<p style="margin:0;">Triggered by: {{ triggered_by }}<br>
+Time: {{ timestamp }}</p>
+{% endblock %}

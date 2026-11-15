@@ -19,6 +19,8 @@ class ActivityViewSet(viewsets.ViewSet):
         GET  /v1/activity/summary/?days=30  staff (is_staff or is_superuser): the overview
         GET  /v1/activity/sessions/?days=30 staff: every session (duration, pages, clicks)
         GET  /v1/activity/session/?session=<id>  staff: one session with its events
+        GET  /v1/activity/messaging/        staff: chat accounts (Matrix) and the use of
+                                            one-time login links (24 h / 7 d / 30 d)
     """
 
     authentication_classes = [JWTAuthentication, ExpiringTokenAuthentication, SessionAuthentication]
@@ -43,6 +45,15 @@ class ActivityViewSet(viewsets.ViewSet):
         if denied := self._staff_only(request):
             return denied
         return RequestSuccess(activity.summary(activity.summary_days(request.query_params.get("days"))))
+
+    @action(detail=False, url_path="messaging", methods=["GET"])
+    def messaging(self, request, *args, **kwargs):
+        """Staff: {matrix: matrix_accounts.stats(), login_links: login_links.usage_stats()}."""
+        from progeo.helper import login_links, matrix_accounts
+
+        if denied := self._staff_only(request):
+            return denied
+        return RequestSuccess({"matrix": matrix_accounts.stats(), "login_links": login_links.usage_stats()})
 
     @action(detail=False, url_path="sessions", methods=["GET"])
     def sessions(self, request, *args, **kwargs):

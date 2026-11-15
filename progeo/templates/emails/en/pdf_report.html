@@ -1,0 +1,7 @@
+{% extends "emails/en/base.html" %}
+{% block subject %}PDF report — object {{ project_nr }} · {{ project_name }}{% endblock %}
+{% block content %}
+<p style="margin:0 0 12px;">Please find attached the requested measurement report for object <strong>{{ project_nr }} — {{ project_name }}</strong> ({{ range_from }} – {{ range_to }}).</p>
+<p style="margin:0;">Created by: {{ triggered_by }}<br>
+Time: {{ timestamp }}</p>
+{% endblock %}

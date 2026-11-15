@@ -190,6 +190,11 @@ const TopBar = () => {
                 onClick={() => {
                   void i18n.changeLanguage(language.code);
                   setLangOpen(false);
+                  // Also the language of the user's mails and messenger
+                  // messages (UserProfile.language) - not for the read-only demo.
+                  if (auth.user && !demo) {
+                    void axiosConfig.perform_post(auth, '/v1/user/language/', { language: language.code }, () => {}, () => {});
+                  }
                 }}
                 className={
                   currentLang === language.code

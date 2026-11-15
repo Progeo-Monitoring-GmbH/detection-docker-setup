@@ -18,7 +18,44 @@ numbers banned).
 | `progeo-signal-bridge` | mautrix-signal. Its only user is the bot, linked to ProGeo's Signal number. |
 | `progeo-matrix-init`, `progeo-signal-bridge-init` | One-shot, before the others on every `docker compose up`: MAS's config, signing key and database (`mas_init.py`), the bridge's config and appservice registration (`signal_bridge_init.sh`). |
 
-## How a login works
+## Setup dialog and QR code login (recommended)
+
+Mein Konto shows the chat as the **recommended** notification channel. A button opens the dialog
+"ProGeo Chat einrichten" ([MatrixSetupModal.tsx](../../frontend/src/main/MatrixSetupModal.tsx)). It
+has three animated steps:
+
+1. **Install Element X:** store buttons, and a QR code with the provisioning link without a login hint.
+2. **Scan & sign in, without a password:**
+   - The dialog requests a **one-time login code** (`POST /v1/user/matrix/qr/`). The QR code holds
+     the Element X provisioning link with `login_hint=progeo-qr:<token>`.
+   - Element X passes the hint to MAS, and MAS forwards it to `/auth/oidc/authorize/`
+     (`forward_login_hint: true`).
+   - There the token stands in for the portal session ([progeo/oidc.py](../../progeo/oidc.py)), only
+     for this one authorization of the chat client. The phone gets no portal session.
+   - The token is a `LoginLink` with purpose `matrix`: only its SHA-256 is stored, it works once, it
+     is valid for `MATRIX_QR_LOGIN_MINUTES` (10), and a new code revokes the old one.
+   - It was shown in a portal session that already passed 2FA, so it needs no second factor itself.
+   - An expired code lands on the normal portal login, which ignores the token as a user name.
+3. **Test message:** the bot writes to the new account (`POST /v1/user/matrix/test/`, at most once a
+   minute). The first message arrives as an invitation the user accepts. Then **"use the chat for
+   notifications"** (`POST /v1/user/matrix/primary/`) sets Matrix as the user's messenger and switches
+   the messenger channel on for every location the user gets alarm or offline notifications for. The
+   mail channel stays on.
+
+The dialog notices the app login by itself (it polls `/v1/user/matrix/`). The location notification
+tab shows a dismissible banner with the same dialog until the chat is the user's primary channel.
+
+The animations are rendered by
+[scripts/tutorial/render_matrix_tutorial.py](../../scripts/tutorial/render_matrix_tutorial.py)
+(OpenCV + ffmpeg, low-poly, no text, so the same clips work in every language) into
+`frontend/public/assets/tutorial/`. Run it with `--preview` to iterate on the look in seconds.
+
+**Security trade-off:** whoever photographs the QR code within its validity can sign in to the chat
+as that user, but not to the portal. That is why codes are short-lived, single-use and replaced on
+every refresh. The token is visible in the MAS and nginx access logs (query string), but it is
+already used up by the time anyone could read it there.
+
+## How a login works (manual, other apps)
 
 1. The user scans a QR code in Mein Konto, one per app:
    - **Element X:** Element's provisioning link

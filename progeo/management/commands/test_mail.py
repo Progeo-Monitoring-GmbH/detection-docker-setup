@@ -74,6 +74,7 @@ class Command(BaseCommand):
         '  python manage.py test_mail --templates\n'
         '  python manage.py test_mail --template disconnect_project.txt\n'
         '  python manage.py test_mail --templates --dry-run\n'
+        '  python manage.py test_mail --templates --language en\n'
         '  python manage.py test_mail --to test-mails@progeo.com kontakt@progeo.com'
     )
 
@@ -84,6 +85,8 @@ class Command(BaseCommand):
                             help="Also send every template in progeo/templates/emails.")
         parser.add_argument("--template", action="append", choices=_template_names(),
                             help="Send only this template (repeatable). Skips the plain test mail.")
+        parser.add_argument("--language", choices=emailhelper.LANGUAGES, default=emailhelper.DEFAULT_LANGUAGE,
+                            help="Template language (emails/<language>/, German where a translation is missing).")
         parser.add_argument("--dry-run", action="store_true",
                             help="Only print config and rendered mails; no connection, nothing sent.")
 
@@ -111,7 +114,7 @@ class Command(BaseCommand):
 
         templates = options["template"] or (_template_names() if options["templates"] else [])
         for name in templates:
-            rendered = emailhelper.render_mail(name, _sample_context(name))
+            rendered = emailhelper.render_mail(name, _sample_context(name), language=options["language"])
             failures += self._send(name, recipients, SUBJECT_PREFIX + rendered["subject"], rendered["text"], dry_run,
                                    html=rendered["html"])
 

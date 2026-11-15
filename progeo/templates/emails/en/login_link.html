@@ -1,0 +1,11 @@
+{% extends "emails/en/base.html" %}
+{# One-time login link (English). `action_url` is secret. #}
+{% block subject %}Your sign-in link for the ProGeo portal{% endblock %}
+{% block preheader %}Valid once, for {{ valid_minutes }} minutes{% endblock %}
+{% block content %}
+<h1 style="margin:0 0 12px; font-size:20px;">Sign in without a password</h1>
+<p style="margin:0 0 12px;">{% if first_name %}Hello {{ first_name }},{% else %}Hello,{% endif %}</p>
+<p style="margin:0 0 4px;">with the following link you sign in to the ProGeo portal once. It is valid for {{ valid_minutes }} minutes.</p>
+{% include "emails/_button.html" with url=action_url label="Sign in now" %}
+<p style="margin:0; font-size:12px; color:#6E6868;">You did not request a sign-in link? Then you can ignore this e-mail - nobody can sign in without the link.</p>
+{% endblock %}

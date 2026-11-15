@@ -362,6 +362,8 @@ PORTAL_OIDC_ENABLED = bool(PORTAL_OIDC_ISSUER and PORTAL_OIDC_PRIVATE_KEY)
 # The portal's client for MAS's admin API: a deleted/deactivated portal user's
 # chat account follows (helper/matrix_accounts.py). Empty = it doesn't.
 MATRIX_MAS_ADMIN_SECRET = (os.getenv("MATRIX_MAS_ADMIN_SECRET") or "").strip()
+# Validity of the chat login QR code in Mein Konto (helper/matrix_accounts.create_qr_login).
+MATRIX_QR_LOGIN_MINUTES = parse_int(os.getenv("MATRIX_QR_LOGIN_MINUTES"), 10)
 OAUTH2_PROVIDER = {
     "OIDC_ENABLED": PORTAL_OIDC_ENABLED,
     "OIDC_RSA_PRIVATE_KEY": PORTAL_OIDC_PRIVATE_KEY,

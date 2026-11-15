@@ -1,0 +1,8 @@
+{% extends "emails/en/base.html" %}
+{% block subject %}Your access to the ProGeo portal has been approved{% endblock %}
+{% block content %}
+<h1 style="margin:0 0 12px; font-size:20px;">Access approved</h1>
+<p style="margin:0 0 12px;">Hello {{ first_name }},</p>
+<p style="margin:0 0 4px;">your access to the ProGeo portal has been approved. Please sign in again - as soon as objects are assigned to you, you will see them in the portal.</p>
+{% include "emails/_button.html" with url=login_url label="Sign in" %}
+{% endblock %}

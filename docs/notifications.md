@@ -11,7 +11,7 @@ A **`NotificationCase`** is one problem of one location. It has a kind (`offline
 Cases live in the `default` database, like `OutboundMessage`. `case.db` names the database that holds the location's devices, alarms and `ProgeoAccess` rows: the project database once `PROJECT_DB_SPLIT` is on.
 
 | Model | Purpose |
-|---|---|
+| --- | --- |
 | `NotificationCase` | Kind, stage, phase fields, offline devices / alarm ids, who was notified |
 | `NotificationCaseEvent` | Append-only protocol (detected, stage sent, bounce, acknowledged, unsubscribed, …) |
 | `NotificationToken` | One acknowledge/unsubscribe token per recipient and mail (only the SHA-256 is stored) |
@@ -23,13 +23,14 @@ Cases live in the `default` database, like `OutboundMessage`. `case.db` names th
 **Detection: per device, hourly at :50** (`detect_offline_devices`). A device is offline when its last sign of life (newest measurement or command poll) is older than both `2 × data_interval + 10 min` and `NOTIFY_OFFLINE_AFTER_HOURS` (6 h). One case per location collects the offline devices.
 
 These devices never open a case:
+
 - devices that never sent anything (new installations)
 - devices that have been silent longer than `NOTIFY_OFFLINE_IGNORE_AFTER_DAYS` (60 days, i.e. dismantled)
 
 Detection sends no mail. Mails go out with `process_notification_cases` (every 15 min).
 
 | Stage | When (`NOTIFY_OFFLINE_STAGE_DAYS` = 0,3,7,14) | Template | To |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 1 | next 09:00 after detection | `disconnect_project` | TIMEOUT subscribers + location contact mail |
 | 2 | day 3, 09:00 | `offline_reminder` | same |
 | 3 | day 7, 09:00 | `offline_reminder` | same + Objektleitung |
@@ -51,12 +52,13 @@ So a device that flaps daily causes at most the normal stage mails plus one "wie
 `notify_alarm` (called for every new alarm, as before) opens the location's alarm case and sends stage 1 **immediately, at any hour**. Alarms older than `ALARM_NOTIFY_MAX_AGE_HOURS` (re-evaluated history) notify nobody. While the case is open, further alarms only join it. This replaces the old 60-minute cooldown.
 
 | Stage | When (`NOTIFY_ALARM_STAGE_HOURS` = 0,4,24) | Template | To |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 1 | immediately | `alarm_notification` | ALARM subscribers (mail / SMS / messenger, as they chose) |
 | 2 | +4 h, not acknowledged | `alarm_reminder` | same |
 | 3 | +24 h, not acknowledged | `alarm_reminder` | same + Objektleitung; `ProgeoEscalation` opened |
 
 Alarm stages ignore the send window, including the reminders. The case closes when:
+
 - someone acknowledges via the mail link, which sets the case's alarms to `quittiert`, or
 - all its alarms are acknowledged in the portal, or
 - its alarms were deleted.
@@ -71,11 +73,13 @@ Alarm stages ignore the send window, including the reminders. The case closes wh
 ## Links in every mail
 
 Every mail contains, per recipient:
+
 - **an acknowledge link**: `/benachrichtigung/<token>?aktion=quittieren`
 - **an unsubscribe link**: `/benachrichtigung/<token>?aktion=abmelden`
 - **`List-Unsubscribe` + `List-Unsubscribe-Post` headers** (RFC 8058 one-click), as Gmail and Yahoo expect
 
 How the links behave:
+
 - **The page only acts on a button click.** Mail scanners open every link, so loading the page must never acknowledge an alarm or unsubscribe anybody.
 - **Links work without a login.** The token is the key. They stay valid for `NOTIFY_LINK_DAYS` (60).
 - **Tokens never land in the mail log.** The `EMail` rows show a redacted placeholder. Tokens are created in the worker and never pass through the broker.
@@ -99,6 +103,21 @@ What's new is the link to the case. `OutboundMessage.case_id` lets every bounce 
 
 Unreachable cases show in the monitoring, the staff digest and the Prometheus alert `NotificationCasesUnreachable`. The fix is to correct the contact data, or to remove a wrong suppression under Staff → Versand.
 
+## Language
+
+Every mail goes out in its recipient's language:
+
+- **Storage:** the language is `UserProfile.language`. It is stored when the user changes the language in Mein Konto or with the top bar's switch (`POST /v1/user/language/`).
+- **Lookup:** `send_template_mail` resolves it from the recipient address (`emailhelper.recipient_language`) and renders `progeo/templates/emails/<language>/<name>.html`.
+- **Fallback:** the German template in `emails/` is used for unknown addresses (such as the location's contact mail), users without a stored language, and templates without a translation (the staff mails).
+- **SMS and messenger:** the alarm texts are chosen per recipient the same way (`notification_cases.ALARM_WORDS`).
+
+Preview the English mails with `python manage.py test_mail --templates --language en`. A new template needs both files; `test_english_templates_render_and_fall_back_to_german` renders every template in English.
+
+## Messenger (ProGeo chat) as the primary channel
+
+Mein Konto and the notification tab recommend our own Matrix chat. The setup dialog signs the phone in by QR code, without a password, and switches the messenger channel on for all of the user's subscriptions. Details: [docker/matrix/README.md](../docker/matrix/README.md).
+
 ## Monitoring
 
 **Staff → Benachrichtigungen** shows a tile row of open cases per kind and phase, and a list filterable by state and kind. A case's detail view has its devices or alarms, who was notified, the protocol, and the actions *mute 7 days*, *mute until released*, *release* and *close*.
@@ -106,7 +125,7 @@ Unreachable cases show in the monitoring, the staff digest and the Prometheus al
 Phases:
 
 | Phase | Meaning |
-|---|---|
+| --- | --- |
 | detected | case open, nothing sent yet |
 | notified | stage 1 sent |
 | reminder | stage ≥ 2 sent |
@@ -118,6 +137,7 @@ Phases:
 Two flags are shown on top of the phase: **unreachable** and **Kenntnisnahme** (receipt confirmed via the mail link).
 
 Also available:
+
 - **Daily staff digest** to `NOTIFY_STAFF_ADDRESS`, at the first run inside the window. It lists escalations, unreachable cases and locations whose last recipient unsubscribed, and is only sent when there is something to report.
 - **Prometheus metrics:** `progeo_notification_cases_open{kind,phase}`, `progeo_notification_cases_unreachable{kind}` and `progeo_notification_process_last_run_timestamp_seconds`.
 - **Prometheus alerts** `NotificationProcessingStale` (no run for 45 min) and `NotificationCasesUnreachable`.
@@ -133,7 +153,7 @@ Also available:
 ## Settings (`django.env`)
 
 | Variable | Default | |
-|---|---|---|
+| --- | --- | --- |
 | `NOTIFY_WINDOW_START_HOUR` / `_END_HOUR` | 9 / 22 | send window for offline mails (Europe/Berlin) |
 | `NOTIFY_OFFLINE_AFTER_HOURS` | 6 | minimum silence before a device counts as offline |
 | `NOTIFY_OFFLINE_IGNORE_AFTER_DAYS` | 60 | devices silent longer than this open no case |

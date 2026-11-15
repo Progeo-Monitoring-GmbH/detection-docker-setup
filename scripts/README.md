@@ -132,6 +132,7 @@ sudo bash scripts/reclaim_docker_space.sh --all-images --volumes
 | `run_pytest_unit_tests.sh` / `.bat` | Activates `venv` and runs pytest with `progeo.tests.settings`. Any arguments are passed through to pytest. |
 | `pytest_selector.py` / `.bat` | Interactive test picker: choose files, classes or single tests with the arrow keys and space, then run them. Needs `prompt_toolkit`. |
 | `run_celery.bat` | Starts a local Celery worker (Windows). Run it from inside `scripts/`. |
+| `tutorial/render_matrix_tutorial.py` | Renders the low-poly animations of the "ProGeo Chat einrichten" dialog (install, scan, test message) with OpenCV and encodes them with ffmpeg: WebM, MP4 and a PNG poster per step, into `frontend/public/assets/tutorial/`. `--preview` writes only a contact sheet per step, with no ffmpeg needed, so you can iterate quickly. `--step N` renders one clip, `--size` / `--fps` change the output. Needs the backend's venv (numpy, opencv) and `ffmpeg` on the PATH. The clips contain no text, so they work in every portal language. |
 
 ```bash
 bash scripts/run_pytest_unit_tests.sh progeo/tests/test_device_lorawan.py -x
