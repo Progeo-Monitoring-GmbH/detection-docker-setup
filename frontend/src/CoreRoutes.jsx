@@ -27,6 +27,7 @@ const MagicLinkRequest = React.lazy(
 );
 const MagicLinkLogin = React.lazy(() => import('./main/MagicLinkLogin.tsx'));
 const NotificationLinkPage = React.lazy(() => import('./main/NotificationLinkPage.tsx'));
+const MigrationSetup = React.lazy(() => import('./main/MigrationSetup.tsx'));
 const PasswordResetRequest = React.lazy(
   () => import('./main/PasswordResetRequest.tsx'),
 );
@@ -144,6 +145,8 @@ const CoreRoutes = () => {
       <Route path="/login/link/:token" element={<MagicLinkLogin />} />
       {/* Acknowledge / unsubscribe links of notification mails - no login. */}
       <Route path="/benachrichtigung/:token" element={<NotificationLinkPage />} />
+      {/* Migration info mail: set the first password, then signed in. */}
+      <Route path="/konto/einrichten/:token" element={<MigrationSetup />} />
       {/* Password reset by mail link + 2FA code; set on click, not on load. */}
       <Route path="/passwort-vergessen" element={<PasswordResetRequest />} />
       <Route path="/passwort/neu/:token" element={<PasswordResetConfirm />} />

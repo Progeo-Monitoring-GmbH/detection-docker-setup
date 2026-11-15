@@ -273,6 +273,10 @@ docker compose restart progeo-backend
 
 Offline devices and unacknowledged alarms are reported to the subscribers of a location in stages: first notice, reminders, Objektleitung, escalation. Every mail has an acknowledge link and an unsubscribe link. Offline mails go out only between 09:00 and 22:00; alarms go out at any time. Staff see each location's phase under Staff → Benachrichtigungen. Details, settings and rollout: [docs/notifications.md](docs/notifications.md).
 
+## Migration info mail (one-time)
+
+To invite the users of the old platform, the one-time campaign `manage.py migration_invites` sends each of them an info mail. The mail links to a page where they choose a password and are then signed in. Batches go out hourly, only while `MIGRATION_INVITES_ENABLED=1`; switch it off when the campaign is done. Runbook: [docs/migration_invites.md](docs/migration_invites.md).
+
 ## Notes
 
 - Most service ports are controlled via `.env` variables.

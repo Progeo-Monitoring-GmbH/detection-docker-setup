@@ -174,7 +174,10 @@ export const buildPolicySectionsEn = ({ consentButton }: SectionOptions): Policy
         <p>
           On request we send you a one-time sign-in link by e-mail;
           invitations and password resets (only with two-factor
-          authentication) also use such links. We store only a hash of the
+          authentication) also use such links. Users of our previous platform
+          receive a one-time info e-mail about the move with a link to set their
+          password and sign in; we record when it was sent and used. We store
+          only a hash of the
           link, its validity and the time it was used, not the link itself;
           in the sending log it appears masked. The language selected on the
           page that requests the link determines the language of the e-mail.

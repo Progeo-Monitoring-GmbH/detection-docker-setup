@@ -328,7 +328,11 @@ export const buildPolicySections = ({
         <p>
           Auf Wunsch senden wir Ihnen einen einmaligen Anmeldelink per E-Mail;
           auch Einladungen und das Zurücksetzen des Passworts (nur mit
-          Zwei-Faktor-Anmeldung) laufen über solche Links. Wir speichern davon
+          Zwei-Faktor-Anmeldung) laufen über solche Links. Nutzerinnen und
+          Nutzer unserer bisherigen Plattform erhalten zum Umzug einmalig eine
+          Info-E-Mail mit einem Link, über den sie ihr Passwort festlegen und
+          sich anmelden; wir vermerken, wann sie versendet und genutzt wurde.
+          Wir speichern davon
           nur einen Hash, die Gültigkeitsdauer und den Zeitpunkt der
           Verwendung, nicht den Link selbst; im Versandprotokoll erscheint er
           unkenntlich gemacht. Fehlgeschlagene Anmeldeversuche zählen wir je

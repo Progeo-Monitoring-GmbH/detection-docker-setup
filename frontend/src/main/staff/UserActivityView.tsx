@@ -44,7 +44,7 @@ type SessionDetail = { session: string; user_id: number; username: string; event
 /** GET /v1/activity/messaging/ (matrix_accounts.stats, login_links.usage_stats). */
 type MessagingStats = {
   matrix: { enabled: boolean; server_accounts: number | null; connected: number; active_7d: number; active_30d: number; primary: number };
-  login_links: Record<'24h' | '7d' | '30d', Record<'login' | 'invite' | 'reset' | 'matrix' | 'total', number>>;
+  login_links: Record<'24h' | '7d' | '30d', Record<'login' | 'invite' | 'reset' | 'matrix' | 'migration' | 'total', number>>;
 };
 
 const LINK_PERIODS = ['24h', '7d', '30d'] as const;
@@ -92,6 +92,7 @@ const MessagingStatsPanel = () => {
             invite: links[period].invite,
             reset: links[period].reset,
             matrix: links[period].matrix,
+            migration: links[period].migration,
           }),
           testId: `ua-links-${period}`,
         }))}
