@@ -1,5 +1,5 @@
 """patch_live gprs_device_config: the configuration the legacy controllers get
-from their gprs_<script>.php answer (legacy/gprs_table.py) into the devices."""
+from their gprs_<script>.php answer (legacy/gprs_php_config.json) into the devices."""
 from io import StringIO
 
 import pytest
@@ -7,7 +7,7 @@ from django.core.management import call_command
 
 from progeo.management.commands.patch_live import _gprs_targets, gprs_device_config
 from progeo.tests import factories as f
-from progeo.v1.legacy.gprs_table import SCRIPTS
+from progeo.v1.legacy.gprs_table import SCRIPTS, php_configs
 from progeo.v1.models import ProgeoDevice, ProgeoLocation
 
 
@@ -87,6 +87,17 @@ def test_every_configured_script_has_a_target_with_a_valid_pulldown():
     targets = list(_gprs_targets())
     pulldowns = {choice.value for choice in ProgeoDevice.Resistance}
 
-    assert {name for name, *_ in targets} == {name for name, script in SCRIPTS.items() if script.pd}
+    assert {name for name, *_ in targets} == set(php_configs()) == {n for n, s in SCRIPTS.items() if not s.reply}
     assert all(int(pd, 16) in pulldowns for _name, _project, _interval, pd, _pe, _sensors in targets)
     assert all(0 <= int(sensors) <= 999 for *_, sensors in targets)
+
+
+def test_master_template_pe_is_set_from_the_php_configuration():
+    # gprs_4304.php: `$out .= $PE` with $PE = "1"
+    account = f.make_account()
+    location = f.make_location(account, project_id=4304, pe_geschaltet=False)
+    f.make_device(location, raw_hash="4304", project_id=4304)
+
+    gprs_device_config(apply=True)
+
+    assert ProgeoLocation.objects.using(f.DB).get(pk=location.pk).pe_geschaltet is True

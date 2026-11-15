@@ -12,8 +12,10 @@ import pytest
 from django.core.cache import cache
 from django.test import override_settings
 
+from progeo.tests import factories as f
 from progeo.v1.legacy import executor, gprs_state
 from progeo.v1.legacy.gprs import extract_gprs_data
+from progeo.v1.legacy.gprs_table import php_configs
 from progeo.v1.models import ProgeoAlarm, ProgeoMeasurement
 
 CASES = json.loads((Path(__file__).parent / "fixtures" / "legacy_gprs_oracle.json").read_text(encoding="utf-8"))
@@ -40,6 +42,23 @@ def local_cache_and_channels(settings):
     gprs_state.reset_local()
     yield
     gprs_state.reset_local()
+
+
+@pytest.fixture(autouse=True)
+def configured_controllers():
+    """The legacy devices of the scripts used here, configured like on live
+    (patch_live gprs_device_config: the PHP's configuration)."""
+    account = f.make_account()
+    configs = php_configs()
+    for script in ("4031", "4033", "4060_h", "4070", "4073", "4085", "4091", "5754"):
+        project, config, second_project, second = configs[script]
+        for project_id, item in ((project, config), (second_project, second)):
+            if project_id is None:
+                continue
+            location = f.make_location(account, project_id=project_id, pe_geschaltet=item.pe == "1")
+            f.make_device(location, raw_hash=str(project_id), project_id=project_id,
+                          data_interval=int(item.interval), pull_resistance=int(item.pd, 16),
+                          sensor_count=int(item.sensors))
 
 
 def _measurements(project_id=None):

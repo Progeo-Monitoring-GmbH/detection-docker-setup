@@ -17,6 +17,7 @@ import LabeledInput from '../components/ui/kit/LabeledInput';
 import DeviceConfigPanel, {
   type ConfigDevice,
 } from '../components/device/DeviceConfigPanel';
+import LegacyGprsConfigPanel from '../components/device/LegacyGprsConfigPanel';
 import type { PortalOutletContext } from './LocationPortalLayout';
 import ThresholdMixerPanel from './ThresholdMixerPanel';
 import { getProjectTypeLabel } from './projectType';
@@ -28,6 +29,8 @@ import './LocationEinstellungenTab.css';
 type Device = ConfigDevice & {
   hardware: string | null;
   pull_resistance: number | null;
+  /** Legacy GPRS controller: configured through its answer (LegacyGprsConfigPanel). */
+  legacy_gprs?: { script: string; role: 'main' | 'second' } | null;
 };
 
 type AccessRule = {
@@ -389,7 +392,15 @@ const LocationEinstellungenTab = () => {
                     ? t('einstell_config_hide')
                     : t('einstell_config_show')}
                 </button>
-                {configOpen[device.id] && (
+                {configOpen[device.id] && device.legacy_gprs && (
+                  <LegacyGprsConfigPanel
+                    testId={testId('legacy-config', device.id)}
+                    deviceId={device.id}
+                    locationId={locationId}
+                    canEdit={canEditDevices}
+                  />
+                )}
+                {configOpen[device.id] && !device.legacy_gprs && (
                   <DeviceConfigPanel
                     testId={testId('device-config', device.id)}
                     device={device}

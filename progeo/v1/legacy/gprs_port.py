@@ -38,14 +38,27 @@ NO_ALARM = None
 
 
 @dataclass(frozen=True)
+class DeviceConfig:
+    """A controller's configuration as the answer carries it (from its
+    device and location in the database, see gprs_state.py)."""
+
+    interval: str   # measuring interval in seconds, 4 digits
+    pd: str         # pulldown resistor: 0x08 none, 0x18 100R, 0x28 1k, 0x48 10k, 0x88 100k
+    sensors: str    # sensor count, 3 digits
+    pe: str = ""    # PE switched to ground: "0"/"1", "" = unknown
+
+
+@dataclass(frozen=True)
 class GprsScript:
-    """What one gprs_<script>.php did. Defaults = the common template.
+    """What one gprs_<script>.php did - its behaviour and the layout of its
+    answer, not the controller's configuration (DeviceConfig). Defaults =
+    the common template.
 
-    The answer is built from the fields the firmware reads (checkServerReply
-    in the controllers' Lua code; offsets after "xx", 0-based):
+    The firmware (checkServerReply in the controllers' Lua code) reads the
+    answer at fixed offsets after "xx" (0-based):
 
-        xx  pd      interval  reset  sensors  multi  PE   tail
-            2..5    6..9      10     11..13   14,15  16   (ignored by it)
+        xx  pd      interval  reset  sensors  multi  PE   [hybrid 2nd]    tail
+            2..5    6..9      10     11..13   14,15  16   sensors pd PE   (ignored by it)
 
     Any difference in pd, interval, sensors or PE makes the controller
     rewrite its para.dat and restart - see FIRMWARE_FIELDS and the checks
@@ -53,22 +66,18 @@ class GprsScript:
     byte: hybrid and older firmware versions read more than that function.
     """
 
-    pd: str = ""              # pulldown resistor: 0x08 none, 0x18 100R, 0x28 1k, 0x48 10k, 0x88 100k
-    interval: str = ""        # measuring interval in seconds, 4 digits
-    sensors: str = ""         # sensor count, 3 digits
-    multi: str = ""           # interval multiplier (EEPROM firmware), 2 digits
-    pe: str = ""              # PE switched to ground: "0"/"1", "" = no PE switch
-    # hybrid (_h) scripts: the second sensor configuration, measured for
-    # second_project (sensor count, pulldown, PE) - read by their firmware.
-    sensors_2: str = ""
-    pd_2: str = ""
-    pe_2: str = ""
+    multi: str = ""           # interval multiplier (EEPROM firmware), 2 digits - a constant per script
+    has_pe: bool = False      # the answer carries the PE switch (location.pe_geschaltet)
+    # hybrid (_h) scripts: the second sensor configuration (sensors, pd, PE)
+    # is second_project's.
     second_project: int | None = None
     tail: str = ""            # verbatim rest (may hold "{sensor}")
     lead: str = ""            # text before "xx" (chunked scripts: "\n")
-    # A complete answer template instead of the fields above ("{reset}",
+    # A complete answer template instead of the layout above ("{reset}",
     # "{abin}", "{vt}"): gprs_5723 (relay bits), gprs_5787 (fixed answer).
     reply: str = ""
+    # False: no answer is known (scripts missing from gprs_table.py).
+    answers: bool = True
     reset: str = "0"          # reset code without an alarm
     alarm_reset: str = "9"    # ... with an active alarm
     # standard: old template (count/2 may give "4.5", missing status "")
@@ -436,50 +445,64 @@ def sensor_text(kind: str, number: int) -> str:
     return text
 
 
-def render_reply(project: int, script: GprsScript, context: dict, alarms) -> str:
-    """The answer for the controller. `alarms` looks the alarm state up:
-    alarms.top_sensor(project) -> sensor number of the strongest active
-    alarm (0 if unknown) or None; alarms.sensors(project) -> set of sensor
+def render_reply(project: int, script: GprsScript, context: dict, live) -> str:
+    """The answer for the controller. `live` holds the database state:
+    live.config(project) -> DeviceConfig or None (not configured);
+    live.top_sensor(project) -> sensor number of the strongest active alarm
+    (0 if unknown) or NO_ALARM; live.sensors(project) -> set of sensor
     numbers with an active alarm."""
     if script.transform == "split_5723":
-        alarmed = alarms.sensors(5724)
+        alarmed = live.sensors(5724)
         bits = "".join("1" if sensor in alarmed else "0" for sensor in range(1, 5))
         abin = bits + context.get("fss", "0") + "000"
         return script.reply.replace("{abin}", abin).replace("{vt}", context.get("vt", ""))
 
+    config = live.config(project)
+    config_2 = live.config(script.second_project) if script.second_project else None
     if script.transform == "hybrid":
         reset = "3" if context.get("sensor_break") else script.reset
         p1, p2 = (context.get("projects") or [None, None])[:2]
-        a1 = p1 is not None and alarms.top_sensor(p1) is not NO_ALARM
-        a2 = p2 is not None and alarms.top_sensor(p2) is not NO_ALARM
+        a1 = p1 is not None and live.top_sensor(p1) is not NO_ALARM
+        a2 = p2 is not None and live.top_sensor(p2) is not NO_ALARM
         if a1 or a2:
             reset = script.hybrid_resets[0 if not a2 else 1 if not a1 else 2]
-        return compose_reply(script, reset)
+        return compose_reply(script, reset, config, config_2)
 
-    top = alarms.top_sensor(script.alarm_project or project)
+    top = live.top_sensor(script.alarm_project or project)
     if top is NO_ALARM:
-        return compose_reply(script, script.reset)
-    return compose_reply(script, script.alarm_reset, top)
+        return compose_reply(script, script.reset, config, config_2)
+    return compose_reply(script, script.alarm_reset, config, config_2, top)
 
 
-def compose_reply(script: GprsScript, reset: str, alarm_sensor=NO_ALARM) -> str:
-    """The answer from the script's fields; `alarm_sensor`: sensor number
-    of the strongest active alarm (NO_ALARM without one)."""
+def compose_reply(script: GprsScript, reset: str, config: DeviceConfig | None,
+                  config_2: DeviceConfig | None = None, alarm_sensor=NO_ALARM) -> str:
+    """The answer from the script's layout and the controller's
+    configuration; `config_2`: a hybrid script's second configuration;
+    `alarm_sensor`: sensor number of the strongest active alarm.
+
+    Without a complete configuration there is no answer at all: the
+    firmware ignores an answer without "xx" and keeps its configuration,
+    while a half "xx..." would rewrite it or crash it (interval = nil)."""
     if script.reply:
         return script.reply.replace("{reset}", reset)
-    if not script.pd:
-        # No configuration known: no "xx" at all - the firmware ignores the
-        # answer, while a half "xx..." would crash it (interval = nil).
+    if not script.answers or config is None:
         return ""
-    sensors, tail_sensor = script.sensors, "000"
+    if script.has_pe and config.pe not in ("0", "1"):
+        return ""
+    hybrid = ""
+    if script.second_project:
+        if config_2 is None or config_2.pe not in ("0", "1"):
+            return ""
+        hybrid = f"{config_2.sensors}{config_2.pd}{config_2.pe}"
+    sensors, tail_sensor = config.sensors, "000"
     if alarm_sensor is not NO_ALARM and script.sensor:
         if script.sensor == "alarm_sensor":
             tail_sensor = sensor_text("alarm_sensor", alarm_sensor)
         else:
             sensors = sensor_text(script.sensor, alarm_sensor)
     tail = script.tail.replace("{sensor}", tail_sensor)
-    hybrid = f"{script.sensors_2}{script.pd_2}{script.pe_2}"
-    return f"{script.lead}xx{script.pd}{script.interval}{reset}{sensors}{script.multi}{script.pe}{hybrid}{tail}"
+    pe = config.pe if script.has_pe else ""
+    return f"{script.lead}xx{config.pd}{config.interval}{reset}{sensors}{script.multi}{pe}{hybrid}{tail}"
 
 
 def _lua_tonumber(text: str):

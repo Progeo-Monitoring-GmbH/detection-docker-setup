@@ -64,6 +64,7 @@ from progeo.v1.models import (
 from progeo.v1.serializers import DeviceSerializer, ProgeoMeasurementSerializer
 from progeo.v1.viewsets.device_commands_mixin import DeviceCommandsMixin
 from progeo.v1.viewsets.device_provisioning_mixin import DeviceProvisioningMixin
+from progeo.v1.viewsets.legacy_gprs_config_mixin import LegacyGprsConfigMixin
 from progeo.v1.viewsets.progeo_model_viewset import ProgeoModalViewSet
 from progeo.v1.viewsets.setup_viewset import (
     _get_controller_account,
@@ -79,7 +80,7 @@ LORAWAN_MEASUREMENT_FIELDS = {
 
 
 
-class DeviceViewSet(DeviceCommandsMixin, DeviceProvisioningMixin, ProgeoModalViewSet):
+class DeviceViewSet(DeviceCommandsMixin, DeviceProvisioningMixin, LegacyGprsConfigMixin, ProgeoModalViewSet):
     serializer_class = DeviceSerializer
     authentication_classes = [JWTAuthentication, ExpiringTokenAuthentication, SessionAuthentication]
     permission_classes = [IsAuthenticated]
@@ -394,6 +395,9 @@ class DeviceViewSet(DeviceCommandsMixin, DeviceProvisioningMixin, ProgeoModalVie
         if isinstance(bundle, str) and firmware_update.BUNDLE_ID.fullmatch(bundle):
             device_info["firmware_bundle"] = bundle
         device_info = {field: str(value) for field, value in device_info.items() if value not in (None, "")}
+        if sensors and sensors > 0:
+            # The sensors it measures - its configuration, like data_interval.
+            device_info["sensor_count"] = sensors
         if device_info:
             # Only written when something changed (exclude: all fields already equal).
             ProgeoDevice.objects.using(measure._state.db).filter(pk=measure.device_id).exclude(

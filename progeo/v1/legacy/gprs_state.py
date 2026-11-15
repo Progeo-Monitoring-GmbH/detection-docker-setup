@@ -11,25 +11,25 @@ LOCAL_TTL seconds, so an answer costs no database query. Only without a
 snapshot (cold start, cache flushed, beat not running) a request loads its
 own projects.
 
-Database values are used only when valid. A device still at the model
-defaults (3600 s, 100k) was never configured (patch_live gprs_device_config)
-and keeps the table's values: no legacy controller uses that combination,
-and a device re-created by ingestion must not silently reconfigure its
-controller. Without a sensor_count the table's sensor count is answered.
+The database is the only source of the configuration (device_config):
+without a complete, valid one the controller gets no answer - the firmware
+ignores it and keeps what it has. sensor_count is the mark of a configured
+device: ingestion never sets it for these controllers, so a device it
+(re)creates - with model defaults and pe_geschaltet False - is not answered.
 
-Changes reach the answers with the next refresh (patch_live
-gprs_device_config refreshes right away). So do alarms: an alarm appears in
-the answer (reset code, sensor number) up to one refresh interval late.
+Changes reach the answers with the next refresh; the configuration editor
+(gprs_config.py) and patch_live gprs_device_config update their projects in
+the snapshot right away (refresh_projects). Alarms appear in the answer
+(reset code, sensor number) up to one refresh interval late.
 """
 
-import dataclasses
 import time
 
 from django.db.models import F
 
 from progeo.helper.basics import wlog
 from progeo.helper.safe_cache import cache_get, cache_set
-from progeo.v1.legacy.gprs_port import NO_ALARM
+from progeo.v1.legacy.gprs_port import NO_ALARM, DeviceConfig
 from progeo.v1.legacy.gprs_table import SCRIPTS
 
 SNAPSHOT_KEY = "legacy-gprs:state"
@@ -38,7 +38,6 @@ SNAPSHOT_KEY = "legacy-gprs:state"
 SNAPSHOT_TIMEOUT = 45 * 60
 LOCAL_TTL = 60
 PULLDOWNS = {8, 24, 40, 72, 136}  # ProgeoDevice.Resistance
-UNCONFIGURED = (3600, 136)        # ProgeoDevice defaults: data_interval, pull_resistance
 MISSING_WARNING_EVERY = 60
 
 _local = {"snapshot": None, "at": 0.0, "warned": 0.0}
@@ -146,6 +145,23 @@ def refresh():
     return snapshot
 
 
+def refresh_projects(projects):
+    """Update just `projects` in the snapshot (after their configuration was
+    edited); the other processes take it over within LOCAL_TTL seconds.
+    Without a snapshot nothing is stored - requests load from the database."""
+    snapshot = cache_get(SNAPSHOT_KEY)
+    if snapshot is None:
+        return None
+    projects = {int(project) for project in projects}
+    states = load_projects(projects)
+    merged = {project: state for project, state in snapshot["projects"].items() if project not in projects}
+    merged.update(states)
+    snapshot = {"at": snapshot["at"], "projects": merged}
+    cache_set(SNAPSHOT_KEY, snapshot, SNAPSHOT_TIMEOUT)
+    _local.update(snapshot=snapshot, at=time.monotonic())
+    return snapshot
+
+
 def current(projects):
     """The states for an answer: the snapshot (this process's copy, renewed
     from the cache every LOCAL_TTL seconds); without one, `projects` loaded
@@ -168,46 +184,30 @@ def current(projects):
     return load_projects(projects)
 
 
-def _device_fields(state, with_pe, interval_field, pd_field, sensors_field, pe_field):
+def device_config(state):
+    """The DeviceConfig of a project's state, or None when it cannot be
+    answered: no device, never configured (no sensor_count), or a value the
+    firmware cannot take (interval 1-9999 s, one of the five pulldowns,
+    0-999 sensors). PE is "" when the device has no location."""
     if state is None:
-        return {}
-    interval, pull = state["interval"], state["pull_resistance"]
-    if (interval, pull) == UNCONFIGURED:
-        # Never configured: its location's pe_geschaltet is the model
-        # default as well, not the controller's PE.
-        return {}
-    fields = {}
-    if interval_field and isinstance(interval, int) and 0 < interval <= 9999:
-        fields[interval_field] = f"{interval:04d}"
-    if pull in PULLDOWNS:
-        fields[pd_field] = f"0x{pull:02x}"
-    sensors = state.get("sensor_count")
-    if isinstance(sensors, int) and 0 <= sensors <= 999:
-        fields[sensors_field] = f"{sensors:03d}"
-    if with_pe and state["pe"] is not None:
-        fields[pe_field] = "1" if state["pe"] else "0"
-    return fields
+        return None
+    interval, pull, sensors = state["interval"], state["pull_resistance"], state.get("sensor_count")
+    if not (isinstance(interval, int) and 0 < interval <= 9999 and pull in PULLDOWNS
+            and isinstance(sensors, int) and 0 <= sensors <= 999):
+        return None
+    pe = "" if state["pe"] is None else "1" if state["pe"] else "0"
+    return DeviceConfig(f"{interval:04d}", f"0x{pull:02x}", f"{sensors:03d}", pe)
 
 
-def configure(project, script, states):
-    """`script` with interval, pulldown, sensor count and PE from the
-    database (where valid and configured); a hybrid script's second
-    configuration from its second project. Scripts without such fields stay
-    as they are."""
-    if not script.pd:
-        return script
-    changes = _device_fields(states.get(project), bool(script.pe), "interval", "pd", "sensors", "pe")
-    if script.second_project:
-        changes.update(_device_fields(states.get(script.second_project), bool(script.pe_2),
-                                      None, "pd_2", "sensors_2", "pe_2"))
-    return dataclasses.replace(script, **changes) if changes else script
-
-
-class StateAlarms:
-    """The alarm lookup render_reply expects, answered from the states."""
+class Live:
+    """What render_reply looks up, answered from the states: the projects'
+    configuration and their active alarms."""
 
     def __init__(self, states):
         self.states = states
+
+    def config(self, project):
+        return device_config(self.states.get(project))
 
     def _alarms(self, project):
         state = self.states.get(project)

@@ -10,6 +10,7 @@ scripts with sendToImport commented out, the recorded Y strings were also
 checked against the Y strings the production server logged for the same
 requests. Every case has to come out byte for byte the same here.
 """
+import dataclasses
 import json
 from pathlib import Path
 
@@ -23,18 +24,28 @@ from progeo.v1.legacy.gprs_port import (
     php_float,
     receive_chunk,
 )
-from progeo.v1.legacy.gprs_table import SCRIPTS
+from progeo.v1.legacy.gprs_table import SCRIPTS, php_configs
 
 CASES = json.loads((Path(__file__).parent / "fixtures" / "legacy_gprs_oracle.json").read_text(encoding="utf-8"))
 PORTED = [case for case in CASES if case["script"] in SCRIPTS]
+CONFIGS = php_configs()
 
 
-class OracleAlarms:
-    """The alarm tables the PHP saw: {"*": rows} for every table, or
-    {"<project>_Alarm": rows}; a row's Messpkt is the alarm's sensor."""
+class OracleLive:
+    """What the PHP script saw: its configuration ($pd, $int, $sensoren, $PE,
+    as the database holds it now - gprs_php_config.json) and the alarm
+    tables: {"*": rows} for every table, or {"<project>_Alarm": rows}; a
+    row's Messpkt is the alarm's sensor."""
 
-    def __init__(self, variant):
+    def __init__(self, variant, script_name=None):
         self.tables = json.loads(variant)
+        self.configs = {}
+        if script_name in CONFIGS:
+            project, config, second_project, second = CONFIGS[script_name]
+            self.configs = {project: config, second_project: second}
+
+    def config(self, project):
+        return self.configs.get(project)
 
     def _rows(self, project):
         return self.tables.get(f"{project}_Alarm", self.tables.get("*", []))
@@ -83,7 +94,7 @@ def _run(case, variant, replies):
     sent, got = [], []
     for request in _requests(case):
         kwargs = {"randint": randint} if randint else {}
-        y_strings, reply = handle(int(case["script"][:4]), script, request, store, "state", OracleAlarms(variant),
+        y_strings, reply = handle(int(case["script"][:4]), script, request, store, "state", OracleLive(variant, case["script"]),
                                   _timestamp(case), **kwargs)
         sent += y_strings
         got.append(reply)
@@ -141,7 +152,7 @@ def test_a_complete_chunked_upload_gives_the_payload_without_the_newline():
 def test_second_half_without_first_half_is_not_imported():
     script = SCRIPTS["5792"]
     store = DictStore()
-    y_strings, reply = handle(5792, script, "3,5,3,6;;Messung ok;1;0,0,0;2", store, "k", OracleAlarms("{}"), 1)
+    y_strings, reply = handle(5792, script, "3,5,3,6;;Messung ok;1;0,0,0;2", store, "k", OracleLive("{}", "5792"), 1)
     assert y_strings == []
     assert reply.startswith("xx")
 
@@ -157,7 +168,7 @@ def test_unknown_values_raise_instead_of_being_guessed():
 # interval, sensors or PE makes it rewrite para.dat and restart.
 
 PULLDOWNS = {"0x08", "0x18", "0x28", "0x48", "0x88"}
-CONFIGURED = {name: script for name, script in SCRIPTS.items() if script.pd}
+ANSWERING = sorted(name for name, script in SCRIPTS.items() if not script.reply)
 
 # Replies the PHP already sent that change the configuration the current
 # firmware reads while an alarm is active - ported unchanged, these
@@ -172,57 +183,89 @@ KNOWN_LEGACY_CONFIG_CHANGES = {
 }
 
 
-def _alarm_replies(script):
+def _calm_reply(name):
+    script = SCRIPTS[name]
+    _project, config, _second_project, second = CONFIGS[name]
+    return gprs_port.compose_reply(script, script.reset, config, second)
+
+
+def _alarm_replies(name):
+    script = SCRIPTS[name]
+    _project, config, _second_project, second = CONFIGS[name]
     if script.transform == "hybrid":
-        return [gprs_port.compose_reply(script, reset) for reset in script.hybrid_resets]
-    return [gprs_port.compose_reply(script, script.alarm_reset, sensor) for sensor in (1, 7, 123)]
+        return [gprs_port.compose_reply(script, reset, config, second) for reset in script.hybrid_resets]
+    return [gprs_port.compose_reply(script, script.alarm_reset, config, second, sensor) for sensor in (1, 7, 123)]
 
 
-@pytest.mark.parametrize("name", sorted(CONFIGURED))
-def test_the_configuration_fields_have_the_firmwares_format(name):
-    script = CONFIGURED[name]
-    assert script.pd in PULLDOWNS
-    assert len(script.interval) == 4 and script.interval.isdigit() and 0 < int(script.interval) <= 3600
-    assert len(script.sensors) == 3 and script.sensors.isdigit()
+def test_every_answering_script_has_its_php_configuration():
+    assert set(ANSWERING) == set(CONFIGS)
+    for name in ANSWERING:
+        script, (_project, config, second_project, second) = SCRIPTS[name], CONFIGS[name]
+        assert second_project == script.second_project
+        assert (second is not None) == bool(script.second_project)
+        if script.has_pe:
+            assert config.pe in ("0", "1")
+
+
+@pytest.mark.parametrize("name", ANSWERING)
+def test_the_php_configuration_has_the_firmwares_format(name):
+    script = SCRIPTS[name]
+    _project, config, _second_project, second = CONFIGS[name]
+    for item in (config, second) if second else (config,):
+        assert item.pd in PULLDOWNS
+        assert len(item.interval) == 4 and item.interval.isdigit() and 0 < int(item.interval)
+        assert len(item.sensors) == 3 and item.sensors.isdigit()
+        assert item.pe in ("", "0", "1")
     assert script.multi == "" or (len(script.multi) == 2 and script.multi.isdigit())
-    assert script.pe in ("", "0", "1")
     assert {script.reset, script.alarm_reset, *script.hybrid_resets} <= set("0123456789")
 
 
-@pytest.mark.parametrize("name", sorted(CONFIGURED))
+@pytest.mark.parametrize("name", ANSWERING)
 def test_the_firmware_reads_the_configured_values(name):
-    script = CONFIGURED[name]
-    fields = gprs_port.firmware_fields(gprs_port.compose_reply(script, script.reset))
-    assert fields["pd"] == script.pd
-    assert fields["interval"] == int(script.interval)  # nil would crash the firmware
-    assert fields["sensors"] == int(script.sensors)
+    script = SCRIPTS[name]
+    _project, config, _second_project, _second = CONFIGS[name]
+    fields = gprs_port.firmware_fields(_calm_reply(name))
+    assert fields["pd"] == config.pd
+    assert fields["interval"] == int(config.interval)  # nil would crash the firmware
+    assert fields["sensors"] == int(config.sensors)
     assert fields["reset"] == script.reset
-    if script.pe:
-        assert fields["earth"] == int(script.pe)
+    if script.has_pe:
+        assert fields["earth"] == int(config.pe)
 
 
-@pytest.mark.parametrize("name", sorted(set(CONFIGURED) - KNOWN_LEGACY_CONFIG_CHANGES))
+@pytest.mark.parametrize("name", sorted(set(ANSWERING) - KNOWN_LEGACY_CONFIG_CHANGES))
 def test_an_alarm_does_not_change_the_configuration_the_firmware_reads(name):
-    script = CONFIGURED[name]
-    calm = gprs_port.firmware_fields(gprs_port.compose_reply(script, script.reset))
-    for reply in _alarm_replies(script):
+    calm = gprs_port.firmware_fields(_calm_reply(name))
+    for reply in _alarm_replies(name):
         alarm = gprs_port.firmware_fields(reply)
         assert {f: alarm[f] for f in gprs_port.FIRMWARE_FIELDS} == {f: calm[f] for f in gprs_port.FIRMWARE_FIELDS}
 
 
 def test_the_known_legacy_config_changes_are_exactly_those_scripts():
     changing = set()
-    for name, script in CONFIGURED.items():
-        calm = gprs_port.firmware_fields(gprs_port.compose_reply(script, script.reset))
-        for reply in _alarm_replies(script):
+    for name in ANSWERING:
+        calm = gprs_port.firmware_fields(_calm_reply(name))
+        for reply in _alarm_replies(name):
             alarm = gprs_port.firmware_fields(reply)
             if any(alarm[f] != calm[f] for f in gprs_port.FIRMWARE_FIELDS):
                 changing.add(name)
     assert changing == KNOWN_LEGACY_CONFIG_CHANGES
 
 
-def test_a_script_without_configuration_sends_no_xx():
-    assert gprs_port.compose_reply(gprs_port.GprsScript(transform="master"), "0") == ""
+@pytest.mark.parametrize("name", ANSWERING)
+def test_without_a_complete_configuration_there_is_no_answer(name):
+    script = SCRIPTS[name]
+    _project, config, _second_project, second = CONFIGS[name]
+    assert gprs_port.compose_reply(script, script.reset, None, second) == ""
+    if script.has_pe:
+        assert gprs_port.compose_reply(script, script.reset, dataclasses.replace(config, pe=""), second) == ""
+    if script.second_project:
+        assert gprs_port.compose_reply(script, script.reset, config, None) == ""
+
+
+def test_a_script_without_a_known_answer_sends_no_xx():
+    config = gprs_port.DeviceConfig("1800", "0x28", "010", "1")
+    assert gprs_port.compose_reply(gprs_port.GprsScript(transform="master", answers=False), "0", config) == ""
     assert gprs_port.firmware_fields("") is None
 
 

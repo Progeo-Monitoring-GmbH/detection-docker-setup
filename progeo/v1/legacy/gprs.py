@@ -45,8 +45,8 @@ STATE_TIMEOUT = 60 * 60
 # Scripts that are not in gprs_table.py (new controllers, scripts that were
 # missing from the copy of the old server): the data is imported like the
 # gprs_master template did, but there is no configuration to answer with.
-UNKNOWN_SCRIPT = GprsScript(transform="master")
-UNKNOWN_HYBRID_SCRIPT = GprsScript(transform="hybrid", hybrid_resets=("9", "8", "7"))
+UNKNOWN_SCRIPT = GprsScript(transform="master", answers=False)
+UNKNOWN_HYBRID_SCRIPT = GprsScript(transform="hybrid", hybrid_resets=("9", "8", "7"), answers=False)
 
 
 def extract_gprs_data(query_string):
@@ -101,11 +101,29 @@ def _reply(name, project, script, context):
     projects |= {p for p in context.get("projects") or () if p is not None}
     try:
         states = gprs_state.current(projects)
-    except Exception as exc:  # noqa: BLE001 - the controller still needs its answer
-        elog(f"gprs_{name}.php: state lookup failed ({exc!r}), answering from gprs_table.py", tag="[GPRS]")
+    except Exception as exc:  # noqa: BLE001 - no state: no answer, the controller keeps its configuration
+        elog(f"gprs_{name}.php: state lookup failed ({exc!r}), not answered", tag="[GPRS]")
         states = {}
-    live = gprs_state.configure(project, script, states)
-    return render_reply(project, live, context, gprs_state.StateAlarms(states))
+    reply = render_reply(project, script, context, gprs_state.Live(states))
+    if not reply and script.answers:
+        _warn_unconfigured(name, project, script)
+    return reply
+
+
+# Per process: when the missing configuration of a script was last logged.
+_unconfigured_warned = {}
+UNCONFIGURED_WARNING_EVERY = 15 * 60
+
+
+def _warn_unconfigured(name, project, script):
+    now = time.monotonic()
+    if now - _unconfigured_warned.get(name, -UNCONFIGURED_WARNING_EVERY) < UNCONFIGURED_WARNING_EVERY:
+        return
+    _unconfigured_warned[name] = now
+    projects = ", ".join(str(p) for p in (project, script.second_project) if p)
+    wlog(f"gprs_{name}.php not answered: no complete configuration (data_interval, pull_resistance, "
+         f"sensor_count{', pe_geschaltet' if script.has_pe or script.second_project else ''}) "
+         f"of the legacy device of project {projects}", tag="[GPRS]")
 
 
 def _import(script_name, y_strings):

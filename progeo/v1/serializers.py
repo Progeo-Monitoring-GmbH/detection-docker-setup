@@ -115,6 +115,9 @@ class AccountSerializer(ProgeoBaseSerializer):
 class DeviceSerializer(ProgeoBaseSerializer):
     clazz = serializers.SerializerMethodField("get_clazz_name")
     display_name = serializers.ReadOnlyField()
+    # {"script": "gprs_4060_h.php", "role": "main"/"second"} for a legacy GPRS
+    # controller (configured via /v1/device/<pk>/legacy-config/), else None.
+    legacy_gprs = serializers.SerializerMethodField()
 
     class Meta:
         model = ProgeoDevice
@@ -123,6 +126,13 @@ class DeviceSerializer(ProgeoBaseSerializer):
     @staticmethod
     def get_clazz_name(_):
         return "ProgeoDevice"
+
+    @staticmethod
+    def get_legacy_gprs(device):
+        from progeo.v1.legacy.gprs_config import legacy_role
+
+        role = legacy_role(device)
+        return {"script": f"gprs_{role[0]}.php", "role": role[1]} if role else None
 
 
 
