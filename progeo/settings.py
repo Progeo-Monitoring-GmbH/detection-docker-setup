@@ -151,6 +151,14 @@ NOTIFY_STAFF_ADDRESS = (os.getenv("NOTIFY_STAFF_ADDRESS") or "kontakt@progeo.com
 # One-time links (helper/login_links.py).
 MAGIC_LINK_LOGIN_MINUTES = parse_int(os.getenv("MAGIC_LINK_LOGIN_MINUTES"), 15)
 MAGIC_LINK_INVITE_HOURS = parse_int(os.getenv("MAGIC_LINK_INVITE_HOURS"), 72)
+# One-time migration campaign (helper/migration_invites.py, manage.py
+# migration_invites): the info mail with a "set your password" link to the
+# users of the old platform. Sending only while ENABLED - switch it off once
+# the campaign is done (the links mailed stay valid for MIGRATION_INVITE_DAYS).
+MIGRATION_INVITES_ENABLED = parse_boolean(os.getenv("MIGRATION_INVITES_ENABLED", "0"))
+MIGRATION_INVITE_DAYS = parse_int(os.getenv("MIGRATION_INVITE_DAYS"), 21)
+# Leaves room in the global mail limit (MAIL_LIMIT_GLOBAL_HOUR) for alarms.
+MIGRATION_INVITES_PER_HOUR = parse_int(os.getenv("MIGRATION_INVITES_PER_HOUR"), 40)
 ACCESS_REQUEST_VERIFY_HOURS = parse_int(os.getenv("ACCESS_REQUEST_VERIFY_HOURS"), 48)
 # Login links for staff/superusers: off - a mailbox must not be an admin login.
 MAGIC_LINK_ALLOW_STAFF = parse_boolean(os.getenv("MAGIC_LINK_ALLOW_STAFF", "0"))

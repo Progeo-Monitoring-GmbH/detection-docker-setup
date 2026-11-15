@@ -111,6 +111,8 @@ Every mail goes out in its recipient's language:
 - **Lookup:** `send_template_mail` resolves it from the recipient address (`emailhelper.recipient_language`) and renders `progeo/templates/emails/<language>/<name>.html`.
 - **Fallback:** the German template in `emails/` is used for unknown addresses (such as the location's contact mail), users without a stored language, and templates without a translation (the staff mails).
 - **SMS and messenger:** the alarm texts are chosen per recipient the same way (`notification_cases.ALARM_WORDS`).
+- **Public pages:** the login page and every other public page (sign-in link, password reset, access request, privacy policy) have a DE/EN switch. The mails these pages trigger go out in the language chosen there: the sign-in link and password reset mails (the page sends `language`; without one, the user's profile language), and the access request confirmation (`AccessRequest.language`). A language chosen explicitly on the login page is saved to the profile after the sign-in (the top bar sends it once).
+- **Access request decisions:** when staff approve or reject a request, they choose the language in the dialog, preselected with the language of the request form. The approval or rejection mail uses it, and on approval it becomes the user's `UserProfile.language`.
 
 Preview the English mails with `python manage.py test_mail --templates --language en`. A new template needs both files; `test_english_templates_render_and_fall_back_to_german` renders every template in English.
 

@@ -106,10 +106,17 @@ def create_request(data: dict) -> dict:
     if existing:
         # Already has an account: a login link helps more than a second account.
         if len(existing) == 1 and eligible(existing[0]) is None:
-            outbound.dispatch(send_login_link_task, existing[0].pk, "login")
+            from progeo.helper.emailhelper import normalize_language
+
+            outbound.dispatch(send_login_link_task, existing[0].pk, "login", None,
+                              normalize_language(data.get("language")))
         return {}
 
-    request = AccessRequest.objects.using(DB).create(**values, privacy_accepted_at=timezone.now())
+    from progeo.helper.emailhelper import normalize_language
+
+    request = AccessRequest.objects.using(DB).create(
+        **values, privacy_accepted_at=timezone.now(), language=normalize_language(data.get("language")) or "",
+    )
     ilog(f"[access_requests] New request {request.pk} for {email}")
     outbound.dispatch(send_access_verification_task, request.pk)
     return {}
@@ -127,11 +134,13 @@ def send_verification(request_id: int) -> bool:
     request.verify_token_hash = hash_token(token)
     request.verify_expires_at = timezone.now() + timedelta(hours=settings.ACCESS_REQUEST_VERIFY_HOURS)
     request.save(using=DB, update_fields=["verify_token_hash", "verify_expires_at"])
+    # The language the form was filled in (language switch of the page).
     return bool(send_template_mail(
         [request.email], "access_verify",
         {"first_name": request.first_name, "valid_hours": settings.ACCESS_REQUEST_VERIFY_HOURS},
         category="access_request",
         secret_context={"action_url": portal_url(f"/zugang/bestaetigen/{token}")},
+        language=request.language or None,
     ))
 
 
@@ -206,9 +215,17 @@ def verify(token: str, password: str):
     return user, None
 
 
-def approve(request, staff_user, note: str = "", project_ids=()):
+def decision_language(request, language=None) -> str:
+    """The language staff chose for the decision; else the form's; else German."""
+    from progeo.helper.emailhelper import DEFAULT_LANGUAGE, normalize_language
+
+    return normalize_language(language) or normalize_language(request.language) or DEFAULT_LANGUAGE
+
+
+def approve(request, staff_user, note: str = "", project_ids=(), language=None):
     """Grant the default permissions and access to `project_ids` (helper/
-    user_provisioning.py), and tell the requester. Returns the request; the
+    user_provisioning.py), and tell the requester - in `language`, which also
+    becomes the user's language (mails, messenger). Returns the request; the
     grant result is on `request.granted_projects`."""
     from progeo.helper.emailhelper import portal_url
     from progeo.tasks import send_template_mail_task
@@ -224,8 +241,14 @@ def approve(request, staff_user, note: str = "", project_ids=()):
     request.review_note = str(note or "").strip()
     request.save(using=DB)
     request.granted_projects = None
+    language = decision_language(request, language)
     if request.user is not None:
         from progeo.helper.user_provisioning import grant_project_access
+        from progeo.v1.models import UserProfile
+
+        profile, _ = UserProfile.objects.using(DB).get_or_create(user_id=request.user.pk)
+        profile.language = language
+        profile.save(using=DB, update_fields=["language"])
 
         # The defaults every new user gets - independent of the reviewer's own rights.
         defaults = set(_DEFAULT_USER_PERMISSION_CODES)
@@ -234,14 +257,14 @@ def approve(request, staff_user, note: str = "", project_ids=()):
             request.granted_projects = grant_project_access(request.user, project_ids)
         outbound.dispatch(
             send_template_mail_task, [request.user.email or request.email], "access_approved",
-            {"first_name": request.first_name, "login_url": portal_url("/login")}, "access_request",
+            {"first_name": request.first_name, "login_url": portal_url("/login")}, "access_request", language,
         )
-    ilog(f"[access_requests] Request {request.pk} approved by {staff_user}")
+    ilog(f"[access_requests] Request {request.pk} approved by {staff_user} ({language})")
     return request
 
 
-def reject(request, staff_user, note: str = ""):
-    """Deactivate the user and tell the requester (neutral wording)."""
+def reject(request, staff_user, note: str = "", language=None):
+    """Deactivate the user and tell the requester (neutral wording, in `language`)."""
     from progeo.tasks import send_template_mail_task
     from progeo.v1.models import AccessRequest
 
@@ -255,7 +278,7 @@ def reject(request, staff_user, note: str = ""):
         request.user.save(using=DB, update_fields=["is_active"])
     outbound.dispatch(
         send_template_mail_task, [request.email], "access_rejected",
-        {"first_name": request.first_name}, "access_request",
+        {"first_name": request.first_name}, "access_request", decision_language(request, language),
     )
     ilog(f"[access_requests] Request {request.pk} rejected by {staff_user}")
     return request
@@ -329,4 +352,6 @@ def serialize(request) -> dict:
         "reviewed_by": getattr(request.reviewed_by, "username", None),
         "review_note": request.review_note,
         "user_id": request.user_id,
+        # Preselection of the decision dialog's language.
+        "language": decision_language(request),
     }

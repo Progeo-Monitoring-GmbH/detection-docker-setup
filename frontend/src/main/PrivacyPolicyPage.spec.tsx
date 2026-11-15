@@ -2,11 +2,44 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter } from 'react-router';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import CookieBanner from '../components/privacy/CookieBanner';
 import { ConsentProvider } from '../components/privacy/ConsentProvider';
 import { writeConsent } from '../components/privacy/consent';
-import PrivacyPolicyPage from './PrivacyPolicyPage';
+
+// The page follows the portal language (German or English).
+const lang = vi.hoisted(() => ({ current: 'de' }));
+vi.mock('react-i18next', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  useTranslation: () => ({
+    t: (key: string) => key,
+    i18n: {
+      language: lang.current,
+      changeLanguage: (code: string) => {
+        lang.current = code;
+        return Promise.resolve();
+      },
+    },
+  }),
+}));
+
+const { default: PrivacyPolicyPage } = await import('./PrivacyPolicyPage');
+
+const STORAGE_KEYS = [
+  'csrftoken',
+  'sessionid',
+  'authToken',
+  'refreshToken',
+  'progeo_consent',
+  'i18nextLng',
+  'progeo.languageChosen',
+  'progeo.sidebar.collapsed',
+  'progeo.canvasKeyLegend.collapsed',
+  'progeo:matrix-promo-dismissed',
+  'demoToken',
+  'impersonatorTokens',
+  'viewAsUser',
+];
 
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -16,6 +49,7 @@ let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  lang.current = 'de';
   localStorage.clear();
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -55,25 +89,33 @@ describe('PrivacyPolicyPage', () => {
     });
   });
 
-  it('lists every storage key the app actually uses', () => {
+  it.each(['de', 'en'])('lists every storage key the app actually uses (%s)', (language) => {
+    lang.current = language;
     writeConsent({ externalMaps: false, statistics: false });
     renderPage();
 
     const text = container.textContent ?? '';
-    [
-      'csrftoken',
-      'sessionid',
-      'authToken',
-      'refreshToken',
-      'progeo_consent',
-      'i18nextLng',
-      'progeo.sidebar.collapsed',
-      'progeo.canvasKeyLegend.collapsed',
-      'progeo:matrix-promo-dismissed',
-      'demoToken',
-      'impersonatorTokens',
-      'viewAsUser',
-    ].forEach((key) => expect(text).toContain(key));
+    STORAGE_KEYS.forEach((key) => expect(text).toContain(key));
+  });
+
+  it('comes in English with the same sections and a note that German is binding', () => {
+    writeConsent({ externalMaps: false, statistics: false });
+    renderPage();
+    const sectionIds = (root: HTMLElement) => Array.from(root.querySelectorAll('section')).map((section) => section.id);
+    const german = sectionIds(container);
+    expect(container.querySelector('[data-testid="privacy-policy-language-note"]')).toBeNull();
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    lang.current = 'en';
+    renderPage();
+
+    expect(sectionIds(container)).toEqual(german);
+    expect(container.querySelector('h1')?.textContent).toBe('Privacy policy');
+    expect(container.querySelector('.privacy-page')?.getAttribute('lang')).toBe('en');
+    expect(container.querySelector('[data-testid="privacy-policy-language-note"]')?.textContent).toContain(
+      'Only the German version is legally binding',
+    );
   });
 
   it('opens the privacy settings from the page', () => {

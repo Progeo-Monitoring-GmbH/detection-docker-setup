@@ -68,6 +68,13 @@ celery_instance.conf.beat_schedule = {
         # process-notification-cases sees what was detected overnight.
         "schedule": crontab(minute=50),
     },
+    "send-migration-invites-ten-minutely": {
+        "task": "progeo.tasks.send_migration_invites",
+        # One-time migration campaign: a batch of info mails - only while
+        # MIGRATION_INVITES_ENABLED, inside 09:00-22:00, at most
+        # MIGRATION_INVITES_PER_HOUR per hour. Otherwise it does nothing.
+        "schedule": crontab(minute="3-59/10"),
+    },
     "process-notification-cases-quarter-hourly": {
         "task": "progeo.tasks.process_notification_cases",
         # Sends what is due: alarm stages at any time, offline mails only

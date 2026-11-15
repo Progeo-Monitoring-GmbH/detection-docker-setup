@@ -33,7 +33,7 @@ vi.mock('../axiosConfig', () => ({
 }));
 vi.mock('react-i18next', async (importOriginal) => ({
   ...(await importOriginal<object>()),
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'de', changeLanguage: () => Promise.resolve() } }),
 }));
 
 const { default: NotificationLinkPage } = await import('./NotificationLinkPage');

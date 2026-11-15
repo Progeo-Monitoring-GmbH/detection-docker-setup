@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
+import { currentLanguage } from '../ui/LanguageSwitch';
 import axiosConfig from '../../axiosConfig';
 import AuthPage, { AuthLinks, authButtonClass } from './AuthPage';
 
@@ -33,7 +34,7 @@ const EmailRequestPage = ({
   extraLinks,
   testId = 'page-email-request',
 }: EmailRequestPageProps) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -46,7 +47,8 @@ const EmailRequestPage = ({
     void axiosConfig.perform_post(
       undefined,
       endpoint,
-      { email },
+      // The mail goes out in the page's language (its language switch).
+      { email, language: currentLanguage(i18n.language) },
       () => setSent(true),
       (err) => {
         setBusy(false);

@@ -16,6 +16,7 @@
 }
 
 .auth-card {
+  position: relative;
   width: 100%;
   max-width: 420px;
   background: var(--progeo-panel-bg);
@@ -254,4 +255,11 @@
 /* Below a panel (2FA setup). */
 .auth-button--spaced {
   margin-top: 22px;
+}
+
+/* DE | EN in the card's top right corner (LanguageSwitch). */
+.auth-language {
+  position: absolute;
+  top: 14px;
+  right: 14px;
 }

@@ -679,42 +679,28 @@ def test_parse_project_ids():
 
 
 def test_import_users_command(tmp_path, monkeypatch):
-    from progeo import tasks
-
     project_id = 870000 + int(timezone.now().timestamp()) % 9999
     location = f.make_location(f.make_account(), project_id=project_id)
     email = f"{f.unique('csv')}@progeo.com"
     csv_file = tmp_path / "users.csv"
     csv_file.write_text(f"email;first_name;last_name;project_ids\n{email};Erika;Muster;{project_id} 999999\n"
                         "kaputt;;;\n", encoding="utf-8")
-    queued = []
-    monkeypatch.setattr(tasks.send_login_link_task, "apply_async",
-                        lambda args, countdown=0: queued.append((args, countdown)))
-
     out = StringIO()
     call_command("import_users", str(csv_file), "--dry-run", "--invite", stdout=out)
     assert not User.objects.using(f.DB).filter(email=email).exists()
     assert "[dry run] 1 users created" in out.getvalue()
 
     out = StringIO()
-    call_command("import_users", str(csv_file), "--invite", "--invites-per-hour", "2", stdout=out)
+    call_command("import_users", str(csv_file), "--invite", stdout=out)
     user = User.objects.using(f.DB).get(email=email)
     assert ProgeoAccess.objects.using(f.DB).filter(location=location, user_id=user.pk).exists()
     assert "Unknown project numbers: [999999]" in out.getvalue()
     assert "line 3: Invalid email address" in out.getvalue()
-    assert queued == [((user.pk, "invite", "invite_migration"), 0)]
+    # Queued for the migration campaign (helper/migration_invites.py), nothing sent yet.
+    from progeo.v1.models import MigrationInvite
 
-
-def test_migration_invite_mail():
-    from progeo.helper.login_links import send_login_link
-
-    user = f.make_user(email=f"{f.unique('mig')}@progeo.com", first_name="Erika")
-
-    assert send_login_link(user.pk, "invite", "invite_migration")
-
-    message = FakeSMTP.parsed()[-1]
-    assert "umgezogen" in message["Subject"]
-    assert "/login/link/" in body_of(message)
+    assert MigrationInvite.objects.using(f.DB).get(user_id=user.pk).status == "queued"
+    assert "1 users queued for the migration info mail" in out.getvalue()
 
 
 # -- step 5: access requests -----------------------------------------------------

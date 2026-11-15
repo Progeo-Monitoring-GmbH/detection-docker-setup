@@ -43,6 +43,8 @@ type AccessRequest = {
   reviewed_by: string | null;
   review_note: string;
   user_id: number | null;
+  /** Preselected mail language: the form's, else German. */
+  language?: 'de' | 'en';
 };
 
 const STATUS_VARIANT: Record<AccessRequestStatus, string> = {
@@ -86,6 +88,7 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
   const [decision, setDecision] = useState<Decision | null>(null);
   const [note, setNote] = useState('');
   const [projectIds, setProjectIds] = useState('');
+  const [language, setLanguage] = useState<'de' | 'en'>('de');
   const [decisionError, setDecisionError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -129,6 +132,7 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
     setNote('');
     setProjectIds('');
     setDecisionError('');
+    setLanguage(request.language === 'en' ? 'en' : 'de');
     setDecision({ request, action });
   };
 
@@ -160,8 +164,8 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
       auth,
       `/api/auth-support/staff/access-requests/${decision.request.id}/${decision.action}/`,
       decision.action === 'approve'
-        ? { note, project_ids: projectIds }
-        : { note },
+        ? { note, project_ids: projectIds, language }
+        : { note, language },
       (result) => {
         showSuccessBar(
           enqueueSnackbar,
@@ -405,6 +409,22 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
               </Form.Text>
             </Form.Group>
           )}
+          <Form.Group className="mb-3">
+            <Form.Label>{t('staff_requests_language')}</Form.Label>
+            <Form.Select
+              value={language}
+              onChange={(event) => setLanguage(event.target.value as 'de' | 'en')}
+              data-testid="staff-requests-decision-language"
+            >
+              <option value="de">Deutsch</option>
+              <option value="en">English</option>
+            </Form.Select>
+            <Form.Text muted>
+              {decision?.action === 'approve'
+                ? t('staff_requests_language_hint_approve')
+                : t('staff_requests_language_hint_reject')}
+            </Form.Text>
+          </Form.Group>
           <Form.Group>
             <Form.Label>{t('staff_requests_note')}</Form.Label>
             <Form.Control

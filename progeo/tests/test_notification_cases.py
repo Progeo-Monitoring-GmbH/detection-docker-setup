@@ -7,7 +7,8 @@ from datetime import timedelta
 import pytest
 from django.utils import timezone
 
-from progeo.helper import bounces, notification_cases as nc, notifications, outbound
+from progeo.helper import bounces, notifications, outbound
+from progeo.helper import notification_cases as nc
 from progeo.tests import factories as f
 from progeo.tests.mailfakes import FakeSMTP, body_of, fake_smtp  # noqa: F401
 from progeo.v1.models import (
@@ -236,7 +237,7 @@ def test_flapping_device_reopens_at_its_stage_without_a_new_first_notice(site, l
 # ---------------------------------------------------------------------------- stages
 
 def test_reminders_add_the_objektleitung_and_end_in_an_escalation(site, live):
-    location, device = _offline_case_with_stage_one(site, live)
+    location, _device = _offline_case_with_stage_one(site, live)
     lead = f.make_user(email="lead@progeo.com", staff=True)
     f.make_access(location, lead, type=0, objektleitung=True)
 
@@ -357,7 +358,7 @@ def test_acknowledge_in_the_portal_closes_the_case(site):
 
 
 def test_offline_acknowledge_is_noted_but_reminders_go_on(site, live, api_client):
-    location, device = _offline_case_with_stage_one(site, live)
+    location, _device = _offline_case_with_stage_one(site, live)
     case = _case(location)
     token = nc.create_token(case, "kai@progeo.com")
 
@@ -369,7 +370,7 @@ def test_offline_acknowledge_is_noted_but_reminders_go_on(site, live, api_client
 
 
 def test_invalid_or_expired_tokens_are_refused(site, api_client):
-    location, device = site
+    location, _device = site
     case = NotificationCase.objects.using(f.DB).create(kind="offline", location_id=location.pk)
     token = nc.create_token(case, "kai@progeo.com")
     case.tokens.update(expires_at=nc._now() - timedelta(minutes=1))
@@ -382,7 +383,7 @@ def test_invalid_or_expired_tokens_are_refused(site, api_client):
 # ---------------------------------------------------------------------------- unsubscribe
 
 def test_unsubscribe_clears_the_type_bit_but_keeps_the_access(site, api_client):
-    location, device = site
+    location, _device = site
     user = _subscriber(location, "kai@progeo.com", type=ALARM | TIMEOUT)
     case = NotificationCase.objects.using(f.DB).create(kind="offline", location_id=location.pk)
     token = nc.create_token(case, "kai@progeo.com", user.pk)
@@ -397,7 +398,7 @@ def test_unsubscribe_clears_the_type_bit_but_keeps_the_access(site, api_client):
 
 
 def test_contact_mail_opt_out_keeps_it_off_the_next_stage(site, live, api_client):
-    location, device = _offline_case_with_stage_one(site, live)
+    location, _device = _offline_case_with_stage_one(site, live)
     case = _case(location)
     token = nc.create_token(case, "halle@progeo.com")
 
@@ -411,7 +412,7 @@ def test_contact_mail_opt_out_keeps_it_off_the_next_stage(site, live, api_client
 
 
 def test_last_recipient_leaving_is_flagged_for_staff(site, live):
-    location, device = site
+    location, _device = site
     location.mail = None
     location.save(using=f.DB)
     user = _subscriber(location, "kai@progeo.com")

@@ -39,6 +39,7 @@ SAMPLE_CONTEXT = {
     "username": "erika.mustermann",
     "valid_minutes": 15,
     "valid_hours": 72,
+    "valid_days": 21,
     "reason": "Globales MAIL-Limit (100 pro Stunde) erreicht",
     "request": {"first_name": "Erika", "last_name": "Mustermann", "company": "Musterbau GmbH",
                 "email": "erika@progeo.com", "phone": "+49 30 123456", "project": "Objekt 4711",

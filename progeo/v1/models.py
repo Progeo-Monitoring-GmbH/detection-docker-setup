@@ -1527,6 +1527,9 @@ class LoginLink(models.Model):
         # token rides in the login_hint of the Element X link, MAS forwards it
         # to /auth/oidc/authorize/ - it signs in to the chat, never the portal.
         MATRIX = "matrix", "Chat-Anmeldung (QR-Code)"
+        # Migration campaign (helper/migration_invites.py): the info mail's
+        # link to set the password - then the user is signed in.
+        MIGRATION = "migration", "Umzug: Passwort festlegen"
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="login_links")
     purpose = models.CharField(max_length=16, choices=Purpose.choices)
@@ -1537,6 +1540,34 @@ class LoginLink(models.Model):
 
     def __str__(self):
         return f"🔗 {self.purpose} {self.user_id} (used={bool(self.used_at)})"
+
+
+class MigrationInvite(models.Model):
+    """One user of the old platform in the one-time migration campaign
+    (helper/migration_invites.py): queued -> sent (info mail with the
+    set-password link) -> completed (password set). Kept as the campaign's
+    record; the link itself is a LoginLink (purpose "migration")."""
+
+    class Status(models.TextChoices):
+        QUEUED = "queued", "Wartet auf Versand"
+        SENT = "sent", "Versendet"
+        FAILED = "failed", "Nicht versendet"
+        COMPLETED = "completed", "Passwort festgelegt"
+        SKIPPED = "skipped", "Übersprungen"
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="migration_invite")
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.QUEUED, db_index=True)
+    queued_at = models.DateTimeField(default=timezone.now)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    attempts = models.IntegerField(default=0)
+    error = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["queued_at", "id"]
+
+    def __str__(self):
+        return f"✉️ {self.user_id} {self.status}"
 
 
 class TwoFactorDevice(models.Model):
@@ -1587,6 +1618,9 @@ class AccessRequest(models.Model):
     reviewed_at = models.DateTimeField(null=True, blank=True)
     reviewed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     review_note = models.TextField(blank=True, default="")
+    # "de" / "en": the language the form was filled in - preselects the
+    # language staff choose when deciding (the user's mail language then).
+    language = models.CharField(max_length=8, blank=True, default="")
 
     class Meta:
         ordering = ["-created"]

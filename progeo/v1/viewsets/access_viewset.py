@@ -9,10 +9,12 @@ Public (no login, throttled per IP):
   POST password-reset/                  mail a reset link (2FA users; answer never tells)
   POST password-reset/check/            is the reset token valid?
   POST password-reset/confirm/          token + otp + password -> new password + JWT
+  POST migration/check/                 is the migration (set-password) token valid?
+  POST migration/confirm/               token + password (+ otp) -> first password + JWT
 Authenticated:
   GET  access-requests/me/              status of the own request (pending panel)
 Staff:
-  GET  staff/access-requests/           list; POST .../<id>/approve|reject/
+  GET  staff/access-requests/           list; POST .../<id>/approve|reject/ {note, language, project_ids}
   GET  staff/messaging/                 test modes, breaker, limits, log, suppressions
   POST staff/messaging/breaker/reset/   POST staff/messaging/suppressions/<id>/delete/
 
@@ -80,6 +82,14 @@ def _data(request) -> dict:
     return request.data if isinstance(request.data, dict) else {}
 
 
+def _page_language(data) -> str | None:
+    """The language chosen on the public page (its language switch): the
+    language of the mail it triggers - "de"/"en", else None (the user's)."""
+    from progeo.helper.emailhelper import normalize_language
+
+    return normalize_language(data.get("language"))
+
+
 def _time(value):
     return value.strftime("%d.%m.%Y %H:%M") if value else None
 
@@ -129,7 +139,8 @@ class LoginLinkRequestView(APIView):
     throttle_classes = [LoginLinkThrottle]
 
     def post(self, request, *args, **kwargs):
-        login_links.request_login_link(str(_data(request).get("email") or ""))
+        data = _data(request)
+        login_links.request_login_link(str(data.get("email") or ""), _page_language(data))
         # Same answer whether or not the address belongs to a user.
         return RequestSuccess()
 
@@ -160,7 +171,8 @@ class PasswordResetRequestView(APIView):
     throttle_classes = [PasswordResetThrottle]
 
     def post(self, request, *args, **kwargs):
-        password_reset.request_reset(str(_data(request).get("email") or ""))
+        data = _data(request)
+        password_reset.request_reset(str(data.get("email") or ""), _page_language(data))
         # Same answer whether or not the address belongs to a user (or has 2FA).
         return RequestSuccess()
 
@@ -191,6 +203,43 @@ class PasswordResetConfirmView(APIView):
             return RequestFailed(error)
         user.last_login = timezone.now()
         user.save(using=DB, update_fields=["last_login"])
+        return RequestSuccess({**_token_pair(user), "forward": "/"})
+
+
+class MigrationCheckView(APIView):
+    """The set-password link of the migration info mail (helper/migration_invites.py):
+    only reads - mail scanners open the link too."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [TokenCheckThrottle]
+
+    def post(self, request, *args, **kwargs):
+        from progeo.helper import migration_invites
+
+        link = migration_invites.find_link(str(_data(request).get("token") or ""))
+        if link is None:
+            return RequestFailed({"reason": "invalid_token"})
+        user = link.user
+        return RequestSuccess({"username": user.username, "first_name": user.first_name, "email": user.email})
+
+
+class MigrationConfirmView(APIView):
+    """Set the first password with the migration link - and sign in."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [TokenCheckThrottle]
+
+    def post(self, request, *args, **kwargs):
+        from progeo.helper import migration_invites
+
+        data = _data(request)
+        user, error = migration_invites.confirm(
+            str(data.get("token") or ""), str(data.get("password") or ""), data.get("otp"), request,
+        )
+        if error:
+            return RequestFailed(error)
         return RequestSuccess({**_token_pair(user), "forward": "/"})
 
 
@@ -249,6 +298,15 @@ class StaffAccessRequestReviewView(_StaffView):
             return RequestFailed({"reason": "Nur Anfragen in Prüfung können entschieden werden"})
         data = _data(request)
         note = data.get("note") or ""
+        # The language of the requester's mail - and, on approval, of all
+        # their later mails and messenger messages. Staff choose it.
+        language = None
+        if data.get("language") not in (None, ""):
+            from progeo.helper.emailhelper import normalize_language
+
+            language = normalize_language(data.get("language"))
+            if language is None:
+                return RequestFailed({"reason": "language must be de or en"})
         if self.decision == "approve":
             from progeo.helper.user_provisioning import (
                 find_project_locations,
@@ -264,12 +322,12 @@ class StaffAccessRequestReviewView(_StaffView):
                 # Most likely a typo - nothing is approved until the numbers are right.
                 return RequestFailed({"reason": f"Unbekannte Projektnummer(n): {', '.join(map(str, unknown))}",
                                       "unknown_projects": unknown})
-            access_requests.approve(access_request, request.user, note, project_ids=project_ids)
+            access_requests.approve(access_request, request.user, note, project_ids=project_ids, language=language)
             return RequestSuccess({
                 "request": access_requests.serialize(access_request),
                 "projects": access_request.granted_projects,
             })
-        access_requests.reject(access_request, request.user, note)
+        access_requests.reject(access_request, request.user, note, language=language)
         return RequestSuccess({"request": access_requests.serialize(access_request)})
 
 

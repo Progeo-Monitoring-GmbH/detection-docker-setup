@@ -74,6 +74,13 @@ const BROWSER_STORAGE = [
     duration: 'bis zur Löschung im Browser',
   },
   {
+    name: 'progeo.languageChosen',
+    code: true,
+    kind: 'Session Storage',
+    purpose: 'Auf der Anmeldeseite gewählte Sprache – wird nach der Anmeldung in Ihr Profil übernommen',
+    duration: 'bis zur Anmeldung bzw. zum Schließen des Tabs',
+  },
+  {
     name: 'progeo.sidebar.collapsed, progeo.canvasKeyLegend.collapsed',
     code: true,
     kind: 'Local Storage',
@@ -115,27 +122,38 @@ type FactsProps = {
   legalBasis: ReactNode;
   retention: ReactNode;
   recipients?: ReactNode;
+  /** The labels in the policy's language (privacyPolicyContentEn.tsx passes the English ones). */
+  labels?: FactLabels;
+};
+
+export type FactLabels = { purpose: string; legalBasis: string; retention: string; recipients: string };
+
+const FACT_LABELS_DE: FactLabels = {
+  purpose: 'Zweck',
+  legalBasis: 'Rechtsgrundlage',
+  retention: 'Speicherdauer',
+  recipients: 'Empfänger',
 };
 
 /** Purpose / legal basis / retention block, as required per processing by Art. 13 GDPR. */
-const Facts = ({ purpose, legalBasis, retention, recipients }: FactsProps) => (
+export const Facts = ({ purpose, legalBasis, retention, recipients, labels = FACT_LABELS_DE }: FactsProps) => (
   <dl className="privacy-facts">
-    <dt>Zweck</dt>
+    <dt>{labels.purpose}</dt>
     <dd>{purpose}</dd>
-    <dt>Rechtsgrundlage</dt>
+    <dt>{labels.legalBasis}</dt>
     <dd>{legalBasis}</dd>
-    <dt>Speicherdauer</dt>
+    <dt>{labels.retention}</dt>
     <dd>{retention}</dd>
     {recipients && (
       <>
-        <dt>Empfänger</dt>
+        <dt>{labels.recipients}</dt>
         <dd>{recipients}</dd>
       </>
     )}
   </dl>
 );
 
-const ExternalLink = ({
+export const ExternalLink = ({
   href,
   children,
 }: {
@@ -147,7 +165,7 @@ const ExternalLink = ({
   </a>
 );
 
-type SectionOptions = {
+export type SectionOptions = {
   /** Rendered inside the "maps" section so revoking consent is one click away. */
   consentButton: ReactNode;
 };
@@ -326,9 +344,9 @@ export const buildPolicySections = ({
         <p>
           Über das Formular „Zugang beantragen“ können Sie ein Benutzerkonto
           anfragen. Wir verarbeiten dabei Vor- und Nachname, Unternehmen,
-          E-Mail-Adresse, Telefonnummer (optional), Projekt und Ihre Nachricht
-          sowie den Zeitpunkt, zu dem Sie diese Datenschutzerklärung zur
-          Kenntnis genommen haben. Ihre E-Mail-Adresse bestätigen Sie über
+          E-Mail-Adresse, Telefonnummer (optional), Projekt und Ihre Nachricht,
+          die gewählte Sprache (für unsere E-Mails an Sie) sowie den Zeitpunkt,
+          zu dem Sie diese Datenschutzerklärung zur Kenntnis genommen haben. Ihre E-Mail-Adresse bestätigen Sie über
           einen Link (Double-Opt-in); danach prüfen unsere Mitarbeitenden die
           Anfrage.
         </p>

@@ -1,0 +1,31 @@
+/* DE | EN switch of the public pages (LanguageSwitch.tsx). */
+
+.language-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  background: rgba(11, 54, 89, 0.08);
+}
+
+.language-switch-option {
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #0b3659;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 4px 10px;
+  line-height: 1.2;
+}
+
+.language-switch-option.is-active {
+  background: #0b3659;
+  color: #fff;
+}
+
+.language-switch-option:focus-visible {
+  outline: 2px solid #1d5687;
+  outline-offset: 1px;
+}

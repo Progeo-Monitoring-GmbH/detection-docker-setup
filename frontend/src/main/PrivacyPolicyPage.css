@@ -478,3 +478,21 @@
     break-inside: avoid-page;
   }
 }
+
+/* Back link and DE | EN switch in one row. */
+.privacy-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.privacy-inline-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+}

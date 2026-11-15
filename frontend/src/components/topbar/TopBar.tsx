@@ -8,6 +8,7 @@ import { UserProfileModal } from '../../main/UserProfile.tsx';
 import { PRIVACY_POLICY_URL } from '../privacy/consent';
 import { useConsent } from '../privacy/ConsentProvider';
 import { isDemoUser } from '../../main/demo';
+import { takeChosenLanguage } from '../ui/LanguageSwitch';
 import useDemoHeartbeat from '../../main/useDemoHeartbeat';
 import { repeatedTestId } from '../../testIds';
 import './TopBar.css';
@@ -78,6 +79,18 @@ const TopBar = () => {
     document.addEventListener('mousedown', onClickAway);
     return () => document.removeEventListener('mousedown', onClickAway);
   }, []);
+
+  // A language chosen on the login page becomes the profile language (mails,
+  // messenger) once signed in - once, then the top bar's switch takes over.
+  useEffect(() => {
+    if (!auth.user || isDemoUser(auth.user)) {
+      return;
+    }
+    const chosen = takeChosenLanguage();
+    if (chosen) {
+      void axiosConfig.perform_post(auth, '/v1/user/language/', { language: chosen }, () => {}, () => {});
+    }
+  }, [auth]);
 
   const initials = username.slice(0, 2).toUpperCase() || '?';
   const demo = isDemoUser(auth.user);

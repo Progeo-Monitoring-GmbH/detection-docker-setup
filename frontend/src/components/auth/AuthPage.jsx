@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { PRIVACY_POLICY_URL } from '../privacy/consent';
 import { COMPANY, telHref } from '../../main/company';
+import LanguageSwitch from '../ui/LanguageSwitch';
 import './Auth.css';
 
 /**
@@ -36,6 +37,10 @@ const AuthPage = ({ title, intro, children, testId = 'page-auth' }) => {
   return (
     <div className="auth-page" data-testid={testId}>
       <main className="auth-card" data-testid="auth-card">
+        {/* The page's language is also the language of the mails it triggers. */}
+        <div className="auth-language">
+          <LanguageSwitch testId="auth-language" />
+        </div>
         <div className="auth-brand">
           <img
             src="/assets/progeo-logo.png"

@@ -832,6 +832,9 @@ i18n
           staff_notifications_event_unmuted: 'Released',
           staff_notifications_event_online_mail: 'Back-online mail',
           staff_notifications_event_resolved: 'Done',
+          staff_requests_language: 'Language',
+          staff_requests_language_hint_approve: 'Language of the approval mail - and of all later mails and messenger messages to this user (changeable in their profile). Preselected: the language of the request form.',
+          staff_requests_language_hint_reject: 'Language of the rejection mail. Preselected: the language of the request form.',
           staff_messaging_title: 'Sending (email/SMS)',
           staff_messaging_load_error: 'Could not load the sending status',
           staff_messaging_action_error: 'Action failed',
@@ -1317,8 +1320,6 @@ i18n
           topbar_role_kundenadmin: 'Customer admin',
           topbar_role_progeo_admin: 'ProGeo admin',
           privacy_back_to_app: 'Back to the application',
-          privacy_german_only:
-            'This privacy policy is currently available in German only. The German version is legally binding.',
           consent_title: 'Privacy settings',
           consent_intro:
             'We only use technically necessary cookies and browser storage to sign you in and to run this application securely. With your consent, maps additionally load map tiles from external providers, and we analyse how the portal is used (pages, their duration, clicks, logins). You can change your choice at any time via the info menu (i) in the top bar.',
@@ -2818,6 +2819,9 @@ i18n
           staff_notifications_event_unmuted: 'Freigegeben',
           staff_notifications_event_online_mail: 'Wieder-online-Mail',
           staff_notifications_event_resolved: 'Erledigt',
+          staff_requests_language: 'Sprache',
+          staff_requests_language_hint_approve: 'Sprache der Freigabe-Mail - und aller weiteren Mails und Messenger-Nachrichten an diese Person (im Profil änderbar). Vorbelegt: die Sprache des Anfrageformulars.',
+          staff_requests_language_hint_reject: 'Sprache der Absage-Mail. Vorbelegt: die Sprache des Anfrageformulars.',
           staff_messaging_title: 'Versand (E-Mail/SMS)',
           staff_messaging_load_error: 'Versandstatus konnte nicht geladen werden',
           staff_messaging_action_error: 'Aktion fehlgeschlagen',
@@ -3308,8 +3312,6 @@ i18n
           topbar_role_kundenadmin: 'Kundenadmin',
           topbar_role_progeo_admin: 'ProGeo-Admin',
           privacy_back_to_app: 'Zurück zur Anwendung',
-          privacy_german_only:
-            'Diese Datenschutzerklärung ist derzeit nur auf Deutsch verfügbar.',
           consent_title: 'Datenschutz-Einstellungen',
           consent_intro:
             'Wir verwenden nur technisch notwendige Cookies und Browser-Speicher, um Sie anzumelden und diese Anwendung sicher zu betreiben. Mit Ihrer Einwilligung laden Karten zusätzlich Kartenkacheln von externen Anbietern, und wir werten aus, wie das Portal genutzt wird (Seiten, Verweildauer, Klicks, Anmeldungen). Ihre Auswahl können Sie jederzeit über das Info-Menü (i) in der Kopfleiste ändern.',

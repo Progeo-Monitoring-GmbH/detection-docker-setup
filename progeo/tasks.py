@@ -738,31 +738,43 @@ def process_notification_cases():
 
 
 @shared_task
+def send_migration_invites():
+    """One batch of the one-time migration campaign (helper/migration_invites.py)
+    - does nothing unless MIGRATION_INVITES_ENABLED."""
+    from progeo.helper import migration_invites
+
+    return migration_invites.send_due()
+
+
+@shared_task
 def send_template_mail_task(sent_to: list, template_name: str, context: dict | None = None,
-                            category: str = "system"):
+                            category: str = "system", language: str | None = None):
     """emailhelper.send_template_mail in the background (outbound.dispatch).
-    Never for mails with secrets - task arguments end up in the result backend."""
+    Never for mails with secrets - task arguments end up in the result backend.
+    `language`: the template language, by default the recipient's."""
     from progeo.helper.emailhelper import send_template_mail
 
-    return bool(send_template_mail(sent_to, template_name, context, category=category))
+    return bool(send_template_mail(sent_to, template_name, context, category=category, language=language))
 
 
 @shared_task
-def send_login_link_task(user_id: int, purpose: str = "login", template: str | None = None):
+def send_login_link_task(user_id: int, purpose: str = "login", template: str | None = None,
+                         language: str | None = None):
     """Create a one-time login link for the user and mail it - the token is
-    made here, inside the worker, so it never passes the broker."""
+    made here, inside the worker, so it never passes the broker. `language`:
+    the one chosen on the page that asked for it (else the user's)."""
     from progeo.helper.login_links import send_login_link
 
-    return send_login_link(user_id, purpose, template)
+    return send_login_link(user_id, purpose, template, language=language)
 
 
 @shared_task
-def send_password_reset_task(user_id: int):
+def send_password_reset_task(user_id: int, language: str | None = None):
     """Mail a password reset link (token made inside the worker) - or, for a
     user without 2FA, how to get in instead (helper/password_reset.py)."""
     from progeo.helper.password_reset import send_reset
 
-    return send_reset(user_id)
+    return send_reset(user_id, language=language)
 
 
 @shared_task

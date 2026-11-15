@@ -77,15 +77,14 @@ def create_link(user, purpose: str) -> str | None:
 
 
 # Mail templates a link may go out with instead of the purpose's own.
-LINK_TEMPLATES = {
-    # Users imported from the old platform (import_users command).
-    "invite_migration": "invite",
-}
+LINK_TEMPLATES = {}
 
 
-def send_login_link(user_id: int, purpose: str = "login", template: str | None = None) -> bool:
+def send_login_link(user_id: int, purpose: str = "login", template: str | None = None,
+                    language: str | None = None) -> bool:
     """Create a link and mail it to the user (runs in the worker).
-    `template`: one of LINK_TEMPLATES for that purpose, else the default."""
+    `template`: one of LINK_TEMPLATES for that purpose, else the default.
+    `language`: the page's language (login screen), else the user's."""
     from progeo.helper.emailhelper import portal_url, send_template_mail
     from progeo.v1.models import LoginLink
 
@@ -111,10 +110,11 @@ def send_login_link(user_id: int, purpose: str = "login", template: str | None =
         [user.email], name, context,
         category="invite" if invite else "login_link",
         secret_context={"action_url": portal_url(f"/login/link/{token}")},
+        language=language,
     ))
 
 
-def request_login_link(email: str) -> None:
+def request_login_link(email: str, language: str | None = None) -> None:
     """Public "send me a login link": mails the link when exactly one
     eligible user has this address. Says nothing about the outcome - the
     caller answers the same either way (no user enumeration), and the mail
@@ -129,7 +129,7 @@ def request_login_link(email: str) -> None:
     if len(users) != 1:
         ilog(f"[login_links] Login link for {address}: {len(users)} eligible users - nothing sent")
         return
-    outbound.dispatch(send_login_link_task, users[0].pk, "login")
+    outbound.dispatch(send_login_link_task, users[0].pk, "login", None, language)
 
 
 class SecondFactorRequired(Exception):

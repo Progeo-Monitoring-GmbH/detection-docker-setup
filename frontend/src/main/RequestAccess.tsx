@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { currentLanguage } from '../components/ui/LanguageSwitch';
 import axiosConfig from '../axiosConfig';
 import AuthPage, { AuthLinks, authButtonClass } from '../components/auth/AuthPage';
 import { PRIVACY_POLICY_URL } from '../components/privacy/consent';
@@ -61,7 +62,7 @@ const TEXT_FIELDS: {
  * known or not. `website` is a honeypot - hidden from people, filled by bots.
  */
 const RequestAccess = () => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { register, handleSubmit, formState } = useForm<RequestForm>({
     defaultValues: { privacy_accepted: false, website: '' },
   });
@@ -75,7 +76,8 @@ const RequestAccess = () => {
     await axiosConfig.perform_post(
       undefined,
       '/api/auth-support/access-requests/',
-      data,
+      // The language of the confirmation mail - and the preselection when staff decide.
+      { ...data, language: currentLanguage(i18n.language) },
       () => setSent(true),
       (err) => {
         const status = err?.response?.status;

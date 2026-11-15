@@ -190,6 +190,77 @@ def test_rejection_deactivates_the_user(client):
     assert "Zugangsanfrage" in FakeSMTP.parsed()[-1]["Subject"]
 
 
+@pytest.mark.parametrize("language, subject", [
+    ("en-GB", "Please confirm your e-mail address"),
+    ("de", "Bitte bestätigen Sie Ihre E-Mail-Adresse"),
+    (None, "Bitte bestätigen Sie Ihre E-Mail-Adresse"),
+])
+def test_confirmation_mail_in_the_language_of_the_form(client, language, subject):
+    form = {**FORM, "language": language} if language else FORM
+    client.post("/api/auth-support/access-requests/", form, format="json")
+
+    message = FakeSMTP.parsed()[-1]
+    assert subject in message["Subject"]
+    assert "/zugang/bestaetigen/" in body_of(message)
+    # The form's language also preselects the staff's choice.
+    expected = (language or "")[:2]
+    assert AccessRequest.objects.using(f.DB).get(email="erika@progeo.com").language == expected
+
+
+def test_login_link_mail_in_the_language_of_the_login_page(client):
+    user = f.make_user(email="kunde@progeo.com", first_name="Kai")
+    from progeo.v1.models import UserProfile
+
+    UserProfile.objects.using(f.DB).create(user_id=user.pk, language="de")
+
+    client.post("/api/auth-support/login-link/", {"email": "kunde@progeo.com", "language": "en"}, format="json")
+    assert "Your sign-in link for the ProGeo portal" in FakeSMTP.parsed()[-1]["Subject"]
+
+    # Without a page language: the user's own.
+    LoginLink.objects.using(f.DB).filter(user=user).update(created=timezone.now() - timedelta(minutes=5))
+    client.post("/api/auth-support/login-link/", {"email": "kunde@progeo.com"}, format="json")
+    assert "Ihr Anmeldelink" in FakeSMTP.parsed()[-1]["Subject"]
+
+
+def test_password_reset_mail_in_the_language_of_the_page(client):
+    f.make_user(email="kunde@progeo.com", first_name="Kai")
+
+    client.post("/api/auth-support/password-reset/", {"email": "kunde@progeo.com", "language": "en"}, format="json")
+
+    assert "Your password for the ProGeo portal" in FakeSMTP.parsed()[-1]["Subject"]
+
+
+def test_staff_choose_the_language_of_the_approval_and_the_user(client):
+    _request_and_verify(client)
+    request = AccessRequest.objects.using(f.DB).get(email="erika@progeo.com")
+    staff_client = APIClient()
+    staff_client.force_authenticate(user=f.make_user(staff=True))
+    listed = staff_client.get("/api/auth-support/staff/access-requests/").data["requests"]
+    assert listed[0]["language"] == "de"  # the form sent none
+
+    assert staff_client.post(f"/api/auth-support/staff/access-requests/{request.pk}/approve/",
+                             {"language": "fr"}, format="json").status_code == 400
+    staff_client.post(f"/api/auth-support/staff/access-requests/{request.pk}/approve/", {"language": "en"},
+                      format="json")
+
+    assert "Your access to the ProGeo portal has been approved" in FakeSMTP.parsed()[-1]["Subject"]
+    from progeo.v1.models import UserProfile
+
+    assert UserProfile.objects.using(f.DB).get(user_id=request.user_id).language == "en"
+
+
+def test_rejection_mail_in_the_chosen_language(client):
+    _request_and_verify(client)
+    request = AccessRequest.objects.using(f.DB).get(email="erika@progeo.com")
+    staff_client = APIClient()
+    staff_client.force_authenticate(user=f.make_user(staff=True))
+
+    staff_client.post(f"/api/auth-support/staff/access-requests/{request.pk}/reject/", {"language": "en"},
+                      format="json")
+
+    assert "Your access request for the ProGeo portal" in FakeSMTP.parsed()[-1]["Subject"]
+
+
 def test_staff_endpoints_need_staff(client):
     user = f.make_user()
     client.force_authenticate(user=user)

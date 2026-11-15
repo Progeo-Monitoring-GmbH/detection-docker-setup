@@ -35,7 +35,7 @@ def _reset_user_reason(user) -> str | None:
     return None
 
 
-def request_reset(email: str) -> None:
+def request_reset(email: str, language: str | None = None) -> None:
     """Public "forgot password": mails exactly one active user with this
     address - the link (with 2FA) or how to get in (without). The caller
     answers the same either way, and the mail goes out in the background."""
@@ -52,11 +52,12 @@ def request_reset(email: str) -> None:
     if len(users) != 1:
         ilog(f"[password_reset] Reset for {address}: {len(users)} users - nothing sent")
         return
-    outbound.dispatch(send_password_reset_task, users[0].pk)
+    outbound.dispatch(send_password_reset_task, users[0].pk, language)
 
 
-def send_reset(user_id: int) -> bool:
-    """Mail the reset link - or, without 2FA, the way in (runs in the worker)."""
+def send_reset(user_id: int, language: str | None = None) -> bool:
+    """Mail the reset link - or, without 2FA, the way in (runs in the worker),
+    in `language` (the page's, else the user's)."""
     from django.conf import settings
     from django.contrib.auth.models import User
 
@@ -74,6 +75,7 @@ def send_reset(user_id: int) -> bool:
         return bool(send_template_mail(
             [user.email], "password_reset_unavailable",
             {**context, "login_link_url": portal_url("/login/link")}, category="password_reset",
+            language=language,
         ))
     token = create_link(user, LoginLink.Purpose.RESET)
     if token is None:
@@ -83,6 +85,7 @@ def send_reset(user_id: int) -> bool:
         [user.email], "password_reset", {**context, "valid_minutes": settings.PASSWORD_RESET_MINUTES},
         category="password_reset",
         secret_context={"action_url": portal_url(f"/passwort/neu/{token}")},
+        language=language,
     ))
 
 

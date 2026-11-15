@@ -114,7 +114,10 @@ def test_no_qr_code_without_our_chat_server(api_client, settings):
 
 # ---------------------------------------------------------------------------- test message, primary channel
 
-def test_test_message_needs_a_connected_app_and_goes_to_the_users_matrix_id(api_client):
+def test_test_message_needs_a_connected_app_and_goes_to_the_users_matrix_id(api_client, settings):
+    # Own cache: the one-per-minute key would outlive the run in the shared
+    # Redis, and the reset sequences hand out the same user pk next run.
+    settings.CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
     user = f.make_user(username="kai.test", first_name="Kai")
     api_client.force_authenticate(user=user)
     assert api_client.post("/v1/user/matrix/test/").json()["code"] == "matrix_not_connected"

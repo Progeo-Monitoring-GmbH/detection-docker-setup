@@ -23,6 +23,7 @@ from progeo.v1.models import (
     EMail,
     LimitedToken,
     MfSLog,
+    MigrationInvite,
     NotificationCase,
     NotificationCaseEvent,
     NotificationOptOut,
@@ -459,6 +460,13 @@ class NotificationCaseAdmin(admin.ModelAdmin):
     search_fields = ("location_name", "=project_id", "=location_id")
     inlines = [NotificationCaseEventInline]
 
+class MigrationInviteAdmin(admin.ModelAdmin):
+    """The one-time migration campaign (manage.py migration_invites --status)."""
+    list_display = ("queued_at", "user", "status", "sent_at", "completed_at", "attempts", "error")
+    list_filter = ("status",)
+    search_fields = ("user__username", "user__email")
+    raw_id_fields = ("user",)
+
 class NotificationOptOutAdmin(admin.ModelAdmin):
     list_display = ("created", "address", "location_id", "kind", "user_id", "via")
     list_filter = ("kind", "via")
@@ -629,6 +637,7 @@ register_models = [
     {"model": ProgeoEscalation, "admin": ProgeoEscalationAdmin, "custom": True},
     {"model": NotificationCase, "admin": NotificationCaseAdmin, "custom": True},
     {"model": NotificationOptOut, "admin": NotificationOptOutAdmin, "custom": True},
+    {"model": MigrationInvite, "admin": MigrationInviteAdmin, "custom": True},
     {"model": ProgeoFavoriteLocation, "admin": ProgeoFavoriteLocationAdmin, "custom": True},
     {"model": ProgeoActivity, "admin": ProgeoActivityAdmin, "custom": True},
     
