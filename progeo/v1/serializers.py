@@ -238,20 +238,20 @@ def prepare_locations(locations, account=None, lageplans=True, stats=True):
     return locations
 
 
-def location_activity(locations, account=None):
-    """{location pk: (device count, last measurement time)} for the location
-    map - far cheaper than prepare_locations (no measurement count, no
-    lageplans): per database one query over the locations' devices, each
-    asking for its newest measurement only. In the project databases that
-    is max(last_fetched) on the (device_id, last_fetched) index; "default"
-    has no such index - there the newest id (ids are chronological).
-    The project databases in parallel (map_databases)."""
-    from progeo.helper.project_dbs import locations_by_db, map_databases, split_enabled
+def location_activity(groups):
+    """{location pk: (device count, last measurement time)} of `groups`
+    ({database: [locations]}, locations_by_db) for the location map - far
+    cheaper than prepare_locations (no measurement count, no lageplans): per
+    database one query over the locations' devices, each asking for its
+    newest measurement only. In the project databases that is
+    max(last_fetched) on the (device_id, last_fetched) index; "default" has
+    no such index - there the newest id (ids are chronological). The
+    databases in parallel (map_databases); the map asks for a slice of them
+    per request (LocationViewSet.map_locations)."""
+    from progeo.helper.project_dbs import map_databases, split_enabled
 
-    locations = list(locations)
-    if not locations:
+    if not groups:
         return {}
-    groups = locations_by_db(locations, account)
 
     def activity(db_name):
         devices = ProgeoDevice.objects.using(db_name).filter(location_id__in=[loc.pk for loc in groups[db_name]])

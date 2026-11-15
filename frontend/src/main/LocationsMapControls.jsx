@@ -16,29 +16,57 @@ const useLatest = (value) => {
   return ref;
 };
 
+/** The key that turns dragging into "zoom to this area". */
+export const AREA_ZOOM_KEY = 'z';
+
+const isTypingTarget = (target) =>
+  target instanceof HTMLElement &&
+  (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
+
 /**
- * Drag a frame over the map to zoom into it (`enabled`, the map's
- * "Zoom to area" mode) - dragging then no longer moves the map. Off: the map
- * moves by dragging, and Leaflet's own Shift + drag frame still zooms.
- * `onZoomed` after each zoom (the user took over the view).
+ * Hold Z and drag a frame over the map to zoom into it; without Z dragging
+ * moves the map as usual (Leaflet's own Shift + drag frame zooms as well).
+ * While Z is held the map doesn't move and shows a crosshair. Z typed into
+ * a field (the search) does nothing. `onZoomed` after each zoom (the user
+ * took over the view).
  */
-export const AreaZoom = ({ enabled, onZoomed }) => {
+export const AreaZoom = ({ onZoomed }) => {
   const map = useMap();
   const zoomed = useLatest(onZoomed);
 
   useEffect(() => {
-    if (!enabled) {
-      return undefined;
-    }
     const container = map.getContainer();
-    map.dragging.disable();
-    map.boxZoom.disable();
-    container.classList.add('locmap-area-zoom');
-
+    let held = false;
     let start = null;
     let frame = null;
     let swallowClick = false;
     const pointOf = (event) => map.mouseEventToContainerPoint(event);
+
+    const hold = (on) => {
+      if (held === on) {
+        return;
+      }
+      held = on;
+      container.classList.toggle('locmap-area-zoom', on);
+      // Disabled while held: a drag begun with Z draws the frame, it doesn't move the map.
+      if (on) {
+        map.dragging.disable();
+      } else if (!start) {
+        map.dragging.enable();
+      }
+    };
+    const onKeyDown = (event) => {
+      if (event.key.toLowerCase() === AREA_ZOOM_KEY && !event.ctrlKey && !event.metaKey && !event.altKey
+          && !isTypingTarget(event.target)) {
+        hold(true);
+      }
+    };
+    const onKeyUp = (event) => {
+      if (event.key.toLowerCase() === AREA_ZOOM_KEY) {
+        hold(false);
+      }
+    };
+    const onBlur = () => hold(false);
 
     const onMove = (event) => {
       const current = pointOf(event);
@@ -63,10 +91,13 @@ export const AreaZoom = ({ enabled, onZoomed }) => {
         zoomed.current?.();
       }
       start = null;
+      if (!held) {
+        map.dragging.enable(); // Z was let go during the drag
+      }
     };
     const onDown = (event) => {
-      if (event.button !== 0 || event.target.closest('.leaflet-control')) {
-        return;
+      if (!held || event.button !== 0 || event.target.closest('.leaflet-control')) {
+        return; // without Z: Leaflet moves the map
       }
       start = pointOf(event);
       event.preventDefault(); // no text selection while framing
@@ -80,9 +111,15 @@ export const AreaZoom = ({ enabled, onZoomed }) => {
       }
     };
 
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
     container.addEventListener('mousedown', onDown);
     container.addEventListener('click', onClickCapture, true);
     return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
       container.removeEventListener('mousedown', onDown);
       container.removeEventListener('click', onClickCapture, true);
       document.removeEventListener('mousemove', onMove);
@@ -92,9 +129,8 @@ export const AreaZoom = ({ enabled, onZoomed }) => {
       }
       container.classList.remove('locmap-area-zoom');
       map.dragging.enable();
-      map.boxZoom.enable();
     };
-  }, [map, enabled, zoomed]);
+  }, [map, zoomed]);
 
   return null;
 };

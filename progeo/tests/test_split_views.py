@@ -145,21 +145,46 @@ def test_the_map_lists_only_its_fields_with_the_newest_measurement_per_database(
     received = timezone.now() + datetime.timedelta(minutes=3)
     ProgeoMeasurement.objects.using(ALIAS).filter(pk=world["newest"].pk).update(last_fetched=received)
 
-    with SPLIT, CaptureQueriesContext(connections[ALIAS]) as project_queries:
-        rows = {row["id"]: row for row in staff_client.get("/v1/location/map/").json()}
+    def activity_of(plan):
+        """The plan's activity, or the chunks' when it has none yet."""
+        activity = dict(plan["activity"])
+        for index in range(plan["chunks"]):
+            chunk = staff_client.get(f"/v1/location/map/?chunk={index}").json()
+            assert chunk["chunk"] == index
+            activity.update(chunk["activity"])
+        return activity
 
-    row = rows[location.pk]
+    with SPLIT, CaptureQueriesContext(connections[ALIAS]) as project_queries:
+        plan = staff_client.get("/v1/location/map/").json()
+    # The plan reads no project database - the locations come at once.
+    assert len(project_queries) == 0
+    assert plan["chunks"] >= 1 and plan["databases"] >= 1
+    row = next(row for row in plan["locations"] if row["id"] == location.pk)
     assert set(row) == {"id", "project_id", "name", "address", "plz", "city", "manager", "telefon", "mail",
-                        "latitude", "longitude", "device_count", "last_measurement_at"}
-    assert (row["latitude"], row["longitude"], row["device_count"]) == (50.5, 7.5, 1)
+                        "latitude", "longitude"}
+    assert (row["latitude"], row["longitude"]) == (50.5, 7.5)
+
+    with SPLIT, CaptureQueriesContext(connections[ALIAS]) as project_queries:
+        activity = activity_of(plan)
     # The measurement only the project database has - one query there.
-    assert datetime.datetime.fromisoformat(row["last_measurement_at"]) == received
+    device_count, last = activity[str(location.pk)]
+    assert device_count == 1 and datetime.datetime.fromisoformat(last) == received
     assert len(project_queries) == 1
+
+    # Every chunk cached: the next plan brings the activity itself.
+    with SPLIT:
+        again = staff_client.get("/v1/location/map/").json()
+    assert again["chunks"] == 0 and again["activity"][str(location.pk)] == activity[str(location.pk)]
+    with SPLIT:
+        assert staff_client.get(f"/v1/location/map/?chunk={plan['chunks']}").status_code == 400
 
     # Split off: from "default" (newest by id there).
     newest_default = ProgeoMeasurement.objects.using(f.DB).filter(device=world["device"]).order_by("-pk").first()
-    off = {row["id"]: row for row in staff_client.get("/v1/location/map/?off=1").json()}
-    assert datetime.datetime.fromisoformat(off[location.pk]["last_measurement_at"]) == newest_default.last_fetched
+    from django.core.cache import cache
+
+    cache.clear()
+    off = activity_of(staff_client.get("/v1/location/map/").json())
+    assert datetime.datetime.fromisoformat(off[str(location.pk)][1]) == newest_default.last_fetched
 
 
 @WITH_PROJECT_DBS

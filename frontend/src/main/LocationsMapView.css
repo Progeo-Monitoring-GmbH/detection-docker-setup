@@ -31,7 +31,49 @@
   min-height: 420px;
 }
 
-/* "Zoom to area": a crosshair over the map, the frame being dragged. */
+/* While the activity chunks load: a full-width row under the header's tools. */
+.locmap-progress {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.progress.locmap-progress-bar {
+  flex: 1;
+  height: 6px;
+}
+
+/* The state badges are the filter: the picked one ringed, the others dimmed. */
+.badge.locmap-state-badge {
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.badge.locmap-state-badge--active {
+  box-shadow: 0 0 0 2px var(--progeo-panel-bg, #fff), 0 0 0 4px var(--progeo-blue);
+}
+
+.badge.locmap-state-badge--dimmed {
+  opacity: 0.45;
+}
+
+.badge.locmap-state-badge:focus-visible {
+  outline: 2px solid var(--progeo-blue);
+  outline-offset: 2px;
+}
+
+.locmap-key-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #6e6868;
+  white-space: nowrap;
+}
+
+/* Z held ("zoom to area"): a crosshair over the map, the frame being dragged. */
 .leaflet-container.locmap-area-zoom {
   cursor: crosshair;
 }

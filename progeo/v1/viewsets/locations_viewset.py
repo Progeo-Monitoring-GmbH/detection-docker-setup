@@ -507,39 +507,89 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
     # The fields of a location the map (LocationsMapView) shows.
     MAP_FIELDS = ("id", "project_id", "name", "address", "plz", "city", "manager", "telefon", "mail",
                   "latitude", "longitude")
-    MAP_CACHE_SECONDS = 60
+    # Databases per chunk - like the device statistics (device_inventory.CHUNK_DATABASES).
+    MAP_CHUNK_DATABASES = 40
+    MAP_ACTIVITY_SECONDS = 120
 
-    @require_module_permissions("module_locations_enabled")
-    @action(detail=False, url_path="map", methods=["GET"])
-    def map_locations(self, request, *args, **kwargs):
-        """The locations for the map: MAP_FIELDS plus device_count and
-        last_measurement_at (location_activity) - without the full list's
-        measurement count over every row and its lageplans, which made the
-        map wait. The locations of the primary account, like the list.
-        Cached for a minute; the map follows live measurements over the
-        websocket meanwhile."""
-        from progeo.v1.serializers import location_activity
+    def _map_groups(self, request):
+        """(locations, [(database, [locations])] sorted by database) of the
+        user's primary account - the chunks slice that list. Not
+        get_queryset(): with the split off it annotates the full stats."""
+        from progeo.helper.project_dbs import locations_by_db
 
-        cache_key, _cache = search_cache(request)
-        if _cache:
-            return _cache
         account = self._primary_account(request)
         if not account:
-            return Response(data=[])
-        # Not get_queryset(): with the split off it annotates the full stats.
+            return [], []
         locations = list(
             ProgeoLocation.objects.using(account.db_name)
             .filter(location_q(request.user, account))
             .only(*self.MAP_FIELDS)
             .order_by("id")
         )
-        activity = location_activity(locations, account)
-        data = []
-        for location in locations:
-            device_count, last = activity.get(location.pk, (0, None))
-            row = {field: getattr(location, field) for field in self.MAP_FIELDS}
-            data.append({**row, "device_count": device_count, "last_measurement_at": last})
-        return cache_save_and_return(cache_key, data, time_out=self.MAP_CACHE_SECONDS)
+        return locations, sorted(locations_by_db(locations, account).items())
+
+    def _map_chunk_key(self, request, index, groups):
+        """Cache key of a chunk: the user (what it may see) and the chunk's
+        databases and locations - a changed list makes a new key."""
+        import hashlib
+
+        content = ";".join(f"{db}:{','.join(str(loc.pk) for loc in group)}" for db, group in groups)
+        digest = hashlib.md5(content.encode(), usedforsecurity=False).hexdigest()
+        return f"progeo:location-map:{request.user.pk}:{index}:{digest}"
+
+    def _map_chunks(self, groups):
+        size = self.MAP_CHUNK_DATABASES
+        return [groups[start:start + size] for start in range(0, len(groups), size)]
+
+    @require_module_permissions("module_locations_enabled")
+    @action(detail=False, url_path="map", methods=["GET"])
+    def map_locations(self, request, *args, **kwargs):
+        """The location map (LocationsMapView), in chunks like the device
+        statistics - ~1000 project databases take far too long for one request.
+
+        Without `chunk`: the locations at once (MAP_FIELDS, from the
+        account database only) and `chunks`/`databases` to scan; when every
+        chunk is cached, `activity` already holds them all (`chunks` 0).
+        `chunk=<k>`: `activity` {location id: [device count, last measurement]}
+        of the k-th MAP_CHUNK_DATABASES databases (location_activity), cached
+        for MAP_ACTIVITY_SECONDS. Locations without devices are left out."""
+        from django.core.cache import cache
+
+        from progeo.v1.serializers import location_activity
+
+        locations, groups = self._map_groups(request)
+        chunks = self._map_chunks(groups)
+
+        chunk_param = request.query_params.get("chunk")
+        if chunk_param is not None:
+            try:
+                index = int(chunk_param)
+            except ValueError:
+                return RequestFailed({"reason": "Invalid chunk"})
+            if not 0 <= index < len(chunks):
+                return RequestFailed({"reason": f"Chunk {index} out of range (0..{len(chunks) - 1})"})
+            key = self._map_chunk_key(request, index, chunks[index])
+            activity = cache.get(key)
+            if activity is None:
+                activity = {
+                    str(pk): [count, last.isoformat() if last else None]
+                    for pk, (count, last) in location_activity(dict(chunks[index])).items()
+                }
+                cache.set(key, activity, self.MAP_ACTIVITY_SECONDS)
+            return Response(data={"chunk": index, "databases": len(chunks[index]), "activity": activity})
+
+        cached = [cache.get(self._map_chunk_key(request, index, chunk)) for index, chunk in enumerate(chunks)]
+        complete = all(part is not None for part in cached)
+        activity = {}
+        if complete:
+            for part in cached:
+                activity.update(part)
+        return Response(data={
+            "locations": [{field: getattr(location, field) for field in self.MAP_FIELDS} for location in locations],
+            "databases": len(groups),
+            "chunks": 0 if complete else len(chunks),
+            "activity": activity,
+        })
 
     @require_module_permissions("module_locations_enabled")
     @action(detail=False, url_path="details", methods=["GET"])

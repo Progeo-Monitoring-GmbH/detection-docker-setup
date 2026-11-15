@@ -8,6 +8,7 @@ import {
   Form,
   ListGroup,
   Row,
+  ProgressBar,
   Spinner,
 } from 'react-bootstrap';
 import { ArrowsFullscreen, BellFill, BellSlashFill } from 'react-bootstrap-icons';
@@ -28,11 +29,12 @@ import axiosConfig from '../axiosConfig';
 import { matchesLocationSearch } from '../components/location/locationSearch';
 import { showInfoBar, showRequestError } from '../components/ui/Snackbar.jsx';
 import PillButton from '../components/ui/kit/PillButton';
-import SegmentedControl from '../components/ui/kit/SegmentedControl';
+import { KeyChip } from '../components/ui/KeyHints';
 import { useWheelHint, WheelZoomHint } from '../components/ui/wheelZoom';
 import { useConsent } from '../components/privacy/ConsentProvider';
 import MapConsentNotice from '../components/privacy/MapConsentNotice';
 import { repeatedTestId } from '../testIds';
+import { runChunks } from './deviceStatisticsBuild';
 import { AreaZoom, CtrlWheelZoom } from './LocationsMapControls';
 import './LocationsMapView.css';
 
@@ -50,11 +52,43 @@ const TILE_URL =
   import.meta.env.VITE_MAP_TILE_URL ||
   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 
+/**
+ * GET: the locations at once and how many chunks of project databases to
+ * scan; ?chunk=k: the device count and last measurement of the k-th chunk's
+ * locations - like the device statistics' chunked build.
+ */
+const MAP_URL = '/v1/location/map/';
+/** Chunk requests at a time - each one already queries its databases in parallel on the server. */
+const CHUNK_CONCURRENCY = 2;
+
+/**
+ * The rows with a chunk's activity ({id: [device count, last measurement]})
+ * - a live update newer than the chunk's last measurement is kept.
+ */
+const withActivity = (rows, activity) => {
+  if (!activity || !Object.keys(activity).length) {
+    return rows;
+  }
+  return rows.map((row) => {
+    const entry = activity[row.id];
+    if (!entry) {
+      return row;
+    }
+    const [deviceCount, last] = entry;
+    const newest =
+      row.last_measurement_at && (!last || Date.parse(row.last_measurement_at) > Date.parse(last))
+        ? row.last_measurement_at
+        : last;
+    return { ...row, device_count: deviceCount, last_measurement_at: newest };
+  });
+};
+
+/** Muted unless this browser switched the messages on ("0"). */
 const readToastsMuted = () => {
   try {
-    return window.localStorage.getItem(TOASTS_MUTED_KEY) === '1';
+    return window.localStorage.getItem(TOASTS_MUTED_KEY) !== '0';
   } catch {
-    return false;
+    return true;
   }
 };
 
@@ -62,7 +96,7 @@ const storeToastsMuted = (muted) => {
   try {
     window.localStorage.setItem(TOASTS_MUTED_KEY, muted ? '1' : '0');
   } catch {
-    // Storage unavailable (private mode): muted for this visit only.
+    // Storage unavailable (private mode): the choice holds for this visit only.
   }
 };
 
@@ -205,13 +239,14 @@ const ageInfoFromDate = (value) => {
   };
 };
 
-const STATE_FILTER_OPTIONS = [
-  { value: 'all', label: 'All states' },
-  { value: 'fresh_1h', label: 'Fresh (<=1h)' },
-  { value: 'fresh_24h', label: 'Recent (<=24h)' },
-  { value: 'late_72h', label: 'Late (<=72h)' },
-  { value: 'stale', label: 'Stale (>72h)' },
-  { value: 'no_data', label: 'No data yet' },
+/** The state badges - each one filters the map and the list to its state. */
+const STATE_BADGES = [
+  { state: 'all', bg: 'dark' },
+  { state: 'fresh_1h', bg: 'success' },
+  { state: 'fresh_24h', bg: 'warning', text: 'dark' },
+  { state: 'late_72h', bg: 'warning' },
+  { state: 'stale', bg: 'danger' },
+  { state: 'no_data', bg: 'secondary' },
 ];
 
 const STATE_TITLES = {
@@ -340,6 +375,9 @@ LocationListItem.displayName = 'LocationListItem';
 const LocationsMapView = () => {
   const { t } = useTranslation();
   const auth = useAuth();
+  // The load runs once per mount - through a ref, a new auth object doesn't restart the chunks.
+  const authRef = useRef(auth);
+  authRef.current = auth;
   const { allows } = useConsent();
   const { enqueueSnackbar } = useSnackbar();
   const [rows, setRows] = useState([]);
@@ -351,7 +389,8 @@ const LocationsMapView = () => {
   const [flashMarkers, setFlashMarkers] = useState({});
   const [flashTick, setFlashTick] = useState(Date.now());
   const [toastsMuted, setToastsMuted] = useState(readToastsMuted);
-  const [mode, setMode] = useState('zoom');
+  // While the activity chunks load: {done, total} databases.
+  const [activityProgress, setActivityProgress] = useState(null);
   const [fitRequest, setFitRequest] = useState(0);
   const [wheelHint, showWheelHint] = useWheelHint();
   const interactedRef = useRef(false);
@@ -366,21 +405,63 @@ const LocationsMapView = () => {
     storeToastsMuted(toastsMuted);
   }, [toastsMuted]);
 
+  // The locations come at once, their activity chunk by chunk (MAP_URL).
   useEffect(() => {
-    setLoading(true);
-    void axiosConfig.perform_get(
-      auth,
-      '/v1/location/map/',
-      (response) => {
-        setRows(response?.data || []);
+    let cancelled = false;
+    const get = (query) =>
+      new Promise((resolve, reject) => {
+        void axiosConfig.perform_get(
+          authRef.current,
+          `${MAP_URL}${query}`,
+          (response) => resolve(response?.data ?? {}),
+          reject,
+        );
+      });
+    const load = async () => {
+      setLoading(true);
+      try {
+        const plan = await get('');
+        if (cancelled) {
+          return;
+        }
+        setRows(withActivity(plan.locations || [], plan.activity));
         setLoading(false);
-      },
-      (error) => {
-        showRequestError(enqueueSnackbar, 'Could not load locations', error);
-        setLoading(false);
-      },
-    );
-  }, [auth, enqueueSnackbar]);
+        const chunks = Number(plan.chunks) || 0;
+        if (!chunks) {
+          return;
+        }
+        setActivityProgress({ done: 0, total: Number(plan.databases) || 0 });
+        await runChunks(
+          chunks,
+          CHUNK_CONCURRENCY,
+          async (index) => {
+            const chunk = await get(`?chunk=${index}`);
+            if (cancelled) {
+              return;
+            }
+            setRows((current) => withActivity(current, chunk.activity));
+            setActivityProgress(
+              (current) => current && { ...current, done: current.done + (Number(chunk.databases) || 0) },
+            );
+          },
+          () => cancelled,
+        );
+      } catch (error) {
+        if (!cancelled) {
+          showRequestError(enqueueSnackbar, 'Could not load locations', error);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+          setActivityProgress(null);
+        }
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [enqueueSnackbar]);
 
   useEffect(() => {
     const ws = new WebSocket(`${getWsBaseUrl()}/ws/commands/list`);
@@ -495,15 +576,9 @@ const LocationsMapView = () => {
                 {mappableRows.length} mapped / {filteredRows.length} filtered / {rows.length} total
               </span>
               <div className="locmap-toolbar">
-                <SegmentedControl
-                  options={[
-                    { value: 'zoom', label: t('locmap_mode_zoom'), title: t('locmap_mode_zoom_title') },
-                    { value: 'pan', label: t('locmap_mode_pan'), title: t('locmap_mode_pan_title') },
-                  ]}
-                  value={mode}
-                  onChange={setMode}
-                  testId="locations-map-mode"
-                />
+                <span className="locmap-key-hint" data-testid="locations-map-zoom-hint">
+                  <KeyChip>Z</KeyChip> + {t('locmap_zoom_area_hint')}
+                </span>
                 <PillButton
                   variant="ghost"
                   icon={<ArrowsFullscreen size={13} />}
@@ -521,6 +596,22 @@ const LocationsMapView = () => {
                   testId="locations-map-mute-toasts"
                 />
               </div>
+              {activityProgress && (
+                <div className="locmap-progress" data-testid="locations-map-progress">
+                  <span className="small text-muted">
+                    {t('locmap_loading_activity', {
+                      done: activityProgress.done,
+                      total: activityProgress.total,
+                    })}
+                  </span>
+                  <ProgressBar
+                    now={activityProgress.done}
+                    max={Math.max(activityProgress.total, 1)}
+                    animated
+                    className="locmap-progress-bar"
+                  />
+                </div>
+              )}
             </Card.Header>
             <Card.Body className="locmap-map-body" data-testid="locations-map-map">
               {loading ? (
@@ -551,7 +642,7 @@ const LocationsMapView = () => {
                     interactedRef={interactedRef}
                     fitRequest={fitRequest}
                   />
-                  <AreaZoom enabled={mode === 'zoom'} onZoomed={markInteracted} />
+                  <AreaZoom onZoomed={markInteracted} />
                   <CtrlWheelZoom onZoomed={markInteracted} onPlain={showWheelHint} />
                   {mappableRows.map((location) => (
                     <LocationMarker
@@ -577,23 +668,34 @@ const LocationsMapView = () => {
           <Card className="mb-3" data-testid="locations-map-filters">
             <Card.Header>Statistics & Filters</Card.Header>
             <Card.Body className="m-2">
-              <div className="small text-muted mb-2">Location state counts</div>
+              <div className="small text-muted mb-2">Location states - click one to filter</div>
               <div className="d-flex flex-wrap gap-2 mb-3" data-testid="locations-map-state-counts">
-                <Badge bg="success" {...repeatedTestId('locations-map-state-count', 'fresh_1h')}>
-                  {STATE_TITLES.fresh_1h}: {stateStats.fresh_1h}
-                </Badge>
-                <Badge bg="warning" text="dark" {...repeatedTestId('locations-map-state-count', 'fresh_24h')}>
-                  {STATE_TITLES.fresh_24h}: {stateStats.fresh_24h}
-                </Badge>
-                <Badge bg="warning" {...repeatedTestId('locations-map-state-count', 'late_72h')}>
-                  {STATE_TITLES.late_72h}: {stateStats.late_72h}
-                </Badge>
-                <Badge bg="danger" {...repeatedTestId('locations-map-state-count', 'stale')}>
-                  {STATE_TITLES.stale}: {stateStats.stale}
-                </Badge>
-                <Badge bg="secondary" {...repeatedTestId('locations-map-state-count', 'no_data')}>
-                  {STATE_TITLES.no_data}: {stateStats.no_data}
-                </Badge>
+                {STATE_BADGES.map(({ state, bg, text }) => {
+                  const active = stateFilter === state;
+                  const classes = ['locmap-state-badge'];
+                  if (active) {
+                    classes.push('locmap-state-badge--active');
+                  } else if (stateFilter !== 'all') {
+                    classes.push('locmap-state-badge--dimmed');
+                  }
+                  return (
+                    <Badge
+                      key={state}
+                      as="button"
+                      type="button"
+                      bg={bg}
+                      text={text}
+                      className={classes.join(' ')}
+                      aria-pressed={active}
+                      // A second click on the active state shows all again.
+                      onClick={() => setStateFilter((current) => (current === state ? 'all' : state))}
+                      {...repeatedTestId('locations-map-state-count', state)}
+                    >
+                      {state === 'all' ? 'All' : STATE_TITLES[state]}:{' '}
+                      {state === 'all' ? rows.length : stateStats[state]}
+                    </Badge>
+                  );
+                })}
               </div>
 
               <Form.Group className="mb-3" controlId="location-map-search">
@@ -606,21 +708,6 @@ const LocationsMapView = () => {
                   onChange={(event) => setSearchText(event.target.value)}
                   data-testid="locations-map-search"
                 />
-              </Form.Group>
-
-              <Form.Group controlId="location-map-state-filter">
-                <Form.Label className="small mb-1">State filter</Form.Label>
-                {STATE_FILTER_OPTIONS.map((option) => (
-                  <Form.Check
-                    key={option.value}
-                    type="radio"
-                    name="location-map-state-filter"
-                    label={option.label}
-                    checked={stateFilter === option.value}
-                    onChange={() => setStateFilter(option.value)}
-                    {...repeatedTestId('locations-map-state-filter', option.value)}
-                  />
-                ))}
               </Form.Group>
             </Card.Body>
           </Card>
