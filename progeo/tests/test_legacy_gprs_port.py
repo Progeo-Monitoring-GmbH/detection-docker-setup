@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from progeo.tests.legacy_gprs_recorded import recorded_configs
 from progeo.v1.legacy import gprs_port
 from progeo.v1.legacy.gprs_port import (
     NO_ALARM,
@@ -24,16 +25,16 @@ from progeo.v1.legacy.gprs_port import (
     php_float,
     receive_chunk,
 )
-from progeo.v1.legacy.gprs_table import SCRIPTS, php_configs
+from progeo.v1.legacy.gprs_table import SCRIPTS
 
 CASES = json.loads((Path(__file__).parent / "fixtures" / "legacy_gprs_oracle.json").read_text(encoding="utf-8"))
 PORTED = [case for case in CASES if case["script"] in SCRIPTS]
-CONFIGS = php_configs()
+CONFIGS = recorded_configs()
 
 
 class OracleLive:
     """What the PHP script saw: its configuration ($pd, $int, $sensoren, $PE,
-    as the database holds it now - gprs_php_config.json) and the alarm
+    as the database holds it - read out of its recorded answer) and the alarm
     tables: {"*": rows} for every table, or {"<project>_Alarm": rows}; a
     row's Messpkt is the alarm's sensor."""
 

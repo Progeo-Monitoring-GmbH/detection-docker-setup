@@ -369,76 +369,6 @@ def _is_lageplan_copy(lageplan, kept, project_id):
     return digest is not None and digest in {_lageplan_digest(other) for other in kept}
 
 
-def _gprs_targets():
-    """(script, project, interval, pd, pe, sensors) the legacy
-    gprs_<script>.php scripts configured their controllers with
-    (legacy/gprs_php_config.json, frozen 2026-11); a hybrid script
-    configures its second project too (same interval). gprs_5723 / gprs_5787
-    have no configuration in their answer."""
-    from progeo.v1.legacy.gprs_table import php_configs
-
-    for name, (project, config, second_project, second) in sorted(php_configs().items()):
-        yield name, project, config.interval, config.pd, config.pe, config.sensors
-        if second_project:
-            yield name, second_project, second.interval, second.pd, second.pe, second.sensors
-
-
-def gprs_device_config(apply=False):
-    """Takes the configuration the legacy controllers get from their
-    gprs_<script>.php answer into the database: data_interval,
-    pull_resistance and sensor_count of the project's legacy device
-    (raw_hash = project id), pe_geschaltet of its location where the script
-    switches PE. Nothing is created - projects without a legacy device are
-    listed. Read only unless `apply`; applied, the answers' snapshot
-    (legacy/gprs_state.py) is refreshed right away."""
-    from django.db import DEFAULT_DB_ALIAS
-
-    from progeo.v1.legacy import gprs_state
-    from progeo.v1.legacy.gprs import find_legacy_device
-
-    changed, unchanged, missing = 0, 0, []
-    for name, project, interval, pd, pe, sensors in _gprs_targets():
-        db, device = find_legacy_device(project)
-        if device is None:
-            missing.append(project)
-            continue
-        updates = {}
-        if device.data_interval != int(interval):
-            updates["data_interval"] = int(interval)
-        if device.pull_resistance != int(pd, 16):
-            updates["pull_resistance"] = int(pd, 16)
-        if device.sensor_count != int(sensors):
-            updates["sensor_count"] = int(sensors)
-        location = (
-            ProgeoLocation.objects.using(DEFAULT_DB_ALIAS).filter(pk=device.location_id).first()
-            if pe and device.location_id else None
-        )
-        switch_pe = location is not None and location.pe_geschaltet != (pe == "1")
-        if not updates and not switch_pe:
-            unchanged += 1
-            continue
-        changed += 1
-        changes = [f"{field} {getattr(device, field)} -> {value}" for field, value in updates.items()]
-        if switch_pe:
-            changes.append(f"pe_geschaltet {location.pe_geschaltet} -> {pe == '1'}")
-        ilog(f"gprs_{name}.php: project {project} device #{device.pk} ({db}): {', '.join(changes)}")
-        if apply:
-            if updates:
-                for field, value in updates.items():
-                    setattr(device, field, value)
-                device.save(using=db, update_fields=list(updates))
-            if switch_pe:
-                # Saved in default; the save signal mirrors it into the project database.
-                location.pe_geschaltet = pe == "1"
-                location.save(using=DEFAULT_DB_ALIAS, update_fields=["pe_geschaltet"])
-    if missing:
-        elog(f"{len(missing)} projects without a legacy device (raw_hash = project id), left alone: {missing}")
-    ilog(f"{changed} devices {'updated' if apply else 'to update (dry run, use --apply)'}, {unchanged} unchanged")
-    if apply and changed:
-        gprs_state.refresh()
-    return {"changed": changed, "unchanged": unchanged, "missing": missing}
-
-
 # How many of a device's newest measurements are searched for a reported
 # sensor count (raw_data is a text column: parsed here, not queried).
 SENSOR_COUNT_LOOKBACK = 20
@@ -493,7 +423,7 @@ def sensor_count_from_samples(apply=False):
     sample - catch_live_data kept it only in the measurement's
     raw_data["sensors"] - else the count of their provisioning token, else
     the number of measure points connected to them. Devices that have one
-    (legacy controllers: gprs_device_config) are left alone, as are devices
+    (e.g. the legacy GPRS controllers) are left alone, as are devices
     without any source - the report says how many still have none. Read only
     unless `apply`."""
     from collections import Counter
@@ -863,9 +793,6 @@ class Command(BaseCommand):
         '                            and their images, name the measure points from the table, set\n'
         '                            Unknown locations (no dm sensors) and their devices to smartex is\n'
         '                            - read only unless --apply\n'
-        '  gprs_device_config        interval, pulldown, sensors, PE of the legacy GPRS controllers from their\n'
-        '                            PHP config (legacy/gprs_php_config.json) into the devices\n'
-        '                            - read only unless --apply\n'
         '  sensor_count_from_samples sensor_count of the devices without one: newest sample\'s raw_data,\n'
         '                            else provisioning token, else connected measure points; reports how\n'
         '                            many remain unset - read only unless --apply\n\n'
@@ -878,7 +805,6 @@ class Command(BaseCommand):
         '  python manage.py patch_live --patch koords_to_points [--apply]\n'
         '  python manage.py patch_live --patch drop_duplicate_locations [--apply]\n'
         '  python manage.py patch_live --patch drop_is_plans [--apply]\n'
-        '  python manage.py patch_live --patch gprs_device_config [--apply]\n'
         '  python manage.py patch_live --patch sensor_count_from_samples [--apply]'
     )
 
@@ -887,7 +813,7 @@ class Command(BaseCommand):
                             help="Select a patch to run",
                             default=None)
         parser.add_argument("--apply", action="store_true",
-                            help="drop_duplicate_locations, drop_is_plans, koords_to_points, gprs_device_config, "
+                            help="drop_duplicate_locations, drop_is_plans, koords_to_points, "
                                  "sensor_count_from_samples: change the data "
                                  "(default: only report)")
 
@@ -910,8 +836,6 @@ class Command(BaseCommand):
         if patch == "drop_is_plans":
             drop_is_plans(apply=options["apply"])
 
-        if patch == "gprs_device_config":
-            gprs_device_config(apply=options["apply"])
 
         if patch == "sensor_count_from_samples":
             sensor_count_from_samples(apply=options["apply"])

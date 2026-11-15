@@ -18,8 +18,8 @@ device: ingestion never sets it for these controllers, so a device it
 (re)creates - with model defaults and pe_geschaltet False - is not answered.
 
 Changes reach the answers with the next refresh; the configuration editor
-(gprs_config.py) and patch_live gprs_device_config update their projects in
-the snapshot right away (refresh_projects). Alarms appear in the answer
+(gprs_config.py) updates its projects in the snapshot right away
+(refresh_projects). Alarms appear in the answer
 (reset code, sensor number) up to one refresh interval late.
 """
 

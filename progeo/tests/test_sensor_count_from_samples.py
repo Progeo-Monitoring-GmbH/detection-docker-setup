@@ -75,7 +75,7 @@ def test_the_provisioning_token_without_a_reported_count(location):
 
 
 def test_an_existing_count_is_kept(location):
-    device = _device(location, sensor_count=89)  # e.g. a legacy controller (gprs_device_config)
+    device = _device(location, sensor_count=89)  # e.g. a legacy GPRS controller
     _sample(device, {"sensors": 16})
 
     sensor_count_from_samples(apply=True)

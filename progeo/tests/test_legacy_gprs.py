@@ -13,9 +13,9 @@ from django.core.cache import cache
 from django.test import override_settings
 
 from progeo.tests import factories as f
+from progeo.tests.legacy_gprs_recorded import recorded_configs
 from progeo.v1.legacy import executor, gprs_state
 from progeo.v1.legacy.gprs import extract_gprs_data
-from progeo.v1.legacy.gprs_table import php_configs
 from progeo.v1.models import ProgeoAlarm, ProgeoMeasurement
 
 CASES = json.loads((Path(__file__).parent / "fixtures" / "legacy_gprs_oracle.json").read_text(encoding="utf-8"))
@@ -47,9 +47,9 @@ def local_cache_and_channels(settings):
 @pytest.fixture(autouse=True)
 def configured_controllers():
     """The legacy devices of the scripts used here, configured like on live
-    (patch_live gprs_device_config: the PHP's configuration)."""
+    (the configuration the PHP answered with)."""
     account = f.make_account()
-    configs = php_configs()
+    configs = recorded_configs()
     for script in ("4031", "4033", "4060_h", "4070", "4073", "4085", "4091", "5754"):
         project, config, second_project, second = configs[script]
         for project_id, item in ((project, config), (second_project, second)):
