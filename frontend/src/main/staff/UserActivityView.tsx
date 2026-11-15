@@ -69,33 +69,33 @@ const MessagingStatsPanel = () => {
   }
   const { matrix, login_links: links } = stats;
   const number = (value: number | null) => (value === null ? '–' : String(value));
+  // One flat row of tiles (chat accounts, then login links) under the title.
   return (
-    <PanelCard title={t('ua_messaging_title')} testId="user-activity-messaging">
-      {matrix.enabled && (
-        <KpiStrip
-          testId="user-activity-matrix"
-          tiles={[
-            { label: t('ua_matrix_server_accounts'), value: number(matrix.server_accounts), note: t('ua_matrix_server_accounts_note'), testId: 'ua-matrix-server' },
-            { label: t('ua_matrix_connected'), value: number(matrix.connected), note: t('ua_matrix_connected_note'), testId: 'ua-matrix-connected' },
-            { label: t('ua_matrix_active'), value: number(matrix.active_7d), note: t('ua_matrix_active_note', { count: matrix.active_30d }), testId: 'ua-matrix-active' },
-            { label: t('ua_matrix_primary'), value: number(matrix.primary), note: t('ua_matrix_primary_note'), testId: 'ua-matrix-primary' },
-          ]}
-        />
-      )}
+    <PanelCard title={t('ua_messaging_title')} testId="user-activity-messaging" bodyClassName="staff-insights-strip">
       <KpiStrip
-        testId="user-activity-login-links"
-        tiles={LINK_PERIODS.map((period) => ({
-          label: t(`ua_links_${period}`),
-          value: String(links[period].total),
-          note: t('ua_links_note', {
-            login: links[period].login,
-            invite: links[period].invite,
-            reset: links[period].reset,
-            matrix: links[period].matrix,
-            migration: links[period].migration,
-          }),
-          testId: `ua-links-${period}`,
-        }))}
+        testId="user-activity-messaging-kpis"
+        tiles={[
+          ...(matrix.enabled
+            ? [
+                { label: t('ua_matrix_server_accounts'), value: number(matrix.server_accounts), note: t('ua_matrix_server_accounts_note'), testId: 'ua-matrix-server' },
+                { label: t('ua_matrix_connected'), value: number(matrix.connected), note: t('ua_matrix_connected_note'), testId: 'ua-matrix-connected' },
+                { label: t('ua_matrix_active'), value: number(matrix.active_7d), note: t('ua_matrix_active_note', { count: matrix.active_30d }), testId: 'ua-matrix-active' },
+                { label: t('ua_matrix_primary'), value: number(matrix.primary), note: t('ua_matrix_primary_note'), testId: 'ua-matrix-primary' },
+              ]
+            : []),
+          ...LINK_PERIODS.map((period) => ({
+            label: t(`ua_links_${period}`),
+            value: String(links[period].total),
+            note: t('ua_links_note', {
+              login: links[period].login,
+              invite: links[period].invite,
+              reset: links[period].reset,
+              matrix: links[period].matrix,
+              migration: links[period].migration,
+            }),
+            testId: `ua-links-${period}`,
+          })),
+        ]}
       />
     </PanelCard>
   );
@@ -103,6 +103,8 @@ const MessagingStatsPanel = () => {
 
 const PERIODS = ['7', '30', '90', '180'];
 const TOP_PAGES = 12;
+/** Height of the overview charts - one row of the grid lines up. */
+const CHART_HEIGHT = 210;
 const MINUTE = 60 * 1000;
 /** Session length classes of the histogram (upper bounds, ms). */
 const LENGTH_BINS: Array<{ max: number; label: string }> = [
@@ -139,7 +141,7 @@ const PageTimeChart = ({ rows, height }: { rows: Array<{ path: string; total_ms:
             hovertemplate: `%{y}<br>%{customdata[0]} · ${t('ua_views')}: %{customdata[1]}<br>${t('ua_median_view')}: %{customdata[2]}<extra></extra>`,
           },
         ]}
-        layout={baseLayout(height ?? Math.max(200, shown.length * 26 + 40), {
+        layout={baseLayout(height ?? Math.max(CHART_HEIGHT, shown.length * 18 + 36), {
           xaxis: { title: { text: t('ua_minutes') }, rangemode: 'tozero' },
           yaxis: { gridcolor: 'transparent', ticks: '' },
         })}
@@ -257,7 +259,7 @@ const AllSessions = ({
                   hovertemplate: `%{x|%a %d.%m.}<br>%{y} ${t('ua_sessions')}<extra></extra>`,
                 },
               ]}
-              layout={baseLayout(240, { xaxis: { type: 'date', tickformat: '%d.%m.' }, yaxis: { rangemode: 'tozero', tickformat: 'd' } })}
+              layout={baseLayout(CHART_HEIGHT, { xaxis: { type: 'date', tickformat: '%d.%m.' }, yaxis: { rangemode: 'tozero', tickformat: 'd' } })}
               config={plotConfig}
               style={{ width: '100%' }}
               useResizeHandler
@@ -277,7 +279,7 @@ const AllSessions = ({
                   hovertemplate: `%{x}<br>%{y} ${t('ua_sessions')}<extra></extra>`,
                 },
               ]}
-              layout={baseLayout(240, { xaxis: { title: { text: t('ua_col_stay') } }, yaxis: { rangemode: 'tozero', tickformat: 'd' } })}
+              layout={baseLayout(CHART_HEIGHT, { xaxis: { title: { text: t('ua_col_stay') } }, yaxis: { rangemode: 'tozero', tickformat: 'd' } })}
               config={plotConfig}
               style={{ width: '100%' }}
               useResizeHandler
@@ -309,7 +311,7 @@ const AllSessions = ({
                   hovertemplate: `%{y} %{x}:00–%{x}:59<br>%{z} ${t('ua_sessions')}<extra></extra>`,
                 },
               ]}
-              layout={baseLayout(240, {
+              layout={baseLayout(CHART_HEIGHT, {
                 xaxis: { title: { text: t('ua_hour') }, dtick: 3, gridcolor: 'transparent' },
                 yaxis: { autorange: 'reversed', gridcolor: 'transparent' },
               })}
@@ -331,6 +333,7 @@ const AllSessions = ({
           pagination
           paginationPerPage={25}
           customStyles={progeoTableStyles}
+          dense
           highlightOnHover
           pointerOnHover
           onRowClicked={(row) => onOpen(row.session)}
@@ -345,7 +348,10 @@ const AllSessions = ({
 
 // ------------------------------------------------------------------ one session
 
-const OneSession = ({ session, onBack }: { session: string; onBack: () => void }) => {
+/** The session's user and start, shown in the page header. */
+type SessionHead = { username: string; at: string | undefined };
+
+const OneSession = ({ session, onLoaded }: { session: string; onLoaded: (head: SessionHead) => void }) => {
   const { t } = useTranslation();
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
@@ -356,13 +362,19 @@ const OneSession = ({ session, onBack }: { session: string; onBack: () => void }
     void axiosConfig.perform_get(
       auth,
       `/v1/activity/session/?session=${encodeURIComponent(session)}`,
-      (response) => setDetail((response?.data ?? null) as SessionDetail | null),
+      (response) => {
+        const loaded = (response?.data ?? null) as SessionDetail | null;
+        setDetail(loaded);
+        if (loaded) {
+          onLoaded({ username: loaded.username, at: loaded.events[0]?.at });
+        }
+      },
       (error) => {
         setMissing(true);
         showRequestError(enqueueSnackbar, t('ua_session_failed'), error);
       },
     );
-  }, [auth, enqueueSnackbar, session, t]);
+  }, [auth, enqueueSnackbar, onLoaded, session, t]);
 
   const events = useMemo(() => detail?.events ?? [], [detail]);
   const views = events.filter((event) => event.kind === 'page');
@@ -389,17 +401,6 @@ const OneSession = ({ session, onBack }: { session: string; onBack: () => void }
 
   return (
     <>
-      <div className="d-flex flex-wrap align-items-center gap-2">
-        <PillButton label={t('ua_back')} icon={<ArrowLeft />} onClick={onBack} variant="ghost" testId="user-activity-back" />
-        {detail && (
-          <div className="staff-insights-subtitle">
-            {t('ua_session_of', { user: detail.username, at: formatDate(events[0]?.at, 'dateTime') })}
-            {' · '}
-            <code>{detail.session}</code>
-          </div>
-        )}
-      </div>
-
       {missing ? (
         <div className="small text-muted py-3" data-testid="user-activity-session-missing">{t('ua_session_missing')}</div>
       ) : !detail ? (
@@ -444,7 +445,7 @@ const OneSession = ({ session, onBack }: { session: string; onBack: () => void }
                     hovertemplate: `%{customdata[1]}<br>%{customdata[0]}<extra>${t('ua_legend_click')}</extra>`,
                   },
                 ]}
-                layout={baseLayout(Math.max(200, paths.length * 34 + 70), {
+                layout={baseLayout(Math.max(CHART_HEIGHT, paths.length * 26 + 60), {
                   showlegend: true,
                   legend: { orientation: 'h', x: 0, y: 1.02, yanchor: 'bottom', font: { size: 12 } },
                   margin: { l: 8, r: 12, t: 28, b: 8 },
@@ -503,6 +504,11 @@ const UserActivityView = () => {
   const [pages, setPages] = useState<PageRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadedAt, setLoadedAt] = useState(0);
+  const [sessionHead, setSessionHead] = useState<(SessionHead & { session: string }) | null>(null);
+  const onSessionLoaded = useCallback(
+    (loaded: SessionHead) => session && setSessionHead({ ...loaded, session }),
+    [session],
+  );
 
   const load = useCallback(() => {
     let pending = 2;
@@ -552,43 +558,55 @@ const UserActivityView = () => {
       { replace: false },
     );
 
+  const head = sessionHead?.session === session ? sessionHead : null;
+
   return (
     <div className="staff-insights" data-testid="page-user-activity">
-      <div className="staff-insights-head">
-        <div>
-          <h1 className="staff-insights-title">{t('ua_title')}</h1>
-          <div className="staff-insights-subtitle">{t('ua_intro')}</div>
+      <PanelCard
+        title={t('ua_title')}
+        testId="user-activity-header"
+        actions={
+          session ? (
+            <PillButton label={t('ua_back')} icon={<ArrowLeft />} onClick={() => openSession(null)} variant="ghost" testId="user-activity-back" />
+          ) : (
+            <PillSelect
+              label={t('ua_period')}
+              options={PERIODS.map((value) => ({ value, label: t('ua_days', { count: Number(value) }) }))}
+              value={days}
+              onChange={(value) => {
+                if (value !== days) {
+                  setLoading(true);
+                  setDays(value);
+                }
+              }}
+              testId="user-activity-days"
+            />
+          )
+        }
+      >
+        <div className="staff-insights-subtitle">
+          {!session
+            ? t('ua_intro')
+            : head
+              ? <>{t('ua_session_of', { user: head.username, at: formatDate(head.at, 'dateTime') })} · <code>{session}</code></>
+              : <code>{session}</code>}
         </div>
-        {!session && (
-          <PillSelect
-            label={t('ua_period')}
-            options={PERIODS.map((value) => ({ value, label: t('ua_days', { count: Number(value) }) }))}
-            value={days}
-            onChange={(value) => {
-              if (value !== days) {
-                setLoading(true);
-                setDays(value);
-              }
-            }}
-            testId="user-activity-days"
-          />
+        {sessions && !sessions.enabled && (
+          <Alert variant="warning" className="mt-2 mb-0 small" data-testid="user-activity-disabled">
+            {t('ua_disabled', { days: sessions.retention_days })}
+          </Alert>
         )}
-      </div>
-
-      {sessions && !sessions.enabled && (
-        <Alert variant="warning" className="mb-0 small" data-testid="user-activity-disabled">
-          {t('ua_disabled', { days: sessions.retention_days })}
-        </Alert>
-      )}
+      </PanelCard>
 
       {!session && <MessagingStatsPanel />}
 
       {session ? (
-        <OneSession key={session} session={session} onBack={() => openSession(null)} />
+        <OneSession key={session} session={session} onLoaded={onSessionLoaded} />
       ) : !sessions ? (
         <div className="staff-insights-placeholder">{loading && <Spinner animation="border" size="sm" />}</div>
       ) : (
-        <div className={loading ? 'staff-insights-busy' : undefined}>
+        // A stack of its own: the page's gap does not reach into this wrapper.
+        <div className={loading ? 'staff-insights staff-insights-busy' : 'staff-insights'}>
           <AllSessions sessions={sessions} pages={pages} days={Number(days)} loadedAt={loadedAt} onOpen={openSession} />
         </div>
       )}
