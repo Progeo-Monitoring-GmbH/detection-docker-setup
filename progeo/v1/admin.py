@@ -23,6 +23,9 @@ from progeo.v1.models import (
     EMail,
     LimitedToken,
     MfSLog,
+    NotificationCase,
+    NotificationCaseEvent,
+    NotificationOptOut,
     ProgeoAccess,
     ProgeoActivity,
     ProgeoAlarm,
@@ -437,6 +440,30 @@ class ProgeoEscalationAdmin(admin.ModelAdmin):
     raw_id_fields = ("location", "assigned_to", "created_by", "closed_by")
     inlines = [ProgeoEscalationEntryInline]
 
+class NotificationCaseEventInline(admin.TabularInline):
+    """The protocol of a notification case - read-only."""
+    model = NotificationCaseEvent
+    extra = 0
+    can_delete = False
+    readonly_fields = ("created", "kind", "text", "data", "author_id")
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+class NotificationCaseAdmin(admin.ModelAdmin):
+    """Staged notifications (helper/notification_cases.py) - the staff page
+    "Benachrichtigungen" is the main view, this one is for digging."""
+    list_display = ("opened_at", "kind", "state", "project_id", "location_name", "stage", "next_contact_at",
+                    "muted_until", "unreachable_since", "resolution")
+    list_filter = ("kind", "state", "resolution")
+    search_fields = ("location_name", "=project_id", "=location_id")
+    inlines = [NotificationCaseEventInline]
+
+class NotificationOptOutAdmin(admin.ModelAdmin):
+    list_display = ("created", "address", "location_id", "kind", "user_id", "via")
+    list_filter = ("kind", "via")
+    search_fields = ("address", "=location_id")
+
 class ProgeoFavoriteLocationAdmin(admin.ModelAdmin):
     """Favorites bar of the staff users (kept in default with the locations)."""
     list_display = ("created", "user", "location_name", "project_id")
@@ -600,6 +627,8 @@ register_models = [
     {"model": EMail, "admin": EMailAdmin, "custom": True},
     {"model": SMS, "admin": SMSAdmin, "custom": True},
     {"model": ProgeoEscalation, "admin": ProgeoEscalationAdmin, "custom": True},
+    {"model": NotificationCase, "admin": NotificationCaseAdmin, "custom": True},
+    {"model": NotificationOptOut, "admin": NotificationOptOutAdmin, "custom": True},
     {"model": ProgeoFavoriteLocation, "admin": ProgeoFavoriteLocationAdmin, "custom": True},
     {"model": ProgeoActivity, "admin": ProgeoActivityAdmin, "custom": True},
     

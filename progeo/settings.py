@@ -110,10 +110,44 @@ OUTBOUND_ASYNC = parse_boolean(os.getenv("OUTBOUND_ASYNC", "1"))
 # Users/profiles/accounts are copied into every project database after a save
 # (helper/project_db_signals.py) - in celery, not in the request.
 PROJECT_DB_MIRROR_ASYNC = parse_boolean(os.getenv("PROJECT_DB_MIRROR_ASYNC", "1"))
-# Alarm notifications: one per location and channel within the cooldown;
-# alarms older than MAX_AGE (backfills, re-evaluations) notify nobody.
-ALARM_NOTIFY_COOLDOWN_MINUTES = parse_int(os.getenv("ALARM_NOTIFY_COOLDOWN_MINUTES"), 60)
+# Alarms older than MAX_AGE (backfills, re-evaluations) notify nobody.
 ALARM_NOTIFY_MAX_AGE_HOURS = parse_int(os.getenv("ALARM_NOTIFY_MAX_AGE_HOURS"), 6)
+# Staged notifications (helper/notification_cases.py, docs/notifications.md).
+# Offline mails (first notice, reminders, "wieder online") only go out
+# between these hours (Europe/Berlin) - alarms at any time.
+NOTIFY_WINDOW_START_HOUR = parse_int(os.getenv("NOTIFY_WINDOW_START_HOUR"), 9)
+NOTIFY_WINDOW_END_HOUR = parse_int(os.getenv("NOTIFY_WINDOW_END_HOUR"), 22)
+# A device counts as offline once its last sign of life is older than two
+# send intervals (+ grace) AND at least this many hours.
+NOTIFY_OFFLINE_AFTER_HOURS = parse_int(os.getenv("NOTIFY_OFFLINE_AFTER_HOURS"), 6)
+# Devices silent for longer than this when first seen offline (dismantled
+# systems) open no case.
+NOTIFY_OFFLINE_IGNORE_AFTER_DAYS = parse_int(os.getenv("NOTIFY_OFFLINE_IGNORE_AFTER_DAYS"), 60)
+# Offline stages: days after the case opened (at the window start) for
+# stage 1 (notice), 2 (reminder), 3 (reminder + Objektleitung), 4 (escalation).
+NOTIFY_OFFLINE_STAGE_DAYS = [
+    parse_int(value, 0) for value in os.getenv("NOTIFY_OFFLINE_STAGE_DAYS", "0,3,7,14").split(",")
+]
+# Alarm stages: hours after the alarm for stage 1 (now), 2 (reminder) and
+# 3 (reminder + Objektleitung + escalation) - until it is acknowledged.
+NOTIFY_ALARM_STAGE_HOURS = [
+    parse_int(value, 0) for value in os.getenv("NOTIFY_ALARM_STAGE_HOURS", "0,4,24").split(",")
+]
+# A device must be back this long before a case closes as "wieder online".
+NOTIFY_ONLINE_STABLE_HOURS = parse_int(os.getenv("NOTIFY_ONLINE_STABLE_HOURS"), 2)
+# Offline again within this many hours after closing: the case is reopened
+# at its stage instead of starting over with a first notice.
+NOTIFY_REOPEN_HOURS = parse_int(os.getenv("NOTIFY_REOPEN_HOURS"), 48)
+# At most one "wieder online" mail per location within this many days.
+NOTIFY_ONLINE_MAIL_COOLDOWN_DAYS = parse_int(os.getenv("NOTIFY_ONLINE_MAIL_COOLDOWN_DAYS"), 7)
+# Share of OUTBOUND_LIMITS["mail_global_hour"] the offline mails may use -
+# the rest stays free for alarms, login links, ... (the breaker must not trip).
+NOTIFY_OFFLINE_MAIL_SHARE = float(os.getenv("NOTIFY_OFFLINE_MAIL_SHARE", "0.5"))
+# Ack/unsubscribe links in the mails stay valid this many days.
+NOTIFY_LINK_DAYS = parse_int(os.getenv("NOTIFY_LINK_DAYS"), 60)
+# Daily digest of escalations, unreachable cases and unsubscribes for staff
+# (besides the Objektleitung of the locations).
+NOTIFY_STAFF_ADDRESS = (os.getenv("NOTIFY_STAFF_ADDRESS") or "kontakt@progeo.com").strip()
 # One-time links (helper/login_links.py).
 MAGIC_LINK_LOGIN_MINUTES = parse_int(os.getenv("MAGIC_LINK_LOGIN_MINUTES"), 15)
 MAGIC_LINK_INVITE_HOURS = parse_int(os.getenv("MAGIC_LINK_INVITE_HOURS"), 72)

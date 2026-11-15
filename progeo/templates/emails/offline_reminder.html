@@ -1,0 +1,16 @@
+{% extends "emails/base.html" %}
+{# Offline stages 2+: the devices still send nothing (helper/notification_cases.py). #}
+{% block subject %}Erinnerung: Projekt '{{ project_name }}' - Störung besteht weiterhin - Vorgang {{ case_id }}{% endblock %}
+{% block preheader %}Seit {{ last_measurement_at }} werden weiterhin keine Daten übertragen{% endblock %}
+{% block content %}
+<p style="margin:0 0 12px;">Sehr geehrte Damen und Herren,</p>
+<p style="margin:0 0 12px;">die Störung Ihres Flachdachmonitorings im Objekt <strong>{{ project_nr }} — {{ project_name }}</strong> besteht weiterhin: seit dem <strong>{{ last_measurement_at }}</strong> kommen keine Daten auf unserem Server an. Ihre Abdichtungsflächen werden in dieser Zeit nicht auf Leckagen überwacht.</p>
+{% if devices %}<p style="margin:0 0 4px;">Betroffene Geräte:</p>
+<ul style="margin:0 0 12px; padding-left:20px;">{% for device in devices %}
+  <li>{{ device.label }} (zuletzt {{ device.last_seen }})</li>{% endfor %}
+</ul>{% endif %}
+<p style="margin:0 0 12px;">Bitte prüfen Sie Internetzugang, Netzwerkfreigaben und die Stromversorgung der Monitoring-Box. Bei Fragen erreichen Sie uns werktäglich von 09:00 bis 16:30 Uhr unter {{ company.phone }} - bitte nennen Sie die Vorgangsnummer <strong>{{ case_id }}</strong>.</p>
+{% if include_objektleitung %}<p style="margin:0 0 12px;">Diese Erinnerung geht auch an die zuständige ProGeo-Objektleitung.</p>{% endif %}
+<p style="margin:0;">Mit freundlichen Grüßen<br>Ihr ProGeo-Team</p>
+{% include "emails/_notification_links.html" with ack_label="Kenntnisnahme bestätigen" kind_text="Störungsmeldungen" %}
+{% endblock %}

@@ -176,3 +176,22 @@ groups:
         annotations:
           summary: '{{ $value }} databases had no fresh dump in the last backup bundle'
           description: 'Their dbbackup failed - see the summary of handle_all_dbs in logs/backend/daily.log.'
+
+  - name: notifications
+    rules:
+      - alert: NotificationProcessingStale
+        expr: time() - progeo_notification_process_last_run_timestamp_seconds > 45 * 60
+        labels:
+          severity: critical
+        annotations:
+          summary: 'process_notification_cases has not finished for {{ $value | humanizeDuration }}'
+          description: 'Alarm and offline notifications are not being sent. Is celery beat/worker running (CELERY_DISABLED_TASKS)? See docs/notifications.md.'
+
+      - alert: NotificationCasesUnreachable
+        expr: progeo_notification_cases_unreachable > 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $value }} open {{ $labels.kind }} notification case(s) reach nobody'
+          description: 'No recipient, all addresses suppressed or bounced - fix the contacts (Staff -> Benachrichtigungen).'

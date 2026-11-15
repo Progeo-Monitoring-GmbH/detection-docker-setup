@@ -226,8 +226,60 @@ class OutboundCollector:
         yield last
 
 
+class NotificationCaseCollector:
+    """Open notification cases by kind and phase (helper/notification_cases.py)
+    and when process_notification_cases last finished - one small query on
+    "default" per scrape."""
+
+    @staticmethod
+    def describe():
+        return []
+
+    def collect(self):
+        from django.core.cache import cache
+
+        from progeo.helper import notification_cases
+        from progeo.v1.models import NotificationCase
+
+        cases = GaugeMetricFamily(
+            "progeo_notification_cases_open",
+            "Open notification cases by kind and phase",
+            labels=["kind", "phase"],
+        )
+        unreachable = GaugeMetricFamily(
+            "progeo_notification_cases_unreachable",
+            "Open notification cases whose last stage reached nobody",
+            labels=["kind"],
+        )
+        try:
+            counts, unreached = {}, {}
+            for case in NotificationCase.objects.using("default").filter(state=NotificationCase.State.OPEN).only(
+                "kind", "state", "stage", "muted_until", "escalation_id", "back_since", "unreachable_since",
+            ):
+                key = (case.kind, notification_cases.phase(case))
+                counts[key] = counts.get(key, 0) + 1
+                if case.unreachable_since:
+                    unreached[case.kind] = unreached.get(case.kind, 0) + 1
+        except Exception:  # noqa: BLE001 - a scrape must not fail on the database
+            return
+        for (kind, phase), count in counts.items():
+            cases.add_metric([kind, phase], count)
+        for kind in NotificationCase.Kind.values:
+            unreachable.add_metric([kind], unreached.get(kind, 0))
+        yield cases
+        yield unreachable
+        last_run = cache.get(notification_cases.LAST_RUN_KEY)
+        if last_run is not None:
+            yield GaugeMetricFamily(
+                "progeo_notification_process_last_run_timestamp_seconds",
+                "When process_notification_cases last finished",
+                value=float(last_run),
+            )
+
+
 # Read at scrape time from files / Redis - the same in every worker.
-CUSTOM_COLLECTORS = (BackupTransferCollector(), CronJobCollector(), OutboundCollector())
+CUSTOM_COLLECTORS = (BackupTransferCollector(), CronJobCollector(), OutboundCollector(),
+                     NotificationCaseCollector())
 for _collector in CUSTOM_COLLECTORS:
     REGISTRY.register(_collector)
 

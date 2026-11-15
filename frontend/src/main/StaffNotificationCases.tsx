@@ -1,0 +1,428 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Badge, Button, ButtonGroup, Card, Form, Modal, Spinner, Table } from 'react-bootstrap';
+import { ArrowRepeat, BellFill } from 'react-bootstrap-icons';
+import DataTable from 'react-data-table-component';
+import type { TableColumn } from 'react-data-table-component';
+import { useSnackbar } from 'notistack';
+import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router';
+
+import { useAuth } from '../../hooks/CoreAuthProvider';
+import axiosConfig from '../axiosConfig';
+import { showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import { repeatedTestId } from '../testIds';
+import './StaffNotificationCases.css';
+
+type Kind = 'offline' | 'alarm';
+type Phase = 'detected' | 'notified' | 'reminder' | 'escalated' | 'recovering' | 'muted' | 'resolved';
+
+type CaseEvent = {
+  id: number;
+  kind: string;
+  created: string | null;
+  text: string;
+  data: Record<string, unknown>;
+};
+
+type NotificationCase = {
+  id: number;
+  kind: Kind;
+  state: 'open' | 'resolved';
+  phase: Phase;
+  stage: number;
+  stages: number;
+  location_id: number;
+  project_id: number | null;
+  location_name: string;
+  opened_at: string | null;
+  last_contact_at: string | null;
+  next_contact_at: string | null;
+  muted: boolean;
+  muted_until: string | null;
+  unreachable_since: string | null;
+  acknowledged_at: string | null;
+  escalation_id: number | null;
+  resolved_at: string | null;
+  resolution: string;
+  back_since: string | null;
+  devices: { id: string; label: string; last_seen: string | null; back_since: string | null }[];
+  alarm_count: number;
+  notified: string[];
+  events?: CaseEvent[];
+};
+
+type Summary = {
+  counts: Record<Kind, Record<string, number>>;
+  resolved_last_day: Partial<Record<Kind, number>>;
+  in_window: boolean;
+  baseline_done: boolean;
+  unsubscribed_last_week: number;
+  no_recipients_left: number;
+};
+
+const PHASE_VARIANT: Record<Phase, string> = {
+  detected: 'secondary',
+  notified: 'primary',
+  reminder: 'warning',
+  escalated: 'danger',
+  recovering: 'info',
+  muted: 'dark',
+  resolved: 'success',
+};
+
+const SUMMARY_PHASES = ['open', 'detected', 'notified', 'reminder', 'escalated', 'recovering', 'muted', 'unreachable'];
+
+/**
+ * "Benachrichtigungen" in the staff admin: in which phase every location's
+ * notification case is (offline / alarm, helper/notification_cases.py) -
+ * detected, notified, reminders, escalated, recovering, muted - with its
+ * protocol, and the staff actions mute / release / close.
+ */
+const StaffNotificationCases = () => {
+  const { t } = useTranslation();
+  const auth = useAuth();
+  const { enqueueSnackbar } = useSnackbar();
+  const [summary, setSummary] = useState<Summary | null>(null);
+  const [cases, setCases] = useState<NotificationCase[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [state, setState] = useState<'open' | 'resolved' | 'all'>('open');
+  const [kind, setKind] = useState<'' | Kind>('');
+  const [selected, setSelected] = useState<NotificationCase | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const fetchCases = useCallback(() => {
+    const query = new URLSearchParams({ state });
+    if (kind) {
+      query.set('kind', kind);
+    }
+    void axiosConfig.perform_get(
+      auth,
+      `/v1/notification-case/?${query.toString()}`,
+      (result) => {
+        setCases((result?.data?.cases || []) as NotificationCase[]);
+        setLoading(false);
+      },
+      (error) => {
+        showRequestError(enqueueSnackbar, t('staff_notifications_load_error'), error);
+        setLoading(false);
+      },
+    );
+    void axiosConfig.perform_get(
+      auth,
+      '/v1/notification-case/summary/',
+      (result) => setSummary(result?.data as Summary),
+      () => undefined,
+    );
+  }, [auth, enqueueSnackbar, kind, state, t]);
+
+  useEffect(() => {
+    fetchCases();
+  }, [fetchCases]);
+
+  const openCase = (row: NotificationCase) => {
+    void axiosConfig.perform_get(
+      auth,
+      `/v1/notification-case/${row.id}/`,
+      (result) => setSelected(result?.data?.case as NotificationCase),
+      (error) => showRequestError(enqueueSnackbar, t('staff_notifications_load_error'), error),
+    );
+  };
+
+  const act = (path: 'mute' | 'unmute' | 'close', body: Record<string, unknown>, message: string) => {
+    if (!selected) {
+      return;
+    }
+    setBusy(true);
+    void axiosConfig.perform_post(
+      auth,
+      `/v1/notification-case/${selected.id}/${path}/`,
+      body,
+      (result) => {
+        setBusy(false);
+        setSelected(result?.data?.case as NotificationCase);
+        showSuccessBar(enqueueSnackbar, message);
+        fetchCases();
+      },
+      (error) => {
+        setBusy(false);
+        showRequestError(enqueueSnackbar, t('staff_notifications_action_error'), error);
+      },
+    );
+  };
+
+  const columns = useMemo<TableColumn<NotificationCase>[]>(
+    () => [
+      {
+        name: t('staff_notifications_col_kind'),
+        width: '100px',
+        cell: (row) => (
+          <Badge bg={row.kind === 'alarm' ? 'danger' : 'secondary'} {...repeatedTestId('staff-notifications-kind', row.id)}>
+            {t(`notification_kind_${row.kind}`)}
+          </Badge>
+        ),
+      },
+      {
+        name: t('staff_notifications_col_project'),
+        selector: (row) => `${row.project_id ?? row.location_id} ${row.location_name}`,
+        sortable: true,
+        cell: (row) => (
+          <span className="small">
+            <Link to={`/location/${row.location_id}/status`} onClick={(event) => event.stopPropagation()}>
+              {row.project_id ?? row.location_id}
+            </Link>{' '}
+            {row.location_name}
+          </span>
+        ),
+      },
+      {
+        name: t('staff_notifications_col_phase'),
+        width: '190px',
+        cell: (row) => (
+          <span className="d-flex flex-wrap gap-1" {...repeatedTestId('staff-notifications-phase', row.id)}>
+            <Badge bg={PHASE_VARIANT[row.phase] || 'secondary'}>{t(`staff_notifications_phase_${row.phase}`)}</Badge>
+            {row.unreachable_since && <Badge bg="danger">{t('staff_notifications_unreachable')}</Badge>}
+            {row.acknowledged_at && row.state === 'open' && <Badge bg="info" text="dark">{t('staff_notifications_acknowledged')}</Badge>}
+          </span>
+        ),
+      },
+      {
+        name: t('staff_notifications_col_stage'),
+        width: '80px',
+        selector: (row) => row.stage,
+        sortable: true,
+        format: (row) => `${row.stage}/${row.stages}`,
+      },
+      {
+        name: t('staff_notifications_col_opened'),
+        width: '140px',
+        selector: (row) => row.opened_at || '',
+      },
+      {
+        name: t('staff_notifications_col_next'),
+        width: '140px',
+        selector: (row) => (row.state === 'open' ? row.next_contact_at || '-' : row.resolved_at || '-'),
+      },
+    ],
+    [t],
+  );
+
+  const offline = summary?.counts.offline;
+  const alarm = summary?.counts.alarm;
+
+  return (
+    <Card className="border-0 shadow-sm my-4 p-3" data-testid="staff-notifications">
+      <Card.Body>
+        <div className="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+          <h5 className="mb-0">
+            <BellFill className="me-2 text-warning" />
+            {t('staff_notifications_title')}
+          </h5>
+          <Button variant="outline-secondary" size="sm" onClick={fetchCases} data-testid="staff-notifications-refresh">
+            <ArrowRepeat className="me-1" />
+            {t('staff_refresh')}
+          </Button>
+        </div>
+
+        {summary && (
+          <>
+            <div className="d-flex flex-wrap gap-2 mb-2" data-testid="staff-notifications-modes">
+              <Badge bg={summary.in_window ? 'success' : 'secondary'}>
+                {summary.in_window ? t('staff_notifications_in_window') : t('staff_notifications_quiet_hours')}
+              </Badge>
+              {!summary.baseline_done && <Badge bg="info" text="dark">{t('staff_notifications_no_baseline')}</Badge>}
+              {summary.no_recipients_left > 0 && (
+                <Badge bg="danger">{t('staff_notifications_no_recipients_left', { count: summary.no_recipients_left })}</Badge>
+              )}
+            </div>
+            <Table size="sm" bordered className="mb-3 small staff-notifications-summary" data-testid="staff-notifications-summary">
+              <thead>
+                <tr>
+                  <th />
+                  {SUMMARY_PHASES.map((phase) => (
+                    <th key={phase}>{t(`staff_notifications_phase_${phase}`)}</th>
+                  ))}
+                  <th>{t('staff_notifications_resolved_day')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {([['offline', offline], ['alarm', alarm]] as const).map(([name, counts]) => (
+                  <tr key={name} {...repeatedTestId('staff-notifications-summary-row', name)}>
+                    <th>{t(`notification_kind_${name}`)}</th>
+                    {SUMMARY_PHASES.map((phase) => (
+                      <td key={phase}>{counts?.[phase] ?? 0}</td>
+                    ))}
+                    <td>{summary.resolved_last_day[name] ?? 0}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          </>
+        )}
+
+        <div className="d-flex flex-wrap gap-2 mb-2">
+          <Form.Select
+            size="sm"
+            className="staff-notifications-filter"
+            value={state}
+            onChange={(event) => setState(event.target.value as typeof state)}
+            data-testid="staff-notifications-state"
+          >
+            <option value="open">{t('staff_notifications_state_open')}</option>
+            <option value="resolved">{t('staff_notifications_state_resolved')}</option>
+            <option value="all">{t('staff_notifications_state_all')}</option>
+          </Form.Select>
+          <Form.Select
+            size="sm"
+            className="staff-notifications-filter"
+            value={kind}
+            onChange={(event) => setKind(event.target.value as typeof kind)}
+            data-testid="staff-notifications-kind-filter"
+          >
+            <option value="">{t('staff_notifications_kind_all')}</option>
+            <option value="offline">{t('notification_kind_offline')}</option>
+            <option value="alarm">{t('notification_kind_alarm')}</option>
+          </Form.Select>
+        </div>
+
+        <DataTable
+          columns={columns}
+          data={cases}
+          pagination
+          paginationPerPage={15}
+          progressPending={loading}
+          progressComponent={
+            <div className="d-flex align-items-center gap-2 text-muted py-4">
+              <Spinner size="sm" animation="border" />
+              {t('staff_loading')}
+            </div>
+          }
+          noDataComponent={<div className="text-muted py-3">{t('staff_notifications_empty')}</div>}
+          onRowClicked={openCase}
+          highlightOnHover
+          pointerOnHover
+          dense
+        />
+      </Card.Body>
+
+      <Modal show={selected != null} onHide={() => setSelected(null)} size="lg" data-testid="staff-notifications-detail">
+        {selected && (
+          <>
+            <Modal.Header closeButton>
+              <Modal.Title className="fs-6">
+                {t(`notification_kind_${selected.kind}`)} · {selected.project_id ?? selected.location_id} {selected.location_name}
+              </Modal.Title>
+            </Modal.Header>
+            <Modal.Body>
+              <dl className="row small mb-3 staff-notifications-facts">
+                <dt className="col-4">{t('staff_notifications_col_phase')}</dt>
+                <dd className="col-8">
+                  <Badge bg={PHASE_VARIANT[selected.phase] || 'secondary'}>{t(`staff_notifications_phase_${selected.phase}`)}</Badge>{' '}
+                  {t('staff_notifications_stage_of', { stage: selected.stage, stages: selected.stages })}
+                </dd>
+                <dt className="col-4">{t('staff_notifications_col_opened')}</dt>
+                <dd className="col-8">{selected.opened_at || '-'}</dd>
+                <dt className="col-4">{t('staff_notifications_col_next')}</dt>
+                <dd className="col-8">{selected.next_contact_at || '-'}</dd>
+                {selected.muted && (
+                  <>
+                    <dt className="col-4">{t('staff_notifications_muted_until')}</dt>
+                    <dd className="col-8">{selected.muted_until}</dd>
+                  </>
+                )}
+                {selected.escalation_id && (
+                  <>
+                    <dt className="col-4">{t('staff_notifications_escalation')}</dt>
+                    <dd className="col-8">#{selected.escalation_id}</dd>
+                  </>
+                )}
+                <dt className="col-4">{t('staff_notifications_notified')}</dt>
+                <dd className="col-8">{selected.notified.join(', ') || '-'}</dd>
+                {selected.kind === 'offline' && (
+                  <>
+                    <dt className="col-4">{t('staff_notifications_devices')}</dt>
+                    <dd className="col-8">
+                      {selected.devices.map((device) => (
+                        <div key={device.id}>
+                          {device.label} - {t('staff_notifications_last_seen', { at: device.last_seen || '-' })}
+                          {device.back_since && <Badge bg="success" className="ms-1">{t('staff_notifications_back')}</Badge>}
+                        </div>
+                      ))}
+                    </dd>
+                  </>
+                )}
+                {selected.kind === 'alarm' && (
+                  <>
+                    <dt className="col-4">{t('staff_notifications_alarms')}</dt>
+                    <dd className="col-8">{selected.alarm_count}</dd>
+                  </>
+                )}
+              </dl>
+              <h6>{t('staff_notifications_protocol')}</h6>
+              <Table size="sm" className="small" data-testid="staff-notifications-events">
+                <tbody>
+                  {(selected.events || []).map((entry) => (
+                    <tr key={entry.id} {...repeatedTestId('staff-notifications-event', entry.id)}>
+                      <td className="text-nowrap text-muted">{entry.created}</td>
+                      <td className="text-nowrap">{t(`staff_notifications_event_${entry.kind}`)}</td>
+                      <td>{entry.text}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            </Modal.Body>
+            {selected.state === 'open' && (
+              <Modal.Footer>
+                <ButtonGroup size="sm">
+                  {selected.muted ? (
+                    <Button
+                      variant="outline-primary"
+                      disabled={busy}
+                      onClick={() => act('unmute', {}, t('staff_notifications_unmuted'))}
+                      data-testid="staff-notifications-unmute"
+                    >
+                      {t('staff_notifications_unmute')}
+                    </Button>
+                  ) : (
+                    <>
+                      <Button
+                        variant="outline-secondary"
+                        disabled={busy}
+                        onClick={() => act('mute', { days: 7 }, t('staff_notifications_muted'))}
+                        data-testid="staff-notifications-mute-week"
+                      >
+                        {t('staff_notifications_mute_week')}
+                      </Button>
+                      <Button
+                        variant="outline-secondary"
+                        disabled={busy}
+                        onClick={() => act('mute', { days: null }, t('staff_notifications_muted'))}
+                        data-testid="staff-notifications-mute"
+                      >
+                        {t('staff_notifications_mute')}
+                      </Button>
+                    </>
+                  )}
+                </ButtonGroup>
+                <Button
+                  variant="outline-danger"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => {
+                    if (window.confirm(t('staff_notifications_close_confirm'))) {
+                      act('close', {}, t('staff_notifications_closed'));
+                    }
+                  }}
+                  data-testid="staff-notifications-close"
+                >
+                  {t('staff_notifications_close')}
+                </Button>
+              </Modal.Footer>
+            )}
+          </>
+        )}
+      </Modal>
+    </Card>
+  );
+};
+
+export default StaffNotificationCases;

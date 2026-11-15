@@ -26,6 +26,7 @@ const MagicLinkRequest = React.lazy(
   () => import('./main/MagicLinkRequest.tsx'),
 );
 const MagicLinkLogin = React.lazy(() => import('./main/MagicLinkLogin.tsx'));
+const NotificationLinkPage = React.lazy(() => import('./main/NotificationLinkPage.tsx'));
 const PasswordResetRequest = React.lazy(
   () => import('./main/PasswordResetRequest.tsx'),
 );
@@ -141,6 +142,8 @@ const CoreRoutes = () => {
       {/* One-time login link from a mail; redeemed on click, not on load. */}
       <Route path="/login/link" element={<MagicLinkRequest />} />
       <Route path="/login/link/:token" element={<MagicLinkLogin />} />
+      {/* Acknowledge / unsubscribe links of notification mails - no login. */}
+      <Route path="/benachrichtigung/:token" element={<NotificationLinkPage />} />
       {/* Password reset by mail link + 2FA code; set on click, not on load. */}
       <Route path="/passwort-vergessen" element={<PasswordResetRequest />} />
       <Route path="/passwort/neu/:token" element={<PasswordResetConfirm />} />

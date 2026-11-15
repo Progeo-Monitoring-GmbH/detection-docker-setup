@@ -7,9 +7,10 @@ user picked in the profile (Signal / WhatsApp / Matrix). Everything here goes
 through emailhelper/esendex/messenger, i.e. through the outbound guard (test
 modes, limits, suppression list - helper/outbound.py).
 
-Alarm notifications are deliberately sparse: only new alarms, only recent
-ones (ALARM_NOTIFY_MAX_AGE_HOURS - re-evaluating old measurements must not
-alarm anyone), and per location at most one per ALARM_NOTIFY_COOLDOWN_MINUTES.
+Alarm notifications: only new alarms, only recent ones
+(ALARM_NOTIFY_MAX_AGE_HOURS - re-evaluating old measurements must not alarm
+anyone). Each opens or joins the location's alarm case; the stages, reminders
+and links live in helper/notification_cases.py (docs/notifications.md).
 Every recipient gets an own mail - recipients never see each other's address.
 """
 from datetime import timedelta
@@ -18,7 +19,7 @@ from django.conf import settings
 from django.utils import timezone
 
 from progeo.helper import outbound
-from progeo.helper.basics import elog, ilog
+from progeo.helper.basics import ilog
 
 ALARM_CATEGORY = "alarm"
 TIMEOUT_CATEGORY = "timeout"
@@ -78,21 +79,20 @@ def notification_recipients(location, db_name, notify_type=None):
     return recipients
 
 
-def _format_number(value):
+def format_number(value):
     if value is None:
         return "-"
     return f"{value:.1f}".rstrip("0").rstrip(".") if isinstance(value, float) else str(value)
 
 
-def _format_time(value):
-    return value.strftime("%d.%m.%Y %H:%M") if hasattr(value, "strftime") else str(value or "-")
-
-
 def notify_alarm(alarm, location, db_name) -> dict:
-    """Mail/SMS/messenger the ALARM subscribers of `location` about the new
-    `alarm`. Returns {"skipped": reason} or {"mails": n, "sms": n, "messenger": n}."""
-    from progeo.helper import esendex, messenger
-    from progeo.helper.emailhelper import portal_url, send_template_mail
+    """A new `alarm` of `location`: opens the location's alarm case
+    (helper/notification_cases.py) and sends its stage 1 to the ALARM
+    subscribers right away - at any hour. While the case is open (not yet
+    acknowledged) further alarms only join it; its reminders follow on the
+    case's schedule. Returns {"skipped": reason} or {"mails": n, "sms": n,
+    "messenger": n}."""
+    from progeo.helper import notification_cases
     from progeo.v1.models import ProgeoAccess
 
     triggered_at = alarm.triggered_at or timezone.now()
@@ -101,65 +101,19 @@ def notify_alarm(alarm, location, db_name) -> dict:
         ilog(f"[notify_alarm] Alarm {alarm.pk} triggered {triggered_at} - too old to notify")
         return {"skipped": "too_old"}
 
-    cooldown = settings.ALARM_NOTIFY_COOLDOWN_MINUTES
-    if outbound.recently_sent(ALARM_CATEGORY, location.pk, cooldown):
-        ilog(f"[notify_alarm] Location {location.pk} was notified within {cooldown} min - alarm {alarm.pk} skipped")
-        return {"skipped": "cooldown"}
-
-    recipients = notification_recipients(location, db_name, ProgeoAccess.NotifiTypes.ALARM)
-    if not recipients:
+    case, created = notification_cases.open_alarm_case(alarm, location, db_name)
+    if not created:
+        ilog(f"[notify_alarm] Alarm {alarm.pk} joins the open alarm case {case.pk} of location {location.pk}")
+        return {"skipped": "case_open"}
+    claimed = notification_cases.claim_next_stage(case.pk, timezone.now())
+    if claimed is None:
+        return {"skipped": "muted"}
+    counts = notification_cases.send_alarm_stage(claimed)
+    if not any(counts.values()) and not notification_recipients(location, db_name, ProgeoAccess.NotifiTypes.ALARM):
         return {"skipped": "no_recipients"}
-
-    sensors = ", ".join(
-        f"S{entry.get('sensor_id')} ({_format_number(entry.get('max_value'))})"
-        for entry in (alarm.sensor_max_values or []) if isinstance(entry, dict)
-    )
-    context = {
-        "project_nr": location.project_id or location.pk,
-        "project_name": location.name or f"Objekt {location.pk}",
-        "triggered_at": _format_time(triggered_at),
-        "max_value": _format_number(alarm.max_value),
-        "threshold": _format_number(alarm.threshold),
-        "sensors": sensors,
-        "portal_link": portal_url(f"/location/{location.pk}/status"),
-        "cooldown_minutes": cooldown,
-    }
-    sms_body = (
-        f"ProGeo Alarm Objekt {context['project_nr']} {context['project_name']}: "
-        f"Messwert {context['max_value']} > Schwelle {context['threshold']}. Details im Portal."
-    )
-    # Messenger messages cost nothing per character: the sensors and the link too.
-    messenger_body = (
-        f"ProGeo Alarm - Objekt {context['project_nr']} {context['project_name']}\n"
-        f"{context['triggered_at']}: Messwert {context['max_value']} > Schwelle {context['threshold']}"
-        + (f"\nSensoren: {sensors}" if sensors else "")
-        + f"\n{context['portal_link']}"
-    )
-
-    mails = sms = chats = 0
-    for recipient in recipients:
-        if recipient["mail"] and send_template_mail(
-            [recipient["mail"]], "alarm_notification", context,
-            location=location, db=db_name, category=ALARM_CATEGORY,
-        ):
-            mails += 1
-        if recipient["mobile"]:
-            try:
-                esendex.send_sms(recipient["mobile"], sms_body, location=location, db=db_name,
-                                 category=ALARM_CATEGORY)
-                sms += 1
-            except esendex.EsendexError as exc:
-                elog(f"[notify_alarm] SMS to {recipient['name']} failed: {exc}")
-        if recipient["messenger"]:
-            try:
-                messenger.send_message(recipient["messenger"]["service"], recipient["messenger"]["address"],
-                                       messenger_body, location=location, db=db_name, category=ALARM_CATEGORY)
-                chats += 1
-            except messenger.MessengerError as exc:
-                elog(f"[notify_alarm] Messenger message to {recipient['name']} failed: {exc}")
-    ilog(f"[notify_alarm] Alarm {alarm.pk} at location {location.pk}: {mails} mail(s), {sms} SMS, "
-         f"{chats} messenger message(s)")
-    return {"mails": mails, "sms": sms, "messenger": chats}
+    ilog(f"[notify_alarm] Alarm {alarm.pk} at location {location.pk} (case {case.pk}): {counts['mails']} mail(s), "
+         f"{counts['sms']} SMS, {counts['messenger']} messenger message(s)")
+    return counts
 
 
 def queue_alarm_notification(alarm, location, db_name) -> None:
@@ -173,8 +127,7 @@ def queue_alarm_notification(alarm, location, db_name) -> None:
 
 
 def timeout_recipients(location, db_name) -> list[str]:
-    """Mail addresses of the TIMEOUT subscribers of `location` (the daily
-    disconnect mail goes to them in addition to the location's contact mail)."""
+    """Mail addresses of the TIMEOUT subscribers of `location`."""
     from progeo.v1.models import ProgeoAccess
 
     return [r["mail"] for r in notification_recipients(location, db_name, ProgeoAccess.NotifiTypes.TIMEOUT)

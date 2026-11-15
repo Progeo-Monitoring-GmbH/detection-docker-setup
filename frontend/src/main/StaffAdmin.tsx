@@ -38,6 +38,7 @@ import { formatDate } from './dateFormat';
 import { startImpersonation } from './impersonation';
 import StaffAccessRequests from './StaffAccessRequests';
 import StaffMessaging from './StaffMessaging';
+import StaffNotificationCases from './StaffNotificationCases';
 import { staffFlags } from './access';
 import { childTestId, repeatedTestId } from '../testIds';
 import './StaffAdmin.css';
@@ -1076,6 +1077,8 @@ const StaffAdmin = () => {
       <StaffAccessRequests onChanged={fetchUsers} />
 
       <StaffMessaging />
+
+      <StaffNotificationCases />
 
       <UserFormModal
         show={showCreate}

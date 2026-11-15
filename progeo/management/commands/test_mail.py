@@ -27,7 +27,14 @@ SAMPLE_CONTEXT = {
     "triggered_by": "manage.py test_mail",
     "triggered_at": "20.10.2026 08:15",
     "sensors": "S3 (250), S4 (180)",
-    "cooldown_minutes": 60,
+    "stage": 2,
+    "offline_since": "20.10.2026 08:15",
+    "back_since": "21.10.2026 10:40",
+    "devices": [{"label": "Dach Nord · smartex dm · 4711-01", "last_seen": "20.10.2026 08:15"}],
+    "alarm_count": 2,
+    "is_reminder": True,
+    "include_objektleitung": False,
+    "kind_label": "Alarm",
     "first_name": "Erika",
     "username": "erika.mustermann",
     "valid_minutes": 15,
@@ -38,7 +45,8 @@ SAMPLE_CONTEXT = {
                 "message": "Bitte um Zugang zum Objekt 4711."},
 }
 # Link variables get a harmless sample URL (never a real one-time link).
-SAMPLE_LINK_KEYS = ("action_url", "portal_link", "login_url", "review_url", "staff_url")
+SAMPLE_LINK_KEYS = ("action_url", "portal_link", "login_url", "review_url", "staff_url", "ack_url",
+                    "unsubscribe_url")
 
 
 def _template_names():

@@ -1477,6 +1477,8 @@ class OutboundMessage(models.Model):
     error = models.TextField(null=True, blank=True)
     bounced_at = models.DateTimeField(null=True, blank=True)
     bounce_reason = models.TextField(null=True, blank=True)
+    # The NotificationCase the message belongs to - a bounce reaches the case.
+    case_id = models.IntegerField(null=True, blank=True, db_index=True)
 
     class Meta:
         ordering = ["-created"]
@@ -1659,6 +1661,162 @@ class ProgeoEscalationEntry(models.Model):
 
     def __str__(self):
         return f"🚨 #{self.escalation_id} {self.kind}: {self.text[:40]}"
+
+
+class NotificationCase(models.Model):
+    """One problem of one location the subscribers are told about in stages
+    (helper/notification_cases.py, docs/notifications.md): "offline" (devices
+    stopped sending) or "alarm" (unacknowledged alarms). Lives in "default"
+    like OutboundMessage, so the monitoring needs no project database. At
+    most one open case per location and kind; closed cases stay (history)."""
+
+    class Kind(models.TextChoices):
+        OFFLINE = "offline", "Offline"
+        ALARM = "alarm", "Alarm"
+
+    class State(models.TextChoices):
+        OPEN = "open", "Offen"
+        RESOLVED = "resolved", "Erledigt"
+
+    class Resolution(models.TextChoices):
+        BACK_ONLINE = "back_online", "Wieder online"
+        ACKNOWLEDGED = "acknowledged", "Quittiert"
+        ALARMS_GONE = "alarms_gone", "Alarme entfernt"
+        MANUAL = "manual", "Manuell geschlossen"
+
+    kind = models.CharField(max_length=16, choices=Kind.choices)
+    state = models.CharField(max_length=16, choices=State.choices, default=State.OPEN, db_index=True)
+    # Database holding the location's devices/alarms/access rows (project
+    # database with the split on). Location ids are global, no FK.
+    db = models.CharField(max_length=100, default="default")
+    location_id = models.IntegerField(db_index=True)
+    project_id = models.IntegerField(null=True, blank=True)
+    location_name = models.CharField(max_length=255, blank=True, default="")
+    # 0 = detected, nothing sent yet; then the stage last sent.
+    stage = models.IntegerField(default=0)
+    opened_at = models.DateTimeField(default=timezone.now)
+    last_contact_at = models.DateTimeField(null=True, blank=True)
+    next_contact_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    # Offline: {device_id: {"label", "last_seen" (iso), "back_since" (iso|None)}}.
+    devices = models.JSONField(default=dict, blank=True)
+    # Alarm: ids of the alarms (in `db`) the case reports.
+    alarm_ids = models.JSONField(default=list, blank=True)
+    # Addresses that got a stage mail - the "wieder online" mail goes to them only.
+    notified = models.JSONField(default=list, blank=True)
+    # Offline: since when every device of the case is back (stability wait).
+    back_since = models.DateTimeField(null=True, blank=True)
+    # No mails until then (staff mute; the baseline of the first run: far future).
+    muted_until = models.DateTimeField(null=True, blank=True)
+    # The last stage reached nobody (no recipient, all suppressed/bounced).
+    unreachable_since = models.DateTimeField(null=True, blank=True)
+    # Noticed via the mail link (offline: does not stop the reminders).
+    acknowledged_at = models.DateTimeField(null=True, blank=True)
+    acknowledged_by_id = models.IntegerField(null=True, blank=True)
+    acknowledged_via = models.CharField(max_length=16, blank=True, default="")
+    escalation_id = models.IntegerField(null=True, blank=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolution = models.CharField(max_length=16, choices=Resolution.choices, blank=True, default="")
+    # Offline: the "wieder online" mail is due (sent inside the window) / was sent.
+    online_mail_due = models.BooleanField(default=False)
+    online_mail_sent_at = models.DateTimeField(null=True, blank=True)
+    updated = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-opened_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["kind", "db", "location_id"], condition=models.Q(state="open"),
+                name="progeo_notifcase_one_open",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["kind", "db", "location_id", "resolved_at"], name="progeo_notifcase_reopen"),
+        ]
+
+    @property
+    def is_open(self):
+        return self.state == self.State.OPEN
+
+    def __str__(self):
+        return f"🔔 {self.kind} {self.project_id or self.location_id} stage {self.stage} ({self.state})"
+
+
+class NotificationCaseEvent(models.Model):
+    """Protocol of a NotificationCase - written only, never changed."""
+
+    class Kind(models.TextChoices):
+        OPENED = "opened", "Erkannt"
+        REOPENED = "reopened", "Wieder geöffnet"
+        DEVICES = "devices", "Geräte geändert"
+        ALARMS = "alarms", "Alarme hinzugekommen"
+        STAGE = "stage", "Stufe versendet"
+        ESCALATED = "escalated", "Eskaliert"
+        UNREACHABLE = "unreachable", "Niemand erreicht"
+        BOUNCE = "bounce", "Unzustellbar"
+        ACKNOWLEDGED = "acknowledged", "Kenntnisnahme"
+        UNSUBSCRIBED = "unsubscribed", "Abgemeldet"
+        MUTED = "muted", "Stumm geschaltet"
+        UNMUTED = "unmuted", "Stummschaltung aufgehoben"
+        ONLINE_MAIL = "online_mail", "Wieder-online-Mail"
+        RESOLVED = "resolved", "Erledigt"
+
+    case = models.ForeignKey(NotificationCase, on_delete=models.CASCADE, related_name="events")
+    kind = models.CharField(max_length=16, choices=Kind.choices)
+    created = models.DateTimeField(default=timezone.now)
+    text = models.TextField(blank=True, default="")
+    data = models.JSONField(default=dict, blank=True)
+    # Staff user (mute, manual close) - links of the mails have no login.
+    author_id = models.IntegerField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["created", "id"]
+
+    def __str__(self):
+        return f"🔔 #{self.case_id} {self.kind}: {self.text[:40]}"
+
+
+class NotificationToken(models.Model):
+    """The acknowledge/unsubscribe link of one recipient in one mail of a
+    case. Only the SHA-256 of the token is stored - the token itself exists
+    only in the mail. Valid NOTIFY_LINK_DAYS, also after the case closed
+    (the page then says so)."""
+
+    token_hash = models.CharField(max_length=64, unique=True)
+    case = models.ForeignKey(NotificationCase, on_delete=models.CASCADE, related_name="tokens")
+    # The subscriber (ProgeoAccess user); None for the location's contact mail.
+    user_id = models.IntegerField(null=True, blank=True)
+    address = models.CharField(max_length=255)
+    created = models.DateTimeField(default=timezone.now)
+    expires_at = models.DateTimeField()
+    acknowledged_at = models.DateTimeField(null=True, blank=True)
+    unsubscribed_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"🔗 case {self.case_id} -> {self.address}"
+
+
+class NotificationOptOut(models.Model):
+    """Someone unsubscribed from a kind of notification of a location (mail
+    link). Proof of the unsubscribe for everybody; for addresses without a
+    ProgeoAccess subscription (the location's contact mail, the Objektleitung
+    in escalation stages) it is also what keeps them off the list -
+    subscribers lose the type bit of their ProgeoAccess row instead."""
+
+    address = models.CharField(max_length=255)
+    location_id = models.IntegerField()
+    kind = models.CharField(max_length=16, choices=NotificationCase.Kind.choices)
+    user_id = models.IntegerField(null=True, blank=True)
+    created = models.DateTimeField(default=timezone.now)
+    # "link", "one_click" (List-Unsubscribe-Post of the mail client)
+    via = models.CharField(max_length=16, blank=True, default="")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["address", "location_id", "kind"], name="progeo_notif_optout_unique"),
+        ]
+
+    def __str__(self):
+        return f"🚫 {self.address} {self.kind} @ {self.location_id}"
 
 
 # ==============================================================================================

@@ -48,6 +48,12 @@ from progeo.v1.viewsets.base_viewsets import (
     UserModulePermissionView,
 )
 from progeo.v1.viewsets.docker_viewset import DockerViewSet
+from progeo.v1.viewsets.notification_viewset import (
+    NotificationAcknowledgeView,
+    NotificationLinkCheckView,
+    NotificationOneClickUnsubscribeView,
+    NotificationUnsubscribeView,
+)
 from progeo.v1.viewsets.staff_admin_viewset import (
     StaffUserDeleteView,
     StaffUserDetailView,
@@ -100,6 +106,10 @@ urlpatterns = [
     re_path(r"^api/auth-support/staff/access-requests/$", StaffAccessRequestListView.as_view(), name="staff_access_requests"),
     re_path(r"^api/auth-support/staff/access-requests/(?P<pk>\d+)/approve/$", StaffAccessRequestReviewView.as_view(decision="approve"), name="staff_access_request_approve"),
     re_path(r"^api/auth-support/staff/access-requests/(?P<pk>\d+)/reject/$", StaffAccessRequestReviewView.as_view(decision="reject"), name="staff_access_request_reject"),
+    re_path(r"^api/auth-support/notifications/check/$", NotificationLinkCheckView.as_view(), name="notification_link_check"),
+    re_path(r"^api/auth-support/notifications/acknowledge/$", NotificationAcknowledgeView.as_view(), name="notification_acknowledge"),
+    re_path(r"^api/auth-support/notifications/unsubscribe/$", NotificationUnsubscribeView.as_view(), name="notification_unsubscribe"),
+    re_path(r"^api/auth-support/notifications/one-click/(?P<token>[A-Za-z0-9_-]{20,100})/$", NotificationOneClickUnsubscribeView.as_view(), name="notification_one_click"),
     re_path(r"^api/auth-support/staff/messaging/$", StaffMessagingView.as_view(), name="staff_messaging"),
     re_path(r"^api/auth-support/staff/messaging/breaker/reset/$", StaffBreakerResetView.as_view(), name="staff_messaging_breaker_reset"),
     re_path(r"^api/auth-support/staff/messaging/suppressions/(?P<pk>\d+)/delete/$", StaffSuppressionDeleteView.as_view(), name="staff_messaging_suppression_delete"),

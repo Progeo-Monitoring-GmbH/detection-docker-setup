@@ -200,7 +200,8 @@ def check(channel: str, recipients: list) -> tuple[list, dict]:
 # ---------------------------------------------------------------------------- log
 
 def log(channel: str, status: str, recipient: str, *, actual_recipient: str = "", category: str = "system",
-        subject: str = "", message_id: str = "", location=None, error: str | None = None) -> None:
+        subject: str = "", message_id: str = "", location=None, error: str | None = None,
+        case_id: int | None = None) -> None:
     """Store one OutboundMessage row. Like the EMail/SMS log it must never
     break or mask the send, so failures are only reported (in a savepoint)."""
     from django.core.cache import cache
@@ -230,6 +231,7 @@ def log(channel: str, status: str, recipient: str, *, actual_recipient: str = ""
                 message_id=str(message_id or "")[:255],
                 location_id=getattr(location, "pk", location) if location is not None else None,
                 error=error,
+                case_id=case_id,
             )
     except Exception as exc:  # noqa: BLE001 - see docstring
         elog(f"Could not log the outbound {channel} to {recipient}: {exc}", tag="[OUTBOUND]")

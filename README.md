@@ -269,6 +269,10 @@ docker compose restart progeo-backend
 - Analysis: the Django admin (`Progeo activities`) and, for staff, `GET /v1/activity/summary/?days=30` (page views with average/median duration per path, top click targets, logins and active users per day).
 - The privacy policy (`frontend/src/main/privacyPolicyContent.tsx`) describes it. Change both together.
 
+## Notifications (offline / alarm)
+
+Offline devices and unacknowledged alarms are reported to the subscribers of a location in stages: first notice, reminders, Objektleitung, escalation. Every mail has an acknowledge link and an unsubscribe link. Offline mails go out only between 09:00 and 22:00; alarms go out at any time. Staff see each location's phase under Staff → Benachrichtigungen. Details, settings and rollout: [docs/notifications.md](docs/notifications.md).
+
 ## Notes
 
 - Most service ports are controlled via `.env` variables.

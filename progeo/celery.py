@@ -58,7 +58,22 @@ celery_instance.conf.beat_schedule = {
         "task": "progeo.tasks.generate_daily_alarm_report",
         # Bundles yesterday's alarms into an AlarmDailyReport shortly after
         # midnight (00:37), once all of the previous day has been evaluated.
+        # Statistics only - it sends no mails.
         "schedule": crontab(hour=0, minute=37),
+    },
+    "detect-offline-devices-hourly": {
+        "task": "progeo.tasks.detect_offline_devices",
+        # Per device: still sending? Opens/updates/resolves the offline
+        # NotificationCases (no mails). At :50, so the 09:00 run of
+        # process-notification-cases sees what was detected overnight.
+        "schedule": crontab(minute=50),
+    },
+    "process-notification-cases-quarter-hourly": {
+        "task": "progeo.tasks.process_notification_cases",
+        # Sends what is due: alarm stages at any time, offline mails only
+        # between NOTIFY_WINDOW_START_HOUR and _END_HOUR (09:00-22:00), spread
+        # over the runs when many are due (hourly mail budget).
+        "schedule": crontab(minute="0,15,30,45"),
     },
     "refresh-project-db-stats-daily": {
         "task": "progeo.tasks.refresh_project_db_stats",

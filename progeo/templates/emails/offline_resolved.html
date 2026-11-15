@@ -1,0 +1,11 @@
+{% extends "emails/base.html" %}
+{# The devices of an offline case send again (helper/notification_cases.py) - once per case, only to whoever got its offline mails. #}
+{% block subject %}Projekt '{{ project_name }}' - Datenübertragung wieder aufgenommen - Vorgang {{ case_id }}{% endblock %}
+{% block preheader %}Seit {{ back_since }} kommen wieder Daten an{% endblock %}
+{% block content %}
+<p style="margin:0 0 12px;">Sehr geehrte Damen und Herren,</p>
+<p style="margin:0 0 12px;">gute Nachrichten: Ihr Flachdachmonitoring im Objekt <strong>{{ project_nr }} — {{ project_name }}</strong> überträgt seit dem <strong>{{ back_since }}</strong> wieder Daten. Die Leckageüberwachung ist wieder aktiv, der Vorgang <strong>{{ case_id }}</strong> ist abgeschlossen.</p>
+<p style="margin:0 0 12px;">Vielen Dank für Ihre Unterstützung.</p>
+<p style="margin:0;">Mit freundlichen Grüßen<br>Ihr ProGeo-Team</p>
+{% include "emails/_notification_links.html" with kind_text="Störungsmeldungen" %}
+{% endblock %}

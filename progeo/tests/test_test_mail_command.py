@@ -67,7 +67,10 @@ def test_sends_plain_test_mail_to_default_recipient(capsys):
     assert "pw" not in capsys.readouterr().out
 
 
-def test_templates_sends_every_template_with_sample_data():
+def test_templates_sends_every_template_with_sample_data(settings):
+    # More templates than the per-recipient hourly limit (20) since the staged
+    # notifications - the limit is not what this test is about.
+    settings.OUTBOUND_LIMITS = {**settings.OUTBOUND_LIMITS, "mail_per_recipient_hour": 100}
     call_command("test_mail", "--templates", "--to", "a@progeo.com")
 
     assert len(FakeSMTP.sent) == 1 + len(emailhelper.template_names())

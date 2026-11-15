@@ -13,7 +13,8 @@ Two sources:
 A hard bounce (5.x.x, the address doesn't exist) suppresses the address at
 once, soft bounces (4.x.x, mailbox full, ...) after EmailSuppression.SOFT_LIMIT.
 Suppressed addresses get no mail until staff remove the entry (Benutzer-
-verwaltung -> Versand). Only messages recognized as bounces are moved to
+verwaltung -> Versand). A bounced notification also reaches its
+NotificationCase (OutboundMessage.case_id -> notification_cases.note_bounce). Only messages recognized as bounces are moved to
 BOUNCE_IMAP_PROCESSED_FOLDER; everything else in the mailbox stays untouched,
 and the last seen UID is remembered so nothing is parsed twice.
 """
@@ -191,6 +192,14 @@ def apply_bounce(bounce: dict) -> int:
             row.bounce_reason = entry["reason"]
             row.save(using=DB, update_fields=["status", "bounced_at", "bounce_reason"])
             marked += 1
+            if row.case_id:
+                # A notification stage: its case learns who it did not reach.
+                try:
+                    from progeo.helper.notification_cases import note_bounce
+
+                    note_bounce(row)
+                except Exception as exc:  # noqa: BLE001 - the bounce itself is recorded
+                    elog(f"[bounces] Could not note the bounce on case {row.case_id}: {exc}")
         # The original recipient only bounced if the mail really went there
         # (not in test mode, where it went to MAIL_TEST_RECIPIENT).
         targets = {row.recipient for row in matching if not row.actual_recipient or row.actual_recipient == row.recipient}

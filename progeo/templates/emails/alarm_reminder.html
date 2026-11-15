@@ -1,0 +1,17 @@
+{% extends "emails/base.html" %}
+{# Alarm stages 2+: the alarms are still not acknowledged (helper/notification_cases.py). #}
+{% block subject %}Erinnerung: Alarm nicht quittiert — Objekt {{ project_nr }} · {{ project_name }}{% endblock %}
+{% block preheader %}{{ alarm_count }} Alarm(e) seit {{ triggered_at }} noch nicht quittiert{% endblock %}
+{% block content %}
+<h1 style="margin:0 0 12px; font-size:20px;">Alarm noch nicht quittiert</h1>
+<p style="margin:0 0 12px;">Im Objekt <strong>{{ project_nr }} — {{ project_name }}</strong> {% if alarm_count == 1 %}ist ein Alarm{% else %}sind {{ alarm_count }} Alarme{% endif %} noch nicht quittiert. Bitte prüfen Sie die Messwerte und quittieren Sie den Alarm.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 8px; font-size:14px;">
+  <tr><td style="padding:2px 16px 2px 0; color:#6E6868;">Zuletzt ausgelöst</td><td style="padding:2px 0;">{{ triggered_at }}</td></tr>
+  <tr><td style="padding:2px 16px 2px 0; color:#6E6868;">Höchster Messwert</td><td style="padding:2px 0;">{{ max_value }}</td></tr>
+  <tr><td style="padding:2px 16px 2px 0; color:#6E6868;">Schwellwert</td><td style="padding:2px 0;">{{ threshold }}</td></tr>
+  {% if sensors %}<tr><td style="padding:2px 16px 2px 0; color:#6E6868;">Sensoren</td><td style="padding:2px 0;">{{ sensors }}</td></tr>{% endif %}
+</table>
+{% if include_objektleitung %}<p style="margin:0 0 12px;">Diese Erinnerung geht auch an die zuständige ProGeo-Objektleitung.</p>{% endif %}
+{% include "emails/_button.html" with url=portal_link label="Im Portal ansehen" %}
+{% include "emails/_notification_links.html" with ack_label="Alarm quittieren" kind_text="Alarmmeldungen" %}
+{% endblock %}

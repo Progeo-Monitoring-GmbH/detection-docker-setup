@@ -345,7 +345,8 @@ def _is_hard_refusal(exc_or_code) -> bool:
 
 def send_mail(sent_to: list, subject: str, message: str, files: list,
               location=None, db: str = "default", html: str | None = None,
-              category: str = "system", log_message: str | None = None):
+              category: str = "system", log_message: str | None = None,
+              case_id: int | None = None, extra_headers: dict | None = None):
     """Send an (already rendered) email and record it.
 
     Every mail passes the outbound guard (helper/outbound.py) first: too many
@@ -357,7 +358,9 @@ def send_mail(sent_to: list, subject: str, message: str, files: list,
     The mail attempt is persisted as an EMail row (with `sent`/`error`
     reflecting the outcome; `log_message` replaces the body there, e.g. with
     redacted login links) and as one OutboundMessage row per recipient.
-    `location` links the rows to a project.
+    `location` links the rows to a project, `case_id` the OutboundMessage
+    rows to their NotificationCase (bounces). `extra_headers` are added to
+    the mail (List-Unsubscribe) - never logged, so they may carry tokens.
     """
     from progeo.v1.models import OutboundMessage
 
@@ -389,7 +392,7 @@ def send_mail(sent_to: list, subject: str, message: str, files: list,
         elog(f"[emailhelper] {error}: {subject}")
         for recipient in recipients:
             outbound.log(mail, status.BLOCKED, recipient, category=category, subject=subject,
-                         location=location, error=error)
+                         location=location, error=error, case_id=case_id)
         _persist_email(recipients, subject, logged_body, files, location=location, sent=False, error=error, db=db)
         return None
 
@@ -397,7 +400,7 @@ def send_mail(sent_to: list, subject: str, message: str, files: list,
     for recipient, (reject_status, error) in rejected.items():
         ilog(f"[emailhelper] Not sending '{subject}' to {recipient}: {error}")
         outbound.log(mail, reject_status, recipient, category=category, subject=subject,
-                     location=location, error=error)
+                     location=location, error=error, case_id=case_id)
     if not allowed:
         error = "; ".join(sorted({error for _status, error in rejected.values()}))
         _persist_email(recipients, subject, logged_body, files, location=location, sent=False, error=error, db=db)
@@ -407,12 +410,12 @@ def send_mail(sent_to: list, subject: str, message: str, files: list,
         ilog(f"[emailhelper] SMTP not configured (MAIL_SENDER/MAIL_SERVER), skipping mail to {allowed}")
         for recipient in allowed:
             outbound.log(mail, status.FAILED, recipient, category=category, subject=subject,
-                         location=location, error="SMTP not configured")
+                         location=location, error="SMTP not configured", case_id=case_id)
         _persist_email(allowed, subject, logged_body, files, location=location,
                        sent=False, error="SMTP not configured", db=db)
         return None
 
-    headers = {"X-Progeo-Category": category}
+    headers = {"X-Progeo-Category": category, **(extra_headers or {})}
     deliver_to, sent_status, sent_subject = allowed, status.SENT, subject
     if outbound.mail_test_mode():
         deliver_to = [outbound.mail_test_recipient()]
@@ -431,7 +434,7 @@ def send_mail(sent_to: list, subject: str, message: str, files: list,
         elog(f"Could not send Mail to '{deliver_to}': {exc}")
         for recipient in allowed:
             outbound.log(mail, status.FAILED, recipient, actual_recipient=", ".join(deliver_to), category=category,
-                         subject=subject, message_id=message_id, location=location, error=str(exc))
+                         subject=subject, message_id=message_id, location=location, error=str(exc), case_id=case_id)
         _persist_email(allowed, sent_subject, logged_body, files, location=location,
                        sent=False, error=str(exc), db=db)
         return None
@@ -443,7 +446,7 @@ def send_mail(sent_to: list, subject: str, message: str, files: list,
         if reason is not None:
             error = f"Vom Server abgelehnt: {reason}"
             outbound.log(mail, status.FAILED, recipient, actual_recipient=actual, category=category,
-                         subject=subject, message_id=message_id, location=location, error=error)
+                         subject=subject, message_id=message_id, location=location, error=error, case_id=case_id)
             if _is_hard_refusal(reason) and not outbound.mail_test_mode():
                 from progeo.helper.bounces import record_bounce
 
@@ -451,7 +454,7 @@ def send_mail(sent_to: list, subject: str, message: str, files: list,
             continue
         accepted.append(recipient)
         outbound.log(mail, sent_status, recipient, actual_recipient=actual, category=category,
-                     subject=subject, message_id=message_id, location=location)
+                     subject=subject, message_id=message_id, location=location, case_id=case_id)
 
     if not accepted:
         _persist_email(allowed, sent_subject, logged_body, files, location=location,
@@ -468,7 +471,8 @@ def send_mail(sent_to: list, subject: str, message: str, files: list,
 def send_template_mail(sent_to: list, template_name: str, context: dict | None = None,
                        files: list | None = None, subject_override: str | None = None,
                        location=None, db: str = "default", category: str = "system",
-                       secret_context: dict | None = None):
+                       secret_context: dict | None = None, case_id: int | None = None,
+                       extra_headers: dict | None = None):
     """Render `template_name` with `context` and send it (HTML + text).
 
     Returns the content hash when sent, False when the template is missing,
@@ -482,7 +486,8 @@ def send_template_mail(sent_to: list, template_name: str, context: dict | None =
     subject = subject_override or rendered["subject"]
     return send_mail(sent_to, subject, rendered["text"], files or [], location=location, db=db,
                      html=rendered["html"], category=category,
-                     log_message=rendered["log_text"] if secret_context else None)
+                     log_message=rendered["log_text"] if secret_context else None,
+                     case_id=case_id, extra_headers=extra_headers)
 
 
 def send_info_mail(subject: str, message: str):

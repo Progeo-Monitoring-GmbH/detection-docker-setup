@@ -10,7 +10,7 @@ class Command(BaseCommand):
         "Generate AlarmDailyReport rows for the last N days (default 14). "
         "Delegates to the celery task progeo.tasks.generate_daily_alarm_report "
         "per day, so backfilling older days also runs the project-connectivity "
-        "check and disconnect mails for each day.\n\n"
+        "check for each day (statistics only - it sends no mails).\n\n"
         "Examples:\n"
         "  python manage.py generate_alarm_reports\n"
         "  python manage.py generate_alarm_reports --days 30\n"

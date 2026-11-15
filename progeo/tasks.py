@@ -482,8 +482,8 @@ def generate_daily_alarm_report(db: str | None = None, report_date=None):
     totals, per-location / per-sensor counts, an hourly distribution and the
     top alarms of that day. Also checks project connectivity: every location
     is classified as online / disconnected / dead based on whether measurements
-    arrive at the start and end of the day, and the contacts of projects that
-    just lost their signal are notified by mail (if SMTP is configured). The
+    arrive at the start and end of the day (statistics only - no mails; the
+    offline notifications are detect_offline_devices / process_notification_cases). The
     report row is upserted per account+date, so re-running the task for the
     same day simply refreshes the report.
 
@@ -663,8 +663,8 @@ def run_cad_import(job_id: str):
 
 @shared_task
 def send_alarm_notification(alarm_id: int, location_id: int, db_name: str = "default"):
-    """Mail/SMS/messenger the subscribers of a new alarm (helper/notifications.py) -
-    queued by queue_alarm_notification for instantly evaluated uploads."""
+    """Open/extend the alarm case of a new alarm and send its first stage
+    (helper/notifications.notify_alarm) - queued by queue_alarm_notification."""
     from progeo.helper.notifications import notify_alarm
     from progeo.v1.models import ProgeoAlarm, ProgeoLocation
 
@@ -673,6 +673,68 @@ def send_alarm_notification(alarm_id: int, location_id: int, db_name: str = "def
     if alarm is None or location is None:
         return {"skipped": "missing"}
     return notify_alarm(alarm, location, db_name)
+
+
+@shared_task
+def detect_offline_devices(db: str | None = None):
+    """Open, update and resolve the offline NotificationCases: per device,
+    whether it still sends (helper/notification_cases.detect_offline). No
+    mails - those go out with process_notification_cases inside the window.
+    The very first run is the baseline: outages that already existed open
+    muted cases (staff release them in the monitoring)."""
+    from progeo.helper import notification_cases
+    from progeo.helper.basics import elog, ilog
+    from progeo.helper.project_dbs import release_connection
+
+    baseline = not notification_cases.baseline_done()
+    totals = {"opened": 0, "reopened": 0, "updated": 0, "resolved": 0}
+    failed = []
+    for db_name in _task_databases(db, measurements=True):
+        try:
+            result = notification_cases.detect_offline(db_name, baseline=baseline)
+        except Exception as exc:  # noqa: BLE001 - one failing database must not stop the others
+            elog(f"[detect_offline_devices] db={db_name} failed: {exc}")
+            failed.append(db_name)
+            continue
+        finally:
+            release_connection(db_name)
+        for key, value in result.items():
+            totals[key] += value
+    if baseline and not failed:
+        notification_cases.mark_baseline_done()
+    ilog(f"[detect_offline_devices] {totals} baseline={baseline} failed={failed}")
+    return {**totals, "baseline": baseline, "failed": failed}
+
+
+@shared_task
+def process_notification_cases():
+    """Send the due stages of the NotificationCases (alarms at any time,
+    offline mails only inside NOTIFY_WINDOW_*), the "wieder online" mails
+    and the daily staff digest. One run at a time (cache lock)."""
+    import time
+
+    from django.core.cache import cache
+
+    from progeo.helper import notification_cases
+
+    try:
+        locked = cache.add(notification_cases.LOCK_KEY, 1, timeout=14 * 60)
+    except Exception:  # noqa: BLE001 - no cache: the per-case row locks still hold
+        locked = True
+    if not locked:
+        return {"skipped": "running"}
+    try:
+        result = notification_cases.process()
+        try:
+            cache.set(notification_cases.LAST_RUN_KEY, time.time(), None)
+        except Exception:  # noqa: BLE001, S110 - monitoring only
+            pass
+        return result
+    finally:
+        try:
+            cache.delete(notification_cases.LOCK_KEY)
+        except Exception:  # noqa: BLE001, S110
+            pass
 
 
 @shared_task

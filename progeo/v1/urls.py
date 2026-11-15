@@ -17,6 +17,7 @@ from progeo.v1.viewsets.firmware_viewset import (
 )
 from progeo.v1.viewsets.interface_viewset import InterfaceViewSet
 from progeo.v1.viewsets.locations_viewset import LocationViewSet
+from progeo.v1.viewsets.notification_viewset import NotificationCaseViewSet
 from progeo.v1.viewsets.setup_viewset import AccountViewSet, SetupViewSet
 from progeo.v1.viewsets.status_viewset import StatusViewSet
 from progeo.v1.viewsets.user_profile_viewset import UserProfileViewSet
@@ -62,6 +63,9 @@ favorite_router.register(r'', FavoriteViewSet, basename='favorite')
 activity_router = CustomRouter()
 activity_router.register(r'', ActivityViewSet, basename='activity')
 
+notification_case_router = CustomRouter()
+notification_case_router.register(r'', NotificationCaseViewSet, basename='notification-case')
+
 database_usage_router = CustomRouter()
 database_usage_router.register(r'', DatabaseUsageViewSet, basename='database-usage')
 
@@ -80,6 +84,7 @@ urlpatterns = [
     re_path(r'^favorite/', include(favorite_router.urls)),
     re_path(r'^activity/', include(activity_router.urls)),
     re_path(r'^database-usage/', include(database_usage_router.urls)),
+    re_path(r'^notification-case/', include(notification_case_router.urls)),
     # Flash bundle uploads (release.sh); nginx serves them at /firmware/.
     re_path(r'^firmware/bundles/$', FirmwareBundleUploadView.as_view(), name='firmware_bundle_upload'),
     re_path(r'^firmware/channels/(?P<channel>[^/]+)/$', FirmwareChannelUploadView.as_view(), name='firmware_channel_upload'),

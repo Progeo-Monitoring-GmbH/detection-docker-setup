@@ -189,15 +189,20 @@ def test_alarm_sms_goes_through_the_dry_run(site):
     assert row.message.startswith("ProGeo Alarm Objekt 4711 Halle Nord: Messwert 180 > Schwelle 100.")
 
 
-def test_alarm_cooldown_per_location(site):
+def test_further_alarms_join_the_open_alarm_case(site):
+    from progeo.v1.models import NotificationCase
+
     location, device = site
     _subscriber(location, "a@progeo.com")
+    first = f.make_alarm(device, triggered_ago=f.minutes(5))
+    second = f.make_alarm(device, sensor_id=2, triggered_ago=f.minutes(1))
 
-    notifications.notify_alarm(f.make_alarm(device, triggered_ago=f.minutes(5)), location, f.DB)
-    second = notifications.notify_alarm(f.make_alarm(device, sensor_id=2, triggered_ago=f.minutes(1)), location, f.DB)
+    notifications.notify_alarm(first, location, f.DB)
+    assert notifications.notify_alarm(second, location, f.DB) == {"skipped": "case_open"}
 
-    assert second == {"skipped": "cooldown"}
     assert len(FakeSMTP.sent) == 1
+    case = NotificationCase.objects.using(f.DB).get(location_id=location.pk, kind="alarm")
+    assert case.alarm_ids == [first.pk, second.pk] and case.stage == 1
 
 
 def test_old_alarms_notify_nobody(site):

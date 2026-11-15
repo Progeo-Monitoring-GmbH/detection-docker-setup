@@ -10,7 +10,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.authentication import ExpiringTokenAuthentication
 from progeo.decorator import require_module_permissions
-from progeo.helper.basics import RequestFailed, RequestSuccess
+from progeo.helper.basics import RequestFailed, RequestSuccess, elog
 from progeo.helper.cacher import cache_save_and_return, search_cache
 from progeo.helper.creator import create_MfS_log
 from progeo.helper.location_access import (
@@ -582,6 +582,14 @@ class AlarmViewSet(ProgeoModalViewSet):
                 using=db_name,
                 update_fields=["evaluated_at", "evaluated_by", "status"],
             )
+            # Stops the reminders of the location's alarm case once all its
+            # alarms are acknowledged (helper/notification_cases.py).
+            try:
+                from progeo.helper.notification_cases import sync_alarm_cases
+
+                sync_alarm_cases(db_name, alarm.measurement.device.location_id)
+            except Exception as exc:  # noqa: BLE001 - the acknowledge itself stands
+                elog(f"[alarm acknowledge] Could not sync the alarm case of alarm {alarm.pk}: {exc}")
 
         create_MfS_log(request)
 

@@ -398,35 +398,46 @@ def test_daily_report_reads_the_project_databases(world, settings):
 
 @WITH_PROJECT_DBS
 @LOCMEM_CACHE
-def test_disconnect_mail_only_on_the_transition_since_the_day_before(world, monkeypatch):
+def test_daily_report_sends_no_mails(world, monkeypatch):
+    """The report runs at 00:37 - statistics only. Offline mails are the
+    NotificationCases (helper/notification_cases.py), sent inside the window."""
     from progeo.helper import emailhelper
     from progeo.tasks import generate_daily_alarm_report
 
     sent = []
     monkeypatch.setattr(emailhelper, "smtp_configured", lambda: True)
-    monkeypatch.setattr(emailhelper, "send_template_mail",
-                        lambda recipients, template, context, location=None, db=None, **kwargs: sent.append(db) or True)
+    monkeypatch.setattr(emailhelper, "send_template_mail", lambda *args, **kwargs: sent.append(args) or True)
     location = world["location"]
     ProgeoLocation.objects.using(f.DB).filter(pk=location.pk).update(mail="halle@progeo.com")
-    key = str(location.pk)
     day_before = REPORT_DAY - datetime.timedelta(days=1)
 
     with SPLIT:
         generate_daily_alarm_report(db=f.DB, report_date=day_before)
-        assert _report(day_before).projects[key]["status"] == "disconnected"
-        assert sent == []  # no report of the day before it: baseline, no mails
-
         generate_daily_alarm_report(db=f.DB, report_date=REPORT_DAY)
-        assert sent == []  # still disconnected - no daily spam
 
-        previous = _report(day_before)
-        previous.projects[key]["status"] = "online"
-        previous.save(using=f.DB)
-        generate_daily_alarm_report(db=f.DB, report_date=REPORT_DAY)
-        generate_daily_alarm_report(db=f.DB, report_date=REPORT_DAY)  # a re-run doesn't mail again
+    assert sent == []
+    assert _report(day_before).projects[str(location.pk)]["status"] == "disconnected"
 
-    assert sent == [ALIAS]  # the EMail row goes to the location's project database
-    assert _report(REPORT_DAY).projects[key]["emailed_disconnect"] is True
+
+@WITH_PROJECT_DBS
+@LOCMEM_CACHE
+def test_offline_detection_reads_the_project_database(world):
+    """With the split on the devices' newest measurements live in the project
+    database - the case remembers it (recipients, alarms are read there)."""
+    from progeo.helper import notification_cases
+    from progeo.tasks import detect_offline_devices
+    from progeo.v1.models import NotificationCase
+
+    notification_cases.mark_baseline_done()
+    ProgeoMeasurement.objects.using(ALIAS).update(last_fetched=timezone.now() - datetime.timedelta(days=2))
+
+    with SPLIT:
+        result = detect_offline_devices()
+
+    assert result["opened"] == 1
+    case = NotificationCase.objects.using(f.DB).get(location_id=world["location"].pk)
+    assert case.db == ALIAS and case.kind == "offline"
+    assert list(case.devices) == [str(world["device"].pk)]
 
 
 # ---------------------------------------------------------------------------- map_databases

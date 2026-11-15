@@ -1,5 +1,5 @@
 {% extends "emails/base.html" %}
-{# New alarm of a project (helper/notifications.py: notify_alarm) to every ProgeoAccess user with the ALARM type and the e-mail channel. #}
+{# Alarm stage 1 (helper/notification_cases.py): new alarm of a project, to every ProgeoAccess user with the ALARM type and the e-mail channel - at any hour. Reminders: alarm_reminder.html. #}
 {% block subject %}Alarm — Objekt {{ project_nr }} · {{ project_name }}{% endblock %}
 {% block preheader %}Messwert {{ max_value }} über dem Schwellwert {{ threshold }}{% endblock %}
 {% block content %}
@@ -12,5 +12,6 @@
   {% if sensors %}<tr><td style="padding:2px 16px 2px 0; color:#6E6868;">Sensoren</td><td style="padding:2px 0;">{{ sensors }}</td></tr>{% endif %}
 </table>
 {% include "emails/_button.html" with url=portal_link label="Im Portal ansehen" %}
-<p style="margin:0; font-size:12px; color:#6E6868;">Weitere Alarme dieses Objekts werden frühestens nach {{ cooldown_minutes }} Minuten erneut gemeldet.</p>
+<p style="margin:0 0 4px; font-size:12px; color:#6E6868;">Bitte quittieren Sie den Alarm, sobald Sie sich darum kümmern - bis dahin erinnern wir Sie. Weitere Alarme dieses Objekts nehmen wir in diesen Vorgang auf.</p>
+{% include "emails/_notification_links.html" with ack_label="Alarm quittieren" kind_text="Alarmmeldungen" %}
 {% endblock %}

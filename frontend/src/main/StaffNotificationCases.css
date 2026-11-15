@@ -1,0 +1,19 @@
+/* Staff admin -> Benachrichtigungen (StaffNotificationCases.tsx). */
+
+.staff-notifications-summary th,
+.staff-notifications-summary td {
+  text-align: center;
+  white-space: nowrap;
+}
+
+.staff-notifications-summary tbody th {
+  text-align: left;
+}
+
+.form-select.staff-notifications-filter {
+  width: auto;
+}
+
+.staff-notifications-facts dd {
+  margin-bottom: 0.25rem;
+}
