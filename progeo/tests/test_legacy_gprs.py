@@ -9,9 +9,10 @@ import json
 from pathlib import Path
 
 import pytest
+from django.core.cache import cache
 from django.test import override_settings
 
-from progeo.v1.legacy import executor
+from progeo.v1.legacy import executor, gprs_state
 from progeo.v1.legacy.gprs import extract_gprs_data
 from progeo.v1.models import ProgeoAlarm, ProgeoMeasurement
 
@@ -30,9 +31,15 @@ def _reply(case, variant=NO_ALARM):
 
 @pytest.fixture(autouse=True)
 def local_cache_and_channels(settings):
-    """No Redis needed: the device cache, upload state and the live broadcast run in memory."""
+    """No Redis needed: the device cache, upload state and the live broadcast
+    run in memory. No state snapshot: answers load their projects directly
+    (snapshot behaviour: test_gprs_state.py)."""
     settings.CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
     settings.CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
+    cache.clear()
+    gprs_state.reset_local()
+    yield
+    gprs_state.reset_local()
 
 
 def _measurements(project_id=None):

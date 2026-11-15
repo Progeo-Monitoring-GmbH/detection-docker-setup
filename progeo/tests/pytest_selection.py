@@ -31,7 +31,7 @@ AREA_MODULES = {
     """,
     "exports": "exports lageplan_export",
     "integrations": """
-        airtable_locations cad_import data_transfer_api interface_api legacy_gprs legacy_gprs_port gprs_device_config
+        airtable_locations cad_import data_transfer_api interface_api legacy_gprs legacy_gprs_port gprs_device_config gprs_state
         matrix_account_sync modbus_tcp
     """,
     "locations": """

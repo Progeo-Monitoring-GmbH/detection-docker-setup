@@ -370,32 +370,35 @@ def _is_lageplan_copy(lageplan, kept, project_id):
 
 
 def _gprs_targets():
-    """(script, project, interval, pd, pe) the legacy gprs_<script>.php
-    scripts configured their controllers with (legacy/gprs_table.py); a
-    hybrid script configures its second project too (same interval)."""
+    """(script, project, interval, pd, pe, sensors) the legacy
+    gprs_<script>.php scripts configured their controllers with
+    (legacy/gprs_table.py); a hybrid script configures its second project
+    too (same interval)."""
     from progeo.v1.legacy.gprs_table import SCRIPTS
 
     for name, script in sorted(SCRIPTS.items()):
         if not script.pd:
             continue  # gprs_5723 / gprs_5787: no configuration in their answer
-        yield name, int(name.removesuffix("_h")), script.interval, script.pd, script.pe
+        yield name, int(name.removesuffix("_h")), script.interval, script.pd, script.pe, script.sensors
         if script.second_project:
-            yield name, script.second_project, script.interval, script.pd_2, script.pe_2
+            yield name, script.second_project, script.interval, script.pd_2, script.pe_2, script.sensors_2
 
 
 def gprs_device_config(apply=False):
     """Takes the configuration the legacy controllers get from their
-    gprs_<script>.php answer into the database: data_interval and
-    pull_resistance of the project's legacy device (raw_hash = project id),
-    pe_geschaltet of its location where the script switches PE. Nothing is
-    created - projects without a legacy device are listed. Read only unless
-    `apply`."""
+    gprs_<script>.php answer into the database: data_interval,
+    pull_resistance and sensor_count of the project's legacy device
+    (raw_hash = project id), pe_geschaltet of its location where the script
+    switches PE. Nothing is created - projects without a legacy device are
+    listed. Read only unless `apply`; applied, the answers' snapshot
+    (legacy/gprs_state.py) is refreshed right away."""
     from django.db import DEFAULT_DB_ALIAS
 
+    from progeo.v1.legacy import gprs_state
     from progeo.v1.legacy.gprs import find_legacy_device
 
     changed, unchanged, missing = 0, 0, []
-    for name, project, interval, pd, pe in _gprs_targets():
+    for name, project, interval, pd, pe, sensors in _gprs_targets():
         db, device = find_legacy_device(project)
         if device is None:
             missing.append(project)
@@ -405,6 +408,8 @@ def gprs_device_config(apply=False):
             updates["data_interval"] = int(interval)
         if device.pull_resistance != int(pd, 16):
             updates["pull_resistance"] = int(pd, 16)
+        if device.sensor_count != int(sensors):
+            updates["sensor_count"] = int(sensors)
         location = (
             ProgeoLocation.objects.using(DEFAULT_DB_ALIAS).filter(pk=device.location_id).first()
             if pe and device.location_id else None
@@ -430,6 +435,8 @@ def gprs_device_config(apply=False):
     if missing:
         elog(f"{len(missing)} projects without a legacy device (raw_hash = project id), left alone: {missing}")
     ilog(f"{changed} devices {'updated' if apply else 'to update (dry run, use --apply)'}, {unchanged} unchanged")
+    if apply and changed:
+        gprs_state.refresh()
     return {"changed": changed, "unchanged": unchanged, "missing": missing}
 
 
@@ -757,7 +764,7 @@ class Command(BaseCommand):
         '                            and their images, name the measure points from the table, set\n'
         '                            Unknown locations (no dm sensors) and their devices to smartex is\n'
         '                            - read only unless --apply\n'
-        '  gprs_device_config        interval, pulldown and PE of the legacy GPRS controllers from their\n'
+        '  gprs_device_config        interval, pulldown, sensors, PE of the legacy GPRS controllers from their\n'
         '                            gprs_<project>.php answer (legacy/gprs_table.py) into the devices\n'
         '                            - read only unless --apply\n\n'
         'Examples:\n'

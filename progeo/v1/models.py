@@ -562,6 +562,10 @@ class ProgeoDevice(ProgeoModel, auto_prefetch.Model):
     # one), each counting its pairs from 1 - see sensor_order_of. Set by the
     # Lageplan wizard's import (helper/cad_import.py).
     first_sensor_order = models.IntegerField(default=1)
+    # Number of sensors the controller measures - part of its configuration
+    # like data_interval / pull_resistance. The legacy GPRS controllers get it
+    # in their answer (v1/legacy/gprs_state.py); None: not configured.
+    sensor_count = models.IntegerField(null=True, blank=True)
 
     def sensor_order_of(self, pair_index: int) -> int:
         """sensor_order of the measure point the 0-based pair `pair_index` of

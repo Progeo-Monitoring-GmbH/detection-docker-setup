@@ -28,20 +28,14 @@ import time
 from urllib.parse import unquote_plus
 
 from django.core.cache import cache
-from django.db.models import F
 from django.http import HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from progeo.helper.basics import elog, ilog, wlog
+from progeo.v1.legacy import gprs_state
 from progeo.v1.legacy.executor import ingest_legacy_query
-from progeo.v1.legacy.gprs_port import (
-    NO_ALARM,
-    GprsScript,
-    prepare,
-    render_reply,
-    y_points,
-)
+from progeo.v1.legacy.gprs_port import GprsScript, prepare, render_reply, y_points
 from progeo.v1.legacy.gprs_table import SCRIPTS
 
 # Chunked uploads and two-part measurements are collected in the cache (the
@@ -98,43 +92,20 @@ def find_legacy_device(project_id):
     return (db, device) if device else (None, None)
 
 
-class ProjectAlarms:
-    """The legacy alarm tables (<project>_Alarm, Status 'Alarm', mail sent):
-    unacknowledged, not yet normalized alarms of the project's legacy device
-    (raw_hash = project id), strongest first."""
-
-    def __init__(self):
-        self._sensors = {}
-
-    def _active(self, project_id):
-        if project_id not in self._sensors:
-            from progeo.v1.models import ProgeoAlarm
-
-            sensors = []
-            try:
-                db, device = find_legacy_device(project_id)
-                if device:
-                    sensors = list(
-                        ProgeoAlarm.objects.using(db)
-                        .filter(
-                            measurement__device_id=device.pk,
-                            normalized_at__isnull=True,
-                            status=ProgeoAlarm.Status.NEU,
-                        )
-                        .order_by(F("max_value").desc(nulls_last=True), "-pk")
-                        .values_list("sensor_id", flat=True)
-                    )
-            except Exception as exc:  # noqa: BLE001 - the controller still needs its answer
-                elog(f"alarm lookup for project {project_id} failed: {exc!r}", tag="[GPRS]")
-            self._sensors[project_id] = sensors
-        return self._sensors[project_id]
-
-    def top_sensor(self, project_id):
-        sensors = self._active(project_id)
-        return (sensors[0] or 0) if sensors else NO_ALARM
-
-    def sensors(self, project_id):
-        return {sensor for sensor in self._active(project_id) if sensor}
+def _reply(name, project, script, context):
+    """The answer with the live configuration and alarms (gprs_state.py:
+    a snapshot, no query per request). The legacy alarm tables
+    (<project>_Alarm, Status 'Alarm', mail sent) are the unacknowledged, not
+    normalized alarms of the project's legacy device."""
+    projects = gprs_state.script_projects(name, script) if name in SCRIPTS else {project}
+    projects |= {p for p in context.get("projects") or () if p is not None}
+    try:
+        states = gprs_state.current(projects)
+    except Exception as exc:  # noqa: BLE001 - the controller still needs its answer
+        elog(f"gprs_{name}.php: state lookup failed ({exc!r}), answering from gprs_table.py", tag="[GPRS]")
+        states = {}
+    live = gprs_state.configure(project, script, states)
+    return render_reply(project, live, context, gprs_state.StateAlarms(states))
 
 
 def _import(script_name, y_strings):
@@ -179,9 +150,9 @@ def gprs_php(request, script):
         # The PHP script would have died here; answer anyway, so the
         # controller keeps its configuration and deep sleep.
         elog(f"gprs_{script}.php: unusable request ({exc!r}): {data!r}", tag="[GPRS]")
-        return _text(render_reply(project, config, {}, ProjectAlarms()))
+        return _text(_reply(script, project, config, {}))
     if prepared.reply is not None:
         return _text(prepared.reply)
 
     _import(script, prepared.y_strings)
-    return _text(render_reply(project, config, prepared.context, ProjectAlarms()))
+    return _text(_reply(script, project, config, prepared.context))

@@ -45,6 +45,7 @@ def test_apply_sets_interval_and_pulldown(controllers):
 
     device = _reload(controllers[4033])  # gprs_4033.php: xx0x081800.089...
     assert device.data_interval == 1800
+    assert device.sensor_count == 89
     assert device.pull_resistance == ProgeoDevice.Resistance.OFF
     assert _pe(controllers[4033]) is False  # no PE switch in that script: left alone
 
@@ -57,6 +58,7 @@ def test_a_hybrid_script_configures_both_projects(controllers):
     assert (second.data_interval, second.pull_resistance) == (300, ProgeoDevice.Resistance.RES_1k)
     assert _pe(controllers[4060]) is True   # $PE = "1"
     assert _pe(controllers[4061]) is False  # $sensorconf2PE = "0"
+    assert (first.sensor_count, second.sensor_count) == (20, 34)  # $sensoren, $sensconf2
 
 
 def test_a_second_run_changes_nothing(controllers):
@@ -86,4 +88,5 @@ def test_every_configured_script_has_a_target_with_a_valid_pulldown():
     pulldowns = {choice.value for choice in ProgeoDevice.Resistance}
 
     assert {name for name, *_ in targets} == {name for name, script in SCRIPTS.items() if script.pd}
-    assert all(int(pd, 16) in pulldowns for *_, pd, _pe in targets)
+    assert all(int(pd, 16) in pulldowns for _name, _project, _interval, pd, _pe, _sensors in targets)
+    assert all(0 <= int(sensors) <= 999 for *_, sensors in targets)

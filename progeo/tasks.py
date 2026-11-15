@@ -882,3 +882,12 @@ def mirror_project_rows_task(payload: dict):
     from progeo.helper.project_db_signals import _MirrorBatch
 
     _MirrorBatch.from_payload(payload).flush()
+
+
+@shared_task
+def refresh_legacy_gprs_state():
+    """Snapshot of the legacy GPRS controllers' configuration and alarms for
+    their answers (v1/legacy/gprs_state.py); returns the number of projects."""
+    from progeo.v1.legacy.gprs_state import refresh
+
+    return len(refresh()["projects"])

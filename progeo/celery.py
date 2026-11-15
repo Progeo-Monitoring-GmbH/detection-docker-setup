@@ -122,6 +122,14 @@ celery_instance.conf.beat_schedule = {
         # apart (a month's end only makes one gap shorter).
         "schedule": crontab(day_of_month="*/3", hour=4, minute=40),
     },
+    "refresh-legacy-gprs-state-minutely": {
+        "task": "progeo.tasks.refresh_legacy_gprs_state",
+        # Configuration and alarms of the legacy GPRS controllers for their
+        # answers (v1/legacy/gprs_state.py) - read here, not per request.
+        # :11 right after evaluate-measurements (:10) picked up new alarms,
+        # clear of the other tasks walking every project database.
+        "schedule": crontab(minute="11,26,41,56"),
+    },
 }
 if not settings.PROGEO_CONFIG_EVALUATE_INSTANTLY:
     # With PROGEO_CONFIG_EVALUATE_INSTANTLY every measurement is evaluated when
