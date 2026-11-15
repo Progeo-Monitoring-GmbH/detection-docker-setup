@@ -42,7 +42,7 @@ const BROWSER_STORAGE = [
     name: 'sessionid',
     code: true,
     kind: 'Cookie',
-    purpose: 'Anmeldesitzung',
+    purpose: 'Anmeldesitzung (auch für die Anmeldung im ProGeo Chat)',
     duration: 'bis zur Abmeldung, max. 2 Wochen',
   },
   {
@@ -50,6 +50,13 @@ const BROWSER_STORAGE = [
     code: true,
     kind: 'Local Storage',
     purpose: 'Anmelde-Token für die Kommunikation mit dem Server',
+    duration: 'bis zur Abmeldung',
+  },
+  {
+    name: 'refreshToken',
+    code: true,
+    kind: 'Local Storage',
+    purpose: 'Erneuert das Anmelde-Token, ohne dass Sie sich neu anmelden müssen',
     duration: 'bis zur Abmeldung',
   },
   {
@@ -65,6 +72,34 @@ const BROWSER_STORAGE = [
     kind: 'Local Storage',
     purpose: 'Gewählte Sprache',
     duration: 'bis zur Löschung im Browser',
+  },
+  {
+    name: 'progeo.sidebar.collapsed, progeo.canvasKeyLegend.collapsed',
+    code: true,
+    kind: 'Local Storage',
+    purpose: 'Darstellung: eingeklappte Seitenleiste bzw. Legende',
+    duration: 'bis zur Löschung im Browser',
+  },
+  {
+    name: 'progeo:matrix-promo-dismissed',
+    code: true,
+    kind: 'Local Storage',
+    purpose: 'Merkt sich, dass Sie die Empfehlung des ProGeo Chats ausgeblendet haben',
+    duration: 'bis zur Löschung im Browser',
+  },
+  {
+    name: 'demoToken',
+    code: true,
+    kind: 'Local Storage',
+    purpose: 'Nur öffentliche Demo: erneute Anmeldung über denselben Demo-Link',
+    duration: 'bis zum Ablauf des Demo-Links',
+  },
+  {
+    name: 'impersonatorTokens, viewAsUser',
+    code: true,
+    kind: 'Local Storage',
+    purpose: 'Nur für ProGeo-Mitarbeitende: Support-Ansicht („Anmelden als“, „Als Nutzer anzeigen“)',
+    duration: 'bis zur Abmeldung',
   },
   {
     name: 'Zwischenspeicher',
@@ -157,7 +192,8 @@ export const buildPolicySections = ({
         <p>
           Diese Datenschutzerklärung gilt für das ProGeo-Monitoring-Portal
           (diese Webanwendung) einschließlich der damit verbundenen
-          Benachrichtigungen per E-Mail und SMS. Das Portal dient unseren
+          Benachrichtigungen per E-Mail, SMS und Messenger sowie für den
+          ProGeo Chat, unseren eigenen Chat-Server. Das Portal dient unseren
           Kundinnen und Kunden zur Überwachung von Gebäuden und Bauwerken,
           insbesondere zur Leckage- und Feuchteortung.
         </p>
@@ -194,7 +230,24 @@ export const buildPolicySections = ({
         <Facts
           purpose="Auslieferung der Anwendung, Gewährleistung von Stabilität und Sicherheit, Erkennung und Abwehr von Angriffen sowie Fehleranalyse."
           legalBasis="Art. 6 Abs. 1 lit. f DSGVO. Unser berechtigtes Interesse liegt im sicheren und störungsfreien Betrieb der Anwendung."
-          retention="Server-Logs werden nur so lange gespeichert, wie es für die genannten Zwecke erforderlich ist, und anschließend automatisch gelöscht. Daten, deren Aufbewahrung zur Aufklärung eines konkreten Sicherheitsvorfalls erforderlich ist, werden bis zu dessen Abschluss aufbewahrt."
+          retention="Server-Logs werden in unserem Protokollsystem nach 30 Tagen automatisch gelöscht. Daten, deren Aufbewahrung zur Aufklärung eines konkreten Sicherheitsvorfalls erforderlich ist, werden bis zu dessen Abschluss aufbewahrt."
+        />
+        <h3>Fehleranalyse und Betriebsüberwachung</h3>
+        <p>
+          Tritt in der Anwendung ein Fehler auf, übermittelt der Server einen
+          Fehlerbericht (Fehlermeldung, betroffene Funktion, technische
+          Begleitinformationen) an ein Fehlerprotokoll, das wir selbst
+          betreiben. Dabei werden standardmäßig keine personenbezogenen
+          Merkmale wie IP-Adressen oder Anmeldedaten mitgesendet; im
+          Einzelfall kann ein Bericht jedoch z. B. einen Benutzernamen
+          enthalten. Für die Betriebsüberwachung erfassen wir zudem technische
+          Kennzahlen (z. B. Antwortzeiten, Anzahl versendeter Nachrichten)
+          ohne Personenbezug.
+        </p>
+        <Facts
+          purpose="Erkennung und Behebung von Fehlern, Sicherstellung des Betriebs."
+          legalBasis="Art. 6 Abs. 1 lit. f DSGVO. Unser berechtigtes Interesse liegt im fehlerfreien Betrieb der Überwachung."
+          retention="Fehlerberichte werden gelöscht, sobald sie für die Fehlerbehebung nicht mehr benötigt werden."
         />
         <h3>Verschlüsselung</h3>
         <p>
@@ -218,14 +271,26 @@ export const buildPolicySections = ({
         </p>
         <ul>
           <li>Benutzername, Vor- und Nachname, E-Mail-Adresse</li>
-          <li>optional: Mobilfunknummer für SMS-Benachrichtigungen</li>
+          <li>
+            optional: Mobilfunknummer für SMS-Benachrichtigungen sowie der
+            gewählte Messenger und Ihre Adresse dort (Signal- bzw.
+            WhatsApp-Nummer oder Matrix-ID)
+          </li>
           <li>Passwort (ausschließlich als Hash gespeichert)</li>
+          <li>
+            bei aktivierter Zwei-Faktor-Anmeldung: der geheime Schlüssel Ihrer
+            Authenticator-App (verschlüsselt) und Ihre Wiederherstellungscodes
+            (nur als Hash)
+          </li>
           <li>
             Zugehörigkeit zu Ihrem Unternehmen, Rollen und Berechtigungen sowie
             die Ihnen zugeordneten Objekte und Benachrichtigungseinstellungen
           </li>
           <li>Zeitpunkt der Kontoerstellung und der letzten Anmeldung</li>
-          <li>Spracheinstellung</li>
+          <li>
+            Spracheinstellung – sie bestimmt auch die Sprache Ihrer E-Mails und
+            Messenger-Nachrichten
+          </li>
         </ul>
         <Facts
           purpose="Bereitstellung des Portals, Anmeldung, Rechteverwaltung und Zustellung der von Ihnen gewünschten Benachrichtigungen."
@@ -241,6 +306,46 @@ export const buildPolicySections = ({
           }
           retention="Für die Dauer des Bestehens Ihres Benutzerkontos. Nach Löschung des Kontos werden die Daten gelöscht, soweit keine gesetzlichen Aufbewahrungspflichten entgegenstehen. In Datensicherungen verbleiben sie bis zu deren turnusmäßiger Überschreibung."
         />
+        <h3>Anmeldelinks, Passwort-Zurücksetzen und Schutz vor Missbrauch</h3>
+        <p>
+          Auf Wunsch senden wir Ihnen einen einmaligen Anmeldelink per E-Mail;
+          auch Einladungen und das Zurücksetzen des Passworts (nur mit
+          Zwei-Faktor-Anmeldung) laufen über solche Links. Wir speichern davon
+          nur einen Hash, die Gültigkeitsdauer und den Zeitpunkt der
+          Verwendung, nicht den Link selbst; im Versandprotokoll erscheint er
+          unkenntlich gemacht. Fehlgeschlagene Anmeldeversuche zählen wir je
+          Benutzername und je IP-Adresse für 15 Minuten, um das Erraten von
+          Passwörtern zu verhindern.
+        </p>
+        <Facts
+          purpose="Sichere Anmeldung ohne Passwort, Schutz Ihres Kontos, zusammengefasste Auswertung, wie häufig Anmeldelinks genutzt werden."
+          legalBasis="Art. 6 Abs. 1 lit. b bzw. lit. f DSGVO (wie beim Benutzerkonto)."
+          retention="Fehlversuche: 15 Minuten. Unbenutzte Links verfallen nach ihrer Gültigkeit (Minuten bis wenige Tage) und werden durch neue ersetzt; die Angabe, wann ein Link verwendet wurde, bleibt für die Dauer des Benutzerkontos gespeichert."
+        />
+        <h3>Zugangsanfrage</h3>
+        <p>
+          Über das Formular „Zugang beantragen“ können Sie ein Benutzerkonto
+          anfragen. Wir verarbeiten dabei Vor- und Nachname, Unternehmen,
+          E-Mail-Adresse, Telefonnummer (optional), Projekt und Ihre Nachricht
+          sowie den Zeitpunkt, zu dem Sie diese Datenschutzerklärung zur
+          Kenntnis genommen haben. Ihre E-Mail-Adresse bestätigen Sie über
+          einen Link (Double-Opt-in); danach prüfen unsere Mitarbeitenden die
+          Anfrage.
+        </p>
+        <Facts
+          purpose="Prüfung der Anfrage und Einrichtung eines Benutzerkontos."
+          legalBasis="Art. 6 Abs. 1 lit. b DSGVO (vorvertragliche Maßnahme auf Ihre Anfrage)."
+          retention="Nicht bestätigte Anfragen werden nach 7 Tagen gelöscht, abgelehnte Anfragen nach 90 Tagen. Nach einer Freigabe gelten die Fristen des Benutzerkontos."
+        />
+        <h3>Support-Zugriff</h3>
+        <p>
+          Zur Unterstützung bei Fragen und Störungen können ausgewählte
+          ProGeo-Administratorinnen und -Administratoren das Portal aus Sicht
+          Ihres Benutzerkontos ansehen („Anmelden als“). Jeder solche Zugriff
+          wird mit Zeitpunkt und handelnder Person protokolliert. Ihr Passwort
+          erfahren wir dabei nicht, und der Zeitpunkt Ihrer letzten Anmeldung
+          bleibt unverändert.
+        </p>
         <h3>Protokollierung von Aktionen</h3>
         <p>
           Zur Nachvollziehbarkeit und zum Schutz vor Missbrauch protokollieren
@@ -286,19 +391,47 @@ export const buildPolicySections = ({
   },
   {
     id: 'benachrichtigungen',
-    title: 'Benachrichtigungen per E-Mail und SMS',
+    title: 'Benachrichtigungen per E-Mail, SMS und Messenger',
     body: (
       <>
         <p>
-          Je nach Ihren Einstellungen informiert Sie das Portal per E-Mail
-          und/oder SMS über Alarme, Verbindungsabbrüche von Messsystemen,
-          Berichte und Testmeldungen. Dazu verarbeiten wir Ihre E-Mail-Adresse
-          bzw. Mobilfunknummer sowie den Inhalt der Nachricht (z. B. Objektname,
-          Projektnummer und Art des Ereignisses). Jede versendete Nachricht wird
-          mit Empfänger, Inhalt und Zustellstatus protokolliert.
+          Je nach Ihren Einstellungen informiert Sie das Portal per E-Mail,
+          SMS und/oder Messenger (ProGeo Chat, Signal oder WhatsApp) über
+          Alarme, Verbindungsabbrüche von Messsystemen, Berichte und
+          Testmeldungen. Dazu verarbeiten wir Ihre E-Mail-Adresse,
+          Mobilfunknummer bzw. Messenger-Adresse, Ihre Spracheinstellung sowie
+          den Inhalt der Nachricht (z. B. Objektname, Projektnummer und Art
+          des Ereignisses). Jede versendete Nachricht wird mit Empfänger,
+          Inhalt und Zustellstatus protokolliert; Links zum Anmelden oder
+          Quittieren erscheinen im Protokoll unkenntlich gemacht.
         </p>
-        <h3>E-Mail</h3>
-        <p>E-Mails versenden wir über unseren eigenen Mailserver.</p>
+        <h3>Stufenweise Benachrichtigung, Quittieren und Abbestellen</h3>
+        <p>
+          Bleibt ein Alarm unquittiert oder eine Störung bestehen, erinnern wir
+          die eingetragenen Empfängerinnen und Empfänger in festen Abständen
+          und beziehen in späteren Stufen die zuständige ProGeo-Objektleitung
+          ein; zuletzt wird der Vorgang intern eskaliert. Störungsmeldungen
+          versenden wir nur zwischen 9 und 22 Uhr, Alarme jederzeit. Zu jedem
+          Vorgang protokollieren wir, wer wann benachrichtigt wurde, welche
+          Nachrichten unzustellbar waren und wer den Empfang bestätigt, einen
+          Alarm quittiert oder Benachrichtigungen abbestellt hat.
+        </p>
+        <p>
+          Jede Benachrichtigungs-E-Mail enthält einen persönlichen Link zum
+          Quittieren bzw. Bestätigen und einen Link zum Abbestellen; Ihr
+          E-Mail-Programm kann die Abmeldung auch direkt auslösen
+          („List-Unsubscribe“). Von diesen Links speichern wir nur einen Hash;
+          sie sind 60 Tage gültig. Beim Abbestellen bleibt Ihr Portalzugang
+          bestehen; wir vermerken die Abmeldung (Adresse, Objekt, Art der
+          Benachrichtigung, Zeitpunkt) als Nachweis.
+        </p>
+        <h3>E-Mail und Unzustellbarkeitsmeldungen</h3>
+        <p>
+          E-Mails versenden wir über unseren eigenen Mailserver. Meldet ein
+          empfangender Mailserver eine E-Mail als unzustellbar, werten wir diese
+          automatische Rückmeldung aus und sperren eine dauerhaft unzustellbare
+          Adresse für weitere Nachrichten, bis sie berichtigt wird.
+        </p>
         <h3>SMS-Versand über Esendex</h3>
         <p>
           Für den Versand von SMS setzen wir den Dienstleister Esendex (Esendex
@@ -307,11 +440,92 @@ export const buildPolicySections = ({
           Übermittlung in das Vereinigte Königreich erfolgt auf Grundlage des
           Angemessenheitsbeschlusses der EU-Kommission (Art. 45 DSGVO).
         </p>
+        <h3>WhatsApp</h3>
+        <p>
+          Wählen Sie WhatsApp, senden wir die Nachrichten über die WhatsApp
+          Business Platform (Cloud API) der Meta Platforms Ireland Ltd.,
+          Merrion Road, Dublin 4, Irland. Meta erhält dafür Ihre Telefonnummer
+          und den Nachrichtentext; eine Verarbeitung durch die Meta Platforms,
+          Inc. in den USA ist möglich. Die Übermittlung in die USA erfolgt auf
+          Grundlage des EU-U.S. Data Privacy Framework (Art. 45 DSGVO) bzw. der
+          Standardvertragsklauseln der EU-Kommission (Art. 46 DSGVO) (
+          <ExternalLink href="https://www.whatsapp.com/legal/business-data-processing-terms">
+            Bedingungen
+          </ExternalLink>
+          ).
+        </p>
+        <h3>Signal</h3>
+        <p>
+          Wählen Sie Signal, senden wir die Nachrichten von der Signal-Nummer
+          von ProGeo über unseren eigenen Chat-Server an Ihre Signal-Nummer.
+          Die Zustellung übernimmt der Dienst Signal (Signal Messenger LLC,
+          USA). Die Nachrichten sind auf dem Weg zu Ihnen Ende-zu-Ende
+          verschlüsselt; Signal erhält jedoch Ihre Telefonnummer als
+          Empfängeradresse (
+          <ExternalLink href="https://signal.org/legal/">Datenschutzhinweise von Signal</ExternalLink>
+          ).
+        </p>
         <Facts
-          purpose="Zustellung von Alarm- und Statusmeldungen; Nachweis der erfolgten bzw. fehlgeschlagenen Zustellung."
-          legalBasis="Art. 6 Abs. 1 lit. b bzw. lit. f DSGVO (wie beim Benutzerkonto). Die Benachrichtigungen sind wesentlicher Bestandteil der Überwachungsleistung."
-          retention="Versandprotokolle werden für die Dauer des Überwachungsauftrags aufbewahrt, um die Zustellung von Alarmmeldungen nachweisen zu können."
-          recipients="Esendex (SMS) als Auftragsverarbeiter gemäß Art. 28 DSGVO."
+          purpose="Zustellung von Alarm- und Statusmeldungen, Erinnerung bis zur Behebung bzw. Quittierung; Nachweis der erfolgten bzw. fehlgeschlagenen Zustellung, der Quittierung und von Abmeldungen."
+          legalBasis="Art. 6 Abs. 1 lit. b bzw. lit. f DSGVO (wie beim Benutzerkonto). Die Benachrichtigungen sind wesentlicher Bestandteil der Überwachungsleistung. Die Wahl von SMS und Messenger ist freiwillig."
+          retention="Versandprotokolle, Benachrichtigungsvorgänge und Abmeldungen werden für die Dauer des Überwachungsauftrags aufbewahrt, um die Zustellung von Alarmmeldungen nachweisen zu können. Gesperrte Adressen bleiben gesperrt, bis sie berichtigt werden."
+          recipients="Esendex (SMS) als Auftragsverarbeiter gemäß Art. 28 DSGVO; je nach Ihrer Wahl Meta (WhatsApp) bzw. Signal."
+        />
+      </>
+    ),
+  },
+  {
+    id: 'chat',
+    title: 'ProGeo Chat (Matrix)',
+    body: (
+      <>
+        <p>
+          Der ProGeo Chat ist ein Chat-Server nach dem offenen Standard
+          Matrix, den wir selbst betreiben. Die Nutzung ist freiwillig. Sie
+          melden sich in einer Chat-App mit Ihrem ProGeo-Zugang an – über die
+          Anmeldeseite des Portals oder über einen QR-Code in Ihrem Profil, der
+          eine einmalige, 10 Minuten gültige Anmeldung ermöglicht (wir
+          speichern davon nur einen Hash und den Zeitpunkt der Verwendung).
+          Bei der ersten Anmeldung entsteht Ihr Chat-Konto.
+        </p>
+        <p>Auf unserem Chat-Server werden dabei verarbeitet:</p>
+        <ul>
+          <li>Ihre Matrix-ID (abgeleitet aus Ihrem Benutzernamen) und Ihr Anzeigename</li>
+          <li>
+            Ihre angemeldeten Geräte und Sitzungen sowie deren IP-Adressen und
+            App-Bezeichnungen
+          </li>
+          <li>
+            Ihre Chats und Nachrichten, auch die Benachrichtigungen unseres
+            Systems; den Zeitpunkt Ihrer letzten Anmeldung in einer Chat-App
+            zeigt das Portal in Ihrem Profil an
+          </li>
+        </ul>
+        <p>
+          Nachrichten unseres Benachrichtigungssystems sind nicht
+          Ende-zu-Ende-verschlüsselt: Sie werden verschlüsselt übertragen,
+          liegen auf unserem Server aber lesbar vor. Chats zwischen
+          Nutzerinnen und Nutzern verschlüsselt die App Ende-zu-Ende.
+        </p>
+        <p>
+          Die Chat-App installieren Sie selbst aus dem App Store bzw. von
+          Google Play; wir empfehlen Element X (Element Creations Ltd.,
+          Vereinigtes Königreich). Beim Öffnen unseres Einrichtungslinks bzw.
+          QR-Codes ruft Ihr Gerät eine Seite von Element (mobile.element.io)
+          auf, die die App mit unserem Server öffnet. Damit Sie Nachrichten
+          auch bei geschlossener App erhalten, leitet unser Server
+          Push-Benachrichtigungen über den Push-Dienst des App-Anbieters an
+          Apple bzw. Google weiter; dabei werden technische Kennungen (z. B.
+          Nachrichten- und Chat-Kennung) übermittelt. Für die App und diese
+          Dienste gelten die Datenschutzhinweise des jeweiligen Anbieters (
+          <ExternalLink href="https://element.io/privacy">Element</ExternalLink>
+          ).
+        </p>
+        <Facts
+          purpose="Bereitstellung des Chats und Zustellung von Benachrichtigungen per Messenger."
+          legalBasis="Art. 6 Abs. 1 lit. b bzw. lit. f DSGVO (wie beim Benutzerkonto)."
+          retention="Für die Dauer Ihres Benutzerkontos. Wird Ihr Portalzugang deaktiviert, wird auch das Chat-Konto deaktiviert; wird er gelöscht, löschen wir das Chat-Konto samt Inhalten. Die IP-Adressen Ihrer Geräte speichert der Chat-Server höchstens 28 Tage. Die Matrix-ID selbst wird aus technischen Gründen nicht erneut vergeben."
+          recipients="Keine Weitergabe der Inhalte; technische Push-Kennungen an den Push-Dienst Ihrer App bzw. an Apple oder Google."
         />
       </>
     ),
@@ -503,6 +717,12 @@ export const buildPolicySections = ({
           Administrationsrechte haben.
         </p>
         <p>
+          Für Wetterdaten (Niederschlag, zur Einordnung von Alarmen) übermittelt
+          unser Server die Koordinaten der betreffenden Objekte an Open-Meteo
+          (open-meteo.com); dabei werden keine Daten von Nutzerinnen und
+          Nutzern übertragen.
+        </p>
+        <p>
           Wir verkaufen keine Daten, nutzen sie nicht für Werbung und erstellen
           keine Nutzerprofile für Werbezwecke.
         </p>
@@ -522,10 +742,21 @@ export const buildPolicySections = ({
           jeweiligen Abschnitten.
         </p>
         <p>
-          Zum Schutz vor Datenverlust erstellen wir regelmäßig Datensicherungen.
-          Gelöschte Daten können darin noch bis zu deren turnusmäßiger
+          Zum Schutz vor Datenverlust erstellen wir täglich Datensicherungen
+          und übertragen sie verschlüsselt auf einen getrennten
+          Sicherungsserver; dort werden sie nach 14 Tagen durch neuere
+          ersetzt. Gelöschte Daten können darin noch bis zu deren turnusmäßiger
           Überschreibung enthalten sein; sie werden in dieser Zeit nicht für
           andere Zwecke verwendet.
+        </p>
+        <p>
+          Bevor wir Änderungen an der Anwendung in Betrieb nehmen, prüfen wir
+          sie auf einem eigenen Testsystem mit einer verschlüsselt
+          übertragenen Kopie der Daten; dort werden nur die beiden jüngsten
+          Kopien vorgehalten. Das Testsystem ist wie das Portal geschützt und
+          versendet keine Nachrichten an Kundinnen und Kunden (Art. 6 Abs. 1
+          lit. f DSGVO – unser berechtigtes Interesse an einem fehlerfreien
+          Betrieb der Überwachung).
         </p>
       </>
     ),
@@ -551,8 +782,10 @@ export const buildPolicySections = ({
         <p>
           Wenden Sie sich dazu formlos an{' '}
           <a href={`mailto:${CONTROLLER.email}`} {...repeatedTestId('privacy-policy-mail-link', 'rechte')}>{CONTROLLER.email}</a>. Ihren
-          Namen, Ihre E-Mail-Adresse und Ihre Mobilfunknummer können Sie
-          außerdem jederzeit selbst in Ihrem Profil im Portal ändern.
+          Namen, Ihre E-Mail-Adresse, Ihre Mobilfunknummer, Ihren Messenger
+          und Ihre Sprache können Sie außerdem jederzeit selbst in Ihrem
+          Profil im Portal ändern; Benachrichtigungen können Sie über den Link
+          in jeder Benachrichtigungs-E-Mail abbestellen.
         </p>
         <div className="privacy-callout">
           <strong>Widerspruchsrecht nach Art. 21 DSGVO</strong>
@@ -605,8 +838,9 @@ export const buildPolicySections = ({
         <p>
           Die Angabe von Name und E-Mail-Adresse ist für die Nutzung des Portals
           erforderlich; ohne diese Daten kann kein Benutzerkonto eingerichtet
-          werden. Die Angabe einer Mobilfunknummer ist freiwillig und nur für
-          SMS-Benachrichtigungen nötig.
+          werden. Die Angabe einer Mobilfunknummer bzw. Messenger-Adresse und
+          die Nutzung des ProGeo Chats sind freiwillig und nur für
+          Benachrichtigungen auf diesen Wegen nötig.
         </p>
         <p>
           Eine automatisierte Entscheidungsfindung einschließlich Profiling im

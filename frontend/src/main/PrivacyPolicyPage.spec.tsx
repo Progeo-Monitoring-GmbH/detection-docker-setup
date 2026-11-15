@@ -64,8 +64,15 @@ describe('PrivacyPolicyPage', () => {
       'csrftoken',
       'sessionid',
       'authToken',
+      'refreshToken',
       'progeo_consent',
       'i18nextLng',
+      'progeo.sidebar.collapsed',
+      'progeo.canvasKeyLegend.collapsed',
+      'progeo:matrix-promo-dismissed',
+      'demoToken',
+      'impersonatorTokens',
+      'viewAsUser',
     ].forEach((key) => expect(text).toContain(key));
   });
 

@@ -171,4 +171,3 @@ Also available:
 
 - **SMS and messenger** carry no acknowledge or unsubscribe link. There is no room in an SMS, and the messenger log stores the text in plain. People unsubscribe from those channels in the portal settings.
 - **No planned pause per location yet** (construction work, scheduled power cut). For now, staff mute the case once it is opened.
-- **The privacy policy** ([privacyPolicyContent.tsx](../frontend/src/main/privacyPolicyContent.tsx)) doesn't mention the unsubscribe records and notification protocol yet.
