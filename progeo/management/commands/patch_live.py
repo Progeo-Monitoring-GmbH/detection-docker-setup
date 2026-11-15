@@ -369,6 +369,70 @@ def _is_lageplan_copy(lageplan, kept, project_id):
     return digest is not None and digest in {_lageplan_digest(other) for other in kept}
 
 
+def _gprs_targets():
+    """(script, project, interval, pd, pe) the legacy gprs_<script>.php
+    scripts configured their controllers with (legacy/gprs_table.py); a
+    hybrid script configures its second project too (same interval)."""
+    from progeo.v1.legacy.gprs_table import SCRIPTS
+
+    for name, script in sorted(SCRIPTS.items()):
+        if not script.pd:
+            continue  # gprs_5723 / gprs_5787: no configuration in their answer
+        yield name, int(name.removesuffix("_h")), script.interval, script.pd, script.pe
+        if script.second_project:
+            yield name, script.second_project, script.interval, script.pd_2, script.pe_2
+
+
+def gprs_device_config(apply=False):
+    """Takes the configuration the legacy controllers get from their
+    gprs_<script>.php answer into the database: data_interval and
+    pull_resistance of the project's legacy device (raw_hash = project id),
+    pe_geschaltet of its location where the script switches PE. Nothing is
+    created - projects without a legacy device are listed. Read only unless
+    `apply`."""
+    from django.db import DEFAULT_DB_ALIAS
+
+    from progeo.v1.legacy.gprs import find_legacy_device
+
+    changed, unchanged, missing = 0, 0, []
+    for name, project, interval, pd, pe in _gprs_targets():
+        db, device = find_legacy_device(project)
+        if device is None:
+            missing.append(project)
+            continue
+        updates = {}
+        if device.data_interval != int(interval):
+            updates["data_interval"] = int(interval)
+        if device.pull_resistance != int(pd, 16):
+            updates["pull_resistance"] = int(pd, 16)
+        location = (
+            ProgeoLocation.objects.using(DEFAULT_DB_ALIAS).filter(pk=device.location_id).first()
+            if pe and device.location_id else None
+        )
+        switch_pe = location is not None and location.pe_geschaltet != (pe == "1")
+        if not updates and not switch_pe:
+            unchanged += 1
+            continue
+        changed += 1
+        changes = [f"{field} {getattr(device, field)} -> {value}" for field, value in updates.items()]
+        if switch_pe:
+            changes.append(f"pe_geschaltet {location.pe_geschaltet} -> {pe == '1'}")
+        ilog(f"gprs_{name}.php: project {project} device #{device.pk} ({db}): {', '.join(changes)}")
+        if apply:
+            if updates:
+                for field, value in updates.items():
+                    setattr(device, field, value)
+                device.save(using=db, update_fields=list(updates))
+            if switch_pe:
+                # Saved in default; the save signal mirrors it into the project database.
+                location.pe_geschaltet = pe == "1"
+                location.save(using=DEFAULT_DB_ALIAS, update_fields=["pe_geschaltet"])
+    if missing:
+        elog(f"{len(missing)} projects without a legacy device (raw_hash = project id), left alone: {missing}")
+    ilog(f"{changed} devices {'updated' if apply else 'to update (dry run, use --apply)'}, {unchanged} unchanged")
+    return {"changed": changed, "unchanged": unchanged, "missing": missing}
+
+
 def drop_duplicate_locations(apply=False):
     """The unnamed duplicate locations ("📐 Location None ✓" in the admin).
     merge_duplicate_locations skips a project as a conflict when both of its
@@ -692,6 +756,9 @@ class Command(BaseCommand):
         '  drop_is_plans             delete the placeholder Lageplans (no drawing, only a legend table)\n'
         '                            and their images, name the measure points from the table, set\n'
         '                            Unknown locations (no dm sensors) and their devices to smartex is\n'
+        '                            - read only unless --apply\n'
+        '  gprs_device_config        interval, pulldown and PE of the legacy GPRS controllers from their\n'
+        '                            gprs_<project>.php answer (legacy/gprs_table.py) into the devices\n'
         '                            - read only unless --apply\n\n'
         'Examples:\n'
         '  python manage.py patch_live --patch fix_dragino_usage\n'
@@ -701,7 +768,8 @@ class Command(BaseCommand):
         '  python manage.py patch_live --patch fetch_koords\n'
         '  python manage.py patch_live --patch koords_to_points [--apply]\n'
         '  python manage.py patch_live --patch drop_duplicate_locations [--apply]\n'
-        '  python manage.py patch_live --patch drop_is_plans [--apply]'
+        '  python manage.py patch_live --patch drop_is_plans [--apply]\n'
+        '  python manage.py patch_live --patch gprs_device_config [--apply]'
     )
 
     def add_arguments(self, parser):
@@ -709,7 +777,7 @@ class Command(BaseCommand):
                             help="Select a patch to run",
                             default=None)
         parser.add_argument("--apply", action="store_true",
-                            help="drop_duplicate_locations, drop_is_plans, koords_to_points: change the data "
+                            help="drop_duplicate_locations, drop_is_plans, koords_to_points, gprs_device_config: change the data "
                                  "(default: only report)")
 
 
@@ -730,6 +798,9 @@ class Command(BaseCommand):
 
         if patch == "drop_is_plans":
             drop_is_plans(apply=options["apply"])
+
+        if patch == "gprs_device_config":
+            gprs_device_config(apply=options["apply"])
 
         if patch == "fetch_koords":
             fetch_koords()

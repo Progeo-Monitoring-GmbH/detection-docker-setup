@@ -130,7 +130,7 @@ urlpatterns = [
 
     # Legacy GPRS controllers: the old PHP endpoint of data-progeo.net (see
     # progeo/v1/legacy/gprs.py; nginx passes it through on plain http).
-    re_path(r"^gprs_(?P<project>\d+)\.php$", gprs_php, name="legacy_gprs"),
+    re_path(r"^gprs_(?P<script>\d+(?:_h)?)\.php$", gprs_php, name="legacy_gprs"),
 
     ###re_path(r"^silk/", include("silk.urls", namespace="silk")),
 

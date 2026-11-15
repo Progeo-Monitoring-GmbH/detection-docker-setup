@@ -675,7 +675,7 @@ DBBACKUP_CONNECTORS = {
 
 # The legacy GPRS controllers speak plain HTTP and follow no redirects, so
 # their endpoint must never be redirected to https (SECURE_SSL_REDIRECT).
-SECURE_REDIRECT_EXEMPT = [r"^gprs_\d+\.php$"]
+SECURE_REDIRECT_EXEMPT = [r"^gprs_\d+(_h)?\.php$"]
 
 SECURE_REFERRER_POLICY = os.getenv("SECURE_REFERRER_POLICY")
 # nginx sets X-Forwarded-Proto on every proxied request. Trusting it is only

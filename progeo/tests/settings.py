@@ -443,7 +443,7 @@ if os.getenv("SECURE_PROXY_SSL_HEADER"):
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 # Same as progeo/settings.py: the legacy GPRS controllers speak plain http.
-SECURE_REDIRECT_EXEMPT = [r"^gprs_\d+\.php$"]
+SECURE_REDIRECT_EXEMPT = [r"^gprs_\d+(_h)?\.php$"]
 
 SECURE_REFERRER_POLICY = os.getenv("SECURE_REFERRER_POLICY")
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
