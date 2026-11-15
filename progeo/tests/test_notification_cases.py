@@ -305,6 +305,43 @@ def test_a_bounced_stage_mail_reaches_its_case(site, live, settings):
     assert case.unreachable_since is not None
 
 
+# ---------------------------------------------------------------------------- test modes
+
+def test_in_mail_test_mode_every_stage_mail_and_alarm_goes_to_the_test_recipient_only(site, live, settings):
+    """MAIL_TEST_MODE (on unless the env says 0): the staged system's mails
+    reach MAIL_TEST_RECIPIENT only - the original recipients are just named
+    in the subject; SMS_DRY_RUN keeps its SMS in the log (fake_smtp fails
+    the test on any network post)."""
+    from progeo.v1.models import UserProfile
+
+    settings.MAIL_TEST_MODE = True
+    settings.SMS_DRY_RUN = True
+    settings.MAIL_TEST_RECIPIENT = "test-mails@progeo.com"
+    location, device = site
+    _subscriber(location, "kai@progeo.com")
+    sms_user = _subscriber(location, "sms@progeo.com", type=ALARM,
+                           transport=ProgeoAccess.NotifiTrans.EMAIL_AND_SMS)
+    UserProfile.objects.using(f.DB).update_or_create(user_id=sms_user.pk, defaults={"mobile": "+49 170 1234567"})
+
+    # Offline, stage 1 at nine ...
+    _seen(device, at(16, days=-1))
+    nc.detect_offline(f.DB, now=at(0, 50))
+    live["now"] = at(9)
+    nc.process(now=at(9))
+    # ... and an alarm.
+    notifications.notify_alarm(f.make_alarm(device, value=180, triggered_ago=f.minutes(5)), location, f.DB)
+
+    assert FakeSMTP.sent, "nothing was mailed at all"
+    assert {address for mail in FakeSMTP.sent for address in mail["to"]} == {"test-mails@progeo.com"}
+    assert all(message["To"] == "test-mails@progeo.com" for message in FakeSMTP.parsed())
+    assert all(message["Subject"].startswith("[TEST an ") for message in FakeSMTP.parsed())
+    mails = OutboundMessage.objects.using(f.DB).filter(channel=OutboundMessage.Channel.MAIL)
+    assert set(mails.values_list("status", flat=True)) == {OutboundMessage.Status.REDIRECTED}
+    assert {"halle@progeo.com", "kai@progeo.com", "sms@progeo.com"} <= set(mails.values_list("recipient", flat=True))
+    sms = OutboundMessage.objects.using(f.DB).filter(channel=OutboundMessage.Channel.SMS)
+    assert sms.exists() and not sms.filter(status=OutboundMessage.Status.SENT).exists()
+
+
 # ---------------------------------------------------------------------------- alarms
 
 def test_alarm_reminders_go_out_at_night_until_acknowledged(site, live):
