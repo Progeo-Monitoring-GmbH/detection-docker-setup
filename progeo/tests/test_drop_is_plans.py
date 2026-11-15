@@ -21,7 +21,12 @@ from progeo.tests.test_project_dbs import (  # noqa: F401 - project_dbs is the s
     _copy,
     project_dbs,
 )
-from progeo.v1.models import ProgeoDevice, ProgeoLageplan, ProgeoLocation, ProgeoMeasurePoint
+from progeo.v1.models import (
+    ProgeoDevice,
+    ProgeoLageplan,
+    ProgeoLocation,
+    ProgeoMeasurePoint,
+)
 
 # The django_db marker checks its databases against DATABASES before any fixture runs.
 register_project_db(ALIAS)

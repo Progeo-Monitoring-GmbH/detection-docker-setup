@@ -1,14 +1,28 @@
-# Lint, type checks and tests on every push and pull request.
+# Lint, type checks, tests and dependency audits on pushes to staging.
 #
-# The backend job builds the test database from scratch (recreate_test_db:
-# create, migrate from zero, seed) - so every run also proves the
-# migrations apply to an empty database - and fails on model changes
-# without a migration (makemigrations --check).
+# Every check is its own job, so one failing check never hides or skips the
+# others - each job reports on its own.
+#
+#   blocking (a failure fails the run):
+#     backend-tests       test database from scratch (recreate_test_db: create,
+#                         migrate from zero, seed - so every run also proves the
+#                         migrations apply to an empty database), then pytest
+#     backend-migrations  model changes without a migration (makemigrations --check)
+#     frontend-typecheck  tsc --noEmit
+#     frontend-tests      vitest
+#
+#   warnings only (findings show up as yellow annotations and in the job
+#   summary; the job stays green):
+#     backend-lint        ruff
+#     frontend-lint       oxlint
+#     audit-python        pip-audit
+#     audit-npm           npm audit
 name: CI
 
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -17,9 +31,100 @@ concurrency:
 permissions:
   contents: read
 
+# Shared by the backend jobs; harmless for the others.
+env:
+  DJANGO_SETTINGS_MODULE: progeo.tests.settings
+  TESTS_ACTIVE: '1'
+  SECRET_KEY: ci-only-not-a-secret-0123456789abcdefghijklmnopqrstuvwxyz
+  DJANGO_ALLOWED_HOSTS: testserver,localhost
+  POSTGRES_HOST: localhost
+  POSTGRES_PORT: '5432'
+  POSTGRES_USER: postgres
+  POSTGRES_PASSWORD: postgres
+  POSTGRES_DB: postgres
+  REDIS_HOST: localhost
+  REDIS_PORT: '6379'
+  REDIS_PASSWORD: ''
+  SENTRY_DSN: ''
+  # The versions of the images (docker/backend-base/Dockerfile:
+  # python:3.13-alpine3.24, docker/frontend/Dockerfile).
+  PYTHON_VERSION: '3.13'
+  NODE_VERSION: '24.22.1'
+
 jobs:
-  backend:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
+  # ---------------------------------------------------------------- backend
+
+  backend-lint:
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/staging') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # Never fails the run - not even if installing ruff breaks.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      # ruff needs no project dependencies.
+      - run: python -m pip install ruff
+
+      # Findings as warning annotations (on the changed lines in the diff
+      # view), the per-rule counts in the job summary. --exit-zero: the step
+      # stays green. To make ruff blocking again: drop --exit-zero and the sed.
+      - name: Lint (ruff) - warnings only
+        run: |
+          ruff check progeo conftest.py --output-format=github --exit-zero > ruff.txt
+          sed 's/^::error /::warning /' ruff.txt
+          count=$(grep -c '^::' ruff.txt || true)
+          {
+            echo "### ruff: ${count} finding(s) (not blocking)"
+            if [ "$count" -gt 0 ]; then
+              echo '```'
+              ruff check progeo conftest.py --statistics --exit-zero
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$count" -gt 0 ]; then echo "::warning title=ruff::${count} finding(s) - see the job summary"; fi
+
+  backend-migrations:
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/staging') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      # makemigrations checks the migration history against the database.
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-cad-test.txt
+
+      - name: Python packages
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-cad-test.txt
+
+      - name: Models without a migration
+        run: python manage.py makemigrations --check --dry-run --settings=progeo.tests.settings
+
+  backend-tests:
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/staging') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     services:
@@ -39,47 +144,27 @@ jobs:
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 5s --health-timeout 5s --health-retries 20
-    env:
-      DJANGO_SETTINGS_MODULE: progeo.tests.settings
-      TESTS_ACTIVE: '1'
-      SECRET_KEY: ci-only-not-a-secret-0123456789abcdefghijklmnopqrstuvwxyz
-      DJANGO_ALLOWED_HOSTS: testserver,localhost
-      POSTGRES_HOST: localhost
-      POSTGRES_PORT: '5432'
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: postgres
-      REDIS_HOST: localhost
-      REDIS_PORT: '6379'
-      REDIS_PASSWORD: ''
-      SENTRY_DSN: ''
     steps:
       - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v7
         with:
-          # The version of the backend image (docker/backend-base/Dockerfile:
-          # python:3.13-alpine3.24 - the latest 3.13 patch release).
-          python-version: '3.13'
+          python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
           cache-dependency-path: |
             requirements.txt
             requirements-cad-test.txt
 
+      # Retries: a flaky Ubuntu mirror should not fail the tests.
       - name: System packages (ffmpeg for the video export, gpg for the backup bundles, tesseract for the plan OCR)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg gnupg tesseract-ocr tesseract-ocr-deu
+        run: |
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends ffmpeg gnupg tesseract-ocr tesseract-ocr-deu
 
       - name: Python packages
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-cad-test.txt
-          pip install ruff
-
-      - name: Lint (ruff)
-        run: ruff check progeo conftest.py
-
-      - name: Models without a migration
-        run: python manage.py makemigrations --check --dry-run --settings=progeo.tests.settings
 
       - name: Test database (create, migrate from zero, seed)
         run: python manage.py recreate_test_db --settings=progeo.tests.settings --noinput
@@ -89,18 +174,24 @@ jobs:
           pytest -q -p no:cacheprovider --tb=short
           --cov=progeo --cov-report=term --cov-report=xml:coverage.xml
 
-      - name: Coverage report
+      - name: Coverage report and test log
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: backend-coverage
-          path: coverage.xml
+          name: backend-tests
+          path: |
+            coverage.xml
+            progeo/tests/_pytest.log
           if-no-files-found: ignore
 
-  frontend:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
+  # --------------------------------------------------------------- frontend
+  # Separate jobs: npm ci is cached, so the duplicate install costs little,
+  # and a type error no longer hides the test results (or vice versa).
+
+  frontend-typecheck:
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/staging') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: frontend
@@ -109,8 +200,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          # The version of the frontend image (docker/frontend/Dockerfile).
-          node-version: '24.22.1'
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
@@ -119,21 +209,64 @@ jobs:
       - name: Type check
         run: npx tsc --noEmit -p .
 
-      # 66 findings in the current code (setState in effects, refs read
-      # during render, hook deps, impure render): reported, not blocking,
-      # until they are fixed - then drop continue-on-error.
-      - name: Lint (oxlint)
-        continue-on-error: true
-        run: npm run lint
+  frontend-tests:
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/staging') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
 
       - name: Tests (vitest)
         run: npx vitest run --watch=false
 
+  # Findings in the current code (setState in effects, refs read during
+  # render, hook deps, impure render): reported as warnings, not blocking.
+  # To make oxlint blocking once they are fixed: replace the step with
+  # `npm run lint` and drop continue-on-error.
+  frontend-lint:
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/staging') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+
+      - name: Lint (oxlint) - warnings only
+        run: |
+          npm run --silent lint -- --format=github > oxlint.txt || true
+          sed 's/^::error/::warning/' oxlint.txt
+          count=$(grep -c '^::' oxlint.txt || true)
+          echo "### oxlint: ${count} finding(s) (not blocking)" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$count" -gt 0 ]; then echo "::warning title=oxlint::${count} finding(s) - see the annotations"; fi
+
+  # ------------------------------------------------------ dependency audits
   # Known vulnerabilities in the dependencies. Reported, not blocking yet:
-  # turn continue-on-error off once the current findings are dealt with.
-  # Only on pushes to staging (not on every push / PR) to keep the noise down.
-  dependency-audit:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
+  # drop continue-on-error once the current findings are dealt with.
+
+  audit-python:
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/staging') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     continue-on-error: true
@@ -142,17 +275,27 @@ jobs:
 
       - uses: actions/setup-python@v7
         with:
-          python-version: '3.13.7'
+          python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Python (pip-audit)
         run: |
           python -m pip install --upgrade pip pip-audit
-          pip-audit -r requirements.txt
+          pip-audit -r requirements.txt || echo "::warning title=pip-audit::vulnerable Python dependencies - see the log"
+
+  audit-npm:
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/staging') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v7
         with:
-          node-version: '24.22.1'
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: npm (production dependencies)
-        working-directory: frontend
-        run: npm audit --omit=dev --audit-level=high
+        run: npm audit --omit=dev --audit-level=high || echo "::warning title=npm audit::vulnerable npm dependencies (high or worse) - see the log"

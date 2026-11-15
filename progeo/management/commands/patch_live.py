@@ -9,8 +9,7 @@ from django.conf import settings
 from progeo.helper.basics import dlog, elog, ilog
 from progeo.management.commands._base import BaseCommand
 from progeo.v1.creator import save_lageplan_upload
-from progeo.v1.legacy.executor import fetch_legacy_data, parse_sample_timestamp
-from progeo.v1.legacy.helper_resistance import MAX_JSON_SAFE_RESISTANCE_OHM
+from progeo.v1.legacy.executor import fetch_legacy_data
 from progeo.v1.models import (
     ProgeoDevice,
     ProgeoLageplan,
@@ -469,6 +468,51 @@ def sensor_count_from_samples(apply=False):
     return {**filled, "unknown": unknown, "remaining": remaining, "remaining_by_type": dict(remaining_by_type)}
 
 
+def unknown_db_devices(apply=False):
+    """The devices of the "unknown" project database that belong to a project
+    (their location's, or - without location - the one of their project_id /
+    numeric raw_hash): moved with their measurements, alarms, commands and
+    noise profiles into the project's database (helper/project_db_move.py).
+    Devices without a project stay. Read only unless `apply`."""
+    from progeo.helper.project_db_move import (
+        move_device,
+        orphaned_measurements,
+        unknown_devices,
+    )
+    from progeo.helper.project_dbs import project_alias, split_enabled
+    from progeo.v1.models import NotificationCase
+
+    if not split_enabled():
+        elog("PROJECT_DB_SPLIT is off - there is no \"unknown\" database to clean up")
+        return {}
+    devices = unknown_devices()
+    movable = [device for device in devices if device.movable]
+    for device in devices:
+        span = f"{device.first:%Y-%m-%d} .. {device.last:%Y-%m-%d}" if device.measurements else "-"
+        target = f"-> project {device.project_id} (location #{device.target_location_id})" if device.movable else "stays"
+        notes = f" [{'; '.join(device.notes)}]" if device.notes else ""
+        ilog(f"device #{device.pk} {device.raw_hash} ({device.type or '?'}, location #{device.location_id}): "
+             f"{device.measurements} measurements {span}, {device.alarms} alarms - {target}: {device.reason}{notes}")
+
+    moved, failed = [], []
+    if apply:
+        for device in movable:
+            try:
+                moved.append((device.pk, move_device(device)))
+            except Exception as exc:  # noqa: BLE001 - one device must not stop the others
+                elog(f"device #{device.pk} ({device.raw_hash}) not moved: {exc!r}")
+                failed.append(device.pk)
+
+    orphans = orphaned_measurements()
+    cases = NotificationCase.objects.filter(db=project_alias(None), state=NotificationCase.State.OPEN).count()
+    ilog(f"{len(devices)} devices in {project_alias(None)}: {len(movable)} "
+         f"{'moved' if apply else 'to move (dry run, use --apply)'}"
+         f"{f' ({len(failed)} failed: {failed})' if failed else ''}, {len(devices) - len(movable)} stay; "
+         f"{orphans} measurements there without device, {cases} open escalation cases on it")
+    return {"devices": len(devices), "movable": len(movable), "moved": moved, "failed": failed,
+            "orphaned_measurements": orphans, "open_cases": cases}
+
+
 def drop_duplicate_locations(apply=False):
     """The unnamed duplicate locations ("📐 Location None ✓" in the admin).
     merge_duplicate_locations skips a project as a conflict when both of its
@@ -795,7 +839,10 @@ class Command(BaseCommand):
         '                            - read only unless --apply\n'
         '  sensor_count_from_samples sensor_count of the devices without one: newest sample\'s raw_data,\n'
         '                            else provisioning token, else connected measure points; reports how\n'
-        '                            many remain unset - read only unless --apply\n\n'
+        '                            many remain unset - read only unless --apply\n'
+        '  unknown_db_devices        move the devices of the "unknown" project database that belong to a\n'
+        '                            project (location / project_id / numeric raw_hash) with their\n'
+        '                            measurements and alarms into its database - read only unless --apply\n\n'
         'Examples:\n'
         '  python manage.py patch_live --patch fix_dragino_usage\n'
         '  python manage.py patch_live --patch fetch_legacy_data\n'
@@ -805,7 +852,8 @@ class Command(BaseCommand):
         '  python manage.py patch_live --patch koords_to_points [--apply]\n'
         '  python manage.py patch_live --patch drop_duplicate_locations [--apply]\n'
         '  python manage.py patch_live --patch drop_is_plans [--apply]\n'
-        '  python manage.py patch_live --patch sensor_count_from_samples [--apply]'
+        '  python manage.py patch_live --patch sensor_count_from_samples [--apply]\n'
+        '  python manage.py patch_live --patch unknown_db_devices [--apply]'
     )
 
     def add_arguments(self, parser):
@@ -814,7 +862,7 @@ class Command(BaseCommand):
                             default=None)
         parser.add_argument("--apply", action="store_true",
                             help="drop_duplicate_locations, drop_is_plans, koords_to_points, "
-                                 "sensor_count_from_samples: change the data "
+                                 "sensor_count_from_samples, unknown_db_devices: change the data "
                                  "(default: only report)")
 
 
@@ -839,6 +887,9 @@ class Command(BaseCommand):
 
         if patch == "sensor_count_from_samples":
             sensor_count_from_samples(apply=options["apply"])
+
+        if patch == "unknown_db_devices":
+            unknown_db_devices(apply=options["apply"])
 
         if patch == "fetch_koords":
             fetch_koords()

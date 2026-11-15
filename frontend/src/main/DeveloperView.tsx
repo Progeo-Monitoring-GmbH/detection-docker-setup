@@ -8,13 +8,12 @@ const DEVELOPER_TABS = [
   { segment: 'docker', labelKey: 'sidebar_docker' },
   { segment: 'legacy-import', labelKey: 'sidebar_legacy_import' },
   { segment: 'ws-debug', labelKey: 'sidebar_ws_debug' },
-  { segment: 'dev', labelKey: 'sidebar_dev' },
 ] as const;
 
 /**
- * "Developer" (sidebar: Tools): the superuser tooling that used to be four
- * separate sidebar items - Docker, Legacy Import, WS Debug and Dev - as tabs
- * over one <Outlet/>. The old paths redirect here (CoreRoutes).
+ * "Developer" (sidebar: Tools): the superuser tooling that used to be
+ * separate sidebar items - Docker, Legacy Import and WS Debug - as tabs over
+ * one <Outlet/>. The old paths redirect here (CoreRoutes).
  */
 const DeveloperView = () => {
   const { t } = useTranslation();

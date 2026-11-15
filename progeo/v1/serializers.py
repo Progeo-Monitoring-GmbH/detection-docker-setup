@@ -238,6 +238,44 @@ def prepare_locations(locations, account=None, lageplans=True, stats=True):
     return locations
 
 
+def location_activity(locations, account=None):
+    """{location pk: (device count, last measurement time)} for the location
+    map - far cheaper than prepare_locations (no measurement count, no
+    lageplans): per database one query over the locations' devices, each
+    asking for its newest measurement only. In the project databases that
+    is max(last_fetched) on the (device_id, last_fetched) index; "default"
+    has no such index - there the newest id (ids are chronological).
+    The project databases in parallel (map_databases)."""
+    from progeo.helper.project_dbs import locations_by_db, map_databases, split_enabled
+
+    locations = list(locations)
+    if not locations:
+        return {}
+    groups = locations_by_db(locations, account)
+
+    def activity(db_name):
+        devices = ProgeoDevice.objects.using(db_name).filter(location_id__in=[loc.pk for loc in groups[db_name]])
+        measurements = ProgeoMeasurement.objects.using(db_name).filter(device=OuterRef("pk")).order_by().values("device")
+        if split_enabled() and db_name != "default":
+            devices = devices.annotate(newest=Subquery(measurements.annotate(m=Max("last_fetched")).values("m")[:1]))
+        else:
+            devices = devices.alias(
+                newest_id=Subquery(measurements.annotate(m=Max("pk")).values("m")[:1], output_field=IntegerField())
+            ).annotate(newest=Subquery(
+                ProgeoMeasurement.objects.using(db_name).filter(pk=OuterRef("newest_id")).values("last_fetched")[:1]
+            ))
+        result = {}
+        for location_id, last in devices.values_list("location_id", "newest"):
+            count, latest = result.get(location_id, (0, None))
+            result[location_id] = (count + 1, max(filter(None, (latest, last)), default=None))
+        return result
+
+    merged = {}
+    for part in map_databases(activity, groups):
+        merged.update(part)
+    return merged
+
+
 class ProgeoLocationMinSerializer(ProgeoBaseSerializer):
     clazz = serializers.SerializerMethodField("get_clazz_name")
     id = serializers.IntegerField(read_only=True)

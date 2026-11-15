@@ -138,6 +138,32 @@ def test_alarm_overview_and_summary_include_the_project_databases_alarms(staff_c
 
 @WITH_PROJECT_DBS
 @LOCMEM_CACHE
+def test_the_map_lists_only_its_fields_with_the_newest_measurement_per_database(staff_client, world):
+    location = world["location"]
+    ProgeoLocation.objects.using(f.DB).filter(pk=location.pk).update(latitude=50.5, longitude=7.5)
+    # Newer than everything copied from default (the alarms' measurements are "now").
+    received = timezone.now() + datetime.timedelta(minutes=3)
+    ProgeoMeasurement.objects.using(ALIAS).filter(pk=world["newest"].pk).update(last_fetched=received)
+
+    with SPLIT, CaptureQueriesContext(connections[ALIAS]) as project_queries:
+        rows = {row["id"]: row for row in staff_client.get("/v1/location/map/").json()}
+
+    row = rows[location.pk]
+    assert set(row) == {"id", "project_id", "name", "address", "plz", "city", "manager", "telefon", "mail",
+                        "latitude", "longitude", "device_count", "last_measurement_at"}
+    assert (row["latitude"], row["longitude"], row["device_count"]) == (50.5, 7.5, 1)
+    # The measurement only the project database has - one query there.
+    assert datetime.datetime.fromisoformat(row["last_measurement_at"]) == received
+    assert len(project_queries) == 1
+
+    # Split off: from "default" (newest by id there).
+    newest_default = ProgeoMeasurement.objects.using(f.DB).filter(device=world["device"]).order_by("-pk").first()
+    off = {row["id"]: row for row in staff_client.get("/v1/location/map/?off=1").json()}
+    assert datetime.datetime.fromisoformat(off[location.pk]["last_measurement_at"]) == newest_default.last_fetched
+
+
+@WITH_PROJECT_DBS
+@LOCMEM_CACHE
 def test_locations_table_costs_one_query_per_project_database(api_client, world):
     """Regression (Sentry N+1): the locations table's details read the stats
     with two queries per project database, and the alarm summary checked the

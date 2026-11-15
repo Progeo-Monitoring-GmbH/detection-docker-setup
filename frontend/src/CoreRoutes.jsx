@@ -53,7 +53,6 @@ const BackupView = React.lazy(() => import('./main/BackupView'));
 const TokenLogin = React.lazy(() => import('./main/TokenLogin'));
 const ChangeLogs = React.lazy(() => import('./main/ChangeLogs'));
 const DeveloperView = React.lazy(() => import('./main/DeveloperView.tsx'));
-const DevView = React.lazy(() => import('./main/DevView'));
 const WsDebugView = React.lazy(() => import('./main/WsDebugView'));
 const DockerStatusView = React.lazy(() => import('./main/DockerStatusView'));
 const DeviceListView = React.lazy(() => import('./main/DeviceListView'));
@@ -215,7 +214,8 @@ const CoreRoutes = () => {
                 </WebSocketProvider>
               }
             />
-            <Route path="dev/" element={<DevView />} />
+            {/* The retired "Dev" tab (frontend diagnostics - the browser's dev tools do it better). */}
+            <Route path="dev/" element={<Navigate to="/developer/" replace />} />
           </Route>
           {/* Their former standalone paths. */}
           <Route
@@ -232,7 +232,7 @@ const CoreRoutes = () => {
           />
           <Route
             path="/dev"
-            element={<Navigate to="/developer/dev/" replace />}
+            element={<Navigate to="/developer/" replace />}
           />
           <Route
             path="/device/overview"

@@ -10,7 +10,13 @@ import pytest
 from django.utils import timezone
 
 from progeo.tests import factories as f
-from progeo.v1.models import Account, ProgeoDevice, ProgeoLageplan, ProgeoLocation, ProgeoMeasurePoint
+from progeo.v1.models import (
+    Account,
+    ProgeoDevice,
+    ProgeoLageplan,
+    ProgeoLocation,
+    ProgeoMeasurePoint,
+)
 
 URL = "/v1/status/device_statistics/"
 

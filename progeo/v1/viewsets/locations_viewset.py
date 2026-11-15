@@ -504,6 +504,43 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             data.extend(ProgeoLocationMinSerializer(locations, many=True).data)
         return Response(data=data)
 
+    # The fields of a location the map (LocationsMapView) shows.
+    MAP_FIELDS = ("id", "project_id", "name", "address", "plz", "city", "manager", "telefon", "mail",
+                  "latitude", "longitude")
+    MAP_CACHE_SECONDS = 60
+
+    @require_module_permissions("module_locations_enabled")
+    @action(detail=False, url_path="map", methods=["GET"])
+    def map_locations(self, request, *args, **kwargs):
+        """The locations for the map: MAP_FIELDS plus device_count and
+        last_measurement_at (location_activity) - without the full list's
+        measurement count over every row and its lageplans, which made the
+        map wait. The locations of the primary account, like the list.
+        Cached for a minute; the map follows live measurements over the
+        websocket meanwhile."""
+        from progeo.v1.serializers import location_activity
+
+        cache_key, _cache = search_cache(request)
+        if _cache:
+            return _cache
+        account = self._primary_account(request)
+        if not account:
+            return Response(data=[])
+        # Not get_queryset(): with the split off it annotates the full stats.
+        locations = list(
+            ProgeoLocation.objects.using(account.db_name)
+            .filter(location_q(request.user, account))
+            .only(*self.MAP_FIELDS)
+            .order_by("id")
+        )
+        activity = location_activity(locations, account)
+        data = []
+        for location in locations:
+            device_count, last = activity.get(location.pk, (0, None))
+            row = {field: getattr(location, field) for field in self.MAP_FIELDS}
+            data.append({**row, "device_count": device_count, "last_measurement_at": last})
+        return cache_save_and_return(cache_key, data, time_out=self.MAP_CACHE_SECONDS)
+
     @require_module_permissions("module_locations_enabled")
     @action(detail=False, url_path="details", methods=["GET"])
     def details(self, request, *args, **kwargs):

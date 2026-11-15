@@ -1628,7 +1628,6 @@ i18n
           provision_firmware_none: 'No bundle on the server - {{version}}',
           provision_firmware_latest: 'latest in {{channels}}',
           sidebar_ws_debug: 'WS Debug',
-          sidebar_dev: 'Dev',
           sidebar_developer: 'Developer',
           devices_title: 'Devices',
           devices_pick_location:
@@ -2021,6 +2020,15 @@ i18n
           // Over plans and plots (components/ui/wheelZoom.tsx).
           zoom_hint_wheel: 'Ctrl + scroll to zoom',
           zoom_hint_touch: 'Use two fingers to move and zoom',
+          // The location map (main/LocationsMapView.jsx).
+          locmap_mode_zoom: 'Zoom to area',
+          locmap_mode_zoom_title: 'Drag a frame over the map to zoom into it',
+          locmap_mode_pan: 'Move',
+          locmap_mode_pan_title: 'Drag to move the map (Shift + drag still zooms to an area)',
+          locmap_show_all: 'Show all',
+          locmap_toasts_on: 'Live messages on',
+          locmap_toasts_off: 'Live messages muted',
+          locmap_toasts_title: 'Show or mute the message for every live measurement',
         },
       },
       de: {
@@ -3647,7 +3655,6 @@ i18n
           provision_firmware_none: 'Kein Bundle auf dem Server - {{version}}',
           provision_firmware_latest: 'aktuell in {{channels}}',
           sidebar_ws_debug: 'WS-Debug',
-          sidebar_dev: 'Dev',
           sidebar_developer: 'Entwickler',
           devices_title: 'Geräte',
           devices_pick_location:
@@ -4044,6 +4051,15 @@ i18n
           // Over plans and plots (components/ui/wheelZoom.tsx).
           zoom_hint_wheel: 'Strg + Mausrad zum Zoomen',
           zoom_hint_touch: 'Mit zwei Fingern verschieben und zoomen',
+          // The location map (main/LocationsMapView.jsx).
+          locmap_mode_zoom: 'Bereich zoomen',
+          locmap_mode_zoom_title: 'Einen Rahmen über die Karte ziehen, um hineinzuzoomen',
+          locmap_mode_pan: 'Verschieben',
+          locmap_mode_pan_title: 'Ziehen verschiebt die Karte (Umschalt + Ziehen zoomt weiterhin in einen Bereich)',
+          locmap_show_all: 'Alle zeigen',
+          locmap_toasts_on: 'Live-Meldungen an',
+          locmap_toasts_off: 'Live-Meldungen stumm',
+          locmap_toasts_title: 'Die Meldung zu jeder Live-Messung zeigen oder stummschalten',
         },
       },
     },

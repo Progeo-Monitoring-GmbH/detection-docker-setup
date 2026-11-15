@@ -1,13 +1,49 @@
-/* The location map page (LocationsMapView.jsx): the map card and the
-   scrollable location list. The map's own size is a Leaflet prop. */
+/* The location map page (LocationsMapView.jsx, LocationsMapControls.jsx):
+   the map card with its toolbar and the scrollable location list. */
 
 .card.locmap-map-card {
   min-height: 72vh;
 }
 
+.card-header.locmap-map-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.locmap-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
 .card-body.locmap-map-body {
   padding: 0;
   position: relative;
+}
+
+.locmap-map {
+  width: 100%;
+  height: calc(100vh - 220px);
+  min-height: 420px;
+}
+
+/* "Zoom to area": a crosshair over the map, the frame being dragged. */
+.leaflet-container.locmap-area-zoom {
+  cursor: crosshair;
+}
+
+.locmap-zoom-frame {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 800;
+  border: 2px dashed var(--progeo-orange);
+  background: rgba(255, 255, 255, 0.18);
+  pointer-events: none;
 }
 
 .locmap-loading {

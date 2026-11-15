@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getWsBaseUrl } from '../backendUrl';
 import {
   Badge,
@@ -10,6 +10,7 @@ import {
   Row,
   Spinner,
 } from 'react-bootstrap';
+import { ArrowsFullscreen, BellFill, BellSlashFill } from 'react-bootstrap-icons';
 import {
   CircleMarker,
   MapContainer,
@@ -18,6 +19,7 @@ import {
   useMap,
 } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
+import { useTranslation } from 'react-i18next';
 
 import { useSnackbar } from 'notistack';
 
@@ -25,13 +27,21 @@ import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
 import { matchesLocationSearch } from '../components/location/locationSearch';
 import { showInfoBar, showRequestError } from '../components/ui/Snackbar.jsx';
+import PillButton from '../components/ui/kit/PillButton';
+import SegmentedControl from '../components/ui/kit/SegmentedControl';
+import { useWheelHint, WheelZoomHint } from '../components/ui/wheelZoom';
 import { useConsent } from '../components/privacy/ConsentProvider';
 import MapConsentNotice from '../components/privacy/MapConsentNotice';
 import { repeatedTestId } from '../testIds';
+import { AreaZoom, CtrlWheelZoom } from './LocationsMapControls';
 import './LocationsMapView.css';
 
 const DEFAULT_CENTER = [51.1657, 10.4515];
 const FLASH_DURATION_MS = 30000;
+/** Flash strength in steps: a marker re-renders a few times while fading, not every tick. */
+const FLASH_STEPS = 20;
+// Per browser: whether the live measurement messages are muted.
+const TOASTS_MUTED_KEY = 'locmap.toasts-muted';
 
 // Tile source: point VITE_MAP_TILE_URL at a local tile server (or another
 // provider) for offline deployments - with the default Esri source the map
@@ -40,64 +50,80 @@ const TILE_URL =
   import.meta.env.VITE_MAP_TILE_URL ||
   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 
+const readToastsMuted = () => {
+  try {
+    return window.localStorage.getItem(TOASTS_MUTED_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
+
+const storeToastsMuted = (muted) => {
+  try {
+    window.localStorage.setItem(TOASTS_MUTED_KEY, muted ? '1' : '0');
+  } catch {
+    // Storage unavailable (private mode): muted for this visit only.
+  }
+};
+
 const hasCoordinates = (location) =>
   typeof location.latitude === 'number' &&
   Number.isFinite(location.latitude) &&
   typeof location.longitude === 'number' &&
   Number.isFinite(location.longitude);
 
-const MapViewportController = ({ markers, selectedLocation }) => {
+/**
+ * Fits the map to the markers - until the user moves or zooms by hand
+ * (`interactedRef`, also set by the zoom controls), so live updates never
+ * yank the view away. `fitRequest` changes: fit again ("Show all").
+ */
+const MapViewportController = ({ markers, selectedLocation, interactedRef, fitRequest }) => {
   const map = useMap();
-  // Signature of the markers' spatial content only (id + coordinates). Websocket
-  // updates that merely refresh metadata (e.g. last_measurement_at) create a new
-  // `markers` array but keep the same signature, so the map is NOT re-fitted and
-  // the user's zoom/position stays put.
+  // Signature of the markers' spatial content only (id + coordinates):
+  // websocket updates that merely refresh last_measurement_at keep it.
   const fittedSignatureRef = useRef(null);
-  // Once the user has panned or zoomed by hand, stop auto-fitting entirely so
-  // even genuinely new markers don't yank the view away.
-  const userInteractedRef = useRef(false);
+  const fitRequestRef = useRef(fitRequest);
 
   useEffect(() => {
-    const markUserInteracted = () => {
-      userInteractedRef.current = true;
+    const markInteracted = () => {
+      interactedRef.current = true;
     };
-    const container = map.getContainer();
-    map.on('dragstart', markUserInteracted);
-    container.addEventListener('wheel', markUserInteracted, { passive: true });
+    map.on('dragstart', markInteracted);
     return () => {
-      map.off('dragstart', markUserInteracted);
-      container.removeEventListener('wheel', markUserInteracted);
+      map.off('dragstart', markInteracted);
     };
-  }, [map]);
+  }, [map, interactedRef]);
 
   useEffect(() => {
+    const requested = fitRequest !== fitRequestRef.current;
+    fitRequestRef.current = fitRequest;
+    if (interactedRef.current && !requested) {
+      return;
+    }
     const signature = markers
       .map((location) => `${location.id}:${location.latitude},${location.longitude}`)
       .sort()
       .join('|');
-
-    if (userInteractedRef.current || signature === fittedSignatureRef.current) {
+    if (signature === fittedSignatureRef.current && !requested) {
       return;
     }
     fittedSignatureRef.current = signature;
+    interactedRef.current = false;
 
     if (!markers.length) {
       map.setView(DEFAULT_CENTER, 6);
       return;
     }
-
-    const bounds = markers.map((location) => [
-      location.latitude,
-      location.longitude,
-    ]);
-    map.fitBounds(bounds, { padding: [32, 32], maxZoom: 16 });
-  }, [map, markers]);
+    map.fitBounds(
+      markers.map((location) => [location.latitude, location.longitude]),
+      { padding: [32, 32], maxZoom: 16 },
+    );
+  }, [map, markers, interactedRef, fitRequest]);
 
   useEffect(() => {
     if (!selectedLocation || !hasCoordinates(selectedLocation)) {
       return;
     }
-
     map.flyTo(
       [selectedLocation.latitude, selectedLocation.longitude],
       Math.max(map.getZoom(), 15),
@@ -211,26 +237,108 @@ const blendHexColor = (fromHex, toHex, t) => {
   const clampT = Math.min(1, Math.max(0, t));
   const from = fromHex.replace('#', '');
   const to = toHex.replace('#', '');
-  const fr = parseInt(from.slice(0, 2), 16);
-  const fg = parseInt(from.slice(2, 4), 16);
-  const fb = parseInt(from.slice(4, 6), 16);
-  const tr = parseInt(to.slice(0, 2), 16);
-  const tg = parseInt(to.slice(2, 4), 16);
-  const tb = parseInt(to.slice(4, 6), 16);
-
-  const rr = Math.round(fr + (tr - fr) * clampT)
-    .toString(16)
-    .padStart(2, '0');
-  const rg = Math.round(fg + (tg - fg) * clampT)
-    .toString(16)
-    .padStart(2, '0');
-  const rb = Math.round(fb + (tb - fb) * clampT)
-    .toString(16)
-    .padStart(2, '0');
-  return `#${rr}${rg}${rb}`;
+  const channel = (offset) => {
+    const a = parseInt(from.slice(offset, offset + 2), 16);
+    const b = parseInt(to.slice(offset, offset + 2), 16);
+    return Math.round(a + (b - a) * clampT)
+      .toString(16)
+      .padStart(2, '0');
+  };
+  return `#${channel(0)}${channel(2)}${channel(4)}`;
 };
 
+/**
+ * One location on the map. Memoized: a hover, a selection or a live update
+ * re-renders the markers it concerns, not all of them. The tooltip only
+ * exists while the marker is hovered or selected - one per marker made the
+ * map slow with many locations.
+ */
+const LocationMarker = memo(({ location, isHovered, isSelected, flash, onHover, onLeave, onSelect }) => {
+  const ageInfo = ageInfoFromDate(location.last_measurement_at);
+  const flashRatio = flash * 0.85;
+  const eventHandlers = useMemo(
+    () => ({
+      mouseover: () => onHover(location.id),
+      mouseout: () => onLeave(location.id),
+      click: () => onSelect(location.id),
+    }),
+    [location.id, onHover, onLeave, onSelect],
+  );
+  const baseRadius = isSelected ? 6 : isHovered ? 5 : 4;
+  return (
+    <CircleMarker
+      center={[location.latitude, location.longitude]}
+      radius={baseRadius + flash * 2.5}
+      pathOptions={{
+        color: isSelected ? '#1d3557' : blendHexColor(ageInfo.markerStroke, '#ffffff', flashRatio),
+        fillColor: blendHexColor(ageInfo.markerFill, '#ffffff', flashRatio),
+        fillOpacity: Math.min(1, (isSelected ? 0.95 : 0.85) + flash * 0.12),
+        weight: (isSelected ? 2 : 1) + flash,
+      }}
+      eventHandlers={eventHandlers}
+    >
+      {(isHovered || isSelected) && (
+        <Tooltip direction="top" offset={[0, -8]} opacity={1} permanent>
+          <div className="locmap-tooltip" {...repeatedTestId('locations-map-tooltip', location.id)}>
+            <div>
+              <strong>{buildLocationLabel(location)}</strong>
+            </div>
+            {buildLocationMeta(location) && <div>{buildLocationMeta(location)}</div>}
+            {location.manager && <div>Manager: {location.manager}</div>}
+            {location.telefon && <div>Phone: {location.telefon}</div>}
+            {location.mail && <div>Mail: {location.mail}</div>}
+            <div>Devices: {location.device_count || 0}</div>
+            <div>Last measurement: {ageInfo.label}</div>
+          </div>
+        </Tooltip>
+      )}
+    </CircleMarker>
+  );
+});
+LocationMarker.displayName = 'LocationMarker';
+
+/** One location of the list - memoized like LocationMarker. */
+const LocationListItem = memo(({ location, isFocused, onHover, onLeave, onSelect }) => {
+  const ageInfo = ageInfoFromDate(location.last_measurement_at);
+  const mapped = hasCoordinates(location);
+  return (
+    <ListGroup.Item
+      action
+      active={isFocused}
+      onMouseEnter={() => onHover(location.id)}
+      onMouseLeave={() => onLeave(location.id)}
+      onClick={() => onSelect(location.id)}
+      className="locmap-list-item"
+      {...repeatedTestId('locations-map-item', location.id)}
+    >
+      <div className="d-flex justify-content-between align-items-start gap-2">
+        <div>
+          <div className="fw-semibold">{buildLocationLabel(location)}</div>
+          <div className="small opacity-75">{buildLocationMeta(location) || 'No address data'}</div>
+          <div className="small opacity-75">
+            {mapped
+              ? `${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}`
+              : 'No coordinates'}
+          </div>
+          <div className="small opacity-75">Last measurement: {ageInfo.label}</div>
+        </div>
+        <Badge bg={mapped ? ageInfo.badge : 'secondary'}>
+          {mapped ? ageInfo.label : location.device_count || 0}
+        </Badge>
+      </div>
+    </ListGroup.Item>
+  );
+});
+LocationListItem.displayName = 'LocationListItem';
+
+/**
+ * Staff (superuser) map of every location: coloured by the age of its last
+ * measurement, live updates over the websocket (marker flash + a message,
+ * which can be muted). Data: GET /v1/location/map/ - only what the map
+ * shows, cached for a minute by the backend.
+ */
 const LocationsMapView = () => {
+  const { t } = useTranslation();
   const auth = useAuth();
   const { allows } = useConsent();
   const { enqueueSnackbar } = useSnackbar();
@@ -242,20 +350,29 @@ const LocationsMapView = () => {
   const [stateFilter, setStateFilter] = useState('all');
   const [flashMarkers, setFlashMarkers] = useState({});
   const [flashTick, setFlashTick] = useState(Date.now());
-  // The websocket handler is set up once - it looks the rows up through this.
+  const [toastsMuted, setToastsMuted] = useState(readToastsMuted);
+  const [mode, setMode] = useState('zoom');
+  const [fitRequest, setFitRequest] = useState(0);
+  const [wheelHint, showWheelHint] = useWheelHint();
+  const interactedRef = useRef(false);
+  // The websocket handler is set up once - it reads these through refs.
   const rowsRef = useRef(rows);
+  const toastsMutedRef = useRef(toastsMuted);
   useEffect(() => {
     rowsRef.current = rows;
   }, [rows]);
+  useEffect(() => {
+    toastsMutedRef.current = toastsMuted;
+    storeToastsMuted(toastsMuted);
+  }, [toastsMuted]);
 
   useEffect(() => {
     setLoading(true);
     void axiosConfig.perform_get(
       auth,
-      '/v1/location/',
+      '/v1/location/map/',
       (response) => {
-        const items = response?.data || [];
-        setRows(items);
+        setRows(response?.data || []);
         setLoading(false);
       },
       (error) => {
@@ -266,8 +383,7 @@ const LocationsMapView = () => {
   }, [auth, enqueueSnackbar]);
 
   useEffect(() => {
-    const wsUrl = `${getWsBaseUrl()}/ws/commands/list`;
-    const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(`${getWsBaseUrl()}/ws/commands/list`);
 
     ws.onmessage = (event) => {
       try {
@@ -278,34 +394,26 @@ const LocationsMapView = () => {
 
         // The event carries the ids only - the details are in the loaded rows.
         const locationId = message?.location_id;
-        const projectId = message?.project_id;
         const location = rowsRef.current.find((row) => row.id === locationId);
         if (!location) {
-          showInfoBar(
-            enqueueSnackbar,
-            `Legacy measurement parsed for project ${projectId}`,
-          );
+          if (!toastsMutedRef.current) {
+            showInfoBar(enqueueSnackbar, `Legacy measurement parsed for project ${message?.project_id}`);
+          }
           return;
         }
 
         const nowIso = new Date().toISOString();
         setRows((prev) =>
-          prev.map((row) =>
-            row.id === locationId
-              ? { ...row, last_measurement_at: nowIso }
-              : row,
-          ),
+          prev.map((row) => (row.id === locationId ? { ...row, last_measurement_at: nowIso } : row)),
         );
+        setFlashMarkers((prev) => ({ ...prev, [locationId]: Date.now() + FLASH_DURATION_MS }));
 
-        setFlashMarkers((prev) => ({
-          ...prev,
-          [locationId]: Date.now() + FLASH_DURATION_MS,
-        }));
-
-        showInfoBar(
-          enqueueSnackbar,
-          `Live update: ${buildLocationLabel(location)} received new legacy measurement`,
-        );
+        if (!toastsMutedRef.current) {
+          showInfoBar(
+            enqueueSnackbar,
+            `Live update: ${buildLocationLabel(location)} received new legacy measurement`,
+          );
+        }
       } catch {
         // Ignore malformed websocket payloads.
       }
@@ -316,70 +424,44 @@ const LocationsMapView = () => {
     };
   }, [enqueueSnackbar]);
 
+  const hasActiveFlash = Object.keys(flashMarkers).length > 0;
   useEffect(() => {
-    const hasActiveFlash = Object.values(flashMarkers).some(
-      (expiresAt) => expiresAt > Date.now(),
-    );
-
     if (!hasActiveFlash) {
-      return;
+      return undefined;
     }
-
     const timer = setInterval(() => {
       const now = Date.now();
       setFlashTick(now);
       setFlashMarkers((prev) => {
-        const next = {};
-        Object.entries(prev).forEach(([id, expiresAt]) => {
-          if (expiresAt > now) {
-            next[id] = expiresAt;
-          }
-        });
-        return next;
+        const entries = Object.entries(prev).filter(([, expiresAt]) => expiresAt > now);
+        return entries.length === Object.keys(prev).length ? prev : Object.fromEntries(entries);
       });
     }, 500);
-
     return () => clearInterval(timer);
-  }, [flashMarkers]);
+  }, [hasActiveFlash]);
 
-  const filteredRows = useMemo(() => {
-    return rows.filter((location) => {
-      const ageInfo = ageInfoFromDate(location.last_measurement_at);
-      if (stateFilter !== 'all' && ageInfo.state !== stateFilter) {
-        return false;
-      }
-
-      return matchesLocationSearch(location, searchText);
-    });
-  }, [rows, searchText, stateFilter]);
-
-  const mappableRows = useMemo(
-    () => filteredRows.filter(hasCoordinates),
-    [filteredRows],
+  const filteredRows = useMemo(
+    () =>
+      rows.filter(
+        (location) =>
+          (stateFilter === 'all' || ageInfoFromDate(location.last_measurement_at).state === stateFilter) &&
+          matchesLocationSearch(location, searchText),
+      ),
+    [rows, searchText, stateFilter],
   );
 
-  const stateStats = useMemo(() => {
-    const counts = {
-      fresh_1h: 0,
-      fresh_24h: 0,
-      late_72h: 0,
-      stale: 0,
-      no_data: 0,
-    };
+  const mappableRows = useMemo(() => filteredRows.filter(hasCoordinates), [filteredRows]);
 
+  const stateStats = useMemo(() => {
+    const counts = { fresh_1h: 0, fresh_24h: 0, late_72h: 0, stale: 0, no_data: 0 };
     rows.forEach((location) => {
-      const info = ageInfoFromDate(location.last_measurement_at);
-      counts[info.state] += 1;
+      counts[ageInfoFromDate(location.last_measurement_at).state] += 1;
     });
     return counts;
   }, [rows]);
 
   useEffect(() => {
-    if (!selectedId) {
-      return;
-    }
-    const existsInFiltered = filteredRows.some((row) => row.id === selectedId);
-    if (!existsInFiltered) {
+    if (selectedId && !filteredRows.some((row) => row.id === selectedId)) {
       setSelectedId(null);
     }
   }, [filteredRows, selectedId]);
@@ -389,17 +471,56 @@ const LocationsMapView = () => {
     [selectedId, filteredRows],
   );
 
+  // Stable handlers - the memoized markers and list items keep them.
+  const hover = useCallback((id) => setHoveredId(id), []);
+  const leave = useCallback((id) => setHoveredId((prev) => (prev === id ? null : prev)), []);
+  const select = useCallback((id) => setSelectedId(id), []);
+  const markInteracted = useCallback(() => {
+    interactedRef.current = true;
+  }, []);
+
+  const flashOf = (id) => {
+    const remaining = (flashMarkers[id] || 0) - flashTick;
+    return remaining > 0 ? Math.ceil((remaining / FLASH_DURATION_MS) * FLASH_STEPS) / FLASH_STEPS : 0;
+  };
+
   return (
     <Container fluid className="py-4" data-testid="page-locations-map">
       <Row className="g-3">
         <Col xl={9} lg={8}>
           <Card className="locmap-map-card" data-testid="locations-map-card">
-            <Card.Header className="d-flex justify-content-between align-items-center">
+            <Card.Header className="locmap-map-header">
               <span>Location Map</span>
               <span className="text-muted small" data-testid="locations-map-counts">
-                {mappableRows.length} mapped / {filteredRows.length} filtered /{' '}
-                {rows.length} total
+                {mappableRows.length} mapped / {filteredRows.length} filtered / {rows.length} total
               </span>
+              <div className="locmap-toolbar">
+                <SegmentedControl
+                  options={[
+                    { value: 'zoom', label: t('locmap_mode_zoom'), title: t('locmap_mode_zoom_title') },
+                    { value: 'pan', label: t('locmap_mode_pan'), title: t('locmap_mode_pan_title') },
+                  ]}
+                  value={mode}
+                  onChange={setMode}
+                  testId="locations-map-mode"
+                />
+                <PillButton
+                  variant="ghost"
+                  icon={<ArrowsFullscreen size={13} />}
+                  label={t('locmap_show_all')}
+                  onClick={() => setFitRequest((value) => value + 1)}
+                  testId="locations-map-show-all"
+                />
+                <PillButton
+                  variant="ghost"
+                  active={toastsMuted}
+                  icon={toastsMuted ? <BellSlashFill size={13} /> : <BellFill size={13} />}
+                  label={toastsMuted ? t('locmap_toasts_off') : t('locmap_toasts_on')}
+                  title={t('locmap_toasts_title')}
+                  onClick={() => setToastsMuted((muted) => !muted)}
+                  testId="locations-map-mute-toasts"
+                />
+              </div>
             </Card.Header>
             <Card.Body className="locmap-map-body" data-testid="locations-map-map">
               {loading ? (
@@ -413,8 +534,10 @@ const LocationsMapView = () => {
                 <MapContainer
                   center={DEFAULT_CENTER}
                   zoom={6}
-                  style={{ height: '100vh', width: '100%' }}
-                  scrollWheelZoom
+                  className="locmap-map"
+                  // Canvas instead of one SVG element per marker - hundreds of markers stay fast.
+                  preferCanvas
+                  scrollWheelZoom={false}
                 >
                   {allows('externalMaps') && (
                     <TileLayer
@@ -425,83 +548,26 @@ const LocationsMapView = () => {
                   <MapViewportController
                     markers={mappableRows}
                     selectedLocation={selectedLocation}
+                    interactedRef={interactedRef}
+                    fitRequest={fitRequest}
                   />
-                  {mappableRows.map((location) => {
-                    const isHovered = hoveredId === location.id;
-                    const isSelected = selectedId === location.id;
-                    const ageInfo = ageInfoFromDate(
-                      location.last_measurement_at,
-                    );
-                    const flashUntil = flashMarkers[location.id] || 0;
-                    const flashRemaining = Math.max(0, flashUntil - flashTick);
-                    const flashStrength = Math.min(
-                      1,
-                      flashRemaining / FLASH_DURATION_MS,
-                    );
-                    const flashRatio = flashStrength * 0.85;
-                    const flashFill = blendHexColor(
-                      ageInfo.markerFill,
-                      '#ffffff',
-                      flashRatio,
-                    );
-                    const flashStroke = blendHexColor(
-                      ageInfo.markerStroke,
-                      '#ffffff',
-                      flashRatio,
-                    );
-                    const baseRadius = isSelected ? 6 : isHovered ? 5 : 4;
-                    return (
-                      <CircleMarker
-                        key={location.id}
-                        center={[location.latitude, location.longitude]}
-                        radius={baseRadius + flashStrength * 2.5}
-                        pathOptions={{
-                          color: isSelected ? '#1d3557' : flashStroke,
-                          fillColor: flashFill,
-                          fillOpacity: Math.min(
-                            1,
-                            (isSelected ? 0.95 : 0.85) + flashStrength * 0.12,
-                          ),
-                          weight: (isSelected ? 2 : 1) + flashStrength,
-                        }}
-                        eventHandlers={{
-                          mouseover: () => setHoveredId(location.id),
-                          mouseout: () =>
-                            setHoveredId((prev) =>
-                              prev === location.id ? null : prev,
-                            ),
-                          click: () => setSelectedId(location.id),
-                        }}
-                      >
-                        <Tooltip
-                          direction="top"
-                          offset={[0, -8]}
-                          opacity={1}
-                          permanent={isSelected === true}
-                        >
-                          <div className="locmap-tooltip" {...repeatedTestId('locations-map-tooltip', location.id)}>
-                            <div>
-                              <strong>{buildLocationLabel(location)}</strong>
-                            </div>
-                            {buildLocationMeta(location) && (
-                              <div>{buildLocationMeta(location)}</div>
-                            )}
-                            {location.manager && (
-                              <div>Manager: {location.manager}</div>
-                            )}
-                            {location.telefon && (
-                              <div>Phone: {location.telefon}</div>
-                            )}
-                            {location.mail && <div>Mail: {location.mail}</div>}
-                            <div>Devices: {location.device_count || 0}</div>
-                            <div>Last measurement: {ageInfo.label}</div>
-                          </div>
-                        </Tooltip>
-                      </CircleMarker>
-                    );
-                  })}
+                  <AreaZoom enabled={mode === 'zoom'} onZoomed={markInteracted} />
+                  <CtrlWheelZoom onZoomed={markInteracted} onPlain={showWheelHint} />
+                  {mappableRows.map((location) => (
+                    <LocationMarker
+                      key={location.id}
+                      location={location}
+                      isHovered={hoveredId === location.id}
+                      isSelected={selectedId === location.id}
+                      flash={flashOf(location.id)}
+                      onHover={hover}
+                      onLeave={leave}
+                      onSelect={select}
+                    />
+                  ))}
                 </MapContainer>
               )}
+              {!loading && <WheelZoomHint visible={wheelHint} testId="locations-map-wheel-hint" />}
               {!loading && <MapConsentNotice placement="top" />}
             </Card.Body>
           </Card>
@@ -563,60 +629,17 @@ const LocationsMapView = () => {
             <Card.Header data-testid="locations-map-list-count">
               Existing Locations ({filteredRows.length})
             </Card.Header>
-            <ListGroup
-              variant="flush"
-              className="locmap-list"
-              data-testid="locations-map-list"
-            >
-              {filteredRows.map((location) => {
-                const isFocused =
-                  hoveredId === location.id || selectedId === location.id;
-                const ageInfo = ageInfoFromDate(location.last_measurement_at);
-                return (
-                  <ListGroup.Item
-                    key={location.id}
-                    action
-                    active={isFocused}
-                    onMouseEnter={() => setHoveredId(location.id)}
-                    onMouseLeave={() =>
-                      setHoveredId((prev) =>
-                        prev === location.id ? null : prev,
-                      )
-                    }
-                    onClick={() => setSelectedId(location.id)}
-                    className="locmap-list-item"
-                    {...repeatedTestId('locations-map-item', location.id)}
-                  >
-                    <div className="d-flex justify-content-between align-items-start gap-2">
-                      <div>
-                        <div className="fw-semibold">
-                          {buildLocationLabel(location)}
-                        </div>
-                        <div className="small opacity-75">
-                          {buildLocationMeta(location) || 'No address data'}
-                        </div>
-                        <div className="small opacity-75">
-                          {hasCoordinates(location)
-                            ? `${location.latitude?.toFixed(5)}, ${location.longitude?.toFixed(5)}`
-                            : 'No coordinates'}
-                        </div>
-                        <div className="small opacity-75">
-                          Last measurement: {ageInfo.label}
-                        </div>
-                      </div>
-                      <Badge
-                        bg={
-                          hasCoordinates(location) ? ageInfo.badge : 'secondary'
-                        }
-                      >
-                        {hasCoordinates(location)
-                          ? ageInfo.label
-                          : location.device_count || 0}
-                      </Badge>
-                    </div>
-                  </ListGroup.Item>
-                );
-              })}
+            <ListGroup variant="flush" className="locmap-list" data-testid="locations-map-list">
+              {filteredRows.map((location) => (
+                <LocationListItem
+                  key={location.id}
+                  location={location}
+                  isFocused={hoveredId === location.id || selectedId === location.id}
+                  onHover={hover}
+                  onLeave={leave}
+                  onSelect={select}
+                />
+              ))}
               {!filteredRows.length && !loading && (
                 <ListGroup.Item className="text-muted" data-testid="locations-map-empty">
                   No locations found for this filter.
