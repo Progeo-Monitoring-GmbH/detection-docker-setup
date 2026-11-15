@@ -27,10 +27,12 @@ export type ZeitreiheSensor = {
   /** First to last value in the period, in percent of the first (as on
    * Analyse, "Größte Änderungen"); null when the first was 0. */
   trend: number | null;
-  /** At least one value above the threshold. */
+  /** At least one value above the threshold (never for a disabled sensor). */
   triggered: boolean;
   active: boolean;
   silent: boolean;
+  /** Switched off: drawn gray, raises no alarm (disabledSensors.ts). */
+  disabled?: boolean;
 };
 
 /**
@@ -42,6 +44,7 @@ export const zeitreiheSensorsOf = (
   zeitreihe: Pick<SensorHeatmapResponse, 'timestamps' | 'data'> | null,
   labelOf: (sensorId: number) => string,
   thresholdOf: (sensorId: number) => number | null,
+  disabledOf: (sensorId: number) => boolean = () => false,
 ): ZeitreiheSensor[] => {
   if (!zeitreihe) {
     return [];
@@ -64,6 +67,7 @@ export const zeitreiheSensorsOf = (
       const min = Math.min(...values);
       const max = Math.max(...values);
       const range = max - min;
+      const disabled = disabledOf(sensorId);
       return [
         {
           id: `sensor-${sensorId}`,
@@ -84,9 +88,10 @@ export const zeitreiheSensorsOf = (
           peakRatio: max / scale,
           rangeRatio: range / scale,
           trend: percentChange(values[0], values[values.length - 1]),
-          triggered: hasThreshold && max > threshold,
+          triggered: !disabled && hasThreshold && max > threshold,
           active: range / scale >= ACTIVE_RANGE,
           silent: range / scale < SILENT_RANGE,
+          ...(disabled ? { disabled: true } : {}),
         },
       ];
     });

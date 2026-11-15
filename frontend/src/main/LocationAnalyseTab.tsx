@@ -734,6 +734,16 @@ const LocationAnalyseTab = () => {
       ),
     [heatmap, shownDevice],
   );
+  // The shown device's disabled sensors (pair index, like sensorThresholds): drawn gray.
+  const disabledSensors = useMemo(
+    () =>
+      new Set(
+        (heatmap?.sensor_points ?? []).flatMap((point) =>
+          point.disabled && (point.device == null || point.device === shownDevice) ? [(point.pair ?? point.pos) - 1] : [],
+        ),
+      ),
+    [heatmap, shownDevice],
+  );
 
   // ------------------------------------------------------------- Störungsprofile
   const loadNoiseProfiles = useCallback(() => {
@@ -1572,6 +1582,7 @@ const LocationAnalyseTab = () => {
                   isLoadingSensorHistory={sensorHistoryLoading}
                   threshold={alarmThreshold}
                   sensorThresholds={sensorThresholds}
+                  disabledSensors={disabledSensors}
                   maskLines={maskLines}
                   selectedRange={offerNoiseProfiles ? profileRange : null}
                   onRangeSelect={offerNoiseProfiles ? setProfileRange : null}

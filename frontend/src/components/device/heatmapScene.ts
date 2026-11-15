@@ -5,6 +5,7 @@
  * sensor markers and the colour scale.
  */
 import { plotTheme } from '../../styles/plotTheme';
+import { DISABLED_SENSOR_FILL } from './disabledSensors';
 import { heatPixels, toScreen, type View } from './heatmapCanvas';
 import type { ChartFrame, ChartLayout } from './heatmapChart';
 
@@ -140,14 +141,29 @@ const drawReference = (ctx: CanvasRenderingContext2D, [rx, ry]: [number, number]
   ctx.restore();
 };
 
+/** A marker's state: above its threshold (red, larger), disabled (gray) or neither (blue). */
+type MarkerState = 'over' | 'disabled' | null;
+
+/** The state of sensor `index` in the frame - disabled before over (a disabled sensor never alarms). */
+const markerState = (scene: Scene, index: number): MarkerState => {
+  const sensor = scene.layout.sensors[index];
+  if (sensor.disabled) {
+    return 'disabled';
+  }
+  return sensor.threshold != null && scene.frame.values[index] > sensor.threshold ? 'over' : null;
+};
+
+const MARKER_COLORS = { over: OVER_THRESHOLD_COLOR, disabled: DISABLED_SENSOR_FILL } as const;
+
 const drawMarker = (
   ctx: CanvasRenderingContext2D,
   sx: number,
   sy: number,
   emphasis: 'highlighted' | 'hovered' | null,
-  over: boolean,
+  state: MarkerState,
   selected = false,
 ) => {
+  const over = state === 'over';
   if (selected) {
     ctx.beginPath();
     ctx.arc(sx, sy, MARKER_RADIUS + 4, 0, Math.PI * 2);
@@ -172,7 +188,7 @@ const drawMarker = (
   }
   ctx.beginPath();
   ctx.arc(sx, sy, over ? MARKER_RADIUS + 1 : MARKER_RADIUS, 0, Math.PI * 2);
-  ctx.fillStyle = over ? OVER_THRESHOLD_COLOR : plotTheme.brandBlue;
+  ctx.fillStyle = state ? MARKER_COLORS[state] : plotTheme.brandBlue;
   ctx.fill();
   ctx.strokeStyle = '#ffffff';
   ctx.lineWidth = 1;
@@ -207,8 +223,7 @@ const drawLines = (ctx: CanvasRenderingContext2D, scene: Scene, view: View, over
     }
     const [x0, y0] = toScreen(view, sensor.wx, sensor.wy);
     const [x1, y1] = toScreen(view, sensor.wxEnd, sensor.wyEnd);
-    const value = scene.frame.values[index];
-    const over = sensor.threshold != null && value > sensor.threshold;
+    const state = markerState(scene, index);
     const emphasized = overlay.hovered === index || overlay.highlighted === index;
     const selected = overlay.selected?.has(index) ?? false;
     const stroke = (color: string, width: number) => {
@@ -222,7 +237,7 @@ const drawLines = (ctx: CanvasRenderingContext2D, scene: Scene, view: View, over
     // A selected line: a pink border instead of the white one.
     stroke(selected ? SELECTED_COLOR : '#ffffff', selected ? 9 : emphasized ? 8 : 5);
     stroke(
-      overlay.highlighted === index ? plotTheme.brandOrange : over ? OVER_THRESHOLD_COLOR : plotTheme.brandBlue,
+      overlay.highlighted === index ? plotTheme.brandOrange : state ? MARKER_COLORS[state] : plotTheme.brandBlue,
       emphasized ? 5 : 3,
     );
   });
@@ -292,9 +307,7 @@ const drawSensors = (
       drawLineLabel(ctx, scene.sensorText(index), sx, sy, highlighted);
       return;
     }
-    const value = scene.frame.values[index];
-    const over = sensor.threshold != null && value > sensor.threshold;
-    drawMarker(ctx, sx, sy, highlighted ? 'highlighted' : hovered ? 'hovered' : null, over, selected);
+    drawMarker(ctx, sx, sy, highlighted ? 'highlighted' : hovered ? 'hovered' : null, markerState(scene, index), selected);
     drawMarkerLabel(ctx, scene.sensorText(index), sx, sy, highlighted);
   });
   ctx.restore();

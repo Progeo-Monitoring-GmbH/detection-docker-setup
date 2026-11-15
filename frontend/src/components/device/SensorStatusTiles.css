@@ -1,0 +1,75 @@
+/* The Sensoransicht (SensorStatusTiles.tsx): one tile per sensor, its state
+   as a large coloured block. Gray for disabled sensors: disabledSensors.ts. */
+
+.sensor-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.sensor-tiles-empty {
+  color: #8b8383;
+  font-size: 13px;
+  padding: 10px 2px;
+}
+
+.sensor-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px;
+  border-radius: 11px;
+  background: var(--progeo-surface);
+}
+
+.sensor-tile-name {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--progeo-blue);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The status block: large, the state in colour. */
+.sensor-tile-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 72px;
+  border-radius: 8px;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #fff;
+}
+
+.sensor-tile--ok .sensor-tile-status {
+  background: #1e9e4a;
+}
+
+.sensor-tile--alarm .sensor-tile-status {
+  background: #dc2626;
+}
+
+.sensor-tile--disabled .sensor-tile-status {
+  background: #c9c8c2;
+  color: #5f5e59;
+}
+
+.sensor-tile--nodata .sensor-tile-status {
+  background: var(--progeo-track);
+  color: #6e6868;
+}
+
+.sensor-tile-reading {
+  font-size: 12px;
+  color: #6e6868;
+  font-variant-numeric: tabular-nums;
+}
+
+.sensor-tile--alarm .sensor-tile-reading {
+  color: #dc2626;
+  font-weight: 600;
+}

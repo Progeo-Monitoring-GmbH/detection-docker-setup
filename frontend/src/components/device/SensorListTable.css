@@ -24,3 +24,9 @@
 .sensor-list--over {
   color: #dc2626;
 }
+
+/* A disabled sensor (components/device/disabledSensors.ts): gray, never red. */
+.sensor-list--disabled {
+  color: #8e8d87;
+  text-decoration: line-through;
+}

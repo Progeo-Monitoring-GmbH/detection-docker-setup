@@ -12,6 +12,8 @@ export type SensorListRow = {
   /** Highest value of the loaded measurements. */
   max: number | null;
   threshold: number | null;
+  /** Switched off: gray, never red (it raises no alarm). */
+  disabled?: boolean;
 };
 
 type SensorListTableProps = {
@@ -22,8 +24,15 @@ type SensorListTableProps = {
 
 const formatMv = (value: number | null) => (value != null ? `${Math.round(value)} mV` : '–');
 
-const isOver = (value: number | null, threshold: number | null) =>
-  value != null && threshold != null && value > threshold;
+/** Above the threshold - never for a disabled sensor. */
+const isOver = (row: SensorListRow, value: number | null) =>
+  !row.disabled && value != null && row.threshold != null && value > row.threshold;
+
+/** The class of a reading: gray when disabled, red when over. */
+const readingClass = (row: SensorListRow, value: number | null, base = '') =>
+  [base, row.disabled ? 'sensor-list--disabled' : isOver(row, value) ? 'sensor-list--over' : '']
+    .filter(Boolean)
+    .join(' ') || undefined;
 
 /** Sorts numbers ascending, missing values below every number (DataTable reverses it for descending). */
 const byNumber = (pick: (row: SensorListRow) => number | null) => (a: SensorListRow, b: SensorListRow) => {
@@ -81,7 +90,11 @@ const SensorListTable = ({ rows, testId = 'sensor-list-table' }: SensorListTable
         // Sensor numbers in their natural order ("2" before "10").
         sortFunction: (a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }),
         cell: (row) => (
-          <span className="sensor-list-strong" {...repeatedTestId(`${testId}-row`, row.key)}>
+          <span
+            className={readingClass(row, null, 'sensor-list-strong')}
+            title={row.disabled ? t('status_sensor_table_disabled_hint') : undefined}
+            {...repeatedTestId(`${testId}-row`, row.key)}
+          >
             {row.label}
           </span>
         ),
@@ -95,7 +108,7 @@ const SensorListTable = ({ rows, testId = 'sensor-list-table' }: SensorListTable
         sortFunction: byNumber((row) => row.value),
         cell: (row) => (
           <span
-            className={isOver(row.value, row.threshold) ? 'sensor-list-strong sensor-list--over' : 'sensor-list-strong'}
+            className={readingClass(row, row.value, 'sensor-list-strong')}
             {...repeatedTestId(`${testId}-value`, row.key)}
           >
             {formatMv(row.value)}
@@ -110,7 +123,7 @@ const SensorListTable = ({ rows, testId = 'sensor-list-table' }: SensorListTable
         sortable: true,
         sortFunction: byNumber((row) => row.max),
         cell: (row) => (
-          <span className={isOver(row.max, row.threshold) ? 'sensor-list--over' : undefined}>
+          <span className={readingClass(row, row.max)}>
             {formatMv(row.max)}
           </span>
         ),
@@ -122,7 +135,11 @@ const SensorListTable = ({ rows, testId = 'sensor-list-table' }: SensorListTable
         selector: (row) => row.threshold ?? -Infinity,
         sortable: true,
         sortFunction: byNumber((row) => row.threshold),
-        cell: (row) => <span className="sensor-list-muted">{formatMv(row.threshold)}</span>,
+        cell: (row) => (
+          <span className="sensor-list-muted">
+            {row.disabled ? t('status_sensor_table_disabled') : formatMv(row.threshold)}
+          </span>
+        ),
         right: true,
       },
     ],

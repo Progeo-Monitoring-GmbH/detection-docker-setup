@@ -29,6 +29,12 @@
   text-overflow: ellipsis;
 }
 
+/* A disabled sensor (components/device/disabledSensors.ts). */
+.zeitreihe-sensor-label.zeitreihe-sensor-label--disabled {
+  color: #8e8d87;
+  text-decoration: line-through;
+}
+
 .zeitreihe-number {
   font-variant-numeric: tabular-nums;
 }

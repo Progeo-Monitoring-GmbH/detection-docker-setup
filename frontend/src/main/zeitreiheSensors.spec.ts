@@ -12,6 +12,20 @@ const zeitreiheOf = (data: Record<string, Array<number | null>>) => ({
 });
 
 describe('zeitreiheSensorsOf', () => {
+  it('never counts a disabled sensor as triggered - it raises no alarm', () => {
+    const sensors = zeitreiheSensorsOf(
+      zeitreiheOf({ '1': [50, 150], '2': [50, 150] }),
+      (id) => `S${id}`,
+      () => 100,
+      (id) => id === 1,
+    );
+    expect(sensors.map((s) => [s.id, s.triggered, s.disabled ?? false])).toEqual([
+      ['sensor-1', false, true],
+      ['sensor-2', true, false],
+    ]);
+    expect(defaultZeitreiheIds(sensors)[0]).toBe('sensor-2');
+  });
+
   it('classifies relative to each threshold - a sensor can be in several tables', () => {
     const sensors = zeitreiheSensorsOf(
       zeitreiheOf({

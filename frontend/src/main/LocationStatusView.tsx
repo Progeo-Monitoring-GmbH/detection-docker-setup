@@ -435,6 +435,7 @@ const LocationStatusView = ({
         zeitreihe,
         sensorLabel,
         (sensorId) => measurePointOf(sensorId)?.threshold ?? thresholdValue,
+        (sensorId) => Boolean(measurePointOf(sensorId)?.disabled),
       ),
     [measurePointOf, sensorLabel, thresholdValue, zeitreihe],
   );
@@ -550,6 +551,7 @@ const LocationStatusView = ({
                   denied={clustersDenied}
                   sensorLabel={sensorLabel}
                   metersOf={metersOf}
+                  disabledOf={(sensorId) => Boolean(measurePointOf(sensorId)?.disabled)}
                   acknowledging={acknowledging}
                   onAcknowledge={acknowledge}
                   onViewAll={demo ? undefined : () => navigate(`/location/${locationId}/alarms`)}

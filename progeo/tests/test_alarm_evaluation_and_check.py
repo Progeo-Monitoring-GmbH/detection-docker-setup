@@ -388,6 +388,124 @@ def test_sensor_overrides_follow_device_sensor_offset_and_gallop(window, site):
     assert alarm.sensor_max_values == [{"sensor_id": 11, "max_value": 80.0}]
 
 
+# -- thresholds changed between evaluations -----------------------------------
+
+def test_a_raised_location_threshold_applies_to_the_next_evaluation(window, site):
+    location, device = site
+    f.make_measurement(device, pairs=[150], fetched_at=window[1](10))
+    ProgeoLocation.objects.using(f.DB).filter(pk=location.pk).update(alarm_threshold=200)
+
+    _evaluate(window)
+
+    assert _alarms(device) == []
+
+
+def test_a_lowered_location_threshold_triggers_where_the_old_one_did_not(window, site):
+    location, device = site
+    f.make_measurement(device, pairs=[80], fetched_at=window[1](10))
+    _evaluate(window)
+    assert _alarms(device) == []
+
+    ProgeoLocation.objects.using(f.DB).filter(pk=location.pk).update(alarm_threshold=50)
+    _evaluate(window)
+
+    [alarm] = _alarms(device)
+    assert (alarm.sensor_id, alarm.threshold, alarm.max_value) == (1, 50, 80)
+
+
+def test_a_sensor_threshold_raised_after_the_alarm_normalizes_it_at_the_next_check(site):
+    location, device = site
+    alarm = _open_alarm(device)
+    f.make_measurement(device, pairs=[150], fetched_at=timezone.now() - f.minutes(1))
+    check_existing_alarms_db(f.DB)
+    assert _reload(alarm).normalized_at is None  # still over 100
+
+    f.make_measure_point(location, 1, threshold=500)
+    check_existing_alarms_db(f.DB)
+
+    assert _reload(alarm).normalized_at is not None
+
+
+def test_a_raised_location_threshold_normalizes_the_open_alarm_at_the_next_check(site):
+    location, device = site
+    alarm = _open_alarm(device)
+    f.make_measurement(device, pairs=[150], fetched_at=timezone.now() - f.minutes(1))
+    ProgeoLocation.objects.using(f.DB).filter(pk=location.pk).update(alarm_threshold=200)
+
+    check_existing_alarms_db(f.DB)
+
+    assert _reload(alarm).normalized_at is not None
+
+
+# -- disabled sensors never alarm ---------------------------------------------------
+
+def test_a_disabled_sensor_triggers_no_alarm(window, site):
+    location, device = site
+    f.make_measure_point(location, 1, disabled=True)
+    f.make_measurement(device, pairs=[900], fetched_at=window[1](10))
+
+    _evaluate(window)
+
+    assert _alarms(device) == []
+
+
+def test_a_disabled_sensor_is_left_out_of_an_alarm_of_the_others(window, site):
+    location, device = site
+    f.make_measure_point(location, 1, disabled=True)
+    f.make_measurement(device, pairs=[900, 150], fetched_at=window[1](10))
+
+    _evaluate(window)
+
+    [alarm] = _alarms(device)
+    assert (alarm.sensor_id, alarm.max_value) == (2, 150)
+    assert alarm.sensor_max_values == [{"sensor_id": 2, "max_value": 150.0}]
+
+
+def test_disabled_wins_over_a_threshold_of_the_same_sensor(window, site):
+    location, device = site
+    f.make_measure_point(location, 1, threshold=10)
+    f.make_measure_point(location, 1, disabled=True)  # a second point of the sensor
+    f.make_measurement(device, pairs=[900], fetched_at=window[1](10))
+
+    _evaluate(window)
+
+    assert _alarms(device) == []
+
+
+def test_a_disabled_sensor_follows_the_device_sensor_offset(window, site):
+    location, device = site
+    device.first_sensor_order = 10
+    device.save(using=f.DB, update_fields=["first_sensor_order"])
+    f.make_measure_point(location, 10, disabled=True)
+    f.make_measurement(device, pairs=[900, 150], fetched_at=window[1](10))
+
+    _evaluate(window)
+
+    [alarm] = _alarms(device)
+    assert alarm.sensor_id == 11
+
+
+def test_disabling_the_alarming_sensor_normalizes_its_alarm_at_the_next_check(site):
+    location, device = site
+    alarm = _open_alarm(device)
+    f.make_measurement(device, pairs=[150], fetched_at=timezone.now() - f.minutes(1))
+    f.make_measure_point(location, 1, disabled=True)
+
+    check_existing_alarms_db(f.DB)
+
+    assert _reload(alarm).normalized_at is not None
+
+
+def test_instant_evaluation_skips_disabled_sensors(settings, window, site):
+    settings.PROGEO_CONFIG_EVALUATE_INSTANTLY = True
+    location, device = site
+    f.make_measure_point(location, 2, disabled=True)
+
+    assert evaluate_measurement_instantly(f.make_measurement(device, pairs=[50, 900], fetched_at=window[1](10)),
+                                          f.DB) is False
+    assert _alarms(device) == []
+
+
 # -- check_existing_alarms_db ------------------------------------------------
 
 def _open_alarm(device, value=150, fetched_ago=datetime.timedelta(minutes=30), **fields):

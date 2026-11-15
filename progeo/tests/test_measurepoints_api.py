@@ -38,7 +38,7 @@ def test_get_lists_reporting_sensors_and_existing_points(api_client, setup):
 
     assert [sensor["sensor_order"] for sensor in sensors] == [1, 2, 3, 5]
     by_order = {sensor["sensor_order"]: sensor for sensor in sensors}
-    assert by_order[1] == {"sensor_order": 1, "id": None, "name": None, "threshold": None}
+    assert by_order[1] == {"sensor_order": 1, "id": None, "name": None, "threshold": None, "disabled": False}
     assert by_order[2]["name"] == "Garage"
     assert by_order[2]["threshold"] == 150
     assert by_order[5]["id"] is not None
@@ -128,6 +128,120 @@ def test_post_requires_edit_permission(api_client, setup):
 
     assert response.status_code == 403
     assert _points(location) == {}
+
+
+# -- disabled sensors ------------------------------------------------------------
+
+def test_disabling_keeps_the_threshold_and_get_reports_it(api_client, setup):
+    location, _user = setup
+    f.make_measure_point(location, 2, threshold=150)
+
+    response = api_client.post(_url(location), {"points": [{"sensor_order": 2, "disabled": True}]}, format="json")
+
+    assert response.status_code == 200, response.content
+    assert (_points(location)[2].disabled, _points(location)[2].threshold) == (True, 150)
+    by_order = {s["sensor_order"]: s for s in api_client.get(_url(location)).json()["sensors"]}
+    assert by_order[2]["disabled"] is True and by_order[1]["disabled"] is False
+
+
+def test_a_threshold_change_keeps_the_sensor_disabled(api_client, setup):
+    location, _user = setup
+    f.make_measure_point(location, 1, disabled=True)
+
+    api_client.post(_url(location), {"points": [{"sensor_order": 1, "threshold": 80}]}, format="json")
+
+    assert (_points(location)[1].disabled, _points(location)[1].threshold) == (True, 80)
+
+
+def test_disabling_a_sensor_without_point_creates_an_unplaced_one(api_client, setup):
+    location, _user = setup
+
+    api_client.post(_url(location), {"points": [{"sensor_order": 3, "disabled": True}]}, format="json")
+
+    point = _points(location)[3]
+    assert (point.disabled, point.threshold, point.x, point.y) == (True, None, 0, 0)
+
+
+def test_enabling_reaches_every_point_of_the_sensor(api_client, setup):
+    location, _user = setup
+    first = f.make_measure_point(location, 2, threshold=60, disabled=True)
+    second = f.make_measure_point(location, 2, disabled=True)
+
+    api_client.post(_url(location), {"points": [{"sensor_order": 2, "disabled": False, "threshold": 70}]},
+                    format="json")
+
+    first.refresh_from_db(using=f.DB)
+    second.refresh_from_db(using=f.DB)
+    assert (first.disabled, second.disabled) == (False, False)
+    assert (first.threshold, second.threshold) == (70, None)  # the threshold lives on the first point
+
+
+@pytest.mark.parametrize(
+    "entry, reason",
+    [
+        ({"sensor_order": 1, "disabled": "yes"}, "disabled must be true or false"),
+        ({"sensor_order": 1}, "threshold or disabled required"),
+    ],
+)
+def test_invalid_disabled_entries_save_nothing(api_client, setup, entry, reason):
+    location, _user = setup
+
+    response = api_client.post(_url(location), {"points": [entry]}, format="json")
+
+    assert response.json() == {"reason": reason, "success": False}
+    assert _points(location) == {}
+
+
+def test_the_heatmap_tells_every_view_which_sensors_are_disabled(api_client, setup):
+    """sensor_points of /heatmap/ feed the plan, the heat, the sensor table
+    and the Zeitreihe - they draw disabled sensors gray."""
+    location, _user = setup
+    f.make_measure_point(location, 1, x=0.2, y=0.2, nx=0.2, ny=0.2)
+    f.make_measure_point(location, 2, x=0.6, y=0.2, nx=0.6, ny=0.2)
+    api_client.post(_url(location), {"points": [{"sensor_order": 2, "disabled": True}]}, format="json")
+    viewer = f.make_user(perms=("module_locations_enabled", "module_measurements_enabled"))
+    f.Account.objects.using(f.DB).get(pk=location.account_id).users.add(viewer)
+    api_client.force_authenticate(user=viewer)
+
+    body = api_client.get(f"/v1/location/{location.id}/heatmap/?limit=10").json()
+
+    assert {point["pos"]: point["disabled"] for point in body["sensor_points"]} == {1: False, 2: True}
+
+
+# -- what the settings change for the alarms --------------------------------------
+
+def _evaluate_device(location, values):
+    """A measurement with `values` (sensor n = pair n) evaluated - the alarms it raised."""
+    import datetime
+
+    from progeo.helper.alarm_evaluation import evaluate_measurements_db
+    from progeo.v1.models import ProgeoAlarm, ProgeoDevice
+
+    device = ProgeoDevice.objects.using(f.DB).filter(location=location).first()
+    when = datetime.datetime(2038, 3, 1, 12, tzinfo=datetime.UTC)
+    f.make_measurement(device, pairs=values, fetched_at=when)
+    evaluate_measurements_db(f.DB, when - datetime.timedelta(minutes=1), when + datetime.timedelta(minutes=1))
+    return list(ProgeoAlarm.objects.using(f.DB).filter(measurement__device=device).order_by("id"))
+
+
+def test_a_threshold_saved_here_decides_the_next_evaluation(api_client, setup):
+    location, _user = setup  # the object threshold: 100
+    api_client.post(_url(location), {"points": [{"sensor_order": 1, "threshold": 500},
+                                                {"sensor_order": 2, "threshold": 40}]}, format="json")
+
+    [alarm] = _evaluate_device(location, [300, 50])
+
+    assert (alarm.sensor_id, alarm.threshold) == (2, 40)
+
+
+def test_a_sensor_disabled_here_raises_no_alarm(api_client, setup):
+    location, _user = setup
+    api_client.post(_url(location), {"points": [{"sensor_order": 1, "disabled": True}]}, format="json")
+
+    assert _evaluate_device(location, [900]) == []
+
+    api_client.post(_url(location), {"points": [{"sensor_order": 1, "disabled": False}]}, format="json")
+    assert len(_evaluate_device(location, [900])) == 1
 
 
 # -- ?days=N: the highest alarm value per sensor (Schwellwerte plot) ---------------

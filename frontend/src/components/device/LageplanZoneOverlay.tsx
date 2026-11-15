@@ -16,6 +16,7 @@ import {
 import { fullBox, isFull, panBox, type ViewBox, viewBoxAttribute, zoomBox } from './planViewBox';
 import SensorTooltip from './SensorTooltip';
 import ZoomControls from './ZoomControls';
+import { DISABLED_SENSOR_FILL } from './disabledSensors';
 import { childTestId } from '../../testIds';
 import './LageplanZoneOverlay.css';
 
@@ -32,6 +33,8 @@ export type LageplanZonePoint = {
   groupLabel?: string | null;
   value: number | null;
   threshold: number | null;
+  /** Switched off: gray, never over its threshold (disabledSensors.ts). */
+  disabled?: boolean;
   /** Position in meters; null while the plan isn't calibrated. */
   meters?: [number, number] | null;
   /** smartex® dm: the end of the sensor's band line (normalized like x/y) -
@@ -610,6 +613,7 @@ const LageplanZoneOverlay = ({
           meters={hover.point.meters ?? null}
           value={hover.point.value ?? Number.NaN}
           threshold={hover.point.threshold}
+          disabled={Boolean(hover.point.disabled)}
           cursorX={hover.cursorX}
           cursorY={hover.cursorY}
           containerWidth={hover.width}
@@ -660,12 +664,18 @@ const GroupLabel = ({
 
 /** The zone of a hovered line or segment: its sensors and the highest current value. */
 const ZoneTooltip = ({ hover, group, testId }: { hover: Hover; group: ZoneGroup; testId?: string }) => {
-  const highest = highestPoint(group.points);
-  const threshold = highest?.threshold ?? group.points[0]?.threshold ?? null;
+  // Judged by its enabled sensors; a zone of disabled ones only is gray.
+  const enabled = group.points.filter((point) => !point.disabled);
+  const highest = highestPoint(enabled);
+  const threshold = highest?.threshold ?? enabled[0]?.threshold ?? null;
   return (
     <CursorTooltip
       width={210}
-      dotColor={alarmHeatColor({ threshold, max_value: highest?.value ?? 0, max_values: [] })}
+      dotColor={
+        enabled.length
+          ? alarmHeatColor({ threshold, max_value: highest?.value ?? 0, max_values: [] })
+          : DISABLED_SENSOR_FILL
+      }
       title={group.label ?? `Sensor #${group.points[0].pos}`}
       cursorX={hover.cursorX}
       cursorY={hover.cursorY}
@@ -714,14 +724,16 @@ const groupPoints = (points: LageplanZonePoint[], mode: LageplanOverlayMode): Zo
   return groups;
 };
 
+/** A group's colour comes from its highest enabled point - gray only when all are disabled. */
 const makeGroup = (key: string, label: string | null, points: LageplanZonePoint[]): ZoneGroup => {
-  const highest = highestPoint(points);
+  const enabled = points.filter((point) => !point.disabled);
+  const highest = highestPoint(enabled);
   return {
     key,
     label,
     points,
     isOver: points.some(isOverThreshold),
-    color: highest ? pointColor(highest) : pointColor(points[0]),
+    color: highest ? pointColor(highest) : pointColor(enabled[0] ?? points[0]),
   };
 };
 
@@ -731,12 +743,15 @@ const highestPoint = (points: LageplanZonePoint[]) =>
     null,
   );
 
-/** The heatmap's colour of a sensor's current value. */
+/** The heatmap's colour of a sensor's current value - gray when disabled. */
 const pointColor = (point: LageplanZonePoint) =>
-  alarmHeatColor({ threshold: point.threshold, max_value: point.value ?? 0, max_values: [] });
+  point.disabled
+    ? DISABLED_SENSOR_FILL
+    : alarmHeatColor({ threshold: point.threshold, max_value: point.value ?? 0, max_values: [] });
 
+/** Above its threshold - a disabled sensor never is (it raises no alarm). */
 const isOverThreshold = (point: LageplanZonePoint) =>
-  point.value != null && point.threshold != null && point.value > point.threshold;
+  !point.disabled && point.value != null && point.threshold != null && point.value > point.threshold;
 
 /** Half the median nearest-neighbour distance (view units), within sane bounds. */
 export const segmentPadding = (positions: Array<[number, number]>, unit: number) => {

@@ -52,6 +52,8 @@ export type PlotSensor = {
   /** Field mode: the device and its name in the climate charts. */
   device: number | null;
   label: string | null;
+  /** Switched off (disabledSensors.ts): drawn gray, adds no heat. */
+  disabled?: boolean;
 };
 
 /** A sensor at its position on the plan (world = image pixels). */
@@ -285,6 +287,7 @@ export const plotSensors = (
         name: point.name ?? null,
         device: point.device ?? null,
         label: point.label ?? null,
+        ...(point.disabled ? { disabled: true } : {}),
       };
     })
     .filter((entry) => Number.isFinite(entry.x) && Number.isFinite(entry.y));
@@ -430,6 +433,7 @@ export const chartLayout = ({
       name: sensor.name,
       device: sensor.device,
       label: sensor.label,
+      ...(sensor.disabled ? { disabled: true } : {}),
     };
   });
 
@@ -514,12 +518,12 @@ export const heatSources = (
     }));
   });
 
-/** The highest reading (magnitude) of the sensors over all frames - the
- * normalized heat's full scale; null without any. */
+/** The highest reading (magnitude) of the enabled sensors over all frames -
+ * the normalized heat's full scale; null without any. */
 export const seriesPeak = (sensors: PlotSensor[]) => {
   let peak = 0;
   sensors.forEach((sensor) =>
-    sensor.series.forEach((raw) => {
+    (sensor.disabled ? [] : sensor.series).forEach((raw) => {
       const value = Math.abs(Number(raw ?? Number.NaN));
       if (Number.isFinite(value) && value > peak) {
         peak = value;
@@ -555,11 +559,16 @@ export const chartFrame = (
   }: { sigma: 'auto' | number; heatReference: number | null; fieldRange: FieldRange | null },
 ): ChartFrame => {
   const usedSigma = sigma === 'auto' ? layout.autoSigma : clamp(sigma, 0.005, 0.3);
+  // A disabled sensor adds no heat (field mode: no reading) - its value
+  // still shows on its gray marker and in the tooltip (`values`).
+  const heat = weights.map((point, index) =>
+    layout.sensors[index]?.disabled ? { ...point, weight: fieldRange ? Number.NaN : 0 } : point,
+  );
   const { grid, coverage } = fieldRange
-    ? buildFieldGrid(weights, layout.resolution, usedSigma, fieldRange, layout.pad, layout.domain)
+    ? buildFieldGrid(heat, layout.resolution, usedSigma, fieldRange, layout.pad, layout.domain)
     : {
         grid: buildWeightedGrid(
-          heatSources(weights, layout.lines, usedSigma),
+          heatSources(heat, layout.lines, usedSigma),
           layout.resolution,
           usedSigma,
           reference,

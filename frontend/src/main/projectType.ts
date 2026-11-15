@@ -34,13 +34,15 @@ export const isLorawanProject = (value: number | null | undefined): boolean =>
  * How the Status tab draws a product's sensors on the Lageplan: the
  * Gaussian heat field (SensorHeatmap2D) or one of LageplanZoneOverlay's
  * modes - lines (one run of sensors per grid row), segments (one filled
- * area per named zone) or points.
+ * area per named zone) or points - or, without a plan, one status tile per
+ * sensor (SensorStatusTiles, the "Sensoransicht" - also every product's
+ * view while its location has no Lageplan).
  */
-export type PlanVisualization = 'heatmap' | 'lines' | 'segments' | 'points';
+export type PlanVisualization = 'heatmap' | 'lines' | 'segments' | 'points' | 'tiles';
 
 const PLAN_VISUALIZATIONS: Record<number, PlanVisualization> = {
   1: 'lines', // smartex® dm
-  3: 'segments', // smartex® is
+  3: 'tiles', // smartex® is
   7: 'heatmap', // smartex® mx-PEEL
   8: 'segments', // smartex® mx-va
   9: 'segments', // smartex® mx-al

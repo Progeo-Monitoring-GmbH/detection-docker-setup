@@ -130,6 +130,11 @@
   background: repeating-linear-gradient(45deg, #2a78d6 0 3px, #c44d26 3px 6px);
 }
 
+/* Disabled sensors - the gray of every view (components/device/disabledSensors.ts). */
+.threshold-mixer-swatch.threshold-mixer-swatch--disabled {
+  background: #c9c8c2;
+}
+
 .threshold-mixer-swatch-object {
   width: 16px;
   height: 3px;
@@ -239,6 +244,11 @@
 
 .threshold-mixer-tooltip-dim {
   opacity: 0.7;
+}
+
+.threshold-mixer-tooltip-disabled {
+  font-weight: 600;
+  opacity: 0.85;
 }
 
 /* -- selection bar and pending changes ------------------------------------------- */

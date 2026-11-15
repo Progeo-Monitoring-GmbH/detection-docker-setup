@@ -403,6 +403,8 @@ def _sensor_points_data(points, location, db_name, names=None):
             "grid_y": point.grid_y,
             "last_value": point.last_value,
             "threshold": point.threshold,
+            # Switched off: triggers no alarm, every view draws it gray.
+            "disabled": point.disabled,
         })
     return sensor_points
 
@@ -1200,12 +1202,15 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
                 ?days=N (1..MAX_HISTORY_DAYS) adds "max" per sensor: its
                 highest alarm value |WP - EP| (get_pairs) of the last N days,
                 null without a measurement - the Schwellwerte plot.
-        POST -> set thresholds (module_locations_edit): body
-                {"points": [{"sensor_order": n, "threshold": <number|null>}]}
-                (or a single {"sensor_order"|"id", "threshold"}). Updates the
-                sensor's ProgeoMeasurePoint, creating an unplaced one (position
-                0/0) if none exists. null clears the override so the point
-                falls back to the object's alarm_threshold.
+        POST -> set thresholds / switch sensors off (module_locations_edit):
+                body {"points": [{"sensor_order": n, "threshold": <number|null>,
+                "disabled": <bool>}]} (or a single {"sensor_order"|"id", ...}) -
+                only the given fields change. Updates the sensor's
+                ProgeoMeasurePoint, creating an unplaced one (position 0/0) if
+                none exists. A null threshold clears the override so the point
+                falls back to the object's alarm_threshold; a disabled sensor
+                never triggers an alarm (helper/alarm_thresholds.py) - set on
+                every point of the sensor. GET reports "disabled" per sensor.
         """
         location, account = self._find_location(request, pk=pk)
         if not location:
@@ -1218,8 +1223,11 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
                 days = _window_days(request)
             except ValueError:
                 return RequestFailed({"reason": "days must be an integer"})
-            points = list(points_qs.order_by("sensor_order"))
-            by_order = {point.sensor_order: point for point in points}
+            points = list(points_qs.order_by("sensor_order", "id"))
+            by_order = {}
+            for point in points:
+                by_order.setdefault(point.sensor_order, point)  # the oldest point carries the threshold
+            disabled_orders = {point.sensor_order for point in points if point.disabled}
             maxima = self._sensor_maxima(request, location, account, db_name, days) if days else {}
             sensor_orders = sorted(
                 set(by_order) | set(maxima) | set(range(1, self._sensor_count(location, db_name) + 1))
@@ -1232,6 +1240,7 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
                         "id": by_order[order].pk if order in by_order else None,
                         "name": by_order[order].name if order in by_order else None,
                         "threshold": by_order[order].threshold if order in by_order else None,
+                        "disabled": order in disabled_orders,
                         **({"max": maxima.get(order)} if days else {}),
                     }
                     for order in sensor_orders
@@ -1251,14 +1260,25 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         # Validate everything first so a bad entry doesn't leave a half-saved batch.
         changes = []
         for entry in entries:
-            threshold = entry.get("threshold")
-            if threshold in (None, ""):
-                threshold = None
-            else:
-                try:
-                    threshold = float(threshold)
-                except (TypeError, ValueError):
-                    return RequestFailed({"reason": "threshold must be a number"})
+            if not isinstance(entry, dict):
+                return RequestFailed({"reason": "points must be objects"})
+            # Only the given fields change: {"disabled": true} keeps the threshold.
+            fields = {}
+            if "threshold" in entry:
+                threshold = entry.get("threshold")
+                if threshold in (None, ""):
+                    fields["threshold"] = None
+                else:
+                    try:
+                        fields["threshold"] = float(threshold)
+                    except (TypeError, ValueError):
+                        return RequestFailed({"reason": "threshold must be a number"})
+            if "disabled" in entry:
+                if not isinstance(entry["disabled"], bool):
+                    return RequestFailed({"reason": "disabled must be true or false"})
+                fields["disabled"] = entry["disabled"]
+            if not fields:
+                return RequestFailed({"reason": "threshold or disabled required"})
             if entry.get("sensor_order") not in (None, ""):
                 try:
                     sensor_order = int(entry.get("sensor_order"))
@@ -1266,7 +1286,7 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
                     return RequestFailed({"reason": "sensor_order must be an integer"})
                 if sensor_order < 1:
                     return RequestFailed({"reason": "sensor_order starts at 1"})
-                changes.append((None, sensor_order, threshold))
+                changes.append((None, sensor_order, fields))
             else:
                 try:
                     mp_id = int(entry.get("id"))
@@ -1274,31 +1294,36 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
                     return RequestFailed({"reason": "sensor_order or id required"})
                 if not points_qs.filter(pk=mp_id).exists():
                     return RequestFailed({"reason": "Measurement point not found"})
-                changes.append((mp_id, None, threshold))
+                changes.append((mp_id, None, fields))
 
         saved = []
         with transaction.atomic(using=db_name):
-            for mp_id, sensor_order, threshold in changes:
+            for mp_id, sensor_order, fields in changes:
                 if mp_id is not None:
-                    point = points_qs.get(pk=mp_id)
-                    point.threshold = threshold
-                    point.save(using=db_name, update_fields=["threshold"])
+                    points = [points_qs.get(pk=mp_id)]
                 else:
-                    point = points_qs.filter(sensor_order=sensor_order).order_by("id").first()
-                    if point:
-                        point.threshold = threshold
-                        point.save(using=db_name, update_fields=["threshold"])
-                    else:
+                    # Every point of the sensor: alarms skip it if any is disabled
+                    # (alarm_thresholds.load_sensor_thresholds) - enabling must reach all.
+                    points = list(points_qs.filter(sensor_order=sensor_order).order_by("id"))
+                    if not points:
                         # No measure point yet: create an unplaced one just to
-                        # carry the threshold (position fields are required).
+                        # carry the setting (position fields are required).
                         point = ProgeoMeasurePoint(
-                            location=location,
-                            sensor_order=sensor_order,
-                            threshold=threshold,
-                            x=0, y=0, nx=0, ny=0, grid_x=0, grid_y=0,
+                            location=location, sensor_order=sensor_order,
+                            x=0, y=0, nx=0, ny=0, grid_x=0, grid_y=0, **fields,
                         )
                         point.save(using=db_name)
-                saved.append(point)
+                        saved.append(point)
+                        continue
+                for index, point in enumerate(points):
+                    # The threshold on the first point (the one alarms read), disabled on all.
+                    update = {key: value for key, value in fields.items() if key == "disabled" or index == 0}
+                    if not update:
+                        continue
+                    for key, value in update.items():
+                        setattr(point, key, value)
+                    point.save(using=db_name, update_fields=list(update))
+                saved.append(points[0])
 
         serialized = ProgeoMeasurePointSerializer(saved, many=True).data
         return RequestSuccess({

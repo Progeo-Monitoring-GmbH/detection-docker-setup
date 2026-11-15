@@ -63,7 +63,8 @@ describe('isLorawanProject', () => {
 describe('planVisualization', () => {
   it('draws each smartex® product its own way on the plan', () => {
     expect(planVisualization(7)).toBe('heatmap'); // mx-PEEL
-    [3, 8, 9].forEach((value) => expect(planVisualization(value)).toBe('segments')); // is, mx-va, mx-al
+    expect(planVisualization(3)).toBe('tiles'); // is: the Sensoransicht
+    [8, 9].forEach((value) => expect(planVisualization(value)).toBe('segments')); // mx-va, mx-al
     expect(planVisualization(1)).toBe('lines'); // dm
     [10, 11].forEach((value) => expect(planVisualization(value)).toBe('points')); // io, vt
   });

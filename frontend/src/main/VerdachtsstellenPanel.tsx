@@ -19,6 +19,8 @@ type VerdachtsstellenPanelProps = {
   sensorLabel: (sensorId: number) => string;
   /** Position of a sensor in meters (calibrated Lageplan only). */
   metersOf: (sensorId: number) => [number, number] | null;
+  /** The sensor is switched off (disabledSensors.ts): its row is gray. */
+  disabledOf?: (sensorId: number) => boolean;
   acknowledging: Set<string>;
   onAcknowledge: (cluster: VerdachtsstelleCluster) => void;
   /** Link to every alarm of the location; none in the demo view. */
@@ -34,6 +36,7 @@ const VerdachtsstellenPanel = ({
   denied,
   sensorLabel,
   metersOf,
+  disabledOf,
   acknowledging,
   onAcknowledge,
   onViewAll,
@@ -78,6 +81,7 @@ const VerdachtsstellenPanel = ({
               cluster={cluster}
               label={sensorLabel(cluster.sensor_id)}
               meters={metersOf(cluster.sensor_id)}
+              disabled={disabledOf?.(cluster.sensor_id) ?? false}
               expanded={expanded.has(cluster.id)}
               onToggle={() => setExpanded((prev) => toggledSet(prev, cluster.id))}
               onAcknowledge={() => onAcknowledge(cluster)}
@@ -97,6 +101,8 @@ type VerdachtsstelleRowProps = {
   label: string;
   /** Position of the leak's sensor in meters (calibrated Lageplan only). */
   meters: [number, number] | null;
+  /** The sensor is switched off: the row is gray, with a note. */
+  disabled?: boolean;
   expanded: boolean;
   onToggle: () => void;
   onAcknowledge: () => void;
@@ -110,6 +116,7 @@ const VerdachtsstelleRow = ({
   cluster,
   label,
   meters,
+  disabled = false,
   expanded,
   onToggle,
   onAcknowledge,
@@ -120,7 +127,10 @@ const VerdachtsstelleRow = ({
   const hasPendingAck = cluster.pending_ack_alarm_ids.length > 0;
 
   return (
-    <div {...repeatedTestId('verdachtsstelle', cluster.id)}>
+    <div
+      className={disabled ? 'verdachtsstellen-row--disabled' : undefined}
+      {...repeatedTestId('verdachtsstelle', cluster.id)}
+    >
       <button
         type="button"
         onClick={onToggle}
@@ -158,6 +168,7 @@ const VerdachtsstelleRow = ({
                   date: formatDate(cluster.resolved_at, 'date'),
                 })}
             {meters && ` · ${formatMeters(meters)}`}
+            {disabled && ` · ${t('status_sensor_table_disabled_hint')}`}
           </span>
         </span>
         <span className="verdachtsstellen-row-peak" {...repeatedTestId('verdachtsstelle-peak', cluster.id)}>

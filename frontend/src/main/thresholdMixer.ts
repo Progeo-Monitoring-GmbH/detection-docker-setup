@@ -2,6 +2,9 @@
  * The Schwellwerte "mixer" (Einstellungen): the object's alarm threshold plus
  * per-sensor overrides, edited as drafts and saved as the minimal set of
  * changes. A sensor without an override inherits the object's threshold.
+ * A disabled sensor never triggers an alarm (the backend skips it, see
+ * progeo/helper/alarm_thresholds.py) - it keeps its threshold for when it is
+ * enabled again.
  */
 
 /** A sensor of GET /v1/location/<id>/measurepoints/?days=N. */
@@ -13,20 +16,25 @@ export type MixerSensor = {
   threshold: number | null;
   /** Highest alarm value |WP - EP| of the period; null without one. */
   max: number | null;
+  /** Switched off: never triggers an alarm. */
+  disabled?: boolean;
 };
 
 /** Unsaved edits. `object` undefined = unchanged (null = no object threshold);
- * `sensors[order]` null = remove that sensor's override. */
+ * `sensors[order]` null = remove that sensor's override; `disabled[order]`
+ * switches the sensor off (true) or on. */
 export type ThresholdDrafts = {
   object?: number | null;
   sensors: Record<number, number | null>;
+  disabled?: Record<number, boolean>;
 };
 
 export const NO_DRAFTS: ThresholdDrafts = { sensors: {} };
 
 export type ThresholdChange =
   | { key: 'object'; kind: 'object'; from: number | null; to: number | null }
-  | { key: string; kind: 'sensor'; sensorOrder: number; from: number | null; to: number | null };
+  | { key: string; kind: 'sensor'; sensorOrder: number; from: number | null; to: number | null }
+  | { key: string; kind: 'disabled'; sensorOrder: number; from: boolean; to: boolean };
 
 export const objectThresholdOf = (saved: number | null, drafts: ThresholdDrafts) =>
   drafts.object !== undefined ? drafts.object : saved;
@@ -35,12 +43,30 @@ export const objectThresholdOf = (saved: number | null, drafts: ThresholdDrafts)
 export const overrideOf = (sensor: MixerSensor, drafts: ThresholdDrafts) =>
   sensor.sensor_order in drafts.sensors ? drafts.sensors[sensor.sensor_order] : sensor.threshold;
 
+/** Switched off, with the drafts applied. */
+export const isDisabled = (sensor: MixerSensor, drafts: ThresholdDrafts) =>
+  drafts.disabled && sensor.sensor_order in drafts.disabled
+    ? drafts.disabled[sensor.sensor_order]
+    : Boolean(sensor.disabled);
+
+/** The drafts with `orders` switched off (true) or on. */
+export const withDisabled = (drafts: ThresholdDrafts, orders: Iterable<number>, value: boolean) => {
+  const disabled = { ...drafts.disabled };
+  for (const order of orders) {
+    disabled[order] = value;
+  }
+  return { ...drafts, disabled };
+};
+
 /** The threshold the sensor is checked against: its override, else the object's. */
 export const effectiveThresholdOf = (sensor: MixerSensor, savedObject: number | null, drafts: ThresholdDrafts) =>
   overrideOf(sensor, drafts) ?? objectThresholdOf(savedObject, drafts);
 
-/** Its period's maximum lies above its effective threshold. */
+/** Its period's maximum lies above its effective threshold (a disabled sensor never is). */
 export const isOver = (sensor: MixerSensor, savedObject: number | null, drafts: ThresholdDrafts) => {
+  if (isDisabled(sensor, drafts)) {
+    return false;
+  }
   const threshold = effectiveThresholdOf(sensor, savedObject, drafts);
   return sensor.max != null && threshold != null && sensor.max > threshold;
 };
@@ -50,6 +76,7 @@ export const isOver = (sensor: MixerSensor, savedObject: number | null, drafts: 
 export const isProtected = (sensor: MixerSensor, savedObject: number | null, drafts: ThresholdDrafts) => {
   const object = objectThresholdOf(savedObject, drafts);
   return (
+    !isDisabled(sensor, drafts) &&
     overrideOf(sensor, drafts) != null &&
     sensor.max != null &&
     object != null &&
@@ -115,6 +142,18 @@ export const thresholdChanges = (
       });
     }
   });
+  sensors.forEach((sensor) => {
+    const draft = drafts.disabled?.[sensor.sensor_order];
+    if (draft !== undefined && draft !== Boolean(sensor.disabled)) {
+      changes.push({
+        key: `disabled-${sensor.sensor_order}`,
+        kind: 'disabled',
+        sensorOrder: sensor.sensor_order,
+        from: Boolean(sensor.disabled),
+        to: draft,
+      });
+    }
+  });
   return changes;
 };
 
@@ -133,18 +172,37 @@ export const withoutChange = (drafts: ThresholdDrafts, change: ThresholdChange):
     const { object: _object, ...rest } = drafts;
     return rest;
   }
+  if (change.kind === 'disabled') {
+    const { [change.sensorOrder]: _undone, ...disabled } = drafts.disabled ?? {};
+    return { ...drafts, disabled };
+  }
   const { [change.sensorOrder]: _undone, ...sensors } = drafts.sensors;
   return { ...drafts, sensors };
 };
 
-/** The request bodies: PATCH of the object (if it changed), POST of the points. */
+/** One sensor's part of POST measurepoints - only the fields that change. */
+export type PointPayload = { sensor_order: number; threshold?: number | null; disabled?: boolean };
+
+/** The request bodies: PATCH of the object (if it changed), POST of the
+ * points - one entry per sensor with its new threshold and/or state. */
 export const savePayloadOf = (changes: ThresholdChange[]) => {
   const object = changes.find((change) => change.kind === 'object');
+  const points = new Map<number, PointPayload>();
+  changes.forEach((change) => {
+    if (change.kind === 'object') {
+      return;
+    }
+    const point = points.get(change.sensorOrder) ?? { sensor_order: change.sensorOrder };
+    if (change.kind === 'sensor') {
+      point.threshold = change.to;
+    } else {
+      point.disabled = change.to;
+    }
+    points.set(change.sensorOrder, point);
+  });
   return {
     object: object ? { alarm_threshold: object.to } : null,
-    points: changes.flatMap((change) =>
-      change.kind === 'sensor' ? [{ sensor_order: change.sensorOrder, threshold: change.to }] : [],
-    ),
+    points: [...points.values()],
   };
 };
 
@@ -181,6 +239,7 @@ export type LoadedThresholdData = {
     pos: number;
     name?: string | null;
     threshold?: number | null;
+    disabled?: boolean | null;
     device?: number | null;
     pair?: number | null;
   }>;
@@ -242,6 +301,7 @@ export const mixerSensorsFromLoaded = ({ points, heatData, rows, shownDevice }: 
       id: null,
       name: point.name ?? null,
       threshold: point.threshold ?? null,
+      ...(point.disabled ? { disabled: true } : {}),
       max,
     });
   });

@@ -233,6 +233,32 @@ describe('frameWeights / chartFrame', () => {
     expect(Math.max(...frame.grid.map((row) => Math.max(...row)))).toBeCloseTo(1);
   });
 
+  it('leaves a disabled sensor out of the heat and the scale, but keeps its value', () => {
+    const offRes = response(
+      [
+        { pos: 1, x: 0.3, y: 0.5, disabled: true },
+        { pos: 2, x: 0.7, y: 0.5 },
+      ],
+      { '1': [900, 900], '2': [20, 40] },
+    );
+    const offSensors = plotSensors(offRes, false);
+    expect(offSensors.map((sensor) => sensor.disabled ?? false)).toEqual([true, false]);
+    expect(seriesPeak(offSensors)).toBe(40); // not 900
+    const layout = layoutOf(offRes);
+    expect(layout.sensors.map((sensor) => sensor.disabled ?? false)).toEqual([true, false]);
+    const frame = chartFrame(layout, frameWeights(offSensors, 1, false), {
+      sigma: 0.05,
+      heatReference: null,
+      fieldRange: null,
+    });
+    expect(frame.values).toEqual([900, 40]); // the tooltip still reads 900
+    // The hot spot is sensor 2's, not the disabled sensor 1's.
+    const [x1, x2] = layout.sensors.map((sensor) => sensor.wx);
+    const heatNear = (wx: number) =>
+      heatAt(frame.grid, layout.xAxis, layout.yAxis, wx, layout.sensors[0].wy, layout.world) ?? 0;
+    expect(heatNear(x2)).toBeGreaterThan(heatNear(x1));
+  });
+
   it('interpolates a field with coverage', () => {
     const layout = layoutOf(res);
     const frame = chartFrame(layout, frameWeights(sensors, 0, true), {

@@ -11,7 +11,7 @@ import {
   useState,
 } from 'react';
 import { Spinner } from 'react-bootstrap';
-import { ArrowCounterclockwise, ChevronLeft, ChevronRight, XLg } from 'react-bootstrap-icons';
+import { ArrowCounterclockwise, ChevronLeft, ChevronRight, SlashCircle, XLg } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
@@ -22,10 +22,12 @@ import PillButton from '../components/ui/kit/PillButton';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import { useWheelHint, useZoomWheel, WheelZoomHint } from '../components/ui/wheelZoom';
 import { childTestId, repeatedTestId } from '../testIds';
+import { DISABLED_SENSOR_FILL, DISABLED_SENSOR_STROKE } from '../components/device/disabledSensors';
 import './ThresholdMixer.css';
 import {
   effectiveThresholdOf,
   gridValuesOf,
+  isDisabled,
   isOver,
   isProtected,
   isQuiet,
@@ -41,6 +43,7 @@ import {
   type ThresholdChange,
   type ThresholdDrafts,
   thresholdChanges,
+  withDisabled,
   withOverrides,
   withoutChange,
 } from './thresholdMixer';
@@ -125,14 +128,14 @@ const ThresholdMixerPanel = ({
   const [days, setDays] = useState(DEFAULT_PERIOD);
   const [fetched, setFetched] = useState<MixerSensor[]>([]);
   const [loading, setLoading] = useState(loaded == null);
-  // With `loaded`: the thresholds just saved, until the page's data has them.
-  const [savedPatch, setSavedPatch] = useState<Record<number, number | null>>({});
+  // With `loaded`: the thresholds / states just saved, until the page's data has them.
+  const [savedPatch, setSavedPatch] = useState<Record<number, Partial<Pick<MixerSensor, 'threshold' | 'disabled'>>>>({});
   const loadedSensors = loaded?.sensors ?? null;
   const sensors = useMemo(
     () =>
       loadedSensors
         ? loadedSensors.map((sensor) =>
-            sensor.sensor_order in savedPatch ? { ...sensor, threshold: savedPatch[sensor.sensor_order] } : sensor,
+            sensor.sensor_order in savedPatch ? { ...sensor, ...savedPatch[sensor.sensor_order] } : sensor,
           )
         : fetched,
     [loadedSensors, savedPatch, fetched],
@@ -143,9 +146,12 @@ const ThresholdMixerPanel = ({
       return;
     }
     setSavedPatch((patch) => {
-      const kept = Object.entries(patch).filter(
-        ([order, value]) => loadedSensors.find((sensor) => sensor.sensor_order === Number(order))?.threshold !== value,
-      );
+      const kept = Object.entries(patch).filter(([order, values]) => {
+        const sensor = loadedSensors.find((candidate) => candidate.sensor_order === Number(order));
+        return Object.entries(values).some(
+          ([key, value]) => (key === 'disabled' ? Boolean(sensor?.disabled) : sensor?.threshold) !== value,
+        );
+      });
       return kept.length === Object.keys(patch).length ? patch : Object.fromEntries(kept);
     });
   }, [loadedSensors]);
@@ -286,6 +292,7 @@ const ThresholdMixerPanel = ({
     sensors.find((sensor) => sensor.sensor_order === order)?.name || t('einstell_points_sensor', { sensor: order });
   const overCount = sensors.filter((sensor) => isOver(sensor, savedObject, drafts)).length;
   const ownCount = sensors.filter((sensor) => overrideOf(sensor, drafts) != null).length;
+  const disabledCount = sensors.filter((sensor) => isDisabled(sensor, drafts)).length;
 
   // -- pointer: grab a handle / the object line, else select -----------------
 
@@ -482,10 +489,13 @@ const ThresholdMixerPanel = ({
       showSuccessBar(enqueueSnackbar, t('einstell_mixer_saved', { count: changes.length }));
       setDrafts(NO_DRAFTS);
       if (loaded) {
-        setSavedPatch((patch) => ({
-          ...patch,
-          ...Object.fromEntries(payload.points.map((point) => [point.sensor_order, point.threshold])),
-        }));
+        setSavedPatch((patch) => {
+          const next = { ...patch };
+          payload.points.forEach(({ sensor_order: order, ...values }) => {
+            next[order] = { ...next[order], ...values };
+          });
+          return next;
+        });
       } else {
         setLoading(true);
         load(days);
@@ -503,6 +513,9 @@ const ThresholdMixerPanel = ({
   };
 
   const changeText = (change: ThresholdChange) => {
+    if (change.kind === 'disabled') {
+      return change.to ? t('einstell_mixer_change_disabled') : t('einstell_mixer_change_enabled');
+    }
     const shown = (value: number | null) =>
       value == null
         ? change.kind === 'object'
@@ -610,9 +623,15 @@ const ThresholdMixerPanel = ({
             const own = overrideOf(sensor, drafts);
             const effective = effectiveThresholdOf(sensor, savedObject, drafts);
             const isSelected = selected.has(order);
+            const off = isDisabled(sensor, drafts);
             const barWidth = Math.max(1, column * 0.62);
             return (
-              <g key={order} data-sensor={order} {...repeatedTestId(`${testId}-column`, order)}>
+              <g
+                key={order}
+                data-sensor={order}
+                data-disabled={off || undefined}
+                {...repeatedTestId(`${testId}-column`, order)}
+              >
                 {(isSelected || hovered === order) && (
                   <rect
                     x={x}
@@ -631,11 +650,13 @@ const ThresholdMixerPanel = ({
                     height={Math.max(1, PLOT_TOP + PLOT_H - toY(sensor.max))}
                     rx={Math.min(3, barWidth / 3)}
                     fill={
-                      isOver(sensor, savedObject, drafts)
-                        ? BAR_OVER
-                        : isProtected(sensor, savedObject, drafts)
-                          ? `url(#${stripesId})`
-                          : BAR
+                      off
+                        ? DISABLED_SENSOR_FILL
+                        : isOver(sensor, savedObject, drafts)
+                          ? BAR_OVER
+                          : isProtected(sensor, savedObject, drafts)
+                            ? `url(#${stripesId})`
+                            : BAR
                     }
                     stroke={hovered === order ? HOVER_OUTLINE : 'none'}
                     strokeWidth={hovered === order ? 1.5 : 0}
@@ -655,7 +676,14 @@ const ThresholdMixerPanel = ({
                   />
                 )}
                 {index % every === 0 && (
-                  <text x={x + column / 2} y={SVG_H - 8} textAnchor="middle" fontSize={10} fill={MUTED}>
+                  <text
+                    x={x + column / 2}
+                    y={SVG_H - 8}
+                    textAnchor="middle"
+                    fontSize={10}
+                    fill={off ? DISABLED_SENSOR_STROKE : MUTED}
+                    textDecoration={off ? 'line-through' : undefined}
+                  >
                     {order}
                   </text>
                 )}
@@ -684,6 +712,9 @@ const ThresholdMixerPanel = ({
       {hoveredSensor && !drag && (
         <div className="threshold-mixer-tooltip" data-testid={childTestId(testId, 'tooltip')}>
           <div className="threshold-mixer-tooltip-title">{labelOf(hoveredSensor.sensor_order)}</div>
+          {isDisabled(hoveredSensor, drafts) && (
+            <div className="threshold-mixer-tooltip-disabled">{t('einstell_mixer_disabled_hint')}</div>
+          )}
           <div>
             {t('einstell_mixer_max')}: {formatValue(hoveredSensor.max)} mV
           </div>
@@ -769,6 +800,10 @@ const ThresholdMixerPanel = ({
           {legendItem(<span className="threshold-mixer-swatch threshold-mixer-swatch--protected" />, t('einstell_mixer_protected_legend'))}
           {legendItem(<span className="threshold-mixer-swatch-object" />, t('einstell_mixer_object'))}
           {legendItem(<span className="threshold-mixer-swatch-own" />, t('einstell_mixer_own_legend', { count: ownCount }))}
+          {legendItem(
+            <span className="threshold-mixer-swatch threshold-mixer-swatch--disabled" />,
+            t('einstell_mixer_disabled_legend', { count: disabledCount }),
+          )}
           <span className="threshold-mixer-usage">{canEdit ? t('einstell_mixer_usage') : null}</span>
         </div>
 
@@ -855,6 +890,22 @@ const ThresholdMixerPanel = ({
               }
               onClick={() => setDrafts((prev) => withOverrides(prev, selectedOrders, null))}
               testId={childTestId(testId, 'remove-selected')}
+            />
+            <PillButton
+              variant="ghost"
+              icon={<SlashCircle size={13} />}
+              label={t('einstell_mixer_disable_selected')}
+              title={t('einstell_mixer_disabled_hint')}
+              disabled={!sensors.some((sensor) => selected.has(sensor.sensor_order) && !isDisabled(sensor, drafts))}
+              onClick={() => setDrafts((prev) => withDisabled(prev, selectedOrders, true))}
+              testId={childTestId(testId, 'disable-selected')}
+            />
+            <PillButton
+              variant="ghost"
+              label={t('einstell_mixer_enable_selected')}
+              disabled={!sensors.some((sensor) => selected.has(sensor.sensor_order) && isDisabled(sensor, drafts))}
+              onClick={() => setDrafts((prev) => withDisabled(prev, selectedOrders, false))}
+              testId={childTestId(testId, 'enable-selected')}
             />
           </div>
         )}

@@ -4,6 +4,7 @@ import FrameSlider, { type AlarmSpan } from '../components/device/FrameSlider';
 import LageplanZoneOverlay from '../components/device/LageplanZoneOverlay';
 import SensorHeatmap2D from '../components/device/SensorHeatmap2D';
 import SensorListTable from '../components/device/SensorListTable';
+import SensorStatusTiles from '../components/device/SensorStatusTiles';
 import type { HeatProfile, SensorHeatmapResponse } from '../components/device/sensorHeatmapTypes';
 import PanelCard from '../components/ui/kit/PanelCard';
 import PlotHelp from '../components/ui/PlotHelp';
@@ -50,6 +51,8 @@ const PlanHint = ({ children, testId }: { children: ReactNode; testId?: string }
  * "Dachansicht": the shown view (Lageplan) of the location with its sensors -
  * per product (see projectType.ts) a heatmap, or lines, segments or points
  * on the plan - and the sensor table, which follows the shown frame.
+ * "Sensoransicht" instead for smartex® is and while the location has no
+ * Lageplan: a status tile per sensor (SensorStatusTiles).
  */
 const LocationPlanPanel = ({
   heatmap,
@@ -132,6 +135,26 @@ const LocationPlanPanel = ({
     [frameIndex, heatmap, sensorLines, sensorPoints.length, sensorStats, threshold, viewPoints],
   );
 
+  // "Sensoransicht": smartex® is, and every product while the location has
+  // no Lageplan - a status tile per sensor (each once, every view's).
+  const asTiles = !denied && (visualization === 'tiles' || (heatmap != null && !shownPlan));
+  const tileRows = useMemo(() => {
+    if (!asTiles) {
+      return [];
+    }
+    const seen = new Set<number>();
+    const points = sensorPoints.filter((point) => !seen.has(point.pos) && Boolean(seen.add(point.pos)));
+    return sensorRowsOf({
+      heatmap,
+      frameIndex: null, // the newest reading of each sensor
+      stats: sensorStats,
+      hasMeasurePoints: points.length > 0,
+      points,
+      lines: [],
+      threshold,
+    });
+  }, [asTiles, heatmap, sensorPoints, sensorStats, threshold]);
+
   const sensorTable = withSensorTable && (
     <div className="plan-panel-sensor-table" data-testid={childTestId(testId, 'sensor-table')}>
       <SensorListTable rows={sensorRows} />
@@ -141,6 +164,9 @@ const LocationPlanPanel = ({
   const content = () => {
     if (denied) {
       return <PlanHint testId={childTestId(testId, 'denied')}>{t('status_no_measurement_access')}</PlanHint>;
+    }
+    if (asTiles) {
+      return <SensorStatusTiles rows={tileRows} testId={childTestId(testId, 'tiles')} />;
     }
     if (!shownPlan) {
       return <PlanHint testId={childTestId(testId, 'no-plan')}>{t('status_no_lageplan')}</PlanHint>;
@@ -185,7 +211,8 @@ const LocationPlanPanel = ({
           imageUrl={shownPlan.url ?? null}
           points={zonePoints}
           height={480}
-          mode={visualization}
+          // 'tiles' never gets here (asTiles above) - points keeps the type whole.
+          mode={visualization === 'tiles' ? 'points' : visualization}
           alignment={shownPlan}
         />
         {sensorTable}
@@ -196,10 +223,10 @@ const LocationPlanPanel = ({
   return (
     <PanelCard
       testId={testId}
-      title={t('status_dachansicht_title')}
+      title={asTiles ? t('status_sensoransicht_title') : t('status_dachansicht_title')}
       actions={
         <>
-          {planViews.length > 1 && (
+          {!asTiles && planViews.length > 1 && (
             <SegmentedControl
               testId={childTestId(testId, 'plans')}
               options={planViews.map((plan, index) => ({

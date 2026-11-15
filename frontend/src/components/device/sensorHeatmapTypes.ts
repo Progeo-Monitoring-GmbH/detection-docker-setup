@@ -82,6 +82,8 @@ export type SensorHeatmapPoint = {
   grid_y?: number | null;
   last_value?: number | null;
   threshold?: number | null;
+  /** Switched off: triggers no alarm, drawn gray (disabledSensors.ts). */
+  disabled?: boolean | null;
   /** The device measuring here; climate heatmap: also its name in the
    * climate charts (ProgeoDevice.display_name). */
   device?: number | null;

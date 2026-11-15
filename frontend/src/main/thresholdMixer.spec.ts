@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   effectiveThresholdOf,
   gridValuesOf,
+  isDisabled,
   isOver,
   isProtected,
   isQuiet,
@@ -15,6 +16,7 @@ import {
   snapped,
   snapStepOf,
   thresholdChanges,
+  withDisabled,
   withOverrides,
   withoutChange,
 } from './thresholdMixer';
@@ -115,6 +117,52 @@ describe('editing drafts', () => {
       ]),
     ).toEqual({ object: { alarm_threshold: 120 }, points: [{ sensor_order: 4, threshold: null }] });
     expect(savePayloadOf([])).toEqual({ object: null, points: [] });
+  });
+});
+
+describe('disabled sensors', () => {
+  const sensors = [sensor(1, 150, 400), { ...sensor(2, null, 400), disabled: true }, sensor(3, null, 400)];
+
+  it('are never over their threshold nor protected - they raise no alarm', () => {
+    expect(isOver(sensors[1], 100, NO_DRAFTS)).toBe(false);
+    expect(isOver(sensors[2], 100, NO_DRAFTS)).toBe(true);
+    const drafts = withDisabled(NO_DRAFTS, [3], true);
+    expect(isDisabled(sensors[2], drafts)).toBe(true);
+    expect(isOver(sensors[2], 100, drafts)).toBe(false);
+    expect(isProtected({ ...sensor(4, 500, 200), disabled: true }, 100, NO_DRAFTS)).toBe(false);
+  });
+
+  it('lists switching off and on as changes, and undoes them one by one', () => {
+    const drafts = withDisabled(withDisabled(NO_DRAFTS, [1, 2], true), [2], false);
+    const changes = thresholdChanges(sensors, 100, drafts);
+    // Sensor 2 was disabled already and is switched on again; 1 is switched off.
+    expect(changes).toEqual([
+      { key: 'disabled-1', kind: 'disabled', sensorOrder: 1, from: false, to: true },
+      { key: 'disabled-2', kind: 'disabled', sensorOrder: 2, from: true, to: false },
+    ]);
+    expect(thresholdChanges(sensors, 100, withoutChange(drafts, changes[0]))).toEqual([changes[1]]);
+    expect(thresholdChanges(sensors, 100, withDisabled(NO_DRAFTS, [2], true))).toEqual([]);
+  });
+
+  it('saves threshold and state of a sensor in one entry, keeping the other unsent', () => {
+    const drafts = withDisabled(withOverrides(NO_DRAFTS, [1, 3], 90), [1], true);
+    expect(savePayloadOf(thresholdChanges(sensors, 100, drafts)).points).toEqual([
+      { sensor_order: 1, threshold: 90, disabled: true },
+      { sensor_order: 3, threshold: 90 },
+    ]);
+    expect(savePayloadOf(thresholdChanges(sensors, 100, withDisabled(NO_DRAFTS, [3], true))).points).toEqual([
+      { sensor_order: 3, disabled: true },
+    ]);
+  });
+
+  it("come disabled from the page's loaded points", () => {
+    const [loaded] = mixerSensorsFromLoaded({
+      points: [{ pos: 1, threshold: 120, disabled: true }],
+      heatData: null,
+      rows: [],
+      shownDevice: null,
+    });
+    expect(loaded.disabled).toBe(true);
   });
 });
 

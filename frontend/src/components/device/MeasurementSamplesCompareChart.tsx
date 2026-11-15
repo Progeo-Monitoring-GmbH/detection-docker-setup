@@ -14,6 +14,7 @@ import { announceKey } from '../ui/KeyHints';
 
 /** No mode bar - only PlotResetButton; Ctrl + wheel zooms (wheelZoom). */
 const PLOT_CONFIG = { ...PLOT_CONFIG_NO_MODEBAR, scrollZoom: true };
+import { DISABLED_SENSOR_STROKE } from './disabledSensors';
 import { assignSlots, type SensorStyle, sensorStyle } from './sensorPalette';
 import { thresholdAreaPath } from './thresholdArea';
 
@@ -105,6 +106,8 @@ type MeasurementSamplesCompareChartProps = {
   threshold?: number | null;
   /** Sensors (pair index) with an own threshold: the threshold area spans ±it there. */
   sensorThresholds?: ReadonlyMap<number, number> | null;
+  /** Disabled sensors (pair index, like sensorThresholds): drawn gray. */
+  disabledSensors?: ReadonlySet<number> | null;
   /** A Störungsprofil's masks (per sensor) as dashed EP / WP lines on the first plot. */
   maskLines?: { ep: number[]; wp: number[] } | null;
   /**
@@ -145,8 +148,8 @@ export const toggledSensor = (selected: number[], sensor: number) =>
 /** Only the legend entry of the threshold area (a layout shape). */
 const THRESHOLD_LEGEND_TRACE = 'threshold-area';
 
-/** The bands (and the threshold area's entry): never highlighted. */
-const BAND_TRACES = new Set(['min-max', 'min-max-lower', 'deviation', 'deviation-lower', THRESHOLD_LEGEND_TRACE]);
+/** The spread boxes (and the threshold area's entry): never highlighted. */
+const BAND_TRACES = new Set(['min-max', 'deviation', THRESHOLD_LEGEND_TRACE]);
 
 /** Traces a legend click doesn't hide. */
 const FIXED_TRACES = new Set([...BAND_TRACES]);
@@ -166,6 +169,21 @@ const OPTIONAL_TRACES = new Set(['wp+ep', 'pair-sum-diff']);
 const MIN_MAX_COLOR = 'rgba(153, 27, 27, 0.25)';
 const DEVIATION_COLOR = 'rgba(252, 122, 46, 0.31)';
 const EDGE_COLOR = 'rgba(0, 0, 0, 0)';
+
+/** First plot: the width of a sensor's spread box (of its slot of 1). */
+const BOX_WIDTH = 0.84;
+/** The mean's flat bar: this share of the y range high. */
+const MEAN_TICK_SHARE = 0.012;
+
+/**
+ * Where the slider's measurement sits in a sensor's slot (offset from the
+ * sensor number, and the bars' width): EP and WP side by side - with
+ * WP + EP shown, three narrower ones.
+ */
+export const currentBarSlots = (withSum: boolean) =>
+  withSum
+    ? { width: 0.24, ep: -0.36, wp: -0.12, 'wp+ep': 0.12 }
+    : { width: 0.3, ep: -0.3, wp: 0, 'wp+ep': 0.3 };
 const BASELINE_COLOR = '#4a4a4a';
 const PERIOD_COLOR = 'rgba(0, 0, 0, 0.06)';
 
@@ -262,7 +280,7 @@ type HoverTrace = {
   name?: string;
   xaxis?: string;
   line?: { color?: string };
-  marker?: { color?: string };
+  marker?: { color?: string; line?: { color?: string } };
   fillcolor?: string;
 };
 
@@ -409,6 +427,7 @@ const MeasurementSamplesCompareChart = (
     isLoadingSensorHistory = false,
     threshold = null,
     sensorThresholds = null,
+    disabledSensors = null,
     maskLines = null,
     selectedRange = null,
     onRangeSelect = null,
@@ -536,7 +555,11 @@ const MeasurementSamplesCompareChart = (
     // "information from previous renders").
     setSlotState({ selected: selectedSensors, slots: sensorSlots });
   }
-  const styleOf = (sensor: number) => sensorStyle(sensorSlots.get(sensor) ?? 0);
+  // A disabled sensor keeps its slot's marker, but its line is gray.
+  const styleOf = (sensor: number) => {
+    const style = sensorStyle(sensorSlots.get(sensor) ?? 0);
+    return disabledSensors?.has(sensor) ? { ...style, color: DISABLED_SENSOR_STROKE } : style;
+  };
   const updateSensors = (next: number[]) =>
     (onSensorsChange ?? setOwnSensors)(next);
   const toggleSensor = (sensor: number) =>
@@ -616,7 +639,7 @@ const MeasurementSamplesCompareChart = (
       ];
     }
     return selectedSensors.map((sensor) => {
-      const { color, marker } = sensorStyle(sensorSlots.get(sensor) ?? 0);
+      const { color, marker } = styleOf(sensor);
       return {
         type: 'scatter' as const,
         // Always solid lines; past the 4 hues a few markers tell them apart.
@@ -634,7 +657,7 @@ const MeasurementSamplesCompareChart = (
         hoverinfo: 'none' as const,
       };
     });
-  }, [selectedSensors, sensorSeries, sensorSlots, t]);
+  }, [selectedSensors, sensorSeries, sensorSlots, disabledSensors, t]);
 
   // EP + WP, WP - EP and the sum difference start hidden; a legend click
   // shows them. Kept here, not by Plotly: they widen the locked y-axis or
@@ -679,45 +702,32 @@ const MeasurementSamplesCompareChart = (
   const hasThresholdArea =
     (threshold != null && threshold > 0) || [...(sensorThresholds?.values() ?? [])].some((own) => own > 0);
 
-  // All plain scatter (not scattergl): a highlight (width, opacity) then
-  // only restyles. No Plotly hover labels - the values go to the tooltip.
+  // No Plotly hover labels - the values go to the tooltip. The first plot is
+  // bars only: its x is the sensor - a line between two sensors would show
+  // values nobody measured.
   const traces = React.useMemo(() => {
-    // A band: the transparent upper edge, then the lower edge filling up to
-    // it - the filled one carries the legend entry (with its colour).
-    const band = (uid: string, name: string, upper: number[], lower: number[], color: string) => [
-      {
-        type: 'scatter' as const,
-        mode: 'lines' as const,
-        uid,
-        name,
-        x: meanAndDeviationSeries.x,
-        y: upper,
-        line: { color: EDGE_COLOR, width: 1 },
-        hoverinfo: 'skip' as const,
-        showlegend: false,
-      },
-      {
-        type: 'scatter' as const,
-        mode: 'lines' as const,
-        uid: `${uid}-lower`,
-        name,
-        x: meanAndDeviationSeries.x,
-        y: lower,
-        line: { color: EDGE_COLOR, width: 1 },
-        fill: 'tonexty' as const,
-        fillcolor: color,
-        hoverinfo: 'none' as const,
-      },
-    ];
+    // A sensor's spread over the period: a box from low to high in its slot.
+    const rangeBar = (uid: string, name: string, high: number[], low: number[], color: string) => ({
+      type: 'bar' as const,
+      uid,
+      name,
+      x: meanAndDeviationSeries.x,
+      base: low,
+      y: high.map((value, index) => value - low[index]),
+      width: BOX_WIDTH,
+      offset: -BOX_WIDTH / 2,
+      marker: { color },
+      hoverinfo: 'none' as const,
+    });
     return [
-      ...band(
+      rangeBar(
         'min-max',
         t('measurement_compare_min_max_label'),
         meanAndDeviationSeries.max,
         meanAndDeviationSeries.min,
         MIN_MAX_COLOR,
       ),
-      ...band(
+      rangeBar(
         'deviation',
         t('measurement_compare_deviation_label'),
         meanAndDeviationSeries.upper,
@@ -742,19 +752,6 @@ const MeasurementSamplesCompareChart = (
             },
           ]
         : []),
-      {
-        type: 'scatter' as const,
-        mode: 'lines' as const,
-        uid: 'mean',
-        name: t('measurement_compare_mean_label'),
-        x: meanAndDeviationSeries.x,
-        y: meanAndDeviationSeries.mean,
-        line: {
-          color: plotTheme.brandBlue,
-          width: 4,
-        },
-        hoverinfo: 'none' as const,
-      },
       // Bars, one per measurement: where none were taken there is no bar,
       // so gaps in the data show (a line would bridge them).
       {
@@ -817,38 +814,41 @@ const MeasurementSamplesCompareChart = (
     }
     const { ep, wp } = currentFrame;
     const x = ep.map((_, index) => sensorNumber(index));
-    const line = (
-      uid: string,
-      name: string,
-      y: number[],
-      color: string,
-      width: number,
-      optional = false,
-    ) => ({
-      type: 'scatter' as const,
-      mode: 'lines' as const,
+    // Side by side in the sensor's slot: EP, WP (and WP + EP while shown).
+    const slots = currentBarSlots(shownOptional.has('wp+ep'));
+    const bar = (uid: keyof typeof slots, name: string, y: number[], color: string, optional = false) => ({
+      type: 'bar' as const,
       uid,
       name,
       x,
       y,
-      line: { color, width },
+      width: slots.width,
+      offset: slots[uid],
+      marker: { color },
       hoverinfo: 'none' as const,
       ...(optional ? visibility(shownOptional, uid) : {}),
     });
-    // A Störungsprofil's masks: dashed, over the sensors they cover.
-    const maskLine = (uid: string, name: string, y: number[], color: string) => ({
-      ...line(uid, name, y, color, 1.5),
+    // A Störungsprofil's masks: an outlined bar over the EP / WP bar it
+    // belongs to - filled is measured, outlined is what the profile expects.
+    const maskBar = (uid: string, name: string, y: number[], color: string, slot: 'ep' | 'wp') => ({
+      type: 'bar' as const,
+      uid,
+      name,
       x: y.map((_, index) => sensorNumber(index)),
-      line: { color, width: 1.5, dash: 'dash' as const },
+      y,
+      width: slots.width,
+      offset: slots[slot],
+      marker: { color: 'rgba(0, 0, 0, 0)', line: { color, width: 1.5 } },
+      hoverinfo: 'none' as const,
     });
     return [
-      line('ep', 'EP', ep, 'red', 2),
-      line('wp', 'WP', wp, 'blue', 2),
-      line('wp+ep', 'WP + EP', ep.map((value, i) => value + wp[i]), plotTheme.contrastViolet, 2, true),
+      bar('ep', 'EP', ep, 'red'),
+      bar('wp', 'WP', wp, 'blue'),
+      bar('wp+ep', 'WP + EP', ep.map((value, i) => value + wp[i]), plotTheme.contrastViolet, true),
       ...(maskLines
         ? [
-            maskLine('mask-ep', t('noise_profile_mask_ep'), maskLines.ep, 'red'),
-            maskLine('mask-wp', t('noise_profile_mask_wp'), maskLines.wp, 'blue'),
+            maskBar('mask-ep', t('noise_profile_mask_ep'), maskLines.ep, 'red', 'ep'),
+            maskBar('mask-wp', t('noise_profile_mask_wp'), maskLines.wp, 'blue', 'wp'),
           ]
         : []),
     ];
@@ -889,6 +889,31 @@ const MeasurementSamplesCompareChart = (
     return [low < 0 ? low - padding : 0, high + padding];
   }, [frames, meanAndDeviationSeries, shownOptional, maskLines]);
 
+  // The mean: a flat bar across the sensor's box, MEAN_TICK_SHARE of the
+  // (locked) y range high - a bar too, so it keeps to its sensor's slot.
+  const meanTraces = React.useMemo(() => {
+    const { x, mean } = meanAndDeviationSeries;
+    if (!mean.length) {
+      return [];
+    }
+    const span = upperRange ? upperRange[1] - upperRange[0] : Math.max(1, ...mean.map(Math.abs));
+    const height = span * MEAN_TICK_SHARE;
+    return [
+      {
+        type: 'bar' as const,
+        uid: 'mean',
+        name: t('measurement_compare_mean_label'),
+        x,
+        base: mean.map((value) => value - height / 2),
+        y: mean.map(() => height),
+        width: BOX_WIDTH,
+        offset: -BOX_WIDTH / 2,
+        marker: { color: plotTheme.brandBlue },
+        hoverinfo: 'none' as const,
+      },
+    ];
+  }, [meanAndDeviationSeries, upperRange, t]);
+
   // The highest sensor number on the first plot.
   const lastSensor = Math.max(
     meanAndDeviationSeries.x[meanAndDeviationSeries.x.length - 1] ?? 1,
@@ -923,7 +948,7 @@ const MeasurementSamplesCompareChart = (
         x1: Math.min(sensorNumber(sensor) + 0.5, lastSensor),
         y0: geometry.upper[0],
         y1: geometry.upper[1],
-        fillcolor: sensorStyle(sensorSlots.get(sensor) ?? 0).color,
+        fillcolor: styleOf(sensor).color,
         opacity: 0.18,
         line: { width: 0 },
       });
@@ -1006,6 +1031,7 @@ const MeasurementSamplesCompareChart = (
     geometry,
     threshold,
     sensorThresholds,
+    disabledSensors,
     selectedRange,
   ]);
 
@@ -1013,7 +1039,8 @@ const MeasurementSamplesCompareChart = (
   // the other lines of its plot faded. The bands stay as they are.
   const [highlighted, setHighlighted] = React.useState<string | null>(null);
   const data = React.useMemo(() => {
-    const all = [...traces, ...currentTraces, ...sensorTraces];
+    // Drawn in this order: the boxes, the mean on them, the slider's measurement in front.
+    const all = [...traces, ...meanTraces, ...currentTraces, ...sensorTraces];
     const subplot = (trace: (typeof all)[number] | undefined) =>
       trace && 'xaxis' in trace ? trace.xaxis : 'x';
     const highlightedTrace = all.find((trace) => trace.uid === highlighted);
@@ -1030,7 +1057,7 @@ const MeasurementSamplesCompareChart = (
       // A line gets wider; a bar trace stays as it is (the others fade).
       return 'line' in trace && trace.line ? { ...trace, line: { ...trace.line, width: trace.line.width + 2 } } : trace;
     });
-  }, [traces, currentTraces, sensorTraces, highlighted]);
+  }, [traces, meanTraces, currentTraces, sensorTraces, highlighted]);
 
   // In 'x unified' hover every line reports its point at the cursor's x: the
   // nearest one within HIGHLIGHT_DISTANCE_PX is the hovered line. Compared
@@ -1048,10 +1075,12 @@ const MeasurementSamplesCompareChart = (
     event.points.forEach((point) => {
       const uid = (point.data as { uid?: string }).uid;
       const toPixel = (point.yaxis as unknown as PixelAxis | undefined)?.l2p;
-      if (!uid || BAND_TRACES.has(uid) || typeof point.y !== 'number' || !toPixel) {
+      // The mean's flat bar reports its height - its value is the series'.
+      const value = uid === 'mean' ? meanAndDeviationSeries.mean[point.pointIndex] : point.y;
+      if (!uid || BAND_TRACES.has(uid) || typeof value !== 'number' || !toPixel) {
         return;
       }
-      const distance = Math.abs(toPixel(point.y) - cursorPixel);
+      const distance = Math.abs(toPixel(value) - cursorPixel);
       if (distance < nearestDistance) {
         nearest = uid;
         nearestDistance = distance;
@@ -1099,19 +1128,25 @@ const MeasurementSamplesCompareChart = (
         name: String(trace.name ?? ''),
         color: String(trace.line?.color ?? trace.marker?.color ?? ''),
       };
-      if (uid === 'min-max-lower' || uid === 'deviation-lower') {
+      if (uid === 'min-max' || uid === 'deviation') {
         const [low, high] =
-          uid === 'min-max-lower'
+          uid === 'min-max'
             ? [meanAndDeviationSeries.min[index], meanAndDeviationSeries.max[index]]
             : [meanAndDeviationSeries.lower[index], meanAndDeviationSeries.upper[index]];
-        return [{ ...row, color: String(trace.fillcolor), band: true, value: `${formatValue(low)} – ${formatValue(high)}` }];
+        return [{ ...row, band: true, value: `${formatValue(low)} – ${formatValue(high)}` }];
+      }
+      if (uid === 'mean') {
+        // Its bar is a flat tick: the value is the series', not the bar's height.
+        const mean = meanAndDeviationSeries.mean[index];
+        const sigma = meanAndDeviationSeries.sigma[index];
+        return [{ ...row, value: `${formatValue(mean)} (${t('measurement_compare_sigma_label')} ${formatValue(sigma)})` }];
       }
       if (typeof point.y !== 'number') {
         return [];
       }
-      if (uid === 'mean') {
-        const sigma = meanAndDeviationSeries.sigma[index];
-        return [{ ...row, value: `${formatValue(point.y)} (${t('measurement_compare_sigma_label')} ${formatValue(sigma)})` }];
+      if (uid.startsWith('mask-')) {
+        // An outlined bar: its colour is the outline's.
+        return [{ ...row, color: String(trace.marker?.line?.color ?? ''), value: formatValue(point.y) }];
       }
       if (uid === detailed) {
         return [{ ...row, value: formatValue(point.y) }, ...potentialRows(uid, index)];

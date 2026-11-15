@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import ThresholdTrendChart, { TREND_COLORS } from '../components/device/ThresholdTrendChart';
 import { PercentCell } from '../components/device/SensorChangesPanel';
+import { DISABLED_SENSOR_STROKE } from '../components/device/disabledSensors';
 import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import PlotHelp from '../components/ui/PlotHelp';
@@ -83,9 +84,13 @@ const ZeitreihePanel = ({ loading, sensors }: { loading: boolean; sensors: Zeitr
   }, [byId]);
 
   const shownIds = onlyTriggered ? triggeredIds : (picked ?? defaultIds);
+  // A plotted disabled sensor is gray - the others keep their slot's colour.
   const colorOf = (id: string) => {
     const index = shownIds.indexOf(id);
-    return index < 0 ? null : TREND_COLORS[index % TREND_COLORS.length];
+    if (index < 0) {
+      return null;
+    }
+    return byId.get(id)?.disabled ? DISABLED_SENSOR_STROKE : TREND_COLORS[index % TREND_COLORS.length];
   };
   const customized = onlyTriggered || picked != null;
 
@@ -121,7 +126,11 @@ const ZeitreihePanel = ({ loading, sensors }: { loading: boolean; sensors: Zeitr
         cell: (sensor) => (
           <span data-tag="allowRowEvents" className="zeitreihe-sensor-cell">
             <SensorSwatch color={colorOf(sensor.id)} />
-            <span data-tag="allowRowEvents" className="zeitreihe-sensor-label">
+            <span
+              data-tag="allowRowEvents"
+              className={sensor.disabled ? 'zeitreihe-sensor-label zeitreihe-sensor-label--disabled' : 'zeitreihe-sensor-label'}
+              title={sensor.disabled ? t('status_sensor_table_disabled_hint') : undefined}
+            >
               {sensor.label}
             </span>
           </span>

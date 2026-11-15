@@ -225,6 +225,41 @@ describe('ThresholdMixerPanel', () => {
     });
   });
 
+  it('disables the selection: gray, not over any more, saved without touching the thresholds', async () => {
+    render();
+    pointer('pointerdown', 70, 220, { ctrlKey: true }); // select sensor 2 (over its own 150)
+    act(() => button('einstell_mixer_disable_selected').click());
+
+    expect(bar(2).getAttribute('fill')).toBe('#c9c8c2');
+    expect(container.querySelector('[data-sensor="2"]')!.getAttribute('data-disabled')).toBe('true');
+    expect(changesText()).toContain('einstell_mixer_change_disabled');
+    expect(container.querySelector('[data-testid="threshold-mixer-legend"]')!.textContent).toContain(
+      'einstell_mixer_disabled_legend:{"count":1}',
+    );
+    await act(async () => {
+      button('einstell_mixer_save').click();
+    });
+    expect(api.post).toHaveBeenCalledWith('/v1/location/7/measurepoints/', {
+      points: [{ sensor_order: 2, disabled: true }],
+    });
+  });
+
+  it('shows a disabled sensor gray and enables it again', async () => {
+    api.sensors[1] = { ...api.sensors[1], disabled: true };
+    render();
+    expect(bar(2).getAttribute('fill')).toBe('#c9c8c2');
+
+    pointer('pointerdown', 70, 220, { ctrlKey: true });
+    act(() => button('einstell_mixer_enable_selected').click());
+    expect(bar(2).getAttribute('fill')).toBe('#C44D26'); // alarming again: 200 > 150
+    await act(async () => {
+      button('einstell_mixer_save').click();
+    });
+    expect(api.post).toHaveBeenCalledWith('/v1/location/7/measurepoints/', {
+      points: [{ sensor_order: 2, disabled: false }],
+    });
+  });
+
   it('removes a marker that is clicked - a slight jitter still counts as a click', () => {
     render();
     // Sensor 2's marker at y 90 (150): pressed and released 2 px lower.

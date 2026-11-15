@@ -212,6 +212,13 @@ describe('zonePointsOf', () => {
     expect(zonePointsOf({ points, lines: null, heatmap, frameIndex: null, threshold: 100 })[0].value).toBe(7);
   });
 
+  it('passes disabled on to the plan overlay', () => {
+    const zones = zonePointsOf({
+      points: [point(1, { disabled: true }), point(2)], lines: null, heatmap, frameIndex: 1, threshold: 100,
+    });
+    expect(zones.map((zone) => zone.disabled ?? false)).toEqual([true, false]);
+  });
+
   it('groups the points of a line', () => {
     const lines = sensorLinesOf(points, () => 'Linie');
     const zones = zonePointsOf({ points, lines, heatmap, frameIndex: 0, threshold: null });
@@ -276,6 +283,29 @@ describe('sensorStatsOf / sensorRowsOf', () => {
     const lines = sensorLinesOf(points, () => 'Linie 1');
     const [row] = sensorRowsOf({ ...base, frameIndex: 2, hasMeasurePoints: true, points, lines });
     expect(row).toEqual({ key: 'row-0', label: 'Linie 1', value: 8, max: 40, threshold: 40 });
+  });
+
+  it('marks disabled sensors - a line by its enabled ones, disabled only when all are', () => {
+    const rows = sensorRowsOf({
+      ...base,
+      frameIndex: null,
+      hasMeasurePoints: true,
+      points: [point(1, { disabled: true }), point(2)],
+    });
+    expect(rows.map((row) => row.disabled ?? false)).toEqual([true, false]);
+
+    const mixed = [point(1, { grid_y: 0, disabled: true }), point(2, { grid_y: 0, threshold: 40 })];
+    const [line] = sensorRowsOf({
+      ...base, frameIndex: null, hasMeasurePoints: true, points: mixed, lines: sensorLinesOf(mixed, () => 'L'),
+    });
+    // Sensor 1 (max 40) is off: the line reads sensor 2 only (max 8).
+    expect([line.max, line.threshold, line.disabled]).toEqual([8, 40, undefined]);
+
+    const off = [point(1, { grid_y: 0, disabled: true }), point(2, { grid_y: 0, disabled: true })];
+    const [offLine] = sensorRowsOf({
+      ...base, frameIndex: null, hasMeasurePoints: true, points: off, lines: sensorLinesOf(off, () => 'L'),
+    });
+    expect(offLine.disabled).toBe(true);
   });
 });
 

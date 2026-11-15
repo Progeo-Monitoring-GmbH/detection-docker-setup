@@ -1,5 +1,6 @@
 import CursorTooltip, { TooltipRow } from '../ui/CursorTooltip';
 import { alarmHeatColor } from '../../main/alarmUtils';
+import { DISABLED_SENSOR_FILL } from './disabledSensors';
 import { formatMeters } from './planMeters';
 
 type SensorTooltipProps = {
@@ -18,6 +19,8 @@ type SensorTooltipProps = {
   decimals?: number;
   /** Colour of the title dot; default: the value's alarm heat colour. */
   dotColor?: string;
+  /** Switched off: a gray dot and "disabled" - it raises no alarm. */
+  disabled?: boolean;
   /** Cursor position relative to the heatmap container (px). */
   cursorX: number;
   cursorY: number;
@@ -40,12 +43,15 @@ const SensorTooltip = ({
   unit,
   decimals,
   dotColor,
+  disabled = false,
   testId = 'sensor-tooltip',
   ...rest
 }: SensorTooltipProps) => (
   <CursorTooltip
     width={200}
-    dotColor={dotColor ?? alarmHeatColor({ threshold, max_value: value, max_values: [] })}
+    dotColor={
+      disabled ? DISABLED_SENSOR_FILL : (dotColor ?? alarmHeatColor({ threshold, max_value: value, max_values: [] }))
+    }
     title={name ? `${name} (#${sensorPos})` : `Sensor #${sensorPos}`}
     testId={testId}
     {...rest}
@@ -57,6 +63,7 @@ const SensorTooltip = ({
     </TooltipRow>
     {meters && <TooltipRow label="Position">{formatMeters(meters)}</TooltipRow>}
     {threshold != null && <TooltipRow label="Threshold">{threshold}</TooltipRow>}
+    {disabled && <TooltipRow label="Alarm">disabled</TooltipRow>}
   </CursorTooltip>
 );
 

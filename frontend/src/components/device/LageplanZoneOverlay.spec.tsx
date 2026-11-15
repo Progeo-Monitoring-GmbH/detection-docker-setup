@@ -191,6 +191,25 @@ describe('LageplanZoneOverlay points', () => {
     hover(container.querySelector('[data-testid="zone-point"]')!);
     expect(container.textContent).toContain('Bad Dusche (#7)');
   });
+
+  it('draws a disabled sensor gray and never red-rimmed, whatever it reads', () => {
+    render(null, 'points', [{ ...point(1, 0.2, 0.2, 'Aus', 368), disabled: true }, point(2, 0.6, 0.2, 'An', 368)]);
+    const [off, on] = [...container.querySelectorAll('circle:not([data-testid])')];
+    expect(off.getAttribute('fill')).toBe('#c9c8c2');
+    expect(off.getAttribute('stroke')).not.toBe('#dc2626');
+    expect(on.getAttribute('stroke')).toBe('#dc2626');
+    hover(container.querySelector('[data-testid="zone-point"]')!);
+    expect(container.textContent).toContain('disabled');
+  });
+
+  it('colours a line by its enabled sensors - a disabled one does not make it red', () => {
+    render(null, 'lines', [
+      point(1, 0.2, 0.25, 'Dachmitte', 12),
+      { ...point(2, 0.6, 0.25, 'Dachmitte', 368), disabled: true },
+    ]);
+    const line = [...container.querySelectorAll('circle:not([data-testid])')];
+    expect(line.some((marker) => marker.getAttribute('stroke') === '#dc2626')).toBe(false);
+  });
 });
 
 describe('LageplanZoneOverlay dm bands', () => {

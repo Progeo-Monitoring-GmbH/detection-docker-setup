@@ -286,6 +286,7 @@ export const zonePointsOf = ({
       : {}),
     value: frameValue(heatmap, frameIndex, point.pos) ?? point.last_value ?? null,
     threshold: point.threshold ?? threshold,
+    ...(point.disabled ? { disabled: true } : {}),
     meters: measurePointMeters(point),
   }));
 };
@@ -334,13 +335,19 @@ export const sensorRowsOf = ({
       : (fallback ?? stats.get(key)?.latest ?? null);
 
   if (hasMeasurePoints && lines.length > 0) {
-    return lines.map((line) => ({
-      key: line.key,
-      label: line.label,
-      value: highestOf(line.points.map((point) => valueOf(String(point.pos), point.last_value ?? null))),
-      max: highestOf(line.points.map((point) => stats.get(String(point.pos))?.max)),
-      threshold: lowestOf(line.points.map((point) => point.threshold)) ?? threshold,
-    }));
+    return lines.map((line) => {
+      // A line is judged by its enabled sensors - disabled only when all are.
+      const enabled = line.points.filter((point) => !point.disabled);
+      const counted = enabled.length ? enabled : line.points;
+      return {
+        key: line.key,
+        label: line.label,
+        value: highestOf(counted.map((point) => valueOf(String(point.pos), point.last_value ?? null))),
+        max: highestOf(counted.map((point) => stats.get(String(point.pos))?.max)),
+        threshold: lowestOf(counted.map((point) => point.threshold)) ?? threshold,
+        ...(enabled.length ? {} : { disabled: true }),
+      };
+    });
   }
 
   if (hasMeasurePoints) {
@@ -352,6 +359,7 @@ export const sensorRowsOf = ({
         value: valueOf(key, point.last_value ?? null),
         max: stats.get(key)?.max ?? null,
         threshold: point.threshold ?? threshold,
+        ...(point.disabled ? { disabled: true } : {}),
       };
     });
   }

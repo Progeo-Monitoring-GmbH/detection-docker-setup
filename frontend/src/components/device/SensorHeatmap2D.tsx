@@ -786,6 +786,7 @@ const HoveredSensorTooltip = ({
           : undefined
       }
       threshold={sensor.threshold}
+      disabled={Boolean(sensor.disabled)}
       cursorX={screen[0]}
       cursorY={screen[1]}
       containerWidth={containerWidth}
