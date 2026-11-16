@@ -35,10 +35,13 @@ def at(hour, minute=0, days=0):
 
 @pytest.fixture(autouse=True)
 def live(monkeypatch):
-    """Not the first run any more (no baseline mute) and a fixed "now"."""
+    """Not the first run any more (no baseline mute) and a fixed "now" - also
+    for OutboundMessage.created, which note_bounce compares with the case's
+    last contact (with the real clock the suite failed before nine)."""
     nc.mark_baseline_done()
     clock = {"now": at(10)}
     monkeypatch.setattr(nc, "_now", lambda: clock["now"])
+    monkeypatch.setattr(OutboundMessage._meta.get_field("created"), "default", lambda: clock["now"])
     return clock
 
 

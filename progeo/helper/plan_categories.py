@@ -30,7 +30,7 @@ def image_signature(path: str) -> int:
     background = Image.new("RGBA", image.size, (255, 255, 255, 255))
     background.alpha_composite(image)
     small = background.convert("L").resize(SIGNATURE_SIZE, Image.Resampling.BOX)
-    pixels = list(small.getdata())
+    pixels = list(small.get_flattened_data())
     width = SIGNATURE_SIZE[0]
     bits = 0
     for row in range(SIGNATURE_SIZE[1]):

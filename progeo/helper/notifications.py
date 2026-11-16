@@ -105,7 +105,7 @@ def notify_alarm(alarm, location, db_name) -> dict:
     if not created:
         ilog(f"[notify_alarm] Alarm {alarm.pk} joins the open alarm case {case.pk} of location {location.pk}")
         return {"skipped": "case_open"}
-    claimed = notification_cases.claim_next_stage(case.pk, timezone.now())
+    claimed = notification_cases.claim_next_stage(case.pk, notification_cases._now())
     if claimed is None:
         return {"skipped": "muted"}
     counts = notification_cases.send_alarm_stage(claimed)

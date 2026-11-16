@@ -32,9 +32,9 @@ def test_tail_start(data, count, start):
 def test_copy_stripped_matches_strip_restrict():
     middle = b"".join(b"COPY line %d\n" % index for index in range(200_000))
     for dump in (
-        b"-- dump\n\restrict abc\nSET x;\n" + middle + b"-- complete\n\unrestrict abc\n\n",
-        b"\restrict abc\nSELECT 1;\n\unrestrict abc",  # small: head and tail overlap
-        b"\restrict abc\n" + middle,  # no \unrestrict
+        b"-- dump\n\\restrict abc\nSET x;\n" + middle + b"-- complete\n\\unrestrict abc\n\n",
+        b"\\restrict abc\nSELECT 1;\n\\unrestrict abc",  # small: head and tail overlap
+        b"\\restrict abc\n" + middle,  # no \unrestrict
         b"",
     ):
         expected = RestrictSafePgDumpConnector._strip_restrict(io.BytesIO(dump)).read()
@@ -46,5 +46,5 @@ def test_copy_stripped_keeps_lookalikes_in_the_middle():
     # Only the head and tail are checked - like _strip_restrict, the data in between passes untouched.
     head = b"-- line\n" * _HEAD_SCAN_LINES
     tail = b"-- line\n" * _TAIL_SCAN_LINES
-    dump = head + b"\restrict inside\n" + tail
+    dump = head + b"\\restrict inside\n" + tail
     assert stripped(dump) == dump

@@ -19,6 +19,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from django.conf import settings
+from django.utils import timezone
 
 from progeo.helper.basics import wlog
 
@@ -88,11 +89,12 @@ def fetch_legacy_file(project_id, download=True):
 
 def _received(stamp):
     """The old server's receive time - naive local wall time, like the rest of
-    the legacy data (USE_TZ is off in production)."""
+    the legacy data (USE_TZ is off in production); local-aware with USE_TZ."""
     try:
-        return datetime.strptime(stamp.strip(), "%d.%m.%Y %H:%M")
+        received = datetime.strptime(stamp.strip(), "%d.%m.%Y %H:%M")
     except ValueError:
         return None
+    return timezone.make_aware(received) if settings.USE_TZ else received
 
 
 def parse_legacy_file(project_id, path):
