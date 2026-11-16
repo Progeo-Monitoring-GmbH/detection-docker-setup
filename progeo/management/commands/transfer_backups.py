@@ -11,10 +11,24 @@ from progeo.helper.backup_transfer import (
     gpg_keyring,
     is_enabled,
     latest_dumps,
+    orphaned_dumps,
     transfer_backups,
 )
 from progeo.helper.basics import elog, ilog, wlog
+from progeo.helper.project_dbs import register_all_project_dbs
 from progeo.management.commands._base import BaseCommand
+
+
+def existing_databases():
+    """The databases handle_all_dbs backs up (configured + existing project
+    databases), or None if they can't be listed - then every database with a
+    dump counts, as before."""
+    try:
+        register_all_project_dbs()
+    except Exception as exc:  # noqa: BLE001 - the transfer must not depend on it
+        elog(f"Backup transfer: existing databases not listed ({exc}) - every database with a dump counts")
+        return None
+    return list(settings.DATABASES)
 
 
 class Command(BaseCommand):
@@ -41,10 +55,14 @@ class Command(BaseCommand):
             ilog(f"{config.prefix}_HOST is empty - no backup transfer to {config.name}")
             return
         target = f"{config.user}@{config.host}:{config.path}"
+        databases = existing_databases()
+        orphaned = orphaned_dumps(settings.BACKUP_DIR, databases) if databases is not None else []
+        if orphaned:
+            ilog(f"Backup transfer: dumps of deleted databases kept, not sent: {orphaned}")
 
         if options["dry_run"]:
             since = datetime.datetime.now() - datetime.timedelta(hours=RECENT_HOURS)
-            dumps, stale = latest_dumps(settings.BACKUP_DIR, since)
+            dumps, stale = latest_dumps(settings.BACKUP_DIR, since, databases)
             for path in dumps.values():
                 self.stdout.write(path)
             self.stdout.write(f"{len(dumps)} dumps would go to {target}; no dump of the last {RECENT_HOURS}h: {stale or '-'}")
@@ -57,7 +75,7 @@ class Command(BaseCommand):
             return
 
         try:
-            result = transfer_backups(target=config.name)
+            result = transfer_backups(target=config.name, databases=databases)
         except TransferError as exc:
             elog(f"Backup transfer to {target} failed: {exc}")
             raise CommandError(str(exc)) from exc

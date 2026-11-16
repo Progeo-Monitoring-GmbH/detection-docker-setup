@@ -138,9 +138,8 @@ def dump_created_at(entry):
     return datetime.datetime.fromtimestamp(entry.stat().st_mtime)
 
 
-def latest_dumps(backup_dir, since):
-    """({database: path} of the newest dump per database created since `since`,
-    sorted list of the databases whose newest dump is older)."""
+def _newest_dumps(backup_dir):
+    """{database: (created, path)} of the newest dump per database in backup_dir."""
     newest = {}
     if os.path.isdir(backup_dir):
         for entry in os.scandir(backup_dir):
@@ -150,8 +149,31 @@ def latest_dumps(backup_dir, since):
             created = dump_created_at(entry)
             if database and (database not in newest or created > newest[database][0]):
                 newest[database] = (created, entry.path)
+    return newest
+
+
+def latest_dumps(backup_dir, since, databases=None):
+    """({database: path} of the newest dump per database created since `since`,
+    sorted list of the databases whose newest dump is older - "stale").
+
+    `databases`: the databases tonight's run backs up (handle_all_dbs). Given,
+    only they count: one without a fresh dump - or without any - is stale,
+    and the old dumps of a deleted database are neither sent nor reported as
+    stale (see orphaned_dumps). None: every database with a dump counts."""
+    newest = _newest_dumps(backup_dir)
+    if databases is not None:
+        wanted = set(databases)
+        newest = {db: value for db, value in newest.items() if db in wanted}
     recent = {db: path for db, (created, path) in newest.items() if created >= since}
-    return dict(sorted(recent.items())), sorted(set(newest) - set(recent))
+    expected = set(newest) if databases is None else set(databases)
+    return dict(sorted(recent.items())), sorted(expected - set(recent))
+
+
+def orphaned_dumps(backup_dir, databases):
+    """Sorted databases that have dumps in backup_dir but are not in
+    `databases` - deleted since. Their dumps stay (the last copy of that
+    data); delete them by hand once no longer needed."""
+    return sorted(set(_newest_dumps(backup_dir)) - set(databases))
 
 
 def clean_old_dumps(backup_dir, databases, keep):
@@ -430,10 +452,12 @@ def _write_status(path, ok, result=None, error=""):
     os.replace(tmp, path)
 
 
-def transfer_backups(backup_dir=None, now=None, connector=None, status_file=None, key_file=None, target="backup"):
+def transfer_backups(backup_dir=None, now=None, connector=None, status_file=None, key_file=None, target="backup",
+                     databases=None):
     """Bundles tonight's dumps encrypted onto the target's server (default:
     the backup server); raises TransferError (after recording it in the
-    status file) when nothing or not all of it got there."""
+    status file) when nothing or not all of it got there. `databases`: the
+    existing databases, see latest_dumps."""
     backup_dir = backup_dir or settings.BACKUP_DIR
     now = now or datetime.datetime.now()
     status_file = status_file or status_path(target)
@@ -442,7 +466,7 @@ def transfer_backups(backup_dir=None, now=None, connector=None, status_file=None
     started = time.monotonic()
     result = TransferResult(bundle=f"{BUNDLE_PREFIX}{now:%Y-%m-%d-%H%M%S}{BUNDLE_SUFFIX}")
     try:
-        dumps, result.stale = latest_dumps(backup_dir, now - datetime.timedelta(hours=RECENT_HOURS))
+        dumps, result.stale = latest_dumps(backup_dir, now - datetime.timedelta(hours=RECENT_HOURS), databases)
         if not dumps:
             raise TransferError(f"No dumps of the last {RECENT_HOURS}h in {backup_dir}")
         if DEFAULT_DB_ALIAS not in dumps:

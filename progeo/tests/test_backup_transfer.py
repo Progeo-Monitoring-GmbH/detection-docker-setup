@@ -196,6 +196,23 @@ def test_sends_the_newest_dump_per_database_of_tonight_as_one_encrypted_tar(dirs
     assert saved["recipients"] == result.recipients
 
 
+def test_dumps_of_deleted_databases_are_not_stale(tmp_path):
+    _dump(tmp_path, "default-srv-2026-10-26-235301.psql.gz")
+    _dump(tmp_path, "project_1-srv-2026-10-26-235402.psql.gz")
+    _dump(tmp_path, "project_7-srv-2026-10-20-235300.psql.gz")  # database deleted since
+    _dump(tmp_path, "project_12-srv-2026-10-24-235300.psql.gz")  # exists, its dump failed tonight
+    since = NOW - datetime.timedelta(hours=bt.RECENT_HOURS)
+    existing = ["default", "project_1", "project_12", "project_20"]  # project_20: never dumped
+
+    dumps, stale = bt.latest_dumps(str(tmp_path), since, existing)
+
+    assert list(dumps) == ["default", "project_1"]
+    assert stale == ["project_12", "project_20"]
+    assert bt.orphaned_dumps(str(tmp_path), existing) == ["project_7"]
+    # without the list of databases, every database with a dump counts
+    assert bt.latest_dumps(str(tmp_path), since)[1] == ["project_12", "project_7"]
+
+
 @override_settings(BACKUP_REMOTE_HOST="backup.progeo.com", BACKUP_REMOTE_PATH=REMOTE, BACKUP_REMOTE_KEEP=2)
 def test_keeps_the_newest_bundles_and_drops_leftovers_of_broken_runs(dirs, gpg_key):
     backup_dir, server, _status = dirs
