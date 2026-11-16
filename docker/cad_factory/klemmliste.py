@@ -34,6 +34,17 @@ in a grid of cells read in one of two ways:
 Rows without a readable MUX card and pin are skipped (sub-headings, sums);
 an empty MUX cell repeats the card above (merged cells). Problems are
 reported as warnings, never by guessing.
+
+A location with several controllers has one Klemmliste for all of them: the
+column "Measuring Unit" (Messeinheit) names the controller ("Area A", ...),
+carried down like the MUX card, and the MUX cards count from 1 again for
+each one - the positions are per unit, every row says its "unit".
+
+Some lists give every sensor two rows - its two wires: the one with MUX card
+and PIN, the other "block / GE". The sensor's cell spans both, so its name
+may stand in either row: a PIN row without a name takes it from the row
+right after it, when that one has no PIN of its own but is labelled where
+MUX and PIN stand ("block" / "GE") - a sum or a heading leaves them empty.
 """
 import re
 import unicodedata
@@ -46,8 +57,10 @@ HEADER_SYNONYMS = (
     ("mux", ("muxkarte", "muxcard", "multiplexerkarte", "multiplexer", "muxplatine", "muxnr", "muxnummer", "mux",
              "karte")),
     ("pin", ("pinnr", "pinnummer", "pin", "eingang", "kanal")),
-    ("sensor", ("sensorname", "sensorbezeichnung", "sensor", "dmleitung", "dmsensor", "sensorleitung", "leitung",
-                "messpunkt", "messstelle", "bezeichnung")),
+    ("sensor", ("sensorname", "sensorbezeichnung", "sensor", "dmleitung", "dmcable", "dmkabel", "dmsensor",
+                "sensorleitung", "sensorcable", "leitung", "messpunkt", "messstelle", "bezeichnung")),
+    # Optional: the controller of the row, when one list covers several.
+    ("unit", ("measuringunit", "measurementunit", "messeinheit", "mea", "einheit", "unit")),
 )
 # Words of a header that rule a column out for a role ("Sensor-Typ" names no sensor).
 HEADER_EXCLUDES = {"sensor": ("typ", "type", "art", "anzahl", "laenge", "lange")}
@@ -162,10 +175,26 @@ def infer_columns(known: dict, rows, width) -> dict | None:
 
 
 def _readable_rows(rows, mapping) -> int:
-    """How many rows have a pin and a sensor name under `mapping` - is it a Klemmliste at all?"""
-    return sum(1 for row in rows
-               if mapping["pin"] < len(row) and first_number(row[mapping["pin"]]) is not None
-               and mapping["sensor"] < len(row) and clean_name(row[mapping["sensor"]]))
+    """How many PIN rows have a sensor name under `mapping` - in the row or,
+    two rows per sensor, in the next one without a PIN. Is it a Klemmliste at all?"""
+    def cell(row, role):
+        return clean_name(row[mapping[role]]) if mapping[role] < len(row) else ""
+
+    count = 0
+    for index, row in enumerate(rows):
+        if first_number(cell(row, "pin")) is None:
+            continue
+        following = rows[index + 1] if index + 1 < len(rows) else None
+        if cell(row, "sensor") or (following and first_number(cell(following, "pin")) is None
+                                   and (cell(following, "pin") or cell(following, "mux"))
+                                   and cell(following, "sensor")):
+            count += 1
+    return count
+
+
+def is_header_row(cells) -> bool:
+    """A repeated header (continuation page): it names two of the columns."""
+    return len(header_roles(cells)) >= 2
 
 
 def find_columns(header_rows, data_rows, width) -> dict | None:
@@ -197,39 +226,82 @@ class RowCollector:
     def __init__(self):
         self.rows = []
         self.warnings = []
+        self.units = []  # in the order of the list
         self._positions = {}
         self._last_mux = None
+        self._unit = None
+        # A PIN row without a name: its name may follow in the next row (two rows per sensor).
+        self._pending = None
 
     def restart(self):
-        """A new table: a merged MUX cell never reaches across tables."""
+        """A new table: a merged MUX cell never reaches across tables (a
+        measuring unit and a pending name do - pages break anywhere)."""
         self._last_mux = None
 
     def add(self, cells: dict, page: int) -> None:
         name = clean_name(cells.get("sensor"))
         mux_text = clean_name(cells.get("mux"))
-        pin = first_number(cells.get("pin"))
+        pin_text = clean_name(cells.get("pin"))
+        unit_text = clean_name(cells.get("unit"))
+        if unit_text and unit_text != self._unit:
+            self._flush()
+            self._unit = unit_text
+            self._last_mux = None
+            if unit_text not in self.units:
+                self.units.append(unit_text)
+        pin = first_number(pin_text)
         mux = first_number(mux_text) if mux_text else self._last_mux
         if mux_text:
             self._last_mux = mux
         if pin is None or mux is None:
-            return  # a sub-heading, a sum or an empty line
-        if not name:
-            self.warnings.append(f"Page {page}: MUX {mux} PIN {pin} has no sensor name - skipped")
+            # A row without an input: the second wire of the PIN row above
+            # ("block" / "GE" where MUX and PIN stand) may carry its name - not
+            # a sum or a heading (nothing there), and not its own "GE" label.
+            second_wire = bool(pin_text or mux_text)
+            if name and self._pending and second_wire and name not in (pin_text, mux_text):
+                self._store(self._pending, name)
+                self._pending = None
             return
+        self._flush()
+        entry = {"unit": self._unit, "mux": mux, "pin": pin, "page": page}
+        if not name:
+            self._pending = entry
+            return
+        self._store(entry, name)
+
+    def finish(self):
+        """The end of the list: a PIN row still waiting for its name has none."""
+        self._flush()
+
+    def _flush(self):
+        if self._pending:
+            entry = self._pending
+            self._pending = None
+            self.warnings.append(f"Page {entry['page']}: {self._where(entry)} has no sensor name - skipped")
+
+    @staticmethod
+    def _where(entry):
+        unit = f"{entry['unit']}: " if entry["unit"] else ""
+        return f"{unit}MUX {entry['mux']} PIN {entry['pin']}"
+
+    def _store(self, entry, name):
+        mux, pin, page = entry["mux"], entry["pin"], entry["page"]
         if not 1 <= pin <= PINS_PER_MUX or mux < 1:
             self.warnings.append(
-                f"Page {page}: {name}: MUX {mux} PIN {pin} is no valid input (PIN 1-{PINS_PER_MUX}) - skipped")
+                f"Page {page}: {name}: {self._where(entry)} is no valid input (PIN 1-{PINS_PER_MUX}) - skipped")
             return
         position = (mux - 1) * PINS_PER_MUX + pin
-        if position in self._positions:
-            earlier = self._positions[position]
+        key = (entry["unit"], position)
+        if key in self._positions:
+            earlier = self._positions[key]
             if earlier != name:
                 self.warnings.append(
-                    f"Page {page}: position {position} (MUX {mux} PIN {pin}) twice: "
+                    f"Page {page}: position {position} ({self._where(entry)}) twice: "
                     f"'{earlier}' and '{name}' - the first is kept")
             return
-        self._positions[position] = name
-        self.rows.append({"sensor": name, "mux": mux, "pin": pin, "position": position, "page": page})
+        self._positions[key] = name
+        self.rows.append({"sensor": name, "mux": mux, "pin": pin, "position": position, "page": page,
+                          "unit": entry["unit"]})
 
 
 # -- 1. ruled tables ----------------------------------------------------------
@@ -289,6 +361,8 @@ def _read_tables(doc, collector, log) -> bool:
                 log(f"Page {page_number}: table continues the Klemmliste above")
             used = True
             for row in rows[start:]:
+                if is_header_row(row):
+                    continue
                 collector.add({role: row[index] if index < len(row) else "" for role, index in columns.items()},
                               page_number)
     return used
@@ -416,10 +490,17 @@ def read_klemmliste(path, log=lambda _line: None) -> dict:
         log(f"Klemmliste: {doc.page_count} page(s)")
         for method, reader in (("tables", _read_tables), ("words", _read_words)):
             collector = RowCollector()
-            if reader(doc, collector, log) and collector.rows:
+            used = reader(doc, collector, log)
+            collector.finish()
+            if used and collector.rows:
                 log(f"Klemmliste: {len(collector.rows)} sensor(s) read from the {method}")
-                return {"rows": sorted(collector.rows, key=lambda row: row["position"]),
-                        "warnings": collector.warnings, "method": method}
+                order = {unit: index for index, unit in enumerate(collector.units)}
+                rows = sorted(collector.rows, key=lambda row: (order.get(row["unit"], -1), row["position"]))
+                units = [{"unit": unit, "rows": sum(1 for row in rows if row["unit"] == unit)}
+                         for unit in collector.units]
+                for unit in units:
+                    log(f"Klemmliste: measuring unit {unit['unit']}: {unit['rows']} sensor(s)")
+                return {"rows": rows, "warnings": collector.warnings, "method": method, "units": units}
             log(f"Klemmliste: nothing found by {method}")
     reason = "No table with sensor names, MUX cards and PINs found (e.g. the columns Sensor, MUX Karte and PIN)"
-    return {"rows": [], "warnings": [reason], "method": None}
+    return {"rows": [], "warnings": [reason], "method": None, "units": []}

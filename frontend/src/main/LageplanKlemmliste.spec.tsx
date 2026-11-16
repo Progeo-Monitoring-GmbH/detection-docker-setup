@@ -213,6 +213,66 @@ describe('LageplanKlemmliste', () => {
     expect(byTestId('lageplan-wizard-klemmliste-line', '1')!.className).toContain('--same');
   });
 
+  it('puts the measuring units on the devices, checks their sensor counts and lets one be changed', async () => {
+    const units = {
+      mode: 'name',
+      moves: [],
+      conflicts: [],
+      changes: [
+        { position: 1, mux: 1, pin: 1, sensor_order: 1, new: '1', old: null, points: 1, unit: 'Area A' },
+        { position: 1, mux: 1, pin: 1, sensor_order: 201, new: '107', old: null, points: 1, unit: 'Area B' },
+      ],
+      unchanged: [],
+      missing: [],
+      without_name: [],
+      units: [
+        { unit: 'Area A', rows: 105, device_id: 5, device_label: 'Controller A', first_sensor_order: 1,
+          last_sensor_order: 105, sensor_count: 105, count_matches: true },
+        { unit: 'Area B', rows: 82, device_id: 6, device_label: 'Controller B', first_sensor_order: 201,
+          last_sensor_order: 282, sensor_count: 80, count_matches: false },
+      ],
+      unit_warnings: ['Area B: 82 sensor(s) in the list, Controller B measures 80'],
+      unassigned: 0,
+      device_updates: [{ unit: 'Area B', device_id: 6, device_label: 'Controller B',
+        first_sensor_order: [1, 106], sensor_count: [80, 80] }],
+      rows_total: 187,
+      point_orders: { count: 187, min: 1, max: 283 },
+    };
+    api.post.mockImplementation((_url: string, _body: Record<string, unknown>, ok: Ok) => ok({ data: { result: units } }));
+    await render({ devices: [{ id: 5, label: 'Controller A' }, { id: 6, label: 'Controller B', first_sensor_order: 201 }] });
+
+    await act(async () =>
+      api.finishUpload!(
+        { rows: [{ ...ROWS[0], unit: 'Area A' }, { ...ROWS[0], sensor: '107', unit: 'Area B' }], warnings: [] },
+        { job_id: 'job-units', status: 'done', result: null, log: [], error: null },
+      ),
+    );
+
+    // One picker per unit instead of the single device picker.
+    expect(byTestId('lageplan-wizard-klemmliste-device')).toBeNull();
+    expect(byTestId('lageplan-wizard-klemmliste-unit', 'Area B')!.className).toContain('--warning');
+    expect(byTestId('lageplan-wizard-klemmliste-unit', 'Area B')!.textContent).toContain('80 ≠ 82');
+    expect(byTestId('lageplan-wizard-klemmliste-unit-warnings')!.textContent).toContain('Controller B measures 80');
+    expect(byTestId('lageplan-wizard-klemmliste-total')!.textContent).toContain('187 sensor(s) in the list, 187');
+    expect(byTestId('lageplan-wizard-klemmliste-device-update', '6')!.textContent).toBe(
+      'Area B → Controller B: first sensor 1 → 106',
+    );
+    // 2 name changes + 1 device update.
+    expect(byTestId('lageplan-wizard-klemmliste-apply')!.textContent).toContain('Apply 3 change(s)');
+    // Positions repeat per unit - the lines are told apart by it.
+    expect(byTestId('lageplan-wizard-klemmliste-line', 'Area A-1')).not.toBeNull();
+    expect(byTestId('lageplan-wizard-klemmliste-line', 'Area B-1')).not.toBeNull();
+
+    const select = byTestId('lageplan-wizard-klemmliste-unit-device', 'Area A') as HTMLSelectElement;
+    await act(async () => {
+      select.value = '6';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    const last = api.post.mock.calls[api.post.mock.calls.length - 1];
+    expect(last[1]).toMatchObject({ job_id: 'job-units', unit_devices: { 'Area A': 6, 'Area B': 6 }, dry_run: true });
+  });
+
   it('previews again for another device of the location', async () => {
     await render({ devices: [{ id: 5, label: 'Controller A' }, { id: 6, label: 'Controller B', first_sensor_order: 26 }] });
 

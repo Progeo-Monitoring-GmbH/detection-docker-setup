@@ -115,3 +115,24 @@
 .lageplan-klemmliste-line--missing td {
   color: var(--bs-secondary-color);
 }
+
+.lageplan-klemmliste-units {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.lageplan-klemmliste-unit .form-select {
+  min-width: 12rem;
+}
+
+.lageplan-klemmliste-unit--warning td {
+  background-color: var(--bs-warning-bg-subtle);
+}
+
+.lageplan-klemmliste-device-updates {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+}

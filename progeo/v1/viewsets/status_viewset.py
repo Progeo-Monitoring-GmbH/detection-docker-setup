@@ -740,8 +740,9 @@ class StatusViewSet(ProgeoModalViewSet):
     @action(detail=False, url_path="measure_points/klemmliste/apply", methods=["POST"])
     def klemmliste_apply(self, request, *args, **kwargs):
         """The names of a finished klemmliste job onto the location's measure
-        points (helper/klemmliste_names.py): {job_id, device_id?, dry_run?} -
-        dry_run only lists what would change."""
+        points (helper/klemmliste_names.py): {job_id, device_id?, unit_devices?
+        ({measuring unit: device id | null}), dry_run?} - dry_run only lists
+        what would change."""
         from progeo.helper import klemmliste_names
 
         location, db_name, error = self._wizard_location(request)
@@ -756,9 +757,12 @@ class StatusViewSet(ProgeoModalViewSet):
         if job.get("status") != "done":
             return RequestFailed({"reason": "The Klemmliste is not read yet"})
         dry_run = data.get("dry_run") in (True, "1", "true")
+        unit_devices = data.get("unit_devices")
+        if unit_devices is not None and not isinstance(unit_devices, dict):
+            return RequestFailed({"reason": "unit_devices must be an object {unit: device id}"})
         handler = klemmliste_names.preview if dry_run else klemmliste_names.apply
         try:
-            result = handler(db_name, location, job["result"]["rows"], data.get("device_id"))
+            result = handler(db_name, location, job["result"]["rows"], data.get("device_id"), unit_devices)
         except klemmliste_names.KlemmlisteError as exc:
             return RequestFailed({"reason": str(exc)})
         if not dry_run:

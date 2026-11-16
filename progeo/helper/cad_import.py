@@ -389,7 +389,7 @@ def run_job(job_id: str) -> None:
                 _finish(job, "failed", error=failure_reason(outcome))
                 return
             result = {"rows": parsed["rows"], "warnings": parsed.get("warnings") or [],
-                      "method": parsed.get("method")}
+                      "method": parsed.get("method"), "units": parsed.get("units") or []}
             _append_log(job, f"Read {len(result['rows'])} sensor names")
             _finish(job, "done", result=result)
             return

@@ -26,7 +26,28 @@ export type MeaDocument = {
 };
 
 /** A row the cad_factory read from the Klemmliste (docker/cad_factory/klemmliste.py). */
-type KlemmlisteRow = { sensor: string; mux: number; pin: number; position: number; page: number };
+type KlemmlisteRow = {
+  sensor: string;
+  mux: number;
+  pin: number;
+  position: number;
+  page: number;
+  /** The measuring unit (controller) of the row - one list for several devices; MUX counts from 1 per unit. */
+  unit?: string | null;
+};
+
+/** Per measuring unit: its device and the sensor count check (klemmliste_names._unit_summary). */
+type UnitSummary = {
+  unit: string;
+  rows: number;
+  device_id: number | null;
+  device_label: string | null;
+  first_sensor_order: number | null;
+  last_sensor_order?: number | null;
+  /** The device's own sensor count (ProgeoDevice.sensor_count), null if unknown. */
+  sensor_count: number | null;
+  count_matches: boolean | null;
+};
 
 type PreviewEntry = {
   position: number;
@@ -36,6 +57,7 @@ type PreviewEntry = {
   sensor_order: number;
   /** A move / conflict: the point's number now (its plan label). */
   from_order?: number;
+  unit?: string | null;
   new: string;
   old?: string | null;
   points?: number;
@@ -47,10 +69,26 @@ type Preview = {
   mode?: 'name' | 'renumber';
   moves?: PreviewEntry[];
   conflicts?: { position: number; mux?: number | null; pin?: number | null; sensor: string;
-    sensor_order: number; from_order: number }[];
+    sensor_order: number; from_order: number; unit?: string | null }[];
   changes: PreviewEntry[];
   unchanged: PreviewEntry[];
-  missing: { position: number; mux?: number | null; pin?: number | null; sensor: string; sensor_order: number }[];
+  missing: { position: number; mux?: number | null; pin?: number | null; sensor: string; sensor_order: number;
+    unit?: string | null }[];
+  /** A list for several controllers: its measuring units and their devices. */
+  units?: UnitSummary[];
+  unit_warnings?: string[];
+  /** Rows of a unit without device - left out. */
+  unassigned?: number;
+  /** What applying changes on the devices: [now, new] first sensor number and sensor count. */
+  device_updates?: {
+    unit: string;
+    device_id: number;
+    device_label: string;
+    first_sensor_order: [number, number];
+    sensor_count: [number | null, number];
+  }[];
+  /** The list's sensors - compared with the location's measure points (point_orders.count). */
+  rows_total?: number;
   without_name: number[];
   /** The location's measure points: how many, lowest and highest sensor number. */
   point_orders?: { count: number; min: number | null; max: number | null };
@@ -83,8 +121,9 @@ const formatSize = (size: number | null) => {
 /** One line of the preview: what happens to a Klemmliste position. */
 type PreviewLine = PreviewEntry & { state: 'move' | 'change' | 'same' | 'missing' | 'conflict' };
 
-/** What applying writes: the moves and the name changes. */
-const pendingCount = (preview: Preview | null) => (preview ? (preview.moves?.length ?? 0) + preview.changes.length : 0);
+/** What applying writes: the device updates, the moves and the name changes. */
+const pendingCount = (preview: Preview | null) =>
+  preview ? (preview.device_updates?.length ?? 0) + (preview.moves?.length ?? 0) + preview.changes.length : 0;
 
 const previewLines = (preview: Preview): PreviewLine[] =>
   [
@@ -105,7 +144,16 @@ const previewLines = (preview: Preview): PreviewLine[] =>
       new: entry.sensor,
       state: 'missing' as const,
     })),
-  ].sort((a, b) => a.position - b.position);
+  // In the list's order: by unit (as they come), then by position.
+  ].sort((a, b) => {
+    const units = (preview.units ?? []).map((unit) => unit.unit);
+    const unitOrder = (line: { unit?: string | null }) => (line.unit ? units.indexOf(line.unit) : -1);
+    return unitOrder(a) - unitOrder(b) || a.position - b.position;
+  });
+
+/** The key of a preview line: positions repeat in every unit. */
+const lineKey = (line: { unit?: string | null; position: number }) =>
+  line.unit ? `${line.unit}-${line.position}` : String(line.position);
 
 /**
  * Lageplan wizard, step 7: the location's MEA documents from Airtable (staff -
@@ -144,6 +192,8 @@ const LageplanKlemmliste = ({
   // The finished Klemmliste job (upload or Airtable).
   const [job, setJob] = useState<{ id: string; name: string; rows: KlemmlisteRow[]; warnings: string[] } | null>(null);
   const [deviceId, setDeviceId] = useState<number | ''>('');
+  // Measuring units: the device picked per unit (none: the backend's order - first sensor numbers).
+  const [unitDevices, setUnitDevices] = useState<Record<string, number | null> | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -215,6 +265,7 @@ const LageplanKlemmliste = ({
   const post = (
     jobId: string,
     device: number | '',
+    units: Record<string, number | null> | null,
     dryRun: boolean,
     onDone: (result: Preview) => void,
     onFail: (error: unknown) => void,
@@ -222,19 +273,26 @@ const LageplanKlemmliste = ({
     void axiosConfig.perform_post(
       auth,
       `${STATUS_URL}/klemmliste/apply/`,
-      { location_id: locationId, job_id: jobId, device_id: device === '' ? null : device, dry_run: dryRun },
+      {
+        location_id: locationId,
+        job_id: jobId,
+        device_id: device === '' ? null : device,
+        ...(units ? { unit_devices: units } : {}),
+        dry_run: dryRun,
+      },
       (response) => onDone(response?.data?.result as Preview),
       onFail,
     );
   };
 
   /** What applying would change - after reading the list and when another device is picked. */
-  const loadPreview = (jobId: string, device: number | '') => {
+  const loadPreview = (jobId: string, device: number | '', units: Record<string, number | null> | null) => {
     setPreviewing(true);
     setPreview(null);
     post(
       jobId,
       device,
+      units,
       true,
       (result) => {
         setPreview(result);
@@ -258,15 +316,29 @@ const LageplanKlemmliste = ({
       rows: data.rows,
       warnings: Array.isArray(data.warnings) ? data.warnings : [],
     });
-    loadPreview(finished.job_id, deviceId);
+    // A new list: its units go to the devices in order again.
+    setUnitDevices(null);
+    loadPreview(finished.job_id, deviceId, null);
   };
 
   const pickDevice = (device: number | '') => {
     setDeviceId(device);
     if (job) {
-      loadPreview(job.id, device);
+      loadPreview(job.id, device, unitDevices);
     }
   };
+
+  /** Another device for a measuring unit - the others keep theirs. */
+  const pickUnitDevice = (unit: string, device: number | null) => {
+    const current = Object.fromEntries((preview?.units ?? []).map((entry) => [entry.unit, entry.device_id]));
+    const next = { ...current, ...unitDevices, [unit]: device };
+    setUnitDevices(next);
+    if (job) {
+      loadPreview(job.id, deviceId, next);
+    }
+  };
+
+  const hasUnits = Boolean(job?.rows.some((row) => row.unit));
 
   const apply = () => {
     if (!job) {
@@ -276,12 +348,20 @@ const LageplanKlemmliste = ({
     post(
       job.id,
       deviceId,
+      unitDevices,
       false,
       (result) => {
         setApplying(false);
         // Applied: what it moved and named is now as the list says.
         const done = [...(result.moves ?? []), ...result.changes].map((entry) => ({ ...entry, from_order: undefined }));
-        setPreview({ ...result, mode: 'name', moves: [], changes: [], unchanged: [...result.unchanged, ...done] });
+        setPreview({
+          ...result,
+          mode: 'name',
+          moves: [],
+          changes: [],
+          device_updates: [],
+          unchanged: [...result.unchanged, ...done],
+        });
         showSuccessBar(
           enqueueSnackbar,
           `${result.updated ?? 0} measure point(s) ${result.moves?.length ? 'renumbered and ' : ''}named from the Klemmliste`,
@@ -417,7 +497,7 @@ const LageplanKlemmliste = ({
               <span>
                 <strong>{job.rows.length}</strong> sensor name(s) from {job.name}
               </span>
-              {devices.length > 1 && (
+              {devices.length > 1 && !hasUnits && (
                 <Form.Select
                   size="sm"
                   className="lageplan-klemmliste-device"
@@ -448,6 +528,110 @@ const LageplanKlemmliste = ({
                   <li key={warning}>{warning}</li>
                 ))}
               </ul>
+            )}
+            {preview && (preview.units?.length ?? 0) > 0 && (
+              <div className="lageplan-klemmliste-units" data-testid="lageplan-wizard-klemmliste-units">
+                <div className="lageplan-klemmliste-note">
+                  One list for {preview.units?.length} measuring units - each counts its MUX cards from 1 and goes to
+                  one device (in the order of their first sensor number). Check the order and the sensor counts.
+                </div>
+                <Table size="sm" className="mb-0">
+                  <thead>
+                    <tr>
+                      <th>Measuring unit</th>
+                      <th>Device</th>
+                      <th>Sensors in the list</th>
+                      <th>Device measures</th>
+                      <th>Sensor numbers</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preview.units?.map((unit) => (
+                      <tr
+                        key={unit.unit}
+                        className={
+                          unit.device_id == null || unit.count_matches === false
+                            ? 'lageplan-klemmliste-unit lageplan-klemmliste-unit--warning'
+                            : 'lageplan-klemmliste-unit'
+                        }
+                        {...repeatedTestId('lageplan-wizard-klemmliste-unit', unit.unit)}
+                      >
+                        <td>{unit.unit}</td>
+                        <td>
+                          <Form.Select
+                            size="sm"
+                            value={unit.device_id ?? ''}
+                            onChange={(event) =>
+                              pickUnitDevice(unit.unit, event.target.value === '' ? null : Number(event.target.value))
+                            }
+                            aria-label={`Device of ${unit.unit}`}
+                            {...repeatedTestId('lageplan-wizard-klemmliste-unit-device', unit.unit)}
+                          >
+                            <option value="">– none (left out) –</option>
+                            {devices.map((device) => (
+                              // The id too: the controllers of a location are often all "smartex dm".
+                              <option key={device.id} value={device.id}>
+                                {device.label} #{device.id} (now from sensor {device.first_sensor_order ?? 1})
+                              </option>
+                            ))}
+                          </Form.Select>
+                        </td>
+                        <td>{unit.rows}</td>
+                        <td>
+                          {unit.sensor_count == null ? (
+                            <span className="lageplan-klemmliste-muted">unknown</span>
+                          ) : unit.count_matches ? (
+                            <span>{unit.sensor_count} ✓</span>
+                          ) : (
+                            <strong>{unit.sensor_count} ≠ {unit.rows}</strong>
+                          )}
+                        </td>
+                        <td>
+                          {unit.device_id == null
+                            ? '–'
+                            : `${unit.first_sensor_order}–${unit.last_sensor_order ?? unit.first_sensor_order}`}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+                {preview.rows_total != null && preview.point_orders && (
+                  <div
+                    className={
+                      preview.rows_total === preview.point_orders.count
+                        ? 'lageplan-klemmliste-note'
+                        : 'lageplan-klemmliste-note lageplan-klemmliste-note--warning'
+                    }
+                    data-testid="lageplan-wizard-klemmliste-total"
+                  >
+                    {preview.rows_total} sensor(s) in the list, {preview.point_orders.count} measure point(s) at the
+                    location {preview.rows_total === preview.point_orders.count ? '✓' : '- they differ'}
+                  </div>
+                )}
+                {(preview.device_updates?.length ?? 0) > 0 && (
+                  <ul className="lageplan-klemmliste-device-updates" data-testid="lageplan-wizard-klemmliste-device-updates">
+                    {preview.device_updates?.map((update) => (
+                      <li key={update.device_id} {...repeatedTestId('lageplan-wizard-klemmliste-device-update', update.device_id)}>
+                        {update.unit} → {update.device_label}:{' '}
+                        {update.first_sensor_order[0] !== update.first_sensor_order[1] &&
+                          `first sensor ${update.first_sensor_order[0]} → ${update.first_sensor_order[1]}`}
+                        {update.first_sensor_order[0] !== update.first_sensor_order[1] &&
+                          update.sensor_count[0] !== update.sensor_count[1] &&
+                          ', '}
+                        {update.sensor_count[0] !== update.sensor_count[1] &&
+                          `sensor count ${update.sensor_count[0] ?? '–'} → ${update.sensor_count[1]}`}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {(preview.unit_warnings?.length ?? 0) > 0 && (
+                  <ul className="lageplan-klemmliste-warnings" data-testid="lageplan-wizard-klemmliste-unit-warnings">
+                    {preview.unit_warnings?.map((warning) => (
+                      <li key={warning}>{warning}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             )}
             {preview?.mode === 'renumber' && (preview.moves?.length ?? 0) > 0 && (
               <div className="lageplan-klemmliste-note" data-testid="lageplan-wizard-klemmliste-renumber">
@@ -495,6 +679,7 @@ const LageplanKlemmliste = ({
                 <Table size="sm" className="mb-0">
                   <thead>
                     <tr>
+                      {hasUnits && <th>Unit</th>}
                       <th>Position</th>
                       <th>MUX / PIN</th>
                       <th>Sensor</th>
@@ -505,10 +690,11 @@ const LageplanKlemmliste = ({
                   <tbody>
                     {lines.map((line) => (
                       <tr
-                        key={line.position}
+                        key={lineKey(line)}
                         className={`lageplan-klemmliste-line lageplan-klemmliste-line--${line.state}`}
-                        {...repeatedTestId('lageplan-wizard-klemmliste-line', line.position)}
+                        {...repeatedTestId('lageplan-wizard-klemmliste-line', lineKey(line))}
                       >
+                        {hasUnits && <td>{line.unit ?? '–'}</td>}
                         <td>{line.position}</td>
                         <td>{line.mux != null ? `${line.mux} / ${line.pin}` : '–'}</td>
                         <td>{line.new}</td>

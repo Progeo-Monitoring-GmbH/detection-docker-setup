@@ -70,7 +70,7 @@ def test_a_ruled_table_with_more_columns(klemmliste, tmp_path):
 
     assert result["method"] == "tables"
     assert _positions(result) == {1: "dm 001 Dach Nord", 2: "dm 002 Dach Nord", 17: "dm 017 Halle", 32: "Reserve"}
-    assert result["rows"][2] == {"sensor": "dm 017 Halle", "mux": 2, "pin": 1, "position": 17, "page": 1}
+    assert result["rows"][2] == {"sensor": "dm 017 Halle", "mux": 2, "pin": 1, "position": 17, "page": 1, "unit": None}
     assert result["warnings"] == []
 
 
@@ -246,3 +246,63 @@ def test_the_cad_reader_prints_the_rows_as_json(tmp_path):
 
     assert run.returncode == 0, run.stderr
     assert _positions(json.loads(run.stdout)) == {1: "dm 001", 2: "dm 002"}
+
+
+# -- several controllers in one list (Pin_Assignment of project 5977) -----------------
+
+OHIO_COLUMNS = [(20, 55, "Measuring Unit"), (75, 45, "Entry point"), (120, 45, "dm-cable"), (165, 40, "color"),
+                (205, 35, "CAT 5"), (240, 30, "wire"), (270, 70, "Color code"), (340, 50, "MUX Card"), (390, 30, "PIN")]
+
+
+def _pair(cable, mux, pin, cat="", unit="", entry="", name_in_ge=False, wire=1):
+    """A sensor's two rows: the PIN row (brown) and the "block / GE" row (white) -
+    its dm-cable number in either of them."""
+    first = (unit, entry, "" if name_in_ge else cable, "brown", cat, wire, "blue/white", f"MUX {mux}", pin)
+    second = ("", "", cable if name_in_ge else "", "white", "", wire + 1, "blue", "block", "GE")
+    return [first, second]
+
+
+def test_measuring_units_restart_their_mux_cards_and_a_sensor_spans_two_rows(klemmliste, tmp_path):
+    def build(doc):
+        first = doc.new_page()
+        first.insert_text((20, 25), "pin assignment - dm   5977 - Ohio Health Women Center", fontsize=9)
+        rows = [*_pair("1", 1, 1, unit="Area A", entry="EP 1", name_in_ge=True),
+                *_pair("2", 1, 2, cat="1", name_in_ge=True, wire=3),
+                *_pair("281", 1, 3, wire=5),  # added later: another number, same pattern
+                *_pair("3", 1, 4, cat="2", wire=7)]
+        _text_table(first, 40, OHIO_COLUMNS, rows, ruled=True)
+        second = doc.new_page()
+        # The header again on every page; Area B counts its MUX cards from 1 again.
+        rows = [*_pair("107", 1, 1, unit="Area B", entry="EP 7", name_in_ge=True),
+                *_pair("108", 1, 2, cat="1", wire=3), *_pair("125", 2, 1, wire=5)]
+        _text_table(second, 40, OHIO_COLUMNS, rows, ruled=True)
+
+    result = klemmliste.read_klemmliste(_pdf(tmp_path / "Pin_Assignment_dm_Ohio.pdf", build))
+
+    assert result["warnings"] == []
+    assert result["units"] == [{"unit": "Area A", "rows": 4}, {"unit": "Area B", "rows": 3}]
+    assert [(row["unit"], row["position"], row["sensor"]) for row in result["rows"]] == [
+        ("Area A", 1, "1"), ("Area A", 2, "2"), ("Area A", 3, "281"), ("Area A", 4, "3"),
+        ("Area B", 1, "107"), ("Area B", 2, "108"), ("Area B", 17, "125"),
+    ]
+
+
+def test_a_pin_row_without_any_name_is_reported(klemmliste, tmp_path):
+    def build(doc):
+        rows = [*_pair("1", 1, 1, unit="Area A"), *_pair("", 1, 2), *_pair("3", 1, 3)]
+        _text_table(doc.new_page(), 40, OHIO_COLUMNS, rows, ruled=True)
+
+    result = klemmliste.read_klemmliste(_pdf(tmp_path / "gap.pdf", build))
+
+    assert _positions(result) == {1: "1", 3: "3"}
+    assert result["warnings"] == ["Page 1: Area A: MUX 1 PIN 2 has no sensor name - skipped"]
+
+
+def test_without_units_every_row_has_none(klemmliste, tmp_path):
+    def build(doc):
+        _text_table(doc.new_page(), 40, [(40, 120, "Sensor"), (160, 60, "MUX Karte"), (220, 40, "PIN")],
+                    [("dm 001", 1, 1), ("dm 002", 1, 2)], ruled=True)
+
+    result = klemmliste.read_klemmliste(_pdf(tmp_path / "plain.pdf", build))
+
+    assert result["units"] == [] and {row["unit"] for row in result["rows"]} == {None}

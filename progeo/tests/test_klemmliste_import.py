@@ -18,7 +18,7 @@ from progeo.helper import (
     klemmliste_names,
 )
 from progeo.tests import factories as f
-from progeo.v1.models import Account, ProgeoMeasurePoint
+from progeo.v1.models import Account, ProgeoDevice, ProgeoMeasurePoint
 from progeo.v1.viewsets import status_viewset
 
 ROWS = [
@@ -68,7 +68,7 @@ def test_a_klemmliste_job_reads_the_rows_and_stores_nothing(location, monkeypatc
 
     job = cad_import.get_job(job_id)
     assert job["status"] == "done", job["error"]
-    assert job["result"] == {"rows": ROWS, "warnings": ["Page 1: twice"], "method": "tables"}
+    assert job["result"] == {"rows": ROWS, "warnings": ["Page 1: twice"], "method": "tables", "units": []}
     assert calls[0]["mode"] == "klemmliste" and calls[0]["png_out"] is None
     assert ProgeoMeasurePoint.objects.using(f.DB).get(location=location).name == "old"
 
@@ -108,7 +108,8 @@ def test_preview_and_apply_name_every_point_of_the_position(location):
 
     assert [(c["sensor_order"], c["old"], c["new"], c["points"]) for c in preview["changes"]] == [(1, "dm 1", "D_124", 2)]
     assert [c["sensor_order"] for c in preview["unchanged"]] == [2]
-    assert preview["missing"] == [{"position": 17, "mux": 2, "pin": 1, "sensor": "D_104", "sensor_order": 17}]
+    assert preview["missing"] == [
+        {"position": 17, "mux": 2, "pin": 1, "sensor": "D_104", "sensor_order": 17, "unit": None, "device_id": None}]
     assert preview["without_name"] == [3]
     assert preview["point_orders"] == {"count": 3, "min": 1, "max": 3}
     assert preview["named_like_points"] == 0
@@ -386,3 +387,148 @@ def test_airtable_documents_are_staff_only(api_client, location, airtable):
     response = api_client.get("/v1/status/measure_points/airtable_documents/", {"location_id": location.project_id})
 
     assert response.json()["reason"] == "Staff access required"
+
+
+# -- several controllers: measuring units ------------------------------------------
+
+UNIT_ROWS = [
+    {"sensor": "1", "mux": 1, "pin": 1, "position": 1, "unit": "Area A"},
+    {"sensor": "2", "mux": 1, "pin": 2, "position": 2, "unit": "Area A"},
+    {"sensor": "107", "mux": 1, "pin": 1, "position": 1, "unit": "Area B"},
+    {"sensor": "125", "mux": 2, "pin": 1, "position": 17, "unit": "Area B"},
+]
+
+
+def test_units_go_to_the_devices_in_order_of_their_first_sensor(location):
+    # Created out of order: the first sensor decides, not the pk.
+    second = f.make_device(location, mac="Controller B", first_sensor_order=101, sensor_count=2)
+    first = f.make_device(location, mac="Controller A", first_sensor_order=1, sensor_count=2)
+    for order in (1, 2, 101, 117):
+        _point(location, order)
+
+    preview = klemmliste_names.preview(f.DB, location, UNIT_ROWS)
+
+    assert [(u["unit"], u["device_id"], u["first_sensor_order"], u["rows"], u["count_matches"])
+            for u in preview["units"]] == [("Area A", first.pk, 1, 2, True), ("Area B", second.pk, 101, 2, True)]
+    targets = {(c["unit"], c["position"]): c["sensor_order"] for c in preview["changes"]}
+    assert targets == {("Area A", 1): 1, ("Area A", 2): 2, ("Area B", 1): 101, ("Area B", 17): 117}
+    assert preview["unit_warnings"] == []
+
+
+def test_the_sensor_counts_and_ranges_are_checked(location):
+    f.make_device(location, mac="Controller A", first_sensor_order=1, sensor_count=3)
+    f.make_device(location, mac="Controller B", first_sensor_order=10, sensor_count=2)
+
+    preview = klemmliste_names.preview(f.DB, location, UNIT_ROWS)
+
+    warnings = " | ".join(preview["unit_warnings"])
+    assert "Area A: 2 sensor(s) in the list, Controller A (#" in warnings and ") measures 3" in warnings
+    # Area B's position 17 goes up to sensor 26 - fine; Area A (1-2) doesn't reach 10.
+    assert "starts at" not in warnings
+    overlapping = klemmliste_names.preview(f.DB, location, [*UNIT_ROWS[:2], *(
+        {"sensor": f"x{n}", "mux": 1, "pin": n, "position": n, "unit": "Area A"} for n in range(3, 13)),
+        *UNIT_ROWS[2:]])
+    # Area A (1-12) runs into Area B (from 10): the devices are realigned - B from 13.
+    assert "sensor ranges overlap" in overlapping["unit_warnings"][0]
+    assert [(u["unit"], u["first_sensor_order"], u["last_sensor_order"]) for u in overlapping["units"]] == [
+        ("Area A", 1, 12), ("Area B", 13, 29)]
+
+
+def test_a_unit_can_go_to_another_device_or_none(location):
+    first = f.make_device(location, first_sensor_order=1)
+    second = f.make_device(location, first_sensor_order=101)
+    _point(location, 1)
+
+    swapped = klemmliste_names.preview(f.DB, location, UNIT_ROWS,
+                                       unit_devices={"Area A": second.pk, "Area B": first.pk})
+    assert [(u["unit"], u["device_id"]) for u in swapped["units"]] == [("Area A", second.pk), ("Area B", first.pk)]
+
+    without = klemmliste_names.preview(f.DB, location, UNIT_ROWS, unit_devices={"Area B": None})
+    assert without["unassigned"] == 2 and "Area B: no device" in without["unit_warnings"][0]
+    foreign = f.make_device(f.make_location(Account.objects.using(f.DB).get(pk=1)))
+    with pytest.raises(klemmliste_names.KlemmlisteError):
+        klemmliste_names.preview(f.DB, location, UNIT_ROWS, unit_devices={"Area A": foreign.pk})
+
+
+def test_more_units_than_devices_leaves_the_rest_out(location):
+    f.make_device(location, first_sensor_order=1)
+
+    preview = klemmliste_names.preview(f.DB, location, UNIT_ROWS)
+
+    assert [u["device_id"] is None for u in preview["units"]] == [False, True]
+    assert preview["unassigned"] == 2
+
+
+def test_label_numbered_points_move_to_their_unit_and_input(location):
+    f.make_device(location, first_sensor_order=1)
+    f.make_device(location, first_sensor_order=201)
+    # Numbered by their plan label (= the cable number) after the CAD import.
+    for order in (1, 2, 107, 125):
+        _point(location, order, f"dm {order}")
+
+    applied = klemmliste_names.apply(f.DB, location, UNIT_ROWS)
+
+    assert applied["mode"] == "renumber"
+    assert _orders(location) == {1: "1", 2: "2", 201: "107", 217: "125"}
+
+
+def test_apply_takes_the_unit_devices_of_the_request(api_client, staff, location):
+    first = f.make_device(location, first_sensor_order=1)
+    second = f.make_device(location, first_sensor_order=101)
+    _point(location, 1, "old")
+    job_id = _done_job(location, staff, rows=UNIT_ROWS)
+    url = "/v1/status/measure_points/klemmliste/apply/"
+
+    body = api_client.post(url, {"location_id": location.project_id, "job_id": job_id, "dry_run": True,
+                                 "unit_devices": {"Area A": second.pk, "Area B": first.pk}}, format="json").json()
+
+    assert [(u["unit"], u["device_id"]) for u in body["result"]["units"]] == [
+        ("Area A", second.pk), ("Area B", first.pk)]
+    bad = api_client.post(url, {"location_id": location.project_id, "job_id": job_id, "unit_devices": [1]},
+                          format="json").json()
+    assert bad["reason"] == "unit_devices must be an object {unit: device id}"
+
+
+def test_devices_all_starting_at_1_are_aligned_with_the_list(location):
+    """Like location 3031 (Ohio Health, 3 controllers): every device still starts
+    at sensor 1, none knows its sensor count, the points carry their cable
+    number from the plan."""
+    devices = [f.make_device(location, first_sensor_order=1) for _ in range(3)]
+    rows = [
+        *({"sensor": str(n), "mux": 1, "pin": n, "position": n, "unit": "Area A"} for n in (1, 2, 3)),
+        *({"sensor": str(106 + n), "mux": 1, "pin": n, "position": n, "unit": "Area B"} for n in (1, 2)),
+        {"sensor": "193", "mux": 1, "pin": 1, "position": 1, "unit": "Area C"},
+    ]
+    for row in rows:
+        _point(location, int(row["sensor"]), f"dm {row['sensor']}")
+
+    preview = klemmliste_names.preview(f.DB, location, rows)
+
+    assert [(u["unit"], u["device_id"], u["first_sensor_order"], u["last_sensor_order"]) for u in preview["units"]] == [
+        ("Area A", devices[0].pk, 1, 3), ("Area B", devices[1].pk, 4, 5), ("Area C", devices[2].pk, 6, 6)]
+    assert [(d["device_id"], d["first_sensor_order"], d["sensor_count"]) for d in preview["device_updates"]] == [
+        (devices[0].pk, [1, 1], [None, 3]), (devices[1].pk, [1, 4], [None, 2]), (devices[2].pk, [1, 6], [None, 1])]
+    assert "sensor ranges overlap" in preview["unit_warnings"][0]
+    assert (preview["rows_total"], preview["point_orders"]["count"]) == (6, 6)
+
+    klemmliste_names.apply(f.DB, location, rows)
+
+    stored = {device.pk: (device.first_sensor_order, device.sensor_count)
+              for device in ProgeoDevice.objects.using(f.DB).filter(location=location)}
+    assert stored == {devices[0].pk: (1, 3), devices[1].pk: (4, 2), devices[2].pk: (6, 1)}
+    points = dict(ProgeoMeasurePoint.objects.using(f.DB).filter(location=location)
+                  .values_list("sensor_order", "device_id"))
+    assert points == {1: devices[0].pk, 2: devices[0].pk, 3: devices[0].pk, 4: devices[1].pk, 5: devices[1].pk,
+                      6: devices[2].pk}
+    assert _orders(location)[4] == "107"
+
+
+def test_devices_whose_ranges_fit_are_left_alone(location):
+    f.make_device(location, mac="Controller A", first_sensor_order=1, sensor_count=2)
+    f.make_device(location, mac="Controller B", first_sensor_order=101, sensor_count=17)
+
+    preview = klemmliste_names.preview(f.DB, location, UNIT_ROWS)
+
+    assert preview["device_updates"] == []
+    assert len(preview["unit_warnings"]) == 1 and "Controller B (#" in preview["unit_warnings"][0]
+    assert preview["unit_warnings"][0].endswith(") measures 17")
