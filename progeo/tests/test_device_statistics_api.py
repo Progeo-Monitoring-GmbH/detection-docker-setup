@@ -32,7 +32,9 @@ def world(bound_account):
     smartbox and a 40-day-old device; one with an active Lageplan but no
     measure points and a never-measured node (no chip_id)."""
     now = timezone.now()
-    with_plan = f.make_location(bound_account, name="Halle mit Punkten", project_id=940001, project_type=1)
+    with_plan = f.make_location(
+        bound_account, name="Halle mit Punkten", project_id=940001, project_type=1, latitude=50.1, longitude=7.1
+    )
     without_plan = f.make_location(bound_account, name="Halle ohne Punkte", project_id=940002, project_type=3)
     # The Lageplan does not count: without points the location still lacks them.
     ProgeoLageplan.objects.using(f.DB).create(
@@ -85,7 +87,7 @@ def test_base_url_is_only_the_page_shell(api_client, world):
     assert body["generated_at"]
     assert body["sections"] == [
         "overview", "by_type", "chip_id", "measured", "points", "dead",
-        "unused_locations", "locations_missing_points", "dead_locations",
+        "unused_locations", "locations_missing_points", "dead_locations", "locations_without_gps",
     ]
     # No inventory data and therefore no expensive scan on the base request.
     assert "totals" not in body
@@ -127,6 +129,7 @@ def test_overview_has_totals_and_type_breakdown(api_client, world):
         "dead": 2,
         "unused_locations": 1,
         "locations_missing_points": 1,
+        "locations_without_gps": 1,
     }
     # By the locations' project type, not the technical device type.
     assert body["by_type"] == [
@@ -173,6 +176,17 @@ def test_devices_land_in_chip_and_measurement_lists(api_client, world):
     assert _ids(points, "missing_points") == {world["never"].id}
     # Every section carries the totals for the KPI tiles.
     assert chip["totals"]["devices"] == 3
+
+
+def test_locations_without_gps_position_are_counted_and_listed(api_client, world, bound_account):
+    # Half a position is none: the map needs both coordinates.
+    half = f.make_location(bound_account, name="Nur Breitengrad", project_id=940003, latitude=51.0)
+    body = _get(api_client, f.make_user(staff=True), "locations_without_gps", refresh=True)
+
+    rows = {row["id"]: row for row in body["locations"]["locations_without_gps"]}
+    assert set(rows) == {world["without_plan"].id, half.id}
+    assert rows[half.id]["has_gps"] is False
+    assert body["totals"]["locations_without_gps"] == 2
 
 
 def test_location_without_measure_points_is_listed(api_client, world):

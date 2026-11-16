@@ -92,6 +92,18 @@ afterEach(() => {
 });
 
 describe('NoiseProfilePanel', () => {
+  it('starts minimized, opens on its toggle - and by itself when an edit starts', () => {
+    render();
+    const toggle = container.querySelector<HTMLElement>('[data-testid="noise-profile-toggle"]')!;
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    act(() => toggle.click());
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    act(() => toggle.click());
+
+    act(() => root.render(<NoiseProfilePanel {...panelProps} draftName="Neu" />));
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  });
+
   it('shows the picked profile\'s rating big, each measure as a traffic light', () => {
     render();
     expect(tile('score').textContent).toContain('72 %');

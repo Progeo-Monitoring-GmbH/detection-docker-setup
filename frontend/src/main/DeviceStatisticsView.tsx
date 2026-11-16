@@ -78,6 +78,8 @@ type StatisticsTotals = {
   dead: number;
   unused_locations: number;
   locations_missing_points: number;
+  /** Locations without latitude and longitude - not on the map. */
+  locations_without_gps: number;
 };
 
 type StatisticsTypeRow = {
@@ -113,7 +115,8 @@ type StatisticsRequestSection =
   | 'dead'
   | 'unused_locations'
   | 'locations_missing_points'
-  | 'dead_locations';
+  | 'dead_locations'
+  | 'locations_without_gps';
 
 type StatsSection =
   | 'by_type'
@@ -123,7 +126,8 @@ type StatsSection =
   | 'dead'
   | 'unused_locations'
   | 'locations_missing_points'
-  | 'dead_locations';
+  | 'dead_locations'
+  | 'locations_without_gps';
 
 /** One selected table row; `database` addresses it for bulk deletion. */
 type SelectedRow = {
@@ -143,6 +147,7 @@ const EMPTY_TOTALS: StatisticsTotals = {
   dead: 0,
   unused_locations: 0,
   locations_missing_points: 0,
+  locations_without_gps: 0,
 };
 
 /** Missing lists/keys become empty instead of crashing the page. */
@@ -178,6 +183,7 @@ const REQUEST_SECTION: Record<StatsSection, StatisticsRequestSection> = {
   unused_locations: 'unused_locations',
   locations_missing_points: 'locations_missing_points',
   dead_locations: 'dead_locations',
+  locations_without_gps: 'locations_without_gps',
 };
 
 const STATISTICS_URL = '/v1/status/device_statistics/';
@@ -991,6 +997,7 @@ const DeviceStatisticsView = () => {
       label: t('device_stats_locations_missing_points'),
     },
     { value: 'dead_locations', label: t('device_stats_dead_locations') },
+    { value: 'locations_without_gps', label: t('device_stats_locations_without_gps') },
   ];
 
   // by_type is keyed by the locations' project type (PROJECT_TYPE_CHOICES
@@ -1200,6 +1207,19 @@ const DeviceStatisticsView = () => {
             />
           </ListSection>
         );
+      case 'locations_without_gps':
+        return (
+          <ListSection title={t('device_stats_locations_without_gps')} testKey="without-gps">
+            <LocationList
+              rows={current.locations.locations_without_gps ?? []}
+              selectable
+              showAdminEdit={isSuperuser}
+              selectionKey={`without-gps-${selectionEpoch}`}
+              testKey="without-gps"
+              onSelectionChange={selectionHandler('without-gps', 'location')}
+            />
+          </ListSection>
+        );
       default:
         return null;
     }
@@ -1249,6 +1269,12 @@ const DeviceStatisticsView = () => {
       label: t('device_stats_locations_missing_points'),
       value: hasTotals ? String(totals.locations_missing_points) : '–',
       valueColor: totals.locations_missing_points > 0 ? AMBER : undefined,
+    },
+    {
+      label: t('device_stats_locations_without_gps'),
+      value: hasTotals ? String(totals.locations_without_gps) : '–',
+      valueColor: totals.locations_without_gps > 0 ? AMBER : undefined,
+      testId: 'device-stats-kpi-without-gps',
     },
   ];
 

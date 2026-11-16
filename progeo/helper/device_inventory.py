@@ -81,7 +81,7 @@ CHUNK_DATABASES = 40
 BUILD_SECONDS = 900
 # Versioned: a snapshot of an older layout (e.g. still with missing_lageplan)
 # must not be served after a deploy.
-CACHE_PREFIX = "progeo:device-statistics:v2:"
+CACHE_PREFIX = "progeo:device-statistics:v3:"
 # The sections the frontend requests one by one (the first also warms the
 # cache for all following ones, which are then served from it).
 SECTION_NAMES = (
@@ -94,6 +94,7 @@ SECTION_NAMES = (
     "unused_locations",
     "locations_missing_points",
     "dead_locations",
+    "locations_without_gps",
 )
 
 
@@ -117,7 +118,7 @@ def _collect_locations(accounts):
         locations = (
             ProgeoLocation.objects.using(account.db_name)
             .filter(account=account)
-            .only("id", "name", "project_id", "project_type", "account_id")
+            .only("id", "name", "project_id", "project_type", "account_id", "latitude", "longitude")
         )
         for database, group in locations_by_db(locations, account).items():
             entries = grouped.setdefault(database, {})
@@ -222,6 +223,8 @@ def _location_row(location, device_count, last, has_lageplan, point_count, now, 
         "point_count": point_count,
         "has_points": point_count > 0,
         "has_lageplan": has_lageplan,
+        # The map (/map/) and the weather need both coordinates.
+        "has_gps": getattr(location, "latitude", None) is not None and getattr(location, "longitude", None) is not None,
         "unused": device_count == 0 or dead,
         "dead": dead,
     }
@@ -305,6 +308,7 @@ def _totals(device_rows, location_rows):
         "dead": sum(1 for row in device_rows if row["dead"]),
         "unused_locations": sum(1 for row in location_rows if row["unused"]),
         "locations_missing_points": sum(1 for row in location_rows if not row["has_points"]),
+        "locations_without_gps": sum(1 for row in location_rows if not row["has_gps"]),
     }
 
 
@@ -330,6 +334,7 @@ def _aggregate(device_rows, location_rows, now):
     unused_locations = [row for row in location_rows if row["unused"]]
     locations_missing_points = [row for row in location_rows if not row["has_points"]]
     dead_locations = [row for row in location_rows if row["dead"]]
+    locations_without_gps = [row for row in location_rows if not row["has_gps"]]
 
     truncated = False
     for type_key, rows in list(devices["by_type"].items()):
@@ -344,10 +349,11 @@ def _aggregate(device_rows, location_rows, now):
         "unused": unused_locations[:MAX_LIST_ROWS],
         "missing_points": locations_missing_points[:MAX_LIST_ROWS],
         "dead": dead_locations[:MAX_LIST_ROWS],
+        "without_gps": locations_without_gps[:MAX_LIST_ROWS],
     }
     truncated = truncated or any(
         len(rows) > MAX_LIST_ROWS
-        for rows in (unused_locations, locations_missing_points, dead_locations)
+        for rows in (unused_locations, locations_missing_points, dead_locations, locations_without_gps)
     )
 
     payload = {
@@ -455,6 +461,8 @@ def start_build(accounts, chunk_size=None):
                     "name": location.name,
                     "project_id": location.project_id,
                     "project_type": location.project_type,
+                    "latitude": location.latitude,
+                    "longitude": location.longitude,
                 }
                 for location in group.values()
             ]
@@ -584,10 +592,11 @@ def statistics_section(payload, section):
         return {**base, "devices": {"missing_points": devices["missing_points"]}}
     if section == "dead":
         return {**base, "devices": {"dead": devices["dead"]}}
-    # The three location sections.
+    # The location sections.
     location_key = {
         "unused_locations": "unused",
         "locations_missing_points": "missing_points",
         "dead_locations": "dead",
+        "locations_without_gps": "without_gps",
     }[section]
     return {**base, "locations": {section: locations[location_key]}}

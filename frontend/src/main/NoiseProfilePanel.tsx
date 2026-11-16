@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { Button, Card, Collapse, Spinner } from 'react-bootstrap';
 import { XLg } from 'react-bootstrap-icons';
 import { useTranslation } from 'react-i18next';
@@ -193,8 +193,15 @@ const NoiseProfilePanel = ({
   thresholds = null,
 }: NoiseProfilePanelProps) => {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(true);
+  // Minimized until opened - the measurements above come first. An edit
+  // (a new or changed profile) opens it: the editor must be seen.
+  const [open, setOpen] = useState(false);
   const editing = draftName != null;
+  useEffect(() => {
+    if (editing) {
+      setOpen(true);
+    }
+  }, [editing]);
   const selected = profiles.find((profile) => profile.id === selectedId) ?? null;
   const active = profiles.find((profile) => profile.is_active) ?? null;
   const tested = profiles.find((profile) => profile.id === testedId) ?? null;

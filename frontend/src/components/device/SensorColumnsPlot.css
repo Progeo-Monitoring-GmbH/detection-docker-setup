@@ -1,0 +1,123 @@
+/* The measurements' first plot (SensorColumnsPlot.tsx) - laid out like the
+   threshold mixer (main/ThresholdMixer.css): a fixed y-axis gutter with the
+   grip, columns that scroll beside it. */
+
+.sensor-columns {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Legend and filter: one row, left-aligned with the text above the chart. */
+.sensor-columns-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.sensor-columns-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+
+.sensor-columns-legend-item,
+.sensor-columns-legend-static {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--progeo-blue);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.sensor-columns-legend-item {
+  cursor: pointer;
+}
+
+.sensor-columns-legend-item--off {
+  opacity: 0.4;
+}
+
+.sensor-columns-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+/* min–max: a whisker with caps. */
+.sensor-columns-swatch--whisker {
+  background:
+    linear-gradient(rgba(153, 27, 27, 0.7), rgba(153, 27, 27, 0.7)) center / 1.5px 100% no-repeat,
+    linear-gradient(rgba(153, 27, 27, 0.7), rgba(153, 27, 27, 0.7)) top / 8px 1.5px no-repeat,
+    linear-gradient(rgba(153, 27, 27, 0.7), rgba(153, 27, 27, 0.7)) bottom / 8px 1.5px no-repeat;
+  border-radius: 0;
+}
+
+/* The mean: a short line. */
+.sensor-columns-swatch.sensor-columns-swatch--line {
+  height: 3px;
+  border-radius: 2px;
+}
+
+/* A Störungsprofil's mask: a dashed outline. */
+.sensor-columns-swatch--outline {
+  border: 1.2px dashed #8b8383;
+  background: none;
+}
+
+.sensor-columns-spacer {
+  flex: 1;
+}
+
+.sensor-columns-filter,
+.sensor-columns-status {
+  color: #8b8383;
+  font-size: 12px;
+}
+
+.sensor-columns-chart {
+  display: flex;
+  position: relative;
+}
+
+.sensor-columns-gutter {
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.sensor-columns-grip {
+  cursor: ns-resize;
+  outline: none;
+}
+
+.sensor-columns-grip:focus-visible rect,
+.sensor-columns-grip--dragging rect {
+  fill: var(--progeo-blue);
+}
+
+.sensor-columns-scroll-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Room under the plot for the horizontal scrollbar. */
+.sensor-columns-scroller {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 10px;
+  outline: none;
+  scrollbar-color: #8b8383 var(--progeo-track-soft);
+}
+
+.sensor-columns-plot {
+  display: block;
+  cursor: pointer;
+}
