@@ -438,3 +438,23 @@ def test_the_map_carries_the_purgeable_flag(api_client, world):
 
     assert rows[world["without_plan"].pk]["purgeable"] is True
     assert rows[world["with_plan"].pk]["purgeable"] is None
+
+
+def test_staff_read_the_switched_off_flags_of_locations(api_client, world):
+    ProgeoLocation.objects.using(f.DB).filter(pk=world["without_plan"].pk).update(purgeable=True)
+    ProgeoLocation.objects.using(f.DB).filter(pk=world["with_plan"].pk).update(notifications_disabled=True)
+    ids = f"{world['with_plan'].pk},{world['without_plan'].pk},999999999"
+
+    api_client.force_authenticate(user=f.make_user())
+    assert api_client.get(f"/v1/location/flags/?ids={ids}").json()["reason"] == "Staff access required"
+
+    api_client.force_authenticate(user=f.make_user(staff=True))
+    flags = api_client.get(f"/v1/location/flags/?ids={ids}").json()["flags"]
+
+    assert flags == {
+        str(world["with_plan"].pk): {"notifications_disabled": True, "purgeable": None},
+        str(world["without_plan"].pk): {"notifications_disabled": False, "purgeable": True},
+    }
+    assert api_client.get("/v1/location/flags/?ids=x").json()["success"] is False
+    too_many = ",".join(str(pk) for pk in range(1, 502))
+    assert api_client.get(f"/v1/location/flags/?ids={too_many}").json()["success"] is False

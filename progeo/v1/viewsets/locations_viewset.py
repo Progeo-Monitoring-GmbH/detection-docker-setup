@@ -593,6 +593,36 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             "activity": activity,
         })
 
+    # Ids per GET /v1/location/flags/ request.
+    FLAGS_MAX_IDS = 500
+
+    @action(detail=False, url_path="flags", methods=["GET"])
+    def flags(self, request, *args, **kwargs):
+        """Staff: the "switched off" flags of locations, for the striped rows of
+        every location table - ?ids=1,2,3 -> {"flags": {id: {notifications_disabled,
+        purgeable}}}. Read from "default" (where both are switched), ids not
+        there from the configured accounts' databases; unknown ids are left out."""
+        if not _is_staff_admin(getattr(request, "user", None)):
+            return RequestFailed({"reason": "Staff access required"})
+        try:
+            ids = {int(value) for value in request.query_params.get("ids", "").split(",") if value.strip()}
+        except ValueError:
+            return RequestFailed({"reason": "ids must be numbers"})
+        if len(ids) > self.FLAGS_MAX_IDS:
+            return RequestFailed({"reason": f"At most {self.FLAGS_MAX_IDS} ids per request"})
+        fields = ("pk", "notifications_disabled", "purgeable")
+        found = {}
+        databases = ["default", *dict.fromkeys(account.db_name for account in configured_accounts())]
+        for database in dict.fromkeys(databases):
+            missing = ids - set(found)
+            if not missing:
+                break
+            for pk, notifications_disabled, purgeable in (
+                ProgeoLocation.objects.using(database).filter(pk__in=missing).values_list(*fields)
+            ):
+                found[pk] = {"notifications_disabled": notifications_disabled, "purgeable": purgeable}
+        return RequestSuccess({"flags": {str(pk): value for pk, value in found.items()}})
+
     @require_module_permissions("module_locations_enabled")
     @action(detail=True, url_path="purgeable", methods=["POST"])
     def purgeable(self, request, pk=None, *args, **kwargs):

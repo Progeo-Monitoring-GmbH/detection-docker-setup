@@ -107,12 +107,12 @@ describe('StaffNotificationCases', () => {
       );
     });
 
-    expect(rowOf(4701).className).toContain('staff-notifications-row-disabled');
-    expect(rowOf(4702).className).not.toContain('staff-notifications-row-disabled');
+    expect(rowOf(4701).className).toContain('location-row-off');
+    expect(rowOf(4702).className).not.toContain('location-row-off');
     // Unknown location (null): not marked either.
-    expect(rowOf(4703).className).not.toContain('staff-notifications-row-disabled');
-    const icons = [...container.querySelectorAll('[data-testid="staff-notifications-disabled"]')];
-    expect(icons.map((icon) => icon.getAttribute('data-test-key'))).toEqual(['1']);
+    expect(rowOf(4703).className).not.toContain('location-row-off');
+    const icons = [...container.querySelectorAll('[data-testid="location-flag-icons"]')];
+    expect(icons.map((icon) => icon.getAttribute('data-test-key'))).toEqual(['case-1']);
     expect(container.querySelector('[data-testid="staff-notifications-legend"]')).not.toBeNull();
   });
 });

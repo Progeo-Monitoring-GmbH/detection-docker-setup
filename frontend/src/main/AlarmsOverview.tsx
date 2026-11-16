@@ -32,6 +32,7 @@ import AlarmTimeline, {
 import { type RainEvent, rainEventKey } from './alarmUtils';
 import { formatDate, toLocalIso } from './dateFormat';
 import { repeatedTestId } from '../testIds';
+import { LocationFlagIcons, locationOffRowStyle, useLocationFlags } from '../components/location/locationFlags';
 import './AlarmsOverview.css';
 
 type AlarmDevice = {
@@ -422,6 +423,9 @@ const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
     [filteredRows],
   );
 
+  // Staff: alarms of a switched-off location (notifications off / marked purgeable) striped.
+  const { flagsOf, isOff } = useLocationFlags(rows.map((row) => row.location?.id));
+
   const columns: TableColumn<AlarmRow>[] = [
     {
       name: t('alarms_overview_col_id'),
@@ -433,9 +437,14 @@ const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
       name: t('alarm_detail_location'),
       cell: (row) => {
         const loc = row.location;
-        return loc
-          ? `${loc.name || t('alarms_overview_unnamed')} (${loc.project_id ?? loc.id})`
-          : '-';
+        return loc ? (
+          <span>
+            <LocationFlagIcons flags={flagsOf(loc.id)} testKey={`alarm-${row.id}-${loc.id ?? ''}`} />
+            {`${loc.name || t('alarms_overview_unnamed')} (${loc.project_id ?? loc.id})`}
+          </span>
+        ) : (
+          '-'
+        );
       },
       sortable: true,
       grow: 1.4,
@@ -561,6 +570,8 @@ const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
   ];
 
   const conditionalRowStyles = [
+    // First: the table keeps the style of the last matching rule (the selection's).
+    locationOffRowStyle((row: AlarmRow) => isOff(row.location?.id)),
     {
       when: (row: AlarmRow) => selectedAlarm !== null && alarmKey(row) === alarmKey(selectedAlarm),
       style: {

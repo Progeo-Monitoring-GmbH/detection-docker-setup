@@ -6,7 +6,7 @@ import {
   type ReactNode,
 } from 'react';
 import { Alert, Badge, Button, ProgressBar, Spinner } from 'react-bootstrap';
-import { ArrowCounterclockwise, ArrowRepeat, PencilSquare, Trash3, Trash3Fill } from 'react-bootstrap-icons';
+import { ArrowCounterclockwise, ArrowRepeat, PencilSquare, Trash3 } from 'react-bootstrap-icons';
 import DataTable, { type TableColumn } from 'react-data-table-component';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
@@ -30,6 +30,13 @@ import { staffFlags } from './access';
 import { getProjectTypeLabel } from './projectType';
 import { addCounts, mergeTypeCounts, runChunks } from './deviceStatisticsBuild';
 import NotificationLocationsPanel from './NotificationLocationsPanel';
+import {
+  LocationFlagIcons,
+  locationOffRowStyle,
+  setLocationFlags,
+  useLocationFlags,
+  type LocationFlags,
+} from '../components/location/locationFlags';
 import { repeatedTestId } from '../testIds';
 import './DeviceStatisticsView.css';
 
@@ -276,6 +283,8 @@ const DeviceList = ({
 }) => {
   const { t } = useTranslation();
   const now = useNow();
+  // The device's location switched off: the striped row (locationFlags.tsx).
+  const { flagsOf, isOff } = useLocationFlags(rows.map((row) => row.location_id));
 
   if (!rows.length) {
     return (
@@ -338,6 +347,7 @@ const DeviceList = ({
       sortable: true,
       cell: (row) => (
         <div className="small">
+          <LocationFlagIcons flags={flagsOf(row.location_id)} testKey={`device-${row.database}-${row.id}`} />
           {row.location_id != null ? (
             <Link
               to={locationDetailUrl({ id: row.location_id })}
@@ -404,6 +414,7 @@ const DeviceList = ({
       customStyles={COMPACT_TABLE_STYLES}
       selectableRows={selectable}
       selectableRowsHighlight
+      conditionalRowStyles={[locationOffRowStyle((row: StatisticsDevice) => isOff(row.location_id))]}
       onSelectedRowsChange={(state: { selectedRows: StatisticsDevice[] }) =>
         onSelectionChange?.(state.selectedRows)
       }
@@ -413,11 +424,6 @@ const DeviceList = ({
     />
   );
 };
-
-/** Marked rows look switched off (DeviceStatisticsView.css). */
-const PURGEABLE_ROW_STYLES = [
-  { when: (row: StatisticsLocation) => row.purgeable === true, classNames: ['device-stats-row-purgeable'] },
-];
 
 /** The shared location table (location, device count, measure points, Lageplan, status). */
 const LocationList = ({
@@ -444,6 +450,11 @@ const LocationList = ({
 }) => {
   const { t } = useTranslation();
   const now = useNow();
+  const { flagsOf } = useLocationFlags(rows.map((row) => row.id));
+  // The store (toggles of this visit included) - until it answers, the snapshot's mark.
+  const flagsFor = (row: StatisticsLocation): LocationFlags =>
+    flagsOf(row.id) ?? { notifications_disabled: null, purgeable: row.purgeable ?? null };
+  const purgeableOf = (row: StatisticsLocation) => flagsFor(row).purgeable === true;
 
   if (!rows.length) {
     return (
@@ -460,14 +471,7 @@ const LocationList = ({
       sortable: true,
       cell: (row) => (
         <div className="small">
-          {row.purgeable === true && (
-            <Trash3Fill
-              size={11}
-              className="me-1 device-stats-purgeable-icon"
-              title={t('device_stats_purgeable_marked')}
-              {...repeatedTestId('device-stats-location-purgeable', `${row.database}-${row.id}`)}
-            />
-          )}
+          <LocationFlagIcons flags={flagsFor(row)} testKey={`${row.database}-${row.id}`} />
           <Link
             to={locationDetailUrl(row)}
             title={t('device_stats_open_location')}
@@ -552,28 +556,28 @@ const LocationList = ({
       ? [
           {
             name: t('device_stats_col_purgeable'),
-            selector: (row: StatisticsLocation) => (row.purgeable === true ? 1 : 0),
+            selector: (row: StatisticsLocation) => (purgeableOf(row) ? 1 : 0),
             sortable: true,
             cell: (row: StatisticsLocation) => (
               <Button
                 size="sm"
-                variant={row.purgeable === true ? 'outline-secondary' : 'outline-danger'}
+                variant={purgeableOf(row) ? 'outline-secondary' : 'outline-danger'}
                 className="device-stats-purge-button"
                 disabled={Boolean(purgeBusy[row.id])}
                 title={
-                  row.purgeable === true
+                  purgeableOf(row)
                     ? t('device_stats_purgeable_unmark_title')
                     : t('device_stats_purgeable_mark_title')
                 }
-                onClick={() => onTogglePurgeable(row)}
+                onClick={() => onTogglePurgeable({ ...row, purgeable: purgeableOf(row) })}
                 {...repeatedTestId('device-stats-purge-toggle', `${row.database}-${row.id}`)}
               >
-                {row.purgeable === true ? (
+                {purgeableOf(row) ? (
                   <ArrowCounterclockwise size={12} className="me-1" />
                 ) : (
                   <Trash3 size={12} className="me-1" />
                 )}
-                {row.purgeable === true ? t('device_stats_purgeable_unmark') : t('device_stats_purgeable_mark')}
+                {purgeableOf(row) ? t('device_stats_purgeable_unmark') : t('device_stats_purgeable_mark')}
               </Button>
             ),
             width: '150px',
@@ -613,7 +617,10 @@ const LocationList = ({
       customStyles={COMPACT_TABLE_STYLES}
       selectableRows={selectable}
       selectableRowsHighlight
-      conditionalRowStyles={PURGEABLE_ROW_STYLES}
+      conditionalRowStyles={[locationOffRowStyle((row: StatisticsLocation) => {
+        const flags = flagsFor(row);
+        return flags.notifications_disabled === true || flags.purgeable === true;
+      })]}
       onSelectedRowsChange={(state: { selectedRows: StatisticsLocation[] }) =>
         onSelectionChange?.(state.selectedRows)
       }
@@ -662,9 +669,6 @@ const DeviceStatisticsView = () => {
   const [selectionEpoch, setSelectionEpoch] = useState(0);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  // Purgeable flags changed on this page: they win over the snapshot's rows
-  // (a location can be in several lists, each loaded on its own).
-  const [purgeOverrides, setPurgeOverrides] = useState<Record<number, boolean | null>>({});
   const [purgeBusy, setPurgeBusy] = useState<Record<number, boolean>>({});
   const requestRef = useRef(0);
   const inFlight = useRef(false);
@@ -967,7 +971,8 @@ const DeviceStatisticsView = () => {
       { purgeable },
       (response) => {
         const saved = (response?.data?.location?.purgeable ?? purgeable) as boolean | null;
-        setPurgeOverrides((overrides) => ({ ...overrides, [row.id]: saved }));
+        // Every table of the visit follows (locationFlags store).
+        setLocationFlags(row.id, { purgeable: saved });
         setPurgeBusy((busy) => ({ ...busy, [row.id]: false }));
         showSuccessBar(
           enqueueSnackbar,
@@ -982,9 +987,6 @@ const DeviceStatisticsView = () => {
       },
     );
   };
-
-  const withPurgeable = (rows: StatisticsLocation[] | undefined) =>
-    (rows ?? []).map((row) => (row.id in purgeOverrides ? { ...row, purgeable: purgeOverrides[row.id] } : row));
 
   const current = sections[requestKey] ?? null;
   const overview = sections.overview ?? null;
@@ -1261,7 +1263,7 @@ const DeviceStatisticsView = () => {
         return (
           <ListSection title={t('device_stats_unused_locations')} testKey="unused">
             <LocationList
-              rows={withPurgeable(current.locations.unused_locations)}
+              rows={current.locations.unused_locations ?? []}
               selectable
               showAdminEdit={isSuperuser}
               onTogglePurgeable={togglePurgeable}
@@ -1276,7 +1278,7 @@ const DeviceStatisticsView = () => {
         return (
           <ListSection title={t('device_stats_locations_missing_points')} testKey="missing-points">
             <LocationList
-              rows={withPurgeable(current.locations.locations_missing_points)}
+              rows={current.locations.locations_missing_points ?? []}
               selectable
               showAdminEdit={isSuperuser}
               onTogglePurgeable={togglePurgeable}
@@ -1291,7 +1293,7 @@ const DeviceStatisticsView = () => {
         return (
           <ListSection title={t('device_stats_dead_locations')} testKey="dead-locations">
             <LocationList
-              rows={withPurgeable(current.locations.dead_locations)}
+              rows={current.locations.dead_locations ?? []}
               selectable
               showAdminEdit={isSuperuser}
               onTogglePurgeable={togglePurgeable}

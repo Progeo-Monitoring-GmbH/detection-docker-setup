@@ -36,6 +36,7 @@ vi.mock('../components/ui/kit/DonutChart', () => ({ default: () => null }));
 vi.mock('./NotificationLocationsPanel', () => ({ default: () => null }));
 
 const { default: DeviceStatisticsView } = await import('./DeviceStatisticsView');
+const { resetLocationFlags } = await import('../components/location/locationFlags');
 
 const LOCATION = (id: number, fields: Record<string, unknown> = {}) => ({
   id,
@@ -76,10 +77,20 @@ beforeEach(() => {
   } as unknown as typeof ResizeObserver;
   api.get.mockReset();
   api.post.mockReset();
+  resetLocationFlags();
   // The cached snapshot: the overview at once, every section from cache.
   api.get.mockImplementation((url: string) => {
     if (url.includes('plan=1')) {
       return { cached: true, generated_at: '2026-11-16T10:00:00Z', totals: {}, by_type: [] };
+    }
+    if (url.startsWith('/v1/location/flags/')) {
+      // Location 1: notifications off; 2: marked purgeable (as in the snapshot).
+      return {
+        flags: {
+          1: { notifications_disabled: true, purgeable: null },
+          2: { notifications_disabled: false, purgeable: true },
+        },
+      };
     }
     if (url.includes('section=unused_locations') || url.includes('section=dead_locations')) {
       return { locations: { unused_locations: UNUSED, dead_locations: UNUSED } };
@@ -116,19 +127,29 @@ const openSection = async (section: string) => {
 
 const toggle = (id: number) =>
   container.querySelector<HTMLButtonElement>(`[data-testid="device-stats-purge-toggle"][data-test-key="progeo_p1-${id}"]`);
-const marked = (id: number) =>
-  container.querySelector(`[data-testid="device-stats-location-purgeable"][data-test-key="progeo_p1-${id}"]`) != null;
+const icons = (id: number) =>
+  container.querySelector(`[data-testid="location-flag-icons"][data-test-key="progeo_p1-${id}"]`);
+const marked = (id: number) => icons(id)?.querySelector('[aria-label="location_flag_purgeable"]') != null;
+const row = (id: number) => toggle(id)!.closest('.rdt_TableRow')!;
+const flush = () => act(async () => {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+});
 
 describe('DeviceStatisticsView purgeable locations', () => {
-  it('shows the mark per row and the marked rows as switched off', async () => {
+  it('shows the mark per row and the switched-off rows striped', async () => {
     await render();
     await openSection('unused_locations');
+    await flush();
 
     expect(toggle(1)!.textContent).toBe('device_stats_purgeable_mark');
     expect(toggle(2)!.textContent).toBe('device_stats_purgeable_unmark');
     expect(marked(1)).toBe(false);
     expect(marked(2)).toBe(true);
-    expect(toggle(2)!.closest('.rdt_TableRow')!.className).toContain('device-stats-row-purgeable');
+    // Notifications off counts as switched off, too.
+    expect(icons(1)!.querySelector('[aria-label="location_flag_notifications_off"]')).not.toBeNull();
+    expect(row(1).className).toContain('location-row-off');
+    expect(row(2).className).toContain('location-row-off');
+    expect(api.get.mock.calls.filter(([url]) => String(url).startsWith('/v1/location/flags/'))).toHaveLength(1);
   });
 
   it('marks a row and keeps the mark when another list shows the same location', async () => {
@@ -137,6 +158,7 @@ describe('DeviceStatisticsView purgeable locations', () => {
     );
     await render();
     await openSection('unused_locations');
+    await flush();
 
     await act(async () => {
       toggle(1)!.click();

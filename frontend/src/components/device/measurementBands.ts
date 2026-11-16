@@ -37,48 +37,61 @@ export type SignedBands = {
   /** Sensor numbers (from 1). */
   x: number[];
   mean: number[];
-  /** Mean ± one standard deviation ("Abweichung"). */
+  /**
+   * "Abweichung": the middle 50 % of the values - the 75th / 25th
+   * percentile (interquartile range). Always between min and max, so it
+   * never reaches below 0 when no value does (mean ± σ did for skewed values).
+   */
   upper: number[];
   lower: number[];
+  /** Standard deviation (shown as a number next to the mean). */
   sigma: number[];
   /** Lowest / highest value ("Spannweite"). */
   min: number[];
   max: number[];
 };
 
+/** The `fraction` quantile of ascending `sorted` (linear between neighbours, like numpy's default). */
+export const quantileOf = (sorted: readonly number[], fraction: number): number => {
+  if (!sorted.length) {
+    return Number.NaN;
+  }
+  const position = (sorted.length - 1) * Math.min(1, Math.max(0, fraction));
+  const below = Math.floor(position);
+  const above = Math.ceil(position);
+  return sorted[below] + (sorted[above] - sorted[below]) * (position - below);
+};
+
 /**
- * Per sensor (index in each list) over the lists: the mean, ± the standard
- * deviation and the range of its values - the bands of the "by sensor" plots.
+ * Per sensor (index in each list) over the lists: the mean, the middle 50 %
+ * (25th-75th percentile), the standard deviation and the range of its
+ * values - the bands of the "by sensor" plots. A sensor no list has a value
+ * for is left out.
  */
 const bandsOf = (lists: number[][]): SignedBands => {
-  const sums: number[] = [];
-  const squares: number[] = [];
-  const counts: number[] = [];
-  const minimums: number[] = [];
-  const maximums: number[] = [];
-  lists.forEach((values) =>
-    values.forEach((value, index) => {
-      minimums[index] = Math.min(minimums[index] ?? value, value);
-      maximums[index] = Math.max(maximums[index] ?? value, value);
-      sums[index] = (sums[index] || 0) + value;
-      squares[index] = (squares[index] || 0) + value * value;
-      counts[index] = (counts[index] || 0) + 1;
+  const values: number[][] = [];
+  // The values are numbers already (potentialsOf / signedValuesOf: Number(x || 0)).
+  lists.forEach((list) =>
+    list.forEach((value, index) => {
+      (values[index] ??= []).push(value);
     }),
   );
   const bands: SignedBands = { x: [], mean: [], upper: [], lower: [], sigma: [], min: [], max: [] };
-  counts.forEach((count, index) => {
-    if (!count) {
+  values.forEach((sensorValues, index) => {
+    if (!sensorValues?.length) {
       return;
     }
-    const mean = sums[index] / count;
-    const sigma = Math.sqrt(Math.max(squares[index] / count - mean * mean, 0));
+    const sorted = [...sensorValues].sort((a, b) => a - b);
+    const mean = sorted.reduce((sum, value) => sum + value, 0) / sorted.length;
+    // Two passes: sum of squares minus mean² loses precision on large values.
+    const variance = sorted.reduce((sum, value) => sum + (value - mean) ** 2, 0) / sorted.length;
     bands.x.push(index + 1);
     bands.mean.push(mean);
-    bands.sigma.push(sigma);
-    bands.upper.push(mean + sigma);
-    bands.lower.push(mean - sigma);
-    bands.min.push(minimums[index]);
-    bands.max.push(maximums[index]);
+    bands.sigma.push(Math.sqrt(variance));
+    bands.lower.push(quantileOf(sorted, 0.25));
+    bands.upper.push(quantileOf(sorted, 0.75));
+    bands.min.push(sorted[0]);
+    bands.max.push(sorted[sorted.length - 1]);
   });
   return bands;
 };

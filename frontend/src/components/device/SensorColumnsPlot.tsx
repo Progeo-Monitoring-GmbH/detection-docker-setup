@@ -89,7 +89,7 @@ const format = (value: number | null | undefined) =>
 /**
  * The measurements' first plot, built like the threshold mixer: a column per
  * sensor - slim for 4 sensors, scrolling (Ctrl + wheel zooms) for 300 - with
- * the period's spread of WP − EP on the left (whisker min–max, box ±1σ,
+ * the period's spread of WP − EP on the left (whisker min–max, box the middle 50 % (25th-75th percentile),
  * mean) and the slider's measurement on the right (bars EP | WP, WP + EP on
  * demand), side by side so nothing hides anything. The green area is ±the
  * alarm threshold. The grip on the axis hides every sensor whose |WP − EP|

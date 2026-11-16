@@ -1,0 +1,21 @@
+/* A switched-off location (notifications disabled or marked purgeable) in
+   any table row - locationFlags.tsx. Discreet stripes as a background IMAGE,
+   so a row's own background colour (alarm severity, hover, selection) stays
+   underneath; specific enough to beat the data table's row class. */
+.location-row-off,
+.rdt_TableRow.location-row-off,
+.list-group-item.location-row-off {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent 0 4px,
+    rgba(var(--bs-emphasis-color-rgb), 0.045) 4px 8px
+  );
+}
+
+.location-flag-icons {
+  display: inline-flex;
+  gap: 0.2rem;
+  margin-right: 0.3rem;
+  color: var(--bs-secondary-color);
+  vertical-align: -1px;
+}

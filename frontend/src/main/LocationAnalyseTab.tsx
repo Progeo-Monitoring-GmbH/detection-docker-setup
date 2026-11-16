@@ -6,7 +6,8 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import axiosConfig from '../axiosConfig';
 import { downloadResponse, openResponseInNewTab } from '../helper';
-import { showRequestError } from '../components/ui/Snackbar.jsx';
+import { showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import usePermissions from '../../hooks/usePermissions';
 import SensorHeatmap2D from '../components/device/SensorHeatmap2D.tsx';
 import {
   type HeatProfile,
@@ -38,7 +39,7 @@ import PillSelect from '../components/ui/kit/PillSelect';
 import { MEAN_WINDOWS, smoothHeatmap, smoothMeasurements } from './analyseSmoothing';
 import { compareOffsetsFor, heatmapChange } from './analyseCompare';
 import MeasurementComparePlot from '../components/device/MeasurementComparePlot';
-import { Archive, Funnel, Magic, XLg } from 'react-bootstrap-icons';
+import { Archive, Funnel, Magic, ToggleOff, ToggleOn, XLg } from 'react-bootstrap-icons';
 import { getBackendUrl } from '../backendUrl';
 import { usePreloadLageplanImages } from '../components/device/useLageplanImage';
 import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
@@ -51,6 +52,7 @@ import NoiseProfilePanel, { type NoiseViewState, type ProfileRange } from './Noi
 import NoiseProfileEditor from './NoiseProfileEditor';
 import ThresholdMixerToggle from './ThresholdMixerToggle';
 import { mixerSensorsFromLoaded } from './thresholdMixer';
+import { disabledPairsOf, overrideKey, sensorOrderOf } from './analyseSensorSwitch';
 import {
   cleanRows,
   type NoiseProfile,
@@ -233,6 +235,14 @@ const LocationAnalyseTab = () => {
   const [noiseBusy, setNoiseBusy] = useState(false);
   // Bumped when a profile changed: the heatmap (cleaned by the backend) reloads.
   const [noiseRevision, setNoiseRevision] = useState(0);
+  // Switching the selected sensors off / on (ProgeoMeasurePoint.disabled -
+  // never an alarm, drawn gray). POST measurepoints needs module_locations_edit.
+  const { hasPermission } = usePermissions();
+  const canSwitchSensors = hasPermission('module_locations_edit') && !isLorawan;
+  // Saved here, before the heatmap brings them: "<location>:<device>:<pair>" -> disabled.
+  const [disabledOverrides, setDisabledOverrides] = useState<Record<string, boolean>>({});
+  const [switchingSensors, setSwitchingSensors] = useState(false);
+  const [confirmDisable, setConfirmDisable] = useState(false);
 
   const exportCsv = () => {
     void openResponseInNewTab(auth, `/v1/location/${locationId}/export_csv/`);
@@ -734,16 +744,58 @@ const LocationAnalyseTab = () => {
       ),
     [heatmap, shownDevice],
   );
-  // The shown device's disabled sensors (pair index, like sensorThresholds): drawn gray.
+  // The shown device's disabled sensors (pair index, like sensorThresholds):
+  // drawn gray - what the heatmap says, switched here since then on top.
   const disabledSensors = useMemo(
-    () =>
-      new Set(
-        (heatmap?.sensor_points ?? []).flatMap((point) =>
-          point.disabled && (point.device == null || point.device === shownDevice) ? [(point.pair ?? point.pos) - 1] : [],
-        ),
-      ),
-    [heatmap, shownDevice],
+    () => disabledPairsOf(heatmap?.sensor_points ?? [], locationId, shownDevice, disabledOverrides),
+    [heatmap, shownDevice, locationId, disabledOverrides],
   );
+
+  const selectedEnabled = sensors.filter((pair) => !disabledSensors.has(pair));
+  const selectedDisabled = sensors.filter((pair) => disabledSensors.has(pair));
+
+  /** Switch the selected sensors off (`disabled`) or on - the ones not already so. */
+  const switchSensors = (disabled: boolean) => {
+    const targets = (disabled ? selectedEnabled : selectedDisabled).flatMap((pair) => {
+      const order = sensorOrderOf(heatmap?.sensor_points ?? [], shownDevice, pair, devices.length);
+      return order == null ? [] : [{ pair, order }];
+    });
+    setConfirmDisable(false);
+    if (!targets.length) {
+      enqueueSnackbar(t('analyse_sensors_switch_unknown'), { variant: 'warning' });
+      return;
+    }
+    setSwitchingSensors(true);
+    void axiosConfig.perform_post(
+      auth,
+      `/v1/location/${locationId}/measurepoints/`,
+      { points: targets.map(({ order }) => ({ sensor_order: order, disabled })) },
+      () => {
+        setSwitchingSensors(false);
+        setDisabledOverrides((overrides) => {
+          const next = { ...overrides };
+          targets.forEach(({ pair }) => {
+            next[overrideKey(locationId, shownDevice, pair)] = disabled;
+          });
+          return next;
+        });
+        // The heatmap (plan, thresholds panel) brings the new state.
+        heatmapCache.current.clear();
+        setNoiseRevision((revision) => revision + 1);
+        showSuccessBar(
+          enqueueSnackbar,
+          t(disabled ? 'analyse_sensors_disabled' : 'analyse_sensors_enabled', {
+            count: targets.length,
+            sensors: targets.map(({ pair }) => pair + 1).join(', '),
+          }),
+        );
+      },
+      (error) => {
+        setSwitchingSensors(false);
+        showRequestError(enqueueSnackbar, t('analyse_sensors_switch_failed'), error);
+      },
+    );
+  };
 
   // ------------------------------------------------------------- Störungsprofile
   const loadNoiseProfiles = useCallback(() => {
@@ -1304,6 +1356,22 @@ const LocationAnalyseTab = () => {
       </div>
 
       <ConfirmDialog
+        testId="analyse-sensor-disable-dialog"
+        show={confirmDisable}
+        title={t('analyse_sensors_disable_confirm_title')}
+        message={t('analyse_sensors_disable_confirm', {
+          count: selectedEnabled.length,
+          sensors: selectedEnabled.map((pair) => pair + 1).join(', '),
+        })}
+        confirmLabel={t('analyse_sensors_disable_confirm_button')}
+        cancelLabel={t('heat_limit_cancel')}
+        onConfirm={() => switchSensors(true)}
+        onCancel={() => setConfirmDisable(false)}
+        confirming={switchingSensors}
+        danger
+      />
+
+      <ConfirmDialog
         testId="analyse-archive-dialog"
         show={archiveDialog !== null && profileRange !== null}
         title={t('analyse_archive')}
@@ -1544,6 +1612,36 @@ const LocationAnalyseTab = () => {
                       </option>
                     ))}
                   </Form.Select>
+                )}
+                {canSwitchSensors && sensors.length > 0 && (
+                  <div className="d-flex flex-wrap gap-2" data-testid="analyse-sensor-switch">
+                    {selectedEnabled.length > 0 && (
+                      <Button
+                        size="sm"
+                        variant="outline-secondary"
+                        disabled={switchingSensors}
+                        onClick={() => setConfirmDisable(true)}
+                        title={t('analyse_sensors_disable_title')}
+                        data-testid="analyse-sensor-disable"
+                      >
+                        <ToggleOff className="me-1" />
+                        {t('analyse_sensors_disable', { count: selectedEnabled.length })}
+                      </Button>
+                    )}
+                    {selectedDisabled.length > 0 && (
+                      <Button
+                        size="sm"
+                        variant="outline-success"
+                        disabled={switchingSensors}
+                        onClick={() => switchSensors(false)}
+                        title={t('analyse_sensors_enable_title')}
+                        data-testid="analyse-sensor-enable"
+                      >
+                        <ToggleOn className="me-1" />
+                        {t('analyse_sensors_enable', { count: selectedDisabled.length })}
+                      </Button>
+                    )}
+                  </div>
                 )}
               </div>
               {measurementTotal > measurements.length && (

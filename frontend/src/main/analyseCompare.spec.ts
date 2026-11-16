@@ -56,6 +56,28 @@ describe('signedBands / nearestRow', () => {
     expect(bands.sigma).toEqual([1, 1]);
     expect(bands.min).toEqual([2, -2]);
     expect(bands.max).toEqual([4, 0]);
+    // The middle 50 %: 25th / 75th percentile.
+    expect(bands.lower).toEqual([2.5, -1.5]);
+    expect(bands.upper).toEqual([3.5, -0.5]);
+  });
+
+  it('keeps the "Abweichung" within the values - never negative when no value is', () => {
+    // Mostly quiet, a few spikes: mean - sigma would be about -2.6 here.
+    const values = [0, 0, 0, 0, 0, 0, 0, 1, 2, 40];
+    const bands = signedBands(values.map((value, minute) => row(minute, [0, value])));
+    expect(bands.mean[0]).toBeCloseTo(4.3);
+    expect(bands.mean[0] - bands.sigma[0]).toBeLessThan(0);
+    expect(bands.lower[0]).toBe(0);
+    expect(bands.upper[0]).toBeCloseTo(0.75);
+    expect(bands.lower[0]).toBeGreaterThanOrEqual(bands.min[0]);
+    expect(bands.upper[0]).toBeLessThanOrEqual(bands.max[0]);
+  });
+
+  it('has half of the values inside the band', () => {
+    const values = [5, 1, 9, 3, 7, 2, 8, 4, 6, 10, 0, 11];
+    const bands = signedBands(values.map((value, minute) => row(minute, [0, value])));
+    const inside = values.filter((value) => value >= bands.lower[0] && value <= bands.upper[0]);
+    expect(inside.length).toBe(values.length / 2);
   });
 
   it('picks the measurement nearest in time, the newest without one', () => {
@@ -82,6 +104,7 @@ describe('wpChangeBands', () => {
     expect(bands.mean).toEqual([2]);
     expect(bands.sigma).toEqual([1]);
     expect([bands.min, bands.max]).toEqual([[1], [3]]);
+    expect([bands.lower, bands.upper]).toEqual([[1.5], [2.5]]);
     expect(wpChangeBands(rows, [], 7 * DAY).x).toEqual([]);
   });
 });

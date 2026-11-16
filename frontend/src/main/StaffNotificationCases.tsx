@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Badge, Button, ButtonGroup, Card, Form, Modal, Spinner, Table } from 'react-bootstrap';
-import { ArrowRepeat, BellFill, BellSlashFill } from 'react-bootstrap-icons';
+import { ArrowRepeat, BellFill, BellSlashFill, Trash3Fill } from 'react-bootstrap-icons';
 import DataTable from 'react-data-table-component';
 import type { TableColumn } from 'react-data-table-component';
 import { useSnackbar } from 'notistack';
@@ -11,6 +11,14 @@ import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
 import { showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import { repeatedTestId } from '../testIds';
+import {
+  LocationFlagIcons,
+  LOCATION_OFF_CLASS,
+  isLocationOff,
+  locationOffRowStyle,
+  useLocationFlags,
+  type LocationFlags,
+} from '../components/location/locationFlags';
 import './StaffNotificationCases.css';
 
 type Kind = 'offline' | 'alarm';
@@ -76,15 +84,6 @@ const PHASE_VARIANT: Record<Phase, string> = {
   resolved: 'success',
 };
 
-/** Cases of a location with notifications switched off look switched off -
- * the striped rows of the device statistics (StaffNotificationCases.css). */
-const SWITCHED_OFF_ROW_STYLES = [
-  {
-    when: (row: NotificationCase) => row.notifications_disabled === true,
-    classNames: ['staff-notifications-row-disabled'],
-  },
-];
-
 const SUMMARY_PHASES = ['open', 'detected', 'notified', 'reminder', 'escalated', 'recovering', 'muted', 'unreachable'];
 
 /**
@@ -105,6 +104,15 @@ const StaffNotificationCases = () => {
   const [kind, setKind] = useState<'' | Kind>('');
   const [selected, setSelected] = useState<NotificationCase | null>(null);
   const [busy, setBusy] = useState(false);
+  // Cases of a switched-off location (notifications off, marked purgeable):
+  // the striped rows of every location table - the store, until it answers
+  // the case's own notification switch.
+  const { flagsOf } = useLocationFlags(cases.map((row) => row.location_id));
+  const flagsFor = (row: NotificationCase): LocationFlags => ({
+    notifications_disabled: row.notifications_disabled,
+    purgeable: null,
+    ...flagsOf(row.location_id),
+  });
 
   const fetchCases = useCallback(() => {
     const query = new URLSearchParams({ state });
@@ -183,14 +191,7 @@ const StaffNotificationCases = () => {
         sortable: true,
         cell: (row) => (
           <span className="small">
-            {row.notifications_disabled === true && (
-              <BellSlashFill
-                size={11}
-                className="me-1 staff-notifications-disabled-icon"
-                title={t('staff_notifications_location_disabled')}
-                {...repeatedTestId('staff-notifications-disabled', row.id)}
-              />
-            )}
+            <LocationFlagIcons flags={flagsFor(row)} testKey={`case-${row.id}`} />
             <Link to={`/location/${row.location_id}/status`} onClick={(event) => event.stopPropagation()}>
               {row.project_id ?? row.location_id}
             </Link>{' '}
@@ -227,7 +228,9 @@ const StaffNotificationCases = () => {
         selector: (row) => (row.state === 'open' ? row.next_contact_at || '-' : row.resolved_at || '-'),
       },
     ],
-    [t],
+    // flagsFor reads the flags store - a new value re-renders this component.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [t, flagsOf],
   );
 
   const offline = summary?.counts.offline;
@@ -336,9 +339,12 @@ const StaffNotificationCases = () => {
             <option value="alarm">{t('notification_kind_alarm')}</option>
           </Form.Select>
           <span className="small staff-notifications-legend" data-testid="staff-notifications-legend">
-            <span className="staff-notifications-legend-swatch" aria-hidden="true" />
-            <BellSlashFill size={11} className="me-1" />
-            {t('staff_notifications_legend_disabled')}
+            <span className={`staff-notifications-legend-swatch ${LOCATION_OFF_CLASS}`} aria-hidden="true" />
+            {t('location_flag_legend')}
+            <BellSlashFill size={11} className="ms-2 me-1" />
+            {t('location_flag_notifications_off')}
+            <Trash3Fill size={11} className="ms-2 me-1" />
+            {t('location_flag_purgeable')}
           </span>
         </div>
 
@@ -356,7 +362,7 @@ const StaffNotificationCases = () => {
           }
           noDataComponent={<div className="text-muted py-3">{t('staff_notifications_empty')}</div>}
           onRowClicked={openCase}
-          conditionalRowStyles={SWITCHED_OFF_ROW_STYLES}
+          conditionalRowStyles={[locationOffRowStyle((row: NotificationCase) => isLocationOff(flagsFor(row)))]}
           highlightOnHover
           pointerOnHover
           dense

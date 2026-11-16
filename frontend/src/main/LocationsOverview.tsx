@@ -20,6 +20,14 @@ import LocationEditModal, {
 import { staffFlags } from './access';
 import { formatDate } from './dateFormat';
 import { repeatedTestId } from '../testIds';
+import {
+  LocationFlagIcons,
+  locationOffRowStyle,
+  useLocationFlags,
+  type LocationFlags,
+} from '../components/location/locationFlags';
+
+type FlagsOf = (id: number | null | undefined) => LocationFlags | null;
 import './LocationsOverview.css';
 
 type LocationRow = LocationEditRow & {
@@ -51,7 +59,7 @@ type ActiveAlarm = {
 };
 
 /** Columns of the active alarms list (a row opens its location's alarms). */
-const activeAlarmColumns: TableColumn<ActiveAlarm>[] = [
+const activeAlarmColumnsFor = (flagsOf: FlagsOf): TableColumn<ActiveAlarm>[] => [
   {
     name: 'Triggered',
     selector: (row) => row.triggered_at ?? '',
@@ -70,6 +78,7 @@ const activeAlarmColumns: TableColumn<ActiveAlarm>[] = [
     selector: (row) => row.location.name || '-',
     cell: (row) => (
       <div className="small" {...repeatedTestId('locations-active-alarm', row.id)}>
+        <LocationFlagIcons flags={flagsOf(row.location.id)} testKey={`active-alarm-${row.id}`} />
         {row.location.name || '-'}
         {row.location.city && (
           <div className="text-muted">{row.location.city}</div>
@@ -276,11 +285,14 @@ const locationColumns = ({
   alarmSummary,
   onEdit,
   canDelete,
+  flagsOf,
 }: {
   alarmSummary: Record<string, LocationAlarmSummary>;
   /** Null without the permission to edit. */
   onEdit: ((row: LocationRow) => void) | null;
   canDelete: boolean;
+  /** Staff: the switched-off flags (locationFlags.tsx) - null for everyone else. */
+  flagsOf: FlagsOf;
 }): TableColumn<LocationRow>[] => [
   {
     name: 'Project',
@@ -295,7 +307,10 @@ const locationColumns = ({
     cell: (row) => (
       <span className="d-flex align-items-center gap-2 locations-name-cell" {...repeatedTestId('locations-row', row.id)}>
         <FavoriteStar locationId={row.id} size={26} />
-        <span className="locations-name-text">{row.name || '-'}</span>
+        <span className="locations-name-text">
+          <LocationFlagIcons flags={flagsOf(row.id)} testKey={`location-${row.id}`} />
+          {row.name || '-'}
+        </span>
       </span>
     ),
     sortable: true,
@@ -545,12 +560,24 @@ const LocationsOverview = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredRows, currentPage, rowsPerPage]);
 
+  // Staff: switched-off locations (notifications off / marked purgeable) striped.
+  const { flagsOf, isOff } = useLocationFlags([
+    ...rows.map((row) => row.id),
+    ...(activeAlarms ?? []).map((row) => row.location.id),
+  ]);
+
   const columns = locationColumns({
     alarmSummary,
     onEdit: canEdit ? openEditModal : null,
     canDelete,
+    flagsOf,
   });
-  const conditionalRowStyles = rowStylesFor(alarmSummary);
+  // The switched-off stripes first: the table keeps the style of the last
+  // matching rule, so the state colour stays (locationOffRowStyle).
+  const conditionalRowStyles = [
+    locationOffRowStyle((row: LocationRow) => isOff(row.id)),
+    ...rowStylesFor(alarmSummary),
+  ];
 
   return (
     <React.Fragment>
@@ -627,8 +654,9 @@ const LocationsOverview = () => {
               </Alert>
             ) : (
               <DataTable
-                columns={activeAlarmColumns}
+                columns={activeAlarmColumnsFor(flagsOf)}
                 data={activeAlarms}
+                conditionalRowStyles={[locationOffRowStyle((row: ActiveAlarm) => isOff(row.location.id))]}
                 pagination
                 highlightOnHover
                 pointerOnHover

@@ -12,6 +12,14 @@ import PillButton from '../components/ui/kit/PillButton';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import { showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import { repeatedTestId } from '../testIds';
+import {
+  LocationFlagIcons,
+  isLocationOff,
+  locationOffRowStyle,
+  setLocationFlags,
+  useLocationFlags,
+  type LocationFlags,
+} from '../components/location/locationFlags';
 import './NotificationLocationsPanel.css';
 
 /** A row of GET /v1/notification-location/. */
@@ -53,6 +61,17 @@ const NotificationLocationsPanel = () => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [busy, setBusy] = useState<Record<number, boolean>>({});
+  // The striped "switched off" rows like every location table: the store
+  // (purge mark included), until it answers the row's own switch.
+  const { flagsOf } = useLocationFlags(rows.map((row) => row.id));
+  const flagsFor = useCallback(
+    (row: NotificationLocation): LocationFlags => ({
+      purgeable: null,
+      ...flagsOf(row.id),
+      notifications_disabled: row.notifications_disabled,
+    }),
+    [flagsOf],
+  );
 
   // `loading` is switched on by whoever asks for the reload (initial state,
   // filter change, refresh) - not inside the effect.
@@ -93,6 +112,7 @@ const NotificationLocationsPanel = () => {
           if (response?.data?.counts) {
             setCounts(response.data.counts as Counts);
           }
+          setLocationFlags(row.id, { notifications_disabled: now });
           setBusy((current) => ({ ...current, [row.id]: false }));
           showSuccessBar(
             enqueueSnackbar,
@@ -123,6 +143,7 @@ const NotificationLocationsPanel = () => {
         wrap: true,
         cell: (row) => (
           <div className="small">
+            <LocationFlagIcons flags={flagsFor(row)} testKey={`notification-${row.id}`} />
             <Link to={`/location/${row.id}/status`} {...repeatedTestId('notification-locations-link', row.id)}>
               {row.name || '–'}
             </Link>
@@ -182,7 +203,7 @@ const NotificationLocationsPanel = () => {
         ),
       },
     ],
-    [busy, t, toggle],
+    [busy, flagsFor, t, toggle],
   );
 
   const filterOptions = [
@@ -237,6 +258,7 @@ const NotificationLocationsPanel = () => {
         columns={columns}
         data={visible}
         dense
+        conditionalRowStyles={[locationOffRowStyle((row: NotificationLocation) => isLocationOff(flagsFor(row)))]}
         pagination
         paginationPerPage={15}
         paginationRowsPerPageOptions={[15, 30, 50, 100]}

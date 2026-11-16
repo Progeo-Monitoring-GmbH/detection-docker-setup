@@ -520,7 +520,7 @@ def test_staff_monitoring_lists_mutes_and_closes(site, live, api_client):
     assert [event["kind"] for event in detail["events"]] == ["opened", "muted", "unmuted", "resolved"]
 
 
-@pytest.mark.parametrize("flags", [{"is_staff": True}, {"is_superuser": True}], ids=["staff", "superuser"])
+@pytest.mark.parametrize("flags", [{"staff": True}, {"is_superuser": True}], ids=["staff", "superuser"])
 def test_staff_list_and_toggle_the_location_switch(site, live, api_client, flags):
     location, device = site
     _disable(location)

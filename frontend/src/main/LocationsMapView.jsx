@@ -41,6 +41,12 @@ import { useWheelHint, WheelZoomHint } from '../components/ui/wheelZoom';
 import { useConsent } from '../components/privacy/ConsentProvider';
 import MapConsentNotice from '../components/privacy/MapConsentNotice';
 import { repeatedTestId } from '../testIds';
+import {
+  LOCATION_OFF_CLASS,
+  LocationFlagIcons,
+  setLocationFlags,
+  useLocationFlags,
+} from '../components/location/locationFlags';
 import { runChunks } from './deviceStatisticsBuild';
 import { AreaZoom, CtrlWheelZoom } from './LocationsMapControls';
 import './LocationsMapView.css';
@@ -377,7 +383,8 @@ LocationMarker.displayName = 'LocationMarker';
  * flag, a later script deletes them); a marked location looks switched off
  * and can be unmarked. A div, not a button: it holds that button.
  */
-const LocationListItem = memo(({ location, isFocused, busy, onHover, onLeave, onSelect, onTogglePurgeable }) => {
+const LocationListItem = memo(
+  ({ location, notificationsOff, isFocused, busy, onHover, onLeave, onSelect, onTogglePurgeable }) => {
   const { t } = useTranslation();
   const ageInfo = ageInfoFromDate(location.last_measurement_at);
   const mapped = hasCoordinates(location);
@@ -386,6 +393,10 @@ const LocationListItem = memo(({ location, isFocused, busy, onHover, onLeave, on
   const classes = ['locmap-list-item'];
   if (purgeable) {
     classes.push('locmap-list-item--purgeable');
+  }
+  // Switched off (notifications off / purgeable): the stripes of every location table.
+  if (purgeable || notificationsOff) {
+    classes.push(LOCATION_OFF_CLASS);
   }
   return (
     <ListGroup.Item
@@ -409,14 +420,10 @@ const LocationListItem = memo(({ location, isFocused, busy, onHover, onLeave, on
       <div className="d-flex justify-content-between align-items-start gap-2">
         <div>
           <div className="fw-semibold">
-            {purgeable && (
-              <Trash3Fill
-                size={12}
-                className="me-1 locmap-purgeable-icon"
-                title={t('locmap_purgeable_marked')}
-                {...repeatedTestId('locations-map-item-purgeable', location.id)}
-              />
-            )}
+            <LocationFlagIcons
+              flags={{ notifications_disabled: notificationsOff, purgeable }}
+              testKey={`map-${location.id}`}
+            />
             {buildLocationLabel(location)}
           </div>
           <div className="small opacity-75">{buildLocationMeta(location) || 'No address data'}</div>
@@ -451,7 +458,8 @@ const LocationListItem = memo(({ location, isFocused, busy, onHover, onLeave, on
       </div>
     </ListGroup.Item>
   );
-});
+  },
+);
 LocationListItem.displayName = 'LocationListItem';
 
 /**
@@ -620,6 +628,8 @@ const LocationsMapView = () => {
   );
 
   const mappableRows = useMemo(() => filteredRows.filter(hasCoordinates), [filteredRows]);
+  // Notifications switched off (the purge mark is in the rows): the list's stripes.
+  const { flagsOf } = useLocationFlags(rows.map((row) => row.id));
 
   const stateStats = useMemo(() => {
     const counts = { fresh_1h: 0, fresh_24h: 0, late_72h: 0, stale: 0, no_data: 0, purgeable: 0 };
@@ -663,6 +673,7 @@ const LocationsMapView = () => {
         (response) => {
           const saved = response?.data?.location?.purgeable ?? purgeable;
           setRows((current) => current.map((row) => (row.id === location.id ? { ...row, purgeable: saved } : row)));
+          setLocationFlags(location.id, { purgeable: saved });
           setPurgeBusy((current) => ({ ...current, [location.id]: false }));
           showSuccessBar(
             enqueueSnackbar,
@@ -843,6 +854,7 @@ const LocationsMapView = () => {
                   key={location.id}
                   location={location}
                   isFocused={hoveredId === location.id || selectedId === location.id}
+                  notificationsOff={flagsOf(location.id)?.notifications_disabled === true}
                   busy={Boolean(purgeBusy[location.id])}
                   onHover={hover}
                   onLeave={leave}

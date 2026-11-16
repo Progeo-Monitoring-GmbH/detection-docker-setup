@@ -161,7 +161,7 @@ def test_the_map_lists_only_its_fields_with_the_newest_measurement_per_database(
     assert plan["chunks"] >= 1 and plan["databases"] >= 1
     row = next(row for row in plan["locations"] if row["id"] == location.pk)
     assert set(row) == {"id", "project_id", "name", "address", "plz", "city", "manager", "telefon", "mail",
-                        "latitude", "longitude"}
+                        "latitude", "longitude", "purgeable"}
     assert (row["latitude"], row["longitude"]) == (50.5, 7.5)
 
     with SPLIT, CaptureQueriesContext(connections[ALIAS]) as project_queries:

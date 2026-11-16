@@ -13,6 +13,7 @@ import SeverityBadge, { type Severity } from '../components/ui/kit/SeverityBadge
 import { matchesLocationSearch } from '../components/location/locationSearch';
 import FavoriteStar from './FavoriteStar';
 import { repeatedTestId } from '../testIds';
+import { LOCATION_OFF_CLASS, LocationFlagIcons, useLocationFlags } from '../components/location/locationFlags';
 import './LocationVerwaltungView.css';
 
 type VerwaltungRow = {
@@ -102,6 +103,8 @@ const LocationVerwaltungView = () => {
       );
     });
   }, [rows, search, statusFilter]);
+  // Switched-off locations (notifications off / marked purgeable) striped.
+  const { flagsOf, isOff } = useLocationFlags(rows.map((row) => row.id));
 
   const kpiTiles = [
     { label: t('verwaltung_kpi_total'), value: String(rows.length) },
@@ -245,13 +248,14 @@ const LocationVerwaltungView = () => {
                   {filtered.map((row) => (
                     <div
                       key={`${row.account_id}-${row.id}`}
-                      className="location-verwaltung-grid location-verwaltung-row"
+                      className={`location-verwaltung-grid location-verwaltung-row${isOff(row.id) ? ` ${LOCATION_OFF_CLASS}` : ''}`}
                       {...repeatedTestId('verwaltung-row', `${row.account_id}-${row.id}`)}
                     >
                       <span className="location-verwaltung-nr">{row.nr ?? '–'}</span>
                       <span className="location-verwaltung-name-cell">
                         <FavoriteStar locationId={row.id} size={26} />
                         <span className="location-verwaltung-name">
+                          <LocationFlagIcons flags={flagsOf(row.id)} testKey={`verwaltung-${row.account_id}-${row.id}`} />
                           {row.name || '–'}
                         </span>
                       </span>

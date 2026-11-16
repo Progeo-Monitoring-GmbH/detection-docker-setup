@@ -66,7 +66,7 @@ export const niceTicks = (low: number, high: number, about = 5) => {
 
 /** Where things sit in a column (fractions of its width). */
 export type ColumnSlots = {
-  /** The period's spread (whisker, ±σ box, mean); null while hidden. */
+  /** The period's spread (whisker, middle-50 % box, mean); null while hidden. */
   spread: [number, number] | null;
   /** The slider's measurement, one bar each; empty while hidden. */
   bars: Array<{ key: CurrentSeries; from: number; to: number }>;
