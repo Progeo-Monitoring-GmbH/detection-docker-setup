@@ -149,6 +149,27 @@ class DeviceViewSet(DeviceCommandsMixin, DeviceProvisioningMixin, LegacyGprsConf
     def destroy(self, request, *args, **kwargs):
         return super().destroy(request, *args, **kwargs)
 
+    @require_module_permissions("module_devices_enabled")
+    @action(detail=True, url_path="notify_on_measurements", methods=["POST"])
+    def set_notify_on_measurements(self, request, pk=None, *args, **kwargs):
+        """{"enabled": true|false} - staff only. While set, the device's next
+        measurement mails every staff user once and clears it again
+        (helper/measurement_notice.py). ?location= names the database."""
+        if not is_staff_admin(request.user):
+            return RequestFailed({"reason": "Staff access required"})
+        enabled = request.data.get("enabled") if isinstance(request.data, dict) else None
+        if isinstance(enabled, str):
+            enabled = {"true": True, "1": True, "false": False, "0": False}.get(enabled.strip().lower())
+        if not isinstance(enabled, bool):
+            return RequestFailed({"reason": 'Expected {"enabled": true|false}'})
+        device = self._visible_device(pk)
+        if device is None:
+            return RequestFailed({"reason": "Device not found"})
+        ProgeoDevice.objects.using(device._state.db).filter(pk=device.pk).update(notify_on_measurements=enabled)
+        ilog(f"notify_on_measurements of device {device.raw_hash} set to {enabled} by user {request.user.pk}",
+             tag="[MEASUREMENT_NOTICE]")
+        return RequestSuccess({"id": device.pk, "notify_on_measurements": enabled})
+
     def _visible_device(self, pk):
         """Device `pk` if the user sees it (get_queryset - ?location= names
         the database with the split on), else None."""

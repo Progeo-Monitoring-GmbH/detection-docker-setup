@@ -566,6 +566,11 @@ class ProgeoDevice(ProgeoModel, auto_prefetch.Model):
     # like data_interval / pull_resistance. The legacy GPRS controllers get it
     # in their answer (v1/legacy/gprs_state.py); None: not configured.
     sensor_count = models.IntegerField(null=True, blank=True)
+    # Staff set it in the device overview: the next measurement the device
+    # sends mails every staff user and clears it again
+    # (helper/measurement_notice.py). Not writable through DeviceSerializer -
+    # only POST /v1/device/<pk>/notify_on_measurements/ (staff) sets it.
+    notify_on_measurements = models.BooleanField(default=False)
 
     def sensor_order_of(self, pair_index: int) -> int:
         """sensor_order of the measure point the 0-based pair `pair_index` of

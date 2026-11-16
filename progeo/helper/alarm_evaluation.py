@@ -303,11 +303,18 @@ def evaluate_measurement_instantly(measurement, db: str = "default") -> bool:
     every ingestion path calls this after saving. Never raises, so a failing
     evaluation cannot break measurement ingestion. Returns True if an alarm
     was triggered.
+
+    Also - in every mode, since every ingestion path calls this - sends the
+    one-time staff notice of a device with notify_on_measurements set
+    (helper/measurement_notice.py).
     """
     from django.conf import settings
 
     from progeo.helper.basics import elog
+    from progeo.helper.measurement_notice import notify_measurement_received
 
+    if measurement is not None and measurement.pk is not None:
+        notify_measurement_received(measurement, db)
     if not getattr(settings, "PROGEO_CONFIG_EVALUATE_INSTANTLY", False):
         return False
     if measurement is None or measurement.pk is None:

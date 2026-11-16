@@ -12,7 +12,7 @@ import {
   Sliders,
   Terminal,
 } from 'react-bootstrap-icons';
-import { Spinner } from 'react-bootstrap';
+import { Form, Spinner } from 'react-bootstrap';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
 import usePermissions from '../../hooks/usePermissions';
 import axiosConfig from '../axiosConfig';
@@ -57,6 +57,8 @@ type OverviewDevice = {
   ip: string | null;
   /** null: not pinged, or no private IPv4 to ping. */
   ping: boolean | null;
+  /** Staff get one mail when the device's next measurement arrives; cleared by the server then. */
+  notify_on_measurements?: boolean;
 };
 
 type OverviewStats = {
@@ -188,6 +190,8 @@ const DeviceListView = () => {
   const [testDevice, setTestDevice] = useState<ProvisionedDevice | null>(null);
   const [airtable, setAirtable] = useState<AirtableSync | null>(null);
   const [syncing, setSyncing] = useState(false);
+  // Devices whose "notify on measurements" switch is being saved.
+  const [notifySaving, setNotifySaving] = useState<number[]>([]);
   // Answers of an older selection are dropped.
   const requestRef = useRef(0);
 
@@ -298,6 +302,36 @@ const DeviceListView = () => {
         showRequestError(enqueueSnackbar, t('devices_delete_failed'), error);
         setDeleting(false);
         setDeleteTarget(null);
+      },
+    );
+  };
+
+  // -- notify on measurements (staff) --------------------------------------------
+
+  const setNotify = (device: OverviewDevice, enabled: boolean) => {
+    const location = device.location ?? locationId;
+    setNotifySaving((ids) => [...ids, device.id]);
+    const done = () => setNotifySaving((ids) => ids.filter((id) => id !== device.id));
+    void axiosConfig.perform_post(
+      auth,
+      // ?location=: device ids are only unique within one project database.
+      `/v1/device/${device.id}/notify_on_measurements/${location ? `?location=${location}` : ''}`,
+      { enabled },
+      () => {
+        setOverview((current) =>
+          current && {
+            ...current,
+            devices: current.devices.map((row) =>
+              row.id === device.id ? { ...row, notify_on_measurements: enabled } : row,
+            ),
+          },
+        );
+        showSuccessBar(enqueueSnackbar, t(enabled ? 'devices_notify_on' : 'devices_notify_off'));
+        done();
+      },
+      (error) => {
+        showRequestError(enqueueSnackbar, t('devices_notify_failed'), error);
+        done();
       },
     );
   };
@@ -543,6 +577,27 @@ const DeviceListView = () => {
             sortable: true,
             cell: pingChip,
           },
+          {
+            id: 'notify',
+            name: t('devices_col_notify'),
+            selector: (device: OverviewDevice) => Number(Boolean(device.notify_on_measurements)),
+            sortable: true,
+            ignoreRowClick: true,
+            cell: (device: OverviewDevice) => (
+              <span title={t('devices_notify_hint')}>
+                <Form.Check
+                  type="switch"
+                  id={`device-notify-${device.id}`}
+                  className="mb-0"
+                  aria-label={t('devices_col_notify')}
+                  checked={Boolean(device.notify_on_measurements)}
+                  disabled={notifySaving.includes(device.id)}
+                  onChange={(event) => setNotify(device, event.target.checked)}
+                  {...repeatedTestId('device-list-notify', device.id)}
+                />
+              </span>
+            ),
+          },
         ]
       : []),
     {
@@ -606,7 +661,8 @@ const DeviceListView = () => {
     },
     // The chips and buttons only read these.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [t, isStaff, isSuperuser, canEdit, canDelete, canProvision, canCommands, overview?.pinged, pinging, projectExample]);
+  ], [t, isStaff, isSuperuser, canEdit, canDelete, canProvision, canCommands, overview?.pinged, pinging, projectExample,
+    notifySaving, locationId]);
 
 
   return (

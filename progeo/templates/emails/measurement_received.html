@@ -1,0 +1,16 @@
+{% extends "emails/base.html" %}
+{# To every staff user, once: the device had notify_on_measurements set (helper/measurement_notice.py). #}
+{% block subject %}Gerät {{ device }} empfängt Daten{% endblock %}
+{% block preheader %}Erste Messung am {{ received_at }}{% endblock %}
+{% block content %}
+<h1 style="margin:0 0 12px; font-size:20px;">Gerät {{ device }} empfängt Daten</h1>
+<p style="margin:0 0 12px;">Für dieses Gerät war in der Geräteübersicht eine Benachrichtigung bei Messdaten gesetzt. Die erste Messung ist eingegangen; die Benachrichtigung ist damit wieder ausgeschaltet.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 8px; font-size:14px;">
+  <tr><td style="padding:2px 16px 2px 0; color:#6E6868;">Gerät</td><td style="padding:2px 0;">{{ device }}</td></tr>
+  <tr><td style="padding:2px 16px 2px 0; color:#6E6868;">Hash</td><td style="padding:2px 0;">{{ raw_hash }}</td></tr>
+  <tr><td style="padding:2px 16px 2px 0; color:#6E6868;">Standort</td><td style="padding:2px 0;">{{ location|default:"-" }}</td></tr>
+  <tr><td style="padding:2px 16px 2px 0; color:#6E6868;">Projekt</td><td style="padding:2px 0;">{{ project_id|default:"-" }}</td></tr>
+  <tr><td style="padding:2px 16px 2px 0; color:#6E6868;">Empfangen</td><td style="padding:2px 0;">{{ received_at }}</td></tr>
+</table>
+{% include "emails/_button.html" with url=overview_url label="Zur Geräteübersicht" %}
+{% endblock %}

@@ -122,6 +122,8 @@ class DeviceSerializer(ProgeoBaseSerializer):
     class Meta:
         model = ProgeoDevice
         fields = "__all__"
+        # Staff only, via POST /v1/device/<pk>/notify_on_measurements/ - it mails every staff user.
+        read_only_fields = ("notify_on_measurements",)
 
     @staticmethod
     def get_clazz_name(_):
