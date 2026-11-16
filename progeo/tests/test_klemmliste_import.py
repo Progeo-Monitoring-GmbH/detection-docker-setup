@@ -11,7 +11,12 @@ from django.conf import settings as django_settings
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 
-from progeo.helper import airtable_documents, cad_import, docker_helper, klemmliste_names
+from progeo.helper import (
+    airtable_documents,
+    cad_import,
+    docker_helper,
+    klemmliste_names,
+)
 from progeo.tests import factories as f
 from progeo.v1.models import Account, ProgeoMeasurePoint
 from progeo.v1.viewsets import status_viewset
@@ -103,8 +108,10 @@ def test_preview_and_apply_name_every_point_of_the_position(location):
 
     assert [(c["sensor_order"], c["old"], c["new"], c["points"]) for c in preview["changes"]] == [(1, "dm 1", "D_124", 2)]
     assert [c["sensor_order"] for c in preview["unchanged"]] == [2]
-    assert preview["missing"] == [{"position": 17, "sensor": "D_104", "sensor_order": 17}]
+    assert preview["missing"] == [{"position": 17, "mux": 2, "pin": 1, "sensor": "D_104", "sensor_order": 17}]
     assert preview["without_name"] == [3]
+    assert preview["point_orders"] == {"count": 3, "min": 1, "max": 3}
+    assert preview["named_like_points"] == 0
     assert set(ProgeoMeasurePoint.objects.using(f.DB).filter(sensor_order=1).values_list("name", flat=True)) == {"dm 1"}
 
     applied = klemmliste_names.apply(f.DB, location, ROWS)
@@ -112,6 +119,71 @@ def test_preview_and_apply_name_every_point_of_the_position(location):
     assert applied["updated"] == 2
     names = dict(ProgeoMeasurePoint.objects.using(f.DB).filter(location=location).values_list("sensor_order", "name"))
     assert names == {1: "D_124", 2: "D_123", 3: "keep me"}
+
+
+def _orders(location):
+    return dict(ProgeoMeasurePoint.objects.using(f.DB).filter(location=location)
+                .order_by("sensor_order").values_list("sensor_order", "name"))
+
+
+def test_points_numbered_by_their_plan_label_move_to_their_input(location):
+    # The dm CAD import numbers a point by its label ("dm 124" -> 124), not by MUX/PIN.
+    for order in (104, 123, 124):
+        _point(location, order, f"dm {order}", threshold=order)
+    _point(location, 124, "dm 124")  # the same sensor on a second Lageplan
+    _point(location, 99, "other")    # not in the Klemmliste - stays
+
+    preview = klemmliste_names.preview(f.DB, location, ROWS)
+
+    assert preview["mode"] == "renumber"
+    assert [(m["from_order"], m["sensor_order"], m["new"], m["points"]) for m in preview["moves"]] == [
+        (124, 1, "D_124", 2), (123, 2, "D_123", 1), (104, 17, "D_104", 1)]
+    assert preview["missing"] == [] and preview["conflicts"] == []
+    assert preview["without_name"] == [99]
+    assert preview["point_orders"] == {"count": 4, "min": 99, "max": 124}
+    assert _orders(location)[124] == "dm 124"  # nothing written yet
+
+    applied = klemmliste_names.apply(f.DB, location, ROWS)
+
+    assert applied["updated"] == 4
+    assert _orders(location) == {1: "D_124", 2: "D_123", 17: "D_104", 99: "other"}
+    # A point keeps its own settings when it moves.
+    assert ProgeoMeasurePoint.objects.using(f.DB).get(location=location, sensor_order=17).threshold == 104
+
+
+def test_renumbering_swaps_numbers_and_leaves_conflicts_alone(location):
+    # Labels 1-3 wired in another order: D_2 on input 1, D_1 on input 2 (a swap),
+    # D_3 on input 4 - taken by point 4, which the list doesn't move away.
+    for order in (1, 2, 3, 4):
+        _point(location, order, f"dm {order}")
+    rows = [{"sensor": "D_2", "mux": 1, "pin": 1, "position": 1}, {"sensor": "D_1", "mux": 1, "pin": 2, "position": 2},
+            {"sensor": "D_3", "mux": 1, "pin": 4, "position": 4}]
+
+    preview = klemmliste_names.preview(f.DB, location, rows)
+
+    assert preview["mode"] == "renumber"
+    assert [(m["from_order"], m["sensor_order"]) for m in preview["moves"]] == [(2, 1), (1, 2)]
+    assert [(c["from_order"], c["sensor_order"]) for c in preview["conflicts"]] == [(3, 4)]
+
+    klemmliste_names.apply(f.DB, location, rows)
+
+    assert _orders(location) == {1: "D_2", 2: "D_1", 3: "dm 3", 4: "dm 4"}
+
+
+def test_points_already_numbered_by_input_are_only_named(location):
+    # D_5 at input 5, point 5 there already: nothing to move.
+    _point(location, 5, "dm 5")
+    rows = [{"sensor": "D_5", "mux": 1, "pin": 5, "position": 5}]
+
+    preview = klemmliste_names.preview(f.DB, location, rows)
+
+    assert preview["mode"] == "name" and preview["moves"] == []
+    assert [(c["sensor_order"], c["new"]) for c in preview["changes"]] == [(5, "D_5")]
+
+
+@pytest.mark.parametrize("name, number", [("D_124", 124), ("dm 007", 7), ("Rampe 3a", 3), ("Nordwand", None)])
+def test_name_number(name, number):
+    assert klemmliste_names.name_number(name) == number
 
 
 def test_positions_count_from_the_devices_first_sensor(location):

@@ -43,6 +43,7 @@ prints {"rows": [{"sensor", "mux", "pin", "position", "page"}], "warnings",
 "method"} as one JSON object on stdout; exit code 2 without any row.
 """
 import argparse
+import io
 import json
 import math
 import os
@@ -536,8 +537,9 @@ def main() -> int:
         from klemmliste import read_klemmliste
 
         try:
-            # PyMuPDF's table finder prints tips to stdout, which carries only the JSON.
-            with heartbeat("reading the Klemmliste"), redirect_stdout(sys.stderr):
+            # PyMuPDF's table finder prints tips ("Consider using the pymupdf_layout
+            # package ...") to stdout, which carries only the JSON - dropped.
+            with heartbeat("reading the Klemmliste"), redirect_stdout(io.StringIO()):
                 result = read_klemmliste(args.input, log=log)
         except Exception as exc:  # noqa: BLE001 - a broken PDF: the reason is for the user
             log(f"The Klemmliste can't be read: {type(exc).__name__}: {exc}")

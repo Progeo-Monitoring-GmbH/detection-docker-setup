@@ -30,8 +30,10 @@ const ROWS = [
 const PREVIEW = {
   changes: [{ position: 1, mux: 1, pin: 1, sensor_order: 1, new: 'D_124', old: 'dm 1', points: 2 }],
   unchanged: [{ position: 2, mux: 1, pin: 2, sensor_order: 2, new: 'D_123', old: 'D_123', points: 1 }],
-  missing: [{ position: 17, sensor: 'D_104', sensor_order: 17 }],
+  missing: [{ position: 17, mux: 2, pin: 1, sensor: 'D_104', sensor_order: 17 }],
   without_name: [3],
+  point_orders: { count: 3, min: 1, max: 104 },
+  named_like_points: 1,
 };
 
 vi.mock('../axiosConfig', () => ({
@@ -151,13 +153,61 @@ describe('LageplanKlemmliste', () => {
     expect(states).toEqual([['1', 'change'], ['2', 'same'], ['17', 'missing']]);
     expect(byTestId('lageplan-wizard-klemmliste-warnings')!.textContent).toContain('one twice');
     expect(byTestId('lageplan-wizard-klemmliste-unnamed')!.textContent).toContain('3');
-    expect(byTestId('lageplan-wizard-klemmliste-apply')!.textContent).toContain('Apply 1 name(s)');
+    // A missing position keeps its MUX / PIN - and the numbering mismatch is explained.
+    const missing = byTestId('lageplan-wizard-klemmliste-line', '17')!;
+    expect(missing.querySelectorAll('td')[1].textContent).toBe('2 / 1');
+    const mismatch = byTestId('lageplan-wizard-klemmliste-mismatch')!.textContent;
+    expect(mismatch).toContain('numbered 1–104');
+    expect(mismatch).toContain('numbered by their plan label');
+    expect(byTestId('lageplan-wizard-klemmliste-apply')!.textContent).toContain('Apply 1 change(s)');
 
     await click('lageplan-wizard-klemmliste-apply');
 
     expect(api.post.mock.calls[2][1]).toMatchObject({ job_id: 'job-airtable', dry_run: false });
     expect(onNamesApplied).toHaveBeenCalledTimes(1);
     expect((byTestId('lageplan-wizard-klemmliste-apply') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('moves label-numbered points to their input (renumber mode) and names the conflicts', async () => {
+    const renumber = {
+      mode: 'renumber',
+      moves: [
+        { position: 1, mux: 1, pin: 1, from_order: 124, sensor_order: 1, new: 'D_124', old: 'dm 124', points: 1 },
+        { position: 2, mux: 1, pin: 2, from_order: 123, sensor_order: 2, new: 'D_123', old: null, points: 1 },
+      ],
+      conflicts: [{ position: 17, mux: 2, pin: 1, sensor: 'D_104', from_order: 104, sensor_order: 17 }],
+      changes: [],
+      unchanged: [],
+      missing: [],
+      without_name: [],
+      point_orders: { count: 4, min: 17, max: 124 },
+      named_like_points: 3,
+    };
+    api.post.mockImplementation((_url: string, body: Record<string, unknown>, ok: Ok) =>
+      ok({ data: { result: body.dry_run ? renumber : { ...renumber, updated: 2 } } }),
+    );
+    await render();
+
+    await act(async () =>
+      api.finishUpload!({ rows: ROWS, warnings: [] },
+        { job_id: 'job-upload', status: 'done', result: null, log: [], error: null }),
+    );
+
+    const move = byTestId('lageplan-wizard-klemmliste-line', '1')!;
+    expect(move.className).toContain('--move');
+    expect(move.querySelectorAll('td')[3].textContent).toBe('#124 → #1');
+    expect(move.querySelectorAll('td')[1].textContent).toBe('1 / 1');
+    expect(byTestId('lageplan-wizard-klemmliste-line', '17')!.className).toContain('--conflict');
+    expect(byTestId('lageplan-wizard-klemmliste-renumber')).not.toBeNull();
+    expect(byTestId('lageplan-wizard-klemmliste-conflicts')!.textContent).toContain('1 sensor(s)');
+    // In renumber mode the numbers are explained above - no "no measure point" hint.
+    expect(byTestId('lageplan-wizard-klemmliste-mismatch')).toBeNull();
+    expect(byTestId('lageplan-wizard-klemmliste-apply')!.textContent).toContain('Apply 2 change(s)');
+
+    await click('lageplan-wizard-klemmliste-apply');
+
+    expect(onNamesApplied).toHaveBeenCalledTimes(1);
+    expect(byTestId('lageplan-wizard-klemmliste-line', '1')!.className).toContain('--same');
   });
 
   it('previews again for another device of the location', async () => {

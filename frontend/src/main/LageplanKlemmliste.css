@@ -40,6 +40,10 @@
   color: var(--bs-danger-text-emphasis);
 }
 
+.lageplan-klemmliste-note--warning {
+  color: var(--bs-warning-text-emphasis);
+}
+
 .lageplan-klemmliste-documents {
   list-style: none;
   margin: 0;
@@ -99,8 +103,13 @@
   font-size: 0.85rem;
 }
 
-.lageplan-klemmliste-line--change td {
+.lageplan-klemmliste-line--change td,
+.lageplan-klemmliste-line--move td {
   background-color: var(--bs-success-bg-subtle);
+}
+
+.lageplan-klemmliste-line--conflict td {
+  background-color: var(--bs-warning-bg-subtle);
 }
 
 .lageplan-klemmliste-line--missing td {

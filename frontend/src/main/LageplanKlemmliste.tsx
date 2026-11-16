@@ -31,7 +31,10 @@ type PreviewEntry = {
   position: number;
   mux: number | null;
   pin: number | null;
+  /** The sensor number after applying (the input). */
   sensor_order: number;
+  /** A move / conflict: the point's number now (its plan label). */
+  from_order?: number;
   new: string;
   old?: string | null;
   points?: number;
@@ -39,10 +42,19 @@ type PreviewEntry = {
 
 /** klemmliste/apply's answer (helper/klemmliste_names.py). */
 type Preview = {
+  /** "renumber": the points are numbered by their plan label and move to their input. */
+  mode?: 'name' | 'renumber';
+  moves?: PreviewEntry[];
+  conflicts?: { position: number; mux?: number | null; pin?: number | null; sensor: string;
+    sensor_order: number; from_order: number }[];
   changes: PreviewEntry[];
   unchanged: PreviewEntry[];
-  missing: { position: number; sensor: string; sensor_order: number }[];
+  missing: { position: number; mux?: number | null; pin?: number | null; sensor: string; sensor_order: number }[];
   without_name: number[];
+  /** The location's measure points: how many, lowest and highest sensor number. */
+  point_orders?: { count: number; min: number | null; max: number | null };
+  /** Missing rows whose sensor name ends in an existing point's number ("D_124" - point 124). */
+  named_like_points?: number;
   updated?: number;
 };
 
@@ -64,16 +76,27 @@ const formatSize = (size: number | null) => {
 };
 
 /** One line of the preview: what happens to a Klemmliste position. */
-type PreviewLine = PreviewEntry & { state: 'change' | 'same' | 'missing' };
+type PreviewLine = PreviewEntry & { state: 'move' | 'change' | 'same' | 'missing' | 'conflict' };
+
+/** What applying writes: the moves and the name changes. */
+const pendingCount = (preview: Preview | null) => (preview ? (preview.moves?.length ?? 0) + preview.changes.length : 0);
 
 const previewLines = (preview: Preview): PreviewLine[] =>
   [
+    ...(preview.moves ?? []).map((entry) => ({ ...entry, state: 'move' as const })),
+    ...(preview.conflicts ?? []).map((entry) => ({
+      ...entry,
+      mux: entry.mux ?? null,
+      pin: entry.pin ?? null,
+      new: entry.sensor,
+      state: 'conflict' as const,
+    })),
     ...preview.changes.map((entry) => ({ ...entry, state: 'change' as const })),
     ...preview.unchanged.map((entry) => ({ ...entry, state: 'same' as const })),
     ...preview.missing.map((entry) => ({
       ...entry,
-      mux: null,
-      pin: null,
+      mux: entry.mux ?? null,
+      pin: entry.pin ?? null,
       new: entry.sensor,
       state: 'missing' as const,
     })),
@@ -250,8 +273,13 @@ const LageplanKlemmliste = ({
       false,
       (result) => {
         setApplying(false);
-        setPreview({ ...result, changes: [], unchanged: [...result.unchanged, ...result.changes] });
-        showSuccessBar(enqueueSnackbar, `${result.updated ?? 0} measure point(s) renamed from the Klemmliste`);
+        // Applied: what it moved and named is now as the list says.
+        const done = [...(result.moves ?? []), ...result.changes].map((entry) => ({ ...entry, from_order: undefined }));
+        setPreview({ ...result, mode: 'name', moves: [], changes: [], unchanged: [...result.unchanged, ...done] });
+        showSuccessBar(
+          enqueueSnackbar,
+          `${result.updated ?? 0} measure point(s) ${result.moves?.length ? 'renumbered and ' : ''}named from the Klemmliste`,
+        );
         onNamesApplied();
       },
       (error) => {
@@ -402,9 +430,9 @@ const LageplanKlemmliste = ({
               )}
               <PillButton
                 icon={applying ? <Spinner animation="border" size="sm" /> : <ListCheck size={13} />}
-                label={`Apply ${preview?.changes.length ?? 0} name(s)`}
+                label={`Apply ${pendingCount(preview)} change(s)`}
                 onClick={apply}
-                disabled={applying || previewing || !preview || preview.changes.length === 0}
+                disabled={applying || previewing || pendingCount(preview) === 0}
                 testId="lageplan-wizard-klemmliste-apply"
               />
             </div>
@@ -414,6 +442,37 @@ const LageplanKlemmliste = ({
                   <li key={warning}>{warning}</li>
                 ))}
               </ul>
+            )}
+            {preview?.mode === 'renumber' && (preview.moves?.length ?? 0) > 0 && (
+              <div className="lageplan-klemmliste-note" data-testid="lageplan-wizard-klemmliste-renumber">
+                The measure points are numbered by their plan label (e.g. D_124 is point 124). Applying moves
+                each one to its input - sensor number (MUX - 1) × 16 + PIN - and names it, so the plan shows the
+                readings of the right input. Points not in the list keep their number.
+              </div>
+            )}
+            {preview && (preview.conflicts?.length ?? 0) > 0 && (
+              <div
+                className="lageplan-klemmliste-note lageplan-klemmliste-note--warning"
+                data-testid="lageplan-wizard-klemmliste-conflicts"
+              >
+                {preview.conflicts?.length} sensor(s) can&apos;t move: their input&apos;s number is taken by a point the
+                list doesn&apos;t move away. They stay as they are.
+              </div>
+            )}
+            {preview && preview.missing.length > 0 && preview.point_orders && preview.mode !== 'renumber' && (
+              <div
+                className="lageplan-klemmliste-note lageplan-klemmliste-note--warning"
+                data-testid="lageplan-wizard-klemmliste-mismatch"
+              >
+                {preview.missing.length} position(s) have no measure point with that sensor number.{' '}
+                {preview.point_orders.count === 0
+                  ? 'The location has no measure points yet - import or place them first.'
+                  : `The location's ${preview.point_orders.count} measure point(s) are numbered ` +
+                    `${preview.point_orders.min}–${preview.point_orders.max}.`}
+                {(preview.named_like_points ?? 0) > 0 &&
+                  ` ${preview.named_like_points} sensor name(s) end in the number of an existing point ` +
+                    '(e.g. D_124 and point 124): the points are numbered by their plan label, not by MUX/PIN.'}
+              </div>
             )}
             {preview && preview.without_name.length > 0 && (
               <div className="lageplan-klemmliste-note" data-testid="lageplan-wizard-klemmliste-unnamed">
@@ -447,8 +506,22 @@ const LageplanKlemmliste = ({
                         <td>{line.position}</td>
                         <td>{line.mux != null ? `${line.mux} / ${line.pin}` : '–'}</td>
                         <td>{line.new}</td>
-                        <td>{line.state === 'missing' ? `#${line.sensor_order} – none` : `#${line.sensor_order}`}</td>
                         <td>
+                          {line.state === 'missing'
+                            ? `#${line.sensor_order} – none`
+                            : line.state === 'move' || line.state === 'conflict'
+                              ? `#${line.from_order} → #${line.sensor_order}`
+                              : `#${line.sensor_order}`}
+                        </td>
+                        <td>
+                          {line.state === 'move' && (
+                            <span>
+                              {line.old || '(no name)'} → {line.new}, number {line.from_order} → {line.sensor_order}
+                            </span>
+                          )}
+                          {line.state === 'conflict' && (
+                            <span className="lageplan-klemmliste-muted">number {line.sensor_order} is taken</span>
+                          )}
                           {line.state === 'change' && <span>{line.old || '(no name)'} → {line.new}</span>}
                           {line.state === 'same' && <span className="lageplan-klemmliste-muted">unchanged</span>}
                           {line.state === 'missing' && (
