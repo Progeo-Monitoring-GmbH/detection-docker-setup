@@ -655,7 +655,8 @@ class StatusViewSet(ProgeoModalViewSet):
     @action(detail=False, url_path="measure_points/airtable_documents", methods=["GET"])
     def airtable_documents(self, request, *args, **kwargs):
         """Staff: the location's MEA documents in Airtable - the CAD plan
-        (*.dwg), Router_Daten.txt and Klemmliste*.pdf (helper/airtable_documents.py).
+        (*.dwg), Router_Daten.txt and every PDF, a recognised Klemmliste first
+        (helper/airtable_documents.py).
         ?refresh=1 skips the 5-minute cache."""
         from progeo.helper import airtable_documents
 
@@ -719,8 +720,8 @@ class StatusViewSet(ProgeoModalViewSet):
                 return RequestFailed({"reason": "Staff access required"})
             try:
                 entry = airtable_documents.document(location, document_id)
-                if entry["kind"] != "klemmliste":
-                    return RequestFailed({"reason": "This document is no Klemmliste"})
+                if entry["kind"] not in airtable_documents.READABLE_KINDS:
+                    return RequestFailed({"reason": "Only a PDF can be read as Klemmliste"})
                 upload = ContentFile(airtable_documents.read_bytes(entry), name=entry["name"])
             except airtable_documents.AirtableDocumentsError as exc:
                 return RequestFailed({"reason": str(exc)})

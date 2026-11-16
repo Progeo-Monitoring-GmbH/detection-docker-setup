@@ -277,13 +277,16 @@ def _doc(record_id, filename, kind="MEA-Dokumente"):
 @pytest.fixture
 def airtable(monkeypatch):
     project = {"id": "recProject000000a", "fields": {"Projektnummer": 937078, "Dokumente": [
-        "recDwg0000000000a", "recDwl0000000000a", "recRouter0000000a", "recKlemm00000000a", "recOrder00000000a"]}}
+        "recDwg0000000000a", "recDwl0000000000a", "recRouter0000000a", "recKlemm00000000a", "recOrder00000000a",
+        "recPinAssign0000a", "recModel00000000a", "recXlsx000000000a"]}}
     projects = FakeTable({project["id"]: project})
     documents = FakeTable({record["id"]: record for record in (
         _doc("recDwg0000000000a", "FCX_403018_B.dwg"), _doc("recDwl0000000000a", "FCX_403018_B.dwl"),
         _doc("recRouter0000000a", "Router_Daten.txt"),
         _doc("recKlemm00000000a", "Klemmliste_dm_Gebrüder_Weiss_Robinigstraße.pdf"),
         _doc("recOrder00000000a", "Klemmliste_alt.pdf", kind="Auftragsbestaetigungen"),
+        _doc("recPinAssign0000a", "Pin_Assignment_dm_UK_Cancer_Center.pdf"), _doc("recModel00000000a", "MEA-Modell.pdf"),
+        _doc("recXlsx000000000a", "Klemmliste_dm.xlsx"),
     )})
 
     class Helper:
@@ -305,9 +308,12 @@ def test_the_mea_documents_of_the_project(api_client, staff, location, airtable)
                           {"location_id": location.project_id}).json()
 
     assert body["project_found"] is True
+    # Every PDF of MEA-Dokumente - the ones named like a Klemmliste first; not the .dwl/.xlsx, not other folders.
     assert [(d["kind"], d["name"]) for d in body["documents"]] == [
         ("dwg", "FCX_403018_B.dwg"), ("router", "Router_Daten.txt"),
         ("klemmliste", "Klemmliste_dm_Gebrüder_Weiss_Robinigstraße.pdf"),
+        ("klemmliste", "Pin_Assignment_dm_UK_Cancer_Center.pdf"),
+        ("pdf", "MEA-Modell.pdf"),
     ]
     assert "url" not in body["documents"][0]
     assert "937078" in airtable["projects"].formulas[0]
@@ -318,7 +324,7 @@ def test_the_airtable_link_names_the_project_record(location, airtable):
 
     result = airtable_documents.location_documents(location, refresh=True)
 
-    assert len(result["documents"]) == 3 and airtable["projects"].formulas == []
+    assert len(result["documents"]) == 5 and airtable["projects"].formulas == []
 
 
 def test_a_document_downloads_through_the_backend(api_client, staff, location, airtable, monkeypatch):
@@ -364,9 +370,13 @@ def test_a_klemmliste_from_airtable_starts_a_job(api_client, staff, location, ai
     job = cad_import.get_job(response.json()["job_id"])
     assert job["source_name"] == "Klemmliste_dm_Gebrüder_Weiss_Robinigstraße.pdf"
     assert (tmp_path / "cad_imports" / Path(job["cad_input"]).name).read_bytes() == b"%PDF-airtable"
-    no_list = api_client.post(url, {"location_id": location.project_id, "document": "recDwg0000000000a"},
-                              format="json")
-    assert no_list.json()["reason"] == "This document is no Klemmliste"
+    no_pdf = api_client.post(url, {"location_id": location.project_id, "document": "recDwg0000000000a"},
+                             format="json")
+    assert no_pdf.json()["reason"] == "Only a PDF can be read as Klemmliste"
+    # Any PDF can be read - the cad_factory decides by the table it holds.
+    other = api_client.post(url, {"location_id": location.project_id, "document": "recModel00000000a"},
+                            format="json")
+    assert cad_import.get_job(other.json()["job_id"])["source_name"] == "MEA-Modell.pdf"
 
 
 def test_airtable_documents_are_staff_only(api_client, location, airtable):

@@ -13,15 +13,23 @@ a device). The backend gives that point the row's sensor name.
 
 The PDFs come in several variants (Excel exports, CAD title blocks, with and
 without ruled tables, columns in any order, headers wrapped over two lines,
-tables over several pages), so nothing here depends on positions or column
-order - the columns are found by their header text:
+tables over several pages, other header names - "dm Leitung" instead of
+"Sensor"), so nothing here depends on positions, column order or exact
+header names. The columns are found
 
-1. PyMuPDF's table finder (ruled tables): every table whose header row
-   names the three columns; a table without such a header on a later page
-   continues the last one when it has as many columns.
-2. Otherwise word positions: the line naming the three columns is the
-   header, every column spans the room up to the middle between its label
-   and the neighbouring ones, and each line below is cut into those columns.
+- by their header text where it is known (HEADER_SYNONYMS), and
+- for every column the header doesn't name, by what the column holds
+  (infer_columns): PIN whole numbers 1-16, MUX "MUX 1" or small repeating
+  numbers, the sensor short names ending in a number ("D_1", "dm 007").
+
+in a grid of cells read in one of two ways:
+
+1. PyMuPDF's table finder (ruled tables): the header is one of a table's
+   first rows; a table without one on a later page continues the last one
+   when it has as many columns.
+2. Otherwise word positions: a header line (or two, when wrapped) with at
+   least three labels; every column spans the room up to the middle between
+   its label and the neighbouring ones, each line below is cut into them.
 
 Rows without a readable MUX card and pin are skipped (sub-headings, sums);
 an empty MUX cell repeats the card above (merged cells). Problems are
@@ -35,13 +43,25 @@ PINS_PER_MUX = 16
 # Normalized header text (normalize_header) -> column. Checked in this
 # order, so the specific labels win ("muxkarte" before "karte").
 HEADER_SYNONYMS = (
-    ("mux", ("muxkarte", "muxcard", "multiplexerkarte", "multiplexer", "muxnr", "muxnummer", "mux", "karte")),
+    ("mux", ("muxkarte", "muxcard", "multiplexerkarte", "multiplexer", "muxplatine", "muxnr", "muxnummer", "mux",
+             "karte")),
     ("pin", ("pinnr", "pinnummer", "pin", "eingang", "kanal")),
-    ("sensor", ("sensorname", "sensorbezeichnung", "sensor", "messpunkt", "messstelle")),
+    ("sensor", ("sensorname", "sensorbezeichnung", "sensor", "dmleitung", "dmsensor", "sensorleitung", "leitung",
+                "messpunkt", "messstelle", "bezeichnung")),
 )
 # Words of a header that rule a column out for a role ("Sensor-Typ" names no sensor).
 HEADER_EXCLUDES = {"sensor": ("typ", "type", "art", "anzahl", "laenge", "lange")}
 COLUMNS = ("sensor", "mux", "pin")
+
+# What the cells of a column hold, for the columns the header doesn't name.
+PIN_CELL_RE = re.compile(r"^\d{1,2}$")
+MUX_CELL_RE = re.compile(r"^(?:mux|karte|m)\s*[-_.:]?\s*\d{1,2}$", re.IGNORECASE)
+SENSOR_CELL_RE = re.compile(r"^[^\W\d_]{1,8}\s*[-_. /]?\s*\d{1,4}[^\W\d_]?$")
+# A column is taken when this share of its filled cells fits (and enough are filled).
+PIN_SHARE, MUX_SHARE, SENSOR_SHARE = 0.8, 0.8, 0.6
+MIN_FILLED = 3
+# A table counts as a Klemmliste with at least this many readable rows.
+MIN_ROWS = 2
 
 # Words of one PDF line are at most this far apart vertically (points).
 LINE_TOLERANCE = 3.0
@@ -76,17 +96,90 @@ def header_role(text) -> str | None:
     return match[0] if match else None
 
 
-def header_map(cells) -> dict | None:
-    """{role: cell index} when `cells` name all three columns, else None. Per
-    column the best label wins ("Sensor" over "Messpunkt"), then the first."""
+def header_roles(cells) -> dict:
+    """{role: cell index} of the columns `cells` name - maybe not all three.
+    Per column the best label wins ("Sensor" over "Messpunkt"), then the first."""
     best = {}
     for index, cell in enumerate(cells):
         match = header_match(cell)
         if match and (match[0] not in best or match[1] < best[match[0]][0]):
             best[match[0]] = (match[1], index)
-    if not all(role in best for role in COLUMNS):
-        return None
     return {role: index for role, (_rank, index) in best.items()}
+
+
+def header_map(cells) -> dict | None:
+    """{role: cell index} when `cells` name all three columns, else None."""
+    roles = header_roles(cells)
+    return roles if all(role in roles for role in COLUMNS) else None
+
+
+def _filled(rows, index) -> list:
+    return [" ".join(str(row[index]).split()) for row in rows if index < len(row) and str(row[index] or "").strip()]
+
+
+def _share(values, test) -> float:
+    return sum(1 for value in values if test(value)) / len(values) if values else 0.0
+
+
+def _is_pin(value) -> bool:
+    return bool(PIN_CELL_RE.match(value)) and 1 <= int(value) <= PINS_PER_MUX
+
+
+def infer_columns(known: dict, rows, width) -> dict | None:
+    """`known` ({role: index} from the header) completed by what the other
+    columns hold - None when a role stays without a column. A column the
+    header names for another role is never taken."""
+    mapping = dict(known)
+
+    def free():
+        return [index for index in range(width) if index not in mapping.values()]
+
+    def best(test, share, minimum=MIN_FILLED, extra=lambda values: True):
+        scored = []
+        for index in free():
+            values = _filled(rows, index)
+            if len(values) >= minimum and _share(values, test) >= share and extra(values):
+                scored.append((sum(1 for value in values if test(value)), -index, index))
+        return max(scored)[2] if scored else None
+
+    if "pin" not in mapping:
+        found = best(_is_pin, PIN_SHARE, extra=lambda values: len(set(values)) > 1)
+        if found is not None:
+            mapping["pin"] = found
+    if "mux" not in mapping:
+        # "MUX 1", "Karte 2" - or bare card numbers, repeating down the column (merged cells: few filled).
+        found = best(lambda value: bool(MUX_CELL_RE.match(value)), MUX_SHARE, minimum=1)
+        if found is None:
+            found = best(lambda value: bool(PIN_CELL_RE.match(value)) and int(value) >= 1, MUX_SHARE, minimum=1,
+                         extra=lambda values: len(set(values)) < len(values) or len(values) <= 2)
+        if found is not None:
+            mapping["mux"] = found
+    if "sensor" not in mapping:
+        found = best(lambda value: bool(SENSOR_CELL_RE.match(value)), SENSOR_SHARE)
+        if found is not None:
+            mapping["sensor"] = found
+    return mapping if all(role in mapping for role in COLUMNS) else None
+
+
+def _readable_rows(rows, mapping) -> int:
+    """How many rows have a pin and a sensor name under `mapping` - is it a Klemmliste at all?"""
+    return sum(1 for row in rows
+               if mapping["pin"] < len(row) and first_number(row[mapping["pin"]]) is not None
+               and mapping["sensor"] < len(row) and clean_name(row[mapping["sensor"]]))
+
+
+def find_columns(header_rows, data_rows, width) -> dict | None:
+    """The columns of a table: the header (one of `header_rows`, merged when
+    a header is wrapped is the caller's business) names what it can,
+    the cells below tell the rest."""
+    cells = [" ".join(str(cell or "").split()) for cell in header_rows]
+    if any(PIN_CELL_RE.match(cell) or MUX_CELL_RE.match(cell) for cell in cells):
+        return None  # a data row ("MUX 1", a PIN), not a header
+    known = header_roles(cells)
+    mapping = infer_columns(known, data_rows, width)
+    if mapping and _readable_rows(data_rows, mapping) >= MIN_ROWS:
+        return mapping
+    return None
 
 
 def first_number(text) -> int | None:
@@ -179,10 +272,16 @@ def _read_tables(doc, collector, log) -> bool:
         for rows in _table_rows(page):
             collector.restart()
             start = 0
+            row_width = max((len(row) for row in rows), default=0)
             for index, row in enumerate(rows[:4]):  # the header is near the top
-                mapping = header_map(row)
+                mapping = find_columns(row, rows[index + 1:], row_width)
                 if mapping:
                     columns, width, start = mapping, len(row), index + 1
+                    named = {role for role in header_roles(row)}
+                    guessed = [role for role in COLUMNS if role not in named]
+                    if guessed:
+                        log(f"Page {page_number}: column(s) {', '.join(guessed)} found by their content "
+                            f"(header: {', '.join(clean_name(row[mapping[role]]) or '-' for role in guessed)})")
                     break
             else:
                 if columns is None or not rows or len(rows[0]) != width:
@@ -214,18 +313,35 @@ def _labels(line) -> list:
     """The column labels of a header line: words closer than a gap merged ("MUX Karte")."""
     labels = []
     for x0, x1, text in line:
-        if labels and x0 - labels[-1][1] < 6 and not header_role(text):
+        if labels and x0 - labels[-1][1] < 6:
             labels[-1] = (labels[-1][0], x1, f"{labels[-1][2]} {text}")
         else:
             labels.append((x0, x1, text))
     return labels
 
 
+def _cut(line, bounds) -> list:
+    """The words of `line` as cells, one per column (left, right)."""
+    cells = [[] for _bound in bounds]
+    for x0, x1, text in line:
+        middle = (x0 + x1) / 2
+        for index, (left, right) in enumerate(bounds):
+            if left <= middle < right:
+                cells[index].append(text)
+    return [" ".join(words) for words in cells]
+
+
 def _header_columns(lines, index) -> tuple | None:
     """(columns {role: (left, right)}, lines used) when line `index` - alone or
-    with the next one, for headers wrapped over two lines - names the three columns."""
+    with the next one, for headers wrapped over two lines - is the header of a
+    Klemmliste: at least three labels, its roles named or found below."""
     for used in (1, 2):
         if index + used > len(lines):
+            break
+        # Every line of a header is free of data ("MUX 1", a PIN) - two data
+        # lines stacked would look like a wrapped header otherwise.
+        if any(PIN_CELL_RE.match(label[2]) or MUX_CELL_RE.match(label[2])
+               for line in lines[index:index + used] for label in _labels(line)):
             break
         labels = _labels(sorted((word for line in lines[index:index + used] for word in line),
                                 key=lambda word: word[0]))
@@ -237,14 +353,25 @@ def _header_columns(lines, index) -> tuple | None:
                               f"{merged[-1][2]} {label[2]}")
             else:
                 merged.append(label)
-        mapping = header_map([label[2] for label in merged])
-        if not mapping:
+        # Without a ruled table the columns come from the labels. A header whose
+        # labels are all unknown must at least label every column: the lines
+        # below have no more word groups than it has labels - else a column
+        # without a label would smear into its neighbours.
+        if len(merged) < 3:
             continue
+        if not header_roles([label[2] for label in merged]):
+            groups = sorted(len(_labels(line)) for line in lines[index + used:index + used + 30])
+            if not groups or groups[len(groups) // 2] > len(merged):
+                continue
         bounds = []
         for position, label in enumerate(merged):
             left = (merged[position - 1][1] + label[0]) / 2 if position else float("-inf")
             right = (label[1] + merged[position + 1][0]) / 2 if position + 1 < len(merged) else float("inf")
             bounds.append((left, right))
+        data = [_cut(line, bounds) for line in lines[index + used:]]
+        mapping = find_columns([label[2] for label in merged], data, len(merged))
+        if not mapping:
+            continue
         return {role: bounds[index_] for role, index_ in mapping.items()}, used
     return None
 
@@ -294,4 +421,5 @@ def read_klemmliste(path, log=lambda _line: None) -> dict:
                 return {"rows": sorted(collector.rows, key=lambda row: row["position"]),
                         "warnings": collector.warnings, "method": method}
             log(f"Klemmliste: nothing found by {method}")
-    return {"rows": [], "warnings": ["No table with the columns Sensor, MUX Karte and PIN found"], "method": None}
+    reason = "No table with sensor names, MUX cards and PINs found (e.g. the columns Sensor, MUX Karte and PIN)"
+    return {"rows": [], "warnings": [reason], "method": None}

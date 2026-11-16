@@ -5,8 +5,11 @@ its files as records of the documents table (AIRTABLE_DOCUMENTS_TABLE,
 "Dokumente"), each with the file in "Anlage". The ones in the project's
 SharePoint folder "MEA-Dokumente" have Dokumententyp "MEA-Dokumente"; of
 those the wizard offers the CAD plan (*.dwg), the router data
-(Router_Daten*.txt) and the Klemmliste (Klemmliste*.pdf - its sensor names
-are read by progeo-cad_factory, see helper/klemmliste_names.py).
+(Router_Daten*.txt) and every PDF: the Klemmliste is not always called so
+("Pin_Assignment_dm_UK_Cancer_Center.pdf"), so the names KLEMMLISTE_NAME
+knows are only listed first - the sensor names of any of them can be read
+by progeo-cad_factory, which finds the table by its contents (see
+helper/klemmliste_names.py).
 
 The project is found by the record id in the location's airtable_url, else
 by its project number. Airtable's file URLs expire after a few hours, so they
@@ -27,12 +30,18 @@ DOCUMENTS_FIELD = "Dokumente"
 ATTACHMENT_FIELD = "Anlage"
 MEA_TYPE = "MEA-Dokumente"
 DOCUMENT_FIELDS = ["Name", ATTACHMENT_FIELD, "Dokumententyp", "Created"]
-# kind -> filename pattern (lower case); a .dwl / .bak next to the .dwg is no plan.
+# What a Klemmliste PDF is called (lower case, anywhere in the name).
+KLEMMLISTE_NAME = re.compile(r"klemm(liste|plan)|pin[_ -]?(assignment|belegung)|pinbelegung|terminal[_ -]?list")
+# kind -> filename test (lower case); a .dwl / .bak next to the .dwg is no plan.
+# The first matching kind wins: a recognised Klemmliste before the other PDFs.
 KINDS = (
     ("dwg", re.compile(r"\.dwg$")),
     ("router", re.compile(r"^router[_ -]?daten.*\.txt$")),
-    ("klemmliste", re.compile(r"^klemmliste.*\.pdf$")),
+    ("klemmliste", re.compile(rf"(?:{KLEMMLISTE_NAME.pattern}).*\.pdf$")),
+    ("pdf", re.compile(r"\.pdf$")),
 )
+# Kinds whose sensor names can be read (status_viewset klemmliste).
+READABLE_KINDS = ("klemmliste", "pdf")
 RECORD_ID_RE = re.compile(r"\b(rec[A-Za-z0-9]{14})\b")
 CACHE_SECONDS = 300
 # Formula length: record ids per documents request.

@@ -128,6 +128,80 @@ def test_the_7078_variant_ruled_seven_columns_mux_as_text_and_ge_rows(klemmliste
     assert result["warnings"] == []
 
 
+SL_ROWS = [("", "D_1", "", "rot ohne", "MUX 1", 1), ("", "D_10", "", "rot einfach", "MUX 1", 2),
+           ("", "D_2", "", "rot 2 weit", "MUX 1", 3), ("", "D_11", "SL 1", "rot 2 eng", "MUX 1", 4),
+           ("", "D_3", "", "grün ohne", "MUX 1", 5), ("", "D_12", "", "grün einfach", "MUX 1", 6),
+           ("", "D_7", "", "gelb ohne", "MUX 1", 13)]
+SL_POSITIONS = {1: "D_1", 2: "D_10", 3: "D_2", 4: "D_11", 5: "D_3", 6: "D_12", 13: "D_7"}
+
+
+def _sl_columns(sensor_header, mux_header="MUX Karte", pin_header="PIN"):
+    return [(30, 60, "Einführungs\npunkt"), (90, 70, sensor_header), (160, 50, "Sammel\nleitung"),
+            (210, 80, "Farbcode"), (290, 60, mux_header), (350, 30, pin_header)]
+
+
+def test_the_dm_leitung_variant(klemmliste, tmp_path):
+    """The Klemmliste with "dm Leitung" instead of "Sensor" - and a Sammelleitung
+    cell ("SL 1") that looks like a sensor name but is none."""
+    def build(doc):
+        page = doc.new_page()
+        page.insert_text((30, 25), "PROGEO Monitoring", fontsize=9)
+        page.insert_text((300, 25), "Klemmliste - dm", fontsize=9)
+        _text_table(page, 40, _sl_columns("dm Leitung"), SL_ROWS, ruled=True)
+
+    result = klemmliste.read_klemmliste(_pdf(tmp_path / "Klemmliste_dm_Leitung.pdf", build))
+
+    assert result["method"] == "tables"
+    assert _positions(result) == SL_POSITIONS
+    assert result["warnings"] == []
+
+
+@pytest.mark.parametrize("ruled", [True, False], ids=["ruled", "words"])
+@pytest.mark.parametrize("headers", [
+    ("Strang", "MUX Karte", "PIN"),   # an unknown sensor header
+    ("Kabel-Nr.", "Platine", "Klemme"),  # nothing named but the content
+    ("", "", ""),                     # no labels for the three at all
+], ids=["sensor-unknown", "all-unknown", "unlabelled"])
+def test_columns_the_header_does_not_name_are_found_by_their_content(klemmliste, tmp_path, ruled, headers):
+    def build(doc):
+        _text_table(doc.new_page(), 40, _sl_columns(*headers), SL_ROWS, ruled=ruled)
+
+    result = klemmliste.read_klemmliste(_pdf(tmp_path / "variant.pdf", build))
+
+    if not ruled and headers == ("", "", ""):
+        # Without a table and without labels, three header words are needed to find the columns.
+        assert result["rows"] == []
+        return
+    assert _positions(result) == SL_POSITIONS
+
+
+def test_bare_card_numbers_and_a_merged_mux_column(klemmliste, tmp_path):
+    def build(doc):
+        columns = [(40, 80, "Bezeichnung"), (120, 50, "Karte"), (170, 40, "Kanal"), (210, 80, "Farbe")]
+        rows = [("S 1", 1, 1, "rot"), ("S 2", "", 2, "rot"), ("S 3", "", 3, "grün"), ("S 17", 2, 1, "grün"),
+                ("S 18", "", 2, "grau")]
+        _text_table(doc.new_page(), 40, columns, rows, ruled=True)
+
+    result = klemmliste.read_klemmliste(_pdf(tmp_path / "bare.pdf", build))
+
+    assert _positions(result) == {1: "S 1", 2: "S 2", 3: "S 3", 17: "S 17", 18: "S 18"}
+
+
+@pytest.mark.parametrize("values, role", [
+    (["1", "2", "3", "16"], "pin"), (["MUX 1", "MUX 1", "MUX 2"], "mux"), (["D_1", "dm 007", "D 124"], "sensor"),
+])
+def test_infer_columns_reads_what_a_column_holds(klemmliste, values, role):
+    others = {"pin": ["1", "2", "3", "4"], "mux": ["MUX 1"] * 4, "sensor": ["D_1", "D_2", "D_3", "D_4"]}
+    columns = [others[name] if name != role else values + [""] * (4 - len(values))
+               for name in ("sensor", "mux", "pin")]
+    rows = [list(row) for row in zip(["rot ohne", "rot 2 weit", "grün", "grau"], *columns, strict=False)]
+    known = {name: index + 1 for index, name in enumerate(("sensor", "mux", "pin")) if name != role}
+
+    mapping = klemmliste.infer_columns(known, rows, 4)
+
+    assert mapping[role] == ("sensor", "mux", "pin").index(role) + 1
+
+
 def test_invalid_and_duplicate_inputs_are_warned_about_not_guessed(klemmliste, tmp_path):
     def build(doc):
         page = doc.new_page()

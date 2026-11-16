@@ -21,6 +21,7 @@ const DOCUMENTS = [
   { id: 'recDwg', name: 'FCX_403018_B.dwg', kind: 'dwg', size: 214853, type: null, created: null },
   { id: 'recRouter', name: 'Router_Daten.txt', kind: 'router', size: 201, type: null, created: null },
   { id: 'recKlemm', name: 'Klemmliste_dm_Gebrüder_Weiss.pdf', kind: 'klemmliste', size: 206334, type: null, created: null },
+  { id: 'recModel', name: 'MEA-Modell.pdf', kind: 'pdf', size: 5000, type: null, created: null },
 ];
 const ROWS = [
   { sensor: 'D_124', mux: 1, pin: 1, position: 1, page: 1 },
@@ -117,9 +118,11 @@ describe('LageplanKlemmliste', () => {
     const names = [...container.querySelectorAll('[data-testid="lageplan-wizard-mea-document"]')].map(
       (row) => row.getAttribute('data-test-key'),
     );
-    expect(names).toEqual(['recDwg', 'recRouter', 'recKlemm']);
-    // Only the Klemmliste can be read.
+    expect(names).toEqual(['recDwg', 'recRouter', 'recKlemm', 'recModel']);
+    // Every PDF can be read - a Klemmliste isn't always named so; the plan and the router data can't.
     expect(byTestId('lageplan-wizard-mea-read', 'recDwg')).toBeNull();
+    expect(byTestId('lageplan-wizard-mea-read', 'recRouter')).toBeNull();
+    expect(byTestId('lageplan-wizard-mea-read', 'recModel')).not.toBeNull();
 
     await click('lageplan-wizard-mea-download', 'recDwg');
 

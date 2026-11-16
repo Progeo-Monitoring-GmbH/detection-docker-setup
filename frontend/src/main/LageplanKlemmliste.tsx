@@ -18,7 +18,8 @@ type Auth = ReturnType<typeof useAuth>;
 export type MeaDocument = {
   id: string;
   name: string;
-  kind: 'dwg' | 'router' | 'klemmliste';
+  /** "klemmliste": named like one (Klemmliste*, Pin_Assignment*, ...); "pdf": any other PDF - readable too. */
+  kind: 'dwg' | 'router' | 'klemmliste' | 'pdf';
   size: number | null;
   type: string | null;
   created: string | null;
@@ -64,7 +65,11 @@ const KIND_LABEL: Record<MeaDocument['kind'], string> = {
   dwg: 'CAD plan',
   router: 'Router data',
   klemmliste: 'Klemmliste',
+  pdf: 'PDF',
 };
+
+/** The sensor names of any PDF can be read - a Klemmliste isn't always named so. */
+const READABLE: ReadonlySet<MeaDocument['kind']> = new Set(['klemmliste', 'pdf']);
 
 const STATUS_URL = '/v1/status/measure_points';
 
@@ -104,7 +109,8 @@ const previewLines = (preview: Preview): PreviewLine[] =>
 
 /**
  * Lageplan wizard, step 7: the location's MEA documents from Airtable (staff -
- * CAD plan, Router_Daten.txt, Klemmliste PDF, each downloadable) and the
+ * CAD plan, Router_Daten.txt and every PDF, a recognised Klemmliste first,
+ * each downloadable; any PDF can be read as Klemmliste) and the
  * Klemmliste: read by progeo-cad_factory (uploaded or straight from Airtable),
  * its sensor names - position (MUX - 1) * 16 + PIN - previewed against the
  * measure points and written onto them.
@@ -319,7 +325,7 @@ const LageplanKlemmliste = ({
         </div>
       ) : documents.length === 0 ? (
         <div className="lageplan-klemmliste-note" data-testid="lageplan-wizard-mea-empty">
-          No CAD plan, Router_Daten.txt or Klemmliste among the project&apos;s MEA documents.
+          No CAD plan, Router_Daten.txt or PDF among the project&apos;s MEA documents.
         </div>
       ) : (
         <ul className="lageplan-klemmliste-documents">
@@ -333,7 +339,7 @@ const LageplanKlemmliste = ({
               </span>
               <span className="lageplan-klemmliste-muted">{formatSize(document.size)}</span>
               <span className="lageplan-klemmliste-actions">
-                {document.kind === 'klemmliste' && (
+                {READABLE.has(document.kind) && (
                   <PillButton
                     icon={starting === document.id ? <Spinner animation="border" size="sm" /> : <ListCheck size={13} />}
                     label="Read names"
