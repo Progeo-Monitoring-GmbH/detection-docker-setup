@@ -550,6 +550,12 @@ def test_staff_list_and_toggle_the_location_switch(site, live, api_client, flags
     assert switched.data == {"disabled": False} and "aktiviert" in switched.text
     summary = api_client.get("/v1/notification-case/summary/").data
     assert summary["locations"]["enabled"] >= 1 and "withheld_last_day" in summary
+    # The case list and detail carry the location's switch (the striped rows of the staff panel).
+    case = _case(location)
+    listed = api_client.get("/v1/notification-case/?state=open").data["cases"]
+    assert next(row for row in listed if row["id"] == case.pk)["notifications_disabled"] is False
+    _disable(location)
+    assert api_client.get(f"/v1/notification-case/{case.pk}/").data["case"]["notifications_disabled"] is True
     assert api_client.post("/v1/notification-location/999999/toggle/", {"disabled": True},
                            format="json").status_code == 404
 

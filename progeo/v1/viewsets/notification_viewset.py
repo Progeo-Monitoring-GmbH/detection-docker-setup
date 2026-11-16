@@ -114,7 +114,16 @@ def _time(value):
     return cases.fmt(value) if value else None
 
 
-def serialize_case(case, events=False):
+def _notifications_disabled(location_ids) -> dict:
+    """{location id: notifications_disabled} from "default", where staff switch it."""
+    ids = {pk for pk in location_ids if pk is not None}
+    if not ids:
+        return {}
+    return dict(ProgeoLocation.objects.using(DB).filter(pk__in=ids).values_list("pk", "notifications_disabled"))
+
+
+def serialize_case(case, events=False, notifications_disabled=None):
+    """`notifications_disabled`: the location's switch (None = location unknown)."""
     data = {
         "id": case.pk,
         "kind": case.kind,
@@ -146,6 +155,7 @@ def serialize_case(case, events=False):
         ],
         "alarm_count": len(case.alarm_ids or []),
         "notified": case.notified or [],
+        "notifications_disabled": notifications_disabled,
     }
     if events:
         data["events"] = [{
@@ -153,6 +163,12 @@ def serialize_case(case, events=False):
             "data": entry.data, "author_id": entry.author_id,
         } for entry in case.events.using(DB).all()]
     return data
+
+
+def _detail(case):
+    """A case with its protocol and its location's switch."""
+    return serialize_case(case, events=True,
+                          notifications_disabled=_notifications_disabled([case.location_id]).get(case.location_id))
 
 
 class NotificationCaseViewSet(viewsets.ViewSet):
@@ -199,13 +215,17 @@ class NotificationCaseViewSet(viewsets.ViewSet):
             except (TypeError, ValueError):
                 return RequestFailed({"reason": "Invalid location"})
         limit = 500 if state == "open" else 200
-        return RequestSuccess({"cases": [serialize_case(case) for case in queryset[:limit]]})
+        rows = list(queryset[:limit])
+        switches = _notifications_disabled(case.location_id for case in rows)
+        return RequestSuccess({"cases": [
+            serialize_case(case, notifications_disabled=switches.get(case.location_id)) for case in rows
+        ]})
 
     def retrieve(self, request, pk=None, *args, **kwargs):
         case, error = self._case(request, pk)
         if error:
             return error
-        return RequestSuccess({"case": serialize_case(case, events=True)})
+        return RequestSuccess({"case": _detail(case)})
 
     @action(detail=False, methods=["GET"])
     def summary(self, request, *args, **kwargs):
@@ -267,7 +287,7 @@ class NotificationCaseViewSet(viewsets.ViewSet):
         case.muted_until = until
         cases._save(case, "muted_until")
         cases.event(case, "muted", text, {"until": until.isoformat()}, author_id=request.user.pk)
-        return RequestSuccess({"case": serialize_case(case, events=True)})
+        return RequestSuccess({"case": _detail(case)})
 
     @action(detail=True, methods=["POST"])
     def unmute(self, request, pk=None, *args, **kwargs):
@@ -285,7 +305,7 @@ class NotificationCaseViewSet(viewsets.ViewSet):
                 case.next_contact_at = cases.next_window_start(now) if not cases.in_window(now) else now
             cases._save(case, "muted_until", "next_contact_at")
             cases.event(case, "unmuted", "Benachrichtigungen freigegeben", author_id=request.user.pk)
-        return RequestSuccess({"case": serialize_case(case, events=True)})
+        return RequestSuccess({"case": _detail(case)})
 
     @action(detail=True, methods=["POST"])
     def close(self, request, pk=None, *args, **kwargs):
@@ -296,7 +316,7 @@ class NotificationCaseViewSet(viewsets.ViewSet):
             text = request.data.get("text") if isinstance(request.data, dict) else ""
             text = str(text or "").strip()[:2000] or "Manuell geschlossen"
             cases._resolve(case, NotificationCase.Resolution.MANUAL, text, author_id=request.user.pk)
-        return RequestSuccess({"case": serialize_case(case, events=True)})
+        return RequestSuccess({"case": _detail(case)})
 
 
 # ---------------------------------------------------------------------------- location switch

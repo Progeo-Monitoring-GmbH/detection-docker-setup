@@ -1,0 +1,118 @@
+// @vitest-environment jsdom
+import { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { MemoryRouter } from 'react-router';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+const api = vi.hoisted(() => ({ answers: {} as Record<string, unknown> }));
+
+vi.mock('../axiosConfig', () => ({
+  default: {
+    perform_get: (_auth: unknown, url: string, ok: (response: unknown) => void) =>
+      ok({ data: api.answers[url.split('?')[0]] ?? {} }),
+    perform_post: () => undefined,
+  },
+}));
+vi.mock('../../hooks/CoreAuthProvider', () => ({ useAuth: () => ({}) }));
+vi.mock('notistack', () => ({ useSnackbar: () => ({ enqueueSnackbar: vi.fn() }) }));
+vi.mock('react-i18next', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  useTranslation: () => ({ t: (key: string) => key }),
+}));
+
+const { default: StaffNotificationCases } = await import('./StaffNotificationCases');
+
+const CASE = (id: number, notificationsDisabled: boolean | null) => ({
+  id,
+  kind: 'offline',
+  state: 'open',
+  phase: 'notified',
+  stage: 1,
+  stages: 5,
+  location_id: 100 + id,
+  project_id: 4700 + id,
+  location_name: `Halle ${id}`,
+  opened_at: '16.11.2026 09:00',
+  last_contact_at: null,
+  next_contact_at: null,
+  muted: false,
+  muted_until: null,
+  unreachable_since: null,
+  acknowledged_at: null,
+  escalation_id: null,
+  resolved_at: null,
+  resolution: '',
+  back_since: null,
+  devices: [],
+  alarm_count: 0,
+  notified: [],
+  notifications_disabled: notificationsDisabled,
+});
+
+let container: HTMLDivElement;
+let root: Root;
+
+beforeEach(() => {
+  // DataTable asks for the colour scheme; jsdom has no matchMedia.
+  window.matchMedia ??= ((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  })) as typeof window.matchMedia;
+  globalThis.ResizeObserver ??= class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+  api.answers = {
+    '/v1/notification-case/': { cases: [CASE(1, true), CASE(2, false), CASE(3, null)] },
+    '/v1/notification-case/summary/': {
+      counts: { offline: { open: 3 }, alarm: {} },
+      resolved_last_day: {},
+      in_window: true,
+      baseline_done: true,
+      unsubscribed_last_week: 0,
+      no_recipients_left: 0,
+      locations: { disabled: 1, enabled: 1 },
+      withheld_last_day: 0,
+    },
+  };
+  container = document.createElement('div');
+  document.body.appendChild(container);
+  root = createRoot(container);
+});
+
+afterEach(() => {
+  act(() => root.unmount());
+  container.remove();
+});
+
+const rowOf = (projectId: number) =>
+  [...container.querySelectorAll('.rdt_TableRow')].find((row) => row.textContent?.includes(String(projectId)))!;
+
+describe('StaffNotificationCases', () => {
+  it('stripes the cases of locations whose notifications are switched off', async () => {
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <StaffNotificationCases />
+        </MemoryRouter>,
+      );
+    });
+
+    expect(rowOf(4701).className).toContain('staff-notifications-row-disabled');
+    expect(rowOf(4702).className).not.toContain('staff-notifications-row-disabled');
+    // Unknown location (null): not marked either.
+    expect(rowOf(4703).className).not.toContain('staff-notifications-row-disabled');
+    const icons = [...container.querySelectorAll('[data-testid="staff-notifications-disabled"]')];
+    expect(icons.map((icon) => icon.getAttribute('data-test-key'))).toEqual(['1']);
+    expect(container.querySelector('[data-testid="staff-notifications-legend"]')).not.toBeNull();
+  });
+});

@@ -25,3 +25,40 @@
 .staff-notifications-switch-logic {
   padding-left: 1.1rem;
 }
+
+/* Cases of a location whose notifications are switched off
+   (ProgeoLocation.notifications_disabled): the striped look of the switched-off
+   rows of the device statistics - specific enough to beat the table's row background. */
+[data-testid='staff-notifications'] .rdt_TableRow.staff-notifications-row-disabled,
+.staff-notifications-legend-swatch {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--bs-tertiary-bg),
+    var(--bs-tertiary-bg) 6px,
+    var(--bs-secondary-bg) 6px,
+    var(--bs-secondary-bg) 12px
+  );
+}
+
+[data-testid='staff-notifications'] .rdt_TableRow.staff-notifications-row-disabled {
+  color: var(--bs-secondary-color);
+}
+
+.staff-notifications-disabled-icon {
+  vertical-align: -1px;
+}
+
+.staff-notifications-legend {
+  display: inline-flex;
+  align-items: center;
+  color: var(--bs-secondary-color);
+}
+
+.staff-notifications-legend-swatch {
+  display: inline-block;
+  width: 1.5rem;
+  height: 0.9rem;
+  margin-right: 0.4rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 2px;
+}

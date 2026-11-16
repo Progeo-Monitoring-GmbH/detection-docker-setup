@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Badge, Button, ButtonGroup, Card, Form, Modal, Spinner, Table } from 'react-bootstrap';
-import { ArrowRepeat, BellFill } from 'react-bootstrap-icons';
+import { ArrowRepeat, BellFill, BellSlashFill } from 'react-bootstrap-icons';
 import DataTable from 'react-data-table-component';
 import type { TableColumn } from 'react-data-table-component';
 import { useSnackbar } from 'notistack';
@@ -48,6 +48,8 @@ type NotificationCase = {
   devices: { id: string; label: string; last_seen: string | null; back_since: string | null }[];
   alarm_count: number;
   notified: string[];
+  /** The location's switch (ProgeoLocation.notifications_disabled); null = location unknown. */
+  notifications_disabled: boolean | null;
   events?: CaseEvent[];
 };
 
@@ -73,6 +75,15 @@ const PHASE_VARIANT: Record<Phase, string> = {
   muted: 'dark',
   resolved: 'success',
 };
+
+/** Cases of a location with notifications switched off look switched off -
+ * the striped rows of the device statistics (StaffNotificationCases.css). */
+const SWITCHED_OFF_ROW_STYLES = [
+  {
+    when: (row: NotificationCase) => row.notifications_disabled === true,
+    classNames: ['staff-notifications-row-disabled'],
+  },
+];
 
 const SUMMARY_PHASES = ['open', 'detected', 'notified', 'reminder', 'escalated', 'recovering', 'muted', 'unreachable'];
 
@@ -172,6 +183,14 @@ const StaffNotificationCases = () => {
         sortable: true,
         cell: (row) => (
           <span className="small">
+            {row.notifications_disabled === true && (
+              <BellSlashFill
+                size={11}
+                className="me-1 staff-notifications-disabled-icon"
+                title={t('staff_notifications_location_disabled')}
+                {...repeatedTestId('staff-notifications-disabled', row.id)}
+              />
+            )}
             <Link to={`/location/${row.location_id}/status`} onClick={(event) => event.stopPropagation()}>
               {row.project_id ?? row.location_id}
             </Link>{' '}
@@ -316,6 +335,11 @@ const StaffNotificationCases = () => {
             <option value="offline">{t('notification_kind_offline')}</option>
             <option value="alarm">{t('notification_kind_alarm')}</option>
           </Form.Select>
+          <span className="small staff-notifications-legend" data-testid="staff-notifications-legend">
+            <span className="staff-notifications-legend-swatch" aria-hidden="true" />
+            <BellSlashFill size={11} className="me-1" />
+            {t('staff_notifications_legend_disabled')}
+          </span>
         </div>
 
         <DataTable
@@ -332,6 +356,7 @@ const StaffNotificationCases = () => {
           }
           noDataComponent={<div className="text-muted py-3">{t('staff_notifications_empty')}</div>}
           onRowClicked={openCase}
+          conditionalRowStyles={SWITCHED_OFF_ROW_STYLES}
           highlightOnHover
           pointerOnHover
           dense

@@ -38,6 +38,20 @@ type ModuleItem = {
   icon: typeof Geo;
   to: string;
   visible: boolean;
+  /** The page selects a location by ?location= - the link carries the selected one. */
+  carriesLocation?: boolean;
+};
+
+/**
+ * The selected location to carry along: ?location=<pk> of the current URL
+ * (device overview, Lageplan wizard, ...), else the open portal location.
+ */
+export const selectedLocationParam = (search: string, locationId: number | null) => {
+  const param = new URLSearchParams(search).get('location');
+  if (param && /^\d+$/.test(param)) {
+    return param;
+  }
+  return locationId != null ? String(locationId) : null;
 };
 
 /**
@@ -134,6 +148,7 @@ const LocationSidebar = ({
       icon: Hdd,
       to: '/device/overview',
       visible: can(routeRule('/device/overview')),
+      carriesLocation: true,
     },
     {
       // Staff tool: devices/locations in need of attention (type, chip ID,
@@ -223,6 +238,7 @@ const LocationSidebar = ({
       icon: Layers,
       to: '/lageplan/wizard/',
       visible: can(routeRule('/lageplan/wizard/')),
+      carriesLocation: true,
     },
     {
       key: 'map',
@@ -240,6 +256,8 @@ const LocationSidebar = ({
       visible: can(routeRule('/developer')),
     },
   ];
+
+  const carriedLocation = selectedLocationParam(routerLocation.search, locationId);
 
   const isActivePrefix = (to: string) => {
     const prefix = to.endsWith('/') ? to : `${to}/`;
@@ -327,7 +345,10 @@ const LocationSidebar = ({
     const Icon = item.icon;
     return renderLink({
       key: item.key,
-      to: item.to,
+      to:
+        item.carriesLocation && carriedLocation
+          ? `${item.to}?location=${encodeURIComponent(carriedLocation)}`
+          : item.to,
       active: isActivePrefix(item.to),
       global: true,
       icon: <Icon size={17} className="progeo-sidebar-svg" />,
