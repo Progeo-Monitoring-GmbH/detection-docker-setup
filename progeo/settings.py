@@ -201,6 +201,7 @@ BOUNCE_IMAP_PROCESSED_FOLDER = (os.getenv("BOUNCE_IMAP_PROCESSED_FOLDER") or "pr
 AIRTABLE_API_KEY = (os.getenv("AIRTABLE_API_KEY") or "").strip()
 AIRTABLE_BASE_ID = (os.getenv("AIRTABLE_BASE_ID") or "").strip()
 AIRTABLE_PROJECTS_TABLE = (os.getenv("AIRTABLE_PROJECTS_TABLE") or "Projects").strip()
+AIRTABLE_DOCUMENTS_TABLE = (os.getenv("AIRTABLE_DOCUMENTS_TABLE") or "Dokumente").strip()
 
 # Origin the provisioned controllers send their samples to (control.url of the
 # config, helper/device_provisioning.py) - on a local dev system e.g. the LAN

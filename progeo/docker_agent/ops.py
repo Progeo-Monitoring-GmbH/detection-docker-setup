@@ -227,7 +227,12 @@ def _split_lines(chunks, on_line):
         on_line(buffer.decode("utf-8", errors="replace"))
 
 
-def check_cad_factory_args(cad_input, coord_margin, timeout_seconds, run_id, png_out):
+# What the CAD reader does with the input: the measure points of a DWG/DXF
+# (or, with png_out, a plan PDF as PNG), or the sensor names of a Klemmliste PDF.
+CAD_FACTORY_MODES = ("points", "klemmliste")
+
+
+def check_cad_factory_args(cad_input, coord_margin, timeout_seconds, run_id, png_out, mode="points"):
     """The run's arguments, checked - the agent's trust boundary: nothing
     here may reach outside media/ or pass options to the CAD reader."""
     if not isinstance(cad_input, str) or not _CAD_INPUT.match(cad_input) or ".." in cad_input.split("/"):
@@ -243,10 +248,15 @@ def check_cad_factory_args(cad_input, coord_margin, timeout_seconds, run_id, png
         raise InvalidRequest("run_id must be up to 32 letters and digits")
     if png_out is not None and (not isinstance(png_out, str) or not _PNG_OUT.match(png_out)):
         raise InvalidRequest("png_out must be a .png file name")
+    if mode not in CAD_FACTORY_MODES:
+        raise InvalidRequest(f"mode must be one of {', '.join(CAD_FACTORY_MODES)}")
+    if mode == "klemmliste" and (png_out is not None or not cad_input.lower().endswith(".pdf")):
+        raise InvalidRequest("A Klemmliste is a PDF, read without png_out")
 
 
 def run_cad_factory(cad_input: str, coord_margin: float = 0.2, timeout_seconds: int = 1800,
-                    on_line=None, run_id: str | None = None, png_out: str | None = None) -> dict:
+                    on_line=None, run_id: str | None = None, png_out: str | None = None,
+                    mode: str = "points") -> dict:
     """Run progeo-cad_factory (docker/cad_factory/cad_reader.py) on a plan below
     media/ as a one-off container of the compose service, named
     progeo-cad_factory-run-<run_id> (see _cad_factory_run_settings). Every
@@ -255,11 +265,12 @@ def run_cad_factory(cad_input: str, coord_margin: float = 0.2, timeout_seconds: 
 
     media/ is mounted read-only; with png_out (a file name - for a PDF) the
     container may write media/uploads/cad_imports, and renders the plan to
-    that file there.
+    that file there. mode "klemmliste": the sensor names of a Klemmliste PDF
+    (cad_reader.py --klemmliste) as one JSON object on stdout.
 
     Returns {"exit_code", "stdout", "stderr", "oom_killed", "timed_out"}.
     """
-    check_cad_factory_args(cad_input, coord_margin, timeout_seconds, run_id, png_out)
+    check_cad_factory_args(cad_input, coord_margin, timeout_seconds, run_id, png_out, mode)
     client = _client()
     backend = _get_container_or_none(client, os.getenv("DOCKER_BACKEND_CONTAINER", "progeo-backend"))
     settings = _cad_factory_run_settings(client, backend, run_id or uuid4().hex[:12])
@@ -271,6 +282,8 @@ def run_cad_factory(cad_input: str, coord_margin: float = 0.2, timeout_seconds: 
     if png_out:
         volumes[f"{media_source.rstrip('/')}/uploads/cad_imports"] = {"bind": "/workspace/out", "mode": "rw"}
         command += ["--png-out", f"/workspace/out/{png_out}"]
+    if mode == "klemmliste":
+        command.append("--klemmliste")
     run_user = f"{os.getenv('DOCKER_UID', '1000')}:{os.getenv('DOCKER_GID', '1001')}"
 
     container = None

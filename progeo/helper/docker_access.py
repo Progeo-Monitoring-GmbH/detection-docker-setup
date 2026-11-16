@@ -111,17 +111,18 @@ def container_state(key):
     return None if payload.get("missing") else payload
 
 
-def run_cad_factory(cad_input, coord_margin=0.2, timeout_seconds=1800, on_line=None, run_id=None, png_out=None):
+def run_cad_factory(cad_input, coord_margin=0.2, timeout_seconds=1800, on_line=None, run_id=None, png_out=None,
+                    mode="points"):
     """ops.run_cad_factory - through the agent: its output lines arrive while
     the container runs."""
     if not uses_agent():
         return ops.run_cad_factory(
             cad_input, coord_margin=coord_margin, timeout_seconds=timeout_seconds,
-            on_line=on_line, run_id=run_id, png_out=png_out,
+            on_line=on_line, run_id=run_id, png_out=png_out, mode=mode,
         )
     body = {
         "cad_input": cad_input, "coord_margin": coord_margin, "timeout_seconds": timeout_seconds,
-        "run_id": run_id, "png_out": png_out,
+        "run_id": run_id, "png_out": png_out, "mode": mode,
     }
     response = _request(
         "POST", "/cad-factory/run", body, stream=True,

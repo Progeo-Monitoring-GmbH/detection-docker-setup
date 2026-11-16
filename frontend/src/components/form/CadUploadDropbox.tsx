@@ -22,7 +22,7 @@ type FollowedJob = { id: string; name?: string };
  * One import job, followed live (useCadImportJob): its status, the log and
  * an error. `compact` (several jobs at once): one line each, the log folded.
  */
-const CadJobView = ({
+export const CadJobView = ({
   auth,
   jobId,
   name,
@@ -109,13 +109,17 @@ const CadUploadDropbox = ({ callBackProcessing = () => {}, testId = 'cad-upload'
     setOutcomes((current) => ({ ...current, [finished.job_id]: finished.status }));
     const source = finished.source_name ? ` (${finished.source_name})` : '';
     if (finished.status === 'done' && finished.result) {
+      const rows = Array.isArray(finished.result.rows) ? finished.result.rows.length : 0;
       showSuccessBar(
         enqueueSnackbar,
         finished.kind === 'lageplan'
           ? `Lageplan created from the PDF${source}`
-          : `CAD import finished: ${finished.result.stored ?? 0} point(s)`,
+          : finished.kind === 'klemmliste'
+            ? `Klemmliste read: ${rows} sensor name(s)${source}`
+            : `CAD import finished: ${finished.result.stored ?? 0} point(s)`,
       );
-      callBackProcessing(finished.result);
+      // The finished job too: a Klemmliste is applied by its job id.
+      (callBackProcessing as (result: unknown, job?: CadImportJob) => void)(finished.result, finished);
     } else {
       showErrorBar(enqueueSnackbar, `Import failed${source}: ${finished.error || 'unknown error'}`);
     }

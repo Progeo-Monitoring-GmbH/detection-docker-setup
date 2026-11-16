@@ -79,6 +79,7 @@ VALID = {"cad_input": "media/uploads/cad_imports/plan.dwg", "coord_margin": 0.2,
 def test_valid_cad_factory_arguments_pass():
     ops.check_cad_factory_args(**VALID)
     ops.check_cad_factory_args(**{**VALID, "png_out": "job_1.png", "run_id": None})
+    ops.check_cad_factory_args(**{**VALID, "cad_input": "media/uploads/cad_imports/k.pdf", "mode": "klemmliste"})
 
 
 @pytest.mark.parametrize("changes", [
@@ -95,6 +96,9 @@ def test_valid_cad_factory_arguments_pass():
     {"run_id": "../x"},
     {"png_out": "../../etc/x.png"},
     {"png_out": "plan.jpg"},
+    {"mode": "--klemmliste"},
+    {"mode": "klemmliste"},  # a .dwg is no Klemmliste
+    {"mode": "klemmliste", "cad_input": "media/uploads/cad_imports/k.pdf", "png_out": "k.png"},
 ])
 def test_cad_factory_arguments_outside_the_rules_are_refused(changes):
     with pytest.raises(ops.InvalidRequest):
@@ -151,7 +155,7 @@ def test_a_cad_factory_run_streams_its_lines_and_returns_the_result(agent):
 
     assert lines == ["[1] reading", "[2] matching"]
     assert outcome["exit_code"] == 0
-    assert agent.ops.calls[-1] == ("cad", {**VALID, "png_out": None})
+    assert agent.ops.calls[-1] == ("cad", {**VALID, "png_out": None, "mode": "points"})
 
 
 def test_a_cad_factory_run_outside_the_rules_never_starts(agent):

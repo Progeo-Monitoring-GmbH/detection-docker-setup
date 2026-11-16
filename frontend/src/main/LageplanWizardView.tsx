@@ -17,6 +17,7 @@ import ConfirmDialog from '../components/ui/kit/ConfirmDialog';
 import DeleteIconButton from '../components/ui/kit/DeleteIconButton';
 import FloatingActionBar from '../components/ui/kit/FloatingActionBar';
 import PanelCard from '../components/ui/kit/PanelCard';
+import LageplanKlemmliste from './LageplanKlemmliste';
 import PillButton from '../components/ui/kit/PillButton';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import { useAuth } from '../../hooks/CoreAuthProvider';
@@ -1746,6 +1747,32 @@ const LageplanWizardView = () => {
     </StepCard>
   );
 
+  // Step 7: the MEA documents from Airtable and the Klemmliste's sensor names.
+  const renderStepKlemmliste = () => (
+    <StepCard number={7} title={staff ? 'MEA documents and Klemmliste' : 'Klemmliste'}>
+      {selectedLocationId === null ? (
+        <Notice tone="warning" testId="lageplan-wizard-klemmliste-needs-location">
+          Select a location in step 1 first.
+        </Notice>
+      ) : (
+        <LageplanKlemmliste
+          // A new location starts the step afresh: its documents, no Klemmliste of the last one.
+          key={selectedLocationId}
+          auth={auth}
+          locationId={selectedLocationId}
+          devices={devices.map((device) => ({
+            id: device.id,
+            label: deviceLabel(device),
+            first_sensor_order: device.first_sensor_order,
+          }))}
+          staff={staff}
+          // The new names show on the plan and in the sensor list.
+          onNamesApplied={() => setReloadKey((key) => key + 1)}
+        />
+      )}
+    </StepCard>
+  );
+
   if (!permissionsLoading && !canEditDevices) {
     return (
       <div data-testid="page-lageplan-wizard">
@@ -1794,6 +1821,7 @@ const LageplanWizardView = () => {
       {renderStepThree()}
       {renderStepFour()}
       {staff && renderStepHeatLimits()}
+      {renderStepKlemmliste()}
 
       <ConfirmDialog
         show={confirmAction !== null}

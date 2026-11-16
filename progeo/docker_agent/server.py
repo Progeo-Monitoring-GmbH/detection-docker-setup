@@ -11,7 +11,8 @@ network, with a bearer token:
     POST /containers/action        {"container", "action": start|stop|restart|remove} -> {"name"}
     POST /containers/logs          {"container", "tail", "timestamps"?} -> {"name", "logs"}
     POST /containers/state         {"container"} -> {"name", "running"} | {"missing": true}
-    POST /cad-factory/run          {"cad_input", "coord_margin", "timeout_seconds", "run_id"?, "png_out"?}
+    POST /cad-factory/run          {"cad_input", "coord_margin", "timeout_seconds", "run_id"?, "png_out"?,
+                                    "mode"? ("points" | "klemmliste")}
                                    -> NDJSON: {"line": ...} per output line, last {"result": {...}}
                                       or {"error": ..., "reason": ...}
 
@@ -195,6 +196,7 @@ class AgentHandler(BaseHTTPRequestHandler):
             "timeout_seconds": data.get("timeout_seconds", 1800),
             "run_id": data.get("run_id"),
             "png_out": data.get("png_out"),
+            "mode": data.get("mode", "points"),
         }
         # Refused before the stream starts: a plain JSON error with its status.
         self.ops.check_cad_factory_args(**arguments)

@@ -15,7 +15,12 @@ from django.core.files.base import ContentFile
 from django.core.files.storage import FileSystemStorage
 from django.db import transaction
 from django.db.models import OuterRef, Subquery
-from django.http import FileResponse, JsonResponse, RawPostDataException
+from django.http import (
+    FileResponse,
+    JsonResponse,
+    RawPostDataException,
+    StreamingHttpResponse,
+)
 from django.utils import timezone
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action
@@ -634,6 +639,131 @@ class StatusViewSet(ProgeoModalViewSet):
         return RequestSuccess({
             "jobs": jobs, "job_id": jobs[0]["job_id"], "status": "queued", "location_id": location.id,
         })
+
+    # -- MEA documents from Airtable, Klemmliste (Lageplan wizard) ----------------
+
+    @staticmethod
+    def _wizard_location(request):
+        """(location, db_name, error) by location_id (project id) of the query or body."""
+        data = request.data if hasattr(request.data, "get") else {}
+        return _measure_point_location(
+            request, {"location_id": request.query_params.get("location_id") or data.get("location_id")}
+        )
+
+    @calc_runtime
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
+    @action(detail=False, url_path="measure_points/airtable_documents", methods=["GET"])
+    def airtable_documents(self, request, *args, **kwargs):
+        """Staff: the location's MEA documents in Airtable - the CAD plan
+        (*.dwg), Router_Daten.txt and Klemmliste*.pdf (helper/airtable_documents.py).
+        ?refresh=1 skips the 5-minute cache."""
+        from progeo.helper import airtable_documents
+
+        if not is_staff_admin(request.user):
+            return RequestFailed({"reason": "Staff access required"})
+        location, _db_name, error = self._wizard_location(request)
+        if error:
+            return error
+        try:
+            data = airtable_documents.location_documents(
+                location, refresh=request.query_params.get("refresh") in ("1", "true"))
+        except airtable_documents.AirtableDocumentsError as exc:
+            return RequestFailed({"reason": str(exc)})
+        return RequestSuccess({**data, "airtable_url": location.airtable_url})
+
+    @calc_runtime
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
+    @action(detail=False, url_path="measure_points/airtable_documents/download", methods=["GET"])
+    def airtable_document_download(self, request, *args, **kwargs):
+        """Staff: one of airtable_documents (?document=<record id>) as a file -
+        fetched from Airtable now and passed through (its URL expires)."""
+        from progeo.helper import airtable_documents
+
+        if not is_staff_admin(request.user):
+            return RequestFailed({"reason": "Staff access required"})
+        location, _db_name, error = self._wizard_location(request)
+        if error:
+            return error
+        try:
+            entry = airtable_documents.document(location, (request.query_params.get("document") or "").strip())
+            upstream = airtable_documents.open_download(entry)
+        except airtable_documents.AirtableDocumentsError as exc:
+            return RequestFailed({"reason": str(exc)})
+
+        def chunks():
+            with upstream:
+                yield from upstream.iter_content(64 * 1024)
+
+        response = StreamingHttpResponse(chunks(), content_type=entry.get("type") or "application/octet-stream")
+        response["Content-Disposition"] = airtable_documents.content_disposition(entry["name"])
+        if upstream.headers.get("Content-Length"):
+            response["Content-Length"] = upstream.headers["Content-Length"]
+        return response
+
+    @calc_runtime
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
+    @action(detail=False, url_path="measure_points/klemmliste", methods=["POST"])
+    def klemmliste(self, request, *args, **kwargs):
+        """Read a Klemmliste PDF - the uploaded files0, or the Airtable document
+        "document" (staff) - as a background job of progeo-cad_factory
+        (helper/cad_import.py, kind "klemmliste"); its result are the rows
+        {sensor, mux, pin, position}. Nothing is stored: klemmliste/apply does."""
+        location, db_name, error = self._wizard_location(request)
+        if error:
+            return error
+        document_id = str(request.data.get("document") or "").strip() if hasattr(request.data, "get") else ""
+        if document_id:
+            from progeo.helper import airtable_documents
+
+            if not is_staff_admin(request.user):
+                return RequestFailed({"reason": "Staff access required"})
+            try:
+                entry = airtable_documents.document(location, document_id)
+                if entry["kind"] != "klemmliste":
+                    return RequestFailed({"reason": "This document is no Klemmliste"})
+                upload = ContentFile(airtable_documents.read_bytes(entry), name=entry["name"])
+            except airtable_documents.AirtableDocumentsError as exc:
+                return RequestFailed({"reason": str(exc)})
+        else:
+            upload = request.FILES.get("files0") or next(iter(request.FILES.values()), None)
+            if upload is None:
+                return RequestFailed({"reason": "Upload a Klemmliste PDF or pick one from Airtable."})
+            if os.path.splitext(upload.name)[1].lower() != ".pdf":
+                return RequestFailed({"reason": "A Klemmliste is a PDF file."})
+        job_id = self._start_cad_job(request, location, db_name, upload, ".pdf", kind="klemmliste")
+        return RequestSuccess({"job_id": job_id, "status": "queued", "location_id": location.id,
+                               "source_name": upload.name})
+
+    @calc_runtime
+    @require_module_permissions("module_devices_enabled", "module_devices_edit")
+    @action(detail=False, url_path="measure_points/klemmliste/apply", methods=["POST"])
+    def klemmliste_apply(self, request, *args, **kwargs):
+        """The names of a finished klemmliste job onto the location's measure
+        points (helper/klemmliste_names.py): {job_id, device_id?, dry_run?} -
+        dry_run only lists what would change."""
+        from progeo.helper import klemmliste_names
+
+        location, db_name, error = self._wizard_location(request)
+        if error:
+            return error
+        data = request.data if hasattr(request.data, "get") else {}
+        job = cad_import.get_job(str(data.get("job_id") or "").strip())
+        if not job or job.get("user_id") != request.user.pk or job.get("kind") != "klemmliste":
+            return RequestFailed({"reason": "Klemmliste job not found"})
+        if job.get("location_pk") != location.pk:
+            return RequestFailed({"reason": "The Klemmliste was read for another location"})
+        if job.get("status") != "done":
+            return RequestFailed({"reason": "The Klemmliste is not read yet"})
+        dry_run = data.get("dry_run") in (True, "1", "true")
+        handler = klemmliste_names.preview if dry_run else klemmliste_names.apply
+        try:
+            result = handler(db_name, location, job["result"]["rows"], data.get("device_id"))
+        except klemmliste_names.KlemmlisteError as exc:
+            return RequestFailed({"reason": str(exc)})
+        if not dry_run:
+            ilog(f"[klemmliste] {result['updated']} measure point name(s) of location {location.pk} "
+                 f"from {job.get('source_name')} by {request.user.username}")
+        return RequestSuccess({"result": result, "applied": not dry_run})
 
     @calc_runtime
     @require_module_permissions("module_devices_enabled", "module_devices_edit")

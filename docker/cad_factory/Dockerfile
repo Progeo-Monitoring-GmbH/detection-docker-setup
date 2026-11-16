@@ -48,5 +48,7 @@ RUN pip install --no-cache-dir /tmp/wheels/*.whl ezdxf==1.4.5 pymupdf==1.28.2 \
 
 WORKDIR /workspace
 COPY ./docker/cad_factory/cad_reader.py /usr/local/bin/cad_reader.py
+# The Klemmliste reader (cad_reader.py --klemmliste) - next to it, so the import finds it.
+COPY ./docker/cad_factory/klemmliste.py /usr/local/bin/klemmliste.py
 
 ENTRYPOINT ["python", "/usr/local/bin/cad_reader.py"]

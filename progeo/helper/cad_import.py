@@ -10,6 +10,11 @@ A plan PDF (status_viewset from_pdf) is a job of kind "lageplan": the
 container renders it as PNG into UPLOAD_DIR/cad_imports, which is stored as a
 new Lageplan of the location.
 
+A Klemmliste PDF (status_viewset klemmliste) is a job of kind "klemmliste":
+the container reads its sensor names (cad_reader.py --klemmliste); the result
+is {"rows": [{sensor, mux, pin, position, page}], "warnings", "method"} -
+nothing is stored until the user applies it (helper/klemmliste_names.py).
+
 A job lives JOB_TTL_SECONDS in the cache (written by the task only):
 
     {"status": "queued" | "running" | "done" | "failed", "log": [line, ...],
@@ -64,7 +69,7 @@ def _key(job_id: str) -> str:
 def create_job(*, user_id, location_pk, db_name, cad_input, source_name, coord_margin=0.2, kind="points",
                device_ranges=None, lageplan_id=None) -> str:
     """cad_input: the uploaded plan, relative to the project root (media/uploads/...);
-    kind: "points" (DWG/DXF) or "lageplan" (PDF); device_ranges: the devices of
+    kind: "points" (DWG/DXF), "lageplan" (plan PDF) or "klemmliste"; device_ranges: the devices of
     the location the imported points are connected to, lageplan_id: the plan
     they go onto (store_measure_points)."""
     job_id = uuid4().hex
@@ -296,9 +301,23 @@ def _finish(job: dict, status: str, *, result=None, error=None) -> None:
 
 
 def _is_points_output(line: str) -> bool:
-    """The points JSON on stdout - big, it comes with the result instead."""
+    """The points (or Klemmliste) JSON on stdout - big, it comes with the result instead."""
     text = line.strip()
-    return text.startswith("[{") or text == "[]"
+    return text.startswith(("[{", '{"rows"')) or text == "[]"
+
+
+def extract_json_object(output: str):
+    """The last JSON object in the container's stdout, None without one."""
+    for line in reversed([line.strip() for line in (output or "").splitlines()]):
+        if not line.startswith("{"):
+            continue
+        try:
+            parsed = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return None
 
 
 def extract_json_list(output: str):
@@ -345,6 +364,7 @@ def run_job(job_id: str) -> None:
     job["status"] = "running"
     _append_log(job, f"Starting progeo-cad_factory for {job['source_name']}")
     is_lageplan = job.get("kind") == "lageplan"
+    is_klemmliste = job.get("kind") == "klemmliste"
     png_name = f"{job_id}.png" if is_lageplan else None
     png_path = os.path.join(settings.UPLOAD_DIR, IMPORT_DIR, png_name) if png_name else None
 
@@ -361,7 +381,18 @@ def run_job(job_id: str) -> None:
             on_line=on_line,
             run_id=job_id[:12],
             png_out=png_name,
+            **({"mode": "klemmliste"} if is_klemmliste else {}),
         )
+        if is_klemmliste:
+            parsed = extract_json_object(outcome["stdout"])
+            if outcome["exit_code"] != 0 or not parsed or not parsed.get("rows"):
+                _finish(job, "failed", error=failure_reason(outcome))
+                return
+            result = {"rows": parsed["rows"], "warnings": parsed.get("warnings") or [],
+                      "method": parsed.get("method")}
+            _append_log(job, f"Read {len(result['rows'])} sensor names")
+            _finish(job, "done", result=result)
+            return
         points = None if is_lageplan else extract_json_list(outcome["stdout"])
         produced = os.path.isfile(png_path) if is_lageplan else points is not None
         if outcome["exit_code"] != 0 or not produced:

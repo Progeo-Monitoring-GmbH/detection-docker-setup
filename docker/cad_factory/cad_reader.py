@@ -34,6 +34,13 @@ A PDF export of a plan becomes a Lageplan image instead:
 renders the first page with drawings on the plan's layers (PDF_PLAN_LAYERS,
 exported from CAD as PDF layers), cropped to them - without frame, title
 block and legend; a PDF without those layers as its whole first page.
+
+A Klemmliste PDF gives the sensor name per measuring position (klemmliste.py):
+
+    docker compose run --rm progeo-cad_factory media/uploads/Klemmliste.pdf --klemmliste
+
+prints {"rows": [{"sensor", "mux", "pin", "position", "page"}], "warnings",
+"method"} as one JSON object on stdout; exit code 2 without any row.
 """
 import argparse
 import json
@@ -43,7 +50,7 @@ import re
 import sys
 import threading
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stdout
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -505,7 +512,8 @@ def heartbeat(task: str):
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Print the measure points of a DWG/DXF plan as JSON, or render a plan PDF as PNG."
+        description="Print the measure points of a DWG/DXF plan as JSON, render a plan PDF as PNG, "
+                    "or read the sensor names of a Klemmliste PDF."
     )
     parser.add_argument("input", help="Path of the .dwg, .dxf or .pdf file.")
     parser.add_argument(
@@ -515,11 +523,33 @@ def main() -> int:
         help="Merge close X/Y values within this margin before assigning row/column indices (default: 0.2).",
     )
     parser.add_argument("--png-out", help="PDF only: where the Lageplan PNG is written.")
+    parser.add_argument("--klemmliste", action="store_true",
+                        help="PDF only: print the sensor names of a Klemmliste as JSON.")
     args = parser.parse_args()
 
     if not os.path.isfile(args.input):
         log(f"Input file does not exist: {args.input}")
         return 2
+    if args.klemmliste:
+        # klemmliste.py lies next to this script (also in the image) - found from any working directory.
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from klemmliste import read_klemmliste
+
+        try:
+            # PyMuPDF's table finder prints tips to stdout, which carries only the JSON.
+            with heartbeat("reading the Klemmliste"), redirect_stdout(sys.stderr):
+                result = read_klemmliste(args.input, log=log)
+        except Exception as exc:  # noqa: BLE001 - a broken PDF: the reason is for the user
+            log(f"The Klemmliste can't be read: {type(exc).__name__}: {exc}")
+            return 2
+        for warning in result["warnings"]:
+            log(f"Warning: {warning}")
+        print(json.dumps(result), flush=True)
+        if not result["rows"]:
+            log(result["warnings"][-1] if result["warnings"] else "No sensors found")
+            return 2
+        log(f"Done: {len(result['rows'])} sensors")
+        return 0
     if os.path.splitext(args.input)[1].lower() == ".pdf":
         if not args.png_out:
             parser.error("a PDF needs --png-out")
