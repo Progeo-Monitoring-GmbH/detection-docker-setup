@@ -433,6 +433,20 @@ def test_test_notification_sends_per_channel_and_reports_errors(staff_client, no
     assert all("Objekt 920001 Halle 3" in sms[1] for sms in channels["sms"])
 
 
+def test_test_notification_goes_out_while_the_location_notifications_are_disabled(
+        staff_client, notification_world, monkeypatch):
+    notification_world.notifications_disabled = True
+    notification_world.save(using=f.DB, update_fields=["notifications_disabled"])
+    calls = []
+    monkeypatch.setattr(emailhelper, "send_template_mail", lambda *a, **k: calls.append(("mail", k)) or "hash")
+    monkeypatch.setattr(esendex, "send_sms", lambda *a, **k: calls.append(("sms", k)) or {"batch_id": "B"})
+
+    body = staff_client.post(f"/v1/location/{notification_world.id}/test_notification/").json()
+
+    assert all(row.get("email_ok", True) and row.get("sms_ok", True) for row in body["results"])
+    assert calls and all(kwargs["bypass_location_switch"] is True for _channel, kwargs in calls)
+
+
 def test_test_notification_failed_mail_is_reported(staff_client, notification_world, monkeypatch, channels):
     monkeypatch.setattr(emailhelper, "send_template_mail", lambda *a, **k: None)
 

@@ -12,7 +12,7 @@ Code: [progeo/helper/migration_invites.py](../progeo/helper/migration_invites.py
 2. **Queue:** `python manage.py migration_invites --queue --dry-run` lists who would be queued: active customers with an address and no password yet, not staff, not queued before. Then run it without `--dry-run`. `--emails list.txt` limits the queue to the given addresses (one per line).
 3. **Test first:**
    - Set `MIGRATION_INVITES_ENABLED=1` in `django.env` and restart the backend and Celery.
-   - On staging (`MAIL_TEST_MODE=1`), every mail goes to `MAIL_TEST_RECIPIENT`.
+   - Invites go to the real addresses (there is no mail test mode any more) - on staging, queue only internal addresses (`--emails list.txt`).
    - `python manage.py migration_invites --send-now 2` sends a small batch right away (the window and the hourly limit still apply). Open the link and set a password.
 4. **Let it run:** the Celery task `send_migration_invites` (every 10 minutes) mails the queue:
    - at most `MIGRATION_INVITES_PER_HOUR` per hour (default 40), and never more than half of the free room in `MAIL_LIMIT_GLOBAL_HOUR`, so alarms still get through and the circuit breaker doesn't trip;

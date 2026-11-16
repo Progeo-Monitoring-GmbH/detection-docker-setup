@@ -201,7 +201,7 @@ def apply_bounce(bounce: dict) -> int:
                 except Exception as exc:  # noqa: BLE001 - the bounce itself is recorded
                     elog(f"[bounces] Could not note the bounce on case {row.case_id}: {exc}")
         # The original recipient only bounced if the mail really went there
-        # (not in test mode, where it went to MAIL_TEST_RECIPIENT).
+        # (not for old rows of the removed MAIL_TEST_MODE, sent to a test address).
         targets = {row.recipient for row in matching if not row.actual_recipient or row.actual_recipient == row.recipient}
         for address in targets:
             record_bounce(address, entry["hard"], entry["reason"])

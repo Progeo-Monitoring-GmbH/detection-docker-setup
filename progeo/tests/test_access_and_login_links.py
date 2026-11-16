@@ -59,7 +59,7 @@ def test_request_creates_unverified_entry_and_mails_the_confirmation(client):
     request = AccessRequest.objects.using(f.DB).get(email="erika@progeo.com")
     assert request.status == "unverified" and request.user is None
     message = FakeSMTP.parsed()[-1]
-    assert message["X-Original-To"] == "erika@progeo.com"
+    assert message["To"] == "erika@progeo.com"
     token = _link_token("/zugang/bestaetigen/")
     assert request.verify_token_hash == login_links.hash_token(token)
     # The logged copy of the mail holds no working link.
@@ -114,7 +114,7 @@ def test_verify_creates_a_pending_user_and_tells_staff(client):
     assert not request.user.user_permissions.exists()
     assert AccessToken(tokens["access"])["is_pending"] is True
     staff_notice = FakeSMTP.parsed()[-1]
-    assert staff_notice["X-Original-To"] == "kontakt@progeo.com"
+    assert staff_notice["To"] == "kontakt@progeo.com"
     assert "Erika Mustermann" in staff_notice["Subject"]
     # The confirmation link is used up.
     again = client.post("/api/auth-support/access-requests/verify/check/", {"token": "x"}, format="json")

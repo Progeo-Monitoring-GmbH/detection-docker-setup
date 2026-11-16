@@ -1,0 +1,14 @@
+/* Device statistics -> Benachrichtigungen pro Objekt (NotificationLocationsPanel.tsx). */
+
+.notification-locations-muted {
+  color: var(--bs-secondary-color);
+}
+
+.form-control.notification-locations-search {
+  max-width: 320px;
+}
+
+.form-check.notification-locations-switch {
+  margin-bottom: 0;
+  white-space: nowrap;
+}

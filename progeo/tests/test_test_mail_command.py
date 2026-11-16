@@ -46,7 +46,6 @@ def smtp(monkeypatch, settings):
     for name in interface_config._SMTP_ENV.values():
         monkeypatch.delenv(name, raising=False)
     settings.PROGEO_CONFIG_ENABLE_MAILING = True
-    settings.MAIL_TEST_MODE = False
     SystemConfig.objects.using(f.DB).filter(key="smtp").delete()
     SystemConfig.objects.using(f.DB).create(key="smtp", value=dict(SMTP))
     FakeSMTP.sent = []

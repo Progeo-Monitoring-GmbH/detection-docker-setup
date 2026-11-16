@@ -41,6 +41,7 @@ from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
+from progeo.helper import outbound
 from progeo.helper.basics import elog, ilog, wlog
 
 DB = "default"
@@ -399,24 +400,34 @@ def _send_short_messages(case, rows, bodies):
         sms_body, messenger_body = bodies[languages.get(row.get("user_id"), "de")]
         if row.get("mobile"):
             try:
-                esendex.send_sms(row["mobile"], sms_body, location=location, db=case.db, category="alarm")
-                sms += 1
+                result = esendex.send_sms(row["mobile"], sms_body, location=location, db=case.db, category="alarm")
+                sms += 0 if result.get("withheld") else 1
             except esendex.EsendexError as exc:
                 elog(f"[notification_cases] SMS to {row.get('name')} failed: {exc}")
         if row.get("messenger"):
             try:
-                messenger.send_message(row["messenger"]["service"], row["messenger"]["address"], messenger_body,
-                                       location=location, db=case.db, category="alarm")
-                chats += 1
+                result = messenger.send_message(row["messenger"]["service"], row["messenger"]["address"],
+                                                messenger_body, location=location, db=case.db, category="alarm")
+                chats += 0 if result.get("withheld") else 1
             except messenger.MessengerError as exc:
                 elog(f"[notification_cases] Messenger message to {row.get('name')} failed: {exc}")
     return sms, chats
 
 
-def _record_stage(case, stage, sent, failed, sms=0, chats=0, recipient_count=0, text=""):
+def _record_stage(case, stage, sent, failed, sms=0, chats=0, recipient_count=0, text="", withheld=False):
+    """The stage's event and who it reached. `withheld`: the location's
+    notifications are disabled - the stage counts (the case moves on), its
+    messages were logged but not sent, so it is not "unreachable"."""
     delivered = len(sent) + sms + chats
     case.notified = sorted(set(case.notified or []) | set(sent))
     fields = ["notified"]
+    if withheld:
+        event(case, "stage", f"Stufe {stage} erstellt, nicht versendet (Benachrichtigungen des Objekts deaktiviert)", {
+            "stage": stage, "mails": [], "failed": [], "withheld": failed, "sms": 0, "messenger": 0,
+            "recipients": recipient_count,
+        })
+        _save(case, *fields)
+        return 0
     event(case, "stage", text or f"Stufe {stage} versendet", {
         "stage": stage, "mails": sent, "failed": failed, "sms": sms, "messenger": chats,
         "recipients": recipient_count,
@@ -517,7 +528,8 @@ def send_offline_stage(case):
     template = "disconnect_project" if case.stage == 1 else "offline_reminder"
     context = {**_offline_context(case, location), "include_objektleitung": include_lead}
     sent, failed = _send_mails(case, rows, template, context, "timeout")
-    return _record_stage(case, case.stage, sent, failed, recipient_count=len(rows))
+    return _record_stage(case, case.stage, sent, failed, recipient_count=len(rows),
+                         withheld=outbound.notifications_withheld(location))
 
 
 # The words of the alarm SMS / messenger messages per recipient language.
@@ -564,7 +576,8 @@ def send_alarm_stage(case):
         )
         bodies[language] = (sms_body, messenger_body)
     sms, chats = _send_short_messages(case, rows, bodies)
-    _record_stage(case, case.stage, sent, failed, sms, chats, recipient_count=len(rows))
+    _record_stage(case, case.stage, sent, failed, sms, chats, recipient_count=len(rows),
+                  withheld=outbound.notifications_withheld(location))
     if last:
         _escalate(case, f"Alarm im Objekt {case.project_id or case.location_id} nicht quittiert")
     return {"mails": len(sent), "sms": sms, "messenger": chats}
@@ -859,7 +872,11 @@ def send_online_mail(case) -> int:
     sent, failed = _send_mails(case, rows, "offline_resolved", context, "online")
     case.online_mail_sent_at = _now()
     _save(case, "online_mail_due", "online_mail_sent_at")
-    event(case, "online_mail", "Wieder-online-Mail versendet", {"mails": sent, "failed": failed})
+    if outbound.notifications_withheld(location):
+        event(case, "online_mail", "Wieder-online-Mail nicht versendet (Benachrichtigungen des Objekts deaktiviert)",
+              {"mails": [], "failed": [], "withheld": failed})
+    else:
+        event(case, "online_mail", "Wieder-online-Mail versendet", {"mails": sent, "failed": failed})
     return len(sent)
 
 

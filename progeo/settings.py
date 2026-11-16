@@ -73,12 +73,11 @@ METRICS_TOKEN = (os.getenv("METRICS_TOKEN") or "").strip()
 # ########################################################################
 # Outbound mail / SMS safety (see django.env.template, helper/outbound.py)
 #
-# Safe by default: unless the env explicitly says MAIL_TEST_MODE=0 every mail
-# goes to MAIL_TEST_RECIPIENT, and unless SMS_DRY_RUN=0 / MESSENGER_DRY_RUN=0
-# SMS / messenger messages (Signal, WhatsApp, Matrix) are only logged.
+# Notifications only leave for locations whose notifications staff switched
+# on (ProgeoLocation.notifications_disabled, off by default). Unless
+# SMS_DRY_RUN=0 / MESSENGER_DRY_RUN=0, SMS / messenger messages (Signal,
+# WhatsApp, Matrix) are only logged.
 # ########################################################################
-MAIL_TEST_MODE = parse_boolean(os.getenv("MAIL_TEST_MODE", "1"))
-MAIL_TEST_RECIPIENT = (os.getenv("MAIL_TEST_RECIPIENT") or "test-mails@progeo.com").strip()
 SMS_DRY_RUN = parse_boolean(os.getenv("SMS_DRY_RUN", "1"))
 MESSENGER_DRY_RUN = parse_boolean(os.getenv("MESSENGER_DRY_RUN", "1"))
 # Envelope sender (Return-Path) - bounces land in this mailbox. Empty = the

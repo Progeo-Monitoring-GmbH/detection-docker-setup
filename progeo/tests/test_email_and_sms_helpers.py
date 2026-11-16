@@ -20,8 +20,7 @@ SMTP = {"sender": "noreply@progeo.com", "reply_to": "reply@progeo.com", "server"
 
 @pytest.fixture(autouse=True)
 def isolated_config(monkeypatch, settings):
-    # The real send path - the safe modes are tested in test_outbound.py.
-    settings.MAIL_TEST_MODE = False
+    # The real send path - the dry run is tested in test_outbound.py.
     settings.SMS_DRY_RUN = False
     for name in [*interface_config._SMTP_ENV.values(), *interface_config._ESENDEX_ENV.values()]:
         monkeypatch.delenv(name, raising=False)

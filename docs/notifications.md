@@ -95,6 +95,18 @@ POST /api/auth-support/notifications/unsubscribe/  {token}
 POST /api/auth-support/notifications/one-click/<token>/   (mail clients, RFC 8058)
 ```
 
+## Location switch
+
+`ProgeoLocation.notifications_disabled` (default `True`, so every new and existing location starts switched off) decides whether a location's notifications leave the box. The rollout switches the locations on one after another.
+
+- **Everything is still created.** Detection, cases, stages, escalations and the protocol run as usual. Every mail, SMS and messenger message is still built and logged: an `OutboundMessage` row with status `withheld` and an `EMail` / `SMS` row with `withheld = True`. Only the hand-over to SMTP, Esendex or the messenger is skipped.
+- **One check, in the outbound path.** `send_mail`, `send_sms` and `send_message` call `outbound.notifications_withheld(location)` for every message with a location. It always reads `default`, where staff toggle the flag (the project databases only mirror it). System mails without a location (login links, invites, password reset, staff notices) are not affected.
+- **Withheld stages are not "unreachable".** The stage counts and the case moves on, but its event says *created, not sent*, and the case is not marked unreachable.
+- **The staff test notification** (Testleckage) ignores the switch, so staff can test a location before switching it on.
+- **Staff only:** `GET /v1/notification-location/?state=disabled|enabled|all` and `POST /v1/notification-location/<pk>/toggle/ {disabled}`. Every toggle adds a `switched` event to the location's open cases. The location API does not let anyone else change the flag (it is read-only there).
+
+The staff page (*Staff → Benachrichtigungen*) shows how many locations are switched on and how many messages were withheld in the last 24 hours.
+
 ## Bounces
 
 Bounces still go through [bounces.py](../progeo/helper/bounces.py): immediate SMTP 5xx refusals, and DSNs read from the bounce mailbox every 10 minutes. Hard bounces, or three soft bounces, suppress the address.
@@ -149,7 +161,7 @@ Also available:
 
 1. **Apply the migration.** Run `makemigrations --check` and then `migrate` (0057_notification_cases). Deploy backend and frontend.
 2. **Let the baseline run.** The **first run** of `detect_offline_devices` is the baseline. Every location that is already offline gets a case that is **muted until released**, so nobody gets mail about old outages. Staff release the cases they want to pursue (Staff → Benachrichtigungen → *Freigeben*). The first offline stage then goes out at the next 09:00.
-3. **Check on staging first.** `MAIL_TEST_MODE=1` (the default) redirects all mails to `MAIL_TEST_RECIPIENT`. `CELERY_DISABLED_TASKS=detect_offline_devices,process_notification_cases` switches the system off on a server.
+3. **Switch the locations on one by one.** Every location starts with `notifications_disabled = True`: its cases, stages and EMail/SMS rows are created, but nothing is sent (see *Location switch*). Staff switch locations on under *Device statistics → Notifications per location*. `CELERY_DISABLED_TASKS=detect_offline_devices,process_notification_cases` switches the whole system off on a server.
 4. **Check deliverability before going live.** SPF, DKIM and DMARC of the sending domain matter now that reminders go out regularly.
 
 ## Settings (`django.env`)

@@ -17,6 +17,8 @@ import './StaffAdmin.css';
 
 type MessageStatus =
   | 'sent'
+  | 'withheld'
+  // Old rows only - the mail test mode is gone.
   | 'redirected'
   | 'dry_run'
   | 'rate_limited'
@@ -49,8 +51,6 @@ type Suppression = {
 
 type MessagingState = {
   mailing_enabled: boolean;
-  mail_test_mode: boolean;
-  mail_test_recipient: string;
   sms_dry_run: boolean;
   messenger_dry_run: boolean;
   breaker: {
@@ -78,6 +78,7 @@ const CHANNEL_BADGES: Record<OutboundMessage['channel'], { bg: string; label: st
 
 const STATUS_VARIANT: Record<MessageStatus, string> = {
   sent: 'success',
+  withheld: 'secondary',
   redirected: 'info',
   dry_run: 'info',
   rate_limited: 'warning',
@@ -273,15 +274,7 @@ const StaffMessaging = () => {
               {t('staff_messaging_mailing_disabled')}
             </Badge>
           )}
-          {state.mail_test_mode ? (
-            <Badge bg="info" text="dark" data-testid="staff-messaging-mail-mode">
-              {t('staff_messaging_test_mode', {
-                recipient: state.mail_test_recipient,
-              })}
-            </Badge>
-          ) : (
-            <Badge bg="success" data-testid="staff-messaging-mail-mode">{t('staff_messaging_live_mode')}</Badge>
-          )}
+          <Badge bg="success" data-testid="staff-messaging-mail-mode">{t('staff_messaging_live_mode')}</Badge>
           {state.sms_dry_run ? (
             <Badge bg="info" text="dark" data-testid="staff-messaging-sms-mode">
               {t('staff_messaging_sms_dry_run')}

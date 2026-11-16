@@ -342,8 +342,6 @@ class StaffMessagingView(_StaffView):
         suppressions = EmailSuppression.objects.using(DB).filter(active=True).order_by("-last_bounce_at")[:200]
         return RequestSuccess({
             "mailing_enabled": bool(settings.PROGEO_CONFIG_ENABLE_MAILING),
-            "mail_test_mode": outbound.mail_test_mode(),
-            "mail_test_recipient": outbound.mail_test_recipient(),
             "sms_dry_run": outbound.sms_dry_run(),
             "messenger_dry_run": outbound.messenger_dry_run(),
             "breaker": {**breaker, "tripped_at": breaker.get("tripped_at")},

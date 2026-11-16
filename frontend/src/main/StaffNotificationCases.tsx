@@ -53,6 +53,10 @@ type NotificationCase = {
 
 type Summary = {
   counts: Record<Kind, Record<string, number>>;
+  /** Locations by their notification switch (ProgeoLocation.notifications_disabled). */
+  locations?: { disabled: number; enabled: number };
+  /** Messages logged but not sent in the last 24 h (disabled locations). */
+  withheld_last_day?: number;
   resolved_last_day: Partial<Record<Kind, number>>;
   in_window: boolean;
   baseline_done: boolean;
@@ -76,7 +80,8 @@ const SUMMARY_PHASES = ['open', 'detected', 'notified', 'reminder', 'escalated',
  * "Benachrichtigungen" in the staff admin: in which phase every location's
  * notification case is (offline / alarm, helper/notification_cases.py) -
  * detected, notified, reminders, escalated, recovering, muted - with its
- * protocol, and the staff actions mute / release / close.
+ * protocol, and the staff actions mute / release / close. On top: how many
+ * locations are switched on - only those get their messages sent.
  */
 const StaffNotificationCases = () => {
   const { t } = useTranslation();
@@ -234,6 +239,35 @@ const StaffNotificationCases = () => {
                 <Badge bg="danger">{t('staff_notifications_no_recipients_left', { count: summary.no_recipients_left })}</Badge>
               )}
             </div>
+            {summary.locations && (
+              <div className="staff-notifications-switch small mb-3" data-testid="staff-notifications-switch">
+                <div className="d-flex flex-wrap align-items-center gap-2 mb-1">
+                  <Badge
+                    bg={summary.locations.enabled ? 'success' : 'secondary'}
+                    data-testid="staff-notifications-switch-enabled"
+                  >
+                    {t('staff_notifications_switch_enabled', {
+                      enabled: summary.locations.enabled,
+                      total: summary.locations.enabled + summary.locations.disabled,
+                    })}
+                  </Badge>
+                  {(summary.withheld_last_day ?? 0) > 0 && (
+                    <Badge bg="warning" text="dark" data-testid="staff-notifications-switch-withheld">
+                      {t('staff_notifications_switch_withheld', { count: summary.withheld_last_day })}
+                    </Badge>
+                  )}
+                  <Link to="/device/statistics/" data-testid="staff-notifications-switch-link">
+                    {t('staff_notifications_switch_link')}
+                  </Link>
+                </div>
+                <ul className="staff-notifications-switch-logic mb-0">
+                  <li>{t('staff_notifications_switch_logic_created')}</li>
+                  <li>{t('staff_notifications_switch_logic_sent')}</li>
+                  <li>{t('staff_notifications_switch_logic_system')}</li>
+                  <li>{t('staff_notifications_switch_logic_test')}</li>
+                </ul>
+              </div>
+            )}
             <Table size="sm" bordered className="mb-3 small staff-notifications-summary" data-testid="staff-notifications-summary">
               <thead>
                 <tr>

@@ -67,7 +67,7 @@ def _case(location, kind="offline"):
 
 
 def _originals():
-    return sorted(m["X-Original-To"] for m in FakeSMTP.parsed())
+    return sorted(m["To"] for m in FakeSMTP.parsed())
 
 
 # ---------------------------------------------------------------------------- time
@@ -288,8 +288,7 @@ def test_a_stage_that_reaches_nobody_marks_the_case_unreachable(site, live):
     assert case.events.filter(kind="unreachable").exists()
 
 
-def test_a_bounced_stage_mail_reaches_its_case(site, live, settings):
-    settings.MAIL_TEST_MODE = False
+def test_a_bounced_stage_mail_reaches_its_case(site, live):
     location, device = site
     location.mail = None
     location.save(using=f.DB)
@@ -308,19 +307,21 @@ def test_a_bounced_stage_mail_reaches_its_case(site, live, settings):
     assert case.unreachable_since is not None
 
 
-# ---------------------------------------------------------------------------- test modes
+# ---------------------------------------------------------------------------- location switch
 
-def test_in_mail_test_mode_every_stage_mail_and_alarm_goes_to_the_test_recipient_only(site, live, settings):
-    """MAIL_TEST_MODE (on unless the env says 0): the staged system's mails
-    reach MAIL_TEST_RECIPIENT only - the original recipients are just named
-    in the subject; SMS_DRY_RUN keeps its SMS in the log (fake_smtp fails
-    the test on any network post)."""
-    from progeo.v1.models import UserProfile
+def _disable(location):
+    location.notifications_disabled = True
+    location.save(using=f.DB, update_fields=["notifications_disabled"])
 
-    settings.MAIL_TEST_MODE = True
-    settings.SMS_DRY_RUN = True
-    settings.MAIL_TEST_RECIPIENT = "test-mails@progeo.com"
+
+def test_a_disabled_location_gets_its_stages_and_alarm_but_nothing_is_sent(site, live):
+    """notifications_disabled: cases, stages and the EMail/SMS/OutboundMessage
+    rows are created as usual - only nothing leaves (fake_smtp also fails the
+    test on any network post), and the stage is not "unreachable"."""
+    from progeo.v1.models import SMS, UserProfile
+
     location, device = site
+    _disable(location)
     _subscriber(location, "kai@progeo.com")
     sms_user = _subscriber(location, "sms@progeo.com", type=ALARM,
                            transport=ProgeoAccess.NotifiTrans.EMAIL_AND_SMS)
@@ -332,17 +333,43 @@ def test_in_mail_test_mode_every_stage_mail_and_alarm_goes_to_the_test_recipient
     live["now"] = at(9)
     nc.process(now=at(9))
     # ... and an alarm.
-    notifications.notify_alarm(f.make_alarm(device, value=180, triggered_ago=f.minutes(5)), location, f.DB)
+    counts = notifications.notify_alarm(f.make_alarm(device, value=180, triggered_ago=f.minutes(5)), location, f.DB)
 
-    assert FakeSMTP.sent, "nothing was mailed at all"
-    assert {address for mail in FakeSMTP.sent for address in mail["to"]} == {"test-mails@progeo.com"}
-    assert all(message["To"] == "test-mails@progeo.com" for message in FakeSMTP.parsed())
-    assert all(message["Subject"].startswith("[TEST an ") for message in FakeSMTP.parsed())
-    mails = OutboundMessage.objects.using(f.DB).filter(channel=OutboundMessage.Channel.MAIL)
-    assert set(mails.values_list("status", flat=True)) == {OutboundMessage.Status.REDIRECTED}
-    assert {"halle@progeo.com", "kai@progeo.com", "sms@progeo.com"} <= set(mails.values_list("recipient", flat=True))
-    sms = OutboundMessage.objects.using(f.DB).filter(channel=OutboundMessage.Channel.SMS)
-    assert sms.exists() and not sms.filter(status=OutboundMessage.Status.SENT).exists()
+    assert FakeSMTP.sent == []
+    assert counts == {"mails": 0, "sms": 0, "messenger": 0}
+    rows = OutboundMessage.objects.using(f.DB).filter(location_id=location.pk)
+    assert set(rows.values_list("status", flat=True)) == {OutboundMessage.Status.WITHHELD}
+    assert {"halle@progeo.com", "kai@progeo.com", "sms@progeo.com", "+491701234567"} <= set(
+        rows.values_list("recipient", flat=True))
+    assert EMail.objects.using(f.DB).filter(location=location, withheld=True, sent=False).count() >= 3
+    assert SMS.objects.using(f.DB).filter(location=location, withheld=True).exists()
+    for kind in ("offline", "alarm"):
+        case = _case(location, kind)
+        assert case.stage == 1 and case.unreachable_since is None
+        stage = case.events.get(kind="stage")
+        assert "nicht versendet" in stage.text and stage.data["withheld"]
+        assert not case.events.filter(kind="unreachable").exists()
+        assert case.notified == []
+
+
+def test_switching_a_location_on_sends_the_next_stage(site, live):
+    location, device = site
+    _disable(location)
+    _subscriber(location, "kai@progeo.com")
+    _seen(device, at(16, days=-1))
+    nc.detect_offline(f.DB, now=at(0, 50))
+    live["now"] = at(9)
+    nc.process(now=at(9))
+    assert FakeSMTP.sent == []
+
+    location.notifications_disabled = False
+    location.save(using=f.DB, update_fields=["notifications_disabled"])
+    case = _case(location)
+    live["now"] = case.next_contact_at
+    nc.process(now=case.next_contact_at)
+
+    assert _originals() == ["halle@progeo.com", "kai@progeo.com"]
+    assert _case(location).stage == 2
 
 
 # ---------------------------------------------------------------------------- alarms
@@ -491,6 +518,52 @@ def test_staff_monitoring_lists_mutes_and_closes(site, live, api_client):
     assert closed.data["case"]["state"] == "resolved" and closed.data["case"]["resolution"] == "manual"
     detail = api_client.get(f"/v1/notification-case/{case.pk}/").data["case"]
     assert [event["kind"] for event in detail["events"]] == ["opened", "muted", "unmuted", "resolved"]
+
+
+@pytest.mark.parametrize("flags", [{"is_staff": True}, {"is_superuser": True}], ids=["staff", "superuser"])
+def test_staff_list_and_toggle_the_location_switch(site, live, api_client, flags):
+    location, device = site
+    _disable(location)
+    _seen(device, at(16, days=-1))
+    nc.detect_offline(f.DB, now=at(0, 50))
+    url = f"/v1/notification-location/{location.pk}/toggle/"
+
+    api_client.force_authenticate(user=f.make_user())
+    assert api_client.get("/v1/notification-location/").status_code == 403
+    assert api_client.post(url, {"disabled": False}, format="json").status_code == 403
+
+    api_client.force_authenticate(user=f.make_user(**flags))
+    listed = api_client.get("/v1/notification-location/").data
+    row = next(row for row in listed["locations"] if row["id"] == location.pk)
+    assert row["notifications_disabled"] is True and row["open_cases"] == 1 and row["project_id"] == 4711
+    assert listed["counts"]["disabled"] >= 1
+
+    assert api_client.post(url, {"disabled": "maybe"}, format="json").data["success"] is False
+    toggled = api_client.post(url, {"disabled": False}, format="json").data
+    assert toggled["location"]["notifications_disabled"] is False
+    location.refresh_from_db(using=f.DB)
+    assert location.notifications_disabled is False
+    assert all(row["id"] != location.pk for row in api_client.get("/v1/notification-location/").data["locations"])
+    assert any(row["id"] == location.pk
+               for row in api_client.get("/v1/notification-location/?state=enabled").data["locations"])
+    switched = _case(location).events.get(kind="switched")
+    assert switched.data == {"disabled": False} and "aktiviert" in switched.text
+    summary = api_client.get("/v1/notification-case/summary/").data
+    assert summary["locations"]["enabled"] >= 1 and "withheld_last_day" in summary
+    assert api_client.post("/v1/notification-location/999999/toggle/", {"disabled": True},
+                           format="json").status_code == 404
+
+
+def test_the_location_api_cannot_change_the_switch(site, api_client):
+    location, _device = site
+    _disable(location)
+    from progeo.v1.serializers import LocationSerializer
+
+    serializer = LocationSerializer(location, data={"notifications_disabled": False}, partial=True)
+    assert serializer.is_valid()
+    serializer.save()
+    location.refresh_from_db(using=f.DB)
+    assert location.notifications_disabled is True
 
 
 def test_suppressed_addresses_still_count_as_not_reached(site, live):

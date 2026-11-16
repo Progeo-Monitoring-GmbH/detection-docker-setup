@@ -508,7 +508,7 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
 
     # The fields of a location the map (LocationsMapView) shows.
     MAP_FIELDS = ("id", "project_id", "name", "address", "plz", "city", "manager", "telefon", "mail",
-                  "latitude", "longitude")
+                  "latitude", "longitude", "purgeable")
     # Databases per chunk - like the device statistics (device_inventory.CHUNK_DATABASES).
     MAP_CHUNK_DATABASES = 40
     MAP_ACTIVITY_SECONDS = 120
@@ -592,6 +592,39 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             "chunks": 0 if complete else len(chunks),
             "activity": activity,
         })
+
+    @require_module_permissions("module_locations_enabled")
+    @action(detail=True, url_path="purgeable", methods=["POST"])
+    def purgeable(self, request, pk=None, *args, **kwargs):
+        """Staff mark a stale / never-measured location as purgeable
+        ({purgeable: true}), or unmark it ({purgeable: false} = reviewed,
+        kept; null = not reviewed). Only the flag - a later script deletes
+        the marked locations. Saved in the account database (mirrored into
+        the project database), patched into the cached device statistics."""
+        from progeo.helper.device_inventory import mark_location_in_snapshot
+        from progeo.v1.viewsets.status_viewset import _request_accounts
+
+        if not _is_staff_admin(getattr(request, "user", None)):
+            return RequestFailed({"reason": "Staff access required"})
+        data = request.data if hasattr(request.data, "get") else {}
+        if "purgeable" not in data:
+            return RequestFailed({"reason": "purgeable must be true, false or null"})
+        value = data.get("purgeable")
+        if isinstance(value, str):
+            value = {"true": True, "1": True, "false": False, "0": False, "null": None, "": None}.get(
+                value.strip().lower(), "invalid")
+        if value not in (True, False, None):
+            return RequestFailed({"reason": "purgeable must be true, false or null"})
+        location, account = self._find_location(request, pk=pk)
+        if not location:
+            return RequestFailed({"reason": "Location not found"})
+        if location.purgeable != value:
+            location.purgeable = value
+            location.save(using=account.db_name, update_fields=["purgeable"])
+            ilog(f"[locations] location {location.pk} ({location.name}) purgeable={value} "
+                 f"by {request.user.username}")
+        mark_location_in_snapshot([a for a in _request_accounts(request) if a], location.pk, purgeable=value)
+        return RequestSuccess({"location": {"id": location.pk, "purgeable": location.purgeable}})
 
     @require_module_permissions("module_locations_enabled")
     @action(detail=False, url_path="details", methods=["GET"])
@@ -2666,7 +2699,8 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         each of them - email via send_template_mail (already logs an EMail
         row), SMS via Esendex (its first real caller in this codebase),
         messenger via helper/messenger.py - and reports per-recipient results instead of failing the whole
-        request when one channel is unavailable/misconfigured."""
+        request when one channel is unavailable/misconfigured. Goes out even while the location's
+        notifications are disabled (bypass_location_switch): staff test before switching them on."""
         if not _is_staff_admin(getattr(request, "user", None)):
             return RequestFailed({"reason": "Staff access required"})
 
@@ -2696,7 +2730,7 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             if recipient["mail"]:
                 sent = send_template_mail(
                     [recipient["mail"]], "test_leakage", context,
-                    location=location, db=db_name, category="test",
+                    location=location, db=db_name, category="test", bypass_location_switch=True,
                 )
                 result["email_ok"] = bool(sent)
             if recipient["mobile"]:
@@ -2707,6 +2741,7 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
                         location=location,
                         db=db_name,
                         category="test",
+                        bypass_location_switch=True,
                     )
                     result["sms_ok"] = True
                 except EsendexError as exc:
@@ -2721,6 +2756,7 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
                         location=location,
                         db=db_name,
                         category="test",
+                        bypass_location_switch=True,
                     )
                     result["messenger_ok"] = True
                 except messenger.MessengerError as exc:

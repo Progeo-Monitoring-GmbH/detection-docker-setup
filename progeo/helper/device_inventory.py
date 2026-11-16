@@ -79,9 +79,10 @@ CACHE_SECONDS = 900
 CHUNK_DATABASES = 40
 # How long a started chunked build (its plan and finished chunks) is kept.
 BUILD_SECONDS = 900
-# Versioned: a snapshot of an older layout (e.g. still with missing_lageplan)
+# Versioned: a snapshot of an older layout (e.g. still with missing_lageplan,
+# or location rows without purgeable)
 # must not be served after a deploy.
-CACHE_PREFIX = "progeo:device-statistics:v3:"
+CACHE_PREFIX = "progeo:device-statistics:v4:"
 # The sections the frontend requests one by one (the first also warms the
 # cache for all following ones, which are then served from it).
 SECTION_NAMES = (
@@ -118,7 +119,7 @@ def _collect_locations(accounts):
         locations = (
             ProgeoLocation.objects.using(account.db_name)
             .filter(account=account)
-            .only("id", "name", "project_id", "project_type", "account_id", "latitude", "longitude")
+            .only("id", "name", "project_id", "project_type", "account_id", "latitude", "longitude", "purgeable")
         )
         for database, group in locations_by_db(locations, account).items():
             entries = grouped.setdefault(database, {})
@@ -227,6 +228,8 @@ def _location_row(location, device_count, last, has_lageplan, point_count, now, 
         "has_gps": getattr(location, "latitude", None) is not None and getattr(location, "longitude", None) is not None,
         "unused": device_count == 0 or dead,
         "dead": dead,
+        # Staff marked it for the purge script (ProgeoLocation.purgeable).
+        "purgeable": getattr(location, "purgeable", None),
     }
 
 
@@ -384,6 +387,22 @@ def _cache_key(accounts) -> str:
 def invalidate_statistics(accounts):
     """Drop the cached snapshot after rows were deleted (or devices changed)."""
     cache_delete(_cache_key(accounts))
+
+
+def mark_location_in_snapshot(accounts, location_id, **fields) -> bool:
+    """Set `fields` on every row of location `location_id` in the cached
+    snapshot (a flag changed - no new scan of all databases for that).
+    Returns whether a cached snapshot was updated."""
+    key = _cache_key(accounts)
+    payload = cache_get(key)
+    if not payload:
+        return False
+    for rows in (payload.get("locations") or {}).values():
+        for row in rows:
+            if row.get("id") == location_id:
+                row.update(fields)
+    cache_set(key, payload, CACHE_SECONDS)
+    return True
 
 
 def statistics_snapshot(accounts, refresh=False):

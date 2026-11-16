@@ -108,3 +108,37 @@
 .list-group-item.locmap-list-item {
   cursor: pointer;
 }
+
+/* A location marked purgeable (ProgeoLocation.purgeable) looks switched off. */
+.list-group-item.locmap-list-item--purgeable:not(.active) {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--bs-tertiary-bg),
+    var(--bs-tertiary-bg) 6px,
+    var(--bs-secondary-bg) 6px,
+    var(--bs-secondary-bg) 12px
+  );
+  color: var(--bs-secondary-color);
+}
+
+.list-group-item.locmap-list-item--purgeable .fw-semibold {
+  text-decoration: line-through;
+}
+
+.locmap-purgeable-icon {
+  vertical-align: -1px;
+}
+
+.btn.locmap-purge-button {
+  --bs-btn-padding-y: 0.1rem;
+  --bs-btn-padding-x: 0.4rem;
+  --bs-btn-font-size: 0.75rem;
+  border: 1px solid var(--bs-border-color);
+  background: var(--bs-body-bg);
+  color: var(--bs-body-color);
+  white-space: nowrap;
+}
+
+.locmap-tooltip-purgeable {
+  font-weight: 600;
+}

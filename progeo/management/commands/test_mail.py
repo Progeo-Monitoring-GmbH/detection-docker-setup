@@ -128,7 +128,6 @@ class Command(BaseCommand):
         cfg = interface_config.get_smtp_config()
         stored = interface_config._stored("smtp") or {}
         self.stdout.write(f"PROGEO_CONFIG_ENABLE_MAILING = {settings.PROGEO_CONFIG_ENABLE_MAILING}")
-        self.stdout.write(f"MAIL_TEST_MODE = {settings.MAIL_TEST_MODE} (-> {settings.MAIL_TEST_RECIPIENT})")
         self.stdout.write("Effective SMTP config:")
         for field, env_name in interface_config._SMTP_ENV.items():
             value = cfg.get(field)

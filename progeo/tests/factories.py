@@ -62,8 +62,11 @@ def grant(user, *codes):
 
 
 def make_location(account, **fields):
+    """A location with its notifications switched ON - the model default
+    (off, ProgeoLocation.notifications_disabled) is tested in test_outbound."""
     fields.setdefault("name", unique("location"))
     fields.setdefault("alarm_threshold", 100)
+    fields.setdefault("notifications_disabled", False)
     return ProgeoLocation.objects.using(DB).create(account=account, **fields)
 
 

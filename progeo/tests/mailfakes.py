@@ -2,8 +2,8 @@
 
     from progeo.tests.mailfakes import fake_smtp  # noqa: F401  (fixture)
 
-`fake_smtp` configures SMTP, enables mailing, keeps the safe test modes ON
-(tests of the real send path switch them off) and records every sent mail;
+`fake_smtp` configures SMTP, enables mailing, keeps the SMS dry run ON
+(tests of the real send path switch it off) and records every sent mail;
 `FakeSMTP.parsed()` returns the sent mails as email.message objects.
 """
 import email
@@ -63,7 +63,6 @@ def fake_smtp(monkeypatch, settings):
     monkeypatch.setenv("FRONTEND_URL", "@PROTOCOL://dashboard.progeo.com")
     monkeypatch.setenv("PROTOCOL", "https")
     settings.PROGEO_CONFIG_ENABLE_MAILING = True
-    settings.MAIL_TEST_MODE = True
     settings.SMS_DRY_RUN = True
     settings.CACHES = LOCMEM
     # The public endpoints' throttles count per IP in the cache.

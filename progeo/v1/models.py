@@ -361,6 +361,19 @@ class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
     # (helper/weather.py) - shown next to the alarms on the alarm timeline.
     rain_check_enabled = models.BooleanField(default=False, blank=True)
 
+    # Notifications (alarm, offline, online - mail, SMS, messenger) are
+    # created and logged as usual but not sent while this is set: staff
+    # switch the locations on one after another (device statistics page).
+    # Checked in the outbound path (helper/outbound.notifications_withheld,
+    # always against "default"); the staff test notification ignores it.
+    notifications_disabled = models.BooleanField(default=True, blank=True)
+
+    # Staff review of stale / never-measured locations (/map/, device
+    # statistics): True = may be purged (a later script deletes them),
+    # False = reviewed and kept, None = not reviewed. Only the flag - nothing
+    # is deleted by setting it.
+    purgeable = models.BooleanField(null=True, default=None, blank=True)
+
     # Statistics of the project's own database (all locations of a project
     # share it, so they carry the same values) - refreshed daily by
     # refresh_project_db_stats (helper/project_db_stats.py).
@@ -1395,6 +1408,9 @@ class EMail(ProgeoModel, auto_prefetch.Model):
     files = models.TextField(null=False)
     # Send outcome: True = delivered, False = skipped/failed (kept for the log).
     sent = models.BooleanField(default=False)
+    # Not sent on purpose: the location's notifications are disabled
+    # (ProgeoLocation.notifications_disabled) - created, but held back.
+    withheld = models.BooleanField(default=False)
     # Human-readable reason when the mail could not be sent (SMTP missing,
     # connection error, no recipient, ...).
     error = models.TextField(null=True, blank=True)
@@ -1433,6 +1449,8 @@ class SMS(ProgeoModel, auto_prefetch.Model):
     message = models.TextField()
     # Send outcome: True = accepted by the gateway, False = failed (kept for the log).
     sent = models.BooleanField(default=False)
+    # Not sent on purpose: the location's notifications are disabled.
+    withheld = models.BooleanField(default=False)
     # Esendex batch id / messenger message id of an accepted message, for support requests.
     batch_id = models.CharField(max_length=64, null=True, blank=True)
     # Human-readable reason when the SMS could not be sent.
@@ -1458,7 +1476,9 @@ class OutboundMessage(models.Model):
 
     class Status(models.TextChoices):
         SENT = "sent", "Versendet"
-        # MAIL_TEST_MODE: delivered to MAIL_TEST_RECIPIENT instead.
+        # The location's notifications are disabled: logged, never sent.
+        WITHHELD = "withheld", "Zurückgehalten (Objekt-Benachrichtigungen aus)"
+        # Old rows only: the removed MAIL_TEST_MODE delivered to a test address.
         REDIRECTED = "redirected", "Umgeleitet (Testmodus)"
         # SMS_DRY_RUN / MESSENGER_DRY_RUN: logged, never handed to the gateway.
         DRY_RUN = "dry_run", "Nicht versendet (Testmodus)"
@@ -1478,7 +1498,7 @@ class OutboundMessage(models.Model):
     created = models.DateTimeField(default=timezone.now)
     # Normalized original recipient (lowercase mail / phone number).
     recipient = models.CharField(max_length=255)
-    # Where it really went (MAIL_TEST_RECIPIENT in test mode).
+    # Where it really went (old rows: the test address of the removed MAIL_TEST_MODE).
     actual_recipient = models.CharField(max_length=255, blank=True, default="")
     # alarm, timeout, test, login_link, invite, access_request, system, ...
     category = models.CharField(max_length=32, blank=True, default="system")
@@ -1809,6 +1829,8 @@ class NotificationCaseEvent(models.Model):
         UNMUTED = "unmuted", "Stummschaltung aufgehoben"
         ONLINE_MAIL = "online_mail", "Wieder-online-Mail"
         RESOLVED = "resolved", "Erledigt"
+        # Staff switched the location's notifications on/off.
+        SWITCHED = "switched", "Objekt-Benachrichtigungen geschaltet"
 
     case = models.ForeignKey(NotificationCase, on_delete=models.CASCADE, related_name="events")
     kind = models.CharField(max_length=16, choices=Kind.choices)

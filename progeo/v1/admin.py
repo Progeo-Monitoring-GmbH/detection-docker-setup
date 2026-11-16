@@ -363,7 +363,7 @@ class LocationNameFilter(TextInputFilter):
 class ProgeoLocationAdmin(MultiDBModelAdmin):
     list_display = ("id", "name", "project_id", "project_type", "city")
     list_display_links = ("id", "name")
-    list_filter = (LocationNameFilter, "project_type")
+    list_filter = (LocationNameFilter, "project_type", "notifications_disabled", "purgeable")
     search_fields = ("name", "=project_id", "city", "address")
     ordering = ("name",)
 

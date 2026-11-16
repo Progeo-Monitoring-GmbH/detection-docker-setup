@@ -6,7 +6,7 @@ import {
   type ReactNode,
 } from 'react';
 import { Alert, Badge, Button, ProgressBar, Spinner } from 'react-bootstrap';
-import { ArrowRepeat, PencilSquare } from 'react-bootstrap-icons';
+import { ArrowCounterclockwise, ArrowRepeat, PencilSquare, Trash3, Trash3Fill } from 'react-bootstrap-icons';
 import DataTable, { type TableColumn } from 'react-data-table-component';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
@@ -29,6 +29,7 @@ import { plotTheme } from '../styles/plotTheme';
 import { staffFlags } from './access';
 import { getProjectTypeLabel } from './projectType';
 import { addCounts, mergeTypeCounts, runChunks } from './deviceStatisticsBuild';
+import NotificationLocationsPanel from './NotificationLocationsPanel';
 import { repeatedTestId } from '../testIds';
 import './DeviceStatisticsView.css';
 
@@ -65,6 +66,8 @@ type StatisticsLocation = {
   has_lageplan: boolean;
   unused: boolean;
   dead: boolean;
+  /** Marked for the purge script (ProgeoLocation.purgeable): true, false = kept, null = not reviewed. */
+  purgeable?: boolean | null;
 };
 
 type StatisticsTotals = {
@@ -411,6 +414,11 @@ const DeviceList = ({
   );
 };
 
+/** Marked rows look switched off (DeviceStatisticsView.css). */
+const PURGEABLE_ROW_STYLES = [
+  { when: (row: StatisticsLocation) => row.purgeable === true, classNames: ['device-stats-row-purgeable'] },
+];
+
 /** The shared location table (location, device count, measure points, Lageplan, status). */
 const LocationList = ({
   rows,
@@ -418,6 +426,8 @@ const LocationList = ({
   selectionKey,
   onSelectionChange,
   showAdminEdit = false,
+  onTogglePurgeable,
+  purgeBusy = {},
   testKey,
 }: {
   rows: StatisticsLocation[];
@@ -425,6 +435,10 @@ const LocationList = ({
   selectionKey?: string;
   onSelectionChange?: (rows: StatisticsLocation[]) => void;
   showAdminEdit?: boolean;
+  /** Shows the "purgeable" column with a mark/unmark button per row. */
+  onTogglePurgeable?: (row: StatisticsLocation) => void;
+  /** Location ids whose flag is being saved. */
+  purgeBusy?: Record<number, boolean>;
   /** data-test-key of the list's empty state (src/testIds.ts). */
   testKey: string;
 }) => {
@@ -446,6 +460,14 @@ const LocationList = ({
       sortable: true,
       cell: (row) => (
         <div className="small">
+          {row.purgeable === true && (
+            <Trash3Fill
+              size={11}
+              className="me-1 device-stats-purgeable-icon"
+              title={t('device_stats_purgeable_marked')}
+              {...repeatedTestId('device-stats-location-purgeable', `${row.database}-${row.id}`)}
+            />
+          )}
           <Link
             to={locationDetailUrl(row)}
             title={t('device_stats_open_location')}
@@ -526,6 +548,38 @@ const LocationList = ({
       ),
       width: '130px',
     },
+    ...(onTogglePurgeable
+      ? [
+          {
+            name: t('device_stats_col_purgeable'),
+            selector: (row: StatisticsLocation) => (row.purgeable === true ? 1 : 0),
+            sortable: true,
+            cell: (row: StatisticsLocation) => (
+              <Button
+                size="sm"
+                variant={row.purgeable === true ? 'outline-secondary' : 'outline-danger'}
+                className="device-stats-purge-button"
+                disabled={Boolean(purgeBusy[row.id])}
+                title={
+                  row.purgeable === true
+                    ? t('device_stats_purgeable_unmark_title')
+                    : t('device_stats_purgeable_mark_title')
+                }
+                onClick={() => onTogglePurgeable(row)}
+                {...repeatedTestId('device-stats-purge-toggle', `${row.database}-${row.id}`)}
+              >
+                {row.purgeable === true ? (
+                  <ArrowCounterclockwise size={12} className="me-1" />
+                ) : (
+                  <Trash3 size={12} className="me-1" />
+                )}
+                {row.purgeable === true ? t('device_stats_purgeable_unmark') : t('device_stats_purgeable_mark')}
+              </Button>
+            ),
+            width: '150px',
+          },
+        ]
+      : []),
     ...(showAdminEdit
       ? [
           {
@@ -559,6 +613,7 @@ const LocationList = ({
       customStyles={COMPACT_TABLE_STYLES}
       selectableRows={selectable}
       selectableRowsHighlight
+      conditionalRowStyles={PURGEABLE_ROW_STYLES}
       onSelectedRowsChange={(state: { selectedRows: StatisticsLocation[] }) =>
         onSelectionChange?.(state.selectedRows)
       }
@@ -584,6 +639,7 @@ const PIE_COLORS = [
  * devices without a chip ID, without a measurement in the last 24 h, without
  * measure points at their location or dead, plus unused/dead locations and
  * locations without measure points. Data comes from GET /v1/status/device_statistics/.
+ * Below: the notification switch per location (NotificationLocationsPanel, live, not cached).
  */
 const DeviceStatisticsView = () => {
   const auth = useAuth();
@@ -606,6 +662,10 @@ const DeviceStatisticsView = () => {
   const [selectionEpoch, setSelectionEpoch] = useState(0);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Purgeable flags changed on this page: they win over the snapshot's rows
+  // (a location can be in several lists, each loaded on its own).
+  const [purgeOverrides, setPurgeOverrides] = useState<Record<number, boolean | null>>({});
+  const [purgeBusy, setPurgeBusy] = useState<Record<number, boolean>>({});
   const requestRef = useRef(0);
   const inFlight = useRef(false);
   const authRef = useRef(auth);
@@ -897,6 +957,35 @@ const DeviceStatisticsView = () => {
     );
   };
 
+  /** Mark / unmark a location as purgeable (unmark = reviewed, kept: false). */
+  const togglePurgeable = (row: StatisticsLocation) => {
+    const purgeable = row.purgeable !== true;
+    setPurgeBusy((busy) => ({ ...busy, [row.id]: true }));
+    void axiosConfig.perform_post(
+      auth,
+      `/v1/location/${row.id}/purgeable/`,
+      { purgeable },
+      (response) => {
+        const saved = (response?.data?.location?.purgeable ?? purgeable) as boolean | null;
+        setPurgeOverrides((overrides) => ({ ...overrides, [row.id]: saved }));
+        setPurgeBusy((busy) => ({ ...busy, [row.id]: false }));
+        showSuccessBar(
+          enqueueSnackbar,
+          t(saved ? 'device_stats_purgeable_marked_toast' : 'device_stats_purgeable_unmarked_toast', {
+            name: row.name || row.project_id || row.id,
+          }),
+        );
+      },
+      (requestError) => {
+        setPurgeBusy((busy) => ({ ...busy, [row.id]: false }));
+        showRequestError(enqueueSnackbar, t('device_stats_purgeable_error'), requestError);
+      },
+    );
+  };
+
+  const withPurgeable = (rows: StatisticsLocation[] | undefined) =>
+    (rows ?? []).map((row) => (row.id in purgeOverrides ? { ...row, purgeable: purgeOverrides[row.id] } : row));
+
   const current = sections[requestKey] ?? null;
   const overview = sections.overview ?? null;
   // While a build runs: the counts of the chunks scanned so far.
@@ -1172,9 +1261,11 @@ const DeviceStatisticsView = () => {
         return (
           <ListSection title={t('device_stats_unused_locations')} testKey="unused">
             <LocationList
-              rows={current.locations.unused_locations ?? []}
+              rows={withPurgeable(current.locations.unused_locations)}
               selectable
               showAdminEdit={isSuperuser}
+              onTogglePurgeable={togglePurgeable}
+              purgeBusy={purgeBusy}
               selectionKey={`unused-${selectionEpoch}`}
               testKey="unused"
               onSelectionChange={selectionHandler('unused', 'location')}
@@ -1185,9 +1276,11 @@ const DeviceStatisticsView = () => {
         return (
           <ListSection title={t('device_stats_locations_missing_points')} testKey="missing-points">
             <LocationList
-              rows={current.locations.locations_missing_points ?? []}
+              rows={withPurgeable(current.locations.locations_missing_points)}
               selectable
               showAdminEdit={isSuperuser}
+              onTogglePurgeable={togglePurgeable}
+              purgeBusy={purgeBusy}
               selectionKey={`missing-points-${selectionEpoch}`}
               testKey="missing-points"
               onSelectionChange={selectionHandler('missing-points', 'location')}
@@ -1198,9 +1291,11 @@ const DeviceStatisticsView = () => {
         return (
           <ListSection title={t('device_stats_dead_locations')} testKey="dead-locations">
             <LocationList
-              rows={current.locations.dead_locations ?? []}
+              rows={withPurgeable(current.locations.dead_locations)}
               selectable
               showAdminEdit={isSuperuser}
+              onTogglePurgeable={togglePurgeable}
+              purgeBusy={purgeBusy}
               selectionKey={`dead-locations-${selectionEpoch}`}
               testKey="dead-locations"
               onSelectionChange={selectionHandler('dead-locations', 'location')}
@@ -1333,6 +1428,8 @@ const DeviceStatisticsView = () => {
       >
         {renderSection()}
       </PanelCard>
+
+      <NotificationLocationsPanel />
 
       <ConfirmDialog
         show={confirmDelete}

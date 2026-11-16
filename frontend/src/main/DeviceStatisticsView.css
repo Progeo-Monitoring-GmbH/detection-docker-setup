@@ -41,3 +41,32 @@
   height: 6px;
 }
 
+
+/* A location marked purgeable (ProgeoLocation.purgeable) looks switched off -
+   specific enough to beat the table's own row background. */
+.device-stats .rdt_TableRow.device-stats-row-purgeable {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--bs-tertiary-bg),
+    var(--bs-tertiary-bg) 6px,
+    var(--bs-secondary-bg) 6px,
+    var(--bs-secondary-bg) 12px
+  );
+  color: var(--bs-secondary-color);
+}
+
+.device-stats .rdt_TableRow.device-stats-row-purgeable a {
+  color: var(--bs-secondary-color);
+  text-decoration: line-through;
+}
+
+.device-stats-purgeable-icon {
+  vertical-align: -1px;
+}
+
+.btn.device-stats-purge-button {
+  --bs-btn-padding-y: 0.1rem;
+  --bs-btn-padding-x: 0.4rem;
+  --bs-btn-font-size: 0.75rem;
+  white-space: nowrap;
+}

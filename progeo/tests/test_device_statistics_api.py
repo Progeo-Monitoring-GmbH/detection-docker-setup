@@ -369,3 +369,72 @@ def test_chunked_build_is_staff_only(api_client, world):
     status, body = _call(api_client, plan=1)
 
     assert (status, body["reason"]) == (400, "Staff access required")
+
+
+# -- purgeable (ProgeoLocation.purgeable) --------------------------------------------
+
+def _mark(api_client, location, value):
+    return api_client.post(f"/v1/location/{location.pk}/purgeable/", {"purgeable": value}, format="json")
+
+
+def test_new_locations_are_not_reviewed_for_the_purge(world):
+    assert ProgeoLocation().purgeable is None
+    assert world["without_plan"].purgeable is None
+
+
+def test_staff_mark_a_location_purgeable_and_the_cached_lists_follow(api_client, world):
+    user = f.make_user(staff=True, perms=("module_locations_enabled", "module_devices_enabled"))
+    unused = _get(api_client, user, "unused_locations", refresh=True)["locations"]["unused_locations"]
+    assert {row["id"]: row["purgeable"] for row in unused}[world["without_plan"].id] is None
+
+    response = _mark(api_client, world["without_plan"], True)
+
+    assert response.status_code == 200, response.content
+    assert response.json()["location"] == {"id": world["without_plan"].id, "purgeable": True}
+    world["without_plan"].refresh_from_db(using=f.DB)
+    assert world["without_plan"].purgeable is True
+    # Served from the patched snapshot - no rebuild needed.
+    for section, key in (("unused_locations", "unused_locations"), ("locations_missing_points",
+                                                                       "locations_missing_points")):
+        rows = _get(api_client, user, section)["locations"][key]
+        assert {row["id"]: row["purgeable"] for row in rows}[world["without_plan"].id] is True
+
+    assert _mark(api_client, world["without_plan"], False).json()["location"]["purgeable"] is False
+    assert _mark(api_client, world["without_plan"], None).json()["location"]["purgeable"] is None
+    world["without_plan"].refresh_from_db(using=f.DB)
+    assert world["without_plan"].purgeable is None
+
+
+def test_purgeable_is_staff_only_and_validated(api_client, world):
+    api_client.force_authenticate(user=f.make_user(perms=("module_locations_enabled",)))
+    assert _mark(api_client, world["without_plan"], True).json()["reason"] == "Staff access required"
+
+    api_client.force_authenticate(user=f.make_user(staff=True, perms=("module_locations_enabled",)))
+    assert _mark(api_client, world["without_plan"], "maybe").json()["success"] is False
+    assert api_client.post(f"/v1/location/{world['without_plan'].pk}/purgeable/", {}, format="json").json()[
+        "success"] is False
+    assert api_client.post("/v1/location/999999999/purgeable/", {"purgeable": True},
+                           format="json").json()["reason"] == "Location not found"
+    world["without_plan"].refresh_from_db(using=f.DB)
+    assert world["without_plan"].purgeable is None
+
+
+def test_the_location_api_cannot_set_purgeable(world):
+    from progeo.v1.serializers import LocationSerializer
+
+    serializer = LocationSerializer(world["without_plan"], data={"purgeable": True}, partial=True)
+    assert serializer.is_valid()
+    serializer.save()
+    world["without_plan"].refresh_from_db(using=f.DB)
+    assert world["without_plan"].purgeable is None
+
+
+def test_the_map_carries_the_purgeable_flag(api_client, world):
+    ProgeoLocation.objects.using(f.DB).filter(pk=world["without_plan"].pk).update(purgeable=True)
+    api_client.force_authenticate(user=f.make_user(is_superuser=True, staff=True,
+                                                   perms=("module_locations_enabled",)))
+
+    rows = {row["id"]: row for row in api_client.get("/v1/location/map/").json()["locations"]}
+
+    assert rows[world["without_plan"].pk]["purgeable"] is True
+    assert rows[world["with_plan"].pk]["purgeable"] is None

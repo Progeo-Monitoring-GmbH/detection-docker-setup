@@ -17,3 +17,11 @@
 .staff-notifications-facts dd {
   margin-bottom: 0.25rem;
 }
+
+.staff-notifications-switch {
+  color: var(--bs-secondary-color);
+}
+
+.staff-notifications-switch-logic {
+  padding-left: 1.1rem;
+}

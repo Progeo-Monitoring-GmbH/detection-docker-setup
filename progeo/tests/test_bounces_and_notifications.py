@@ -170,7 +170,7 @@ def test_new_alarm_mails_each_alarm_subscriber_separately(site):
 
     assert notifications.notify_alarm(alarm, location, f.DB) == {"mails": 2, "sms": 0, "messenger": 0}
 
-    originals = sorted(m["X-Original-To"] for m in FakeSMTP.parsed())
+    originals = sorted(m["To"] for m in FakeSMTP.parsed())
     assert originals == ["a@progeo.com", "b@progeo.com"]
     message = FakeSMTP.parsed()[0]
     assert "Alarm — Objekt 4711 · Halle Nord" in message["Subject"]

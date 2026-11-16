@@ -376,7 +376,8 @@ def create_progeo_alarm_safe(measurement: ProgeoMeasurement, sensor_id: int | No
 
 def create_email_safe(sent_to: str, message: str, files: str = "", subject: str = "",
 					  location: ProgeoLocation | None = None, sent: bool = False, error: str | None = None,
-					  raw_hash: str | None = None, db: str = "default") -> tuple[EMail | None, bool]:
+					  raw_hash: str | None = None, db: str = "default",
+					  withheld: bool = False) -> tuple[EMail | None, bool]:
 	if not raw_hash:
 		raw_hash = _calc_hash({
 			"sent_to": sent_to,
@@ -398,14 +399,16 @@ def create_email_safe(sent_to: str, message: str, files: str = "", subject: str 
 			"location": location,
 			"sent": sent,
 			"error": error,
+			"withheld": withheld,
 		},
 	)
 	# The same mail sent again (e.g. a retry after a failure) reuses its row -
 	# the latest attempt's outcome must win, not the first one's.
-	if email is not None and not created and (email.sent != sent or email.error != error):
+	if email is not None and not created and (email.sent != sent or email.error != error or email.withheld != withheld):
 		email.sent = sent
 		email.error = error
-		email.save(using=db, update_fields=["sent", "error"])
+		email.withheld = withheld
+		email.save(using=db, update_fields=["sent", "error", "withheld"])
 	return email, created
 
 

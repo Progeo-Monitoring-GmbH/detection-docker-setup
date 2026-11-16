@@ -78,7 +78,7 @@ def _dig(data, *path):
 
 
 def _log_sms(to: str, body: str, sender: str | None, location, db: str, sent: bool,
-             batch_id: str | None = None, error: str | None = None) -> None:
+             batch_id: str | None = None, error: str | None = None, withheld: bool = False) -> None:
     """Store the send attempt as an SMS row. Logging must never break or
     mask the send itself, so failures here are only reported - inside a
     savepoint, so a failed insert doesn't abort the caller's transaction."""
@@ -96,16 +96,20 @@ def _log_sms(to: str, body: str, sender: str | None, location, db: str, sent: bo
                 sent=sent,
                 batch_id=(batch_id or None) and str(batch_id)[:64],
                 error=error,
+                withheld=withheld,
             )
     except Exception as exc:  # noqa: BLE001 - see docstring
         elog(f"Could not log the SMS to {to}: {exc}", tag="[ESENDEX]")
 
 
 def send_sms(to: str, body: str, cfg: dict | None = None, sender: str | None = None,
-             location=None, db: str = "default", category: str = "system") -> dict:
+             location=None, db: str = "default", category: str = "system",
+             bypass_location_switch: bool = False) -> dict:
     """Send one SMS through Esendex and log the attempt as an SMS row.
 
-    The outbound guard runs first (helper/outbound.py): per-recipient and
+    The outbound guard runs first (helper/outbound.py): a `location` whose
+    notifications are disabled holds the SMS back (``"withheld": True``,
+    nothing raised - `bypass_location_switch` skips that check); per-recipient and
     global limits / the circuit breaker raise SmsBlocked, and with
     settings.SMS_DRY_RUN the SMS is only logged, never sent. The text is made
     GSM-7 friendly and cut to OUTBOUND_LIMITS["sms_max_segments"] - SMS cost
@@ -137,6 +141,14 @@ def send_sms(to: str, body: str, cfg: dict | None = None, sender: str | None = N
     body = outbound.sms_text(body)
     recipient = outbound.normalize_phone(to) or str(to).strip()
     effective_sender = sender or _effective_cfg(cfg).get("from") or None
+
+    if not bypass_location_switch and outbound.notifications_withheld(location):
+        ilog(f"SMS to {to} withheld: notifications of location {location.pk} disabled", tag="[ESENDEX]")
+        outbound.log(channel, status.WITHHELD, recipient, category=category, subject=body,
+                     location=location, error=outbound.WITHHELD_ERROR)
+        _log_sms(to, body, effective_sender, location, db, sent=False, error=outbound.WITHHELD_ERROR, withheld=True)
+        return {"success": False, "withheld": True, "to": str(to).strip(), "from": effective_sender,
+                "batch_id": None, "message_ids": []}
 
     _allowed, rejected = outbound.check(channel, [recipient])
     if recipient in rejected:

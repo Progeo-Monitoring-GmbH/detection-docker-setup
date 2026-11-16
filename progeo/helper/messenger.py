@@ -99,7 +99,7 @@ def message_text(body: str) -> str:
 
 
 def _log(service: str, to: str, body: str, sender, location, db: str, sent: bool,
-         message_id: str | None = None, error: str | None = None) -> None:
+         message_id: str | None = None, error: str | None = None, withheld: bool = False) -> None:
     """Store the attempt as an SMS row (channel = service). Like the SMS log
     it must never break or mask the send - failures are only reported."""
     from django.db import transaction
@@ -117,16 +117,19 @@ def _log(service: str, to: str, body: str, sender, location, db: str, sent: bool
                 sent=sent,
                 batch_id=(message_id or None) and str(message_id)[:64],
                 error=error,
+                withheld=withheld,
             )
     except Exception as exc:  # noqa: BLE001 - see docstring
         elog(f"Could not log the {LABELS[service]} message to {to}: {exc}", tag="[MESSENGER]")
 
 
 def send_message(service: str, to: str, body: str, cfg: dict | None = None, location=None,
-                 db: str = "default", category: str = "system") -> dict:
+                 db: str = "default", category: str = "system", bypass_location_switch: bool = False) -> dict:
     """Send one messenger message and log the attempt.
 
-    The outbound guard runs first: limits / the circuit breaker raise
+    The outbound guard runs first: a `location` whose notifications are
+    disabled holds the message back ("withheld": True, nothing raised -
+    `bypass_location_switch` skips that check); limits / the circuit breaker raise
     MessengerBlocked, and with settings.MESSENGER_DRY_RUN the message is only
     logged. `cfg` overrides the stored gateway config (unsaved form values).
 
@@ -151,6 +154,14 @@ def send_message(service: str, to: str, body: str, cfg: dict | None = None, loca
     effective = effective_config(service, cfg)
     sender = None
     subject = f"[{LABELS[service]}] {body}"
+
+    if not bypass_location_switch and outbound.notifications_withheld(location):
+        ilog(f"{LABELS[service]} message to {recipient} withheld: notifications of location {location.pk} disabled",
+             tag="[MESSENGER]")
+        outbound.log(channel, status.WITHHELD, recipient, category=category, subject=subject,
+                     location=location, error=outbound.WITHHELD_ERROR)
+        _log(service, recipient, body, sender, location, db, sent=False, error=outbound.WITHHELD_ERROR, withheld=True)
+        return {"success": False, "withheld": True, "service": service, "to": recipient, "message_id": None}
 
     _allowed, rejected = outbound.check(channel, [recipient])
     if recipient in rejected:

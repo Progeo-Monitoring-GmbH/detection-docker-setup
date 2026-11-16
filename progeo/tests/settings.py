@@ -28,10 +28,8 @@ ALLOWED_HOSTS = [os.getenv("DJANGO_ALLOWED_HOSTS")]
 PRETTY_DATE_FORMAT = "%d.%m.%Y, %H:%M"
 DATETIME_FORMAT = PRETTY_DATE_FORMAT
 
-# Outbound mail / SMS (see progeo/settings.py) - tests always start in the
-# safe modes; tests of the real send path switch them off explicitly.
-MAIL_TEST_MODE = True
-MAIL_TEST_RECIPIENT = "test-mails@progeo.com"
+# Outbound SMS / messenger (see progeo/settings.py) - tests always start in
+# the dry runs; tests of the real send path switch them off explicitly.
 SMS_DRY_RUN = True
 MESSENGER_DRY_RUN = True
 MAIL_ENVELOPE_FROM = ""

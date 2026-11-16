@@ -2,9 +2,12 @@
 SMS (esendex.send_sms) and messenger message (messenger.send_message)
 passes here before anything leaves the box.
 
-  - Test modes (settings.MAIL_TEST_MODE / SMS_DRY_RUN / MESSENGER_DRY_RUN):
-    on unless the env switches them off explicitly - mails go to
-    MAIL_TEST_RECIPIENT, SMS and messenger messages are only logged.
+  - Location switch (ProgeoLocation.notifications_disabled, on by default):
+    everything sent for a location whose notifications are disabled is
+    logged as WITHHELD (and as EMail/SMS row with withheld=True) but never
+    sent - staff switch the locations on one after another.
+  - Test modes (settings.SMS_DRY_RUN / MESSENGER_DRY_RUN): on unless the env
+    switches them off explicitly - SMS and messenger messages are only logged.
   - Limits (settings.OUTBOUND_LIMITS): per recipient per hour/day and global.
     We never mass send: hitting a global limit trips the circuit breaker,
     which blocks ALL sending until staff reset it (StaffMessagingView).
@@ -53,12 +56,23 @@ def limits() -> dict:
     return {**DEFAULT_LIMITS, **(getattr(settings, "OUTBOUND_LIMITS", None) or {})}
 
 
-def mail_test_mode() -> bool:
-    return bool(getattr(settings, "MAIL_TEST_MODE", True))
+WITHHELD_ERROR = "Benachrichtigungen des Objekts deaktiviert - nicht versendet"
 
 
-def mail_test_recipient() -> str:
-    return getattr(settings, "MAIL_TEST_RECIPIENT", "") or "test-mails@progeo.com"
+def notifications_withheld(location) -> bool:
+    """Whether messages for `location` are held back
+    (ProgeoLocation.notifications_disabled). Read from "default" - staff
+    toggle it there and the project databases only mirror it; a location
+    missing in default falls back to the passed instance."""
+    if location is None:
+        return False
+    from progeo.v1.models import ProgeoLocation
+
+    stored = ProgeoLocation.objects.using(DB).filter(pk=getattr(location, "pk", location)).values_list(
+        "notifications_disabled", flat=True).first()
+    if stored is None:
+        stored = getattr(location, "notifications_disabled", False)
+    return bool(stored)
 
 
 def sms_dry_run() -> bool:

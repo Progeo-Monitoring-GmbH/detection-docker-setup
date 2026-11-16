@@ -18,6 +18,10 @@ Staff (is_staff or is_superuser) - the monitoring of the cases:
   POST /v1/notification-case/<pk>/mute/     {days: n | null (until unmuted)}
   POST /v1/notification-case/<pk>/unmute/
   POST /v1/notification-case/<pk>/close/    {text?}
+
+Staff - the location switch (ProgeoLocation.notifications_disabled):
+  GET  /v1/notification-location/?state=disabled|enabled|all
+  POST /v1/notification-location/<pk>/toggle/  {disabled: true|false}
 """
 from datetime import timedelta
 
@@ -34,8 +38,13 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from progeo.authentication import ExpiringTokenAuthentication
 from progeo.helper import notification_cases as cases
-from progeo.helper.basics import RequestFailed, RequestSuccess
-from progeo.v1.models import NotificationCase, NotificationCaseEvent
+from progeo.helper.basics import RequestFailed, RequestSuccess, ilog
+from progeo.v1.models import (
+    NotificationCase,
+    NotificationCaseEvent,
+    OutboundMessage,
+    ProgeoLocation,
+)
 from progeo.v1.viewsets.access_viewset import TokenCheckThrottle
 
 DB = "default"
@@ -222,6 +231,9 @@ class NotificationCaseViewSet(viewsets.ViewSet):
         )
         return RequestSuccess({
             "counts": counts,
+            "locations": location_switch_counts(),
+            "withheld_last_day": OutboundMessage.objects.using(DB).filter(
+                status=OutboundMessage.Status.WITHHELD, created__gte=now - timedelta(days=1)).count(),
             "resolved_last_day": {row["kind"]: row["n"] for row in resolved_today},
             "in_window": cases.in_window(now),
             "baseline_done": cases.baseline_done(),
@@ -285,3 +297,105 @@ class NotificationCaseViewSet(viewsets.ViewSet):
             text = str(text or "").strip()[:2000] or "Manuell geschlossen"
             cases._resolve(case, NotificationCase.Resolution.MANUAL, text, author_id=request.user.pk)
         return RequestSuccess({"case": serialize_case(case, events=True)})
+
+
+# ---------------------------------------------------------------------------- location switch
+
+def location_switch_counts() -> dict:
+    """{"disabled": n, "enabled": n} over the locations in "default"."""
+    rows = dict(
+        ProgeoLocation.objects.using(DB).values("notifications_disabled")
+        .annotate(n=Count("id")).values_list("notifications_disabled", "n")
+    )
+    return {"disabled": rows.get(True, 0), "enabled": rows.get(False, 0)}
+
+
+def _parse_bool(value):
+    if isinstance(value, bool):
+        return value
+    if str(value).strip().lower() in ("1", "true", "yes", "on"):
+        return True
+    if str(value).strip().lower() in ("0", "false", "no", "off"):
+        return False
+    return None
+
+
+def serialize_location(location, open_cases=0, withheld=0):
+    return {
+        "id": location.pk,
+        "name": location.name,
+        "project_id": location.project_id,
+        "city": location.city,
+        "account_name": location.account.name if location.account_id else None,
+        "notifications_disabled": location.notifications_disabled,
+        "open_cases": open_cases,
+        "withheld_last_week": withheld,
+    }
+
+
+class NotificationLocationViewSet(viewsets.ViewSet):
+    """Staff switch the notifications of the locations on one after another
+    (device statistics page). Disabled locations still get their cases,
+    stages and EMail/SMS rows - only nothing leaves (helper/outbound.py)."""
+
+    authentication_classes = [JWTAuthentication, ExpiringTokenAuthentication, SessionAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def list(self, request, *args, **kwargs):
+        denied = NotificationCaseViewSet._denied(request)
+        if denied:
+            return denied
+        state = request.query_params.get("state", "disabled")
+        queryset = ProgeoLocation.objects.using(DB).select_related("account").order_by("project_id", "name", "pk")
+        if state == "disabled":
+            queryset = queryset.filter(notifications_disabled=True)
+        elif state == "enabled":
+            queryset = queryset.filter(notifications_disabled=False)
+        elif state != "all":
+            return RequestFailed({"reason": "state must be disabled, enabled or all"})
+        locations = list(queryset)
+        ids = [location.pk for location in locations]
+        open_cases = dict(
+            NotificationCase.objects.using(DB).filter(state=NotificationCase.State.OPEN, location_id__in=ids)
+            .values("location_id").annotate(n=Count("id")).values_list("location_id", "n")
+        ) if ids else {}
+        withheld = dict(
+            OutboundMessage.objects.using(DB).filter(
+                status=OutboundMessage.Status.WITHHELD, location_id__in=ids,
+                created__gte=timezone.now() - timedelta(days=7),
+            ).values("location_id").annotate(n=Count("id")).values_list("location_id", "n")
+        ) if ids else {}
+        return RequestSuccess({
+            "locations": [
+                serialize_location(location, open_cases.get(location.pk, 0), withheld.get(location.pk, 0))
+                for location in locations
+            ],
+            "counts": location_switch_counts(),
+        })
+
+    @action(detail=True, methods=["POST"])
+    def toggle(self, request, pk=None, *args, **kwargs):
+        denied = NotificationCaseViewSet._denied(request)
+        if denied:
+            return denied
+        try:
+            location = ProgeoLocation.objects.using(DB).select_related("account").filter(pk=int(pk)).first()
+        except (TypeError, ValueError):
+            location = None
+        if location is None:
+            return Response({"success": False, "reason": "Location not found"}, status=404)
+        disabled = _parse_bool(request.data.get("disabled") if isinstance(request.data, dict) else None)
+        if disabled is None:
+            return RequestFailed({"reason": "disabled must be true or false"})
+        if location.notifications_disabled != disabled:
+            location.notifications_disabled = disabled
+            # Saved in default - the post_save signal mirrors it into the project database.
+            location.save(using=DB, update_fields=["notifications_disabled"])
+            text = ("Benachrichtigungen des Objekts deaktiviert" if disabled
+                    else "Benachrichtigungen des Objekts aktiviert")
+            ilog(f"[notifications] {text}: location {location.pk} ({location.name}) by {request.user.username}")
+            for case in NotificationCase.objects.using(DB).filter(
+                    state=NotificationCase.State.OPEN, location_id=location.pk):
+                cases.event(case, NotificationCaseEvent.Kind.SWITCHED, text, {"disabled": disabled},
+                            author_id=request.user.pk)
+        return RequestSuccess({"location": serialize_location(location), "counts": location_switch_counts()})

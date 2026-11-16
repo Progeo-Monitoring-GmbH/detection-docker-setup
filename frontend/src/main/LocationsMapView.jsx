@@ -11,7 +11,14 @@ import {
   ProgressBar,
   Spinner,
 } from 'react-bootstrap';
-import { ArrowsFullscreen, BellFill, BellSlashFill } from 'react-bootstrap-icons';
+import {
+  ArrowCounterclockwise,
+  ArrowsFullscreen,
+  BellFill,
+  BellSlashFill,
+  Trash3,
+  Trash3Fill,
+} from 'react-bootstrap-icons';
 import {
   CircleMarker,
   MapContainer,
@@ -27,7 +34,7 @@ import { useSnackbar } from 'notistack';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
 import { matchesLocationSearch } from '../components/location/locationSearch';
-import { showInfoBar, showRequestError } from '../components/ui/Snackbar.jsx';
+import { showInfoBar, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
 import PillButton from '../components/ui/kit/PillButton';
 import { KeyChip } from '../components/ui/KeyHints';
 import { useWheelHint, WheelZoomHint } from '../components/ui/wheelZoom';
@@ -247,7 +254,27 @@ const STATE_BADGES = [
   { state: 'late_72h', bg: 'warning' },
   { state: 'stale', bg: 'danger' },
   { state: 'no_data', bg: 'secondary' },
+  // Not an age: the locations staff marked for the purge script.
+  { state: 'purgeable', bg: 'light', text: 'dark' },
 ];
+
+/** Staff may mark these states as purgeable (ProgeoLocation.purgeable). */
+const PURGE_CANDIDATE_STATES = new Set(['stale', 'no_data']);
+
+const isPurgeable = (location) => location.purgeable === true;
+
+/** A purgeable location looks switched off: grey, dashed, see-through. */
+const PURGEABLE_MARKER = { fill: '#dee2e6', stroke: '#6c757d' };
+
+const matchesStateFilter = (location, stateFilter) => {
+  if (stateFilter === 'all') {
+    return true;
+  }
+  if (stateFilter === 'purgeable') {
+    return isPurgeable(location);
+  }
+  return ageInfoFromDate(location.last_measurement_at).state === stateFilter;
+};
 
 const STATE_TITLES = {
   fresh_1h: 'Fresh (<=1h)',
@@ -255,6 +282,7 @@ const STATE_TITLES = {
   late_72h: 'Late (<=72h)',
   stale: 'Stale (>72h)',
   no_data: 'No data yet',
+  purgeable: 'Purgeable',
 };
 
 const buildLocationLabel = (location) => {
@@ -289,7 +317,11 @@ const blendHexColor = (fromHex, toHex, t) => {
  * map slow with many locations.
  */
 const LocationMarker = memo(({ location, isHovered, isSelected, flash, onHover, onLeave, onSelect }) => {
+  const { t } = useTranslation();
   const ageInfo = ageInfoFromDate(location.last_measurement_at);
+  const purgeable = isPurgeable(location);
+  const fill = purgeable ? PURGEABLE_MARKER.fill : ageInfo.markerFill;
+  const stroke = purgeable ? PURGEABLE_MARKER.stroke : ageInfo.markerStroke;
   const flashRatio = flash * 0.85;
   const eventHandlers = useMemo(
     () => ({
@@ -305,10 +337,11 @@ const LocationMarker = memo(({ location, isHovered, isSelected, flash, onHover, 
       center={[location.latitude, location.longitude]}
       radius={baseRadius + flash * 2.5}
       pathOptions={{
-        color: isSelected ? '#1d3557' : blendHexColor(ageInfo.markerStroke, '#ffffff', flashRatio),
-        fillColor: blendHexColor(ageInfo.markerFill, '#ffffff', flashRatio),
-        fillOpacity: Math.min(1, (isSelected ? 0.95 : 0.85) + flash * 0.12),
+        color: isSelected ? '#1d3557' : blendHexColor(stroke, '#ffffff', flashRatio),
+        fillColor: blendHexColor(fill, '#ffffff', flashRatio),
+        fillOpacity: purgeable ? 0.45 : Math.min(1, (isSelected ? 0.95 : 0.85) + flash * 0.12),
         weight: (isSelected ? 2 : 1) + flash,
+        dashArray: purgeable ? '2 3' : undefined,
       }}
       eventHandlers={eventHandlers}
     >
@@ -324,6 +357,12 @@ const LocationMarker = memo(({ location, isHovered, isSelected, flash, onHover, 
             {location.mail && <div>Mail: {location.mail}</div>}
             <div>Devices: {location.device_count || 0}</div>
             <div>Last measurement: {ageInfo.label}</div>
+            {purgeable && (
+              <div className="locmap-tooltip-purgeable" {...repeatedTestId('locations-map-tooltip-purgeable', location.id)}>
+                <Trash3Fill size={11} className="me-1" />
+                {t('locmap_purgeable_marked')}
+              </div>
+            )}
           </div>
         </Tooltip>
       )}
@@ -332,23 +371,54 @@ const LocationMarker = memo(({ location, isHovered, isSelected, flash, onHover, 
 });
 LocationMarker.displayName = 'LocationMarker';
 
-/** One location of the list - memoized like LocationMarker. */
-const LocationListItem = memo(({ location, isFocused, onHover, onLeave, onSelect }) => {
+/**
+ * One location of the list - memoized like LocationMarker. Stale and
+ * never-measured locations get a button to mark them purgeable (only the
+ * flag, a later script deletes them); a marked location looks switched off
+ * and can be unmarked. A div, not a button: it holds that button.
+ */
+const LocationListItem = memo(({ location, isFocused, busy, onHover, onLeave, onSelect, onTogglePurgeable }) => {
+  const { t } = useTranslation();
   const ageInfo = ageInfoFromDate(location.last_measurement_at);
   const mapped = hasCoordinates(location);
+  const purgeable = isPurgeable(location);
+  const candidate = purgeable || PURGE_CANDIDATE_STATES.has(ageInfo.state);
+  const classes = ['locmap-list-item'];
+  if (purgeable) {
+    classes.push('locmap-list-item--purgeable');
+  }
   return (
     <ListGroup.Item
+      as="div"
       action
+      role="button"
+      tabIndex={0}
       active={isFocused}
       onMouseEnter={() => onHover(location.id)}
       onMouseLeave={() => onLeave(location.id)}
       onClick={() => onSelect(location.id)}
-      className="locmap-list-item"
+      onKeyDown={(event) => {
+        if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault();
+          onSelect(location.id);
+        }
+      }}
+      className={classes.join(' ')}
       {...repeatedTestId('locations-map-item', location.id)}
     >
       <div className="d-flex justify-content-between align-items-start gap-2">
         <div>
-          <div className="fw-semibold">{buildLocationLabel(location)}</div>
+          <div className="fw-semibold">
+            {purgeable && (
+              <Trash3Fill
+                size={12}
+                className="me-1 locmap-purgeable-icon"
+                title={t('locmap_purgeable_marked')}
+                {...repeatedTestId('locations-map-item-purgeable', location.id)}
+              />
+            )}
+            {buildLocationLabel(location)}
+          </div>
           <div className="small opacity-75">{buildLocationMeta(location) || 'No address data'}</div>
           <div className="small opacity-75">
             {mapped
@@ -357,9 +427,27 @@ const LocationListItem = memo(({ location, isFocused, onHover, onLeave, onSelect
           </div>
           <div className="small opacity-75">Last measurement: {ageInfo.label}</div>
         </div>
-        <Badge bg={mapped ? ageInfo.badge : 'secondary'}>
-          {mapped ? ageInfo.label : location.device_count || 0}
-        </Badge>
+        <div className="d-flex flex-column align-items-end gap-1">
+          <Badge bg={purgeable ? 'light' : mapped ? ageInfo.badge : 'secondary'} text={purgeable ? 'dark' : undefined}>
+            {purgeable ? t('locmap_purgeable_badge') : mapped ? ageInfo.label : location.device_count || 0}
+          </Badge>
+          {candidate && (
+            <button
+              type="button"
+              className="btn btn-sm locmap-purge-button"
+              disabled={busy}
+              title={purgeable ? t('locmap_purgeable_unmark_title') : t('locmap_purgeable_mark_title')}
+              onClick={(event) => {
+                event.stopPropagation();
+                onTogglePurgeable(location);
+              }}
+              {...repeatedTestId('locations-map-purge-toggle', location.id)}
+            >
+              {purgeable ? <ArrowCounterclockwise size={12} className="me-1" /> : <Trash3 size={12} className="me-1" />}
+              {purgeable ? t('locmap_purgeable_unmark') : t('locmap_purgeable_mark')}
+            </button>
+          )}
+        </div>
       </div>
     </ListGroup.Item>
   );
@@ -392,6 +480,8 @@ const LocationsMapView = () => {
   // While the activity chunks load: {done, total} databases.
   const [activityProgress, setActivityProgress] = useState(null);
   const [fitRequest, setFitRequest] = useState(0);
+  // Locations whose purgeable flag is being saved.
+  const [purgeBusy, setPurgeBusy] = useState({});
   const [wheelHint, showWheelHint] = useWheelHint();
   const interactedRef = useRef(false);
   // The websocket handler is set up once - it reads these through refs.
@@ -524,9 +614,7 @@ const LocationsMapView = () => {
   const filteredRows = useMemo(
     () =>
       rows.filter(
-        (location) =>
-          (stateFilter === 'all' || ageInfoFromDate(location.last_measurement_at).state === stateFilter) &&
-          matchesLocationSearch(location, searchText),
+        (location) => matchesStateFilter(location, stateFilter) && matchesLocationSearch(location, searchText),
       ),
     [rows, searchText, stateFilter],
   );
@@ -534,9 +622,12 @@ const LocationsMapView = () => {
   const mappableRows = useMemo(() => filteredRows.filter(hasCoordinates), [filteredRows]);
 
   const stateStats = useMemo(() => {
-    const counts = { fresh_1h: 0, fresh_24h: 0, late_72h: 0, stale: 0, no_data: 0 };
+    const counts = { fresh_1h: 0, fresh_24h: 0, late_72h: 0, stale: 0, no_data: 0, purgeable: 0 };
     rows.forEach((location) => {
       counts[ageInfoFromDate(location.last_measurement_at).state] += 1;
+      if (isPurgeable(location)) {
+        counts.purgeable += 1;
+      }
     });
     return counts;
   }, [rows]);
@@ -559,6 +650,35 @@ const LocationsMapView = () => {
   const markInteracted = useCallback(() => {
     interactedRef.current = true;
   }, []);
+
+  /** Mark / unmark a location as purgeable (unmark = reviewed, kept: false). */
+  const togglePurgeable = useCallback(
+    (location) => {
+      const purgeable = !isPurgeable(location);
+      setPurgeBusy((current) => ({ ...current, [location.id]: true }));
+      void axiosConfig.perform_post(
+        authRef.current,
+        `/v1/location/${location.id}/purgeable/`,
+        { purgeable },
+        (response) => {
+          const saved = response?.data?.location?.purgeable ?? purgeable;
+          setRows((current) => current.map((row) => (row.id === location.id ? { ...row, purgeable: saved } : row)));
+          setPurgeBusy((current) => ({ ...current, [location.id]: false }));
+          showSuccessBar(
+            enqueueSnackbar,
+            t(saved ? 'locmap_purgeable_marked_toast' : 'locmap_purgeable_unmarked_toast', {
+              name: buildLocationLabel(location),
+            }),
+          );
+        },
+        (error) => {
+          setPurgeBusy((current) => ({ ...current, [location.id]: false }));
+          showRequestError(enqueueSnackbar, t('locmap_purgeable_error'), error);
+        },
+      );
+    },
+    [enqueueSnackbar, t],
+  );
 
   const flashOf = (id) => {
     const remaining = (flashMarkers[id] || 0) - flashTick;
@@ -691,6 +811,7 @@ const LocationsMapView = () => {
                       onClick={() => setStateFilter((current) => (current === state ? 'all' : state))}
                       {...repeatedTestId('locations-map-state-count', state)}
                     >
+                      {state === 'purgeable' && <Trash3Fill size={10} className="me-1" />}
                       {state === 'all' ? 'All' : STATE_TITLES[state]}:{' '}
                       {state === 'all' ? rows.length : stateStats[state]}
                     </Badge>
@@ -722,9 +843,11 @@ const LocationsMapView = () => {
                   key={location.id}
                   location={location}
                   isFocused={hoveredId === location.id || selectedId === location.id}
+                  busy={Boolean(purgeBusy[location.id])}
                   onHover={hover}
                   onLeave={leave}
                   onSelect={select}
+                  onTogglePurgeable={togglePurgeable}
                 />
               ))}
               {!filteredRows.length && !loading && (

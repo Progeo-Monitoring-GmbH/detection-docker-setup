@@ -366,7 +366,7 @@ def _send_mail(send_from, send_to, reply_to, subject, message, files,
 
 def _persist_email(sent_to: list, subject: str, message: str, files: list,
                    location=None, sent: bool = False, error: str | None = None,
-                   db: str = "default"):
+                   db: str = "default", withheld: bool = False):
     """Store the mail attempt as an EMail row (linked to a location when given)."""
     from progeo.v1.creator import create_email_safe
 
@@ -378,6 +378,7 @@ def _persist_email(sent_to: list, subject: str, message: str, files: list,
         location=location,
         sent=sent,
         error=error,
+        withheld=withheld,
         db=db,
     )
 
@@ -393,13 +394,16 @@ def _is_hard_refusal(exc_or_code) -> bool:
 def send_mail(sent_to: list, subject: str, message: str, files: list,
               location=None, db: str = "default", html: str | None = None,
               category: str = "system", log_message: str | None = None,
-              case_id: int | None = None, extra_headers: dict | None = None):
+              case_id: int | None = None, extra_headers: dict | None = None,
+              bypass_location_switch: bool = False):
     """Send an (already rendered) email and record it.
 
-    Every mail passes the outbound guard (helper/outbound.py) first: too many
-    recipients, a tripped circuit breaker, suppressed (bounced) addresses and
-    per-recipient/global limits drop recipients; in MAIL_TEST_MODE the mail
-    goes to MAIL_TEST_RECIPIENT with the original recipients in the subject.
+    Every mail passes the outbound guard (helper/outbound.py) first: a
+    `location` whose notifications are disabled holds the mail back (logged
+    as WITHHELD - `bypass_location_switch` skips that, for the staff test
+    notification); too many recipients, a tripped circuit breaker,
+    suppressed (bounced) addresses and per-recipient/global limits drop
+    recipients.
 
     Returns the content hash when sent, None when sending failed / skipped.
     The mail attempt is persisted as an EMail row (with `sent`/`error`
@@ -433,6 +437,15 @@ def send_mail(sent_to: list, subject: str, message: str, files: list,
     if not recipients:
         return None
 
+    if not bypass_location_switch and outbound.notifications_withheld(location):
+        ilog(f"[emailhelper] Notifications of location {location.pk} disabled - '{subject}' withheld")
+        for recipient in recipients:
+            outbound.log(mail, status.WITHHELD, recipient, category=category, subject=subject,
+                         location=location, error=outbound.WITHHELD_ERROR, case_id=case_id)
+        _persist_email(recipients, subject, logged_body, files, location=location, sent=False,
+                       error=outbound.WITHHELD_ERROR, db=db, withheld=True)
+        return None
+
     max_recipients = outbound.limits()["mail_max_recipients"]
     if len(recipients) > max_recipients:
         error = f"Zu viele Empfänger ({len(recipients)} > {max_recipients}) - Mail nicht versendet"
@@ -463,16 +476,11 @@ def send_mail(sent_to: list, subject: str, message: str, files: list,
         return None
 
     headers = {"X-Progeo-Category": category, **(extra_headers or {})}
-    deliver_to, sent_status, sent_subject = allowed, status.SENT, subject
-    if outbound.mail_test_mode():
-        deliver_to = [outbound.mail_test_recipient()]
-        sent_status = status.REDIRECTED
-        sent_subject = f"[TEST an {', '.join(allowed)}] {subject}"
-        headers["X-Original-To"] = ", ".join(allowed)
+    deliver_to = allowed
 
     message_id = new_message_id(sender)
     try:
-        refused = _send_mail(sender, deliver_to, reply_to, sent_subject, message, files, server, port,
+        refused = _send_mail(sender, deliver_to, reply_to, subject, message, files, server, port,
                              username, password, use_tls=True, html=html, message_id=message_id,
                              envelope_from=envelope_sender(cfg), headers=headers)
     except smtplib.SMTPRecipientsRefused as exc:
@@ -482,36 +490,36 @@ def send_mail(sent_to: list, subject: str, message: str, files: list,
         for recipient in allowed:
             outbound.log(mail, status.FAILED, recipient, actual_recipient=", ".join(deliver_to), category=category,
                          subject=subject, message_id=message_id, location=location, error=str(exc), case_id=case_id)
-        _persist_email(allowed, sent_subject, logged_body, files, location=location,
+        _persist_email(allowed, subject, logged_body, files, location=location,
                        sent=False, error=str(exc), db=db)
         return None
 
     refused = {outbound.normalize_address(address): reason for address, reason in (refused or {}).items()}
     accepted = []
-    for recipient, actual in ((r, deliver_to[0] if outbound.mail_test_mode() else r) for r in allowed):
-        reason = refused.get(actual)
+    for recipient in allowed:
+        reason = refused.get(recipient)
         if reason is not None:
             error = f"Vom Server abgelehnt: {reason}"
-            outbound.log(mail, status.FAILED, recipient, actual_recipient=actual, category=category,
+            outbound.log(mail, status.FAILED, recipient, actual_recipient=recipient, category=category,
                          subject=subject, message_id=message_id, location=location, error=error, case_id=case_id)
-            if _is_hard_refusal(reason) and not outbound.mail_test_mode():
+            if _is_hard_refusal(reason):
                 from progeo.helper.bounces import record_bounce
 
                 record_bounce(recipient, hard=True, reason=error)
             continue
         accepted.append(recipient)
-        outbound.log(mail, sent_status, recipient, actual_recipient=actual, category=category,
+        outbound.log(mail, status.SENT, recipient, actual_recipient=recipient, category=category,
                      subject=subject, message_id=message_id, location=location, case_id=case_id)
 
     if not accepted:
-        _persist_email(allowed, sent_subject, logged_body, files, location=location,
+        _persist_email(allowed, subject, logged_body, files, location=location,
                        sent=False, error="Alle Empfänger vom Server abgelehnt", db=db)
         return None
 
-    content = {"sent_to": accepted, "subject": sent_subject, "message": message, "files": files}
+    content = {"sent_to": accepted, "subject": subject, "message": message, "files": files}
     _hash = calc_hash_from_dict(content)
-    _persist_email(accepted, sent_subject, logged_body, files, location=location, sent=True, db=db)
-    dlog(f"Mail was sent to '{deliver_to}' (for {accepted}), hash={_hash}")
+    _persist_email(accepted, subject, logged_body, files, location=location, sent=True, db=db)
+    dlog(f"Mail was sent to {accepted}, hash={_hash}")
     return _hash
 
 
@@ -519,7 +527,8 @@ def send_template_mail(sent_to: list, template_name: str, context: dict | None =
                        files: list | None = None, subject_override: str | None = None,
                        location=None, db: str = "default", category: str = "system",
                        secret_context: dict | None = None, case_id: int | None = None,
-                       extra_headers: dict | None = None, language: str | None = None):
+                       extra_headers: dict | None = None, language: str | None = None,
+                       bypass_location_switch: bool = False):
     """Render `template_name` with `context` and send it (HTML + text) - in
     `language`, by default the recipient's (recipient_language).
 
@@ -536,7 +545,8 @@ def send_template_mail(sent_to: list, template_name: str, context: dict | None =
     return send_mail(sent_to, subject, rendered["text"], files or [], location=location, db=db,
                      html=rendered["html"], category=category,
                      log_message=rendered["log_text"] if secret_context else None,
-                     case_id=case_id, extra_headers=extra_headers)
+                     case_id=case_id, extra_headers=extra_headers,
+                     bypass_location_switch=bypass_location_switch)
 
 
 def send_info_mail(subject: str, message: str):
@@ -549,7 +559,7 @@ def send_info_mail(subject: str, message: str):
 
 def send_breaker_alert(reason: str):
     """Tell the admin the circuit breaker tripped. Bypasses outbound.check()
-    (the breaker blocks everything else) but not the test mode."""
+    (the breaker blocks everything else)."""
     target = os.getenv("DJANGO_SUPERUSER_EMAIL")
     cfg = get_smtp_config()
     if not target or not settings.PROGEO_CONFIG_ENABLE_MAILING or not cfg.get("server") or not cfg.get("sender"):
@@ -558,7 +568,7 @@ def send_breaker_alert(reason: str):
     rendered = render_mail("breaker_alert", {"reason": reason, "staff_url": portal_url("/staff/")})
     if not rendered:
         return None
-    deliver_to = [outbound.mail_test_recipient()] if outbound.mail_test_mode() else [target]
+    deliver_to = [target]
     try:
         port = int(cfg.get("port") or 587)
     except (TypeError, ValueError):

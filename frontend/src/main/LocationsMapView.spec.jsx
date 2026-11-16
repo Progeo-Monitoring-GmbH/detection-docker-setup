@@ -7,6 +7,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const hooks = vi.hoisted(() => ({
   get: vi.fn(),
+  post: vi.fn(),
   enqueue: vi.fn(),
   sockets: [],
   map: null,
@@ -25,7 +26,10 @@ vi.mock('react-leaflet', () => ({
   useMap: () => hooks.map,
 }));
 vi.mock('../axiosConfig', () => ({
-  default: { perform_get: (_auth, url, onSuccess) => hooks.get(url, onSuccess) },
+  default: {
+    perform_get: (_auth, url, onSuccess) => hooks.get(url, onSuccess),
+    perform_post: (_auth, url, body, onSuccess, onError) => hooks.post(url, body, onSuccess, onError),
+  },
 }));
 vi.mock('../../hooks/CoreAuthProvider', () => ({ useAuth: () => ({}) }));
 vi.mock('notistack', () => ({ useSnackbar: () => ({ enqueueSnackbar: hooks.enqueue }) }));
@@ -98,6 +102,7 @@ beforeEach(() => {
   hooks.map = fakeMap();
   hooks.sockets.length = 0;
   hooks.get.mockReset();
+  hooks.post.mockReset();
   hooks.enqueue.mockReset();
   window.localStorage.clear();
   vi.stubGlobal('WebSocket', FakeSocket);
@@ -261,5 +266,81 @@ describe('LocationsMapView', () => {
       byTestId('locations-map-show-all').click();
     });
     expect(hooks.map.fitBounds.mock.calls.length).toBe(fits + 1);
+  });
+
+  describe('purgeable', () => {
+    const OLD = new Date(Date.now() - 10 * 24 * 3600 * 1000).toISOString();
+    // 1: fresh, 2: no data yet, 3: stale, 4: stale and already marked.
+    const PURGE_PLAN = {
+      locations: [
+        ...LOCATIONS,
+        { id: 3, project_id: 4713, name: 'Alt', latitude: 52.3, longitude: 9.3 },
+        { id: 4, project_id: 4714, name: 'Weg', latitude: 53.4, longitude: 10.4, purgeable: true },
+      ],
+      chunks: 0,
+      databases: 1,
+      activity: { 1: [2, new Date().toISOString()], 3: [1, OLD], 4: [1, OLD] },
+    };
+    const toggle = (id) =>
+      container.querySelector(`[data-testid="locations-map-purge-toggle"][data-test-key="${id}"]`);
+    const item = (id) => container.querySelector(`[data-testid="locations-map-item"][data-test-key="${id}"]`);
+    const badge = (state) =>
+      container.querySelector(`[data-testid="locations-map-state-count"][data-test-key="${state}"]`);
+
+    it('offers the mark only for stale and never-measured locations', async () => {
+      await render(PURGE_PLAN);
+
+      expect(toggle(1)).toBeNull();
+      expect(toggle(2).textContent).toBe('locmap_purgeable_mark');
+      expect(toggle(3).textContent).toBe('locmap_purgeable_mark');
+      expect(toggle(4).textContent).toBe('locmap_purgeable_unmark');
+      expect(item(4).className).toContain('locmap-list-item--purgeable');
+      expect(item(3).className).not.toContain('locmap-list-item--purgeable');
+      expect(badge('purgeable').textContent).toContain(': 1');
+    });
+
+    it('marks a location without selecting it, and the purgeable badge filters', async () => {
+      hooks.post.mockImplementation((url, body, onSuccess) =>
+        onSuccess({ data: { location: { id: 3, purgeable: body.purgeable } } }),
+      );
+      await render(PURGE_PLAN);
+
+      await act(async () => {
+        toggle(3).click();
+      });
+
+      expect(hooks.post).toHaveBeenCalledWith('/v1/location/3/purgeable/', { purgeable: true }, expect.any(Function), expect.any(Function));
+      expect(item(3).className).toContain('locmap-list-item--purgeable');
+      expect(item(3).className).not.toContain('active');
+      expect(badge('purgeable').textContent).toContain(': 2');
+
+      await act(async () => {
+        badge('purgeable').click();
+      });
+      const listed = [...container.querySelectorAll('[data-testid="locations-map-item"]')].map((el) =>
+        el.getAttribute('data-test-key'),
+      );
+      expect(listed).toEqual(['3', '4']);
+    });
+
+    it('unmarks as kept (false) and keeps the flag when saving fails', async () => {
+      hooks.post.mockImplementationOnce((url, body, onSuccess) =>
+        onSuccess({ data: { location: { id: 4, purgeable: false } } }),
+      );
+      await render(PURGE_PLAN);
+
+      await act(async () => {
+        toggle(4).click();
+      });
+      expect(hooks.post.mock.calls[0][1]).toEqual({ purgeable: false });
+      expect(item(4).className).not.toContain('locmap-list-item--purgeable');
+
+      hooks.post.mockImplementationOnce((url, body, onSuccess, onError) => onError(new Error('nope')));
+      await act(async () => {
+        toggle(2).click();
+      });
+      expect(item(2).className).not.toContain('locmap-list-item--purgeable');
+      expect(toggle(2).disabled).toBe(false);
+    });
   });
 });

@@ -1,12 +1,19 @@
-"""Outbound guard (helper/outbound.py) and the mail format: test modes that
-cannot be bypassed, limits, circuit breaker, suppression list, HTML layout,
-redacted one-time links, GSM-7 SMS text."""
+"""Outbound guard (helper/outbound.py) and the mail format: the location
+switch (notifications_disabled), the SMS dry run, limits, circuit breaker,
+suppression list, HTML layout, redacted one-time links, GSM-7 SMS text."""
 import pytest
 
-from progeo.helper import emailhelper, esendex, outbound
+from progeo.helper import emailhelper, esendex, messenger, outbound
 from progeo.tests import factories as f
 from progeo.tests.mailfakes import SMTP, FakeSMTP, body_of, fake_smtp  # noqa: F401
-from progeo.v1.models import SMS, EMail, EmailSuppression, OutboundMessage, SystemConfig
+from progeo.v1.models import (
+    SMS,
+    EMail,
+    EmailSuppression,
+    OutboundMessage,
+    ProgeoLocation,
+    SystemConfig,
+)
 
 pytestmark = pytest.mark.usefixtures("fake_smtp")
 
@@ -15,30 +22,102 @@ def _log(**filters):
     return list(OutboundMessage.objects.using(f.DB).filter(**filters).order_by("id"))
 
 
-# -- test modes ----------------------------------------------------------------
+# -- location switch -----------------------------------------------------------
 
-def test_test_mode_redirects_every_mail_to_the_test_recipient():
-    subject = f.unique("redirect")
+def test_new_locations_start_with_notifications_disabled():
+    assert ProgeoLocation().notifications_disabled is True
 
-    assert emailhelper.send_mail(["Kunde@Example.org", "b@progeo.com"], subject, "Hallo", [])
+
+def test_mails_go_to_the_real_recipients():
+    subject = f.unique("live")
+
+    assert emailhelper.send_mail(["Kunde@progeo.com", "b@progeo.com"], subject, "Hallo", [])
 
     [mail] = FakeSMTP.sent
-    assert mail["to"] == ["test-mails@progeo.com"]
+    assert mail["to"] == ["kunde@progeo.com", "b@progeo.com"]
     [message] = FakeSMTP.parsed()
-    assert message["Subject"] == f"[TEST an kunde@example.org, b@progeo.com] {subject}"
-    assert message["X-Original-To"] == "kunde@example.org, b@progeo.com"
-    rows = _log(subject=subject)
-    assert [(r.recipient, r.actual_recipient, r.status) for r in rows] == [
-        ("kunde@example.org", "test-mails@progeo.com", "redirected"),
-        ("b@progeo.com", "test-mails@progeo.com", "redirected"),
+    assert message["Subject"] == subject and message["X-Original-To"] is None
+    assert [(r.recipient, r.actual_recipient, r.status) for r in _log(subject=subject)] == [
+        ("kunde@progeo.com", "kunde@progeo.com", "sent"),
+        ("b@progeo.com", "b@progeo.com", "sent"),
     ]
 
 
-def test_template_mails_are_redirected_too():
-    emailhelper.send_template_mail(["kunde@progeo.com"], "test_leakage", {"project_nr": 1, "project_name": "X"})
+def test_mail_of_a_disabled_location_is_created_but_withheld():
+    location = f.make_location(f.make_account(), notifications_disabled=True)
+    subject = f.unique("withheld")
 
-    assert FakeSMTP.sent[0]["to"] == ["test-mails@progeo.com"]
+    assert emailhelper.send_mail(["kunde@progeo.com"], subject, "Alarm", [], location=location,
+                                 category="alarm", case_id=17) is None
 
+    assert FakeSMTP.sent == []
+    [row] = _log(subject=subject)
+    assert (row.status, row.location_id, row.case_id, row.error) == (
+        "withheld", location.pk, 17, outbound.WITHHELD_ERROR)
+    stored = EMail.objects.using(f.DB).get(subject=subject)
+    assert (stored.sent, stored.withheld, stored.location_id) == (False, True, location.pk)
+
+
+def test_withheld_mails_do_not_count_against_the_limits(settings):
+    settings.OUTBOUND_LIMITS = {**settings.OUTBOUND_LIMITS, "mail_per_recipient_hour": 1}
+    location = f.make_location(f.make_account(), notifications_disabled=True)
+    for _ in range(3):
+        emailhelper.send_mail(["kunde@progeo.com"], f.unique("held"), "x", [], location=location)
+
+    assert emailhelper.send_mail(["kunde@progeo.com"], f.unique("real"), "x", [])
+
+
+def test_the_switch_is_read_from_the_database_not_the_passed_instance():
+    location = f.make_location(f.make_account(), notifications_disabled=True)
+    location.notifications_disabled = False  # stale instance, e.g. a project db copy
+
+    assert emailhelper.send_mail(["kunde@progeo.com"], f.unique("stale"), "x", [], location=location) is None
+    assert FakeSMTP.sent == []
+
+
+def test_enabled_location_sends_and_a_resend_clears_the_withheld_row():
+    location = f.make_location(f.make_account(), notifications_disabled=True)
+    subject = f.unique("same")
+    args = (["kunde@progeo.com"], subject, "Same body", [])
+    emailhelper.send_mail(*args, location=location)
+
+    ProgeoLocation.objects.using(f.DB).filter(pk=location.pk).update(notifications_disabled=False)
+    assert emailhelper.send_mail(*args, location=location)
+
+    assert len(FakeSMTP.sent) == 1
+    stored = EMail.objects.using(f.DB).get(subject=subject)
+    assert (stored.sent, stored.withheld, stored.error) == (True, False, None)
+
+
+def test_bypass_sends_for_a_disabled_location():
+    location = f.make_location(f.make_account(), notifications_disabled=True)
+
+    assert emailhelper.send_template_mail(["kunde@progeo.com"], "test_leakage", {"project_nr": 1, "project_name": "X"},
+                                          location=location, category="test", bypass_location_switch=True)
+    assert FakeSMTP.sent[0]["to"] == ["kunde@progeo.com"]
+
+
+def test_sms_and_messenger_of_a_disabled_location_are_withheld_without_raising():
+    location = f.make_location(f.make_account(), notifications_disabled=True)
+
+    sms = esendex.send_sms("+49 151 123", "Alarm", location=location, db=f.DB, category="alarm")
+    chat = messenger.send_message("signal", "+49 151 123", "Alarm", location=location, db=f.DB, category="alarm")
+
+    assert sms["withheld"] is True and chat["withheld"] is True
+    rows = SMS.objects.using(f.DB).filter(location=location)
+    assert {(row.channel, row.sent, row.withheld) for row in rows} == {("sms", False, True), ("signal", False, True)}
+    assert {(r.channel, r.status) for r in _log(location_id=location.pk)} == {
+        ("sms", "withheld"), ("messenger", "withheld")}
+
+
+def test_system_mails_without_a_location_are_never_withheld():
+    f.make_location(f.make_account(), notifications_disabled=True)
+
+    assert emailhelper.send_template_mail(["kunde@progeo.com"], "test_leakage", {"project_nr": 1, "project_name": "X"})
+    assert FakeSMTP.sent[0]["to"] == ["kunde@progeo.com"]
+
+
+# -- test modes ----------------------------------------------------------------
 
 def test_sms_dry_run_logs_but_never_calls_esendex():
     location = f.make_location(f.make_account())
@@ -52,15 +131,15 @@ def test_sms_dry_run_logs_but_never_calls_esendex():
     assert (logged.recipient, logged.status, logged.category) == ("+49151123", "dry_run", "alarm")
 
 
-def test_safe_modes_are_on_unless_the_env_switches_them_off():
+def test_dry_runs_are_on_unless_the_env_switches_them_off_and_mail_test_mode_is_gone():
     # Static check - re-importing progeo.settings would re-init Sentry.
     from pathlib import Path
 
     source = (Path(emailhelper.__file__).resolve().parent.parent / "settings.py").read_text(encoding="utf-8")
 
-    assert 'MAIL_TEST_MODE = parse_boolean(os.getenv("MAIL_TEST_MODE", "1"))' in source
     assert 'SMS_DRY_RUN = parse_boolean(os.getenv("SMS_DRY_RUN", "1"))' in source
-    assert '(os.getenv("MAIL_TEST_RECIPIENT") or "test-mails@progeo.com")' in source
+    assert 'MESSENGER_DRY_RUN = parse_boolean(os.getenv("MESSENGER_DRY_RUN", "1"))' in source
+    assert "MAIL_TEST_MODE" not in source and "MAIL_TEST_RECIPIENT" not in source
 
 
 # -- limits / breaker / suppression -------------------------------------------
@@ -110,7 +189,6 @@ def test_global_limit_trips_the_breaker_until_reset(settings):
 
 def test_breaker_alert_reaches_the_admin_once(settings, monkeypatch):
     monkeypatch.setenv("DJANGO_SUPERUSER_EMAIL", "admin@progeo.com")
-    settings.MAIL_TEST_MODE = False
     settings.OUTBOUND_LIMITS = {**settings.OUTBOUND_LIMITS, "mail_global_hour": 1}
 
     emailhelper.send_mail(["a@progeo.com"], f.unique("g"), "x", [])
@@ -137,13 +215,12 @@ def test_suppressed_address_gets_nothing():
     assert emailhelper.send_mail(["dead@progeo.com", "ok@progeo.com"], subject, "x", [])
 
     assert {(r.recipient, r.status) for r in _log(subject=subject)} == {
-        ("dead@progeo.com", "suppressed"), ("ok@progeo.com", "redirected"),
+        ("dead@progeo.com", "suppressed"), ("ok@progeo.com", "sent"),
     }
-    assert "dead@progeo.com" not in FakeSMTP.parsed()[0]["Subject"]
+    assert FakeSMTP.sent[0]["to"] == ["ok@progeo.com"]
 
 
-def test_smtp_refusal_550_suppresses_the_address(settings):
-    settings.MAIL_TEST_MODE = False
+def test_smtp_refusal_550_suppresses_the_address():
     FakeSMTP.refuse = {"gone@progeo.com": (550, b"5.1.1 User unknown")}
 
     emailhelper.send_mail(["gone@progeo.com", "ok@progeo.com"], f.unique("refused"), "x", [])

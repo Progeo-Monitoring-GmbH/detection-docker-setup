@@ -303,6 +303,8 @@ class LocationSerializer(ProgeoBaseSerializer):
     class Meta:
         model = ProgeoLocation
         fields = "__all__"
+        # Staff only: /v1/notification-location/<pk>/toggle/ and /v1/location/<pk>/purgeable/.
+        read_only_fields = ("notifications_disabled", "purgeable")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
