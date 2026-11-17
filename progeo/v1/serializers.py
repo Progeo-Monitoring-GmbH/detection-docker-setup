@@ -302,7 +302,8 @@ class LocationSerializer(ProgeoBaseSerializer):
 
     class Meta:
         model = ProgeoLocation
-        fields = "__all__"
+        # The readiness checklist is staff-only: /v1/location/<pk>/readiness/.
+        exclude = ("readiness_score", "readiness_checks", "readiness_at")
         # Staff only: /v1/notification-location/<pk>/toggle/ and /v1/location/<pk>/purgeable/.
         read_only_fields = ("notifications_disabled", "purgeable")
 

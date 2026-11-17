@@ -1,0 +1,147 @@
+/* The readiness checklist of a location (LocationChecklistView.tsx). Panels,
+   pills and tables: components/ui/kit/kit.css; the score badge:
+   components/location/locationFlags.css. */
+
+.location-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.checklist-picker {
+  max-width: 560px;
+}
+
+/* -- summary ------------------------------------------------------------------- */
+
+.checklist-summary {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.checklist-score {
+  font-size: 2.6rem;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.checklist-score-max {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--bs-secondary-color);
+}
+
+.checklist-score--ready {
+  color: var(--bs-success-text-emphasis);
+}
+
+.checklist-score--almost {
+  color: var(--bs-info-text-emphasis);
+}
+
+.checklist-score--progress {
+  color: var(--bs-warning-text-emphasis);
+}
+
+.checklist-score--open {
+  color: var(--bs-danger-text-emphasis);
+}
+
+.checklist-summary-text {
+  flex: 1 1 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.checklist-progress {
+  height: 0.5rem;
+  max-width: 420px;
+}
+
+/* -- the checks ---------------------------------------------------------------- */
+
+.checklist-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.checklist-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--bs-border-color-translucent);
+}
+
+.checklist-item:last-child {
+  border-bottom: 0;
+}
+
+.checklist-item--na {
+  opacity: 0.65;
+}
+
+.checklist-icon {
+  flex: 0 0 auto;
+  margin-top: 0.2rem;
+}
+
+.checklist-icon--pass {
+  color: var(--bs-success);
+}
+
+.checklist-icon--fail {
+  color: var(--bs-danger);
+}
+
+.checklist-icon--na {
+  color: var(--bs-secondary-color);
+}
+
+.checklist-item-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.checklist-item-title {
+  font-weight: 500;
+}
+
+.checklist-optional {
+  margin-left: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--bs-secondary-color);
+  text-transform: lowercase;
+}
+
+/* The check's weight in the score - discreet, right-aligned. */
+.checklist-weight {
+  float: right;
+  font-size: 0.72rem;
+  color: var(--bs-secondary-color);
+  font-variant-numeric: tabular-nums;
+}
+
+.checklist-weight::before {
+  content: '×';
+  margin-right: 0.1em;
+}
+
+.checklist-detail {
+  font-size: 0.85rem;
+  color: var(--bs-secondary-color);
+  overflow-wrap: anywhere;
+}
+
+/* -- overview ------------------------------------------------------------------ */
+
+.checklist-open {
+  font-size: 0.8rem;
+  color: var(--bs-secondary-color);
+  white-space: normal;
+}

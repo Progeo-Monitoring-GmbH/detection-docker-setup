@@ -87,6 +87,12 @@ celery_instance.conf.beat_schedule = {
         # Size + measurement count of every project database onto its locations.
         "schedule": crontab(hour=3, minute=15),
     },
+    "refresh-location-readiness-daily": {
+        "task": "progeo.tasks.refresh_location_readiness",
+        # The checklist score of every location (/checklist/location/) - after
+        # the project db stats, clear of the 03:15 run.
+        "schedule": crontab(hour=3, minute=45),
+    },
     "ensure-measurement-partitions-monthly": {
         "task": "progeo.tasks.ensure_measurement_partitions",
         # Current + next year's measurement partition in every project database.

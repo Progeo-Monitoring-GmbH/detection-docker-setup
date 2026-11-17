@@ -623,8 +623,8 @@ const DeviceListView = () => {
               <Sliders size={14} />
             </button>
           )}
-          {/* Sensors are placed in the Lageplan wizard (superuser-only). */}
-          {canEdit && isSuperuser && device.location && (
+          {/* Sensors are placed in the Lageplan wizard (staff, access.ts). */}
+          {isStaff && device.location && (
             <button
               type="button"
               title={t('devices_action_editor')}

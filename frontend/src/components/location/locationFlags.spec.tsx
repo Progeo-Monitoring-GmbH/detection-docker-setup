@@ -29,9 +29,15 @@ vi.mock('react-i18next', async (importOriginal) => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-const { useLocationFlags, setLocationFlags, resetLocationFlags, isLocationOff, LocationFlagIcons } = await import(
-  './locationFlags'
-);
+const {
+  useLocationFlags,
+  setLocationFlags,
+  resetLocationFlags,
+  isLocationOff,
+  LocationFlagIcons,
+  ReadinessBadge,
+  readinessLevel,
+} = await import('./locationFlags');
 
 let container: HTMLDivElement;
 let root: Root;
@@ -114,6 +120,20 @@ describe('useLocationFlags', () => {
     expect(container.querySelector('[aria-label="location_flag_purgeable"]')).not.toBeNull();
   });
 
+  it('shows the readiness score as a badge next to the name, also for a location switched on', async () => {
+    await render(<Probe ids={[2]} name="a" />);
+    expect(container.querySelector('[data-testid="readiness-badge"]')).toBeNull();
+
+    await act(async () => setLocationFlags(2, { readiness_score: 85 }));
+
+    const badge = container.querySelector('[data-testid="readiness-badge"]')!;
+    expect(badge.textContent).toBe('85');
+    expect(badge.className).toContain('readiness-badge--almost');
+    // No router in this test: a plain badge, no link.
+    expect(badge.tagName).toBe('SPAN');
+    expect(offOf('a')[2]).toBe('false');
+  });
+
   it('shows nothing and asks nothing for non-staff users', async () => {
     hooks.auth = { user: {} };
     await render(<Probe ids={[1, 4]} name="a" />);
@@ -121,6 +141,29 @@ describe('useLocationFlags', () => {
     expect(api.get).not.toHaveBeenCalled();
     expect(offOf('a')).toEqual({ 1: 'false', 4: 'false' });
     expect(container.querySelector('[data-testid="location-flag-icons"]')).toBeNull();
+  });
+});
+
+describe('readinessLevel', () => {
+  it('matches the backend levels', () => {
+    expect([100, 99, 80, 79, 50, 49, 0].map(readinessLevel)).toEqual([
+      'ready', 'almost', 'almost', 'progress', 'progress', 'open', 'open',
+    ]);
+  });
+});
+
+describe('ReadinessBadge', () => {
+  it('links to the checklist inside a router', async () => {
+    const { MemoryRouter } = await import('react-router');
+    await render(
+      <MemoryRouter>
+        <ReadinessBadge score={42} locationId={7} testKey="x" />
+      </MemoryRouter>,
+    );
+
+    const badge = container.querySelector('[data-testid="readiness-badge"]')!;
+    expect(badge.getAttribute('href')).toBe('/checklist/location/?location=7');
+    expect(badge.className).toContain('readiness-badge--open');
   });
 });
 

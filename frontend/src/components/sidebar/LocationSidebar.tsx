@@ -13,6 +13,7 @@ import {
   GraphUp,
   Hdd,
   Layers,
+  ListCheck,
   People,
   Plug,
   Terminal,
@@ -158,6 +159,15 @@ const LocationSidebar = ({
       icon: GraphUp,
       to: '/device/statistics/',
       visible: can(routeRule('/device/statistics/')),
+    },
+    {
+      // Staff: "is the location ready?" - its checklist and score.
+      key: 'checklist',
+      label: t('sidebar_checklist'),
+      icon: ListCheck,
+      to: '/checklist/location/',
+      visible: can(routeRule('/checklist/location/')),
+      carriesLocation: true,
     },
     {
       key: 'alarms',

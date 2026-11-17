@@ -452,8 +452,8 @@ def test_staff_read_the_switched_off_flags_of_locations(api_client, world):
     flags = api_client.get(f"/v1/location/flags/?ids={ids}").json()["flags"]
 
     assert flags == {
-        str(world["with_plan"].pk): {"notifications_disabled": True, "purgeable": None},
-        str(world["without_plan"].pk): {"notifications_disabled": False, "purgeable": True},
+        str(world["with_plan"].pk): {"notifications_disabled": True, "purgeable": None, "readiness_score": None},
+        str(world["without_plan"].pk): {"notifications_disabled": False, "purgeable": True, "readiness_score": None},
     }
     assert api_client.get("/v1/location/flags/?ids=x").json()["success"] is False
     too_many = ",".join(str(pk) for pk in range(1, 502))

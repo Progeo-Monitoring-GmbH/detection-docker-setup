@@ -64,6 +64,8 @@ export const APP_ROUTE_ACCESS = {
   '/device/:id/update/': ANY_USER,
   // Opened from the device overview.
   '/device/statistics/': allOf(STAFF, permission('module_devices_enabled')),
+  // "Is the location ready?" - the readiness checklist (staff, like its endpoints).
+  '/checklist/location/': STAFF,
   '/admin/panel/': SUPERUSER,
   '/staff/': STAFF,
   // Database usage and user activity (main/staff/).
@@ -74,8 +76,8 @@ export const APP_ROUTE_ACCESS = {
   '/escalations/': STAFF,
   '/escalations/:id': STAFF,
   '/backup/:account/overview/': permission('module_backup_enabled'),
-  '/lageplan/wizard/': SUPERUSER,
-  '/map/': SUPERUSER,
+  '/lageplan/wizard/': STAFF,
+  '/map/': STAFF,
   // Object management - ProGeo-Admins (roleModel: superusers).
   '/verwaltung/': SUPERUSER,
   '/anlegen/': SUPERUSER,

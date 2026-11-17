@@ -14,8 +14,47 @@
 
 .location-flag-icons {
   display: inline-flex;
+  align-items: center;
   gap: 0.2rem;
   margin-right: 0.3rem;
   color: var(--bs-secondary-color);
   vertical-align: -1px;
+}
+
+/* The readiness score (staff, /checklist/location/) - coloured by level. */
+.readiness-badge {
+  display: inline-block;
+  min-width: 1.9em;
+  padding: 0 0.3em;
+  border-radius: 0.6em;
+  font-size: 0.72em;
+  font-weight: 600;
+  line-height: 1.45;
+  text-align: center;
+  text-decoration: none;
+  font-variant-numeric: tabular-nums;
+}
+
+a.readiness-badge:hover {
+  text-decoration: underline;
+}
+
+.readiness-badge--ready {
+  color: var(--bs-success-text-emphasis);
+  background-color: var(--bs-success-bg-subtle);
+}
+
+.readiness-badge--almost {
+  color: var(--bs-info-text-emphasis);
+  background-color: var(--bs-info-bg-subtle);
+}
+
+.readiness-badge--progress {
+  color: var(--bs-warning-text-emphasis);
+  background-color: var(--bs-warning-bg-subtle);
+}
+
+.readiness-badge--open {
+  color: var(--bs-danger-text-emphasis);
+  background-color: var(--bs-danger-bg-subtle);
 }

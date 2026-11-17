@@ -6,6 +6,7 @@ import 'react-bootstrap-typeahead/css/Typeahead.bs5.css';
 import { useTranslation } from 'react-i18next';
 import { getProjectTypeLabel } from '../../main/projectType';
 import { childTestId, repeatedTestId } from '../../testIds';
+import { ReadinessBadge } from './locationFlags';
 import {
   locationAddressLine,
   locationLabel,
@@ -17,6 +18,8 @@ import {
  * project_type is the choice value or an already resolved label. */
 export type PickableLocation = SearchableLocation & {
   project_type?: number | string | null;
+  /** Staff only (/v1/location/min/): the checklist score, 0-100. */
+  readiness_score?: number | null;
 };
 
 type LocationPickerProps<T extends PickableLocation> = {
@@ -97,6 +100,11 @@ const LocationPicker = <T extends PickableLocation>({
               {...repeatedTestId(`${testId}-option`, location.id ?? locationLabel(location))}
             >
               <span className="text-truncate">
+                <ReadinessBadge
+                  score={location.readiness_score}
+                  testKey={location.id ?? locationLabel(location)}
+                  className="me-1"
+                />
                 <strong>
                   {location.name || location.address || 'Location'}
                 </strong>

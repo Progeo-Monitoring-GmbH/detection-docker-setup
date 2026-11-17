@@ -1,5 +1,6 @@
-import { useEffect, useSyncExternalStore } from 'react';
+import { useEffect, useSyncExternalStore, type MouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link, useInRouterContext } from 'react-router';
 import { BellSlashFill, Trash3Fill } from 'react-bootstrap-icons';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import axiosConfig from '../../axiosConfig';
@@ -17,11 +18,27 @@ import './locationFlags.css';
  * The flags come from one store: GET /v1/location/flags/?ids=... (batched,
  * once per id) - and every toggle (notification switch, purge mark) writes
  * its new value here, so all tables follow at once.
+ *
+ * The same store carries the readiness score (0-100, the checklist of
+ * /checklist/location/): LocationFlagIcons shows it next to the name as a
+ * badge linking to the checklist.
  */
 export type LocationFlags = {
+  /** The location - set by the store (the badge links to its checklist). */
+  id?: number;
   notifications_disabled: boolean | null;
   purgeable: boolean | null;
+  /** 0-100, null: never checked. */
+  readiness_score?: number | null;
 };
+
+export type ReadinessLevel = 'ready' | 'almost' | 'progress' | 'open';
+
+/** Like the backend's location_readiness.LEVELS. */
+export const readinessLevel = (score: number): ReadinessLevel =>
+  score >= 100 ? 'ready' : score >= 80 ? 'almost' : score >= 50 ? 'progress' : 'open';
+
+export const checklistPath = (locationId: number) => `/checklist/location/?location=${locationId}`;
 
 export const LOCATION_OFF_CLASS = 'location-row-off';
 
@@ -69,7 +86,7 @@ const flush = () => {
         const flags = (response?.data?.flags ?? {}) as Record<string, LocationFlags>;
         batch.forEach((id) => {
           if (!store.has(id)) {
-            store.set(id, flags[String(id)] ?? { notifications_disabled: null, purgeable: null });
+            store.set(id, { id, ...(flags[String(id)] ?? { notifications_disabled: null, purgeable: null }) });
           }
         });
         notify();
@@ -93,7 +110,7 @@ const request = (auth: Auth, ids: number[]) => {
 /** A flag changed on the page (a toggle answered): every table follows. */
 export const setLocationFlags = (id: number, patch: Partial<LocationFlags>) => {
   const current = store.get(id) ?? { notifications_disabled: null, purgeable: null };
-  store.set(id, { ...current, ...patch });
+  store.set(id, { ...current, ...patch, id });
   requested.add(id);
   notify();
 };
@@ -151,14 +168,56 @@ export const locationOffRowStyle = <T,>(isOff: (row: T) => boolean) => ({
   classNames: [LOCATION_OFF_CLASS],
 });
 
-/** The icons of a switched-off location (none otherwise) - next to its name. */
+// The badge sits in clickable rows - opening the checklist must not also
+// select the row.
+const stopRowClick = (event: MouseEvent) => event.stopPropagation();
+
+/**
+ * The readiness score as a small coloured badge (nothing while unknown) -
+ * a link to the location's checklist when `locationId` is given and the
+ * page has a router.
+ */
+export const ReadinessBadge = ({
+  score,
+  locationId,
+  testKey,
+  className,
+}: {
+  score: number | null | undefined;
+  locationId?: number | null;
+  testKey: string | number;
+  className?: string;
+}) => {
+  const { t } = useTranslation();
+  const inRouter = useInRouterContext();
+  if (score == null) {
+    return null;
+  }
+  const props = {
+    className: ['readiness-badge', `readiness-badge--${readinessLevel(score)}`, className].filter(Boolean).join(' '),
+    title: t('readiness_badge_title', { score }),
+    'aria-label': t('readiness_badge_title', { score }),
+    ...repeatedTestId('readiness-badge', testKey),
+  };
+  return inRouter && locationId != null ? (
+    <Link to={checklistPath(locationId)} onClick={stopRowClick} {...props}>
+      {score}
+    </Link>
+  ) : (
+    <span {...props}>{score}</span>
+  );
+};
+
+/** The readiness score (staff) and the icons of a switched-off location - next to its name. */
 export const LocationFlagIcons = ({ flags, testKey }: { flags: LocationFlags | null; testKey: string | number }) => {
   const { t } = useTranslation();
-  if (!isLocationOff(flags)) {
+  const score = flags?.readiness_score ?? null;
+  if (!isLocationOff(flags) && score == null) {
     return null;
   }
   return (
     <span className="location-flag-icons" {...repeatedTestId('location-flag-icons', testKey)}>
+      <ReadinessBadge score={score} locationId={flags?.id} testKey={testKey} />
       {flags?.notifications_disabled === true && (
         <BellSlashFill size={11} title={t('location_flag_notifications_off')} aria-label={t('location_flag_notifications_off')} />
       )}

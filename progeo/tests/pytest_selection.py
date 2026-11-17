@@ -38,7 +38,7 @@ AREA_MODULES = {
     "locations": """
         auto_lageplans drop_is_plans favorites_api koords_to_points lageplan_edit location_admin location_geo_and_admin_api
         location_timeline_and_measurepoints measurepoints_api plan_detect plan_detect_api plan_meters plan_ocr
-        rain_events status_api
+        location_readiness rain_events status_api
     """,
     "measurements": """
         archived_measurements catch_up_legacy_files climate_heatmap evaluate_measurement heatmap_video

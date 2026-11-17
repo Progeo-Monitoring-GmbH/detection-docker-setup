@@ -384,7 +384,7 @@ LocationMarker.displayName = 'LocationMarker';
  * and can be unmarked. A div, not a button: it holds that button.
  */
 const LocationListItem = memo(
-  ({ location, notificationsOff, isFocused, busy, onHover, onLeave, onSelect, onTogglePurgeable }) => {
+  ({ location, notificationsOff, readinessScore, isFocused, busy, onHover, onLeave, onSelect, onTogglePurgeable }) => {
   const { t } = useTranslation();
   const ageInfo = ageInfoFromDate(location.last_measurement_at);
   const mapped = hasCoordinates(location);
@@ -421,7 +421,12 @@ const LocationListItem = memo(
         <div>
           <div className="fw-semibold">
             <LocationFlagIcons
-              flags={{ notifications_disabled: notificationsOff, purgeable }}
+              flags={{
+                id: location.id,
+                notifications_disabled: notificationsOff,
+                purgeable,
+                readiness_score: readinessScore,
+              }}
               testKey={`map-${location.id}`}
             />
             {buildLocationLabel(location)}
@@ -855,6 +860,7 @@ const LocationsMapView = () => {
                   location={location}
                   isFocused={hoveredId === location.id || selectedId === location.id}
                   notificationsOff={flagsOf(location.id)?.notifications_disabled === true}
+                  readinessScore={flagsOf(location.id)?.readiness_score ?? null}
                   busy={Boolean(purgeBusy[location.id])}
                   onHover={hover}
                   onLeave={leave}

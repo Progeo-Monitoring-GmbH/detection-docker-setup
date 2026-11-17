@@ -57,12 +57,15 @@ describe('APP_ROUTE_ACCESS', () => {
     expect(allowed(STAFF_WITHOUT_PERMISSIONS)).toEqual(
       [
         '*',
+        '/checklist/location/',
         '/device/:id/update/',
         '/device/overview',
         '/escalations/',
         '/escalations/:id',
         '/insights/activity/',
         '/insights/databases/',
+        '/lageplan/wizard/',
+        '/map/',
         '/staff/',
       ].sort(),
     );

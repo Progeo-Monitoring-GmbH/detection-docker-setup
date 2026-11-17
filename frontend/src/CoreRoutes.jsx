@@ -125,6 +125,9 @@ const LocationsMapView = React.lazy(
 const LegacyImportView = React.lazy(
   () => import('./main/LegacyImportView.tsx'),
 );
+const LocationChecklistView = React.lazy(
+  () => import('./main/LocationChecklistView.tsx'),
+);
 const DeviceStatisticsView = React.lazy(
   () => import('./main/DeviceStatisticsView.tsx'),
 );
@@ -278,6 +281,10 @@ const CoreRoutes = () => {
           <Route
             path="/device/statistics/"
             element={guard('/device/statistics/', <DeviceStatisticsView />)}
+          />
+          <Route
+            path="/checklist/location/"
+            element={guard('/checklist/location/', <LocationChecklistView />)}
           />
           {/* The panel opens its own log-stream socket (admin/useLogStream). */}
           <Route

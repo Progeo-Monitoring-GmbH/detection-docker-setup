@@ -545,6 +545,14 @@ def refresh_project_db_stats():
 
 
 @shared_task
+def refresh_location_readiness():
+    """The readiness score of every location (helper/location_readiness.py)."""
+    from progeo.helper.location_readiness import refresh
+
+    return refresh()
+
+
+@shared_task
 def ensure_measurement_partitions():
     """Measurement partitions of the current and next year in the template
     and every project database (helper/project_db_partitions.py) - so the

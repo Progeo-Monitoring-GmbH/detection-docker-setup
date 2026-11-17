@@ -499,11 +499,17 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             "id", "project_id", "name", "city", "plz", "address", "country",
             "manager", "telefon", "mail", "project_type",
         )
+        # Staff see the readiness score next to the names (location_readiness).
+        staff = _is_staff_admin(getattr(request, "user", None))
         for account in accounts:
-            locations = ProgeoLocation.objects.using(account.db_name).filter(
+            locations = list(ProgeoLocation.objects.using(account.db_name).filter(
                 location_q(request.user, account)
-            ).only(*fields)
-            data.extend(ProgeoLocationMinSerializer(locations, many=True).data)
+            ).only(*fields, *(("readiness_score",) if staff else ())))
+            rows = ProgeoLocationMinSerializer(locations, many=True).data
+            if staff:
+                for row, location in zip(rows, locations):
+                    row["readiness_score"] = location.readiness_score
+            data.extend(rows)
         return Response(data=data)
 
     # The fields of a location the map (LocationsMapView) shows.
@@ -610,18 +616,68 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             return RequestFailed({"reason": "ids must be numbers"})
         if len(ids) > self.FLAGS_MAX_IDS:
             return RequestFailed({"reason": f"At most {self.FLAGS_MAX_IDS} ids per request"})
-        fields = ("pk", "notifications_disabled", "purgeable")
+        fields = ("pk", "notifications_disabled", "purgeable", "readiness_score")
         found = {}
         databases = ["default", *dict.fromkeys(account.db_name for account in configured_accounts())]
         for database in dict.fromkeys(databases):
             missing = ids - set(found)
             if not missing:
                 break
-            for pk, notifications_disabled, purgeable in (
+            for pk, notifications_disabled, purgeable, readiness_score in (
                 ProgeoLocation.objects.using(database).filter(pk__in=missing).values_list(*fields)
             ):
-                found[pk] = {"notifications_disabled": notifications_disabled, "purgeable": purgeable}
+                found[pk] = {"notifications_disabled": notifications_disabled, "purgeable": purgeable,
+                             "readiness_score": readiness_score}
         return RequestSuccess({"flags": {str(pk): value for pk, value in found.items()}})
+
+    @action(detail=True, url_path="readiness", methods=["GET"])
+    def readiness(self, request, pk=None, *args, **kwargs):
+        """Staff: the "is the location ready?" checklist of one location
+        (helper/location_readiness.py), checked now and stored with it -
+        {location, score, level, checks: [{key, group, weight, optional,
+        status, values}], at}."""
+        from progeo.helper.location_readiness import check_location
+
+        if not _is_staff_admin(getattr(request, "user", None)):
+            return RequestFailed({"reason": "Staff access required"})
+        location, account = self._find_location(request, pk=pk)
+        if not location:
+            return RequestFailed({"reason": "Location not found"})
+        result = check_location(location, account)
+        return RequestSuccess({
+            "location": {"id": location.pk, "project_id": location.project_id, "name": location.name,
+                         "purgeable": location.purgeable},
+            **result,
+        })
+
+    @action(detail=False, url_path="readiness", methods=["GET"])
+    def readiness_list(self, request, *args, **kwargs):
+        """Staff: the stored scores of every location of the configured
+        accounts, lowest first - {"locations": [{id, project_id, name,
+        score, level, at, failed: [check keys]}]}. Locations never checked
+        have score None (run the location_readiness command)."""
+        from progeo.helper.location_readiness import FAIL, level_of
+
+        if not _is_staff_admin(getattr(request, "user", None)):
+            return RequestFailed({"reason": "Staff access required"})
+        rows = {}
+        for database in dict.fromkeys(account.db_name for account in configured_accounts()):
+            for location in ProgeoLocation.objects.using(database).only(
+                "id", "project_id", "name", "city", "purgeable", "readiness_score", "readiness_checks", "readiness_at",
+            ):
+                if location.pk in rows:
+                    continue
+                checks = location.readiness_checks if isinstance(location.readiness_checks, list) else []
+                rows[location.pk] = {
+                    "id": location.pk, "project_id": location.project_id, "name": location.name,
+                    "city": location.city, "purgeable": location.purgeable,
+                    "score": location.readiness_score, "level": level_of(location.readiness_score),
+                    "at": location.readiness_at,
+                    "failed": [check.get("key") for check in checks
+                               if isinstance(check, dict) and check.get("status") == FAIL],
+                }
+        ordered = sorted(rows.values(), key=lambda row: (row["score"] is not None, row["score"] or 0, row["id"]))
+        return RequestSuccess({"locations": ordered})
 
     @require_module_permissions("module_locations_enabled")
     @action(detail=True, url_path="purgeable", methods=["POST"])

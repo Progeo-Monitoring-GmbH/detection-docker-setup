@@ -374,6 +374,14 @@ class ProgeoLocation(ProgeoModel, auto_prefetch.Model):
     # is deleted by setting it.
     purgeable = models.BooleanField(null=True, default=None, blank=True)
 
+    # "Is the location ready?" (helper/location_readiness.py): 0-100, 100 =
+    # every check of the checklist passed; the checks behind it and when they
+    # ran. None: never checked. Recalculated by the location_readiness
+    # command / nightly task and whenever staff open /checklist/location/.
+    readiness_score = models.PositiveSmallIntegerField(null=True, blank=True)
+    readiness_checks = models.JSONField(null=True, blank=True)
+    readiness_at = models.DateTimeField(null=True, blank=True)
+
     # Statistics of the project's own database (all locations of a project
     # share it, so they carry the same values) - refreshed daily by
     # refresh_project_db_stats (helper/project_db_stats.py).
