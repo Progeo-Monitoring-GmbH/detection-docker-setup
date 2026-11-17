@@ -72,13 +72,38 @@ export const portalTabOf = (pathname: string): PortalNavItem | null => {
   return PORTAL_NAV_ITEMS.find((item) => item.segment === segment) ?? null;
 };
 
+/** Location pages besides the portal tabs (CoreRoutes: /location/:id/<segment>). */
+const LOCATION_PAGE_SEGMENTS = new Set([
+  ...PORTAL_NAV_ITEMS.map((item) => item.segment),
+  'schnittstelle',
+  'heatplot',
+  'heatmap2d',
+  'alarms',
+]);
+
+/** The location the page shows: /location/<id>/... or ?location=<id>; else null. */
+export const openLocationId = (pathname: string, search = ''): number | null => {
+  const id = Number(
+    /^\/location\/(\d+)\//.exec(pathname)?.[1] ?? new URLSearchParams(search).get('location'),
+  );
+  return Number.isInteger(id) && id > 0 ? id : null;
+};
+
 /**
- * Where a switch to location `id` leads (favorites bar): the tab of the open
- * location page, so /objekt stays /objekt - anywhere else the status page
- * (every user may open it; the analysis is staff-only).
- * Deeper paths of a tab are dropped: they belong to the open location.
+ * Where a switch to location `id` leads (favorites bar): the open page with
+ * the other location - /location/12/objekt -> /location/7/objekt,
+ * /checklist/location/?location=12 -> ?location=7 - so staff move between
+ * locations without leaving the page. Anywhere else the status page (every
+ * user may open it). Deeper paths and other parameters are dropped: they
+ * belong to the open location (a plan, a sensor).
  */
-export const switchLocationPath = (pathname: string, id: string | number) => {
-  const tab = portalTabOf(pathname);
-  return tab ? portalNavPath(tab, id) : `/location/${id}/status`;
+export const switchLocationPath = (pathname: string, id: string | number, search = '') => {
+  const segment = /^\/location\/\d+\/([^/?#]+)/.exec(pathname)?.[1];
+  if (segment && LOCATION_PAGE_SEGMENTS.has(segment)) {
+    return `/location/${id}/${segment}`;
+  }
+  if (new URLSearchParams(search).has('location')) {
+    return `${pathname}?location=${id}`;
+  }
+  return `/location/${id}/status`;
 };

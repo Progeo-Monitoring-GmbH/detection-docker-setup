@@ -66,12 +66,14 @@
   flex-wrap: wrap;
 }
 
+/* The plan gets two thirds of a wide row (the heatmap fills its width);
+   below ~950px the Verdachtsstellen wrap under it. */
 .status-column-plan {
-  flex: 1 1 560px;
+  flex: 2 1 560px;
   min-width: 0;
 }
 
 .status-column-side {
-  flex: 1 1 380px;
+  flex: 1 1 360px;
   min-width: 0;
 }

@@ -35,6 +35,7 @@ const STORAGE_KEYS = [
   'progeo.languageChosen',
   'progeo.sidebar.collapsed',
   'progeo.canvasKeyLegend.collapsed',
+  'progeo.map.baseLayer',
   'demoToken',
   'impersonatorTokens',
   'viewAsUser',

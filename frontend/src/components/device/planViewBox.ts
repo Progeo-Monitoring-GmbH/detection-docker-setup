@@ -37,3 +37,19 @@ export const panBox = (box: ViewBox, dx: number, dy: number, full: ViewBox): Vie
   keepInside({ ...box, x: box.x - dx, y: box.y - dy }, full);
 
 export const viewBoxAttribute = (box: ViewBox) => `${box.x} ${box.y} ${box.w} ${box.h}`;
+
+/** The lowest overlay a fitted plan gets - very wide plans stay usable. */
+export const MIN_FITTED_HEIGHT = 240;
+
+/**
+ * The overlay height at which the whole plan (`full`) fills `width` - so a
+ * plan that is wide for its card leaves no empty bands beside it - between
+ * MIN_FITTED_HEIGHT and `maxHeight` (a tall plan keeps bands instead of
+ * growing past it). `maxHeight` while the width or the plan is unknown.
+ */
+export const fittedPlanHeight = (width: number, full: ViewBox, maxHeight: number) => {
+  if (!(width > 0) || !(full.w > 0) || !(full.h > 0)) {
+    return maxHeight;
+  }
+  return Math.round(clamp((width * full.h) / full.w, Math.min(MIN_FITTED_HEIGHT, maxHeight), maxHeight));
+};

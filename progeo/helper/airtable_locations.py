@@ -21,9 +21,13 @@ locations share their parent's project_id and are left alone.
 """
 import re
 
+from django.conf import settings
 from django.core import signing
 from django.db import DEFAULT_DB_ALIAS, connections
 
+from progeo.helper.airtable import AirtableHelper
+from progeo.helper.airtable_documents import project_records
+from progeo.helper.basics import ilog, wlog
 from progeo.helper.location_access import configured_accounts
 from progeo.management.commands.airtable_projects_json import is_broken_address
 from progeo.v1.models import ProgeoLocation
@@ -45,6 +49,11 @@ PROJECT_TYPES = {
 }
 # Not device types - no product sheet names them.
 NO_SHEET_TYPES = {TYPES.UNKNOWN, TYPES.DEVELOPMENT, TYPES.VERSUCH, TYPES.SONSTIGE}
+
+ADDRESS_FIELDS = ("address", "plz", "city")
+# fill_address runs while the checklist loads: don't wait long.
+AIRTABLE_TIMEOUT = (5, 15)
+GEOCODE_TIMEOUT = 8
 
 SIGNING_SALT = "progeo.airtable-locations"
 # Import right after the sync - an hour old list is stale.
@@ -194,6 +203,51 @@ def sync(rows):
             updated.append({"id": location.pk, "project_id": location.project_id, "name": location.name,
                             "fields": changed})
     return {"available": available, "updated": updated, "unchanged": unchanged}
+
+
+def fill_address(location, db_name) -> list:
+    """Linked to Airtable but the address incomplete (checklist check
+    "address"): the empty parts from the project's Baustellenadresse - and,
+    still without a position, latitude/longitude looked up for the address
+    (Nominatim, as when the address is saved in the Objekt tab). Saved in
+    `db_name`. Returns the changed fields; [] when nothing is missing,
+    Airtable has nothing or can't be reached - never raises."""
+    from progeo.helper.legacy.geo import GeoHelper, has_position
+
+    if not (location.airtable_url or "").strip():
+        return []
+    missing = [field for field in ADDRESS_FIELDS if not (getattr(location, field) or "").strip()]
+    if not missing:
+        return []
+    helper = AirtableHelper(timeout=AIRTABLE_TIMEOUT)
+    if not helper.configured:
+        return []
+    try:
+        rows = [row for row in map(project_row, project_records(helper, location, fields=FIELDS)) if row]
+    except Exception as exc:  # noqa: BLE001 - the checklist is shown anyway
+        wlog(f"[airtable] address of location {location.pk}: {exc!r}")
+        return []
+    row = next((row for row in rows if any(row[field] for field in missing)), None)
+    if row is None:
+        return []
+    changed = [field for field in missing if row[field]]
+    for field in changed:
+        setattr(location, field, row[field])
+
+    if not has_position(location.latitude, location.longitude) and getattr(settings, "GEOCODE_ON_SAVE", True):
+        try:
+            latitude, longitude = GeoHelper(timeout=GEOCODE_TIMEOUT).fetch_lat_lon(
+                location.project_id, location.address or "", location.plz or "", location.city or "")
+        except Exception as exc:  # noqa: BLE001 - the address is kept without a position
+            wlog(f"[airtable] position of location {location.pk}: {exc!r}")
+            latitude = longitude = None
+        if latitude is not None and longitude is not None:
+            location.latitude, location.longitude = latitude, longitude
+            changed += ["latitude", "longitude"]
+
+    location.save(using=db_name, update_fields=changed)
+    ilog(f"[airtable] location {location.pk}: {', '.join(changed)} filled from Airtable")
+    return changed
 
 
 def sign_rows(rows) -> str:

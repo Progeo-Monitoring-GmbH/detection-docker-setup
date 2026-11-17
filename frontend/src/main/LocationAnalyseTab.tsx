@@ -53,6 +53,7 @@ import NoiseProfileEditor from './NoiseProfileEditor';
 import ThresholdMixerToggle from './ThresholdMixerToggle';
 import { mixerSensorsFromLoaded } from './thresholdMixer';
 import { disabledPairsOf, overrideKey, sensorOrderOf } from './analyseSensorSwitch';
+import { addedSensor, focusedPositionOf, type SensorFocus } from './analyseFocus';
 import {
   cleanRows,
   type NoiseProfile,
@@ -161,6 +162,8 @@ const LocationAnalyseTab = () => {
   // The sensors (pair index) the measurements' second plot follows - picked
   // there or on the heatmap.
   const [sensors, setSensors] = useState<number[]>([]);
+  // The one of them picked last - a white ring on the plan (the others lila).
+  const [sensorFocus, setSensorFocus] = useState<SensorFocus | null>(null);
   const [heatmap, setHeatmap] = useState<SensorHeatmapResponse | null>(null);
   const [measurements, setMeasurements] = useState<MeasurementCompareRow[]>([]);
   // Measurements in the period, of which `measurements` are shown.
@@ -721,7 +724,8 @@ const LocationAnalyseTab = () => {
   // sensors can be split over devices, each counting its pairs from 1.
   // Shows that device if needed.
   // The plan's sensors (pos) of the second plot's selection: the pairs of
-  // the shown device - drawn with a pink border, in sync with the plot.
+  // the shown device - the active sensors, drawn with a lila ring, in sync
+  // with the plot; the focused one (picked last) with a white ring.
   const selectedPositions = useMemo(
     () =>
       (heatmap?.sensor_points ?? []).flatMap((point) => {
@@ -730,6 +734,15 @@ const LocationAnalyseTab = () => {
       }),
     [heatmap, sensors, shownDevice],
   );
+  const focusedPosition = focusedPositionOf(heatmap?.sensor_points ?? [], sensorFocus, sensors, shownDevice);
+  // A selection change from the charts: a single added sensor gets the focus.
+  const changeSensors = (next: number[]) => {
+    const added = addedSensor(sensors, next);
+    if (added != null) {
+      setSensorFocus({ device: shownDevice, pair: added });
+    }
+    setSensors(next);
+  };
 
   // The alarm thresholds on the first measurement plot: the location's, and
   // the own ones of the shown device's sensors (pair index).
@@ -1144,8 +1157,11 @@ const LocationAnalyseTab = () => {
     if (device != null && device !== shownDevice && devices.some((candidate) => candidate.id === device)) {
       setPickedDevice({ locationId, id: device });
       setSensors([pairIndex]);
+      setSensorFocus({ device, pair: pairIndex });
       return;
     }
+    // Also an already active sensor: a click focuses it.
+    setSensorFocus({ device: shownDevice, pair: pairIndex });
     setSensors((selected) =>
       selected.includes(pairIndex) ? selected : [...selected, pairIndex].sort((a, b) => a - b),
     );
@@ -1552,6 +1568,7 @@ const LocationAnalyseTab = () => {
                       forceNormalize={changeHeatmap != null}
                       onAreaSelect={selectPlanArea}
                       selectedPositions={selectedPositions}
+                      focusedPosition={focusedPosition}
                       fitPlan
                       hideChrome
                       time={frameTime}
@@ -1584,7 +1601,7 @@ const LocationAnalyseTab = () => {
               loading={compareLoading}
               onClose={() => setCompareDays(null)}
               selectedSensors={sensors}
-              onSensorSelect={(sensor) => setSensors((selected) => toggledSensor(selected, sensor))}
+              onSensorSelect={(sensor) => changeSensors(toggledSensor(sensors, sensor))}
             />
           )}
 
@@ -1674,7 +1691,7 @@ const LocationAnalyseTab = () => {
                   time={frameTime}
                   onTimeChange={setFrameTime}
                   sensors={sensors}
-                  onSensorsChange={setSensors}
+                  onSensorsChange={changeSensors}
                   sensorHistoryRows={offerSensorHistory ? shownSensorHistory : null}
                   onToggleSensorHistory={offerSensorHistory ? toggleSensorHistory : null}
                   isLoadingSensorHistory={sensorHistoryLoading}

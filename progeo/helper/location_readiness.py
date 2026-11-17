@@ -154,7 +154,9 @@ def check_devices(facts):
 
 def check_devices_online(facts):
     if not facts.devices:
-        return _result(False, offline=0, total=0, names="")
+        # "All devices online" with none would read as passed - check
+        # "devices" fails already.
+        return _na(offline=0, total=0, names="")
     offline = [device for device in facts.devices if not device["online"]]
     return _result(not offline, offline=len(offline), total=len(facts.devices),
                    names=", ".join(device["label"] for device in offline[:5]))
@@ -434,16 +436,23 @@ def collect_facts(location, account=None, now=None) -> Facts:
 
 # -- stored -----------------------------------------------------------------------
 
-def check_location(location, account=None, save=True, now=None) -> dict:
+def check_location(location, account=None, save=True, now=None, airtable=True) -> dict:
     """evaluate() of the location - stored on it (save) in the account's
-    database. update(), no save(): that would mirror the location again."""
+    database. update(), no save(): that would mirror the location again.
+
+    With `airtable` (and `save`), an address missing on a location linked to
+    Airtable is fetched from there first (airtable_locations.fill_address);
+    result["airtable_filled"]: the fields it filled."""
+    from progeo.helper.airtable_locations import fill_address
     from progeo.v1.models import ProgeoLocation
 
     now = now or timezone.now()
+    db = account.db_name if account is not None else DEFAULT_DB_ALIAS
+    filled = fill_address(location, db) if airtable and save else []
     result = evaluate(collect_facts(location, account, now))
     result["at"] = now
+    result["airtable_filled"] = filled
     if save:
-        db = account.db_name if account is not None else DEFAULT_DB_ALIAS
         ProgeoLocation.objects.using(db).filter(pk=location.pk).update(
             readiness_score=result["score"], readiness_checks=result["checks"], readiness_at=now,
         )

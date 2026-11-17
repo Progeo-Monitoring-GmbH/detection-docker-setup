@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import math
 import os
 import posixpath
@@ -10,6 +11,7 @@ from zoneinfo import ZoneInfo
 from celery.result import AsyncResult
 from django.conf import settings
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.core.files.storage import FileSystemStorage
 from django.core.validators import validate_email
@@ -180,6 +182,9 @@ LOCATION_GEO_CSV_FIELDS = ["id", "project_id", *LOCATION_GEO_FIELDS]
 GEOCODE_ADDRESS_FIELDS = ("address", "plz", "city", "country")
 GEOCODE_SAVE_TIMEOUT = 8
 PDF_MAX_ROWS = 200
+# Verwaltung: how long the open-alarm severity of a database's locations is
+# reused (_worst_open_severity) - alarms are evaluated every 15 minutes.
+OVERVIEW_SEVERITY_CACHE_SECONDS = 120
 PDF_SENSORS_PER_TABLE = 14
 
 # Upper bound for the browser-captured frames ZIP of the heatmap video export
@@ -3124,28 +3129,48 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         """{location_id: severity} for every currently-open alarm (NEU/
         QUITTIERT) across `location_ids`, worst severity wins - the same
         rollup ProgeoAlarm.severity already computes per-alarm, aggregated
-        per-location for the Verwaltung dashboard."""
+        per-location for the Verwaltung dashboard.
+
+        Reads only the columns the severity needs: loading the alarms with
+        select_related also pulled every measurement's eigen/wirk arrays and
+        raw_data plus the device. The max_values history still has to be
+        read (peak_value prefers it), so the result is cached briefly
+        (OVERVIEW_SEVERITY_CACHE_SECONDS) - with the project databases split
+        a visit asks every one of them."""
         if not location_ids:
             return {}
+        ids = sorted(location_ids)
+        key = "progeo:verwaltung-severity:{}:{}".format(
+            db_name, hashlib.sha1(",".join(map(str, ids)).encode()).hexdigest()
+        )
+        cached = cache.get(key)
+        if cached is not None:
+            return cached
         order = {
             ProgeoAlarm.Severity.BEOBACHTEN: 0,
             ProgeoAlarm.Severity.ALARM: 1,
             ProgeoAlarm.Severity.KRITISCH: 2,
         }
         worst = {}
-        alarms = (
+        rows = (
             ProgeoAlarm.objects.using(db_name)
             .filter(
-                measurement__device__location_id__in=location_ids,
+                measurement__device__location_id__in=ids,
                 status__in=[ProgeoAlarm.Status.NEU, ProgeoAlarm.Status.QUITTIERT],
             )
-            .select_related("measurement__device")
+            .order_by()
+            .values_list("measurement__device__location_id", "threshold", "max_value",
+                         "sensor_max_values", "max_values")
         )
-        for alarm in alarms:
-            location_id = alarm.measurement.device.location_id
-            severity = alarm.severity
+        for location_id, threshold, max_value, sensor_max_values, max_values in rows:
+            severity = ProgeoAlarm(
+                threshold=threshold, max_value=max_value,
+                sensor_max_values=sensor_max_values, max_values=max_values,
+            ).severity
             if location_id not in worst or order[severity] > order[worst[location_id]]:
                 worst[location_id] = severity
+        worst = {location_id: str(severity) for location_id, severity in worst.items()}
+        cache.set(key, worst, OVERVIEW_SEVERITY_CACHE_SECONDS)
         return worst
 
     @action(detail=False, url_path="accounts", methods=["GET"])
@@ -3160,6 +3185,12 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         ]
         return RequestSuccess({"accounts": rows})
 
+    # Verwaltung rows: more of the location's own columns, read by the same
+    # query as the list (plz/address -> address line, project_type -> product).
+    ADMIN_OVERVIEW_EXTRA_FIELDS = (
+        "plz", "address", "project_type", "purgeable", "notifications_disabled", "readiness_score",
+    )
+
     @action(detail=False, url_path="admin_overview", methods=["GET"])
     def admin_overview(self, request, *args, **kwargs):
         """Verwaltung: cross-tenant dashboard for ProGeo staff - every
@@ -3169,13 +3200,28 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         if not _is_staff_admin(getattr(request, "user", None)):
             return RequestFailed({"reason": "Staff access required"})
 
+        accounts = sorted(configured_accounts(), key=lambda account: account.name or "")
+        # One location query per account database (not one per account), and
+        # only the columns of the list - location_db needs project_id.
+        accounts_by_db = {}
+        for account in accounts:
+            accounts_by_db.setdefault(account.db_name, []).append(account)
+        locations_by_account = {}
+        for db_name, db_accounts in accounts_by_db.items():
+            for location in (
+                ProgeoLocation.objects.using(db_name)
+                .filter(account_id__in=[account.id for account in db_accounts])
+                .only("id", "account_id", "project_id", "name", "city", *self.ADMIN_OVERVIEW_EXTRA_FIELDS)
+            ):
+                locations_by_account.setdefault(location.account_id, []).append(location)
+
         listed = []
         # Alarms live in each location's project database (location_db), not
         # the account's: pair every location pk with its database, so ids are
         # only looked up where they belong - one query per database.
         ids_by_db = {}
-        for account in sorted(configured_accounts(), key=lambda account: account.name or ""):
-            for location in ProgeoLocation.objects.using(account.db_name).filter(account=account):
+        for account in accounts:
+            for location in locations_by_account.get(account.id, []):
                 db_name = location_db(location, account)
                 ids_by_db.setdefault(db_name, set()).add(location.id)
                 listed.append((db_name, location, account))
@@ -3195,6 +3241,9 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
                 "city": location.city,
                 "owner": account.name,
                 "status": worst_by_db[db_name].get(location.id) or "ok",
+                # Columns of the same query (no extra lookups): address line,
+                # product and the staff flags (purgeable = red stripes).
+                **{field: getattr(location, field) for field in self.ADMIN_OVERVIEW_EXTRA_FIELDS},
             })
 
         kpis = {"ok": 0, "beobachten": 0, "alarm": 0, "kritisch": 0}

@@ -37,6 +37,11 @@ const {
   LocationFlagIcons,
   ReadinessBadge,
   readinessLevel,
+  locationRowClass,
+  locationFlagRowStyles,
+  seedLocationFlags,
+  LOCATION_OFF_CLASS,
+  LOCATION_PURGEABLE_CLASS,
 } = await import('./locationFlags');
 
 let container: HTMLDivElement;
@@ -173,5 +178,53 @@ describe('isLocationOff', () => {
     expect(isLocationOff({ notifications_disabled: false, purgeable: true })).toBe(true);
     expect(isLocationOff({ notifications_disabled: false, purgeable: false })).toBe(false);
     expect(isLocationOff(null)).toBe(false);
+  });
+});
+
+describe('locationRowClass', () => {
+  it('stripes purgeable rows red, other switched-off rows grey, the rest not at all', () => {
+    expect(locationRowClass({ notifications_disabled: true, purgeable: true })).toBe(LOCATION_PURGEABLE_CLASS);
+    expect(locationRowClass({ notifications_disabled: false, purgeable: true })).toBe(LOCATION_PURGEABLE_CLASS);
+    expect(locationRowClass({ notifications_disabled: true, purgeable: null })).toBe(LOCATION_OFF_CLASS);
+    expect(locationRowClass({ notifications_disabled: false, purgeable: false })).toBe('');
+    expect(locationRowClass(null)).toBe('');
+  });
+
+  it('gives the data table two exclusive rules', () => {
+    const flags: Record<number, { notifications_disabled: boolean; purgeable: boolean | null }> = {
+      1: { notifications_disabled: true, purgeable: true },
+      2: { notifications_disabled: true, purgeable: null },
+      3: { notifications_disabled: false, purgeable: null },
+    };
+    const [purgeable, off] = locationFlagRowStyles((row: { id: number }) => flags[row.id] ?? null);
+    expect(purgeable.classNames).toEqual([LOCATION_PURGEABLE_CLASS]);
+    expect(off.classNames).toEqual([LOCATION_OFF_CLASS]);
+    expect([1, 2, 3].map((id) => [purgeable.when({ id }), off.when({ id })])).toEqual([
+      [true, false],
+      [false, true],
+      [false, false],
+    ]);
+  });
+});
+
+describe('seedLocationFlags', () => {
+  it('stores flags that came with the rows - no request for them', async () => {
+    seedLocationFlags([
+      { id: 5, notifications_disabled: false, purgeable: true, readiness_score: 80 },
+      { id: 6, notifications_disabled: true, purgeable: null },
+    ]);
+    await render(<Probe ids={[5, 6]} name="a" />);
+
+    expect(api.get).not.toHaveBeenCalled();
+    expect(offOf('a')).toEqual({ 5: 'true', 6: 'true' });
+    expect(container.querySelector('[data-testid="readiness-badge"]')?.textContent).toBe('80');
+  });
+
+  it('keeps a value toggled on the page', async () => {
+    setLocationFlags(5, { notifications_disabled: false, purgeable: false });
+    seedLocationFlags([{ id: 5, notifications_disabled: false, purgeable: true }]);
+    await render(<Probe ids={[5]} name="a" />);
+
+    expect(offOf('a')).toEqual({ 5: 'false' });
   });
 });

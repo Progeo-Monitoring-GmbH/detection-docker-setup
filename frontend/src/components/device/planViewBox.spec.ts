@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { framePosition } from './FrameSlider';
-import { fullBox, isFull, MAX_ZOOM, panBox, zoomBox } from './planViewBox';
+import { fittedPlanHeight, fullBox, isFull, MAX_ZOOM, MIN_FITTED_HEIGHT, panBox, zoomBox } from './planViewBox';
 
 const full = fullBox(1600, 1200);
 
@@ -39,5 +39,22 @@ describe('framePosition', () => {
   it('has no place for moments outside the frames', () => {
     expect(framePosition(timestamps, -1000)).toBeNaN();
     expect(framePosition(timestamps, 41_000)).toBeNaN();
+  });
+});
+
+describe('fittedPlanHeight', () => {
+  it('makes a wide plan as tall as the width needs', () => {
+    // 1600 x 1200 in a 800 px card: 600 px, no bands beside it.
+    expect(fittedPlanHeight(800, full, 900)).toBe(600);
+  });
+
+  it('stops a tall plan at the maximum and a very wide one at the minimum', () => {
+    expect(fittedPlanHeight(800, fullBox(600, 1200), 700)).toBe(700);
+    expect(fittedPlanHeight(800, fullBox(4000, 200), 700)).toBe(MIN_FITTED_HEIGHT);
+  });
+
+  it('keeps the maximum while the width or the plan is unknown', () => {
+    expect(fittedPlanHeight(0, full, 480)).toBe(480);
+    expect(fittedPlanHeight(800, fullBox(1, 0), 480)).toBe(480);
   });
 });

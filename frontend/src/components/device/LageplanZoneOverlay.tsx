@@ -13,7 +13,7 @@ import {
   useWheelHint,
   WheelZoomHint,
 } from '../ui/wheelZoom';
-import { fullBox, isFull, panBox, type ViewBox, viewBoxAttribute, zoomBox } from './planViewBox';
+import { fittedPlanHeight, fullBox, isFull, panBox, type ViewBox, viewBoxAttribute, zoomBox } from './planViewBox';
 import SensorTooltip from './SensorTooltip';
 import ZoomControls from './ZoomControls';
 import { DISABLED_SENSOR_FILL } from './disabledSensors';
@@ -64,7 +64,13 @@ export type LageplanOverlayMode = 'lines' | 'segments' | 'points';
 type LageplanZoneOverlayProps = {
   imageUrl: string | null;
   points: LageplanZonePoint[];
+  /** The overlay's height - with `fitWidth` its upper bound. */
   height?: number;
+  /**
+   * As tall as the plan needs to fill the card's width (fittedPlanHeight),
+   * at most `height` - no empty bands beside a wide plan.
+   */
+  fitWidth?: boolean;
   mode?: LageplanOverlayMode;
   /** Where the points lie on the plan image (the shown Lageplan's alignment). */
   alignment?: PlanPointAlignment | null;
@@ -148,7 +154,8 @@ const DRAG_THRESHOLD = 3;
 const LageplanZoneOverlay = ({
   imageUrl,
   points,
-  height = 480,
+  height: maxHeight = 480,
+  fitWidth = false,
   mode = 'lines',
   alignment = null,
   onPointClick,
@@ -222,9 +229,24 @@ const LageplanZoneOverlay = ({
     setUserBox(null);
   }, [imageSize]);
 
+  // fitWidth: the card's width, for the height that fills it.
+  const [containerWidth, setContainerWidth] = useState(0);
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!fitWidth || !container || typeof ResizeObserver === 'undefined') {
+      return undefined;
+    }
+    const measure = () => setContainerWidth(container.clientWidth);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [fitWidth]);
+
   // Without the image (yet) the points span a square, as before.
   const [viewWidth, viewHeight] = imageSize ?? [1, 1];
   const full = fullBox(viewWidth, viewHeight);
+  const height = fitWidth && imageSize ? fittedPlanHeight(containerWidth, full, maxHeight) : maxHeight;
   const box = userBox ?? full;
   // Plan geometry relative to the image's shorter side ...
   const planUnit = Math.min(viewWidth, viewHeight);

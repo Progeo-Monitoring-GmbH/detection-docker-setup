@@ -4,6 +4,7 @@ import { Magic } from 'react-bootstrap-icons';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
 import axiosConfig from '../../axiosConfig';
 import { getBackendUrl } from '../../backendUrl';
+import { canvasFont } from '../../styles/fonts';
 import { plotTheme } from '../../styles/plotTheme';
 import { childTestId } from '../../testIds';
 import CanvasKeyLegend from '../ui/CanvasKeyLegend';
@@ -115,7 +116,7 @@ const drawStage = (
   ctx.fillStyle = PROPOSAL_COLOR;
   ctx.lineWidth = 2;
   ctx.setLineDash([7, 4]);
-  ctx.font = '600 12px system-ui, sans-serif';
+  ctx.font = canvasFont(600, 12);
   ctx.textAlign = 'center';
   outlined.forEach(({ name, points }) => {
     ctx.beginPath();

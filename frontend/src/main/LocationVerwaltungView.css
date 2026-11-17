@@ -56,17 +56,19 @@
 }
 
 .location-verwaltung-table {
-  min-width: 560px;
+  min-width: 720px;
 }
 
+/* Compact rows like the locations overview (components/location/
+   locationList.css: the name cell, product pill, two-line cells). */
 .location-verwaltung-grid {
   display: grid;
-  grid-template-columns: 70px 1fr 100px 130px 110px 130px;
+  grid-template-columns: 64px minmax(220px, 2.6fr) 130px minmax(110px, 1fr) 100px 120px;
   gap: 8px;
 }
 
 .location-verwaltung-head {
-  padding: 6px 4px 10px;
+  padding: 4px 8px 8px;
   font-size: 10.5px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -75,42 +77,24 @@
 }
 
 .location-verwaltung-row {
-  padding: 10px 4px;
-  font-size: 13px;
+  min-height: 40px;
+  padding: 3px 8px;
+  font-size: 12.5px;
   border-top: 1px solid var(--progeo-track);
   align-items: center;
+  cursor: pointer;
+}
+
+.location-verwaltung-row:hover {
+  background-color: var(--progeo-track-soft);
 }
 
 .location-verwaltung-right {
   text-align: right;
 }
 
-.location-verwaltung-nr {
-  font-weight: 600;
-}
-
-.location-verwaltung-name-cell {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.location-verwaltung-cell {
   min-width: 0;
-}
-
-.location-verwaltung-name {
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.location-verwaltung-dim {
-  color: #8b8383;
-}
-
-.location-verwaltung-ellipsis {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .location-verwaltung-ok {
@@ -119,24 +103,11 @@
   font-weight: 500;
 }
 
-.location-verwaltung-row-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
-}
-
-/* A link: also on hover, so the global a:hover colour doesn't win. */
-.location-verwaltung-open,
-.location-verwaltung-open:hover {
-  display: inline-flex;
-  align-items: center;
-  height: 32px;
-  padding: 0 12px;
-  border-radius: var(--progeo-radius-pill);
-  background: var(--progeo-surface);
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--progeo-orange);
+/* The permissions pill: as low as the compact row. */
+.location-verwaltung-row .progeo-pill {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
 }
 
 /* -- permissions dialog ------------------------------------------------------- */

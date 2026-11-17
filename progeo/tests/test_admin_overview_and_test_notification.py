@@ -73,6 +73,29 @@ def test_admin_overview_lists_locations_across_every_account():
     assert {"Kunde A", "Kunde B"}.issubset(owners)
 
 
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_admin_overview_rows_carry_address_product_and_flags():
+    """The Verwaltung list shows the address line, the product and the staff
+    flags (purgeable -> red stripes) from the same query - no /flags/ calls."""
+    staff_user = User.objects.using("default").create(username="admin-ov-fields", is_staff=True)
+    account = Account.objects.using("default").create(name="Kunde F", raw_hash="acct-f-overview", db_name="default")
+    location = ProgeoLocation.objects.using("default").create(
+        account=account, name="Objekt F", project_id=9003, plz="12345", address="Hauptstr. 1", city="Berlin",
+        project_type=ProgeoLocation.PROJECT_TYPE_CHOICES.UNKNOWN, purgeable=True,
+        notifications_disabled=False, readiness_score=70,
+    )
+
+    response = LocationViewSet().admin_overview(_fake_request(user=staff_user))
+
+    row = next(row for row in response.data["objects"] if row["id"] == location.id)
+    assert row["plz"] == "12345"
+    assert row["address"] == "Hauptstr. 1"
+    assert row["project_type"] == ProgeoLocation.PROJECT_TYPE_CHOICES.UNKNOWN
+    assert row["purgeable"] is True
+    assert row["notifications_disabled"] is False
+    assert row["readiness_score"] == 70
+
+
 # -- _notification_recipients ----------------------------------------------
 
 @pytest.mark.django_db(databases=["unit_tests", "default"])

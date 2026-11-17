@@ -70,9 +70,10 @@ def _documents_table(helper):
     return helper.table(getattr(settings, "AIRTABLE_DOCUMENTS_TABLE", "") or "Dokumente")
 
 
-def project_records(helper, location) -> list:
+def project_records(helper, location, fields=(DOCUMENTS_FIELD, "Projektnummer")) -> list:
     """The Airtable project records of `location`: by the record id of its
-    airtable_url, else every record with its project number."""
+    airtable_url (every field), else every record with its project number
+    (`fields`)."""
     match = RECORD_ID_RE.search(location.airtable_url or "")
     if match:
         try:
@@ -82,7 +83,7 @@ def project_records(helper, location) -> list:
     if location.project_id is None:
         return []
     formula = f"{{Projektnummer}}&''='{int(location.project_id)}'"
-    return helper.table().all(formula=formula, fields=[DOCUMENTS_FIELD, "Projektnummer"], max_records=5)
+    return helper.table().all(formula=formula, fields=list(fields), max_records=5)
 
 
 def _document(record) -> dict | None:

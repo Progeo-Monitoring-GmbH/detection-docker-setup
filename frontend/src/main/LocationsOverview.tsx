@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
-import DataTable from 'react-data-table-component';
+import DataTable, { Media } from 'react-data-table-component';
 import type { TableColumn } from 'react-data-table-component';
 import { Alert, Button, Form, Spinner } from 'react-bootstrap';
 import { Bell, Pencil, Search, XLg } from 'react-bootstrap-icons';
@@ -18,19 +18,26 @@ import DeleteIconButton from '../components/ui/kit/DeleteIconButton';
 import PanelCard from '../components/ui/kit/PanelCard';
 import PillButton from '../components/ui/kit/PillButton';
 import { progeoTableStyles } from '../components/ui/kit/SearchableDataTable';
-import FavoriteStar from './FavoriteStar';
 import LocationEditModal, {
   type LocationEditRow,
 } from '../components/modal/LocationEditModal.tsx';
 import { staffFlags } from './access';
-import { formatDate } from './dateFormat';
+import { formatDate, formatRelativeTime } from './dateFormat';
+import { getProjectTypeLabel } from './projectType';
 import { repeatedTestId } from '../testIds';
 import {
   LocationFlagIcons,
-  locationOffRowStyle,
+  locationFlagRowStyles,
   useLocationFlags,
   type LocationFlags,
 } from '../components/location/locationFlags';
+import {
+  LOCATION_LIST_CLASS,
+  LocationNameCell,
+  TwoLineCell,
+  isRecentMeasurement,
+  locationAddressLine,
+} from '../components/location/LocationListCells';
 
 import { untaggedRowClick } from './wholeRowClick';
 import './LocationsOverview.css';
@@ -38,6 +45,8 @@ import './LocationsOverview.css';
 type FlagsOf = (id: number | null | undefined) => LocationFlags | null;
 
 type LocationRow = LocationEditRow & {
+  /** ProgeoLocation.PROJECT_TYPE_CHOICES - the product (smartex® dm, ...). */
+  project_type?: number | null;
   measurement_count?: number;
   last_measurement_at?: string | null;
 };
@@ -93,13 +102,17 @@ const activeAlarmColumnsFor = (flagsOf: FlagsOf, t: TFn): TableColumn<ActiveAlar
     name: t('locations_col_location'),
     selector: (row) => row.location.name || '-',
     cell: (row) => (
-      <div className="small" {...repeatedTestId('locations-active-alarm', row.id)}>
-        <LocationFlagIcons flags={flagsOf(row.location.id)} testKey={`active-alarm-${row.id}`} />
-        {row.location.name || '-'}
-        {row.location.city && (
-          <div className="text-muted">{row.location.city}</div>
-        )}
-      </div>
+      <span className="location-list-name-wrap" {...repeatedTestId('locations-active-alarm', row.id)}>
+        <TwoLineCell
+          primary={
+            <>
+              <LocationFlagIcons flags={flagsOf(row.location.id)} testKey={`active-alarm-${row.id}`} />
+              {row.location.name || '–'}
+            </>
+          }
+          secondary={row.location.city || undefined}
+        />
+      </span>
     ),
     sortable: true,
     grow: 1.6,
@@ -258,11 +271,12 @@ const LocationActions = ({
   canDelete: boolean;
   t: TFn;
 }) => (
-  <div className="d-flex gap-2">
+  <div className="location-list-actions">
     {onEdit && (
       <Button
         size="sm"
         variant="outline-primary"
+        className="location-list-icon-button"
         title={t('locations_edit')}
         aria-label={t('locations_edit')}
         {...repeatedTestId('locations-edit', row.id)}
@@ -287,7 +301,33 @@ const LocationActions = ({
   </div>
 );
 
-/** Columns of the locations table. */
+/** The Last measurement column: how long ago (green while recent), the date as tooltip. */
+const LastMeasurementCell = ({ row, t }: { row: LocationRow; t: TFn }) => {
+  if (row.measurement_count === undefined) {
+    // Details not loaded yet - the State column shows the spinner.
+    return null;
+  }
+  if (!row.last_measurement_at) {
+    return <span className="location-list-muted">{t('locations_never_measured')}</span>;
+  }
+  return (
+    <span
+      className={`location-list-muted${isRecentMeasurement(row.last_measurement_at) ? ' location-list-recent' : ''}`}
+      title={formatDate(row.last_measurement_at, 'dateTime')}
+      {...repeatedTestId('locations-last-measurement', row.id)}
+    >
+      {formatRelativeTime(row.last_measurement_at)}
+    </span>
+  );
+};
+
+/** The contact: the object manager, phone/e-mail as the second line. */
+const contactLines = (row: LocationRow) => {
+  const reach = [row.telefon, row.mail].filter(Boolean).join(' · ');
+  return row.manager ? { primary: row.manager, secondary: reach } : { primary: reach || '–', secondary: '' };
+};
+
+/** Columns of the locations table: compact rows, details as a muted second line. */
 const locationColumns = ({
   alarmSummary,
   onEdit,
@@ -304,61 +344,88 @@ const locationColumns = ({
   t: TFn;
 }): TableColumn<LocationRow>[] => [
   {
+    id: 'project',
     name: t('locations_col_project'),
-    selector: (row) => row.project_id ?? '-',
+    selector: (row) => row.project_id ?? 0,
+    cell: (row) => <span className="location-list-num">{row.project_id ?? '–'}</span>,
     sortable: true,
-    width: '110px',
+    width: '90px',
   },
   {
+    id: 'name',
     name: t('locations_col_name'),
-    selector: (row) => row.name || '-',
-    // The star pins the location as favorite.
+    selector: (row) => row.name || '',
+    // The star pins the location as favorite; the address is the second line.
     cell: (row) => (
-      <span className="d-flex align-items-center gap-2 locations-name-cell" {...repeatedTestId('locations-row', row.id)}>
-        <FavoriteStar locationId={row.id} size={26} />
-        <span className="locations-name-text">
-          <LocationFlagIcons flags={flagsOf(row.id)} testKey={`location-${row.id}`} />
-          {row.name || '-'}
-        </span>
+      <span className="location-list-name-wrap" {...repeatedTestId('locations-row', row.id)}>
+        <LocationNameCell
+          locationId={row.id}
+          name={row.name || '–'}
+          subline={locationAddressLine(row)}
+          flags={flagsOf(row.id)}
+          testKey={`location-${row.id}`}
+        />
       </span>
     ),
     sortable: true,
-    grow: 1.4,
+    grow: 2.4,
+    minWidth: '220px',
   },
   {
-    name: t('locations_col_city'),
-    selector: (row) => row.city || '-',
+    id: 'product',
+    name: t('locations_col_product'),
+    selector: (row) => (row.project_type ? getProjectTypeLabel(t, row.project_type) : ''),
+    cell: (row) =>
+      row.project_type ? (
+        <span className="location-list-product">{getProjectTypeLabel(t, row.project_type)}</span>
+      ) : (
+        <span className="location-list-muted">–</span>
+      ),
     sortable: true,
-    grow: 1.2,
+    width: '130px',
+    hide: Media.MD,
   },
   {
-    name: t('locations_col_address'),
-    selector: (row) => row.address || '-',
-    grow: 1.7,
-    sortable: true,
-    wrap: true,
-  },
-  {
-    name: t('locations_col_contact'),
-    selector: (row) => row.manager || row.telefon || row.mail || '-',
-    sortable: true,
-    grow: 1.5,
-    wrap: true,
-  },
-  {
+    id: 'state',
     name: t('locations_col_state'),
     cell: (row) => <LocationStateCell row={row} summary={alarmSummary[String(row.id)]} t={t} />,
-    width: '150px',
+    width: '140px',
   },
   {
-    name: t('locations_col_devices'),
-    selector: (row) => row.device_count || 0,
+    id: 'last-measurement',
+    name: t('locations_col_last_measurement'),
+    selector: (row) => row.last_measurement_at ?? '',
+    cell: (row) => <LastMeasurementCell row={row} t={t} />,
     sortable: true,
-    width: '120px',
+    width: '140px',
+    hide: Media.SM,
   },
   {
+    id: 'devices',
+    name: t('locations_col_devices'),
+    selector: (row) => row.device_count ?? 0,
+    cell: (row) => <span className="location-list-num">{row.device_count ?? '–'}</span>,
+    sortable: true,
+    right: true,
+    width: '80px',
+  },
+  {
+    id: 'contact',
+    name: t('locations_col_contact'),
+    selector: (row) => row.manager || row.telefon || row.mail || '',
+    cell: (row) => {
+      const { primary, secondary } = contactLines(row);
+      return <TwoLineCell plain primary={primary} secondary={secondary} title={[primary, secondary].filter(Boolean).join(' · ')} />;
+    },
+    sortable: true,
+    grow: 1.4,
+    hide: Media.LG,
+  },
+  {
+    id: 'actions',
     name: t('locations_col_actions'),
-    width: '120px',
+    width: '84px',
+    right: true,
     cell: (row) => (
       <LocationActions row={row} onEdit={onEdit} canDelete={canDelete} t={t} />
     ),
@@ -577,8 +644,8 @@ const LocationsOverview = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredRows, currentPage, rowsPerPage]);
 
-  // Staff: switched-off locations (notifications off / marked purgeable) striped.
-  const { flagsOf, isOff } = useLocationFlags([
+  // Staff: switched-off locations striped (grey), purgeable ones red.
+  const { flagsOf } = useLocationFlags([
     ...rows.map((row) => row.id),
     ...(activeAlarms ?? []).map((row) => row.location.id),
   ]);
@@ -590,10 +657,10 @@ const LocationsOverview = () => {
     flagsOf,
     t,
   });
-  // The switched-off stripes first: the table keeps the style of the last
-  // matching rule, so the state colour stays (locationOffRowStyle).
+  // The stripes first (purgeable red, switched off grey): the table keeps the
+  // style of the last matching rule, so the state colour stays.
   const conditionalRowStyles = [
-    locationOffRowStyle((row: LocationRow) => isOff(row.id)),
+    ...locationFlagRowStyles((row: LocationRow) => flagsOf(row.id)),
     ...rowStylesFor(alarmSummary),
   ];
 
@@ -690,12 +757,12 @@ const LocationsOverview = () => {
             </div>
           ) : (
             // Rows keep DataTable's own keyboard handling (Enter on a focused row).
-            <div onClick={untaggedRowClick(activeAlarms, openAlarmRow)}>
+            <div className={LOCATION_LIST_CLASS} onClick={untaggedRowClick(activeAlarms, openAlarmRow)}>
               <DataTable
                 columns={activeAlarmColumnsFor(flagsOf, t)}
                 data={activeAlarms}
                 customStyles={progeoTableStyles}
-                conditionalRowStyles={[locationOffRowStyle((row: ActiveAlarm) => isOff(row.location.id))]}
+                conditionalRowStyles={locationFlagRowStyles((row: ActiveAlarm) => flagsOf(row.location.id))}
                 pagination
                 paginationComponentOptions={paginationOptions}
                 highlightOnHover
@@ -710,22 +777,25 @@ const LocationsOverview = () => {
         </PanelCard>
       )}
 
+      {/* The filters left-aligned in the panel head, right above the table -
+          no extra title row; the count on the right. */}
       <PanelCard
         testId="locations-list"
-        title={
-          <span className="locations-list-title">
-            {t('locations_list_title')}
-            {!loading && (
-              <span className="locations-list-count" data-testid="locations-count">
-                {t('locations_count', { count: filteredRows.length, total: rows.length })}
-              </span>
-            )}
-          </span>
+        title={filters}
+        actions={
+          !loading && (
+            <span className="locations-list-count" data-testid="locations-count">
+              {t('locations_count', { count: filteredRows.length, total: rows.length })}
+            </span>
+          )
         }
-        actions={filters}
       >
         {/* Rows keep DataTable's own keyboard handling (Enter on a focused row). */}
-        <div onClick={untaggedRowClick(filteredRows, handleRowClick)} data-testid="locations-table">
+        <div
+          className={LOCATION_LIST_CLASS}
+          onClick={untaggedRowClick(filteredRows, handleRowClick)}
+          data-testid="locations-table"
+        >
           <DataTable
             columns={columns}
             data={filteredRows}

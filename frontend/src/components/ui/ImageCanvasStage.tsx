@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowClockwise, ArrowCounterclockwise, Magic } from 'react-bootstrap-icons';
 import axiosConfig from '../../axiosConfig';
 import { useAuth } from '../../../hooks/CoreAuthProvider';
+import { canvasFont } from '../../styles/fonts';
 import { childTestId } from '../../testIds';
 import ZoomControls from '../device/ZoomControls';
 import { ALIGN_PINS, fitAlignment, type AlignPin } from './alignmentFit';
@@ -773,7 +774,7 @@ const ImageCanvasStage = ({
 
     /** Text with a white halo, readable on any plan. */
     const drawLabel = (text: string, x: number, y: number, color: string, size = 11) => {
-      ctx.font = `600 ${size * px}px sans-serif`;
+      ctx.font = canvasFont(600, size * px);
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       ctx.lineJoin = 'round';
@@ -824,7 +825,7 @@ const ImageCanvasStage = ({
       ctx.strokeStyle = '#ffffff';
       ctx.stroke();
 
-      ctx.font = `600 ${11 * px}px sans-serif`;
+      ctx.font = canvasFont(600, 11 * px);
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = '#ffffff';

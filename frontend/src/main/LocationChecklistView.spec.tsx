@@ -62,6 +62,7 @@ vi.mock('../axiosConfig', () => ({
             score: 64,
             level: 'progress',
             at: '2026-11-17T10:00:00Z',
+            airtable_filled: ['plz', 'city'],
             checks: [
               check('address', 'base', 'pass'),
               check('devices_online', 'devices', 'fail', {
@@ -202,6 +203,14 @@ describe('LocationChecklistView', () => {
     expect(byKey('checklist-fix', 'devices_online')!.getAttribute('href')).toBe(
       '/device/overview?location=7',
     );
+    // The checklist stays open.
+    expect(
+      byKey('checklist-fix', 'devices_online')!.getAttribute('target'),
+    ).toBe('_blank');
+    expect(
+      container.querySelector('[data-testid="checklist-airtable-filled"]')!
+        .textContent,
+    ).toBe('readiness_airtable_filled:{"fields":"plz, city"}');
     expect(byKey('checklist-detail', 'sensor_devices')!.textContent).toContain(
       'readiness_detail_sensor_devices_uncovered:{"count":2}; readiness_detail_sensor_devices_count:{"counted":30,"points":28}',
     );

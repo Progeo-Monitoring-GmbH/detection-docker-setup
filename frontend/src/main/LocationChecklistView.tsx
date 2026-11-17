@@ -63,6 +63,8 @@ type Readiness = {
   level: string;
   checks: ReadinessCheck[];
   at: string;
+  /** Fields the check filled from Airtable just now (missing address). */
+  airtable_filled?: string[];
 };
 
 type OverviewRow = {
@@ -129,9 +131,6 @@ export const checkDetail = (t: TFunction, check: ReadinessCheck): string => {
     !values.total;
   if (needsPlan || (check.key === 'lageplan_cropped' && values.span == null)) {
     return t('readiness_detail_needs_plan');
-  }
-  if (check.key === 'devices_online' && !values.total) {
-    return t('readiness_detail_needs_devices');
   }
   if (check.key === 'lageplan_resolution') {
     // Low-res legacy plan (helper/plan_resolution.py): upload it again.
@@ -520,6 +519,16 @@ const LocationChecklistView = () => {
                 {' · '}
                 {t('readiness_checked_at', { at: formatDate(data.at) })}
               </div>
+              {Boolean(data.airtable_filled?.length) && (
+                <div
+                  className="small text-info-emphasis"
+                  data-testid="checklist-airtable-filled"
+                >
+                  {t('readiness_airtable_filled', {
+                    fields: data.airtable_filled!.join(', '),
+                  })}
+                </div>
+              )}
               <div className="small text-muted">
                 {t('readiness_points_explain')}
               </div>
@@ -588,6 +597,9 @@ const LocationChecklistView = () => {
                             {path && (
                               <Link
                                 to={path}
+                                // The checklist stays open to check the next point.
+                                target="_blank"
+                                rel="noopener noreferrer"
                                 className="ms-2"
                                 {...repeatedTestId('checklist-fix', check.key)}
                               >

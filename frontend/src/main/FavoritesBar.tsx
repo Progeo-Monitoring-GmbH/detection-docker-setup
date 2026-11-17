@@ -3,23 +3,24 @@ import { useTranslation } from 'react-i18next';
 import { Link, useLocation as useRouterLocation } from 'react-router';
 import { repeatedTestId } from '../testIds';
 import { useFavorites } from './favorites';
-import { switchLocationPath } from './portalNav';
+import { openLocationId, switchLocationPath } from './portalNav';
 import './Favorites.css';
 
 /**
  * The user's favorite locations as one bar at the top of every page
- * (below the TopBar): each one opens the location on the tab of the open
- * location page (/objekt stays /objekt), elsewhere its status page; the x next
- * to it removes the favorite. Hidden without favorites - the stars pin them.
+ * (below the TopBar): each one opens the location on the page open now
+ * (/objekt stays /objekt, the checklist stays the checklist - see
+ * switchLocationPath), elsewhere its status page; the x next to it removes the
+ * favorite. Hidden without favorites - the stars pin them.
  */
 const FavoritesBar = ({ className }: { className?: string }) => {
   const { t } = useTranslation();
   const { enabled, favorites, max, isPending, toggle } = useFavorites();
-  const { pathname } = useRouterLocation();
+  const { pathname, search } = useRouterLocation();
   if (!enabled || favorites.length === 0) {
     return null;
   }
-  const openId = Number(/^\/location\/(\d+)\//.exec(pathname)?.[1] ?? Number.NaN);
+  const openId = openLocationId(pathname, search);
 
   return (
     <nav
@@ -45,7 +46,7 @@ const FavoritesBar = ({ className }: { className?: string }) => {
             className={`d-inline-flex align-items-center favorites-bar-pill${active ? ' favorites-bar-pill--active' : ''}`}
           >
             <Link
-              to={switchLocationPath(pathname, favorite.location)}
+              to={switchLocationPath(pathname, favorite.location, search)}
               title={[favorite.project_id, favorite.name, favorite.city].filter(Boolean).join(' · ')}
               className="favorites-bar-link"
               {...repeatedTestId('favorites-bar-link', favorite.location)}

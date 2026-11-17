@@ -101,9 +101,11 @@ type SensorHeatmap2DProps = {
   /** Device (sensor_points[].device) whose marker is highlighted - e.g. the
    * line hovered in the climate charts. */
   highlightedDevice?: number | null;
-  /** The pos (sensor_order) of the selected sensors - e.g. those of the
-   * measurements' second plot - drawn with a pink border. */
+  /** The pos (sensor_order) of the selected (active) sensors - e.g. those
+   * of the measurements' second plot - drawn with a lila ring. */
   selectedPositions?: number[];
+  /** The pos of the one focused sensor (the one picked last) - a white ring. */
+  focusedPosition?: number | null;
   /** Called with the device of the hovered marker, null when it is left. */
   onHoverDevice?: (device: number | null) => void;
   /** Called with the pos (sensor_order) of a clicked sensor marker. */
@@ -231,6 +233,7 @@ const SensorHeatmap2D = ({
   compact = fitPlan,
   highlightedDevice = null,
   selectedPositions,
+  focusedPosition = null,
   onHoverDevice,
   onSensorClick,
   profile = 'diff',
@@ -563,6 +566,7 @@ const SensorHeatmap2D = ({
       (sceneSensors ?? []).flatMap((sensor, index) => (positions.has(sensor.pos) ? [index] : [])),
     );
   }, [sceneSensors, selectedPositions]);
+  const focusedIndex = focusedPosition != null ? sensorIndex((sensor) => sensor.pos === focusedPosition) : null;
   // The plan under the cursor - also while it is over a sensor.
   const underCursor = hover?.kind === 'sensor' ? hover.under : hover;
   // The guides only lead to a position in meters.
@@ -581,11 +585,17 @@ const SensorHeatmap2D = ({
         scene,
         { width, height: canvasHeight, dpr },
         view,
-        { hovered: hoveredIndex, highlighted: highlightedIndex, selected: selectedIndices, cursor: guideCursor },
+        {
+          hovered: hoveredIndex,
+          highlighted: highlightedIndex,
+          selected: selectedIndices,
+          focused: focusedIndex,
+          cursor: guideCursor,
+        },
         null,
       );
     }
-  }, [canvasRef, scene, view, width, canvasHeight, hoveredIndex, highlightedIndex, selectedIndices, guideCursor]);
+  }, [canvasRef, scene, view, width, canvasHeight, hoveredIndex, highlightedIndex, selectedIndices, focusedIndex, guideCursor]);
 
   // ---------------------------------------------------------------- export
 

@@ -5,6 +5,7 @@
  * sensor markers and the colour scale.
  */
 import { plotTheme } from '../../styles/plotTheme';
+import { canvasFont } from '../../styles/fonts';
 import { DISABLED_SENSOR_FILL } from './disabledSensors';
 import { heatPixels, toScreen, type View } from './heatmapCanvas';
 import type { ChartFrame, ChartLayout } from './heatmapChart';
@@ -15,10 +16,15 @@ const HEAT_OPACITY = 0.7;
 const MARKER_RADIUS = 3.15;
 /** Marker of a sensor reading above its threshold. */
 const OVER_THRESHOLD_COLOR = '#dc2626';
-/** Border of a selected sensor (shown in the measurements' second plot). */
-const SELECTED_COLOR = '#e6007e';
-const LABEL_FONT = '600 10px system-ui, sans-serif';
-const HIGHLIGHTED_LABEL_FONT = '700 12px system-ui, sans-serif';
+/** Ring of an active sensor - one of the selected sensors (e.g. those the
+ * measurements' second plot shows): ProGeo contrast violet ("lila"). */
+const ACTIVE_RING_COLOR = plotTheme.contrastViolet;
+/** Ring of the one focused sensor (the one picked last): white with a thin
+ * dark outline, readable on light plans and on the heat. */
+const FOCUS_RING_COLOR = '#ffffff';
+const FOCUS_RING_OUTLINE = 'rgba(9, 54, 89, 0.9)';
+const LABEL_FONT = canvasFont(600, 10);
+const HIGHLIGHTED_LABEL_FONT = canvasFont(700, 12);
 
 export type Scene = {
   layout: ChartLayout;
@@ -53,8 +59,10 @@ export type SceneOverlay = {
   hovered: number | null;
   /** Index of the sensor highlighted from outside (highlightedDevice). */
   highlighted: number | null;
-  /** Indices of the selected sensors - drawn with a pink border. */
+  /** Indices of the selected (active) sensors - drawn with a lila ring. */
   selected?: ReadonlySet<number>;
+  /** Index of the one focused sensor - a white ring instead of the lila one. */
+  focused?: number | null;
   /** Cursor (screen pixels) the reference point's guides lead to. */
   cursor: [number, number] | null;
 };
@@ -167,13 +175,22 @@ const drawMarker = (
   sy: number,
   emphasis: 'highlighted' | 'hovered' | null,
   state: MarkerState,
-  selected = false,
+  ring: 'active' | 'focused' | null = null,
 ) => {
   const over = state === 'over';
-  if (selected) {
+  if (ring === 'focused') {
     ctx.beginPath();
     ctx.arc(sx, sy, MARKER_RADIUS + 4, 0, Math.PI * 2);
-    ctx.strokeStyle = SELECTED_COLOR;
+    ctx.strokeStyle = FOCUS_RING_OUTLINE;
+    ctx.lineWidth = 5;
+    ctx.stroke();
+    ctx.strokeStyle = FOCUS_RING_COLOR;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  } else if (ring === 'active') {
+    ctx.beginPath();
+    ctx.arc(sx, sy, MARKER_RADIUS + 4, 0, Math.PI * 2);
+    ctx.strokeStyle = ACTIVE_RING_COLOR;
     ctx.lineWidth = 3;
     ctx.stroke();
   }
@@ -231,7 +248,8 @@ const drawLines = (ctx: CanvasRenderingContext2D, scene: Scene, view: View, over
     const [x1, y1] = toScreen(view, sensor.wxEnd, sensor.wyEnd);
     const state = markerState(scene, index);
     const emphasized = overlay.hovered === index || overlay.highlighted === index;
-    const selected = overlay.selected?.has(index) ?? false;
+    const focused = overlay.focused === index;
+    const selected = focused || (overlay.selected?.has(index) ?? false);
     const stroke = (color: string, width: number) => {
       ctx.strokeStyle = color;
       ctx.lineWidth = width;
@@ -240,8 +258,12 @@ const drawLines = (ctx: CanvasRenderingContext2D, scene: Scene, view: View, over
       ctx.lineTo(x1, y1);
       ctx.stroke();
     };
-    // A selected line: a pink border instead of the white one.
-    stroke(selected ? SELECTED_COLOR : '#ffffff', selected ? 9 : emphasized ? 8 : 5);
+    // An active line: a lila border instead of the white one; the focused
+    // one a white border with a dark outline.
+    if (focused) {
+      stroke(FOCUS_RING_OUTLINE, 11);
+    }
+    stroke(focused ? FOCUS_RING_COLOR : selected ? ACTIVE_RING_COLOR : '#ffffff', selected ? 9 : emphasized ? 8 : 5);
     stroke(
       overlay.highlighted === index ? plotTheme.brandOrange : state ? MARKER_COLORS[state] : plotTheme.brandBlue,
       emphasized ? 5 : 3,
@@ -286,8 +308,12 @@ const drawSensors = (
 ) => {
   const { sensors } = scene.layout;
   const order = sensors.map((_, index) => index);
+  // The focused sensor above its neighbours, the highlighted one on top.
+  if (overlay.focused != null && overlay.focused !== overlay.highlighted && overlay.focused < order.length) {
+    order.push(...order.splice(overlay.focused, 1));
+  }
   if (overlay.highlighted != null) {
-    order.push(...order.splice(overlay.highlighted, 1));
+    order.push(...order.splice(order.indexOf(overlay.highlighted), 1));
   }
   ctx.save();
   ctx.font = LABEL_FONT;
@@ -305,7 +331,8 @@ const drawSensors = (
     }
     const highlighted = overlay.highlighted === index;
     const hovered = overlay.hovered === index;
-    const selected = overlay.selected?.has(index) ?? false;
+    const focused = overlay.focused === index;
+    const selected = focused || (overlay.selected?.has(index) ?? false);
     // Without the dots: still the hovered, highlighted and selected ones.
     const withMarker = scene.showSensors || highlighted || hovered || selected;
     // The labels are a toggle of their own (off by default).
@@ -317,7 +344,7 @@ const drawSensors = (
       return;
     }
     if (withMarker) {
-      drawMarker(ctx, sx, sy, highlighted ? 'highlighted' : hovered ? 'hovered' : null, markerState(scene, index), selected);
+      drawMarker(ctx, sx, sy, highlighted ? 'highlighted' : hovered ? 'hovered' : null, markerState(scene, index), focused ? 'focused' : selected ? 'active' : null);
     }
     if (withLabel) {
       drawMarkerLabel(ctx, scene.sensorText(index), sx, sy, highlighted);
@@ -349,7 +376,7 @@ const drawColorBar = (ctx: CanvasRenderingContext2D, scene: Scene, { width, heig
   ctx.font = LABEL_FONT;
   ctx.textBaseline = 'alphabetic';
   ctx.fillText(scene.scaleTitle, barX - 2, barTop - 5);
-  ctx.font = '10px system-ui, sans-serif';
+  ctx.font = canvasFont(400, 10);
   ctx.textBaseline = 'middle';
   for (let tick = 0; tick <= 5; tick += 1) {
     const value = tick / 5;

@@ -12,6 +12,7 @@ import { plotTheme } from '../../styles/plotTheme';
 import { childTestId, repeatedTestId } from '../../testIds';
 import { labelEveryOf, snapped, snapStepOf } from '../../main/thresholdMixer';
 import PlotHelp from '../ui/PlotHelp';
+import { sensorThresholdOf, THRESHOLD_AREA_FILL } from './sensorThresholdArea';
 import PillButton from '../ui/kit/PillButton';
 import { useWheelHint, useZoomWheel, WheelZoomHint } from '../ui/wheelZoom';
 import { DISABLED_SENSOR_FILL, DISABLED_SENSOR_STROKE } from './disabledSensors';
@@ -41,7 +42,7 @@ const COLORS = {
   whisker: 'rgba(153, 27, 27, 0.7)',
   sigma: 'rgba(252, 122, 46, 0.5)',
   mean: plotTheme.brandBlue,
-  threshold: 'rgba(44, 160, 44, 0.13)',
+  threshold: THRESHOLD_AREA_FILL,
   filter: 'rgba(11, 54, 89, 0.06)',
   filterLine: '#8B8383',
   grid: 'rgba(11, 54, 89, 0.08)',
@@ -174,10 +175,7 @@ const SensorColumnsPlot = ({
     }
     return key === 'ep' ? ep : key === 'wp' ? wp : ep + wp;
   };
-  const thresholdOf = (sensor: number) => {
-    const own = sensorThresholds?.get(sensor);
-    return own != null && own > 0 ? own : threshold != null && threshold > 0 ? threshold : null;
-  };
+  const thresholdOf = (sensor: number) => sensorThresholdOf(sensor, threshold, sensorThresholds);
 
   const toggle = (part: Part) =>
     setParts((currentParts) => {

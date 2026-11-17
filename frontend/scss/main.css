@@ -50,6 +50,8 @@ body,
 }
 
 body {
+  /* Bootstrap's reboot (style.scss, loaded later) sets the same family from
+     $font-family-sans-serif; this keeps it for pages rendered before it. */
   font-family: 'Plus Jakarta Sans', 'Segoe UI', Tahoma, sans-serif;
   background-color: var(--progeo-warm-gray-1);
   color: var(--progeo-blue);

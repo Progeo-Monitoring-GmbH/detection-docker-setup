@@ -45,6 +45,21 @@ export const LOCATION_OFF_CLASS = 'location-row-off';
 export const isLocationOff = (flags: Partial<LocationFlags> | null | undefined) =>
   flags?.notifications_disabled === true || flags?.purgeable === true;
 
+/** Marked for the purge script: red stripes instead of the discreet grey ones. */
+export const LOCATION_PURGEABLE_CLASS = 'location-row-purgeable';
+
+/**
+ * The row class of a location in the location lists (overview, Verwaltung):
+ * purgeable -> red stripes, otherwise switched off -> grey stripes, else ''.
+ * Exclusive, so the two stripe patterns never stack.
+ */
+export const locationRowClass = (flags: Partial<LocationFlags> | null | undefined): string => {
+  if (flags?.purgeable === true) {
+    return LOCATION_PURGEABLE_CLASS;
+  }
+  return isLocationOff(flags) ? LOCATION_OFF_CLASS : '';
+};
+
 const FLAGS_URL = '/v1/location/flags/';
 /** Ids per request (the backend allows 500). */
 const BATCH = 200;
@@ -115,6 +130,30 @@ export const setLocationFlags = (id: number, patch: Partial<LocationFlags>) => {
   notify();
 };
 
+/**
+ * Flags a list already received with its rows (the Verwaltung's
+ * admin_overview): stored at once - one notification - and never asked for
+ * again. Ids already in the store keep their (possibly newer, toggled) value.
+ */
+export const seedLocationFlags = (rows: ReadonlyArray<Partial<LocationFlags> & { id: number }>) => {
+  let changed = false;
+  rows.forEach((row) => {
+    requested.add(row.id);
+    if (!store.has(row.id)) {
+      store.set(row.id, {
+        id: row.id,
+        notifications_disabled: row.notifications_disabled ?? null,
+        purgeable: row.purgeable ?? null,
+        readiness_score: row.readiness_score ?? null,
+      });
+      changed = true;
+    }
+  });
+  if (changed) {
+    notify();
+  }
+};
+
 /** Tests: forget everything. */
 export const resetLocationFlags = () => {
   store.clear();
@@ -167,6 +206,21 @@ export const locationOffRowStyle = <T,>(isOff: (row: T) => boolean) => ({
   when: isOff,
   classNames: [LOCATION_OFF_CLASS],
 });
+
+/**
+ * Like locationOffRowStyle, but purgeable rows get the red stripes
+ * (locationRowClass) - two exclusive rules, put them FIRST as well.
+ */
+export const locationFlagRowStyles = <T,>(flagsOfRow: (row: T) => LocationFlags | null) => [
+  {
+    when: (row: T) => locationRowClass(flagsOfRow(row)) === LOCATION_PURGEABLE_CLASS,
+    classNames: [LOCATION_PURGEABLE_CLASS],
+  },
+  {
+    when: (row: T) => locationRowClass(flagsOfRow(row)) === LOCATION_OFF_CLASS,
+    classNames: [LOCATION_OFF_CLASS],
+  },
+];
 
 // The badge sits in clickable rows - opening the checklist must not also
 // select the row.

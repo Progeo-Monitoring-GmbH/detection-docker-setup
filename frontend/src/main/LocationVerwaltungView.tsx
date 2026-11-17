@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router';
+import { useCallback, useDeferredValue, useEffect, useMemo, useState, type MouseEvent } from 'react';
+import { Link, useNavigate } from 'react-router';
 import { Spinner } from 'react-bootstrap';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
@@ -11,9 +11,15 @@ import PillButton from '../components/ui/kit/PillButton';
 import KpiStrip from '../components/ui/kit/KpiStrip';
 import SeverityBadge, { type Severity } from '../components/ui/kit/SeverityBadge';
 import { matchesLocationSearch } from '../components/location/locationSearch';
-import FavoriteStar from './FavoriteStar';
 import { repeatedTestId } from '../testIds';
-import { LOCATION_OFF_CLASS, LocationFlagIcons, useLocationFlags } from '../components/location/locationFlags';
+import { locationRowClass, seedLocationFlags, useLocationFlags } from '../components/location/locationFlags';
+import {
+  LOCATION_LIST_CLASS,
+  LocationNameCell,
+  TwoLineCell,
+  locationAddressLine,
+} from '../components/location/LocationListCells';
+import { getProjectTypeLabel } from './projectType';
 import './LocationVerwaltungView.css';
 
 type VerwaltungRow = {
@@ -24,6 +30,19 @@ type VerwaltungRow = {
   city: string | null;
   owner: string | null;
   status: Severity | 'ok';
+  // Same query as the rest (LocationViewSet.ADMIN_OVERVIEW_EXTRA_FIELDS).
+  plz?: string | null;
+  address?: string | null;
+  project_type?: number | null;
+  purgeable?: boolean | null;
+  notifications_disabled?: boolean | null;
+  readiness_score?: number | null;
+};
+
+/** A click on the row opens the object - not on its buttons and links. */
+const isRowOwnClick = (event: MouseEvent) => {
+  const target = event.target;
+  return target instanceof Element && !target.closest('button, a, input, select, textarea, label');
 };
 
 type Kpis = { ok: number; beobachten: number; alarm: number; kritisch: number };
@@ -75,7 +94,10 @@ const LocationVerwaltungView = () => {
       auth,
       '/v1/location/admin_overview/',
       (response) => {
-        setRows((response?.data?.objects || []) as VerwaltungRow[]);
+        const objects = (response?.data?.objects || []) as VerwaltungRow[];
+        // The flags came with the rows - no /v1/location/flags/ round trips.
+        seedLocationFlags(objects.filter((row) => 'purgeable' in row));
+        setRows(objects);
         setKpis((response?.data?.kpis || { ok: 0, beobachten: 0, alarm: 0, kritisch: 0 }) as Kpis);
         setLoading(false);
       },
@@ -92,19 +114,24 @@ const LocationVerwaltungView = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // The list has every location of every account (~1000 rows): typing
+  // updates the field at once, the rows follow when React has time.
+  const deferredSearch = useDeferredValue(search);
   const filtered = useMemo(() => {
     return rows.filter((row) => {
       if (statusFilter !== 'Alle' && row.status !== statusFilter) {
         return false;
       }
       return matchesLocationSearch(
-        { name: row.name, project_id: row.nr, city: row.city, owner: row.owner },
-        search,
+        { name: row.name, project_id: row.nr, city: row.city, plz: row.plz, address: row.address, owner: row.owner },
+        deferredSearch,
       );
     });
-  }, [rows, search, statusFilter]);
-  // Switched-off locations (notifications off / marked purgeable) striped.
-  const { flagsOf, isOff } = useLocationFlags(rows.map((row) => row.id));
+  }, [rows, deferredSearch, statusFilter]);
+  const rowIds = useMemo(() => rows.map((row) => row.id), [rows]);
+  // Switched-off locations striped grey, purgeable ones red.
+  const { flagsOf } = useLocationFlags(rowIds);
+  const navigate = useNavigate();
 
   const kpiTiles = [
     { label: t('verwaltung_kpi_total'), value: String(rows.length) },
@@ -235,58 +262,75 @@ const LocationVerwaltungView = () => {
                 {t('verwaltung_no_objects')}
               </div>
             ) : (
-              <div className="location-verwaltung-scroll">
+              <div className={`location-verwaltung-scroll ${LOCATION_LIST_CLASS}`}>
                 <div className="location-verwaltung-table" data-testid="verwaltung-table">
                   <div className="location-verwaltung-grid location-verwaltung-head">
                     <span>{t('verwaltung_col_nr')}</span>
                     <span>{t('verwaltung_col_object')}</span>
-                    <span>{t('verwaltung_col_city')}</span>
+                    <span>{t('verwaltung_col_product')}</span>
                     <span>{t('verwaltung_col_owner')}</span>
                     <span>{t('verwaltung_col_status')}</span>
                     <span className="location-verwaltung-right">{t('verwaltung_col_actions')}</span>
                   </div>
-                  {filtered.map((row) => (
-                    <div
-                      key={`${row.account_id}-${row.id}`}
-                      className={`location-verwaltung-grid location-verwaltung-row${isOff(row.id) ? ` ${LOCATION_OFF_CLASS}` : ''}`}
-                      {...repeatedTestId('verwaltung-row', `${row.account_id}-${row.id}`)}
-                    >
-                      <span className="location-verwaltung-nr">{row.nr ?? '–'}</span>
-                      <span className="location-verwaltung-name-cell">
-                        <FavoriteStar locationId={row.id} size={26} />
-                        <span className="location-verwaltung-name">
-                          <LocationFlagIcons flags={flagsOf(row.id)} testKey={`verwaltung-${row.account_id}-${row.id}`} />
-                          {row.name || '–'}
-                        </span>
-                      </span>
-                      <span className="location-verwaltung-dim">{row.city || '–'}</span>
-                      <span className="location-verwaltung-dim location-verwaltung-ellipsis">
-                        {row.owner || '–'}
-                      </span>
-                      <span {...repeatedTestId('verwaltung-row-status', `${row.account_id}-${row.id}`)}>
-                        {row.status === 'ok' ? (
-                          <span className="location-verwaltung-ok">{t('status_kpi_ok')}</span>
-                        ) : (
-                          <SeverityBadge severity={row.status} label={t(`ui_severity_${row.status}`)} />
-                        )}
-                      </span>
-                      <span className="location-verwaltung-row-actions">
-                        <PillButton
-                          label={t('verwaltung_permissions')}
-                          onClick={() => loadPerms(row)}
-                          testId="verwaltung-row-permissions"
-                          testKey={`${row.account_id}-${row.id}`}
+                  {filtered.map((row) => {
+                    const key = `${row.account_id}-${row.id}`;
+                    const flags = flagsOf(row.id);
+                    const rowClass = locationRowClass(flags);
+                    return (
+                      // The whole row opens the object; the name is the link
+                      // for keyboard and middle-click.
+                      <div
+                        key={key}
+                        className={`location-verwaltung-grid location-verwaltung-row${rowClass ? ` ${rowClass}` : ''}`}
+                        onClick={(event) => {
+                          if (isRowOwnClick(event)) {
+                            navigate(`/location/${row.id}/status`);
+                          }
+                        }}
+                        {...repeatedTestId('verwaltung-row', key)}
+                      >
+                        <span className="location-list-num">{row.nr ?? '–'}</span>
+                        <LocationNameCell
+                          locationId={row.id}
+                          name={
+                            <Link
+                              to={`/location/${row.id}/status`}
+                              title={t('verwaltung_open')}
+                              {...repeatedTestId('verwaltung-row-open', key)}
+                            >
+                              {row.name || '–'}
+                            </Link>
+                          }
+                          subline={locationAddressLine(row)}
+                          flags={flags}
+                          testKey={`verwaltung-${key}`}
                         />
-                        <Link
-                          to={`/location/${row.id}/status`}
-                          className="location-verwaltung-open"
-                          {...repeatedTestId('verwaltung-row-open', `${row.account_id}-${row.id}`)}
-                        >
-                          {t('verwaltung_open')}
-                        </Link>
-                      </span>
-                    </div>
-                  ))}
+                        <span className="location-verwaltung-cell">
+                          {row.project_type ? (
+                            <span className="location-list-product">{getProjectTypeLabel(t, row.project_type)}</span>
+                          ) : (
+                            <span className="location-list-muted">–</span>
+                          )}
+                        </span>
+                        <TwoLineCell plain primary={row.owner || '–'} title={row.owner || undefined} />
+                        <span {...repeatedTestId('verwaltung-row-status', key)}>
+                          {row.status === 'ok' ? (
+                            <span className="location-verwaltung-ok">{t('status_kpi_ok')}</span>
+                          ) : (
+                            <SeverityBadge severity={row.status} label={t(`ui_severity_${row.status}`)} />
+                          )}
+                        </span>
+                        <span className="location-list-actions">
+                          <PillButton
+                            label={t('verwaltung_permissions')}
+                            onClick={() => loadPerms(row)}
+                            testId="verwaltung-row-permissions"
+                            testKey={key}
+                          />
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}

@@ -17,6 +17,7 @@ const PLOT_CONFIG = { ...PLOT_CONFIG_NO_MODEBAR, scrollZoom: true };
 import { DISABLED_SENSOR_STROKE } from './disabledSensors';
 import { assignSlots, type SensorStyle, sensorStyle } from './sensorPalette';
 import SensorColumnsPlot from './SensorColumnsPlot';
+import { THRESHOLD_AREA_FILL, thresholdAreaOf } from './sensorThresholdArea';
 
 /** The help buttons' distance (px) above a plot's top edge. */
 const HELP_ABOVE_PX = 28;
@@ -738,8 +739,41 @@ const MeasurementSamplesCompareChart = (
   }, [frames, meanAndDeviationSeries, maskLines]);
 
 
+  // The second plot's alarm threshold area (|WP − EP| below it: no alarm),
+  // like the first plot's - for the selected sensors' thresholds.
+  const thresholdArea = React.useMemo(
+    () => thresholdAreaOf(selectedSensors, threshold, sensorThresholds),
+    [selectedSensors, threshold, sensorThresholds],
+  );
+  const thresholdLineColors = thresholdArea.lines.map(({ sensor }) => styleOf(sensor).color).join('|');
+
   const shapes = React.useMemo(() => {
     const result: Partial<Plotly.Shape>[] = [];
+    // The threshold area across the second plot - behind its lines. Its y is
+    // data, so the plot's autorange keeps it in view.
+    const acrossSensorPlot = { xref: 'x3 domain' as Plotly.XAxisName, yref: 'y4' as Plotly.YAxisName, x0: 0, x1: 1 };
+    if (thresholdArea.top != null) {
+      result.push({
+        ...acrossSensorPlot,
+        type: 'rect',
+        layer: 'below',
+        y0: 0,
+        y1: thresholdArea.top,
+        fillcolor: THRESHOLD_AREA_FILL,
+        line: { width: 0 },
+      });
+    }
+    const lineColors = thresholdLineColors.split('|');
+    thresholdArea.lines.forEach(({ value }, index) => {
+      result.push({
+        ...acrossSensorPlot,
+        type: 'line',
+        layer: 'below',
+        y0: value,
+        y1: value,
+        line: { color: lineColors[index], width: 1.5, dash: 'dash' },
+      });
+    });
     // With the history: the slider's period, shaded on the second plot.
     if (historySeries && frames.length) {
       result.push({
@@ -810,11 +844,12 @@ const MeasurementSamplesCompareChart = (
   }, [
     alarmBandX,
     currentFrame,
-    selectedSensors,
     historySeries,
     frames,
     geometry,
     selectedRange,
+    thresholdArea,
+    thresholdLineColors,
   ]);
 
   // The line under the cursor or its legend entry is highlighted: wider,

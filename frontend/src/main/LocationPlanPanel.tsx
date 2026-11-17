@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import FrameSlider, { focusFrameIndex, type AlarmSpan } from '../components/device/FrameSlider';
 import LageplanZoneOverlay from '../components/device/LageplanZoneOverlay';
@@ -57,6 +57,24 @@ type LocationPlanPanelProps = {
   testId?: string;
 };
 
+/**
+ * The tallest the plan gets: it fills the card's width (height from the
+ * plan's aspect), but stays within about three quarters of the window - a
+ * tall plan keeps empty bands beside it instead of needing a scroll.
+ */
+export const planMaxHeight = (windowHeight: number) =>
+  Math.round(Math.min(900, Math.max(420, windowHeight * 0.75)));
+
+const usePlanMaxHeight = () => {
+  const [maxHeight, setMaxHeight] = useState(() => planMaxHeight(window.innerHeight));
+  useEffect(() => {
+    const onResize = () => setMaxHeight(planMaxHeight(window.innerHeight));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  return maxHeight;
+};
+
 const PlanHint = ({ children, testId }: { children: ReactNode; testId?: string }) => (
   <div className="plan-panel-hint" data-testid={testId}>{children}</div>
 );
@@ -87,6 +105,7 @@ const LocationPlanPanel = ({
   testId = 'plan-panel',
 }: LocationPlanPanelProps) => {
   const { t } = useTranslation();
+  const maxHeight = usePlanMaxHeight();
   // smartex® dm: the heat field too, with its band lines (SensorHeatmap2D).
   const withHeat = visualization === 'heatmap' || visualization === 'lines';
   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
@@ -109,8 +128,6 @@ const LocationPlanPanel = ({
       ),
     [heatmap],
   );
-
-  const selectedPositions = useMemo(() => (selectedSensor != null ? [selectedSensor] : []), [selectedSensor]);
 
   const planViews = useMemo(() => planViewsOf(heatmap), [heatmap]);
   const shownPlan = planViews.find((plan) => plan.id === selectedPlanId) ?? planViews[0] ?? null;
@@ -207,8 +224,8 @@ const LocationPlanPanel = ({
           <div className="plan-panel-heatmap" data-testid={childTestId(testId, 'heatmap')}>
             <SensorHeatmap2D
               response={viewHeatmap}
-              height={560}
-              compact
+              // Full card width; as tall as the shown area needs, up to maxHeight.
+              height={maxHeight}
               hideChrome
               onTimestampChange={setFrameIndex}
               alarms={alarmSpans}
@@ -217,7 +234,8 @@ const LocationPlanPanel = ({
               profileLoading={profileLoading}
               focusTime={focusTime}
               frameToolbar={frameToolbar}
-              selectedPositions={selectedPositions}
+              // The clicked sensor: the white "selected" ring (lila marks active ones).
+              focusedPosition={selectedSensor}
               onSensorClick={onSensorSelect}
               suspicions={shownSuspicions}
             />
@@ -243,7 +261,8 @@ const LocationPlanPanel = ({
         <LageplanZoneOverlay
           imageUrl={shownPlan.url ?? null}
           points={zonePoints}
-          height={480}
+          height={maxHeight}
+          fitWidth
           // 'tiles' never gets here (asTiles above) - points keeps the type whole.
           mode={visualization === 'tiles' ? 'points' : visualization}
           alignment={shownPlan}

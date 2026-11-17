@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { PORTAL_NAV_ITEMS, portalNavPath, portalTabOf, switchLocationPath } from './portalNav';
+import {
+  PORTAL_NAV_ITEMS,
+  openLocationId,
+  portalNavPath,
+  portalTabOf,
+  switchLocationPath,
+} from './portalNav';
 
 describe('PORTAL_NAV_ITEMS', () => {
   it('is non-empty and starts with the status page', () => {
@@ -64,12 +70,34 @@ describe('switchLocationPath', () => {
     expect(switchLocationPath(pathname, 7)).toBe(expected);
   });
 
-  it.each(['/alarms/', '/location/overview/', '/location/12/unknown', '/'])(
+  it.each(['/location/12/heatmap2d', '/location/12/alarms/'])(
+    'stays on the location page %s',
+    (pathname) => {
+      expect(switchLocationPath(pathname, 7)).toBe(pathname.replace('12', '7').replace(/\/$/, ''));
+    },
+  );
+
+  it.each([
+    ['/checklist/location/', '?location=12', '/checklist/location/?location=7'],
+    ['/device/overview', '?location=12&ping=1', '/device/overview?location=7'],
+    ['/lageplan/wizard/', '?location=12&plan=3', '/lageplan/wizard/?location=7'],
+  ])('keeps the page of %s%s, only the location changes', (pathname, search, expected) => {
+    expect(switchLocationPath(pathname, 7, search)).toBe(expected);
+  });
+
+  it.each(['/alarms/', '/location/overview/', '/location/12/unknown', '/', '/checklist/location/'])(
     'opens the status page from %s',
     (pathname) => {
       expect(switchLocationPath(pathname, 7)).toBe('/location/7/status');
     },
   );
+
+  it('knows the location a page shows', () => {
+    expect(openLocationId('/location/12/objekt')).toBe(12);
+    expect(openLocationId('/checklist/location/', '?location=12')).toBe(12);
+    expect(openLocationId('/checklist/location/', '')).toBeNull();
+    expect(openLocationId('/location/overview/')).toBeNull();
+  });
 
   it('knows the tab of a location page only', () => {
     expect(portalTabOf('/location/3/rechte')?.key).toBe('rechte');

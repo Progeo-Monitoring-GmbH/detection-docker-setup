@@ -71,10 +71,10 @@ def test_an_empty_location_fails_nearly_everything():
     result = lr.evaluate(lr.Facts(location={"notifications_disabled": True, "alarm_threshold": 100}))
 
     # Nothing to look at for these - left out of the score.
-    assert {key for key, status in _status(result).items() if status == lr.NA} == {
-        "sensor_devices", "points_named", "dead_sensors_disabled", "lageplan_resolution"}
-    assert _failed(result) == set(_status(result)) - {"threshold", "sensor_devices", "points_named",
-                                                      "dead_sensors_disabled", "lageplan_resolution"}
+    not_applicable = {"devices_online", "sensor_devices", "points_named", "dead_sensors_disabled",
+                      "lageplan_resolution"}
+    assert {key for key, status in _status(result).items() if status == lr.NA} == not_applicable
+    assert _failed(result) == set(_status(result)) - {"threshold", *not_applicable}
     assert result["level"] == "open"
 
 
@@ -112,6 +112,14 @@ def test_offline_devices_are_named():
 
     check = next(c for c in result["checks"] if c["key"] == "devices_online")
     assert (check["status"], check["values"]) == (lr.FAIL, {"offline": 1, "total": 2, "names": "B"})
+
+
+def test_without_devices_only_the_devices_check_fails():
+    """"All devices online" is not failed (nor passed) without any device."""
+    result = lr.evaluate(ready_facts(devices=[], points=[]))
+
+    assert _status(result)["devices_online"] == lr.NA
+    assert "devices" in _failed(result)
 
 
 def _device(pk, first=1, count=None):
@@ -266,6 +274,94 @@ def test_an_offline_device_fails_the_check(ready_location, account):
 
     assert "devices_online" in _failed(result)
     assert next(c for c in result["checks"] if c["key"] == "devices_online")["values"]["names"].startswith("Keller")
+
+
+class FakeAirtable:
+    """AirtableHelper answering with `records` (the project rows)."""
+
+    records = []
+    calls = []
+
+    def __init__(self, *args, **kwargs):
+        self.configured = True
+
+    def table(self, *args):
+        return self
+
+    def all(self, formula=None, fields=None, max_records=None):
+        FakeAirtable.calls.append(formula)
+        return FakeAirtable.records
+
+
+@pytest.fixture
+def airtable(monkeypatch):
+    from progeo.helper import airtable_locations
+
+    FakeAirtable.records = [{"id": "recA", "fields": {
+        "Projektnummer": "950001", "Baustellenadresse": "Hauptstraße 1, 50667 Köln"}}]
+    FakeAirtable.calls = []
+    monkeypatch.setattr(airtable_locations, "AirtableHelper", FakeAirtable)
+    return FakeAirtable
+
+
+def _without_address(location, **changes):
+    fields = {"address": None, "plz": "", "city": None, **changes}
+    ProgeoLocation.objects.using(f.DB).filter(pk=location.pk).update(**fields)
+    location.refresh_from_db(using=f.DB)
+    return location
+
+
+def test_a_missing_address_is_fetched_from_airtable(ready_location, account, airtable):
+    location = _without_address(ready_location)
+
+    result = lr.check_location(location, account)
+
+    assert airtable.calls  # by project number: the fixture's link has no record id
+    assert result["airtable_filled"] == ["address", "plz", "city"]
+    assert "address" not in _failed(result)
+    location.refresh_from_db(using=f.DB)
+    assert (location.address, location.plz, location.city) == ("Hauptstraße 1", "50667", "Köln")
+
+
+def test_only_the_empty_address_parts_are_filled(ready_location, account, airtable):
+    location = _without_address(ready_location, address="Nebenweg 2", plz="50668")
+
+    assert lr.check_location(location, account)["airtable_filled"] == ["city"]
+    location.refresh_from_db(using=f.DB)
+    assert (location.address, location.plz, location.city) == ("Nebenweg 2", "50668", "Köln")
+
+
+def test_the_position_is_looked_up_for_the_fetched_address(ready_location, account, airtable, settings,
+                                                          monkeypatch):
+    from progeo.helper.legacy import geo
+
+    settings.GEOCODE_ON_SAVE = True
+    monkeypatch.setattr(geo.GeoHelper, "fetch_lat_lon", lambda self, *args: (50.94, 6.96))
+    location = _without_address(ready_location, latitude=None, longitude=None)
+
+    result = lr.check_location(location, account)
+
+    assert result["airtable_filled"] == ["address", "plz", "city", "latitude", "longitude"]
+    assert not {"address", "geo"} & _failed(result)
+
+
+@pytest.mark.parametrize("case", ["complete", "no_link", "airtable_empty", "airtable_down", "no_save"])
+def test_airtable_is_only_asked_for_a_missing_address_of_a_linked_location(ready_location, account, airtable,
+                                                                            case, monkeypatch):
+    location = ready_location
+    if case != "complete":
+        location = _without_address(location, airtable_url=None if case == "no_link" else location.airtable_url)
+    if case == "airtable_empty":
+        airtable.records = [{"id": "recA", "fields": {"Projektnummer": "950001"}}]
+    if case == "airtable_down":
+        def broken(*args, **kwargs):
+            raise ConnectionError("airtable down")
+        monkeypatch.setattr(airtable, "all", broken)
+
+    result = lr.check_location(location, account, save=case != "no_save")
+
+    assert result["airtable_filled"] == []
+    assert bool(airtable.calls) == (case == "airtable_empty")
 
 
 def test_staff_open_the_checklist_of_a_location(api_client, ready_location):

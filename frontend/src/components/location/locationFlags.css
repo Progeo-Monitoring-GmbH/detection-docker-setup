@@ -12,6 +12,19 @@
   );
 }
 
+/* Marked for the purge script (purgeable) in the location lists: red
+   stripes, light enough to keep the text readable. Also a background IMAGE,
+   so the row's state colour, hover and selection stay underneath. */
+.location-row-purgeable,
+.rdt_TableRow.location-row-purgeable,
+.list-group-item.location-row-purgeable {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(var(--bs-danger-rgb), 0.05) 0 6px,
+    rgba(var(--bs-danger-rgb), 0.14) 6px 12px
+  );
+}
+
 .location-flag-icons {
   display: inline-flex;
   align-items: center;

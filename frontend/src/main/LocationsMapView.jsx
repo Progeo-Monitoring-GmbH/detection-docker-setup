@@ -22,7 +22,6 @@ import {
 import {
   CircleMarker,
   MapContainer,
-  TileLayer,
   Tooltip,
   useMap,
 } from 'react-leaflet';
@@ -40,6 +39,8 @@ import { KeyChip } from '../components/ui/KeyHints';
 import { useWheelHint, WheelZoomHint } from '../components/ui/wheelZoom';
 import { useConsent } from '../components/privacy/ConsentProvider';
 import MapConsentNotice from '../components/privacy/MapConsentNotice';
+import { MapBaseTiles, MapLayerSwitch } from '../components/ui/MapBaseLayer';
+import { useMapBaseLayer } from '../components/ui/mapLayers';
 import { repeatedTestId } from '../testIds';
 import {
   LOCATION_OFF_CLASS,
@@ -58,12 +59,8 @@ const FLASH_STEPS = 20;
 // Per browser: whether the live measurement messages are muted.
 const TOASTS_MUTED_KEY = 'locmap.toasts-muted';
 
-// Tile source: point VITE_MAP_TILE_URL at a local tile server (or another
-// provider) for offline deployments - with the default Esri source the map
-// page needs internet at runtime.
-const TILE_URL =
-  import.meta.env.VITE_MAP_TILE_URL ||
-  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+// Tiles: components/ui/mapLayers.ts (satellite / hybrid / street, or the
+// own tile server of VITE_MAP_TILE_URL for offline deployments).
 
 /**
  * GET: the locations at once and how many chunks of project databases to
@@ -480,6 +477,7 @@ const LocationsMapView = () => {
   const authRef = useRef(auth);
   authRef.current = auth;
   const { allows } = useConsent();
+  const [baseLayer, setBaseLayer] = useMapBaseLayer();
   const { enqueueSnackbar } = useSnackbar();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -789,12 +787,7 @@ const LocationsMapView = () => {
                   preferCanvas
                   scrollWheelZoom={false}
                 >
-                  {allows('externalMaps') && (
-                    <TileLayer
-                      attribution="Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community"
-                      url={TILE_URL}
-                    />
-                  )}
+                  {allows('externalMaps') && <MapBaseTiles layer={baseLayer} />}
                   <MapViewportController
                     markers={mappableRows}
                     selectedLocation={selectedLocation}
@@ -818,6 +811,9 @@ const LocationsMapView = () => {
                 </MapContainer>
               )}
               {!loading && <WheelZoomHint visible={wheelHint} testId="locations-map-wheel-hint" />}
+              {!loading && allows('externalMaps') && (
+                <MapLayerSwitch value={baseLayer} onChange={setBaseLayer} />
+              )}
               {!loading && <MapConsentNotice placement="top" />}
             </Card.Body>
           </Card>

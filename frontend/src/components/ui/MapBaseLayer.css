@@ -1,0 +1,24 @@
+/* Base layer switch over a Leaflet map (MapBaseLayer.tsx): above Leaflet's
+   panes and controls (z-index up to 1000). */
+.btn-group.map-layer-switch {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1001;
+  box-shadow: 0 1px 4px rgba(11, 54, 89, 0.18);
+  border-radius: 8px;
+}
+
+.btn-group.map-layer-switch .btn {
+  font-size: 12px;
+  padding: 3px 10px;
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(11, 54, 89, 0.12);
+  color: var(--progeo-blue);
+}
+
+.btn-group.map-layer-switch .btn.active {
+  background: var(--progeo-orange);
+  border-color: var(--progeo-orange);
+  color: #fff;
+}

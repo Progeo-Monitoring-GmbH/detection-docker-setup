@@ -1,0 +1,123 @@
+/* The shared look of the location lists - LocationsOverview (a data table)
+   and LocationVerwaltungView (a CSS grid): compact rows with a bold first
+   line and a small muted second line (LocationListCells.tsx). Stripes of
+   switched-off / purgeable rows: locationFlags.css. */
+
+/* -- compact rows (data table inside .location-list) ----------------------- */
+
+.location-list {
+  --rdt-row-height: 40px;
+  --rdt-cell-padding-x: 8px;
+  --rdt-cell-padding-x-mobile: 6px;
+}
+
+.location-list .rdt_TableCell {
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+
+/* Plain (not bold) first line: contact, owner. */
+.location-list-lines--plain .location-list-primary {
+  font-weight: 400;
+}
+
+/* -- cells ------------------------------------------------------------------ */
+
+.location-list-lines {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.location-list-primary,
+.location-list-secondary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.location-list-primary {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--progeo-blue);
+}
+
+.location-list-secondary {
+  font-size: 11px;
+  font-weight: 400;
+  color: #8b8383;
+}
+
+.location-list-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  width: 100%;
+}
+
+.location-list-name-cell .favorite-star {
+  flex: 0 0 auto;
+}
+
+/* A name that is a link (Verwaltung): looks like the text, underlined on hover. */
+.location-list-primary a,
+.location-list-primary a:hover {
+  color: inherit;
+}
+
+.location-list-primary a:hover {
+  text-decoration: underline;
+}
+
+.location-list-num {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.location-list-muted {
+  color: #8b8383;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The product (smartex® dm, ...): a small pill. */
+.location-list-product {
+  display: inline-block;
+  max-width: 100%;
+  padding: 1px 8px;
+  border-radius: var(--progeo-radius-pill);
+  background: var(--progeo-track-soft);
+  color: var(--progeo-blue);
+  font-size: 11px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Last measurement: green while it is recent, muted otherwise. */
+.location-list-recent {
+  color: #3f7a1c;
+}
+
+.location-list-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  width: 100%;
+}
+
+.location-list-icon-button.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}

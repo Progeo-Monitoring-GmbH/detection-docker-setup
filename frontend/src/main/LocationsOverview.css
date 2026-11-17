@@ -13,24 +13,32 @@
   margin-bottom: 0;
 }
 
-.locations-list-title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
 .locations-list-count {
   font-size: 12.5px;
   color: #8b8383;
   font-weight: 400;
+  white-space: nowrap;
 }
 
-/* Search, "only connected" switch and "active alarms" in the panel head. */
+/* Search, "only connected" switch and "active alarms": the panel head of
+   the list, left-aligned right above the table - no title row of its own. */
+.progeo-panel-head:has(.locations-filters) {
+  padding: 12px 16px 8px;
+}
+
+.progeo-panel-title:has(> .locations-filters) {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 400;
+}
+
 .locations-filters {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  justify-content: flex-start;
+  gap: 10px 12px;
 }
 
 .progeo-table-search.locations-search {
@@ -76,8 +84,9 @@
   box-shadow: inset 3px 0 0 var(--progeo-orange);
 }
 
+/* Only the bar: a green tint on every measuring row was more noise than
+   information (the State column says it). */
 .rdt_TableRow.locations-row--measurement {
-  background-color: rgba(141, 193, 96, 0.12);
   box-shadow: inset 3px 0 0 var(--progeo-contrast-green);
 }
 
@@ -85,14 +94,12 @@
   box-shadow: inset 3px 0 0 var(--progeo-warm-gray-3);
 }
 
-/* -- name cell ------------------------------------------------------------- */
+/* -- name cell (LocationNameCell, components/location/locationList.css) --- */
 
-.locations-name-cell {
+/* The test-id wrapper of the shared name cell: it may shrink, so the
+   name and address cut off instead of widening the column. */
+.location-list-name-wrap {
+  display: flex;
   min-width: 0;
-  font-weight: 500;
-}
-
-.locations-name-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  width: 100%;
 }

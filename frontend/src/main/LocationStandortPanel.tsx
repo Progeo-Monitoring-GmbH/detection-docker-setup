@@ -1,4 +1,4 @@
-import { CircleMarker, MapContainer, TileLayer } from 'react-leaflet';
+import { CircleMarker, MapContainer } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useTranslation } from 'react-i18next';
 import { Geo } from 'react-bootstrap-icons';
@@ -7,6 +7,8 @@ import type { LocationDetail } from './locationTypes';
 import { formatDate } from './dateFormat';
 import { useConsent } from '../components/privacy/ConsentProvider';
 import MapConsentNotice from '../components/privacy/MapConsentNotice';
+import { MapBaseTiles, MapLayerSwitch } from '../components/ui/MapBaseLayer';
+import { useMapBaseLayer } from '../components/ui/mapLayers';
 import './LocationStandortPanel.css';
 
 // react-leaflet@5's shipped prop types don't resolve `center`/`zoom`/
@@ -15,13 +17,8 @@ import './LocationStandortPanel.css';
 // surfaced before). Cast rather than fight the library's types.
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const AnyMapContainer = MapContainer as any;
-const AnyTileLayer = TileLayer as any;
 const AnyCircleMarker = CircleMarker as any;
 /* eslint-enable @typescript-eslint/no-explicit-any */
-
-const TILE_URL =
-  import.meta.env.VITE_MAP_TILE_URL ||
-  'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 
 type LocationStandortPanelProps = {
   location: LocationDetail | null;
@@ -51,6 +48,8 @@ const LocationStandortPanel = ({
 }: LocationStandortPanelProps) => {
   const { t } = useTranslation();
   const { allows } = useConsent();
+  // Satellite by default - the building is what matters here.
+  const [baseLayer, setBaseLayer] = useMapBaseLayer();
 
   return (
     <PanelCard title={t('objekt_standort_title')} testId="standort">
@@ -62,19 +61,14 @@ const LocationStandortPanel = ({
             <AnyMapContainer
               key={`${location.latitude},${location.longitude}`}
               center={[location.latitude, location.longitude]}
-              zoom={15}
+              zoom={17}
               className="standort-leaflet"
               scrollWheelZoom={false}
               dragging={false}
               zoomControl={false}
               doubleClickZoom={false}
             >
-              {allows('externalMaps') && (
-                <AnyTileLayer
-                  attribution="&copy; OpenStreetMap contributors"
-                  url={TILE_URL}
-                />
-              )}
+              {allows('externalMaps') && <MapBaseTiles layer={baseLayer} />}
               <AnyCircleMarker
                 center={[location.latitude, location.longitude]}
                 radius={7}
@@ -85,6 +79,9 @@ const LocationStandortPanel = ({
                 }}
               />
             </AnyMapContainer>
+            {allows('externalMaps') && (
+              <MapLayerSwitch value={baseLayer} onChange={setBaseLayer} />
+            )}
             <MapConsentNotice />
           </>
         ) : (

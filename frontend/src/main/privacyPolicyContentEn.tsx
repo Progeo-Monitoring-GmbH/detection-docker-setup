@@ -33,7 +33,7 @@ const BROWSER_STORAGE = [
   { name: 'progeo_consent', code: true, kind: 'Local Storage', purpose: 'Stores your privacy choices', duration: '12 months' },
   { name: 'i18nextLng', code: true, kind: 'Local Storage', purpose: 'Selected language', duration: 'until deleted in the browser' },
   { name: 'progeo.languageChosen', code: true, kind: 'Session Storage', purpose: 'Language selected on the sign-in page - stored in your profile after signing in', duration: 'until signing in or closing the tab' },
-  { name: 'progeo.sidebar.collapsed, progeo.canvasKeyLegend.collapsed', code: true, kind: 'Local Storage', purpose: 'Display: collapsed sidebar or legend', duration: 'until deleted in the browser' },
+  { name: 'progeo.sidebar.collapsed, progeo.canvasKeyLegend.collapsed, progeo.map.baseLayer', code: true, kind: 'Local Storage', purpose: 'Display: collapsed sidebar or legend, selected map view', duration: 'until deleted in the browser' },
   { name: 'demoToken', code: true, kind: 'Local Storage', purpose: 'Public demo only: signing in again with the same demo link', duration: 'until the demo link expires' },
   { name: 'impersonatorTokens, viewAsUser', code: true, kind: 'Local Storage', purpose: 'ProGeo staff only: support view ("log in as", "show as user")', duration: 'until sign-out' },
   { name: 'Cache', code: false, kind: 'Session Storage', purpose: 'Speeds up loading data that was already retrieved', duration: 'until the tab is closed' },
@@ -439,7 +439,7 @@ export const buildPolicySectionsEn = ({ consentButton }: SectionOptions): Policy
             )
           </li>
           <li>
-            <strong>Esri ArcGIS Online</strong> (satellite images) - Environmental
+            <strong>Esri ArcGIS Online</strong> (satellite images and place labels) - Environmental
             Systems Research Institute, Inc., 380 New York Street, Redlands, CA
             92373, USA (
             <ExternalLink href="https://www.esri.com/en-us/privacy/overview">privacy policy</ExternalLink>

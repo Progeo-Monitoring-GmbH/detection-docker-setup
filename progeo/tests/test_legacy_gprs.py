@@ -12,9 +12,9 @@ import pytest
 from django.core.cache import cache
 from django.test import override_settings
 
+from progeo.consumer import GRP_NAME
 from progeo.tests import factories as f
 from progeo.tests.legacy_gprs_recorded import recorded_configs
-from progeo.consumer import GRP_NAME
 from progeo.v1.legacy import executor, gprs_state, live_events
 from progeo.v1.legacy.gprs import extract_gprs_data
 from progeo.v1.models import ProgeoAlarm, ProgeoMeasurement

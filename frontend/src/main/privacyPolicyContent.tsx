@@ -81,10 +81,10 @@ const BROWSER_STORAGE = [
     duration: 'bis zur Anmeldung bzw. zum Schließen des Tabs',
   },
   {
-    name: 'progeo.sidebar.collapsed, progeo.canvasKeyLegend.collapsed',
+    name: 'progeo.sidebar.collapsed, progeo.canvasKeyLegend.collapsed, progeo.map.baseLayer',
     code: true,
     kind: 'Local Storage',
-    purpose: 'Darstellung: eingeklappte Seitenleiste bzw. Legende',
+    purpose: 'Darstellung: eingeklappte Seitenleiste bzw. Legende, gewählte Kartenansicht',
     duration: 'bis zur Löschung im Browser',
   },
   {
@@ -607,7 +607,7 @@ export const buildPolicySections = ({
             )
           </li>
           <li>
-            <strong>Esri ArcGIS Online</strong> (Satellitenbilder) –
+            <strong>Esri ArcGIS Online</strong> (Satellitenbilder und Ortsbeschriftungen) –
             Environmental Systems Research Institute, Inc., 380 New York Street,
             Redlands, CA 92373, USA (
             <ExternalLink href="https://www.esri.com/en-us/privacy/overview">

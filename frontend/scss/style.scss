@@ -17,6 +17,12 @@ $input-bg: #ffffff;
 $input-color: #0b3659;
 $input-border-color: #cac4c4;
 
+// The portal's one font (bundled: src/assets/fonts/plus-jakarta-sans).
+// Bootstrap's reboot sets body/input/button fonts from this, after
+// main.css - so it must be set here, not only on `body` in main.css.
+// Same stack as FONT_STACK in src/styles/fonts.ts (Plotly, canvas text).
+$font-family-sans-serif: 'Plus Jakarta Sans', 'Segoe UI', Tahoma, sans-serif;
+
 @import '~bootstrap/scss/bootstrap';
 
 .card-body {

@@ -1,4 +1,5 @@
 import { formatDate } from '../../main/dateFormat';
+import { canvasFont } from '../../styles/fonts';
 
 /**
  * Frame-export helpers for the sensor heatmap: capture PNG frames from the
@@ -42,7 +43,7 @@ export const drawFrameLabel = (
   frameWord = 'frame',
 ) => {
   const text = `${formatTimestamp(timestamp)}  \u00B7  ${frameWord} ${frameNumber}/${totalFrames}`;
-  ctx.font = '600 20px system-ui, -apple-system, "Segoe UI", sans-serif';
+  ctx.font = canvasFont(600, 20);
   const textWidth = ctx.measureText(text).width;
   const padX = 14;
   const padY = 9;

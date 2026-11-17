@@ -376,7 +376,6 @@ const LageplanWizardView = () => {
   // overview) preselects the location; the selection is kept there.
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedLocation = Number(searchParams.get('location'));
-  const appliedRequest = useRef(false);
   // ?plan=<lageplan id> (e.g. from /analyse) preselects that plan of the
   // location - once, with the first plans loaded.
   const requestedPlan = useRef<number | null>(Number(searchParams.get('plan')) || null);
@@ -453,19 +452,19 @@ const LageplanWizardView = () => {
     void fetchLocations();
   }, [auth]);
 
-  // Once the locations are there: select the one ?location= names.
+  // Once the locations are there, and whenever ?location= changes from
+  // outside (favorites bar): select the one it names. The picker sets the
+  // parameter itself - then it names the selected location already.
   useEffect(() => {
-    if (appliedRequest.current || !locations.length) {
+    if (!locations.length || !requestedLocation) {
       return;
     }
-    appliedRequest.current = true;
     const requested = locations.find((loc) => loc.id === requestedLocation);
-    if (requested) {
+    if (requested && requested.project_id !== selectedLocationId) {
       selectLocation(requested);
     }
-    // Only for the first list - later the user picks.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locations]);
+  }, [locations, requestedLocation]);
 
   useEffect(() => {
     if (selectedLocationId === null) {
