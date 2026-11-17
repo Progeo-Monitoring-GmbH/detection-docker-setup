@@ -257,6 +257,14 @@
   text-transform: uppercase;
 }
 
+/* "(optional)" after a label: quieter than the label itself. */
+.progeo-field-label-suffix {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  color: #a39c9c;
+}
+
 .progeo-field-input {
   width: 100%;
   height: 40px;

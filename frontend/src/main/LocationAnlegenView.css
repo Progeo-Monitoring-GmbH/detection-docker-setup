@@ -137,3 +137,58 @@
   color: #3f7a1c;
   font-weight: 500;
 }
+
+/* -- optional / required markers ------------------------------------------------ */
+
+.anlegen-field-optional,
+.anlegen-required-note {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  color: #a39c9c;
+}
+
+.anlegen-required-note {
+  font-size: 12px;
+}
+
+.anlegen-field-required {
+  color: #c44d26;
+}
+
+/* -- Objekt-Nr. check ------------------------------------------------------------- */
+
+.anlegen-nr {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.anlegen-nr-hint {
+  font-size: 12px;
+  color: #8b8383;
+}
+
+.anlegen-nr-hint--ok {
+  color: #3f7a1c;
+}
+
+.anlegen-nr-hint--bad {
+  color: #c44d26;
+}
+
+.anlegen-nr-hint a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.anlegen-nr-suggestion {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--progeo-orange);
+  text-decoration: underline;
+  cursor: pointer;
+}

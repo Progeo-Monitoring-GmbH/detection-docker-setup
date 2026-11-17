@@ -6,6 +6,7 @@ from django.db.models import (
     Count,
     IntegerField,
     Max,
+    Min,
     OuterRef,
     Prefetch,
     Subquery,
@@ -217,6 +218,27 @@ def with_measurement_stats(locations):
     )
 
 
+def first_measurement_at(location, db_name):
+    """When `location` went online - the Objekt tab's "Online seit": the time
+    of its first measurement in `db_name` (its project database), archived
+    test measurements from before the installation left out. Only for a
+    single location (detail view), never per row of a list.
+    Lowest pk = oldest (ids are chronological). MIN(id) grouped by location,
+    not ORDER BY id LIMIT 1, for the reason given in with_measurement_stats."""
+    first_id = (
+        ProgeoMeasurement.objects.using(db_name)
+        .filter(device__location_id=location.pk, archived=False)
+        .order_by()
+        .values("device__location")
+        .annotate(first=Min("pk"))
+        .values_list("first", flat=True)
+        .first()
+    )
+    if first_id is None:
+        return None
+    return ProgeoMeasurement.objects.using(db_name).filter(pk=first_id).values_list("last_fetched", flat=True).first()
+
+
 def prepare_locations(locations, account=None, lageplans=True, stats=True):
     """Locations ready for LocationSerializer when their project rows live in
     different databases (PROJECT_DB_SPLIT): child locations from the
@@ -317,7 +339,12 @@ class LocationSerializer(ProgeoBaseSerializer):
     clazz = serializers.SerializerMethodField("get_clazz_name")
     device_count = serializers.IntegerField(read_only=True)
     has_device = serializers.SerializerMethodField("get_has_device")
-    last_measurement_at = serializers.DateTimeField(read_only=True)
+    # ISO with offset (format=None), not the project-wide pretty format: the
+    # frontend shows these relative ("15 min ago") and the pretty string has
+    # no timezone - the browser read it as its own local time.
+    last_measurement_at = serializers.DateTimeField(format=None, read_only=True)
+    # Only set by the detail view (first_measurement_at) - lists leave it out.
+    first_measurement_at = serializers.DateTimeField(format=None, read_only=True)
     measurement_count = serializers.IntegerField(read_only=True)
     lageplans = serializers.SerializerMethodField("get_lageplans")
     child_location_ids = serializers.SerializerMethodField("get_child_location_ids")

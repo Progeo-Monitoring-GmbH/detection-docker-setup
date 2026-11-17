@@ -15,7 +15,7 @@ from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.core.files.storage import FileSystemStorage
 from django.core.validators import validate_email
-from django.db import transaction
+from django.db import connections, transaction
 from django.db.models import (
     Avg,
     Count,
@@ -62,7 +62,7 @@ from progeo.helper.cacher import (
 )
 from progeo.helper.climate_heatmap import CLIMATE_METRICS, climate_frames
 from progeo.helper.climate_heatmap import frame_step as climate_frame_step
-from progeo.helper.demo import demo_export_throttle, is_demo_user
+from progeo.helper.demo import DEMO_PERMISSION, demo_export_throttle, is_demo_user
 from progeo.helper.legacy.geo import GeoHelper, has_position
 from progeo.helper.location_access import (
     can_see_location,
@@ -99,6 +99,7 @@ from progeo.v1.serializers import (
     ProgeoMeasurementSerializer,
     ProgeoMeasurePointSerializer,
     ProgeoRainEventSerializer,
+    first_measurement_at,
     location_prefetches,
     prepare_locations,
     with_measurement_stats,
@@ -185,6 +186,8 @@ PDF_MAX_ROWS = 200
 # Verwaltung: how long the open-alarm severity of a database's locations is
 # reused (_worst_open_severity) - alarms are evaluated every 15 minutes.
 OVERVIEW_SEVERITY_CACHE_SECONDS = 120
+# Largest chunk of admin_overview (?limit=) - the Verwaltung asks for less.
+ADMIN_OVERVIEW_MAX_CHUNK = 1000
 PDF_SENSORS_PER_TABLE = 14
 
 # Upper bound for the browser-captured frames ZIP of the heatmap video export
@@ -764,12 +767,16 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
 
     @require_module_permissions("module_locations_enabled")
     def retrieve(self, request, pk=None, *args, **kwargs):
-        if not split_enabled():
-            return super().retrieve(request, *args, pk=pk, **kwargs)
         cache_key, _cache = search_cache(request)
         if _cache:
             return _cache
-        location = prepare_locations([self.get_object()], self._primary_account(request))[0]
+        if not split_enabled():
+            location = self.get_object()
+            location.first_measurement_at = first_measurement_at(location, location._state.db)
+            return cache_save_and_return(cache_key, self.get_serializer(location).data)
+        account = self._primary_account(request)
+        location = prepare_locations([self.get_object()], account)[0]
+        location.first_measurement_at = first_measurement_at(location, location_db(location, account))
         return cache_save_and_return(cache_key, LocationSerializer(location).data)
 
     @require_module_permissions("module_notifications_enabled")
@@ -780,8 +787,8 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         GET  -> {"access": [...], "users": [{id, username, email, mobile}...],
                  "staff_users": [{id, username, email}...],
                  "members": [...], "can_grant_account", "can_invite"}
-               (requires module_notifications_enabled). "users" are this
-               account's users and "staff_users" ProGeo staff (Objektleitung
+               (requires module_notifications_enabled). "users" are all active
+               customer users (Verwaltung picker) and "staff_users" ProGeo staff (Objektleitung
                candidates, Einstellungen) - both for staff only, both are
                assigned the same way, via a POST below. "members" is everyone
                with access to this location (Rechte tab): account members
@@ -829,15 +836,27 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             if not manages:
                 rows = [rule for rule in rows if rule.user_id == viewer.pk or rule.objektleitung]
             users = []
-            # Staff only (Verwaltung): the account can be shared by many
-            # customers (everything lives in one account today) - its member
-            # list is nothing a customer may see.
-            if account and is_staff:
-                for user in account.users.all().order_by("username"):
+            # Staff only (Verwaltung "Berechtigungen" picker): every active
+            # customer user - not just the account's members, as customers
+            # mostly get single locations (ProgeoAccess) and are no members.
+            # ProGeo staff and the read-only demo users are left out. Nothing
+            # a customer may see: it would list every other customer.
+            if is_staff:
+                candidates = (
+                    User.objects.filter(is_active=True, is_staff=False, is_superuser=False)
+                    .exclude(user_permissions__codename=DEMO_PERMISSION)
+                    .exclude(groups__permissions__codename=DEMO_PERMISSION)
+                    .select_related("profile")
+                    .distinct()
+                    .order_by("last_name", "first_name", "username")
+                )
+                for user in candidates:
                     profile = getattr(user, "profile", None)
                     users.append({
                         "id": user.id,
                         "username": user.username,
+                        "first_name": user.first_name,
+                        "last_name": user.last_name,
                         "email": user.email,
                         "mobile": profile.mobile if profile is not None else None,
                         "messenger": profile.messenger if profile is not None and profile.messenger_address() else None,
@@ -3185,6 +3204,47 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         ]
         return RequestSuccess({"accounts": rows})
 
+    @action(detail=False, url_path="nr-check", methods=["GET"])
+    def nr_check(self, request, *args, **kwargs):
+        """Anlegen: is Objekt-Nr. `?nr=` still free? Staff-only - it names
+        other customers' objects. Searches every account database once
+        (aliases of one physical database count once).
+        -> {"nr", "free", "used_by": [{id, name, account}], "suggestion"}:
+        `suggestion` is the next number above the highest one in use.
+        Without `nr` only the suggestion (free/used_by: null)."""
+        if not _is_staff_admin(getattr(request, "user", None)):
+            return RequestFailed({"reason": "Staff access required"})
+        raw = (request.query_params.get("nr") or "").strip()
+        nr = None
+        if raw:
+            try:
+                nr = int(raw)
+            except ValueError:
+                return RequestFailed({"reason": "nr must be an integer"})
+
+        used_by, highest, seen = [], 0, set()
+        # Account rows live in "default" - no join across databases.
+        account_names = dict(Account.objects.using("default").values_list("id", "name"))
+        for account in configured_accounts():
+            config = connections.settings[account.db_name]
+            physical = (config.get("HOST"), config.get("PORT"), config.get("NAME"))
+            if physical in seen:
+                continue
+            seen.add(physical)
+            locations = ProgeoLocation.objects.using(account.db_name)
+            highest = max(highest, locations.aggregate(top=Max("project_id"))["top"] or 0)
+            if nr is not None:
+                for location_id, name, account_id in locations.filter(project_id=nr).values_list(
+                    "id", "name", "account_id"
+                ):
+                    used_by.append({"id": location_id, "name": name, "account": account_names.get(account_id)})
+        return RequestSuccess({
+            "nr": nr,
+            "free": None if nr is None else not used_by,
+            "used_by": None if nr is None else used_by,
+            "suggestion": highest + 1,
+        })
+
     # Verwaltung rows: more of the location's own columns, read by the same
     # query as the list (plz/address -> address line, project_type -> product).
     ADMIN_OVERVIEW_EXTRA_FIELDS = (
@@ -3196,9 +3256,22 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         """Verwaltung: cross-tenant dashboard for ProGeo staff - every
         location across every Account, not just the one the request happens
         to be bound to (see _resolve_request_accounts: for a staff SPA
-        session that's always one fixed "controller account")."""
+        session that's always one fixed "controller account").
+
+        Optional ?offset=&limit= return one chunk of the (stable) list, so
+        the page can show the first rows at once and load the rest after:
+        the alarm rollup - the expensive part - then covers only the chunk's
+        locations. "count" is always the total, "next_offset" the start of
+        the next chunk (null after the last). Without them: every row, and
+        "kpis" over all of them (a chunked page sums the rows itself)."""
         if not _is_staff_admin(getattr(request, "user", None)):
             return RequestFailed({"reason": "Staff access required"})
+        try:
+            offset = max(0, int(request.query_params.get("offset", 0)))
+            limit = request.query_params.get("limit")
+            limit = None if limit in (None, "") else max(1, min(int(limit), ADMIN_OVERVIEW_MAX_CHUNK))
+        except (TypeError, ValueError):
+            return RequestFailed({"reason": "offset and limit must be integers"})
 
         accounts = sorted(configured_accounts(), key=lambda account: account.name or "")
         # One location query per account database (not one per account), and
@@ -3215,16 +3288,23 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             ):
                 locations_by_account.setdefault(location.account_id, []).append(location)
 
+        ordered = [
+            (location, account)
+            for account in accounts
+            for location in sorted(locations_by_account.get(account.id, []), key=lambda location: location.id)
+        ]
+        total = len(ordered)
+        if limit is not None:
+            ordered = ordered[offset:offset + limit]
         listed = []
         # Alarms live in each location's project database (location_db), not
         # the account's: pair every location pk with its database, so ids are
         # only looked up where they belong - one query per database.
         ids_by_db = {}
-        for account in accounts:
-            for location in locations_by_account.get(account.id, []):
-                db_name = location_db(location, account)
-                ids_by_db.setdefault(db_name, set()).add(location.id)
-                listed.append((db_name, location, account))
+        for location, account in ordered:
+            db_name = location_db(location, account)
+            ids_by_db.setdefault(db_name, set()).add(location.id)
+            listed.append((db_name, location, account))
 
         databases = list(ids_by_db)
         worst_by_db = dict(zip(databases, map_databases(
@@ -3250,7 +3330,8 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         for row in rows:
             kpis[row["status"]] = kpis.get(row["status"], 0) + 1
 
-        return RequestSuccess({"objects": rows, "kpis": kpis, "count": len(rows)})
+        next_offset = offset + limit if limit is not None and offset + limit < total else None
+        return RequestSuccess({"objects": rows, "kpis": kpis, "count": total, "next_offset": next_offset})
 
     @staticmethod
     def _save_coordinate_upload(location, uploaded_file):

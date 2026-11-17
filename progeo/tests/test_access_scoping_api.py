@@ -5,11 +5,12 @@ single-access (ProgeoAccess row) -> only that location, neither -> nothing,
 staff -> everything. Covers the location list/detail endpoints and the data
 hanging off a location (devices, alarms, measurements).
 """
+from datetime import datetime
+
 import pytest
 from django.db import connections
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
-from rest_framework import serializers
 
 from progeo.tests import factories as f
 from progeo.v1.models import ProgeoLageplan, ProgeoMeasurement
@@ -182,7 +183,8 @@ def test_location_details_reports_measurement_count_and_last_measurement(api_cli
 
     granted = rows[world["granted"].id]
     assert granted["measurement_count"] == expected_count
-    assert granted["last_measurement_at"] == serializers.DateTimeField().to_representation(expected_last)
+    # ISO with offset (format=None) - the frontend shows it relative.
+    assert datetime.fromisoformat(granted["last_measurement_at"]) == expected_last
 
     other = rows[world["other"].id]
     other_count = ProgeoMeasurement.objects.using(f.DB).filter(device__location=world["other"]).count()

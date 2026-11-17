@@ -1,6 +1,8 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useState, type MouseEvent } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { Spinner } from 'react-bootstrap';
+import DataTable, { type TableColumn } from 'react-data-table-component';
+import { ArrowCounterclockwise, Trash3 } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
@@ -12,7 +14,14 @@ import KpiStrip from '../components/ui/kit/KpiStrip';
 import SeverityBadge, { type Severity } from '../components/ui/kit/SeverityBadge';
 import { matchesLocationSearch } from '../components/location/locationSearch';
 import { repeatedTestId } from '../testIds';
-import { locationRowClass, seedLocationFlags, useLocationFlags } from '../components/location/locationFlags';
+import { progeoTableStyles } from '../components/ui/kit/SearchableDataTable';
+import {
+  ReadinessBadge,
+  locationFlagRowStyles,
+  seedLocationFlags,
+  setLocationFlags,
+  useLocationFlags,
+} from '../components/location/locationFlags';
 import {
   LOCATION_LIST_CLASS,
   LocationNameCell,
@@ -20,9 +29,12 @@ import {
   locationAddressLine,
 } from '../components/location/LocationListCells';
 import { getProjectTypeLabel } from './projectType';
+import { untaggedRowClick } from './wholeRowClick';
 import './LocationVerwaltungView.css';
 
 type VerwaltungRow = {
+  /** verwaltungRowKey - DataTable's keyField. */
+  key?: string;
   id: number;
   account_id: number;
   nr: number | null;
@@ -39,13 +51,25 @@ type VerwaltungRow = {
   readiness_score?: number | null;
 };
 
-/** A click on the row opens the object - not on its buttons and links. */
-const isRowOwnClick = (event: MouseEvent) => {
-  const target = event.target;
-  return target instanceof Element && !target.closest('button, a, input, select, textarea, label');
-};
+/** Location ids are only unique within one account database. */
+export const verwaltungRowKey = (row: Pick<VerwaltungRow, 'account_id' | 'id'>) => `${row.account_id}-${row.id}`;
 
 type Kpis = { ok: number; beobachten: number; alarm: number; kritisch: number };
+
+/** Rows per admin_overview request: the first chunk shows at once, the rest follows. */
+export const VERWALTUNG_CHUNK_SIZE = 200;
+
+/** The KPI tiles over the rows loaded so far. */
+export const verwaltungKpis = (rows: ReadonlyArray<Pick<VerwaltungRow, 'status'>>): Kpis => {
+  const kpis: Kpis = { ok: 0, beobachten: 0, alarm: 0, kritisch: 0 };
+  rows.forEach((row) => {
+    kpis[row.status] += 1;
+  });
+  return kpis;
+};
+
+/** Sort order of the status column: worst first when descending. */
+const STATUS_RANK: Record<VerwaltungRow['status'], number> = { ok: 0, beobachten: 1, alarm: 2, kritisch: 3 };
 
 type AccessRule = {
   id: number;
@@ -56,7 +80,48 @@ type AccessRule = {
   transport?: number | null;
 };
 
-type AccessUser = { id: number; username: string; email?: string | null };
+type AccessUser = {
+  id: number;
+  username: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  email?: string | null;
+};
+
+/** Answer of POST access/invite (backend helper/location_invites.py). */
+type InviteStatus = 'granted' | 'invited' | 'already' | 'staff';
+
+const INVITE_MESSAGE_KEYS: Record<InviteStatus, string> = {
+  granted: 'rechte_invite_granted',
+  invited: 'rechte_invite_invited',
+  already: 'rechte_invite_already',
+  staff: 'rechte_invite_staff',
+};
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** "First Last (mail)" - the username when the name is empty. */
+export const accessUserLabel = (user: AccessUser): string => {
+  const name = [user.first_name, user.last_name].filter(Boolean).join(' ').trim() || user.username;
+  return user.email && user.email !== name ? `${name} (${user.email})` : name;
+};
+
+/** The picker's users without access yet, narrowed by `filter` (name, username, mail). */
+export const pickableUsers = (
+  users: AccessUser[],
+  rules: Array<{ user?: number | null }>,
+  filter: string,
+) => {
+  const needle = filter.trim().toLowerCase();
+  return users.filter(
+    (user) =>
+      !rules.some((rule) => rule.user === user.id) &&
+      (!needle ||
+        [user.username, user.first_name, user.last_name, user.email].some((value) =>
+          (value || '').toLowerCase().includes(needle),
+        )),
+  );
+};
 
 const STATUS_FILTERS: Array<{ value: string; labelKey: string }> = [
   { value: 'Alle', labelKey: 'verwaltung_filter_all' },
@@ -77,8 +142,11 @@ const LocationVerwaltungView = () => {
   const { t } = useTranslation();
 
   const [rows, setRows] = useState<VerwaltungRow[]>([]);
-  const [kpis, setKpis] = useState<Kpis>({ ok: 0, beobachten: 0, alarm: 0, kritisch: 0 });
   const [loading, setLoading] = useState(true);
+  /** All locations (admin_overview "count") - known with the first chunk. */
+  const [total, setTotal] = useState<number | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [purgeBusy, setPurgeBusy] = useState<Record<string, boolean>>({});
   const [denied, setDenied] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('Alle');
@@ -88,31 +156,64 @@ const LocationVerwaltungView = () => {
   const [accessUsers, setAccessUsers] = useState<AccessUser[]>([]);
   const [permsLoading, setPermsLoading] = useState(false);
   const [newUserId, setNewUserId] = useState('');
+  const [userFilter, setUserFilter] = useState('');
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteFirstName, setInviteFirstName] = useState('');
+  const [inviteLastName, setInviteLastName] = useState('');
+  const [inviting, setInviting] = useState(false);
 
+  // The chunks are requested one after the other - with the newest auth.
+  const authRef = useRef(auth);
   useEffect(() => {
-    void axiosConfig.perform_get(
-      auth,
-      '/v1/location/admin_overview/',
-      (response) => {
-        const objects = (response?.data?.objects || []) as VerwaltungRow[];
-        // The flags came with the rows - no /v1/location/flags/ round trips.
-        seedLocationFlags(objects.filter((row) => 'purgeable' in row));
-        setRows(objects);
-        setKpis((response?.data?.kpis || { ok: 0, beobachten: 0, alarm: 0, kritisch: 0 }) as Kpis);
-        setLoading(false);
-      },
-      (error) => {
-        if (error?.response?.status === 400 || error?.response?.status === 403) {
-          setDenied(true);
-        } else {
-          showRequestError(enqueueSnackbar, 'Could not load objects', error);
-        }
-        setLoading(false);
-      },
-    );
-    // Once on mount: auth changes with every token refresh.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    authRef.current = auth;
+  }, [auth]);
+
+  // In chunks: the first VERWALTUNG_CHUNK_SIZE rows show at once (each
+  // chunk's alarm rollup covers only its own locations), the rest follows.
+  useEffect(() => {
+    let cancelled = false;
+    const loadChunk = (offset: number) => {
+      void axiosConfig.perform_get(
+        authRef.current,
+        `/v1/location/admin_overview/?offset=${offset}&limit=${VERWALTUNG_CHUNK_SIZE}`,
+        (response) => {
+          if (cancelled) {
+            return;
+          }
+          const objects = ((response?.data?.objects || []) as VerwaltungRow[]).map((row) => ({
+            ...row,
+            key: verwaltungRowKey(row),
+          }));
+          // The flags came with the rows - no /v1/location/flags/ round trips.
+          seedLocationFlags(objects.filter((row) => 'purgeable' in row));
+          setRows((previous) => (offset === 0 ? objects : [...previous, ...objects]));
+          setTotal(typeof response?.data?.count === 'number' ? response.data.count : null);
+          setLoading(false);
+          const next = response?.data?.next_offset;
+          setLoadingMore(typeof next === 'number');
+          if (typeof next === 'number') {
+            loadChunk(next);
+          }
+        },
+        (error) => {
+          if (cancelled) {
+            return;
+          }
+          if (error?.response?.status === 400 || error?.response?.status === 403) {
+            setDenied(true);
+          } else {
+            showRequestError(enqueueSnackbar, 'Could not load objects', error);
+          }
+          setLoading(false);
+          setLoadingMore(false);
+        },
+      );
+    };
+    loadChunk(0);
+    return () => {
+      cancelled = true;
+    };
+  }, [enqueueSnackbar]);
 
   // The list has every location of every account (~1000 rows): typing
   // updates the field at once, the rows follow when React has time.
@@ -132,17 +233,60 @@ const LocationVerwaltungView = () => {
   // Switched-off locations striped grey, purgeable ones red.
   const { flagsOf } = useLocationFlags(rowIds);
   const navigate = useNavigate();
+  const kpis = useMemo(() => verwaltungKpis(rows), [rows]);
 
   const kpiTiles = [
-    { label: t('verwaltung_kpi_total'), value: String(rows.length) },
+    { label: t('verwaltung_kpi_total'), value: String(total ?? rows.length) },
     { label: t('ui_severity_kritisch'), value: String(kpis.kritisch), valueColor: '#C44D26' },
     { label: t('ui_severity_alarm'), value: String(kpis.alarm), valueColor: '#EB633B' },
     { label: t('ui_severity_beobachten'), value: String(kpis.beobachten), valueColor: '#9A7208' },
   ];
 
+  const openRow = useCallback((row: VerwaltungRow) => navigate(`/location/${row.id}/status`), [navigate]);
+
+  /** Mark / unmark as purgeable (unmark = reviewed, kept: false) - like the /map/ list. */
+  const togglePurgeable = useCallback(
+    (row: VerwaltungRow) => {
+      const key = verwaltungRowKey(row);
+      const purgeable = flagsOf(row.id)?.purgeable !== true;
+      setPurgeBusy((current) => ({ ...current, [key]: true }));
+      void axiosConfig.perform_post(
+        authRef.current,
+        `/v1/location/${row.id}/purgeable/`,
+        { purgeable },
+        (response) => {
+          const saved = (response?.data?.location?.purgeable ?? purgeable) as boolean | null;
+          setLocationFlags(row.id, { purgeable: saved });
+          setRows((current) =>
+            current.map((candidate) =>
+              verwaltungRowKey(candidate) === key ? { ...candidate, purgeable: saved } : candidate,
+            ),
+          );
+          setPurgeBusy((current) => ({ ...current, [key]: false }));
+          showSuccessBar(
+            enqueueSnackbar,
+            t(saved ? 'locmap_purgeable_marked_toast' : 'locmap_purgeable_unmarked_toast', {
+              name: row.name || row.nr || row.id,
+            }),
+          );
+        },
+        (error) => {
+          setPurgeBusy((current) => ({ ...current, [key]: false }));
+          showRequestError(enqueueSnackbar, t('locmap_purgeable_error'), error);
+        },
+      );
+    },
+    [enqueueSnackbar, flagsOf, t],
+  );
+
   const loadPerms = useCallback((row: VerwaltungRow) => {
     setPermsFor(row);
     setPermsLoading(true);
+    setNewUserId('');
+    setUserFilter('');
+    setInviteEmail('');
+    setInviteFirstName('');
+    setInviteLastName('');
     void axiosConfig.perform_get(
       auth,
       `/v1/location/${row.id}/access/`,
@@ -200,10 +344,178 @@ const LocationVerwaltungView = () => {
     );
   };
 
+  const inviteValid = EMAIL_PATTERN.test(inviteEmail.trim());
+
+  /** A new address gets an invitation, a known one access plus a notice (access/invite). */
+  const inviteUser = () => {
+    if (!permsFor || !inviteValid) {
+      return;
+    }
+    const row = permsFor;
+    const email = inviteEmail.trim();
+    setInviting(true);
+    void axiosConfig.perform_post(
+      auth,
+      `/v1/location/${row.id}/access/invite/`,
+      { email, scope: 'single', first_name: inviteFirstName.trim(), last_name: inviteLastName.trim() },
+      (response) => {
+        const status = response?.data?.status as InviteStatus | undefined;
+        showSuccessBar(enqueueSnackbar, t((status && INVITE_MESSAGE_KEYS[status]) || 'rechte_added', { email }));
+        setInviting(false);
+        // Reload: the new rule (and a newly created user for the picker).
+        loadPerms(row);
+      },
+      (error) => {
+        showRequestError(enqueueSnackbar, 'Could not send the invitation', error);
+        setInviting(false);
+      },
+    );
+  };
+
   const availableUsers = useMemo(
-    () => accessUsers.filter((user) => !rules.some((rule) => rule.user === user.id)),
-    [accessUsers, rules],
+    () => pickableUsers(accessUsers, rules, userFilter),
+    [accessUsers, rules, userFilter],
   );
+
+  const columns = useMemo<TableColumn<VerwaltungRow>[]>(
+    () => [
+      {
+        id: 'nr',
+        name: t('verwaltung_col_nr'),
+        selector: (row) => row.nr ?? -1,
+        sortable: true,
+        width: '80px',
+        cell: (row) => <span className="location-list-num">{row.nr ?? '–'}</span>,
+      },
+      {
+        id: 'object',
+        name: t('verwaltung_col_object'),
+        selector: (row) => (row.name || '').toLowerCase(),
+        sortable: true,
+        grow: 3,
+        cell: (row) => {
+          const key = verwaltungRowKey(row);
+          const flags = flagsOf(row.id);
+          return (
+            <LocationNameCell
+              locationId={row.id}
+              name={
+                <Link
+                  to={`/location/${row.id}/status`}
+                  title={t('verwaltung_open')}
+                  {...repeatedTestId('verwaltung-row-open', key)}
+                >
+                  {row.name || '–'}
+                </Link>
+              }
+              subline={locationAddressLine(row)}
+              // The score has its own column here.
+              flags={flags ? { ...flags, readiness_score: null } : null}
+              testKey={`verwaltung-${key}`}
+            />
+          );
+        },
+      },
+      {
+        id: 'product',
+        name: t('verwaltung_col_product'),
+        selector: (row) => (row.project_type ? getProjectTypeLabel(t, row.project_type) : ''),
+        sortable: true,
+        cell: (row) =>
+          row.project_type ? (
+            <span className="location-list-product">{getProjectTypeLabel(t, row.project_type)}</span>
+          ) : (
+            <span className="location-list-muted">–</span>
+          ),
+      },
+      {
+        id: 'owner',
+        name: t('verwaltung_col_owner'),
+        selector: (row) => (row.owner || '').toLowerCase(),
+        sortable: true,
+        cell: (row) => <TwoLineCell plain primary={row.owner || '–'} title={row.owner || undefined} />,
+      },
+      {
+        id: 'status',
+        name: t('verwaltung_col_status'),
+        selector: (row) => STATUS_RANK[row.status],
+        sortable: true,
+        width: '120px',
+        cell: (row) => (
+          <span {...repeatedTestId('verwaltung-row-status', verwaltungRowKey(row))}>
+            {row.status === 'ok' ? (
+              <span className="location-verwaltung-ok">{t('status_kpi_ok')}</span>
+            ) : (
+              <SeverityBadge severity={row.status} label={t(`ui_severity_${row.status}`)} />
+            )}
+          </span>
+        ),
+      },
+      {
+        id: 'score',
+        name: t('verwaltung_col_score'),
+        selector: (row) => flagsOf(row.id)?.readiness_score ?? row.readiness_score ?? -1,
+        sortable: true,
+        width: '90px',
+        cell: (row) => {
+          const score = flagsOf(row.id)?.readiness_score ?? row.readiness_score;
+          return score == null ? (
+            <span className="location-list-muted" title={t('verwaltung_score_none')}>
+              –
+            </span>
+          ) : (
+            <ReadinessBadge score={score} locationId={row.id} testKey={`verwaltung-${verwaltungRowKey(row)}`} />
+          );
+        },
+      },
+      {
+        id: 'purgeable',
+        name: t('verwaltung_col_purgeable'),
+        selector: (row) => (flagsOf(row.id)?.purgeable === true ? 1 : 0),
+        sortable: true,
+        width: '190px',
+        cell: (row) => {
+          const key = verwaltungRowKey(row);
+          const purgeable = flagsOf(row.id)?.purgeable === true;
+          return (
+            <button
+              type="button"
+              className={`location-verwaltung-purge${purgeable ? ' location-verwaltung-purge--on' : ''}`}
+              onClick={() => togglePurgeable(row)}
+              disabled={Boolean(purgeBusy[key])}
+              title={t(purgeable ? 'locmap_purgeable_unmark_title' : 'locmap_purgeable_mark_title')}
+              {...repeatedTestId('verwaltung-row-purgeable', key)}
+            >
+              {purgeable ? <ArrowCounterclockwise size={12} /> : <Trash3 size={12} />}
+              {t(purgeable ? 'locmap_purgeable_unmark' : 'locmap_purgeable_mark')}
+            </button>
+          );
+        },
+      },
+      {
+        id: 'actions',
+        name: t('verwaltung_col_actions'),
+        right: true,
+        width: '150px',
+        cell: (row) => (
+          <span className="location-list-actions">
+            <PillButton
+              label={t('verwaltung_permissions')}
+              onClick={() => loadPerms(row)}
+              testId="verwaltung-row-permissions"
+              testKey={verwaltungRowKey(row)}
+            />
+          </span>
+        ),
+      },
+    ],
+    [flagsOf, loadPerms, purgeBusy, t, togglePurgeable],
+  );
+  const rowStyles = useMemo(() => locationFlagRowStyles((row: VerwaltungRow) => flagsOf(row.id)), [flagsOf]);
+  const paginationOptions = {
+    rowsPerPageText: t('locations_rows_per_page'),
+    rangeSeparatorText: t('locations_range_separator'),
+  };
 
   if (denied) {
     return (
@@ -231,6 +543,12 @@ const LocationVerwaltungView = () => {
                 <span className="location-verwaltung-count" data-testid="verwaltung-count">
                   {t('verwaltung_object_count', { count: filtered.length, total: rows.length })}
                 </span>
+                {loadingMore && (
+                  <span className="location-verwaltung-loading-more" data-testid="verwaltung-loading-more">
+                    <Spinner animation="border" size="sm" />
+                    {t('verwaltung_loading_more', { loaded: rows.length, total: total ?? rows.length })}
+                  </span>
+                )}
               </span>
             }
             actions={
@@ -262,76 +580,29 @@ const LocationVerwaltungView = () => {
                 {t('verwaltung_no_objects')}
               </div>
             ) : (
-              <div className={`location-verwaltung-scroll ${LOCATION_LIST_CLASS}`}>
-                <div className="location-verwaltung-table" data-testid="verwaltung-table">
-                  <div className="location-verwaltung-grid location-verwaltung-head">
-                    <span>{t('verwaltung_col_nr')}</span>
-                    <span>{t('verwaltung_col_object')}</span>
-                    <span>{t('verwaltung_col_product')}</span>
-                    <span>{t('verwaltung_col_owner')}</span>
-                    <span>{t('verwaltung_col_status')}</span>
-                    <span className="location-verwaltung-right">{t('verwaltung_col_actions')}</span>
-                  </div>
-                  {filtered.map((row) => {
-                    const key = `${row.account_id}-${row.id}`;
-                    const flags = flagsOf(row.id);
-                    const rowClass = locationRowClass(flags);
-                    return (
-                      // The whole row opens the object; the name is the link
-                      // for keyboard and middle-click.
-                      <div
-                        key={key}
-                        className={`location-verwaltung-grid location-verwaltung-row${rowClass ? ` ${rowClass}` : ''}`}
-                        onClick={(event) => {
-                          if (isRowOwnClick(event)) {
-                            navigate(`/location/${row.id}/status`);
-                          }
-                        }}
-                        {...repeatedTestId('verwaltung-row', key)}
-                      >
-                        <span className="location-list-num">{row.nr ?? '–'}</span>
-                        <LocationNameCell
-                          locationId={row.id}
-                          name={
-                            <Link
-                              to={`/location/${row.id}/status`}
-                              title={t('verwaltung_open')}
-                              {...repeatedTestId('verwaltung-row-open', key)}
-                            >
-                              {row.name || '–'}
-                            </Link>
-                          }
-                          subline={locationAddressLine(row)}
-                          flags={flags}
-                          testKey={`verwaltung-${key}`}
-                        />
-                        <span className="location-verwaltung-cell">
-                          {row.project_type ? (
-                            <span className="location-list-product">{getProjectTypeLabel(t, row.project_type)}</span>
-                          ) : (
-                            <span className="location-list-muted">–</span>
-                          )}
-                        </span>
-                        <TwoLineCell plain primary={row.owner || '–'} title={row.owner || undefined} />
-                        <span {...repeatedTestId('verwaltung-row-status', key)}>
-                          {row.status === 'ok' ? (
-                            <span className="location-verwaltung-ok">{t('status_kpi_ok')}</span>
-                          ) : (
-                            <SeverityBadge severity={row.status} label={t(`ui_severity_${row.status}`)} />
-                          )}
-                        </span>
-                        <span className="location-list-actions">
-                          <PillButton
-                            label={t('verwaltung_permissions')}
-                            onClick={() => loadPerms(row)}
-                            testId="verwaltung-row-permissions"
-                            testKey={key}
-                          />
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
+              // Rows keep DataTable's own keyboard handling (Enter on a focused row);
+              // clicks on untagged cell content open the object too.
+              <div
+                className={LOCATION_LIST_CLASS}
+                onClick={untaggedRowClick(filtered, openRow, verwaltungRowKey)}
+                data-testid="verwaltung-table"
+              >
+                <DataTable
+                  columns={columns}
+                  data={filtered}
+                  keyField="key"
+                  customStyles={progeoTableStyles}
+                  conditionalRowStyles={rowStyles}
+                  pagination
+                  paginationPerPage={50}
+                  paginationRowsPerPageOptions={[25, 50, 100, 250]}
+                  paginationComponentOptions={paginationOptions}
+                  defaultSortFieldId="nr"
+                  highlightOnHover
+                  pointerOnHover
+                  onRowClicked={openRow}
+                  dense
+                />
               </div>
             )}
           </PanelCard>
@@ -400,23 +671,63 @@ const LocationVerwaltungView = () => {
                   </div>
                 ))}
 
+                <div className="location-verwaltung-section-title">{t('verwaltung_existing_user')}</div>
                 <div className="location-verwaltung-add">
+                  <input
+                    value={userFilter}
+                    onChange={(event) => setUserFilter(event.target.value)}
+                    placeholder={t('verwaltung_user_filter_placeholder')}
+                    className="location-verwaltung-user-filter"
+                    data-testid="verwaltung-permissions-user-filter"
+                  />
                   <select
                     value={newUserId}
                     onChange={(event) => setNewUserId(event.target.value)}
                     className="location-verwaltung-user-select"
                     data-testid="verwaltung-permissions-user"
                   >
-                    <option value="">{t('rechte_select_user_placeholder')}</option>
+                    <option value="">
+                      {t('verwaltung_select_user_count', { count: availableUsers.length })}
+                    </option>
                     {availableUsers.map((user) => (
                       <option key={user.id} value={user.id}>
-                        {user.username}
-                        {user.email ? ` (${user.email})` : ''}
+                        {accessUserLabel(user)}
                       </option>
                     ))}
                   </select>
                   <PillButton label={t('rechte_add_confirm')} onClick={addUser} testId="verwaltung-permissions-add" />
                 </div>
+
+                <div className="location-verwaltung-section-title">{t('verwaltung_invite_title')}</div>
+                <div className="location-verwaltung-invite" data-testid="verwaltung-permissions-invite">
+                  <input
+                    type="email"
+                    value={inviteEmail}
+                    onChange={(event) => setInviteEmail(event.target.value)}
+                    placeholder={t('rechte_invite_email')}
+                    className="location-verwaltung-invite-email"
+                    data-testid="verwaltung-invite-email"
+                  />
+                  <input
+                    value={inviteFirstName}
+                    onChange={(event) => setInviteFirstName(event.target.value)}
+                    placeholder={t('rechte_invite_first_name')}
+                    data-testid="verwaltung-invite-first-name"
+                  />
+                  <input
+                    value={inviteLastName}
+                    onChange={(event) => setInviteLastName(event.target.value)}
+                    placeholder={t('rechte_invite_last_name')}
+                    data-testid="verwaltung-invite-last-name"
+                  />
+                  <PillButton
+                    label={t('verwaltung_invite_send')}
+                    onClick={inviteUser}
+                    disabled={!inviteValid || inviting}
+                    testId="verwaltung-invite-send"
+                  />
+                </div>
+                <div className="location-verwaltung-invite-hint">{t('rechte_invite_hint')}</div>
               </>
             )}
           </div>

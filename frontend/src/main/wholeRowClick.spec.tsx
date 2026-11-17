@@ -5,7 +5,9 @@ import DataTable from 'react-data-table-component';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { untaggedRowClick } from './wholeRowClick';
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+(
+  globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 type Row = { id: number; name: string };
 
@@ -58,7 +60,11 @@ const renderTable = (onRow: (row: Row) => void) => {
               cell: (row) => (
                 <span>
                   <strong data-testid={`name-${row.id}`}>{row.name}</strong>
-                  <button type="button" data-testid={`star-${row.id}`} onClick={(event) => event.stopPropagation()}>
+                  <button
+                    type="button"
+                    data-testid={`star-${row.id}`}
+                    onClick={(event) => event.stopPropagation()}
+                  >
                     star
                   </button>
                 </span>
@@ -101,5 +107,35 @@ describe('untaggedRowClick', () => {
     renderTable(onRow);
     click(container.querySelector('[data-testid="star-9"]'));
     expect(onRow).not.toHaveBeenCalled();
+  });
+
+  it('finds the row by another keyField (Verwaltung: account + id)', () => {
+    type KeyedRow = Row & { key: string };
+    const rows: KeyedRow[] = ROWS.map((row) => ({
+      ...row,
+      key: `7-${row.id}`,
+    }));
+    const onRow = vi.fn();
+    act(() => {
+      root.render(
+        <div onClick={untaggedRowClick(rows, onRow, (row) => row.key)}>
+          <DataTable
+            data={rows}
+            keyField="key"
+            columns={[
+              {
+                name: 'Name',
+                cell: (row) => (
+                  <strong data-testid={`keyed-${row.id}`}>{row.name}</strong>
+                ),
+              },
+            ]}
+          />
+        </div>,
+      );
+    });
+    click(container.querySelector('[data-testid="keyed-9"]'));
+    expect(onRow).toHaveBeenCalledTimes(1);
+    expect(onRow.mock.calls[0][0]).toEqual(rows[1]);
   });
 });

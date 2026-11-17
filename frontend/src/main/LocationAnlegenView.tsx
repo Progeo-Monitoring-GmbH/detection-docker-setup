@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
@@ -12,6 +13,34 @@ import { childTestId, repeatedTestId } from '../testIds';
 import './LocationAnlegenView.css';
 
 type AccountOption = { id: number; name: string };
+
+/** Answer of GET /v1/location/nr-check/ (LocationViewSet.nr_check). */
+type NrCheck = {
+  nr: number | null;
+  free: boolean | null;
+  used_by: Array<{ id: number; name: string | null; account: string | null }> | null;
+  suggestion: number;
+};
+
+/** What the Objekt-Nr. field shows below itself. */
+export type NrHint =
+  | { kind: 'empty' }
+  | { kind: 'invalid' }
+  | { kind: 'checking' }
+  | { kind: 'free' }
+  | { kind: 'used'; usedBy: NonNullable<NrCheck['used_by']> };
+
+/** "123" -> 123, "" -> null, anything else -> NaN (invalid). */
+export const parseNr = (value: string): number | null => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  return /^\d+$/.test(trimmed) ? Number(trimmed) : Number.NaN;
+};
+
+/** Wait this long after the last keystroke before asking the backend. */
+const NR_CHECK_DELAY_MS = 350;
 type ProjectTypeOption = { value: number; label: string };
 
 type FormState = {
@@ -80,6 +109,71 @@ const FilePickerCard = ({ title, hint, chooseLabel, files, onChange, testId }: F
   </div>
 );
 
+/** Below the Objekt-Nr.: free / already used (with links) / next free number. */
+const NrHintLine = ({
+  hint,
+  suggestion,
+  onUseSuggestion,
+}: {
+  hint: NrHint;
+  suggestion: number | null;
+  onUseSuggestion: (nr: number) => void;
+}) => {
+  const { t } = useTranslation();
+  if (hint.kind === 'checking') {
+    return (
+      <div className="anlegen-nr-hint" data-testid="anlegen-nr-hint" data-state="checking">
+        {t('anlegen_nr_checking')}
+      </div>
+    );
+  }
+  if (hint.kind === 'invalid') {
+    return (
+      <div className="anlegen-nr-hint anlegen-nr-hint--bad" data-testid="anlegen-nr-hint" data-state="invalid">
+        {t('anlegen_nr_invalid')}
+      </div>
+    );
+  }
+  if (hint.kind === 'free') {
+    return (
+      <div className="anlegen-nr-hint anlegen-nr-hint--ok" data-testid="anlegen-nr-hint" data-state="free">
+        {t('anlegen_nr_free')}
+      </div>
+    );
+  }
+  if (hint.kind === 'used') {
+    return (
+      <div className="anlegen-nr-hint anlegen-nr-hint--bad" data-testid="anlegen-nr-hint" data-state="used">
+        {t('anlegen_nr_used')}{' '}
+        {hint.usedBy.map((location, index) => (
+          <span key={location.id}>
+            {index > 0 && ', '}
+            <Link to={`/location/${location.id}/objekt`} target="_blank" rel="noopener noreferrer">
+              {location.name || `#${location.id}`}
+            </Link>
+            {location.account ? ` (${location.account})` : ''}
+          </span>
+        ))}
+        {suggestion != null && (
+          <>
+            {' · '}
+            <button type="button" className="anlegen-nr-suggestion" onClick={() => onUseSuggestion(suggestion)}>
+              {t('anlegen_nr_use_suggestion', { nr: suggestion })}
+            </button>
+          </>
+        )}
+      </div>
+    );
+  }
+  return suggestion != null ? (
+    <div className="anlegen-nr-hint" data-testid="anlegen-nr-hint" data-state="empty">
+      <button type="button" className="anlegen-nr-suggestion" onClick={() => onUseSuggestion(suggestion)}>
+        {t('anlegen_nr_use_suggestion', { nr: suggestion })}
+      </button>
+    </div>
+  ) : null;
+};
+
 const LocationAnlegenView = () => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
@@ -93,6 +187,53 @@ const LocationAnlegenView = () => {
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState<string | null>(null);
+  const [nrHint, setNrHint] = useState<NrHint>({ kind: 'empty' });
+  const [nrSuggestion, setNrSuggestion] = useState<number | null>(null);
+
+  const authRef = useRef(auth);
+  useEffect(() => {
+    authRef.current = auth;
+  }, [auth]);
+
+  // Is the Objekt-Nr. still free? Asked while typing (debounced); an
+  // answer for an older value is dropped.
+  useEffect(() => {
+    const nr = parseNr(form.nr);
+    if (nr === null) {
+      setNrHint({ kind: 'empty' });
+      return undefined;
+    }
+    if (Number.isNaN(nr)) {
+      setNrHint({ kind: 'invalid' });
+      return undefined;
+    }
+    let current = true;
+    setNrHint({ kind: 'checking' });
+    const timer = setTimeout(() => {
+      void axiosConfig.perform_get(
+        authRef.current,
+        `/v1/location/nr-check/?nr=${nr}`,
+        (response) => {
+          if (!current) {
+            return;
+          }
+          const check = response?.data as NrCheck | undefined;
+          setNrSuggestion(check?.suggestion ?? null);
+          setNrHint(check?.free === false ? { kind: 'used', usedBy: check.used_by ?? [] } : { kind: 'free' });
+        },
+        () => {
+          // No hint rather than a wrong one - creating still works.
+          if (current) {
+            setNrHint({ kind: 'empty' });
+          }
+        },
+      );
+    }, NR_CHECK_DELAY_MS);
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
+  }, [form.nr]);
 
   useEffect(() => {
     void axiosConfig.perform_get(auth, '/v1/location/accounts/', (response) => {
@@ -100,6 +241,10 @@ const LocationAnlegenView = () => {
     });
     void axiosConfig.perform_get(auth, '/v1/location/project-types/', (response) => {
       setProjectTypes((response?.data?.project_types || []) as ProjectTypeOption[]);
+    });
+    // The next free number, offered while the field is empty.
+    void axiosConfig.perform_get(auth, '/v1/location/nr-check/', (response) => {
+      setNrSuggestion((response?.data?.suggestion as number | undefined) ?? null);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -114,6 +259,10 @@ const LocationAnlegenView = () => {
     }
     if (!form.name.trim()) {
       showErrorBar(enqueueSnackbar, t('anlegen_name_required'));
+      return;
+    }
+    if (nrHint.kind === 'invalid') {
+      showErrorBar(enqueueSnackbar, t('anlegen_nr_invalid'));
       return;
     }
 
@@ -192,6 +341,8 @@ const LocationAnlegenView = () => {
     reader.readAsText(file);
   };
 
+  const optionalLabel = `(${t('access_optional')})`;
+
   return (
     <div className="anlegen-view" data-testid="page-anlegen">
       <div className="anlegen-notice" data-testid="anlegen-notice">
@@ -206,6 +357,7 @@ const LocationAnlegenView = () => {
           <label className="anlegen-field">
             <span className="anlegen-field-label">
               {t('anlegen_field_account')}
+              <span className="anlegen-field-required" aria-hidden="true"> *</span>
             </span>
             <select
               value={form.accountId}
@@ -221,28 +373,41 @@ const LocationAnlegenView = () => {
               ))}
             </select>
           </label>
-          <LabeledInput label={t('anlegen_field_nr')} value={form.nr} onChange={setField('nr')} testId="anlegen-nr" />
-          <LabeledInput label={t('anlegen_field_name')} value={form.name} onChange={setField('name')} testId="anlegen-name" />
-          <LabeledInput label={t('anlegen_field_airtable')} value={form.airtableUrl} onChange={setField('airtableUrl')} testId="anlegen-airtable" title={t('anlegen_field_airtable_hint')} />
+          <div className="anlegen-nr">
+            <LabeledInput
+              label={t('anlegen_field_nr')}
+              labelSuffix={optionalLabel}
+              value={form.nr}
+              onChange={setField('nr')}
+              testId="anlegen-nr"
+            />
+            <NrHintLine
+              hint={nrHint}
+              suggestion={nrSuggestion}
+              onUseSuggestion={(nr) => setField('nr')(String(nr))}
+            />
+          </div>
+          <LabeledInput label={`${t('anlegen_field_name')} *`} value={form.name} onChange={setField('name')} testId="anlegen-name" />
+          <LabeledInput label={t('anlegen_field_airtable')} labelSuffix={optionalLabel} value={form.airtableUrl} onChange={setField('airtableUrl')} testId="anlegen-airtable" title={t('anlegen_field_airtable_hint')} />
         </div>
       </PanelCard>
 
       <PanelCard title={t('anlegen_section_adresse')} testId="anlegen-adresse">
         <div className="anlegen-section-hint">{t('anlegen_section_adresse_hint')}</div>
         <div className="anlegen-grid">
-          <LabeledInput label={t('anlegen_field_address')} value={form.address} onChange={setField('address')} testId="anlegen-address" />
-          <LabeledInput label={t('anlegen_field_plz')} value={form.plz} onChange={setField('plz')} testId="anlegen-plz" />
-          <LabeledInput label={t('anlegen_field_city')} value={form.city} onChange={setField('city')} testId="anlegen-city" />
-          <LabeledInput label={t('anlegen_field_country')} value={form.country} onChange={setField('country')} testId="anlegen-country" />
+          <LabeledInput label={t('anlegen_field_address')} labelSuffix={optionalLabel} value={form.address} onChange={setField('address')} testId="anlegen-address" />
+          <LabeledInput label={t('anlegen_field_plz')} labelSuffix={optionalLabel} value={form.plz} onChange={setField('plz')} testId="anlegen-plz" />
+          <LabeledInput label={t('anlegen_field_city')} labelSuffix={optionalLabel} value={form.city} onChange={setField('city')} testId="anlegen-city" />
+          <LabeledInput label={t('anlegen_field_country')} labelSuffix={optionalLabel} value={form.country} onChange={setField('country')} testId="anlegen-country" />
         </div>
       </PanelCard>
 
       <PanelCard title={t('anlegen_section_ansprechpartner')} testId="anlegen-ansprechpartner">
         <div className="anlegen-section-hint">{t('anlegen_section_ansprechpartner_hint')}</div>
         <div className="anlegen-grid">
-          <LabeledInput label={t('anlegen_field_manager')} value={form.manager} onChange={setField('manager')} testId="anlegen-manager" />
-          <LabeledInput label={t('anlegen_field_mail')} value={form.mail} onChange={setField('mail')} testId="anlegen-mail" />
-          <PhoneInput label={t('anlegen_field_telefon')} value={form.telefon} onChange={setField('telefon')} testId="anlegen-telefon" />
+          <LabeledInput label={t('anlegen_field_manager')} labelSuffix={optionalLabel} value={form.manager} onChange={setField('manager')} testId="anlegen-manager" />
+          <LabeledInput label={t('anlegen_field_mail')} labelSuffix={optionalLabel} value={form.mail} onChange={setField('mail')} testId="anlegen-mail" />
+          <PhoneInput label={t('anlegen_field_telefon')} labelSuffix={optionalLabel} value={form.telefon} onChange={setField('telefon')} testId="anlegen-telefon" />
         </div>
       </PanelCard>
 
@@ -251,6 +416,7 @@ const LocationAnlegenView = () => {
         <label className="anlegen-field anlegen-field--narrow">
           <span className="anlegen-field-label">
             {t('anlegen_field_project_type')}
+            <span className="anlegen-field-optional"> {optionalLabel}</span>
           </span>
           <select
             value={form.projectType}
@@ -268,7 +434,9 @@ const LocationAnlegenView = () => {
       </PanelCard>
 
       <PanelCard title={t('anlegen_section_files')} testId="anlegen-files">
-        <div className="anlegen-section-hint">{t('anlegen_section_files_hint')}</div>
+        <div className="anlegen-section-hint">
+          {t('anlegen_section_files_hint')} <span className="anlegen-field-optional">{optionalLabel}</span>
+        </div>
         <div className="anlegen-grid anlegen-grid--files">
           <FilePickerCard
             title={t('anlegen_field_visualization')}
@@ -291,6 +459,7 @@ const LocationAnlegenView = () => {
 
       <div className="anlegen-actions" data-testid="anlegen-actions">
         <PillButton label={t('anlegen_create')} onClick={create} disabled={creating} testId="anlegen-create" />
+        <span className="anlegen-required-note">{t('anlegen_required_note')}</span>
         <label className="anlegen-import">
           <span>{importing ? '…' : t('anlegen_import_data')}</span>
           <input

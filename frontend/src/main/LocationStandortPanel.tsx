@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Geo } from 'react-bootstrap-icons';
 import PanelCard from '../components/ui/kit/PanelCard';
 import type { LocationDetail } from './locationTypes';
-import { formatDate } from './dateFormat';
+import { formatDate, formatRelativeTime } from './dateFormat';
 import { useConsent } from '../components/privacy/ConsentProvider';
 import MapConsentNotice from '../components/privacy/MapConsentNotice';
 import { MapBaseTiles, MapLayerSwitch } from '../components/ui/MapBaseLayer';
@@ -124,8 +124,12 @@ const LocationStandortPanel = ({
           <span className="standort-fact-label">
             {t('objekt_fact_last_measurement')}
           </span>
-          <span className="standort-fact-value" data-testid="standort-last-measurement">
-            {formatDate(location?.last_measurement_at)}
+          <span
+            className="standort-fact-value"
+            data-testid="standort-last-measurement"
+            title={formatDate(location?.last_measurement_at, 'dateTime')}
+          >
+            {formatRelativeTime(location?.last_measurement_at)}
           </span>
         </div>
       </div>

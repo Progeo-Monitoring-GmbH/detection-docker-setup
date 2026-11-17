@@ -96,6 +96,64 @@ def test_admin_overview_rows_carry_address_product_and_flags():
     assert row["readiness_score"] == 70
 
 
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_admin_overview_loads_in_chunks():
+    """?offset=&limit= - the chunks add up to the full list, each row once."""
+    staff_user = User.objects.using("default").create(username="admin-ov-chunks", is_staff=True)
+    account = Account.objects.using("default").create(name="Kunde C", raw_hash="acct-c-overview", db_name="default")
+    for number in range(5):
+        ProgeoLocation.objects.using("default").create(account=account, name=f"Chunk {number}", project_id=9100 + number)
+    everything = LocationViewSet().admin_overview(_fake_request(user=staff_user)).data
+    assert everything["next_offset"] is None
+
+    seen, offset = [], 0
+    while offset is not None:
+        chunk = LocationViewSet().admin_overview(
+            _fake_request(user=staff_user, query_params={"offset": str(offset), "limit": "2"})
+        ).data
+        assert chunk["success"] is True and chunk["count"] == everything["count"]
+        assert len(chunk["objects"]) <= 2
+        seen += [(row["account_id"], row["id"]) for row in chunk["objects"]]
+        offset = chunk["next_offset"]
+
+    assert seen == [(row["account_id"], row["id"]) for row in everything["objects"]]
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_admin_overview_refuses_a_bad_chunk():
+    staff_user = User.objects.using("default").create(username="admin-ov-bad-chunk", is_staff=True)
+    response = LocationViewSet().admin_overview(_fake_request(user=staff_user, query_params={"limit": "x"}))
+    assert response.data["success"] is False
+
+
+# -- nr_check (Anlegen: is the Objekt-Nr. free?) ----------------------------
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_nr_check_names_the_object_using_the_number():
+    staff_user = User.objects.using("default").create(username="nr-check-staff", is_staff=True)
+    account = Account.objects.using("default").create(name="Kunde N", raw_hash="acct-n-nrcheck", db_name="default")
+    taken = ProgeoLocation.objects.using("default").create(account=account, name="Halle N", project_id=987654)
+
+    used = LocationViewSet().nr_check(_fake_request(user=staff_user, query_params={"nr": "987654"})).data
+    free = LocationViewSet().nr_check(_fake_request(user=staff_user, query_params={"nr": "987655"})).data
+
+    assert used["free"] is False
+    assert used["used_by"] == [{"id": taken.id, "name": "Halle N", "account": "Kunde N"}]
+    assert free["free"] is True and free["used_by"] == []
+    assert used["suggestion"] >= 987655  # above the highest number in use
+
+
+@pytest.mark.django_db(databases=["unit_tests", "default"])
+def test_nr_check_is_staff_only_and_needs_a_number():
+    customer = User.objects.using("default").create(username="nr-check-customer")
+    staff_user = User.objects.using("default").create(username="nr-check-staff-2", is_staff=True)
+
+    assert LocationViewSet().nr_check(_fake_request(user=customer, query_params={"nr": "1"})).data["success"] is False
+    assert LocationViewSet().nr_check(_fake_request(user=staff_user, query_params={"nr": "x"})).data["success"] is False
+    only_suggestion = LocationViewSet().nr_check(_fake_request(user=staff_user)).data
+    assert only_suggestion["free"] is None and only_suggestion["suggestion"] >= 1
+
+
 # -- _notification_recipients ----------------------------------------------
 
 @pytest.mark.django_db(databases=["unit_tests", "default"])

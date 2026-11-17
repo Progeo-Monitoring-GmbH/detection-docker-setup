@@ -21,6 +21,8 @@ export type LocationDetail = {
   device_count?: number | null;
   measurement_count?: number | null;
   last_measurement_at?: string | null;
+  /** First (non-archived) measurement - "Online seit". Only on the detail endpoint. */
+  first_measurement_at?: string | null;
   last_updated?: string | null;
   pe_geschaltet?: boolean | null;
   /** The hourly rain check (ProgeoRainEvent) runs for this location. */

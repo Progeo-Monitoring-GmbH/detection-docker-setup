@@ -18,6 +18,8 @@ type LabeledInputProps = {
   autoComplete?: string;
   /** data-testid of the input. */
   testId?: string;
+  /** Muted, not uppercased, after the label - e.g. "(optional)". */
+  labelSuffix?: string;
 };
 
 /** Uppercase small label above a soft-surface input, as used on the Objekt/Einstellungen panels. */
@@ -30,6 +32,7 @@ const LabeledInput = ({
   title,
   autoComplete = NO_AUTOFILL,
   testId,
+  labelSuffix,
 }: LabeledInputProps) => {
   const labelId = useId();
   // Firefox ignores autocomplete for address capture and recognises the
@@ -42,6 +45,7 @@ const LabeledInput = ({
     <Wrapper className="progeo-field">
       <span id={labelId} className="progeo-field-label">
         {label}
+        {labelSuffix && <span className="progeo-field-label-suffix"> {labelSuffix}</span>}
       </span>
       <input
         type={type}

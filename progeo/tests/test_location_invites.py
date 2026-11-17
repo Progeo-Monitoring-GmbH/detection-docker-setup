@@ -58,6 +58,26 @@ def test_staff_still_get_the_account_users(api_client, world):
     assert body["can_invite"] is True
 
 
+def test_staff_can_pick_every_customer_but_no_staff_or_demo_users(api_client, world):
+    """Verwaltung "Berechtigungen": customers with single-location access are
+    no account members - the picker was empty for them."""
+    from progeo.helper.demo import DEMO_PERMISSION
+
+    _account, location, _admin = world
+    outsider = f.make_user()  # in no account at all
+    other_staff = f.make_user(staff=True)
+    demo = f.make_user(perms=(DEMO_PERMISSION,))
+    inactive = f.make_user()
+    inactive.is_active = False
+    inactive.save()
+    api_client.force_authenticate(user=f.make_user(staff=True))
+
+    ids = {user["id"] for user in api_client.get(f"/v1/location/{location.pk}/access/").json()["users"]}
+
+    assert outsider.pk in ids
+    assert not ids & {other_staff.pk, demo.pk, inactive.pk}
+
+
 def test_viewers_may_not_invite_even_with_the_notification_add_permission(api_client, world):
     account, location, _admin = world
     viewer = f.make_user(perms=(*CUSTOMER, *NOTIF), accounts=[account])

@@ -49,52 +49,48 @@
   padding: 10px 2px;
 }
 
-/* -- object table ------------------------------------------------------------ */
+/* -- object table (DataTable, compact rows: components/location/locationList.css) -- */
 
-.location-verwaltung-scroll {
-  overflow-x: auto;
-}
-
-.location-verwaltung-table {
-  min-width: 720px;
-}
-
-/* Compact rows like the locations overview (components/location/
-   locationList.css: the name cell, product pill, two-line cells). */
-.location-verwaltung-grid {
-  display: grid;
-  grid-template-columns: 64px minmax(220px, 2.6fr) 130px minmax(110px, 1fr) 100px 120px;
-  gap: 8px;
-}
-
-.location-verwaltung-head {
-  padding: 4px 8px 8px;
-  font-size: 10.5px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #8b8383;
-  font-weight: 500;
-}
-
-.location-verwaltung-row {
-  min-height: 40px;
-  padding: 3px 8px;
-  font-size: 12.5px;
-  border-top: 1px solid var(--progeo-track);
+.location-verwaltung-loading-more {
+  display: inline-flex;
   align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #8b8383;
+  font-weight: 400;
+}
+
+/* Mark / unmark as purgeable - red once marked, like the striped row. */
+.location-verwaltung-purge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--progeo-track);
+  border-radius: 9px;
+  background: var(--progeo-surface);
+  color: var(--progeo-blue);
+  font-family: inherit;
+  font-size: 12px;
+  white-space: nowrap;
   cursor: pointer;
 }
 
-.location-verwaltung-row:hover {
-  background-color: var(--progeo-track-soft);
+.location-verwaltung-purge:hover:not(:disabled) {
+  border-color: #c44d26;
+  color: #c44d26;
 }
 
-.location-verwaltung-right {
-  text-align: right;
+.location-verwaltung-purge--on {
+  border-color: #c44d26;
+  background: #fbeae4;
+  color: #c44d26;
 }
 
-.location-verwaltung-cell {
-  min-width: 0;
+.location-verwaltung-purge:disabled {
+  opacity: 0.6;
+  cursor: wait;
 }
 
 .location-verwaltung-ok {
@@ -104,7 +100,7 @@
 }
 
 /* The permissions pill: as low as the compact row. */
-.location-verwaltung-row .progeo-pill {
+.location-verwaltung .rdt_TableRow .progeo-pill {
   height: 26px;
   padding: 0 10px;
   font-size: 12px;
@@ -224,6 +220,51 @@
   gap: 10px;
   align-items: center;
   flex-wrap: wrap;
+}
+
+.location-verwaltung-section-title {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8b8383;
+}
+
+/* Filter, picker and the invitation fields share the select's look. */
+.location-verwaltung-user-filter,
+.location-verwaltung-invite input {
+  height: 38px;
+  border: none;
+  border-radius: 10px;
+  background: var(--progeo-surface);
+  padding: 0 12px;
+  font-family: inherit;
+  font-size: 13.5px;
+  color: var(--progeo-blue);
+  min-width: 0;
+}
+
+.location-verwaltung-user-filter {
+  flex: 0 1 180px;
+}
+
+.location-verwaltung-invite {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+
+@media (max-width: 640px) {
+  .location-verwaltung-invite {
+    grid-template-columns: 1fr;
+  }
+}
+
+.location-verwaltung-invite-hint {
+  font-size: 12px;
+  color: #8b8383;
 }
 
 .location-verwaltung-user-select {

@@ -12,7 +12,12 @@ import type { MouseEvent } from 'react';
  * themselves.
  */
 export const untaggedRowClick =
-  <T extends { id: number }>(rows: T[], onRow: (row: T) => void) =>
+  <T extends { id: number | string }>(
+    rows: T[],
+    onRow: (row: T) => void,
+    /** The DataTable keyField's value - when it isn't `id`. */
+    keyOf: (row: T) => string | number = (row) => row.id,
+  ) =>
   (event: MouseEvent) => {
     const target = event.target;
     if (!(target instanceof Element)) {
@@ -26,7 +31,7 @@ export const untaggedRowClick =
     }
     const rowElement = target.closest('.rdt_TableRow');
     const id = rowElement ? /^row-(.+)$/.exec(rowElement.id)?.[1] : undefined;
-    const row = id != null ? rows.find((candidate) => String(candidate.id) === id) : undefined;
+    const row = id != null ? rows.find((candidate) => String(keyOf(candidate)) === id) : undefined;
     if (row) {
       onRow(row);
     }

@@ -62,6 +62,42 @@ def test_prepare_locations_sets_the_device_count_per_database(editor_world):
     assert prepared.device_count == 1
 
 
+# -- "Online seit" ------------------------------------------------------------------
+
+def test_online_since_is_the_first_measurement_without_archived_tests(api_client, editor_world):
+    from datetime import UTC, datetime
+
+    _account, location, editor = editor_world
+    device = f.make_device(location)
+    f.make_measurement(device, fetched_at=datetime(2024, 1, 2, tzinfo=UTC), archived=True)
+    f.make_measurement(device, fetched_at=datetime(2024, 3, 4, tzinfo=UTC))
+    f.make_measurement(device, fetched_at=datetime(2024, 5, 6, tzinfo=UTC))
+    api_client.force_authenticate(user=editor)
+
+    body = api_client.get(f"/v1/location/{location.pk}/").json()
+
+    assert body["first_measurement_at"].startswith("2024-03-04")
+
+
+def test_online_since_is_empty_without_measurements(api_client, editor_world):
+    _account, location, editor = editor_world
+    f.make_device(location)
+    api_client.force_authenticate(user=editor)
+
+    assert api_client.get(f"/v1/location/{location.pk}/").json()["first_measurement_at"] is None
+
+
+def test_lists_leave_online_since_out(api_client, editor_world):
+    """Only the detail view pays for the extra query, never a list per row."""
+    _account, _location, editor = editor_world
+    api_client.force_authenticate(user=editor)
+
+    rows = api_client.get("/v1/location/").json()
+    rows = rows.get("results", rows) if isinstance(rows, dict) else rows
+
+    assert rows and all("first_measurement_at" not in row for row in rows)
+
+
 def test_the_save_answer_keeps_the_figures(api_client, editor_world):
     _account, location, editor = editor_world
     f.make_device(location)

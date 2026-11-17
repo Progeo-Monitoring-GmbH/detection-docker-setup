@@ -12,7 +12,7 @@ import type { LocationDetail } from './locationTypes';
 import type { PortalOutletContext } from './LocationPortalLayout';
 import LocationStandortPanel from './LocationStandortPanel';
 import { useProgeoRole } from './roleModel';
-import { formatDate } from './dateFormat';
+import { formatDate, formatRelativeTime } from './dateFormat';
 import { getProjectTypeLabel } from './projectType';
 import './LocationObjektTab.css';
 
@@ -48,7 +48,12 @@ const toForm = (location: LocationDetail | null): FormState => ({
 
 // Figures the save answer may lack (an older backend, a cached detail):
 // keep the loaded ones instead of blanking the tab.
-const STAT_FIELDS = ['device_count', 'measurement_count', 'last_measurement_at'] as const;
+const STAT_FIELDS = [
+  'device_count',
+  'measurement_count',
+  'last_measurement_at',
+  'first_measurement_at',
+] as const;
 
 const mergeSaved = (current: LocationDetail, saved: Partial<LocationDetail>): LocationDetail => {
   const merged = { ...current, ...saved };
@@ -192,13 +197,15 @@ const LocationObjektTab = () => {
             <LabeledInput
               testId="objekt-online-since"
               label={t('objekt_field_online_since')}
-              value={formatDate(location?.last_updated)}
+              value={formatDate(location?.first_measurement_at, 'date')}
+              title={formatDate(location?.first_measurement_at, 'dateTime')}
               readOnly
             />
             <LabeledInput
               testId="objekt-last-measurement"
               label={t('objekt_field_last_measurement')}
-              value={formatDate(location?.last_measurement_at)}
+              value={formatRelativeTime(location?.last_measurement_at)}
+              title={formatDate(location?.last_measurement_at, 'dateTime')}
               readOnly
             />
           </div>

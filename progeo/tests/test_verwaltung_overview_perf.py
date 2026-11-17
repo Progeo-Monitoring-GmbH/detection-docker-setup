@@ -7,11 +7,11 @@ import time
 from types import SimpleNamespace
 
 import pytest
-from django.core.cache import cache
 from django.db import connections
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
+from progeo.helper.cacher import clear_cache_pattern
 from progeo.helper.location_access import configured_accounts
 from progeo.tests import factories as f
 from progeo.v1.models import ProgeoAlarm, ProgeoMeasurement
@@ -63,7 +63,7 @@ def _overview(staff):
 
 
 def _forget_severities():
-    cache.delete_pattern("progeo:verwaltung-severity:*")
+    clear_cache_pattern("progeo:verwaltung-severity:*")
 
 
 def _captured(staff):
