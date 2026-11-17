@@ -1,0 +1,102 @@
+/* BadgePicker.tsx: picked items as badges in a text field, the matches of
+   the typed text in a list below it. */
+
+.badge-picker {
+  position: relative;
+}
+
+/* The field: badges and the input on one wrapping line. */
+.form-control.badge-picker-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-height: 38px;
+  padding: 4px 8px;
+  cursor: text;
+}
+
+.badge-picker--invalid .form-control.badge-picker-field {
+  border-color: var(--bs-form-invalid-border-color);
+}
+
+.badge-picker-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 4px 2px 8px;
+  border-radius: 999px;
+  background: var(--bs-primary-bg-subtle);
+  color: var(--bs-primary-text-emphasis);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.badge-picker-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.badge-picker-remove:hover {
+  background: rgba(var(--bs-primary-rgb), 0.18);
+}
+
+.badge-picker-input {
+  flex: 1 1 120px;
+  min-width: 120px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--bs-body-color);
+  font-size: 14px;
+}
+
+.badge-picker-spinner {
+  width: 14px;
+  height: 14px;
+  border-width: 1.5px;
+  color: var(--bs-secondary-color);
+}
+
+.badge-picker-list {
+  position: absolute;
+  z-index: 1060;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  max-height: 260px;
+  margin: 0;
+  padding: 4px 0;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 8px;
+  background: var(--bs-body-bg);
+  box-shadow: 0 6px 18px rgba(11, 54, 89, 0.15);
+}
+
+.badge-picker-option {
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.badge-picker-option--active {
+  background: var(--bs-tertiary-bg);
+}
+
+.badge-picker-empty {
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--bs-secondary-color);
+}

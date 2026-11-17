@@ -483,6 +483,26 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
                     return location, account
         return None, None
 
+    def get_object(self):
+        """The location of a detail route (retrieve/update/destroy) in any of
+        the user's accounts - get_queryset() covers the first account only,
+        so a location of another one (a second membership, a single access,
+        staff opening any) was a 404. Its account is kept for the answer
+        (self.object_account)."""
+        from django.http import Http404
+
+        location, account = self._find_location(self.request, pk=self.kwargs.get(self.lookup_field))
+        if location is None:
+            raise Http404
+        if not split_enabled():
+            # The measurement stats the serializer shows (get_queryset annotates them).
+            location = with_measurement_stats(
+                ProgeoLocation.objects.using(location._state.db).filter(pk=location.pk)
+            ).first()
+        self.check_object_permissions(self.request, location)
+        self.object_account = account
+        return location
+
     @require_module_permissions("module_locations_enabled")
     def list(self, request, *args, **kwargs):
         if not split_enabled():
@@ -825,8 +845,9 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             location = self.get_object()
             location.first_measurement_at = first_measurement_at(location, location._state.db)
             return cache_save_and_return(cache_key, self.get_serializer(location).data)
-        account = self._primary_account(request)
-        location = prepare_locations([self.get_object()], account)[0]
+        location = self.get_object()
+        account = self.object_account
+        location = prepare_locations([location], account)[0]
         location.first_measurement_at = first_measurement_at(location, location_db(location, account))
         return cache_save_and_return(cache_key, LocationSerializer(location).data)
 
@@ -1969,7 +1990,10 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
         if split_enabled():
             # get_queryset carries no stats with the split on: without them the
             # answer would blank the Objekt tab's device/measurement figures.
-            prepare_locations([instance], self._primary_account(self.request), lageplans=False)
+            prepare_locations(
+                [instance], getattr(self, "object_account", None) or self._primary_account(self.request),
+                lageplans=False,
+            )
 
     @staticmethod
     def _geocode_moved(location):
@@ -2344,8 +2368,9 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
 
     def get_queryset(self):
         # A single QuerySet can only target one database, so the standard
-        # (paginated) list/retrieve/update/destroy actions operate on the
-        # user's primary account; use /min and /details for the multi-account view.
+        # (paginated) list action operates on the user's primary account; use
+        # /min and /details for the multi-account view. retrieve/update/destroy
+        # find their location in any account (get_object).
         account = self._primary_account(self.request)
         if not account:
             return ProgeoLocation.objects.none()
@@ -3281,6 +3306,61 @@ class LocationViewSet(NoiseProfilesMixin, ProgeoModalViewSet):
             for account in Account.objects.using("default").all().order_by("name")
         ]
         return RequestSuccess({"accounts": rows})
+
+    # Projects the project search answers at most.
+    PROJECT_SEARCH_LIMIT = 20
+
+    @action(detail=False, url_path="project-search", methods=["GET"])
+    def project_search(self, request, *args, **kwargs):
+        """Staff: the projects matching `?q=` over every account (not only
+        the staff member's - access requests are approved for any customer):
+        a project number starting with q, or a name / city containing it.
+        Without the demo account. One row per project number - its locations
+        can repeat across accounts:
+        {"projects": [{project_id, names, cities, accounts, locations}]},
+        exact number first, at most PROJECT_SEARCH_LIMIT."""
+        from django.db.models import Q
+
+        from progeo.helper.demo import DEMO_ACCOUNT_HASH
+
+        if not _is_staff_admin(getattr(request, "user", None)):
+            return RequestFailed({"reason": "Staff access required"})
+        query = (request.query_params.get("q") or "").strip()
+        if not query:
+            return RequestSuccess({"projects": []})
+        match = Q(name__icontains=query) | Q(city__icontains=query)
+        if query.isdigit():
+            # The number's leading digits (Postgres compares the integer as text).
+            match |= Q(project_id__startswith=query)
+
+        projects = {}
+        seen = set()
+        for account in configured_accounts():
+            if account.raw_hash == DEMO_ACCOUNT_HASH:
+                continue
+            config = connections.settings[account.db_name]
+            physical = (config.get("HOST"), config.get("PORT"), config.get("NAME"))
+            rows = (
+                ProgeoLocation.objects.using(account.db_name)
+                .filter(account=account, project_id__isnull=False)
+                .filter(match)
+                .values_list("id", "project_id", "name", "city")
+                .order_by("project_id")[: self.PROJECT_SEARCH_LIMIT * 3]
+            )
+            for location_id, project_id, name, city in rows:
+                if (physical, location_id) in seen:
+                    continue
+                seen.add((physical, location_id))
+                entry = projects.setdefault(project_id, {
+                    "project_id": project_id, "names": [], "cities": [], "accounts": [], "locations": 0,
+                })
+                entry["locations"] += 1
+                for key, value in (("names", name), ("cities", city), ("accounts", account.name)):
+                    if value and value not in entry[key]:
+                        entry[key].append(value)
+        exact = int(query) if query.isdigit() else None
+        ordered = sorted(projects.values(), key=lambda entry: (entry["project_id"] != exact, entry["project_id"]))
+        return RequestSuccess({"projects": ordered[: self.PROJECT_SEARCH_LIMIT]})
 
     @action(detail=False, url_path="nr-check", methods=["GET"])
     def nr_check(self, request, *args, **kwargs):

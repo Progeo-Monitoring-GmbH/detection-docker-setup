@@ -23,6 +23,7 @@ import {
   showSuccessBar,
 } from '../components/ui/Snackbar.jsx';
 import { repeatedTestId } from '../testIds';
+import BadgePicker from '../components/ui/kit/BadgePicker';
 
 type AccessRequestStatus =
   'unverified' | 'pending' | 'approved' | 'rejected';
@@ -64,6 +65,22 @@ const STATUS_ORDER: Record<AccessRequestStatus, number> = {
 
 type Decision = { request: AccessRequest; action: 'approve' | 'reject' };
 
+/** A project of the project search (/v1/location/project-search/) - or just
+ * a number typed in (then without names: checked on approval). */
+export type ProjectChoice = {
+  project_id: number;
+  names?: string[];
+  cities?: string[];
+  accounts?: string[];
+  locations?: number;
+};
+
+type AccountChoice = { id: number; name: string };
+
+/** Project numbers in typed or pasted text ("4711, 4712 / 4713") - 3 digits at least. */
+export const projectNumbersIn = (text: string): ProjectChoice[] =>
+  Array.from(new Set((text.match(/\d{3,}/g) ?? []).map(Number))).map((projectId) => ({ project_id: projectId }));
+
 /** What an approval with project numbers granted (helper/location_access.py). */
 type GrantedProjects = {
   granted: number[];
@@ -87,7 +104,10 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
   const [loading, setLoading] = useState(true);
   const [decision, setDecision] = useState<Decision | null>(null);
   const [note, setNote] = useState('');
-  const [projectIds, setProjectIds] = useState('');
+  const [projects, setProjects] = useState<ProjectChoice[]>([]);
+  // The accounts the user becomes a member of (all their locations).
+  const [accounts, setAccounts] = useState<AccountChoice[]>([]);
+  const [allAccounts, setAllAccounts] = useState<AccountChoice[] | null>(null);
   const [language, setLanguage] = useState<'de' | 'en'>('de');
   const [decisionError, setDecisionError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -128,9 +148,42 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
     fetchRequests();
   };
 
+  // The accounts to pick from - once, when the first approval opens.
+  const loadAccounts = () => {
+    if (allAccounts !== null) {
+      return;
+    }
+    setAllAccounts([]);
+    void axiosConfig.perform_get(
+      auth,
+      '/v1/location/accounts/',
+      (result) => setAllAccounts((result?.data?.accounts ?? []) as AccountChoice[]),
+      () => setAllAccounts(null),
+    );
+  };
+
+  const searchProjects = (text: string) =>
+    new Promise<ProjectChoice[]>((resolve) => {
+      void axiosConfig.perform_get(
+        auth,
+        `/v1/location/project-search/?q=${encodeURIComponent(text)}`,
+        (result) => resolve((result?.data?.projects ?? []) as ProjectChoice[]),
+        () => resolve([]),
+      );
+    });
+
+  const searchAccounts = (text: string) => {
+    const needle = text.toLowerCase();
+    return (allAccounts ?? []).filter((account) => (account.name || '').toLowerCase().includes(needle));
+  };
+
   const openDecision = (request: AccessRequest, action: Decision['action']) => {
     setNote('');
-    setProjectIds('');
+    setProjects([]);
+    setAccounts([]);
+    if (action === 'approve') {
+      loadAccounts();
+    }
     setDecisionError('');
     setLanguage(request.language === 'en' ? 'en' : 'de');
     setDecision({ request, action });
@@ -164,7 +217,12 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
       auth,
       `/api/auth-support/staff/access-requests/${decision.request.id}/${decision.action}/`,
       decision.action === 'approve'
-        ? { note, project_ids: projectIds, language }
+        ? {
+            note,
+            project_ids: projects.map((project) => project.project_id),
+            account_ids: accounts.map((account) => account.id),
+            language,
+          }
         : { note, language },
       (result) => {
         showSuccessBar(
@@ -174,13 +232,17 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
             : t('staff_requests_rejected'),
         );
         showGrantedProjects(result?.data?.projects as GrantedProjects | null);
+        const memberOf = (result?.data?.accounts ?? []) as string[];
+        if (memberOf.length) {
+          showInfoBar(enqueueSnackbar, t('staff_requests_accounts_granted', { accounts: memberOf.join(', ') }));
+        }
         setBusy(false);
         setDecision(null);
         fetchRequests();
         onChanged?.();
       },
       (error) => {
-        if (error?.response?.data?.unknown_projects) {
+        if (error?.response?.data?.unknown_projects || error?.response?.data?.unknown_accounts) {
           // Shown in the dialog, which stays open for the correction.
           setDecisionError(errorReason(error));
         } else {
@@ -309,6 +371,8 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
           ) : null,
       },
     ],
+    // openDecision only runs on a click - it reads the state of that moment.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [t],
   );
 
@@ -385,29 +449,88 @@ const StaffAccessRequests = ({ onChanged }: { onChanged?: () => void }) => {
             )}
           </p>
           {decision?.action === 'approve' && (
-            <Form.Group className="mb-3">
-              <Form.Label>{t('staff_requests_projects')}</Form.Label>
-              <Form.Control
-                value={projectIds}
-                placeholder={decision.request.project || '4711, 4712'}
-                isInvalid={Boolean(decisionError)}
-                onChange={(event) => {
-                  setProjectIds(event.target.value);
-                  setDecisionError('');
-                }}
-                data-testid="staff-requests-decision-projects"
-              />
-              <Form.Control.Feedback type="invalid" data-testid="staff-requests-decision-error">
-                {decisionError}
-              </Form.Control.Feedback>
-              <Form.Text muted>
-                {decision.request.project
-                  ? t('staff_requests_projects_stated', {
-                      project: decision.request.project,
-                    })
-                  : t('staff_requests_projects_hint')}
-              </Form.Text>
-            </Form.Group>
+            <>
+              <Form.Group className="mb-3">
+                <Form.Label>{t('staff_requests_projects')}</Form.Label>
+                <BadgePicker<ProjectChoice>
+                  selected={projects}
+                  onChange={(next) => {
+                    setProjects(next);
+                    setDecisionError('');
+                  }}
+                  keyOf={(project) => project.project_id}
+                  badgeLabel={(project) => (
+                    <>
+                      <strong>{project.project_id}</strong>
+                      {project.names?.length ? ` · ${project.names[0]}` : ''}
+                    </>
+                  )}
+                  optionLabel={(project) => (
+                    <span className="d-flex justify-content-between gap-3">
+                      <span>
+                        <strong>{project.project_id}</strong>
+                        {project.names?.length ? ` · ${project.names.join(', ')}` : ''}
+                        {project.cities?.length ? (
+                          <span className="text-muted"> ({project.cities.join(', ')})</span>
+                        ) : null}
+                      </span>
+                      <span className="text-muted small text-nowrap">{project.accounts?.join(', ')}</span>
+                    </span>
+                  )}
+                  search={searchProjects}
+                  fromText={projectNumbersIn}
+                  placeholder={t('staff_requests_projects_placeholder')}
+                  emptyLabel={t('staff_requests_projects_none')}
+                  invalid={Boolean(decisionError)}
+                  testId="staff-requests-decision-projects"
+                />
+                {decisionError && (
+                  <div className="invalid-feedback d-block" data-testid="staff-requests-decision-error">
+                    {decisionError}
+                  </div>
+                )}
+                <Form.Text muted>
+                  {decision.request.project
+                    ? t('staff_requests_projects_stated', {
+                        project: decision.request.project,
+                      })
+                    : t('staff_requests_projects_hint')}
+                </Form.Text>
+                {/* Numbers in what the requester wrote - one click each. */}
+                {projectNumbersIn(decision.request.project || '')
+                  .filter((suggestion) => !projects.some((project) => project.project_id === suggestion.project_id))
+                  .map((suggestion) => (
+                    <button
+                      key={suggestion.project_id}
+                      type="button"
+                      className="btn btn-sm btn-outline-secondary rounded-pill me-1 mt-1 py-0"
+                      onClick={() => setProjects((current) => [...current, suggestion])}
+                      {...repeatedTestId('staff-requests-project-suggestion', suggestion.project_id)}
+                    >
+                      + {suggestion.project_id}
+                    </button>
+                  ))}
+              </Form.Group>
+              <Form.Group className="mb-3">
+                <Form.Label>{t('staff_requests_accounts')}</Form.Label>
+                <BadgePicker<AccountChoice>
+                  selected={accounts}
+                  onChange={(next) => {
+                    setAccounts(next);
+                    setDecisionError('');
+                  }}
+                  keyOf={(account) => account.id}
+                  badgeLabel={(account) => account.name}
+                  optionLabel={(account) => account.name}
+                  search={searchAccounts}
+                  delay={0}
+                  placeholder={t('staff_requests_accounts_placeholder')}
+                  emptyLabel={t('staff_requests_accounts_none')}
+                  testId="staff-requests-decision-accounts"
+                />
+                <Form.Text muted>{t('staff_requests_accounts_hint')}</Form.Text>
+              </Form.Group>
+            </>
           )}
           <Form.Group className="mb-3">
             <Form.Label>{t('staff_requests_language')}</Form.Label>

@@ -134,6 +134,11 @@ def django_db_setup(django_db_blocker):
         _reset_sequences("unit_tests")
         _ensure_permissions("default")
         ensure_migrated_database(settings.DEMO_DATABASE)
+    # Cached API answers (cacher.search_cache: path + user id) outlive a test
+    # session in Redis - and every session hands out the same ids again (the
+    # rows are rolled back, the sequences realigned above), so a test could
+    # get another session's stale answer. Within a session ids never repeat.
+    cache.clear()
     yield
 
 

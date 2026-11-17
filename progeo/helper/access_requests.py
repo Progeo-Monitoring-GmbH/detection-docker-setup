@@ -262,11 +262,13 @@ def decision_language(request, language=None) -> str:
     return normalize_language(language) or normalize_language(request.language) or DEFAULT_LANGUAGE
 
 
-def approve(request, staff_user, note: str = "", project_ids=(), language=None):
-    """Grant the default permissions and access to `project_ids` (helper/
-    user_provisioning.py), and tell the requester - in `language`, which also
+def approve(request, staff_user, note: str = "", project_ids=(), language=None, accounts=()):
+    """Grant the default permissions, access to `project_ids` (helper/
+    user_provisioning.py) and membership of `accounts` (Account rows - all
+    their locations), and tell the requester - in `language`, which also
     becomes the user's language (mails, messenger). Returns the request; the
-    grant result is on `request.granted_projects`."""
+    grant result is on `request.granted_projects`, the accounts' names on
+    `request.granted_accounts`."""
     from progeo.helper.emailhelper import portal_url
     from progeo.tasks import send_template_mail_task
     from progeo.v1.models import AccessRequest
@@ -281,6 +283,7 @@ def approve(request, staff_user, note: str = "", project_ids=(), language=None):
     request.review_note = str(note or "").strip()
     request.save(using=DB)
     request.granted_projects = None
+    request.granted_accounts = []
     language = decision_language(request, language)
     if request.user is not None:
         from progeo.helper.user_provisioning import grant_project_access
@@ -295,6 +298,9 @@ def approve(request, staff_user, note: str = "", project_ids=(), language=None):
         _apply_permissions(request.user, defaults, defaults)
         if project_ids:
             request.granted_projects = grant_project_access(request.user, project_ids)
+        for account in accounts:
+            account.users.add(request.user)
+            request.granted_accounts.append(account.name)
         outbound.dispatch(
             send_template_mail_task, [request.user.email or request.email], "access_approved",
             {"first_name": request.first_name, "login_url": portal_url("/login")}, "access_request", language,

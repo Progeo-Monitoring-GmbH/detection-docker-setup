@@ -11,6 +11,7 @@ import i18n from './i18n.jsx';
 import { isDemoReadOnlyError, isDemoUser, loginPathFor } from './main/demo';
 import { isImpersonationBlockedError } from './main/impersonation';
 import { isTwoFactorSetupError, TWO_FACTOR_SETUP_PATH } from './main/twoFactor';
+import { isPendingReviewError, PENDING_REVIEW_PATH } from './main/pendingReview';
 import { watchAxios } from './maintenance';
 import { refreshAccessToken } from './tokenRefresh';
 
@@ -107,7 +108,8 @@ export default class axiosConfig {
   /**
    * Runs a request; on 401/403 the user is sent to the login page (demo
    * users: their demo link) - a 403 because 2FA has to be set up first goes
-   * to that setup instead. A write refused because of the read-only demo
+   * to that setup instead, one because the account still waits for review
+   * to the "being reviewed" panel. A write refused because of the read-only demo
    * is no auth problem - the caller's error handling runs (errorReason()
    * explains it), callers without one get a hint here.
    */
@@ -137,6 +139,15 @@ export default class axiosConfig {
         if (isTwoFactorSetupError(error)) {
           // Logged in fine, but nothing is reachable before 2FA is set up.
           auth?.navigate(TWO_FACTOR_SETUP_PATH);
+          return;
+        }
+        if (isPendingReviewError(error)) {
+          // Logged in fine, but the account still waits for the staff's
+          // review: the "being reviewed" panel - sending the user to the
+          // login page would only loop back here.
+          if (auth?.location !== PENDING_REVIEW_PATH) {
+            auth?.navigate(PENDING_REVIEW_PATH);
+          }
           return;
         }
         // Demo users only log in again (via their link) on an expired session -

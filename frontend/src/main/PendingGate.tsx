@@ -1,10 +1,7 @@
 import { Navigate, Outlet } from 'react-router';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import { needsTwoFactorSetup, TWO_FACTOR_SETUP_PATH } from './twoFactor';
-
-/** True for a user whose access request still waits for the staff's review. */
-const isPendingUser = (user: unknown) =>
-  Boolean((user as { is_pending?: boolean } | null)?.is_pending);
+import { isPendingUser, PENDING_REVIEW_PATH } from './pendingReview';
 
 /**
  * Layout route around the portal's layouts: a user whose access request is
@@ -16,7 +13,7 @@ const isPendingUser = (user: unknown) =>
 const PendingGate = () => {
   const auth = useAuth();
   if (isPendingUser(auth.user)) {
-    return <Navigate to="/zugang/pruefung" replace />;
+    return <Navigate to={PENDING_REVIEW_PATH} replace />;
   }
   if (needsTwoFactorSetup(auth.user)) {
     return <Navigate to={TWO_FACTOR_SETUP_PATH} replace />;

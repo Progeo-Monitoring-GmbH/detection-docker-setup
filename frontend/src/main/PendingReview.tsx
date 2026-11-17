@@ -97,6 +97,9 @@ const PendingReview = () => {
   return (
     <AuthPage title={t('pending_title')} testId="page-pending-review">
       <p className="auth-muted" data-testid="pending-review-pending">{t('pending_text')}</p>
+      <div className="alert alert-info small" role="status" data-testid="pending-review-blocked">
+        {t('pending_login_blocked')}
+      </div>
       <p className="auth-muted">{t('pending_text_mail')}</p>
       {demoUrl && (
         <>

@@ -40,9 +40,10 @@ def _summary(api_client, **params):
 
 
 def test_summary_counts_alarms_and_active_ones_per_location(api_client, world):
+    """Per Verdachtsstelle (sensor): sensor 1 open, sensor 2 resolved."""
     _account, location, other_location, device, member = world
-    f.make_alarm(device, triggered_ago=f.minutes(30))
-    f.make_alarm(device, triggered_ago=f.minutes(90), normalized_ago=f.minutes(60))
+    f.make_alarm(device, sensor_id=1, triggered_ago=f.minutes(30))
+    f.make_alarm(device, sensor_id=2, triggered_ago=f.minutes(90), normalized_ago=f.minutes(60))
     f.make_alarm(f.make_device(other_location), triggered_ago=f.minutes(5))
     api_client.force_authenticate(user=member)
 
@@ -63,6 +64,29 @@ def test_summary_ids_filter(api_client, world):
     assert list(_summary(api_client, ids=f"{other_location.id}, ")) == [str(other_location.id)]
 
 
+def test_summary_counts_a_flapping_sensor_once_like_the_clusters(api_client, world):
+    """A sensor hovering around its threshold raises an alarm per re-trigger -
+    still one case: the summary counts Verdachtsstellen like /clusters/, not
+    alarm rows (170 rows were ~6 cases)."""
+    _account, location, _other, device, member = world
+    for minutes in range(40):
+        f.make_alarm(device, sensor_id=7, triggered_ago=f.minutes(200 - 4 * minutes),
+                     normalized_ago=f.minutes(198 - 4 * minutes))
+    f.make_alarm(device, sensor_id=7, triggered_ago=f.minutes(5))  # open again
+    # One alarm reporting two sensors over the threshold - two cases.
+    both = f.make_alarm(device, sensor_id=3, triggered_ago=f.minutes(50), normalized_ago=f.minutes(40))
+    ProgeoAlarm.objects.using(f.DB).filter(pk=both.pk).update(
+        sensor_max_values=[{"sensor_id": 3, "max_value": 150}, {"sensor_id": 4, "max_value": 130}])
+    api_client.force_authenticate(user=member)
+
+    summary = _summary(api_client)[str(location.id)]
+    clusters = api_client.get("/v1/alarm/clusters/", {"location": location.id}).json()["clusters"]
+
+    assert summary == {"count": 3, "active": 1}
+    assert summary["count"] == len(clusters)
+    assert summary["active"] == sum(1 for cluster in clusters if cluster["state"] != "geloest")
+
+
 def test_summary_rejects_non_integer_ids(api_client, world):
     api_client.force_authenticate(user=world[4])
 
@@ -75,8 +99,8 @@ def test_summary_rejects_non_integer_ids(api_client, world):
 def test_summary_keeps_old_active_alarms_but_drops_old_resolved_ones(api_client, world):
     _account, location, _other, device, member = world
     old = timedelta(days=30)
-    f.make_alarm(device, triggered_ago=old)  # still open
-    f.make_alarm(device, triggered_ago=old, normalized_ago=old - timedelta(hours=1))
+    f.make_alarm(device, sensor_id=1, triggered_ago=old)  # still open
+    f.make_alarm(device, sensor_id=2, triggered_ago=old, normalized_ago=old - timedelta(hours=1))
     api_client.force_authenticate(user=member)
 
     assert _summary(api_client) == {str(location.id): {"count": 1, "active": 1}}

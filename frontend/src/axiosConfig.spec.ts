@@ -87,6 +87,24 @@ describe('perform_get', () => {
     expect(auth.navigate).toHaveBeenCalledWith('/konto/zwei-faktor');
   });
 
+  it('sends a user whose account awaits review to the review panel, not the login', async () => {
+    const pending = () =>
+      Object.assign(new Error('Request failed with status code 403'), {
+        response: { status: 403, data: { success: false, reason: 'Account pending review', pending_review: true } },
+      });
+    vi.spyOn(axiosConfig.holder, 'get').mockImplementation(() => Promise.reject(pending()));
+    const elsewhere = makeAuth('/location/5/status');
+    const onPanel = makeAuth('/zugang/pruefung');
+
+    await axiosConfig.perform_get(elsewhere, '/api/auth-support/module-permissions/', vi.fn(), vi.fn());
+    await axiosConfig.perform_get(onPanel, '/api/auth-support/module-permissions/', vi.fn(), vi.fn());
+
+    expect(elsewhere.navigate).toHaveBeenCalledTimes(1);
+    expect(elsewhere.navigate).toHaveBeenCalledWith('/zugang/pruefung');
+    // Already there: no loop through the login page.
+    expect(onPanel.navigate).not.toHaveBeenCalled();
+  });
+
   it('does not throw on 401 when no auth context is given', async () => {
     vi.spyOn(axiosConfig.holder, 'get').mockRejectedValue(httpError(401));
     const onError = vi.fn();

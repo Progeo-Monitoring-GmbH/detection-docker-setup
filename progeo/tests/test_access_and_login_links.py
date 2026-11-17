@@ -177,6 +177,46 @@ def test_approval_opens_the_portal(client):
     assert client.get("/api/auth-support/module-permissions/").status_code == 200
 
 
+def test_approval_makes_the_user_a_member_of_the_chosen_accounts(client):
+    _request_and_verify(client)
+    first, second = f.make_account(name="Kunde Eins"), f.make_account(name="Kunde Zwei")
+    staff_client = APIClient()
+    staff_client.force_authenticate(user=f.make_user(staff=True))
+    request = AccessRequest.objects.using(f.DB).get(email="erika@progeo.com")
+    url = f"/api/auth-support/staff/access-requests/{request.pk}/approve/"
+
+    unknown = staff_client.post(url, {"account_ids": [first.pk, 999999]}, format="json").json()
+    response = staff_client.post(url, {"account_ids": [first.pk, second.pk]}, format="json").json()
+
+    assert unknown["unknown_accounts"] == [999999]
+    assert response["accounts"] == ["Kunde Eins", "Kunde Zwei"]
+    assert first.users.filter(pk=request.user_id).exists() and second.users.filter(pk=request.user_id).exists()
+
+
+def test_staff_search_projects_by_number_name_or_city(client):
+    account = f.make_account(name="Kunde Suche")
+    f.make_location(account, project_id=847101, name="Halle Nord", city="Ulm")
+    f.make_location(account, project_id=847102, name="Lager", city="Neu-Ulm")
+    f.make_location(account, project_id=999847, name="Werk Ost", city="Bonn")
+    staff_client = APIClient()
+    staff_client.force_authenticate(user=f.make_user(staff=True))
+
+    def search(query):
+        return [row["project_id"] for row in staff_client.get("/v1/location/project-search/", {"q": query}).json()
+                ["projects"]]
+
+    assert search("8471") == [847101, 847102]
+    assert search("847102") == [847102]
+    assert set(search("ulm")) >= {847101, 847102}
+    assert search("Werk Ost") == [999847]
+    row = staff_client.get("/v1/location/project-search/", {"q": "847101"}).json()["projects"][0]
+    assert row == {"project_id": 847101, "names": ["Halle Nord"], "cities": ["Ulm"], "accounts": ["Kunde Suche"],
+                   "locations": 1}
+    customer = APIClient()
+    customer.force_authenticate(user=f.make_user(perms=("module_locations_enabled",)))
+    assert customer.get("/v1/location/project-search/", {"q": "847"}).json()["reason"] == "Staff access required"
+
+
 def test_rejection_deactivates_the_user(client):
     _request_and_verify(client)
     staff = f.make_user(staff=True)

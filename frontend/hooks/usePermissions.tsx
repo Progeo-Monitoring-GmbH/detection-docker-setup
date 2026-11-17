@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import axiosConfig from '../src/axiosConfig';
 import { AuthContextType, useAuth } from './CoreAuthProvider';
+import { isPendingUser } from '../src/main/pendingReview';
 
 export type ModulePermissions = Record<string, boolean>;
 
@@ -141,6 +142,11 @@ const fetchPermissionPayload = async (auth: AuthContextType, token: string) => {
   const cacheKey = permissionCacheKey(auth, token);
   if (!token) {
     clearPermissionsCache();
+    return EMPTY_PERMISSIONS;
+  }
+  // Awaiting review: the backend refuses everything but the review status -
+  // no permissions to ask for (the request would only be a 403).
+  if (isPendingUser(auth?.user)) {
     return EMPTY_PERMISSIONS;
   }
 

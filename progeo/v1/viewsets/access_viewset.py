@@ -283,6 +283,27 @@ class StaffAccessRequestListView(_StaffView):
         return RequestSuccess({"requests": [access_requests.serialize(row) for row in rows]})
 
 
+def _requested_accounts(raw):
+    """(accounts, error) of an approval's `account_ids` (a list of Account
+    ids - the user becomes a member of each). Unknown ids refuse it."""
+    from progeo.v1.models import Account
+
+    if raw in (None, "", []):
+        return [], None
+    if not isinstance(raw, list) or any(isinstance(value, bool) for value in raw):
+        return None, RequestFailed({"reason": "account_ids must be a list of account ids"})
+    try:
+        ids = list(dict.fromkeys(int(value) for value in raw))
+    except (TypeError, ValueError):
+        return None, RequestFailed({"reason": "account_ids must be a list of account ids"})
+    accounts = {account.pk: account for account in Account.objects.using(DB).filter(pk__in=ids)}
+    unknown = [account_id for account_id in ids if account_id not in accounts]
+    if unknown:
+        return None, RequestFailed({"reason": f"Unbekannte Accounts: {', '.join(map(str, unknown))}",
+                                    "unknown_accounts": unknown})
+    return [accounts[account_id] for account_id in ids], None
+
+
 class StaffAccessRequestReviewView(_StaffView):
     """POST .../<pk>/approve/ or .../<pk>/reject/ (`decision` from the URL)."""
 
@@ -322,10 +343,15 @@ class StaffAccessRequestReviewView(_StaffView):
                 # Most likely a typo - nothing is approved until the numbers are right.
                 return RequestFailed({"reason": f"Unbekannte Projektnummer(n): {', '.join(map(str, unknown))}",
                                       "unknown_projects": unknown})
-            access_requests.approve(access_request, request.user, note, project_ids=project_ids, language=language)
+            accounts, error = _requested_accounts(data.get("account_ids"))
+            if error:
+                return error
+            access_requests.approve(access_request, request.user, note, project_ids=project_ids, language=language,
+                                    accounts=accounts)
             return RequestSuccess({
                 "request": access_requests.serialize(access_request),
                 "projects": access_request.granted_projects,
+                "accounts": access_request.granted_accounts,
             })
         access_requests.reject(access_request, request.user, note, language=language)
         return RequestSuccess({"request": access_requests.serialize(access_request)})

@@ -1,7 +1,8 @@
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
-from django.db.models import Count, F, Q
+from django.db.models import F, Q
 from django.utils import timezone
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action
@@ -122,6 +123,12 @@ class AlarmViewSet(ProgeoModalViewSet):
         Optional `ids` (comma-separated) scopes the summary to those
         location ids, e.g. the rows currently visible on a paginated table.
         Covers every account of the user, like /v1/location/min/ lists them.
+
+        Counts what the portal calls an alarm case - a Verdachtsstelle, i.e.
+        one sensor (`clusters`, sidebar badge), not ProgeoAlarm rows: a
+        sensor hovering around its threshold raises a new row on every
+        re-trigger, dozens per case. `count`: sensors with alarms in the
+        window, `active`: those of them with an unresolved alarm.
         Returns {"locations": {<location_id>: {"count": n, "active": m}}}.
         """
         accounts = resolve_request_accounts(request, fallback_account=_get_controller_account())
@@ -160,24 +167,36 @@ class AlarmViewSet(ProgeoModalViewSet):
                     | Q(triggered_at__isnull=True, last_fetched__gte=cutoff)
                 )
             )
-            return list(rows.values("measurement__device__location_id").annotate(
-                count=Count("id"),
-                active=Count("id", filter=Q(normalized_at__isnull=True)),
+            # Only what the sensor grouping needs - not whole alarm rows.
+            return list(rows.values(
+                "measurement__device__location_id", "sensor_id", "sensor_max_values", "normalized_at",
             ))
 
         rows = [row for chunk in map_databases(summary_rows, groups) for row in chunk]
+        return RequestSuccess({"locations": self._summarize_by_sensor(rows)})
 
-        locations = {}
+    @classmethod
+    def _summarize_by_sensor(cls, rows):
+        """{location id: {"count", "active"}} of alarm `rows` (dicts with
+        measurement__device__location_id, sensor_id, sensor_max_values,
+        normalized_at): the Verdachtsstellen per location - the sensors the
+        alarms reported over-threshold, grouped like `clusters`
+        (_group_alarms_by_sensor) - and how many of them are still open."""
+        sensors, open_sensors = defaultdict(set), defaultdict(set)
         for row in rows:
             location_id = row["measurement__device__location_id"]
             if location_id is None:
                 continue
-            locations[str(location_id)] = {
-                "count": row["count"],
-                "active": row["active"],
-            }
-
-        return RequestSuccess({"locations": locations})
+            alarm = SimpleNamespace(sensor_max_values=row["sensor_max_values"], sensor_id=row["sensor_id"],
+                                    max_value=None)
+            for sensor_id, _value in cls._sensor_max_value_pairs(alarm):
+                sensors[location_id].add(sensor_id)
+                if row["normalized_at"] is None:
+                    open_sensors[location_id].add(sensor_id)
+        return {
+            str(location_id): {"count": len(found), "active": len(open_sensors[location_id])}
+            for location_id, found in sensors.items()
+        }
 
     @require_module_permissions("module_measurements_enabled")
     @action(detail=False, url_path="active", methods=["GET"])

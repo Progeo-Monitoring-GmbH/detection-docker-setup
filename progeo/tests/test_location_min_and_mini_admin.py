@@ -62,6 +62,53 @@ def test_customers_list_the_locations_of_their_account_and_their_accesses(api_cl
     assert b1.pk not in listed
 
 
+# -- opening one location (/v1/location/<id>/) -----------------------------------------
+
+def _opens(api_client, user, location):
+    api_client.force_authenticate(user=user)
+    return api_client.get(f"/v1/location/{location.pk}/").status_code
+
+
+def test_a_location_of_a_second_account_opens(api_client, two_accounts):
+    """Detail routes looked in the first account only: 404 for the rest."""
+    first, second, a1, _a2, b1, b2 = two_accounts
+    staff = f.make_user(staff=True, perms=READ, accounts=[first, second])
+    customer = f.make_user(perms=READ, accounts=[first])
+    f.make_access(b1, customer)
+
+    assert _opens(api_client, staff, b1) == 200
+    assert _opens(api_client, customer, a1) == 200
+    assert _opens(api_client, customer, b1) == 200
+    assert _opens(api_client, customer, b2) == 404
+
+
+def test_staff_open_any_location_superusers_too(api_client, two_accounts):
+    """Staff tools (checklist, Verwaltung) link across accounts - opening by
+    id isn't limited to the staff member's own accounts."""
+    _first, _second, a1, _a2, _b1, b2 = two_accounts
+
+    assert _opens(api_client, f.make_user(staff=True, perms=READ), b2) == 200
+    assert _opens(api_client, f.make_user(staff=True, is_superuser=True), a1) == 200
+
+
+def test_staff_alarm_summaries_cover_their_accounts_only(api_client, two_accounts):
+    """Lists follow listed_locations everywhere - here the alarm summary of
+    the overview: staff get their accounts, superusers every one."""
+    first, _second, a1, _a2, b1, _b2 = two_accounts
+    for location in (a1, b1):
+        f.make_alarm(f.make_device(location))
+    perms = (*READ, "module_measurements_enabled")
+    url = f"/v1/alarm/location_summary/?ids={a1.pk},{b1.pk}"
+
+    api_client.force_authenticate(user=f.make_user(staff=True, perms=perms, accounts=[first]))
+    as_staff = api_client.get(url).json()["locations"]
+    api_client.force_authenticate(user=f.make_user(staff=True, is_superuser=True))
+    as_superuser = api_client.get(url).json()["locations"]
+
+    assert set(as_staff) == {str(a1.pk)}
+    assert set(as_superuser) == {str(a1.pk), str(b1.pk)}
+
+
 # -- the mini admin -------------------------------------------------------------------
 
 @pytest.fixture

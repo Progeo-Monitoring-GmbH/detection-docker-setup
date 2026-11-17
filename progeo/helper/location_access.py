@@ -334,14 +334,32 @@ def _is_demo(user) -> bool:
     return is_demo_user(user)
 
 
+def sees_every_location(user) -> bool:
+    """Superusers - and internal calls without a user - list every location of
+    every account (listed_locations)."""
+    return not user or bool(getattr(user, "is_superuser", False))
+
+
 def resolve_request_accounts(request, fallback_account=None) -> list[Account]:
-    """All accounts relevant for the request's user. Staff (and anonymous
-    internal calls) keep using the request's/controller account."""
+    """All accounts relevant for the request's user, the request's (or the
+    controller) account first:
+
+    - superusers: every configured account;
+    - staff: that account plus the ones they belong to or hold single
+      accesses in - staff act on every location of these (location_q), the
+      staff tools (provisioning, statistics, firmware) rely on it;
+    - customers: their memberships and single-access accounts.
+    Internal calls without a user keep the request's account."""
     user = getattr(request, "user", None)
-    if not user or is_staff_admin(user):
-        account = getattr(request, "account", None) or fallback_account
-        return [account] if account else []
-    return user_accounts(user)
+    first = getattr(request, "account", None) or fallback_account
+    if not user or not is_staff_admin(user):
+        if not user:
+            return [first] if first else []
+        return user_accounts(user)
+    accounts = configured_accounts() if sees_every_location(user) else user_accounts(user)
+    ordered = [first] if first is not None else []
+    ordered += [account for account in accounts if first is None or account.pk != first.pk]
+    return ordered
 
 
 def resolve_request_account(request, fallback_account=None):
@@ -377,9 +395,9 @@ def listed_locations(user) -> list[tuple[Account, Q]]:
     - superusers: every location of every configured account;
     - staff and everyone else: the locations of the accounts they belong to,
       plus those granted to them one by one (ProgeoAccess) - being staff
-      alone lists nothing (they still open any location, location_q).
+      alone lists nothing (they still open any location by id).
     """
-    if getattr(user, "is_superuser", False):
+    if sees_every_location(user):
         return [(account, Q(account=account)) for account in configured_accounts()]
     listed = []
     for account in user_accounts(user):
@@ -391,7 +409,9 @@ def listed_locations(user) -> list[tuple[Account, Q]]:
 
 
 def location_q(user, account, prefix: str = "") -> Q:
-    """Filter for rows visible to `user` within `account`. `prefix` is the
+    """Filter for rows `user` may see and act on within `account`: everything
+    for staff and members, else the user's single accesses. What the location
+    lists show is narrower for staff (listed_locations). `prefix` is the
     lookup path to the location, e.g. "device__location__" for measurements."""
     scope = Q(**{f"{prefix}account": account})
     if not user or is_staff_admin(user) or is_account_member(user, account):
