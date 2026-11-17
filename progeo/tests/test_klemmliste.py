@@ -168,8 +168,9 @@ def test_columns_the_header_does_not_name_are_found_by_their_content(klemmliste,
 
     result = klemmliste.read_klemmliste(_pdf(tmp_path / "variant.pdf", build))
 
-    if not ruled and headers == ("", "", ""):
-        # Without a table and without labels, three header words are needed to find the columns.
+    if not ruled and headers in (("", "", ""), ("Kabel-Nr.", "Platine", "Klemme")):
+        # Without a ruled table the columns come from the labels - one of them has to be a
+        # known one; how unknown words group depends on the PDF library's font metrics.
         assert result["rows"] == []
         return
     assert _positions(result) == SL_POSITIONS

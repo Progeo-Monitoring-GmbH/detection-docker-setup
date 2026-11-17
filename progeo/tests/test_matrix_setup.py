@@ -229,7 +229,7 @@ def test_english_templates_render_and_fall_back_to_german():
 def test_alarm_messenger_message_in_the_recipients_language():
     location = f.make_location(f.make_account(), name="Hall North", project_id=4711, alarm_threshold=100)
     device = f.make_device(location)
-    user = f.make_user(email="kai@progeo.com")
+    user = f.make_user(email="rudi.radau@progeo.com")
     UserProfile.objects.using(f.DB).create(user_id=user.pk, messenger="whatsapp", messenger_id="+49 160 2",
                                            language="en")
     f.make_access(location, user, transport=ProgeoAccess.NotifiTrans.MESSENGER, type=ProgeoAccess.NotifiTypes.ALARM)

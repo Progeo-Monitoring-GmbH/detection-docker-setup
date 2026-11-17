@@ -28,8 +28,9 @@ in a grid of cells read in one of two ways:
    first rows; a table without one on a later page continues the last one
    when it has as many columns.
 2. Otherwise word positions: a header line (or two, when wrapped) with at
-   least three labels; every column spans the room up to the middle between
-   its label and the neighbouring ones, each line below is cut into them.
+   least three labels, one of them a known one; every column spans the room
+   up to the middle between its label and the neighbouring ones, each line
+   below is cut into them.
 
 Rows without a readable MUX card and pin are skipped (sub-headings, sums);
 an empty MUX cell repeats the card above (merged cells). Problems are
@@ -427,16 +428,14 @@ def _header_columns(lines, index) -> tuple | None:
                               f"{merged[-1][2]} {label[2]}")
             else:
                 merged.append(label)
-        # Without a ruled table the columns come from the labels. A header whose
-        # labels are all unknown must at least label every column: the lines
-        # below have no more word groups than it has labels - else a column
-        # without a label would smear into its neighbours.
-        if len(merged) < 3:
+        # Without a ruled table the columns come from the labels: at least one
+        # of them has to be a known one (Sensor, MUX Karte, PIN, ...). A header
+        # of unknown words only may be no header at all, or leave a column
+        # without a label that smears into its neighbours - and how its words
+        # group depends on the PDF library's font metrics. Ruled tables have
+        # their columns from the grid and need no known label.
+        if len(merged) < 3 or not header_roles([label[2] for label in merged]):
             continue
-        if not header_roles([label[2] for label in merged]):
-            groups = sorted(len(_labels(line)) for line in lines[index + used:index + used + 30])
-            if not groups or groups[len(groups) // 2] > len(merged):
-                continue
         bounds = []
         for position, label in enumerate(merged):
             left = (merged[position - 1][1] + label[0]) / 2 if position else float("-inf")

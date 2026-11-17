@@ -37,11 +37,15 @@ def at(hour, minute=0, days=0):
 def live(monkeypatch):
     """Not the first run any more (no baseline mute) and a fixed "now" - also
     for OutboundMessage.created, which note_bounce compares with the case's
-    last contact (with the real clock the suite failed before nine)."""
+    last contact (with the real clock the suite failed before nine).
+
+    Django caches a field's default function (Field._get_default, a cached
+    property): patching `default` only works until the first row anywhere in
+    the run was created - the cached function itself is replaced."""
     nc.mark_baseline_done()
     clock = {"now": at(10)}
     monkeypatch.setattr(nc, "_now", lambda: clock["now"])
-    monkeypatch.setattr(OutboundMessage._meta.get_field("created"), "default", lambda: clock["now"])
+    monkeypatch.setattr(OutboundMessage._meta.get_field("created"), "_get_default", lambda: clock["now"])
     return clock
 
 
@@ -94,7 +98,7 @@ def test_offline_stages_start_at_the_next_window_start():
 
 def test_detection_opens_a_case_but_mails_nothing_at_night(site, live):
     location, device = site
-    _subscriber(location, "kai@progeo.com")
+    _subscriber(location, "rudi.radau@progeo.com")
     _seen(device, at(16, days=-1))
     live["now"] = at(0, 50)
 
@@ -109,7 +113,7 @@ def test_detection_opens_a_case_but_mails_nothing_at_night(site, live):
 
 def test_stage_one_at_nine_with_links_and_list_unsubscribe(site, live):
     location, device = site
-    _subscriber(location, "kai@progeo.com")
+    _subscriber(location, "rudi.radau@progeo.com")
     _subscriber(location, "alarm-only@progeo.com", type=ALARM)
     _seen(device, at(16, days=-1))
     nc.detect_offline(f.DB, now=at(0, 50))
@@ -117,7 +121,7 @@ def test_stage_one_at_nine_with_links_and_list_unsubscribe(site, live):
     live["now"] = at(9)
     nc.process(now=at(9))
 
-    assert _originals() == ["halle@progeo.com", "kai@progeo.com"]
+    assert _originals() == ["halle@progeo.com", "rudi.radau@progeo.com"]
     message = FakeSMTP.parsed()[0]
     assert "Störung des Monitoringsystems" in message["Subject"]
     text = body_of(message)
@@ -135,7 +139,7 @@ def test_stage_one_at_nine_with_links_and_list_unsubscribe(site, live):
 
 def test_baseline_run_opens_muted_cases(site):
     location, device = site
-    _subscriber(location, "kai@progeo.com")
+    _subscriber(location, "rudi.radau@progeo.com")
     _seen(device, at(16, days=-1))
 
     nc.detect_offline(f.DB, now=at(0, 50), baseline=True)
@@ -174,7 +178,7 @@ def test_per_device_detection_collects_devices_of_one_location(site):
 
 def _offline_case_with_stage_one(site, live):
     location, device = site
-    _subscriber(location, "kai@progeo.com")
+    _subscriber(location, "rudi.radau@progeo.com")
     _seen(device, at(16, days=-1))
     nc.detect_offline(f.DB, now=at(0, 50))
     live["now"] = at(9)
@@ -195,7 +199,7 @@ def test_back_online_after_the_stability_wait_mails_who_was_told(site, live):
     assert not case.is_open and case.resolution == "back_online" and case.online_mail_due
 
     nc.process(now=at(14))
-    assert _originals() == ["halle@progeo.com", "kai@progeo.com"]
+    assert _originals() == ["halle@progeo.com", "rudi.radau@progeo.com"]
     assert "wieder aufgenommen" in FakeSMTP.parsed()[0]["Subject"]
     assert not _case(location).online_mail_due
 
@@ -244,12 +248,13 @@ def test_reminders_add_the_objektleitung_and_end_in_an_escalation(site, live):
     lead = f.make_user(email="lead@progeo.com", staff=True)
     f.make_access(location, lead, type=0, objektleitung=True)
 
-    for days, expected in ((3, ["halle@progeo.com", "kai@progeo.com"]),
-                           (7, ["halle@progeo.com", "kai@progeo.com", "lead@progeo.com"])):
+    for days, expected in ((3, ["halle@progeo.com", "rudi.radau@progeo.com"]),
+                           (7, ["halle@progeo.com", "rudi.radau@progeo.com", "lead@progeo.com"])):
         FakeSMTP.sent = []
         nc.detect_offline(f.DB, now=at(8, 50, days=days))
         nc.process(now=at(9, days=days))
-        assert _originals() == expected
+        # _originals() is sorted - the recipients, not their order.
+        assert _originals() == sorted(expected)
         assert "Erinnerung" in FakeSMTP.parsed()[0]["Subject"]
 
     FakeSMTP.sent = []
@@ -263,7 +268,7 @@ def test_reminders_add_the_objektleitung_and_end_in_an_escalation(site, live):
 
 def test_offline_mails_respect_the_hourly_budget(site, live, settings):
     location, device = site
-    _subscriber(location, "kai@progeo.com")
+    _subscriber(location, "rudi.radau@progeo.com")
     _seen(device, at(16, days=-1))
     nc.detect_offline(f.DB, now=at(0, 50))
     settings.OUTBOUND_LIMITS = {**settings.OUTBOUND_LIMITS, "mail_global_hour": 2}
@@ -292,7 +297,7 @@ def test_a_bounced_stage_mail_reaches_its_case(site, live):
     location, device = site
     location.mail = None
     location.save(using=f.DB)
-    _subscriber(location, "kai@progeo.com")
+    _subscriber(location, "rudi.radau@progeo.com")
     _seen(device, at(16, days=-1))
     nc.detect_offline(f.DB, now=at(0, 50))
     live["now"] = at(9)
@@ -300,7 +305,7 @@ def test_a_bounced_stage_mail_reaches_its_case(site, live):
     row = OutboundMessage.objects.using(f.DB).get(case_id=_case(location).pk)
 
     bounces.apply_bounce({"message_id": row.message_id,
-                          "entries": [{"recipient": "kai@progeo.com", "hard": True, "reason": "5.1.1"}]})
+                          "entries": [{"recipient": "rudi.radau@progeo.com", "hard": True, "reason": "5.1.1"}]})
 
     case = _case(location)
     assert case.events.filter(kind="bounce").exists()
@@ -322,7 +327,7 @@ def test_a_disabled_location_gets_its_stages_and_alarm_but_nothing_is_sent(site,
 
     location, device = site
     _disable(location)
-    _subscriber(location, "kai@progeo.com")
+    _subscriber(location, "rudi.radau@progeo.com")
     sms_user = _subscriber(location, "sms@progeo.com", type=ALARM,
                            transport=ProgeoAccess.NotifiTrans.EMAIL_AND_SMS)
     UserProfile.objects.using(f.DB).update_or_create(user_id=sms_user.pk, defaults={"mobile": "+49 170 1234567"})
@@ -339,7 +344,7 @@ def test_a_disabled_location_gets_its_stages_and_alarm_but_nothing_is_sent(site,
     assert counts == {"mails": 0, "sms": 0, "messenger": 0}
     rows = OutboundMessage.objects.using(f.DB).filter(location_id=location.pk)
     assert set(rows.values_list("status", flat=True)) == {OutboundMessage.Status.WITHHELD}
-    assert {"halle@progeo.com", "kai@progeo.com", "sms@progeo.com", "+491701234567"} <= set(
+    assert {"halle@progeo.com", "rudi.radau@progeo.com", "sms@progeo.com", "+491701234567"} <= set(
         rows.values_list("recipient", flat=True))
     assert EMail.objects.using(f.DB).filter(location=location, withheld=True, sent=False).count() >= 3
     assert SMS.objects.using(f.DB).filter(location=location, withheld=True).exists()
@@ -355,7 +360,7 @@ def test_a_disabled_location_gets_its_stages_and_alarm_but_nothing_is_sent(site,
 def test_switching_a_location_on_sends_the_next_stage(site, live):
     location, device = site
     _disable(location)
-    _subscriber(location, "kai@progeo.com")
+    _subscriber(location, "rudi.radau@progeo.com")
     _seen(device, at(16, days=-1))
     nc.detect_offline(f.DB, now=at(0, 50))
     live["now"] = at(9)
@@ -368,7 +373,7 @@ def test_switching_a_location_on_sends_the_next_stage(site, live):
     live["now"] = case.next_contact_at
     nc.process(now=case.next_contact_at)
 
-    assert _originals() == ["halle@progeo.com", "kai@progeo.com"]
+    assert _originals() == ["halle@progeo.com", "rudi.radau@progeo.com"]
     assert _case(location).stage == 2
 
 
@@ -376,7 +381,7 @@ def test_switching_a_location_on_sends_the_next_stage(site, live):
 
 def test_alarm_reminders_go_out_at_night_until_acknowledged(site, live):
     location, device = site
-    _subscriber(location, "kai@progeo.com", type=ALARM)
+    _subscriber(location, "rudi.radau@progeo.com", type=ALARM)
     alarm = f.make_alarm(device, value=180, triggered_ago=f.minutes(5))
     notifications.notify_alarm(alarm, location, f.DB)
     assert len(FakeSMTP.sent) == 1
@@ -395,11 +400,11 @@ def test_alarm_reminders_go_out_at_night_until_acknowledged(site, live):
 
 def test_acknowledge_link_acknowledges_the_alarms_and_ends_the_reminders(site, api_client):
     location, device = site
-    user = _subscriber(location, "kai@progeo.com", type=ALARM)
+    user = _subscriber(location, "rudi.radau@progeo.com", type=ALARM)
     alarm = f.make_alarm(device, value=180, triggered_ago=f.minutes(5))
     notifications.notify_alarm(alarm, location, f.DB)
     case = _case(location, "alarm")
-    token = nc.create_token(case, "kai@progeo.com", user.pk)
+    token = nc.create_token(case, "rudi.radau@progeo.com", user.pk)
 
     check = api_client.post("/api/auth-support/notifications/check/", {"token": token}, format="json")
     assert check.status_code == 200 and check.data["kind"] == "alarm" and check.data["state"] == "open"
@@ -414,7 +419,7 @@ def test_acknowledge_link_acknowledges_the_alarms_and_ends_the_reminders(site, a
 
 def test_acknowledge_in_the_portal_closes_the_case(site):
     location, device = site
-    _subscriber(location, "kai@progeo.com", type=ALARM)
+    _subscriber(location, "rudi.radau@progeo.com", type=ALARM)
     alarm = f.make_alarm(device, value=180, triggered_ago=f.minutes(5))
     notifications.notify_alarm(alarm, location, f.DB)
     ProgeoAlarm.objects.using(f.DB).filter(pk=alarm.pk).update(status=ProgeoAlarm.Status.QUITTIERT)
@@ -427,7 +432,7 @@ def test_acknowledge_in_the_portal_closes_the_case(site):
 def test_offline_acknowledge_is_noted_but_reminders_go_on(site, live, api_client):
     location, _device = _offline_case_with_stage_one(site, live)
     case = _case(location)
-    token = nc.create_token(case, "kai@progeo.com")
+    token = nc.create_token(case, "rudi.radau@progeo.com")
 
     response = api_client.post("/api/auth-support/notifications/acknowledge/", {"token": token}, format="json")
 
@@ -439,7 +444,7 @@ def test_offline_acknowledge_is_noted_but_reminders_go_on(site, live, api_client
 def test_invalid_or_expired_tokens_are_refused(site, api_client):
     location, _device = site
     case = NotificationCase.objects.using(f.DB).create(kind="offline", location_id=location.pk)
-    token = nc.create_token(case, "kai@progeo.com")
+    token = nc.create_token(case, "rudi.radau@progeo.com")
     case.tokens.update(expires_at=nc._now() - timedelta(minutes=1))
 
     for value in (token, "nonsense"):
@@ -451,16 +456,16 @@ def test_invalid_or_expired_tokens_are_refused(site, api_client):
 
 def test_unsubscribe_clears_the_type_bit_but_keeps_the_access(site, api_client):
     location, _device = site
-    user = _subscriber(location, "kai@progeo.com", type=ALARM | TIMEOUT)
+    user = _subscriber(location, "rudi.radau@progeo.com", type=ALARM | TIMEOUT)
     case = NotificationCase.objects.using(f.DB).create(kind="offline", location_id=location.pk)
-    token = nc.create_token(case, "kai@progeo.com", user.pk)
+    token = nc.create_token(case, "rudi.radau@progeo.com", user.pk)
 
     response = api_client.post("/api/auth-support/notifications/unsubscribe/", {"token": token}, format="json")
 
     assert response.status_code == 200 and response.data["unsubscribed"] is True
     rule = ProgeoAccess.objects.using(f.DB).get(location=location, user_id=user.pk)
     assert rule.type == ALARM
-    assert NotificationOptOut.objects.using(f.DB).filter(address="kai@progeo.com", kind="offline").exists()
+    assert NotificationOptOut.objects.using(f.DB).filter(address="rudi.radau@progeo.com", kind="offline").exists()
     assert case.events.filter(kind="unsubscribed").exists()
 
 
@@ -475,16 +480,16 @@ def test_contact_mail_opt_out_keeps_it_off_the_next_stage(site, live, api_client
 
     nc.detect_offline(f.DB, now=at(8, 50, days=3))
     nc.process(now=at(9, days=3))
-    assert _originals() == ["kai@progeo.com"]
+    assert _originals() == ["rudi.radau@progeo.com"]
 
 
 def test_last_recipient_leaving_is_flagged_for_staff(site, live):
     location, _device = site
     location.mail = None
     location.save(using=f.DB)
-    user = _subscriber(location, "kai@progeo.com")
+    user = _subscriber(location, "rudi.radau@progeo.com")
     case = NotificationCase.objects.using(f.DB).create(kind="offline", location_id=location.pk)
-    row = nc.find_token(nc.create_token(case, "kai@progeo.com", user.pk))
+    row = nc.find_token(nc.create_token(case, "rudi.radau@progeo.com", user.pk))
 
     assert nc.unsubscribe(row) == {"already": False, "recipients_left": False}
 
@@ -576,12 +581,12 @@ def test_suppressed_addresses_still_count_as_not_reached(site, live):
     location, device = site
     location.mail = None
     location.save(using=f.DB)
-    _subscriber(location, "kai@progeo.com")
-    bounces.record_bounce("kai@progeo.com", hard=True, reason="5.1.1")
+    _subscriber(location, "rudi.radau@progeo.com")
+    bounces.record_bounce("rudi.radau@progeo.com", hard=True, reason="5.1.1")
     _seen(device, at(16, days=-1))
     nc.detect_offline(f.DB, now=at(0, 50))
 
     nc.process(now=at(9))
 
     assert _case(location).unreachable_since is not None
-    assert outbound.suppressed(["kai@progeo.com"]) == {"kai@progeo.com"}
+    assert outbound.suppressed(["rudi.radau@progeo.com"]) == {"rudi.radau@progeo.com"}

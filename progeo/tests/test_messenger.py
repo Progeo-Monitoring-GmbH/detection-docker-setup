@@ -305,7 +305,7 @@ def site():
 
 
 def _subscriber(location, transport, **profile):
-    user = f.make_user(email="kai@progeo.com", first_name="Kai")
+    user = f.make_user(email="rudi.radau@progeo.com", first_name="Kai")
     if profile:
         UserProfile.objects.using(f.DB).create(user_id=user.pk, **profile)
     f.make_access(location, user, transport=transport, type=ProgeoAccess.NotifiTypes.ALARM)
@@ -355,7 +355,7 @@ def test_timeline_shows_messenger_messages():
 # -- Schnittstelle -----------------------------------------------------------
 
 def _login(api_client, *perms):
-    user = f.make_user(perms=perms, email="kai@progeo.com")
+    user = f.make_user(perms=perms, email="rudi.radau@progeo.com")
     api_client.force_authenticate(user=user)
     return user
 

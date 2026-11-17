@@ -8,6 +8,20 @@ import datetime
 CONNECTIVITY_EDGE_HOURS = 2
 
 
+def day_bounds(report_date) -> tuple:
+    """(start, end) of `report_date` - naive with USE_TZ off (production),
+    in the local time zone with it on (tests), so the queries never compare
+    an aware column with a naive time."""
+    from django.conf import settings
+    from django.utils import timezone
+
+    start = datetime.datetime.combine(report_date, datetime.time.min)
+    end = datetime.datetime.combine(report_date, datetime.time.max)
+    if settings.USE_TZ:
+        start, end = timezone.make_aware(start), timezone.make_aware(end)
+    return start, end
+
+
 def _split_report(db: str) -> bool:
     from django.db import DEFAULT_DB_ALIAS
 
@@ -59,8 +73,7 @@ def collect_project_connectivity(db: str, report_date, location_ids=None):
 
     from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurement
 
-    day_start = datetime.datetime.combine(report_date, datetime.time.min)
-    day_end = datetime.datetime.combine(report_date, datetime.time.max)
+    day_start, day_end = day_bounds(report_date)
     start_edge = day_start + datetime.timedelta(hours=CONNECTIVITY_EDGE_HOURS)
     end_edge = day_end - datetime.timedelta(hours=CONNECTIVITY_EDGE_HOURS)
 
@@ -130,8 +143,7 @@ def _alarm_stats(db: str, report_date, location_ids=None) -> dict:
 
     from progeo.v1.models import ProgeoAlarm
 
-    day_start = datetime.datetime.combine(report_date, datetime.time.min)
-    day_end = datetime.datetime.combine(report_date, datetime.time.max)
+    day_start, day_end = day_bounds(report_date)
 
     alarms = ProgeoAlarm.objects.using(db).filter(
         triggered_at__gte=day_start,

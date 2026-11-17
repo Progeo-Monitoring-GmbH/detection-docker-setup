@@ -47,7 +47,7 @@ const INFO = {
   resolution: '',
   acknowledged: false,
   unsubscribed: false,
-  address: 'kai@progeo.com',
+  address: 'rudi.radau@progeo.com',
 };
 
 let container: HTMLDivElement;
