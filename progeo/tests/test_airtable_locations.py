@@ -13,7 +13,7 @@ TYPES = ProgeoLocation.PROJECT_TYPE_CHOICES
 _project_ids = itertools.count(950001)
 
 
-def _record(project_id, status=airtable_locations.STATUS, **fields):
+def _record(project_id, status="Messeinheit und Inbetriebnahme", **fields):
     return {"id": f"rec{project_id}", "fields": {
         "Projektnummer": str(project_id),
         "Objektname": f"Objekt {project_id}",
@@ -47,10 +47,23 @@ def test_project_rows_filters_status_and_maps_fields():
     ])
     assert rows == [{
         "project_id": new, "name": f"Objekt {new}", "project_type": TYPES.SMARTEX_DM,
-        "project_type_label": "smartex® dm", "sheet_types": [], "product_sheets": [], "airtable_type": "smartex",
+        "project_type_label": "smartex® dm", "status": "Messeinheit und Inbetriebnahme", "sheet_types": [],
+        "product_sheets": [], "airtable_type": "smartex",
         "airtable_url": f"https://airtable.com/app/rec{new}", "address": "Karl-Liebknecht-Str. 5",
         "plz": "10178", "city": "Berlin", "raw_address": "Karl-Liebknecht-Str. 5\n10178 Berlin",
     }]
+
+
+def test_the_planning_and_sensorik_projects_are_caught_too():
+    planning, sensorik, measuring, done = (next(_project_ids) for _ in range(4))
+    rows = airtable_locations.project_rows([
+        _record(planning, status="Technischer Planung"), _record(sensorik, status="Sensorik"),
+        _record(measuring), _record(done, status="Abgerechnet / In Betreuung"),
+    ])
+
+    assert [(row["project_id"], row["status"]) for row in rows] == [
+        (planning, "Technischer Planung"), (sensorik, "Sensorik"), (measuring, "Messeinheit und Inbetriebnahme"),
+    ]
 
 
 def test_sheet_types_from_the_product_sheet_filenames():

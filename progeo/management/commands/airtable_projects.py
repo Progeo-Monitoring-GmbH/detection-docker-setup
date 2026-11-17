@@ -5,6 +5,7 @@ import os
 from django.core.management.base import CommandError
 
 from progeo.helper.airtable import AirtableHelper
+from progeo.helper.airtable_locations import STATUSES
 from progeo.helper.basics import save_check_dir
 from progeo.management.commands._base import BaseCommand
 from progeo.management.commands.airtable_projects_json import (
@@ -167,7 +168,7 @@ class Command(BaseCommand):
                     continue
 
                 status = fields.get("Status")
-                if status != "Messeinheit und Inbetriebnahme":
+                if status not in STATUSES:
                     continue
 
                 address = fields.get("Baustellenadresse")

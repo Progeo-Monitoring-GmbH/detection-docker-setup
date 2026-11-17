@@ -15,6 +15,8 @@ type AirtableProject = {
   name: string | null;
   airtable_type: string;
   project_type_label: string;
+  /** The Airtable status (airtable_locations.STATUSES). */
+  status: string | null;
   product_sheets: string[];
   airtable_url: string | null;
   raw_address: string;
@@ -44,6 +46,21 @@ const byText = (pick: (project: AirtableProject) => string) => (a: AirtableProje
 
 const typeText = (project: AirtableProject) => [project.project_type_label, ...project.product_sheets].join(' ');
 
+/** The statuses the sync fetches, in the order a project passes them
+ * (helper/airtable_locations.py STATUSES) - the column sorts by it. */
+const STATUS_ORDER = ['Technischer Planung', 'Sensorik', 'Messeinheit und Inbetriebnahme'];
+
+const statusRank = (project: AirtableProject) => {
+  const rank = STATUS_ORDER.indexOf(project.status ?? '');
+  return rank === -1 ? STATUS_ORDER.length : rank;
+};
+
+const STATUS_CLASS: Record<string, string> = {
+  'Technischer Planung': 'airtable-sync-status--planning',
+  Sensorik: 'airtable-sync-status--sensorik',
+  'Messeinheit und Inbetriebnahme': 'airtable-sync-status--measuring',
+};
+
 const projectKey = (project: AirtableProject) => project.project_id;
 
 const COLUMNS: SearchableColumn<AirtableProject>[] = [
@@ -69,6 +86,24 @@ const COLUMNS: SearchableColumn<AirtableProject>[] = [
     cell: (project) => <span {...ROW_CLICK}>{project.name || '-'}</span>,
     wrap: true,
     grow: 1.5,
+  },
+  {
+    id: 'status',
+    name: 'Status',
+    selector: (project) => project.status ?? '',
+    sortable: true,
+    sortFunction: (a, b) => statusRank(a) - statusRank(b) || a.project_id - b.project_id,
+    cell: (project) => (
+      <span
+        {...ROW_CLICK}
+        className={`airtable-sync-status ${STATUS_CLASS[project.status ?? ''] ?? ''}`}
+        {...repeatedTestId('airtable-sync-status', project.project_id)}
+      >
+        {project.status || '-'}
+      </span>
+    ),
+    wrap: true,
+    width: '170px',
   },
   {
     id: 'type',
@@ -126,7 +161,8 @@ const COLUMNS: SearchableColumn<AirtableProject>[] = [
 
 /**
  * Result of "Sync with Airtable" (staff, device overview): the projects in
- * "Messeinheit und Inbetriebnahme" without a location can be created under
+ * "Technischer Planung", "Sensorik" or "Messeinheit und Inbetriebnahme"
+ * (shown per row) without a location can be created under
  * an account; the existing locations were merge-updated by the sync
  * (helper/airtable_locations.py). `onLocationsChanged`: names changed or
  * locations were created - the overview reloads its location list.
@@ -189,7 +225,7 @@ const AirtableSyncPanel = ({
 
   return (
     <PanelCard
-      title='Airtable projects in "Messeinheit und Inbetriebnahme"'
+      title="Airtable projects (Technischer Planung, Sensorik, Messeinheit und Inbetriebnahme)"
       testId="airtable-sync"
       actions={
         <Button variant="link" size="sm" className="p-0" onClick={onClose} data-testid="airtable-sync-close">

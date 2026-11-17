@@ -1,7 +1,8 @@
 """Locations from the Airtable projects (DeviceViewSet provision/airtable/*).
 
-"sync" fetches the projects in status "Messeinheit und Inbetriebnahme" -
-the ones a controller is provisioned for. Projects that already have a
+"sync" fetches the projects in STATUSES - from the technical planning to
+"Messeinheit und Inbetriebnahme", where a controller is provisioned for
+them; each row carries its status. Projects that already have a
 location (same project_id, in any account's database) are merge-updated;
 the rest come back as "available", signed, so "import" creates exactly
 those rows under the chosen account without asking Airtable again.
@@ -27,7 +28,10 @@ from progeo.helper.location_access import configured_accounts
 from progeo.management.commands.airtable_projects_json import is_broken_address
 from progeo.v1.models import ProgeoLocation
 
-STATUS = "Messeinheit und Inbetriebnahme"
+# The Airtable statuses (field "Status") whose projects get a location, in
+# the order a project passes them - spelled exactly as in Airtable
+# ("Technischer Planung" is its spelling).
+STATUSES = ("Technischer Planung", "Sensorik", "Messeinheit und Inbetriebnahme")
 SHEETS_FIELD = "Produktblätter"
 FIELDS = ["Projektnummer", "Objektname", "Projekttyp", "Status", "Baustellenadresse", "Link zum Projekt",
           SHEETS_FIELD]
@@ -101,6 +105,7 @@ def project_row(record):
         "name": clip(fields.get("Objektname"), "name"),
         "project_type": int(project_type),
         "project_type_label": TYPES(project_type).label,
+        "status": fields.get("Status") or None,
         "sheet_types": [int(value) for value in types],
         "product_sheets": [sheet.get("filename") for sheet in sheets if isinstance(sheet, dict)],
         "airtable_type": airtable_type,
@@ -113,10 +118,10 @@ def project_row(record):
 
 
 def project_rows(records):
-    """The rows of the records in STATUS, one per project_id."""
+    """The rows of the records in STATUSES, one per project_id."""
     rows = {}
     for record in records:
-        if record.get("fields", {}).get("Status") != STATUS:
+        if record.get("fields", {}).get("Status") not in STATUSES:
             continue
         row = project_row(record)
         if row:

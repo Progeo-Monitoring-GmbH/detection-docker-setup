@@ -1,5 +1,31 @@
 /* The Airtable sync panel (AirtableSyncPanel.tsx): its project table. */
 
+/* The project's Airtable status as a pill - earlier stages paler. */
+.airtable-sync-status {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--bs-secondary-color);
+  background-color: var(--bs-secondary-bg);
+}
+
+.airtable-sync-status--planning {
+  color: var(--bs-info-text-emphasis);
+  background-color: var(--bs-info-bg-subtle);
+}
+
+.airtable-sync-status--sensorik {
+  color: var(--bs-warning-text-emphasis);
+  background-color: var(--bs-warning-bg-subtle);
+}
+
+.airtable-sync-status--measuring {
+  color: var(--bs-success-text-emphasis);
+  background-color: var(--bs-success-bg-subtle);
+}
+
 /* The address keeps its line breaks. */
 .airtable-sync-address {
   white-space: pre-line;

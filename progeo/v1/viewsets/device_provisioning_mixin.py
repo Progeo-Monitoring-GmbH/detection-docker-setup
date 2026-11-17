@@ -343,9 +343,11 @@ class DeviceProvisioningMixin:
     @require_module_permissions("module_devices_provision")
     @action(detail=False, url_path="provision/airtable/sync", methods=["POST"])
     def provision_airtable_sync(self, request, *args, **kwargs):
-        """Fetch the Airtable projects in "Messeinheit und Inbetriebnahme",
+        """Fetch the Airtable projects in airtable_locations.STATUSES
+        (technical planning, Sensorik, Messeinheit und Inbetriebnahme),
         merge-update their existing locations and return the projects
-        without one (`signed` goes to provision/airtable/import)."""
+        without one with their status (`signed` goes to
+        provision/airtable/import)."""
         if not is_staff_admin(request.user):
             return RequestFailed({"reason": "Staff access required"})
         try:
