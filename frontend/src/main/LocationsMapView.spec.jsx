@@ -92,9 +92,13 @@ const render = async (plan = PLAN, chunk = CHUNK) => {
   });
 };
 
-const liveEvent = async (locationId) => {
+// One batch of the backend (v1/legacy/live_events.py) with these locations.
+const liveEvent = async (...locationIds) => {
   await act(async () => {
-    hooks.sockets.at(-1).send({ type: 'legacy_location_event', location_id: locationId, project_id: 4711 });
+    hooks.sockets.at(-1).send({
+      type: 'legacy_location_events',
+      events: locationIds.map((id) => ({ location_id: id, project_id: 4700 + id })),
+    });
   });
 };
 
@@ -199,6 +203,18 @@ describe('LocationsMapView', () => {
 
     await liveEvent(1);
     expect(hooks.enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows one message per batch, not one per location', async () => {
+    window.localStorage.setItem('locmap.toasts-muted', '0');
+    await render();
+
+    await liveEvent(1, 2, 99);
+
+    const messages = hooks.enqueue.mock.calls.map(([message]) => String(message));
+    expect(messages).toHaveLength(2);
+    expect(messages[0]).toContain('2 locations received new legacy measurements');
+    expect(messages[1]).toContain('project 4799');
   });
 
   it('filters by clicking a state badge, a second click shows all again', async () => {

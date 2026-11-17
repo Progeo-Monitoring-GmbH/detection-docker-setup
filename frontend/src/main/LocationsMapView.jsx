@@ -572,30 +572,53 @@ const LocationsMapView = () => {
     ws.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
-        if (message?.type !== 'legacy_location_event') {
+        if (message?.type !== 'legacy_location_events' || !Array.isArray(message.events)) {
           return;
         }
 
-        // The event carries the ids only - the details are in the loaded rows.
-        const locationId = message?.location_id;
-        const location = rowsRef.current.find((row) => row.id === locationId);
-        if (!location) {
-          if (!toastsMutedRef.current) {
-            showInfoBar(enqueueSnackbar, `Legacy measurement parsed for project ${message?.project_id}`);
+        // Every project that measured since the last batch (backend: every
+        // 10 s, v1/legacy/live_events.py) - ids only, the details are in the
+        // loaded rows.
+        const known = [];
+        const unknownProjects = [];
+        message.events.forEach((item) => {
+          const location = rowsRef.current.find((row) => row.id === item?.location_id);
+          if (location) {
+            known.push(location);
+          } else {
+            unknownProjects.push(item?.project_id);
           }
-          return;
+        });
+
+        if (known.length) {
+          const ids = new Set(known.map((location) => location.id));
+          const nowIso = new Date().toISOString();
+          const flashUntil = Date.now() + FLASH_DURATION_MS;
+          setRows((prev) =>
+            prev.map((row) => (ids.has(row.id) ? { ...row, last_measurement_at: nowIso } : row)),
+          );
+          setFlashMarkers((prev) => ({
+            ...prev,
+            ...Object.fromEntries([...ids].map((id) => [id, flashUntil])),
+          }));
         }
 
-        const nowIso = new Date().toISOString();
-        setRows((prev) =>
-          prev.map((row) => (row.id === locationId ? { ...row, last_measurement_at: nowIso } : row)),
-        );
-        setFlashMarkers((prev) => ({ ...prev, [locationId]: Date.now() + FLASH_DURATION_MS }));
-
-        if (!toastsMutedRef.current) {
+        if (toastsMutedRef.current) {
+          return;
+        }
+        // One toast per batch, not one per location.
+        if (known.length === 1) {
           showInfoBar(
             enqueueSnackbar,
-            `Live update: ${buildLocationLabel(location)} received new legacy measurement`,
+            `Live update: ${buildLocationLabel(known[0])} received new legacy measurement`,
+          );
+        } else if (known.length > 1) {
+          showInfoBar(enqueueSnackbar, `Live update: ${known.length} locations received new legacy measurements`);
+        }
+        if (unknownProjects.length) {
+          showInfoBar(
+            enqueueSnackbar,
+            `Legacy measurement parsed for project ${unknownProjects.join(', ')}`,
           );
         }
       } catch {

@@ -14,7 +14,8 @@ from django.test import override_settings
 
 from progeo.tests import factories as f
 from progeo.tests.legacy_gprs_recorded import recorded_configs
-from progeo.v1.legacy import executor, gprs_state
+from progeo.consumer import GRP_NAME
+from progeo.v1.legacy import executor, gprs_state, live_events
 from progeo.v1.legacy.gprs import extract_gprs_data
 from progeo.v1.models import ProgeoAlarm, ProgeoMeasurement
 
@@ -212,22 +213,50 @@ def test_a_broken_live_broadcast_does_not_lose_the_measurement(client, monkeypat
     assert _measurements(4070).count() == before + 1
 
 
-def test_the_live_broadcast_carries_only_the_ids(client, monkeypatch):
-    sent = []
+@pytest.fixture
+def sent(monkeypatch):
+    """What the live broadcast sends to the map's group."""
+    messages = []
 
     class RecordingLayer:
         async def group_send(self, group, message):
-            sent.append(message)
+            messages.append((group, message))
 
-    monkeypatch.setattr(executor, "get_channel_layer", RecordingLayer)
+    monkeypatch.setattr(live_events, "get_channel_layer", RecordingLayer)
+    return messages
 
+
+def test_the_live_broadcast_carries_only_the_ids(client, sent):
     assert _get(client, "4070", _case("4070")["data"]).status_code == 200
 
     assert sent
-    for message in sent:
-        assert set(message) == {"type", "project_id", "location_id"}
-        assert message["type"] == "legacy_location_event"
-        assert message["project_id"] == 4070
+    for group, message in sent:
+        assert group == GRP_NAME
+        assert set(message) == {"type", "events"}
+        assert message["type"] == "legacy_location_events"
+        assert [set(event) for event in message["events"]] == [{"project_id", "location_id"}]
+        assert message["events"][0]["project_id"] == 4070
+
+
+def test_the_live_broadcast_is_sent_in_batches(client, sent, settings):
+    """One message per batch with every project that measured meanwhile -
+    not one per measurement."""
+    settings.LEGACY_LIVE_BATCH_SECONDS = 3600
+    try:
+        for script in ("4070", "4070", "4060_h"):
+            assert _get(client, script, _case(script)["data"]).status_code == 200
+        assert sent == []
+
+        message = live_events.flush()
+    finally:
+        live_events.flush()  # nothing left for the next test, the timer cancelled
+
+    assert sent == [(GRP_NAME, message)]
+    project_ids = [event["project_id"] for event in message["events"]]
+    # Each project once (4070 measured twice), in the order they measured first.
+    assert project_ids[:2] == [4070, 4060]
+    assert len(project_ids) == len(set(project_ids))
+    assert live_events.flush() is None
 
 
 @override_settings(SECURE_SSL_REDIRECT=True)

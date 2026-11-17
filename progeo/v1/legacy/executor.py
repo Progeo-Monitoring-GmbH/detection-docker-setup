@@ -4,8 +4,6 @@ import os
 from dataclasses import dataclass
 from datetime import datetime
 
-from asgiref.sync import async_to_sync
-from channels.layers import get_channel_layer
 from django.conf import settings
 from django.db import DEFAULT_DB_ALIAS, IntegrityError, transaction
 from django.db.models.signals import post_delete
@@ -13,10 +11,10 @@ from django.dispatch import receiver
 from django.utils import timezone
 from rest_framework.parsers import BaseParser
 
-from progeo.consumer import GRP_NAME
 from progeo.helper.alarm_evaluation import evaluate_measurement_instantly
 from progeo.helper.basics import elog, ilog, wlog
 from progeo.helper.safe_cache import cache_delete, cache_get, cache_set
+from progeo.v1.legacy import live_events
 from progeo.v1.legacy.helper_resistance import MAX_JSON_SAFE_RESISTANCE_OHM
 from progeo.v1.models import ProgeoDevice, ProgeoLocation, ProgeoMeasurement
 from progeo.v1.viewsets.setup_viewset import _get_controller_account
@@ -579,24 +577,8 @@ def _normalize_legacy_payload_to_int_list(data):
 
 
 def _broadcast_legacy_location(project_id: int):
-    channel_layer = get_channel_layer()
-    if channel_layer is None:
-        return
-
-    # Ids only: the map has the location details from /v1/location/ already.
-    location_id = (
-        ProgeoLocation.objects.using("default")
-        .filter(project_id=project_id)
-        .values_list("id", flat=True)
-        .first()
-    )
-    payload = {
-        "type": "legacy_location_event",
-        "project_id": project_id,
-        "location_id": location_id,
-    }
-
-    async_to_sync(channel_layer.group_send)(GRP_NAME, payload)
+    """Live update for the map - sent with the next batch (live_events.py)."""
+    live_events.queue(project_id)
 
 
 # The controllers append up to two values after the declared pairs; script.php

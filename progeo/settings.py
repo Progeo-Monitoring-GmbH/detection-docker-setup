@@ -553,6 +553,10 @@ CHANNEL_LAYERS = {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
             "hosts": [CHANNEL_LAYER_REDIS_URL],
+            # Default: a day. A member whose process died without leaving the
+            # group (restart, killed worker) is dropped after an hour; live
+            # consumers join again every GROUP_REFRESH_SECONDS (consumer.py).
+            "group_expiry": 60 * 60,
         },
     },
 }

@@ -363,6 +363,9 @@ CHANNEL_LAYERS = {
     },
 }
 
+# Legacy live updates at once, no timer thread outliving the test (v1/legacy/live_events.py).
+LEGACY_LIVE_BATCH_SECONDS = 0
+
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",

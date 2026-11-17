@@ -25,6 +25,11 @@ LOG_STREAM_DOCKER_POLL_SECONDS = 3
 LOG_STREAM_MAX_APPEND = 512 * 1024
 # Below nginx's default proxy_read_timeout (60 s) of the /ws/ location.
 LOG_STREAM_HEARTBEAT_SECONDS = 20
+# Redis drops a group member after group_expiry (CHANNEL_LAYERS, settings.py):
+# a channel whose process died without disconnect() (restart, killed worker)
+# would otherwise collect every broadcast until it is "over capacity". Live
+# consumers join again well before that.
+GROUP_REFRESH_SECONDS = 10 * 60
 
 
 def _is_staff_admin(user) -> bool:
@@ -40,6 +45,21 @@ def _may_read_logs(user) -> bool:
     from progeo.decorator import has_module_permissions
 
     return has_module_permissions(user, "module_admin_enabled")
+
+
+async def _stay_in_group(channel_layer, group, channel_name):
+    """Joins `group` again every GROUP_REFRESH_SECONDS while the socket is open."""
+    from progeo.helper.basics import elog
+
+    try:
+        while True:
+            await asyncio.sleep(GROUP_REFRESH_SECONDS)
+            try:
+                await channel_layer.group_add(group, channel_name)
+            except Exception as exc:  # noqa: BLE001 - Redis away: try again next round
+                elog(f"group_add {group}: {exc!r}", tag="[WEBSOCKET]")
+    except asyncio.CancelledError:
+        pass
 
 
 @database_sync_to_async
@@ -62,6 +82,7 @@ class CommandConsumer(AsyncWebsocketConsumer):
         super().__init__(*args, **kwargs)
         self.group_name = GRP_NAME
         self.kwargs = {}
+        self.group_task = None
 
     async def connect(self):
         self.kwargs = self.scope["url_route"]["kwargs"]
@@ -78,8 +99,13 @@ class CommandConsumer(AsyncWebsocketConsumer):
         )
 
         await self.accept()
+        self.group_task = asyncio.create_task(
+            _stay_in_group(self.channel_layer, self.group_name, self.channel_name)
+        )
 
     async def disconnect(self, close_code):
+        if self.group_task:
+            self.group_task.cancel()
         await self.channel_layer.group_discard(
             self.group_name,
             self.channel_name
@@ -100,7 +126,7 @@ class CommandConsumer(AsyncWebsocketConsumer):
         # Send message to WebSocket
         await self.send(text_data=json.dumps(event))
 
-    async def legacy_location_event(self, event):
+    async def legacy_location_events(self, event):
         await self.send(text_data=json.dumps(event))
 
 
@@ -243,6 +269,7 @@ class CadImportJobConsumer(AsyncWebsocketConsumer):
         super().__init__(*args, **kwargs)
         self.job_id = None
         self.heartbeat_task = None
+        self.group_task = None
 
     async def connect(self):
         job_id = self.scope["url_route"]["kwargs"]["job_id"]
@@ -258,10 +285,14 @@ class CadImportJobConsumer(AsyncWebsocketConsumer):
         job = await asyncio.to_thread(get_job, job_id) or job
         await self.send_json({"type": "cad_snapshot", "job": public_job(job)})
         self.heartbeat_task = asyncio.create_task(self._heartbeat())
+        self.group_task = asyncio.create_task(
+            _stay_in_group(self.channel_layer, job_group(job_id), self.channel_name)
+        )
 
     async def disconnect(self, close_code):
-        if self.heartbeat_task:
-            self.heartbeat_task.cancel()
+        for task in (self.heartbeat_task, self.group_task):
+            if task:
+                task.cancel()
         if self.job_id:
             await self.channel_layer.group_discard(job_group(self.job_id), self.channel_name)
 
