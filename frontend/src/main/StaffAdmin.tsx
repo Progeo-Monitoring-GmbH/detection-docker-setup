@@ -49,6 +49,7 @@ import {
   type UserAccount,
 } from './staffAccounts';
 import './StaffAdmin.css';
+import { useMobileColumns } from '../components/ui/kit/mobileTable';
 
 type PermissionDef = {
   code: string;
@@ -779,7 +780,7 @@ const StaffAdmin = () => {
     return (id: number) => colors.get(id) ?? '#b8b0b0';
   }, [legend]);
 
-  const columns = useMemo<TableColumn<StaffUser>[]>(
+  const allColumns = useMemo<TableColumn<StaffUser>[]>(
     () => [
       {
         id: 'username',
@@ -991,6 +992,8 @@ const StaffAdmin = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [busyId, t, roleLabel, isSuperuser, isStaff, accountColorOf],
   );
+  // Phones: the name in the row, everything else (the actions too) in its expander.
+  const { columns, expandable } = useMobileColumns(allColumns, ['username']);
 
   if (!canManageUsers) {
     return (
@@ -1150,6 +1153,7 @@ const StaffAdmin = () => {
 
           <DataTable
             columns={columns}
+            {...expandable}
             data={filteredUsers}
             defaultSortFieldId="username"
             pagination

@@ -439,6 +439,7 @@ const LocationChecklistView = () => {
   const overviewColumns = useMemo<SearchableColumn<OverviewRow>[]>(
     () => [
       {
+        id: 'score',
         name: t('readiness_column_score'),
         width: '90px',
         sortable: true,
@@ -455,6 +456,7 @@ const LocationChecklistView = () => {
             : t('readiness_never_checked'),
       },
       {
+        id: 'location',
         name: t('readiness_column_location'),
         grow: 2,
         sortable: true,
@@ -471,6 +473,7 @@ const LocationChecklistView = () => {
           `${row.name ?? ''} ${row.project_id ?? ''} ${row.city ?? ''}`,
       },
       {
+        id: 'open',
         name: t('readiness_column_open'),
         grow: 3,
         cell: (row) => (
@@ -482,6 +485,7 @@ const LocationChecklistView = () => {
         searchText: (row) => row.failed.map(checkTitle).join(' '),
       },
       {
+        id: 'checked',
         name: t('readiness_column_checked'),
         width: '150px',
         sortable: true,
@@ -561,6 +565,8 @@ const LocationChecklistView = () => {
               },
             ]}
             testId="checklist-overview-table"
+            // Phones: score and object in the row, open checks and date in the expander.
+            mobileColumns={['score', 'location']}
           />
         </>
       )}

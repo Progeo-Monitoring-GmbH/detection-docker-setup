@@ -141,14 +141,17 @@ const TopBar = () => {
         <button
           type="button"
           onClick={() => auth.setViewAsUser(!auth.viewAsUser)}
-          title={auth.viewAsUser ? undefined : t('topbar_view_as_user_title')}
+          title={auth.viewAsUser ? t('topbar_view_as_staff') : t('topbar_view_as_user_title')}
+          aria-label={auth.viewAsUser ? t('topbar_view_as_staff') : t('topbar_view_as_user')}
           className={auth.viewAsUser ? 'topbar-pill topbar-pill--accent' : 'topbar-pill'}
           data-testid="topbar-view-as-user"
         >
           {auth.viewAsUser ? <PersonGear size={16} /> : <Eye size={16} />}
-          {auth.viewAsUser
-            ? t('topbar_view_as_staff')
-            : t('topbar_view_as_user')}
+          <span className="topbar-pill-label">
+            {auth.viewAsUser
+              ? t('topbar_view_as_staff')
+              : t('topbar_view_as_user')}
+          </span>
         </button>
       )}
       {auth.canViewAsUser && !auth.viewAsUser && hideArchived !== null && (
@@ -158,11 +161,14 @@ const TopBar = () => {
           disabled={archivedBusy}
           aria-pressed={!hideArchived}
           title={t('topbar_archived_title')}
+          aria-label={hideArchived ? t('topbar_archived_hidden') : t('topbar_archived_shown')}
           className={hideArchived ? 'topbar-pill topbar-pill--muted' : 'topbar-pill'}
           data-testid="topbar-archived-toggle"
         >
           <Archive size={16} />
-          {hideArchived ? t('topbar_archived_hidden') : t('topbar_archived_shown')}
+          <span className="topbar-pill-label">
+            {hideArchived ? t('topbar_archived_hidden') : t('topbar_archived_shown')}
+          </span>
         </button>
       )}
       <div className="topbar-anchor">
@@ -254,6 +260,7 @@ const TopBar = () => {
         type="button"
         onClick={() => setProfileOpen(true)}
         title={t('topbar_account_title')}
+        aria-label={`${t('topbar_account_title')}: ${name}`}
         className="topbar-account"
         data-testid="topbar-account"
       >

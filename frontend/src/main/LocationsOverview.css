@@ -174,3 +174,30 @@
   height: 11px;
   border-width: 1.5px;
 }
+
+/* -- phones (LocationMobileStateCell): the dot and the open alarm cases ------- */
+
+.locations-mobile-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+}
+
+.locations-mobile-alarm {
+  font-weight: 600;
+  color: var(--progeo-orange);
+}
+
+@media (max-width: 640px) {
+  /* Search over the full width, the switches below it. */
+  .progeo-table-search.locations-search {
+    flex-basis: 100%;
+    max-width: none;
+    min-width: 0;
+  }
+
+  .locations-overview .location-list .rdt_TableRow {
+    min-height: 56px;
+  }
+}

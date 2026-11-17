@@ -1,0 +1,53 @@
+/* mobileTable.tsx: the columns a phone hides, as label / content pairs under
+   their row. */
+
+.mobile-row-details {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  margin: 0;
+  padding: 8px 14px 14px 46px;
+  background: var(--progeo-surface);
+  border-bottom: 1px solid var(--progeo-track);
+}
+
+.mobile-row-detail {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.mobile-row-detail dt {
+  flex: none;
+  max-width: 45%;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #8b8383;
+}
+
+.mobile-row-detail dd {
+  min-width: 0;
+  margin: 0;
+  text-align: right;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+/* A table in phone mode fits its panel: the data table sizes itself to its
+   widest content otherwise (min-width: fit-content), and a long object name
+   would push the kept columns off the screen - it is cut with an ellipsis. */
+.progeo-mobile-table .rdt_Table {
+  width: 100%;
+  min-width: 0;
+}
+
+/* !important: the data table writes the columns' minimum widths itself. */
+.progeo-mobile-table .rdt_TableCell,
+.progeo-mobile-table .rdt_TableCol {
+  min-width: 0 !important;
+  overflow: hidden;
+}

@@ -45,8 +45,27 @@
 
 /* -- portal frame (over Bootstrap's container-fluid gutter) -------------------- */
 
+/* No minimum width: the pages fit a phone - wide content (tables, plans)
+   scrolls or rearranges inside its panel instead of widening the page. */
 .container-fluid.app-portal-frame {
-  min-width: 750px;
   margin: 0;
   padding: 0;
+}
+
+/* -- phones: the large dialogs (user, permissions, approvals) on the whole
+   screen - the small confirmations stay dialogs. ------------------------------ */
+@media (max-width: 640px) {
+  .modal-dialog.modal-lg,
+  .modal-dialog.modal-xl {
+    max-width: none;
+    min-height: 100%;
+    margin: 0;
+  }
+
+  .modal-dialog.modal-lg .modal-content,
+  .modal-dialog.modal-xl .modal-content {
+    min-height: 100vh;
+    border: none;
+    border-radius: 0;
+  }
 }

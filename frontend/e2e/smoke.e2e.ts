@@ -19,8 +19,8 @@ for (const [path, pageTestId] of PAGES) {
 
 const LOCATION_TABS: Array<[tab: string, pageTestId: string]> = [
   ['status', 'page-location-status'],
-  ['analyse', 'page-location-analyse'],
-  ['objekt', 'page-location-objekt'],
+  ['analysis', 'page-location-analyse'],
+  ['object', 'page-location-objekt'],
 ];
 
 for (const [tab, pageTestId] of LOCATION_TABS) {

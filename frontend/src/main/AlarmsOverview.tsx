@@ -13,7 +13,11 @@ import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
-import { showErrorBar, showRequestError, showSuccessBar } from '../components/ui/Snackbar.jsx';
+import {
+  showErrorBar,
+  showRequestError,
+  showSuccessBar,
+} from '../components/ui/Snackbar.jsx';
 import { FilterComponent } from '../components/ui/FilterComponent.jsx';
 import SensorHeatmap2D from '../components/device/SensorHeatmap2D.tsx';
 import {
@@ -32,7 +36,18 @@ import AlarmTimeline, {
 import { type RainEvent, rainEventKey } from './alarmUtils';
 import { formatDate, toLocalIso } from './dateFormat';
 import { repeatedTestId } from '../testIds';
-import { LocationFlagIcons, locationOffRowStyle, useLocationFlags } from '../components/location/locationFlags';
+import {
+  LocationFlagIcons,
+  locationOffRowStyle,
+  useLocationFlags,
+} from '../components/location/locationFlags';
+import useIsMobile from '../components/ui/useIsMobile';
+import { useMobileColumns } from '../components/ui/kit/mobileTable';
+import {
+  FullscreenButton,
+  FullscreenFrame,
+  useFullscreen,
+} from '../components/ui/kit/Fullscreen';
 import './AlarmsOverview.css';
 
 type AlarmDevice = {
@@ -140,6 +155,7 @@ const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
   // alarmKey() - ids repeat across project databases.
   const [acknowledgingId, setAcknowledgingId] = useState<string | null>(null);
   const heatmapCardRef = useRef<HTMLDivElement | null>(null);
+  const heatmapFullscreen = useFullscreen();
   // Only ticks while at least one alarm is active (or the last-hour filter is
   // on, so the window stays rolling); frozen otherwise, so the timeline does
   // not re-render when all alarms are normalized.
@@ -174,13 +190,16 @@ const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
         `/v1/alarm/?${params.toString()}`,
         (response) => {
           const incoming = (response?.data?.alarms || []) as AlarmRow[];
-          const incomingRain = (response?.data?.rain_events || []) as RainEvent[];
+          const incomingRain = (response?.data?.rain_events ||
+            []) as RainEvent[];
           setRainEvents((prev) => {
             if (!merge) {
               return incomingRain;
             }
             // A rain event can span both loaded windows: keep it once.
-            const map = new Map(prev.map((event) => [rainEventKey(event), event]));
+            const map = new Map(
+              prev.map((event) => [rainEventKey(event), event]),
+            );
             for (const event of incomingRain) {
               map.set(rainEventKey(event), event);
             }
@@ -203,7 +222,11 @@ const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
           onSuccess?.();
         },
         (error) => {
-          showRequestError(enqueueSnackbar, t('alarm_detail_load_alarms_failed'), error);
+          showRequestError(
+            enqueueSnackbar,
+            t('alarm_detail_load_alarms_failed'),
+            error,
+          );
           setLoading(false);
         },
       );
@@ -265,7 +288,11 @@ const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
   }, []);
 
   const fetchHeatmap = useCallback(
-    (alarm: AlarmRow, profile: HeatProfile = heatProfile, profileSwitch = false) => {
+    (
+      alarm: AlarmRow,
+      profile: HeatProfile = heatProfile,
+      profileSwitch = false,
+    ) => {
       const locationId = alarm.location?.id;
       if (locationId == null) {
         showErrorBar(enqueueSnackbar, t('alarms_overview_no_location'));
@@ -310,7 +337,11 @@ const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
           setProfileLoading(false);
         },
         (error) => {
-          showRequestError(enqueueSnackbar, t('alarms_overview_heatmap_failed'), error);
+          showRequestError(
+            enqueueSnackbar,
+            t('alarms_overview_heatmap_failed'),
+            error,
+          );
           setHeatmapResponse(null);
           setHeatmapLoading(false);
           setProfileLoading(false);
@@ -344,15 +375,25 @@ const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
           if (updated) {
             setRows((prev) =>
               prev.map((row) =>
-                row.id === updated.id && row.location?.id === updated.location?.id ? updated : row,
+                row.id === updated.id &&
+                row.location?.id === updated.location?.id
+                  ? updated
+                  : row,
               ),
             );
           }
-          showSuccessBar(enqueueSnackbar, t('alarms_overview_acknowledged_done', { id: alarm.id }));
+          showSuccessBar(
+            enqueueSnackbar,
+            t('alarms_overview_acknowledged_done', { id: alarm.id }),
+          );
           setAcknowledgingId(null);
         },
         (error) => {
-          showRequestError(enqueueSnackbar, t('alarms_overview_acknowledge_failed'), error);
+          showRequestError(
+            enqueueSnackbar,
+            t('alarms_overview_acknowledge_failed'),
+            error,
+          );
           setAcknowledgingId(null);
         },
       );
@@ -405,7 +446,9 @@ const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
           .map((pair) => String(pair.sensor_id ?? ''))
           .join(' '),
         isAlarmActive(row) ? 'active' : 'normalized',
-        isAlarmActive(row) ? t('alarm_state_active') : t('alarm_state_normalized'),
+        isAlarmActive(row)
+          ? t('alarm_state_active')
+          : t('alarm_state_normalized'),
         t((STATUS_LABELS[row.status ?? 0] || STATUS_LABELS[0]).labelKey),
         row.status === 1 ? 'acknowledged' : '',
         row.evaluated_by?.username,
@@ -424,22 +467,30 @@ const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
   );
 
   // Staff: alarms of a switched-off location (notifications off / marked purgeable) striped.
-  const { flagsOf, isOff } = useLocationFlags(rows.map((row) => row.location?.id));
+  const { flagsOf, isOff } = useLocationFlags(
+    rows.map((row) => row.location?.id),
+  );
 
-  const columns: TableColumn<AlarmRow>[] = [
+  const phone = useIsMobile();
+  const allColumns: TableColumn<AlarmRow>[] = [
     {
+      id: 'id',
       name: t('alarms_overview_col_id'),
       selector: (row) => row.id,
       sortable: true,
       width: '90px',
     },
     {
+      id: 'location',
       name: t('alarm_detail_location'),
       cell: (row) => {
         const loc = row.location;
         return loc ? (
           <span>
-            <LocationFlagIcons flags={flagsOf(loc.id)} testKey={`alarm-${row.id}-${loc.id ?? ''}`} />
+            <LocationFlagIcons
+              flags={flagsOf(loc.id)}
+              testKey={`alarm-${row.id}-${loc.id ?? ''}`}
+            />
             {`${loc.name || t('alarms_overview_unnamed')} (${loc.project_id ?? loc.id})`}
           </span>
         ) : (
@@ -451,6 +502,7 @@ const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
       wrap: true,
     },
     {
+      id: 'device',
       name: t('alarm_field_device'),
       cell: (row) => row.device?.display_name || row.device?.raw_hash || '-',
       sortable: true,
@@ -458,6 +510,7 @@ const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
       wrap: true,
     },
     {
+      id: 'sensors',
       name: t('alarm_field_sensors'),
       cell: (row) => {
         const pairs = Array.isArray(row.sensor_max_values)
@@ -472,51 +525,66 @@ const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
       wrap: true,
     },
     {
+      id: 'threshold',
       name: t('alarm_field_threshold'),
       selector: (row) => row.threshold ?? '-',
       width: '110px',
     },
     {
+      id: 'max-value',
       name: t('alarm_field_max_value'),
       selector: (row) => row.max_value ?? '-',
       width: '110px',
     },
     {
+      id: 'triggered',
       name: t('alarm_field_triggered'),
       cell: (row) => {
         const ms = alarmStartTime(row);
-        return ms != null
-          ? formatDate(ms)
-          : row.triggered_at || '-';
+        return ms != null ? formatDate(ms) : row.triggered_at || '-';
       },
       sortable: true,
       width: '180px',
       wrap: true,
     },
     {
+      id: 'active-for',
       name: t('alarm_field_active_for'),
       cell: (row) => formatDuration(alarmActiveDuration(row)),
       sortable: true,
       width: '140px',
     },
     {
+      id: 'status',
       name: t('alarm_field_status'),
       cell: (row) => {
         const status = STATUS_LABELS[row.status ?? 0] || STATUS_LABELS[0];
         const active = isAlarmActive(row);
         const acknowledged = row.status === 1;
         return (
-          <div className="d-flex flex-column gap-1" {...repeatedTestId('alarms-row-status', alarmKey(row))}>
+          <div
+            className="d-flex flex-column gap-1"
+            {...repeatedTestId('alarms-row-status', alarmKey(row))}
+          >
             <div className="d-flex align-items-center gap-2">
-              <Badge bg={active ? 'danger' : 'success'} {...repeatedTestId('alarms-row-state', alarmKey(row))}>
+              <Badge
+                bg={active ? 'danger' : 'success'}
+                {...repeatedTestId('alarms-row-state', alarmKey(row))}
+              >
                 {active ? t('alarm_state_active') : t('alarm_state_normalized')}
               </Badge>
-              <Badge bg={status.variant} {...repeatedTestId('alarms-row-evaluation', alarmKey(row))}>
+              <Badge
+                bg={status.variant}
+                {...repeatedTestId('alarms-row-evaluation', alarmKey(row))}
+              >
                 {t(status.labelKey)}
               </Badge>
             </div>
             {acknowledged && (
-              <small className="text-muted" {...repeatedTestId('alarms-row-acknowledged-by', alarmKey(row))}>
+              <small
+                className="text-muted"
+                {...repeatedTestId('alarms-row-acknowledged-by', alarmKey(row))}
+              >
                 {t('alarms_overview_acknowledged_by', {
                   user: row.evaluated_by?.username || t('alarm_unknown_user'),
                 })}{' '}
@@ -524,9 +592,7 @@ const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
                 {row.evaluated_at
                   ? (() => {
                       const ms = parseTimestamp(row.evaluated_at);
-                      return ms != null
-                        ? formatDate(ms)
-                        : row.evaluated_at;
+                      return ms != null ? formatDate(ms) : row.evaluated_at;
                     })()
                   : '-'}
               </small>
@@ -534,9 +600,11 @@ const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
           </div>
         );
       },
-      width: '260px',
+      // Phones: the status shares the row with the object only.
+      width: phone ? undefined : '260px',
     },
     {
+      id: 'actions',
       name: t('alarms_overview_col_actions'),
       width: '150px',
       cell: (row) => {
@@ -568,12 +636,18 @@ const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
       },
     },
   ];
+  // Phones: object and status in the row, the rest (and the acknowledge button) under it.
+  const { columns, expandable } = useMobileColumns(allColumns, [
+    'location',
+    'status',
+  ]);
 
   const conditionalRowStyles = [
     // First: the table keeps the style of the last matching rule (the selection's).
     locationOffRowStyle((row: AlarmRow) => isOff(row.location?.id)),
     {
-      when: (row: AlarmRow) => selectedAlarm !== null && alarmKey(row) === alarmKey(selectedAlarm),
+      when: (row: AlarmRow) =>
+        selectedAlarm !== null && alarmKey(row) === alarmKey(selectedAlarm),
       style: {
         backgroundColor: 'rgba(220, 53, 69, 0.10)',
         borderLeft: '3px solid #dc3545',
@@ -619,7 +693,10 @@ const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
             })}
           </small>
         </div>
-        <div className="d-flex flex-wrap align-items-center gap-2" data-testid="alarms-filters">
+        <div
+          className="d-flex flex-wrap align-items-center gap-2"
+          data-testid="alarms-filters"
+        >
           <Form.Check
             type="switch"
             id="alarms-only-active"
@@ -665,7 +742,8 @@ const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
             title={t('alarms_overview_load_more_hint')}
             data-testid="alarms-load-more"
           >
-            <PlusLg className="me-2" />+{t('alarms_overview_days', { count: days })}
+            <PlusLg className="me-2" />+
+            {t('alarms_overview_days', { count: days })}
           </Button>
           <Button
             variant="outline-primary"
@@ -679,7 +757,10 @@ const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
         </div>
       </div>
 
-      <Card className="border-0 shadow-sm mb-3 p-2" data-testid="alarms-timeline-card">
+      <Card
+        className="border-0 shadow-sm mb-3 p-2"
+        data-testid="alarms-timeline-card"
+      >
         <Card.Body>
           <div className="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
             <h5 className="mb-0">{t('alarm_detail_timeline')}</h5>
@@ -697,61 +778,82 @@ const AlarmsOverview = ({ testId = 'page-alarms' }: { testId?: string }) => {
         </Card.Body>
       </Card>
 
-      <Card ref={heatmapCardRef} className="border-0 shadow-sm my-5 p-2" data-testid="alarms-heatmap">
-        <Card.Body>
-          <div className="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
-            <h5 className="mb-0" data-testid="alarms-heatmap-title">
-              <ThermometerHalf className="me-2 text-danger" />
-              {heatmapTitle}
-            </h5>
-            <small className="text-muted">
-              {t('alarms_overview_heatmap_hint')}
-            </small>
-          </div>
-
-          {heatmapLoading ? (
-            <div
-              className="d-flex align-items-center gap-2 text-muted py-5 justify-content-center"
-              data-testid="alarms-heatmap-loading"
-            >
-              <Spinner size="sm" animation="border" />
-              {t('alarms_overview_heatmap_loading')}
-            </div>
-          ) : !selectedAlarm ? (
-            <div className="text-muted py-5 text-center" data-testid="alarms-heatmap-select">
-              {t('alarms_overview_heatmap_select')}
-            </div>
-          ) : (
-            <>
-              <SensorHeatmap2D
-                response={heatmapResponse}
-                profile={heatProfile}
-                onProfileChange={(profile) => {
-                  setHeatProfile(profile);
-                  fetchHeatmap(selectedAlarm, profile, true);
-                }}
-                profileLoading={profileLoading}
-              />
-              <div className="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
-                <h5 className="mb-0">
-                  <Activity className="me-2 text-primary" />
-                  {t('alarms_overview_measurements')}
-                </h5>
-                <small className="text-muted">{t('alarms_overview_measurements_hint')}</small>
-              </div>
-              {selectedAlarm ? (
-                <AlarmMeasurementCompareChart alarm={selectedAlarm} />
-              ) : (
-                <div className="text-muted py-5 text-center" data-testid="alarms-measurements-select">
-                  {t('alarms_overview_measurements_select')}
-                </div>
+      <FullscreenFrame state={heatmapFullscreen}>
+        <Card
+          ref={heatmapCardRef}
+          className="border-0 shadow-sm my-5 p-2"
+          data-testid="alarms-heatmap"
+        >
+          <Card.Body>
+            <div className="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
+              <h5 className="mb-0" data-testid="alarms-heatmap-title">
+                <ThermometerHalf className="me-2 text-danger" />
+                {heatmapTitle}
+              </h5>
+              {selectedAlarm && (
+                <FullscreenButton
+                  state={heatmapFullscreen}
+                  testId="alarms-heatmap-fullscreen"
+                />
               )}
-            </>
-          )}
-        </Card.Body>
-      </Card>
+              <small className="text-muted">
+                {t('alarms_overview_heatmap_hint')}
+              </small>
+            </div>
+
+            {heatmapLoading ? (
+              <div
+                className="d-flex align-items-center gap-2 text-muted py-5 justify-content-center"
+                data-testid="alarms-heatmap-loading"
+              >
+                <Spinner size="sm" animation="border" />
+                {t('alarms_overview_heatmap_loading')}
+              </div>
+            ) : !selectedAlarm ? (
+              <div
+                className="text-muted py-5 text-center"
+                data-testid="alarms-heatmap-select"
+              >
+                {t('alarms_overview_heatmap_select')}
+              </div>
+            ) : (
+              <>
+                <SensorHeatmap2D
+                  response={heatmapResponse}
+                  profile={heatProfile}
+                  onProfileChange={(profile) => {
+                    setHeatProfile(profile);
+                    fetchHeatmap(selectedAlarm, profile, true);
+                  }}
+                  profileLoading={profileLoading}
+                />
+                <div className="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
+                  <h5 className="mb-0">
+                    <Activity className="me-2 text-primary" />
+                    {t('alarms_overview_measurements')}
+                  </h5>
+                  <small className="text-muted">
+                    {t('alarms_overview_measurements_hint')}
+                  </small>
+                </div>
+                {selectedAlarm ? (
+                  <AlarmMeasurementCompareChart alarm={selectedAlarm} />
+                ) : (
+                  <div
+                    className="text-muted py-5 text-center"
+                    data-testid="alarms-measurements-select"
+                  >
+                    {t('alarms_overview_measurements_select')}
+                  </div>
+                )}
+              </>
+            )}
+          </Card.Body>
+        </Card>
+      </FullscreenFrame>
 
       <DataTable
+        {...expandable}
         columns={columns}
         data={tableRows}
         keyField="_key"

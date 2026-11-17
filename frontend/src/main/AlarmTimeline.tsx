@@ -799,7 +799,7 @@ const AlarmTimeline = ({
         )}
       </div>
 
-      <div className="alarm-timeline-legend d-flex gap-3 mt-2 small text-muted" data-testid={childTestId(testId, 'legend')}>
+      <div className="alarm-timeline-legend d-flex flex-wrap gap-3 mt-2 small text-muted" data-testid={childTestId(testId, 'legend')}>
         <span className="d-flex align-items-center gap-1">
           <span className="alarm-timeline-swatch alarm-timeline-swatch-border-red" />
           Still active

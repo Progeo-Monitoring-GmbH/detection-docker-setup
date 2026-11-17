@@ -4,6 +4,7 @@ import { Search, XLg } from 'react-bootstrap-icons';
 import { matchesSearchWords, rowSearchText, searchWords } from './tableSearch';
 import { childTestId } from '../../../testIds';
 import './kit.css';
+import { useMobileColumns } from './mobileTable';
 
 /** A DataTable column plus what the global search should read from it. */
 export type SearchableColumn<T> = TableColumn<T> & {
@@ -129,6 +130,12 @@ export type SearchableDataTableProps<T, K> = Omit<TableProps<T>, 'columns' | 'da
   toolbar?: ReactNode;
   /** data-testid of the table; its search field is "<testId>-search", the count "<testId>-count". */
   testId?: string;
+  /**
+   * Phones: the ids of the columns that stay in the row - the others move
+   * into an expander under it (mobileTable.tsx). Without it the table keeps
+   * its columns and scrolls sideways in its panel.
+   */
+  mobileColumns?: string[];
 };
 
 /**
@@ -152,6 +159,7 @@ const SearchableDataTable = <T, K = string | number>({
   pointerOnHover,
   conditionalRowStyles,
   testId,
+  mobileColumns,
   ...tableProps
 }: SearchableDataTableProps<T, K>) => {
   const [query, setQuery] = useState('');
@@ -219,6 +227,9 @@ const SearchableDataTable = <T, K = string | number>({
       ...plain,
     ];
   }, [columns, selection, rows, labels.selectAll, labels.selectRow]);
+  // Phones: the `mobileColumns` in the row (the selection checkbox too), the
+  // others in its expander.
+  const phone = useMobileColumns(tableColumns, mobileColumns && ['__selected', ...mobileColumns]);
 
   const rowStyles = useMemo(() => {
     if (!selection) {
@@ -278,7 +289,8 @@ const SearchableDataTable = <T, K = string | number>({
       </div>
       <DataTable
         {...tableProps}
-        columns={tableColumns}
+        {...phone.expandable}
+        columns={phone.columns}
         data={rows}
         customStyles={customStyles}
         conditionalRowStyles={rowStyles}

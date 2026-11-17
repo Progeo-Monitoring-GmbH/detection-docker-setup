@@ -30,6 +30,7 @@ import {
 } from '../components/location/LocationListCells';
 import { getProjectTypeLabel } from './projectType';
 import { untaggedRowClick } from './wholeRowClick';
+import { useMobileColumns } from '../components/ui/kit/mobileTable';
 import './LocationVerwaltungView.css';
 
 type VerwaltungRow = {
@@ -377,7 +378,7 @@ const LocationVerwaltungView = () => {
     [accessUsers, rules, userFilter],
   );
 
-  const columns = useMemo<TableColumn<VerwaltungRow>[]>(
+  const allColumns = useMemo<TableColumn<VerwaltungRow>[]>(
     () => [
       {
         id: 'nr',
@@ -511,6 +512,8 @@ const LocationVerwaltungView = () => {
     ],
     [flagsOf, loadPerms, purgeBusy, t, togglePurgeable],
   );
+  // Phones: object and status in the row, the rest (purge, permissions too) in its expander.
+  const { columns, expandable } = useMobileColumns(allColumns, ['object', 'status']);
   const rowStyles = useMemo(() => locationFlagRowStyles((row: VerwaltungRow) => flagsOf(row.id)), [flagsOf]);
   const paginationOptions = {
     rowsPerPageText: t('locations_rows_per_page'),
@@ -592,6 +595,7 @@ const LocationVerwaltungView = () => {
                   data={filtered}
                   keyField="key"
                   customStyles={progeoTableStyles}
+                  {...expandable}
                   conditionalRowStyles={rowStyles}
                   pagination
                   paginationPerPage={50}

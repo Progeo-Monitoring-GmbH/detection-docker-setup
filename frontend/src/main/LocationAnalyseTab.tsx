@@ -74,6 +74,7 @@ import {
   type MeasurementsLoad,
   withLoad,
 } from './analyseCache';
+import { FullscreenButton, FullscreenFrame, useFullscreen } from '../components/ui/kit/Fullscreen';
 
 /** The resolutions offered: most measurements per period, spread evenly
  * over it by the backend (?days=&limit=, at most 2000). */
@@ -132,6 +133,8 @@ const LocationAnalyseTab = () => {
   const auth = useAuth();
   const { enqueueSnackbar } = useSnackbar();
   const { t } = useTranslation();
+  // The heatmap on the whole screen (phones: the only way to read it).
+  const heatmapFullscreen = useFullscreen();
   // Battery charts are device maintenance - staff (and superusers) only.
   const isStaff = staffFlags(auth?.user).isStaffOrSuperuser;
 
@@ -1510,6 +1513,7 @@ const LocationAnalyseTab = () => {
         </>
       ) : (
         <>
+          <FullscreenFrame state={heatmapFullscreen}>
           <Card className="border-0 shadow-sm" data-testid="analyse-heatmap">
             <Card.Header className="bg-transparent border-0 pt-2 pb-0">
               <Button
@@ -1529,6 +1533,11 @@ const LocationAnalyseTab = () => {
                 </span>
               )}
               <PlotHelp topic="heatmap" className="ms-2 align-middle" testId="analyse-heatmap-help" />
+              {heatmapOpen && (
+                <span className="ms-2 align-middle">
+                  <FullscreenButton state={heatmapFullscreen} testId="analyse-heatmap-fullscreen" />
+                </span>
+              )}
               {heatmapLoading && (
                 <Spinner size="sm" animation="border" className="ms-2 text-muted" data-testid="analyse-heatmap-loading" />
               )}
@@ -1590,6 +1599,7 @@ const LocationAnalyseTab = () => {
               </div>
             </Collapse>
           </Card>
+          </FullscreenFrame>
 
           {compare && (
             <MeasurementComparePlot

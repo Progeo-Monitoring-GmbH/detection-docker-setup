@@ -38,7 +38,33 @@
   color: var(--progeo-blue);
 }
 
+/* Star, name and (staff) the escalation in one row - on phones the
+   escalation goes below, the name keeps the width. */
+.portal-header {
+  display: flex;
+  align-items: center;
+  gap: 12px 16px;
+}
+
 .portal-escalation {
   flex: 1;
   min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .portal-header {
+    flex-wrap: wrap;
+  }
+
+  .portal-title {
+    flex: 1 1 0;
+  }
+
+  .portal-title-name {
+    font-size: 18px;
+  }
+
+  .portal-escalation {
+    flex: 1 1 100%;
+  }
 }

@@ -9,6 +9,7 @@ import type { SuspicionPlanMarker } from '../components/device/SuspicionMarkers'
 import { suspicionsOnPlan } from './computedSuspicion';
 import type { HeatProfile, SensorHeatmapResponse } from '../components/device/sensorHeatmapTypes';
 import PanelCard from '../components/ui/kit/PanelCard';
+import { FullscreenButton, FullscreenFrame, useFullscreen } from '../components/ui/kit/Fullscreen';
 import PlotHelp from '../components/ui/PlotHelp';
 import SegmentedControl from '../components/ui/kit/SegmentedControl';
 import {
@@ -105,6 +106,7 @@ const LocationPlanPanel = ({
   testId = 'plan-panel',
 }: LocationPlanPanelProps) => {
   const { t } = useTranslation();
+  const fullscreen = useFullscreen();
   const maxHeight = usePlanMaxHeight();
   // smartex® dm: the heat field too, with its band lines (SensorHeatmap2D).
   const withHeat = visualization === 'heatmap' || visualization === 'lines';
@@ -273,6 +275,8 @@ const LocationPlanPanel = ({
   };
 
   return (
+    // The plan on the whole screen - on a phone the only way to read it.
+    <FullscreenFrame state={fullscreen}>
     <PanelCard
       testId={testId}
       title={asTiles ? t('status_sensoransicht_title') : t('status_dachansicht_title')}
@@ -289,12 +293,14 @@ const LocationPlanPanel = ({
               onChange={(value) => setSelectedPlanId(Number(value))}
             />
           )}
+          {!asTiles && <FullscreenButton state={fullscreen} testId={childTestId(testId, 'fullscreen')} />}
           <PlotHelp topic="status_plan" testId={childTestId(testId, 'help')} />
         </>
       }
     >
       {content()}
     </PanelCard>
+    </FullscreenFrame>
   );
 };
 

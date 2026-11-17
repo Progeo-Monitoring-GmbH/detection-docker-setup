@@ -35,6 +35,8 @@ import {
 
 import { untaggedRowClick } from './wholeRowClick';
 import { sortLoadedFirst, useChunkedPreload } from './overviewPreload';
+import useIsMobile from '../components/ui/useIsMobile';
+import { useMobileColumns } from '../components/ui/kit/mobileTable';
 import './LocationsOverview.css';
 
 type FlagsOf = (id: number | null | undefined) => LocationFlags | null;
@@ -322,6 +324,45 @@ const LastMeasurementCell = ({ row, failed, t }: { row: LocationRow; failed: boo
 };
 
 /**
+ * Phones: one narrow column instead of Zustand + Alarm - the online dot, and
+ * the open alarm cases next to it ("2/3") when there are any.
+ */
+const LocationMobileStateCell = ({
+  row,
+  summary,
+  failed,
+  t,
+}: {
+  row: LocationRow;
+  summary: LocationAlarmSummary | undefined;
+  failed: boolean;
+  t: TFn;
+}) => {
+  if (row.measurement_count === undefined) {
+    return failed ? (
+      <CellFailed testId="locations-state-failed" rowId={row.id} t={t} />
+    ) : (
+      <CellLoading testId="locations-state-loading" rowId={row.id} t={t} />
+    );
+  }
+  const connectivity = locationConnectivity(row);
+  return (
+    <span
+      className="locations-mobile-state"
+      title={t(CONNECTIVITY_KEYS[connectivity])}
+      {...repeatedTestId('locations-state', row.id)}
+    >
+      <span className={`locations-state-dot locations-state-dot--${connectivity}`} />
+      {summary && summary.count > 0 && (
+        <span className="locations-mobile-alarm" {...repeatedTestId('locations-alarm', row.id)}>
+          {summary.active}/{summary.count}
+        </span>
+      )}
+    </span>
+  );
+};
+
+/**
  * What each sortable column sorts by - null while the row's data is still
  * loading (sortLoadedFirst puts those last). The table sorts through this
  * (sortServer), so the rows on screen are known and loaded first.
@@ -344,6 +385,7 @@ export const sortValueOf = (
       // Online first, then offline, never measured last (descending).
       return detailsLoaded ? { online: 2, offline: 1, none: 0 }[locationConnectivity(row)] : null;
     case 'alarm':
+    case 'mobile-state':
       return summary ? summary.active * 10_000 + summary.count : null;
     case 'last-measurement':
       return detailsLoaded ? (row.last_measurement_at ?? '') : null;
@@ -358,8 +400,11 @@ const locationColumns = ({
   failedDetails,
   failedAlarms,
   flagsOf,
+  mobile,
   t,
 }: {
+  /** Phone width: name and the compact state column only (LocationMobileStateCell). */
+  mobile: boolean;
   alarmSummary: Record<string, LocationAlarmSummary>;
   /** Rows whose details / alarm summary could not be loaded. */
   failedDetails: Set<number>;
@@ -394,7 +439,8 @@ const locationColumns = ({
     ),
     sortable: true,
     grow: 2.4,
-    minWidth: '220px',
+    // Phones: the name takes what the expander and the state leave.
+    minWidth: mobile ? '0' : '220px',
   },
   {
     id: 'product',
@@ -418,6 +464,7 @@ const locationColumns = ({
     cell: (row) => <LocationStateCell row={row} failed={failedDetails.has(row.id)} t={t} />,
     sortable: true,
     width: '130px',
+    omit: mobile,
   },
   {
     id: 'alarm',
@@ -428,6 +475,23 @@ const locationColumns = ({
     ),
     sortable: true,
     width: '130px',
+    omit: mobile,
+  },
+  {
+    id: 'mobile-state',
+    name: t('locations_col_state'),
+    cell: (row) => (
+      <LocationMobileStateCell
+        row={row}
+        summary={alarmSummary[String(row.id)]}
+        failed={failedDetails.has(row.id)}
+        t={t}
+      />
+    ),
+    sortable: true,
+    right: true,
+    width: '84px',
+    omit: !mobile,
   },
   {
     id: 'last-measurement',
@@ -659,7 +723,12 @@ const LocationsOverview = () => {
     ...(activeAlarms ?? []).map((row) => row.location.id),
   ]);
 
-  const columns = locationColumns({ alarmSummary, failedDetails, failedAlarms, flagsOf, t });
+  const mobile = useIsMobile();
+  // Phones: name and the compact state in the row, the rest in its expander.
+  const { columns, expandable } = useMobileColumns(
+    locationColumns({ alarmSummary, failedDetails, failedAlarms, flagsOf, mobile, t }),
+    ['name', 'mobile-state'],
+  );
   // The stripes first (purgeable red, switched off grey): the table keeps the
   // style of the last matching rule, so the state colour stays.
   const conditionalRowStyles = [
@@ -809,6 +878,7 @@ const LocationsOverview = () => {
             columns={columns}
             data={sortedRows}
             customStyles={progeoTableStyles}
+            {...expandable}
             sortServer
             onSort={(column, direction) => {
               setSort({ id: String(column.id), ascending: direction === 'asc' });

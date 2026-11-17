@@ -163,3 +163,33 @@
   font-weight: 500;
   white-space: nowrap;
 }
+
+/* -- phones: one row of round icon buttons ------------------------------------
+   The labels (view as user, archived) and the user name only as tooltip /
+   accessible name - the row would otherwise wrap into two. */
+@media (max-width: 640px) {
+  .topbar {
+    gap: 8px;
+    flex-wrap: nowrap;
+  }
+
+  .topbar-pill {
+    height: 36px;
+    min-width: 36px;
+    padding: 0 10px;
+  }
+
+  .topbar-pill--icon {
+    width: 36px;
+    padding: 0;
+  }
+
+  .topbar-pill-label,
+  .topbar-username {
+    display: none;
+  }
+
+  .topbar-account {
+    padding: 2px;
+  }
+}

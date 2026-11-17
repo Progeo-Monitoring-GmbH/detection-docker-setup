@@ -809,6 +809,8 @@ const DeviceListView = () => {
               </div>
             ) : (
               <SearchableDataTable
+                // Phones: device and status in the row, the rest (the actions too) in its expander.
+                mobileColumns={['device', 'status']}
                 columns={columns}
                 data={shown}
                 keyField="id"

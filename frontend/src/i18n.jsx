@@ -313,6 +313,8 @@ i18n
           ui_no_permission_edit:
             'View only – editing requires additional permissions.',
           ui_loading: 'Loading…',
+          ui_fullscreen: 'Full screen',
+          ui_fullscreen_exit: 'Leave full screen',
           demo_badge: 'Demo',
           demo_read_only: 'This is a demo - changes are not saved.',
           measurements_export: 'Export measurements',
@@ -2645,6 +2647,8 @@ i18n
           ui_no_permission_edit:
             'Nur ansehen – zum Bearbeiten fehlt die Berechtigung.',
           ui_loading: 'Wird geladen…',
+          ui_fullscreen: 'Vollbild',
+          ui_fullscreen_exit: 'Vollbild beenden',
           demo_badge: 'Demo',
           demo_read_only: 'Dies ist eine Demo - Änderungen werden nicht gespeichert.',
           measurements_export: 'Messwerte exportieren',

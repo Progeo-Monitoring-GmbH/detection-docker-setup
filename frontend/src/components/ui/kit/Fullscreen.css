@@ -1,0 +1,40 @@
+/* Fullscreen.tsx: a panel on the whole screen, and its header button. */
+
+/* On the whole screen: the page colour behind the panel, scrolling if the
+   plan is taller than the screen. */
+.progeo-fullscreen:fullscreen,
+.progeo-fullscreen--fallback {
+  overflow: auto;
+  padding: 8px;
+  background: var(--progeo-page-bg);
+}
+
+/* The browser has no fullscreen (iPhone Safari): the panel covers the page. */
+.progeo-fullscreen--fallback {
+  position: fixed;
+  inset: 0;
+  z-index: 1080;
+}
+
+.progeo-fullscreen--active > .progeo-panel {
+  min-height: 100%;
+}
+
+.progeo-fullscreen-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--progeo-surface);
+  box-shadow: var(--progeo-shadow-chrome);
+  color: var(--progeo-blue);
+  cursor: pointer;
+}
+
+.progeo-fullscreen-button:hover {
+  background: var(--progeo-track);
+}

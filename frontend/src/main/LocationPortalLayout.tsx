@@ -85,7 +85,7 @@ const LocationPortalLayout = () => {
         <FavoritesBar />
         {id && !loading && location && (
           // The big star pins the location; staff also see its escalation.
-          <div className="d-flex align-items-center gap-3" data-testid="location-portal-header">
+          <div className="portal-header" data-testid="location-portal-header">
             <FavoriteStar locationId={locationId} size={40} />
             {/* Which object this is - on every tab, for everyone (the tabs show no name of their own). */}
             <div className="portal-title" data-testid="portal-location-title">

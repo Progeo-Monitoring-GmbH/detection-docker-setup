@@ -111,6 +111,36 @@
   color: #8b8383;
 }
 
+/* Phones: the KPIs two by two instead of one tall column - a hairline grid
+   (the gap shows the track colour), an odd last one across both columns. */
+@media (max-width: 640px) {
+  .progeo-kpi-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1px;
+    background: var(--progeo-track);
+  }
+
+  .progeo-kpi-strip > * {
+    background: var(--progeo-panel-bg);
+  }
+
+  .progeo-kpi-strip > * + * {
+    border-left: none;
+  }
+
+  .progeo-kpi-strip > :last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+
+  .progeo-stat {
+    padding: 12px 14px;
+  }
+
+  .progeo-stat-number {
+    font-size: 22px;
+  }
+}
+
 /* -- PillButton / SegmentedControl / PillSelect ------------------------------ */
 
 .progeo-pill {
