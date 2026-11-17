@@ -1,6 +1,6 @@
 import React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation as useRouterLocation, useSearchParams } from 'react-router';
+import { useLocation as useRouterLocation, useNavigate, useSearchParams } from 'react-router';
 import { WIZARD_ANCHORS, type WizardStep } from './lageplanWizardAnchors';
 import { Badge, Button, Spinner } from 'react-bootstrap';
 import { CheckLg, ChevronLeft, ChevronRight, FileEarmarkPdf, PencilSquare, PlusLg } from 'react-bootstrap-icons';
@@ -232,6 +232,9 @@ const Chip = ({ children, variant }: { children: React.ReactNode; variant?: 'mai
   <span className={variant ? `lageplan-chip lageplan-chip--${variant}` : 'lageplan-chip'}>{children}</span>
 );
 
+// The step a link asked for (#wizard-...) - marked by its StepCard.
+const TargetStepContext = React.createContext<string | null>(null);
+
 const StepCard = ({
   number,
   step,
@@ -247,23 +250,27 @@ const StepCard = ({
   done?: boolean;
   actions?: React.ReactNode;
   children: React.ReactNode;
-}) => (
-  <PanelCard
-    id={WIZARD_ANCHORS[step]}
-    title={
-      <span className="lageplan-step-title">
-        <span className={done ? 'lageplan-step-number lageplan-step-number--done' : 'lageplan-step-number'}>
-          {done ? <CheckLg size={13} /> : number}
+}) => {
+  const targeted = React.useContext(TargetStepContext) === WIZARD_ANCHORS[step];
+  return (
+    <PanelCard
+      id={WIZARD_ANCHORS[step]}
+      className={targeted ? 'lageplan-step--target' : undefined}
+      title={
+        <span className="lageplan-step-title">
+          <span className={done ? 'lageplan-step-number lageplan-step-number--done' : 'lageplan-step-number'}>
+            {done ? <CheckLg size={13} /> : number}
+          </span>
+          {title}
         </span>
-        {title}
-      </span>
-    }
-    actions={actions}
-    testId={`lageplan-wizard-step-${number}`}
-  >
-    {children}
-  </PanelCard>
-);
+      }
+      actions={actions}
+      testId={`lageplan-wizard-step-${number}`}
+    >
+      {children}
+    </PanelCard>
+  );
+};
 
 /** A Lageplan image as thumbnail - media needs the Authorization header, so
  * it's fetched as blob (like ImageCanvasStage); PDFs get a placeholder.
@@ -380,7 +387,7 @@ const LageplanWizardView = () => {
 
   // ?location=<location pk> (as everywhere else, e.g. from the device
   // overview) preselects the location; the selection is kept there.
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const requestedLocation = Number(searchParams.get('location'));
   // ?plan=<lageplan id> (e.g. from /analyse) preselects that plan of the
   // location - once, with the first plans loaded.
@@ -391,9 +398,18 @@ const LageplanWizardView = () => {
   // Opened at a step (#wizard-..., e.g. from the checklist's "Beheben"):
   // scroll there once the location is chosen - again while its plans and
   // points load and push the step down, until the user scrolls themselves.
-  const { hash } = useRouterLocation();
+  // The step is kept apart from the URL: the browser marked no :target (the
+  // step wasn't rendered yet), and nothing that rewrites the URL may lose it.
+  const { hash, search } = useRouterLocation();
+  const navigate = useNavigate();
+  const [targetStep, setTargetStep] = useState<string | null>(() => hash.slice(1) || null);
   useEffect(() => {
-    const target = hash.slice(1);
+    if (hash.length > 1) {
+      setTargetStep(hash.slice(1));
+    }
+  }, [hash]);
+  useEffect(() => {
+    const target = targetStep;
     if (!target || selectedLocationId === null) {
       return undefined;
     }
@@ -413,23 +429,22 @@ const LageplanWizardView = () => {
       timers.forEach((timer) => window.clearTimeout(timer));
       events.forEach((event) => window.removeEventListener(event, stop));
     };
-  }, [hash, selectedLocationId]);
+  }, [targetStep, selectedLocationId]);
 
   // Everything below step 1 belongs to the selected location.
   const selectLocation = (next: WizardLocation | null) => {
-    setSearchParams(
-      (current) => {
-        const params = new URLSearchParams(current);
-        if (next?.id != null) {
-          params.set('location', String(next.id));
-        } else {
-          params.delete('location');
-        }
-        params.delete('plan');
-        return params;
-      },
-      { replace: true },
-    );
+    // ?location= names the selection (?plan= was read already). Only when
+    // it changes - and with the #anchor kept: setSearchParams would drop it.
+    const params = new URLSearchParams(search);
+    if (next?.id != null) {
+      params.set('location', String(next.id));
+    } else {
+      params.delete('location');
+    }
+    params.delete('plan');
+    if (params.toString() !== new URLSearchParams(search).toString()) {
+      navigate({ search: params.toString() ? `?${params}` : '', hash }, { replace: true });
+    }
     setSelectedLocationId(next ? next.project_id : null);
     setPointSource(
       next && isLorawanProject(next.project_type) ? 'manual' : 'cad',
@@ -1842,6 +1857,7 @@ const LageplanWizardView = () => {
   }
 
   return (
+    <TargetStepContext.Provider value={targetStep}>
     <div className="lageplan-wizard" data-testid="page-lageplan-wizard">
       <div className="lageplan-wizard-head">
         <div>
@@ -1951,6 +1967,7 @@ const LageplanWizardView = () => {
         }}
       />
     </div>
+    </TargetStepContext.Provider>
   );
 };
 

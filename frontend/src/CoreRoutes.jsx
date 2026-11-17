@@ -62,9 +62,6 @@ const AlarmReportView = React.lazy(() => import('./main/AlarmReportView.tsx'));
 const LocationHeatplotView = React.lazy(
   () => import('./main/LocationHeatplotView.tsx'),
 );
-const LocationHeatmap2DView = React.lazy(
-  () => import('./main/LocationHeatmap2DView.tsx'),
-);
 const LocationAlarmDetail = React.lazy(
   () => import('./main/LocationAlarmDetail.tsx'),
 );
@@ -256,13 +253,6 @@ const CoreRoutes = () => {
           <Route
             path="/locations/:id/heatplot"
             element={guard('/locations/:id/heatplot', <LocationHeatplotView />)}
-          />
-          <Route
-            path="/location/:id/heatmap2d"
-            element={guard(
-              '/location/:id/heatmap2d',
-              <LocationHeatmap2DView />,
-            )}
           />
           <Route
             path="/location/:id/alarms"

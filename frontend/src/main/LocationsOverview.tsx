@@ -34,6 +34,7 @@ import {
 } from '../components/location/LocationListCells';
 
 import { untaggedRowClick } from './wholeRowClick';
+import { sortLoadedFirst, useChunkedPreload } from './overviewPreload';
 import './LocationsOverview.css';
 
 type FlagsOf = (id: number | null | undefined) => LocationFlags | null;
@@ -233,13 +234,25 @@ const CONNECTIVITY_KEYS: Record<Connectivity, string> = {
   none: 'locations_state_no_data',
 };
 
-/** The State column: a dot and Online / Offline / No data - a spinner until the details are loaded. */
-const LocationStateCell = ({ row, t }: { row: LocationRow; t: TFn }) => {
+/** Placeholder of a cell whose data is still loading - a soft bar, not a spinner. */
+const CellLoading = ({ testId, rowId, t }: { testId: string; rowId: number; t: TFn }) => (
+  <span className="locations-cell-loading" role="status" aria-label={t('ui_loading')} {...repeatedTestId(testId, rowId)} />
+);
+
+/** A cell whose data could not be loaded: a dash, the reason as tooltip. */
+const CellFailed = ({ testId, rowId, t }: { testId: string; rowId: number; t: TFn }) => (
+  <span className="location-list-muted" title={t('locations_row_failed')} {...repeatedTestId(testId, rowId)}>
+    –
+  </span>
+);
+
+/** The State column: a dot and Online / Offline / No data. */
+const LocationStateCell = ({ row, failed, t }: { row: LocationRow; failed: boolean; t: TFn }) => {
   if (row.measurement_count === undefined) {
-    return (
-      <div className="d-flex align-items-center gap-2 text-muted" {...repeatedTestId('locations-state-loading', row.id)}>
-        <Spinner size="sm" animation="border" />
-      </div>
+    return failed ? (
+      <CellFailed testId="locations-state-failed" rowId={row.id} t={t} />
+    ) : (
+      <CellLoading testId="locations-state-loading" rowId={row.id} t={t} />
     );
   }
   const connectivity = locationConnectivity(row);
@@ -255,17 +268,19 @@ const LocationStateCell = ({ row, t }: { row: LocationRow; t: TFn }) => {
 const LocationAlarmCell = ({
   row,
   summary,
+  failed,
   t,
 }: {
   row: LocationRow;
   summary: LocationAlarmSummary | undefined;
+  failed: boolean;
   t: TFn;
 }) => {
   if (!summary) {
-    return (
-      <div className="d-flex align-items-center gap-2 text-muted" {...repeatedTestId('locations-alarm-loading', row.id)}>
-        <Spinner size="sm" animation="border" />
-      </div>
+    return failed ? (
+      <CellFailed testId="locations-alarm-failed" rowId={row.id} t={t} />
+    ) : (
+      <CellLoading testId="locations-alarm-loading" rowId={row.id} t={t} />
     );
   }
   if (summary.count === 0) {
@@ -284,10 +299,13 @@ const LocationAlarmCell = ({
 };
 
 /** The Last measurement column: how long ago (green while recent), the date as tooltip. */
-const LastMeasurementCell = ({ row, t }: { row: LocationRow; t: TFn }) => {
+const LastMeasurementCell = ({ row, failed, t }: { row: LocationRow; failed: boolean; t: TFn }) => {
   if (row.measurement_count === undefined) {
-    // Details not loaded yet - the State column shows the spinner.
-    return null;
+    return failed ? (
+      <CellFailed testId="locations-last-measurement-failed" rowId={row.id} t={t} />
+    ) : (
+      <CellLoading testId="locations-last-measurement-loading" rowId={row.id} t={t} />
+    );
   }
   if (!row.last_measurement_at) {
     return <span className="location-list-muted">{t('locations_never_measured')}</span>;
@@ -303,13 +321,49 @@ const LastMeasurementCell = ({ row, t }: { row: LocationRow; t: TFn }) => {
   );
 };
 
+/**
+ * What each sortable column sorts by - null while the row's data is still
+ * loading (sortLoadedFirst puts those last). The table sorts through this
+ * (sortServer), so the rows on screen are known and loaded first.
+ */
+export const sortValueOf = (
+  columnId: string,
+  row: LocationRow,
+  summary: LocationAlarmSummary | undefined,
+  t: TFn,
+): string | number | null => {
+  const detailsLoaded = row.measurement_count !== undefined;
+  switch (columnId) {
+    case 'project':
+      return row.project_id ?? null;
+    case 'name':
+      return (row.name || '').toLowerCase();
+    case 'product':
+      return row.project_type ? getProjectTypeLabel(t, row.project_type) : '';
+    case 'state':
+      // Online first, then offline, never measured last (descending).
+      return detailsLoaded ? { online: 2, offline: 1, none: 0 }[locationConnectivity(row)] : null;
+    case 'alarm':
+      return summary ? summary.active * 10_000 + summary.count : null;
+    case 'last-measurement':
+      return detailsLoaded ? (row.last_measurement_at ?? '') : null;
+    default:
+      return null;
+  }
+};
+
 /** Columns of the locations table: compact rows, details as a muted second line. */
 const locationColumns = ({
   alarmSummary,
+  failedDetails,
+  failedAlarms,
   flagsOf,
   t,
 }: {
   alarmSummary: Record<string, LocationAlarmSummary>;
+  /** Rows whose details / alarm summary could not be loaded. */
+  failedDetails: Set<number>;
+  failedAlarms: Set<number>;
   /** Staff: the switched-off flags (locationFlags.tsx) - null for everyone else. */
   flagsOf: FlagsOf;
   t: TFn;
@@ -361,7 +415,7 @@ const locationColumns = ({
     name: t('locations_col_state'),
     // Online first, then offline, never measured last.
     selector: (row) => ({ online: 2, offline: 1, none: 0 })[locationConnectivity(row)],
-    cell: (row) => <LocationStateCell row={row} t={t} />,
+    cell: (row) => <LocationStateCell row={row} failed={failedDetails.has(row.id)} t={t} />,
     sortable: true,
     width: '130px',
   },
@@ -369,7 +423,9 @@ const locationColumns = ({
     id: 'alarm',
     name: t('locations_col_alarm'),
     selector: (row) => alarmSummary[String(row.id)]?.active ?? -1,
-    cell: (row) => <LocationAlarmCell row={row} summary={alarmSummary[String(row.id)]} t={t} />,
+    cell: (row) => (
+      <LocationAlarmCell row={row} summary={alarmSummary[String(row.id)]} failed={failedAlarms.has(row.id)} t={t} />
+    ),
     sortable: true,
     width: '130px',
   },
@@ -377,7 +433,7 @@ const locationColumns = ({
     id: 'last-measurement',
     name: t('locations_col_last_measurement'),
     selector: (row) => row.last_measurement_at ?? '',
-    cell: (row) => <LastMeasurementCell row={row} t={t} />,
+    cell: (row) => <LastMeasurementCell row={row} failed={failedDetails.has(row.id)} t={t} />,
     sortable: true,
     width: '150px',
     hide: Media.SM,
@@ -411,11 +467,19 @@ const LocationsOverview = () => {
   const [onlyConnected, setOnlyConnected] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(OVERVIEW_ROWS_PER_PAGE);
-  // Ids for which the full detail fields (device/measurement counts) were
-  // already loaded, so the paginated table only fetches what's missing.
-  const loadedDetailIds = useRef<Set<number>>(new Set());
-  // Ids for which the alarm summary was already loaded, same on-page-demand pattern.
-  const loadedAlarmIds = useRef<Set<number>>(new Set());
+  // Toggled to send the table back to page 1 (a new sort or search).
+  const [resetPage, setResetPage] = useState(false);
+  const toFirstPage = () => {
+    setCurrentPage(1);
+    setResetPage((current) => !current);
+  };
+  // The table sorts through us (sortServer): the rows on screen are known.
+  const [sort, setSort] = useState<{ id: string; ascending: boolean } | null>(null);
+  // Rows whose details / alarm summary could not be loaded - a dash, not a
+  // placeholder forever; one error message per list.
+  const [failedDetails, setFailedDetails] = useState<Set<number>>(new Set());
+  const [failedAlarms, setFailedAlarms] = useState<Set<number>>(new Set());
+  const errorShown = useRef(false);
   // "Active alarms": every open alarm of all locations, loaded on demand.
   const [activeAlarms, setActiveAlarms] = useState<ActiveAlarm[] | null>(null);
   const [activeTruncated, setActiveTruncated] = useState(false);
@@ -445,10 +509,16 @@ const LocationsOverview = () => {
       `/v1/location/min/?${locationsQuery(search, hasDevice)}`,
       (response) => {
         const next = (response?.data || []) as LocationRow[];
-        loadedDetailIds.current.clear();
-        loadedAlarmIds.current.clear();
+        // A new list: what was loaded or queued for the old one is dropped.
+        preload.reset();
+        errorShown.current = false;
+        setAlarmSummary({});
+        setFailedDetails(new Set());
+        setFailedAlarms(new Set());
         setRows(next);
         setLoading(false);
+        // Everything in the background - the rows on screen move ahead.
+        preload.enqueue(next.map((row) => row.id));
         // Single-location accounts land directly in the LocationDetailView.
         if (
           !autoForwarded.current &&
@@ -466,68 +536,77 @@ const LocationsOverview = () => {
     );
   };
 
-  // Load alarm counts per location separately, so the location list stays
-  // light and the rows can be colored by alarm state. Only fetches for the
-  // ids currently visible on screen, merging into the existing summary.
-  const fetchAlarmSummary = (ids: number[]) => {
-    if (ids.length === 0) {
-      return;
+  const showLoadError = (message: string, error: unknown) => {
+    if (!errorShown.current) {
+      errorShown.current = true;
+      showRequestError(enqueueSnackbar, message, error);
     }
-    ids.forEach((id) => loadedAlarmIds.current.add(id));
-
-    void axiosConfig.perform_get(
-      auth,
-      `/v1/alarm/location_summary/?ids=${ids.join(',')}`,
-      (response) => {
-        const payload = (response?.data?.locations || {}) as Record<
-          string,
-          LocationAlarmSummary
-        >;
-        setAlarmSummary((prev) => mergeAlarmSummary(prev, payload, ids));
-      },
-      (error) => {
-        ids.forEach((id) => loadedAlarmIds.current.delete(id));
-        showRequestError(
-          enqueueSnackbar,
-          t('locations_error_alarm_summary'),
-          error,
-        );
-      },
-    );
   };
+
+  const addFailed = (setter: typeof setFailedDetails, ids: number[]) =>
+    setter((current) => new Set([...current, ...ids]));
+
+  /**
+   * One chunk of rows: their details (device/measurement counts, last
+   * measurement) and alarm summary - /min stays light, the rest follows in
+   * the background (useChunkedPreload), the rows on screen first.
+   */
+  const loadChunk = (ids: number[], generation: number) => {
+    const current = () => generation === preload.generation();
+    const details = new Promise<void>((resolve) => {
+      void axiosConfig.perform_get(
+        auth,
+        `/v1/location/details/?ids=${ids.join(',')}&skip_lageplans=1`,
+        (response) => {
+          if (current()) {
+            const loaded = (response?.data || []) as LocationRow[];
+            setRows((prev) => mergeDetails(prev, loaded));
+            const found = new Set(loaded.map((detail) => detail.id));
+            const missing = ids.filter((id) => !found.has(id));
+            if (missing.length) {
+              addFailed(setFailedDetails, missing);
+            }
+          }
+          resolve();
+        },
+        (error) => {
+          if (current()) {
+            addFailed(setFailedDetails, ids);
+            showLoadError(t('locations_error_details'), error);
+          }
+          resolve();
+        },
+      );
+    });
+    const alarms = new Promise<void>((resolve) => {
+      void axiosConfig.perform_get(
+        auth,
+        `/v1/alarm/location_summary/?ids=${ids.join(',')}`,
+        (response) => {
+          if (current()) {
+            const payload = (response?.data?.locations || {}) as Record<string, LocationAlarmSummary>;
+            setAlarmSummary((prev) => mergeAlarmSummary(prev, payload, ids));
+          }
+          resolve();
+        },
+        (error) => {
+          if (current()) {
+            addFailed(setFailedAlarms, ids);
+            showLoadError(t('locations_error_alarm_summary'), error);
+          }
+          resolve();
+        },
+      );
+    });
+    return Promise.all([details, alarms]).then(() => undefined);
+  };
+  const preload = useChunkedPreload(loadChunk);
 
   useEffect(() => {
     fetchLocations(searchText, onlyConnected);
     // Per filter switch only: typing in the search filters the loaded rows.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onlyConnected]);
-
-  // Batch-load the full fields (device/measurement counts) for ids that
-  // aren't loaded yet, so /min stays fast and details trickle in per page.
-  const fetchLocationDetails = (ids: number[]) => {
-    if (ids.length === 0) {
-      return;
-    }
-    ids.forEach((id) => loadedDetailIds.current.add(id));
-
-    void axiosConfig.perform_get(
-      auth,
-      `/v1/location/details/?ids=${ids.join(',')}&skip_lageplans=1`,
-      (response) => {
-        const details = (response?.data || []) as LocationRow[];
-        setRows((prev) => mergeDetails(prev, details));
-      },
-      (error) => {
-        // Allow a retry on the next page change instead of silently missing data.
-        ids.forEach((id) => loadedDetailIds.current.delete(id));
-        showRequestError(
-          enqueueSnackbar,
-          t('locations_error_details'),
-          error,
-        );
-      },
-    );
-  };
 
   const handleRowClick = (row: LocationRow) => {
     navigate(`/location/${row.id}/status`);
@@ -544,31 +623,35 @@ const LocationsOverview = () => {
     return rows.filter((row) => matchesLocationSearch(row, searchText));
   }, [rows, searchText]);
 
-  // Fetch the missing detail fields and alarm summary only for the page
-  // currently on screen.
-  useEffect(() => {
+  const sortedRows = useMemo(
+    () =>
+      sort
+        ? sortLoadedFirst(
+            filteredRows,
+            (row) => sortValueOf(sort.id, row, alarmSummary[String(row.id)], t),
+            sort.ascending,
+          )
+        : filteredRows,
+    [filteredRows, sort, alarmSummary, t],
+  );
+
+  // The rows on screen go to the front of the loading queue - after a new
+  // page, sort or search they don't wait for the rest of the list.
+  const visibleIds = useMemo(() => {
     const start = (currentPage - 1) * rowsPerPage;
-    const visibleIds = filteredRows
-      .slice(start, start + rowsPerPage)
-      .map((row) => row.id);
-
-    const missingDetailIds = visibleIds.filter(
-      (id) => !loadedDetailIds.current.has(id),
-    );
-    if (missingDetailIds.length > 0) {
-      fetchLocationDetails(missingDetailIds);
+    return sortedRows.slice(start, start + rowsPerPage).map((row) => row.id);
+  }, [sortedRows, currentPage, rowsPerPage]);
+  const visibleKey = visibleIds.join(',');
+  useEffect(() => {
+    if (visibleIds.length) {
+      preload.enqueue(visibleIds, true);
     }
-
-    const missingAlarmIds = visibleIds.filter(
-      (id) => !loadedAlarmIds.current.has(id),
-    );
-    if (missingAlarmIds.length > 0) {
-      fetchAlarmSummary(missingAlarmIds);
-    }
-    // Per visible page: the fetch functions are new on every render, the
-    // loaded*Ids refs keep ids from being requested twice.
+    // Per set of visible rows (visibleKey), not per new array.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredRows, currentPage, rowsPerPage]);
+  }, [visibleKey, preload.enqueue]);
+
+  // How far the background loading is: rows with details (or given up).
+  const preloaded = rows.filter((row) => row.measurement_count !== undefined || failedDetails.has(row.id)).length;
 
   // Staff: switched-off locations striped (grey), purgeable ones red.
   const { flagsOf } = useLocationFlags([
@@ -576,7 +659,7 @@ const LocationsOverview = () => {
     ...(activeAlarms ?? []).map((row) => row.location.id),
   ]);
 
-  const columns = locationColumns({ alarmSummary, flagsOf, t });
+  const columns = locationColumns({ alarmSummary, failedDetails, failedAlarms, flagsOf, t });
   // The stripes first (purgeable red, switched off grey): the table keeps the
   // style of the last matching rule, so the state colour stays.
   const conditionalRowStyles = [
@@ -595,12 +678,12 @@ const LocationsOverview = () => {
           aria-label={t('locations_search_placeholder')}
           onChange={(event) => {
             setSearchText(event.target.value);
-            setCurrentPage(1);
+            toFirstPage();
           }}
           onKeyDown={(event) => {
             if (event.key === 'Escape') {
               setSearchText('');
-              setCurrentPage(1);
+              toFirstPage();
             }
           }}
           className="progeo-table-search-input"
@@ -611,7 +694,7 @@ const LocationsOverview = () => {
             type="button"
             onClick={() => {
               setSearchText('');
-              setCurrentPage(1);
+              toFirstPage();
             }}
             aria-label={t('locations_search_clear')}
             title={t('locations_search_clear')}
@@ -705,6 +788,12 @@ const LocationsOverview = () => {
         actions={
           !loading && (
             <span className="locations-list-count" data-testid="locations-count">
+              {preloaded < rows.length && (
+                <span className="locations-preload" data-testid="locations-preload">
+                  <Spinner size="sm" animation="border" />
+                  {t('locations_preload_progress', { done: preloaded, total: rows.length })}
+                </span>
+              )}
               {t('locations_count', { count: filteredRows.length, total: rows.length })}
             </span>
           )
@@ -713,14 +802,20 @@ const LocationsOverview = () => {
         {/* Rows keep DataTable's own keyboard handling (Enter on a focused row). */}
         <div
           className={LOCATION_LIST_CLASS}
-          onClick={untaggedRowClick(filteredRows, handleRowClick)}
+          onClick={untaggedRowClick(sortedRows, handleRowClick)}
           data-testid="locations-table"
         >
           <DataTable
             columns={columns}
-            data={filteredRows}
+            data={sortedRows}
             customStyles={progeoTableStyles}
+            sortServer
+            onSort={(column, direction) => {
+              setSort({ id: String(column.id), ascending: direction === 'asc' });
+              toFirstPage();
+            }}
             pagination
+            paginationResetDefaultPage={resetPage}
             paginationPerPage={rowsPerPage}
             paginationRowsPerPageOptions={OVERVIEW_ROWS_PER_PAGE_OPTIONS}
             paginationComponentOptions={paginationOptions}

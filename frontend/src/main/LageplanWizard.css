@@ -328,12 +328,13 @@
   font-size: 12.5px;
 }
 
-/* Opened at a step (#wizard-..., lageplanWizardAnchors.ts): it is marked,
-   and the sticky header doesn't cover its title. */
+/* Opened at a step (#wizard-..., lageplanWizardAnchors.ts): it is marked
+   (TargetStepContext - CSS :target misses a step rendered after the page
+   loaded), and the sticky header doesn't cover its title. */
 .progeo-panel[id^='wizard-'] {
   scroll-margin-top: 72px;
 }
 
-.progeo-panel[id^='wizard-']:target {
+.progeo-panel.lageplan-step--target {
   box-shadow: 0 0 0 2px var(--progeo-orange);
 }

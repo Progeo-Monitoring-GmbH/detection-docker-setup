@@ -43,7 +43,6 @@ describe('APP_ROUTE_ACCESS', () => {
         '/device/:id/update/',
         '/device/overview',
         '/location/:id/alarms',
-        '/location/:id/heatmap2d',
         '/location/:id/heatplot',
         '/location/overview/',
         '/locations/:id/heatplot',

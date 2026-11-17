@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Button } from 'react-bootstrap';
-import { ArrowLeft, Grid3x3Gap } from 'react-bootstrap-icons';
+import { ArrowLeft } from 'react-bootstrap-icons';
 import { useSnackbar } from 'notistack';
 import { useNavigate } from 'react-router';
 import { useAuth } from '../../hooks/CoreAuthProvider.tsx';
@@ -13,7 +13,7 @@ import { childTestId } from '../testIds';
 const RELOAD_DEBOUNCE_MS = 900;
 
 /**
- * Loads /v1/location/:id/heatmap/ for the 2D and 3D heatmap views, refetching
+ * Loads /v1/location/:id/heatmap/ for the 3D heatmap view (heatplot), refetching
  * (debounced) whenever the measurement limit changes or `refresh` is called.
  */
 export const useLocationHeatmap = (id: string | undefined, profile: HeatProfile = 'diff') => {
@@ -55,20 +55,15 @@ export const useLocationHeatmap = (id: string | undefined, profile: HeatProfile 
 };
 
 type HeatmapViewHeaderProps = {
-  id: string | undefined;
-  /** The sibling view to switch to ("heatplot" = 3D, "heatmap2d" = 2D). */
-  switchTo: 'heatplot' | 'heatmap2d';
   loading: boolean;
   onRefresh: () => void;
   className?: string;
-  /** data-testid of the bar; its buttons are "<testId>-back" / "-switch" / "-refresh". */
+  /** data-testid of the bar; its buttons are "<testId>-back" / "-refresh". */
   testId?: string;
 };
 
-/** Back / switch-view / refresh button bar of the location heatmap views. */
+/** Back / refresh button bar of the location heatmap view. */
 export const HeatmapViewHeader = ({
-  id,
-  switchTo,
   loading,
   onRefresh,
   className = '',
@@ -80,24 +75,14 @@ export const HeatmapViewHeader = ({
       className={`d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3 ${className}`}
       data-testid={testId}
     >
-      <div className="d-flex gap-2">
-        <Button
-          variant="outline-secondary"
-          onClick={() => navigate('/location/overview/')}
-          data-testid={childTestId(testId, 'back')}
-        >
-          <ArrowLeft className="me-2" />
-          Back to Locations
-        </Button>
-        <Button
-          variant="outline-primary"
-          onClick={() => navigate(`/location/${id}/${switchTo}`)}
-          data-testid={childTestId(testId, 'switch')}
-        >
-          <Grid3x3Gap className="me-2" />
-          {switchTo === 'heatplot' ? '3D Heatmap' : '2D Heatmap'}
-        </Button>
-      </div>
+      <Button
+        variant="outline-secondary"
+        onClick={() => navigate('/location/overview/')}
+        data-testid={childTestId(testId, 'back')}
+      >
+        <ArrowLeft className="me-2" />
+        Back to Locations
+      </Button>
 
       <Button
         variant="outline-primary"

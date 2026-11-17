@@ -77,7 +77,6 @@ const LOCATION_PAGE_SEGMENTS = new Set([
   ...PORTAL_NAV_ITEMS.map((item) => item.segment),
   'schnittstelle',
   'heatplot',
-  'heatmap2d',
   'alarms',
 ]);
 

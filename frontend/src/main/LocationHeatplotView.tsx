@@ -8,12 +8,7 @@ const LocationHeatplotView = () => {
 
   return (
     <Container className="py-4" data-testid="page-location-heatplot">
-      <HeatmapViewHeader
-        id={id}
-        switchTo="heatmap2d"
-        loading={loading}
-        onRefresh={refresh}
-      />
+      <HeatmapViewHeader loading={loading} onRefresh={refresh} />
 
       <Card className="border-0 shadow-sm mb-3" data-testid="location-heatplot-settings">
         <Card.Body>

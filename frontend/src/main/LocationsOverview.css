@@ -135,3 +135,42 @@
   min-width: 0;
   width: 100%;
 }
+
+/* -- loading (overviewPreload.ts) ------------------------------------------- */
+
+/* A cell still loading: a soft pulsing bar where the value will be. */
+.locations-cell-loading {
+  display: inline-block;
+  width: 72px;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--progeo-warm-gray-3, #e4dfdc);
+  opacity: 0.6;
+  animation: locations-cell-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes locations-cell-pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .locations-cell-loading {
+    animation: none;
+  }
+}
+
+/* "Zustand wird geladen ... 300/1000" next to the count. */
+.locations-preload {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 12px;
+}
+
+.locations-preload .spinner-border {
+  width: 11px;
+  height: 11px;
+  border-width: 1.5px;
+}
