@@ -176,7 +176,7 @@ def send_verification(request_id: int) -> bool:
         [request.email], "access_verify",
         {"first_name": request.first_name, "valid_hours": settings.ACCESS_REQUEST_VERIFY_HOURS},
         category="access_request",
-        secret_context={"action_url": portal_url(f"/zugang/bestaetigen/{token}")},
+        secret_context={"action_url": portal_url(f"/access/verify/{token}")},
         language=request.language or None,
     ))
 

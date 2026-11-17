@@ -143,32 +143,31 @@ const CoreRoutes = () => {
       <Route path="/login/link" element={<MagicLinkRequest />} />
       <Route path="/login/link/:token" element={<MagicLinkLogin />} />
       {/* Acknowledge / unsubscribe links of notification mails - no login. */}
-      <Route path="/benachrichtigung/:token" element={<NotificationLinkPage />} />
+      <Route path="/notification/:token" element={<NotificationLinkPage />} />
       {/* Migration info mail: set the first password, then signed in. */}
-      <Route path="/konto/einrichten/:token" element={<MigrationSetup />} />
+      <Route path="/account/setup/:token" element={<MigrationSetup />} />
       {/* Password reset by mail link + 2FA code; set on click, not on load. */}
-      <Route path="/passwort-vergessen" element={<PasswordResetRequest />} />
-      <Route path="/passwort/neu/:token" element={<PasswordResetConfirm />} />
+      <Route path="/forgot-password" element={<PasswordResetRequest />} />
+      <Route path="/password/reset/:token" element={<PasswordResetConfirm />} />
       {/* Staff who have to set up 2FA first see only this (PendingGate). */}
-      <Route path="/konto/zwei-faktor" element={<TwoFactorSetupRequired />} />
+      <Route path="/account/two-factor" element={<TwoFactorSetupRequired />} />
       {/* Access request: form -> mail confirmation -> staff review. */}
-      <Route path="/zugang/beantragen" element={<RequestAccess />} />
-      <Route path="/zugang/bestaetigen/:token" element={<VerifyAccess />} />
-      <Route path="/zugang/pruefung" element={<PendingReview />} />
+      <Route path="/access/request" element={<RequestAccess />} />
+      <Route path="/access/verify/:token" element={<VerifyAccess />} />
+      <Route path="/access/review" element={<PendingReview />} />
       {/* Public demo: the link token logs in the read-only "demo" user. */}
       <Route path="/demo/login/:token" element={<DemoLogin />} />
       <Route path="/demo/" element={<DemoView />} />
       <Route path="/demo/location/:id" element={<DemoView />} />
       {/* Public - must stay reachable without login (GDPR information duty). */}
-      <Route path="/datenschutz" element={<PrivacyPolicyPage />} />
-      <Route path="/privacy" element={<Navigate to="/datenschutz" replace />} />
+      <Route path="/privacy" element={<PrivacyPolicyPage />} />
       {/* Print sheet - deliberately outside the layouts (no sidebar). */}
       <Route
         path="/setup/:account/controller/qrcodes/"
         element={<ControllerQrCodePrintView />}
       />
 
-      {/* Users awaiting the review of their access request see only /zugang/pruefung. */}
+      {/* Users awaiting the review of their access request see only /access/review. */}
       <Route element={<PendingGate />}>
         {/* Object/location monitoring portal - its own mockup-driven sidebar. */}
         <Route element={<LocationPortalLayout />}>
@@ -188,11 +187,6 @@ const CoreRoutes = () => {
             />
           ))}
           <Route path="/location/:id/detail/" element={<RedirectToStatus />} />
-          {/* Was a portal tab, but the interface config is system-wide. */}
-          <Route
-            path="/location/:id/schnittstelle"
-            element={<Navigate to="/schnittstelle/" replace />}
-          />
         </Route>
 
         {/* Everything else - the general-purpose sidebar (ported 1:1 from the
@@ -258,7 +252,7 @@ const CoreRoutes = () => {
             path="/location/:id/alarms"
             element={guard('/location/:id/alarms', <LocationAlarmDetail />)}
           />
-          {/* Retired: device config moved to /location/:id/einstellungen. */}
+          {/* Retired: device config moved to /location/:id/settings. */}
           <Route
             path="/device/:id/update/"
             element={guard('/device/:id/update/', <DeviceSettingsRedirect />)}
@@ -293,8 +287,8 @@ const CoreRoutes = () => {
           />
           {/* System-wide SMTP/Modbus/SMS/messenger config - not per location. */}
           <Route
-            path="/schnittstelle/"
-            element={guard('/schnittstelle/', <LocationInterfaceTab />)}
+            path="/interface/"
+            element={guard('/interface/', <LocationInterfaceTab />)}
           />
           <Route
             path="/escalations/"
@@ -309,17 +303,17 @@ const CoreRoutes = () => {
             element={guard('/backup/:account/overview/', <BackupView />)}
           />
           <Route
-            path="/lageplan/wizard/"
-            element={guard('/lageplan/wizard/', <LageplanWizardView />)}
+            path="/site-plan/wizard/"
+            element={guard('/site-plan/wizard/', <LageplanWizardView />)}
           />
           <Route path="/map/" element={guard('/map/', <LocationsMapView />)} />
           <Route
-            path="/verwaltung/"
-            element={guard('/verwaltung/', <LocationVerwaltungView />)}
+            path="/management/"
+            element={guard('/management/', <LocationVerwaltungView />)}
           />
           <Route
-            path="/anlegen/"
-            element={guard('/anlegen/', <LocationAnlegenView />)}
+            path="/create/"
+            element={guard('/create/', <LocationAnlegenView />)}
           />
           <Route path="*" element={guard('*', <LandingPage />)} />
         </Route>

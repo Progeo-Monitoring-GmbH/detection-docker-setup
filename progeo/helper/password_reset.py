@@ -1,7 +1,7 @@
 """Self-service password reset - only with 2FA.
 
   1. request_reset (public form, answer never tells): a user with 2FA gets a
-     reset link (/passwort/neu/<token>, PASSWORD_RESET_MINUTES), a user
+     reset link (/password/reset/<token>, PASSWORD_RESET_MINUTES), a user
      without 2FA a mail saying how to get in instead (login link, then set
      up 2FA in the profile - or ask ProGeo). A mailbox alone never sets a
      password.
@@ -84,7 +84,7 @@ def send_reset(user_id: int, language: str | None = None) -> bool:
     return bool(send_template_mail(
         [user.email], "password_reset", {**context, "valid_minutes": settings.PASSWORD_RESET_MINUTES},
         category="password_reset",
-        secret_context={"action_url": portal_url(f"/passwort/neu/{token}")},
+        secret_context={"action_url": portal_url(f"/password/reset/{token}")},
         language=language,
     ))
 

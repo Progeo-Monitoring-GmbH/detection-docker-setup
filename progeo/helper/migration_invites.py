@@ -2,7 +2,7 @@
 
     queued  -> manage.py migration_invites --queue (or import_users --invite)
     sent    -> the info mail with a "set your password" link went out
-    completed -> the user set a password on /konto/einrichten/<token> and
+    completed -> the user set a password on /account/setup/<token> and
                  was signed in right away
 
 Sending runs only while MIGRATION_INVITES_ENABLED is on: the celery task
@@ -147,7 +147,7 @@ def send_invite(invite, now=None) -> bool:
         [user.email], "migration_invite",
         {"first_name": user.first_name, "username": user.username, "valid_days": settings.MIGRATION_INVITE_DAYS},
         category=CATEGORY,
-        secret_context={"action_url": portal_url(f"/konto/einrichten/{token}")},
+        secret_context={"action_url": portal_url(f"/account/setup/{token}")},
     )
     if sent:
         invite.status, invite.sent_at, invite.error = MigrationInvite.Status.SENT, now, ""

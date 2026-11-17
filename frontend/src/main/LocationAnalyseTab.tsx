@@ -1535,7 +1535,7 @@ const LocationAnalyseTab = () => {
               {isStaff && (
                 // Staff: straight to the Lageplan wizard - this location and the shown plan.
                 <Link
-                  to={`/lageplan/wizard/?location=${locationId}${planId != null ? `&plan=${planId}` : ''}`}
+                  to={`/site-plan/wizard/?location=${locationId}${planId != null ? `&plan=${planId}` : ''}`}
                   className="analyse-wizard-link float-end"
                   title={t('analyse_open_wizard_hint')}
                   data-testid="analyse-open-wizard"

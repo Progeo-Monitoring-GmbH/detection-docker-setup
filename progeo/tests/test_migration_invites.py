@@ -39,7 +39,7 @@ def _imported(email=None, **fields):
 
 def _token():
     text = body_of(FakeSMTP.parsed()[-1])
-    match = re.search(r"https://dashboard\.progeo\.com/konto/einrichten/([A-Za-z0-9_-]+)", text)
+    match = re.search(r"https://dashboard\.progeo\.com/account/setup/([A-Za-z0-9_-]+)", text)
     assert match, text
     return match.group(1)
 
@@ -143,7 +143,7 @@ def test_expired_and_revoked_links_are_refused(campaign):
     migration_invites.queue([first, second])
     migration_invites.send_due()
     tokens = [match.group(1) for message in FakeSMTP.parsed()
-              for match in [re.search(r"/konto/einrichten/([A-Za-z0-9_-]+)", body_of(message))] if match]
+              for match in [re.search(r"/account/setup/([A-Za-z0-9_-]+)", body_of(message))] if match]
     LoginLink.objects.using(f.DB).filter(user_id=first.pk).update(expires_at=timezone.now() - timedelta(seconds=1))
     assert migration_invites.revoke_unused() == 2  # the expired one counts too
 

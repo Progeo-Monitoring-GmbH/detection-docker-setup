@@ -74,8 +74,8 @@ Alarm stages ignore the send window, including the reminders. The case closes wh
 
 Every mail contains, per recipient:
 
-- **an acknowledge link**: `/benachrichtigung/<token>?aktion=quittieren`
-- **an unsubscribe link**: `/benachrichtigung/<token>?aktion=abmelden`
+- **an acknowledge link**: `/notification/<token>?action=acknowledge`
+- **an unsubscribe link**: `/notification/<token>?action=unsubscribe`
 - **`List-Unsubscribe` + `List-Unsubscribe-Post` headers** (RFC 8058 one-click), as Gmail and Yahoo expect
 
 How the links behave:

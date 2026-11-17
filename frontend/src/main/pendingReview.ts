@@ -6,7 +6,7 @@
  */
 
 /** The panel of a user awaiting review (PendingReview). */
-export const PENDING_REVIEW_PATH = '/zugang/pruefung';
+export const PENDING_REVIEW_PATH = '/access/review';
 
 /** True for a user whose access request still waits for the staff's review. */
 export const isPendingUser = (user: unknown) =>

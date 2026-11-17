@@ -38,7 +38,7 @@ const TARGET_MAX = 100;
 const TOKEN_MIN_LENGTH = 16;
 
 // The routes with the token of a mailed link (CoreRoutes.jsx).
-const TOKEN_ROUTE = /^(\/login\/link\/|\/passwort\/neu\/|\/zugang\/bestaetigen\/|\/demo\/login\/)[^/]+/;
+const TOKEN_ROUTE = /^(\/login\/link\/|\/password\/reset\/|\/access\/verify\/|\/account\/setup\/|\/notification\/|\/demo\/login\/)[^/]+/;
 
 const normalizeSegment = (segment: string) => {
   if (/^\d+$/.test(segment)) {

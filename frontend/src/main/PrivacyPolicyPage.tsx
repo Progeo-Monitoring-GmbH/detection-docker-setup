@@ -103,7 +103,7 @@ const useActiveSection = (ids: string[]) => {
 };
 
 /**
- * Public privacy policy (route /datenschutz) - reachable without login, e.g.
+ * Public privacy policy (route /privacy) - reachable without login, e.g.
  * from the login page and the cookie banner.
  */
 const PrivacyPolicyPage = () => {

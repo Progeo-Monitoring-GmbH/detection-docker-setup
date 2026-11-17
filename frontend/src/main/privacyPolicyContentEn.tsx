@@ -41,7 +41,7 @@ const BROWSER_STORAGE = [
 
 export const buildPolicySectionsEn = ({ consentButton }: SectionOptions): PolicySection[] => [
   {
-    id: 'verantwortlicher',
+    id: 'controller',
     title: 'Controller',
     body: (
       <>
@@ -71,7 +71,7 @@ export const buildPolicySectionsEn = ({ consentButton }: SectionOptions): Policy
     ),
   },
   {
-    id: 'geltungsbereich',
+    id: 'scope',
     title: 'Scope',
     body: (
       <>
@@ -92,7 +92,7 @@ export const buildPolicySectionsEn = ({ consentButton }: SectionOptions): Policy
     ),
   },
   {
-    id: 'bereitstellung',
+    id: 'hosting',
     title: 'Providing the application and server logs',
     body: (
       <>
@@ -136,7 +136,7 @@ export const buildPolicySectionsEn = ({ consentButton }: SectionOptions): Policy
     ),
   },
   {
-    id: 'konto',
+    id: 'account',
     title: 'User account and sign-in',
     body: (
       <>
@@ -227,7 +227,7 @@ export const buildPolicySectionsEn = ({ consentButton }: SectionOptions): Policy
     ),
   },
   {
-    id: 'objektdaten',
+    id: 'object-data',
     title: 'Object and contact data',
     body: (
       <>
@@ -252,7 +252,7 @@ export const buildPolicySectionsEn = ({ consentButton }: SectionOptions): Policy
     ),
   },
   {
-    id: 'benachrichtigungen',
+    id: 'notifications',
     title: 'Notifications by e-mail, SMS and messenger',
     body: (
       <>
@@ -421,7 +421,7 @@ export const buildPolicySectionsEn = ({ consentButton }: SectionOptions): Policy
     ),
   },
   {
-    id: 'kartendienste',
+    id: 'map-services',
     title: 'External map services (only with consent)',
     body: (
       <>
@@ -475,7 +475,7 @@ export const buildPolicySectionsEn = ({ consentButton }: SectionOptions): Policy
     ),
   },
   {
-    id: 'nutzungsstatistik',
+    id: 'usage-statistics',
     title: 'Usage statistics (only with consent)',
     body: (
       <>
@@ -533,7 +533,7 @@ export const buildPolicySectionsEn = ({ consentButton }: SectionOptions): Policy
     ),
   },
   {
-    id: 'empfaenger',
+    id: 'recipients',
     title: 'Recipients and processors',
     body: (
       <>
@@ -561,7 +561,7 @@ export const buildPolicySectionsEn = ({ consentButton }: SectionOptions): Policy
     ),
   },
   {
-    id: 'speicherdauer',
+    id: 'retention',
     title: 'Retention and backups',
     body: (
       <>
@@ -590,7 +590,7 @@ export const buildPolicySectionsEn = ({ consentButton }: SectionOptions): Policy
     ),
   },
   {
-    id: 'rechte',
+    id: 'your-rights',
     title: 'Your rights',
     body: (
       <>
@@ -631,7 +631,7 @@ export const buildPolicySectionsEn = ({ consentButton }: SectionOptions): Policy
     ),
   },
   {
-    id: 'beschwerde',
+    id: 'complaints',
     title: 'Right to lodge a complaint with a supervisory authority',
     body: (
       <>
@@ -657,7 +657,7 @@ export const buildPolicySectionsEn = ({ consentButton }: SectionOptions): Policy
     ),
   },
   {
-    id: 'sonstiges',
+    id: 'other',
     title: 'Obligation to provide data, automated decisions',
     body: (
       <>
@@ -676,7 +676,7 @@ export const buildPolicySectionsEn = ({ consentButton }: SectionOptions): Policy
     ),
   },
   {
-    id: 'aenderungen',
+    id: 'changes',
     title: 'Changes to this privacy policy',
     body: (
       <p>

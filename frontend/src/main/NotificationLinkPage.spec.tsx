@@ -71,7 +71,7 @@ const render = (path: string) =>
     root.render(
       <MemoryRouter initialEntries={[path]}>
         <Routes>
-          <Route path="/benachrichtigung/:token" element={<NotificationLinkPage />} />
+          <Route path="/notification/:token" element={<NotificationLinkPage />} />
         </Routes>
       </MemoryRouter>,
     );
@@ -81,14 +81,14 @@ const urls = () => api.post.mock.calls.map(([url]) => url);
 
 describe('NotificationLinkPage', () => {
   it('only reads the link on load - mail scanners must not acknowledge anything', () => {
-    render('/benachrichtigung/tok123?aktion=quittieren');
+    render('/notification/tok123?action=acknowledge');
     expect(urls()).toEqual(['/api/auth-support/notifications/check/']);
     expect(byTestId('notification-link-submit')!.textContent).toBe('notification_link_alarm_button');
   });
 
   it('acknowledges the alarm on the button', () => {
     api.answers['/api/auth-support/notifications/acknowledge/'] = { ...INFO, state: 'resolved' };
-    render('/benachrichtigung/tok123?aktion=quittieren');
+    render('/notification/tok123?action=acknowledge');
     act(() => byTestId('notification-link-submit')!.click());
     expect(api.post).toHaveBeenLastCalledWith('/api/auth-support/notifications/acknowledge/', { token: 'tok123' });
     expect(byTestId('notification-link-done')!.textContent).toBe('notification_link_alarm_acknowledged');
@@ -97,7 +97,7 @@ describe('NotificationLinkPage', () => {
 
   it('unsubscribes on the button of the unsubscribe link', () => {
     api.answers['/api/auth-support/notifications/unsubscribe/'] = { ...INFO, unsubscribed: true };
-    render('/benachrichtigung/tok123?aktion=abmelden');
+    render('/notification/tok123?action=unsubscribe');
     expect(byTestId('notification-link-submit')!.textContent).toBe('notification_link_unsubscribe_button');
     act(() => byTestId('notification-link-submit')!.click());
     expect(api.post).toHaveBeenLastCalledWith('/api/auth-support/notifications/unsubscribe/', { token: 'tok123' });
@@ -106,7 +106,7 @@ describe('NotificationLinkPage', () => {
 
   it('says so when the link is invalid or expired', () => {
     api.answers['/api/auth-support/notifications/check/'] = new Error('400');
-    render('/benachrichtigung/expired');
+    render('/notification/expired');
     expect(byTestId('notification-link-invalid')).not.toBeNull();
     expect(byTestId('notification-link-submit')).toBeNull();
   });

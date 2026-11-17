@@ -49,7 +49,7 @@ SESSION_EVENTS_MAX = 5000
 
 _NUMERIC_SEGMENT = re.compile(r"^\d+$")
 # The routes with a token of a mailed link (frontend/src/CoreRoutes.jsx).
-_TOKEN_ROUTE = re.compile(r"^(/login/link/|/passwort/neu/|/zugang/bestaetigen/|/demo/login/)[^/]+")
+_TOKEN_ROUTE = re.compile(r"^(/login/link/|/password/reset/|/access/verify/|/account/setup/|/notification/|/demo/login/)[^/]+")
 _TOKEN_MIN_LENGTH = 16
 _TARGET_FORBIDDEN = re.compile(r"[^A-Za-z0-9_.:-]")
 

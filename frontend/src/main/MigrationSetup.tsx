@@ -8,7 +8,7 @@ import AuthPage, { AuthLinks, authButtonClass } from '../components/auth/AuthPag
 import { repeatedTestId } from '../testIds';
 
 /**
- * Target of the migration info mail (/konto/einrichten/<token>, backend
+ * Target of the migration info mail (/account/setup/<token>, backend
  * helper/migration_invites.py): users of the old platform choose their
  * password on the new one and are signed in right away. Loading the page
  * only checks the token (mail scanners open every link); the button sets

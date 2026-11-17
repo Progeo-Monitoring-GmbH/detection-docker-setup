@@ -264,7 +264,7 @@ docker compose restart progeo-backend
 `ACTIVITY_TRACKING_ENABLED=1` in `.env` records how normal users use the portal (`ProgeoActivity`, [progeo/helper/activity.py](progeo/helper/activity.py)): logins, page views with the time the page was visible, and clicks (the element's `data-testid`, never its text). Off by default.
 
 - Only users who accepted "Usage statistics" in the privacy banner are tracked. Staff and superusers are never tracked, also not while a superuser is logged in as someone else.
-- Stored per event: user, a random id per browser tab, kind, path with ids replaced (`/location/:id/analyse`), click target, duration, time. No IP address, no user agent.
+- Stored per event: user, a random id per browser tab, kind, path with ids replaced (`/location/:id/analysis`), click target, duration, time. No IP address, no user agent.
 - Events older than `ACTIVITY_RETENTION_DAYS` (default 180) are deleted every night at 04:24 by the celery task `cleanup_activity`. It runs while tracking is off too, and `CELERY_DISABLED_TASKS` can switch it off like the other tasks.
 - Analysis: the Django admin (`Progeo activities`) and, for staff, `GET /v1/activity/summary/?days=30` (page views with average/median duration per path, top click targets, logins and active users per day).
 - The privacy policy (`frontend/src/main/privacyPolicyContent.tsx`) describes it. Change both together.

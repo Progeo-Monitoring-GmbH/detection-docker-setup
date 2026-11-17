@@ -58,14 +58,14 @@ describe('LocationSidebar carries the selected location', () => {
     render('/device/overview?location=42');
 
     expect(href('device')).toBe('/device/overview?location=42');
-    expect(href('lageplan')).toBe('/lageplan/wizard/?location=42');
+    expect(href('lageplan')).toBe('/site-plan/wizard/?location=42');
     // Other modules stay plain.
     expect(href('map')).toBe('/map/');
     expect(href('device-statistics')).toBe('/device/statistics/');
   });
 
   it('marks the page active although its link carries the location', () => {
-    render('/lageplan/wizard/?location=7&plan=3');
+    render('/site-plan/wizard/?location=7&plan=3');
 
     const link = container.querySelector('[data-testid="sidebar-link"][data-test-key="lageplan"]')!;
     expect(link.getAttribute('aria-current')).toBe('page');
@@ -82,7 +82,7 @@ describe('LocationSidebar carries the selected location', () => {
     render('/map/');
 
     expect(href('device')).toBe('/device/overview');
-    expect(href('lageplan')).toBe('/lageplan/wizard/');
+    expect(href('lageplan')).toBe('/site-plan/wizard/');
   });
 
   it('ignores anything but a location pk', () => {

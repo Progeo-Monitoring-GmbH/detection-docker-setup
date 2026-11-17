@@ -22,7 +22,7 @@ class Command(BaseCommand):
         "   'completed'), set MIGRATION_INVITES_ENABLED=0 again - the campaign\n"
         "   can't send any more. The links mailed stay valid for\n"
         "   MIGRATION_INVITE_DAYS; --revoke voids the unused ones early.\n\n"
-        "The link opens /konto/einrichten/<token>: the user sets a password and\n"
+        "The link opens /account/setup/<token>: the user sets a password and\n"
         "is signed in right away.\n\n"
         "Examples:\n"
         "  python manage.py migration_invites --queue --dry-run\n"

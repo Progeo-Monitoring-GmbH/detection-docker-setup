@@ -1,6 +1,6 @@
 # Migration info mail (one-time campaign)
 
-The users of the old platform get one info mail: "the portal has moved, set your password". The link opens `/konto/einrichten/<token>`. There the user chooses a password (plus their 2FA code, if they have 2FA) and is **signed in right away**.
+The users of the old platform get one info mail: "the portal has moved, set your password". The link opens `/account/setup/<token>`. There the user chooses a password (plus their 2FA code, if they have 2FA) and is **signed in right away**.
 
 The campaign is meant to run **once** and then be switched off.
 

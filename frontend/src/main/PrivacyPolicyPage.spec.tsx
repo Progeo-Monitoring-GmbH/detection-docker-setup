@@ -64,7 +64,7 @@ afterEach(() => {
 const renderPage = () => {
   act(() =>
     root.render(
-      <MemoryRouter initialEntries={['/datenschutz']}>
+      <MemoryRouter initialEntries={['/privacy']}>
         <ConsentProvider>
           <PrivacyPolicyPage />
           <CookieBanner />

@@ -168,9 +168,11 @@ def test_client_time_is_only_taken_within_the_last_day(tracking):
 
 
 @pytest.mark.parametrize(("raw", "expected"), [
-    ("/location/12/analyse", "/location/:id/analyse"),
+    ("/location/12/analysis", "/location/:id/analysis"),
     ("/login/link/abc", "/login/link/:token"),
-    ("/passwort/neu/x-y_z", "/passwort/neu/:token"),
+    ("/password/reset/x-y_z", "/password/reset/:token"),
+    ("/access/verify/abc", "/access/verify/:token"),
+    ("/notification/abc", "/notification/:token"),
     ("/demo/login/abcdef", "/demo/login/:token"),
     ("/device/0a1b2c3d4e5f6a7b8c9d/update/", "/device/:token/update/"),
     ("/device/statistics/", "/device/statistics/"),

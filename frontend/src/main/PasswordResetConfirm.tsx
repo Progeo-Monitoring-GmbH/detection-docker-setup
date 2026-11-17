@@ -8,7 +8,7 @@ import AuthPage, { AuthLinks, authButtonClass } from '../components/auth/AuthPag
 import { repeatedTestId } from '../testIds';
 
 /**
- * Reset link from the "Passwort vergessen" mail (/passwort/neu/<token>).
+ * Reset link from the "Passwort vergessen" mail (/password/reset/<token>).
  * Like VerifyAccess, the token is only checked on load (no side effect -
  * mail scanners open the link too); the new password is only set on the
  * button press, together with the code from the authenticator app (a
@@ -108,7 +108,7 @@ const PasswordResetConfirm = () => {
       <AuthPage title={t('password_new_title')} testId="page-password-reset">
         <p className="auth-muted" data-testid="password-reset-invalid">{t('password_new_invalid')}</p>
         <AuthLinks>
-          <Link to="/passwort-vergessen" data-testid="password-reset-request-new">{t('password_new_request_new')}</Link>
+          <Link to="/forgot-password" data-testid="password-reset-request-new">{t('password_new_request_new')}</Link>
           <Link to="/login" data-testid="auth-back-to-login">{t('auth_back_to_login')}</Link>
         </AuthLinks>
       </AuthPage>

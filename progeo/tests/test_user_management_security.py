@@ -595,7 +595,7 @@ def test_reset_without_2fa_mails_no_link(client):
     client.post("/api/auth-support/password-reset/", {"email": user.email}, format="json")
 
     text = body_of(FakeSMTP.parsed()[-1])
-    assert "Zwei-Faktor" in text and "/passwort/neu/" not in text
+    assert "Zwei-Faktor" in text and "/password/reset/" not in text
     assert not LoginLink.objects.using(f.DB).filter(user=user, purpose="reset").exists()
 
 
@@ -605,7 +605,7 @@ def test_reset_with_2fa(client):
     other_device = _login(APIClient(), user, otp=_code(secret)).data
     assert client.post("/api/auth-support/password-reset/", {"email": user.email.upper()},
                        format="json").data == {"success": True}
-    token = _link_token("/passwort/neu/")
+    token = _link_token("/password/reset/")
 
     assert client.post("/api/auth-support/password-reset/check/", {"token": token},
                        format="json").data["username"] == user.username

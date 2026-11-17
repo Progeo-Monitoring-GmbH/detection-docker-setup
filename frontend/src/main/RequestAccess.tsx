@@ -59,7 +59,7 @@ const TEXT_FIELDS: {
 ];
 
 /**
- * Public "Zugang beantragen" form (/zugang/beantragen). The backend mails a
+ * Public "Zugang beantragen" form (/access/request). The backend mails a
  * confirmation link; only a confirmed request reaches the staff for review.
  * The answer is always the same "check your inbox", whether the address is
  * known or not. `website` is a honeypot - hidden from people, filled by bots.

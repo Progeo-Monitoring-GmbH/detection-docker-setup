@@ -84,7 +84,7 @@ describe('perform_get', () => {
 
     expect(onError).toHaveBeenCalledWith(error);
     expect(auth.navigate).toHaveBeenCalledTimes(1);
-    expect(auth.navigate).toHaveBeenCalledWith('/konto/zwei-faktor');
+    expect(auth.navigate).toHaveBeenCalledWith('/account/two-factor');
   });
 
   it('sends a user whose account awaits review to the review panel, not the login', async () => {
@@ -94,13 +94,13 @@ describe('perform_get', () => {
       });
     vi.spyOn(axiosConfig.holder, 'get').mockImplementation(() => Promise.reject(pending()));
     const elsewhere = makeAuth('/location/5/status');
-    const onPanel = makeAuth('/zugang/pruefung');
+    const onPanel = makeAuth('/access/review');
 
     await axiosConfig.perform_get(elsewhere, '/api/auth-support/module-permissions/', vi.fn(), vi.fn());
     await axiosConfig.perform_get(onPanel, '/api/auth-support/module-permissions/', vi.fn(), vi.fn());
 
     expect(elsewhere.navigate).toHaveBeenCalledTimes(1);
-    expect(elsewhere.navigate).toHaveBeenCalledWith('/zugang/pruefung');
+    expect(elsewhere.navigate).toHaveBeenCalledWith('/access/review');
     // Already there: no loop through the login page.
     expect(onPanel.navigate).not.toHaveBeenCalled();
   });

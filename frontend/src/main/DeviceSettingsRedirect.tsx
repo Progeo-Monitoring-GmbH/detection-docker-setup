@@ -22,7 +22,7 @@ const DeviceSettingsRedirect = () => {
       (response) => {
         const location = response?.data?.location as number | null | undefined;
         navigate(
-          location ? `/location/${location}/einstellungen` : '/device/overview/',
+          location ? `/location/${location}/settings` : '/device/overview/',
           { replace: true },
         );
       },

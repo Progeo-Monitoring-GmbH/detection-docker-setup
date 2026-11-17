@@ -8,7 +8,7 @@
  */
 
 /** The only page of a user who has to set up 2FA first. */
-export const TWO_FACTOR_SETUP_PATH = '/konto/zwei-faktor';
+export const TWO_FACTOR_SETUP_PATH = '/account/two-factor';
 
 /** JWT claim `two_factor_setup_required` (ProgeoTokenObtainPairSerializer). */
 export const needsTwoFactorSetup = (user: unknown) =>

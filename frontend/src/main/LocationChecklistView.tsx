@@ -118,14 +118,14 @@ export const fixPath = (key: string, id: number): string | null => {
     case 'product':
     case 'address':
     case 'geo':
-      return `/location/${id}/objekt`;
+      return `/location/${id}/object`;
     case 'threshold':
     case 'rain_check':
     case 'objektleitung':
-      return `/location/${id}/einstellungen`;
+      return `/location/${id}/settings`;
     case 'users':
     case 'alarm_recipient':
-      return `/location/${id}/rechte`;
+      return `/location/${id}/permissions`;
     case 'notifications_enabled':
       return '/device/statistics/';
     case 'devices':

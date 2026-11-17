@@ -7,7 +7,7 @@ Public (no login - the token from the mail is the key, throttled per IP):
   POST /api/auth-support/notifications/one-click/<token>/
        RFC 8058 one-click unsubscribe (List-Unsubscribe-Post of the mail client)
 
-The links in the mails open the frontend page /benachrichtigung/<token>,
+The links in the mails open the frontend page /notification/<token>,
 which only POSTs on a button click: mail scanners open every link of a mail
 and must neither acknowledge an alarm nor unsubscribe anybody.
 

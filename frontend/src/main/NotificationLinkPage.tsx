@@ -16,11 +16,15 @@ type LinkInfo = {
   address: string;
 };
 
-type Action = 'quittieren' | 'abmelden';
+type Action = 'acknowledge' | 'unsubscribe';
+
+/** The link's action: ?action=acknowledge|unsubscribe. */
+const actionOf = (params: URLSearchParams): Action =>
+  params.get('action') === 'unsubscribe' ? 'unsubscribe' : 'acknowledge';
 
 /**
  * Target of the acknowledge / unsubscribe links in notification mails
- * (/benachrichtigung/<token>?aktion=quittieren|abmelden, backend
+ * (/notification/<token>?action=acknowledge|unsubscribe, backend
  * helper/notification_cases.py). Loading the page only reads what the link is
  * about - the action itself needs the button: mail scanners open every link
  * of a mail and must neither acknowledge an alarm nor unsubscribe anybody.
@@ -35,7 +39,7 @@ const NotificationLinkPage = () => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState<string>('');
-  const [action, setAction] = useState<Action>(params.get('aktion') === 'abmelden' ? 'abmelden' : 'quittieren');
+  const [action, setAction] = useState<Action>(actionOf(params));
 
   useEffect(() => {
     if (!token) {
@@ -53,7 +57,7 @@ const NotificationLinkPage = () => {
   const run = () => {
     setBusy(true);
     setError('');
-    const url = action === 'abmelden'
+    const url = action === 'unsubscribe'
       ? '/api/auth-support/notifications/unsubscribe/'
       : '/api/auth-support/notifications/acknowledge/';
     void axiosConfig.perform_post(
@@ -64,7 +68,7 @@ const NotificationLinkPage = () => {
         setBusy(false);
         const data = response.data as LinkInfo & { state?: string; recipients_left?: boolean };
         setInfo(data);
-        if (action === 'abmelden') {
+        if (action === 'unsubscribe') {
           setDone(t('notification_link_unsubscribed'));
         } else if (data.kind === 'alarm') {
           setDone(t('notification_link_alarm_acknowledged'));
@@ -97,7 +101,7 @@ const NotificationLinkPage = () => {
   const kindLabel = info.kind === 'alarm' ? t('notification_kind_alarm') : t('notification_kind_offline');
   const resolved = info.state === 'resolved';
   let intro: string;
-  if (action === 'abmelden') {
+  if (action === 'unsubscribe') {
     intro = info.unsubscribed && !done
       ? t('notification_link_already_unsubscribed')
       : t('notification_link_unsubscribe_intro', { kind: kindLabel, project: info.project_nr });
@@ -106,9 +110,9 @@ const NotificationLinkPage = () => {
   } else {
     intro = resolved ? t('notification_link_offline_resolved') : t('notification_link_offline_intro');
   }
-  const canAct = !done && (action === 'abmelden' ? !info.unsubscribed : !resolved);
+  const canAct = !done && (action === 'unsubscribe' ? !info.unsubscribed : !resolved);
   let buttonLabel: string;
-  if (action === 'abmelden') {
+  if (action === 'unsubscribe') {
     buttonLabel = t('notification_link_unsubscribe_button');
   } else if (info.kind === 'alarm') {
     buttonLabel = t('notification_link_alarm_button');
@@ -134,18 +138,18 @@ const NotificationLinkPage = () => {
           type="button"
           disabled={busy}
           onClick={run}
-          className={authButtonClass(busy, action === 'abmelden', 'auth-button--block')}
+          className={authButtonClass(busy, action === 'unsubscribe', 'auth-button--block')}
           data-testid="notification-link-submit"
         >
           {buttonLabel}
         </button>
       )}
       <AuthLinks>
-        {action === 'quittieren' && !info.unsubscribed && (
+        {action === 'acknowledge' && !info.unsubscribed && (
           <button
             type="button"
             className="btn btn-link p-0"
-            onClick={() => { setAction('abmelden'); setDone(''); }}
+            onClick={() => { setAction('unsubscribe'); setDone(''); }}
             data-testid="notification-link-switch-unsubscribe"
           >
             {t('notification_link_switch_unsubscribe')}

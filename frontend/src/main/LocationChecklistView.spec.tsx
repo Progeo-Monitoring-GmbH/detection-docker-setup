@@ -261,7 +261,7 @@ describe('LocationChecklistView', () => {
       'readiness_detail_sensor_devices_uncovered:{"count":2}; readiness_detail_sensor_devices_count:{"counted":30,"points":28}',
     );
     expect(byKey('checklist-fix', 'sensor_devices')!.getAttribute('href')).toBe(
-      '/lageplan/wizard/?location=7#wizard-devices',
+      '/site-plan/wizard/?location=7#wizard-devices',
     );
 
     expect(byKey('checklist-check', 'points_named')!.textContent).toContain(
@@ -397,17 +397,17 @@ describe('checkDetail', () => {
 
 describe('fixPath', () => {
   it('opens the wizard at the step that fixes the point', () => {
-    expect(fixPath('lageplan', 3)).toBe('/lageplan/wizard/?location=3#wizard-plans');
-    expect(fixPath('lageplan_resolution', 3)).toBe('/lageplan/wizard/?location=3#wizard-plans');
-    expect(fixPath('measure_points', 3)).toBe('/lageplan/wizard/?location=3#wizard-points');
-    expect(fixPath('lageplan_aligned', 3)).toBe('/lageplan/wizard/?location=3#wizard-align');
-    expect(fixPath('lageplan_calibrated', 3)).toBe('/lageplan/wizard/?location=3#wizard-align');
-    expect(fixPath('heat_limitation', 3)).toBe('/lageplan/wizard/?location=3#wizard-heat-limits');
+    expect(fixPath('lageplan', 3)).toBe('/site-plan/wizard/?location=3#wizard-plans');
+    expect(fixPath('lageplan_resolution', 3)).toBe('/site-plan/wizard/?location=3#wizard-plans');
+    expect(fixPath('measure_points', 3)).toBe('/site-plan/wizard/?location=3#wizard-points');
+    expect(fixPath('lageplan_aligned', 3)).toBe('/site-plan/wizard/?location=3#wizard-align');
+    expect(fixPath('lageplan_calibrated', 3)).toBe('/site-plan/wizard/?location=3#wizard-align');
+    expect(fixPath('heat_limitation', 3)).toBe('/site-plan/wizard/?location=3#wizard-heat-limits');
   });
 
   it('sends alarm recipients to the Rechte tab and the product to the Objekt tab', () => {
-    expect(fixPath('alarm_recipient', 3)).toBe('/location/3/rechte');
-    expect(fixPath('product', 3)).toBe('/location/3/objekt');
+    expect(fixPath('alarm_recipient', 3)).toBe('/location/3/permissions');
+    expect(fixPath('product', 3)).toBe('/location/3/object');
   });
 
   it('has no link for the Airtable check - it is fixed in place', () => {

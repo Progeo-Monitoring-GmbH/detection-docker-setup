@@ -6,9 +6,10 @@ import { useAuth } from '../../hooks/CoreAuthProvider';
 import axiosConfig from '../axiosConfig';
 import AuthPage, { AuthLinks, authButtonClass } from '../components/auth/AuthPage';
 import { repeatedTestId } from '../testIds';
+import { PENDING_REVIEW_PATH } from './pendingReview';
 
 /**
- * Confirmation link of an access request (/zugang/bestaetigen/<token>). The
+ * Confirmation link of an access request (/access/verify/<token>). The
  * token is only checked on load (no side effect - mail scanners open the
  * link too); choosing a password confirms the address, creates the account
  * and logs the user in. Until the staff approved the request the portal
@@ -60,7 +61,7 @@ const VerifyAccess = () => {
       { token, password },
       (response) => {
         auth.loginWithTokens(response.data.access, response.data.refresh);
-        navigate('/zugang/pruefung', { replace: true });
+        navigate(PENDING_REVIEW_PATH, { replace: true });
       },
       (err) => {
         setBusy(false);
@@ -98,7 +99,7 @@ const VerifyAccess = () => {
       <AuthPage title={t('access_verify_title')} testId="page-verify-access">
         <p className="auth-muted" data-testid="verify-access-invalid">{t('access_verify_invalid')}</p>
         <AuthLinks>
-          <Link to="/zugang/beantragen" data-testid="verify-access-request-access-link">{t('login_request_access')}</Link>
+          <Link to="/access/request" data-testid="verify-access-request-access-link">{t('login_request_access')}</Link>
           <Link to="/login" data-testid="auth-back-to-login">{t('auth_back_to_login')}</Link>
         </AuthLinks>
       </AuthPage>

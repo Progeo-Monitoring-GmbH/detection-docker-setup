@@ -1,4 +1,4 @@
-"""Verwaltung (/verwaltung/, LocationViewSet.admin_overview): the staff list of
+"""Verwaltung (/management/, LocationViewSet.admin_overview): the staff list of
 every location must stay cheap - a fixed number of queries per database, no
 matter how many locations, accounts or open alarms there are; the alarm
 rollup reads only the columns of the severity (not the measurement's

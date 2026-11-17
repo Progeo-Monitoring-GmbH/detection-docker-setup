@@ -46,7 +46,7 @@ describe('APP_ROUTE_ACCESS', () => {
         '/location/:id/heatplot',
         '/location/overview/',
         '/locations/:id/heatplot',
-        '/schnittstelle/',
+        '/interface/',
         // module_mini_admin_enabled: the users table of their own account.
         '/staff/',
       ].sort(),
@@ -64,7 +64,7 @@ describe('APP_ROUTE_ACCESS', () => {
         '/escalations/:id',
         '/insights/activity/',
         '/insights/databases/',
-        '/lageplan/wizard/',
+        '/site-plan/wizard/',
         '/map/',
         '/staff/',
       ].sort(),

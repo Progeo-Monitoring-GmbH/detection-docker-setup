@@ -167,7 +167,7 @@ export const buildPolicySections = ({
   consentButton,
 }: SectionOptions): PolicySection[] => [
   {
-    id: 'verantwortlicher',
+    id: 'controller',
     title: 'Verantwortlicher',
     body: (
       <>
@@ -196,7 +196,7 @@ export const buildPolicySections = ({
     ),
   },
   {
-    id: 'geltungsbereich',
+    id: 'scope',
     title: 'Geltungsbereich',
     body: (
       <>
@@ -219,7 +219,7 @@ export const buildPolicySections = ({
     ),
   },
   {
-    id: 'bereitstellung',
+    id: 'hosting',
     title: 'Bereitstellung der Anwendung und Server-Logs',
     body: (
       <>
@@ -271,7 +271,7 @@ export const buildPolicySections = ({
     ),
   },
   {
-    id: 'konto',
+    id: 'account',
     title: 'Benutzerkonto und Anmeldung',
     body: (
       <>
@@ -380,7 +380,7 @@ export const buildPolicySections = ({
     ),
   },
   {
-    id: 'objektdaten',
+    id: 'object-data',
     title: 'Objekt- und Kontaktdaten',
     body: (
       <>
@@ -405,7 +405,7 @@ export const buildPolicySections = ({
     ),
   },
   {
-    id: 'benachrichtigungen',
+    id: 'notifications',
     title: 'Benachrichtigungen per E-Mail, SMS und Messenger',
     body: (
       <>
@@ -586,7 +586,7 @@ export const buildPolicySections = ({
     ),
   },
   {
-    id: 'kartendienste',
+    id: 'map-services',
     title: 'Externe Kartendienste (nur mit Einwilligung)',
     body: (
       <>
@@ -646,7 +646,7 @@ export const buildPolicySections = ({
     ),
   },
   {
-    id: 'nutzungsstatistik',
+    id: 'usage-statistics',
     title: 'Nutzungsstatistik (nur mit Einwilligung)',
     body: (
       <>
@@ -714,7 +714,7 @@ export const buildPolicySections = ({
     ),
   },
   {
-    id: 'empfaenger',
+    id: 'recipients',
     title: 'Empfänger und Auftragsverarbeiter',
     body: (
       <>
@@ -745,7 +745,7 @@ export const buildPolicySections = ({
     ),
   },
   {
-    id: 'speicherdauer',
+    id: 'retention',
     title: 'Speicherdauer und Datensicherung',
     body: (
       <>
@@ -777,7 +777,7 @@ export const buildPolicySections = ({
     ),
   },
   {
-    id: 'rechte',
+    id: 'your-rights',
     title: 'Ihre Rechte',
     body: (
       <>
@@ -819,7 +819,7 @@ export const buildPolicySections = ({
     ),
   },
   {
-    id: 'beschwerde',
+    id: 'complaints',
     title: 'Beschwerderecht bei der Aufsichtsbehörde',
     body: (
       <>
@@ -846,7 +846,7 @@ export const buildPolicySections = ({
     ),
   },
   {
-    id: 'sonstiges',
+    id: 'other',
     title: 'Pflicht zur Bereitstellung, automatisierte Entscheidungen',
     body: (
       <>
@@ -867,7 +867,7 @@ export const buildPolicySections = ({
     ),
   },
   {
-    id: 'aenderungen',
+    id: 'changes',
     title: 'Änderungen dieser Datenschutzerklärung',
     body: (
       <p>

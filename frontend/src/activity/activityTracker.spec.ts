@@ -27,11 +27,12 @@ const html = (markup: string) => {
 
 describe('normalizePath', () => {
   it.each([
-    ['/location/12/analyse', '/location/:id/analyse'],
-    ['/location/12/analyse?from=3#top', '/location/:id/analyse'],
+    ['/location/12/analysis', '/location/:id/analysis'],
+    ['/location/12/analysis?from=3#top', '/location/:id/analysis'],
     ['/login/link/abc', '/login/link/:token'],
-    ['/passwort/neu/x-y_z', '/passwort/neu/:token'],
-    ['/zugang/bestaetigen/abc', '/zugang/bestaetigen/:token'],
+    ['/password/reset/x-y_z', '/password/reset/:token'],
+    ['/access/verify/abc', '/access/verify/:token'],
+    ['/notification/abc', '/notification/:token'],
     ['/demo/login/abc', '/demo/login/:token'],
     ['/device/0a1b2c3d4e5f6a7b8c9d/update/', '/device/:token/update/'],
     ['/backup/1/overview/', '/backup/:id/overview/'],
@@ -157,7 +158,7 @@ describe('createActivityTracker', () => {
 
   it('records page views, clicks and flushes every FLUSH_MS', () => {
     const activity = tracker();
-    activity.pageChanged('/location/7/analyse');
+    activity.pageChanged('/location/7/analysis');
     activity.setActive(true);
     vi.advanceTimersByTime(4000);
     document.getElementById('b')!.click();
@@ -167,8 +168,8 @@ describe('createActivityTracker', () => {
     vi.advanceTimersByTime(FLUSH_MS);
 
     expect(events()).toEqual([
-      { kind: 'click', path: '/location/:id/analyse', target: 'alarms-export', at: Date.parse('2026-11-13T10:00:04Z') },
-      { kind: 'page', path: '/location/:id/analyse', duration_ms: 4000, at: Date.parse('2026-11-13T10:00:00Z') },
+      { kind: 'click', path: '/location/:id/analysis', target: 'alarms-export', at: Date.parse('2026-11-13T10:00:04Z') },
+      { kind: 'page', path: '/location/:id/analysis', duration_ms: 4000, at: Date.parse('2026-11-13T10:00:00Z') },
     ]);
     expect(sent[0].session).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
   });

@@ -4,8 +4,8 @@ import '../components/auth/Auth.css';
 import EmailRequestPage from '../components/auth/EmailRequestPage';
 
 /**
- * "Passwort vergessen" (/passwort-vergessen): the backend mails a reset link
- * (/passwort/neu/<token>) - only to users with 2FA, a mailbox alone must not
+ * "Passwort vergessen" (/forgot-password): the backend mails a reset link
+ * (/password/reset/<token>) - only to users with 2FA, a mailbox alone must not
  * be enough to take over an account. Everyone else gets a mail explaining
  * the way in (login link, then 2FA in the profile). The page always shows
  * the same confirmation, so it doesn't reveal which addresses are registered.

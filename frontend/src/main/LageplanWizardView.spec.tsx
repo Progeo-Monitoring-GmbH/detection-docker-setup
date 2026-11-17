@@ -80,7 +80,7 @@ const render = async (url: string) => {
 
 describe('LageplanWizardView anchors', () => {
   it('opens at the step of the #anchor - kept while the location is selected', async () => {
-    await render('/lageplan/wizard/?location=7&plan=3#wizard-plans');
+    await render('/site-plan/wizard/?location=7&plan=3#wizard-plans');
 
     // Selecting the location rewrote ?location/?plan - without losing the anchor.
     expect(current).toEqual({ search: '?location=7', hash: '#wizard-plans' });
@@ -92,7 +92,7 @@ describe('LageplanWizardView anchors', () => {
   });
 
   it('marks and scrolls to nothing without an anchor', async () => {
-    await render('/lageplan/wizard/?location=7');
+    await render('/site-plan/wizard/?location=7');
 
     expect(current.search).toBe('?location=7');
     expect(container.querySelectorAll('.lageplan-step--target')).toHaveLength(0);

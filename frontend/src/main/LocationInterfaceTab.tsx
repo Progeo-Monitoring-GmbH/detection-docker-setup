@@ -261,7 +261,7 @@ const BusyLabel = ({ busy, busyText, children }: { busy: boolean; busyText: stri
   );
 
 /**
- * Schnittstelle page (/schnittstelle/, system-wide - not tied to a
+ * Schnittstelle page (/interface/, system-wide - not tied to a
  * location): runtime configuration of the SMTP server, the Modbus
  * connection, the Esendex SMS gateway and the messenger gateways (stored in
  * SystemConfig, falls back to django.env until saved). The messenger cards

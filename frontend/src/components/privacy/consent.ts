@@ -1,7 +1,7 @@
 import Cookies from 'js-cookie';
 
 // In-app route (public, no login required) - see main/PrivacyPolicyPage.tsx.
-export const PRIVACY_POLICY_URL = '/datenschutz';
+export const PRIVACY_POLICY_URL = '/privacy';
 
 export const CONSENT_STORAGE_KEY = 'progeo_consent';
 

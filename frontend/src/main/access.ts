@@ -72,16 +72,16 @@ export const APP_ROUTE_ACCESS = {
   '/insights/databases/': STAFF,
   '/insights/activity/': STAFF,
   // System-wide interface config; the cards check module_interface_* themselves.
-  '/schnittstelle/': permission('module_interface_enabled'),
+  '/interface/': permission('module_interface_enabled'),
   '/escalations/': STAFF,
   '/escalations/:id': STAFF,
   // Staff only (as the backend's BackupViewSet), whatever a customer holds.
   '/backup/:account/overview/': allOf(STAFF, permission('module_backup_enabled')),
-  '/lageplan/wizard/': STAFF,
+  '/site-plan/wizard/': STAFF,
   '/map/': STAFF,
   // Object management - ProGeo-Admins (roleModel: superusers).
-  '/verwaltung/': SUPERUSER,
-  '/anlegen/': SUPERUSER,
+  '/management/': SUPERUSER,
+  '/create/': SUPERUSER,
   // The landing page forwards to what the user may see.
   '*': ANY_USER,
 } satisfies Record<string, AccessRule>;
@@ -127,7 +127,7 @@ const useStaffFlags = () => staffFlags(useAuth()?.user);
 /** Staff flags, module permissions and `can(rule)` for the current user. */
 export const useAccess = () => {
   const flags = useStaffFlags();
-  const { hasPermission, isLoading } = usePermissions();
+  const { hasPermission, isLoading, error, refreshPermissions } = usePermissions();
   const context: AccessContext = {
     isStaff: flags.isStaff,
     isSuperuser: flags.isSuperuser,
@@ -137,6 +137,9 @@ export const useAccess = () => {
     ...flags,
     hasPermission,
     isLoading,
+    /** Loading the module permissions failed - not the same as having none. */
+    error,
+    refreshPermissions,
     can: (rule: AccessRule) => rule(context),
   };
 };

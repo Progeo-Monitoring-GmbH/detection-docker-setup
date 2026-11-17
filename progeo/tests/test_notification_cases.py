@@ -125,13 +125,13 @@ def test_stage_one_at_nine_with_links_and_list_unsubscribe(site, live):
     message = FakeSMTP.parsed()[0]
     assert "Störung des Monitoringsystems" in message["Subject"]
     text = body_of(message)
-    assert "Kenntnisnahme bestätigen: https://dashboard.progeo.com/benachrichtigung/" in text
-    assert "Diese Benachrichtigungen abbestellen: https://dashboard.progeo.com/benachrichtigung/" in text
+    assert "Kenntnisnahme bestätigen: https://dashboard.progeo.com/notification/" in text
+    assert "Diese Benachrichtigungen abbestellen: https://dashboard.progeo.com/notification/" in text
     assert "Dach Nord" in text
     assert message["List-Unsubscribe"].startswith("<https://dashboard.progeo.com/api/auth-support/notifications/one-click/")
     assert message["List-Unsubscribe-Post"] == "List-Unsubscribe=One-Click"
     # The tokens never land in the mail log.
-    assert all("/benachrichtigung/" not in row.message for row in EMail.objects.using(f.DB).filter(location=location))
+    assert all("/notification/" not in row.message for row in EMail.objects.using(f.DB).filter(location=location))
     case = _case(location)
     assert case.stage == 1 and case.next_contact_at == at(9, days=3)
     assert OutboundMessage.objects.using(f.DB).filter(case_id=case.pk).count() == 2

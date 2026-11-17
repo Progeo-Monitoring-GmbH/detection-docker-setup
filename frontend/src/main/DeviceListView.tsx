@@ -616,7 +616,7 @@ const DeviceListView = () => {
               type="button"
               title={t('devices_action_settings')}
               aria-label={t('devices_action_settings')}
-              onClick={() => navigate(`/location/${device.location}/einstellungen`)}
+              onClick={() => navigate(`/location/${device.location}/settings`)}
               className="progeo-icon-button"
               {...repeatedTestId('device-list-settings', device.id)}
             >
@@ -629,7 +629,7 @@ const DeviceListView = () => {
               type="button"
               title={t('devices_action_editor')}
               aria-label={t('devices_action_editor')}
-              onClick={() => navigate(`/lageplan/wizard/?location=${device.location}`)}
+              onClick={() => navigate(`/site-plan/wizard/?location=${device.location}`)}
               className="progeo-icon-button"
               {...repeatedTestId('device-list-editor', device.id)}
             >

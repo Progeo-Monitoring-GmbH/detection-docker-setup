@@ -321,11 +321,18 @@ const usePermissions = () => {
       hasAllModulePermissions(permissions, codes, isAdmin),
     refreshPermissions: async () => {
       clearPermissionsCache();
-      const payload = await fetchPermissionPayload(auth, token);
-      setPermissionPayload(payload);
-      setError(null);
-      setIsLoading(false);
-      return payload;
+      try {
+        const payload = await fetchPermissionPayload(auth, token);
+        setPermissionPayload(payload);
+        setError(null);
+        return payload;
+      } catch (nextError) {
+        // Kept apart from "no permissions": the caller shows a load error.
+        setError(nextError as null);
+        throw nextError;
+      } finally {
+        setIsLoading(false);
+      }
     },
   };
 };

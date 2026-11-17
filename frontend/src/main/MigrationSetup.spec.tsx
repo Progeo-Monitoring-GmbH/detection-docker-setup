@@ -59,9 +59,9 @@ afterEach(() => {
 const render = () =>
   act(() => {
     root.render(
-      <MemoryRouter initialEntries={['/konto/einrichten/tok123']}>
+      <MemoryRouter initialEntries={['/account/setup/tok123']}>
         <Routes>
-          <Route path="/konto/einrichten/:token" element={<MigrationSetup />} />
+          <Route path="/account/setup/:token" element={<MigrationSetup />} />
           <Route path="/" element={<div data-testid="home" />} />
         </Routes>
       </MemoryRouter>,

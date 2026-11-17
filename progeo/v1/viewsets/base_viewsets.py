@@ -272,15 +272,12 @@ class UserModulePermissionView(APIView):
         if invalid_codes:
             return RequestFailed({"reason": f"Invalid permission codes: {sorted(invalid_codes)}"})
 
-        # A staff member may only grant permissions they hold themselves
-        # (superusers hold everything).
-        if request.user.is_superuser:
-            grantable = set(MODULE_PERMISSION_CODES)
-        else:
-            grantable = {
-                code for code in MODULE_PERMISSION_CODES
-                if request.user.has_perm(f"progeo.{code}")
-            }
+        # The same rule as the Benutzerverwaltung: the permissions staff hold
+        # themselves (superusers all) - and the mini admin one, which only
+        # staff grant.
+        from progeo.v1.viewsets.staff_admin_viewset import _grantable_codes
+
+        grantable = _grantable_codes(request.user)
         forbidden_adds = [code for code in add_codes if code not in grantable]
         if forbidden_adds:
             return Response(

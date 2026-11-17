@@ -145,9 +145,9 @@ const LoginForm = () => {
       </form>
 
       <AuthLinks>
-        <Link to="/passwort-vergessen" data-testid="login-forgot-password-link">{t('login_forgot_password')}</Link>
+        <Link to="/forgot-password" data-testid="login-forgot-password-link">{t('login_forgot_password')}</Link>
         <Link to="/login/link" data-testid="login-magic-link-link">{t('login_magic_link')}</Link>
-        <Link to="/zugang/beantragen" data-testid="login-request-access-link">{t('login_request_access')}</Link>
+        <Link to="/access/request" data-testid="login-request-access-link">{t('login_request_access')}</Link>
       </AuthLinks>
     </AuthPage>
   );

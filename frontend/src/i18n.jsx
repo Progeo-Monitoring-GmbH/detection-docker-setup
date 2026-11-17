@@ -1251,6 +1251,8 @@ i18n
           nav_anlegen: 'Create object',
           portal_no_access: 'You do not have access to this section.',
           page_no_access: 'You do not have access to this page.',
+          page_permissions_failed: 'Your permissions could not be loaded.',
+          page_permissions_retry: 'Try again',
           verwaltung_title: 'Object management',
           verwaltung_denied: 'Staff access required.',
           verwaltung_kpi_total: 'Objects',
@@ -3586,6 +3588,8 @@ i18n
           portal_no_access:
             'Keine Zugriffsberechtigung für die Inhalte dieser Location.',
           page_no_access: 'Keine Zugriffsberechtigung für diese Seite.',
+          page_permissions_failed: 'Ihre Berechtigungen konnten nicht geladen werden.',
+          page_permissions_retry: 'Erneut versuchen',
           verwaltung_title: 'Objektverwaltung',
           verwaltung_denied: 'Nur für ProGeo®-Mitarbeitende.',
           verwaltung_kpi_total: 'Objekte',

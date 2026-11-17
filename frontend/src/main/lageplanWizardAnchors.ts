@@ -18,4 +18,4 @@ export type WizardStep = keyof typeof WIZARD_ANCHORS;
 
 /** The wizard for location `id`, opened at `step`. */
 export const wizardPath = (id: number, step?: WizardStep) =>
-  `/lageplan/wizard/?location=${id}${step ? `#${WIZARD_ANCHORS[step]}` : ''}`;
+  `/site-plan/wizard/?location=${id}${step ? `#${WIZARD_ANCHORS[step]}` : ''}`;

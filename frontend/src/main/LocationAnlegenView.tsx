@@ -148,7 +148,7 @@ const NrHintLine = ({
         {hint.usedBy.map((location, index) => (
           <span key={location.id}>
             {index > 0 && ', '}
-            <Link to={`/location/${location.id}/objekt`} target="_blank" rel="noopener noreferrer">
+            <Link to={`/location/${location.id}/object`} target="_blank" rel="noopener noreferrer">
               {location.name || `#${location.id}`}
             </Link>
             {location.account ? ` (${location.account})` : ''}

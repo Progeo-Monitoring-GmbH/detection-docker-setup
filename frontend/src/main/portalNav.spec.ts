@@ -50,7 +50,7 @@ describe('portalNavPath', () => {
   it('uses the segment, not the key', () => {
     const benach = PORTAL_NAV_ITEMS.find((item) => item.key === 'benach');
     expect(benach).toBeDefined();
-    expect(portalNavPath(benach!, 1)).toBe('/location/1/benachrichtigungen');
+    expect(portalNavPath(benach!, 1)).toBe('/location/1/notifications');
   });
 
   it('produces a distinct path for every item', () => {
@@ -61,11 +61,11 @@ describe('portalNavPath', () => {
 
 describe('switchLocationPath', () => {
   it.each([
-    ['/location/12/objekt', '/location/7/objekt'],
-    ['/location/12/benachrichtigungen', '/location/7/benachrichtigungen'],
+    ['/location/12/object', '/location/7/object'],
+    ['/location/12/notifications', '/location/7/notifications'],
     ['/location/12/status/', '/location/7/status'],
     // A deeper path belongs to the open location - only its tab is kept.
-    ['/location/12/einstellungen/lageplan/3', '/location/7/einstellungen'],
+    ['/location/12/settings/lageplan/3', '/location/7/settings'],
   ])('keeps the tab of %s', (pathname, expected) => {
     expect(switchLocationPath(pathname, 7)).toBe(expected);
   });
@@ -80,7 +80,7 @@ describe('switchLocationPath', () => {
   it.each([
     ['/checklist/location/', '?location=12', '/checklist/location/?location=7'],
     ['/device/overview', '?location=12&ping=1', '/device/overview?location=7'],
-    ['/lageplan/wizard/', '?location=12&plan=3', '/lageplan/wizard/?location=7'],
+    ['/site-plan/wizard/', '?location=12&plan=3', '/site-plan/wizard/?location=7'],
   ])('keeps the page of %s%s, only the location changes', (pathname, search, expected) => {
     expect(switchLocationPath(pathname, 7, search)).toBe(expected);
   });
@@ -93,14 +93,14 @@ describe('switchLocationPath', () => {
   );
 
   it('knows the location a page shows', () => {
-    expect(openLocationId('/location/12/objekt')).toBe(12);
+    expect(openLocationId('/location/12/object')).toBe(12);
     expect(openLocationId('/checklist/location/', '?location=12')).toBe(12);
     expect(openLocationId('/checklist/location/', '')).toBeNull();
     expect(openLocationId('/location/overview/')).toBeNull();
   });
 
   it('knows the tab of a location page only', () => {
-    expect(portalTabOf('/location/3/rechte')?.key).toBe('rechte');
+    expect(portalTabOf('/location/3/permissions')?.key).toBe('rechte');
     expect(portalTabOf('/device/overview')).toBeNull();
   });
 });

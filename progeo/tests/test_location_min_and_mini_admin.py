@@ -211,3 +211,18 @@ def test_customers_without_the_permission_get_no_users_table(api_client, mini):
     api_client.force_authenticate(user=mini["colleague"])
 
     assert api_client.get(USERS).json()["reason"] == "Staff access required"
+
+
+def test_both_permission_endpoints_let_staff_grant_the_mini_admin_role(api_client):
+    """/api/auth-support/module-permissions/ (POST) follows the same rule as
+    the Benutzerverwaltung - staff grant the mini admin role without holding
+    it - and the user's own permissions then carry it (the /staff/ guard)."""
+    customer = f.make_user(perms=READ)
+    api_client.force_authenticate(user=f.make_user(staff=True, perms=READ))
+
+    response = api_client.post("/api/auth-support/module-permissions/",
+                               {"user_id": customer.pk, "add": [MINI]}, format="json")
+
+    assert response.status_code == 200, response.content
+    api_client.force_authenticate(user=User.objects.using(f.DB).get(pk=customer.pk))
+    assert api_client.get("/api/auth-support/module-permissions/").json()["permissions"][MINI] is True

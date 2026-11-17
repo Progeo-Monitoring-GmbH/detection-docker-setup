@@ -131,10 +131,10 @@ const LocationClimateHeatmap = ({
         ) : !hasPoints ? (
           <div className="text-muted py-4 text-center" data-testid={childTestId(testId, 'empty')}>
             {t('climate_heatmap_no_points')}
-            {can(routeRule('/lageplan/wizard/')) && (
+            {can(routeRule('/site-plan/wizard/')) && (
               <div className="mt-2">
                 <Link
-                  to={`/lageplan/wizard/?location=${locationId}`}
+                  to={`/site-plan/wizard/?location=${locationId}`}
                   data-testid={childTestId(testId, 'wizard-link')}
                 >{t('climate_heatmap_open_wizard')}</Link>
               </div>

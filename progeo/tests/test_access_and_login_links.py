@@ -38,7 +38,7 @@ def _link_token(path):
 
 def _request_and_verify(client):
     assert client.post("/api/auth-support/access-requests/", FORM, format="json").data["success"]
-    token = _link_token("/zugang/bestaetigen/")
+    token = _link_token("/access/verify/")
     response = client.post("/api/auth-support/access-requests/verify/", {"token": token, "password": PASSWORD},
                            format="json")
     assert response.data["success"], response.data
@@ -60,7 +60,7 @@ def test_request_creates_unverified_entry_and_mails_the_confirmation(client):
     assert request.status == "unverified" and request.user is None
     message = FakeSMTP.parsed()[-1]
     assert message["To"] == "erika@progeo.com"
-    token = _link_token("/zugang/bestaetigen/")
+    token = _link_token("/access/verify/")
     assert request.verify_token_hash == login_links.hash_token(token)
     # The logged copy of the mail holds no working link.
     assert token not in EMail.objects.using(f.DB).get(subject__contains="bestätigen").message
@@ -94,7 +94,7 @@ def test_request_for_an_existing_account_sends_a_login_link_instead(client):
 
 def test_verify_rejects_weak_passwords_in_german(client):
     client.post("/api/auth-support/access-requests/", FORM, format="json")
-    token = _link_token("/zugang/bestaetigen/")
+    token = _link_token("/access/verify/")
 
     check = client.post("/api/auth-support/access-requests/verify/check/", {"token": token}, format="json")
     assert check.data["email"] == "erika@progeo.com"
@@ -123,7 +123,7 @@ def test_verify_creates_a_pending_user_and_tells_staff(client):
 
 def test_expired_confirmation_link(client):
     client.post("/api/auth-support/access-requests/", FORM, format="json")
-    token = _link_token("/zugang/bestaetigen/")
+    token = _link_token("/access/verify/")
     AccessRequest.objects.using(f.DB).update(verify_expires_at=timezone.now() - timedelta(minutes=1))
 
     response = client.post("/api/auth-support/access-requests/verify/check/", {"token": token}, format="json")
@@ -241,7 +241,7 @@ def test_confirmation_mail_in_the_language_of_the_form(client, language, subject
 
     message = FakeSMTP.parsed()[-1]
     assert subject in message["Subject"]
-    assert "/zugang/bestaetigen/" in body_of(message)
+    assert "/access/verify/" in body_of(message)
     # The form's language also preselects the staff's choice.
     expected = (language or "")[:2]
     assert AccessRequest.objects.using(f.DB).get(email="erika@progeo.com").language == expected

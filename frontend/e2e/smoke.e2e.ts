@@ -33,7 +33,7 @@ for (const [tab, pageTestId] of LOCATION_TABS) {
 
 test('the analyse heatmap switches the Lageplan with the keys', async ({ page }) => {
   test.skip(!locationId, 'Set E2E_LOCATION_ID to test the location pages');
-  await openPage(page, `/location/${locationId}/analyse`, 'page-location-analyse');
+  await openPage(page, `/location/${locationId}/analysis`, 'page-location-analyse');
   const plans = page.getByTestId('analyse-heatmap-plans-option');
   test.skip((await plans.count()) < 2, 'The location has only one Lageplan');
 

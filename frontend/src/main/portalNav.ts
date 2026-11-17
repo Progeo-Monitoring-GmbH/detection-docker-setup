@@ -16,7 +16,7 @@ export type PortalNavItem = {
  * belong here and their order.
  *
  * The interface configuration (SMTP/Modbus/SMS/messenger) is system-wide,
- * not per object - it lives at the top-level /schnittstelle/ route instead.
+ * not per object - it lives at the top-level /interface/ route instead.
  */
 export const PORTAL_NAV_ITEMS: PortalNavItem[] = [
   {
@@ -31,35 +31,35 @@ export const PORTAL_NAV_ITEMS: PortalNavItem[] = [
     labelKey: 'nav_objekt',
     icon: 'M5 3h9l5 5v13H5zM14 3v5h5M9 13h6M9 17h4',
     permission: 'module_locations_enabled',
-    segment: 'objekt',
+    segment: 'object',
   },
   {
     key: 'analyse',
     labelKey: 'nav_analyse',
     icon: 'M4 19V5M4 19h16M8 15l3-4 3 3 4-6',
     permission: 'module_measurements_enabled',
-    segment: 'analyse',
+    segment: 'analysis',
   },
   {
     key: 'benach',
     labelKey: 'nav_benach',
     icon: 'M18 8a6 6 0 1 0-12 0c0 6-2 7-2 7h16s-2-1-2-7M10.3 20a2 2 0 0 0 3.4 0',
     permission: 'module_notifications_enabled',
-    segment: 'benachrichtigungen',
+    segment: 'notifications',
   },
   {
     key: 'rechte',
     labelKey: 'nav_rechte',
     icon: 'M9 8a3.2 3.2 0 1 0 0-6.4A3.2 3.2 0 0 0 9 8zM3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M17 6.4a3 3 0 0 1 0 5.6M21 20c0-2.1-.9-3.9-2.3-5',
     permission: 'module_locations_enabled',
-    segment: 'rechte',
+    segment: 'permissions',
   },
   {
     key: 'einstell',
     labelKey: 'nav_einstell',
     icon: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19 12l2 1.3-1.6 3-2.3-.7-1.7 1-.4 2.4h-3.4l-.4-2.4-1.7-1-2.3.7L3.6 13.3 5.6 12l-2-1.3 1.6-3 2.3.7 1.7-1L9.6 5h3.4l.4 2.4 1.7 1 2.3-.7 1.6 3z',
     permission: 'module_locations_enabled',
-    segment: 'einstellungen',
+    segment: 'settings',
   },
 ];
 
@@ -75,7 +75,6 @@ export const portalTabOf = (pathname: string): PortalNavItem | null => {
 /** Location pages besides the portal tabs (CoreRoutes: /location/:id/<segment>). */
 const LOCATION_PAGE_SEGMENTS = new Set([
   ...PORTAL_NAV_ITEMS.map((item) => item.segment),
-  'schnittstelle',
   'heatplot',
   'alarms',
 ]);
@@ -90,7 +89,7 @@ export const openLocationId = (pathname: string, search = ''): number | null => 
 
 /**
  * Where a switch to location `id` leads (favorites bar): the open page with
- * the other location - /location/12/objekt -> /location/7/objekt,
+ * the other location - /location/12/object -> /location/7/object,
  * /checklist/location/?location=12 -> ?location=7 - so staff move between
  * locations without leaving the page. Anywhere else the status page (every
  * user may open it). Deeper paths and other parameters are dropped: they

@@ -209,8 +209,8 @@ def _links(token):
     from progeo.helper.emailhelper import portal_url
 
     return {
-        "ack_url": portal_url(f"/benachrichtigung/{token}?aktion=quittieren"),
-        "unsubscribe_url": portal_url(f"/benachrichtigung/{token}?aktion=abmelden"),
+        "ack_url": portal_url(f"/notification/{token}?action=acknowledge"),
+        "unsubscribe_url": portal_url(f"/notification/{token}?action=unsubscribe"),
     }
 
 

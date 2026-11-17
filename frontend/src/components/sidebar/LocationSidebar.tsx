@@ -56,7 +56,7 @@ export const selectedLocationParam = (search: string, locationId: number | null)
 };
 
 /**
- * "Objektverwaltung": object managers always (it is their /verwaltung/);
+ * "Objektverwaltung": object managers always (it is their /management/);
  * everyone else only with more than one location - a list of one is no
  * overview. Hidden until the count is known, so it never flashes in.
  */
@@ -116,9 +116,9 @@ const LocationSidebar = ({
   );
   // ProGeo-Admins (superusers) manage objects.
   const canCreateLocation =
-    role === 'progeo-admin' && can(routeRule('/verwaltung/'));
+    role === 'progeo-admin' && can(routeRule('/management/'));
   const verwaltungPath = canCreateLocation
-    ? '/verwaltung/'
+    ? '/management/'
     : '/location/overview/';
 
   const [locationCount, setLocationCount] = useState<number | null>(null);
@@ -234,8 +234,8 @@ const LocationSidebar = ({
       key: 'schnittstelle',
       label: t('nav_schnittstelle'),
       icon: Plug,
-      to: '/schnittstelle/',
-      visible: can(routeRule('/schnittstelle/')),
+      to: '/interface/',
+      visible: can(routeRule('/interface/')),
     },
     {
       key: 'backup',
@@ -258,8 +258,8 @@ const LocationSidebar = ({
       key: 'lageplan',
       label: t('sidebar_lageplan_wizard'),
       icon: Layers,
-      to: '/lageplan/wizard/',
-      visible: can(routeRule('/lageplan/wizard/')),
+      to: '/site-plan/wizard/',
+      visible: can(routeRule('/site-plan/wizard/')),
       carriesLocation: true,
     },
     {
@@ -439,8 +439,8 @@ const LocationSidebar = ({
       {canCreateLocation &&
         renderLink({
           key: 'anlegen',
-          to: '/anlegen/',
-          active: routerLocation.pathname === '/anlegen/',
+          to: '/create/',
+          active: routerLocation.pathname === '/create/',
           global: true,
           icon: renderIcon('M12 5v14M5 12h14'),
           label: t('nav_anlegen'),
